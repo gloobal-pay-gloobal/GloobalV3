@@ -48,12 +48,11 @@ const isNetworkNoise = (msg) =>
   );
 
 before(async () => {
-  // Resolved from the preview package's node_modules by absolute path:
-  // playwright is a devDependency there, not at the repo root, so a bare
-  // specifier fails when the suite is run from the root via `npm test`.
-  ({ chromium } = await import(
-    "file://" + path.join(PREVIEW, "node_modules", "playwright", "index.mjs")
-  ));
+  // playwright is a devDependency of the ROOT package (where these tests
+  // live), deliberately not of gloobal-essentials-preview: Netlify's build
+  // base is that preview directory, so a test-only dependency declared there
+  // would be installed — and try to download browsers — on every deploy.
+  ({ chromium } = await import("playwright"));
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gloobal-render-"));
 
   // Rebuild the concatenated bundle first, so this always tests the current

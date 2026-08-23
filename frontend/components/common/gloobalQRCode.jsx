@@ -9,7 +9,14 @@ import { useState as useState3, useEffect as useEffect3, useMemo as useMemoQr } 
 // into it. A scanner reads dark-vs-light per module by luminance, not
 // hue, so any of these six — all solidly dark/saturated, not pastel —
 // reads exactly as "dark" as the plain black square it replaces.
-var QR_MODULE_COLORS = ["#2563EB", "#DC2626", "#EA580C", "#059669", "#9333EA", "#DB2777"];
+// Luminance matters here, not hue. A scanner binarises the camera image
+// against a threshold near 128, so every colour used for a dark module has
+// to sit comfortably BELOW it or that module reads as light and flips a
+// bit. The orange was #EA580C, luminance 123 — only five points of margin,
+// which survives a clean screenshot and does not survive a real camera
+// with glare or an exposure shift. Swapped for a deeper orange (luminance
+// ~97) so all six now sit in the 92-102 band, roughly 30 points clear.
+var QR_MODULE_COLORS = ["#2563EB", "#DC2626", "#C2410C", "#059669", "#9333EA", "#DB2777"];
 
 // One shape per DIAL_SYMBOLS entry (constants/theme.js: − + × = ○ □ ● ■)
 // — back to exactly the Secure ID dial pad's own 8-symbol alphabet, not
@@ -92,6 +99,50 @@ var QR_MODULE_COMBOS = Array.from({ length: 18 }, (_, i) => ({
   colorIndex: i % QR_MODULE_COLORS.length
 }));
 
+// How many data modules get the branded dial-symbol treatment. EVERY dark
+// data module used to — roughly 400 of them on a 33x33 code — and that is
+// why the code did not scan at all.
+//
+// A decoder samples each module's centre and asks one question: dark or
+// light. A plain filled square answers it unambiguously. A "−" is a thin
+// bar, a "+" and a "×" are thin strokes, a "=" is two bars with a gap: each
+// covers a fraction of its cell, and once several hundred of them sit side
+// by side the scanner's binarisation no longer sees a clean grid of
+// dark/light cells at all — it sees texture, fails to resolve the module
+// pitch, and gives up before it ever reaches error correction. Verified
+// with a real jsQR decode of the rendered image: null, every time.
+//
+// Capped at 18 (the 15-20 asked for) the arithmetic changes completely.
+// Those 18 sit inside a code whose remaining ~400 dark data modules are
+// solid squares, so the grid resolves normally, and even if every one of
+// the 18 were misread they are a ~1.6% error rate against a QR error
+// correction budget that tolerates far more. The brand mosaic becomes an
+// accent the code can absorb rather than the substrate it is made of.
+var QR_SYMBOL_MODULE_COUNT = 18;
+
+// Which dark data modules become symbols. Deterministic and exact: hash
+// every candidate, order by that hash, take the first N. The hash ordering
+// scatters them across the grid instead of clustering them (a run of
+// adjacent low-ink cells is exactly what confuses binarisation), and
+// because it is pure arithmetic on (row, col) the same payload always
+// picks the same 18 cells — the same guarantee the combo table below
+// documents, for the same reason.
+function qrPickSymbolModules(matrix, isFunctionModule) {
+  const candidates = [];
+  for (let r = 0; r < matrix.length; r += 1) {
+    for (let c = 0; c < matrix[r].length; c += 1) {
+      if (matrix[r][c] === 1 && !isFunctionModule[r][c]) candidates.push(r * 1e3 + c);
+    }
+  }
+  const scored = candidates.map((id) => {
+    let h = Math.imul(id ^ id >>> 16, 0x45d9f3b);
+    h = Math.imul(h ^ h >>> 16, 0x45d9f3b);
+    return { id, h: (h ^ h >>> 16) >>> 0 };
+  });
+  scored.sort((a, b) => a.h - b.h || a.id - b.id);
+  return new Set(scored.slice(0, QR_SYMBOL_MODULE_COUNT).map((s) => s.id));
+}
+
 // Deterministic on purpose — no Math.random. The same (row, col) always
 // picks the same combo, so the same encoded payload renders
 // pixel-identical every time it's shown: reopen the code, screenshot it
@@ -120,9 +171,13 @@ function qrModuleStyleFor(row, col) {
 // square: their exact geometry is what a real scanner searches the image
 // for to locate and orient the code at all, so it's the one region that
 // can never be restyled. Every dark DATA cell is free to become a symbol.
-function renderQrModule(row, col, isFunction, x, y, moduleSize) {
+function renderQrModule(row, col, isFunction, x, y, moduleSize, symbolModules) {
   const rowKey = `${row}-${col}`;
-  if (isFunction) {
+  // Function patterns as before, and now also every dark data module that
+  // was not one of the chosen few — a plain, fully-filled square is what
+  // makes the code readable, so it is the default rather than the
+  // exception.
+  if (isFunction || !symbolModules || !symbolModules.has(row * 1e3 + col)) {
     return <rect key={rowKey} x={x} y={y} width={moduleSize} height={moduleSize} fill={T.ink} />;
   }
   const { symbolIndex, colorIndex } = qrModuleStyleFor(row, col);
@@ -186,7 +241,13 @@ function GloobalQRCode({ code, size = 200, onSecondsLeftChange }) {
   // per-row array from a nested .map() doesn't carry one itself, which
   // was surfacing as a dev-mode "unique key prop" warning on every
   // render even though every actual module element was already keyed.
-  const qrModules = built ? built.matrix.map((row, r) => row.map((v, c) => v === 1 ? renderQrModule(r, c, built.isFunctionModule[r][c], (c + margin) * moduleSize, (r + margin) * moduleSize, moduleSize) : null)).flat() : null;
+  // Chosen once per matrix, not per module: the selection has to see the
+  // whole grid to pick exactly QR_SYMBOL_MODULE_COUNT of it.
+  const symbolModules = useMemoQr(
+    () => built ? qrPickSymbolModules(built.matrix, built.isFunctionModule) : null,
+    [built]
+  );
+  const qrModules = built ? built.matrix.map((row, r) => row.map((v, c) => v === 1 ? renderQrModule(r, c, built.isFunctionModule[r][c], (c + margin) * moduleSize, (r + margin) * moduleSize, moduleSize, symbolModules) : null)).flat() : null;
   // No center logo anymore — it sat over live data modules purely as
   // brand decoration, at some (small) cost to the error-correction
   // budget for no functional reason. The dial-symbol mosaic above is

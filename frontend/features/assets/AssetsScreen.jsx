@@ -11,7 +11,7 @@ function AssetsScreen({ onClose, ccy, assetRows, onViewPayLater, onViewDetail, o
     aria-label="Back"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>My Assets</span></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
+  ><ArrowLeft size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>My Assets</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* Total */
   }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "22px 20px" }}><div style={{ display: "flex", gap: 18 }}><span style={{ flex: 1 }}><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Current assets</div><div style={{ fontSize: 24, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 3 }}>{ccy}{totalAssets.toFixed(2)}</div></span><span style={{ flex: 1 }}><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Future assets</div><div style={{ fontSize: 24, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 3 }}>{ccy}{totalSpending.toFixed(2)}</div></span></div>{
     /* Spending → Earnings → Assets */

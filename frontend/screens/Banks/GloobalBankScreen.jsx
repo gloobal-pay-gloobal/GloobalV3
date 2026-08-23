@@ -29,6 +29,11 @@ function GloobalBankScreen({
   onRegisterInterest,
   ccy,
   balance,
+  // Same unconfirmed-balance state the dashboard card shows (see the
+  // balanceStatus effect in App.jsx). Threaded through so the two places
+  // that display this account's balance can never disagree about whether
+  // the server has actually confirmed it.
+  balanceUnavailable = false,
   balanceVisible,
   onToggleBalance,
   recentTransactions
@@ -39,7 +44,7 @@ function GloobalBankScreen({
     onBack={onBack}
     onAction={onOpenStats}
     actionLabel="Interest stats"
-  /><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 20 }}><ProductScreenHero color={heroColor} />{
+  /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 20 }}><ProductScreenHero color={heroColor} />{
     /* The balance sits behind the same biometric gate as the wallet
        card on Home — same `balanceVisible` state, same eye control,
        same WebAuthn check on the way to revealing it. Showing it
@@ -58,7 +63,7 @@ function GloobalBankScreen({
       border: `1px solid ${T.line}`,
       boxShadow: T.shadowCard
     }}
-  ><span style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>Your balance</span><span style={{ fontSize: 28, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, letterSpacing: 0.2 }}>{balanceVisible ? `${ccy}${balance}` : "•••••••"}</span></span><button
+  ><span style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>Your balance</span><span style={{ fontSize: 28, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, letterSpacing: 0.2 }}>{balanceUnavailable ? <span style={{ fontSize: 16, fontWeight: 700, color: T.negative }}>Balance unavailable</span> : balanceVisible ? `${ccy}${balance}` : "•••••••"}</span></span><button
     onClick={onToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"

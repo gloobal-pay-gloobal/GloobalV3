@@ -289,9 +289,18 @@ function GloobalId() {
       // quote the stored reference rather than assuming its own was kept,
       // and can show the Creator Share the payee's account really charged.
       const transaction = (result && result.transaction) || {};
+      // The Creator Share's own transaction, minted server-side alongside
+      // the payment with its own referenceId. Passed up so the share
+      // receipt can quote ITS id instead of reusing the payment's — the two
+      // are different movements between different pairs of parties and must
+      // not be identifiable by the same reference.
+      const share = (result && result.shareTransaction) || null;
       return {
         ok: true,
         transactionId: transaction.referenceId || txnId || "",
+        shareTransactionId: (share && share.referenceId) || "",
+        shareAmount: Number(share && share.amount) || 0,
+        shareCurrency: (share && share.currency) || "",
         cashback: Number(result && result.cashback) || 0,
         cashbackRate: Number(result && result.cashbackRate) || 0
       };
@@ -301,7 +310,7 @@ function GloobalId() {
   };
   const handleReportTransactionIssue = (txnId, reason) => openComplaint({ txnId, raisedBy: "sender", reason });
   const bankBalance = useBankBalance();
-  const { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance } = useTransactionActions();
+  const { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance, reconcilePaylaterDue, hydrateGrantsFromServer } = useTransactionActions();
   const [usedQrCodes, setUsedQrCodes] = useState19(() => /* @__PURE__ */ new Set());
   const [showScanScreen, setShowScanScreen] = useState19(false);
   // Backdrop color behind the QR/scan area — same "pick one random
@@ -592,10 +601,6 @@ function GloobalId() {
         : "Gloobal ID verified and locked"
     );
   };
-  const [demoScanTarget] = useState19(() => {
-    const demoId = genSuggestedId(12);
-    return { name: "Priya S.", code: encodeGloobalQR({ gloobalId: demoId, amountCents: 25e3 }) };
-  });
   // Business/travel "Pay" flow (Dashboard's More sheet) also runs
   // through executeTransaction — the same one canonical lifecycle as
   // Send Money and Scan & Pay. No separate ledger-posting path is left
@@ -995,6 +1000,13 @@ function GloobalId() {
   // remote send, because that send changed the server's number and the
   // local ledger has only applied its own view of the same event.
   const [refreshBalanceToken, setRefreshBalanceToken] = useState19(0);
+  // Whether the figure on screen has actually been confirmed against the
+  // server, rather than being whatever the local ledger happens to hold.
+  // The local ledger always has *a* number, so on its own it can never say
+  // "I don't know" — and that same number is what the risk check reads.
+  // "loading" until the first read resolves, so a fresh dashboard never
+  // flashes an error before it has had a chance to succeed.
+  const [balanceStatus, setBalanceStatus] = useState19("loading");
   useEffect15(() => {
     if (stage !== "dashboard") return;
     const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
@@ -1009,15 +1021,64 @@ function GloobalId() {
         // Number(null) === 0 would otherwise sneak a "zero the account"
         // past this guard. It no-ops on anything that is not a number.
         if (profile) reconcileBankBalance(profile.balance);
+        // Only a profile carrying a genuinely numeric balance counts as
+        // confirmed — the same bar reconcileBankBalance itself applies.
+        setBalanceStatus(profile && Number.isFinite(Number(profile.balance)) ? "ready" : "unavailable");
       } catch (e) {
-        // Unreachable or 404. The local ledger keeps whatever it had —
-        // stale is better than blanking someone's balance because a read
-        // timed out on a cold start.
+        if (cancelled) return;
+        // Unreachable, 401 or 404. The local ledger keeps whatever it had —
+        // blanking it would be its own kind of lie — but the UI now says
+        // plainly that this figure is unconfirmed instead of presenting a
+        // local opening float as the account's real balance.
+        setBalanceStatus("unavailable");
       }
     })();
     return () => {
       cancelled = true;
     };
+  }, [stage, registeredUser, refreshBalanceToken]);
+
+  // My Assets and PayLater, restored from the server on arriving at the
+  // dashboard.
+  //
+  // Neither of these was ever read. Both screens are projections of the
+  // local ledger, which is rebuilt from empty on every page load, so every
+  // re-login presented a brand new account: no seeds, no accrued interest,
+  // and — the part that actually mattered — ₹0 owed on PayLater with the
+  // full limit available, to somebody who owed money. RiskEngine reads
+  // paylaterAvailable off that same balance, so it would have authorised
+  // spending against credit that had already been used.
+  //
+  // Runs on the same trigger as the balance reconcile above, including
+  // refreshBalanceToken, so a completed payment refreshes all three
+  // together rather than leaving the seeds a payment just planted invisible
+  // until the next reload.
+  //
+  // Both calls fail soft (null on a failed read, never a fabricated zero),
+  // and a null is skipped rather than reconciled — reconciling "I couldn't
+  // read it" to 0 would clear a real PayLater due, which is the same
+  // mistake in the opposite direction.
+  useEffect15(() => {
+    if (stage !== "dashboard") return;
+    const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
+    if (!symbolId) return;
+    let cancelled = false;
+    (async () => {
+      const [assets, paylater] = await Promise.all([
+        GloobalApi.getAssets(symbolId),
+        GloobalApi.getPaylater(symbolId)
+      ]);
+      if (cancelled) return;
+      // Seeds first: the PayLater LIMIT is derived from the seed list, so
+      // reconciling the due before the seeds exist would briefly compute a
+      // negative availability against an empty limit.
+      if (assets && Array.isArray(assets.seeds)) hydrateGrantsFromServer(assets.seeds);
+      if (paylater) reconcilePaylaterDue(paylater.pendingDues);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, registeredUser, refreshBalanceToken]);
 
   // Money this account RECEIVED, kept apart from what it sent.
@@ -1210,7 +1271,16 @@ function GloobalId() {
     { key: "paylater", group: "post", label: "PayLater", locked: !everRegistered, onPress: () => goToDashboardDestination("paylater") },
     { key: "history", group: "post", label: "Transaction History", locked: !everRegistered, onPress: () => goToDashboardDestination("history") },
     { key: "coverage", group: "post", label: "Gloobal Coverage", locked: !everRegistered, onPress: () => goToDashboardDestination("coverage") },
-    { key: "aboutus", group: "post", label: "About Us", locked: !everRegistered, onPress: () => goToDashboardDestination("aboutus") }
+    { key: "aboutus", group: "post", label: "About Us", locked: !everRegistered, onPress: () => goToDashboardDestination("aboutus") },
+    // Profile sub-screens. They live behind the Profile tab in normal
+    // navigation, but each is a full-screen overlay in its own right, so the
+    // map can open them directly rather than dropping somebody on Profile
+    // and leaving them to find the row themselves — which is the whole point
+    // of having a map.
+    { key: "ghscore", group: "post", label: "GH Score", locked: !everRegistered, onPress: () => goToDashboardDestination("ghscore") },
+    { key: "share", group: "post", label: "Creator Share", locked: !everRegistered, onPress: () => goToDashboardDestination("share") },
+    { key: "updateId", group: "post", label: "Update Gloobal ID", locked: !everRegistered, onPress: () => goToDashboardDestination("updateId") },
+    { key: "referralnet", group: "post", label: "Referral Network", locked: !everRegistered, onPress: () => goToDashboardDestination("referral") }
   ];
   const effectiveLoginCountry = loginMobileCountry || dialCountry;
   const [loginMinLen, loginMaxLen] = mobileDigitRange(effectiveLoginCountry.iso);
@@ -2471,6 +2541,7 @@ function GloobalId() {
     sendHistory={sendMoneyHistory}
     receivedHistory={receivedMoneyHistory}
     bankBalance={bankBalance}
+    balanceUnavailable={balanceStatus === "unavailable"}
     assetSeeds={assetSeeds}
     onPayBusiness={handlePayBusiness}
     paylaterHistory={paylaterHistory}
@@ -2635,7 +2706,7 @@ function GloobalId() {
     ><ScannerIcon size={72} animated /></div><div style={{ textAlign: "center" }}><div style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: 8 }}>
                     Allow Camera Access
                   </div><div style={{ fontSize: 13, color: T.inkFaint, lineHeight: 1.5, maxWidth: 260 }}>
-                    We need access to your camera to scan QR codes. (No real camera in this environment — this leads to a simulated scan instead.)
+                    We need access to your camera to scan QR codes. Your browser will ask you to confirm.
                   </div></div><button
       onClick={() => setScanCameraAccessGranted(true)}
       className="v2-tap"
@@ -2681,26 +2752,11 @@ function GloobalId() {
     >
                   Enter Mobile Number to Pay
                 </div></div></div>
-  ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px", gap: 20 }}>{!scanPendingPayment ? <><div
-    style={{
-      width: 280,
-      height: 280,
-      borderRadius: 28,
-      border: `2px dashed ${scanHeroColor}66`,
-      background: `${scanHeroColor}0D`,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      transition: "background 0.4s ease, border-color 0.4s ease"
-    }}
-  ><ScannerIcon size={80} animated /></div><div style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", lineHeight: 1.5 }}>
-                  No real camera in this environment — tap the demo code below to simulate a scan.
-                </div><button
-    onClick={() => handleQrScanned(demoScanTarget.code)}
-    disabled={scanResolving}
-    className="v2-tap"
-    style={{ border: "none", background: "none", padding: 0, cursor: scanResolving ? "default" : "pointer" }}
-  ><div style={{ background: "#fff", borderRadius: T.radiusLg, padding: 14, boxShadow: T.shadowCard }}><GloobalQRCode code={demoScanTarget.code} size={180} /></div><div style={{ fontSize: 11, color: T.inkFaint, marginTop: 8 }}>{scanResolving ? "Looking this ID up…" : `Tap to simulate scanning ${demoScanTarget.name}'s code`}</div></button>{scanError && <div style={{ fontSize: 12.5, color: T.negative, textAlign: "center", fontWeight: 700 }}>{scanError}</div>}</> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPendingPayment.amountCents > 0 ? "Payment request" : "Gloobal ID"}</div>{scanPendingPayment.amountCents > 0 && <div style={{ fontSize: 32, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: 14 }}>{CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "$"}{(scanPendingPayment.amountCents / 100).toFixed(2)}</div>}{scanPendingPayment.recipientName && <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPendingPayment.recipientName}</div>}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: scanPendingPayment.registered ? 20 : 8 }}><ColoredGloobalId id={scanPendingPayment.gloobalId} /></div>{
+  ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px", gap: 20 }}>{!scanPendingPayment ? <><QrCameraScanner
+    active={showScanScreen && scanScreenTab === "scan" && scanCameraAccessGranted}
+    paused={scanResolving}
+    onDetected={handleQrScanned}
+  /><div style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", lineHeight: 1.5 }}>{scanResolving ? "Looking this ID up\u2026" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div style={{ fontSize: 12.5, color: T.negative, textAlign: "center", fontWeight: 700 }}>{scanError}</div>}</> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPendingPayment.amountCents > 0 ? "Payment request" : "Gloobal ID"}</div>{scanPendingPayment.amountCents > 0 && <div style={{ fontSize: 32, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: 14 }}>{CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "$"}{(scanPendingPayment.amountCents / 100).toFixed(2)}</div>}{scanPendingPayment.recipientName && <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPendingPayment.recipientName}</div>}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: scanPendingPayment.registered ? 20 : 8 }}><ColoredGloobalId id={scanPendingPayment.gloobalId} /></div>{
     /* Said plainly rather than left to be discovered after paying:
        nobody is registered under this ID, so there is no account on
        the other side for the backend to credit and the payment runs

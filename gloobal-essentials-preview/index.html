@@ -2,7 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- maximum-scale/user-scalable stop the page being pinched or
+         double-tapped to zoom like a web page. This is an app shell, not a
+         document: zooming it just breaks the fixed-position overlays
+         (scanner, receipts, the app-map button) away from the viewport they
+         are pinned to.
+
+         Note this meta alone is NOT enough — iOS Safari has deliberately
+         ignored user-scalable=no since iOS 10. It covers Android and
+         desktop; the touch-action rule and the gesture handler below are
+         what cover iOS. All three are needed, none is redundant. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <title>Gloobal Access</title>
     <meta
       name="description"
@@ -47,10 +60,38 @@
          bundle arrive — already matches the app background instead of
          flashing white. */
       html, body { margin: 0; height: 100%; background: #F6F5FC; overscroll-behavior: none; }
+      /* Scrolling yes, pinch-zoom no.
+         `touch-action: manipulation` (already set on body in global.css)
+         only removes the double-tap delay — it still permits pinch. Naming
+         the pan axes explicitly is what drops the zoom gesture while
+         leaving normal one-finger scrolling untouched. */
+      html, body { touch-action: pan-x pan-y; }
     </style>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // iOS Safari's pinch-zoom, which the viewport meta above cannot
+      // disable (user-scalable=no has been ignored there since iOS 10).
+      // These are the non-standard WebKit gesture events, fired only for
+      // multi-touch pinch/rotate — cancelling them does not affect scrolling,
+      // taps, or the drag on the app-map button.
+      //
+      // Registered as non-passive on purpose: preventDefault() is a no-op in
+      // a passive listener, and some browsers default touch listeners to
+      // passive.
+      ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (evt) {
+        document.addEventListener(evt, function (e) { e.preventDefault(); }, { passive: false });
+      });
+      // Desktop: ctrl/⌘ + wheel is the browser's zoom shortcut, and a
+      // trackpad pinch arrives as exactly that. Plain wheel scrolling is
+      // left alone.
+      window.addEventListener(
+        'wheel',
+        function (e) { if (e.ctrlKey || e.metaKey) e.preventDefault(); },
+        { passive: false }
+      );
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

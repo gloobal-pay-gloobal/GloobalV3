@@ -1,0 +1,12 @@
+{
+  "name": "gloobal",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build_app.mjs && npm run build --prefix gloobal-essentials-preview",
+    "test": "node --test \"tests/*.test.mjs\"",
+    "test:money": "node --test tests/money-path.test.mjs",
+    "test:render": "node --test tests/render.test.mjs"
+  }
+}

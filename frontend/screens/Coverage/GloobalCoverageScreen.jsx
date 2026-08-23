@@ -389,7 +389,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       border: "none",
       cursor: "pointer"
     }}
-  ><span style={{ fontSize: 12, fontWeight: 800, color: T.accent }}>{selectedHoomanCategory}</span><ChevronDown3 size={13} color={T.accent} /></button></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{(() => {
+  ><span style={{ fontSize: 12, fontWeight: 800, color: T.accent }}>{selectedHoomanCategory}</span><ChevronDown3 size={13} color={T.accent} /></button></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{(() => {
     const cat = HOOMAN_PROJECT_CATEGORIES.find((c) => c.name === selectedHoomanCategory);
     return <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px" }}><div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{cat.name}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{cat.examples}</div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, paddingTop: 16, borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 12, color: T.inkFaint }}>Real projects in this category</span><span style={{ fontSize: 18, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</span></div></div>;
   })()}<div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>
@@ -413,7 +413,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     placeholder="Search categories"
     aria-label="Search categories"
     style={{ flex: 1, border: "none", outline: "none", background: "none", fontSize: 14, color: T.ink, fontFamily: "inherit" }}
-  /></div></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 30px" }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{HOOMAN_PROJECT_CATEGORIES.filter((c) => c.name.toLowerCase().includes(hoomanCategoryQuery.trim().toLowerCase())).map((cat, i, arr) => <button
+  /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 30px" }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{HOOMAN_PROJECT_CATEGORIES.filter((c) => c.name.toLowerCase().includes(hoomanCategoryQuery.trim().toLowerCase())).map((cat, i, arr) => <button
     key={cat.name}
     onClick={() => {
       setSelectedHoomanCategory(cat.name);
@@ -457,7 +457,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     placeholder="Search country name"
     aria-label="Search country name"
     style={{ flex: 1, border: "none", outline: "none", background: "none", fontSize: 14, color: T.ink, fontFamily: "inherit" }}
-  /></div></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 20px" }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{COVERAGE_ALL_COUNTRIES.filter((c) => c.name.toLowerCase().includes(spendingBreakdownQuery.trim().toLowerCase())).map((c, i) => {
+  /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 20px" }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{COVERAGE_ALL_COUNTRIES.filter((c) => c.name.toLowerCase().includes(spendingBreakdownQuery.trim().toLowerCase())).map((c, i) => {
     const spendInMyCurrency = realCountrySpend[c.code] ?? null;
     const rowCurrency = COUNTRY_CURRENCY[c.iso] || "USD";
     const spendInOwnCurrency = spendInMyCurrency != null ? convert(spendInMyCurrency, myCurrency, rowCurrency) : null;
@@ -481,7 +481,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     aria-label="Back"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft5 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Choose a currency</span></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 30px" }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{[...new Set(COVERAGE_ALL_COUNTRIES.map((c) => COUNTRY_CURRENCY[c.iso] || "USD"))].sort().map((code, i) => <button
+  ><ArrowLeft5 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Choose a currency</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 30px" }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{[...new Set(COVERAGE_ALL_COUNTRIES.map((c) => COUNTRY_CURRENCY[c.iso] || "USD"))].sort().map((code, i) => <button
     key={code}
     onClick={() => {
       setSpendingBreakdownCurrency(code);

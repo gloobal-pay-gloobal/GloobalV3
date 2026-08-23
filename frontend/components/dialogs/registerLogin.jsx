@@ -306,7 +306,7 @@ function CountryPickerScreen({ topCountries, countries, search, onSearch, onSele
       color: T.ink,
       fontWeight: 500
     }}
-  /></div></div><div style={{ flex: 1, overflowY: "auto", padding: "16px 14px 24px" }}>{filtered.length === 0 && <div style={{ padding: 32, textAlign: "center", color: T.inkFaint, fontSize: 13 }}>
+  /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 14px 24px" }}>{filtered.length === 0 && <div style={{ padding: 32, textAlign: "center", color: T.inkFaint, fontSize: 13 }}>
             No countries found
           </div>}{!q && filtered.length > 0 && <><div
     style={{

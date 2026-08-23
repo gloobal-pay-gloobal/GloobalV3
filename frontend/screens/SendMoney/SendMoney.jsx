@@ -266,6 +266,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     let confirmedTxnId = txnId;
     let confirmedShareRatePercent = (bottom.shareRate ?? 0);
     let confirmedCashback = null;
+    // The Creator Share leg's own server-minted reference. Stays empty for a
+    // local simulation or a 0%-share payee.
+    let confirmedShareTxnId = "";
+    let confirmedShareAmount = 0;
     // Whether the backend actually recorded this payment — false for a
     // `skipped` local simulation, and (consistently) false when there is
     // no onRemoteSend at all to have recorded it. Read below by the final
@@ -277,8 +281,29 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     if (onRemoteSend) {
       const remote = await onRemoteSend({
         txnId,
-        amount: convertedAmount,
-        currency: top.currency,
+        // The RECEIVER's own local-currency face value — the number actually
+        // typed into the amount box, whose flag/symbol is the receiver's
+        // (bottom.currency). NOT convertedAmount.
+        //
+        // This is the contract POST /api/transactions/send documents and
+        // relies on: it looks both parties' currencies up from their own
+        // countryIso, treats the `amount` it receives as denominated in the
+        // RECEIVER's currency, and converts to the sender's currency itself
+        // (fxRate) to work out what to debit. It ignores any `currency` the
+        // client sends, deliberately, so the client cannot mislabel a leg.
+        //
+        // Sending convertedAmount here fed the sender-currency number into a
+        // field the server reads as receiver-currency, so the two legs were
+        // BOTH wrong on a cross-border send: paying a ₹5,000 recipient from a
+        // CNY account posted 378.53 as if it were rupees, crediting the payee
+        // ₹378.53 instead of ₹5,000, and debiting the sender the CNY value of
+        // ₹378.53 (~¥28.65) rather than the ¥378.53 they were shown and
+        // agreed to. Same-currency pairs were unaffected — fxRate is exactly
+        // 1 there, so the two numbers are equal and the bug was invisible.
+        amount: parseFloat(amount) || 0,
+        // Ignored server-side (see above), but it must not *claim* to be the
+        // sender's currency while carrying a receiver-currency figure.
+        currency: bottom.currency,
         receiver: bottom,
         // The verified PIN, from the ref — `pin` state is "" by now.
         pin: verifiedPinRef.current || "",
@@ -309,6 +334,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
         // up.
         if (Number.isFinite(remote.cashbackRate)) confirmedShareRatePercent = remote.cashbackRate * 100;
         if (Number.isFinite(remote.cashback)) confirmedCashback = remote.cashback;
+        if (remote.shareTransactionId) confirmedShareTxnId = remote.shareTransactionId;
+        if (Number.isFinite(remote.shareAmount)) confirmedShareAmount = remote.shareAmount;
       }
     }
     // ONE call: risk-check, posting, provenance, complaint window, and
@@ -349,6 +376,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     const { receipt: receipt2, historyEntry } = buildTransactionSnapshot({
       sender: top,
       receiver: bottom,
+      shareTxnId: confirmedShareTxnId,
+      shareAmount: confirmedShareAmount,
       amount,
       convertedAmount,
       payMethod,

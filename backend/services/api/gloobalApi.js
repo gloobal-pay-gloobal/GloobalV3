@@ -504,6 +504,76 @@ var GloobalApi = {
     return Array.isArray(result.referrals) ? result.referrals : [];
   },
 
+  // --- My Assets and PayLater -------------------------------------------
+  //
+  // Both of these routes have existed on the backend the whole time and
+  // nothing in this client ever called them. That is the entire reason My
+  // Assets and PayLater history "reset on every re-login": the screens are
+  // projections of the LOCAL in-memory ledger (see useEssentialsGrants /
+  // usePaylaterHistory), which is rebuilt from nothing on every page load,
+  // and no read ever restored what the server already holds. Nothing was
+  // being lost — it was simply never being fetched.
+  //
+  // Both fail soft, the same way getInterestStatus does: a null return means
+  // "could not read", which callers must treat differently from a genuinely
+  // empty account. Returning zeroes on a failed read here would be the same
+  // class of invention as the local opening float that made the dashboard
+  // show a balance the server did not share.
+
+  // GET /api/assets/:symbolId — every seed this account holds, plus the four
+  // lifetime totals. `seeds` carries computeSeed's shape: { id, business,
+  // category, amountPaid, cashbackRate, cashback, currentValue,
+  // interestAccrued, interestClaimed, interestAvailable, yearsAccrued,
+  // plantedAt, currency }.
+  //
+  // Note for whoever maps these into the local ledger: the server reports
+  // `yearsAccrued`, while the local EssentialsGrant entity and
+  // computePaylaterAvailable both work in `monthsAccrued`. They are the same
+  // quantity in different units and must be converted at the boundary, not
+  // read across as though they were interchangeable.
+  async getAssets(symbolId) {
+    try {
+      const result = await gloobalApiClient.get(`/api/assets/${encodeURIComponent(symbolId)}`);
+      if (!result) return null;
+      return {
+        seeds: Array.isArray(result.seeds) ? result.seeds : [],
+        totalCashbackEarned: Number(result.totalCashbackEarned) || 0,
+        totalInterestAccrued: Number(result.totalInterestAccrued) || 0,
+        totalInterestAvailable: Number(result.totalInterestAvailable) || 0,
+        totalInterestClaimed: Number(result.totalInterestClaimed) || 0
+      };
+    } catch (e) {
+      return null;
+    }
+  },
+
+  // GET /api/assets/paylater/:symbolId — the account's real PayLater
+  // position, computed server-side from its seeds and its actual PayLater
+  // transactions, plus up to 50 recent rows.
+  //
+  // `transactions` rows are { id, type: "charge" | "repayment" | "credit",
+  // amount, description, createdAt } — NOT the local history shape, which
+  // uses { direction: "out" | "in", status: "pending" | ..., amount }. A
+  // mapper has to translate; the two are not the same records seen twice.
+  //
+  // `pendingDues` is the figure computePaylaterAvailable already accepts as
+  // its `realPaylaterDue` override, which exists precisely so the server's
+  // number can replace the records-summed one that never saw settlements.
+  async getPaylater(symbolId) {
+    try {
+      const result = await gloobalApiClient.get(`/api/assets/paylater/${encodeURIComponent(symbolId)}`);
+      if (!result) return null;
+      return {
+        limit: Number(result.limit) || 0,
+        available: Number(result.available) || 0,
+        pendingDues: Number(result.pendingDues) || 0,
+        transactions: Array.isArray(result.transactions) ? result.transactions : []
+      };
+    } catch (e) {
+      return null;
+    }
+  },
+
   // --- Transactions -----------------------------------------------------
 
   // POST /api/transactions/send — PIN-verified server-side. The whole
@@ -514,7 +584,21 @@ var GloobalApi = {
     gloobalRateCheck(key);
     const result = await gloobalApiClient.post("/api/transactions/send", payload);
     gloobalRateClear(key);
-    return Object.assign({}, result, { transaction: result.transaction || {} });
+    // shareTransaction is the SECOND leg the server mints for the Creator
+    // Share — its own Transaction row, with its own unique referenceId, and
+    // metadata.paymentReferenceId pointing back at the payment (see
+    // mintShareLegAndReceipts in lib/merchantShareFlow.js). The server has
+    // been returning it all along and this client discarded it, which is
+    // exactly why the share receipt showed the PAYMENT's id: nothing here
+    // ever read the share's own.
+    //
+    // Normalised to null rather than {} when absent — a payee with a 0%
+    // share rate legitimately has no share leg, and an empty object would
+    // read as "there is one, with no id".
+    return Object.assign({}, result, {
+      transaction: result.transaction || {},
+      shareTransaction: result.shareTransaction || null
+    });
   },
 
   // GET /api/transactions/history/:symbolId — a per-viewer projection:

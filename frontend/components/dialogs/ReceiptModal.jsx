@@ -42,7 +42,26 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   const shareCurrency = receipt.currencyCode;
   const shareAmountBase = receipt.amount;
   const shareAmount = shareAmountBase * ((receipt.shareRate ?? 0) / 100);
-  const rawTxnId = receipt.txnId ? receipt.txnId.replace(/\s/g, "") : "";
+  // Each tab shows ITS OWN transaction's reference.
+  //
+  // The Creator Share is a separate movement between a different pair of
+  // parties — I pay Jio (one transaction), then Jio's share comes back to
+  // me (another) — and the server already mints it as its own Transaction
+  // with its own referenceId (mintShareLegAndReceipts). Both tabs used to
+  // print receipt.txnId, so the payment and the share were indistinguishable
+  // by reference and neither could be looked up unambiguously.
+  //
+  // Falls back to the payment's id when there is no share leg — a payee
+  // sharing 0% mints none — so the Creator Share tab is never left showing
+  // a blank where a reference should be.
+  const shareTxnRaw = receipt.shareTxnId ? String(receipt.shareTxnId).replace(/\s/g, "") : "";
+  const showingShare = receiptTab === "share" && !!shareTxnRaw;
+  const rawTxnId = showingShare
+    ? shareTxnRaw
+    : receipt.txnId ? receipt.txnId.replace(/\s/g, "") : "";
+  // The payment this share came from, shown beneath it so the two can be
+  // traced to each other.
+  const shareSourceTxnId = showingShare && receipt.txnId ? receipt.txnId.replace(/\s/g, "") : "";
   const handleCopyTxnId = () => {
     if (!rawTxnId) return;
     copyToClipboard(rawTxnId);
@@ -290,9 +309,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       letterSpacing: 0.4,
       whiteSpace: "nowrap"
     }}
-  >
-              Transaction ID
-            </span><button
+  >{showingShare ? "Share transaction ID" : "Transaction ID"}</span><button
     onClick={handleCopyTxnId}
     aria-label="Copy transaction ID"
     className="v2-tap"
@@ -311,7 +328,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       justifyContent: "center",
       cursor: "pointer"
     }}
-  >{copied ? <Check size={13} color={T.positive} /> : <Copy size={13} color={T.inkSoft} />}</button><div style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", justifyContent: "center", gap: 4, fontFamily: "monospace", fontSize: 14, fontWeight: 800, maxWidth: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>{rawTxnId.split("").map((ch, i) => <span key={i} style={{ flexShrink: 0, color: POSITION_COLORS[(i + txnColorOffset) % POSITION_COLORS.length], transition: "color 0.4s ease" }}>{ch}</span>)}</div></div>}{
+  >{copied ? <Check size={13} color={T.positive} /> : <Copy size={13} color={T.inkSoft} />}</button><div style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", justifyContent: "center", gap: 4, fontFamily: "monospace", fontSize: 14, fontWeight: 800, maxWidth: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>{rawTxnId.split("").map((ch, i) => <span key={i} style={{ flexShrink: 0, color: POSITION_COLORS[(i + txnColorOffset) % POSITION_COLORS.length], transition: "color 0.4s ease" }}>{ch}</span>)}</div>{shareSourceTxnId && <div style={{ marginTop: 8, fontSize: 10.5, fontWeight: 600, color: T.inkFaint, textAlign: "center", lineHeight: 1.45, wordBreak: "break-all" }}>{"From payment "}<span style={{ fontFamily: "monospace", fontWeight: 800 }}>{shareSourceTxnId}</span></div>}</div>}{
     /* Provenance & complaint window — each viewer only ever sees
        their OWN resolved city/state (never the other party's), plus
        a short, explicit window to report an issue. Reporting opens a

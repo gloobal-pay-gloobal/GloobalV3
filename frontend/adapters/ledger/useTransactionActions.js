@@ -36,6 +36,13 @@ function useTransactionActions() {
   // shows, and the figure executeTransaction's risk check reads, are the
   // account's real balance rather than a local opening float.
   const reconcileBankBalance = useCallback2((serverBalance) => core.reconcileBankBalance(serverBalance), [core]);
-  return { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance };
+  // The same reconcile-against-the-server contract, for the two things that
+  // used to reset on every re-login: what this account owes on PayLater, and
+  // the seeds My Assets is built from. See their definitions in
+  // FinancialCore for why the due is reconciled as a total while the seeds
+  // are replayed individually.
+  const reconcilePaylaterDue = useCallback2((serverDues) => core.reconcilePaylaterDue(serverDues), [core]);
+  const hydrateGrantsFromServer = useCallback2((serverSeeds) => core.hydrateGrantsFromServer(serverSeeds), [core]);
+  return { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance, reconcilePaylaterDue, hydrateGrantsFromServer };
 }
 

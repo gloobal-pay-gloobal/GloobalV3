@@ -1,5 +1,17 @@
 // src/core/transaction/transactionSnapshot.js
-function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, payMethod, now, shareRatePercent, ledgerRecordId, txnId }) {
+// shareTxnId / shareAmount describe the Creator Share leg — the separate
+// transaction the server mints when the payee shares a percentage back to
+// the payer (mintShareLegAndReceipts, lib/merchantShareFlow.js). It has its
+// own referenceId, and this snapshot carries it as its own field rather
+// than letting the share inherit the payment's txnId.
+//
+// Before this, one resolvedTxnId was stamped on the receipt AND the history
+// entry AND, downstream, the share the payer received — so paying Jio and
+// receiving Jio's share back were both labelled with the payment's id.
+// They are two different movements between two different pairs of parties
+// (me -> Jio, then Jio -> me) and a reference that cannot tell them apart
+// cannot be used to look either of them up.
+function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, payMethod, now, shareRatePercent, ledgerRecordId, txnId, shareTxnId = "", shareAmount = 0 }) {
   const resolvedTxnId = txnId || genTxnId();
   const txnTime = formatClockTime(now);
   const txnShareRate = shareRatePercent ?? 0;
@@ -29,6 +41,12 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     time: txnTime,
     status: "completed",
     txnId: resolvedTxnId,
+    // The share leg's OWN reference, and the payment it came from. Empty
+    // when the payee shares nothing (a 0% rate mints no share leg at all),
+    // which is why the receipt must test for it rather than assume it.
+    shareTxnId: shareTxnId || "",
+    shareSourceTxnId: shareTxnId ? resolvedTxnId : "",
+    shareAmount: Number(shareAmount) || 0,
     ledgerRecordId: ledgerRecordId ?? null
   };
   const historyEntry = {
@@ -45,6 +63,8 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     time: txnTime,
     txnId: resolvedTxnId,
     shareRate: txnShareRate,
+    shareTxnId: shareTxnId || "",
+    shareAmount: Number(shareAmount) || 0,
     ledgerRecordId: ledgerRecordId ?? null
   };
   return { receipt, historyEntry };

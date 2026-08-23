@@ -168,6 +168,7 @@ const FRONTEND_MODULES = [
   "adapters/diagnostics/useDiagnostics.js",
   "screens/DevTools/DiagnosticsScreen.jsx",
   "screens/DevTools/DisputeCasesSection.jsx",
+  "components/common/qrScanner.jsx",
   "components/common/appMap.jsx",
   "App.jsx",
   "components/common/launchSplash.jsx",

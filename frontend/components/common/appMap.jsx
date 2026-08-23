@@ -42,7 +42,21 @@ var MAP_ICON_SIZE = 52;
 // Anything under this many px of total pointer travel is a tap (open the
 // map), not a drag (reposition the button) — same distance DailySpendingChart
 // already uses to tell a tap from a swipe (components/cards/misc.jsx).
-var MAP_DRAG_THRESHOLD = 6;
+// How far the pointer may travel before a press stops counting as a tap.
+//
+// This was 6px, which is a mouse number, not a finger one. A thumb tapping
+// a 52px target on a handheld phone routinely slides 8-15px between touch
+// and release — so almost every real tap crossed the line, was treated as a
+// drag, and the map never opened. The only presses that DID open it were
+// unusually still ones, which is exactly why it felt like the icon needed a
+// long, deliberate hold.
+var MAP_DRAG_THRESHOLD = 12;
+// ...and a quick press is a tap even if it wandered further than that. A
+// fast flick of the thumb can cover 20px and still be, unmistakably, a tap
+// rather than an attempt to reposition the button. Distance alone cannot
+// tell those apart; distance plus duration can.
+var MAP_TAP_MAX_MS = 250;
+var MAP_TAP_SLOP = 24;
 // Keeps the button from snapping into the very corner, where it would sit
 // half under a notch/status bar or a home-indicator safe area on some
 // devices.
@@ -75,7 +89,7 @@ function AppMapButton({ onOpen }) {
   const btnRef = useRef16(null);
 
   const handlePointerDown = (e) => {
-    dragRef.current = { startX: e.clientX, startY: e.clientY, moved: 0 };
+    dragRef.current = { startX: e.clientX, startY: e.clientY, moved: 0, startedAt: Date.now() };
     try {
       btnRef.current?.setPointerCapture(e.pointerId);
     } catch (err) {
@@ -103,7 +117,12 @@ function AppMapButton({ onOpen }) {
     } catch (err) {
       // No-op — see handlePointerDown.
     }
-    if (!d || d.moved <= MAP_DRAG_THRESHOLD) {
+    // Either test is enough to call it a tap: barely moved at all, OR
+    // released quickly without straying far. The second is what rescues the
+    // ordinary fast thumb-tap that happens to slide a little.
+    const heldFor = d ? Date.now() - d.startedAt : 0;
+    const isTap = !d || d.moved <= MAP_DRAG_THRESHOLD || (heldFor <= MAP_TAP_MAX_MS && d.moved <= MAP_TAP_SLOP);
+    if (isTap) {
       // A tap, not a drag: open the map, leave the button's position alone.
       setDragging(false);
       setDragPoint(null);

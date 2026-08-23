@@ -55,7 +55,7 @@ var GH_HERO_CIRCLE_SIZE = 136;
 // rounded corner, not to route around the circle.
 var GH_ID_ROW_RESERVE = 10;
 // src/screens/Dashboard/Dashboard.jsx
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -645,6 +645,14 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     else if (deepLinkTarget === "assets") setShowAssets(true);
     else if (deepLinkTarget === "paylater") setShowPayLater(true);
     else if (deepLinkTarget === "aboutus") setShowAboutUs(true);
+    // The profile sub-screens. These are full-screen overlays keyed off
+    // profileOverlay, independent of whether the Profile tab itself is
+    // showing, so the app map can open them from anywhere the same way it
+    // opens the show* screens above.
+    else if (deepLinkTarget === "ghscore") setProfileOverlay("ghscore");
+    else if (deepLinkTarget === "share") setProfileOverlay("share");
+    else if (deepLinkTarget === "updateId") setProfileOverlay("updateId");
+    else if (deepLinkTarget === "referral") setProfileOverlay("referral");
     if (onConsumeDeepLink) onConsumeDeepLink();
   }, [deepLinkTarget]);
   useEffect12(() => {
@@ -1246,7 +1254,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       textOverflow: "ellipsis",
       zIndex: 1
     }}
-  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : ` ${dialCountry.name}`} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceVisible ? `${ccy}${balance}` : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
+  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : ` ${dialCountry.name}`} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceUnavailable ? <span style={{ fontSize: 17, fontWeight: 700, color: T.negative }}>Balance unavailable</span> : balanceVisible ? `${ccy}${balance}` : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"
@@ -1949,7 +1957,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     onChange={(e) => setMoreQuery(e.target.value)}
     placeholder="Search businesses & services"
     style={{ flex: 1, border: "none", outline: "none", background: "none", fontSize: 13.5, color: T.ink, fontFamily: "inherit" }}
-  />{moreQuery && <button onClick={() => setMoreQuery("")} aria-label="Clear search" style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex" }}><X3 size={14} color={T.inkFaint} /></button>}</div></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 18 }}>{(() => {
+  />{moreQuery && <button onClick={() => setMoreQuery("")} aria-label="Clear search" style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex" }}><X3 size={14} color={T.inkFaint} /></button>}</div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 18 }}>{(() => {
     const q = moreQuery.trim().toLowerCase();
     const pinned = [
       { key: "recharge", label: "Recharge", Icon: Smartphone2, color: bankHeroColor, onClick: () => {
@@ -2018,7 +2026,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        More. Deliberately minimal: same functional core as Send Money
        (amount in, confirm, done) without the receiver search, since
        the "receiver" here is a fixed business rather than a person. */
-  }{payTarget && <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px calc(30px + env(safe-area-inset-bottom, 0px))" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}><span style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: T.accent }}>{payTarget.Icon ? <payTarget.Icon size={17} color={T.accent} /> : payTarget.chip}</span><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Pay {payTarget.label}</span></span><button
+  }{payTarget && <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px calc(30px + env(safe-area-inset-bottom, 0px))" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}><span style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: T.accent }}>{payTarget.Icon ? <payTarget.Icon size={17} color={T.accent} /> : payTarget.chip}</span><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Pay {payTarget.label}</span></span><button
     onClick={requestClosePayTarget}
     aria-label="Close"
     style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
@@ -2101,7 +2109,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     onClick={requestCloseReceive}
     aria-label="Close"
     style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><X3 size={15} color={T.inkSoft} /></button></div></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 22px calc(30px + env(safe-area-inset-bottom, 0px))" }}><div
+  ><X3 size={15} color={T.inkSoft} /></button></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 22px calc(30px + env(safe-area-inset-bottom, 0px))" }}><div
     style={{
       position: "relative",
       display: "flex",
@@ -2190,7 +2198,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     aria-label="Creator Share overview"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.positive, boxShadow: "0 4px 12px rgba(5,150,105,0.35)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
-  ><BarChart3 size={17} color="#fff" /></button></div><div style={{ flex: 1, overflowY: "auto", padding: "18px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px 6px" }}>{
+  ><BarChart3 size={17} color="#fff" /></button></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "18px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px 6px" }}>{
     /* My contribution — big open readout, no box around it */
   }<div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginBottom: 20 }}><div style={{ display: "flex", alignItems: "baseline", gap: 6 }}><span style={{ fontSize: 48, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay }}>{myShareRate.toFixed(2)}</span><span style={{ fontSize: 22, fontWeight: 700, color: T.ink }}>%</span></div><div style={{ fontSize: 13, color: T.inkSoft, textAlign: "center" }}>
                   For every 100, it's <span style={{ color: T.accent, fontWeight: 800 }}>{myShareRate.toFixed(2)}</span></div></div>{
@@ -2228,7 +2236,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        action (onOpenSend → SendMoneyScreen); Accept Rent opens the QR
        + Gloobal ID sheet below instead, since collecting rent is a
        receiving action, not a sending one. */
-  }{showRentChoice && <div style={{ position: "fixed", inset: 0, zIndex: 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px calc(30px + env(safe-area-inset-bottom, 0px))" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Rent</span><button
+  }{showRentChoice && <div style={{ position: "fixed", inset: 0, zIndex: 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px calc(30px + env(safe-area-inset-bottom, 0px))" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Rent</span><button
     onClick={requestCloseRentChoice}
     aria-label="Close"
     style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
@@ -2315,6 +2323,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     onRegisterInterest={() => registerInterest("bank")}
     ccy={ccy}
     balance={balance}
+    balanceUnavailable={balanceUnavailable}
     balanceVisible={balanceVisible}
     onToggleBalance={handleToggleBalance}
     recentTransactions={recentBankTransactions}
@@ -2360,14 +2369,14 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     aria-label="Back"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft4 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Interest so far</span></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "26px 20px", textAlign: "center" }}><div style={{ fontSize: 44, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay }}>{interestSummary("bank") ? `${interestSummary("bank").percent}%` : "∆"}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6 }}>{interestSummary("bank")?.caption || "Couldn't load the count — reopen this screen to try again."}</div></div><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>
+  ><ArrowLeft4 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Interest so far</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "26px 20px", textAlign: "center" }}><div style={{ fontSize: 44, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay }}>{interestSummary("bank") ? `${interestSummary("bank").percent}%` : "∆"}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6 }}>{interestSummary("bank")?.caption || "Couldn't load the count — reopen this screen to try again."}</div></div><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>
               Counted on the server: every account that has tapped “I am IN”, against every account registered. ∆ means the figure couldn’t be loaded, not that it is zero.
             </div></div></div>}{showGloobalCoinStats && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><button
     onClick={requestCloseGloobalCoinStats}
     aria-label="Back"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft4 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Interest so far</span></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "26px 20px", textAlign: "center" }}><div style={{ fontSize: 44, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay }}>{interestSummary("coin") ? `${interestSummary("coin").percent}%` : "∆"}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6 }}>{interestSummary("coin")?.caption || "Couldn't load the count — reopen this screen to try again."}
+  ><ArrowLeft4 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Interest so far</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "26px 20px", textAlign: "center" }}><div style={{ fontSize: 44, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay }}>{interestSummary("coin") ? `${interestSummary("coin").percent}%` : "∆"}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6 }}>{interestSummary("coin")?.caption || "Couldn't load the count — reopen this screen to try again."}
               </div></div><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>
               Counted on the server: every account that has tapped “I am IN”, against every account registered. ∆ means the figure couldn’t be loaded, not that it is zero.
             </div></div></div>}{
@@ -2429,7 +2438,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     aria-label="Back"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft4 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3 }}>{ccy}{assetDetail.row.value.toFixed(2)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${ccy}${assetDetail.target.toFixed(2)}`}</div>{
+  ><ArrowLeft4 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3 }}>{ccy}{assetDetail.row.value.toFixed(2)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${ccy}${assetDetail.target.toFixed(2)}`}</div>{
     /* Growth curve: cashback (t=0) compounding at 1%/month up
        to the point it equals 100% of the original spend. */
   }<svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} width="100%" height="150" style={{ marginTop: 14, display: "block" }} preserveAspectRatio="none">{
@@ -2487,7 +2496,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     }}
   >
                   Paid
-                </button></div>}</div><div style={{ flex: 1, overflowY: "auto", padding: "6px 18px 30px" }}>{profileDetail === "Personal Details" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{
+                </button></div>}</div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{profileDetail === "Personal Details" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{
     /* Identity row — flag on the left, real registered name
        on the right, not a generic label:value pair. */
   }<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 18px" }}><span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>{dialCountry.flag}</span><span style={{ flex: 1, fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</span></div>{[
@@ -2611,7 +2620,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       boxShadow: T.shadowCard,
       cursor: "pointer"
     }}
-  >{shareRole === "merchant" ? <Store2 size={17} color="#F59E0B" /> : <User size={17} color={T.accent} />}</button></div><div style={{ position: "relative", zIndex: 1, flex: 1, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}><div
+  >{shareRole === "merchant" ? <Store2 size={17} color="#F59E0B" /> : <User size={17} color={T.accent} />}</button></div><div style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}><div
     style={{
       position: "relative",
       width: "100%",
@@ -2701,7 +2710,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     aria-label="Back"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft4 size={18} color={T.ink} /></button></div><div style={{ position: "relative", zIndex: 1, flex: 1, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
+  ><ArrowLeft4 size={18} color={T.ink} /></button></div><div style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* Earnings summary */
   }<div style={{ position: "relative", background: T.gradWallet, borderRadius: T.radiusLg, padding: "22px 22px 52px", display: "flex", flexDirection: "column", gap: 4, boxShadow: T.shadowRaised }}><span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: 0.3, textTransform: "uppercase" }}>
                 By <SingleOMark before="N" after="W" /></span><span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay }}>{ccy}{referralNetwork.reduce((sum, m) => sum + m.earned, 0).toFixed(2)}</span><div style={{ display: "flex", gap: 18, marginTop: 10 }}><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Invited</div></div><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.filter((m) => m.status === "Active").length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Active</div></div></div><button
@@ -2861,7 +2870,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     }}
   /></button>}</div>}{
     /* Scrollable content */
-  }<div style={{ flex: 1, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}>{
+  }<div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}>{
     /* ---------- Overview: ring + pillar list ---------- */
   }{ghScreen === "categories" && <><div style={{ position: "relative", background: T.surface, borderRadius: T.radiusXl, padding: "30px 14px", boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>{GH_FLOAT_NUMS.map((n, i) => <span
     key={i}
@@ -3189,7 +3198,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     aria-label="View update history"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><History5 size={18} color={T.ink} /></button></div><div style={{ flex: 1, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 20 }}><div style={{ position: "relative", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 16px 14px" }}><span
+  ><History5 size={18} color={T.ink} /></button></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 20 }}><div style={{ position: "relative", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 16px 14px" }}><span
     style={{
       position: "absolute",
       top: 0,
@@ -3246,7 +3255,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     aria-label="Back"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft4 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Update History</span></div><div style={{ flex: 1, overflowY: "auto", padding: "6px 18px 30px" }}>{idUpdateHistory.length === 0 ? <div style={{ textAlign: "center", padding: "40px 20px", color: T.inkFaint, fontSize: 13 }}>No updates yet</div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{idUpdateHistory.map((h, i) => {
+  ><ArrowLeft4 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Update History</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{idUpdateHistory.length === 0 ? <div style={{ textAlign: "center", padding: "40px 20px", color: T.inkFaint, fontSize: 13 }}>No updates yet</div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{idUpdateHistory.map((h, i) => {
     const older = idUpdateHistory[i + 1];
     return <div key={i} style={{ padding: "14px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}><div style={{ display: "flex", flexDirection: "column", gap: 3 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0, width: 32 }}>From</span><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, letterSpacing: 0.5, fontFamily: "monospace", wordBreak: "break-all" }}>{h.previousId}</span></div><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: T.accent, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0, width: 32 }}>To</span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink, letterSpacing: 0.5, fontFamily: "monospace", wordBreak: "break-all" }}>{h.id}</span></div></div><div style={{ fontSize: 11, color: T.inkFaint, marginTop: 6, display: "flex", alignItems: "center", gap: 5 }}><span>{older ? `${older.date}, ${older.time}` : `${accountCreatedAt.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" })}, ${formatClockTime(accountCreatedAt)}`}</span><ArrowRight2 size={10} style={{ flexShrink: 0 }} /><span>{h.date}, {h.time}</span></div></div>;
   })}</div>}</div></div>}{
@@ -3265,7 +3274,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     aria-label="Back"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft4 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Creator Share overview</span></div><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
+  ><ArrowLeft4 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Creator Share overview</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* Filter — real numbers, not fake. "Total users" is the
        platform-wide count from the backend (GET /api/stats, the
        same figure Global Coverage shows), not the hardcoded 1 it

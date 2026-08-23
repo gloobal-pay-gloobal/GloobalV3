@@ -58,6 +58,37 @@ var EssentialsService = class {
     });
     return grant;
   }
+  // Replays a grant the SERVER already holds back into this in-memory list
+  // (see hydrateGrantsFromServer in FinancialCore). Separate from addGrant
+  // rather than a flag on it, because the two are genuinely different
+  // events and conflating them would corrupt both:
+  //
+  //   - addGrant MINTS a grant a payment just earned. It always starts at
+  //     monthsAccrued: 0, stamps today's date, and mints its own key.
+  //   - restoreGrant RE-CREATES one that was earned in the past. It must
+  //     keep the elapsed growth and the original date, or a year-old seed
+  //     comes back valued as if it were planted this morning, and My Assets
+  //     resets everybody's accrued interest to nothing on every login.
+  //
+  // The funding entry is posted the same way and for the same reason: this
+  // ledger is rebuilt from empty on each page load, so on a fresh load
+  // there is nothing to double-count against. The caller's own id-based
+  // guard is what keeps a second call in the same session from re-posting.
+  restoreGrant({ userAccounts, key, business, chip, amountPaid, cashbackRate, date, time, creatorName, monthsAccrued = 0, currency = "INR" }) {
+    if (!cashbackRate) return null;
+    if (this.#grants.some((g) => g.key === key)) return null;
+    const grant = new EssentialsGrant({ key, business, chip, amountPaid, cashbackRate, date, time, creatorName, monthsAccrued, txnId: null, paylaterSettledAmount: 0 });
+    this.#grants.push(grant);
+    const money = Money.of(grant.accruedValue(this.monthlyGrowthRate), currency);
+    if (money.isPositive()) {
+      this.ledgerEngine.postJournalEntry({
+        memo: `Essentials grant restored: ${business}`,
+        lines: [DebitEntry(userAccounts.essentials.id, money), CreditEntry(this.ledgerEngine.registry.reserve.id, money)],
+        meta: { essentialsGrantKey: grant.key, restoredFromServer: true }
+      });
+    }
+    return grant;
+  }
   // Clears the grant list after a settlement. The ledger entry that
   // actually zeroes the Essentials *balance* is posted by
   // SettlementEngine — this only clears the projection-facing grant

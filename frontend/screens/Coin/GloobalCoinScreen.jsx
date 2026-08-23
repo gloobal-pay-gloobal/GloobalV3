@@ -70,7 +70,7 @@ function GloobalCoinScreen({
     onBack={onBack}
     onAction={onOpenStats}
     actionLabel="Interest stats"
-  /><div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 20 }}><ProductScreenHero color={heroColor} />{
+  /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 20 }}><ProductScreenHero color={heroColor} />{
     /* The holding. Not gated behind the passkey the way the bank balance
        is: coin is minted from a balance that already sits behind that
        gate, so a second prompt here would guard a figure the person had

@@ -99,6 +99,14 @@ const {
   accountCountryIso,
 } = require('./lib/accountCountry');
 
+// One answer to "what currency does this country transact in", shared with
+// lib/settlementEngine.js. Prefers the seeded Country row and falls back to
+// the bundled country/currency map, so a database whose reference tables were
+// never seeded resolves real currencies instead of defaulting everything to
+// rupees — see that module's header for what that default was actually doing
+// in production.
+const { resolveCountry, localCurrencyFor } = require('./lib/countryCurrency');
+
 // Resolves whatever country ISO a client claims (the country picked on the
 // registration phone-code screen) against the seeded Country collection —
 // the same source of truth lib/settlementEngine.js reads localCurrency
@@ -3700,12 +3708,44 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // field raw here would settle a US payee in INR while the payer's screen —
     // which asks the resolve route — correctly showed USD. The two must agree,
     // so they read the country the same way.
+    // Resolved through lib/countryCurrency.js rather than read straight off
+    // Country, and with no fallback currency.
+    //
+    // This used to be `senderCountry?.localCurrency || 'INR'`. On the live
+    // database, Country and Currency both held ZERO documents — the seed
+    // script had never been run there — so every lookup missed, every account
+    // resolved to INR, both sides always matched, fxRate was always 1, and
+    // settlement never fired. A British account paying an American one moved
+    // money as a domestic rupee transfer. The fallback made an unseeded
+    // reference table indistinguishable from a country that really does use
+    // INR, so nothing ever surfaced.
+    //
+    // The resolver prefers the seeded row and falls back to
+    // data/countryCurrencyMap.js — the file the seed script itself copies
+    // from, which ships with the server and covers all 194 supported
+    // countries. So this no longer depends on the collection having been
+    // populated, and it never invents a currency.
     const [senderCountry, receiverCountry] = await Promise.all([
-      Country.findOne({ iso: accountCountryIso(sender) }).select('localCurrency').lean(),
-      Country.findOne({ iso: accountCountryIso(receiver) }).select('localCurrency').lean(),
+      resolveCountry(accountCountryIso(sender)),
+      resolveCountry(accountCountryIso(receiver)),
     ]);
-    const senderCurrency = senderCountry?.localCurrency || 'INR';
-    const destinationCurrency = receiverCountry?.localCurrency || 'INR';
+
+    // Genuinely unsupported ISO — not a missing seed row, which the resolver
+    // already handles. Refused rather than defaulted: every figure below
+    // (the debit, the FX rate, the split, the settlement) is denominated in
+    // these currencies, so guessing one moves the wrong amount of real
+    // balance. Same "fail closed, never invent a number" rule lib/fxRates.js
+    // applies to a missing rate.
+    if (!senderCountry || !receiverCountry) {
+      const unknown = !senderCountry ? accountCountryIso(sender) : accountCountryIso(receiver);
+      return res.status(400).json({
+        success: false,
+        message: `Payments are not supported for country ${unknown} yet.`,
+      });
+    }
+
+    const senderCurrency = senderCountry.localCurrency;
+    const destinationCurrency = receiverCountry.localCurrency;
 
     let fxRate = 1;
     let fxRateSource = 'identity';
@@ -5110,9 +5150,22 @@ const floorToMinorUnit = (value, currencyCode) => {
 // AUDIT_REPORT.md's Bugs Found #6) — GEU entry/redemption currency is
 // always the account's own Country.localCurrency, never a client-supplied
 // code.
+//
+// Goes through the shared resolver for the same reason the transfer route
+// does. This read `country?.localCurrency || 'INR'` against a Country
+// collection that was empty on the live database, so every account's "own
+// currency" was rupees. For GEU that is not a cosmetic default: entry
+// converts the account's own currency into the INR reference, so an account
+// that should have converted at its real rate instead matched the reference
+// exactly and minted 1:1. The symptom would have been precisely the founder's
+// original report — "$100 should not produce only 100 GEU" — arriving from
+// unseeded reference data rather than from the conversion code, which is
+// correct.
+//
+// Returns null for a genuinely unsupported country; callers refuse rather
+// than substituting a currency.
 async function resolveOwnCurrency(user) {
-  const country = await Country.findOne({ iso: accountCountryIso(user) }).select('localCurrency').lean();
-  return country?.localCurrency || 'INR';
+  return localCurrencyFor(accountCountryIso(user));
 }
 
 // GET /api/geu/supply — the GEU analogue of GET /api/coin/supply. MUST stay
@@ -5263,6 +5316,11 @@ app.post('/api/geu/entry', writeLimit, requireAuth, requireSelf('symbolId'), asy
     }
 
     const sourceCurrency = await resolveOwnCurrency(user);
+    // Refused rather than defaulted: the whole entry is denominated in this
+    // currency, so guessing one mints the wrong amount of GEU.
+    if (!sourceCurrency) {
+      return res.status(400).json({ success: false, message: 'GEU entry is not supported for your country yet.' });
+    }
     let exchangeRate = 1;
     let rateSource = 'identity';
     const rateTimestamp = new Date();
@@ -5647,6 +5705,9 @@ app.post('/api/geu/redeem', writeLimit, requireAuth, requireSelf('symbolId'), as
     await materialiseBalance(user);
 
     const destinationCurrency = await resolveOwnCurrency(user);
+    if (!destinationCurrency) {
+      return res.status(400).json({ success: false, message: 'GEU redemption is not supported for your country yet.' });
+    }
     const referenceAmount = toMinorUnit(geuAmount, GEU_REFERENCE_CURRENCY);
     let exchangeRate = 1;
     let rateSource = 'identity';

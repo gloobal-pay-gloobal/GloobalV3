@@ -97,27 +97,21 @@ function createSettlementId() {
   return id;
 }
 
-// countryIso -> Country doc. Country is seed data (seeded by
-// scripts/seed-countries-currencies.mjs) that only changes when a country
-// is added to the registration picker, so an in-process cache is worth it —
-// a query per payment for a table that changes maybe once a year is not.
-const countryCache = new Map();
-let countryCacheLoadedAt = 0;
-const COUNTRY_CACHE_MAX_AGE_MS = 10 * 60 * 1000;
-
-async function getCountry(iso) {
-  const key = String(iso || '').toUpperCase();
-  const stale = Date.now() - countryCacheLoadedAt > COUNTRY_CACHE_MAX_AGE_MS;
-
-  if (stale) {
-    const rows = await Country.find({}).lean();
-    countryCache.clear();
-    for (const row of rows) countryCache.set(row.iso, row);
-    countryCacheLoadedAt = Date.now();
-  }
-
-  return countryCache.get(key) || null;
-}
+// Country resolution is shared with server.js through lib/countryCurrency.js,
+// so the country this API REPORTS for a payee and the country it SETTLES them
+// in can never be two different places.
+//
+// This module used to keep its own Country cache, reading the collection
+// directly and returning null when a row was missing. On the live database
+// that collection was empty — the seed script had never been run — so this
+// returned null for every country. It did not surface, because server.js's
+// own lookup was missing in exactly the same way and defaulted both sides to
+// INR, which meant the currencies always matched and this engine was never
+// called at all. The shared resolver falls back to the bundled
+// data/countryCurrencyMap.js, so both sides now resolve real currencies
+// whether or not the collection has been populated.
+const { resolveCountry } = require('./countryCurrency');
+const getCountry = (iso) => resolveCountry(iso);
 
 // Money arrives here already rounded to each leg's own currency precision by
 // server.js's toMinorUnit. This only guards against a float artefact created

@@ -2629,7 +2629,21 @@ function GloobalId() {
       padding: 16,
       transition: "background 0.4s ease"
     }}
-  ><div style={{ background: "#fff", borderRadius: T.radiusXl, padding: 18, boxShadow: T.shadowCard }}><GloobalQRCode code={encodeGloobalQR({ gloobalId: activeShareRole === "merchant" ? creatorId : secureId, amountCents: requestCents })} size={200} /></div>{
+  ><div style={{ background: "#fff", borderRadius: T.radiusXl, padding: 18, boxShadow: T.shadowCard }}>{
+    /* encodeGloobalQR returns null when the requested amount cannot be
+       represented exactly, instead of the clamped code it used to return.
+       Showing the limit here is the whole point of that change: this panel
+       displays "Requesting X" from requestCents just below, so a silently
+       clamped code meant the screen contradicted itself — the caption said
+       5000.00 while the code said 0.63. Refusing to draw a code is the
+       honest outcome, and it names the ceiling so the number can be
+       corrected rather than guessed at. */
+  }{(() => {
+    const requestQrCode = encodeGloobalQR({ gloobalId: activeShareRole === "merchant" ? creatorId : secureId, amountCents: requestCents });
+    return requestQrCode
+      ? <GloobalQRCode code={requestQrCode} size={200} />
+      : <div style={{ width: 200, height: 200, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center", padding: 12 }}><span style={{ fontSize: 13, fontWeight: 800, color: T.negative }}>Amount too large for a code</span><span style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45 }}>A payment request can carry up to {(QR_MAX_AMOUNT_CENTS / 100).toFixed(2)}. Lower the amount to show a code.</span></div>;
+  })()}</div>{
     /* Same Creator Share edge badge the Receive screen's QR shows —
        one consistent "here's my share rate" affordance wherever your
        code is displayed. Sits on the box's own right edge, clear of

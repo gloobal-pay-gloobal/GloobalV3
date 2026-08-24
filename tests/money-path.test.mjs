@@ -360,26 +360,19 @@ describe("QR payload", () => {
     assert.equal(decoded.gloobalId, validId);
   });
 
-  test(
-    "carries the requested amount through unchanged",
-    {
-      todo:
-        "KNOWN BUG. The amount field is 3 digits in a 4-symbol alphabet " +
-        "(QR_ENCODING_SYMBOLS), so QR_MAX_AMOUNT_CENTS is 4^3-1 = 63. A " +
-        "payment request QR therefore cannot represent more than 0.63 in " +
-        "currency units, and anything larger is silently CLAMPED to 63 " +
-        "rather than rejected — request 500.00 and the payer is shown a " +
-        "code for 0.63. Fix is to widen QR_AMOUNT_LENGTH (or encode the " +
-        "amount in the full 8-symbol DIAL_SYMBOLS base); both lengthen the " +
-        "payload, so re-check scan reliability after changing it."
-    },
-    () => {
-      const decoded = domain.decodeGloobalQR(
-        domain.encodeGloobalQR({ gloobalId: validId, amountCents: 12345 })
-      );
-      assert.equal(decoded.amountCents, 12345);
-    }
-  );
+  // Was a `todo` recording a known bug: the amount field was 3 digits in a
+  // 4-symbol alphabet, so QR_MAX_AMOUNT_CENTS was 4^3-1 = 63 and anything
+  // larger was silently CLAMPED — request 500.00, and the payer was shown a
+  // code for 0.63. Fixed on 24 August 2026 by encoding the amount in the
+  // full 8-symbol DIAL_SYMBOLS base over 7 digits, and by refusing an
+  // unrepresentable amount instead of clamping it. Now a real assertion.
+  // tests/qr-amount.test.mjs covers the range and the refusals in full.
+  test("carries the requested amount through unchanged", () => {
+    const decoded = domain.decodeGloobalQR(
+      domain.encodeGloobalQR({ gloobalId: validId, amountCents: 12345 })
+    );
+    assert.equal(decoded.amountCents, 12345);
+  });
 
   test("amounts within the encodable range do round-trip", () => {
     // Guards the arithmetic itself, independent of the range bug above —
@@ -393,14 +386,17 @@ describe("QR payload", () => {
     }
   });
 
-  test("an over-range amount is clamped, never wrapped", () => {
-    // Documents the CURRENT behaviour so the bug cannot get quietly worse.
-    // Clamping is wrong but bounded; wrapping would let a large request
-    // decode as an arbitrary small one.
-    const decoded = domain.decodeGloobalQR(
-      domain.encodeGloobalQR({ gloobalId: validId, amountCents: 999999 })
+  test("an over-range amount is refused, never clamped or wrapped", () => {
+    // This used to assert that an over-range amount CLAMPED to the ceiling,
+    // documenting the bug so it could not get quietly worse ("clamping is
+    // wrong but bounded; wrapping would let a large request decode as an
+    // arbitrary small one"). Both are wrong for a payment request, and the
+    // right answer is neither: refuse to mint a code at all rather than mint
+    // one for an amount nobody asked for.
+    assert.equal(
+      domain.encodeGloobalQR({ gloobalId: validId, amountCents: domain.QR_MAX_AMOUNT_CENTS + 1 }),
+      null
     );
-    assert.equal(decoded.amountCents, domain.QR_MAX_AMOUNT_CENTS);
   });
 
   test("a zero-amount code is an identity request, not a payment", () => {

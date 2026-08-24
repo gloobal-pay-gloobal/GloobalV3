@@ -4272,20 +4272,31 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             settlementId: settlement.settlementId,
             sourceCountryIso: settlement.sourceCountryIso,
             sourceCurrency: settlement.sourceCurrency,
-            sourceAmount: settlement.sourceAmount,
             // The two source-side ledger lines — the sender's full credit
-            // in, the cashback release back out — not just their net.
-            sourceCreditAmount: settlement.sourceCreditAmount,
+            // in, and the cashback release back out — not just their net.
+            //
+            // `sourceAmount` IS the full credit in. This projection used to
+            // also carry `sourceCreditAmount` and `destinationReleaseAmount`
+            // as separate keys, which were aliases of the two gross figures
+            // under the names server.js passes them in by. Neither exists on
+            // the Settlement schema, so both serialized as undefined. Removed
+            // rather than added to the schema: a second name for a figure
+            // already on the row is exactly the duplicate-amount-field trap,
+            // and nothing ever read them — settlement was always null in
+            // production, so this object has never actually been sent.
+            sourceAmount: settlement.sourceAmount,
             sourceCashbackRelease: settlement.sourceCashbackRelease,
             destinationCountryIso: settlement.destinationCountryIso,
             destinationCurrency: settlement.destinationCurrency,
-            destinationAmount: settlement.destinationAmount,
-            // The two destination-side ledger lines — the full release,
+            // The two destination-side ledger lines — the full release, and
             // the cashback return.
-            destinationReleaseAmount: settlement.destinationReleaseAmount,
+            destinationAmount: settlement.destinationAmount,
             destinationCashbackReturn: settlement.destinationCashbackReturn,
             rate: settlement.rate,
             rateSource: settlement.rateSource,
+            // Carried so a caller can tell a settled corridor from one that
+            // was written and later reverted, without a second round trip.
+            status: settlement.status,
           }
         : null,
       shareTransaction: shareTransaction

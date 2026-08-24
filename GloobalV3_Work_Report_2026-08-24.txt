@@ -1,0 +1,715 @@
+================================================================================
+GLOOBALV3 — WORK REPORT
+24 August 2026
+================================================================================
+
+Repository : https://github.com/gloobal-pay-gloobal/GloobalV3
+Branch     : main (merged from fix/qa-2026-08-24)
+Frontend   : https://gloobalv3.netlify.app        (Netlify)
+Backend    : https://gloobal-pay.onrender.com     (Render, root "server")
+
+Legend used throughout:
+
+  FIXED        code changed, root cause addressed
+  VERIFIED     proven by an automated test or a direct observation
+  DEPLOYED     present in the commit running in production
+  NOT DEPLOYED intentionally excluded, or blocked
+  UNRESOLVED   known to be wrong, not fixed today
+  OUT OF SCOPE deliberately untouched, awaiting a product decision
+
+
+================================================================================
+1. HOW THE DAY STARTED, AND A CORRECTION
+================================================================================
+
+The day began with a request to reconstruct the previous sessions' work logs.
+That produced an error worth recording, because it shaped several hours after
+it.
+
+The 23 August work log stated that the previous session's branch was
+"unmerged and unpushed" and that nothing had reached Netlify or Render. That
+was wrong, and it was written by me. The branch had in fact been merged on
+GitHub through pull requests #6 and #8, with a Netlify-bot fix in #7. Both
+Netlify and Render had been serving that code since 23 Aug 16:45 UTC.
+
+Cause: the local clone had never been fetched, so `origin/main` still pointed
+at an old commit and the branch looked unmerged.
+
+Consequence: the founder's field test was being run against yesterday's code
+in production, not against an unmerged branch. Every finding below is a
+finding against shipped behaviour.
+
+The work log has been corrected in place.
+
+  Lesson recorded: `git fetch` before comparing anything to a remote branch.
+
+
+================================================================================
+2. FOUNDER FIELD TEST — FINDINGS AND ROOT CAUSES
+================================================================================
+
+A live cross-country test was carried out on 24 August. Nine observations were
+reported. Each was traced to a root cause rather than patched at the symptom.
+
+--------------------------------------------------------------------------------
+2.1  "Camera access blocked"                                    FIXED, DEPLOYED
+--------------------------------------------------------------------------------
+
+Not an application defect. netlify.toml sent:
+
+    Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(self)
+
+An empty allowlist "()" disables a feature for EVERY origin, the page's own
+included. It is not "default" and not "ask the user" — it is off. So on the
+live site getUserMedia rejected and navigator.geolocation failed regardless of
+what the visitor chose in the browser prompt.
+
+`payment=(self)` on the same line is the correct shape, which is what made the
+other two easy to miss.
+
+Verified against the live site before changing anything:
+
+    $ curl -sI https://gloobalv3.netlify.app/
+    Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(self)
+
+Fix: camera=(self), geolocation=(self). microphone stays off — nothing records
+audio, and the scanner requests `video` only.
+
+Consequence: the QR scanner shipped on 23 August could not work in production
+however correct its code was. Two of the four mandatory permissions were dead
+for the same one-line reason.
+
+--------------------------------------------------------------------------------
+2.2  Balance wrong until refresh and re-login                    FIXED, DEPLOYED
+--------------------------------------------------------------------------------
+
+Not a token or session problem. Three effects in frontend/App.jsx resolve the
+account id from either source:
+
+    const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
+    if (!symbolId) return;
+    ...
+    }, [stage, registeredUser, refreshBalanceToken]);   // secureId absent
+
+Only `registeredUser` was watched. On a first session the id can arrive in
+`secureId` after the effect has already run, so the run took the early-return
+path and nothing ever re-triggered it: the server balance was never fetched,
+balanceStatus stayed "loading", and the screen kept whatever the local ledger
+held. Refreshing appeared to fix it only because session restore populates the
+id BEFORE stage becomes "dashboard".
+
+The same dependency array governed the assets/PayLater effect and the history
+effect, so both had the identical hole.
+
+Fix: `secureId` added to all three dependency arrays.
+
+--------------------------------------------------------------------------------
+2.3  Account switch retained the previous account's assets       FIXED, DEPLOYED
+--------------------------------------------------------------------------------
+
+A second, separate defect found while investigating 2.2.
+
+LedgerProvider holds the FinancialCore in a useRef and never rebuilds it, so a
+second account reuses the first one's ledger. The balance self-corrected —
+reconcileBankBalance posts a delta and converges from any starting point — but
+the seeds did not: hydrateGrantsFromServer restores only into an EMPTY grant
+list (its guard against double-counting a seed it cannot match by id), so
+account B found account A's grants still present and declined to hydrate at
+all.
+
+Account A's assets stayed on screen, and because the PayLater limit is the sum
+of seed values, account B was extended credit derived from account A's
+cashback.
+
+Fix: FinancialCore#resetForAccountSwitch, called from handleStartOver before
+identity state is torn down. It clears grants and drives balance and PayLater
+to zero by posting the inverse entry, so the reset is visible in the ledger
+rather than silently assigned.
+
+--------------------------------------------------------------------------------
+2.4  "2.4% of 5000" displayed beside 118.00                      FIXED, DEPLOYED
+--------------------------------------------------------------------------------
+
+The money was correct. The label was not.
+
+The My Share slider is `step={0.01}`, so 2.36% is a rate a creator can
+actually set, and 5000 x 0.0236 = 118 exactly. The chain
+server rate -> x100 -> percent -> /100 is lossless; no float error is
+involved.
+
+What differed was display precision between screens:
+
+    My Share, receipt      2 decimals   "2.36%"
+    Assets list, detail    toFixed(1)   "2.4%"
+
+The "31.4 yrs to 100%" figure on the same screen corroborates it: at 1%/month
+compounding, 5000 / 118 needs 31.4 years; 5000 / 120 needs 31.2.
+
+Fix: two decimals everywhere, which is lossless against a 0.01 step. No stored
+rate was rewritten and no amount changed. Changing 118 to 120 would have been
+wrong.
+
+--------------------------------------------------------------------------------
+2.5  Asset list and detail appeared to disagree                  NOT A DEFECT
+--------------------------------------------------------------------------------
+
+Investigated and found to be the same rounding as 2.4, not two formulas.
+`assetRows` is one memo over useEssentialsGrants(), and the detail view is
+`assetRows.find(...)` over that same array. One source, two display
+precisions. Resolved by 2.4.
+
+--------------------------------------------------------------------------------
+2.6  Transaction limit reads as $52-54                           FIXED, DEPLOYED
+--------------------------------------------------------------------------------
+
+`numericAmount` is the face amount in the RECEIVER's currency, so the 5000 cap
+is 5000 of whatever the recipient is paid in. For a US account paying into
+India that is 5000 INR, roughly $52.63 at 95 — exactly the reported figure.
+
+The rule itself is unchanged. The defect was the message, which read
+"Prototype transaction limit is Rs. 5000" in every corridor, true only when
+the recipient happens to be Indian.
+
+The message cannot name the real currency at that point: destinationCurrency
+is resolved further down, after a receiver lookup that sits behind PIN
+verification on purpose. Moving the check past that gate would change what an
+unauthenticated caller can learn about an account, so the message is worded to
+be true in every corridor instead, and now carries `limit` and `limitBasis`
+for the client.
+
+--------------------------------------------------------------------------------
+2.7  Contacts reported "Allowed" without asking                  FIXED, DEPLOYED
+--------------------------------------------------------------------------------
+
+The permissions gate set contacts to "granted" from feature detection alone:
+
+    const supported = "contacts" in navigator && "ContactsManager" in window;
+    setStatus(s => ({ ...s, contacts: supported ? "granted" : "unavailable" }));
+
+It never called the picker. So the gate showed a green "Allowed" tick to
+someone who had never been asked anything and had approved nothing — the one
+thing a permissions screen must never do, because every other row on it
+reflects a real browser answer and the false tick borrowed their credibility.
+
+navigator.contacts.select() prompts fresh on every call and leaves no standing
+grant, so there is genuinely nothing to pre-authorise. The honest state is a
+third one.
+
+Fix: new "ready" state, rendered "Asks when used". Camera, location and
+notifications still call the real browser API.
+
+--------------------------------------------------------------------------------
+2.8  "Third payment said insufficient balance"                   UNRESOLVED
+--------------------------------------------------------------------------------
+
+Not reproduced from code. See section 4 — the currency discovery is a strong
+candidate, but confirming it needs the actual transaction reference IDs.
+
+--------------------------------------------------------------------------------
+2.9  "Sent 5000, receiver got 1000"                              UNRESOLVED
+--------------------------------------------------------------------------------
+
+Not reproduced. Both paths were traced and neither produces it:
+
+  Normal Send Money  — proven exact in both directions by a new bidirectional
+                       test; a round trip returns both accounts to their
+                       opening balances to the cent.
+  Scan-to-pay        — could not have completed at all, because
+                       decodeGloobalQR returned null for every code (see 3.2).
+                       And the amount clamp produced 0.63, never 1000.
+
+The only literal 1000 anywhere in the frontend is the hardcoded example
+payment in the My Share preview (Dashboard.jsx:2218). That remains the best
+hypothesis but it is a guess about which screen was being read.
+
+See section 4 for a better candidate found later in the day.
+
+
+================================================================================
+3. PAYMENT-INTEGRITY DEFECTS FOUND WHILE INVESTIGATING
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1  Cross-border settlement had never run                       FIXED, DEPLOYED
+--------------------------------------------------------------------------------
+
+The settlement engine and its only caller disagreed about the function's
+shape. server.js calls:
+
+    settleCrossBorderPayment({ session, transaction, sender, receiver,
+      senderCurrency, destinationCurrency, destinationReleaseAmount,
+      destinationCashbackReturn, sourceCreditAmount, sourceCashbackRelease,
+      rate, rateSource })
+
+while lib/settlementEngine.js exported:
+
+    async function settleCrossBorderPayment({ transaction, sender, receiver, amount })
+
+No `amount` is ever passed. So `sourceAmount` was undefined and
+`destinationAmount` was NaN on every cross-border payment. Settlement.create
+then failed schema validation, the module's own catch swallowed the error and
+returned null, and the payment carried on and returned 201.
+
+It went further than the signature. server.js destructures three names from a
+module that exports one:
+
+    const { settleCrossBorderPayment, revertCrossBorderSettlement,
+            InsufficientPoolLiquidityError } = require('./lib/settlementEngine');
+
+    module.exports = { settleCrossBorderPayment };   // the entire export
+
+Both of the others were undefined. The revert path would have thrown
+TypeError, and so would `e instanceof InsufficientPoolLiquidityError`. The
+newer engine all of this was written against exists nowhere in the repository,
+its history, or the three legacy working copies on this machine — and the
+suite referenced a sibling test file, cross-currency-transfer.test.mjs, that
+had never existed either.
+
+What it did and did not affect: user balances were always correct, because
+that is server.js's own ledger code, independent of settlement. What was
+missing is the inter-country pool bookkeeping — no Settlement row was ever
+written and both currency pools sat at their opening balance.
+
+Two gaps had to be closed alongside it:
+
+  * CountryCurrencyPool had no DEFAULT_POOL_SEED_BALANCE. Pools are created
+    lazily and opened at 0, so the first payment through any new corridor
+    would fail the liquidity gate and the corridor could never open — nothing
+    can credit a pool that no payment is allowed to use. Seeded at 5,000,000
+    prototype liquidity, representing no real money, exactly like
+    User.balance's opening float.
+
+  * Settlement needed the two cashback legs stored, so a revert can undo
+    exactly what was applied instead of recomputing it from the rate and
+    reintroducing rounding the original write already resolved.
+
+BEHAVIOUR CHANGE WORTH NOTING: settlement now runs inside the payment's Mongo
+transaction and throws rather than swallowing, so a corridor that cannot
+settle takes the payment down with it. That is what server.js was already
+written to expect, and it is the right answer when the alternative is
+releasing money a pool cannot fund. But before this, nothing could make a
+settlement failure fail a payment — because settlement never ran at all.
+
+--------------------------------------------------------------------------------
+3.2  QR payment requests, two defects                            FIXED, DEPLOYED
+--------------------------------------------------------------------------------
+
+FIRST: the amount was clamped, not carried.
+
+The amount field was 3 digits in a 4-symbol alphabet — a range of 4^3-1 = 63
+minor units, 0.63 in currency. Anything larger was silently clamped:
+
+    Math.min(QR_MAX_AMOUNT_CENTS, Math.round(amountCents))
+
+A request for 5,000 produced a code for 0.63, while the same panel displayed
+"Requesting 5000.00" from its own untouched figure directly beside it. The two
+disagreed on screen.
+
+Fix: the amount is encoded over 7 digits of the full 8-symbol alphabet, giving
+2,097,151 minor units (20,971.51) — comfortably above the 5,000 prototype cap.
+An amount that still cannot be represented is REFUSED: encode returns null and
+the Request panel says so and names the ceiling, rather than drawing a code
+for a number nobody asked for. Codes minted before the change still decode.
+
+SECOND, and worse: the codec read DIAL_SYMBOLS at module load time.
+
+DIAL_SYMBOLS lives in frontend/constants/theme.js, which build_app.mjs
+concatenates AFTER backend/utils/. In the built bundle:
+
+    line 4923:  var QR_SYMBOL_BASE = DIAL_SYMBOLS.length;
+    line 7321:  var DIAL_SYMBOLS = ["-", "+", "x", "=", "o", "[]", "*", "#"];
+
+`var` hoists the declaration, not the value. The old code did
+`new Set(DIAL_SYMBOLS)` — and `new Set(undefined)` is perfectly legal, giving
+an EMPTY set. So QR_ID_SYMBOL_SET was always empty in the real bundle,
+decodeGloobalQR's membership check was false for every character, and DECODE
+RETURNED NULL FOR EVERY CODE EVER SCANNED.
+
+QR scanning could not work in the shipped app — independently of the camera,
+and independently of the Permissions-Policy header in 2.1. Three separate
+faults were stacked on the same feature, each one sufficient alone to break
+it.
+
+Fix: the module owns its alphabet outright and evaluates nothing from a later
+module at load time. Tests assert the local copy stays identical to
+DIAL_SYMBOLS and that the module body never references it again.
+
+--------------------------------------------------------------------------------
+3.3  Three broken test fixtures                                  FIXED, DEPLOYED
+--------------------------------------------------------------------------------
+
+None changed application code. All three made a suite report a failure that
+had nothing to do with the behaviour it claimed to test.
+
+asset-seed-integrity — colliding account fixtures. symbolId walks
+SYMBOLS[(seed + i*3) % 8], so the alphabet repeats every 8 and seed N produces
+the identical string to seed N+8. SENDER used seed 4 and PLAIN_RECEIVER seed
+12: the same Gloobal ID. setUp then set the plain receiver's balance to 0,
+silently zeroing the sender's 10,000, and every payment in the file was
+refused with "Insufficient balance" — reported as a seed-integrity failure.
+Every other suite was checked for the same collision; this was the only one.
+
+merchant-share-flow — stale assertion. It expected the sender debited the full
+200, but the server credits the payee's Creator Share straight back as
+immediately spendable balance: 200 out, 10 back, 9,810 left. server.js
+documents exactly this. Corrected to assert the arithmetic rather than a magic
+number.
+
+render — THE SUITE HAD NEVER RUN. The before-hook shelled out to `npx
+esbuild`. There is no bare `npx` on PATH on Windows, and since Node 20
+execFileSync refuses to launch a .cmd without a shell (CVE-2024-27980). The
+hook threw, all six tests were skipped, and the runner reported 0 failures — a
+suite that cannot fail because it never executes reads exactly like a passing
+one. That is how the QR load-order crash in 3.2 stayed hidden: these tests
+catch it in four seconds. Now uses esbuild's Node API, and the page is cut off
+from the network so an intermittent CORS error cannot make the suite flaky.
+
+
+================================================================================
+4. THE PRODUCTION DISCOVERY
+================================================================================
+
+This is the most consequential finding of the day, and it was found by
+checking whether a proposed fix was safe rather than by looking for it.
+
+The payment route resolved currencies like this:
+
+    const senderCurrency = senderCountry?.localCurrency || 'INR';
+    const destinationCurrency = receiverCountry?.localCurrency || 'INR';
+
+Before removing that fallback, a READ-ONLY count was run against the live
+database to check whether failing closed would be safe:
+
+    db: gloobal_db
+    Country docs: 0
+    Currency docs: 0
+    distinct account countryIso: ["CN","GB","GR","IL","IN","PH","PK","SE","US"]
+    account ISOs NOT seeded: all nine
+
+scripts/seed-countries-currencies.mjs had NEVER been run on production.
+
+CONSEQUENCE: every country lookup missed. Every account resolved to INR. Both
+sides therefore always matched, the FX rate was always 1, the settlement gate
+never fired, and a payment from a British account to an American one executed
+as a domestic rupee transfer. Nothing logged and nothing failed, because a
+missing reference table is indistinguishable from a country that genuinely
+uses INR.
+
+Two more defaults were absorbing the same miss:
+
+  * lib/currencyDecimals.js loaded its cache from the equally empty Currency
+    collection and fell through to two decimal places for all 142 currencies.
+    So the 16 zero-decimal currencies that module was written to protect were
+    rounded to cents anyway — the bug it exists to fix was still live,
+    silently, because its data source was empty.
+
+  * resolveOwnCurrency, used by GEU, did the same. GEU entry converts the
+    account's own currency into the INR reference, so a US account matched the
+    reference exactly and minted 1:1. That is precisely the founder's original
+    complaint — "$100 should not produce only 100 GEU" — arriving from
+    unseeded reference data rather than from the conversion code, which is
+    correct.
+
+WHY IT WAS NOT FIXED BY FAILING CLOSED: that would have refused every payment
+on that database. The row was never the only source. Country is a COPY of
+data/countryCurrencyMap.js, written by the seed script from that very file,
+and that file ships inside the server with all 194 countries. The collection
+is a cache of it, not its origin.
+
+FIX: new lib/countryCurrency.js prefers the seeded row — the layer an operator
+can correct without a deploy — falls back to the bundled map, and returns null
+only for an ISO that is genuinely not a supported country, which is refused
+with a message naming it. A failed Mongo read falls through to the map, so a
+transient database blip cannot take payments down. currencyDecimals now layers
+the collection OVER the bundled precision table instead of replacing it.
+
+WHAT THIS MEANS FOR THE FIELD TEST: every payment the founder made was
+executed server-side as INR -> INR whatever countries were involved, while the
+client displayed each account's real currency from its own bundled copy of the
+same map. The server and the screen disagreed about what currency the money
+was in, on every single transaction. That is a better candidate for both 2.8
+and 2.9 than any earlier hypothesis. It is NOT asserted as the cause —
+confirming it needs the actual transaction reference IDs.
+
+
+================================================================================
+5. ALL-COUNTRY COVERAGE
+================================================================================
+
+The settlement work was initially built and proven against one corridor,
+India <-> USA. That was a founder-testing example, not the requirement. The
+implementation was generalised and the regression suite is now generated from
+the country configuration rather than from a hand-written pair.
+
+The authoritative matrix, read from data/frontendCountryList.json and
+data/countryCurrencyMap.js:
+
+    Supported countries        194
+    Supported currencies       142     (126 at 2dp, 16 at 0dp)
+    Directional corridors   37,442     (194 x 193)
+      settling              36,632
+      same-currency            810
+      mixed-precision        9,018
+    Currencies spanning >1 country: 8
+      EUR x26, USD x7, XOF x7, XCD x6, XAF x6, AUD x4, CHF x2, ILS x2
+
+COVERAGE APPROACH — stated plainly because it matters:
+
+All 37,442 corridors were NOT run end to end through HTTP, and no such claim
+is made. Each corridor that way is a registration, a PIN, a payment and three
+database writes — tens of thousands of throwaway rows and many hours against
+Atlas, for corridors that differ only in which ISO string is on them.
+
+Coverage is split by axis instead, and both halves are generated from the seed
+data:
+
+  corridor-matrix.test.mjs        ALL 37,442 corridors, no database. Currency
+                                  resolution, the settle/no-settle decision,
+                                  FX direction, per-currency rounding, and the
+                                  pool keys each corridor would use. Under one
+                                  second.
+
+  cross-border-engine.test.mjs    124 generated corridors, real engine against
+                                  real Mongo with all 194 countries and 142
+                                  currencies seeded. All four precision shapes
+                                  (0->0, 0->2, 2->0, 2->2), a deterministic
+                                  spread across the whole country list, and
+                                  both directions of every sampled pair. Pool
+                                  balances, Settlement rows, the
+                                  total = available + reserved invariant,
+                                  first use of a fresh corridor, repeated use
+                                  creating no duplicate pools, refusal on
+                                  insufficient liquidity, rejection of invalid
+                                  money and unknown countries, and revert
+                                  restoring both pools exactly.
+
+Neither file names a country. Adding one to the seed adds its 2N-1 corridors
+to both automatically, and a test asserts that property so it cannot quietly
+stop being true.
+
+THREE DEFECTS FOUND ONLY BY GENERALISING — all in code written earlier the
+same day against the two-country example:
+
+  1. Rounding assumed two decimals. The engine netted the cashback legs with a
+     hardcoded round2. Sixteen of the 142 supported currencies have zero
+     decimals, and the engine has no business deciding a JPY or KRW figure may
+     carry cents. Now rounds through decimalsFor.
+
+  2. The amount guard coerced instead of checking. requireAmount used
+     Number(value), so null passed as 0 — writing a settlement claiming
+     nothing moved, against pools that really did move — and the string "100"
+     was accepted as money. The comment directly above it explained why
+     coercion is wrong here while the code did it anyway. Now strictly
+     typeof number. THE GENERATED SUITE CAUGHT THIS; the two-country tests
+     never could.
+
+  3. No same-currency guard. The engine documented the precondition that
+     server.js gates same-currency payments out, but did not enforce it. 810
+     corridors are two different countries sharing one currency, and a caller
+     keying the gate off the country rather than the currency would have
+     opened a pool whose counterCurrency equals its own localCurrency — the
+     thing CountryCurrencyPool's header says must never exist. It now refuses.
+     That enforces the existing rule; it does not add one.
+
+SAME CURRENCY, DIFFERENT COUNTRY — the existing rule, documented not invented.
+server.js keys settlement off the CURRENCY:
+
+    if (senderCurrency !== destinationCurrency) { ...settle... }
+
+So a payment between two euro countries — 650 of the 810, since EUR spans 26
+countries — is a same-currency payment producing no settlement and no pool
+movement. Pinned in both suites rather than reinterpreted.
+
+
+================================================================================
+6. TEST RESULTS
+================================================================================
+
+FRONTEND                                        101 tests, 101 pass, 0 fail
+  tests/money-path.test.mjs                      32 pass   (0 todo — the QR
+                                                            clamp todo is now
+                                                            a real assertion)
+  tests/qa-2026-08-24.test.mjs                   21 pass   (new)
+  tests/qr-amount.test.mjs                       42 pass   (new)
+  tests/render.test.mjs                           6 pass   (first time ever
+                                                            actually executed)
+
+QR ROUND-TRIP SPOT CHECK (section 4 of the brief)
+  100   -> 20-char payload -> decoded 100    exact
+  500   -> 20-char payload -> decoded 500    exact
+  1000  -> 20-char payload -> decoded 1000   exact
+  5000  -> 20-char payload -> decoded 5000   exact
+  legacy 16-char payloads still decode, tagged "legacy"
+  no silent clamping — over-range input returns null
+
+BUILD AND DIAGNOSTICS
+  node build_app.mjs                             PASS
+  vite production build                          PASS
+  node --check server/server.js                  PASS
+  tools/frontend/scan-undeclared.mjs             PASS (only `Notification`,
+                                                       the documented
+                                                       non-failure)
+  tools/frontend/probe-panels.mjs                PASS 3/3
+  tools/backend/check-backend.mjs                PASS
+
+SERVER SUITES — see section 7 for the final tally and the honest
+classification of what still fails.
+
+
+================================================================================
+7. REMAINING FAILURES — CLASSIFIED HONESTLY
+================================================================================
+
+concurrency-scale                               UNRESOLVED (intermittent)
+
+  100 concurrent sends against a single balance produce
+  MongoServerError: Write conflict ... TransientTransactionError.
+
+  Run explicitly twice today as required, independently and with nothing else
+  in flight:
+
+      run A   FAIL (6 checks)
+      run B   FAIL
+
+  It passed in one earlier full run. So it is intermittent, and currently
+  failing more often than it passes. It is NOT claimed as fixed.
+
+  The underlying gap is real even when the suite is green: TransientTransaction
+  Error is MongoDB instructing the caller to retry the transaction, and
+  withMongoTransaction does not. Adding a retry loop with backoff to the money
+  path is a deliberate change, not something to slip into a deployment day.
+
+geu-invariants                                  UNRESOLVED / OUT OF SCOPE
+
+  8 checks fail. A redemption returns exchangeRate=0.010439 with
+  rateSource=open.er-api.com where the test expects the CAPTURED rate of 95.
+  The redemption path appears to fetch a fresh live rate instead of using the
+  rate stored at entry — which is the invariant the suite is named for.
+
+  Reads as a real defect. It sits inside GEU, which was explicitly out of
+  scope pending the Coin/GEU product decision, so it was not touched.
+
+geu-concurrency                                 UNTRIAGED
+
+  260 seconds per run. Never opened. No evidence either way, so no claim is
+  made about it. Probably the same write-conflict class as concurrency-scale,
+  but that is not confirmed and is not asserted.
+
+A NOTE ON ONE FALSE ALARM: an earlier full run in the afternoon also showed
+merchant-share-flow failing. That was contention from running two
+concurrency-scale suites against the same Atlas cluster at the same time. Re-run
+clean and alone it reports ALL CHECKS PASSED. It is not a regression, and the
+overlap was my own doing.
+
+
+================================================================================
+8. WHAT WAS DELIBERATELY NOT DONE
+================================================================================
+
+Gloobal Coin vs GEU                             OUT OF SCOPE
+
+  Two separate systems, repeatedly conflated in reporting:
+
+    Gloobal Coin  POST /api/coin/mint. A fully-reserved converter: one unit of
+                  your balance becomes one coin, atomically, fiat moved into
+                  reserve. The 1:1 IS the invariant, guarded by
+                  coin-supply-invariant.test.mjs, and the screen says so.
+
+    GEU           POST /api/geu/entry. Reference currency INR. Resolves the
+                  account's own currency, fetches a real rate, mints
+                  sourceAmount x rate. It already does exactly what was asked
+                  for: $100 at 95 becomes 9,500 GEU.
+
+  A grep for GEU across frontend/ and backend/ returns ZERO matches. The
+  entire GEU system is server-only and has no client wiring at all. So what
+  was tested and called "GEU" is the Coin screen, whose 1:1 is deliberate.
+
+  This is not a broken calculation to repair. It is a correct feature that was
+  never connected, and choosing between wiring GEU, redefining Coin, or
+  relabelling the screen is a product decision. Untouched.
+
+Naming the exact currency in the transaction-limit message   NOT DONE
+
+  Would require moving the limit check past the PIN gate, changing what an
+  unauthenticated caller can learn about an account. Left alone; the message
+  is instead worded to be true in every corridor.
+
+Retry-on-transient for the money path                        NOT DONE
+
+  See concurrency-scale above.
+
+
+================================================================================
+9. GIT HISTORY
+================================================================================
+
+Branch: fix/qa-2026-08-24, merged into main.
+
+Commits, in order:
+
+  a451ac2  Declare jsqr for the QR scanner and playwright for the render tests
+  a23d77f  ... correct stale cashback assertion
+  10d6643  ... correct two stale money-semantics assertions
+             (the three above are test-only, carried over from 23 August and
+              never merged at the time)
+  87e529a  Allow the camera and geolocation the app actually uses
+  68deba8  Fix balance hydration, account-switch bleed, cashback label,
+           limit message and a faked permission
+  abdb1f8  Make cross-border settlement work: reconnect the engine to its caller
+  a22f9b3  Stop the payment-request QR silently changing the amount, and fix
+           its load order
+  a33fb28  Repair three broken test fixtures that were reporting as product
+           failures
+  b949eda  Generalise settlement across all 194 countries, and test every
+           corridor
+  da489fd  Resolve country currency without assuming rupees, and without
+           needing a seeded database
+
+Diff against the previous main: 31 files, +3020 / -265.
+
+Secret scan of the full merge diff: no SMTP password, no MongoDB URI, no
+AUTH_TOKEN_SECRET, no API key, no private key. No .env or secret.txt is
+tracked by git.
+
+
+================================================================================
+10. PRODUCTION REFERENCE DATA
+================================================================================
+
+STATUS: SEEDED (approved explicitly before the write).
+
+Before executing, the script was verified by reading its source rather than by
+trusting its name:
+
+  * The dry run is the DEFAULT, and it returns BEFORE mongoose.connect — it
+    never touches the database at all.
+  * The only writes are Currency.bulkWrite and Country.bulkWrite, both
+    updateOne with upsert:true, filtered on `code` / `iso`, with $set of the
+    row.
+  * No User, Transaction, AssetSeed, Settlement, LedgerEntry or
+    CountryCurrencyPool document is written, read for modification, or
+    deleted.
+  * Idempotent by construction: upsert keyed on code/iso with $set of
+    identical data reports 0 modified on a re-run.
+
+Execution result:
+
+    Countries to upsert: 194
+    Currencies to upsert: 142
+    Currency: 142 inserted, 0 updated.
+    Country: 194 inserted, 0 updated.
+
+Verification after the write:
+
+    db: gloobal_db
+    Country docs: 194
+    Currency docs: 142
+    account ISOs NOT seeded: []          (was: all nine)
+    GB -> GBP    US -> USD    IN -> INR    SE -> SEK
+    zero-decimal currencies: 16
+
+No balance, transaction, asset or settlement document was modified.
+
+NOTE: the code no longer depends on this having been done. The bundled-map
+fallback covers all 194 countries and is proven by a suite that runs with both
+collections deliberately empty. Seeding restores the operator-editable layer.

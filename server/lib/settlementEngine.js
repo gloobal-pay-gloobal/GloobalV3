@@ -123,7 +123,18 @@ async function getCountry(iso) {
 // server.js's toMinorUnit. This only guards against a float artefact created
 // by the subtraction below (gross - cashback), which can reintroduce a long
 // tail even when both inputs were clean.
-const round2 = (n) => Math.round(n * 100) / 100;
+//
+// Rounds in the CURRENCY's own precision, not a fixed two places. 16 of the
+// 142 supported currencies have zero decimals, and this file has no business
+// deciding that a JPY or KRW figure may carry cents. decimalsFor reads the
+// seeded Currency collection — the same source server.js's toMinorUnit uses,
+// so both sides of a corridor round identically to how the payment that
+// created them was rounded.
+const { decimalsFor } = require('./currencyDecimals');
+const roundMinor = (n, currencyCode) => {
+  const factor = 10 ** decimalsFor(currencyCode);
+  return Math.round((Number(n) + Number.EPSILON) * factor) / factor;
+};
 
 // Rejects anything that is not a real, finite, non-negative number. Used on
 // every incoming figure rather than coercing, for the reason the whole
@@ -131,12 +142,23 @@ const round2 = (n) => Math.round(n * 100) / 100;
 // and a silent 0 here would write a settlement claiming nothing moved. The
 // previous version of this file coerced nothing and simply passed `undefined`
 // straight through to the schema, which is how the bug stayed invisible.
+// Strictly a number. An earlier version of this function coerced with
+// Number(value) — and then the comment above it explained why that is exactly
+// the wrong thing to do here. Number(null) is 0, so a null amount passed the
+// guard and would have written a settlement claiming nothing moved, against
+// pools that really did move. Number("100") is 100, so a string from a
+// mis-shaped caller was accepted as money. Both are the coercion trap this
+// codebase refuses everywhere else it touches a balance; the guard now
+// matches its own reasoning.
 function requireAmount(value, field) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) {
-    throw new TypeError(`settleCrossBorderPayment: ${field} must be a non-negative finite number, got ${value}`);
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new TypeError(
+      `settleCrossBorderPayment: ${field} must be a non-negative finite number, got ${
+        value === null ? 'null' : typeof value
+      } ${String(value)}`
+    );
   }
-  return n;
+  return value;
 }
 
 /**
@@ -193,6 +215,28 @@ async function settleCrossBorderPayment({
     );
   }
 
+  // Defence in depth on the precondition this module documents but never
+  // enforced. server.js gates the call on senderCurrency !== destinationCurrency,
+  // so a same-currency payment never reaches here — but 810 of the 37,442
+  // supported corridors are two DIFFERENT countries sharing ONE currency (EUR
+  // alone spans 26 of them), and if any future caller keyed the gate off the
+  // country instead of the currency, every one of those would arrive here.
+  // The result would be a pool whose counterCurrency equals its own
+  // localCurrency, which CountryCurrencyPool's header calls out as a thing
+  // that must never exist — "a country doesn't hold a pool earmarked for
+  // settling with its own currency; that's just its users' balances".
+  //
+  // Refusing is not a new business rule. The rule stays exactly where it is,
+  // in server.js; this only stops the engine silently corrupting the pool
+  // table if it is ever called against that rule.
+  if (senderCurrency === destinationCurrency) {
+    throw new Error(
+      `Settlement for ${transaction?.referenceId}: ${sourceCountry.iso} -> ${destinationCountry.iso} ` +
+        `share the currency ${senderCurrency}, so there is no border to settle. ` +
+        `Same-currency payments must not reach the settlement engine.`
+    );
+  }
+
   const sourceAmount = requireAmount(sourceCreditAmount, 'sourceCreditAmount');
   const destinationAmount = requireAmount(destinationReleaseAmount, 'destinationReleaseAmount');
   const sourceCashback = requireAmount(sourceCashbackRelease, 'sourceCashbackRelease');
@@ -203,8 +247,8 @@ async function settleCrossBorderPayment({
   // Creator Share leg. A share bigger than the payment it came from is not a
   // rounding question, it is a corrupt figure, so it fails loudly here rather
   // than flipping the direction of a pool movement.
-  const sourceNet = round2(sourceAmount - sourceCashback);
-  const destinationNet = round2(destinationAmount - destinationCashback);
+  const sourceNet = roundMinor(sourceAmount - sourceCashback, senderCurrency);
+  const destinationNet = roundMinor(destinationAmount - destinationCashback, destinationCurrency);
   if (sourceNet < 0 || destinationNet < 0) {
     throw new Error(
       `Settlement for ${transaction?.referenceId}: cashback exceeds its own leg ` +
@@ -288,9 +332,13 @@ async function settleCrossBorderPayment({
 async function revertCrossBorderSettlement(settlement) {
   if (!settlement) return null;
 
-  const sourceNet = round2(Number(settlement.sourceAmount || 0) - Number(settlement.sourceCashbackRelease || 0));
-  const destinationNet = round2(
-    Number(settlement.destinationAmount || 0) - Number(settlement.destinationCashbackReturn || 0)
+  const sourceNet = roundMinor(
+    Number(settlement.sourceAmount || 0) - Number(settlement.sourceCashbackRelease || 0),
+    settlement.sourceCurrency
+  );
+  const destinationNet = roundMinor(
+    Number(settlement.destinationAmount || 0) - Number(settlement.destinationCashbackReturn || 0),
+    settlement.destinationCurrency
   );
 
   await Promise.all([

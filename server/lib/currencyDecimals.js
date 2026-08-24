@@ -24,7 +24,32 @@
 // synchronous.
 const DEFAULT_DECIMALS = 2;
 
-let cache = new Map();
+// The bundled precision table, used as the floor under the Mongo cache.
+//
+// The comment above says data/countryCurrencyMap.js "populates it correctly
+// for every seeded currency" — and on the live database nothing was seeded.
+// Currency held zero documents, so this cache loaded empty, decimalsFor
+// returned DEFAULT_DECIMALS for everything, and the zero-decimal currencies
+// this module was written to protect (JPY, KRW, VND, the CFA francs — 16 of
+// the 142 supported) were rounded to two places anyway. The bug the module
+// fixes was still live, silently, because its data source was empty.
+//
+// buildCurrencyMaster() is the same function the seed script reads to
+// populate that collection, and it ships with the server. Seeding it into the
+// cache at require time means the correct precision is available immediately,
+// with or without a populated database; a real Currency row still wins, so an
+// operator can correct one without a deploy.
+const { buildCurrencyMaster } = require('../data/countryCurrencyMap');
+
+function bundledDecimals() {
+  const map = new Map();
+  for (const row of buildCurrencyMaster()) {
+    if (row?.code && Number.isFinite(row.decimals)) map.set(String(row.code).toUpperCase(), row.decimals);
+  }
+  return map;
+}
+
+let cache = bundledDecimals();
 let loaded = false;
 let loadingPromise = null;
 
@@ -45,7 +70,13 @@ async function loadCurrencyDecimals() {
     const Currency = require('../models/Currency');
     const rows = await Currency.find({}).select('code decimals').lean();
 
-    const next = new Map();
+    // Starts from the bundled table and overlays whatever the collection
+    // holds, rather than replacing it. Assigning the query result outright
+    // was what made an unseeded database silently lose every zero-decimal
+    // currency: `rows` came back empty, the cache became empty with it, and
+    // decimalsFor fell through to 2 for all 142 currencies. A real row still
+    // wins over the bundled value, which is the point of reading Mongo at all.
+    const next = bundledDecimals();
     for (const row of rows) {
       if (row?.code && Number.isFinite(row.decimals)) {
         next.set(String(row.code).toUpperCase(), row.decimals);

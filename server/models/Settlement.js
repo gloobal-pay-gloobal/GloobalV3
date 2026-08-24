@@ -38,6 +38,26 @@ const SettlementSchema = new mongoose.Schema({
   // sourceCurrency -> destinationCurrency, as used for this settlement.
   // destinationAmount = sourceAmount * rate, computed once and stored, not
   // recomputed on read.
+  // The payee's Creator Share, on each side of the border.
+  //
+  // A cross-border payment moves four figures through the pools, not two:
+  // each side has its own gross movement and its own cashback reversal. The
+  // sender is credited their cashback back in their OWN currency, so the
+  // source pool must release that much of what it just took; the payee is
+  // credited the payment minus their share, so the destination pool holds
+  // that much back from what it releases.
+  //
+  // Stored rather than recomputed from rate, because a revert has to undo
+  // exactly what was applied — recomputing would reintroduce the rounding
+  // the original write already resolved, and a revert that is off by a cent
+  // leaves the pools permanently out of balance. server.js's no-transaction
+  // revert path reads all four amounts straight off this row for that
+  // reason.
+  //
+  // Default 0: a payee with no Creator Share rate has no cashback leg, and
+  // every settlement written before these fields existed had none recorded.
+  sourceCashbackRelease: { type: Number, default: 0, min: 0 },
+  destinationCashbackReturn: { type: Number, default: 0, min: 0 },
   rate: { type: Number, required: true, min: 0 },
   rateSource: { type: String, required: true, trim: true },
 

@@ -2036,7 +2036,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     inputMode="decimal"
     style={{ flex: 1, border: "none", outline: "none", background: "none", fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "inherit" }}
   /></div>{payTarget.cashbackRate > 0 && <div style={{ fontSize: 11.5, color: T.positive, fontWeight: 700, marginBottom: 18 }}>
-                Earn {(payTarget.cashbackRate * 100).toFixed(1)}% back — {ccy}{((parseFloat(payAmount) || 0) * payTarget.cashbackRate).toFixed(2)} instantly added to My Assets and your PayLater limit
+                Earn {(payTarget.cashbackRate * 100).toFixed(2)}% back — {ccy}{((parseFloat(payAmount) || 0) * payTarget.cashbackRate).toFixed(2)} instantly added to My Assets and your PayLater limit
               </div>}<button
     onClick={() => {
       const amt = parseFloat(payAmount) || 0;
@@ -2452,7 +2452,20 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   }<line x1={assetDetail.todayX} y1={assetDetail.todayY} x2={assetDetail.todayX} y2={assetDetail.baseY} stroke={T.accent} strokeWidth="1.5" strokeDasharray="3 3" /><circle cx={assetDetail.todayX} cy={assetDetail.todayY} r="4.5" fill={T.accent} stroke="#fff" strokeWidth="1.5" /></svg><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: T.inkFaint, marginTop: -4 }}><span>Year 0</span><span>~{(assetDetail.monthsToTarget / 12).toFixed(1)} yrs</span></div><div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>Today</span><span style={{ width: 14, height: 2, background: T.line, marginLeft: 10, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>100% of original spend ({ccy}{assetDetail.target.toFixed(2)})</span></div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>{[
     ...assetDetail.row.chip === "CS" ? [["Creator", assetDetail.row.creatorName]] : [],
     ["Paid", `${ccy}${assetDetail.row.amountPaid.toFixed(2)}`],
-    ["Cashback", `${(assetDetail.row.cashbackRate * 100).toFixed(1)}% \xB7 ${ccy}${assetDetail.row.cashback.toFixed(2)}`],
+    // Two decimals, not one, and this is load-bearing rather than cosmetic.
+    //
+    // The My Share slider is step={0.01}, so 2.36% is a rate somebody can
+    // actually set. Rounding it to "2.4%" here while the amount beside it
+    // stayed the true 2.36% of the payment produced the exact complaint that
+    // sent us looking: "2.4% of 5000" shown next to ₹118.00, when 2.4% of
+    // 5000 is 120. Nothing was wrong with the money — ₹118.00 is correct to
+    // the cent — the label was quietly rounding the authoritative rate and
+    // presenting the rounded value as if it were the rate.
+    //
+    // toFixed(2) is exactly lossless against step={0.01}, and matches what My
+    // Share and the receipt have always shown. Do not reduce this precision
+    // without also constraining the slider, or the two will disagree again.
+    ["Cashback", `${(assetDetail.row.cashbackRate * 100).toFixed(2)}% \xB7 ${ccy}${assetDetail.row.cashback.toFixed(2)}`],
     ["Earned on", assetDetail.row.time ? `${assetDetail.row.date}, ${assetDetail.row.time}` : assetDetail.row.date],
     ["Time to 100%", `${(assetDetail.monthsToTarget / 12).toFixed(1)} yrs`]
   ].map(([label, value]) => <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontSize: 12, color: T.inkFaint }}>{label}</span><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{value}</span></div>)}</div></div></div>}{profileDetail && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><button

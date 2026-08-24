@@ -88,6 +88,24 @@ const CountryCurrencyPoolSchema = new mongoose.Schema({
 CountryCurrencyPoolSchema.index({ countryIso: 1, counterCurrency: 1 }, { unique: true });
 CountryCurrencyPoolSchema.index({ counterCurrency: 1 });
 
+// What a brand-new pool opens with.
+//
+// A pool is created lazily, on the first payment that needs the corridor
+// (see loadOrCreate below). Opening it at 0 makes that very first payment
+// through a brand-new corridor fail the settlement engine's liquidity gate
+// — the destination pool is asked to release the recipient's local currency
+// and has none — so the payment would be refused for a reason that has
+// nothing to do with the payment itself, and the corridor could never open:
+// nothing can ever credit a pool that no payment is allowed to use.
+//
+// Prototype liquidity, exactly like User.balance's own opening float and
+// labelled the same way. It represents no real money. It is deliberately
+// large enough that no prototype payment exhausts a corridor by accident,
+// which would surface as an unexplained "insufficient liquidity" refusal
+// rather than as anything a tester could act on.
+const DEFAULT_POOL_SEED_BALANCE = 5000000;
+CountryCurrencyPoolSchema.statics.DEFAULT_POOL_SEED_BALANCE = DEFAULT_POOL_SEED_BALANCE;
+
 // Same upsert-on-first-use shape as CoinReserve.load(): two settlements
 // racing to touch the same pool for the first time both find nothing and
 // both try to insert, so this goes through findOneAndUpdate with
@@ -101,9 +119,14 @@ CountryCurrencyPoolSchema.statics.loadOrCreate = async function loadOrCreatePool
         countryIso: countryIso.toUpperCase(),
         counterCurrency: counterCurrency.toUpperCase(),
         localCurrency: localCurrency.toUpperCase(),
-        availableBalance: 0,
+        // available and total move together on creation; reserved stays 0
+        // because nothing is in flight yet. totalBalance is stored rather
+        // than derived (see the header comment), so seeding one without the
+        // other would open every new pool already in violation of
+        // total === available + reserved.
+        availableBalance: DEFAULT_POOL_SEED_BALANCE,
         reservedBalance: 0,
-        totalBalance: 0,
+        totalBalance: DEFAULT_POOL_SEED_BALANCE,
         status: 'active'
       }
     },

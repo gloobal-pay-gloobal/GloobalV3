@@ -177,9 +177,20 @@ async function run() {
   const split = await send(200, "cashback");
   const afterSplit = await balances();
   check("send accepted", split.status === 201, `status=${split.status}`);
-  check("sender debited the full 200", afterSplit.sender === 800, `balance=${afterSplit.sender}`);
+  // The payer is NET-debited: 200 leaves, and the payee's 5% share is
+  // credited straight back as real spendable balance (performTransfer's
+  // cashbackCredit leg), so 1000 - 200 + 10 = 810.
+  //
+  // This assertion used to expect 800 — the older design, where the share
+  // went into an AssetSeed instead of back into the balance. It contradicted
+  // this check's own stated invariant: 800 + 190 leaves 10 of the original
+  // 1000 unaccounted for, which is the opposite of conserving. 810 + 190
+  // balances exactly, which is why the conservation check below can now be
+  // asserted directly rather than implied.
+  check("sender net-debited 190 (200 out, 10 share back)", afterSplit.sender === 810, `balance=${afterSplit.sender}`);
   check("receiver credited 190", afterSplit.receiver === 190, `balance=${afterSplit.receiver}`);
   check("the 10 held back is reported as cashback", split.body.cashback === 10, `cashback=${split.body.cashback}`);
+  check("money is conserved", afterSplit.sender + afterSplit.receiver === 1000, `total=${afterSplit.sender + afterSplit.receiver}`);
 
   console.log("\n5. transaction references are 20 Gloobal symbols");
   await seed(1000);

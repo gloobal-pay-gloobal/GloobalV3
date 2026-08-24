@@ -188,7 +188,24 @@ async function run() {
   // yen (e.g. truncating instead of rounding). 34.5 rounds up to 35 (the
   // same "round half away from zero" behaviour toMinorUnit always used),
   // leaving 1000 - 35 = 965 for the receiver.
-  check("cashback rounds 34.5 JPY up to 35 (not truncated to 34)", paid.body?.cashback === 35, `cashback=${paid.body?.cashback}`);
+  //
+  // `body.cashback` is NOT that 35 JPY figure. server.js reports cashback in
+  // the SENDER's own currency — it returns `cashbackCredit`
+  // (= toMinorUnit(cashback * fxRate, senderCurrency)) and labels it with a
+  // `cashbackCurrency` field, because that INR figure is what actually
+  // landed back in the payer's balance and what their own dashboard shows.
+  // This check originally read `body.cashback === 35`, a receiver-currency
+  // expectation against a sender-currency field, and started failing when
+  // the response changed meaning — not when the rounding broke. The JPY
+  // rounding it exists to guard is still fully pinned here: 35 JPY x 1.7 =
+  // 59.5 INR exactly, whereas a truncation to 34 JPY would report 57.8, and
+  // payeeReceives below still pins the receiver side at 1000 - 35 = 965.
+  const CASHBACK_JPY = 35;
+  check("response reports cashback in the sender's own currency",
+    paid.body?.cashbackCurrency === "INR", `cashbackCurrency=${paid.body?.cashbackCurrency}`);
+  check("cashback rounds 34.5 JPY up to 35, not truncated to 34 (35 x 1.7 = 59.5 INR credited back)",
+    paid.body?.cashback === CASHBACK_JPY * SEEDED_RATE,
+    `cashback=${paid.body?.cashback} expected=${CASHBACK_JPY * SEEDED_RATE}`);
   check("payeeReceives is exactly 965 (1000 - 35)", paid.body?.payeeReceives === 965, `payeeReceives=${paid.body?.payeeReceives}`);
 
   const after = await balances();

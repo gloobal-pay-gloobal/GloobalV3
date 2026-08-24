@@ -310,7 +310,7 @@ function GloobalId() {
   };
   const handleReportTransactionIssue = (txnId, reason) => openComplaint({ txnId, raisedBy: "sender", reason });
   const bankBalance = useBankBalance();
-  const { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance, reconcilePaylaterDue, hydrateGrantsFromServer } = useTransactionActions();
+  const { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance, reconcilePaylaterDue, hydrateGrantsFromServer, resetForAccountSwitch } = useTransactionActions();
   const [usedQrCodes, setUsedQrCodes] = useState19(() => /* @__PURE__ */ new Set());
   const [showScanScreen, setShowScanScreen] = useState19(false);
   // Backdrop color behind the QR/scan area — same "pick one random
@@ -1036,7 +1036,19 @@ function GloobalId() {
     return () => {
       cancelled = true;
     };
-  }, [stage, registeredUser, refreshBalanceToken]);
+    // secureId belongs here because the line above reads it.
+    //
+    // The id is resolved from EITHER source — `registeredUser.symbolId` or
+    // `secureId` — but only the first was watched. On a path where the id
+    // lands in `secureId` after this effect has already run once (arriving at
+    // the dashboard before registeredUser is populated), the run took the
+    // `if (!symbolId) return` exit and nothing ever re-triggered it: the
+    // server balance was never fetched, balanceStatus stayed "loading", and
+    // the screen kept showing whatever the local ledger happened to hold.
+    // Refreshing appeared to fix it only because session restore populates
+    // the id BEFORE stage becomes "dashboard", so the first run already had
+    // one. That is the whole bug — nothing to do with the token.
+  }, [stage, registeredUser, secureId, refreshBalanceToken]);
 
   // My Assets and PayLater, restored from the server on arriving at the
   // dashboard.
@@ -1078,8 +1090,11 @@ function GloobalId() {
     return () => {
       cancelled = true;
     };
+    // secureId included for the same reason as the balance effect above —
+    // this reads the id the same two ways and had the same hole, which is
+    // why seeds and PayLater dues were missing on a first session too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, registeredUser, refreshBalanceToken]);
+  }, [stage, registeredUser, secureId, refreshBalanceToken]);
 
   // Money this account RECEIVED, kept apart from what it sent.
   //
@@ -1118,7 +1133,8 @@ function GloobalId() {
     return () => {
       cancelled = true;
     };
-  }, [stage, registeredUser]);
+    // secureId — same missing dependency as the two effects above.
+  }, [stage, registeredUser, secureId]);
 
   // Login, ID mode: check the Gloobal ID the moment it is complete rather
   // than waiting for submit, so the card can show "Account found" before
@@ -1840,6 +1856,14 @@ function GloobalId() {
     // Explicit sign-out: drop the remembered identity too, or the mount
     // effect restores it straight back to the lock screen.
     GloobalApi.clearSession();
+    // Money state first, before any of the identity state below is torn down.
+    // This ledger lives in a useRef in LedgerProvider and survives sign-out,
+    // so without this the next account to sign in inherits this one's seeds —
+    // and hydrateGrantsFromServer refuses to restore into a non-empty grant
+    // list, so the server's real seeds for the new account were never fetched
+    // in. My Assets kept showing the previous person's cashback, and the
+    // PayLater limit derived from it kept extending their credit.
+    resetForAccountSwitch();
     setRegisteredUser(null);
     setAuthError(null);
     // Everything the previous identity left behind. The biometric gate in
@@ -2605,7 +2629,21 @@ function GloobalId() {
       padding: 16,
       transition: "background 0.4s ease"
     }}
-  ><div style={{ background: "#fff", borderRadius: T.radiusXl, padding: 18, boxShadow: T.shadowCard }}><GloobalQRCode code={encodeGloobalQR({ gloobalId: activeShareRole === "merchant" ? creatorId : secureId, amountCents: requestCents })} size={200} /></div>{
+  ><div style={{ background: "#fff", borderRadius: T.radiusXl, padding: 18, boxShadow: T.shadowCard }}>{
+    /* encodeGloobalQR returns null when the requested amount cannot be
+       represented exactly, instead of the clamped code it used to return.
+       Showing the limit here is the whole point of that change: this panel
+       displays "Requesting X" from requestCents just below, so a silently
+       clamped code meant the screen contradicted itself — the caption said
+       5000.00 while the code said 0.63. Refusing to draw a code is the
+       honest outcome, and it names the ceiling so the number can be
+       corrected rather than guessed at. */
+  }{(() => {
+    const requestQrCode = encodeGloobalQR({ gloobalId: activeShareRole === "merchant" ? creatorId : secureId, amountCents: requestCents });
+    return requestQrCode
+      ? <GloobalQRCode code={requestQrCode} size={200} />
+      : <div style={{ width: 200, height: 200, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center", padding: 12 }}><span style={{ fontSize: 13, fontWeight: 800, color: T.negative }}>Amount too large for a code</span><span style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45 }}>A payment request can carry up to {(QR_MAX_AMOUNT_CENTS / 100).toFixed(2)}. Lower the amount to show a code.</span></div>;
+  })()}</div>{
     /* Same Creator Share edge badge the Receive screen's QR shows —
        one consistent "here's my share rate" affordance wherever your
        code is displayed. Sits on the box's own right edge, clear of

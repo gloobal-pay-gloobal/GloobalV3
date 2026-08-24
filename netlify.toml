@@ -54,7 +54,21 @@
     X-Frame-Options           = "DENY"
     X-Content-Type-Options    = "nosniff"
     Referrer-Policy           = "strict-origin-when-cross-origin"
-    Permissions-Policy        = "camera=(), microphone=(), geolocation=(), payment=(self)"
+    # An empty allowlist `()` disables a feature for EVERY origin, the page's
+    # own included — it is not "default" or "ask the user", it is off. camera
+    # and geolocation were both `()`, which meant getUserMedia rejected and
+    # navigator.geolocation failed on the live site no matter what the visitor
+    # chose in the browser prompt. The QR scanner could not work in production
+    # however correct its code was, and the permissions gate could never get a
+    # real answer for either one. `payment=(self)` on the same line was already
+    # the correct shape, which is what made the other two easy to miss.
+    #
+    # `(self)` restores the ordinary behaviour: this origin may ASK, and the
+    # browser's own permission prompt decides. It grants nothing by itself.
+    # microphone stays `()` — nothing in the app records audio, and the camera
+    # stream is requested with `video` only (qrScanner.jsx), so leaving it off
+    # keeps the policy narrow.
+    Permissions-Policy        = "camera=(self), microphone=(), geolocation=(self), payment=(self)"
     Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
     Content-Security-Policy   = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://flagcdn.com https://logo.clearbit.com https://raw.githubusercontent.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://gloobal-pay.onrender.com; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
 

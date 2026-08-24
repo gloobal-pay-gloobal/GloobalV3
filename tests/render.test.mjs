@@ -26,6 +26,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { ROOT } from "./harness.mjs";
 
 const PREVIEW = path.join(ROOT, "gloobal-essentials-preview");
@@ -43,7 +45,13 @@ let chromium;
 // Network calls (the API, the flag CDN, Google Fonts) cannot succeed in a
 // sandbox and are not what this is testing. Only genuine JS faults count.
 const isNetworkNoise = (msg) =>
-  /ERR_TUNNEL|ERR_NAME_NOT_RESOLVED|ERR_INTERNET|ERR_CONNECTION|Failed to load resource|net::/i.test(
+  // CORS is in here for a reason worth stating: the page is served from
+  // file://, so its origin is literally "null", and the real API rejects
+  // that — correctly. The resulting console error is the API's CORS policy
+  // working, not a fault in the app. It appeared only intermittently (the
+  // warmup call racing the 3.5s settle window), which made the whole suite
+  // flaky: green on its own, red in a full run.
+  /ERR_TUNNEL|ERR_NAME_NOT_RESOLVED|ERR_INTERNET|ERR_CONNECTION|Failed to load resource|net::|CORS policy|Access-Control-Allow-Origin|Access to fetch/i.test(
     msg
   );
 
@@ -69,18 +77,31 @@ before(async () => {
      );`
   );
   try {
-    execFileSync(
-      "npx",
-      [
-        "esbuild",
-        "src/__render_entry.jsx",
-        "--bundle",
-        "--jsx=automatic",
-        `--outfile=${path.join(tmp, "app.js")}`,
-        '--define:process.env.NODE_ENV="development"'
-      ],
-      { cwd: PREVIEW, stdio: "pipe" }
-    );
+    // esbuild's Node API, not `npx esbuild`.
+    //
+    // This used to shell out to npx, and on Windows that meant these six
+    // tests never ran at all: there is no bare `npx` on PATH (the shim is
+    // npx.cmd), and since Node 20 execFileSync refuses to launch a .cmd
+    // without a shell (CVE-2024-27980) — so ENOENT first, then EINVAL after
+    // naming the .cmd explicitly. Either way the before-hook threw, every
+    // test in the file was skipped, and the runner reported 0 failures. A
+    // suite that cannot fail because it never executes is worse than one
+    // that fails honestly, which is why this no longer depends on a shell
+    // shim at all.
+    //
+    // Resolved from the preview project rather than the root: esbuild is
+    // Vite's own dependency and is installed there, and the root package
+    // deliberately keeps only playwright (see the note above on why).
+    const esbuildEntry = createRequire(path.join(PREVIEW, "package.json")).resolve("esbuild");
+    const esbuild = (await import(pathToFileURL(esbuildEntry).href)).default;
+    esbuild.buildSync({
+      entryPoints: [path.join(PREVIEW, "src", "__render_entry.jsx")],
+      bundle: true,
+      jsx: "automatic",
+      outfile: path.join(tmp, "app.js"),
+      absWorkingDir: PREVIEW,
+      define: { "process.env.NODE_ENV": '"development"' }
+    });
   } finally {
     fs.rmSync(path.join(PREVIEW, "src", "__render_entry.jsx"), { force: true });
   }
@@ -111,6 +132,17 @@ after(async () => {
 
 async function mount() {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  // Cut the page off from the network entirely, rather than relying on the
+  // console filter alone. This test is about whether the bundle boots, and a
+  // real outbound call makes the result depend on the machine's connectivity
+  // and on whether Render happens to be warm — which is how an intermittent
+  // CORS error from the API warmup turned a passing suite red. Everything
+  // local (the file:// bundle itself) still loads normally.
+  await page.route("**/*", (route) => {
+    const url = route.request().url();
+    if (url.startsWith("file://") || url.startsWith("data:") || url.startsWith("blob:")) return route.continue();
+    return route.abort();
+  });
   const errors = [];
   page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
   page.on("console", (m) => {

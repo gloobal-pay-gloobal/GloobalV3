@@ -54,9 +54,17 @@ const BASE = `http://127.0.0.1:${process.env.PORT}`;
 const SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
 const symbolId = (seed) => Array.from({ length: 12 }, (_, i) => SYMBOLS[(seed + i * 3) % 8]).join("");
 
+// Seeds must not differ by a multiple of 8.
+//
+// symbolId walks SYMBOLS[(seed + i*3) % 8], so the alphabet repeats every 8
+// and seed N produces the identical 12-character string as seed N+8. SENDER
+// was 4 and PLAIN_RECEIVER was 12 — the same Gloobal ID. setUp then set the
+// plain receiver's balance to 0, which silently zeroed the SENDER's 10,000,
+// and every payment in this file was refused with "Insufficient balance".
+// The suite reported that as a seed-integrity failure, which it never was.
 const SENDER = symbolId(4);
 const CREATOR = symbolId(10);
-const PLAIN_RECEIVER = symbolId(12);
+const PLAIN_RECEIVER = symbolId(14);
 const ATTACKER = symbolId(13);
 const PIN = "246813";
 
@@ -143,7 +151,7 @@ async function run() {
 
   console.log("\n2. a real cashback payment happens (performTransfer plants its own seed inline)");
   const paid = await send(CREATOR, 200, "creator sale");
-  check("send accepted", paid.status === 201, `status=${paid.status}`);
+  check("send accepted", paid.status === 201, `status=${paid.status} body=${JSON.stringify(paid.body)}`);
   check("assetSeed present on the response", !!paid.body?.assetSeed);
   const paymentTxn = await Transaction.findOne({ referenceId: paid.body?.transaction?.referenceId }).lean();
   check("exactly one seed already exists for this transaction", (await AssetSeed.countDocuments({ transactionId: paymentTxn._id })) === 1);

@@ -164,7 +164,21 @@ async function run() {
 
   console.log("\n3. the share leg moved no real balance — same figures the atomicity suite expects");
   const afterShared = await balances();
-  check("sender debited the full 200", afterShared.sender === 9800, `balance=${afterShared.sender}`);
+  // Stale assertion, corrected 24 August 2026. It expected 9800 — the full
+  // 200 debited — but the server credits the payee's Creator Share straight
+  // back to the sender as real, immediately spendable balance, in the same
+  // breath as the payment. server.js documents exactly this above its own
+  // cashback split: "a 1% Creator paid 1,000 receives 990 and the payer is
+  // net-debited the converted equivalent of 990 too". So 200 out, 10 back,
+  // 9,810 left. The code is right and this line was describing older
+  // behaviour — the same drift a23d77f and 10d6643 corrected in two other
+  // suites on 23 August, in the one suite they missed.
+  //
+  // Asserted as the arithmetic rather than the literal, so it stays readable
+  // as a statement about the money instead of a magic number.
+  const SHARE_BACK = 200 * 0.05; // the merchant's 5% rate on this payment
+  check("sender net-debited the payment minus the share credited back",
+    afterShared.sender === 10000 - 200 + SHARE_BACK, `balance=${afterShared.sender}`);
   check("merchant credited 190 (200 minus 10 cashback)", afterShared.merchant === 190, `balance=${afterShared.merchant}`);
 
   console.log("\n4. the 4 receipts are attributed to the right party for the right leg");

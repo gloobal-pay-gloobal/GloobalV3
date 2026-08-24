@@ -3559,10 +3559,27 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       });
     }
 
+    // `numericAmount` is the face amount in the RECEIVER's currency (see the
+    // cashback/FX split further down, where cashback and payeeReceives are
+    // computed in destinationCurrency and only then converted for the sender's
+    // leg). So this cap is 5,000 of whatever the recipient is paid in — for a
+    // USD account paying into India that is 5,000 INR, roughly $52 at 95,
+    // which is exactly the "why can't I send more than about $53" report.
+    //
+    // The message used to read "Rs. 5000" unconditionally, which is only true
+    // when the recipient happens to be Indian and actively misleading in every
+    // other corridor. It cannot name the real currency here: destinationCurrency
+    // is resolved further down, after the receiver has been looked up, and that
+    // lookup sits behind PIN verification on purpose. Moving this check past
+    // the PIN gate to get the currency name would change who can learn what
+    // before authenticating, so the message is worded to be true in every
+    // corridor instead.
     if (Number.isFinite(maxPrototypeAmount) && maxPrototypeAmount > 0 && numericAmount > maxPrototypeAmount) {
       return res.status(400).json({
         success: false,
-        message: `Prototype transaction limit is Rs. ${maxPrototypeAmount}.`,
+        message: `Prototype transaction limit is ${maxPrototypeAmount}, in the recipient's own currency.`,
+        limit: maxPrototypeAmount,
+        limitBasis: 'recipient-currency',
       });
     }
 

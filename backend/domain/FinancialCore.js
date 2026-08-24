@@ -216,6 +216,35 @@ function createFinancialCore({ userId = "demo-user", currency = "INR", openingBa
     }
     return added;
   }
+  // Empties this ledger so the next account starts from nothing.
+  //
+  // The ledger is created once per page load (LedgerProvider holds it in a
+  // useRef and never rebuilds it), so signing out and into a second account
+  // reuses the first account's ledger. The balance alone recovered, because
+  // reconcileBankBalance posts a DELTA toward whatever the server reports and
+  // converges from any starting point. The seeds did not: hydrateGrantsFromServer
+  // deliberately restores only into an EMPTY grant list — its guard against
+  // double-counting a seed it cannot match by id — so account B arrived, found
+  // account A's grants still sitting there, and declined to hydrate at all.
+  // Account A's assets stayed on screen, and because the PayLater LIMIT is the
+  // sum of seed values, account B borrowed against account A's cashback.
+  //
+  // Zeroing rather than reconstructing: every figure here is re-derived from
+  // the server moments later by the hydration effects in App.jsx. Leaving the
+  // ledger at zero in between is honest — it is what this browser actually
+  // knows about the new account before the first read returns — and
+  // balanceStatus already renders that state as unconfirmed rather than as a
+  // real zero.
+  function resetForAccountSwitch() {
+    essentialsService.clearGrants();
+    // Same posting discipline reconcileBankBalance uses: a balance is derived
+    // from entries, so it is driven to zero by posting the inverse entry, not
+    // by assignment. Reusing reconcile* also means the reset is recorded in
+    // the ledger with its own memo rather than silently vanishing.
+    reconcileBankBalance(0);
+    reconcilePaylaterDue(0);
+    return true;
+  }
   bus.emit(DomainEvent.CORE_INITIALIZED, { userId, currency, openingBankBalance });
   return {
     store,
@@ -238,6 +267,7 @@ function createFinancialCore({ userId = "demo-user", currency = "INR", openingBa
     reconcileBankBalance,
     reconcilePaylaterDue,
     hydrateGrantsFromServer,
+    resetForAccountSwitch,
     coinService,
     // Mirrors reconcileBankBalance for the coin side. Both are handed the
     // figure the server just reported, and both are no-ops when it already

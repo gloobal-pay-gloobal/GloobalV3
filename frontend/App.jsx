@@ -310,7 +310,7 @@ function GloobalId() {
   };
   const handleReportTransactionIssue = (txnId, reason) => openComplaint({ txnId, raisedBy: "sender", reason });
   const bankBalance = useBankBalance();
-  const { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance, reconcilePaylaterDue, hydrateGrantsFromServer } = useTransactionActions();
+  const { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance, reconcilePaylaterDue, hydrateGrantsFromServer, resetForAccountSwitch } = useTransactionActions();
   const [usedQrCodes, setUsedQrCodes] = useState19(() => /* @__PURE__ */ new Set());
   const [showScanScreen, setShowScanScreen] = useState19(false);
   // Backdrop color behind the QR/scan area — same "pick one random
@@ -1036,7 +1036,19 @@ function GloobalId() {
     return () => {
       cancelled = true;
     };
-  }, [stage, registeredUser, refreshBalanceToken]);
+    // secureId belongs here because the line above reads it.
+    //
+    // The id is resolved from EITHER source — `registeredUser.symbolId` or
+    // `secureId` — but only the first was watched. On a path where the id
+    // lands in `secureId` after this effect has already run once (arriving at
+    // the dashboard before registeredUser is populated), the run took the
+    // `if (!symbolId) return` exit and nothing ever re-triggered it: the
+    // server balance was never fetched, balanceStatus stayed "loading", and
+    // the screen kept showing whatever the local ledger happened to hold.
+    // Refreshing appeared to fix it only because session restore populates
+    // the id BEFORE stage becomes "dashboard", so the first run already had
+    // one. That is the whole bug — nothing to do with the token.
+  }, [stage, registeredUser, secureId, refreshBalanceToken]);
 
   // My Assets and PayLater, restored from the server on arriving at the
   // dashboard.
@@ -1078,8 +1090,11 @@ function GloobalId() {
     return () => {
       cancelled = true;
     };
+    // secureId included for the same reason as the balance effect above —
+    // this reads the id the same two ways and had the same hole, which is
+    // why seeds and PayLater dues were missing on a first session too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, registeredUser, refreshBalanceToken]);
+  }, [stage, registeredUser, secureId, refreshBalanceToken]);
 
   // Money this account RECEIVED, kept apart from what it sent.
   //
@@ -1118,7 +1133,8 @@ function GloobalId() {
     return () => {
       cancelled = true;
     };
-  }, [stage, registeredUser]);
+    // secureId — same missing dependency as the two effects above.
+  }, [stage, registeredUser, secureId]);
 
   // Login, ID mode: check the Gloobal ID the moment it is complete rather
   // than waiting for submit, so the card can show "Account found" before
@@ -1840,6 +1856,14 @@ function GloobalId() {
     // Explicit sign-out: drop the remembered identity too, or the mount
     // effect restores it straight back to the lock screen.
     GloobalApi.clearSession();
+    // Money state first, before any of the identity state below is torn down.
+    // This ledger lives in a useRef in LedgerProvider and survives sign-out,
+    // so without this the next account to sign in inherits this one's seeds —
+    // and hydrateGrantsFromServer refuses to restore into a non-empty grant
+    // list, so the server's real seeds for the new account were never fetched
+    // in. My Assets kept showing the previous person's cashback, and the
+    // PayLater limit derived from it kept extending their credit.
+    resetForAccountSwitch();
     setRegisteredUser(null);
     setAuthError(null);
     // Everything the previous identity left behind. The biometric gate in

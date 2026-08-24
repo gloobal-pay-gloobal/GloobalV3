@@ -43,6 +43,11 @@ function useTransactionActions() {
   // are replayed individually.
   const reconcilePaylaterDue = useCallback2((serverDues) => core.reconcilePaylaterDue(serverDues), [core]);
   const hydrateGrantsFromServer = useCallback2((serverSeeds) => core.hydrateGrantsFromServer(serverSeeds), [core]);
-  return { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance, reconcilePaylaterDue, hydrateGrantsFromServer };
+  // Empties the ledger on sign-out so the next account does not inherit this
+  // one's seeds and PayLater position. See resetForAccountSwitch in
+  // FinancialCore for why the grants in particular could not simply be left
+  // for the next hydrate to overwrite.
+  const resetForAccountSwitch = useCallback2(() => core.resetForAccountSwitch(), [core]);
+  return { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance, reconcilePaylaterDue, hydrateGrantsFromServer, resetForAccountSwitch };
 }
 

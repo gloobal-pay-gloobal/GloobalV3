@@ -85,8 +85,25 @@ function PermissionsGateScreen({ onContinue }) {
           });
         }
       } else if (key === "contacts") {
+        // "ready", never "granted".
+        //
+        // This branch only detects that the Contacts Picker API exists. It
+        // does not — and cannot — obtain a permission: navigator.contacts
+        // .select() prompts fresh on every call and leaves no standing grant
+        // behind, which is why the gate does not open the picker here (doing
+        // so during onboarding would show a contact list for no reason and
+        // still grant nothing).
+        //
+        // Reporting that support detection as "granted" meant the gate showed
+        // a green "Allowed" tick against Contacts for someone who had never
+        // been asked anything and had approved nothing. That is the one thing
+        // a permissions screen must never do — every other row on it reflects
+        // a real browser answer, so the false tick borrowed their credibility.
+        //
+        // "ready" says the honest thing instead: the device can do this, and
+        // the ask happens at the moment it is used.
         const supported = typeof navigator !== "undefined" && "contacts" in navigator && typeof window !== "undefined" && "ContactsManager" in window;
-        setStatus((s) => ({ ...s, contacts: supported ? "granted" : "unavailable" }));
+        setStatus((s) => ({ ...s, contacts: supported ? "ready" : "unavailable" }));
       } else if (key === "camera") {
         if (typeof navigator === "undefined" || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           setStatus((s) => ({ ...s, camera: "unavailable" }));
@@ -136,7 +153,7 @@ function PermissionsGateScreen({ onContinue }) {
     return <div
       key={p.key}
       style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 18px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-    ><span style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><p.Icon size={18} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{p.label}</span><span style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.35 }}>{p.note}</span></span>{st === "granted" ? <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, fontSize: 11, fontWeight: 800, color: T.positive }}><Check4 size={15} color={T.positive} /> Allowed</span> : st === "denied" ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.negative, background: T.negativeSoft, borderRadius: 999, padding: "4px 9px" }}>Blocked</span> : st === "unavailable" ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.inkFaint, background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: 999, padding: "4px 9px" }}>Not on this device</span> : <button
+    ><span style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><p.Icon size={18} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{p.label}</span><span style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.35 }}>{p.note}</span></span>{st === "granted" ? <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, fontSize: 11, fontWeight: 800, color: T.positive }}><Check4 size={15} color={T.positive} /> Allowed</span> : st === "denied" ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.negative, background: T.negativeSoft, borderRadius: 999, padding: "4px 9px" }}>Blocked</span> : st === "unavailable" ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.inkFaint, background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: 999, padding: "4px 9px" }}>Not on this device</span> : st === "ready" ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.inkSoft, background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: 999, padding: "4px 9px" }}>Asks when used</span> : <button
       onClick={() => requestOne(p.key)}
       disabled={busyKey === p.key}
       className="v2-tap"

@@ -73,7 +73,7 @@ function AssetsScreen({ onClose, ccy, assetRows, onViewPayLater, onViewDetail, o
        "Creator Share" out as text every row. */
   }<span style={{ flex: 1.4, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>{r.chip === "CS" ? <FlipSymbolCircle size={30} /> : null}<span style={{ minWidth: 0 }}>{r.chip !== "CS" && <span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.business}</span>}<span style={{ display: "block", fontSize: 11, color: T.inkFaint, marginTop: r.chip === "CS" ? 0 : 1 }}>{r.date}</span></span></span>{
     /* 2 — % it contributes (cashback rate) */
-  }<span style={{ flex: 1, textAlign: "center", fontSize: 13, fontWeight: 800, color: T.positive }}>{(r.cashbackRate * 100).toFixed(1)}%
+  }<span style={{ flex: 1, textAlign: "center", fontSize: 13, fontWeight: 800, color: T.positive }}>{(r.cashbackRate * 100).toFixed(2)}%
                 </span>{
     /* 3 — time it takes to become full */
   }<span style={{ flex: 1, textAlign: "right", fontSize: 13, fontWeight: 800, color: T.ink }}>{(r.monthsToTarget / 12).toFixed(1)} yr

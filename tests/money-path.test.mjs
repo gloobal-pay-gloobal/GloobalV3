@@ -445,3 +445,41 @@ describe("transaction history rows always have an icon", () => {
   });
 });
 
+describe("the referral list can actually overflow its scroller", () => {
+  // A regression guard for a scroll bug that took three attempts to find.
+  //
+  // The referral overlay's scroll column is `display: flex; flexDirection:
+  // column; overflowY: auto`, so every card in it is a flex ITEM. A flex
+  // item's automatic minimum size (min-height: auto) normally stops it
+  // being compressed below its content — but per the flexbox spec that
+  // protection only applies while the item's `overflow` is `visible`. The
+  // referral list card sets `overflow: hidden` to clip its rows to the
+  // card's rounded corners, which resolves its min-height to 0 and lets
+  // the layout squash it.
+  //
+  // Measured: 38 rows needing 2622px were rendered at 554px and clipped.
+  // The scroll column's content then fit exactly — scrollHeight ===
+  // clientHeight — so there was nothing to scroll and the swipe did
+  // nothing. With no referrals the empty-state card sets no `overflow` at
+  // all, is therefore protected, and the screen scrolled fine, which is
+  // exactly the "works empty, breaks once referrals exist" report.
+  const source = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+  const card = source.slice(
+    source.indexOf("referralNetwork.length === 0"),
+    source.indexOf("[...referralNetwork]")
+  );
+
+  test("the list card opts out of flex shrinking", () => {
+    assert.match(
+      card,
+      /flexShrink: 0/,
+      "the referral list card must set flexShrink: 0, or its rows get squashed and the screen has nothing to scroll"
+    );
+  });
+
+  test("it still clips its rows to the card's rounded corners", () => {
+    // The fix must not be "drop overflow: hidden" — that would un-round
+    // the first and last rows instead of fixing the scroll.
+    assert.match(card, /overflow: "hidden"/);
+  });
+});

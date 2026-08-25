@@ -2822,7 +2822,37 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        actually have one. */
   }{referralNetwork.length === 0 ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "32px 20px", textAlign: "center" }}><div style={{ width: 52, height: 52, borderRadius: "50%", background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}><Users23 size={22} color={T.accent} /></div><div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 6 }}>No referrals yet</div><div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5 }}>
                   Share your link and this list fills in with real people, not placeholders.
-                </div></div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{[...referralNetwork].sort((a, b) => b.earnedToday - a.earnedToday).map((m, i) => <button
+                </div></div> : <div style={{
+    borderRadius: T.radiusLg,
+    background: T.surface,
+    overflow: "hidden",
+    boxShadow: T.shadowCard,
+    // THIS is why the referral screen would not scroll once referrals
+    // existed, and scrolled fine while the list was empty.
+    //
+    // The column this sits in is `display: flex; flexDirection: column;
+    // overflowY: auto`, so every card in it is a flex ITEM, and a flex
+    // item's default `flex-shrink: 1` lets it be compressed. What normally
+    // stops that is the automatic minimum size — `min-height: auto`, which
+    // resolves to the item's content height — but per the flexbox spec
+    // that only applies while the item's `overflow` is `visible`. This card
+    // sets `overflow: hidden` (it has to: that is what clips the rows to
+    // the rounded corners), which resolves its min-height to 0 and hands
+    // the layout permission to squash it.
+    //
+    // So it did: 38 rows needing 2622px were crushed into the ~554px left
+    // over, and clipped by that same `overflow: hidden`. The scroll
+    // container's content then FIT exactly, scrollHeight === clientHeight,
+    // and there was genuinely nothing to scroll — the swipe was not being
+    // swallowed, there was no overflow in the first place. The empty state
+    // renders a card with no `overflow` set at all, which is precisely why
+    // "no referrals" scrolled and "some referrals" did not.
+    //
+    // flexShrink: 0 opts this card out of being compressed, so its real
+    // height reaches the scroller and the column overflows the way it
+    // always should have.
+    flexShrink: 0
+  }}>{[...referralNetwork].sort((a, b) => b.earnedToday - a.earnedToday).map((m, i) => <button
     key={`${m.symbolId || "unknown"}-${i}`}
     onClick={() => setSelectedMember(m)}
     className="v2-tap"

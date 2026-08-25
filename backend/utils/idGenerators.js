@@ -28,4 +28,24 @@ function genSuggestedId(length = 12) {
   }
   return s;
 }
+// A set of distinct suggestions to choose between, keeping `seed` as the
+// first entry when one is supplied so a caller that already generated an
+// ID does not see it replaced the moment the row renders.
+//
+// The distinctness loop is not really about collisions — two independent
+// 12-symbol draws from an 8-symbol alphabet collide about once in 68
+// billion — it is about not shipping a list that CAN render three
+// identical rows. `attempts` bounds it so a caller asking for more
+// distinct IDs than the alphabet could produce returns a short list
+// rather than spinning forever.
+function genSuggestedIdSet(count = 1, length = 12, seed = "") {
+  const out = seed && seed.length === length ? [seed] : [];
+  let attempts = 0;
+  while (out.length < count && attempts < count * 12) {
+    attempts += 1;
+    const candidate = genSuggestedId(length);
+    if (!out.includes(candidate)) out.push(candidate);
+  }
+  return out;
+}
 

@@ -713,3 +713,214 @@ No balance, transaction, asset or settlement document was modified.
 NOTE: the code no longer depends on this having been done. The bundled-map
 fallback covers all 194 countries and is proven by a suite that runs with both
 collections deliberately empty. Seeding restores the operator-editable layer.
+
+
+================================================================================
+11. FINAL TEST RESULTS
+================================================================================
+
+Run clean, with nothing else contending for the database — an earlier run had
+shown merchant-share-flow failing, which turned out to be contention from two
+concurrency suites running against the same Atlas cluster at the same time.
+
+FRONTEND                                        101 / 101 pass, 0 fail, 0 todo
+
+SERVER                                          11 / 14 suites pass
+  asset-seed-integrity                          PASS
+  auth-and-access                               PASS
+  coin-supply-invariant                         PASS
+  corridor-matrix                               PASS   (new — all 37,442)
+  cross-border-engine                           PASS   (new — 124 corridors)
+  cross-border-settlement                       PASS   (was 10 failing)
+  cross-currency-transfer                       PASS   (new)
+  currency-decimals-rounding                    PASS
+  merchant-share-flow                           PASS   (was 1 failing)
+  transfer-atomicity                            PASS
+  unseeded-reference-data                       PASS   (new)
+  concurrency-scale                             FAIL   (intermittent)
+  geu-concurrency                               FAIL   (pre-existing)
+  geu-invariants                                FAIL   (pre-existing)
+
+This morning the same suite was 4 of 10.
+
+No NEW failure appeared. The three failures are the same three carried all
+day, none introduced by today's work.
+
+
+================================================================================
+12. DEPLOYMENT
+================================================================================
+
+MERGE
+
+  git checkout main
+  git merge --ff-only origin/main        f2487bf
+  git merge --no-ff fix/qa-2026-08-24    861da7a
+
+  No conflicts. No force push. No history rewritten.
+  Post-merge: build_app.mjs PASS, node --check server.js PASS.
+  32 files changed, +4297 / -265.
+
+  Secret scan of the full merge diff: no SMTP password, no MongoDB URI, no
+  AUTH_TOKEN_SECRET, no API key, no private key. No .env or secret.txt is
+  tracked.
+
+GITHUB                                          SUCCESS
+
+  git push origin main
+  f2487bf..861da7a  main -> main
+
+  Commit: 861da7ab3b5c01cd6ecd84782fdb687ccecb2642
+
+NETLIFY                                         SUCCESS — AUTOMATIC
+
+  Deploy id       6a8c2e591d658000081fc77b
+  commit_ref      861da7ab3b5c01cd6ecd84782fdb687ccecb2642   (exact match)
+  branch          main
+  state           ready, published 2026-08-24 11:43:41 UTC
+  manual_deploy   false
+  6 header rules processed, secret scan 0 matches
+
+  Verified against the live site, not the dashboard:
+
+      curl -sI https://gloobalv3.netlify.app/
+      Permissions-Policy: camera=(self), microphone=(), geolocation=(self), payment=(self)
+
+  The camera and location fix is live.
+
+RENDER                                          FAILED — NOT AUTO-DEPLOYED
+
+  No deploy was triggered by the push.
+
+  Service configuration is correct:
+      autoDeploy          yes
+      autoDeployTrigger   commit
+      branch              main
+      rootDir             server
+      buildCommand        npm install
+      startCommand        node server.js
+      repo                github.com/gloobal-pay-gloobal/GloobalV3
+
+  Latest deploy is still:
+      dep-da5i9n3m8hqs73cqak60
+      commit  f2487bf   (23 August)
+      trigger manual
+      status  live
+
+  Every recent deploy carries trigger "manual". No push has triggered a
+  Render deploy since the repository was renamed. GitHub is not delivering
+  the webhook.
+
+  IT WAS NOT MANUALLY TRIGGERED. Forcing a deploy would have made this report
+  read as complete while leaving the integration broken, and the integration
+  is the thing that needs fixing. Reconnecting it requires re-authorising the
+  GitHub app on the Render service — a dashboard action.
+
+  CONSEQUENCE: the frontend is on today's commit and the backend is not.
+  Every server-side fix from today — the settlement engine, the currency
+  resolver, the precision handling, the transaction-limit message — is
+  merged and pushed but NOT LIVE.
+
+POST-DEPLOY BACKEND CHECK                       PASS (against the old commit)
+
+  node tools/backend/check-backend.mjs
+    ok  warm up
+    ok  resolveUser(unregistered) is refused without a token
+    ok  checkSymbolAvailability(unregistered) === available
+    ok  referralCodeExists(unregistered) === false
+    ok  getProfile(unregistered) raises a typed error, not a crash
+  Backend reachable and answering correctly.
+
+  This confirms the API is healthy. It does NOT confirm it is running today's
+  code — it is not.
+
+
+================================================================================
+13. A LIVE BEHAVIOUR CHANGE THAT LANDED WITHOUT A DEPLOY
+================================================================================
+
+Worth stating plainly, because it is easy to miss and it affects testing.
+
+Seeding the reference data changed production behaviour on its own, because
+the old code's rupee fallback only fired when a Country row was MISSING. With
+194 rows now present, even the currently-deployed backend resolves real
+currencies:
+
+    GB -> GBP      US -> USD      IN -> INR      SE -> SEK
+
+So cross-border payments now genuinely convert, where before every one of them
+was executed as a domestic rupee transfer at a rate of 1.
+
+Settlement records are still not written — that needs the Render deploy — but
+the amounts moving between accounts are now denominated correctly.
+
+Anyone testing production today should know that payment behaviour changed
+without a backend release.
+
+
+================================================================================
+14. STATUS SUMMARY
+================================================================================
+
+FIXED + VERIFIED + DEPLOYED (frontend, live now)
+  Netlify camera/geolocation Permissions-Policy
+  first-login balance hydration
+  account-switch state reset
+  cashback precision display
+  Contacts permission state
+  QR amount encoding
+  QR load-order defect
+
+FIXED + VERIFIED + MERGED, NOT LIVE (backend, blocked on Render)
+  cross-border settlement engine
+  country/currency resolution and the removal of the INR fallback
+  currency precision handling
+  transaction-limit currency wording
+  all-country generalisation of the settlement engine
+
+VERIFIED, NOT CODE
+  production Country/Currency reference data seeded (194 / 142)
+
+UNRESOLVED
+  concurrency-scale — intermittent; two independent runs today both failed
+  geu-invariants — 8 checks; likely a real defect in GEU redemption
+  geu-concurrency — untriaged
+  founder finding: third payment refused
+  founder finding: "sent 5000, received 1000"
+
+OUT OF SCOPE
+  Gloobal Coin vs GEU — a product decision, untouched
+  retry-on-transient for the money path
+
+BLOCKED
+  Render auto-deployment — GitHub webhook not delivering
+
+
+================================================================================
+15. TOMORROW
+================================================================================
+
+1.  Reconnect the Render GitHub integration, then confirm a push produces a
+    deploy with trigger "new_commit" rather than "manual". Until then no
+    backend change reaches production.
+
+2.  Get the founder's transaction reference IDs for the two unreproduced
+    findings. The currency discovery is a strong candidate for both, and the
+    IDs settle it either way.
+
+3.  Real-device QA, now genuinely possible for the first time — camera and
+    location were blocked by a response header until today. Test across
+    several currency regions, not only India and the USA.
+
+4.  Decide Gloobal Coin vs GEU. Everything else in that area is blocked
+    behind it.
+
+5.  Retry-on-transient for the money path, which is the correct fix for
+    concurrency-scale.
+
+6.  Triage geu-invariants once the GEU decision unblocks it.
+
+
+================================================================================
+END OF REPORT
+================================================================================

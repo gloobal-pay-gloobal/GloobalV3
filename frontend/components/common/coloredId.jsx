@@ -1,5 +1,5 @@
 // src/components/common/coloredId.jsx
-import { useState as useState4, useEffect as useEffect4 } from "react";
+import { useState as useState4, useEffect as useEffect4, useRef as useRef18 } from "react";
 function ColoredGloobalId({ id }) {
   const [colorOffset, setColorOffset] = useState4(0);
   useEffect4(() => {
@@ -26,6 +26,44 @@ function IdSymbolDots({ id, revealed = true, size = 20, oneLine = false }) {
   // second, arbitrary cap here was only ever making dots smaller than the
   // space allowed, not protecting anything.
   const dotSize = size;
+  // The size the dots are ACTUALLY drawn at, which in oneLine mode is not
+  // `size`.
+  //
+  // Bug: the glyph on a dot's flipped face was sized `dotSize * 0.5` — off
+  // the `size` PROP. In oneLine mode a dot is `flex: 1 1 0` capped at
+  // `maxWidth: dotSize`, so twelve of them across a phone-width card are
+  // drawn at roughly 24px each, not at the 48px the profile card passes.
+  // The circle shrank to fit; the glyph did not. A 24px symbol inside a
+  // 24px circle is exactly as tall as the circle it sits in, which is why
+  // the symbols on the profile card looked bigger than their dots.
+  // Measuring the first dot and sizing the glyph off THAT keeps the ratio
+  // right at whatever width the row actually gets.
+  const rowRef = useRef18(null);
+  const [renderedDot, setRenderedDot] = useState4(dotSize);
+  useEffect4(() => {
+    if (!oneLine) {
+      setRenderedDot(dotSize);
+      return;
+    }
+    const node = rowRef.current;
+    if (!node) return;
+    const measure = () => {
+      const first = node.firstElementChild;
+      if (!first) return;
+      const w = first.getBoundingClientRect().width;
+      // A hidden or not-yet-laid-out row measures 0; keeping the prop as
+      // the floor means the glyph is never sized to nothing.
+      if (w > 0) setRenderedDot(w);
+    };
+    measure();
+    // Falls back to the one-off measure above where ResizeObserver is
+    // missing — a stale glyph size after a rotate is a far smaller problem
+    // than a crash.
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [oneLine, dotSize, chars.length]);
   useEffect4(() => {
     const interval = setInterval(() => {
       const i = Math.floor(Math.random() * chars.length);
@@ -39,6 +77,7 @@ function IdSymbolDots({ id, revealed = true, size = 20, oneLine = false }) {
     return () => clearInterval(interval);
   }, [chars.length]);
   return <span
+    ref={rowRef}
     style={{
       display: "flex",
       flexWrap: oneLine ? "nowrap" : "wrap",
@@ -76,7 +115,8 @@ function IdSymbolDots({ id, revealed = true, size = 20, oneLine = false }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: dotSize * 0.5,
+        // Off the measured width, not the prop — see renderedDot above.
+        fontSize: renderedDot * 0.5,
         fontWeight: 800,
         color: "#fff"
       }}

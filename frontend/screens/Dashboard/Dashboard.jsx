@@ -42,7 +42,10 @@ import {
 // the card's own layout comment for why its height is fixed at all, and
 // GH_ID_ROW_RESERVE below for how the ID row still avoids sitting under
 // it at this larger size.
-var GH_HERO_CIRCLE_SIZE = 136;
+// Was 136. At that size the circle dominated the card and crowded the
+// Gloobal ID row underneath it; 110 keeps it a hero element without the
+// row having to fight it for the card's height.
+var GH_HERO_CIRCLE_SIZE = 110;
 // A small safety margin on the ID row's right edge — NOT sized to dodge
 // the whole circle horizontally the way the original 68px reserve did.
 // The card's own layout (fixed aspectRatio + justifyContent: flex-end,
@@ -1390,9 +1393,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     return <div style={{ display: "flex", flexDirection: "column" }}>{rows.map((t, i) => <div
       key={t.txnId || `${t.name}-${t.date}-${i}`}
       style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-    ><span
-      style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: recentActivityTab === "receiving" ? T.positiveSoft : T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}
-    >{recentActivityTab === "receiving" ? <ArrowDownLeft2 size={14} color={T.positive} /> : <ArrowUpRight2 size={14} color={T.accent} />}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: recentActivityTab === "receiving" ? T.positive : T.ink, flexShrink: 0 }}>{recentActivityTab === "receiving" ? "+" : "\u2212"}{ccy}{t.amount.toFixed(2)}</span></div>)}</div>;
+    >{
+      /* Same mark as the History rows — see TransactionRow. The tab
+         itself says which direction these are, and the signed amount
+         says it again, so the icon is free to be the shared one. */
+    }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: recentActivityTab === "receiving" ? T.positive : T.ink, flexShrink: 0 }}>{recentActivityTab === "receiving" ? "+" : "\u2212"}{ccy}{t.amount.toFixed(2)}</span></div>)}</div>;
   })()}<button
     onClick={() => {
       setHistoryTab(recentActivityTab);
@@ -2180,7 +2185,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
             </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden", padding: "6px 16px 10px" }}>{receivedRows.slice(0, 5).map((t, i) => <div
     key={t.txnId || `${t.name}-${t.date}-${i}`}
     style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-  ><span style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: T.positiveSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><ArrowDownLeft2 size={13} color={T.positive} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: T.positive, flexShrink: 0 }}>
+  >{
+    /* Same mark as the History rows — see TransactionRow. Direction is
+       already carried by the signed, coloured amount on the right, so
+       the icon does not need to repeat it, and repeating it was the only
+       thing making these rows look like a different app's list. */
+  }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: T.positive, flexShrink: 0 }}>
                     +{ccy}{Number(t.amount || 0).toFixed(2)}
                   </span></div>)}</div></div>}</div></div>}{
     /* My Share — the % of every incoming payment this person shares
@@ -2799,10 +2809,21 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        is putting the most in your pocket today sits at the top.
        Genuinely empty until a real referral actually exists —
        no fake people filling the space. */
+  }{
+    /* Keyed by symbolId AND index, not by `name`.
+       `name` is `referredSymbolId || "Gloobal User"` (see referralNetwork's
+       own fetch), so every referral the backend returns without a symbolId
+       — which is most of them — carried the SAME key "Gloobal User". React
+       still renders all the rows, but it reconciles by key: the duplicates
+       share one identity, so each row's FlipSymbolCircle state gets reused
+       across different people, and `setSelectedMember(m)` on a tap can open
+       a different referral's detail than the row that was tapped. The index
+       makes the key unique; the symbolId keeps it stable for the rows that
+       actually have one. */
   }{referralNetwork.length === 0 ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "32px 20px", textAlign: "center" }}><div style={{ width: 52, height: 52, borderRadius: "50%", background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}><Users23 size={22} color={T.accent} /></div><div style={{ fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 6 }}>No referrals yet</div><div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5 }}>
                   Share your link and this list fills in with real people, not placeholders.
                 </div></div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{[...referralNetwork].sort((a, b) => b.earnedToday - a.earnedToday).map((m, i) => <button
-    key={m.name}
+    key={`${m.symbolId || "unknown"}-${i}`}
     onClick={() => setSelectedMember(m)}
     className="v2-tap"
     style={{

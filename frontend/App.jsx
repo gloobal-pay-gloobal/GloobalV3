@@ -686,6 +686,12 @@ function GloobalId() {
     return () => clearInterval(interval);
   }, []);
   const [suggestedRegId] = useState19(() => genSuggestedId(12));
+  // Which explain-this-screen sheet is open: null, "symbols", or
+  // "referral". One piece of state rather than two booleans, because the
+  // two sheets are mutually exclusive by construction — they belong to
+  // different stages, so there is no state in which both should be open,
+  // and two booleans would let one exist.
+  const [helpSheet, setHelpSheet] = useState19(null);
   const [referralCode, setReferralCode] = useState19(readReferralCodeFromUrl);
   // The ?ref= param has done its job once it's been read into state above —
   // left in place it would keep re-seeding referralCode (clobbering an edit
@@ -1992,6 +1998,24 @@ function GloobalId() {
       zIndex: 25
     }}
   ><ChevronLeft4 size={20} /></button>}{
+    /* Explain this screen — the mirror of the Back chevron above, in the
+       opposite corner, on the two screens that ask for something the
+       person has never seen before: twelve symbols off a pad with no
+       letters on it, and somebody else's twelve with no statement of what
+       handing it over does. Shown on Secure ID whether creating or
+       logging in — the symbol glossary is what makes an existing ID
+       readable too, not only a new one. Nothing else occupies this corner
+       at screen level: the card's own controls (eye toggles, the
+       flip-to-mobile button) live on the card, which starts ~74px lower. */
+  }{(stage === "secureId" || stage === "referral") && <HelpCornerButton
+    onClick={() => setHelpSheet(stage === "referral" ? "referral" : "symbols")}
+    label={stage === "referral" ? "How the referral network works" : "What the Gloobal ID symbols mean"}
+  />}{
+    /* Mounted only while their own stage is active, so leaving the stage
+       unmounts the sheet and useBackClose's cleanup pops its history
+       entry — rather than leaving an open sheet, or a stranded back-stack
+       entry, behind on a screen it does not belong to. */
+  }{stage === "secureId" && <SymbolIdHelpSheet open={helpSheet === "symbols"} onClose={() => setHelpSheet(null)} />}{stage === "referral" && <ReferralHelpSheet open={helpSheet === "referral"} onClose={() => setHelpSheet(null)} />}{
     /* "Gloobal ID" wordmark — now shown on every early registration/
        login screen: phone entry, Secure ID (creating a new one,
        logging in with an existing one, or logging in by phone), and
@@ -2401,8 +2425,16 @@ function GloobalId() {
   }{stage === "secureId" && (!isLoginAttempt || loginEntryMode === "id") && <div style={{ marginTop: 32, position: "relative", zIndex: 1, width: "100%" }}><SymbolDialPad value={secureId} onChange={setSecureId} length={SECURE_ID_LENGTH} /></div>}{
     /* Two ready-made IDs — creation only, never shown while
        logging in, since login needs the person's existing ID,
-       not a fresh suggestion. */
-  }{stage === "secureId" && !isLoginAttempt && <SuggestedIdRow id={suggestedRegId} onPick={setSecureId} />}{
+       not a fresh suggestion.
+       (This comment has always said "Two"; the row actually
+       rendered one. It renders two now, so the two finally agree.
+       Someone meeting the symbol alphabet for the first time has no
+       basis on which to judge a single arbitrary string — a pair
+       side by side is a choice they can actually make. The Update
+       Gloobal ID screen still passes no count and still gets one:
+       replacing an ID you already have is a different, more
+       considered decision.) */
+  }{stage === "secureId" && !isLoginAttempt && <SuggestedIdRow id={suggestedRegId} onPick={setSecureId} count={2} />}{
     /* Login only: proof the ID resolves to a real account, shown before
        the PIN screen rather than after a sign-in that would have failed
        for a reason the person could not see. */

@@ -1253,7 +1253,15 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
             </div><div className="card" style={{ padding: "6px 18px 10px" }}>{recentSentTransactions.map((t, i) => <div
     key={t.txnId || `${t.name}-${t.date}-${i}`}
     style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", borderTop: i === 0 ? "none" : "1px solid #EFEFF5" }}
-  ><Flag emoji={t.flag} size="sm" /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#14122B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: "#9C96AF", marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: "#14122B", flexShrink: 0 }}>
+  >{
+    /* The same living flip-symbol mark every other transaction list in
+       the app uses (History rows, My Assets, the Referral Network). This
+       was `<Flag emoji={t.flag} />`, which rendered an empty tinted
+       square on most rows: a locally-recorded send carries no
+       counterparty flag, and a row restored from the server carries none
+       either, so the box came out blank — a broken avatar rather than a
+       design. The country is still on the receipt this row belongs to. */
+  }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#14122B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: "#9C96AF", marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: "#14122B", flexShrink: 0 }}>
                     −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(Number(t.amount) || 0)}
                   </span></div>)}</div></div>}{searchStage === "found" && bottomOpen && <>{bottom.registered === false && <div
     role="alert"

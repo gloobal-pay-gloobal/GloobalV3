@@ -145,6 +145,10 @@ const FRONTEND_MODULES = [
   "components/common/flipIcons.jsx",
   "components/common/misc.jsx",
   "components/dialogs/ReceiptModal.jsx",
+  // The two explain-this-screen sheets opened from the registration
+  // screens' top-right corner. Needs hooks/useBackClose.js (above) and is
+  // rendered from App.jsx (below).
+  "components/dialogs/helpSheets.jsx",
   "features/assets/AssetsScreen.jsx",
   "features/essentials/EssentialsScreen.jsx",
   "features/history/TransactionRow.jsx",

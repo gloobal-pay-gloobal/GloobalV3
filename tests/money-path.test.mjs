@@ -360,13 +360,15 @@ describe("QR payload", () => {
     assert.equal(decoded.gloobalId, validId);
   });
 
-  // Was a `todo` recording a known bug: the amount field was 3 digits in a
-  // 4-symbol alphabet, so QR_MAX_AMOUNT_CENTS was 4^3-1 = 63 and anything
-  // larger was silently CLAMPED — request 500.00, and the payer was shown a
-  // code for 0.63. Fixed on 24 August 2026 by encoding the amount in the
-  // full 8-symbol DIAL_SYMBOLS base over 7 digits, and by refusing an
-  // unrepresentable amount instead of clamping it. Now a real assertion.
-  // tests/qr-amount.test.mjs covers the range and the refusals in full.
+  // This test was `todo` when it was written, against a 3-digit amount
+  // field in a 4-symbol alphabet: the range was 4^3-1 = 63 minor units,
+  // and anything larger was silently CLAMPED, so a request for 500.00
+  // produced a code for 0.63. That is fixed (gloobalQR.js, 24 Aug 2026) —
+  // the amount is now 7 digits in the full 8-symbol DIAL_SYMBOLS base,
+  // giving 8^7-1 = 2,097,151, and an amount still out of range is
+  // rejected rather than altered. The `todo` marker is removed because
+  // the test passes now; the history stays here because the failure mode
+  // it guards against is the one worth never repeating.
   test("carries the requested amount through unchanged", () => {
     const decoded = domain.decodeGloobalQR(
       domain.encodeGloobalQR({ gloobalId: validId, amountCents: 12345 })
@@ -375,10 +377,11 @@ describe("QR payload", () => {
   });
 
   test("amounts within the encodable range do round-trip", () => {
-    // Guards the arithmetic itself, independent of the range bug above —
-    // so a future widening of the field can be verified against a test
-    // that already passes today.
-    for (const cents of [0, 1, 42, domain.QR_MAX_AMOUNT_CENTS]) {
+    // Guards the arithmetic itself at both ends of the range, including a
+    // figure above PROTOTYPE_TRANSACTION_MAX_AMOUNT (5,000 units) so the
+    // encodable range is verified to cover every amount the app will
+    // actually let someone request.
+    for (const cents of [0, 1, 42, 500000, domain.QR_MAX_AMOUNT_CENTS]) {
       const decoded = domain.decodeGloobalQR(
         domain.encodeGloobalQR({ gloobalId: validId, amountCents: cents })
       );
@@ -386,17 +389,26 @@ describe("QR payload", () => {
     }
   });
 
-  test("an over-range amount is refused, never clamped or wrapped", () => {
-    // This used to assert that an over-range amount CLAMPED to the ceiling,
-    // documenting the bug so it could not get quietly worse ("clamping is
-    // wrong but bounded; wrapping would let a large request decode as an
-    // arbitrary small one"). Both are wrong for a payment request, and the
-    // right answer is neither: refuse to mint a code at all rather than mint
-    // one for an amount nobody asked for.
-    assert.equal(
-      domain.encodeGloobalQR({ gloobalId: validId, amountCents: domain.QR_MAX_AMOUNT_CENTS + 1 }),
-      null
+  test("the encodable range covers every amount the app can request", () => {
+    // The point of the widening. If PROTOTYPE_TRANSACTION_MAX_AMOUNT is
+    // ever raised past what a code can carry, this fails before anyone
+    // discovers it by generating an unusable request.
+    assert.ok(
+      domain.QR_MAX_AMOUNT_CENTS >= 5000 * 100,
+      `range is ${domain.QR_MAX_AMOUNT_CENTS} minor units, below the 5,000-unit transaction cap`
     );
+  });
+
+  test("an over-range amount is rejected, never altered", () => {
+    // A payment instrument may not quietly change the number it was given.
+    // Refusing to produce a code is the only acceptable outcome here —
+    // clamping (the old behaviour) and wrapping would both hand the payer
+    // a code for an amount nobody asked for.
+    const code = domain.encodeGloobalQR({
+      gloobalId: validId,
+      amountCents: domain.QR_MAX_AMOUNT_CENTS + 1
+    });
+    assert.equal(code, null, "an unrepresentable amount must not produce a code");
   });
 
   test("a zero-amount code is an identity request, not a payment", () => {

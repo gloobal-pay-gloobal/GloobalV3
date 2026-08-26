@@ -186,25 +186,9 @@ function ProfileSetupScreen({ onBack, onSubmit, photo, onChangePhoto, docType, o
       padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px",
       flexShrink: 0
     }}
-  ><button
-    onClick={onBack}
-    aria-label="Back"
-    className="v2-tap"
-    style={{
-      width: 40,
-      height: 40,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      color: T.ink,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowCard,
+  ><NavBackButton onClick={onBack} style={{
       flexShrink: 0
-    }}
-  ><ChevronLeft size={20} /></button><span style={{ flex: 1, textAlign: "center", fontFamily: T.fontDisplay, fontSize: 18, color: T.ink, marginRight: 40 }}><SingleOMark before="" after="NE" /> <span style={{ fontWeight: 500 }}>last step</span></span></div><div
+     }} /><span style={{ flex: 1, textAlign: "center", fontFamily: T.fontDisplay, fontSize: 18, color: T.ink, marginRight: 40 }}><SingleOMark before="" after="NE" /> <span style={{ fontWeight: 500 }}>last step</span></span></div><div
     style={{
       flex: 1,
       minHeight: 0,

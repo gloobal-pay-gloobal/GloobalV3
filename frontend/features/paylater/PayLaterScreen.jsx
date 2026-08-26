@@ -4,12 +4,7 @@ import { ArrowLeft as ArrowLeft2, ChevronRight as ChevronRight2 } from "lucide-r
 
 // src/features/paylater/PayLaterScreen.jsx
 function PayLaterScreen({ onClose, ccy, paylaterAvailable, paylaterLimit, totalAssets, paylaterDue, paylaterReceiving, paylaterSending, onViewAssets, onPayNow, toast }) {
-  return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><button
-    onClick={onClose}
-    aria-label="Back"
-    className="v2-tap"
-    style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft2 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" PayLater" /></span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
+  return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onClose} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" PayLater" /></span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* Balance */
   }<div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Available PayLater balance</div><div style={{ fontSize: 28, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay, marginTop: 4 }}>{ccy}{paylaterAvailable.toFixed(2)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>of {ccy}{paylaterLimit.toFixed(2)} limit</div><div style={{ height: 6, borderRadius: 999, background: T.surfaceAlt, marginTop: 12, overflow: "hidden" }}><div
     style={{

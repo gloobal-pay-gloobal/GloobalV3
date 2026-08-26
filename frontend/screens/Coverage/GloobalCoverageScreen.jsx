@@ -329,15 +329,10 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     /* The whole country list — every country, live and coming soon,
        opened from the totals button. Tapping a row selects it and
        flips into its detail. */
-  }{showAllCountries && <div style={{ position: "fixed", inset: 0, zIndex: 270, background: C.surface, display: "flex", flexDirection: "column" }}><div className="flex items-center gap-2.5 px-5 pb-3" style={{ paddingTop: "calc(20px + env(safe-area-inset-top, 0px))", flexShrink: 0 }}><button
-    onClick={() => {
+  }{showAllCountries && <div style={{ position: "fixed", inset: 0, zIndex: 270, background: C.surface, display: "flex", flexDirection: "column" }}><div className="flex items-center gap-2.5 px-5 pb-3" style={{ paddingTop: "calc(20px + env(safe-area-inset-top, 0px))", flexShrink: 0 }}><NavBackButton onClick={() => {
       setShowAllCountries(false);
       setAllCountriesQuery("");
-    }}
-    aria-label="Back"
-    className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-    style={{ background: C.bgSoft, border: `1px solid ${C.line}` }}
-  ><ChevronLeft3 size={18} style={{ color: C.ink }} /></button><div className="display font-bold text-base" style={{ color: C.ink }}>All countries</div></div><div className="px-5 pb-3" style={{ flexShrink: 0 }}><div
+    }} /><div className="display font-bold text-base" style={{ color: C.ink }}>All countries</div></div><div className="px-5 pb-3" style={{ flexShrink: 0 }}><div
     className="flex items-center gap-2 rounded-2xl px-4 py-2.5"
     style={{ background: C.bgSoft, border: `1px solid ${C.line}` }}
   ><Search5 size={15} style={{ color: C.inkFaint, flexShrink: 0 }} /><input
@@ -365,12 +360,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        there's no real "project" concept anywhere in this app's data
        model yet, not even one created by this account. Scaffolding
        for when that feature actually exists. */
-  }{showHoomanProjects && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><button
-    onClick={() => setShowHoomanProjects(false)}
-    aria-label="Back"
-    className="v2-tap"
-    style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft5 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}>
+  }{showHoomanProjects && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => setShowHoomanProjects(false)} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}>
               H<SingleOMark before="" after="" /><SingleOMark before="" after="" />man Projects
             </span>{
     /* Current category — top-right corner, tap to search/pick a
@@ -398,15 +388,10 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     /* Category picker — search bar plus the full list, only
        reachable by tapping the corner button, so the main
        screen itself only ever shows one category. */
-  }{showHoomanCategoryPicker && <div style={{ position: "fixed", inset: 0, zIndex: 350, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><button
-    onClick={() => {
+  }{showHoomanCategoryPicker && <div style={{ position: "fixed", inset: 0, zIndex: 350, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
       setShowHoomanCategoryPicker(false);
       setHoomanCategoryQuery("");
-    }}
-    aria-label="Back"
-    className="v2-tap"
-    style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft5 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Choose a category</span></div><div style={{ padding: "0 18px 14px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "10px 14px" }}><Search5 size={16} color={T.inkFaint} /><input
+    }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Choose a category</span></div><div style={{ padding: "0 18px 14px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "10px 14px" }}><Search5 size={16} color={T.inkFaint} /><input
     type="text"
     value={hoomanCategoryQuery}
     onChange={(e) => setHoomanCategoryQuery(e.target.value)}
@@ -442,15 +427,10 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        bottom can be viewed in any currency the person picks, not
        just their own — someone in India can see the same real total
        expressed in USD, CNY, or anywhere else. */
-  }{showSpendingBreakdown && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><button
-    onClick={() => {
+  }{showSpendingBreakdown && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
       setShowSpendingBreakdown(false);
       setSpendingBreakdownQuery("");
-    }}
-    aria-label="Back"
-    className="v2-tap"
-    style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft5 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Spending by country</span></div><div style={{ padding: "0 18px 14px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "10px 14px" }}><Search5 size={16} color={T.inkFaint} /><input
+    }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Spending by country</span></div><div style={{ padding: "0 18px 14px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "10px 14px" }}><Search5 size={16} color={T.inkFaint} /><input
     type="text"
     value={spendingBreakdownQuery}
     onChange={(e) => setSpendingBreakdownQuery(e.target.value)}
@@ -476,12 +456,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
                 Same real total, shown in whichever currency you pick — not just your own.
               </div></div></div>{
     /* Currency picker for the aggregate total */
-  }{showSpendingCurrencyPicker && <div style={{ position: "fixed", inset: 0, zIndex: 350, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><button
-    onClick={() => setShowSpendingCurrencyPicker(false)}
-    aria-label="Back"
-    className="v2-tap"
-    style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ArrowLeft5 size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Choose a currency</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 30px" }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{[...new Set(COVERAGE_ALL_COUNTRIES.map((c) => COUNTRY_CURRENCY[c.iso] || "USD"))].sort().map((code, i) => <button
+  }{showSpendingCurrencyPicker && <div style={{ position: "fixed", inset: 0, zIndex: 350, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => setShowSpendingCurrencyPicker(false)} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Choose a currency</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 30px" }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{[...new Set(COVERAGE_ALL_COUNTRIES.map((c) => COUNTRY_CURRENCY[c.iso] || "USD"))].sort().map((code, i) => <button
     key={code}
     onClick={() => {
       setSpendingBreakdownCurrency(code);

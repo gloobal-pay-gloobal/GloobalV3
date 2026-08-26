@@ -273,24 +273,58 @@ function GH2HFlipCircle({ size = 40 }) {
     }}
   ><span style={{ fontSize: size * 0.42, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay }}>{symbolChar}</span></span></div></div>;
 }
-function FlipSymbolCircle({ size = 34 }) {
+// A small integer derived from a string, stable across renders, reloads and
+// devices. Deliberately the plain djb2-style hash rather than anything
+// cryptographic: this only has to spread short IDs evenly across a handful
+// of buckets.
+function flipSeedHash(value) {
+  let hash = 5381;
+  const text = String(value || "");
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 33 + text.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+// `seed` turns the mark from decoration into identity.
+//
+// Unseeded (every existing caller) it behaves exactly as before: a random
+// colour and symbol, re-rolled every 1.6s. That is right for a single mark
+// on a transaction row, where it reads as a living logo.
+//
+// It is wrong for a LIST of people. The referral network drew one of these
+// per referral, each re-rolling on its own timer, so every row looked like
+// every other row and nothing told two members apart — 38 rows of identical
+// churn. Passing a seed (the member's Gloobal ID) derives the colour and
+// symbol from that ID instead, so each person keeps their own mark, the
+// same one every time the screen is opened, and the list stops moving.
+function FlipSymbolCircle({ size = 34, seed }) {
   const DOT_COLORS = ["#2563EB", "#DC2626", "#EA580C", "#059669", "#9333EA", "#DB2777"];
+  const seeded = seed !== void 0 && seed !== null && seed !== "";
   const randomColor = (exclude) => {
     let c = DOT_COLORS[Math.floor(Math.random() * DOT_COLORS.length)];
     while (c === exclude) c = DOT_COLORS[Math.floor(Math.random() * DOT_COLORS.length)];
     return c;
   };
-  const [color, setColor] = useState9(() => randomColor());
-  const [symbol, setSymbol] = useState9(() => DIAL_SYMBOLS[Math.floor(Math.random() * DIAL_SYMBOLS.length)]);
+  const seedHash = seeded ? flipSeedHash(seed) : 0;
+  const [color, setColor] = useState9(() => seeded ? DOT_COLORS[seedHash % DOT_COLORS.length] : randomColor());
+  const [symbol, setSymbol] = useState9(
+    () => seeded
+      // A second, independent slice of the hash, so colour and symbol do not
+      // move together — two members who happen to share a colour still
+      // differ by symbol.
+      ? DIAL_SYMBOLS[(seedHash >>> 8) % DIAL_SYMBOLS.length]
+      : DIAL_SYMBOLS[Math.floor(Math.random() * DIAL_SYMBOLS.length)]
+  );
   const [flipped, setFlipped] = useState9(false);
   useEffect9(() => {
+    if (seeded) return;
     const interval = setInterval(() => {
       setFlipped((f) => !f);
       setSymbol(DIAL_SYMBOLS[Math.floor(Math.random() * DIAL_SYMBOLS.length)]);
       setColor((prev) => randomColor(prev));
     }, 1600);
     return () => clearInterval(interval);
-  }, []);
+  }, [seeded]);
   return <span style={{ display: "inline-block", perspective: 200, flexShrink: 0 }}><span
     aria-hidden="true"
     style={{

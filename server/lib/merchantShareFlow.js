@@ -33,6 +33,24 @@ const Receipt = require('../models/Receipt');
 // may read aloud or copy by hand.
 const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+// The eight Gloobal symbols, kept here rather than imported from server.js
+// for the same reason that file states about its own copy: this module
+// validates and mints against its own alphabet.
+//
+// A SHARE reference is now minted in exactly the shape a PAYMENT reference
+// is — twenty of these eight symbols — because the two sit side by side on
+// the same receipt and one of them being Latin letters made them look like
+// identifiers from two different systems. It also broke the promise the ID
+// system is built on: a Gloobal identifier reads the same to someone who
+// reads no Latin script, and 'GLOOBAL-SHR-DXNLE3AXRQ2' does not.
+//
+// Different alphabet, same guarantee: 8^20 is ~1.15e18 values, and the
+// unique index on referenceId is still what actually enforces uniqueness —
+// a collision surfaces as a rejected write, which the caller's try/catch
+// turns into "this leg did not happen", never a misattributed record.
+const GLOOBAL_SYMBOLS = ['−', '+', '×', '=', '○', '□', '●', '■'];
+const SHARE_REFERENCE_LENGTH = 20;
+
 function randomId(prefix, length) {
   let id = prefix;
   for (let i = 0; i < length; i += 1) {
@@ -41,13 +59,23 @@ function randomId(prefix, length) {
   return id;
 }
 
+function randomSymbolReference(length) {
+  let reference = '';
+  for (let i = 0; i < length; i += 1) {
+    // crypto.randomInt, not Math.random — same standard the payment
+    // reference is held to, since this is an identifier for money.
+    reference += GLOOBAL_SYMBOLS[crypto.randomInt(GLOOBAL_SYMBOLS.length)];
+  }
+  return reference;
+}
+
 // A well-formed but unlucky collision against Transaction.referenceId's
 // unique index (or Receipt.receiptId's) surfaces as a rejected write, which
 // the caller's try/catch below turns into "this leg/receipt didn't happen"
 // — never a misattributed record. Same trust-the-unique-index reasoning
 // server.js's own createPrototypeTransactionReference documents, just not
 // re-imported from there since it isn't exported from that module.
-const createShareReferenceId = () => randomId('GLOOBAL-SHR-', 20);
+const createShareReferenceId = () => randomSymbolReference(SHARE_REFERENCE_LENGTH);
 const createReceiptId = () => randomId('GLOOBAL-RCT-', 16);
 
 async function issueReceiptPair({ transaction, leg, payerUserId, payeeUserId, amount, currency, note }) {
@@ -162,4 +190,6 @@ async function mintShareLegAndReceipts({ paymentTransaction, sender, receiver, a
   }
 }
 
-module.exports = { mintShareLegAndReceipts };
+// createShareReferenceId is exported for the reference-format test only —
+// nothing in the app calls it directly.
+module.exports = { mintShareLegAndReceipts, createShareReferenceId };

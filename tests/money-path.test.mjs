@@ -483,3 +483,152 @@ describe("the referral list can actually overflow its scroller", () => {
     assert.match(card, /overflow: "hidden"/);
   });
 });
+
+describe("money direction is coloured the same way everywhere", () => {
+  // Green in, red out — asked for explicitly, and worth a test because the
+  // rule had already drifted once. Before this, "money left your account"
+  // was drawn four different ways: the History list used the brand violet
+  // accent, the Recent Activity card and Gloobal Bank used plain ink,
+  // PayLater used ink, and Send Money's recents used a hardcoded #14122B.
+  // Three of those four made a debit look like ordinary text.
+  //
+  // The fix was one shared pair of constants rather than a corrected
+  // ternary at each site, so what this guards is that the sites keep
+  // READING from that pair — a new list that invents its own colour is the
+  // way this comes back.
+  const theme = readSource("frontend/constants/theme.js");
+
+  test("the shared constants exist and point at green in, red out", () => {
+    assert.match(theme, /var TXN_IN_COLOR = T\.positive;/);
+    assert.match(theme, /var TXN_OUT_COLOR = T\.negative;/);
+  });
+
+  const listSources = [
+    ["frontend/features/history/TransactionHistoryScreen.jsx", 2],
+    ["frontend/features/paylater/PayLaterLedger.jsx", 2],
+    ["frontend/screens/Banks/GloobalBankScreen.jsx", 2],
+    ["frontend/screens/Coin/GloobalCoinScreen.jsx", 2],
+    ["frontend/screens/Dashboard/Dashboard.jsx", 2],
+    ["frontend/screens/SendMoney/SendMoney.jsx", 1]
+  ];
+
+  for (const [file, minUses] of listSources) {
+    test(`${file.split("/").pop()} colours amounts from the shared constants`, () => {
+      const source = readSource(file);
+      const uses = (source.match(/TXN_(IN|OUT)_COLOR/g) || []).length;
+      assert.ok(
+        uses >= minUses,
+        `expected at least ${minUses} use(s) of TXN_IN_COLOR/TXN_OUT_COLOR, found ${uses}`
+      );
+    });
+  }
+
+  test("the History list no longer paints a debit in the brand accent", () => {
+    // The specific drift this started as: `sending` rows were T.accent,
+    // the same violet used for buttons and the active tab.
+    const history = readSource("frontend/features/history/TransactionHistoryScreen.jsx");
+    assert.ok(
+      !/sign: "\\u2212", color: T\.accent/.test(history),
+      "outgoing rows must not use the brand accent"
+    );
+  });
+});
+
+describe("a history row reads icon, name, date, amount", () => {
+  const row = readSource("frontend/features/history/TransactionRow.jsx");
+
+  test("the payment-method chip is gone", () => {
+    // It said "Bank" on effectively every row — no information, and it sat
+    // where the date now goes. The method is still on the receipt.
+    assert.ok(!/HISTORY_METHOD_META/.test(row), "the method chip must not be rendered on the row");
+  });
+
+  test("name and date share the free space, which is what centres the date", () => {
+    // Both need `flex: 1 1 0`. If only the name grows, the date ends up
+    // pinned against the amount rather than in the middle of the row.
+    const flexers = (row.match(/flex: "1 1 0"/g) || []).length;
+    assert.equal(flexers, 2, "name and date must each be flex: 1 1 0");
+    assert.match(row, /textAlign: "center"/);
+  });
+
+  test("the amount is right-aligned with a fixed minimum width", () => {
+    // So figures line up as a column regardless of the name beside them.
+    assert.match(row, /minWidth: 86[\s\S]*?textAlign: "right"/);
+  });
+});
+
+describe("navigation controls are one component, not 29 copies", () => {
+  // There were 29 back buttons across 11 files, drawn three different ways
+  // (an inline 40px circle with no border, the same circle WITH a border,
+  // and a `.icon-btn.circle` CSS class scoped inside Send Money) using two
+  // different glyphs (ArrowLeft on twenty, ChevronLeft on nine). Nobody
+  // decided that; it is what happens when a control is rewritten inline
+  // every time it is needed. These guard the consolidation, because the
+  // only way it survives is if a new screen reaches for the component
+  // rather than hand-rolling a thirtieth circle.
+  const NAV_FILES = [
+    "frontend/App.jsx",
+    "frontend/components/cards/GloobalTaglineCard.jsx",
+    "frontend/components/dialogs/registerLogin.jsx",
+    "frontend/components/payments/PayPinModal.jsx",
+    "frontend/features/assets/AssetsScreen.jsx",
+    "frontend/features/essentials/EssentialsScreen.jsx",
+    "frontend/features/paylater/PayLaterScreen.jsx",
+    "frontend/screens/Coverage/GloobalCoverageScreen.jsx",
+    "frontend/screens/Dashboard/Dashboard.jsx",
+    "frontend/screens/SendMoney/SendMoney.jsx"
+  ];
+
+  test("no screen hand-rolls its own back button any more", () => {
+    const offenders = [];
+    for (const file of NAV_FILES) {
+      const source = readSource(file);
+      // A hand-rolled one is a <button> element carrying the Back label.
+      // NavBackButton usages carry no aria-label of their own.
+      if (/aria-label="Back"/.test(source)) offenders.push(file);
+    }
+    assert.deepEqual(offenders, [], "these still render a raw <button> for Back");
+  });
+
+  test("the shared component defines exactly one glyph and one size", () => {
+    const nav = readSource("frontend/components/buttons/navButtons.jsx");
+    assert.match(nav, /var NAV_BUTTON_SIZE = 40;/);
+    assert.match(nav, /var NAV_GLYPH_SIZE = 18;/);
+    // One arrow, imported once. A ChevronLeft creeping back in is the exact
+    // drift this file replaced — but check the CODE, not the prose: the
+    // header comment names ChevronLeft while explaining what was removed,
+    // and a whole-file grep flags that as a violation of itself.
+    const code = nav.replace(/^\s*\/\/.*$/gm, "");
+    assert.ok(!/ChevronLeft/.test(code), "back must be an arrow, not a chevron");
+  });
+
+  test("back, history and close all share one shell", () => {
+    const nav = readSource("frontend/components/buttons/navButtons.jsx");
+    for (const component of ["NavBackButton", "NavHistoryButton", "NavCloseButton"]) {
+      const body = nav.slice(nav.indexOf(`function ${component}`), nav.indexOf(`function ${component}`) + 400);
+      assert.match(body, /<NavIconButton/, `${component} must render the shared NavIconButton`);
+    }
+  });
+});
+
+describe("the Send and Receive tiles carry a direction dot", () => {
+  const dashboard = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+  // Wide enough to clear the explanatory comment above the markup — the
+  // first window was 900 chars and stopped inside it.
+  const tile = dashboard.slice(
+    dashboard.indexOf("Direction dot, tucked under the GH2H mark"),
+    dashboard.indexOf("Direction dot, tucked under the GH2H mark") + 1800
+  );
+
+  test("red on Send, green on Receive — the same two colours as every amount", () => {
+    assert.match(
+      tile,
+      /background: key === "send" \? TXN_OUT_COLOR : TXN_IN_COLOR/,
+      "the dot must read from the shared direction colours, not its own literals"
+    );
+  });
+
+  test("it is hidden from screen readers, which already hear the tile's label", () => {
+    assert.match(tile, /aria-hidden="true"/);
+  });
+});

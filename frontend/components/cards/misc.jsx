@@ -134,7 +134,24 @@ function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null
   };
   const days = weeks[weekOffset];
   const weekTotal = totals[weekOffset];
-  const max = Math.max(...days.flatMap((d) => [d.paid, d.received]), 1);
+  // `focusDirection` already governed the figures above the chart but not
+  // the bars themselves, so a screen showing only "Received" still drew a
+  // paid bar beside every received one — a second series for a direction
+  // that screen is not about, in a chart 34px tall.
+  const showPaid = !focusDirection || focusDirection === "paid";
+  const showReceived = !focusDirection || focusDirection === "received";
+  // Scale to the series actually drawn. Keeping the other direction in the
+  // maximum is what makes a single-series chart look broken: on the Paid
+  // side of a week where far more came in than went out, every paid bar
+  // would be squashed against the floor by a received figure that is not
+  // even on screen.
+  const max = Math.max(
+    ...days.flatMap((d) => [showPaid ? d.paid : 0, showReceived ? d.received : 0]),
+    1
+  );
+  // One series gets a wider bar — at 7px with nothing beside it the day
+  // reads as a stray tick rather than a column.
+  const barWidth = showPaid && showReceived ? 7 : 10;
   const displayed = selectedDay !== null ? days[selectedDay] : weekTotal;
   return <div style={{ position: "relative" }}><div style={{ display: "flex", justifyContent: focusDirection ? "flex-start" : "space-between", alignItems: "center" }}>{(!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{symbol}{displayed.paid.toFixed(2)}</span>}{(!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{symbol}{displayed.received.toFixed(2)}</span>}</div><div
     onPointerDown={handlePointerDown}
@@ -156,29 +173,29 @@ function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null
     const isToday = weekOffset === 0 && i === days.length - 1;
     const isSelected = selectedDay === i;
     const highlighted = selectedDay !== null ? isSelected : isToday;
-    return <div key={i} data-day-index={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}><div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 34 }}><div
+    return <div key={i} data-day-index={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}><div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 34 }}>{showPaid && <div
       role="img"
       aria-label={`${SPENDING_DAY_LABELS[i]} paid: ${symbol}${d.paid.toFixed(2)}`}
       style={{
-        width: 7,
+        width: barWidth,
         height: Math.max(3, d.paid / max * 34),
         borderRadius: 3,
         background: highlighted ? C.paid : C.paidMuted,
         boxShadow: isSelected ? `0 0 0 1.5px ${C.selectRing}` : "none",
         transition: "height 0.3s ease, background 0.15s ease"
       }}
-    /><div
+    />}{showReceived && <div
       role="img"
       aria-label={`${SPENDING_DAY_LABELS[i]} received: ${symbol}${d.received.toFixed(2)}`}
       style={{
-        width: 7,
+        width: barWidth,
         height: Math.max(3, d.received / max * 34),
         borderRadius: 3,
         background: highlighted ? C.received : C.receivedMuted,
         boxShadow: isSelected ? `0 0 0 1.5px ${C.selectRing}` : "none",
         transition: "height 0.3s ease, background 0.15s ease"
       }}
-    /></div><span style={{ fontSize: 9.5, fontWeight: 700, color: palette === "light" ? T.inkSoft : "inherit", opacity: highlighted ? 0.95 : 0.6 }}>{SPENDING_DAY_LABELS[i]}</span></div>;
+    />}</div><span style={{ fontSize: 9.5, fontWeight: 700, color: palette === "light" ? T.inkSoft : "inherit", opacity: highlighted ? 0.95 : 0.6 }}>{SPENDING_DAY_LABELS[i]}</span></div>;
   })}</div>{
     /* Two dots mark the hard two-week limit — just a quiet sense of
        "there's one more week back, and that's it". */

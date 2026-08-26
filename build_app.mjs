@@ -120,6 +120,9 @@ const FRONTEND_MODULES = [
   "components/common/ScreenErrorBoundary.jsx",
   "adapters/ledger/LedgerProvider.jsx",
   "components/buttons/index.jsx",
+  // The shared back / history navigation controls. Emitted right after the
+  // other buttons and before every screen that renders one.
+  "components/buttons/navButtons.jsx",
   "components/cards/flags.jsx",
   "components/common/backgrounds.jsx",
   "components/common/brand.jsx",
@@ -139,6 +142,14 @@ const FRONTEND_MODULES = [
   "adapters/ledger/useCoinActions.js",
   "adapters/ledger/useProvenanceAndDisputes.js",
   "hooks/useBackClose.js",
+  // Location as a precondition of paying. Needs the provenance layer's
+  // LocationObservation/captureBrowserGeo (already emitted from
+  // BACKEND_MODULES) and is consulted by App.jsx's payment handlers.
+  "hooks/usePaymentLocation.js",
+  // Payment notifications: the ask (after the first payment, never before),
+  // the per-transaction dedupe, and the sending. Needs G_LOGO_DATA_URI from
+  // data/mockData.js, already emitted above.
+  "hooks/usePaymentNotifications.js",
   "hooks/useAmbientFlags.js",
   "components/cards/misc.jsx",
   "components/charts/ghRing.jsx",
@@ -149,6 +160,8 @@ const FRONTEND_MODULES = [
   // screens' top-right corner. Needs hooks/useBackClose.js (above) and is
   // rendered from App.jsx (below).
   "components/dialogs/helpSheets.jsx",
+  // The blocking screen shown when a payment stops for want of a location.
+  "components/dialogs/LocationRequiredModal.jsx",
   "features/assets/AssetsScreen.jsx",
   "features/essentials/EssentialsScreen.jsx",
   "features/history/TransactionRow.jsx",

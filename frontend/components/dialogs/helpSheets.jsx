@@ -36,34 +36,22 @@ var GLOOBAL_SYMBOL_GLOSSARY = [
   { ch: "■", name: "Block", say: "say “block”", note: "filled" }
 ];
 
-// The round button in the screen's top-right corner. Sized and styled to
-// match the Back chevron in the opposite corner exactly — same 40px
-// circle, same border, same shadow, same distance from the safe-area
-// inset — so the two read as one pair of screen-level controls rather
-// than as two unrelated buttons that happen to be at the top.
+// The round button in the screen's top-right corner. It IS the same
+// component as the Back control in the opposite corner (NavIconButton),
+// rather than a second button hand-styled to resemble it — which is what
+// it was, and which is exactly how the two drift apart. Only the glyph and
+// its colour differ. See components/buttons/navButtons.jsx.
 function HelpCornerButton({ onClick, label }) {
-  return <button
+  return <NavIconButton
     onClick={onClick}
-    aria-label={label}
-    className="v2-tap"
+    label={label}
     style={{
       position: "absolute",
       top: "calc(18px + env(safe-area-inset-top, 0px))",
       right: "calc(18px + env(safe-area-inset-right, 0px))",
-      width: 40,
-      height: 40,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      color: T.accent,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowCard,
       zIndex: 25
     }}
-  ><HelpCircle2 size={20} /></button>;
+  ><HelpCircle2 size={NAV_GLYPH_SIZE} color={T.accent} /></NavIconButton>;
 }
 
 // Shared shell: scrim, rounded sheet, grab handle, title row, close button.

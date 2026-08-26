@@ -37,6 +37,26 @@ var T = {
   // Space Grotesk in index.html.
   fontWordmark: "Inter, 'Space Grotesk', ui-sans-serif, system-ui, sans-serif"
 };
+// Money direction, one rule for the whole app: green in, red out.
+//
+// These existed as an ad-hoc ternary at every list that shows an amount,
+// and the ternaries had drifted apart — History coloured a payment out in
+// the app's violet accent, the Recent Activity card and Gloobal Bank used
+// plain ink, PayLater used ink too, Send Money's recents used a hardcoded
+// #14122B. So "money left your account" looked like four different things
+// depending on which screen you were on, and on three of them looked like
+// ordinary text rather than a debit. Read from here, never re-derived.
+//
+// TXN_OUT_COLOR is deliberately T.negative rather than the brand accent:
+// the accent is used for interactive, positive-intent things all over the
+// app (buttons, links, the active tab), so spending it on debits made
+// debits read as taps.
+var TXN_IN_COLOR = T.positive;
+var TXN_OUT_COLOR = T.negative;
+// The soft tints that pair with them, for pills, tiles and chips.
+var TXN_IN_SOFT = T.positiveSoft;
+var TXN_OUT_SOFT = T.negativeSoft;
+
 var C = {
   bgSoft: "#F8F7FC",
   surface: "#FFFFFF",

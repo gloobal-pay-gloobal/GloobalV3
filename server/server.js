@@ -3543,12 +3543,44 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       receiverSymbolId,
       toSymbolId,
       to,
+      // --- the amount, and which side of the corridor it is denominated in ---
+      //
+      // A single `amount` whose currency depended on context was the source
+      // of the worst class of bug this route has had, so the contract now
+      // names both sides explicitly and says which one the person typed.
+      //
+      //   amountBasis: 'source'      sourceAmount is what the SENDER pays,
+      //                              in the sender's own currency. This is
+      //                              the ordinary Send Money case: someone
+      //                              enters 5000 and means 5000 of their own
+      //                              money.
+      //   amountBasis: 'destination' destinationAmount is what the RECEIVER
+      //                              is asking for, in the receiver's own
+      //                              currency. This is the payment-request
+      //                              case: a QR encodes a figure the payee
+      //                              named, and the sender pays whatever that
+      //                              converts to.
+      //
+      // The other side is always computed here, never accepted. Whichever
+      // figure the client did not type is advisory only — it is compared
+      // against the server's own arithmetic and a disagreement is refused,
+      // so a client bug surfaces as a rejected payment rather than as a
+      // wrong one.
+      amountBasis,
+      sourceAmount,
+      destinationAmount,
+      // Advisory. Both currencies are derived below from each account's own
+      // countryIso and never trusted from the client — same rule
+      // payeeCashbackRate already followed — but a mismatch is reported,
+      // because a client that thinks the corridor is USD->INR while the
+      // server resolves GBP->INR has a real bug worth failing on.
+      sourceCurrency: claimedSourceCurrency,
+      destinationCurrency: claimedDestinationCurrency,
+      // Legacy. Before this contract existed, `amount` meant the receiver's
+      // face value with no field saying so. It is still accepted, and still
+      // means exactly that, so an older client build keeps working against a
+      // newer server — but nothing new should send it.
       amount,
-      // Deliberately no longer read: `currency` used to be trusted straight
-      // from the client and defaulted to 'INR' no matter who was actually
-      // involved. Both parties' real currencies are now derived below from
-      // their own countryIso, the same never-trust-the-client rule
-      // payeeCashbackRate already followed.
       note = '',
       pin,
       idempotencyKey,
@@ -3558,13 +3590,37 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     const senderIdentifier = String(senderSymbolId || fromSymbolId || symbolId || '').trim();
     const receiverIdentifier = String(receiverSymbolId || toSymbolId || to || '').trim();
     const cleanPin = String(pin || '').trim();
-    const numericAmount = Number(amount);
+    // Which side the person actually typed. Defaults to 'destination' ONLY
+    // when the request carries the legacy `amount` and nothing else, so an
+    // older client keeps its old meaning; anything using the new fields is
+    // source-denominated unless it says otherwise.
+    const rawBasis = String(amountBasis || '').trim().toLowerCase();
+    const hasSourceAmount = sourceAmount !== undefined && sourceAmount !== null && sourceAmount !== '';
+    const hasDestinationAmount =
+      destinationAmount !== undefined && destinationAmount !== null && destinationAmount !== '';
+    const basis =
+      rawBasis === 'source' || rawBasis === 'destination'
+        ? rawBasis
+        : hasSourceAmount
+          ? 'source'
+          : 'destination';
+    // The figure the person typed, whichever side it belongs to.
+    const typedAmount = Number(
+      basis === 'source'
+        ? (hasSourceAmount ? sourceAmount : amount)
+        : (hasDestinationAmount ? destinationAmount : amount)
+    );
     const cleanNote = String(note || '').trim().slice(0, 140);
     const cleanIdempotencyKey = String(idempotencyKey || '').trim().slice(0, 120);
     // How it was paid ("Gloobal Bank", "Gloobal PayLater", ...). Recorded so
     // the PayLater screen can list its own charges instead of inventing them.
     const cleanPayMethod = String(payMethod || '').trim().slice(0, 40);
-    const maxPrototypeAmount = Number(process.env.PROTOTYPE_TRANSACTION_MAX_AMOUNT || 5000);
+    // Denominated in the SENDER's own currency (see the check further down).
+    // Raised from 5,000 because that ceiling, expressed in the recipient's
+    // currency, made the usable limit swing wildly by corridor — about $53
+    // for a US account paying into India — and was hit constantly in ordinary
+    // testing. The environment variable still overrides it.
+    const maxPrototypeAmount = Number(process.env.PROTOTYPE_TRANSACTION_MAX_AMOUNT || 5000000);
 
     if (!senderIdentifier) {
       return res.status(400).json({
@@ -3587,36 +3643,23 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       });
     }
 
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+    if (!Number.isFinite(typedAmount) || typedAmount <= 0) {
       return res.status(400).json({
         success: false,
         message: 'Valid amount greater than 0 is required.',
       });
     }
 
-    // `numericAmount` is the face amount in the RECEIVER's currency (see the
-    // cashback/FX split further down, where cashback and payeeReceives are
-    // computed in destinationCurrency and only then converted for the sender's
-    // leg). So this cap is 5,000 of whatever the recipient is paid in — for a
-    // USD account paying into India that is 5,000 INR, roughly $52 at 95,
-    // which is exactly the "why can't I send more than about $53" report.
-    //
-    // The message used to read "Rs. 5000" unconditionally, which is only true
-    // when the recipient happens to be Indian and actively misleading in every
-    // other corridor. It cannot name the real currency here: destinationCurrency
-    // is resolved further down, after the receiver has been looked up, and that
-    // lookup sits behind PIN verification on purpose. Moving this check past
-    // the PIN gate to get the currency name would change who can learn what
-    // before authenticating, so the message is worded to be true in every
-    // corridor instead.
-    if (Number.isFinite(maxPrototypeAmount) && maxPrototypeAmount > 0 && numericAmount > maxPrototypeAmount) {
-      return res.status(400).json({
-        success: false,
-        message: `Prototype transaction limit is ${maxPrototypeAmount}, in the recipient's own currency.`,
-        limit: maxPrototypeAmount,
-        limitBasis: 'recipient-currency',
-      });
-    }
+    // The prototype cap is enforced further down, once both currencies are
+    // known. It is denominated in the SENDER's own currency — the money that
+    // actually leaves their balance — and naming that currency in the message
+    // means resolving the sender's country first. The check used to live here,
+    // pre-PIN, and was expressed in the recipient's currency for exactly that
+    // reason; that made the cap mean a different amount of the sender's money
+    // in every corridor, which is the "why can't I send more than about $53"
+    // report. Moving it below costs nothing in disclosure: the sender is
+    // already authenticated by requireAuth/requireSelf, so their own currency
+    // is not a secret being handed to a stranger.
 
     if (!cleanPin) {
       return res.status(400).json({
@@ -3793,6 +3836,73 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       }
     }
 
+    // --- both sides of the corridor, from whichever one was typed ---
+    //
+    // fxRate above converts 1 unit of the DESTINATION currency into the
+    // sender's, which is the direction the settlement engine and the
+    // cashback split are built around. Going the other way is its inverse;
+    // one lookup, one rate, one `fxRateSource` on the record, and no chance
+    // of the two directions disagreeing because they came from separate
+    // fetches taken moments apart.
+    //
+    // Each side is rounded to its OWN currency's precision, so a zero-decimal
+    // destination never receives a fractional unit it cannot hold.
+    const sourceFaceAmount =
+      basis === 'source'
+        ? toMinorUnit(typedAmount, senderCurrency)
+        : toMinorUnit(toMinorUnit(typedAmount, destinationCurrency) * fxRate, senderCurrency);
+    const numericAmount =
+      basis === 'source'
+        ? toMinorUnit(sourceFaceAmount / fxRate, destinationCurrency)
+        : toMinorUnit(typedAmount, destinationCurrency);
+
+    if (!Number.isFinite(sourceFaceAmount) || sourceFaceAmount <= 0 || !Number.isFinite(numericAmount) || numericAmount <= 0) {
+      // Reachable when a tiny source amount converts to less than one minor
+      // unit of the destination currency — 1 IDR into KWD, say. Refused
+      // rather than rounded up to something the sender did not agree to, or
+      // down to a zero-value payment that still debits them.
+      return res.status(400).json({
+        success: false,
+        message: "That amount is too small to convert into the recipient's currency.",
+      });
+    }
+
+    // The client's own view of the corridor, checked but never trusted. A
+    // disagreement means the screen the person just confirmed was showing a
+    // different pair of currencies than the one about to move their money,
+    // and that must not be settled quietly.
+    const claimedSource = String(claimedSourceCurrency || '').trim().toUpperCase();
+    const claimedDestination = String(claimedDestinationCurrency || '').trim().toUpperCase();
+    if (
+      (claimedSource && claimedSource !== senderCurrency) ||
+      (claimedDestination && claimedDestination !== destinationCurrency)
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: 'The currencies on your screen no longer match this account. Please retry the payment.',
+        senderCurrency,
+        destinationCurrency,
+      });
+    }
+
+    // The prototype cap, in the SENDER's own currency and named as such.
+    // Applied to the gross source amount — the money leaving this account —
+    // not to the converted destination figure, so the ceiling means the same
+    // thing in every corridor.
+    if (
+      Number.isFinite(maxPrototypeAmount) &&
+      maxPrototypeAmount > 0 &&
+      sourceFaceAmount > maxPrototypeAmount
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: `Prototype transaction limit is ${maxPrototypeAmount} ${senderCurrency}.`,
+        limit: maxPrototypeAmount,
+        limitCurrency: senderCurrency,
+        limitBasis: 'sender-currency',
+      });
+    }
+
     // The payee's own cashback rate splits the payment, entirely in the
     // receiver's own currency — the payee is credited the amount minus
     // their chosen share, and that share is credited straight back to the
@@ -3817,7 +3927,11 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // What actually leaves the sender's own balance, and what actually
     // lands back in it — both converted into the sender's own currency.
     // Equal to numericAmount/cashback whenever fxRate is 1.
-    const debitAmount = toMinorUnit(numericAmount * fxRate, senderCurrency);
+    // Exactly the figure resolved above — for a source-denominated payment
+    // this IS the number the person typed, to the unit. Recomputing it from
+    // the destination amount would re-round a rounded value and could put the
+    // debit a minor unit away from the quote they confirmed.
+    const debitAmount = sourceFaceAmount;
     const cashbackCredit = toMinorUnit(cashback * fxRate, senderCurrency);
 
     // A courtesy check, not the authority. It fails fast with a useful figure
@@ -3907,6 +4021,15 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         senderCurrency,
         debitAmount,
         fxRate,
+        fxRateSource,
+        // The corridor as this payment was actually agreed, both sides named.
+        // `amount`/`currency` on the row itself remain the receiver's face
+        // value, which is what the payee's statement is denominated in.
+        sourceAmount: sourceFaceAmount,
+        sourceCurrency: senderCurrency,
+        destinationAmount: numericAmount,
+        destinationCurrency,
+        amountBasis: basis,
       },
     };
 
@@ -4333,6 +4456,15 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       senderCurrency,
       destinationCurrency,
       fxRate,
+      // The explicit contract, so no caller has to infer which currency a
+      // bare `amount` is in. sourceAmount is what the sender paid;
+      // destinationAmount is what the receiver was credited before their own
+      // Creator Share split (payeeReceives above is that split's result).
+      sourceAmount: sourceFaceAmount,
+      sourceCurrency: senderCurrency,
+      destinationAmount: numericAmount,
+      amountBasis: basis,
+      fxRateSource,
       assetSeed: plantedSeed ? computeSeed(plantedSeed) : null,
       settlement: settlement
         ? {

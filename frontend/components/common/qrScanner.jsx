@@ -217,3 +217,60 @@ function QrCameraScanner({ onDetected, active = true, paused = false }) {
     }}
   /></div><canvas ref={canvasRef} style={{ display: "none" }} /><div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}><ScanLine1 size={14} />{state === "starting" ? "Starting camera…" : paused ? "Paused" : "Point at a Gloobal QR code"}</div></div>;
 }
+
+
+// Read a Gloobal code out of a still image the person picked from their
+// gallery.
+//
+// This exists because "Upload from gallery" was a button that only revealed
+// the camera view — it opened no picker and decoded nothing. That left no
+// route in at all for the two cases the camera cannot serve: a device whose
+// camera is broken, blocked or absent, and a code that arrived as a
+// screenshot in a chat rather than on somebody's screen.
+//
+// Same decoder, same options as the live loop above, so an image that scans
+// here would have scanned there. Resolves to the payload string, or null
+// when the file holds no readable code — the caller says so rather than
+// leaving a tap that appears to do nothing.
+function decodeGloobalQrFromImageFile(file) {
+  return new Promise((resolve) => {
+    if (!file || typeof FileReader === "undefined") return resolve(null);
+    const reader = new FileReader();
+    reader.onerror = () => resolve(null);
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => resolve(null);
+      image.onload = () => {
+        // Downscaled the same way the camera frames are, and for the same
+        // reason: jsQR's cost scales with pixel count, and a modern phone
+        // photo is large enough to lock the main thread for seconds.
+        const scale = Math.min(1, QR_SCAN_MAX_DIM / Math.max(image.width, image.height) || 1);
+        const w = Math.max(1, Math.round(image.width * scale));
+        const h = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) return resolve(null);
+        // A white ground behind the image: a transparent PNG of a code
+        // composites onto black otherwise, and an all-dark frame decodes as
+        // nothing at all.
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(image, 0, 0, w, h);
+        let pixels;
+        try {
+          pixels = ctx.getImageData(0, 0, w, h);
+        } catch (e) {
+          // A tainted canvas is possible here in a way it never is for a
+          // camera stream, so this one is a real branch rather than a belt.
+          return resolve(null);
+        }
+        const found = jsQR(pixels.data, w, h, { inversionAttempts: "attemptBoth" });
+        resolve(found && found.data ? found.data : null);
+      };
+      image.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+  });
+}

@@ -179,23 +179,42 @@ describe("the dashboard hydration effects watch every id they read", () => {
   });
 });
 
-describe("the prototype transaction limit describes its own currency", () => {
-  // numericAmount is the face amount in the RECEIVER's currency, so the cap is
-  // 5000 of whatever the recipient is paid in — about 52 USD for a US account
-  // paying into India at 95. The message claimed "Rs." in every corridor.
+describe("the prototype transaction limit is the sender's own money", () => {
+  // Twice wrong before this. The message said "Rs." in every corridor, and
+  // the cap itself was denominated in the RECEIVER's currency — so a US
+  // account paying into India hit a ceiling of 5,000 INR, about $53, which
+  // is what "why can't I send more than about $53" actually was.
   const src = readSource("server/server.js");
 
-  test("the limit message no longer hardcodes rupees", () => {
+  test("the message no longer hardcodes rupees", () => {
     assert.ok(
       !/Prototype transaction limit is Rs\./.test(src),
       "the limit is not always denominated in INR"
     );
   });
 
-  test("it states the basis of the cap", () => {
+  test("the cap is measured against the sender's source amount", () => {
     assert.ok(
-      /in the recipient's own currency/.test(src),
-      "the message must say which currency the number is in"
+      /sourceFaceAmount > maxPrototypeAmount/.test(src),
+      "the ceiling must apply to the money leaving the sender's balance"
+    );
+    assert.ok(
+      /limitBasis: 'sender-currency'/.test(src),
+      "the refusal must say which side the cap belongs to"
+    );
+  });
+
+  test("the message names the sender's currency", () => {
+    assert.ok(
+      /Prototype transaction limit is \$\{maxPrototypeAmount\} \$\{senderCurrency\}/.test(src),
+      "the message must carry the real currency code, not a fixed one"
+    );
+  });
+
+  test("the default ceiling is five million", () => {
+    assert.ok(
+      /PROTOTYPE_TRANSACTION_MAX_AMOUNT \|\| 5000000/.test(src),
+      "the send route's default cap must be 5,000,000 of the sender's currency"
     );
   });
 });

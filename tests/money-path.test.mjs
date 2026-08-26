@@ -86,36 +86,72 @@ describe("cross-border send — the amount handed to the server", () => {
   const callStart = src.indexOf("await onRemoteSend({");
   const remoteSendCall = src.slice(callStart, src.indexOf("receiver: bottom,", callStart));
 
-  test("sends the typed receiver-currency amount, not the converted one", () => {
+  test("both sides of the corridor are named, and so is the one that was typed", () => {
+    // The contract that replaced a bare `amount` whose currency depended on
+    // which screen sent it. Every field here is checked because the failure
+    // this guards against is one of them going missing: a source amount with
+    // no basis, or a basis with no source amount, both read as the opposite
+    // side of the corridor on the server.
+    for (const field of [
+      /amountBasis:/,
+      /sourceAmount:\s*senderAmount/,
+      /sourceCurrency:\s*top\.currency/,
+      /destinationAmount:/,
+      /destinationCurrency:\s*bottom\.currency/
+    ]) {
+      assert.ok(field.test(remoteSendCall), `the send payload must carry ${field}`);
+    }
+  });
+
+  test("an ordinary send is denominated in the sender's own currency", () => {
+    // The whole point of the change: someone entering 5000 in India means
+    // five thousand rupees of their own money, and the receiver is credited
+    // whatever that converts to — not five thousand of the receiver's.
     assert.ok(
-      /amount:\s*parseFloat\(amount\)/.test(remoteSendCall),
-      "onRemoteSend must be given the raw typed amount (receiver currency)"
+      /amountBasis:\s*requestedDestinationAmount > 0 \? "destination" : "source"/.test(remoteSendCall),
+      "the basis must be source unless a payment request named a figure"
     );
     assert.ok(
-      !/amount:\s*convertedAmount/.test(remoteSendCall),
-      "onRemoteSend must NOT be given convertedAmount — that is the sender-currency figure"
+      /sourceAmount:\s*senderAmount/.test(remoteSendCall),
+      "the sender's own typed figure is what the server must be asked for"
     );
   });
 
-  test("labels that amount with the receiver's currency", () => {
+  test("a payment request still pays the exact figure the payee asked for", () => {
+    // The one case that stays destination-denominated. Converting it to a
+    // source amount and back would round twice and could short the payee a
+    // minor unit of their own money against a figure they named.
+    assert.ok(
+      /destinationAmount:\s*requestedDestinationAmount > 0 \? requestedDestinationAmount : receiverAmount/.test(remoteSendCall),
+      "a requested amount must be sent through untouched"
+    );
+  });
+
+  test("the legacy field still means what it always meant", () => {
+    // An older server build reads `amount` as the receiver's face value.
+    // Keeping it correct means a client ahead of the server does not move
+    // the wrong sum during a rollout.
+    assert.ok(
+      /amount:\s*requestedDestinationAmount > 0 \? requestedDestinationAmount : receiverAmount/.test(remoteSendCall),
+      "the legacy amount must stay receiver-denominated"
+    );
     assert.ok(
       /currency:\s*bottom\.currency/.test(remoteSendCall),
-      "the currency label must match the amount being sent (receiver's)"
+      "and must stay labelled with the receiver's currency"
     );
   });
 
-  test("the local ledger leg still uses the sender-currency amount", () => {
-    // The two legs are deliberately different: the server is told the
-    // receiver-currency figure, while the LOCAL ledger debits this device's
-    // own balance in the sender's currency. A fix that made both the same
-    // would break the other half.
+  test("the local ledger leg debits this device in the sender's currency", () => {
+    // The two legs are deliberately different: the server is told both sides
+    // of the corridor, while the LOCAL ledger only ever moves this account's
+    // own balance, in this account's own currency.
     const execCall = src.slice(
-      src.indexOf("onExecuteTransaction\n"),
-      src.indexOf("onExecuteTransaction\n") + 600
+      src.indexOf("onExecuteTransaction" + String.fromCharCode(10)),
+      src.indexOf("onExecuteTransaction" + String.fromCharCode(10)) + 600
     );
     assert.ok(
-      /amount:\s*convertedAmount/.test(execCall),
-      "the local ledger leg must keep convertedAmount (sender currency)"
+      /amount:\s*senderAmount/.test(execCall),
+      "the local ledger leg must debit senderAmount (sender currency)"
     );
   });
 });

@@ -30,6 +30,7 @@ function GloobalCoinScreen({
   onRegisterInterest,
   symbolId,
   ccy,
+  ccyCode = "USD",
   bankBalance,
   coinBalance,
   coinHistory,
@@ -87,7 +88,7 @@ function GloobalCoinScreen({
       boxShadow: T.shadowCard
     }}
   ><span style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>Your Gloobal Coin</span><span style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, letterSpacing: 0.2 }}>{Number(coinBalance || 0).toFixed(2)} GC</span><span style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>
-        Backed 1:1 by {ccy}{Number(coinBalance || 0).toFixed(2)} held in reserve
+        Backed 1:1 by {ccy}{fmt(Number(coinBalance || 0), ccyCode)} held in reserve
       </span></div>{
     /* Supply, as the server reports it. `backed` is a comparison of three
        independently maintained figures, so a mismatch is a real finding
@@ -107,7 +108,7 @@ function GloobalCoinScreen({
     }}
   ><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 12.5, fontWeight: 800, color: supply ? supply.backed ? T.positive : T.negative : T.inkSoft }}>{!supply ? "Supply unavailable" : supply.backed ? "Fully backed" : "Reserve does not match supply"}</span><span style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.4 }}>{!supply
     ? "Couldn't reach the server — this is ∆, not zero."
-    : `${supply.issued.toFixed(2)} GC issued against ${ccy}${supply.reserve.toFixed(2)} in reserve · ${supply.holders} ${supply.holders === 1 ? "holder" : "holders"}`}</span></span>{supply && supply.backed && <CoinCheck size={18} color={T.positive} style={{ flexShrink: 0 }} />}</div>{
+    : `${supply.issued.toFixed(2)} GC issued against ${ccy}${fmt(supply.reserve, ccyCode)} in reserve · ${supply.holders} ${supply.holders === 1 ? "holder" : "holders"}`}</span></span>{supply && supply.backed && <CoinCheck size={18} color={T.positive} style={{ flexShrink: 0 }} />}</div>{
     /* Mint / Redeem. One control with two directions rather than two
        screens, because they are the same conversion read in opposite
        directions and the ceiling is the only thing that differs. */
@@ -146,7 +147,7 @@ function GloobalCoinScreen({
     style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 11.5, fontWeight: 800, color: T.accent, flexShrink: 0 }}
   >MAX</button></div><div style={{ fontSize: 11, color: overCeiling ? T.negative : T.inkFaint, lineHeight: 1.4 }}>{overCeiling
     ? mode === "mint"
-      ? `You only have ${ccy}${ceiling.toFixed(2)} to convert.`
+      ? `You only have ${ccy}${fmt(ceiling, ccyCode)} to convert.`
       : `You only hold ${ceiling.toFixed(2)} GC.`
     : mode === "mint"
       ? `Moves ${ccy} out of Gloobal Bank and into the reserve. You can cash out again at any time.`

@@ -10,7 +10,7 @@ import { Filter as FilterHist } from "lucide-react";
 // props instead of keeping its own separate copy (which used to render
 // a second, redundant Receiving/Sending pill directly underneath the
 // header's Received/Paid buttons).
-function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], dialCountry, ccy, openHistoryDirection, onConsumeOpenHistory, historyTab, setHistoryTab, historyMethodFilter, setHistoryMethodFilter }) {
+function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], dialCountry, ccy, ccyCode = "USD", openHistoryDirection, onConsumeOpenHistory, historyTab, setHistoryTab, historyMethodFilter, setHistoryMethodFilter }) {
   const historyScrollRef = useRef9(null);
   const [receipt, setReceipt] = useState12(null);
   const requestCloseReceipt = useBackClose(!!receipt, () => setReceipt(null));
@@ -158,7 +158,7 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
     return <div
       // The label the eye no longer needs, kept for the ear: a screen
       // reader gets neither the colour nor the sign.
-      aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${ccy}${active.value.toFixed(2)}`}
+      aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${ccy}${fmt(active.value, ccyCode)}`}
       style={{ padding: "12px 16px" }}
     ><div
       style={{
@@ -170,7 +170,7 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
         textOverflow: "ellipsis",
         whiteSpace: "nowrap"
       }}
-    >{active.sign}{ccy}{active.value.toFixed(2)}</div></div>;
+    >{active.sign}{ccy}{fmt(active.value, ccyCode)}</div></div>;
   })()}</div>{
     /* Daily trend — same DailySpendingChart the wallet card uses,
        scoped to just this history's data, giving a quick "average
@@ -227,7 +227,7 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
       chip={col.chip}
       color={col.color}
       sign={col.sign}
-      ccy={ccy}
+      ccy={ccy} ccyCode={ccyCode}
       isFirst={i === 0}
       onSelect={() => openHistoryReceipt(t, col.key === "sending" ? "sent" : "received")}
     />)}</div></div>;

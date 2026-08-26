@@ -367,10 +367,12 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     showToast2(
       settledRemotely
         ? `Sending ${CURRENCIES[top.currency].label} ${fmt(
-            convertedAmount
+            convertedAmount,
+            top.currency
           )} to ${bottom.country} \xB7 via ${payMethod || "Gloobal Bank"}`
         : `Not sent — ${CURRENCIES[top.currency].label} ${fmt(
-            convertedAmount
+            convertedAmount,
+            top.currency
           )} recorded locally only, no registered Gloobal account to credit`
     );
     const { receipt: receipt2, historyEntry } = buildTransactionSnapshot({
@@ -1262,7 +1264,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
        either, so the box came out blank — a broken avatar rather than a
        design. The country is still on the receipt this row belongs to. */
   }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#14122B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: "#9C96AF", marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: TXN_OUT_COLOR, flexShrink: 0 }}>
-                    −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(Number(t.amount) || 0)}
+                    −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(Number(t.amount) || 0, top.currency)}
                   </span></div>)}</div></div>}{searchStage === "found" && bottomOpen && <>{bottom.registered === false && <div
     role="alert"
     style={{
@@ -1340,7 +1342,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     onClick={() => handleCopy(top.id, "top-id")}
     aria-label="Copy ID"
   >{copiedKey === "top-id" ? <Check3 size={17} /> : <Copy3 size={17} />}</button></div></div><div className="divider" /><div className="rate-row"><div className="rate-left"><span className="live-dot" /><span>
-                      1 {top.currency} = {fmt(convert(1, top.currency, bottom.currency))} {bottom.currency}</span></div><span className="live-text"><Zap4 size={14} fill="currentColor" /> Live</span></div>{
+                      1 {top.currency} = {fmt(convert(1, top.currency, bottom.currency), bottom.currency)} {bottom.currency}</span></div><span className="live-text"><Zap4 size={14} fill="currentColor" /> Live</span></div>{
     /* Read-only — the exact amount that will be paid/debited
        from the sender's own account, converted from whatever
        the receiver is asking for above. Shown large since
@@ -1355,7 +1357,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       letterSpacing: "-0.01em",
       fontVariantNumeric: "tabular-nums"
     }}
-  >{fmt(convertedAmount)}</span><span
+  >{fmt(convertedAmount, top.currency)}</span><span
     style={{
       display: "flex",
       alignItems: "center",
@@ -1378,7 +1380,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     onClick={handleSend}
     style={{ padding: "14px 18px", marginTop: topOpen ? 0 : 24 }}
   ><span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}><SendMoneyLucideIcon size={18} />
-                {bottom.registered === false ? "Simulate " : "Send "}{CURRENCY_SYMBOL[top.currency] || ""}{fmt(convertedAmount)}</span></button>}</>}{
+                {bottom.registered === false ? "Simulate " : "Send "}{CURRENCY_SYMBOL[top.currency] || ""}{fmt(convertedAmount, top.currency)}</span></button>}</>}{
     /* Funding source — the four ways a transfer can be paid. Picking
        one moves straight on to the OTP confirmation. */
   }{payMethodOpen && <div
@@ -1387,7 +1389,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     aria-modal="true"
     aria-label="Choose how to pay"
     onClick={requestClosePayMethod}
-  ><div className="pin-modal" onClick={(e) => e.stopPropagation()}><button className="pin-close" onClick={requestClosePayMethod} aria-label="Cancel"><X4 size={18} /></button><h3 className="pin-title">Pay with</h3><p className="pin-sub">{CURRENCIES[top.currency].label} {fmt(convertedAmount)}{top.currency !== bottom.currency && <> (≈ {CURRENCY_SYMBOL[bottom.currency] || ""}{fmt(parseFloat(amount) || 0)} {bottom.currency})</>}{" "}
+  ><div className="pin-modal" onClick={(e) => e.stopPropagation()}><button className="pin-close" onClick={requestClosePayMethod} aria-label="Cancel"><X4 size={18} /></button><h3 className="pin-title">Pay with</h3><p className="pin-sub">{CURRENCIES[top.currency].label} {fmt(convertedAmount, top.currency)}{top.currency !== bottom.currency && <> (≈ {CURRENCY_SYMBOL[bottom.currency] || ""}{fmt(parseFloat(amount) || 0, bottom.currency)} {bottom.currency})</>}{" "}
               to {bottom.phone}</p><div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6, textAlign: "left" }}>{[
     { key: "gbank", label: "Gloobal Bank", displayLabel: <GloobalWordmark suffix=" Bank" /> },
     { key: "gpaylater", label: "Gloobal PayLater", displayLabel: <GloobalWordmark suffix=" PayLater" /> },
@@ -1454,7 +1456,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   ><GH2HFlipCircle size={22} /></div><div
     style={{
       marginTop: 14,
-      fontSize: receiptAmountFontSize(`\u2212${CURRENCY_SYMBOL[top.currency] || ""}${fmt(convertedAmount)}`, 26),
+      fontSize: receiptAmountFontSize(`\u2212${CURRENCY_SYMBOL[top.currency] || ""}${fmt(convertedAmount, top.currency)}`, 26),
       fontWeight: 800,
       color: T.negative,
       fontFamily: T.fontDisplay,
@@ -1462,7 +1464,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       overflowWrap: "anywhere"
     }}
   >
-                −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(convertedAmount)}</div></div>{
+                −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(convertedAmount, top.currency)}</div></div>{
     /* Same dial pad used for PIN/OTP everywhere else in the app
        (registration, login) instead of this screen's own
        separate keypad — one PIN entry pattern app-wide. Reaching

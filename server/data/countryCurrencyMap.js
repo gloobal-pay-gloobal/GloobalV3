@@ -62,6 +62,12 @@ const COUNTRY_CURRENCY = {
 // the CFA/CFP franc family, ISK, and a handful of others). Storing an
 // amount like 1500.5 JPY would be a fabricated precision the currency
 // doesn't have.
+// The frontend keeps its own copy of this list, in backend/utils/format.js,
+// for the same reason the country list is copied rather than imported: the
+// browser bundle and this server are separate deploys with no module
+// boundary between them. If a code is added or removed here, change it there
+// too — a currency whose decimals the two disagree about is a number that
+// reads differently on screen than it settles in the ledger.
 const ZERO_DECIMAL_CURRENCIES = new Set([
   "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF",
   "UGX", "VND", "VUV", "XAF", "XOF", "XPF", "MGA",

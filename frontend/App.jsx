@@ -318,7 +318,26 @@ function GloobalId() {
   // aimed at one of those has no counterparty in MongoDB to credit and
   // stays a local simulation. Scan & Pay against a real scanned Gloobal
   // ID, or any receiver carrying a resolvable symbolId, goes remote.
-  const handleRemoteSend = async ({ txnId, amount, currency, receiver, pin: sendPin, payMethodLabel, memo, clientRequestId }) => {
+  const handleRemoteSend = async ({
+    txnId,
+    amount,
+    currency,
+    // The explicit corridor, passed straight through to the server, which
+    // recomputes whichever side was not typed and refuses the payment if its
+    // own arithmetic disagrees. A caller that sends none of these still works
+    // — the legacy `amount`/`currency` pair below is read as the receiver's
+    // face value, which is what it has always meant.
+    amountBasis,
+    sourceAmount,
+    sourceCurrency,
+    destinationAmount,
+    destinationCurrency,
+    receiver,
+    pin: sendPin,
+    payMethodLabel,
+    memo,
+    clientRequestId
+  }) => {
     // Before anything else, including the skipped/local-simulation exits
     // below — a simulated send still writes a history row, and a gate with
     // an exception is not a gate.
@@ -333,8 +352,17 @@ function GloobalId() {
       const result = await GloobalApi.sendTransaction({
         senderSymbolId,
         receiverSymbolId,
+        amountBasis,
+        sourceAmount,
+        sourceCurrency,
+        destinationAmount,
+        destinationCurrency,
         amount,
-        currency: currency || "INR",
+        // No longer defaulted to rupees. A missing currency is now simply
+        // absent, and the server derives both sides from the two accounts'
+        // own countries — claiming INR for an account that is not Indian is
+        // how a mislabelled leg used to get through.
+        currency,
         note: memo || "",
         pin: sendPin,
         payMethod: payMethodLabel || "",
@@ -428,6 +456,42 @@ function GloobalId() {
   // with no camera. It is labelled as unregistered instead, so the
   // difference is visible rather than hidden.
   const [scanResolving, setScanResolving] = useState19(false);
+  // The gallery path. Same decoder and same handler as the live camera, so
+  // a code that reads from an image behaves identically to one held up to
+  // the lens — including the resolve, the payment-request branch and the
+  // unregistered-ID warning.
+  const scanGalleryInputRef = useRef13(null);
+  const handleScanGalleryFile = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    // Clearing the value is what lets the same picture be chosen twice in a
+    // row: without it the input's change event never fires again.
+    event.target.value = "";
+    if (!file) return;
+    setScanError(null);
+    setScanResolving(true);
+    try {
+      const payload = await decodeGloobalQrFromImageFile(file);
+      if (!payload) {
+        // Said plainly. A tap that appears to do nothing is the failure this
+        // whole path replaces.
+        setScanError("No Gloobal code found in that image.");
+        return;
+      }
+      // Move into the scan view before resolving. `scanCameraAccessGranted`
+      // is a view flag, not a permission claim — the real camera request
+      // happens inside QrCameraScanner when it mounts — and everything a
+      // decoded code produces (the resolving state, the payment-request
+      // card, the unregistered warning) is rendered on the other side of
+      // it. Decoding a code and leaving the person on the "Allow Camera
+      // Access" panel would be its own version of the tap that did nothing.
+      setScanCameraAccessGranted(true);
+      await handleQrScanned(payload);
+    } catch (e) {
+      setScanError("That image could not be read.");
+    } finally {
+      setScanResolving(false);
+    }
+  };
   const handleQrScanned = async (rawCode) => {
     setScanError(null);
     if (usedQrCodes.has(rawCode)) {
@@ -579,8 +643,23 @@ function GloobalId() {
       // fails outright.
       const remote = await handleRemoteSend({
         txnId,
+        // Source-denominated, because that is what this screen showed. A
+        // Gloobal QR payload carries an amount in minor units and NO
+        // currency (see encodeGloobalQR), so the scanning side renders it
+        // with the scanner's own symbol — which means the figure the payer
+        // read and agreed to was in their own currency. Settling it as the
+        // payee's currency instead, which is what the old single-`amount`
+        // contract did, moved a different sum than the one on screen.
+        //
+        // The residual limitation is the payload's, not this call's: a code
+        // minted in one currency and scanned in another is ambiguous by
+        // construction. Paying what the payer was shown is the honest
+        // reading of it.
+        amountBasis: "source",
+        sourceAmount: amount,
+        sourceCurrency: COUNTRY_CURRENCY[dialCountry.iso] || undefined,
         amount,
-        currency: COUNTRY_CURRENCY[dialCountry.iso] || "INR",
+        currency: COUNTRY_CURRENCY[dialCountry.iso] || undefined,
         receiver: { gloobalId: scanPendingPayment.gloobalId, name: scanPendingPayment.recipientName },
         pin: scanVerifiedPinRef.current || "",
         payMethodLabel: scanPayMethod,
@@ -2905,7 +2984,15 @@ function GloobalId() {
     >
                   Allow Access
                 </button><button
-      onClick={() => setScanCameraAccessGranted(true)}
+      onClick={() => {
+        // Opens the picker. This used to set scanCameraAccessGranted and
+        // nothing else — a control labelled "Upload from gallery" that
+        // revealed the camera view instead, decoding nothing, leaving no
+        // route in for a device whose camera is blocked or for a code that
+        // arrived as a screenshot.
+        setScanError(null);
+        if (scanGalleryInputRef.current) scanGalleryInputRef.current.click();
+      }}
       className="v2-tap"
       style={{
         display: "flex",
@@ -2920,7 +3007,16 @@ function GloobalId() {
       }}
     ><ImageIcon size={17} />
                   Upload from gallery
-                </button></div><div style={{ paddingBottom: "calc(26px + env(safe-area-inset-bottom, 0px))" }}><div
+                </button>{scanError && <div
+      role="alert"
+      style={{ fontSize: 12.5, color: T.negative, textAlign: "center", fontWeight: 700, maxWidth: 260, lineHeight: 1.45 }}
+    >{scanError}</div>}<input
+      ref={scanGalleryInputRef}
+      type="file"
+      accept="image/*"
+      onChange={handleScanGalleryFile}
+      style={{ display: "none" }}
+    /></div><div style={{ paddingBottom: "calc(26px + env(safe-area-inset-bottom, 0px))" }}><div
       style={{
         width: "100%",
         background: T.surfaceAlt,

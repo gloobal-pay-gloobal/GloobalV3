@@ -166,8 +166,45 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     () => ALL_COUNTRIES.filter((c) => countryMatches(c, searchCountryQuery)),
     [searchCountryQuery]
   );
-  const convertedAmount = useMemo6(
-    () => convert(amount, bottom.currency, top.currency),
+  // The two sides of the payment, each named for whose money it is.
+  //
+  // The amount box is the SENDER's own currency: someone entering 5000 in
+  // India means five thousand rupees of their own money, and the receiver is
+  // credited whatever that converts to. It used to be the other way round —
+  // the box was "what the receiver is asking for", which reads correctly for
+  // a payment request and is the wrong default for an ordinary send, where
+  // nobody has asked for anything.
+  //
+  // Payment requests still work, and still pay the exact figure the payee
+  // named: those are sent destination-denominated (see onRemoteSend below),
+  // so the rounding lands on the sender's side rather than shorting the
+  // payee by a minor unit.
+  const senderAmount = useMemo6(() => parseFloat(amount) || 0, [amount]);
+  // A payment request names a figure in the PAYEE's own currency. When one is
+  // handed in, that exact figure is what gets settled — the box below shows
+  // its sender-currency equivalent so the person knows what they are paying,
+  // but the rounding is taken on the sender's side rather than shorting the
+  // payee a minor unit of their own money.
+  //
+  // Zero for an ordinary send, which is every send today: an amount-bearing
+  // QR still pays in place on the scan screen and never reaches here. The
+  // field exists so that when that handoff does carry an amount, it settles
+  // as a request rather than silently becoming a source-denominated send.
+  const requestedDestinationAmount = Number(prefillReceiver && prefillReceiver.requestedAmount) || 0;
+  const receiverAmount = useMemo6(
+    () => {
+      const raw = convert(amount, top.currency, bottom.currency);
+      // Rounded to the RECEIVER's own minor unit, because that is the
+      // account it has to land in: a yen balance cannot hold 8,274.29, and
+      // quoting a figure the payee's currency cannot represent means the
+      // screen and the request disagree about what was agreed. The server
+      // rounds the same way when it recomputes this side, so the two now
+      // arrive at the same number instead of differing by a fraction of a
+      // unit the payee could never have received.
+      const decimals = currencyDecimals(bottom.currency);
+      const factor = Math.pow(10, decimals);
+      return Math.round(raw * factor) / factor;
+    },
     [amount, top.currency, bottom.currency]
   );
   // The last five payments sent from this screen — `history` (the
@@ -223,6 +260,12 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       // scanned placeholder identically to a resolved account.
       registered: prefillReceiver.registered !== false
     });
+    // Prefill the box with what this request costs the sender, converted
+    // from the payee's own figure.
+    if (Number(prefillReceiver.requestedAmount) > 0) {
+      const payeeCurrency = prefillReceiver.currency || top.currency;
+      setAmount(String(convert(Number(prefillReceiver.requestedAmount), payeeCurrency, top.currency)));
+    }
     setSearchStage("found");
     setFoundDisplayMode("name");
     setTopOpen(false);
@@ -281,28 +324,26 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     if (onRemoteSend) {
       const remote = await onRemoteSend({
         txnId,
-        // The RECEIVER's own local-currency face value — the number actually
-        // typed into the amount box, whose flag/symbol is the receiver's
-        // (bottom.currency). NOT convertedAmount.
+        // Both sides of the corridor, named, plus which one the person
+        // actually typed. POST /api/transactions/send recomputes the other
+        // from its own FX and refuses the payment if the two disagree, so
+        // nothing here can mislabel a leg — the failure mode this replaces
+        // is a single `amount` whose currency depended on which screen sent
+        // it, which once credited a payee 378.53 instead of 5,000.
         //
-        // This is the contract POST /api/transactions/send documents and
-        // relies on: it looks both parties' currencies up from their own
-        // countryIso, treats the `amount` it receives as denominated in the
-        // RECEIVER's currency, and converts to the sender's currency itself
-        // (fxRate) to work out what to debit. It ignores any `currency` the
-        // client sends, deliberately, so the client cannot mislabel a leg.
-        //
-        // Sending convertedAmount here fed the sender-currency number into a
-        // field the server reads as receiver-currency, so the two legs were
-        // BOTH wrong on a cross-border send: paying a ₹5,000 recipient from a
-        // CNY account posted 378.53 as if it were rupees, crediting the payee
-        // ₹378.53 instead of ₹5,000, and debiting the sender the CNY value of
-        // ₹378.53 (~¥28.65) rather than the ¥378.53 they were shown and
-        // agreed to. Same-currency pairs were unaffected — fxRate is exactly
-        // 1 there, so the two numbers are equal and the bug was invisible.
-        amount: parseFloat(amount) || 0,
-        // Ignored server-side (see above), but it must not *claim* to be the
-        // sender's currency while carrying a receiver-currency figure.
+        // `amountBasis: "source"` is the ordinary send: the box holds the
+        // sender's own money and the receiver gets the conversion. A scanned
+        // payment request sends "destination" instead, so the payee is
+        // credited the exact figure they asked for.
+        amountBasis: requestedDestinationAmount > 0 ? "destination" : "source",
+        sourceAmount: senderAmount,
+        sourceCurrency: top.currency,
+        destinationAmount: requestedDestinationAmount > 0 ? requestedDestinationAmount : receiverAmount,
+        destinationCurrency: bottom.currency,
+        // Legacy field, kept so an older server build still reads the leg it
+        // expects: before the contract above existed, `amount` meant the
+        // receiver's face value and nothing said so.
+        amount: requestedDestinationAmount > 0 ? requestedDestinationAmount : receiverAmount,
         currency: bottom.currency,
         receiver: bottom,
         // The verified PIN, from the ref — `pin` state is "" by now.
@@ -347,7 +388,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     const result = onExecuteTransaction
       ? onExecuteTransaction({
           txnId: confirmedTxnId,
-          amount: convertedAmount,
+          amount: senderAmount,
           payMethodLabel: payMethod,
           memo: `Send Money to ${bottom.name}`,
           name: bottom.name,
@@ -367,11 +408,11 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     showToast2(
       settledRemotely
         ? `Sending ${CURRENCIES[top.currency].label} ${fmt(
-            convertedAmount,
+            senderAmount,
             top.currency
           )} to ${bottom.country} \xB7 via ${payMethod || "Gloobal Bank"}`
         : `Not sent — ${CURRENCIES[top.currency].label} ${fmt(
-            convertedAmount,
+            senderAmount,
             top.currency
           )} recorded locally only, no registered Gloobal account to credit`
     );
@@ -381,7 +422,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       shareTxnId: confirmedShareTxnId,
       shareAmount: confirmedShareAmount,
       amount,
-      convertedAmount,
+      convertedAmount: senderAmount,
       payMethod,
       now,
       shareRatePercent: confirmedShareRatePercent,
@@ -1298,8 +1339,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
        exactly what's actually on their account, never a
        choice made here. */
   }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 14 }}><span style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>Creator Share</span><ShareRateFlipCircle percent={bottom.shareRate ?? 0} size={28} staticMode /></div>{
-    /* Editable — the amount the RECEIVER is asking for, in
-       their own currency (e.g. the $100 a US receiver wants).
+    /* Editable — what the SENDER pays, in the sender's own
+       currency. What the receiver gets is shown right below.
        Starts genuinely empty (placeholder shows "0.00") so
        there's nothing to erase before typing. No separate
        "Sending to" caption here anymore — the name/ID are
@@ -1310,7 +1351,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     onChange={handleAmountChange}
     inputMode="decimal"
     placeholder="0.00"
-    aria-label="Amount the receiver is asking for"
+    aria-label="Amount you send, in your own currency"
   /><span
     style={{
       position: "absolute",
@@ -1321,8 +1362,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       color: T.inkSoft,
       lineHeight: 1
     }}
-    aria-label={`Receiver's currency: ${bottom.currency} \u2014 fixed to their account, can't be changed`}
-  >{CURRENCY_SYMBOL[bottom.currency] || bottom.currency}</span></div></>}</div></>}{
+    aria-label={`Your currency: ${top.currency} \u2014 fixed to their account, can't be changed`}
+  >{CURRENCY_SYMBOL[top.currency] || top.currency}</span></div></>}</div></>}{
     /* SWAP — only once a receiver's been found. Flips currency
        sides and, with it, which card is shown big vs as a strip.
        The search bar itself always looks up the receiver, no
@@ -1348,7 +1389,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
        the receiver is asking for above. Shown large since
        it's the number that matters before paying. */
   }<div className="amount-box indigo"><div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: T.accent, marginBottom: 6 }}>
-                    You pay
+                    Receiver gets
                   </div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}><span
     style={{
       fontSize: 34,
@@ -1357,7 +1398,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       letterSpacing: "-0.01em",
       fontVariantNumeric: "tabular-nums"
     }}
-  >{fmt(convertedAmount, top.currency)}</span><span
+  >{fmt(receiverAmount, bottom.currency)}</span><span
     style={{
       display: "flex",
       alignItems: "center",
@@ -1371,8 +1412,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       letterSpacing: 0.2,
       flexShrink: 0
     }}
-    aria-label={`Your currency: ${top.currency} \u2014 fixed to your account, can't be changed`}
-  >{top.currency}</span></div></div></>}</div>}{
+    aria-label={`Receiver's currency: ${bottom.currency} \u2014 fixed to your account, can't be changed`}
+  >{bottom.currency}</span></div></div></>}</div>}{
     /* SEND BUTTON — just my own currency and amount now, nothing
        about what the receiver gets. */
   }{searchStage === "found" && <button
@@ -1380,7 +1421,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     onClick={handleSend}
     style={{ padding: "14px 18px", marginTop: topOpen ? 0 : 24 }}
   ><span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}><SendMoneyLucideIcon size={18} />
-                {bottom.registered === false ? "Simulate " : "Send "}{CURRENCY_SYMBOL[top.currency] || ""}{fmt(convertedAmount, top.currency)}</span></button>}</>}{
+                {bottom.registered === false ? "Simulate " : "Send "}{CURRENCY_SYMBOL[top.currency] || ""}{fmt(senderAmount, top.currency)}</span></button>}</>}{
     /* Funding source — the four ways a transfer can be paid. Picking
        one moves straight on to the OTP confirmation. */
   }{payMethodOpen && <div
@@ -1389,7 +1430,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     aria-modal="true"
     aria-label="Choose how to pay"
     onClick={requestClosePayMethod}
-  ><div className="pin-modal" onClick={(e) => e.stopPropagation()}><button className="pin-close" onClick={requestClosePayMethod} aria-label="Cancel"><X4 size={18} /></button><h3 className="pin-title">Pay with</h3><p className="pin-sub">{CURRENCIES[top.currency].label} {fmt(convertedAmount, top.currency)}{top.currency !== bottom.currency && <> (≈ {CURRENCY_SYMBOL[bottom.currency] || ""}{fmt(parseFloat(amount) || 0, bottom.currency)} {bottom.currency})</>}{" "}
+  ><div className="pin-modal" onClick={(e) => e.stopPropagation()}><button className="pin-close" onClick={requestClosePayMethod} aria-label="Cancel"><X4 size={18} /></button><h3 className="pin-title">Pay with</h3><p className="pin-sub">{CURRENCIES[top.currency].label} {fmt(senderAmount, top.currency)}{top.currency !== bottom.currency && <> — they get {CURRENCY_SYMBOL[bottom.currency] || ""}{fmt(receiverAmount, bottom.currency)} {bottom.currency} at 1 {top.currency} = {fmt(convert(1, top.currency, bottom.currency), bottom.currency)} {bottom.currency}</>}{" "}
               to {bottom.phone}</p><div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6, textAlign: "left" }}>{[
     { key: "gbank", label: "Gloobal Bank", displayLabel: <GloobalWordmark suffix=" Bank" /> },
     { key: "gpaylater", label: "Gloobal PayLater", displayLabel: <GloobalWordmark suffix=" PayLater" /> },
@@ -1456,7 +1497,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   ><GH2HFlipCircle size={22} /></div><div
     style={{
       marginTop: 14,
-      fontSize: receiptAmountFontSize(`\u2212${CURRENCY_SYMBOL[top.currency] || ""}${fmt(convertedAmount, top.currency)}`, 26),
+      fontSize: receiptAmountFontSize(`\u2212${CURRENCY_SYMBOL[top.currency] || ""}${fmt(senderAmount, top.currency)}`, 26),
       fontWeight: 800,
       color: T.negative,
       fontFamily: T.fontDisplay,
@@ -1464,7 +1505,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       overflowWrap: "anywhere"
     }}
   >
-                −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(convertedAmount, top.currency)}</div></div>{
+                −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(senderAmount, top.currency)}</div></div>{
     /* Same dial pad used for PIN/OTP everywhere else in the app
        (registration, login) instead of this screen's own
        separate keypad — one PIN entry pattern app-wide. Reaching

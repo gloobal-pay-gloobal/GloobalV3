@@ -14,13 +14,13 @@
 // halves can be stated. It is not a substitute for the server's own corridor
 // coverage (server/tests) and never asserts arithmetic the server owns.
 //
-// One contract is worth stating up front, because every payment test depends
-// on it and it is counter-intuitive: the amount a person types on Send Money
-// is denominated in the RECEIVER's currency. The screen is labelled "Amount
-// the receiver is asking for", the button shows what the sender will pay
-// after conversion, and the server converts the other way to work out the
-// debit. Reading it backwards is what once credited a payee 378.53 instead
-// of 5,000.
+// One contract underpins every payment test here: the amount a person types
+// on Send Money is denominated in the SENDER's own currency. Someone in
+// India entering 5000 means five thousand rupees of their own money, the
+// panel below shows what the receiver gets, and the request names both sides
+// plus which one was typed. A payment request is the one exception — it stays
+// destination-denominated so the payee is credited the exact figure they
+// named.
 //
 // Everything runs against a locally served build with the API intercepted,
 // so a full run writes nothing to the production database.
@@ -33,6 +33,7 @@ import {
   ACCOUNTS,
   ROOT_DIR,
   buildOnce,
+  convert,
   login,
   openPage,
   revealBalance,
@@ -124,10 +125,16 @@ describe("C. one account's state never survives into another", () => {
 describe("D. a cross-border payment shows what the server actually did", () => {
   // Corridors chosen for their minor units rather than their politics.
   const corridors = [
-    { from: "india", to: "japan", asked: 5000, note: "2-decimal payer, 0-decimal payee" },
-    { from: "japan", to: "india", asked: 5000, note: "0-decimal payer, 2-decimal payee" },
-    { from: "britain", to: "mexico", asked: 1000, note: "2-decimal both sides" },
-    { from: "mexico", to: "india", asked: 500, note: "the corridor production settled first" }
+    // The band, not a point: the app converts with live-ish rates of its
+    // own, so pinning an exact figure would make this fail on a rate move
+    // rather than on a defect. What matters is that 5,000 rupees reaches a
+    // US account as tens of dollars and never as five thousand of them.
+    { from: "india", to: "america", sends: 5000, note: "the founder's own worked example", expectReceived: [40, 70] },
+    { from: "america", to: "india", sends: 100, note: "the reverse of it", expectReceived: [7000, 12000] },
+    { from: "india", to: "japan", sends: 5000, note: "2-decimal payer, 0-decimal payee" },
+    { from: "japan", to: "india", sends: 5000, note: "0-decimal payer, 2-decimal payee" },
+    { from: "britain", to: "mexico", sends: 1000, note: "2-decimal both sides" },
+    { from: "mexico", to: "india", sends: 500, note: "the corridor production settled first" }
   ];
 
   for (const corridor of corridors) {
@@ -141,19 +148,63 @@ describe("D. a cross-border payment shows what the server actually did", () => {
         geolocation: { latitude: 19.076, longitude: 72.8777 }
       });
       await login(page, sender);
-      const result = await sendPayment(page, { sender, receiver, asked: corridor.asked });
+      const result = await sendPayment(page, { sender, receiver, sends: corridor.sends });
 
       const sendCall = api.calls.find((c) => c.path === "/api/transactions/send");
       assert.ok(sendCall, "a payment must reach the server");
 
-      // The number the person typed is the number the server is asked for,
-      // in the receiver's currency. This is the assertion that would fail if
-      // the client ever went back to sending its own converted figure.
+      // The number the person typed is the number the server is asked to
+      // take from THEM, in THEIR currency. This is the assertion that fails
+      // if the two sides of the corridor are ever swapped again.
+      assert.equal(sendCall.body.amountBasis, "source", "an ordinary send is source-denominated");
       assert.equal(
-        Number(sendCall.body.amount),
-        corridor.asked,
-        `the person asked for ${corridor.asked} ${receiver.currency}, the app sent ${sendCall.body.amount}`
+        Number(sendCall.body.sourceAmount),
+        corridor.sends,
+        `the person sent ${corridor.sends} ${sender.currency}, the app asked for ${sendCall.body.sourceAmount}`
       );
+      assert.equal(sendCall.body.sourceCurrency, sender.currency, "the source must be labelled with the sender's currency");
+      assert.equal(sendCall.body.destinationCurrency, receiver.currency, "the destination must be labelled with the receiver's");
+
+      // And the receiver is credited the conversion, never the raw figure.
+      // Checked against what the SCREEN said they would get rather than
+      // against a rate table of this test's own: the app converts with its
+      // own bundled rates, and a test that re-implemented them would be
+      // asserting its own arithmetic. What must hold is that the figure the
+      // person was shown is the figure the server was asked for.
+      assert.equal(
+        Number(sendCall.body.destinationAmount),
+        money(result.receiverQuote),
+        `the screen promised the payee ${result.receiverQuote}, the request carried ${sendCall.body.destinationAmount}`
+      );
+      if (sender.currency !== receiver.currency) {
+        assert.notEqual(
+          Number(sendCall.body.destinationAmount),
+          corridor.sends,
+          `the receiver must not be credited ${corridor.sends} ${receiver.currency} — that is the bug this replaces`
+        );
+      }
+      // What a person is asked to agree to, in one line: their own amount and
+      // currency, the payee's amount and currency, and the rate between them.
+      if (sender.currency !== receiver.currency) {
+        assert.match(
+          result.confirmText,
+          new RegExp(`at 1 ${sender.currency} = `),
+          `the confirmation must state the rate; it said: ${result.confirmText}`
+        );
+        assert.ok(
+          result.confirmText.includes(sender.currency) && result.confirmText.includes(receiver.currency),
+          `the confirmation must name both currencies; it said: ${result.confirmText}`
+        );
+      }
+
+      if (corridor.expectReceived) {
+        const [low, high] = corridor.expectReceived;
+        const got = Number(sendCall.body.destinationAmount);
+        assert.ok(
+          got >= low && got <= high,
+          `${corridor.sends} ${sender.currency} should land near ${low}-${high} ${receiver.currency}, got ${got}`
+        );
+      }
 
       // The quote the sender agreed to must survive the payment: the same
       // figure appears on the confirm step and on what they are left
@@ -194,7 +245,7 @@ describe("D2. the founder's \"sent 5000, received 1000\" report", () => {
       geolocation: { latitude: 19.076, longitude: 72.8777 }
     });
     await login(page, sender);
-    const result = await sendPayment(page, { sender, receiver, asked: 5000 });
+    const result = await sendPayment(page, { sender, receiver, sends: 5000 });
 
     const sendCall = api.calls.find((c) => c.path === "/api/transactions/send");
     assert.ok(sendCall, "the payment must reach the server");
@@ -202,13 +253,17 @@ describe("D2. the founder's \"sent 5000, received 1000\" report", () => {
     const chain = {
       typed: 5000,
       quoted: money(result.quoted),
-      sentToServer: Number(sendCall.body.amount),
-      currencySent: sendCall.body.currency
+      sourceSent: Number(sendCall.body.sourceAmount),
+      destinationSent: Number(sendCall.body.destinationAmount),
+      sourceCurrency: sendCall.body.sourceCurrency,
+      destinationCurrency: sendCall.body.destinationCurrency
     };
 
     assert.equal(chain.quoted, 5000, `the quote drifted: ${JSON.stringify(chain)}`);
-    assert.equal(chain.sentToServer, 5000, `the request drifted: ${JSON.stringify(chain)}`);
-    assert.equal(chain.currencySent, receiver.currency, `the amount must be labelled in the receiver's currency: ${JSON.stringify(chain)}`);
+    assert.equal(chain.sourceSent, 5000, `the debit drifted: ${JSON.stringify(chain)}`);
+    assert.equal(chain.destinationSent, 5000, `the credit drifted: ${JSON.stringify(chain)}`);
+    assert.equal(chain.sourceCurrency, sender.currency, JSON.stringify(chain));
+    assert.equal(chain.destinationCurrency, receiver.currency, JSON.stringify(chain));
     assert.ok(
       result.screen.includes("5,000") || result.screen.includes("5000"),
       `the receipt must show 5,000; screen ended: ${result.screen.slice(-300)}`
@@ -223,6 +278,56 @@ describe("D2. the founder's \"sent 5000, received 1000\" report", () => {
   });
 });
 
+describe("D3. the prototype ceiling is the sender's own money", () => {
+  // Raised from 5,000 to 5,000,000, and moved onto the source side. The old
+  // cap was denominated in the RECEIVER's currency, which made the usable
+  // limit swing by corridor — about $53 for a US account paying into India —
+  // and it was hit constantly in ordinary testing.
+  const cases = [
+    { sends: 4999999, allowed: true },
+    { sends: 5000000, allowed: true },
+    { sends: 5000001, allowed: false }
+  ];
+
+  for (const { sends, allowed } of cases) {
+    test(`${sends.toLocaleString("en-US")} INR is ${allowed ? "allowed" : "refused"}`, async () => {
+      const sender = ACCOUNTS.treasury;
+      const { page, context, api } = await openPage({
+        account: sender,
+        permissions: ["geolocation"],
+        geolocation: { latitude: 19.076, longitude: 72.8777 }
+      });
+      await login(page, sender);
+      const result = await sendPayment(page, { sender, receiver: ACCOUNTS.india2, sends });
+
+      const sendCall = api.calls.find((c) => c.path === "/api/transactions/send");
+      assert.ok(sendCall, "the payment must reach the server to be judged");
+      assert.equal(Number(sendCall.body.sourceAmount), sends, "the ceiling is measured against what was typed");
+
+      if (allowed) {
+        assert.doesNotMatch(
+          result.everShown,
+          /Prototype transaction limit/i,
+          `${sends} should be within the ceiling; screen ended: ${result.screen.slice(-300)}`
+        );
+        assert.match(result.screen, /MONEY SENT/i, "an allowed payment must produce a receipt");
+      } else {
+        assert.match(
+          result.everShown,
+          /limit is 5000000 INR/i,
+          `${sends} should be refused, naming the sender's own currency and ceiling`
+        );
+        assert.doesNotMatch(
+          result.screen,
+          /MONEY SENT/i,
+          "a refused payment must not produce a receipt"
+        );
+      }
+      await context.close();
+    });
+  }
+});
+
 describe("E. the location gate is a real precondition of paying", () => {
   test("a refused location blocks the payment and says why", async () => {
     const { page, context, api } = await openPage({ account: ACCOUNTS.india, permissions: [] });
@@ -230,7 +335,7 @@ describe("E. the location gate is a real precondition of paying", () => {
     const outcome = await sendPayment(page, {
       sender: ACCOUNTS.india,
       receiver: ACCOUNTS.japan,
-      asked: 500,
+      sends: 500,
       expectBlocked: true
     });
     assert.match(
@@ -250,7 +355,7 @@ describe("E. the location gate is a real precondition of paying", () => {
       geolocation: { latitude: 19.076, longitude: 72.8777 }
     });
     await login(page, ACCOUNTS.india);
-    await sendPayment(page, { sender: ACCOUNTS.india, receiver: ACCOUNTS.japan, asked: 500 });
+    await sendPayment(page, { sender: ACCOUNTS.india, receiver: ACCOUNTS.japan, sends: 500 });
     const sendCall = api.calls.find((c) => c.path === "/api/transactions/send");
     assert.ok(sendCall, "an allowed location must not block the payment");
     await context.close();
@@ -384,7 +489,7 @@ async function loginAsAnotherAccount(page, account) {
 // The location gate sits AFTER both confirmations, so a blocked payment
 // still walks the whole flow — it is refused at the last step, which is
 // exactly where a person would meet it.
-async function sendPayment(page, { sender, receiver, asked, expectBlocked = false }) {
+async function sendPayment(page, { sender, receiver, sends, expectBlocked = false }) {
   await page.getByLabel("Send", { exact: true }).click({ force: true });
   await page.getByLabel("Symbol −", { exact: true }).waitFor({ timeout: 25000 });
 
@@ -393,12 +498,14 @@ async function sendPayment(page, { sender, receiver, asked, expectBlocked = fals
   }
   await page.getByRole("button", { name: "Search", exact: true }).click({ force: true });
 
-  const amountField = page.getByLabel("Amount the receiver is asking for");
+  const amountField = page.getByLabel("Amount you send, in your own currency");
   await amountField.waitFor({ timeout: 25000 });
-  await amountField.fill(String(asked));
+  await amountField.fill(String(sends));
   await page.waitForTimeout(800);
 
   // The pay button carries the sender-currency quote: "Send ₹3,021.41".
+  // What the panel under the box promises the payee, before anything is
+  // sent. This is the number the person is agreeing to on their behalf.
   const payButton = page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last();
   const quoted = (await payButton.innerText()).replace(/^(Send|Simulate)\s*/, "").trim();
   await payButton.click({ force: true });
@@ -408,6 +515,15 @@ async function sendPayment(page, { sender, receiver, asked, expectBlocked = fals
   // and the click lands on a button nobody can see.
   const paySheet = page.getByRole("dialog", { name: "Choose how to pay" });
   await paySheet.waitFor({ timeout: 20000 });
+  // "INR 5,000.00 (they get $52.41 USD) to ..." — the sheet is where both
+  // sides are put in front of the person together, so it is the honest place
+  // to read what they agreed the payee would receive. The panel under the
+  // amount box says the same thing but only renders while the sender card is
+  // expanded, which it is not by default.
+  const sheetText = (await paySheet.innerText()).replace(/\s+/g, " ");
+  const receiverQuoteMatch = sheetText.match(/they get [^\d]*([\d,]+(?:\.\d+)?)/i);
+  const receiverQuote = receiverQuoteMatch ? receiverQuoteMatch[1] : null;
+  const confirmText = sheetText;
   // Dispatched rather than clicked: the sheet's rows sit below the fold of a
   // 390x844 viewport, and Playwright refuses even a forced click on an
   // element it considers off-screen. The handler is a plain onClick, so this
@@ -437,11 +553,20 @@ async function sendPayment(page, { sender, receiver, asked, expectBlocked = fals
     }
   }
 
-  // The payment now has to reach the server and come back before there is a
-  // receipt to read. A blocked one is waited on for longer, not less: the
-  // location gate gives a first fix 8 seconds before it gives up, and
-  // asserting before that has elapsed would find an empty screen and call
-  // it a pass.
-  await page.waitForTimeout(expectBlocked ? 14000 : 8000);
-  return { quoted, screen: await text(page) };
+  // Poll rather than sleep-then-look. A refusal is announced in a toast that
+  // clears itself after a couple of seconds, so a single read at the end of
+  // a fixed wait finds an empty screen and calls the refusal a pass. This
+  // keeps everything that appeared while waiting.
+  //
+  // The blocked case is given longer, not less: the location gate allows a
+  // first fix eight seconds before it gives up.
+  const deadline = Date.now() + (expectBlocked ? 14000 : 10000);
+  const seen = [];
+  while (Date.now() < deadline) {
+    const now = await text(page);
+    if (!seen.length || seen[seen.length - 1] !== now) seen.push(now);
+    await page.waitForTimeout(500);
+  }
+  const screen = await text(page);
+  return { quoted, receiverQuote, confirmText, screen, everShown: seen.join(" │ ") };
 }

@@ -175,6 +175,29 @@ export const ACCOUNTS = {
     balance: 2500,
     pin: "345678"
   },
+  america: {
+    symbolId: "●●●●●●●●●●●●",
+    fullName: "Dana Brooks",
+    mobileNumber: "19000000006",
+    country: "US",
+    countryIso: "US",
+    currency: "USD",
+    balance: 900,
+    pin: "456789"
+  },
+  // Balance headroom for the ceiling tests: the cap is 5,000,000 of the
+  // sender's own currency, so proving it needs an account that could
+  // otherwise afford the payment.
+  treasury: {
+    symbolId: "□□□□□□□□□□□□",
+    fullName: "Meera Iyer",
+    mobileNumber: "919000000007",
+    country: "IN",
+    countryIso: "IN",
+    currency: "INR",
+    balance: 20000000,
+    pin: "567890"
+  },
   mexico: {
     symbolId: "××××××××××××",
     fullName: "Lucia Ortiz",
@@ -190,6 +213,16 @@ export const ACCOUNTS = {
 // Deliberately round, made-up rates. The point of a test rate is that the
 // expected number can be written down, not that it matches a market.
 const RATE = {
+  // Around the real corridor, and the one the founder's worked example uses:
+  // 5,000 INR should land as roughly 52-54 USD.
+  "INR:USD": 1 / 95,
+  "USD:INR": 95,
+  "USD:JPY": 155,
+  "JPY:USD": 1 / 155,
+  "GBP:USD": 1.27,
+  "USD:GBP": 1 / 1.27,
+  "MXN:USD": 0.05,
+  "USD:MXN": 20,
   "INR:JPY": 1.8,
   "JPY:INR": 0.5556,
   "INR:GBP": 0.0095,
@@ -335,14 +368,37 @@ export async function installApi(context, options = {}) {
       const receiver = byIdentifier(body.receiverSymbolId || body.toSymbolId || body.recipient);
       if (!sender || !receiver) return json(404, { message: "Account not found" });
 
-      // `amount` is denominated in the RECEIVER's currency, and the server
-      // converts to work out what to debit the sender. That is the real
-      // contract — server.js ignores any `currency` the client sends, on
-      // purpose, so the client cannot mislabel a leg — and it is the shape a
-      // fake has to copy or the test proves nothing. Getting it backwards is
-      // the exact bug that once credited a payee 378.53 instead of 5,000.
-      const destinationAmount = Number(body.amount);
-      const sourceAmount = convert(destinationAmount, receiver.currency, sender.currency);
+      // Mirrors the real contract: the request names both sides and says
+      // which one the person typed, and the server computes the other from
+      // its own rates. A fake that guessed the basis would prove nothing.
+      const basis =
+        body.amountBasis === "destination" || body.amountBasis === "source"
+          ? body.amountBasis
+          : body.sourceAmount !== undefined
+            ? "source"
+            : "destination";
+      const sourceAmount =
+        basis === "source"
+          ? Number(body.sourceAmount !== undefined ? body.sourceAmount : body.amount)
+          : convert(Number(body.destinationAmount !== undefined ? body.destinationAmount : body.amount), receiver.currency, sender.currency);
+      const destinationAmount =
+        basis === "source"
+          ? convert(sourceAmount, sender.currency, receiver.currency)
+          : Number(body.destinationAmount !== undefined ? body.destinationAmount : body.amount);
+
+      // The cap, in the sender's own currency, exactly as the server applies
+      // it — so the browser tests can prove the ceiling means the same thing
+      // in every corridor.
+      const maxPrototypeAmount = options.maxPrototypeAmount || 5000000;
+      if (sourceAmount > maxPrototypeAmount) {
+        return json(400, {
+          success: false,
+          message: `Prototype transaction limit is ${maxPrototypeAmount} ${sender.currency}.`,
+          limit: maxPrototypeAmount,
+          limitCurrency: sender.currency,
+          limitBasis: "sender-currency"
+        });
+      }
       state.balances[sender.symbolId] = Number((state.balances[sender.symbolId] - sourceAmount).toFixed(2));
       state.balances[receiver.symbolId] = Number(
         (state.balances[receiver.symbolId] + destinationAmount).toFixed(2)
@@ -350,6 +406,11 @@ export async function installApi(context, options = {}) {
       const reference = "■×□×+○●=○○□+−−=−+□□×";
       return json(200, {
         success: true,
+        amountBasis: basis,
+        sourceAmount,
+        sourceCurrency: sender.currency,
+        destinationAmount,
+        destinationCurrency: receiver.currency,
         transaction: {
           referenceId: reference,
           transactionId: reference,

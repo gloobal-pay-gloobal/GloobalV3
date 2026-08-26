@@ -16,7 +16,7 @@
 // gone. It repeated on effectively every row — almost everything settles
 // to Bank — so it carried close to no information while taking the space
 // the date now uses. The method is still on the receipt this row opens.
-function TransactionRow({ t, chip, color, sign, ccy, isFirst, onSelect }) {
+function TransactionRow({ t, chip, color, sign, ccy, ccyCode = "USD", isFirst, onSelect }) {
   return <div
     onClick={onSelect}
     className="v2-tap"
@@ -67,5 +67,5 @@ function TransactionRow({ t, chip, color, sign, ccy, isFirst, onSelect }) {
       // colours it can ever be given.
       color
     }}
-  >{sign}{ccy}{t.amount.toFixed(2)}</span></div>;
+  >{sign}{ccy}{fmt(t.amount, ccyCode)}</span></div>;
 }

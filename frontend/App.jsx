@@ -552,6 +552,10 @@ function GloobalId() {
     }
     const amount = scanPendingPayment.amountCents / 100;
     const ccy = CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "$";
+    // The ISO code behind that symbol. Money is formatted against the code,
+    // never the symbol: a currency with no minor unit printed to two decimals
+    // (¥750,000.00) states a precision the currency does not have.
+    const ccyCode = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
     // Declared out here, not inside the `if (amount > 0)` block below, so
     // the final toast — which runs after that block, for both the
     // zero-amount and paid cases — can still tell a real send from a
@@ -669,8 +673,8 @@ function GloobalId() {
     showToast(
       amount > 0
         ? scanSettledRemotely
-          ? `Paid ${ccy}${amount.toFixed(2)} \u2014 verified and locked`
-          : `Not sent \u2014 ${ccy}${amount.toFixed(2)} recorded locally only, no registered Gloobal account to credit`
+          ? `Paid ${ccy}${fmt(amount, ccyCode)} \u2014 verified and locked`
+          : `Not sent \u2014 ${ccy}${fmt(amount, ccyCode)} recorded locally only, no registered Gloobal account to credit`
         : "Gloobal ID verified and locked"
     );
   };

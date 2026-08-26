@@ -13,7 +13,27 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { loadDomain, readSource } from "./harness.mjs";
+import fs from "node:fs";
+import path from "node:path";
+import { ROOT, loadDomain, readSource } from "./harness.mjs";
+
+// Every hand-written source file in the app, so a test can assert that
+// something appears NOWHERE rather than only that it appears somewhere.
+// The generated bundle is excluded: it is a concatenation of these files
+// and would report every hit twice.
+function sourceFiles() {
+  const roots = ["frontend", "backend"];
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(js|jsx)$/.test(entry.name)) found.push(full);
+    }
+  };
+  for (const root of roots) walk(path.join(ROOT, root));
+  return found;
+}
 
 const domain = loadDomain(["createFinancialCore"]);
 const INR = "INR";
@@ -180,35 +200,126 @@ describe("the prototype transaction limit describes its own currency", () => {
   });
 });
 
-describe("the permissions gate never claims an unasked permission", () => {
-  const src = readSource("frontend/components/dialogs/registerLogin.jsx");
+describe("permissions are asked for where they are used, and never claimed", () => {
+  // Rewritten on 26 August 2026. The original three tests asserted against
+  // the registration-time permissions gate — the screen that asked for
+  // camera, location, contacts and notifications up front and rendered each
+  // one's state. That screen is gone: 2dcab5f replaced it with an explainer
+  // that asks for nothing, and moved every request to the moment the
+  // capability is actually used.
+  //
+  // The defect those tests were written for is NOT gone, and is still what
+  // is guarded here: a permission must never be reported as granted on the
+  // strength of the API merely existing. What changed is where the guarantee
+  // lives. Behaviour is covered end-to-end in tests/browser.test.mjs, which
+  // drives a real Chromium and reads the permission states back out of it;
+  // these assertions hold the ARCHITECTURE those behaviours depend on, which
+  // a browser cannot check: that the ask happens in one place per capability,
+  // and that the onboarding screen is not that place.
+  const gate = readSource("frontend/components/dialogs/registerLogin.jsx");
 
-  // Contacts was marked "granted" purely from feature detection — a green
-  // "Allowed" tick for someone who had never been asked anything.
-  test("contacts support detection does not report granted", () => {
+  test("the onboarding screen requests nothing", () => {
+    // The whole point of just-in-time. A prompt is a one-shot resource —
+    // browsers remember a denial per origin and offer no way to ask again —
+    // so spending it during registration, before the person has seen the
+    // feature it belongs to, is how permissions get denied for good.
     assert.ok(
-      !/contacts: supported \? "granted"/.test(src),
+      !/mediaDevices\.getUserMedia\(/.test(gate),
+      "the onboarding screen must not open the camera"
+    );
+    assert.ok(
+      !/geolocation\.getCurrentPosition\(/.test(gate),
+      "the onboarding screen must not ask for location"
+    );
+    assert.ok(
+      !/Notification\.requestPermission\(/.test(gate),
+      "the onboarding screen must not ask for notifications"
+    );
+  });
+
+  test("it explains what will be asked for, and when", () => {
+    // It is allowed to name the capabilities — that is its whole job. What
+    // it may not do is imply any of them has already been granted.
+    for (const capability of ["Location", "Camera", "Contacts", "Alerts"]) {
+      assert.ok(
+        new RegExp(`label: "${capability}"`).test(gate),
+        `the explainer must still name ${capability}`
+      );
+    }
+  });
+
+  test("no screen reports a permission as granted from feature detection", () => {
+    // The original defect, stated in the form it can still recur: Contacts
+    // has no standing grant to hold (the Contact Picker API prompts fresh on
+    // every call), so nothing may derive one from the API's presence.
+    assert.ok(
+      !/contacts:\s*supported\s*\?\s*"granted"/.test(gate),
       "detecting the API is not the same as being granted anything"
     );
     assert.ok(
-      /contacts: supported \? "ready"/.test(src),
-      "supported-but-not-yet-asked needs its own state"
+      !/navigator\.contacts[\s\S]{0,80}granted/.test(gate),
+      "a Contacts grant may not be inferred from navigator.contacts existing"
     );
   });
 
-  test("the gate renders that state honestly", () => {
+  test("each capability is requested in exactly one place, and it is the place that uses it", () => {
+    // The three real browser permissions, and the module that owns each ask.
+    // A second caller appearing anywhere is the regression this catches: it
+    // means some other screen has started prompting on its own.
+    const owners = [
+      ["frontend/components/common/qrScanner.jsx", /mediaDevices\.getUserMedia\(/, "the camera belongs to the QR scanner"],
+      ["backend/domain/provenance/LocationResolver.js", /geolocation\.getCurrentPosition\(/, "location belongs to the provenance resolver"],
+      ["frontend/hooks/usePaymentNotifications.js", /Notification\.requestPermission\(/, "notifications belong to the payment notifier"]
+    ];
+    for (const [file, pattern, why] of owners) {
+      assert.ok(pattern.test(readSource(file)), `${why} — ${file} must make the request`);
+    }
+
+    // "Exactly one place" is the half that actually decays. Every other
+    // source file in the tree must be free of these calls, or some screen
+    // has quietly started prompting on its own again.
+    const owned = new Set(owners.map(([file]) => path.join(ROOT, file.replace(/\//g, path.sep))));
+    const offenders = [];
+    for (const file of sourceFiles()) {
+      if (owned.has(file)) continue;
+      const src = fs.readFileSync(file, "utf8");
+      for (const [, pattern] of owners) {
+        if (pattern.test(src)) offenders.push(`${path.relative(ROOT, file)} :: ${pattern}`);
+      }
+    }
+    assert.deepEqual(offenders, [], "only the owning module may request each permission");
+  });
+
+  test("the notification prompt comes after a payment, not before one", () => {
+    // A permission prompt answers itself when it arrives right after money
+    // has moved: they just paid someone, and the offer is to be told when
+    // the next one lands. Asking during onboarding is why these get denied.
+    const notifications = readSource("frontend/hooks/usePaymentNotifications.js");
     assert.ok(
-      /Asks when used/.test(src),
-      "the ready state must read as a future ask, not a granted permission"
+      /After a payment succeeds, never before/.test(notifications),
+      "the module must still document when it asks"
+    );
+    assert.ok(
+      /if \(Notification\.permission !== "default"\) return Notification\.permission;/.test(notifications),
+      "an already-answered permission must never be re-prompted"
+    );
+    assert.ok(
+      /paymentNotificationsAlreadyAsked\(\)/.test(notifications),
+      "a dismissed prompt must not be asked again — that is how an origin gets auto-denied"
     );
   });
 
-  // The three permissions that DO have a real browser answer must keep asking
-  // for one rather than following contacts into detection-only.
-  test("camera, location and notifications still call the real API", () => {
-    assert.ok(/mediaDevices\.getUserMedia\(\{ video: true \}\)/.test(src), "camera must actually request");
-    assert.ok(/geolocation\.getCurrentPosition\(/.test(src), "location must actually request");
-    assert.ok(/Notification\.requestPermission\(\)/.test(src), "notifications must actually request");
+  test("a location refusal and a location timeout stay different events", () => {
+    // Carried over from the gate this replaced, because the payment path now
+    // depends on it: someone indoors who ALLOWED location gets a timeout,
+    // and telling them they refused — at a till — is the worst failure this
+    // screen has.
+    const resolver = readSource("backend/domain/provenance/LocationResolver.js");
+    assert.ok(/DENIED/.test(resolver) && /TIMEOUT/.test(resolver), "both outcomes must be modelled");
+    assert.ok(
+      !/code === 1 \|\| .*code === 3/.test(resolver),
+      "PERMISSION_DENIED and TIMEOUT must not be collapsed into one branch"
+    );
   });
 });
 

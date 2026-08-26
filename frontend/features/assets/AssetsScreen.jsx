@@ -1,14 +1,14 @@
 // src/features/assets/AssetsScreen.jsx
 import React2, { useState as useState10, Fragment } from "react";
 import { ArrowLeft, ArrowRight, ChevronRight, TrendingUp, Landmark as Landmark3 } from "lucide-react";
-function AssetsScreen({ onClose, ccy, assetRows, onViewPayLater, onViewDetail, onRequestSettle }) {
+function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater, onViewDetail, onRequestSettle }) {
   const [assetsExpanded, setAssetsExpanded] = useState10(false);
   const totalAssets = assetRows.reduce((s, r) => s + r.value, 0);
   const totalSpending = assetRows.reduce((s, r) => s + r.amountPaid, 0);
   const avgMonthsToTarget = assetRows.length ? assetRows.reduce((s, r) => s + r.monthsToTarget, 0) / assetRows.length : 0;
   return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onClose} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>My Assets</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* Total */
-  }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "22px 20px" }}><div style={{ display: "flex", gap: 18 }}><span style={{ flex: 1 }}><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Current assets</div><div style={{ fontSize: 24, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 3 }}>{ccy}{totalAssets.toFixed(2)}</div></span><span style={{ flex: 1 }}><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Future assets</div><div style={{ fontSize: 24, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 3 }}>{ccy}{totalSpending.toFixed(2)}</div></span></div>{
+  }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "22px 20px" }}><div style={{ display: "flex", gap: 18 }}><span style={{ flex: 1 }}><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Current assets</div><div style={{ fontSize: 24, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 3 }}>{ccy}{fmt(totalAssets, ccyCode)}</div></span><span style={{ flex: 1 }}><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Future assets</div><div style={{ fontSize: 24, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 3 }}>{ccy}{fmt(totalSpending, ccyCode)}</div></span></div>{
     /* Spending → Earnings → Assets */
   }<div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 16 }}>{["Spending", "Earnings", "Assets"].map((step, i) => <React2.Fragment key={step}><span style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 12, background: "rgba(255,255,255,0.14)", fontSize: 11.5, fontWeight: 800, color: "#fff" }}>{step}</span>{i < 2 && <ArrowRight size={14} color="rgba(255,255,255,0.55)" style={{ flexShrink: 0 }} />}</React2.Fragment>)}</div><button
     onClick={onViewPayLater}
@@ -38,7 +38,7 @@ function AssetsScreen({ onClose, ccy, assetRows, onViewPayLater, onViewDetail, o
       boxShadow: totalAssets > 0 ? "0 8px 20px rgba(124,58,237,0.3)" : "none"
     }}
   ><Landmark3 size={16} />
-          Settle {ccy}{totalAssets.toFixed(2)} to Gloobal Bank
+          Settle {ccy}{fmt(totalAssets, ccyCode)} to Gloobal Bank
         </button>{
     /* Rate strip — numbers, not paragraphs. Assets is check-only:
        no settings or toggles here, just what's true right now. */

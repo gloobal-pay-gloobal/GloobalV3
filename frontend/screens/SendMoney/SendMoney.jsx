@@ -1094,7 +1094,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
        cards together through name → Gloobal ID → mobile number →
        country name. Replaces the old per-card flip button that used
        to sit on the found receiver card's own corner. */
-  }<div className="header"><button className="icon-btn circle" onClick={onClose} aria-label="Back"><ChevronLeft2 size={20} /></button><div style={{ display: "flex", alignItems: "center", gap: 10 }}><button className="icon-btn circle" onClick={openContactPicker} aria-label="Choose from contacts"><ContactIcon size={15} color={T.inkSoft} /></button><button className="icon-btn circle" onClick={onOpenPaidHistory} aria-label="Paid history"><History6 size={15} color={T.inkSoft} /></button></div></div>{searchStage !== "closed" && <>{bottomOpen && <>{
+  }<div className="header"><NavBackButton onClick={onClose} /><div style={{ display: "flex", alignItems: "center", gap: 10 }}><NavIconButton onClick={openContactPicker} label="Choose from contacts"><ContactIcon size={17} color={T.ink} /></NavIconButton><NavHistoryButton onClick={onOpenPaidHistory} label="Paid history" /></div></div>{searchStage !== "closed" && <>{bottomOpen && <>{
     /* RECEIVER CARD — now shown first/up top: their name/ID and
        the editable amount (in their currency) are what matters
        while searching and typing. Hosts the active search dial
@@ -1261,7 +1261,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
        counterparty flag, and a row restored from the server carries none
        either, so the box came out blank — a broken avatar rather than a
        design. The country is still on the receipt this row belongs to. */
-  }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#14122B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: "#9C96AF", marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: "#14122B", flexShrink: 0 }}>
+  }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#14122B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: "#9C96AF", marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: TXN_OUT_COLOR, flexShrink: 0 }}>
                     −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(Number(t.amount) || 0)}
                   </span></div>)}</div></div>}{searchStage === "found" && bottomOpen && <>{bottom.registered === false && <div
     role="alert"

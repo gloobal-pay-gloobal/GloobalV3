@@ -131,12 +131,7 @@ function ProductServicesCard({ services }) {
 // optional right-hand action. Identical markup in all three before this,
 // down to the safe-area padding.
 function ProductScreenHeader({ title, onBack, onAction, actionLabel }) {
-  return <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><button
-    onClick={onBack}
-    aria-label="Back"
-    className="v2-tap"
-    style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ServiceArrowLeft size={18} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}>{title}</span>{onAction && <button
+  return <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onBack} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}>{title}</span>{onAction && <button
     onClick={onAction}
     aria-label={actionLabel || "More"}
     className="v2-tap"

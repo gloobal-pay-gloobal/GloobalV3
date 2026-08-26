@@ -223,13 +223,77 @@ function GloobalId() {
   // validity. It calls the same submitLocationObservation() interface
   // a real receiver device would call with its own reading; here it's
   // this device reporting its own (sender-role) observation.
+  // Which payment, if any, is currently stopped for want of a location.
+  // `retry` is the exact action that was blocked, so the modal's retry
+  // button resumes THAT payment rather than dumping the person back on a
+  // screen to start again.
+  const [locationGate, setLocationGate] = useState19(null);
+  const [locationGateBusy, setLocationGateBusy] = useState19(false);
+  // The reading captured by the gate, handed to reportSenderLocation so the
+  // observation submitted to provenance is the SAME one the payment was
+  // authorised against — not a second fix taken moments later, which could
+  // legitimately differ and would make the record disagree with the check.
+  const gatedLocationRef = useRef13(null);
+
+  // Every payment funnels through this. Returns true to proceed.
+  //
+  // On a block it opens the modal and remembers `retry`, so the person
+  // resumes the same payment instead of navigating back to it.
+  const passesLocationGate = async ({ retry, isRetry = false } = {}) => {
+    const gate = await ensurePaymentLocation({ retry: isRetry });
+    if (gate.ok) {
+      gatedLocationRef.current = gate.observation;
+      setLocationGate(null);
+      return true;
+    }
+    gatedLocationRef.current = null;
+    setLocationGate({ reason: gate.reason, retry: retry || null });
+    return false;
+  };
+
+  const handleLocationGateRetry = async () => {
+    if (locationGateBusy) return;
+    setLocationGateBusy(true);
+    try {
+      const pending = locationGate;
+      // `isRetry` asks for the longer timeout — the retry case is usually
+      // someone who allowed and needs the extra seconds for a fix.
+      const ok = await passesLocationGate({ retry: pending && pending.retry, isRetry: true });
+      if (ok && pending && pending.retry) pending.retry();
+    } finally {
+      setLocationGateBusy(false);
+    }
+  };
+
+  // Location report for a transaction that has already completed.
+  //
+  // The capture no longer happens here. The gate above takes the reading
+  // BEFORE the payment (see hooks/usePaymentLocation.js for why that
+  // reversed the previous "never gate financial validity" design), and this
+  // submits that same reading. The fallback capture stays for the one path
+  // that can reach here without having gone through the gate — a history
+  // entry replayed from an older record — so provenance still gets an
+  // honest status rather than nothing.
   const reportSenderLocation = (txnId) => {
     (async () => {
-      const observation = await captureBrowserGeo().catch(() => new LocationObservation({ status: LOCATION_STATUS.UNAVAILABLE }));
+      const observation = gatedLocationRef.current
+        || await captureBrowserGeo().catch(() => new LocationObservation({ status: LOCATION_STATUS.UNAVAILABLE }));
       submitLocationObservation({ txnId, role: "sender", observation });
     })();
   };
   const handleSendMoneyComplete = (entry) => {
+    // Confirmation in the tray, then the one-and-only notification ask.
+    // Order matters: notifyPaymentSent is a no-op until permission exists,
+    // so the FIRST payment gets no tray entry and only the offer — asking
+    // and firing in the same breath would show a notification before the
+    // person had answered the prompt about notifications.
+    notifyPaymentSent({
+      txnId: entry.txnId,
+      amount: entry.amount,
+      currencySymbol: CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "",
+      to: entry.name
+    });
+    offerPaymentNotificationsAfterPayment();
     // Tags which side of the account (Personal/Creator) this
     // transaction belongs to, for the role-separated history/chart
     // split in DashboardScreen — not to be confused with the
@@ -255,6 +319,12 @@ function GloobalId() {
   // stays a local simulation. Scan & Pay against a real scanned Gloobal
   // ID, or any receiver carrying a resolvable symbolId, goes remote.
   const handleRemoteSend = async ({ txnId, amount, currency, receiver, pin: sendPin, payMethodLabel, memo, clientRequestId }) => {
+    // Before anything else, including the skipped/local-simulation exits
+    // below — a simulated send still writes a history row, and a gate with
+    // an exception is not a gate.
+    if (!(await passesLocationGate({ retry: null }))) {
+      return { ok: false, reason: "Location is needed before this payment can go through." };
+    }
     const senderSymbolId = registeredUser && registeredUser.symbolId;
     const receiverSymbolId = receiver && (receiver.gloobalId || receiver.symbolId || receiver.id);
     if (!senderSymbolId) return { ok: true, skipped: true, reason: "not signed in against the backend" };
@@ -466,6 +536,9 @@ function GloobalId() {
   // biometric prompt here was decoration. A refusal now leaves the QR
   // unspent and nothing posted.
   const handleScanBiometricVerify = async () => {
+    // Scan & Pay posts through executeTransaction directly rather than
+    // handleRemoteSend, so it needs the gate in its own right.
+    if (!(await passesLocationGate({ retry: () => handleScanBiometricVerify() }))) return;
     if (scanBiometricScanning || !scanPendingPayment) return;
     setScanBiometricScanning(true);
     const verified = await requireBiometric({ pinReason: "Confirm this payment with your PIN." });
@@ -606,7 +679,12 @@ function GloobalId() {
   // Send Money and Scan & Pay. No separate ledger-posting path is left
   // anywhere in the app; an Essentials grant can only ever come from a
   // real, first-time completion inside executeTransaction.
-  const handlePayBusiness = ({ key, label, chip, amount, cashbackRate, payMethodLabel = null }) => {
+  // Async now: it consults the location gate before posting, like every
+  // other payment path. Its callers fire it from an onClick and ignore the
+  // return value, so the promise is unobserved by design.
+  const handlePayBusiness = async ({ key, label, chip, amount, cashbackRate, payMethodLabel = null }) => {
+    const payBusinessArgs = { key, label, chip, amount, cashbackRate, payMethodLabel };
+    if (!(await passesLocationGate({ retry: () => handlePayBusiness(payBusinessArgs) }))) return;
     if (amount <= 0) return;
     const txnId = genTxnId();
     const now = /* @__PURE__ */ new Date();
@@ -1102,6 +1180,34 @@ function GloobalId() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, registeredUser, secureId, refreshBalanceToken]);
 
+  // Arrivals are only noticed if something asks. The summary fetch below
+  // ran once per dashboard entry, so money landing while the app sat open
+  // went unseen until an unrelated refresh happened to fire.
+  const [receivedPollToken, setReceivedPollToken] = useState19(0);
+  // Whether the dedupe list has been primed for this session.
+  //
+  // Without this the first poll would notify for the ENTIRE received
+  // history at once — every payment ever received, all in the tray, the
+  // moment someone turns notifications on. The first pass therefore marks
+  // what already exists as seen WITHOUT showing anything, and only genuinely
+  // new arrivals after that point notify.
+  const receivedNotifyPrimedRef = useRef13(false);
+  useEffect15(() => {
+    if (stage !== "dashboard") return;
+    const interval = setInterval(() => {
+      // Nothing to gain from polling a backgrounded tab, and a phone on
+      // battery has plenty to lose. A notification the person would only
+      // see on returning is one the freshly-woken poll will raise anyway.
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      setReceivedPollToken((n) => n + 1);
+    }, GLOOBAL_RECEIVED_POLL_MS);
+    return () => clearInterval(interval);
+  }, [stage]);
+  // A sign-out must re-prime for whoever signs in next.
+  useEffect15(() => {
+    if (stage !== "dashboard") receivedNotifyPrimedRef.current = false;
+  }, [stage]);
+
   // Money this account RECEIVED, kept apart from what it sent.
   //
   // Every server row used to be appended to sendMoneyHistory regardless of
@@ -1132,6 +1238,19 @@ function GloobalId() {
         };
         setSendMoneyHistory((local) => seedUnder(local, sent));
         setReceivedMoneyHistory((local) => seedUnder(local, received));
+        // First pass for this session: record what is already there as seen
+        // and say nothing. Only what arrives AFTER this point is news.
+        if (!receivedNotifyPrimedRef.current) {
+          received.forEach((entry) => markPaymentNotified(entry.txnId));
+          receivedNotifyPrimedRef.current = true;
+        } else {
+          received.forEach((entry) => notifyPaymentReceived({
+            txnId: entry.txnId,
+            amount: entry.amount,
+            currencySymbol: CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "",
+            from: entry.name
+          }));
+        }
       } catch (e) {
         /* read-only; the dashboard works without it */
       }
@@ -1140,7 +1259,9 @@ function GloobalId() {
       cancelled = true;
     };
     // secureId — same missing dependency as the two effects above.
-  }, [stage, registeredUser, secureId]);
+    // receivedPollToken re-runs this on the poll tick, which is what makes
+    // an arrival visible (and notifiable) while the app is simply open.
+  }, [stage, registeredUser, secureId, receivedPollToken]);
 
   // Login, ID mode: check the Gloobal ID the moment it is complete rather
   // than waiting for submit, so the card can show "Account found" before
@@ -1862,6 +1983,13 @@ function GloobalId() {
     // Explicit sign-out: drop the remembered identity too, or the mount
     // effect restores it straight back to the lock screen.
     GloobalApi.clearSession();
+    // The location fix this device captured belongs to whoever was signed
+    // in when it was taken. Carrying it across a sign-out would attach one
+    // person's whereabouts to another person's first payment.
+    forgetPaymentLocation();
+    // Same reasoning: the next person's first real arrival must not be
+    // swallowed as "already notified".
+    forgetPaymentNotifications();
     // Money state first, before any of the identity state below is torn down.
     // This ledger lives in a useRef in LedgerProvider and survives sign-out,
     // so without this the next account to sign in inherits this one's seeds —
@@ -1976,28 +2104,12 @@ function GloobalId() {
        now centered on the card instead, so the two can never overlap.
        Covers the steps that had no way back: registration's Secure ID
        (→ OTP), login's Secure ID (→ phone), and Referral (→ Secure ID). */
-  }{(stage === "secureId" || stage === "referral") && <button
-    onClick={stage === "referral" ? requestBackFromReferral : requestBackFromSecureId}
-    aria-label="Back"
-    className="v2-tap"
-    style={{
+  }{(stage === "secureId" || stage === "referral") && <NavBackButton onClick={stage === "referral" ? requestBackFromReferral : requestBackFromSecureId} style={{
       position: "absolute",
       top: "calc(18px + env(safe-area-inset-top, 0px))",
       left: "calc(18px + env(safe-area-inset-left, 0px))",
-      width: 40,
-      height: 40,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      color: T.ink,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowCard,
       zIndex: 25
-    }}
-  ><ChevronLeft4 size={20} /></button>}{
+     }} />}{
     /* Explain this screen — the mirror of the Back chevron above, in the
        opposite corner, on the two screens that ask for something the
        person has never seen before: twelve symbols off a pad with no
@@ -2613,8 +2725,7 @@ function GloobalId() {
     /* Scan to pay — real decode/lock logic, simulated camera input
        since there's no actual camera access here. Tapping the demo
        target is standing in for "the camera detected this code." */
-  }{showScanScreen && <div style={{ position: "fixed", inset: 0, zIndex: 400, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><DashboardAmbientBg /><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><button
-    onClick={() => {
+  }{showScanScreen && <div style={{ position: "fixed", inset: 0, zIndex: 400, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><DashboardAmbientBg /><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
       // Leaving the scanner abandons whatever was pending on it, PIN included.
       scanVerifiedPinRef.current = null;
       setShowScanScreen(false);
@@ -2622,11 +2733,7 @@ function GloobalId() {
       setScanError(null);
       setScanCameraAccessGranted(false);
       setScanScreenTab("scan");
-    }}
-    aria-label="Back"
-    className="v2-tap"
-    style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><ChevronLeft4 size={20} color={T.ink} /></button><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{scanScreenTab === "myCode" ? "My Gloobal QR code" : "Scan to pay"}</span></div>{
+    }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{scanScreenTab === "myCode" ? "My Gloobal QR code" : "Scan to pay"}</span></div>{
     /* Scan / My Code — same two-way pattern as any scanner: scan
        someone else's code, or show your own for them to scan.
        "My Code" shows a real, separate ID per role — Personal mode
@@ -2895,6 +3002,15 @@ function GloobalId() {
       setScanPayOptionsOpen(false);
       setScanPayPinOpen(true);
     }}
+  /><LocationRequiredModal
+    open={Boolean(locationGate)}
+    reason={locationGate && locationGate.reason}
+    busy={locationGateBusy}
+    onRetry={handleLocationGateRetry}
+    // Dismissing IS cancelling the payment — nothing was posted, so there
+    // is nothing to undo, and the modal only ever appears in place of a
+    // payment that did not happen.
+    onClose={() => setLocationGate(null)}
   /><PayPinModal
     open={scanPayPinOpen}
     onClose={() => {

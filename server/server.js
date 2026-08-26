@@ -1888,9 +1888,36 @@ app.get('/api/referrals/:symbolId', lookupLimit, requireAuth, requireSelf('symbo
 
     const referrals = await Referral.find({ referrerId: referrer._id }).sort({ createdAt: -1 });
 
+    // Display names for the list, resolved in ONE query rather than one per
+    // referral — a referrer with hundreds of invitees would otherwise cost
+    // hundreds of round trips to render a single screen.
+    //
+    // This route still deliberately returns no CONTACT details: no mobile
+    // number, no email, nothing that lets the referrer reach these accounts
+    // outside Gloobal. A display name is a different thing, and withholding
+    // it had a real cost — the referral screen could only show twelve-symbol
+    // Gloobal IDs, which is unreadable, so the list was a wall of symbols
+    // with no way to tell one person from another.
+    //
+    // An account that has not set a name yields an empty string. The client
+    // renders its own placeholder for that case; it must never be handed the
+    // symbolId dressed up as a name.
+    const referredSymbolIds = referrals
+      .map((referral) => referral.referredSymbolId)
+      .filter(Boolean);
+    const referredUsers = referredSymbolIds.length > 0
+      ? await User.find({ symbolId: { $in: referredSymbolIds } })
+          .select('symbolId fullName')
+          .lean()
+      : [];
+    const nameBySymbolId = new Map(
+      referredUsers.map((user) => [user.symbolId, user.fullName || ''])
+    );
+
     return res.status(200).json({
       referrals: referrals.map((referral) => ({
         referredSymbolId: referral.referredSymbolId,
+        referredName: nameBySymbolId.get(referral.referredSymbolId) || '',
         createdAt: referral.createdAt,
         status: referral.status
       })),

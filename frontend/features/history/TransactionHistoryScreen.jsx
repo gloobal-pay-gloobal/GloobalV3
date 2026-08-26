@@ -1,5 +1,6 @@
 // src/features/history/TransactionHistoryScreen.jsx
 import { useState as useState12, useEffect as useEffect11, useRef as useRef9 } from "react";
+import { Filter as FilterHist } from "lucide-react";
 
 
 // src/features/history/TransactionHistoryScreen.jsx
@@ -86,7 +87,40 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
        both pager panels below are built from the rows these leave in,
        so the tab, the two totals and the list can never describe
        different spans of time. */
-  }<div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{HISTORY_PERIODS.map((p) => <button
+  }<div
+    style={{
+      marginBottom: 14,
+      borderRadius: T.radiusLg,
+      background: T.surface,
+      boxShadow: T.shadowCard,
+      overflow: "hidden"
+    }}
+  >{
+    /* Period and totals in ONE card, and the totals carry no words.
+       This was three stacked blocks — a full-width row of period pills,
+       then a Received tile, then a Paid tile — eating roughly 136px
+       before a single transaction was visible. Worse, the words
+       "RECEIVED" and "PAID" were already on screen: the header directly
+       above this has a Received/Paid toggle, so the same two labels
+       appeared twice within about 200px of each other and neither
+       instance told you anything the other did not.
+       The period control is a compact segmented strip along the top of
+       the card it governs, which is also the honest place for it — it
+       filters these totals, the chart and the list all at once. The two
+       figures below are unlabelled because a signed, coloured figure is
+       already unambiguous under this app's one rule: + and green is
+       money in, − and red is money out. Screen readers still get the
+       full sentence via aria-label, since colour and sign are exactly
+       what a reader cannot convey. */
+  }<div style={{ display: "flex", alignItems: "center", gap: 3, padding: 5, background: T.surfaceAlt }}>{
+    /* A funnel, so the row reads as a control rather than as three words
+       someone left at the top of the screen. Decorative to a screen
+       reader — each segment is already a real button with aria-pressed,
+       which is what carries the state. */
+  }<span
+    aria-hidden="true"
+    style={{ display: "flex", alignItems: "center", padding: "0 7px 0 5px", flexShrink: 0 }}
+  ><FilterHist size={13} color={T.inkFaint} /></span>{HISTORY_PERIODS.map((p) => <button
     key={p.key}
     onClick={() => setHistoryPeriod(p.key)}
     aria-pressed={historyPeriod === p.key}
@@ -95,27 +129,49 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
       flex: 1,
       border: "none",
       borderRadius: 999,
-      padding: "9px 0",
+      padding: "6px 0",
       cursor: "pointer",
-      fontSize: 12,
+      fontSize: 11.5,
       fontWeight: 800,
-      background: historyPeriod === p.key ? T.accentSoft : T.surfaceAlt,
+      // The selected one is lifted onto the card's own surface rather
+      // than tinted a different colour — the same "raised chip" idea the
+      // pay-method filter below already uses, so the two filter rows on
+      // this screen read as the same kind of control.
+      background: historyPeriod === p.key ? T.surface : "transparent",
       color: historyPeriod === p.key ? T.accent : T.inkFaint,
-      transition: "background 0.2s ease, color 0.2s ease"
+      boxShadow: historyPeriod === p.key ? "0 1px 3px rgba(76,29,149,0.14)" : "none",
+      transition: "background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease"
     }}
-  >{p.label}</button>)}</div>{
-    /* Received / Paid for the selected period. These used to be a
-       lifetime figure sitting above a filtered list, which is how a
-       period with no activity in it still showed somebody else's
-       number. Both are summed from the same filtered rows the list
-       renders. */
-  }<div style={{ display: "flex", gap: 10, marginBottom: 14 }}>{[
-    { key: "received", label: "Received", sign: "+", value: periodReceivedTotal, color: T.positive, chip: T.positiveSoft },
-    { key: "paid", label: "Paid", sign: "−", value: periodPaidTotal, color: T.accent, chip: T.accentSoft }
-  ].map((tile) => <div
-    key={tile.key}
-    style={{ flex: 1, minWidth: 0, borderRadius: T.radiusLg, background: tile.chip, padding: "12px 14px" }}
-  ><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.inkSoft }}>{tile.label}</div><div style={{ fontSize: 17, fontWeight: 800, color: tile.color, fontFamily: T.fontDisplay, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tile.sign}{ccy}{tile.value.toFixed(2)}</div></div>)}</div>{
+  >{p.label}</button>)}</div>{(() => {
+    /* ONE total: the direction you are actually looking at.
+       Received and Paid side by side made the same mistake the labels
+       did — the Received/Paid toggle in the header already decides which
+       list is on screen, so a second figure for the other direction
+       answers a question nobody asked here, and it sat directly under a
+       tab saying otherwise. The number now always agrees with the rows
+       beneath it, and the other direction is one tap away, re-read from
+       the same filtered rows. With only one figure to place it can also
+       be bigger, which is what a period total should have been. */
+    const active = historyTab === "sending"
+      ? { label: "Paid", sign: "\u2212", value: periodPaidTotal, color: TXN_OUT_COLOR }
+      : { label: "Received", sign: "+", value: periodReceivedTotal, color: TXN_IN_COLOR };
+    return <div
+      // The label the eye no longer needs, kept for the ear: a screen
+      // reader gets neither the colour nor the sign.
+      aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${ccy}${active.value.toFixed(2)}`}
+      style={{ padding: "12px 16px" }}
+    ><div
+      style={{
+        fontSize: 22,
+        fontWeight: 800,
+        color: active.color,
+        fontFamily: T.fontDisplay,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }}
+    >{active.sign}{ccy}{active.value.toFixed(2)}</div></div>;
+  })()}</div>{
     /* Daily trend — same DailySpendingChart the wallet card uses,
        scoped to just this history's data, giving a quick "average
        day vs a bigger day" read before scrolling the list below. */
@@ -158,8 +214,8 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
     }}
     className="history-pager"
   >{[
-    { key: "receiving", rows: periodReceiveHistory, sign: "+", color: T.positive, chip: T.positiveSoft },
-    { key: "sending", rows: periodSendHistory, sign: "\u2212", color: T.accent, chip: T.accentSoft }
+    { key: "receiving", rows: periodReceiveHistory, sign: "+", color: TXN_IN_COLOR, chip: TXN_IN_SOFT },
+    { key: "sending", rows: periodSendHistory, sign: "\u2212", color: TXN_OUT_COLOR, chip: TXN_OUT_SOFT }
   ].map((col) => {
     const filteredRows = historyMethodFilter === "all" ? col.rows : col.rows.filter((t) => t.method === historyMethodFilter);
     return <div key={col.key} style={{ flex: "0 0 100%", scrollSnapAlign: "start", minWidth: 0 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{filteredRows.length === 0 ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>Nothing {historyPeriodMeta(historyPeriod).emptyLabel}</div> : filteredRows.map((t, i) => <TransactionRow

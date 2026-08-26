@@ -1,6 +1,13 @@
 // src/components/dialogs/registerLogin.jsx
 import { useState as useState6, useEffect as useEffect6, useRef as useRef4 } from "react";
 import {
+  Send as SendMomentIcon,
+  QrCode as QrMomentIcon,
+  Users as PeopleMomentIcon,
+  ArrowDownLeft as MoneyInMomentIcon,
+  Globe as GlobeMomentIcon,
+  ArrowRight as ArrowRightMoment,
+  Check as CheckMoment,
   ChevronLeft,
   Search,
   Phone,
@@ -41,89 +48,49 @@ import {
 // pre-authorize here. Tapping Allow for it only confirms the API exists
 // on this device rather than pretending to obtain a permission that
 // isn't a real, standing one.
+// What Gloobal will ask for, and at what moment — told in pictures.
+//
+// ── Why this screen has almost no words ──────────────────────────────────
+//
+// Gloobal is meant to work for someone who reads no English, and the
+// product already commits to that everywhere it matters: a Gloobal ID is
+// twelve SYMBOLS rather than letters, the dial pad is symbols, money
+// direction is green in and red out, a country is a flag. A screen of
+// English paragraphs standing in front of that system contradicts it.
+//
+// The first version of this screen was ninety words. It said the same four
+// things this one does, and communicated none of them to most of the world.
+//
+// So the meaning is carried by a PAIR of icons — the capability, an arrow,
+// and the moment it is asked for — read as a sentence without words:
+//
+//     pin      →  send        "location, when you send"
+//     camera   →  qr          "camera, when you scan"
+//     contacts →  people      "contacts, when you pick someone"
+//     bell     →  money in    "notifications, when money arrives"
+//
+// One word survives per row, and only because icons are genuinely less
+// universal than they feel — a funnel means "filter" only to someone who
+// has used software with funnels in it. A single noun is also the unit that
+// actually survives translation; a sentence is not.
+//
+// The one thing NOT reduced to a picture is which permission is required.
+// That is a consent boundary, and a pictogram someone has to guess at is
+// not consent. It stays as words, deliberately, and is the only sentence
+// left on the screen.
 function PermissionsGateScreen({ onContinue }) {
+  // Each capability gets its OWN colour, drawn from the same twelve-colour
+  // palette a Gloobal ID is written in. Four identical white cards made the
+  // four things look like one thing repeated; colour is what lets someone
+  // hold "the pink one is the camera" without reading anything, and it is
+  // already the app's way of distinguishing (the profile rows, the ID dots
+  // and the referral marks all key off this palette).
   const PERMISSIONS = [
-    { key: "notifications", label: "Notifications", Icon: Bell4, note: "Payment alerts and security codes land the moment they happen" },
-    { key: "location", label: "Location", Icon: MapPin3, note: "Confirms which country you're transacting from, for fraud checks" },
-    { key: "contacts", label: "Contacts", Icon: Contact3, note: "Pick a recipient from your phone instead of typing their number" },
-    { key: "camera", label: "Camera", Icon: Camera2, note: "Scan a Gloobal QR code to pay or receive instantly" }
+    { key: "location", label: "Location", Icon: MapPin3, When: SendMomentIcon, tone: POSITION_COLORS[0], required: true },
+    { key: "camera", label: "Camera", Icon: Camera2, When: QrMomentIcon, tone: POSITION_COLORS[2] },
+    { key: "contacts", label: "Contacts", Icon: Contact3, When: PeopleMomentIcon, tone: POSITION_COLORS[3] },
+    { key: "notifications", label: "Alerts", Icon: Bell4, When: MoneyInMomentIcon, tone: POSITION_COLORS[4] }
   ];
-  const [status, setStatus] = useState6(() => Object.fromEntries(PERMISSIONS.map((p) => [p.key, "idle"])));
-  const [busyKey, setBusyKey] = useState6(null);
-
-  async function requestOne(key) {
-    if (busyKey) return;
-    setBusyKey(key);
-    try {
-      if (key === "notifications") {
-        if (typeof Notification === "undefined") {
-          setStatus((s) => ({ ...s, notifications: "unavailable" }));
-        } else {
-          try {
-            const result = await Notification.requestPermission();
-            setStatus((s) => ({ ...s, notifications: result === "granted" ? "granted" : "denied" }));
-          } catch (e) {
-            setStatus((s) => ({ ...s, notifications: "denied" }));
-          }
-        }
-      } else if (key === "location") {
-        if (typeof navigator === "undefined" || !navigator.geolocation) {
-          setStatus((s) => ({ ...s, location: "unavailable" }));
-        } else {
-          await new Promise((resolve) => {
-            navigator.geolocation.getCurrentPosition(
-              () => {
-                setStatus((s) => ({ ...s, location: "granted" }));
-                resolve();
-              },
-              () => {
-                setStatus((s) => ({ ...s, location: "denied" }));
-                resolve();
-              },
-              { timeout: 8000 }
-            );
-          });
-        }
-      } else if (key === "contacts") {
-        // "ready", never "granted".
-        //
-        // This branch only detects that the Contacts Picker API exists. It
-        // does not — and cannot — obtain a permission: navigator.contacts
-        // .select() prompts fresh on every call and leaves no standing grant
-        // behind, which is why the gate does not open the picker here (doing
-        // so during onboarding would show a contact list for no reason and
-        // still grant nothing).
-        //
-        // Reporting that support detection as "granted" meant the gate showed
-        // a green "Allowed" tick against Contacts for someone who had never
-        // been asked anything and had approved nothing. That is the one thing
-        // a permissions screen must never do — every other row on it reflects
-        // a real browser answer, so the false tick borrowed their credibility.
-        //
-        // "ready" says the honest thing instead: the device can do this, and
-        // the ask happens at the moment it is used.
-        const supported = typeof navigator !== "undefined" && "contacts" in navigator && typeof window !== "undefined" && "ContactsManager" in window;
-        setStatus((s) => ({ ...s, contacts: supported ? "ready" : "unavailable" }));
-      } else if (key === "camera") {
-        if (typeof navigator === "undefined" || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          setStatus((s) => ({ ...s, camera: "unavailable" }));
-        } else {
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            // Only the permission grant was wanted — an idle camera stream
-            // left open would show the browser's "camera in use" indicator
-            // for a screen that isn't showing any camera feed.
-            stream.getTracks().forEach((t) => t.stop());
-            setStatus((s) => ({ ...s, camera: "granted" }));
-          } catch (e) {
-            setStatus((s) => ({ ...s, camera: "denied" }));
-          }
-        }
-      }
-    } finally {
-      setBusyKey(null);
-    }
-  }
 
   return <div
     style={{
@@ -135,35 +102,149 @@ function PermissionsGateScreen({ onContinue }) {
       flexDirection: "column",
       fontFamily: T.fontBody
     }}
-  ><div
+  >{
+    /* The same drifting currency marks every other full-screen surface in
+       the app sits on. A flat backdrop made this screen look like a system
+       dialog interrupting the app rather than a part of it. */
+  }<DashboardAmbientBg /><div
     style={{
+      position: "relative",
+      zIndex: 1,
       flex: 1,
       minHeight: 0,
       overflowY: "auto",
       WebkitOverflowScrolling: "touch",
-      padding: "calc(48px + env(safe-area-inset-top, 0px)) 24px 24px",
+      padding: "calc(30px + env(safe-area-inset-top, 0px)) 20px 16px",
       display: "flex",
       flexDirection: "column",
-      gap: 22
+      justifyContent: "center",
+      gap: 20
     }}
-  ><div style={{ textAlign: "center" }}><span style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" needs a few things" /></span><div style={{ fontSize: 12.5, color: T.inkFaint, marginTop: 8, lineHeight: 1.5 }}>
-        Turn these on now so payments, scans and alerts work the moment you need them. Nothing here is required — skip anything and turn it on later from your device settings.
-      </div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{PERMISSIONS.map((p, i) => {
-    const st = status[p.key];
-    return <div
-      key={p.key}
-      style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 18px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-    ><span style={{ width: 40, height: 40, borderRadius: 12, flexShrink: 0, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><p.Icon size={18} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{p.label}</span><span style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.35 }}>{p.note}</span></span>{st === "granted" ? <span style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0, fontSize: 11, fontWeight: 800, color: T.positive }}><Check4 size={15} color={T.positive} /> Allowed</span> : st === "denied" ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.negative, background: T.negativeSoft, borderRadius: 999, padding: "4px 9px" }}>Blocked</span> : st === "unavailable" ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.inkFaint, background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: 999, padding: "4px 9px" }}>Not on this device</span> : st === "ready" ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.inkSoft, background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: 999, padding: "4px 9px" }}>Asks when used</span> : <button
-      onClick={() => requestOne(p.key)}
-      disabled={busyKey === p.key}
-      className="v2-tap"
-      style={{ flexShrink: 0, border: `1px solid ${T.accent}`, borderRadius: 999, padding: "7px 14px", background: "none", color: T.accent, fontSize: 11.5, fontWeight: 800, cursor: busyKey === p.key ? "default" : "pointer" }}
-    >{busyKey === p.key ? "Asking…" : "Allow"}</button>}</div>;
-  })}</div></div><div style={{ padding: "0 24px calc(24px + env(safe-area-inset-bottom, 0px))", flexShrink: 0 }}><button
+  >{
+    /* Hero. The gradient the wallet card uses, so the screen opens on
+       something recognisably Gloobal rather than on a list. The globe and
+       the four dots ARE the sentence: one world, four things. */
+  }<div
+    style={{
+      borderRadius: T.radiusXl,
+      background: T.gradWallet,
+      boxShadow: T.shadowRaised,
+      padding: "26px 22px 22px",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 14,
+      flexShrink: 0
+    }}
+  ><GlobeMomentIcon size={30} color="rgba(255,255,255,0.92)" strokeWidth={1.4} /><span style={{ fontSize: 17, color: "#fff", fontFamily: T.fontDisplay }}><GloobalWordmark withSymbols /></span><span style={{ display: "flex", gap: 7 }}>{PERMISSIONS.map((p) => <span
+    key={p.key}
+    style={{ width: 7, height: 7, borderRadius: "50%", background: p.tone, boxShadow: `0 0 0 2px rgba(255,255,255,0.18)` }}
+  />)}</span></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 11, flexShrink: 0 }}>{PERMISSIONS.map((p) => <div
+    key={p.key}
+    style={{
+      position: "relative",
+      borderRadius: T.radiusLg,
+      background: T.surface,
+      boxShadow: T.shadowCard,
+      // A hairline in the tile's own colour, so the tint reads as
+      // deliberate rather than as a card that failed to load.
+      border: `1px solid ${p.tone}22`,
+      padding: "18px 12px 15px",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 13,
+      overflow: "hidden"
+    }}
+  >{
+    /* A wash of the tile's colour behind the icons only — enough to
+       identify it, never enough to fight the icons for attention. */
+  }<span
+    aria-hidden="true"
+    style={{ position: "absolute", top: 0, left: 0, right: 0, height: 62, background: `linear-gradient(${p.tone}14, ${p.tone}00)` }}
+  /><span style={{ position: "relative", display: "flex", alignItems: "center", gap: 8 }}><span
+    style={{
+      width: 50,
+      height: 50,
+      borderRadius: 16,
+      flexShrink: 0,
+      background: `${p.tone}1F`,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }}
+  ><p.Icon size={23} color={p.tone} /></span>{
+    /* Dotted, not solid: a dashed run reads as "…and then, later", which
+       is exactly the relationship — the capability is asked for AT that
+       moment, not now. */
+  }<span style={{ display: "flex", alignItems: "center", gap: 2.5, flexShrink: 0 }}>{[0, 1, 2].map((d) => <span
+    key={d}
+    style={{ width: 2.5, height: 2.5, borderRadius: "50%", background: T.inkFaint, opacity: 0.55 }}
+  />)}</span><span
+    style={{
+      width: 34,
+      height: 34,
+      borderRadius: 11,
+      flexShrink: 0,
+      background: T.surfaceAlt,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }}
+  ><p.When size={16} color={T.inkSoft} /></span></span><span style={{ position: "relative", fontSize: 12.5, fontWeight: 800, color: T.ink }}>{p.label}</span>{
+    /* Required, as a ring rather than a filled dot — a bare dot in the
+       corner read as an unread badge, which means something else. */
+  }{p.required && <span
+    aria-hidden="true"
+    style={{
+      position: "absolute",
+      top: 10,
+      right: 10,
+      width: 9,
+      height: 9,
+      borderRadius: "50%",
+      border: `2.5px solid ${TXN_OUT_COLOR}`,
+      boxSizing: "border-box"
+    }}
+  />}</div>)}</div>{
+    /* The one sentence left standing.
+       Which permission is mandatory is a consent boundary, and a ring
+       nobody can decode is not consent — so it gets exactly one line of
+       plain language, and nothing else on the screen competes with it. */
+  }<div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 9,
+      padding: "11px 14px",
+      borderRadius: T.radiusMd,
+      background: T.surface,
+      border: `1px solid ${T.line}`,
+      flexShrink: 0
+    }}
+  ><span
+    style={{ width: 9, height: 9, borderRadius: "50%", border: `2.5px solid ${TXN_OUT_COLOR}`, boxSizing: "border-box", flexShrink: 0 }}
+  /><span style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.45 }}>
+      Required to send money. The rest are optional.
+    </span></div></div><div style={{ position: "relative", zIndex: 1, padding: "0 20px calc(20px + env(safe-area-inset-bottom, 0px))", flexShrink: 0, display: "flex", justifyContent: "center" }}><button
     onClick={onContinue}
+    aria-label="Continue"
     className="v2-tap"
-    style={{ width: "100%", border: "none", borderRadius: T.radiusMd, padding: "16px 0", cursor: "pointer", background: T.gradButton, color: "#fff", fontSize: 14, fontWeight: 800, boxShadow: "0 10px 24px rgba(124,58,237,0.3)" }}
-  >Continue</button></div></div>;
+    style={{
+      width: 64,
+      height: 64,
+      borderRadius: "50%",
+      border: "none",
+      cursor: "pointer",
+      background: T.gradButton,
+      color: "#fff",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      boxShadow: "0 12px 28px rgba(124,58,237,0.36)"
+    }}
+  ><CheckMoment size={27} strokeWidth={3} /></button></div></div>;
 }
 // src/components/dialogs/registerLogin.jsx
 function PhoneConnector({ country, phoneNumber, onOpenPicker, onOpenDial, dialOpen, onActivate, verifying, showLogin, onLoginTap }) {
@@ -411,28 +492,12 @@ function PinScreen({ value, length, onChange, onSubmit, onBack, revealed, onTogg
     /* Back — same floating circular control (40x40, ChevronLeft) used on
        every other step of the auth flow (phone/OTP/Secure ID/Referral),
        so PIN doesn't break the pattern with its own boxed header bar. */
-  }<button
-    onClick={onBack}
-    aria-label="Back"
-    className="v2-tap"
-    style={{
+  }<NavBackButton onClick={onBack} style={{
       position: "absolute",
       top: "calc(18px + env(safe-area-inset-top, 0px))",
       left: "calc(18px + env(safe-area-inset-left, 0px))",
-      width: 40,
-      height: 40,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      color: T.ink,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowCard,
       zIndex: 25
-    }}
-  ><ChevronLeft size={20} /></button><div
+     }} /><div
     style={{
       flex: 1,
       minHeight: 0,
@@ -529,28 +594,12 @@ function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, 
        every other step of the auth flow (phone/OTP/Secure ID/Referral),
        so this step doesn't break the pattern with its own boxed header
        bar. */
-  }<button
-    onClick={onBack}
-    aria-label="Back"
-    className="v2-tap"
-    style={{
+  }<NavBackButton onClick={onBack} style={{
       position: "absolute",
       top: "calc(18px + env(safe-area-inset-top, 0px))",
       left: "calc(18px + env(safe-area-inset-left, 0px))",
-      width: 40,
-      height: 40,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      color: T.ink,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowCard,
       zIndex: 25
-    }}
-  ><ChevronLeft size={20} /></button><div
+     }} /><div
     style={{
       flex: 1,
       minHeight: 0,
@@ -679,28 +728,12 @@ function BiometricVerifyScreen({ onBack, onVerify, scanning, notice, onSkip, ski
     /* Rendered only when there is somewhere to go. Registration's
        biometric step is terminal — the account and its PIN already
        exist — and passes no onBack, so no chevron is drawn there. */
-  }{onBack && <button
-    onClick={onBack}
-    aria-label="Back"
-    className="v2-tap"
-    style={{
+  }{onBack && <NavBackButton onClick={onBack} style={{
       position: "absolute",
       top: "calc(18px + env(safe-area-inset-top, 0px))",
       left: "calc(18px + env(safe-area-inset-left, 0px))",
-      width: 40,
-      height: 40,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      color: T.ink,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      boxShadow: T.shadowCard,
       zIndex: 25
-    }}
-  ><ChevronLeft size={20} /></button>}<div
+     }} />}<div
     style={{
       flex: 1,
       minHeight: 0,

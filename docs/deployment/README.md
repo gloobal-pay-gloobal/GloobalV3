@@ -63,9 +63,29 @@ Render dashboard under Environment — never in the repository.
 
 ### Auto-deploy is broken — Render needs a manual deploy
 
-The service is configured correctly (`autoDeploy: yes`, trigger `commit`,
-repo `GloobalV3`, branch `main`). GitHub is simply not delivering the
-webhook, so Render never learns that `main` moved.
+**Confirmed cause (28 August 2026): Render's GitHub App has no repository
+access to `GloobalV3`.** Its own build log says so, on every deploy:
+
+```
+==> It looks like we don't have access to your repo, but we'll try to clone it anyway.
+==> Cloning from https://github.com/gloobal-pay-gloobal/GloobalV3
+==> Checking out commit 8031a95... in branch main
+```
+
+That single line explains the whole failure, and it is why a *manual*
+deploy still works while an automatic one never fires. The repository is
+public, so the anonymous clone succeeds and the build completes normally —
+there is nothing wrong with the build. But GitHub only delivers push
+events to an App that has been granted the repository, so Render is never
+told that `main` moved, and no `new_commit` deploy can be created. The
+service configuration is fine and always was (`autoDeploy: yes`, trigger
+`commit`, repo `GloobalV3`, branch `main`); the missing piece is on
+GitHub's side.
+
+This section previously described the cause as a stale webhook left by the
+repository rename. That was the visible symptom, not the mechanism: the
+rename cost the App its grant, and the absent webhook follows from that.
+Deleting or re-adding a webhook alone does not fix it.
 
 The deploy history proves it. A webhook-driven deploy is recorded with
 trigger `new_commit`:
@@ -74,31 +94,58 @@ trigger `new_commit`:
 |---|---|---|
 | 2026-08-13 → 2026-08-18 | `new_commit` × 11 | `gloobal-pay-gloobal/Gloobal` (old) |
 | 2026-08-19 17:15 | `service_updated` | repointed to `GloobalV3` |
-| 2026-08-19 → 2026-08-21 | `manual`, `api`, `service_updated` only | `GloobalV3` |
+| 2026-08-19 → 2026-08-28 | `manual`, `api`, `service_updated` only | `GloobalV3` |
 
 Not one `new_commit` deploy has fired since the service was repointed.
 This is not Render's monorepo path filter (`rootDir: server`) being
-selective: commit `7d7a948` **created the entire `server/` tree** and
-`a07de64` modified it, and neither produced a `new_commit` deploy.
+selective: commit `7d7a948` **created the entire `server/` tree**,
+`a07de64` modified it, and `8031a95` rewrote four files under it. None
+produced a `new_commit` deploy.
 
-The cause is the repository rename (`-GloobalV3` → `GloobalV3`) leaving a
-stale webhook — pushes showed a `remote: This repository moved` redirect.
+The last automatic deploy was `dep-da23a32d0e5s73eufvf0` at
+`2026-08-18T10:33:48Z` (commit `5ba7464`), immediately before the
+repository was renamed `-GloobalV3` → `GloobalV3`.
 
-**Fix it in the dashboards** (there is no API for this):
+**Fix it in the dashboards** (there is no API for this — neither the Render
+MCP nor the REST API exposes App installations):
 
-1. GitHub → `gloobal-pay-gloobal/GloobalV3` → Settings → Webhooks.
-   Delete any hook whose payload URL contains `api.render.com` and still
-   names the old repo, or that shows red/failed recent deliveries.
-2. Render → **Gloobal Pay** → Settings → Build & Deploy → Repository →
-   **Disconnect**, then reconnect to
+1. GitHub → org **Settings → Applications → Installed GitHub Apps** →
+   **Render** → *Repository access*. Add `GloobalV3`, or grant
+   "All repositories".
+   https://github.com/organizations/gloobal-pay-gloobal/settings/installations
+
+   This is the actual fix. Everything below is verification.
+
+2. GitHub → repo → Settings → Webhooks. After step 1 a Render hook should
+   be present and its *Recent Deliveries* should show green 2xx responses.
+   If it is missing, Render → **Gloobal Pay** → Settings → Build & Deploy →
+   Repository → **Disconnect**, then reconnect to
    `https://github.com/gloobal-pay-gloobal/GloobalV3`, branch `main`,
-   root directory `server`. Reconnecting re-creates the webhook.
+   root directory `server`. Reconnecting re-creates the hook.
+
 3. Confirm: push a commit that touches `server/` and check that a deploy
-   appears with trigger `new_commit`, not `manual`.
+   appears with trigger `new_commit` at the pushed SHA. Nothing short of
+   that proves it — a `manual` deploy of the right commit looks identical
+   from the outside and proves nothing.
+
+4. The build log line quoted above should be gone. While it is still
+   printed, the App still lacks access no matter what the webhook page
+   shows.
 
 Until that is done, **a change under `server/` needs a manual deploy**
-(Render dashboard → Manual Deploy → Deploy latest commit). Netlify is
-unaffected and deploys automatically.
+(Render dashboard → Manual Deploy → Deploy latest commit).
+
+Note that Netlify is **not** unaffected, as this file previously claimed.
+On 28 August a push of `8031a95` to `main` produced no Netlify build
+either, leaving the site on the previous commit. Netlify's recent deploys
+are recorded as `deploy_source: "api"` with `manual_deploy: false`, and the
+one for `ca13c78` was created 32 minutes after that commit was made — a
+webhook build starts in seconds, so those were not push-triggered. The
+Netlify GitHub App most likely lost its grant in the same rename, and
+wants the same fix at
+https://app.netlify.com/projects/gloobalv3/configuration/deploys
+(Build & deploy → Continuous deployment → *Link to a different repository*,
+re-selecting the same repo).
 
 Note that Render only rebuilds when files under `rootDir` (`server/`)
 change, so a commit touching only docs or frontend leaving Render on an

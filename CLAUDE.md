@@ -24,9 +24,10 @@ edit in D:\gloobalv3  →  git commit  →  git push origin main
          Netlify → frontend                        Render → API (server/)
 ```
 
-Caveat: the Render half of that is **not currently automatic** — the
-GitHub webhook is stale, so a change under `server/` needs a manual deploy
-until it is reconnected. See `docs/deployment/README.md`.
+Caveat: **neither half is currently automatic.** Render's and Netlify's
+GitHub Apps lost repository access when the repo was renamed, so a push to
+`main` triggers nothing and both sides need a manual deploy. See
+`docs/deployment/README.md`.
 
 `D:\gloobalv3` is the single active workspace. Every other Gloobal folder
 on this machine — including `D:\Desktop\Gloobal`, `D:\Gloobal project`,
@@ -208,12 +209,22 @@ Two independent deploy targets, from the same repo. See
 
 Neither path may move.
 
-**Render auto-deploy is broken.** The service is configured correctly, but
-GitHub is not delivering the webhook — no deploy has been triggered by a
-push since the repository was renamed. After changing anything under
-`server/`, trigger a manual deploy from the Render dashboard, or the live
-API will not have your change. Netlify auto-deploys normally. Evidence and
-the reconnect steps are in `docs/deployment/README.md`.
+**Auto-deploy is broken on both targets.** The Render service is configured
+correctly; what is missing is on GitHub's side. Render's GitHub App has no
+repository access to `GloobalV3`, which its own build log states on every
+deploy ("It looks like we don't have access to your repo, but we'll try to
+clone it anyway"). The clone still succeeds because the repo is public, so
+builds work — but GitHub sends push events only to an App that has been
+granted the repository, so no `new_commit` deploy can ever fire. The last
+one was 2026-08-18, immediately before the rename.
+
+Netlify is in the same state, despite what this file used to say: a push of
+`8031a95` on 2026-08-28 produced no Netlify build either.
+
+So after changing anything under `server/`, trigger a manual deploy from
+the Render dashboard, and expect the Netlify site to sit a commit behind
+until it is deployed too. Evidence and the fix are in
+`docs/deployment/README.md`.
 
 Render only rebuilds when files under `server/` change, so a docs- or
 frontend-only commit leaving Render on an older commit is correct.

@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useState as useState19, useEffect as useEffect15, useRef as useRef13 } from "react";
+import { useState as useState19, useEffect as useEffect15, useRef as useRef13, useCallback as useCallback11 } from "react";
 import {
   ChevronLeft as ChevronLeft4,
   Lock as Lock7,
@@ -1173,49 +1173,141 @@ function GloobalId() {
   // "I don't know" — and that same number is what the risk check reads.
   // "loading" until the first read resolves, so a fresh dashboard never
   // flashes an error before it has had a chance to succeed.
+  // Three states, never two. "loading" is not a balance and neither is an
+  // error, and the screen has to be able to say which it is looking at.
+  //
+  // This used to be read as a single boolean — `balanceStatus ===
+  // "unavailable"` — which meant "loading" and "confirmed" rendered
+  // IDENTICALLY: as a hard currency figure taken from the local ledger. The
+  // local ledger always has a number (it opens at a fixed float and is
+  // rebuilt from empty on every page load), so a first login against a cold
+  // Render instance showed a confident, correctly-formatted, entirely
+  // fictional balance for as long as the read took — €10,000.00 to a
+  // Netherlands account whose real balance was €3,120.55 — and then either
+  // corrected itself or flipped to "Balance unavailable". That is the
+  // "first login shows the wrong balance" report, and the fix is that a
+  // figure is only ever shown once the server has confirmed it.
   const [balanceStatus, setBalanceStatus] = useState19("loading");
+
+  // The identity this hydration cycle belongs to. Compared on the way back
+  // in, so a response for the account someone just signed out of can never
+  // land on the account they signed in to.
+  const hydratedForRef = useRef13(null);
+
+  // ONE hydration cycle for the whole account: the authoritative balance,
+  // the asset seeds and the PayLater due. It is a function rather than an
+  // effect body so the effect, the refresh button and pull-to-refresh can
+  // all call the SAME code path instead of maintaining three copies of it.
+  //
+  // Returns a promise that settles when the cycle is done, which is what
+  // lets pull-to-refresh hold its spinner for exactly as long as the work
+  // actually takes rather than a guessed interval.
+  const hydrateAccount = useCallback11(async () => {
+    const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
+    if (!symbolId) return false;
+    hydratedForRef.current = symbolId;
+
+    // Only the FIRST read for an account announces itself as loading. A
+    // pull-to-refresh on a screen already showing a confirmed figure must
+    // not blank it back to "Loading balance…" — the number on screen is
+    // still the last thing the server said, and replacing it with a
+    // spinner every few seconds is worse than leaving it there.
+    setBalanceStatus((current) => (current === "ready" ? "ready" : "loading"));
+
+    const settled = await Promise.allSettled([
+      GloobalApi.getProfile(symbolId),
+      GloobalApi.getAssets(symbolId),
+      GloobalApi.getPaylater(symbolId)
+    ]);
+
+    // The account changed while this was in flight. Everything below would
+    // be writing one person's money onto another person's screen.
+    if (hydratedForRef.current !== symbolId) return false;
+
+    const [profileResult, assetsResult, paylaterResult] = settled;
+    const profile = profileResult.status === "fulfilled" ? profileResult.value : null;
+
+    // Passed through as-is rather than coerced: reconcileBankBalance is the
+    // one place that decides what counts as a real balance, and
+    // Number(null) === 0 would otherwise sneak a "zero the account" past
+    // this guard. It no-ops on anything that is not a number.
+    if (profile) reconcileBankBalance(profile.balance);
+
+    // Only a profile carrying a genuinely numeric balance counts as
+    // confirmed — the same bar reconcileBankBalance itself applies. Anything
+    // else is an error, and says so, rather than being shown as a figure.
+    const confirmed = Boolean(profile) && Number.isFinite(Number(profile.balance));
+    setBalanceStatus(confirmed ? "ready" : "error");
+
+    // Seeds before dues: the PayLater LIMIT is derived from the seed list,
+    // so reconciling the due first would briefly compute a negative
+    // availability against an empty limit.
+    const assets = assetsResult.status === "fulfilled" ? assetsResult.value : null;
+    const paylater = paylaterResult.status === "fulfilled" ? paylaterResult.value : null;
+    if (assets && Array.isArray(assets.seeds)) hydrateGrantsFromServer(assets.seeds);
+    // A null is skipped rather than reconciled — reconciling "I couldn't
+    // read it" to 0 would clear a real PayLater due, which is the same
+    // mistake as fabricating a balance, in the opposite direction.
+    if (paylater) reconcilePaylaterDue(paylater.pendingDues);
+
+    return confirmed;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registeredUser, secureId]);
+
+  // Kept in a ref so the pull-to-refresh handler and the refresh control can
+  // reach the current cycle without being re-bound on every identity change.
+  const hydrateAccountRef = useRef13(hydrateAccount);
+  useEffect15(() => {
+    hydrateAccountRef.current = hydrateAccount;
+  }, [hydrateAccount]);
+
+  // THE refresh. Pull-to-refresh and any refresh control both call this and
+  // nothing else, so there is exactly one definition of what "refresh this
+  // account" means and no way for two entry points to drift apart.
+  //
+  // Awaits the hydration cycle rather than firing and forgetting, because
+  // the gesture needs to know when the work is actually finished — a
+  // spinner that stops on a timer is lying about the same thing the balance
+  // used to lie about.
+  const handleRefreshAccount = useCallback11(async () => {
+    // Arrivals are polled on their own interval; a deliberate refresh should
+    // pick them up too rather than leaving money that landed a minute ago
+    // invisible until the next tick.
+    setReceivedPollToken((n) => n + 1);
+    try {
+      return await hydrateAccountRef.current();
+    } catch (e) {
+      // hydrateAccount already records the failure in balanceStatus. This
+      // only stops a rejected promise escaping into the gesture handler.
+      return false;
+    }
+  }, []);
+
+  // A new account must never inherit the previous one's verdict. Without
+  // this, signing out of an account whose read had failed and into one that
+  // works showed "Balance unavailable" on the new account until its own read
+  // landed — and the reverse leaked a stale "ready" over the previous
+  // account's number. handleStartOver resets around twenty-five pieces of
+  // identity state and this was not among them.
+  const lastHydratedIdRef = useRef13(null);
+  useEffect15(() => {
+    const symbolId = (registeredUser && registeredUser.symbolId) || secureId || null;
+    if (symbolId === lastHydratedIdRef.current) return;
+    lastHydratedIdRef.current = symbolId;
+    setBalanceStatus("loading");
+  }, [registeredUser, secureId]);
+
   useEffect15(() => {
     if (stage !== "dashboard") return;
     const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
+    // No identity yet. The effect re-runs the moment one arrives, because
+    // BOTH sources are watched below — the id lands in `secureId` on some
+    // paths and in `registeredUser` on others, and watching only one of them
+    // is what made a first login miss its read entirely.
     if (!symbolId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const profile = await GloobalApi.getProfile(symbolId);
-        if (cancelled) return;
-        // Passed through as-is rather than coerced here: reconcileBankBalance
-        // is the one place that decides what counts as a real balance, and
-        // Number(null) === 0 would otherwise sneak a "zero the account"
-        // past this guard. It no-ops on anything that is not a number.
-        if (profile) reconcileBankBalance(profile.balance);
-        // Only a profile carrying a genuinely numeric balance counts as
-        // confirmed — the same bar reconcileBankBalance itself applies.
-        setBalanceStatus(profile && Number.isFinite(Number(profile.balance)) ? "ready" : "unavailable");
-      } catch (e) {
-        if (cancelled) return;
-        // Unreachable, 401 or 404. The local ledger keeps whatever it had —
-        // blanking it would be its own kind of lie — but the UI now says
-        // plainly that this figure is unconfirmed instead of presenting a
-        // local opening float as the account's real balance.
-        setBalanceStatus("unavailable");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // secureId belongs here because the line above reads it.
-    //
-    // The id is resolved from EITHER source — `registeredUser.symbolId` or
-    // `secureId` — but only the first was watched. On a path where the id
-    // lands in `secureId` after this effect has already run once (arriving at
-    // the dashboard before registeredUser is populated), the run took the
-    // `if (!symbolId) return` exit and nothing ever re-triggered it: the
-    // server balance was never fetched, balanceStatus stayed "loading", and
-    // the screen kept showing whatever the local ledger happened to hold.
-    // Refreshing appeared to fix it only because session restore populates
-    // the id BEFORE stage becomes "dashboard", so the first run already had
-    // one. That is the whole bug — nothing to do with the token.
-  }, [stage, registeredUser, secureId, refreshBalanceToken]);
+    hydrateAccount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, registeredUser, secureId, refreshBalanceToken, hydrateAccount]);
 
   // My Assets and PayLater, restored from the server on arriving at the
   // dashboard.
@@ -1237,31 +1329,11 @@ function GloobalId() {
   // and a null is skipped rather than reconciled — reconciling "I couldn't
   // read it" to 0 would clear a real PayLater due, which is the same
   // mistake in the opposite direction.
-  useEffect15(() => {
-    if (stage !== "dashboard") return;
-    const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
-    if (!symbolId) return;
-    let cancelled = false;
-    (async () => {
-      const [assets, paylater] = await Promise.all([
-        GloobalApi.getAssets(symbolId),
-        GloobalApi.getPaylater(symbolId)
-      ]);
-      if (cancelled) return;
-      // Seeds first: the PayLater LIMIT is derived from the seed list, so
-      // reconciling the due before the seeds exist would briefly compute a
-      // negative availability against an empty limit.
-      if (assets && Array.isArray(assets.seeds)) hydrateGrantsFromServer(assets.seeds);
-      if (paylater) reconcilePaylaterDue(paylater.pendingDues);
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // secureId included for the same reason as the balance effect above —
-    // this reads the id the same two ways and had the same hole, which is
-    // why seeds and PayLater dues were missing on a first session too.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, registeredUser, secureId, refreshBalanceToken]);
+  // (The separate My Assets / PayLater effect that used to sit here has been
+  // folded into hydrateAccount above. It ran on exactly the same trigger and
+  // read the id exactly the same two ways, so keeping it apart meant two
+  // copies of the same identity handling and two chances to get it wrong —
+  // and pull-to-refresh would have had to know about both.)
 
   // Arrivals are only noticed if something asks. The summary fetch below
   // ran once per dashboard entry, so money landing while the app sat open
@@ -2083,6 +2155,12 @@ function GloobalId() {
     resetForAccountSwitch();
     setRegisteredUser(null);
     setAuthError(null);
+    // The previous account's verdict about its own balance. Carrying it
+    // across a sign-out told the NEXT person "Balance unavailable" — or,
+    // worse, "ready" — about an account this app had not read yet.
+    setBalanceStatus("loading");
+    hydratedForRef.current = null;
+    lastHydratedIdRef.current = null;
     // Everything the previous identity left behind. The biometric gate in
     // particular has to forget who it was working for, or the next
     // person's first guarded action would be checked against the signed-
@@ -2792,7 +2870,9 @@ function GloobalId() {
     sendHistory={sendMoneyHistory}
     receivedHistory={receivedMoneyHistory}
     bankBalance={bankBalance}
-    balanceUnavailable={balanceStatus === "unavailable"}
+    balanceStatus={balanceStatus}
+    balanceUnavailable={balanceStatus === "error"}
+    onRefreshAccount={handleRefreshAccount}
     assetSeeds={assetSeeds}
     onPayBusiness={handlePayBusiness}
     paylaterHistory={paylaterHistory}

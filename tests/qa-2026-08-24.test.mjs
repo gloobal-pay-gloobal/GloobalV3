@@ -163,12 +163,58 @@ describe("the dashboard hydration effects watch every id they read", () => {
   // restore populates the id before stage becomes "dashboard".
   const src = readSource("frontend/App.jsx");
 
+  // Was `>= 3` when the balance and the assets/PayLater reads were two
+  // separate effects doing identical identity handling. They are one
+  // function now (hydrateAccount), so there is one fewer place to get this
+  // wrong — but the rule itself is unchanged and is asserted on whatever
+  // effects do exist, plus on the hydration callback below.
   test("no hydration effect depends on registeredUser without secureId", () => {
     const deps = src.match(/\}, \[stage, registeredUser[^\]]*\]\);/g) || [];
-    assert.ok(deps.length >= 3, `expected the balance, assets and history effects, found ${deps.length}`);
+    assert.ok(deps.length >= 2, `expected the hydration and history effects, found ${deps.length}`);
     for (const dep of deps) {
       assert.ok(dep.includes("secureId"), `reads secureId but does not watch it: ${dep}`);
     }
+  });
+
+  test("the hydration callback watches both ids it resolves from", () => {
+    // hydrateAccount reads `registeredUser.symbolId || secureId`, so a
+    // useCallback that closes over only one of them would go stale on the
+    // path where the id arrives in the other — the original bug, moved.
+    const callback = src.match(/const hydrateAccount = useCallback11\([\s\S]*?\}, \[([^\]]*)\]\);/);
+    assert.ok(callback, "hydrateAccount must exist as a useCallback");
+    assert.ok(callback[1].includes("registeredUser"), "hydrateAccount must watch registeredUser");
+    assert.ok(callback[1].includes("secureId"), "hydrateAccount must watch secureId");
+  });
+
+  test("signing out clears the previous account's balance verdict", () => {
+    // Without this, account B inherited A's "error" (or A's "ready") until
+    // B's own read landed - the same class of bug as the stale ledger the
+    // test below covers, in the balance rather than the seeds.
+    const startOver = src.match(/const handleStartOver = \(\) => \{[\s\S]*?\n  \};/);
+    assert.ok(startOver, "handleStartOver must exist");
+    assert.ok(
+      /setBalanceStatus\("loading"\)/.test(startOver[0]),
+      "handleStartOver must reset balanceStatus, or the next account inherits this one's verdict"
+    );
+  });
+
+  test("loading is never rendered as a balance", () => {
+    // The whole first-login report: `loading` and `ready` rendered
+    // identically, so the local ledger's opening float was shown as a
+    // confirmed figure while the server was still being asked.
+    const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+    assert.ok(
+      /balanceStatus === "loading" \? <BalanceLoading/.test(dash),
+      "the dashboard must show a loading state, not a figure, while the balance is unconfirmed"
+    );
+    assert.ok(
+      /balanceStatus === "error" \? <BalanceError/.test(dash),
+      "a failed read must be its own state with a retry, not a number"
+    );
+    assert.ok(
+      !/Balance unavailable/.test(dash),
+      "the old single-boolean copy must be gone - it conflated loading with failure"
+    );
   });
 
   test("signing out resets the ledger", () => {

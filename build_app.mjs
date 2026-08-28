@@ -132,6 +132,9 @@ const FRONTEND_MODULES = [
   "components/common/gloobalQRCode.jsx",
   "components/common/coloredId.jsx",
   "components/common/icons.jsx",
+  // The pull-to-refresh wrapper. Needs the theme (emitted first) and is
+  // rendered by the Dashboard, so it sits ahead of every screen.
+  "components/common/PullToRefresh.jsx",
   "components/dialogs/registerLogin.jsx",
   "components/inputs/dialPads.jsx",
   "components/payments/PayOptionsSheet.jsx",

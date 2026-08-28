@@ -83,6 +83,79 @@ class InsufficientPoolLiquidityError extends Error {
   }
 }
 
+// Thrown when a pool row exists but was never given its opening float, so
+// the corridor is closed as a matter of configuration rather than because
+// it ran dry.
+//
+// The distinction is the whole point. loadOrCreate did not always seed
+// DEFAULT_POOL_SEED_BALANCE; rows inserted before it did opened at the
+// schema default of 0. `$setOnInsert` cannot reach a row that already
+// exists, so the day loadOrCreate started seeding, every one of those older
+// rows stayed at zero permanently — and because nothing can credit a pool
+// that no payment is allowed to use, the corridor could never recover on
+// its own. On the live database that is what closed IN <-> US.
+//
+// Reported apart from InsufficientPoolLiquidityError because the two need
+// opposite responses: a drained corridor is a "try again later", while this
+// one will never come back without an operator running
+// scripts/repair-unseeded-pools.mjs. Telling a payer to try again later for
+// this is telling them to wait for something that cannot happen.
+//
+// Identified by all three balances sitting at exactly zero. A pool drained
+// to precisely 0/0/0 by ordinary settlement would report the same way; that
+// is acceptable, because such a corridor is equally stuck and equally in
+// need of an operator, and the message names both possibilities.
+class UnseededCorridorPoolError extends Error {
+  constructor({ countryIso, currency, counterCurrency, requested }) {
+    super(
+      `Country pool ${countryIso} (${currency}, settling with ${counterCurrency}) holds no ` +
+        `liquidity at all — total, available and reserved are each 0 — so it cannot fund a ` +
+        `release of ${requested} ${currency}. The row exists but was never seeded, which means ` +
+        `this corridor is closed by configuration, not exhausted by use. ` +
+        `Run scripts/repair-unseeded-pools.mjs to open it.`
+    );
+    this.name = 'UnseededCorridorPoolError';
+    this.countryIso = countryIso;
+    this.currency = currency;
+    this.counterCurrency = counterCurrency;
+    this.requested = requested;
+  }
+}
+
+// Thrown when a currency cannot be resolved for one of the two sides.
+//
+// A settlement whose currency is undefined must never be attempted. Left
+// unchecked it reaches CountryCurrencyPool.loadOrCreate, whose first act is
+// `counterCurrency.toUpperCase()` — a TypeError on undefined, but on a row
+// keyed by an empty string it would instead materialise a pool for a
+// currency that does not exist, and a Settlement row denominated in
+// nothing. Both are worse than refusing, and neither is recoverable by
+// looking at the data afterwards.
+class UnresolvedCurrencyError extends Error {
+  constructor({ side, countryIso, currency }) {
+    super(
+      `Settlement cannot proceed: the ${side} currency for country ${countryIso || '(no country)'} ` +
+        `resolved to ${currency === undefined ? 'undefined' : JSON.stringify(currency)}. ` +
+        `Every account must resolve to a valid currency before settlement begins. ` +
+        `Check the Country collection and data/countryCurrencyMap.js for that ISO.`
+    );
+    this.name = 'UnresolvedCurrencyError';
+    this.side = side;
+    this.countryIso = countryIso;
+    this.currency = currency;
+  }
+}
+
+// A currency code is only usable if it is a non-empty string. Guarding the
+// shape rather than membership of the seeded list deliberately: the list is
+// checked a few lines later by the country cross-check, and this needs to
+// fire before anything touches a pool key.
+const assertResolvedCurrency = (side, countryIso, currency) => {
+  if (typeof currency !== 'string' || currency.trim() === '') {
+    throw new UnresolvedCurrencyError({ side, countryIso, currency });
+  }
+};
+
 // Deliberately excludes 0/O/1/I — this ID ends up on a receipt someone may
 // read aloud or copy by hand, same reasoning as the Secure ID symbol set
 // existing elsewhere in this codebase avoiding ambiguous characters.
@@ -197,6 +270,17 @@ async function settleCrossBorderPayment({
     );
   }
 
+  // Before the cross-check below can mean anything, both currencies have to
+  // BE something. The cross-check compares two values and passes when they
+  // are equal — so if a country record and its caller were ever both
+  // undefined for the same side, an undefined currency would sail through it
+  // and on into the pool key. Refusing here makes "US / undefined" impossible
+  // to reach settlement rather than merely unlikely.
+  assertResolvedCurrency('sender', sourceCountry.iso, senderCurrency);
+  assertResolvedCurrency('receiver', destinationCountry.iso, destinationCurrency);
+  assertResolvedCurrency('sender country record', sourceCountry.iso, sourceCountry.localCurrency);
+  assertResolvedCurrency('receiver country record', destinationCountry.iso, destinationCountry.localCurrency);
+
   // server.js has already resolved both currencies and the rate from the
   // same country records, and its figures are the ones the payment actually
   // moved. Recomputing them here could disagree with what was debited, so
@@ -254,6 +338,32 @@ async function settleCrossBorderPayment({
     CountryCurrencyPool.loadOrCreate(sourceCountry.iso, destinationCurrency, senderCurrency, session),
     CountryCurrencyPool.loadOrCreate(destinationCountry.iso, senderCurrency, destinationCurrency, session),
   ]);
+
+  // A pool that was never given its opening float was never opened, and
+  // saying "not enough liquidity right now" about it is wrong in the one way
+  // that matters: it tells the payer to wait for a corridor that will not
+  // open by itself. Checked before the liquidity gate so the more specific
+  // diagnosis wins.
+  //
+  // Both halves are required. `seededAt` alone would flag every legacy row,
+  // including the healthy ones carrying real balances, since none of them
+  // predate the field with a stamp. All-zero balances alone would flag a
+  // corridor drained to exactly zero by real settlement, which is open and
+  // merely empty. Together they identify precisely the rows that hold
+  // nothing AND were never given anything.
+  if (
+    !destinationPool.seededAt &&
+    destinationPool.totalBalance === 0 &&
+    destinationPool.availableBalance === 0 &&
+    (destinationPool.reservedBalance || 0) === 0
+  ) {
+    throw new UnseededCorridorPoolError({
+      countryIso: destinationCountry.iso,
+      currency: destinationCurrency,
+      counterCurrency: senderCurrency,
+      requested: destinationAmount,
+    });
+  }
 
   // The hard-liquidity gate. Checked against the destination pool's own
   // available balance before anything moves, and checked on the GROSS
@@ -359,4 +469,6 @@ module.exports = {
   settleCrossBorderPayment,
   revertCrossBorderSettlement,
   InsufficientPoolLiquidityError,
+  UnseededCorridorPoolError,
+  UnresolvedCurrencyError,
 };

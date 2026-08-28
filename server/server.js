@@ -20,7 +20,13 @@ const FaceTemplate = require('./models/FaceTemplate');
 const { nationalNumberFrom } = require('./constants/dialCodes');
 const faceCrypto = require('./lib/faceCrypto');
 const { compareDescriptors, matchThreshold } = require('./lib/faceMatch');
-const { settleCrossBorderPayment, revertCrossBorderSettlement, InsufficientPoolLiquidityError } = require('./lib/settlementEngine');
+const {
+  settleCrossBorderPayment,
+  revertCrossBorderSettlement,
+  InsufficientPoolLiquidityError,
+  UnseededCorridorPoolError,
+  UnresolvedCurrencyError,
+} = require('./lib/settlementEngine');
 const { mintShareLegAndReceipts } = require('./lib/merchantShareFlow');
 const Country = require('./models/Country');
 const AuditLog = require('./models/AuditLog');
@@ -4300,15 +4306,62 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       // hard-liquidity refusal, not a sender-balance problem. Nothing moved:
       // the transaction (or the non-transactional revert path) already
       // undid the sender's debit.
-      if (transferError instanceof InsufficientPoolLiquidityError) {
+      // A corridor that was never opened, as opposed to one that ran dry.
+      // Checked first because UnseededCorridorPoolError is the more specific
+      // diagnosis and carries the only action that actually fixes it.
+      if (transferError instanceof UnseededCorridorPoolError) {
         recordAudit({
           userId: sender._id, action: 'transaction.send.failed', status: 'failed',
-          message: `Insufficient pool liquidity (${transferError.countryIso}/${transferError.counterCurrency})`, req,
-          metadata: { symbolId: sender.symbolId, receiverSymbolId: receiver.symbolId, countryIso: transferError.countryIso, counterCurrency: transferError.counterCurrency },
+          message: `Unseeded corridor pool (${transferError.countryIso}/${transferError.currency})`, req,
+          metadata: {
+            symbolId: sender.symbolId, receiverSymbolId: receiver.symbolId,
+            countryIso: transferError.countryIso, currency: transferError.currency,
+            counterCurrency: transferError.counterCurrency, requested: transferError.requested,
+          },
         });
         return res.status(503).json({
           success: false,
-          message: `This payment corridor (${transferError.countryIso}/${transferError.counterCurrency}) doesn't have enough settlement liquidity right now. Please try again later.`,
+          message: `The ${transferError.counterCurrency} to ${transferError.currency} corridor is not open yet, so this payment cannot be settled. Nothing has left your balance. Please contact support — retrying will not help.`,
+          corridor: { countryIso: transferError.countryIso, currency: transferError.currency, counterCurrency: transferError.counterCurrency },
+        });
+      }
+      // An account whose currency could not be resolved is a configuration
+      // or reference-data fault, never a payer's problem, and never
+      // something to express as a liquidity shortage — that is what put
+      // "US / undefined" in front of a payer in the first place.
+      if (transferError instanceof UnresolvedCurrencyError) {
+        recordAudit({
+          userId: sender._id, action: 'transaction.send.failed', status: 'failed',
+          message: `Unresolved currency (${transferError.side} ${transferError.countryIso})`, req,
+          metadata: {
+            symbolId: sender.symbolId, receiverSymbolId: receiver.symbolId,
+            side: transferError.side, countryIso: transferError.countryIso,
+          },
+        });
+        return res.status(500).json({
+          success: false,
+          message: `This payment could not be set up because the ${transferError.side} account's country (${transferError.countryIso || 'unknown'}) has no currency configured. Nothing has left your balance. Please contact support.`,
+        });
+      }
+      // The message used to interpolate `transferError.counterCurrency`, a
+      // property InsufficientPoolLiquidityError has never carried — it
+      // records the released currency as `currency`. The result was the
+      // literal string "undefined" on the payer's screen next to a real
+      // country code ("US/undefined"), which read as a broken currency
+      // lookup and sent a whole investigation after one that was working.
+      if (transferError instanceof InsufficientPoolLiquidityError) {
+        recordAudit({
+          userId: sender._id, action: 'transaction.send.failed', status: 'failed',
+          message: `Insufficient pool liquidity (${transferError.countryIso}/${transferError.currency})`, req,
+          metadata: {
+            symbolId: sender.symbolId, receiverSymbolId: receiver.symbolId,
+            countryIso: transferError.countryIso, currency: transferError.currency,
+            requested: transferError.requested, available: transferError.available,
+          },
+        });
+        return res.status(503).json({
+          success: false,
+          message: `This payment corridor (${transferError.countryIso}/${transferError.currency}) doesn't have enough settlement liquidity right now. Please try again later.`,
         });
       }
 
@@ -5921,6 +5974,19 @@ app.post('/api/geu/redeem', writeLimit, requireAuth, requireSelf('symbolId'), as
           // redemption started.
           pool = await CountryCurrencyPool.loadOrCreate(accountCountryIso(user), GEU_REFERENCE_CURRENCY, destinationCurrency, session);
 
+          // Same never-opened-versus-ran-dry distinction the payment path
+          // draws. loadOrCreate seeds a NEW row, but cannot touch one that
+          // already exists at zero from before it did, and the conditional
+          // release below cannot tell those two cases apart.
+          if (!pool.seededAt && pool.totalBalance === 0 && pool.availableBalance === 0 && (pool.reservedBalance || 0) === 0) {
+            throw new UnseededCorridorPoolError({
+              countryIso: pool.countryIso,
+              currency: pool.localCurrency,
+              counterCurrency: pool.counterCurrency,
+              requested: localCurrencyAmount,
+            });
+          }
+
           const releasedPool = await CountryCurrencyPool.findOneAndUpdate(
             { _id: pool._id, availableBalance: { $gte: localCurrencyAmount } },
             { $inc: { availableBalance: -localCurrencyAmount, totalBalance: -localCurrencyAmount } },
@@ -5928,7 +5994,19 @@ app.post('/api/geu/redeem', writeLimit, requireAuth, requireSelf('symbolId'), as
           );
 
           if (!releasedPool) {
-            throw new InsufficientPoolLiquidityError(pool.countryIso, pool.counterCurrency, pool.availableBalance, localCurrencyAmount);
+            // Constructed with an object, not four positional arguments.
+            // The constructor destructures its single parameter, so the
+            // positional form passed a string where an object was expected
+            // and every field — countryIso, currency, requested, available
+            // — came out undefined, including in the message this error
+            // exists to produce. The released amount is denominated in the
+            // pool's own local currency, which is what the payer sees.
+            throw new InsufficientPoolLiquidityError({
+              countryIso: pool.countryIso,
+              currency: pool.localCurrency,
+              requested: localCurrencyAmount,
+              available: pool.availableBalance,
+            });
           }
           pool = releasedPool;
         }
@@ -6020,6 +6098,7 @@ app.post('/api/geu/redeem', writeLimit, requireAuth, requireSelf('symbolId'), as
       }));
     } catch (redeemError) {
       if (redeemError instanceof InsufficientPoolLiquidityError) throw redeemError;
+      if (redeemError instanceof UnseededCorridorPoolError) throw redeemError;
       if (redeemError?.name === 'InsufficientGeuError') throw redeemError;
 
       const isRedeemCollision =
@@ -6056,10 +6135,16 @@ app.post('/api/geu/redeem', writeLimit, requireAuth, requireSelf('symbolId'), as
     if (error?.name === 'InsufficientGeuError') {
       return res.status(400).json({ success: false, message: error.message, geuBalance: error.geuBalance });
     }
+    if (error instanceof UnseededCorridorPoolError) {
+      return res.status(503).json({
+        success: false,
+        message: `The ${error.countryIso} redemption corridor is not open yet, so this redemption cannot be settled. Nothing has been redeemed. Please contact support — retrying will not help.`,
+      });
+    }
     if (error instanceof InsufficientPoolLiquidityError) {
       return res.status(503).json({
         success: false,
-        message: `This redemption corridor (${error.countryIso}/${error.counterCurrency}) doesn't have enough settlement liquidity right now. Please try again later.`,
+        message: `This redemption corridor (${error.countryIso}/${error.currency}) doesn't have enough settlement liquidity right now. Please try again later.`,
       });
     }
     console.error('GEU redeem error:', error);

@@ -80,6 +80,24 @@ const CountryCurrencyPoolSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'inactive'],
     default: 'active'
+  },
+  // When this pool was given its opening float, or null if it never was.
+  //
+  // The one thing the three balances cannot tell you on their own. A pool
+  // sitting at 0/0/0 is either a row created before loadOrCreate seeded
+  // anything (closed by configuration, and it will stay closed until an
+  // operator opens it) or a corridor drained to exactly zero by real
+  // settlement (open, and simply empty). Those need opposite answers given
+  // to a payer, and the balances are identical in both cases.
+  //
+  // Null on every row that predates this field, which is exactly the
+  // population that needs identifying — the legacy rows are the unseeded
+  // ones. Rows created from here on always carry it, so a drained pool
+  // keeps its stamp and is correctly reported as exhausted rather than
+  // unopened. scripts/repair-unseeded-pools.mjs sets it when it seeds.
+  seededAt: {
+    type: Date,
+    default: null
   }
 }, { timestamps: true });
 
@@ -127,7 +145,10 @@ CountryCurrencyPoolSchema.statics.loadOrCreate = async function loadOrCreatePool
         availableBalance: DEFAULT_POOL_SEED_BALANCE,
         reservedBalance: 0,
         totalBalance: DEFAULT_POOL_SEED_BALANCE,
-        status: 'active'
+        status: 'active',
+        // Stamped with the balance it records, so the two can never
+        // disagree about whether this pool was ever opened.
+        seededAt: new Date()
       }
     },
     options

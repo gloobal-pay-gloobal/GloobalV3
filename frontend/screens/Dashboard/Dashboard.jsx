@@ -80,7 +80,53 @@ var GH_HERO_CIRCLE_SIZE = 110;
 // rounded corner, not to route around the circle.
 var GH_ID_ROW_RESERVE = 10;
 // src/screens/Dashboard/Dashboard.jsx
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange }) {
+// The balance line while the server is still being asked.
+//
+// Deliberately not a zero, a dash, or the local ledger's figure: those all
+// read as "this is your balance", and one of them was how a Netherlands
+// account came to be shown €10,000.00 it did not have. A person waiting is
+// told they are waiting.
+function BalanceLoading() {
+  return <span
+    style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 17, fontWeight: 700, color: T.inkFaint }}
+  ><span
+    aria-hidden="true"
+    style={{
+      width: 14,
+      height: 14,
+      borderRadius: "50%",
+      border: `2px solid ${T.inkFaint}`,
+      borderTopColor: "transparent",
+      animation: "spin 0.9s linear infinite",
+      flexShrink: 0
+    }}
+  /><span>Loading balance…</span></span>;
+}
+
+// A read that genuinely failed. Says so, and offers the one action that can
+// change the situation — rather than presenting the failure as a number.
+function BalanceError({ onRetry }) {
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><span
+    style={{ fontSize: 17, fontWeight: 700, color: T.negative }}
+  >Unable to load balance</span>{onRetry && <button
+    onClick={onRetry}
+    aria-label="Retry loading balance"
+    className="v2-tap"
+    style={{
+      border: `1px solid ${T.negative}`,
+      background: "transparent",
+      color: T.negative,
+      borderRadius: 999,
+      padding: "3px 12px",
+      fontSize: 12,
+      fontWeight: 800,
+      letterSpacing: 0.3,
+      cursor: "pointer"
+    }}
+  >Retry</button>}</span>;
+}
+
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -1215,7 +1261,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       boxShadow: shareRole === "merchant" ? "0 6px 16px rgba(124,58,237,0.3)" : T.shadowCard,
       flexShrink: 0
     }}
-  ><RefreshCw3 size={17} color={shareRole === "merchant" ? "#fff" : T.accent} /></button></div><div style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>{activeTab === "home" && <div style={{ padding: "8px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div
+  ><RefreshCw3 size={17} color={shareRole === "merchant" ? "#fff" : T.accent} /></button></div><PullToRefresh
+    onRefresh={onRefreshAccount}
+    // Only the Home tab. Pulling down inside History or Assets would refresh
+    // an account view the person is not looking at, and those tabs have
+    // their own scroll positions to respect.
+    disabled={activeTab !== "home"}
+  >{activeTab === "home" && <div style={{ padding: "8px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div
     style={{
       position: "relative",
       borderRadius: T.radiusXl,
@@ -1292,7 +1344,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       textOverflow: "ellipsis",
       zIndex: 1
     }}
-  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : ` ${dialCountry.name}`} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceUnavailable ? <span style={{ fontSize: 17, fontWeight: 700, color: T.negative }}>Balance unavailable</span> : balanceVisible ? `${ccy}${balance}` : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
+  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : ` ${dialCountry.name}`} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceStatus === "loading" ? <BalanceLoading /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? `${ccy}${balance}` : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"
@@ -1872,7 +1924,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     }}
   ><LogoutIcon />
               Exit
-            </button></div>}</div><div
+            </button></div>}</PullToRefresh><div
     style={{
       display: "flex",
       background: T.surface,
@@ -2403,6 +2455,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     ccy={ccy} ccyCode={ccyCode}
     balance={balance}
     balanceUnavailable={balanceUnavailable}
+    balanceStatus={balanceStatus}
+    onRetryBalance={onRefreshAccount}
     balanceVisible={balanceVisible}
     onToggleBalance={handleToggleBalance}
     recentTransactions={recentBankTransactions}

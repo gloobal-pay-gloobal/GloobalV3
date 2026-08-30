@@ -1,0 +1,547 @@
+================================================================================
+GLOOBALV3 - WORK LOG
+28 August 2026
+================================================================================
+
+Compiled 28 August 2026 from the live session, Git, the Render and Netlify
+APIs, and read-only queries against the production MongoDB Atlas database.
+Timestamps are IST unless marked UTC.
+
+No credential, connection string, token or password appears in this document.
+Every production database read was read-only. Exactly one production write was
+made all day, described in section 4, and it was authorised explicitly before
+it ran.
+
+
+================================================================================
+0. SUMMARY
+================================================================================
+
+The day began as a verification request and turned into a live incident. A
+payment from an Indian account to a US account was failing in production with:
+
+    "This payment corridor (US/undefined) doesn't have enough settlement
+     liquidity right now. Please try again later."
+
+That message accused the currency resolver, which turned out to be working
+correctly. Two unrelated defects combined to produce it. Both are fixed, the
+production data behind the refusal is repaired, and the fix is live on the API.
+
+    Root cause found ............... YES - two defects, neither in resolution
+    Production data repaired ....... YES - six settlement pools, verified
+    Code fix committed ............. YES - 44fd010, merged as 8031a95
+    Code fix live on Render ........ YES - dep-da8mpv2d0e5s7394l1u0
+    Netlify ........................ STALE - still serving ca13c78
+    Auto-deploy .................... STILL BROKEN, cause now confirmed
+
+
+================================================================================
+1. LIVE VERSION VERIFICATION
+================================================================================
+
+Performed first, read-only, before anything was changed.
+
+    GitHub main ..... ca13c78612fc014321a970cbd5f3727703515625
+                      via git ls-remote origin refs/heads/main
+    Local main ...... same, working tree clean
+    Render live ..... same - deploy dep-da7cdk2jnfac738f0u30
+                      status live, trigger manual
+    Netlify live .... same - deploy 6a8ecaa946b978a135f18fbe
+                      commit_ref ca13c78..., manual_deploy false
+
+All three aligned at the start of the day. The dashboard was not taken on
+trust; each figure came from its provider's API.
+
+RENDER STARTUP LOGS (deploy dep-da7cdk2jnfac738f0u30)
+
+    ==> Running 'node server.js'
+    Server running on port 5000
+    Connected to MongoDB Atlas
+    ==> Your service is live
+    ==> Available at your primary URL https://gloobal-pay.onrender.com
+
+No AUTH_TOKEN_SECRET error. The only other output was a Mongoose deprecation
+warning about the `new` option for findOneAndUpdate, pre-existing and harmless.
+
+LIVE API CONTRACT CHECK - node tools/backend/check-backend.mjs
+
+    ok  warm up (fire and forget)
+    ok  resolveUser(unregistered) is refused without a token
+    ok  checkSymbolAvailability(unregistered) === available
+    ok  referralCodeExists(unregistered) === false
+    ok  getProfile(unregistered) raises a typed error, not a crash
+
+GET /api/stats returned 200 with 94 users. POST /api/transactions/send with no
+token returned 401 "Sign in to continue.", confirming the route exists and is
+gated.
+
+
+================================================================================
+2. THE LIVE PAYMENT FAILURE - INVESTIGATION
+================================================================================
+
+2.1 WHERE THE MESSAGE CAME FROM
+
+server/server.js:4311 built the string the phone displayed. The "US" was
+correct; the "undefined" was the second interpolation.
+
+2.2 CURRENCY RESOLUTION WAS NEVER BROKEN
+
+Checked before anything else, because that is what the message appeared to
+accuse:
+
+    Country documents in production ................. 194
+    Currency documents in production ................ 142
+    US in the Country collection .................... USD
+    resolveCountry("US") ............................ US/USD
+    All 194 country rows carry a currency ........... YES, none blank
+    All 94 accounts resolve to a real currency ...... YES
+    Receiver account ................................ countryIso "US",
+                                                      no currency field (by design)
+
+server/lib/countryCurrency.js:71 resolveCountry returns either null or a real
+uppercase currency code. It is structurally incapable of returning an object
+whose localCurrency is undefined. Production therefore could not have resolved
+a currency to undefined, and did not.
+
+The two country-to-currency maps were also compared directly:
+server/data/countryCurrencyMap.js and backend/data/countries.js each hold
+194 entries with ZERO disagreements. The server is authoritative; the frontend
+copy agrees with it.
+
+2.3 DEFECT 1 - WHY THE PAYMENT WAS REFUSED
+
+Six CountryCurrencyPool rows in production sat at totalBalance 0,
+availableBalance 0, reservedBalance 0:
+
+    IN local=INR counter=USD    available=0           total=0
+    US local=USD counter=INR    available=0           total=0
+    IN local=INR counter=BDT    available=0           total=0
+    BD local=BDT counter=INR    available=0           total=0
+    IL local=ILS counter=INR    available=0           total=0
+    IN local=INR counter=ILS    available=0           total=0
+
+Against corridors created later, which all worked:
+
+    IN local=INR counter=MXN    available=4985166.50
+    MX local=MXN counter=INR    available=5002633.69
+    GB local=GBP counter=INR    available=5002155.58
+    IN local=INR counter=GBP    available=4720129.72
+    US local=USD counter=GBP    available=4999868.18
+    GB local=GBP counter=USD    available=5000097.00
+
+CountryCurrencyPool.loadOrCreate seeds a new pool with
+DEFAULT_POOL_SEED_BALANCE (5,000,000) through $setOnInsert. It has not always
+done so. Rows inserted before that change opened at the schema default of 0,
+and $setOnInsert only applies to documents it actually inserts - so the day
+seeding was added, every older row kept its zero permanently.
+
+Those corridors could never recover by being used, because nothing can credit
+a pool that no payment is allowed to use. The liquidity gate at
+server/lib/settlementEngine.js:263 refused correctly: availableBalance 0 is
+less than 58.82. The data was wrong, not the gate.
+
+2.4 DEFECT 2 - WHY IT SAID "UNDEFINED"
+
+InsufficientPoolLiquidityError records the released currency as .currency.
+server.js read .counterCurrency, a property that class has never had. The
+interpolation was therefore always the literal string "undefined".
+
+The same class was also constructed with four positional arguments against an
+object-destructuring signature on the GEU redemption path (server.js:5931),
+which left EVERY field undefined there - including in the message the error
+exists to produce.
+
+This is the defect that cost the most time. It made a working currency
+resolver look broken and sent the investigation in the wrong direction.
+
+
+================================================================================
+3. THE CODE FIX
+================================================================================
+
+Branch fix/unseeded-corridor-pools, commit 44fd010, merged as 8031a95.
+
+server/lib/settlementEngine.js (+112)
+
+  - UnseededCorridorPoolError - a corridor that was never opened, distinct
+    from one that ran dry. The two need opposite answers: a drained corridor
+    is "try again later"; a never-opened one will not return without an
+    operator, so telling the payer to wait is telling them to wait for
+    something that cannot happen.
+  - UnresolvedCurrencyError and assertResolvedCurrency - refuses before a pool
+    key can be built from an undefined currency. The pre-existing cross-check
+    compares the caller's currency against the country record and passes when
+    they are equal, so it could not catch a side that was undefined on both
+    halves.
+
+server/models/CountryCurrencyPool.js (+23/-1)
+
+  - seededAt, stamped by loadOrCreate on insert. The three balances cannot
+    distinguish a never-opened pool from one drained to exactly zero, and
+    those two states need opposite answers. Null on every pre-existing row -
+    which is exactly the population needing identification.
+
+  The unseeded test is: NOT seededAt AND all three balances 0. Both halves are
+  required. seededAt alone would flag every healthy legacy row (GB/INR and
+  friends carry no stamp either), and zero balances alone would flag a
+  genuinely drained corridor.
+
+server/server.js (+97/-6)
+
+  - .counterCurrency changed to .currency in both liquidity messages and the
+    audit metadata.
+  - The positional constructor call corrected to object form.
+  - Both new errors handled with their own precise responses.
+  - The same never-opened check added to the GEU redemption path.
+
+server/scripts/repair-unseeded-pools.mjs (new, 135 lines)
+
+  Dry-run by default. Refuses any pool a Settlement references (drained, not
+  unseeded - that case wants a human) and any pool whose localCurrency
+  disagrees with its Country row. Idempotent: a second run finds nothing.
+
+server/tests/corridor-currency-integrity.test.mjs (new, 540 lines)
+
+  19 tests. Wired into npm test and given its own npm run test:corridor-integrity.
+
+NO COUNTRY-SPECIFIC LOGIC WAS ADDED. The production-code diff contains no
+country or currency literal; this was verified by grep over the diff. The
+194-country configuration remains authoritative.
+
+
+================================================================================
+4. PRODUCTION POOL REPAIR - THE DAY'S ONLY WRITE
+================================================================================
+
+Authorised explicitly before execution.
+
+DRY RUN - all six candidates printed with full state. Every one showed
+seededAt "(never)" and "settlements using: 0", so none was a drained pool
+being wrongly topped up:
+
+  pool _id                    country local counter total avail reserved settlements
+  6a8c3ad342ed59aa546f1d51    IN      INR   USD     0     0     0        0
+  6a8c3ad342ed59aa546f1d52    US      USD   INR     0     0     0        0
+  6a8d5c43367c53c1f47d1b2c    IN      INR   BDT     0     0     0        0
+  6a8d5c43367c53c1f47d1b2d    BD      BDT   INR     0     0     0        0
+  6a8d5f03367c53c1f47d1c6c    IL      ILS   INR     0     0     0        0
+  6a8d5f03367c53c1f47d1c6b    IN      INR   ILS     0     0     0        0
+
+EXECUTION - node scripts/repair-unseeded-pools.mjs --execute
+    seeded: 6    skipped: 0
+
+VERIFICATION - re-read read-only twice, once immediately and again just before
+committing:
+
+    IN/USD  local INR  total=5000000 available=5000000 reserved=0 seededAt=set active
+    US/INR  local USD  total=5000000 available=5000000 reserved=0 seededAt=set active
+    IN/BDT  local INR  total=5000000 available=5000000 reserved=0 seededAt=set active
+    BD/INR  local BDT  total=5000000 available=5000000 reserved=0 seededAt=set active
+    IL/INR  local ILS  total=5000000 available=5000000 reserved=0 seededAt=set active
+    IN/ILS  local INR  total=5000000 available=5000000 reserved=0 seededAt=set active
+
+NOTHING ELSE WAS TOUCHED. The script's only write is one updateOne per pool
+document. Confirmed unchanged afterwards: Users 94, Transactions 262,
+LedgerEntries 439, Settlements 5. No user balance, transaction, ledger entry,
+asset, GEU, coin balance or settlement record was modified.
+
+
+================================================================================
+5. PAYMENT VERIFICATION
+================================================================================
+
+Run against the deployed commit's server.js on a THROWAWAY database, not
+production - a real production payment would have created production data.
+
+THE FOUNDER'S EXACT CASE
+
+    Sender ..................... India, INR
+    Receiver ................... US, USD
+    Typed ...................... 5,000
+    sourceCurrency ............. INR
+    sourceAmount ............... 5,000   (exactly what was typed)
+    destinationCurrency ........ USD
+    destinationAmount .......... 58.82
+    Sender debited ............. 20,000,000 -> 19,995,000  (-5,000 INR)
+    Receiver credited .......... +58.82 USD
+
+The receiver is NOT credited 5,000 USD. That was the contract this had to
+preserve, and it holds.
+
+ALL SIX REPAIRED CORRIDORS, BOTH DIRECTIONS - driven through the real
+settlement engine, not merely checked for existence:
+
+    INR -> USD    5,000 INR  ->     58.82 USD     PASS
+    USD -> INR      100 USD  ->  8,500.00 INR     PASS
+    INR -> BDT    5,000 INR  ->  7,000.00 BDT     PASS
+    BDT -> INR    5,000 BDT  ->  3,571.43 INR     PASS
+    INR -> ILS    5,000 INR  ->    220.00 ILS     PASS
+    ILS -> INR      500 ILS  -> 11,350.00 INR     PASS
+
+Plus four unrelated regions, present so a fix that had somehow specialised on
+the repaired set would fail here:
+
+    INR -> JPY    PASS        JPY -> INR    PASS
+    GBP -> MXN    PASS        MXN -> INR    PASS
+
+Every settlement was checked for undefined or NaN in all ten fields, correct
+pool denomination on both sides, and opposite pool movement.
+
+
+================================================================================
+6. TRANSACTION LIMIT
+================================================================================
+
+    Send Money ceiling ......... 5,000,000, in the SENDER's currency
+    Source ..................... server/server.js:3629
+                                 PROTOTYPE_TRANSACTION_MAX_AMOUNT || 5000000
+    Render env var ............. NOT SET - confirmed against the dashboard
+    Effective live value ....... 5,000,000 (the code default)
+
+Behavioural confirmation:
+    5,000,001 INR  ->  refused, "Prototype transaction limit is 5000000 INR."
+                       with limit: 5000000
+    4,999,999 INR  ->  accepted
+    5,001 INR      ->  accepted, proving the old 5,000 ceiling is gone
+
+COIN AND GEU LIMITS DELIBERATELY UNCHANGED, both still defaulting to 5,000 at
+server.js:4835 and server.js:5504. They are different operations. Note that one
+environment variable governs all three call sites, so setting it would move
+them together.
+
+
+================================================================================
+7. TEST RESULTS
+================================================================================
+
+ROOT SUITE - npm test
+
+    tests 195    pass 195    fail 0
+
+Includes the complete Playwright browser suite. Run again in isolation,
+browser.test.mjs gave 22/22, with all six cross-border corridors named:
+
+    D. a cross-border payment shows what the server actually did
+      INR -> USD (the founder's own worked example)      PASS
+      USD -> INR (the reverse of it)                     PASS
+      INR -> JPY (2-decimal payer, 0-decimal payee)      PASS
+      JPY -> INR (0-decimal payer, 2-decimal payee)      PASS
+      GBP -> MXN (2-decimal both sides)                  PASS
+      MXN -> INR (the corridor production settled first) PASS
+
+Those tests assert what a person sees: recipient country and currency, the
+typed amount in the sender's currency, both sides quoted separately with the
+rate, the receiver amount converted and never equal to the raw typed figure,
+and the quote surviving onto the receipt. The INR -> USD case additionally
+pins the result to a 40-70 USD band.
+
+The suite also covers app boot, sign-in hydration, account switching (one
+account's state never surviving into another), the location gate, permissions
+being requested at the point of use, the Permissions-Policy header, QR code
+minting and scanning round-trips, legacy QR compatibility, and share
+references.
+
+NEW CORRIDOR SUITE - corridor-currency-integrity.test.mjs
+
+    tests 19    pass 19    fail 0
+
+Covering: the unseeded pool refused as a closed corridor; a short pool naming
+its real currency; a pool drained to exactly zero reading as exhausted rather
+than never opened; a funded legacy row still settling normally;
+InsufficientPoolLiquidityError carrying .currency and never .counterCurrency;
+a corridor with no row seeding itself; settlement refusing an unresolved
+currency before touching a pool; every account resolving; the refusal being
+generic across GBP, JPY and MXN; and the ten corridor settlements in section 5.
+
+SERVER SUITE - npm test --prefix server
+
+    tests 81    pass 78    fail 3
+
+The three failures, classified honestly:
+
+  geu-invariants (8 checks) - PRE-EXISTING
+      Reproduced with all changes stashed on unmodified main - byte-identical
+      failures. Cause is FX: the test seeds a rate, getRate serves
+      rateSource=open.er-api.com instead.
+
+  geu-concurrency (14 checks) - PRE-EXISTING
+      Same - fails identically on unmodified main.
+
+  concurrency-scale - LOAD-SENSITIVE, NOT A REGRESSION
+      Passes alone on main (161.9s) and alone on this branch (164.0s). Fails
+      only inside the full sequential run. It executes 4th, BEFORE the new
+      test file, so the new tests cannot reach it.
+
+      An attempt to reproduce it in a four-file subset was contaminated - a
+      Playwright capture was hitting Atlas at the same time, and all four
+      files failed, including two that pass in the real run. So the evidence
+      supports "not caused by this change" but does NOT identify what does
+      cause it. It looks like Atlas connection pressure. It predates this work
+      and remains open.
+
+BUILD AND DIAGNOSTICS
+
+    node build_app.mjs ......................... Built, 70 imports consolidated
+    npm run build (Vite) ....................... Built in 7.44s, PWA 21 entries
+    tools/frontend/scan-undeclared.mjs ......... Only "Notification" - the
+                                                 documented known non-failure
+    tools/frontend/probe-panels.mjs ............ 3/3 panels render
+    tools/backend/check-backend.mjs ............ All checks pass
+
+
+================================================================================
+8. GIT
+================================================================================
+
+    44fd010   fix: repair unseeded settlement corridors   6 files, +902/-8
+    8031a95   Merge of fix/unseeded-corridor-pools into main
+    c879e06   docs: name the real reason auto-deploy never fires, on both targets
+
+Files in 44fd010:
+
+    server/lib/settlementEngine.js                     +112
+    server/models/CountryCurrencyPool.js                +23/-1
+    server/package.json                                  +3/-1
+    server/scripts/repair-unseeded-pools.mjs            +135  (new)
+    server/server.js                                    +97/-6
+    server/tests/corridor-currency-integrity.test.mjs   +540  (new)
+
+git diff --check clean. No .env, credential or secret committed.
+
+CURRENT STATE: local main is c879e06; remote main is 8031a95. The
+documentation commit is NOT PUSHED.
+
+
+================================================================================
+9. DEPLOYMENT STATUS
+================================================================================
+
+    GitHub main .... 8031a95   Pushed and confirmed via ls-remote
+    Render ......... 8031a95   LIVE - dep-da8mpv2d0e5s7394l1u0, trigger manual
+    Netlify ........ ca13c78   STALE - deploy 6a8ecaa, never picked up 8031a95
+
+Render deploy dep-da8mpv2d0e5s7394l1u0, created 2026-08-28T11:11:56Z, finished
+11:12:19Z, status live. Startup clean:
+
+    Server running on port 5000
+    Connected to MongoDB Atlas
+    ==> Your service is live
+
+check-backend passes against it and /api/stats returns 94 users.
+
+Netlify being a commit behind is not currently harmful - 8031a95 touches only
+server/, so the frontend bundle is functionally identical. But the site is a
+deploy behind and will stay there until someone builds it.
+
+
+================================================================================
+10. AUTO-DEPLOY - ROOT CAUSE CONFIRMED
+================================================================================
+
+The push of 8031a95 produced NO automatic deploy on either target. Render went
+live only because it was deployed manually from the dashboard.
+
+Render's own build log states the cause, on every deploy:
+
+    ==> It looks like we don't have access to your repo, but we'll try to
+        clone it anyway.
+    ==> Cloning from https://github.com/gloobal-pay-gloobal/GloobalV3
+    ==> Checking out commit 8031a95... in branch main
+
+RENDER'S GITHUB APP HAS NO REPOSITORY ACCESS TO GloobalV3. The clone still
+succeeds because the repository is public, so builds complete normally and
+nothing looks wrong from Render's side - but GitHub delivers push events only
+to an App that has been granted the repository. Render is never told that main
+moved, so no new_commit deploy can be created.
+
+This corrects the previous explanation in the docs, which blamed a stale
+webhook. That was the symptom; the rename cost the App its grant, and the
+missing webhook follows from that. Re-adding a webhook alone does not fix it.
+
+The deploy history matches exactly. Last automatic deploy:
+dep-da23a32d0e5s73eufvf0 at 2026-08-18T10:33:48Z, commit 5ba7464 - days before
+the rename. Everything since is manual, api or service_updated.
+
+Netlify is very likely in the same state. It produced no build for 8031a95;
+its recent deploys are recorded deploy_source "api" with manual_deploy false;
+and its deploy for ca13c78 was created 32 minutes after that commit, where a
+webhook build starts in seconds. This is strong evidence but NOT confirmation
+- the Netlify App's grant could not be inspected with the tooling available.
+
+THE FIX (dashboards only - no API exposes App installations):
+
+  1. GitHub -> org Settings -> Applications -> Installed GitHub Apps ->
+     Render -> Repository access -> add GloobalV3
+     https://github.com/organizations/gloobal-pay-gloobal/settings/installations
+  2. Same for the Netlify App.
+  3. Verify by pushing a commit touching server/ and confirming a deploy
+     appears with trigger new_commit at the pushed SHA. Nothing less proves it
+     - a manual deploy of the right commit is indistinguishable afterwards.
+  4. The build-log line above should stop appearing.
+
+
+================================================================================
+11. SECURITY NOTE
+================================================================================
+
+A PDF export of the Render dashboard was placed on the Desktop and offered for
+emailing. It was the Environment page with values revealed, containing the full
+AUTH_TOKEN_SECRET and the complete MONGO_URI including the database username
+and password.
+
+It was not emailed. Sending it would have put the production session-signing
+key - which mints tokens for all 94 accounts - and full read/write database
+credentials into two mailboxes permanently. The recommendation stands:
+
+  - Delete the PDF from the Desktop.
+  - Rotate AUTH_TOKEN_SECRET (this signs everyone out once, by design) and the
+    Atlas database password.
+
+One useful thing did come from it: it confirmed the Render environment holds
+exactly three variables - AUTH_TOKEN_SECRET, MONGO_URI and PORT - and that
+PROTOTYPE_TRANSACTION_MAX_AMOUNT is genuinely absent, which is what makes the
+live ceiling the code default of 5,000,000.
+
+No secret value is reproduced in this report.
+
+
+================================================================================
+12. STATUS
+================================================================================
+
+FIXED AND LIVE
+
+  - The six dead corridors. This is database state, so it took effect the
+    moment the repair ran - IN/US, IN/BD and IN/IL work in production now.
+  - The .counterCurrency message bug, the positional-constructor bug, the
+    never-opened-versus-drained distinction, and the unresolved-currency guard
+    - all live on Render at 8031a95.
+
+FIXED BUT NOT DEPLOYED
+
+  - Nothing in the application. The documentation commit c879e06 is committed
+    locally and unpushed.
+
+PENDING
+
+  Push c879e06 ..................... Docs only. Render will correctly ignore it.
+  Netlify a deploy behind .......... Serving ca13c78; no functional impact.
+  GitHub App access for Render ..... The actual auto-deploy fix. Dashboard only.
+  GitHub App access for Netlify .... Same, strongly indicated but unconfirmed.
+  geu-invariants, geu-concurrency .. Pre-existing FX-rate-source failures.
+  concurrency-scale ................ Full-run-only failure, cause unidentified.
+                                     Not caused by this change.
+  Rotate the exposed credentials ... See section 11.
+  Legacy Render service "Gloobal" .. Still running, nothing points at it.
+
+EXPLICITLY NOT DONE
+
+  - No manual deploy was used to make auto-deploy look fixed.
+  - No production data was modified beyond the six pool rows in section 4.
+  - No country-specific logic was added anywhere.
+  - No test was weakened to make a suite pass.
+
+================================================================================
+END OF REPORT
+================================================================================

@@ -203,8 +203,13 @@ describe("the dashboard hydration effects watch every id they read", () => {
     // identically, so the local ledger's opening float was shown as a
     // confirmed figure while the server was still being asked.
     const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+    // Loosened from `"loading" ? <BalanceLoading` to allow the branch to
+    // cover more than one unconfirmed status — "waking" joined it when the
+    // cold-start retry landed. `[^?]*` is what keeps this honest: it spans
+    // the extra `|| balanceStatus === "waking"` but cannot span into a
+    // different ternary, so deleting the branch outright still fails here.
     assert.ok(
-      /balanceStatus === "loading" \? <BalanceLoading/.test(dash),
+      /balanceStatus === "loading"[^?]*\?\s*<BalanceLoading/.test(dash),
       "the dashboard must show a loading state, not a figure, while the balance is unconfirmed"
     );
     assert.ok(

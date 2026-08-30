@@ -35,7 +35,15 @@ var QR_SCAN_FRAME_INTERVAL = 3;
 // reliable.
 var QR_SCAN_MAX_DIM = 640;
 
-function QrCameraScanner({ onDetected, active = true, paused = false }) {
+// `fullScreen` makes the camera the screen rather than a picture on it.
+//
+// The boxed version put a 300px black square in the middle of a light page
+// with the viewfinder a fraction of it — so a QR code had to be held far
+// enough back to fit inside a thumbnail, which is exactly when a phone
+// camera stops being able to resolve it. Filling the viewport gives the
+// decoder the whole sensor to work with, and gives the person the framing
+// every scanner has trained them to expect.
+function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen = false }) {
   // "starting" | "running" | "denied" | "unavailable" | "error"
   const [state, setState] = useState32("starting");
   const videoRef = useRef17(null);
@@ -182,7 +190,42 @@ function QrCameraScanner({ onDetected, active = true, paused = false }) {
       : state === "unavailable"
         ? "This device has no camera the browser can use, or the page isn't on a secure (https) connection."
         : "Something went wrong starting the camera. Close this and try again.";
-    return <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "28px 24px", textAlign: "center" }}><div style={{ width: 64, height: 64, borderRadius: "50%", background: T.negativeSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><CameraOff1 size={26} color={T.negative} /></div><div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{title}</div><div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, maxWidth: 280 }}>{body}</div></div>;
+    const card = <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "28px 24px", textAlign: "center" }}><div style={{ width: 64, height: 64, borderRadius: "50%", background: T.negativeSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><CameraOff1 size={26} color={T.negative} /></div><div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{title}</div><div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, maxWidth: 280 }}>{body}</div></div>;
+    // Full screen, this component is a positioned layer inside the scan
+    // overlay rather than an item in its column, so an unpositioned card
+    // would land at the top of the screen under the tabs. Centre it.
+    return fullScreen
+      ? <div style={{ position: "absolute", inset: 0, zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 24px" }}><div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard }}>{card}</div></div>
+      : card;
+  }
+
+  if (fullScreen) {
+    return <><video
+      ref={videoRef}
+      muted
+      playsInline
+      autoPlay
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block", background: "#000" }}
+    />{
+      /* Framing guide. Purely visual — jsQR reads the whole frame, not just
+         what is inside the square — but people aim at a target, and a
+         centred code is a larger, better-focused code.
+
+         The dimming is one enormous spread shadow on the square rather than
+         four positioned panels: it can never leave a seam, and it resizes
+         with the square for free. */
+    }<div
+      aria-hidden="true"
+      style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}
+    ><div
+      style={{
+        width: "min(72vw, 300px)",
+        aspectRatio: "1",
+        borderRadius: 26,
+        border: "2px solid rgba(255,255,255,0.92)",
+        boxShadow: "0 0 0 100vmax rgba(0,0,0,0.45)"
+      }}
+    /></div><canvas ref={canvasRef} style={{ display: "none" }} /></>;
   }
 
   return <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div

@@ -32,6 +32,28 @@ function filterHistoryByPeriod(rows, period, now) {
     return !isNaN(parsed.getTime()) && parsed >= start;
   });
 }
+// The "when" line that sits under a name in a history row: date and time
+// together, e.g. "Aug 30 · 13:52".
+//
+// Seconds are cut. formatClockTime writes "14:07:32" because a receipt wants
+// the exact instant, but a list wants a glanceable one, and the third pair of
+// digits is pure noise under a name.
+//
+// A 24-hour clock on purpose. This half of the line has to survive being read
+// by someone who reads no English, and 13:52 does that where "1:52 PM" does
+// not. (`t.date` is still "Aug 30", which does not — that comes from the row
+// data rather than from here, and is its own thing to fix.)
+//
+// The separator is a middle dot rather than a comma or the word "at": it
+// belongs to no language, and it keeps the two halves legible as two facts.
+function historyRowStamp(t) {
+  if (!t) return "";
+  const date = t.date || "";
+  if (!t.time) return date;
+  const trimmed = String(t.time).match(/^(\d{1,2}:\d{2})/);
+  const clock = trimmed ? trimmed[1] : String(t.time);
+  return date ? `${date} · ${clock}` : clock;
+}
 function sumHistoryAmount(rows) {
   return Math.round(rows.reduce((sum, t) => sum + (Number(t.amount) || 0), 0) * 100) / 100;
 }

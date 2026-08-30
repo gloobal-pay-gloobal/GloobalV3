@@ -1,6 +1,6 @@
 // src/features/history/TransactionHistoryScreen.jsx
 import { useState as useState12, useEffect as useEffect11, useRef as useRef9 } from "react";
-import { Filter as FilterHist } from "lucide-react";
+import { Filter as FilterHist, ChevronDown as ChevronDown4 } from "lucide-react";
 
 
 // src/features/history/TransactionHistoryScreen.jsx
@@ -10,6 +10,20 @@ import { Filter as FilterHist } from "lucide-react";
 // props instead of keeping its own separate copy (which used to render
 // a second, redundant Receiving/Sending pill directly underneath the
 // header's Received/Paid buttons).
+// How many rows a history list shows before it asks to be expanded.
+//
+// A period like "This Month" can hold hundreds of rows, and rendering all of
+// them builds a list taller than the phone several times over — every one of
+// which has to be laid out and painted before the first is visible. Ten is
+// roughly one screenful: enough that the common case (glance at the recent
+// few) never needs a tap, and short enough that the list appears instantly
+// no matter how much history sits behind it.
+//
+// Expanding adds another ten rather than revealing everything, for the same
+// reason. Someone with a thousand transactions who taps once wants the next
+// ten, not a thousand-row list.
+var HISTORY_PAGE_SIZE = 10;
+
 function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], dialCountry, ccy, ccyCode = "USD", openHistoryDirection, onConsumeOpenHistory, historyTab, setHistoryTab, historyMethodFilter, setHistoryMethodFilter }) {
   const historyScrollRef = useRef9(null);
   const [receipt, setReceipt] = useState12(null);
@@ -20,6 +34,17 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
   // filtered rows, so the period is one choice rather than three
   // separately-scoped views that can disagree with each other.
   const [historyPeriod, setHistoryPeriod] = useState12("week");
+  // How many rows each side of the pager is currently showing. Two counts,
+  // not one: the Received and Paid lists are independent lists, and expanding
+  // one has no business expanding the other behind the swipe.
+  const [visibleCounts, setVisibleCounts] = useState12({ receiving: HISTORY_PAGE_SIZE, sending: HISTORY_PAGE_SIZE });
+  // Any change to WHAT is being listed collapses both sides back to one page.
+  // Without this, expanding to 90 rows under "This Month" and then switching
+  // to "Today" would leave the shorter list claiming to be 90 rows deep, and
+  // switching back would skip the pagination entirely.
+  useEffect11(() => {
+    setVisibleCounts({ receiving: HISTORY_PAGE_SIZE, sending: HISTORY_PAGE_SIZE });
+  }, [historyPeriod, historyMethodFilter, isActive]);
   useEffect11(() => {
     if (isActive) {
       if (routedHistoryRef.current) {
@@ -218,19 +243,54 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
     { key: "sending", rows: periodSendHistory, sign: "\u2212", color: TXN_OUT_COLOR, chip: TXN_OUT_SOFT }
   ].map((col) => {
     const filteredRows = historyMethodFilter === "all" ? col.rows : col.rows.filter((t) => t.method === historyMethodFilter);
-    return <div key={col.key} style={{ flex: "0 0 100%", scrollSnapAlign: "start", minWidth: 0 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{filteredRows.length === 0 ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>Nothing {historyPeriodMeta(historyPeriod).emptyLabel}</div> : filteredRows.map((t, i) => <TransactionRow
+    // One page at a time. `remaining` is what the expander offers, and it
+    // counts every row still held back — not just the next ten — so the
+    // number on the button answers "how much more is there" rather than
+    // "how much will this tap give me".
+    const shownRows = filteredRows.slice(0, visibleCounts[col.key]);
+    const remaining = filteredRows.length - shownRows.length;
+    return <div key={col.key} style={{ flex: "0 0 100%", scrollSnapAlign: "start", minWidth: 0 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{filteredRows.length === 0 ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>Nothing {historyPeriodMeta(historyPeriod).emptyLabel}</div> : <>{shownRows.map((t, i) => <TransactionRow
       // txnId first: the received list is now two sources merged (Creator
       // Share grants and real incoming payments), so name+date alone can
       // repeat across them and React would treat two distinct rows as one.
       key={t.txnId || `${t.name}-${t.date}-${i}`}
       t={t}
-      chip={col.chip}
       color={col.color}
       sign={col.sign}
       ccy={ccy} ccyCode={ccyCode}
       isFirst={i === 0}
       onSelect={() => openHistoryReceipt(t, col.key === "sending" ? "sent" : "received")}
-    />)}</div></div>;
+    />)}{
+      /* The expander. A chevron and a number, and nothing else — this is
+         the one control on the screen a person meets while already deep in
+         a list, and "Show 24 more" would be the longest English sentence on
+         the page. A downward chevron means "more below" to a reader of any
+         script, and 24 is 24 everywhere. Screen readers get the full
+         sentence through aria-label, which is where it belongs. */
+    }{remaining > 0 && <button
+      onClick={() => setVisibleCounts((counts) => ({ ...counts, [col.key]: counts[col.key] + HISTORY_PAGE_SIZE }))}
+      className="v2-tap"
+      aria-label={`Show ${Math.min(remaining, HISTORY_PAGE_SIZE)} more, ${remaining} remaining`}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6,
+        // Shorthand FIRST, longhand after. Written the other way round the
+        // shorthand resets borderTop to `medium currentColor` and draws a
+        // thick dark rule across the card.
+        border: "none",
+        borderTop: `1px solid ${T.line}`,
+        background: "transparent",
+        padding: "12px 0",
+        cursor: "pointer",
+        color: T.accent,
+        fontSize: 12.5,
+        fontWeight: 800,
+        fontVariantNumeric: "tabular-nums"
+      }}
+    ><ChevronDown4 size={15} color={T.accent} />{remaining}</button>}</>}</div></div>;
   })}</div><ReceiptModal receipt={receipt} onClose={requestCloseReceipt} /></div>;
 }
 

@@ -1,71 +1,103 @@
 // src/features/history/TransactionRow.jsx
 //
-// One line of transaction history: mark, who, when, how much.
+// One line of transaction history, in the shape of a message list.
 //
-// Four columns, in reading order — icon, name, date, amount — rather than
-// the previous two-column shape that stacked the date and a method chip
-// underneath the name. The old shape made every row two lines tall and put
-// three different pieces of information down the left edge, so scanning a
-// list for an amount meant reading past all of it. Name and date each take
-// an equal share of the free space (`flex: 1 1 0`), which is what puts the
-// date in the middle of the row rather than trailing the name; the amount
-// is pinned right with a fixed minimum width so the currency figures line
-// up as a column even when the names beside them differ in length.
+//   ( mark )  Name                        − $240.00
+//             Aug 30 · 13:52              [badge]
 //
-// The payment-method chip ("Bank", "PayLater", "Coin") is deliberately
-// gone. It repeated on effectively every row — almost everything settles
-// to Bank — so it carried close to no information while taking the space
-// the date now uses. The method is still on the receipt this row opens.
-function TransactionRow({ t, chip, color, sign, ccy, ccyCode = "USD", isFirst, onSelect }) {
+// Three columns, two of them stacked. The mark identifies the row, the middle
+// column answers "who, and when", and the amount holds the right edge.
+//
+// The previous shape laid icon / name / date / amount across a single line,
+// which put the date in the middle of the row doing nothing but separating
+// the two things people actually read, and forced every name to be truncated
+// to leave room for it. Moving the date under the name gives the name the
+// whole width it needs and gives the date and the clock time room to sit
+// together, while the amount keeps the right-hand column where a number
+// belongs — amounts line up under each other and can be compared down the
+// list without reading anything else.
+//
+// This same component now renders all three lists — History, the Home tab's
+// recent activity, and the Recent list on the Receive sheet. They used to be
+// three hand-written copies that drifted apart in icon size, font size and
+// date placement.
+//
+// The payment-method chip ("Bank", "PayLater", "Coin") stays gone. It
+// repeated on effectively every row, so it carried close to no information.
+// It is still on the receipt this row opens.
+
+// Big enough to read as an avatar rather than a bullet. A message list's
+// mark is the thing your eye lands on first, and 28 was sized for a row that
+// was one line tall.
+var TXN_ROW_MARK_SIZE = 42;
+
+// `inset` is the row's own horizontal padding. The History screen puts these
+// straight into an unpadded card and needs it; the Dashboard's two lists sit
+// inside cards that already pad themselves and pass 0, so the rows line up
+// with the card's own heading instead of stepping in from it.
+function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelect, inset = 14 }) {
+  const stamp = historyRowStamp(t);
+  const amount = `${sign}${ccy}${fmt(Number(t.amount || 0), ccyCode)}`;
   return <div
     onClick={onSelect}
     className="v2-tap"
     role="button"
     tabIndex={0}
-    aria-label={`View receipt for ${t.name}, ${t.date}${t.status === "simulated" ? " — not actually sent, simulated only" : ""}`}
-    style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderTop: isFirst ? "none" : `1px solid ${T.line}`, cursor: "pointer" }}
+    aria-label={`${t.name}, ${amount}, ${stamp}${t.status === "simulated" ? " — not actually sent, simulated only" : ""}`}
+    style={{ display: "flex", alignItems: "center", gap: 12, padding: `9px ${inset}px`, cursor: onSelect ? "pointer" : "default" }}
   >{
-    /* The shared living flip-symbol mark, at 28 rather than 36. It is an
-       identifier for the row, not the subject of it — at the old size it
-       was the heaviest thing on a line whose actual content is a name and
-       a number. */
-  }<FlipSymbolCircle size={28} /><span
+    /* Seeded on the counterparty, so one person keeps ONE mark — the same
+       colour and symbol in History, in the Home list and on the Receive
+       sheet, every time the screen is drawn.
+
+       Unseeded it re-rolls on every render, which was tolerable when the
+       mark was a 28px bullet decorating a table row. At avatar size and
+       avatar position it is read as identity, and an identity that changes
+       colour each time you open the screen is worse than no identity: it
+       invites you to recognise a row by its mark and then quietly lies. */
+  }<FlipSymbolCircle size={TXN_ROW_MARK_SIZE} seed={t.phone || t.symbolId || t.name} /><span
     style={{
       flex: "1 1 0",
       minWidth: 0,
       display: "flex",
-      flexDirection: "column",
-      gap: 2
+      alignItems: "center",
+      gap: 10,
+      // The divider hangs off the TEXT block rather than the row, so it
+      // starts where the text starts and clears the mark — the inset rule a
+      // message list uses. On the row it would cut straight through the
+      // gutter and chop the list into boxes.
+      borderTop: isFirst ? "none" : `1px solid ${T.line}`,
+      paddingTop: isFirst ? 0 : 9
     }}
-  ><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>{
-    /* The one badge worth keeping inline: it says this payment never
-       actually left the device. That is not a detail to find on a
-       receipt. */
-  }{t.status === "simulated" && <span style={{ alignSelf: "flex-start", fontSize: 9, fontWeight: 800, color: "#8A5A00", background: "#FEF3C7", border: "1px solid #F5D68A", borderRadius: 999, padding: "1px 6px" }}>
-      Not sent
-    </span>}</span><span
+  ><span style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}><span
+    style={{ fontSize: 14.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+  >{t.name}</span>{
+    /* Date and clock together — see historyRowStamp. */
+  }<span
+    style={{ fontSize: 11, fontWeight: 600, color: T.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+  >{stamp}</span></span>{
+    /* The right-hand column. Never shrinks and never wraps: a truncated
+       amount is a wrong amount. minWidth keeps the figures aligned as a
+       column even when the names beside them differ in length. */
+  }<span
+    style={{ flexShrink: 0, minWidth: 92, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}
+  ><span
     style={{
-      flex: "1 1 0",
-      minWidth: 0,
-      textAlign: "center",
-      fontSize: 11,
-      color: T.inkFaint,
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-      whiteSpace: "nowrap"
-    }}
-  >{t.date}</span><span
-    style={{
-      flexShrink: 0,
-      minWidth: 86,
-      textAlign: "right",
-      fontSize: 13.5,
+      fontSize: 14,
       fontWeight: 800,
-      // Green in, red out — see TXN_IN_COLOR / TXN_OUT_COLOR in
+      whiteSpace: "nowrap",
+      // Green in, red out — TXN_IN_COLOR / TXN_OUT_COLOR in
       // constants/theme.js. The caller passes the colour so this row does
-      // not need to know which list it is in, but there are now only two
-      // colours it can ever be given.
+      // not need to know which list it is in.
       color
     }}
-  >{sign}{ccy}{fmt(t.amount, ccyCode)}</span></div>;
+  >{amount}</span>{
+    /* Sits under the amount, where a message list puts its unread pill, and
+       means the one thing worth interrupting a scan for: this payment never
+       actually left the device. */
+  }{t.status === "simulated" && <span
+    style={{ fontSize: 9, fontWeight: 800, color: "#8A5A00", background: "#FEF3C7", border: "1px solid #F5D68A", borderRadius: 999, padding: "1px 6px", whiteSpace: "nowrap" }}
+  >
+      Not sent
+    </span>}</span></span></div>;
 }

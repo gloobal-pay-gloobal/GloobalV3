@@ -6,7 +6,8 @@ import {
   History as History8,
   RefreshCw as RefreshCw6,
   Fingerprint as Fingerprint2,
-  ImageIcon
+  ImageIcon,
+  ArrowUpRight as ArrowUpRight5
 } from "lucide-react";
 
 
@@ -16,6 +17,40 @@ import {
 // it is a real interactive element (handleHeroCircleTap), not just art —
 // flip this to true to bring it back.
 var SHOW_PHONE_HERO_CIRCLE = false;
+
+// The way out of the scanner for a payment that has no code behind it.
+//
+// It sits where a dead "Enter Mobile Number to Pay" field used to: a div
+// dressed as a text input that took no typing and had no handler. Paying
+// somebody without scanning them is a real need, and the screen used to
+// gesture at it without serving it.
+//
+// Two grounds, because it appears on both a white permission page and on
+// top of live video, and a control that is legible on one is invisible on
+// the other.
+function ScanSendButton({ onClick, overVideo = false }) {
+  return <button
+    onClick={onClick}
+    className="v2-tap"
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 9,
+      width: "100%",
+      border: "none",
+      borderRadius: 999,
+      padding: "15px 20px",
+      background: overVideo ? "rgba(255,255,255,0.94)" : T.gradButton,
+      color: overVideo ? T.accent : "#fff",
+      fontSize: 14.5,
+      fontWeight: 800,
+      cursor: "pointer",
+      boxShadow: overVideo ? "0 6px 22px rgba(0,0,0,0.35)" : "0 8px 20px rgba(124,58,237,0.28)",
+      backdropFilter: overVideo ? "blur(6px)" : undefined
+    }}
+  ><ArrowUpRight5 size={17} />Send</button>;
+}
 
 // Where the profile picture lives. Locally, keyed by Gloobal ID, because
 // the backend has nowhere to put it: PUT /api/profile/:symbolId accepts
@@ -1214,17 +1249,59 @@ function GloobalId() {
     // spinner every few seconds is worse than leaving it there.
     setBalanceStatus((current) => (current === "ready" ? "ready" : "loading"));
 
-    const settled = await Promise.allSettled([
-      GloobalApi.getProfile(symbolId),
-      GloobalApi.getAssets(symbolId),
-      GloobalApi.getPaylater(symbolId)
-    ]);
+    // All three together, retried as a set while the server is still waking.
+    //
+    // The backend sits on a Render free instance that spins down after about
+    // fifteen minutes idle, and the coldest moment it ever sees is exactly
+    // this one: someone opening the app after not using it. A single attempt
+    // meant a cold start was indistinguishable from a broken server, which is
+    // the "sometimes it fails to load balance on first login" report.
+    //
+    // The profile read is the probe. Rethrowing its unreachable failure is
+    // what asks gloobalApiWithWakeRetry for another pass — and because the
+    // whole triple is inside the attempt, the assets and PayLater reads get
+    // retried with it instead of being quietly lost to the same cold start.
+    //
+    // A profile that comes back REJECTED but reachable (a 401, a 500) is not
+    // rethrown: that is a real answer from an awake server, and it falls
+    // through to the `confirmed` check below exactly as it always has.
+    const outcome = await gloobalApiWithWakeRetry(
+      async () => {
+        const results = await Promise.allSettled([
+          GloobalApi.getProfile(symbolId),
+          GloobalApi.getAssets(symbolId),
+          GloobalApi.getPaylater(symbolId)
+        ]);
+        const profile = results[0];
+        if (profile.status === "rejected" && gloobalApiIsUnreachable(profile.reason)) {
+          throw profile.reason;
+        }
+        return results;
+      },
+      {
+        // The same account guard used below, so a wake-up that outlives the
+        // account it was started for stops waiting instead of finishing.
+        isCancelled: () => hydratedForRef.current !== symbolId,
+        // Distinct from "loading": the server is starting, not failing, and
+        // the screen is allowed to say so rather than sit on a spinner that
+        // never changes for half a minute.
+        onWaking: () => setBalanceStatus("waking")
+      }
+    );
 
     // The account changed while this was in flight. Everything below would
     // be writing one person's money onto another person's screen.
     if (hydratedForRef.current !== symbolId) return false;
 
-    const [profileResult, assetsResult, paylaterResult] = settled;
+    // Unreachable through every retry. That is a genuine failure now, not a
+    // cold start, and it is reported as one.
+    if (!outcome.ok) {
+      if (outcome.cancelled) return false;
+      setBalanceStatus("error");
+      return false;
+    }
+
+    const [profileResult, assetsResult, paylaterResult] = outcome.value;
     const profile = profileResult.status === "fulfilled" ? profileResult.value : null;
 
     // Passed through as-is rather than coerced: reconcileBankBalance is the
@@ -2888,15 +2965,40 @@ function GloobalId() {
     /* Scan to pay — real decode/lock logic, simulated camera input
        since there's no actual camera access here. Tapping the demo
        target is standing in for "the camera detected this code." */
-  }{showScanScreen && <div style={{ position: "fixed", inset: 0, zIndex: 400, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><DashboardAmbientBg /><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
-      // Leaving the scanner abandons whatever was pending on it, PIN included.
+  }{showScanScreen && (() => {
+    // Leaving the scanner abandons whatever was pending on it, PIN included.
+    // One definition, used by the back button AND by Send — two copies of a
+    // teardown this security-relevant is two chances to forget the PIN line.
+    const closeScanScreen = () => {
       scanVerifiedPinRef.current = null;
       setShowScanScreen(false);
       setScanPendingPayment(null);
       setScanError(null);
       setScanCameraAccessGranted(false);
       setScanScreenTab("scan");
-    }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{scanScreenTab === "myCode" ? "My Gloobal QR code" : "Scan to pay"}</span></div>{
+    };
+    // The camera is the screen, not a picture on it, whenever it is actually
+    // scanning — not while showing My Code, not before permission, and not
+    // once a code has been read and there is a payment card to look at.
+    const scanLive = scanScreenTab === "scan" && scanCameraAccessGranted && !scanPendingPayment;
+    // Over live video every control needs its own contrast; on the light
+    // page they keep the app's normal colours.
+    const overVideoInk = scanLive ? "#fff" : T.inkFaint;
+    return <div style={{ position: "fixed", inset: 0, zIndex: 400, background: scanLive ? "#000" : T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>{!scanLive && <DashboardAmbientBg />}{
+    /* The camera layer. A direct child of the overlay rather than an item
+       in the column below, which is what lets it run edge to edge behind
+       the back button and the tabs instead of stopping under them. */
+  }{scanLive && <QrCameraScanner
+    fullScreen
+    active={showScanScreen}
+    paused={scanResolving}
+    onDetected={handleQrScanned}
+  />}<div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={closeScanScreen} />{
+    /* No title. It said "Scan to pay" directly above a two-button strip
+       whose first button says "Scan" — the same word twice in 40 pixels —
+       and over a full-screen camera a heading is just something in the way
+       of the thing it is describing. */
+  }</div>{
     /* Scan / My Code — same two-way pattern as any scanner: scan
        someone else's code, or show your own for them to scan.
        "My Code" shows a real, separate ID per role — Personal mode
@@ -2916,8 +3018,12 @@ function GloobalId() {
       border: "none",
       borderRadius: 999,
       padding: "10px 0",
-      background: scanScreenTab === tab.key ? T.gradButton : T.surfaceAlt,
-      color: scanScreenTab === tab.key ? "#fff" : T.inkFaint,
+      // Over live video the inactive chip needs its own ground: T.surfaceAlt
+      // is a near-white that vanishes on a bright frame and glares on a dark
+      // one. A translucent black chip reads on both.
+      background: scanScreenTab === tab.key ? T.gradButton : scanLive ? "rgba(0,0,0,0.45)" : T.surfaceAlt,
+      color: scanScreenTab === tab.key ? "#fff" : overVideoInk,
+      backdropFilter: scanLive && scanScreenTab !== tab.key ? "blur(6px)" : undefined,
       fontSize: 13,
       fontWeight: 800,
       cursor: "pointer",
@@ -3030,9 +3136,11 @@ function GloobalId() {
     // so "Allow Access" can't request a genuine permission — it
     // moves into the same simulated-scan flow below, honestly,
     // rather than pretending to grant something real.
-    <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", padding: "10px 24px 0" }}><h1 style={{ fontSize: 28, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, margin: "10px 0 0" }}>
-                Scan any QR code
-              </h1><div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 22, paddingBottom: 60 }}><div
+    <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", padding: "10px 24px 0" }}>{
+    /* The "Scan any QR code" headline is gone. The screen below it already
+       shows a scanner icon the size of a saucer and a button that says
+       Allow Access — the heading restated the tab that got you here. */
+  }<div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 22, paddingBottom: 60 }}><div
       style={{
         width: 200,
         height: 200,
@@ -3096,24 +3204,21 @@ function GloobalId() {
       accept="image/*"
       onChange={handleScanGalleryFile}
       style={{ display: "none" }}
-    /></div><div style={{ paddingBottom: "calc(26px + env(safe-area-inset-bottom, 0px))" }}><div
-      style={{
-        width: "100%",
-        background: T.surfaceAlt,
-        border: `1px solid ${T.line}`,
-        borderRadius: 999,
-        padding: "15px 20px",
-        fontSize: 14.5,
-        color: T.inkFaint
-      }}
-    >
-                  Enter Mobile Number to Pay
-                </div></div></div>
-  ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px", gap: 20 }}>{!scanPendingPayment ? <><QrCameraScanner
-    active={showScanScreen && scanScreenTab === "scan" && scanCameraAccessGranted}
-    paused={scanResolving}
-    onDetected={handleQrScanned}
-  /><div style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", lineHeight: 1.5 }}>{scanResolving ? "Looking this ID up\u2026" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div style={{ fontSize: 12.5, color: T.negative, textAlign: "center", fontWeight: 700 }}>{scanError}</div>}</> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPendingPayment.amountCents > 0 ? "Payment request" : "Gloobal ID"}</div>{scanPendingPayment.amountCents > 0 && <div style={{ fontSize: 32, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: 14 }}>{CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "$"}{(scanPendingPayment.amountCents / 100).toFixed(2)}</div>}{scanPendingPayment.recipientName && <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPendingPayment.recipientName}</div>}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: scanPendingPayment.registered ? 20 : 8 }}><ColoredGloobalId id={scanPendingPayment.gloobalId} /></div>{
+    /></div><div style={{ paddingBottom: "calc(26px + env(safe-area-inset-bottom, 0px))" }}>{
+    /* Was a div reading "Enter Mobile Number to Pay" that was styled to
+       look like a text field but was not one — no input, no handler, no
+       tap target. It could not be typed into and it did nothing, which is
+       the worst kind of control: it advertised a way to pay someone
+       without a code and then refused to take it.
+
+       This is that promise kept. It opens the real Send flow, where a
+       number or a Gloobal ID can actually be entered. */
+  }<ScanSendButton onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></div></div>
+  ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: scanLive ? "flex-end" : "center", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))", gap: 16 }}>{!scanPendingPayment ? <>{
+    /* The scanner itself is no longer here — it is a full-bleed layer on
+       the overlay above, behind these controls. What is left is what has
+       to sit ON the video: what the camera is doing, and the way out. */
+  }<div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}>{scanResolving ? "Looking this ID up\u2026" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "8px 14px", textAlign: "center", fontWeight: 700 }}>{scanError}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPendingPayment.amountCents > 0 ? "Payment request" : "Gloobal ID"}</div>{scanPendingPayment.amountCents > 0 && <div style={{ fontSize: 32, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: 14 }}>{CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "$"}{(scanPendingPayment.amountCents / 100).toFixed(2)}</div>}{scanPendingPayment.recipientName && <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPendingPayment.recipientName}</div>}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: scanPendingPayment.registered ? 20 : 8 }}><ColoredGloobalId id={scanPendingPayment.gloobalId} /></div>{
     /* Said plainly rather than left to be discovered after paying:
        nobody is registered under this ID, so there is no account on
        the other side for the backend to credit and the payment runs
@@ -3167,7 +3272,8 @@ function GloobalId() {
     style={{ width: "100%", border: "none", background: "none", padding: "12px 0 0", fontSize: 12.5, color: T.inkFaint, cursor: "pointer" }}
   >
                   Cancel
-                </button></div>}</div>}</>}</div>}<PayOptionsSheet
+                </button></div>}</div>}</>}</div>;
+  })()}<PayOptionsSheet
     open={scanPayOptionsOpen}
     onClose={() => setScanPayOptionsOpen(false)}
     onChoose={(label) => {

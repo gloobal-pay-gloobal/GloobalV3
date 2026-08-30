@@ -21,6 +21,64 @@
 var GLOOBAL_API_WAKING_MESSAGE =
   "Couldn't reach the server — it may still be waking up. Please try again in a few seconds.";
 
+// Cold-start retry.
+//
+// The backend runs on a Render FREE instance, which spins down after about
+// fifteen minutes without traffic. Its logs show this plainly: four separate
+// instance ids started on one day, with multi-hour gaps between them. A
+// spin-up takes tens of seconds, and during it a request either hangs or
+// comes back as an unreachable failure.
+//
+// That lands hardest on exactly the calls this app makes FIRST — the balance
+// and profile read on arriving at the dashboard — because opening the app
+// after a while is precisely when the server is coldest. One failed call was
+// enough to paint "balance unavailable" and leave it there until the person
+// found the retry themselves. That is the "sometimes it fails to load
+// balance on first login" report, and it is not intermittent at all: it is
+// deterministic, and it tracks how long the app went unused.
+//
+// The delays climb rather than repeating, because a cold start is not a
+// dropped packet — it is a container booting, and hammering it every second
+// does not make it boot faster. Roughly 37 seconds of total patience, which
+// covers a normal Render spin-up.
+var GLOOBAL_API_WAKE_RETRY_DELAYS_MS = [2000, 5000, 10000, 20000];
+
+// Runs `attempt` and retries ONLY while the failure is "unreachable"
+// (status 0 — a timeout, an offline moment, or a cold start still booting).
+//
+// A 401, a 404 or a 500 is a real answer from a server that is awake, and
+// retrying it would be pointless at best: it would delay a legitimate error
+// by half a minute and, on a route with side effects, risk repeating them.
+// gloobalApiIsUnreachable is the same predicate login already uses to tell
+// "still waking" apart from "wrong PIN".
+//
+// Returns { ok, value } or { ok: false, error, cancelled } — never throws —
+// so a caller inside a React effect cannot turn a wake-up into an unhandled
+// rejection.
+async function gloobalApiWithWakeRetry(attempt, options) {
+  const opts = options || {};
+  let lastError = null;
+  for (let i = 0; i <= GLOOBAL_API_WAKE_RETRY_DELAYS_MS.length; i += 1) {
+    // Checked before every attempt AND after every wait: the screen can be
+    // left, or the account switched, part-way through a 37-second window.
+    if (opts.isCancelled && opts.isCancelled()) return { ok: false, cancelled: true };
+    try {
+      return { ok: true, value: await attempt() };
+    } catch (err) {
+      lastError = err;
+      if (!gloobalApiIsUnreachable(err)) return { ok: false, error: err };
+      const delay = GLOOBAL_API_WAKE_RETRY_DELAYS_MS[i];
+      if (delay === undefined) break;
+      // Tells the caller this is a wake-up rather than a failure, so the UI
+      // can say "still waking" instead of accusing the server of being down
+      // while it is in fact starting normally.
+      if (opts.onWaking) opts.onWaking(i + 1);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  return { ok: false, error: lastError };
+}
+
 var GloobalApi = {
   baseUrl: GLOOBAL_API_BASE,
   isUnreachable: gloobalApiIsUnreachable,

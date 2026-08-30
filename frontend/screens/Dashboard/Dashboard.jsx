@@ -79,6 +79,33 @@ var GH_HERO_CIRCLE_SIZE = 110;
 // stays purely to keep the row's last character from touching the card's
 // rounded corner, not to route around the circle.
 var GH_ID_ROW_RESERVE = 10;
+
+// How many referrals the network list shows before it asks to be expanded.
+// Same ten as the History list, and for the same reason: this list is
+// unbounded (a network can be hundreds deep), and every row rendered is a
+// row laid out and painted before the first one is visible.
+var REFERRAL_PAGE_SIZE = 10;
+
+// The live dot that replaced the word ACTIVE on every referral row.
+//
+// "ACTIVE" was the same nine letters repeated down the entire list, in a
+// language most of the network may not read, saying something the list
+// already implies. A pulsing dot says "live" without a word — it is the
+// convention every status indicator already uses, and it costs eight pixels
+// instead of a badge.
+//
+// Only the ACTIVE dot pulses. A pending referral gets a still amber dot:
+// motion is what distinguishes the two now that the words are gone, so
+// giving both the same animation would throw away the only difference left.
+// The global prefers-reduced-motion rule in App.jsx neutralises the
+// animation for anyone who has asked for that, leaving the colour.
+var REFERRAL_STYLE = `
+  @keyframes referralLivePulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.35; transform: scale(0.82); }
+  }
+  .referral-live-dot { animation: referralLivePulse 1.5s ease-in-out infinite; }
+`;
 // src/screens/Dashboard/Dashboard.jsx
 // The balance line while the server is still being asked.
 //
@@ -86,21 +113,31 @@ var GH_ID_ROW_RESERVE = 10;
 // read as "this is your balance", and one of them was how a Netherlands
 // account came to be shown €10,000.00 it did not have. A person waiting is
 // told they are waiting.
-function BalanceLoading() {
+//
+// `waking` is the same wait, told truthfully. The backend sits on an
+// instance that sleeps when unused, and the first read after a quiet spell
+// can take half a minute to answer — during which the ordinary spinner is
+// indistinguishable from one that has hung. Naming it keeps a person from
+// deciding the app is broken and killing it eight seconds before the number
+// would have arrived.
+function BalanceLoading({ waking = false }) {
+  const tone = waking ? T.accent : T.inkFaint;
   return <span
-    style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 17, fontWeight: 700, color: T.inkFaint }}
+    style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 17, fontWeight: 700, color: tone }}
   ><span
     aria-hidden="true"
     style={{
       width: 14,
       height: 14,
       borderRadius: "50%",
-      border: `2px solid ${T.inkFaint}`,
+      border: `2px solid ${tone}`,
       borderTopColor: "transparent",
-      animation: "spin 0.9s linear infinite",
+      // Slower while waking: a spinner racing through a thirty-second wait
+      // reads as frantic, and this one is waiting on a machine booting.
+      animation: `spin ${waking ? "1.6s" : "0.9s"} linear infinite`,
       flexShrink: 0
     }}
-  /><span>Loading balance…</span></span>;
+  /><span>{waking ? "Waking the server…" : "Loading balance…"}</span></span>;
 }
 
 // A read that genuinely failed. Says so, and offers the one action that can
@@ -562,6 +599,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   const requestClosePayTarget = useBackClose(!!payTarget, () => setPayTarget(null));
   const [payAmount, setPayAmount] = useState14("25.00");
   const [profileOverlay, setProfileOverlay] = useState14(null);
+  // How many referral rows are currently shown. Reset whenever the overlay
+  // changes, so re-opening the network never lands on a list still expanded
+  // to 200 rows from last time.
+  const [referralVisible, setReferralVisible] = useState14(REFERRAL_PAGE_SIZE);
+  useEffect12(() => {
+    setReferralVisible(REFERRAL_PAGE_SIZE);
+  }, [profileOverlay]);
   const requestCloseProfileOverlay = useBackClose(!!profileOverlay, () => setProfileOverlay(null));
   const [selectedMember, setSelectedMember] = useState14(null);
   const requestCloseSelectedMember = useBackClose(!!selectedMember, () => setSelectedMember(null));
@@ -1344,7 +1388,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       textOverflow: "ellipsis",
       zIndex: 1
     }}
-  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : ` ${dialCountry.name}`} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceStatus === "loading" ? <BalanceLoading /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? `${ccy}${balance}` : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
+  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : ` ${dialCountry.name}`} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? `${ccy}${balance}` : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"
@@ -1502,14 +1546,25 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   >{tab.label}</button>)}</div></div>{(() => {
     const rows = (recentActivityTab === "receiving" ? receivedRows : roleSendHistory).slice(0, 5);
     if (rows.length === 0) return <div style={{ padding: "14px 2px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>Nothing yet</div>;
-    return <div style={{ display: "flex", flexDirection: "column" }}>{rows.map((t, i) => <div
+    return <div style={{ display: "flex", flexDirection: "column" }}>{
+      /* THE history row, not a copy of it. This list and the Receive
+         sheet's below were hand-written duplicates of TransactionRow, and
+         they had already drifted apart from it and from each other — a
+         36px mark against 28, 13px name against 13.5, the date tucked
+         under the name here and sitting mid-row over there. Three lists of
+         the same thing that read like three different apps.
+
+         inset={0} because the card around this already pads itself. */
+    }{rows.map((t, i) => <TransactionRow
       key={t.txnId || `${t.name}-${t.date}-${i}`}
-      style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-    >{
-      /* Same mark as the History rows — see TransactionRow. The tab
-         itself says which direction these are, and the signed amount
-         says it again, so the icon is free to be the shared one. */
-    }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: recentActivityTab === "receiving" ? TXN_IN_COLOR : TXN_OUT_COLOR, flexShrink: 0 }}>{recentActivityTab === "receiving" ? "+" : "\u2212"}{ccy}{fmt(t.amount, ccyCode)}</span></div>)}</div>;
+      t={t}
+      color={recentActivityTab === "receiving" ? TXN_IN_COLOR : TXN_OUT_COLOR}
+      sign={recentActivityTab === "receiving" ? "+" : "\u2212"}
+      ccy={ccy}
+      ccyCode={ccyCode}
+      isFirst={i === 0}
+      inset={0}
+    />)}</div>;
   })()}<button
     onClick={() => {
       setHistoryTab(recentActivityTab);
@@ -2308,17 +2363,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        above, already newest-first (see receivedRows' own comment). */
   }{receivedRows.length > 0 && <div style={{ marginTop: 18 }}><div style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 10px 2px" }}>
               Recent
-            </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden", padding: "6px 16px 10px" }}>{receivedRows.slice(0, 5).map((t, i) => <div
+            </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden", padding: "6px 16px 10px" }}>{receivedRows.slice(0, 5).map((t, i) => <TransactionRow
     key={t.txnId || `${t.name}-${t.date}-${i}`}
-    style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-  >{
-    /* Same mark as the History rows — see TransactionRow. Direction is
-       already carried by the signed, coloured amount on the right, so
-       the icon does not need to repeat it, and repeating it was the only
-       thing making these rows look like a different app's list. */
-  }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: TXN_IN_COLOR, flexShrink: 0 }}>
-                    +{ccy}{fmt(Number(t.amount || 0), ccyCode)}
-                  </span></div>)}</div></div>}</div></div>}{
+    t={t}
+    color={TXN_IN_COLOR}
+    sign="+"
+    ccy={ccy}
+    ccyCode={ccyCode}
+    isFirst={i === 0}
+    inset={0}
+  />)}</div></div>}</div></div>}{
     /* My Share — the % of every incoming payment this person shares
        back with whoever paid them. Opened from the Receive sheet's
        pill button. Slider and the custom-% input stay in sync (both
@@ -2945,7 +2999,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // height reaches the scroller and the column overflows the way it
     // always should have.
     flexShrink: 0
-  }}>{[...referralNetwork].sort((a, b) => b.earnedToday - a.earnedToday).map((m, i) => <button
+  }}><style>{REFERRAL_STYLE}</style>{[...referralNetwork].sort((a, b) => b.earnedToday - a.earnedToday).slice(0, referralVisible).map((m, i) => <button
     key={`${m.symbolId || "unknown"}-${i}`}
     onClick={() => setSelectedMember(m)}
     className="v2-tap"
@@ -2987,24 +3041,54 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Joined date and status — both already fetched from the server and
        both previously thrown away, while the row showed an em dash and
        the word "today" on every single line instead. */
-  }{m.joinedAt && <span style={{ fontSize: 11, color: T.inkFaint, whiteSpace: "nowrap" }}>{formatReferralJoinDate(m.joinedAt)}</span>}<span
-    style={{
-      fontSize: 9.5,
-      fontWeight: 800,
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      padding: "1.5px 7px",
-      borderRadius: 999,
-      whiteSpace: "nowrap",
-      color: m.status === "Active" ? T.positive : "#8A5A00",
-      background: m.status === "Active" ? T.positiveSoft : "#FEF3C7"
-    }}
-  >{m.status}</span></span></span>{
+  }{m.joinedAt && <span style={{ fontSize: 11, color: T.inkFaint, whiteSpace: "nowrap" }}>{formatReferralJoinDate(m.joinedAt)}</span>}</span></span>{
     /* Earnings only when there ARE earnings. Every row used to end in
        "\u2014 / today", a column of dashes that said nothing and took the
        eye straight to it; referral earnings are not credited server-side
        yet, so that was every row, always. */
-  }{m.earnedToday > 0 && <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, flexShrink: 0 }}><span style={{ fontSize: 13.5, fontWeight: 800, color: T.positive }}>+{ccy}{fmt(m.earnedToday, ccyCode)}</span><span style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>today</span></span>}<ChevronRight4 size={16} color={T.inkFaint} style={{ flexShrink: 0 }} /></button>)}</div>}</div>{toast && <div
+  }{m.earnedToday > 0 && <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, flexShrink: 0 }}><span style={{ fontSize: 13.5, fontWeight: 800, color: T.positive }}>+{ccy}{fmt(m.earnedToday, ccyCode)}</span><span style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>today</span></span>}{
+    /* The live dot, immediately left of the arrow — this is what the word
+       ACTIVE used to be. Green and pulsing for an active referral, amber
+       and still for a pending one. aria-label carries the word for a
+       screen reader, which is the one reader a coloured dot fails. */
+  }<span
+    aria-label={m.status === "Active" ? "Active" : "Pending"}
+    role="img"
+    className={m.status === "Active" ? "referral-live-dot" : undefined}
+    style={{
+      width: 8,
+      height: 8,
+      borderRadius: "50%",
+      flexShrink: 0,
+      background: m.status === "Active" ? T.positive : "#D97706"
+    }}
+  /><ChevronRight4 size={16} color={T.inkFaint} style={{ flexShrink: 0 }} /></button>)}{
+    /* Same expander as the History list — a chevron and the number of rows
+       still held back, no sentence. See HISTORY_PAGE_SIZE for why the tap
+       adds a page rather than revealing everything. */
+  }{referralNetwork.length > referralVisible && <button
+    onClick={() => setReferralVisible((n) => n + REFERRAL_PAGE_SIZE)}
+    className="v2-tap"
+    aria-label={`Show ${Math.min(referralNetwork.length - referralVisible, REFERRAL_PAGE_SIZE)} more, ${referralNetwork.length - referralVisible} remaining`}
+    style={{
+      width: "100%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      // Shorthand FIRST, longhand after — the same collision that put the
+      // thick black bars between these very rows. See the row above.
+      border: "none",
+      borderTop: `1px solid ${T.line}`,
+      background: "none",
+      padding: "12px 0",
+      cursor: "pointer",
+      color: T.accent,
+      fontSize: 12.5,
+      fontWeight: 800,
+      fontVariantNumeric: "tabular-nums"
+    }}
+  ><ChevronDown size={15} color={T.accent} />{referralNetwork.length - referralVisible}</button>}</div>}</div>{toast && <div
     style={{
       position: "absolute",
       bottom: 30,

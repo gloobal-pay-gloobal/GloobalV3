@@ -90,7 +90,17 @@ var DAILY_SPENDING_PALETTES = {
     selectRing: T.accent
   }
 };
-function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null, palette = "dark" }) {
+// `trailing` is anything to put on the RIGHT of the chart's own header line.
+//
+// The History screen used it to fold its period total into this card rather
+// than stack a second card above it. The two boxes were saying related
+// things about the same rows — one the total for the period, one the figure
+// for whatever day is selected inside it — and separating them made them
+// look like rival answers to the same question. Side by side on one line
+// they read as what they are: the whole, and the part you are pointing at.
+//
+// Absent (the wallet card), the header renders exactly as it always did.
+function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null, palette = "dark", trailing = null }) {
   const C = DAILY_SPENDING_PALETTES[palette] || DAILY_SPENDING_PALETTES.dark;
   const [weekOffset, setWeekOffset] = useState8(0);
   const [selectedDay, setSelectedDay] = useState8(null);
@@ -153,7 +163,16 @@ function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null
   // reads as a stray tick rather than a column.
   const barWidth = showPaid && showReceived ? 7 : 10;
   const displayed = selectedDay !== null ? days[selectedDay] : weekTotal;
-  return <div style={{ position: "relative" }}><div style={{ display: "flex", justifyContent: focusDirection ? "flex-start" : "space-between", alignItems: "center" }}>{(!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{symbol}{displayed.paid.toFixed(2)}</span>}{(!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{symbol}{displayed.received.toFixed(2)}</span>}</div><div
+  const paidFigure = (!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{symbol}{displayed.paid.toFixed(2)}</span>;
+  const receivedFigure = (!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{symbol}{displayed.received.toFixed(2)}</span>;
+  return <div style={{ position: "relative" }}><div style={{ display: "flex", justifyContent: trailing || !focusDirection ? "space-between" : "flex-start", alignItems: "baseline", gap: 10 }}>{
+    /* With a trailing figure the left-hand ones are grouped, so
+       space-between splits LEFT GROUP vs trailing rather than pushing the
+       two directions to opposite edges. Without one the original markup is
+       emitted unchanged, which is what keeps the wallet card identical. */
+  }{trailing
+    ? <span style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>{paidFigure}{receivedFigure}</span>
+    : paidFigure}{trailing || receivedFigure}</div><div
     onPointerDown={handlePointerDown}
     onPointerMove={handlePointerMove}
     onPointerUp={handlePointerUp}

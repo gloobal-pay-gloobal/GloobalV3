@@ -285,18 +285,21 @@ function flipSeedHash(value) {
   }
   return hash;
 }
-// `seed` turns the mark from decoration into identity.
+// `seed` freezes the mark: colour and symbol derived from the seed, and —
+// note the early return in the effect below — NO animation at all.
 //
-// Unseeded (every existing caller) it behaves exactly as before: a random
-// colour and symbol, re-rolled every 1.6s. That is right for a single mark
-// on a transaction row, where it reads as a living logo.
+// NOTHING PASSES IT TODAY, deliberately. It was used on the referral list
+// and the transaction rows to give each person one fixed mark, on the
+// argument that a list of people needs identity rather than churn. That
+// argument was not wrong, but the price was: seeding is the only way to
+// stop the flip, so every seeded list went completely still, and the flip
+// through the dial-pad symbols is the point of this mark. Reverted on
+// request; identity is carried by the name on the row instead.
 //
-// It is wrong for a LIST of people. The referral network drew one of these
-// per referral, each re-rolling on its own timer, so every row looked like
-// every other row and nothing told two members apart — 38 rows of identical
-// churn. Passing a seed (the member's Gloobal ID) derives the colour and
-// symbol from that ID instead, so each person keeps their own mark, the
-// same one every time the screen is opened, and the list stops moving.
+// Kept rather than deleted because the capability is sound and cheap. If it
+// is ever wanted again, separate the two concerns first — a seeded mark
+// COULD keep flipping and land back on its own face each time, which is the
+// version that would not have had to be reverted.
 function FlipSymbolCircle({ size = 34, seed }) {
   const DOT_COLORS = ["#2563EB", "#DC2626", "#EA580C", "#059669", "#9333EA", "#DB2777"];
   const seeded = seed !== void 0 && seed !== null && seed !== "";

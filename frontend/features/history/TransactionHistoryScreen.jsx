@@ -168,43 +168,48 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
       transition: "background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease"
     }}
   >{p.label}</button>)}</div>{(() => {
-    /* ONE total: the direction you are actually looking at.
-       Received and Paid side by side made the same mistake the labels
-       did — the Received/Paid toggle in the header already decides which
-       list is on screen, so a second figure for the other direction
-       answers a question nobody asked here, and it sat directly under a
-       tab saying otherwise. The number now always agrees with the rows
-       beneath it, and the other direction is one tap away, re-read from
-       the same filtered rows. With only one figure to place it can also
-       be bigger, which is what a period total should have been. */
+    /* ONE box, not two. The period total used to sit in its own card
+       directly above the chart's card, and the two were describing the
+       same filtered rows — the total for the period, and the figure for
+       whichever day is selected inside it. Stacked as separate boxes they
+       read as two competing answers (and on a "Today" filter one could say
+       +₹10,000.00 while the other said +₹0.00, which looks like a bug and
+       is not one: they are different questions).
+
+       Now they share the chart's header line. Left is the part you are
+       pointing at — the selected bar, or the visible week. Right is the
+       whole, for the period the strip above selects. The chart sits
+       underneath both, inside the same card as the control that filters
+       it, so the thing being filtered and the filter are never separated.
+
+       ONE total, not two directions: the Received/Paid toggle in the
+       header already decides which list is on screen, so a figure for the
+       other direction answers a question nobody asked here. */
     const active = historyTab === "sending"
       ? { label: "Paid", sign: "\u2212", value: periodPaidTotal, color: TXN_OUT_COLOR }
       : { label: "Received", sign: "+", value: periodReceivedTotal, color: TXN_IN_COLOR };
-    return <div
-      // The label the eye no longer needs, kept for the ear: a screen
-      // reader gets neither the colour nor the sign.
-      aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${ccy}${fmt(active.value, ccyCode)}`}
-      style={{ padding: "12px 16px" }}
-    ><div
-      style={{
-        fontSize: 22,
-        fontWeight: 800,
-        color: active.color,
-        fontFamily: T.fontDisplay,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap"
-      }}
-    >{active.sign}{ccy}{fmt(active.value, ccyCode)}</div></div>;
+    return <div style={{ padding: "14px 16px 16px" }}><DailySpendingChart
+      weeks={historyDailyTrend.weeks}
+      totals={historyDailyTrend.totals}
+      symbol={ccy}
+      focusDirection={historyTab === "sending" ? "paid" : "received"}
+      palette="light"
+      trailing={<span
+        // The label the eye no longer needs, kept for the ear: a screen
+        // reader gets neither the colour nor the sign, and without it this
+        // is a bare number beside another bare number.
+        aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${ccy}${fmt(active.value, ccyCode)}`}
+        style={{
+          fontSize: 19,
+          fontWeight: 800,
+          color: active.color,
+          fontFamily: T.fontDisplay,
+          whiteSpace: "nowrap",
+          flexShrink: 0
+        }}
+      >{active.sign}{ccy}{fmt(active.value, ccyCode)}</span>}
+    /></div>;
   })()}</div>{
-    /* Daily trend — same DailySpendingChart the wallet card uses,
-       scoped to just this history's data, giving a quick "average
-       day vs a bigger day" read before scrolling the list below. */
-  }<div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", marginBottom: 14 }}><DailySpendingChart weeks={historyDailyTrend.weeks} totals={historyDailyTrend.totals} symbol={ccy} focusDirection={historyTab === "sending" ? "paid" : "received"} palette="light" /></div>{
-    /* Method filter — All / Bank / PayLater / Coin, applied to
-       whichever panel (Receiving/Sending) is currently active. The
-       Received/Paid direction toggle itself lives in the header
-       above (see profileDetail === "History"), not duplicated here. */
   }<div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>{["all", "bank", "paylater", "coin"].map((m) => <button
     key={m}
     onClick={() => setHistoryMethodFilter(m)}

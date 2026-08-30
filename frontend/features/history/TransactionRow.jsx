@@ -26,10 +26,14 @@
 // repeated on effectively every row, so it carried close to no information.
 // It is still on the receipt this row opens.
 
-// Big enough to read as an avatar rather than a bullet. A message list's
-// mark is the thing your eye lands on first, and 28 was sized for a row that
-// was one line tall.
-var TXN_ROW_MARK_SIZE = 42;
+// 42 was the avatar size a message list uses, and on the History screen it
+// was fine. In the Dashboard's Recent Activity card — a narrow module among
+// several, not the whole screen — it dominated the row, and once it is
+// dominating the row it has stopped being a mark and started being the
+// subject. 29 is 70% of it: still an avatar, no longer the loudest thing on
+// the line. The glyph inside is sized off this (size * 0.42), so it follows
+// on its own.
+var TXN_ROW_MARK_SIZE = 29;
 
 // `inset` is the row's own horizontal padding. The History screen puts these
 // straight into an unpadded card and needs it; the Dashboard's two lists sit
@@ -46,16 +50,16 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
     aria-label={`${t.name}, ${amount}, ${stamp}${t.status === "simulated" ? " — not actually sent, simulated only" : ""}`}
     style={{ display: "flex", alignItems: "center", gap: 12, padding: `9px ${inset}px`, cursor: onSelect ? "pointer" : "default" }}
   >{
-    /* Seeded on the counterparty, so one person keeps ONE mark — the same
-       colour and symbol in History, in the Home list and on the Receive
-       sheet, every time the screen is drawn.
+    /* The living mark, free-running: it flips on its own timer through the
+       dial-pad symbols and the palette, the way it does everywhere else in
+       the app.
 
-       Unseeded it re-rolls on every render, which was tolerable when the
-       mark was a 28px bullet decorating a table row. At avatar size and
-       avatar position it is read as identity, and an identity that changes
-       colour each time you open the screen is worse than no identity: it
-       invites you to recognise a row by its mark and then quietly lies. */
-  }<FlipSymbolCircle size={TXN_ROW_MARK_SIZE} seed={t.phone || t.symbolId || t.name} /><span
+       It was briefly seeded on the counterparty so each person kept one
+       fixed colour and symbol. That bought a stable identity per row and
+       cost the animation outright — FlipSymbolCircle's seeded branch
+       returns before it ever sets its interval — and the motion is the
+       point of this mark. Identity is carried by the name beside it. */
+  }<FlipSymbolCircle size={TXN_ROW_MARK_SIZE} /><span
     style={{
       flex: "1 1 0",
       minWidth: 0,

@@ -61,6 +61,21 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
   // very next frame instead of requiring the loop to be torn down.
   const pausedRef = useRef17(paused);
   pausedRef.current = paused;
+  // Same treatment, and for a much sharper reason than pausing.
+  //
+  // This effect used to list `onDetected` in its dependencies. The handler
+  // App passes is a plain arrow function redeclared on every render, so its
+  // identity changed constantly, so the effect tore the camera down and
+  // called getUserMedia again — measured at 47 acquisitions and 46 track
+  // stops in twenty seconds, about 2.3 restarts a second. That is the
+  // camera "blinking": each restart is a real stream teardown and a fresh
+  // negotiation, which the video element shows as a black flash.
+  //
+  // Holding the callback in a ref means the loop always calls the CURRENT
+  // handler while the effect itself depends only on things that actually
+  // require a new stream.
+  const onDetectedRef = useRef17(onDetected);
+  onDetectedRef.current = onDetected;
 
   const stop = useCallback10(() => {
     if (rafRef.current) {
@@ -121,7 +136,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       if (!found || !found.data) return;
       if (found.data === lastCodeRef.current) return;
       lastCodeRef.current = found.data;
-      if (onDetected) onDetected(found.data);
+      if (onDetectedRef.current) onDetectedRef.current(found.data);
     };
 
     (async () => {
@@ -175,7 +190,10 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       cancelled = true;
       stop();
     };
-  }, [active, onDetected, stop]);
+    // NOT onDetected — see onDetectedRef above. Only `active` and `stop`
+    // genuinely require a new camera stream.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, stop]);
 
   // Lets the same code be scanned again deliberately (back out of a payment,
   // scan the same person again) without the dedupe above blocking it.

@@ -3025,10 +3025,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       cursor: "pointer"
     }}
   >{
-    /* Seeded with the member's own Gloobal ID, so each person keeps one
-       stable colour+symbol instead of every row re-rolling on its own
-       timer and all 38 looking alike. See FlipSymbolCircle's `seed`. */
-  }<FlipSymbolCircle size={40} seed={m.symbolId || m.name} /><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}><span
+    /* The living mark, free-running — same as every other list in the app.
+       It was seeded on the member's Gloobal ID for a while so each person
+       kept one fixed colour and symbol; that also stopped it animating,
+       which is not a trade worth making for a decoration. The name and the
+       live dot are what identify the row. */
+  }<FlipSymbolCircle size={28} /><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}><span
     style={{
       fontSize: 13.5,
       fontWeight: 700,

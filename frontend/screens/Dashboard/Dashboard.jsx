@@ -163,7 +163,7 @@ function BalanceError({ onRetry }) {
   >Retry</button>}</span>;
 }
 
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [] }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -737,7 +737,51 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   const [shareRole, setShareRole] = useState14("user");
   const [newIdBuffer, setNewIdBuffer] = useState14("");
   const [suggestedUpdateId, setSuggestedUpdateId] = useState14(() => genSuggestedId(12));
+  // Renames made in THIS session. Kept because a rename should appear in the
+  // list the instant it happens, before any reload has fetched it back.
   const [idUpdateHistory, setIdUpdateHistory] = useState14([]);
+  // Every rename this account has ever made, as the server recorded it.
+  //
+  // The Update History screen used to read `idUpdateHistory` alone — a list
+  // that starts empty on every mount and is only appended to by a rename made
+  // right here. So it showed your renames until you closed the app and said
+  // "No updates yet" forever after, even though the backend had been
+  // recording every one of them all along (User.symbolIdHistory).
+  //
+  // Each stored entry names the ID that WAS in use and what replaced it, so a
+  // rename is `previousId -> id` directly. Entries with no replacedBy are the
+  // account's original ID — its creation, not a rename — and are skipped.
+  const serverIdHistory = useMemo5(() => {
+    if (!Array.isArray(idHistory)) return [];
+    return idHistory
+      .filter((entry) => entry && entry.replacedBy && entry.symbolId)
+      .map((entry) => {
+        const when = entry.createdAt ? new Date(entry.createdAt) : null;
+        const valid = when && !isNaN(when.getTime());
+        return {
+          id: entry.replacedBy,
+          previousId: entry.symbolId,
+          date: valid ? when.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" }) : "",
+          time: valid ? formatClockTime(when) : "",
+          at: valid ? when.getTime() : 0
+        };
+      });
+  }, [idHistory]);
+  // One list, newest first. A rename made in this session is already in the
+  // server's copy on the next load, so the two are deduped on the pair they
+  // describe rather than shown twice.
+  const combinedIdHistory = useMemo5(() => {
+    const seen = new Set();
+    return idUpdateHistory
+      .concat(serverIdHistory)
+      .filter((h) => {
+        const key = `${h.previousId}->${h.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => (b.at || Infinity) - (a.at || Infinity));
+  }, [idUpdateHistory, serverIdHistory]);
   const [showIdHistory, setShowIdHistory] = useState14(false);
   const requestCloseIdHistory = useBackClose(showIdHistory, () => setShowIdHistory(false));
   useEffect12(() => {
@@ -830,7 +874,17 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // encodeURIComponent matters here specifically because a Gloobal ID is
   // built from symbols (− + × = ○ ● □ ■), and an unencoded "+" in a URL
   // is interpreted as a space by the time anything downstream reads it.
-  const referralLink = `${GLOOBAL_API_BASE}/r/${encodeURIComponent(shareableGloobalId)}`;
+  // The referral link always carries the ACCOUNT's Gloobal ID — never
+  // shareableGloobalId, which becomes the Creator ID in Creator mode.
+  //
+  // A referral belongs to the account, not to the persona that happens to be
+  // selected: the network is fetched with the personal ID
+  // (GET /api/referrals/:symbolId), the backend's /r/:symbolId route resolves
+  // a real user by that same field, and referralCount is counted against it.
+  // Sharing the Creator ID handed people a code that does not identify this
+  // account at all — which is why the ID on the share sheet did not match the
+  // Gloobal ID on the profile.
+  const referralLink = `${GLOOBAL_API_BASE}/r/${encodeURIComponent(personalGloobalId)}`;
   // The rate this account actually offers, read back from the server.
   //
   // Without this the sheet opened at its hardcoded 1% every time, so someone
@@ -933,7 +987,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     }
     const now = /* @__PURE__ */ new Date();
     setIdUpdateHistory((h) => [
-      { id: newIdBuffer, previousId, date: now.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" }), time: formatClockTime(now) },
+      { id: newIdBuffer, previousId, date: now.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" }), time: formatClockTime(now), at: now.getTime() },
       ...h
     ]);
     // Only the Creator ID is held locally. A personal rename needs no local
@@ -2680,6 +2734,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Identity row — flag on the left, real registered name
        on the right, not a generic label:value pair. */
   }<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 18px" }}><span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>{dialCountry.flag}</span><span style={{ flex: 1, fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</span></div>{[
+    // The number this account is registered against. It was the one piece of
+    // identity the screen knew and did not show.
+    ...(mobileNumber ? [["Mobile", mobileNumber]] : []),
     ["Country", dialCountry.name],
     ["Dial code", dialCountry.dialCode]
   ].map(([k, v], i) => <div key={k} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>{k}</span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</span></div>)}{
@@ -3520,8 +3577,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
               Save new <GloobalWordmark suffix=" ID" /></button></div></div>}{
     /* Log of every past Gloobal ID change, newest first, opened from
        the History icon on the Update Gloobal ID screen. */
-  }{showIdHistory && <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseIdHistory} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Update History</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{idUpdateHistory.length === 0 ? <div style={{ textAlign: "center", padding: "40px 20px", color: T.inkFaint, fontSize: 13 }}>No updates yet</div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{idUpdateHistory.map((h, i) => {
-    const older = idUpdateHistory[i + 1];
+  }{showIdHistory && <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseIdHistory} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Update History</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{combinedIdHistory.length === 0 ? <div style={{ textAlign: "center", padding: "40px 20px", color: T.inkFaint, fontSize: 13 }}>No updates yet</div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{combinedIdHistory.map((h, i) => {
+    const older = combinedIdHistory[i + 1];
     return <div key={i} style={{ padding: "14px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}><div style={{ display: "flex", flexDirection: "column", gap: 3 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0, width: 32 }}>From</span><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, letterSpacing: 0.5, fontFamily: "monospace", wordBreak: "break-all" }}>{h.previousId}</span></div><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: T.accent, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0, width: 32 }}>To</span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink, letterSpacing: 0.5, fontFamily: "monospace", wordBreak: "break-all" }}>{h.id}</span></div></div><div style={{ fontSize: 11, color: T.inkFaint, marginTop: 6, display: "flex", alignItems: "center", gap: 5 }}><span>{older ? `${older.date}, ${older.time}` : `${accountCreatedAt.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" })}, ${formatClockTime(accountCreatedAt)}`}</span><ArrowRight2 size={10} style={{ flexShrink: 0 }} /><span>{h.date}, {h.time}</span></div></div>;
   })}</div>}</div></div>}{
     /* Revealing the balance — same mandatory Face ID + fingerprint

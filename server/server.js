@@ -312,6 +312,13 @@ const serializeSymbolIdHistory = (user) => {
     symbolId: entry.symbolId,
     action: entry.action === 'created' ? 'created' : 'changed',
     createdAt: entry.createdAt || entry.changedAt || null,
+    // What this ID was renamed TO. Stored on every 'changed' entry since
+    // renames were first recorded, but never serialized — so a client could
+    // only reconstruct the succession by assuming entries are contiguous and
+    // in order. Sending it makes "this ID became that one" a fact the client
+    // reads rather than infers, which is what the Update History screen
+    // needs to show a rename as a pair.
+    replacedBy: entry.replacedBy || null,
     // Kept in the payload for clients built before createdAt existed.
     changedAt: entry.changedAt || entry.createdAt || null,
     replacedBy: entry.replacedBy || null
@@ -4629,8 +4636,29 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
         id: transaction._id,
         referenceId: transaction.referenceId,
         direction: isSender ? 'sent' : 'received',
+        // The RECEIVER's side: the face value this payment was denominated
+        // in, and the currency it is in. Right for the receiver, and wrong
+        // for the sender on any cross-border payment.
         amount: transaction.amount,
         currency: transaction.currency,
+        // The SENDER's side, in their own currency.
+        //
+        // The send route has always stored these in metadata precisely
+        // because `amount`/`currency` above are the receiver's — but this
+        // projection never passed them on, so a restored history row had no
+        // way to tell the two apart. A US sender's $5,000 to India came back
+        // as the ₹478,000 the receiver got, rendered with a dollar sign,
+        // because the rupee figure was the only one on offer.
+        //
+        // Null on rows written before these were stored: absent is a fact
+        // the client can act on, where a fabricated figure is not.
+        senderCurrency: transaction.metadata?.senderCurrency || null,
+        debitAmount: Number.isFinite(Number(transaction.metadata?.debitAmount))
+          ? Number(transaction.metadata.debitAmount)
+          : null,
+        fxRate: Number.isFinite(Number(transaction.metadata?.fxRate))
+          ? Number(transaction.metadata.fxRate)
+          : null,
         status: transaction.status,
         note: transaction.note || '',
         counterparty: cleanTransactionUser(counterparty),
@@ -4735,10 +4763,26 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         direction: isSender ? 'sent' : 'received',
         from: transaction.fromUserId?.symbolId || null,
         to: transaction.toUserId?.symbolId || null,
+        // The RECEIVER's side: the face value this payment was denominated
+        // in, and the currency it is in. Right for the receiver, wrong for
+        // the sender on any cross-border payment.
         amount: transaction.amount,
         cashback: Number(transaction.metadata?.cashback) || 0,
         cashbackRate: Number(transaction.metadata?.cashbackRate) || 0,
         currency: transaction.currency,
+        // The SENDER's side, in their own currency — the fields this route
+        // is read for. See the matching block on /api/transactions/history
+        // for the full reasoning; in short, `amount`/`currency` above are
+        // the receiver's, and without these the client had no way to tell
+        // the two apart, so a US sender's $5,000 to India came back as the
+        // ₹478,000 the receiver got, wearing a dollar sign.
+        senderCurrency: transaction.metadata?.senderCurrency || null,
+        debitAmount: Number.isFinite(Number(transaction.metadata?.debitAmount))
+          ? Number(transaction.metadata.debitAmount)
+          : null,
+        fxRate: Number.isFinite(Number(transaction.metadata?.fxRate))
+          ? Number(transaction.metadata.fxRate)
+          : null,
         status: transaction.status,
         note: transaction.note || '',
         counterparty: cleanTransactionUser(counterparty),

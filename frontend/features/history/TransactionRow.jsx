@@ -41,7 +41,25 @@ var TXN_ROW_MARK_SIZE = 29;
 // with the card's own heading instead of stepping in from it.
 function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelect, inset = 14 }) {
   const stamp = historyRowStamp(t);
-  const amount = `${sign}${ccy}${fmt(Number(t.amount || 0), ccyCode)}`;
+  // The row's OWN currency wins over the viewer's account currency.
+  //
+  // `ccy`/`ccyCode` describe the logged-in account, and for a domestic
+  // payment that is also what the row is in. For a cross-border one it is
+  // not: a restored row can legitimately be denominated in the counterparty's
+  // currency (see mapServerTransaction — where the sender's own debit was
+  // never recorded, the row honestly keeps the receiver's figure and says so).
+  // Formatting that with the viewer's symbol is how ₹478,000 came to be
+  // displayed as $478,000.
+  //
+  // The symbol and the decimal rule are taken from the SAME code, so they can
+  // never disagree — a currency with no minor unit is not printed to two
+  // decimals just because the viewer's currency has one.
+  const rowCode = t.currency || ccyCode;
+  // Falls back to the code itself rather than to the viewer's symbol: an
+  // unfamiliar "CNY 5,000.00" is readable and true, where "$5,000.00" is
+  // neither.
+  const rowSymbol = t.currency ? CURRENCY_SYMBOL[t.currency] || `${t.currency} ` : ccy;
+  const amount = `${sign}${rowSymbol}${fmt(Number(t.amount || 0), rowCode)}`;
   return <div
     onClick={onSelect}
     className="v2-tap"

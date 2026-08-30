@@ -54,14 +54,46 @@ function historyRowStamp(t) {
   const clock = trimmed ? trimmed[1] : String(t.time);
   return date ? `${date} · ${clock}` : clock;
 }
-function sumHistoryAmount(rows) {
-  return Math.round(rows.reduce((sum, t) => sum + (Number(t.amount) || 0), 0) * 100) / 100;
+// The period total, in ONE currency.
+//
+// Rows now carry their own currency, and a few legitimately differ from the
+// viewer's: a restored cross-border payment whose sender-side figure was
+// never recorded keeps the counterparty's amount and says so. Adding those
+// straight in is how ₹478,000 got added to a dollar total — the same
+// mistake as the mislabelled row, one line further down the screen, and it
+// was there before rows carried a currency at all. It was simply invisible
+// then, because every row silently claimed to be local.
+//
+// `targetCurrency` is optional so existing callers that just want a raw sum
+// of same-currency rows behave exactly as before.
+function sumHistoryAmount(rows, targetCurrency) {
+  const total = rows.reduce((sum, t) => {
+    const value = Number(t.amount) || 0;
+    if (!targetCurrency || !t.currency || t.currency === targetCurrency) return sum + value;
+    // convert() returns null when it has no rate for the pair. Skipping is
+    // the honest choice: a total that quietly counted an unconvertible
+    // foreign figure at face value would be wrong by the whole exchange
+    // rate, which is far worse than one that leaves it out.
+    const converted = convert(value, t.currency, targetCurrency);
+    return Number.isFinite(converted) ? sum + converted : sum;
+  }, 0);
+  return Math.round(total * 100) / 100;
 }
 function buildHistoryReceipt(t, direction, dialCountry, ccy) {
+  // The currency THIS ROW's amount is in, which is not always the viewer's.
+  //
+  // A restored cross-border row carries its own currency (see
+  // mapServerTransaction), and the receipt has to honour it for the same
+  // reason the list does: `convert()` below is given `rowCurrency` as the
+  // FROM currency, so converting a rupee figure as though it were dollars —
+  // which is what assuming the local currency did — produced a second wrong
+  // number underneath the first one.
   const localCurrency = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
+  const rowCurrency = t.currency || localCurrency;
+  const rowSymbol = t.currency ? CURRENCY_SYMBOL[t.currency] || `${t.currency} ` : ccy;
   const counterpartyCountry = ALL_COUNTRIES.find((c) => c.flag === t.flag);
   const counterpartyCurrency = counterpartyCountry ? COUNTRY_CURRENCY[counterpartyCountry.iso] : null;
-  const converted = counterpartyCurrency && counterpartyCurrency !== localCurrency ? convert(t.amount, localCurrency, counterpartyCurrency) : null;
+  const converted = counterpartyCurrency && counterpartyCurrency !== rowCurrency ? convert(t.amount, rowCurrency, counterpartyCurrency) : null;
   return {
     direction,
     // 'sent' | 'received'
@@ -80,8 +112,9 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy) {
     // Share tab, read from the receiving side.
     shareRate: t.shareRate ?? (direction === "sent" ? randomShareRate() : null),
     amount: t.amount,
-    currencySymbol: ccy,
-    currencyCode: localCurrency,
+    // The row's own, not the account's — same rule as the list.
+    currencySymbol: rowSymbol,
+    currencyCode: rowCurrency,
     convertedAmount: converted,
     convertedCurrency: converted != null ? counterpartyCurrency : null,
     method: HISTORY_METHOD_META[t.method]?.label,

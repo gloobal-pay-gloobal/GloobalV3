@@ -107,11 +107,40 @@ function mapServerTransaction(row, viewerSymbolId) {
     counterparty.fullName && counterparty.fullName !== counterparty.symbolId
       ? counterparty.fullName
       : counterparty.symbolId || "Gloobal User";
+  // WHOSE money this row is about.
+  //
+  // A payment has two sides and they are not the same number. The server
+  // stores `amount`/`currency` as the RECEIVER's face value — ₹478,000, INR
+  // — and the sender's own debit separately (`debitAmount`/`senderCurrency`
+  // — $5,000, USD). This used to take `amount` and drop `currency`
+  // altogether, leaving a bare figure that the row then rendered with
+  // whatever symbol the logged-in account happens to use. A US sender saw
+  // −$478,000.00 for a $5,000 payment: the rupee number wearing a dollar
+  // sign. Same shape in every corridor — ¥5,000 to the UK came back as ¥545.
+  //
+  // So each side is shown its own money. The receiver keeps the face value,
+  // which is genuinely theirs; the sender gets the debit that actually left
+  // their balance.
+  const isReceived = row.direction === "received";
+  const debit = Number(row.debitAmount);
+  const senderSideKnown = !isReceived && Number.isFinite(debit) && row.senderCurrency;
+  // Where the sender's side was never recorded (rows predating it), the
+  // receiver-currency figure is kept AND labelled as such. Mislabelling it
+  // is exactly the bug; showing it honestly in a foreign currency is not.
+  const ownAmount = senderSideKnown ? debit : Number(row.amount) || 0;
+  const ownCurrency = senderSideKnown ? row.senderCurrency : row.currency || null;
   return {
     name: counterpartyName,
     date: created.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     time: formatClockTime(created),
-    amount: Number(row.amount) || 0,
+    amount: ownAmount,
+    // Carried on the row so nothing downstream has to guess. A row with an
+    // amount and no currency is what made this bug possible.
+    currency: ownCurrency,
+    // Kept for the receipt, which shows both sides of a cross-border payment.
+    counterpartyAmount: Number(row.amount) || 0,
+    counterpartyCurrency: row.currency || null,
+    fxRate: Number.isFinite(Number(row.fxRate)) ? Number(row.fxRate) : null,
     status: row.status || "completed",
     direction: row.direction === "received" ? "received" : "sent",
     method: "bank",
@@ -1007,6 +1036,19 @@ function GloobalId() {
   const [loginMobileRevealed, setLoginMobileRevealed] = useState19(false);
   const [regBiometricScanning, setRegBiometricScanning] = useState19(false);
   const [profilePhoto, setProfilePhoto] = useState19(G_LOGO_DATA_URI);
+  // Changing the photo has to WRITE it, not just show it.
+  //
+  // This was `onChangeProfilePhoto={setProfilePhoto}` — state only. The very
+  // first photo appeared to persist because the documentation step happens to
+  // call persistLocalProfile straight after it; every later change lived in
+  // memory and was gone on the next load, which is exactly the "first one
+  // saves, updates don't" report. Same storage the first one used, so an
+  // updated photo is no more special than the original.
+  const handleChangeProfilePhoto = (photo) => {
+    setProfilePhoto(photo);
+    const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
+    if (symbolId) persistLocalProfile(symbolId, documentedName.trim(), photo);
+  };
   const [docType, setDocType] = useState19(null);
   const [documentedName, setDocumentedName] = useState19("");
   const [loginAuthPin, setLoginAuthPin] = useState19("");
@@ -2943,7 +2985,14 @@ function GloobalId() {
     pendingOpenMyShare={pendingOpenMyShare}
     onConsumePendingMyShare={() => setPendingOpenMyShare(false)}
     profilePhoto={profilePhoto}
-    onChangeProfilePhoto={setProfilePhoto}
+    onChangeProfilePhoto={handleChangeProfilePhoto}
+    // The account's own number, for Personal Details. Held in this session
+    // since registration and restored with the session on login.
+    mobileNumber={fullMobileNumber}
+    // Every Gloobal ID this account has ever used, from the server. The
+    // Update History screen used to show only renames made in THIS session,
+    // so it was empty again after every login — see idUpdateHistory there.
+    idHistory={(registeredUser && registeredUser.symbolIdHistory) || []}
     sendHistory={sendMoneyHistory}
     receivedHistory={receivedMoneyHistory}
     bankBalance={bankBalance}

@@ -105,8 +105,8 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
     () => generateDailySpending(periodSendHistory, periodReceiveHistory, historyPeriodMeta(historyPeriod).weekPages),
     [periodSendHistory, periodReceiveHistory, historyPeriod]
   );
-  const periodPaidTotal = useMemo5(() => sumHistoryAmount(periodSendHistory), [periodSendHistory]);
-  const periodReceivedTotal = useMemo5(() => sumHistoryAmount(periodReceiveHistory), [periodReceiveHistory]);
+  const periodPaidTotal = useMemo5(() => sumHistoryAmount(periodSendHistory, ccyCode), [periodSendHistory, ccyCode]);
+  const periodReceivedTotal = useMemo5(() => sumHistoryAmount(periodReceiveHistory, ccyCode), [periodReceiveHistory, ccyCode]);
   return <div><style>{`.history-pager::-webkit-scrollbar { display: none; }`}</style>{
     /* Period tabs — the outermost filter on this screen. The chart and
        both pager panels below are built from the rows these leave in,

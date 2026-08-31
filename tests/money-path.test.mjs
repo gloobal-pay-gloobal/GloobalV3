@@ -96,43 +96,58 @@ describe("cross-border send — the amount handed to the server", () => {
       /amountBasis:/,
       /sourceAmount:\s*senderAmount/,
       /sourceCurrency:\s*top\.currency/,
-      /destinationAmount:/,
+      /destinationAmount:\s*receiverAmount/,
       /destinationCurrency:\s*bottom\.currency/
     ]) {
       assert.ok(field.test(remoteSendCall), `the send payload must carry ${field}`);
     }
   });
 
-  test("an ordinary send is denominated in the sender's own currency", () => {
-    // The whole point of the change: someone entering 5000 in India means
-    // five thousand rupees of their own money, and the receiver is credited
-    // whatever that converts to — not five thousand of the receiver's.
+  test("every send is denominated in the receiver's own currency", () => {
+    // The founder's currency requirement, at the payload level. The amount
+    // box carries the RECEIVER's symbol and holds the RECEIVER's figure, so
+    // the typed side is the destination side — always, not only when a
+    // payment request named a figure.
+    //
+    // This assertion used to read `"destination" : "source"` off a ternary on
+    // requestedDestinationAmount, which is the arrangement this replaces: the
+    // box then held the sender's own amount and the payee's total drifted
+    // with the rate. It is inverted here rather than deleted, because the
+    // failure it guards against is unchanged — a basis that disagrees with
+    // which side the box is actually in silently moves the wrong sum.
     assert.ok(
-      /amountBasis:\s*requestedDestinationAmount > 0 \? "destination" : "source"/.test(remoteSendCall),
-      "the basis must be source unless a payment request named a figure"
+      /amountBasis:\s*"destination"/.test(remoteSendCall),
+      "the basis must be destination — the box is the receiver's currency"
     );
     assert.ok(
-      /sourceAmount:\s*senderAmount/.test(remoteSendCall),
-      "the sender's own typed figure is what the server must be asked for"
+      /destinationAmount:\s*receiverAmount/.test(remoteSendCall),
+      "the payee's own typed figure is what the server must be asked for"
     );
   });
 
-  test("a payment request still pays the exact figure the payee asked for", () => {
-    // The one case that stays destination-denominated. Converting it to a
-    // source amount and back would round twice and could short the payee a
-    // minor unit of their own money against a figure they named.
+  test("the sender's side is quoted alongside it, never typed", () => {
+    // senderAmount is derived from the typed figure, not read out of the
+    // box. It travels as `sourceAmount` so the screen and the server can be
+    // compared, but for a destination basis the server recomputes it from
+    // its own rate and does not take this one — which is what stops a stale
+    // client rate from moving the wrong sum.
     assert.ok(
-      /destinationAmount:\s*requestedDestinationAmount > 0 \? requestedDestinationAmount : receiverAmount/.test(remoteSendCall),
-      "a requested amount must be sent through untouched"
+      /sourceAmount:\s*senderAmount/.test(remoteSendCall),
+      "the sender's cost must be sent as sourceAmount"
+    );
+    assert.ok(
+      /sourceCurrency:\s*top\.currency/.test(remoteSendCall),
+      "and must stay labelled with the sender's own currency"
     );
   });
 
   test("the legacy field still means what it always meant", () => {
     // An older server build reads `amount` as the receiver's face value.
     // Keeping it correct means a client ahead of the server does not move
-    // the wrong sum during a rollout.
+    // the wrong sum during a rollout. It is now simply receiverAmount, since
+    // that is what the person typed.
     assert.ok(
-      /amount:\s*requestedDestinationAmount > 0 \? requestedDestinationAmount : receiverAmount/.test(remoteSendCall),
+      /amount:\s*receiverAmount/.test(remoteSendCall),
       "the legacy amount must stay receiver-denominated"
     );
     assert.ok(

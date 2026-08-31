@@ -128,15 +128,69 @@ CountryCurrencyPoolSchema.statics.DEFAULT_POOL_SEED_BALANCE = DEFAULT_POOL_SEED_
 // racing to touch the same pool for the first time both find nothing and
 // both try to insert, so this goes through findOneAndUpdate with
 // $setOnInsert rather than find-then-create.
+// ── What DEFAULT_POOL_SEED_BALANCE actually is (audit finding GLB-22) ───────
+//
+// 5,000,000 units of the OWNING COUNTRY'S OWN CURRENCY, and the number is the
+// same whichever currency that turns out to be. That is not a considered
+// per-corridor liquidity figure and must not be read as one: 5,000,000 JPY is
+// about $32,000, 5,000,000 IDR is about $300, and 5,000,000 KWD is about $16
+// million. A corridor's opening float therefore varies by four orders of
+// magnitude depending on nothing but which currency its country happens to
+// use.
+//
+// That is acceptable ONLY because this represents no real money — it is
+// prototype liquidity, exactly like User.balance's own opening float, and its
+// job is simply to be large enough that no test payment exhausts a corridor by
+// accident. It is recorded here rather than left implicit because the day this
+// stops being a prototype, this constant is a per-currency table, not a
+// number, and nothing else in the codebase says so.
+//
+// The guard below is the safe part that was missing. A pool is created lazily
+// by whatever payment first needs the corridor, so a caller passing a wrong,
+// empty or self-referential currency pair did not fail — it MATERIALISED a
+// pool under that bad key and handed it five million units of an invented
+// denomination, silently and permanently. Refusing costs a caller a clear
+// error; the previous behaviour cost the pool table a row nobody would ever
+// find.
+const CURRENCY_CODE_PATTERN = /^[A-Z]{3}$/;
+
 CountryCurrencyPoolSchema.statics.loadOrCreate = async function loadOrCreatePool(countryIso, counterCurrency, localCurrency, session) {
+  const iso = String(countryIso || '').trim().toUpperCase();
+  const counter = String(counterCurrency || '').trim().toUpperCase();
+  const local = String(localCurrency || '').trim().toUpperCase();
+
+  if (!/^[A-Z]{2}$/.test(iso)) {
+    throw new Error(`CountryCurrencyPool.loadOrCreate: "${countryIso}" is not an ISO 3166-1 alpha-2 country code.`);
+  }
+
+  if (!CURRENCY_CODE_PATTERN.test(local) || !CURRENCY_CODE_PATTERN.test(counter)) {
+    throw new Error(
+      `CountryCurrencyPool.loadOrCreate: refusing to open pool ${iso} with ` +
+      `localCurrency ${JSON.stringify(localCurrency)} / counterCurrency ${JSON.stringify(counterCurrency)} — ` +
+      'both must be ISO 4217 alpha-3 codes. Seeding a pool under an unresolved currency ' +
+      'creates real liquidity in a denomination that does not exist.'
+    );
+  }
+
+  // The rule this file's own header states, now enforced rather than
+  // described: "a country doesn't hold a pool earmarked for settling with its
+  // own currency; that's just its users' balances."
+  if (local === counter) {
+    throw new Error(
+      `CountryCurrencyPool.loadOrCreate: refusing to open pool ${iso} settling ${local} with ${counter} — ` +
+      'a pool whose counterCurrency equals its own localCurrency has no meaning. ' +
+      'Same-currency payments must not reach the settlement engine.'
+    );
+  }
+
   const options = { upsert: true, new: true, setDefaultsOnInsert: true, ...(session ? { session } : {}) };
   return this.findOneAndUpdate(
-    { countryIso: countryIso.toUpperCase(), counterCurrency: counterCurrency.toUpperCase() },
+    { countryIso: iso, counterCurrency: counter },
     {
       $setOnInsert: {
-        countryIso: countryIso.toUpperCase(),
-        counterCurrency: counterCurrency.toUpperCase(),
-        localCurrency: localCurrency.toUpperCase(),
+        countryIso: iso,
+        counterCurrency: counter,
+        localCurrency: local,
         // available and total move together on creation; reserved stays 0
         // because nothing is in flight yet. totalBalance is stored rather
         // than derived (see the header comment), so seeding one without the

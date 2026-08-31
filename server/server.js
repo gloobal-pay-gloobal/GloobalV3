@@ -40,25 +40,27 @@ const { loadCurrencyDecimals, decimalsFor } = require('./lib/currencyDecimals');
 
 // Audit fix: AuditLog was fully defined (schema, indexes) but never written
 // to anywhere in this file — every route that could meaningfully report a
-// security- or money-relevant event had nowhere to record it. This helper
-// wires it in without touching any economic logic: it is purely an
-// observability side-channel. Fire-and-forget and swallow-on-failure by
-// design — an audit write must never be able to fail, slow down, or change
-// the outcome of the request it's describing. Call sites choose what to log;
-// this only guarantees that logging itself is safe to call inline.
-function recordAudit({ userId = null, action, status = 'info', message = '', req = null, metadata = {} }) {
-  AuditLog.create({
-    userId,
-    action,
-    status,
-    message,
-    ipAddress: req?.ip || req?.headers?.['x-forwarded-for'] || '',
-    userAgent: req?.headers?.['user-agent'] || '',
-    metadata,
-  }).catch((error) => {
-    console.error(`AuditLog write failed for action "${action}":`, error.message);
-  });
-}
+// security- or money-relevant event had nowhere to record it. This wires it
+// in without touching any economic logic: it is purely an observability
+// side-channel. Fire-and-forget by design — an audit write must never be
+// able to fail, slow down, or change the outcome of the request it's
+// describing. Call sites choose what to log; this only guarantees that
+// logging itself is safe to call inline.
+//
+// Audit fix (GLB-24): the implementation used to live here as a one-liner
+// whose `.catch` only covered ASYNCHRONOUS failure, so a synchronous throw
+// from AuditLog.create — a metadata value Mongoose rejects while casting,
+// say — escaped into the calling route and, at the call sites inside the
+// money-moving Mongo transaction, would have aborted the payment it was
+// merely describing. It also counted nothing, so audit logging could be
+// broken indefinitely without anything noticing. Both are fixed in
+// lib/auditTrail.js, which is where this now lives so it can be tested
+// directly rather than only through a live HTTP request.
+const { createAuditRecorder } = require('./lib/auditTrail');
+// auditHealth() is the counter side of that fix — kept on the recorder rather
+// than exposed as a route, since it names no account and nothing in the app
+// consumes it yet. tests/audit-trail.test.mjs asserts against it directly.
+const { recordAudit } = createAuditRecorder(AuditLog);
 
 
 // The prototype float every account opens with. Kept here rather than only on
@@ -229,6 +231,24 @@ app.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Referrer-Policy', 'no-referrer');
   res.set('X-Frame-Options', 'DENY');
+  // Audit fix (GLB-21). This API serves JSON and nothing else — no HTML, no
+  // script, no stylesheet, no image. `default-src 'none'` says exactly that,
+  // so any response that somehow ends up being rendered as a document (a
+  // reflected error page, a content-type confusion) can load nothing and run
+  // nothing. `frame-ancestors 'none'` is the modern spelling of the
+  // X-Frame-Options line above; both are sent because older browsers only
+  // honour the older header.
+  res.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+  // Nothing here needs a camera, a microphone or a location, and the browser
+  // should refuse on this origin's behalf rather than trust that no future
+  // response asks.
+  res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
+  // Only on a real deploy. Sending HSTS from a local http:// server would
+  // pin the developer's browser to https for localhost, which breaks the
+  // next person to run this on port 5000.
+  if (IS_PRODUCTION_DEPLOY) {
+    res.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   res.removeHeader('X-Powered-By');
   next();
 });
@@ -271,6 +291,26 @@ const normalizeMobileNumber = (value) => {
   if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`;
 
   return raw;
+};
+
+// Hides the subscriber digits of a number belonging to somebody OTHER than
+// the caller (audit finding GLB-17 — see cleanResolvedTransactionUserPayload).
+//
+// Keeps the calling code and the last two digits: enough for a payer to
+// recognise the person they meant to pay, not enough to be a phone number.
+// Anything too short to mask meaningfully is dropped entirely rather than
+// returned with a token mask over it.
+const maskMobileNumberForLookup = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const match = /^(\+\d{1,4})(\d+)$/.exec(raw.replace(/[\s\-()]/g, ''));
+  if (!match) return '';
+
+  const [, dialCode, national] = match;
+  if (national.length < 4) return '';
+
+  return `${dialCode}${'•'.repeat(Math.max(2, national.length - 2))}${national.slice(-2)}`;
 };
 
 // The shortest national number we'll treat as identifying on its own. Any
@@ -649,7 +689,50 @@ const requireSelf = (...sources) => async (req, res, next) => {
 // it is not a substitute for a shared store once there is more than one
 // instance.
 
+// ── What this limiter is, precisely (audit finding GLB-16) ──────────────────
+//
+// PROCESS-LOCAL AND VOLATILE. Every counter below lives in this Node process
+// and nowhere else. That means, concretely:
+//
+//   - Two instances = two independent budgets, so the effective limit is
+//     `max` x instance count. This API runs as ONE Render instance today,
+//     which is the only reason the numbers below mean what they say.
+//   - A restart forgets every counter. On Render's free tier the service
+//     sleeps when idle, so an attacker who can trigger a cold start — or
+//     simply wait one out — gets a fresh budget. This is not a theoretical
+//     gap; it is the normal operating pattern of this deployment.
+//
+// So this raises the cost of guessing and scraping. It is NOT a security
+// boundary, and nothing else in this file may be designed on the assumption
+// that it is. The per-account five-strike PIN lockout is the control that
+// actually bounds credential guessing, because it lives in Mongo and no
+// amount of IP rotation or process churn gets around it.
+//
+// Replacing this with a shared store (Redis, or a Mongo-backed counter) is
+// the real fix and is deliberately NOT done here: it introduces an
+// infrastructure dependency, which is a larger change than this pass is for.
 const rateBuckets = new Map();
+
+// A hard ceiling on how many distinct buckets may be held at once.
+//
+// The sweep below runs once a minute, which bounds memory in the ordinary
+// case — but "ordinary" is doing a lot of work there. Every distinct client
+// key creates an entry, the key is derived from a header an attacker
+// partially controls, and a flood can mint far more entries in sixty seconds
+// than the sweep will remove in one pass. Unbounded Map growth in the
+// request path is a memory-exhaustion vector in a process with a 512MB free
+// tier behind it, so the ceiling is enforced at insertion time rather than
+// left to the timer.
+const RATE_BUCKET_MAX = 20000;
+
+// Removes every bucket whose window has already closed. Returns how many are
+// left, so the caller can decide whether a sweep was enough.
+const sweepExpiredRateBuckets = (now = Date.now()) => {
+  for (const [key, bucket] of rateBuckets) {
+    if (bucket.resetAt <= now) rateBuckets.delete(key);
+  }
+  return rateBuckets.size;
+};
 
 // Trusting an arbitrary X-Forwarded-For would let a caller rotate their own
 // limit key by lying, so only the first hop — the one Render itself sets — is
@@ -659,12 +742,7 @@ const clientKey = (req) => {
   return forwarded || req.socket?.remoteAddress || 'unknown';
 };
 
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, bucket] of rateBuckets) {
-    if (bucket.resetAt <= now) rateBuckets.delete(key);
-  }
-}, 60 * 1000).unref();
+setInterval(() => sweepExpiredRateBuckets(), 60 * 1000).unref();
 
 const rateLimit = ({ name, max, windowMs, keyOf }) => (req, res, next) => {
   const scope = keyOf ? keyOf(req) : '';
@@ -673,6 +751,27 @@ const rateLimit = ({ name, max, windowMs, keyOf }) => (req, res, next) => {
   const bucket = rateBuckets.get(key);
 
   if (!bucket || bucket.resetAt <= now) {
+    // Enforced here, not only on the timer: a flood mints new keys far
+    // faster than a once-a-minute sweep retires them.
+    if (rateBuckets.size >= RATE_BUCKET_MAX && sweepExpiredRateBuckets(now) >= RATE_BUCKET_MAX) {
+      // Still over the ceiling with nothing expired to drop. Evict the
+      // entries closest to expiring anyway — they are the ones with the
+      // least budget left to protect, so dropping them costs the least. A
+      // Map iterates in insertion order and every window is the same
+      // length per limiter, so the oldest inserted are also the soonest to
+      // reset; taking them from the front is that order, without a sort.
+      const evictions = Math.max(1, Math.ceil(RATE_BUCKET_MAX * 0.1));
+      let dropped = 0;
+      for (const staleKey of rateBuckets.keys()) {
+        rateBuckets.delete(staleKey);
+        if (++dropped >= evictions) break;
+      }
+      console.warn(
+        `[ratelimit] bucket ceiling (${RATE_BUCKET_MAX}) reached — evicted ${dropped} of the ` +
+        'soonest-to-expire counters. Limits are still applied, but a flood is in progress.'
+      );
+    }
+
     rateBuckets.set(key, { count: 1, resetAt: now + windowMs });
     return next();
   }
@@ -879,6 +978,110 @@ app.post('/api/otp/verify', otpLimit, async (req, res) => {
 // PIN Prototype APIs
 const isValidPinFormat = (pin) => /^\d{4,6}$/.test(String(pin || '').trim());
 
+// ── PIN attempt accounting (audit finding GLB-14) ───────────────────────────
+//
+// The rule is meant to be: five wrong PINs in a row locks the account for ten
+// minutes, then you get another five. What was actually implemented locked it
+// forever.
+//
+// Four routes (/api/login, /api/pin/verify, /api/transactions/send and
+// rejectOnBadPin for coin) each carried their own copy of:
+//
+//     if (lockedUntil && lockedUntil > now) -> 423
+//     ... on mismatch: failedAttempts += 1; if (failedAttempts >= 5) lock
+//
+// Nothing ever reset failedAttempts when a lockout EXPIRED — only a
+// successful PIN did. So once the counter reached 5, it stayed at or above 5
+// for as long as the PIN was never entered correctly. Ten minutes later the
+// lock had lapsed, the next attempt was allowed through, and a single wrong
+// digit took the counter to 6, which is still `>= 5`, so it re-locked for
+// another ten minutes. One mistyped PIN per window, indefinitely: a short
+// burst of wrong guesses became a permanent lockout, and the only escape was
+// the OTP-backed PIN reset.
+//
+// The fix is to treat an elapsed lockout as the end of that attempt run,
+// which is what "five attempts, then a cool-off, then five more" always
+// meant. Nothing is weakened: the same five strikes still cost the same ten
+// minutes, and a caller who keeps guessing still spends ten minutes per five
+// guesses — a rate that makes brute force useless while letting a real person
+// who fat-fingered their PIN back in.
+const PIN_MAX_ATTEMPTS = 5;
+const PIN_LOCKOUT_MS = 10 * 60 * 1000;
+
+// Milliseconds left on an active lockout, or 0 if there is none.
+const pinLockRemainingMs = (pinRecord) => {
+  const until = pinRecord?.lockedUntil ? new Date(pinRecord.lockedUntil).getTime() : 0;
+  const remaining = until - Date.now();
+  return remaining > 0 ? remaining : 0;
+};
+
+// Opens a fresh attempt run if the previous lockout has elapsed.
+//
+// Called before the bcrypt compare on every PIN-checking route. Mutates the
+// in-memory record only — the reset is persisted by whichever of the two
+// outcomes below follows, so a read that leads nowhere writes nothing.
+const beginPinAttempt = (pinRecord) => {
+  if (pinRecord.lockedUntil && pinLockRemainingMs(pinRecord) === 0) {
+    pinRecord.lockedUntil = null;
+    pinRecord.failedAttempts = 0;
+  }
+  return pinRecord;
+};
+
+// The 423 body every locked-out route answers with. One shape, one wording,
+// and — unlike the four hand-written copies it replaces — it actually tells
+// the person how long to wait instead of "please try again later".
+const pinLockoutResponse = (pinRecord) => {
+  const retryAfterSeconds = Math.ceil(pinLockRemainingMs(pinRecord) / 1000);
+  const minutes = Math.ceil(retryAfterSeconds / 60);
+
+  return {
+    status: 423,
+    retryAfterSeconds,
+    lockedUntil: pinRecord.lockedUntil,
+    message:
+      `Too many incorrect PIN attempts. This account is locked for ` +
+      `${minutes} more minute${minutes === 1 ? '' : 's'}. ` +
+      `You can reset your PIN with a verified OTP instead of waiting.`,
+  };
+};
+
+// Records one wrong PIN and locks the account if that was the fifth in this
+// run. Persists, and returns what the caller should tell the person.
+const registerPinFailure = async (pinRecord) => {
+  pinRecord.failedAttempts = (pinRecord.failedAttempts || 0) + 1;
+
+  const lockedNow = pinRecord.failedAttempts >= PIN_MAX_ATTEMPTS;
+  if (lockedNow) {
+    pinRecord.lockedUntil = new Date(Date.now() + PIN_LOCKOUT_MS);
+  }
+
+  await pinRecord.save();
+
+  const attemptsRemaining = Math.max(0, PIN_MAX_ATTEMPTS - pinRecord.failedAttempts);
+
+  return {
+    lockedNow,
+    attemptsRemaining,
+    retryAfterSeconds: lockedNow ? Math.ceil(PIN_LOCKOUT_MS / 1000) : 0,
+    // The count is stated because a silent "Invalid PIN." five times over is
+    // how somebody walks into a lockout without ever being warned.
+    message: lockedNow
+      ? `Invalid PIN. That was ${PIN_MAX_ATTEMPTS} incorrect attempts, so this account is ` +
+        `locked for ${Math.round(PIN_LOCKOUT_MS / 60000)} minutes.`
+      : `Invalid PIN. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} left ` +
+        `before this account is locked for ${Math.round(PIN_LOCKOUT_MS / 60000)} minutes.`,
+  };
+};
+
+// Clears the attempt run after a correct PIN.
+const registerPinSuccess = async (pinRecord) => {
+  pinRecord.failedAttempts = 0;
+  pinRecord.lockedUntil = null;
+  pinRecord.lastVerifiedAt = new Date();
+  await pinRecord.save();
+};
+
 // Sets or replaces an account's PIN.
 //
 // This was the worst hole in the API. It took { symbolId, pin } and nothing
@@ -956,6 +1159,18 @@ app.post('/api/pin/set', credentialLimit, async (req, res) => {
       }
     );
 
+    // Audit fix (GLB-20): the OTP was looked up and honoured, then left
+    // unconsumed. Every other route that spends an OTP marks it —
+    // /api/register-symbol and /api/pin/reset both call consumeOtp — and this
+    // one did not, so a single verified registration OTP stayed good for
+    // repeated PIN sets until its ten-minute window closed. Same account
+    // either way, so the blast radius was small, but "one code, one use" is
+    // the property an OTP has or does not have; it cannot be mostly true.
+    //
+    // Only on the OTP path. A caller who proved themselves with a session
+    // token never looked at an OTP and has nothing to consume.
+    if (registrationOtp) await consumeOtp(registrationOtp);
+
     return res.status(200).json({
       message: 'PIN set successfully.',
       user: await publicUserPayload(user)
@@ -1004,34 +1219,35 @@ app.post('/api/pin/verify', credentialLimit, async (req, res) => {
       });
     }
 
-    if (pinRecord.lockedUntil && pinRecord.lockedUntil > new Date()) {
-      return res.status(423).json({
+    beginPinAttempt(pinRecord);
+
+    if (pinLockRemainingMs(pinRecord) > 0) {
+      const locked = pinLockoutResponse(pinRecord);
+      res.set('Retry-After', String(locked.retryAfterSeconds));
+      return res.status(locked.status).json({
         verified: false,
-        message: 'PIN is temporarily locked. Please try again later.'
+        message: locked.message,
+        retryAfterSeconds: locked.retryAfterSeconds,
+        lockedUntil: locked.lockedUntil
       });
     }
 
     const isMatch = await bcrypt.compare(cleanPin, pinRecord.pinHash);
 
     if (!isMatch) {
-      pinRecord.failedAttempts += 1;
+      const failure = await registerPinFailure(pinRecord);
 
-      if (pinRecord.failedAttempts >= 5) {
-        pinRecord.lockedUntil = new Date(Date.now() + 10 * 60 * 1000);
-      }
-
-      await pinRecord.save();
+      if (failure.lockedNow) res.set('Retry-After', String(failure.retryAfterSeconds));
 
       return res.status(401).json({
         verified: false,
-        message: 'Invalid PIN.'
+        message: failure.message,
+        attemptsRemaining: failure.attemptsRemaining,
+        lockedUntil: pinRecord.lockedUntil
       });
     }
 
-    pinRecord.failedAttempts = 0;
-    pinRecord.lockedUntil = null;
-    pinRecord.lastVerifiedAt = new Date();
-    await pinRecord.save();
+    await registerPinSuccess(pinRecord);
 
     // This route is the primary re-authentication step after a restored
     // session (see Frontend's session.js — a lock screen always costs a
@@ -1184,9 +1400,32 @@ app.post('/api/register-symbol', registerLimit, async (req, res) => {
       });
     }
 
-    if (Array.from(cleanSymbolId).length !== 12) {
+    // Audit fix (GLB-13): this used to be a bare length check —
+    // `Array.from(cleanSymbolId).length !== 12` — which accepted any twelve
+    // characters at all. The Gloobal ID is a payment address rendered in a
+    // deliberately unambiguous eight-symbol alphabet, and accepting anything
+    // else meant an ID could be registered in Latin letters, digits, or
+    // Unicode lookalikes of the real symbols. In an app where the ID *is*
+    // where the money goes, a registerable near-copy of a merchant's ID is a
+    // misdirected-payment problem, not a cosmetic one.
+    //
+    // isValidSymbolId is the check change-symbol-id has always used; the two
+    // entry points into the ID space now agree. The alphabet itself is
+    // unchanged.
+    if (!isValidSymbolId(cleanSymbolId)) {
       return res.status(400).json({
-        message: 'Secure ID must contain exactly 12 symbols.'
+        message: `Secure ID must be exactly ${SYMBOL_ID_LENGTH} Gloobal symbols (${GLOOBAL_SYMBOLS.join(' ')}).`
+      });
+    }
+
+    // Audit fix (GLB-12): an ID released by a rename is never re-issued —
+    // see symbolIdWasRetired. Checked before the "already registered"
+    // branches below, because a retired ID has no current owner and would
+    // otherwise fall through to the free-to-claim path.
+    if (await symbolIdWasRetired(cleanSymbolId)) {
+      return res.status(409).json({
+        message: 'This Secure ID was previously used by another account and cannot be reissued. Please choose another.',
+        retired: true
       });
     }
 
@@ -1414,32 +1653,33 @@ app.post('/api/login', credentialLimit, async (req, res) => {
       });
     }
 
-    if (pinRecord.lockedUntil && pinRecord.lockedUntil > new Date()) {
-      return res.status(423).json({
-        message: 'PIN is temporarily locked. Please try again later.'
+    beginPinAttempt(pinRecord);
+
+    if (pinLockRemainingMs(pinRecord) > 0) {
+      const locked = pinLockoutResponse(pinRecord);
+      res.set('Retry-After', String(locked.retryAfterSeconds));
+      return res.status(locked.status).json({
+        message: locked.message,
+        retryAfterSeconds: locked.retryAfterSeconds,
+        lockedUntil: locked.lockedUntil
       });
     }
 
     const isMatch = await bcrypt.compare(cleanPin, pinRecord.pinHash);
 
     if (!isMatch) {
-      pinRecord.failedAttempts += 1;
+      const failure = await registerPinFailure(pinRecord);
 
-      if (pinRecord.failedAttempts >= 5) {
-        pinRecord.lockedUntil = new Date(Date.now() + 10 * 60 * 1000);
-      }
-
-      await pinRecord.save();
+      if (failure.lockedNow) res.set('Retry-After', String(failure.retryAfterSeconds));
 
       return res.status(401).json({
-        message: 'Invalid PIN.'
+        message: failure.message,
+        attemptsRemaining: failure.attemptsRemaining,
+        lockedUntil: pinRecord.lockedUntil
       });
     }
 
-    pinRecord.failedAttempts = 0;
-    pinRecord.lockedUntil = null;
-    pinRecord.lastVerifiedAt = new Date();
-    await pinRecord.save();
+    await registerPinSuccess(pinRecord);
 
     return res.status(200).json({
       message: 'Login successful.',
@@ -1957,6 +2197,41 @@ const isValidSymbolId = (value) => {
   return chars.length === SYMBOL_ID_LENGTH && chars.every((ch) => GLOOBAL_SYMBOLS.includes(ch));
 };
 
+// ── Retired Gloobal IDs (audit finding GLB-12) ──────────────────────────────
+//
+// A Gloobal ID is a payment address. It is printed on QR codes, pasted into
+// referral links, and saved in other people's payee lists. Renaming an
+// account (PATCH /api/profile/change-symbol-id) correctly repoints every
+// stored reference — but it also dropped the old ID straight back into the
+// pool for anyone to register.
+//
+// That is the dangerous half. Every artefact already in the world still
+// carries the old ID, and a payer using one has no way to tell that the
+// account behind it changed hands: the ID resolves, a name comes back, the
+// payment goes through, and the money lands with whoever claimed it next.
+// No error is raised at any point, on either side.
+//
+// The smallest fix that closes it is to stop recycling. An ID that has ever
+// been released stays released, so an old QR code or saved payee resolves to
+// nobody — a clean 404 the payer can see — instead of silently resolving to
+// a stranger. The trail is already recorded: change-symbol-id writes the
+// outgoing ID into symbolIdHistory with action 'changed', and models/User.js
+// indexes symbolIdHistory.symbolId so this stays a keyed lookup.
+//
+// `exceptUserId` exists for one case: an account returning to an ID it used
+// to hold itself. Those old references pointed at this same account, so
+// honouring them is correct rather than dangerous, and there is no reason to
+// block somebody from undoing their own rename.
+const symbolIdWasRetired = async (symbolId, exceptUserId = null) => {
+  const query = {
+    symbolIdHistory: { $elemMatch: { symbolId, action: 'changed' } }
+  };
+
+  if (exceptUserId) query._id = { $ne: exceptUserId };
+
+  return Boolean(await User.exists(query));
+};
+
 // Changing the Gloobal ID someone signed up with. The ID is the identity
 // every other route keys off, so the rename has to carry the referral
 // graph with it — otherwise a changed ID silently detaches the person from
@@ -2039,6 +2314,18 @@ app.patch('/api/profile/change-symbol-id', writeLimit, requireAuth, requireSelf(
       return res.status(409).json({
         error: 'This Gloobal ID is already taken. Please choose another.',
         message: 'This Gloobal ID is already taken. Please choose another.'
+      });
+    }
+
+    // Audit fix (GLB-12): and neither may it be an ID some OTHER account
+    // released. Renaming into a stranger's retired ID would inherit every
+    // QR code and saved payee still pointing at it. Returning to one's own
+    // former ID is allowed — those references pointed here to begin with.
+    if (await symbolIdWasRetired(newSymbolId, user._id)) {
+      return res.status(409).json({
+        error: 'This Gloobal ID was previously used by another account and cannot be reissued.',
+        message: 'This Gloobal ID was previously used by another account and cannot be reissued.',
+        retired: true
       });
     }
 
@@ -2267,6 +2554,61 @@ function getWebAuthnConfig(req) {
   };
 }
 
+// ── WebAuthn challenge lifetime (audit finding GLB-25) ──────────────────────
+//
+// A challenge is the only thing making a WebAuthn assertion answer THIS
+// ceremony rather than any earlier one. It was stored in a single slot on the
+// user document with no expiry and no single-use rule: cleared only by a
+// successful verification, so one issued weeks ago was still accepted, and a
+// failed verification left it sitting there to be tried against again.
+//
+// Two properties are restored here, both narrow:
+//
+//   1. It expires. Five minutes — comfortably longer than the 60-second
+//      timeout the options themselves carry, so a slow phone or a person
+//      hunting for their fingerprint reader is never cut off, and short
+//      enough that a leaked challenge is worthless by the time anyone could
+//      use it. A challenge with no stored expiry (every document written
+//      before this field existed) counts as expired: failing closed costs one
+//      extra trip through the options route, failing open costs the property.
+//
+//   2. It is single-use. Reading it consumes it, pass or fail, so the same
+//      challenge cannot be replayed against a second attempt. A genuine retry
+//      starts a new ceremony, which is what a retry is.
+//
+// This deliberately does NOT touch how origin/rpID are derived — that is a
+// separate finding with a separate fix.
+const WEBAUTHN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+const stashWebAuthnChallenge = async (user, challenge) => {
+  user.currentChallenge = challenge;
+  user.currentChallengeExpiresAt = new Date(Date.now() + WEBAUTHN_CHALLENGE_TTL_MS);
+  await user.save();
+};
+
+const clearWebAuthnChallenge = async (user) => {
+  user.currentChallenge = null;
+  user.currentChallengeExpiresAt = null;
+  await user.save();
+};
+
+// Returns the challenge if it is still live, or null — and clears it either
+// way, which is what makes it single-use.
+const consumeWebAuthnChallenge = async (user) => {
+  const stored = user?.currentChallenge || null;
+  const expiresAt = user?.currentChallengeExpiresAt
+    ? new Date(user.currentChallengeExpiresAt).getTime()
+    : 0;
+
+  if (!stored) return null;
+
+  await clearWebAuthnChallenge(user);
+
+  if (!expiresAt || expiresAt <= Date.now()) return null;
+
+  return stored;
+};
+
 // Passkey Status
 app.post('/api/passkey/status', lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
@@ -2349,8 +2691,7 @@ app.post('/api/passkey/register/options', writeLimit, requireAuth, requireSelf('
       }
     });
 
-    user.currentChallenge = options.challenge;
-    await user.save();
+    await stashWebAuthnChallenge(user, options.challenge);
 
     return res.status(200).json(options);
   } catch (error) {
@@ -2385,12 +2726,23 @@ app.post('/api/passkey/register/verify', writeLimit, requireAuth, requireSelf('s
     const passkeys = Array.isArray(user.passkeys) ? user.passkeys : [];
 
     if (passkeys.length > 0) {
-      user.currentChallenge = null;
-      await user.save();
+      await clearWebAuthnChallenge(user);
 
       return res.status(409).json({
         verified: false,
         message: 'Device authentication is already registered for this Secure ID. Please verify existing device.'
+      });
+    }
+
+    // Audit fix (GLB-25): reading consumes. An expired or already-used
+    // challenge comes back null and the ceremony has to be restarted.
+    const challenge = await consumeWebAuthnChallenge(user);
+
+    if (!challenge) {
+      return res.status(400).json({
+        verified: false,
+        message: 'This passkey registration has expired. Please start again.',
+        challengeExpired: true
       });
     }
 
@@ -2399,7 +2751,7 @@ app.post('/api/passkey/register/verify', writeLimit, requireAuth, requireSelf('s
 
     const verification = await verifyRegistrationResponse({
       response,
-      expectedChallenge: user.currentChallenge,
+      expectedChallenge: challenge,
       expectedOrigin: origin,
       expectedRPID: rpID
     });
@@ -2424,7 +2776,7 @@ app.post('/api/passkey/register/verify', writeLimit, requireAuth, requireSelf('s
     });
 
     user.passkeys = passkeys;
-    user.currentChallenge = null;
+    // The challenge was already cleared by consumeWebAuthnChallenge above.
     await user.save();
 
     return res.status(200).json({
@@ -2482,8 +2834,7 @@ app.post('/api/passkey/auth/options', credentialLimit, async (req, res) => {
       userVerification: 'preferred'
     });
 
-    user.currentChallenge = options.challenge;
-    await user.save();
+    await stashWebAuthnChallenge(user, options.challenge);
 
     return res.status(200).json(options);
   } catch (error) {
@@ -2524,12 +2875,24 @@ app.post('/api/passkey/auth/verify', credentialLimit, async (req, res) => {
       });
     }
 
+    // Audit fix (GLB-25): reading consumes, so the same challenge cannot be
+    // presented twice and one older than WEBAUTHN_CHALLENGE_TTL_MS is refused.
+    const challenge = await consumeWebAuthnChallenge(user);
+
+    if (!challenge) {
+      return res.status(400).json({
+        verified: false,
+        message: 'This sign-in attempt has expired. Please try again.',
+        challengeExpired: true
+      });
+    }
+
     const { verifyAuthenticationResponse } = await getWebAuthnServer();
     const { rpID, origin } = getWebAuthnConfig(req);
 
     const verification = await verifyAuthenticationResponse({
       response,
-      expectedChallenge: user.currentChallenge,
+      expectedChallenge: challenge,
       expectedOrigin: origin,
       expectedRPID: rpID,
       credential: {
@@ -2549,7 +2912,7 @@ app.post('/api/passkey/auth/verify', credentialLimit, async (req, res) => {
 
     passkey.counter = verification.authenticationInfo.newCounter;
     user.passkeys = passkeys;
-    user.currentChallenge = null;
+    // The challenge was already cleared by consumeWebAuthnChallenge above.
     await user.save();
 
     return res.status(200).json({
@@ -2658,10 +3021,40 @@ function cleanResolvedTransactionUserPayload(resolved) {
     return null;
   }
 
+  const mobileNumber = resolved.user.mobileNumber || '';
+
   return {
     fullName: resolved.user.fullName,
-    email: resolved.user.email || '',
-    mobileNumber: resolved.user.mobileNumber || '',
+    // Audit fix (GLB-17). This is a lookup of SOMEBODY ELSE, performed by
+    // whoever is about to pay them, and it used to hand back that person's
+    // email address and their mobile number in full. Neither is needed to
+    // send money, and together they turn every signed-in account into a
+    // directory: one Gloobal ID in, a name, an email and a phone number out.
+    //
+    // `email` is gone outright — nothing on the paying side ever read it.
+    //
+    // `mobileNumber` is masked rather than removed, because the payment
+    // screen shows it to confirm "yes, this is the right person" — and it was
+    // ALREADY being masked there, client-side, by SendMoney's own
+    // maskMobileNumber. Masking on this side means the full number never
+    // leaves the server in the first place, which is where the decision
+    // belongs; the screen renders what it is given.
+    //
+    // The dial code survives the mask so the recipient's country can still be
+    // derived from it. In practice `countryIso` below is the authority and
+    // this is only its fallback, but a fallback that has been quietly
+    // hollowed out is worse than one that works.
+    mobileNumber: maskMobileNumberForLookup(mobileNumber),
+    // Accounts created before the name step existed carry their own phone
+    // number as `fullName`, and a name that is just the number is not a name
+    // worth showing. The clients used to work that out by comparing fullName
+    // against mobileNumber — which they can no longer do now that the number
+    // arrives masked, and which was never their comparison to make. The
+    // server knows both values; it answers the question directly.
+    nameIsMobile: Boolean(
+      resolved.user.fullName &&
+      normalizeText(resolved.user.fullName) === normalizeText(mobileNumber)
+    ),
     symbolId: resolved.user.symbolId,
     // The payee's own Creator Share. A sender has to be told the rate
     // before they pay, and this route is the only lookup they perform, so
@@ -2689,7 +3082,10 @@ function cleanResolvedTransactionUserPayload(resolved) {
     // apart from the default standing in for one.
     countryIso: accountCountryIso(resolved.user),
     matchedBy: resolved.matchedBy,
-    normalizedIdentifier: resolved.normalizedIdentifier,
+    // `normalizedIdentifier` was here and is gone (GLB-17): nothing on the
+    // client read it, and for a phone-number lookup it echoed the full
+    // E.164 number straight back — undoing, in the field below the masked
+    // one, exactly what the mask above is for.
   };
 }
 
@@ -2810,18 +3206,44 @@ async function materialiseBalance(user) {
   user.balance = DEFAULT_ACCOUNT_BALANCE;
 }
 
-async function resolveTransactionReference(candidate) {
-  const cleaned = String(candidate || '').trim();
-  const chars = Array.from(cleaned);
-  const wellFormed =
-    chars.length === TRANSACTION_REFERENCE_LENGTH &&
-    chars.every((ch) => GLOOBAL_SYMBOLS.includes(ch));
+// The canonical reference this payment will be known by, on both parties'
+// receipts and in every support conversation about it.
+//
+// ── Audit fix (GLB-13/GLB-18) ────────────────────────────────────────────
+//
+// This used to take a `candidate` off the request body
+// (`req.body.referenceId ?? req.body.transactionId`), check it was
+// well-formed, check no transaction already used it, and — if both held —
+// adopt it as the payment's identity. Three things were wrong with that:
+//
+//  1. The identity of a financial record was chosen by one of its two
+//     parties. The payee's copy of the receipt carries a reference the payer
+//     picked, which is precisely backwards for an identifier whose job is to
+//     be an independent handle on the transaction.
+//  2. `exists()` then `create()` is a check-then-act across two round trips.
+//     The unique index on Transaction.referenceId rescues correctness, but
+//     only by turning a losing race into a 500.
+//  3. Nothing legitimate needed it. Retry-safety is `idempotencyKey`, which
+//     is a separate field with its own unique partial index and is
+//     deliberately left untouched here — a client that retries a timed-out
+//     payment still gets the original transaction back, exactly as before.
+//
+// So the reference is now always minted server-side. Collisions are
+// astronomically unlikely (20 symbols from an 8-symbol alphabet is 8^20, or
+// 60 bits, from crypto.randomInt) but retried anyway rather than left to
+// surface as a failed payment.
+const TRANSACTION_REFERENCE_ATTEMPTS = 5;
 
-  if (wellFormed && !(await Transaction.exists({ referenceId: cleaned }))) {
-    return cleaned;
+async function resolveTransactionReference() {
+  for (let attempt = 0; attempt < TRANSACTION_REFERENCE_ATTEMPTS; attempt += 1) {
+    const reference = createPrototypeTransactionReference();
+    if (!(await Transaction.exists({ referenceId: reference }))) return reference;
   }
 
-  return createPrototypeTransactionReference();
+  // Five collisions in a row against a 60-bit space is not luck, it is a
+  // broken random source. Fail loudly rather than hand back a reference that
+  // is about to violate the unique index.
+  throw new Error('Could not mint a unique transaction reference after 5 attempts.');
 }
 
 function cleanTransactionUser(user) {
@@ -2871,9 +3293,35 @@ app.get('/api/users/available', lookupLimit, async (req, res) => {
       });
     }
 
-    const taken = await User.exists({ symbolId });
+    // Audit fix (GLB-17), part one. This route has to stay unauthenticated —
+    // it runs during registration, before anybody has a token — so it will
+    // always answer "is this ID free". What it must not do is answer that
+    // question about arbitrary input.
+    //
+    // Requiring a well-formed ID first means a prober can only ask about the
+    // 8^12 addresses that could actually exist, rather than using this as a
+    // general-purpose existence oracle for anything they can type. Combined
+    // with lookupLimit (90 per five minutes, keyed on the caller and
+    // deliberately NOT on the ID being asked about), walking the space is not
+    // a thing this route can be used for.
+    if (!isValidSymbolId(symbolId)) {
+      return res.status(400).json({
+        success: false,
+        message: `A Gloobal ID is exactly ${SYMBOL_ID_LENGTH} Gloobal symbols.`
+      });
+    }
 
-    return res.json({ success: true, symbolId, available: !taken, exists: Boolean(taken) });
+    // Audit fix (GLB-17), part two: `exists` was `!available` under a second
+    // name. Two fields carrying one fact is two chances to read the wrong
+    // one, and the client only ever reads `available`. One answer, one field.
+    //
+    // Audit fix (GLB-12): a retired ID is not available either, and saying so
+    // here keeps the registration screen honest instead of letting somebody
+    // pick an ID that POST /api/register-symbol will then refuse.
+    const taken =
+      Boolean(await User.exists({ symbolId })) || (await symbolIdWasRetired(symbolId));
+
+    return res.json({ success: true, symbolId, available: !taken });
   } catch (error) {
     console.error('Availability check error:', error);
     return res.status(500).json({
@@ -3450,7 +3898,18 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
       return res.status(200).json({ claimed: 0, newBalance: Number(user.balance) || 0, seedIds: [] });
     }
 
-    const roundedClaim = toMinorUnit(totalClaimed);
+    // Audit fix (GLB-19): this credits the account's own balance, so it rounds
+    // in the account's own currency — it used to default to two places, which
+    // paid a JPY or KRW account fractions of a unit that currency does not
+    // have. Falls back to the previous behaviour only for an account whose
+    // country cannot be resolved at all, which is the same answer every other
+    // call to toMinorUnit without a currency already gives.
+    //
+    // This does NOT address the separate finding that seeds in different
+    // currencies are summed together before reaching here (GLB-05) — that one
+    // is deliberately untouched in this pass.
+    const claimCurrency = await resolveOwnCurrency(user);
+    const roundedClaim = toMinorUnit(totalClaimed, claimCurrency || undefined);
     const credited = await User.findOneAndUpdate(
       { _id: user._id },
       { $inc: { balance: roundedClaim } },
@@ -3459,7 +3918,8 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
 
     return res.status(200).json({
       claimed: roundedClaim,
-      newBalance: toMinorUnit(credited?.balance ?? user.balance),
+      newBalance: toMinorUnit(credited?.balance ?? user.balance, claimCurrency || undefined),
+      currency: claimCurrency || null,
       seedIds: claimedSeedIds,
     });
   } catch (error) {
@@ -3724,44 +4184,45 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       });
     }
 
-    if (pinRecord.lockedUntil && pinRecord.lockedUntil > new Date()) {
+    beginPinAttempt(pinRecord);
+
+    if (pinLockRemainingMs(pinRecord) > 0) {
+      const locked = pinLockoutResponse(pinRecord);
       recordAudit({
         userId: sender._id, action: 'transaction.send.blocked', status: 'blocked',
         message: 'PIN locked out', req, metadata: { symbolId: sender.symbolId },
       });
-      return res.status(423).json({
+      res.set('Retry-After', String(locked.retryAfterSeconds));
+      return res.status(locked.status).json({
         success: false,
-        message: 'PIN is temporarily locked. Please try again later.',
+        message: locked.message,
+        retryAfterSeconds: locked.retryAfterSeconds,
+        lockedUntil: locked.lockedUntil,
       });
     }
 
     const isPinMatch = await bcrypt.compare(cleanPin, pinRecord.pinHash);
 
     if (!isPinMatch) {
-      pinRecord.failedAttempts = (pinRecord.failedAttempts || 0) + 1;
-
-      if (pinRecord.failedAttempts >= 5) {
-        pinRecord.lockedUntil = new Date(Date.now() + 10 * 60 * 1000);
-      }
-
-      await pinRecord.save();
+      const failure = await registerPinFailure(pinRecord);
 
       recordAudit({
         userId: sender._id, action: 'transaction.send.pin_invalid', status: 'failed',
-        message: `Invalid PIN (attempt ${pinRecord.failedAttempts}/5)`, req,
-        metadata: { symbolId: sender.symbolId, lockedOut: !!pinRecord.lockedUntil },
+        message: `Invalid PIN (attempt ${pinRecord.failedAttempts}/${PIN_MAX_ATTEMPTS})`, req,
+        metadata: { symbolId: sender.symbolId, lockedOut: failure.lockedNow },
       });
+
+      if (failure.lockedNow) res.set('Retry-After', String(failure.retryAfterSeconds));
 
       return res.status(401).json({
         success: false,
-        message: 'Invalid PIN.',
+        message: failure.message,
+        attemptsRemaining: failure.attemptsRemaining,
+        lockedUntil: pinRecord.lockedUntil,
       });
     }
 
-    pinRecord.failedAttempts = 0;
-    pinRecord.lockedUntil = null;
-    pinRecord.lastVerifiedAt = new Date();
-    await pinRecord.save();
+    await registerPinSuccess(pinRecord);
 
     // Checked after the PIN, not before it: the answer reveals roughly what
     // the account holds, which is not something to hand out to whoever can
@@ -4002,9 +4463,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       });
     }
 
-    const transactionReference = await resolveTransactionReference(
-      req.body?.referenceId ?? req.body?.transactionId
-    );
+    // Audit fix (GLB-18): minted here, never adopted from the request. A
+    // client that sends `referenceId` or `transactionId` has them ignored —
+    // retry-safety is `idempotencyKey`, checked above, and that is unchanged.
+    const transactionReference = await resolveTransactionReference();
 
     const transactionFields = {
       fromUserId: sender._id,
@@ -4850,32 +5312,74 @@ const rejectOnBadPin = async (user, rawPin) => {
 
   if (!pinRecord) return { status: 404, message: 'PIN is not set for this Secure ID.' };
 
-  if (pinRecord.lockedUntil && pinRecord.lockedUntil > new Date()) {
-    return { status: 423, message: 'PIN is temporarily locked. Please try again later.' };
+  beginPinAttempt(pinRecord);
+
+  if (pinLockRemainingMs(pinRecord) > 0) {
+    const locked = pinLockoutResponse(pinRecord);
+    return {
+      status: locked.status,
+      message: locked.message,
+      retryAfterSeconds: locked.retryAfterSeconds,
+      lockedUntil: locked.lockedUntil,
+    };
   }
 
   const matches = await bcrypt.compare(cleanPin, pinRecord.pinHash);
 
   if (!matches) {
-    pinRecord.failedAttempts = (pinRecord.failedAttempts || 0) + 1;
-    if (pinRecord.failedAttempts >= 5) {
-      pinRecord.lockedUntil = new Date(Date.now() + 10 * 60 * 1000);
-    }
-    await pinRecord.save();
-    return { status: 401, message: 'Invalid PIN.' };
+    const failure = await registerPinFailure(pinRecord);
+    return {
+      status: 401,
+      message: failure.message,
+      attemptsRemaining: failure.attemptsRemaining,
+      lockedUntil: pinRecord.lockedUntil,
+    };
   }
 
-  pinRecord.failedAttempts = 0;
-  pinRecord.lockedUntil = null;
-  pinRecord.lastVerifiedAt = new Date();
-  await pinRecord.save();
+  await registerPinSuccess(pinRecord);
+
+  return null;
+};
+
+// ── Zero-decimal currencies on the coin path (audit finding GLB-19) ─────────
+//
+// toMinorUnit takes an optional currency and defaults to two decimal places.
+// Every call on the coin routes omitted it, which is right for the COIN leg —
+// 'GC' is a prototype unit, not an ISO currency, and two places is what it has
+// always used — and wrong for the FIAT leg, because that one moves real
+// balance out of an account denominated in its owner's own currency. Sixteen
+// of the 142 supported currencies have no minor unit at all, so a JPY, KRW,
+// VND or CLP account could mint 100.55 coin and have 100.55 of a currency with
+// no hundredths debited from it, then carry the fraction in its balance and
+// on its ledger rows forever.
+//
+// This asserts the amount is representable in the account's own currency
+// rather than quietly rounding it: rounding would move a different amount of
+// money than the caller asked to move, which is a worse answer than "that is
+// not an amount of yen".
+//
+// Nothing about how much moves changes for a two-decimal currency, which is
+// almost every account.
+const assertRepresentableInAccountCurrency = (amount, currencyCode) => {
+  const rounded = toMinorUnit(amount, currencyCode);
+
+  if (rounded !== amount) {
+    const places = decimalsFor(currencyCode);
+    return places === 0
+      ? `${currencyCode} has no decimal places, so ${amount} is not a valid amount. Use a whole number.`
+      : `${currencyCode} amounts carry at most ${places} decimal place${places === 1 ? '' : 's'}.`;
+  }
 
   return null;
 };
 
 // Shared validation for an amount arriving in a coin request body.
+//
+// Rounds in COIN units. The caller is responsible for also checking the figure
+// against the account's own currency where a fiat leg moves — see
+// assertRepresentableInAccountCurrency above and the mint/redeem routes.
 const readCoinAmount = (raw) => {
-  const amount = toMinorUnit(Number(raw));
+  const amount = toMinorUnit(Number(raw), COIN_CURRENCY);
   const maxPrototypeAmount = Number(process.env.PROTOTYPE_TRANSACTION_MAX_AMOUNT || 5000);
 
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -4985,7 +5489,22 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
     // the correct answer — that account holds no coin.
     await materialiseBalance(user);
 
-    const referenceId = await resolveTransactionReference(null);
+    // Audit fix (GLB-19): a mint moves fiat out of THIS account's balance, so
+    // the amount has to be a real amount of THIS account's currency. Resolved
+    // the same never-trust-the-client way every money route does.
+    const accountCurrency = await resolveOwnCurrency(user);
+
+    if (!accountCurrency) {
+      return res.status(400).json({ success: false, message: 'Gloobal Coin is not supported for your country yet.' });
+    }
+
+    const precisionError = assertRepresentableInAccountCurrency(coinAmount, accountCurrency);
+
+    if (precisionError) {
+      return res.status(400).json({ success: false, message: precisionError, currency: accountCurrency });
+    }
+
+    const referenceId = await resolveTransactionReference();
 
     const { value, atomic } = await withMongoTransaction(async (session) => {
       const sessionOpt = session ? { session } : {};
@@ -5010,8 +5529,10 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
         { upsert: true, returnDocument: 'after', ...sessionOpt }
       );
 
-      const balanceAfter = toMinorUnit(converted.balance);
-      const coinAfter = toMinorUnit(converted.coinBalance);
+      // Audit fix (GLB-19): the fiat leg rounds in the ACCOUNT'S currency, the
+      // coin leg in coin units. These used to both default to two places.
+      const balanceAfter = toMinorUnit(converted.balance, accountCurrency);
+      const coinAfter = toMinorUnit(converted.coinBalance, COIN_CURRENCY);
 
       const [transaction] = await Transaction.create(
         [
@@ -5041,7 +5562,7 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
             userId: user._id,
             entryType: 'debit',
             amount: coinAmount,
-            balanceBefore: toMinorUnit(balanceAfter + coinAmount),
+            balanceBefore: toMinorUnit(balanceAfter + coinAmount, accountCurrency),
             balanceAfter,
             currency: reserveDoc?.reserveCurrency || 'INR',
             note: 'Fiat moved into coin reserve',
@@ -5052,7 +5573,7 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
             userId: user._id,
             entryType: 'credit',
             amount: coinAmount,
-            balanceBefore: toMinorUnit(coinAfter - coinAmount),
+            balanceBefore: toMinorUnit(coinAfter - coinAmount, COIN_CURRENCY),
             balanceAfter: coinAfter,
             currency: COIN_CURRENCY,
             note: 'Gloobal Coin issued',
@@ -5099,7 +5620,23 @@ app.post('/api/coin/redeem', writeLimit, requireAuth, requireSelf('symbolId'), a
 
     await materialiseBalance(user);
 
-    const referenceId = await resolveTransactionReference(null);
+    // Audit fix (GLB-19): a redeem pays fiat INTO this account's balance, so
+    // the same "is this a real amount of this currency" test the mint applies
+    // has to hold here too — otherwise a zero-decimal balance receives a
+    // fraction it cannot represent.
+    const accountCurrency = await resolveOwnCurrency(user);
+
+    if (!accountCurrency) {
+      return res.status(400).json({ success: false, message: 'Gloobal Coin is not supported for your country yet.' });
+    }
+
+    const precisionError = assertRepresentableInAccountCurrency(coinAmount, accountCurrency);
+
+    if (precisionError) {
+      return res.status(400).json({ success: false, message: precisionError, currency: accountCurrency });
+    }
+
+    const referenceId = await resolveTransactionReference();
 
     const { value, atomic } = await withMongoTransaction(async (session) => {
       const sessionOpt = session ? { session } : {};
@@ -5133,8 +5670,10 @@ app.post('/api/coin/redeem', writeLimit, requireAuth, requireSelf('symbolId'), a
         throw new Error('Coin reserve is short of the amount being redeemed — refusing to pay out unbacked coin.');
       }
 
-      const balanceAfter = toMinorUnit(converted.balance);
-      const coinAfter = toMinorUnit(converted.coinBalance);
+      // Audit fix (GLB-19): the fiat leg rounds in the ACCOUNT'S currency, the
+      // coin leg in coin units. These used to both default to two places.
+      const balanceAfter = toMinorUnit(converted.balance, accountCurrency);
+      const coinAfter = toMinorUnit(converted.coinBalance, COIN_CURRENCY);
 
       const [transaction] = await Transaction.create(
         [
@@ -5160,7 +5699,7 @@ app.post('/api/coin/redeem', writeLimit, requireAuth, requireSelf('symbolId'), a
             userId: user._id,
             entryType: 'debit',
             amount: coinAmount,
-            balanceBefore: toMinorUnit(coinAfter + coinAmount),
+            balanceBefore: toMinorUnit(coinAfter + coinAmount, COIN_CURRENCY),
             balanceAfter: coinAfter,
             currency: COIN_CURRENCY,
             note: 'Gloobal Coin redeemed',
@@ -5171,7 +5710,7 @@ app.post('/api/coin/redeem', writeLimit, requireAuth, requireSelf('symbolId'), a
             userId: user._id,
             entryType: 'credit',
             amount: coinAmount,
-            balanceBefore: toMinorUnit(balanceAfter - coinAmount),
+            balanceBefore: toMinorUnit(balanceAfter - coinAmount, accountCurrency),
             balanceAfter,
             currency: reserveDoc.reserveCurrency || 'INR',
             note: 'Fiat returned from coin reserve',
@@ -5239,9 +5778,20 @@ app.post('/api/coin/send', writeLimit, requireAuth, requireSelf('senderSymbolId'
     // Before the balance is looked at, so a wrong PIN learns nothing about
     // what the account holds.
     const pinFailure = await rejectOnBadPin(sender, pin);
-    if (pinFailure) return res.status(pinFailure.status).json({ success: false, message: pinFailure.message });
+    if (pinFailure) {
+      if (pinFailure.retryAfterSeconds) res.set('Retry-After', String(pinFailure.retryAfterSeconds));
+      return res.status(pinFailure.status).json({
+        success: false,
+        message: pinFailure.message,
+        attemptsRemaining: pinFailure.attemptsRemaining,
+        retryAfterSeconds: pinFailure.retryAfterSeconds,
+        lockedUntil: pinFailure.lockedUntil,
+      });
+    }
 
-    const referenceId = await resolveTransactionReference(req.body?.referenceId);
+    // Audit fix (GLB-18): the reference is minted here, never taken from
+    // the request body. See resolveTransactionReference's own header.
+    const referenceId = await resolveTransactionReference();
 
     const { value, atomic } = await withMongoTransaction(async (session) => {
       const sessionOpt = session ? { session } : {};
@@ -5271,8 +5821,8 @@ app.post('/api/coin/send', writeLimit, requireAuth, requireSelf('senderSymbolId'
 
         if (!credited) throw new Error('Receiver account disappeared mid-transfer.');
 
-        const senderCoinAfter = toMinorUnit(debited.coinBalance);
-        const receiverCoinAfter = toMinorUnit(credited.coinBalance);
+        const senderCoinAfter = toMinorUnit(debited.coinBalance, COIN_CURRENCY);
+        const receiverCoinAfter = toMinorUnit(credited.coinBalance, COIN_CURRENCY);
 
         const [transaction] = await Transaction.create(
           [
@@ -5298,7 +5848,7 @@ app.post('/api/coin/send', writeLimit, requireAuth, requireSelf('senderSymbolId'
               userId: sender._id,
               entryType: 'debit',
               amount: coinAmount,
-              balanceBefore: toMinorUnit(senderCoinAfter + coinAmount),
+              balanceBefore: toMinorUnit(senderCoinAfter + coinAmount, COIN_CURRENCY),
               balanceAfter: senderCoinAfter,
               currency: COIN_CURRENCY,
               note: 'Gloobal Coin sent',
@@ -5309,7 +5859,7 @@ app.post('/api/coin/send', writeLimit, requireAuth, requireSelf('senderSymbolId'
               userId: receiver._id,
               entryType: 'credit',
               amount: coinAmount,
-              balanceBefore: toMinorUnit(receiverCoinAfter - coinAmount),
+              balanceBefore: toMinorUnit(receiverCoinAfter - coinAmount, COIN_CURRENCY),
               balanceAfter: receiverCoinAfter,
               currency: COIN_CURRENCY,
               note: 'Gloobal Coin received',
@@ -5577,6 +6127,19 @@ app.post('/api/geu/entry', writeLimit, requireAuth, requireSelf('symbolId'), asy
     if (!sourceCurrency) {
       return res.status(400).json({ success: false, message: 'GEU entry is not supported for your country yet.' });
     }
+
+    // Audit fix (GLB-19): `sourceAmount` above was rounded to two places
+    // before this currency was known, and it is the figure debited from this
+    // account's own balance. A zero-decimal account entering 100.55 would have
+    // had 100.55 of a currency with no hundredths taken from it. Checked
+    // rather than re-rounded, for the reason the coin routes give: rounding
+    // here would move a different amount than the caller asked to move.
+    const sourcePrecisionError = assertRepresentableInAccountCurrency(sourceAmount, sourceCurrency);
+
+    if (sourcePrecisionError) {
+      return res.status(400).json({ success: false, message: sourcePrecisionError, currency: sourceCurrency });
+    }
+
     let exchangeRate = 1;
     let rateSource = 'identity';
     const rateTimestamp = new Date();
@@ -5593,7 +6156,7 @@ app.post('/api/geu/entry', writeLimit, requireAuth, requireSelf('symbolId'), asy
     const referenceAmount = toMinorUnit(sourceAmount * exchangeRate, GEU_REFERENCE_CURRENCY);
     const geuAmount = toMinorUnit(referenceAmount, GEU_CURRENCY);
     const entryId = createGeuId('GLOOBAL-GEU-ENTRY-');
-    const referenceId = await resolveTransactionReference(null);
+    const referenceId = await resolveTransactionReference();
 
     let value;
     let atomic;
@@ -5803,7 +6366,7 @@ app.post('/api/geu/growth', writeLimit, requireAuth, requireSelf('symbolId'), as
 
     const reason = requested > 0 ? 'POSITIVE_ADJUSTMENT' : requested === 0 ? 'ZERO_ADJUSTMENT' : 'NEGATIVE_ADJUSTMENT';
     const growthEventId = createGeuId('GLOOBAL-GEU-GROWTH-');
-    const referenceId = await resolveTransactionReference(null);
+    const referenceId = await resolveTransactionReference();
 
     let value;
     let atomic;
@@ -5982,7 +6545,7 @@ app.post('/api/geu/redeem', writeLimit, requireAuth, requireSelf('symbolId'), as
     }
 
     const redemptionId = createGeuId('GLOOBAL-GEU-REDEEM-');
-    const referenceId = await resolveTransactionReference(null);
+    const referenceId = await resolveTransactionReference();
 
     let value;
     let atomic;

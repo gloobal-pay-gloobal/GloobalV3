@@ -200,8 +200,24 @@ async function run() {
   check("a minted reference is 20 symbols and nothing else",
     /^[−+×=○□●■]{20}$/u.test(minted.body?.transaction?.referenceId || ""),
     minted.body?.transaction?.referenceId);
-  check("a well-formed client reference is honoured",
-    supplied.body?.transaction?.referenceId === wanted);
+  // This used to assert the opposite — that a well-formed reference sent by
+  // the client became the payment's identity. That was the behaviour audit
+  // finding GLB-18 removed: the identifier a payment is known by on BOTH
+  // parties' receipts must not be chosen by one of them, and the
+  // check-then-create it needed was a race the unique index could only turn
+  // into a 500. References are minted server-side now, and a client that
+  // sends one has it ignored rather than rejected, so older clients keep
+  // working.
+  //
+  // Retry-safety is unaffected: that is `idempotencyKey`, which has its own
+  // unique partial index and its own coverage in hardening-fixes.test.mjs.
+  check("a client-supplied reference is ignored, not adopted (GLB-18)",
+    supplied.body?.transaction?.referenceId !== wanted,
+    `asked=${wanted} got=${supplied.body?.transaction?.referenceId}`);
+  check("and the payment still succeeds, with a server-minted reference",
+    supplied.status === 201 &&
+    /^[−+×=○□●■]{20}$/u.test(supplied.body?.transaction?.referenceId || ""),
+    `status=${supplied.status} ref=${supplied.body?.transaction?.referenceId}`);
 
   console.log("\n6. overspending is a refusal, not a crash");
   const broke = await send(99999, "too much");

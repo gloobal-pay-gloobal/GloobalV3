@@ -383,18 +383,70 @@ async function settleCrossBorderPayment({
   // wrote pools outside any transaction and hand-rolled a compensating
   // reversal between the two updates; none of that is needed now, and
   // hand-compensation inside a transaction would double-revert.
-  const [creditedSourcePool, debitedDestinationPool] = await Promise.all([
-    CountryCurrencyPool.findByIdAndUpdate(
-      sourcePool._id,
-      { $inc: { availableBalance: sourceNet, totalBalance: sourceNet } },
-      { new: true, ...sessionOpt }
-    ),
-    CountryCurrencyPool.findByIdAndUpdate(
-      destinationPool._id,
-      { $inc: { availableBalance: -destinationNet, totalBalance: -destinationNet } },
-      { new: true, ...sessionOpt }
-    ),
-  ]);
+  // ── Audit fix (GLB-15): the release is a CONDITIONAL update ─────────────
+  //
+  // The gate above is a read, and it used to be the only thing standing
+  // between two concurrent settlements and an overdrawn corridor: read
+  // availableBalance, compare it in Node, then $inc unconditionally some
+  // milliseconds later. Two payments racing through the same corridor both
+  // read the same balance, both passed, and both decremented — for exactly
+  // the same reason two concurrent sends out of one account both used to
+  // pass, which server.js fixed years-of-comments ago by making the debit a
+  // conditional $inc. The pool never got the same treatment.
+  //
+  // Inside a Mongo transaction the write conflict on the pool document would
+  // usually abort and retry one of the two, so this was mostly covered on
+  // Atlas. "Mostly" is the problem: withMongoTransaction silently falls back
+  // to session === null on any deployment without transactions, and on that
+  // path there is nothing at all — the read-then-write is the whole control,
+  // and a pool can be driven negative, which means releasing local currency
+  // the corridor does not hold.
+  //
+  // The filter below matches and decrements in one indivisible operation, so
+  // it is now correct on both paths. The pre-read gate is deliberately kept:
+  // it checks the stricter GROSS figure, and it produces the specific,
+  // actionable error the payer sees. This is the backstop underneath it.
+  //
+  // The source pool stays unconditional. It is a CREDIT — it cannot underflow,
+  // and there is no balance for it to race against.
+  //
+  // The two writes are also sequenced rather than run through Promise.all, in
+  // that order, for a reason beyond style: the destination debit is the only
+  // one that can fail, so doing it first means a refusal leaves nothing at all
+  // applied. Under the old parallel form a failed debit would have left the
+  // source credit standing on the non-transactional path, where no abort comes
+  // to take it back — a corridor gaining liquidity for a payment that never
+  // happened. (Two operations on one session should not be issued
+  // concurrently either.)
+  const debitedDestinationPool = await CountryCurrencyPool.findOneAndUpdate(
+    { _id: destinationPool._id, availableBalance: { $gte: destinationNet } },
+    { $inc: { availableBalance: -destinationNet, totalBalance: -destinationNet } },
+    { returnDocument: 'after', ...sessionOpt }
+  );
+
+  if (!debitedDestinationPool) {
+    // No match means the corridor's balance moved between the gate above and
+    // this write. Nothing was decremented — $inc either matched and applied or
+    // did neither — and nothing else has been touched yet. Re-read rather than
+    // reported from the stale pre-gate figure, so the payer is told what the
+    // corridor actually holds now.
+    const current = await CountryCurrencyPool.findById(destinationPool._id)
+      .select('availableBalance')
+      .lean();
+
+    throw new InsufficientPoolLiquidityError({
+      countryIso: destinationCountry.iso,
+      currency: destinationCurrency,
+      requested: destinationAmount,
+      available: Number(current?.availableBalance) || 0,
+    });
+  }
+
+  const creditedSourcePool = await CountryCurrencyPool.findByIdAndUpdate(
+    sourcePool._id,
+    { $inc: { availableBalance: sourceNet, totalBalance: sourceNet } },
+    { new: true, ...sessionOpt }
+  );
 
   const [settlement] = await Settlement.create(
     [{

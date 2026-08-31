@@ -1,8 +1,12 @@
 // src/components/cards/misc.jsx
 import { useState as useState8, useRef as useRef7 } from "react";
-function ReceiptRow({ label, value, flag, mono, accent, wrap }) {
+// `testId` is optional and purely for the browser tests: the two rows that
+// name the OTHER party to a payment are the ones a test has to be able to read
+// unambiguously, and matching them by their label text would break the day the
+// copy changes.
+function ReceiptRow({ label, value, flag, mono, accent, wrap, testId }) {
   if (!value) return null;
-  return <div style={{ display: "flex", alignItems: wrap ? "flex-start" : "center", justifyContent: "space-between", gap: 14 }}><span style={{ fontSize: 12.5, color: T.inkFaint, fontWeight: 600, flexShrink: 0, paddingTop: wrap ? 1 : 0 }}>{label}</span><span
+  return <div data-testid={testId} style={{ display: "flex", alignItems: wrap ? "flex-start" : "center", justifyContent: "space-between", gap: 14 }}><span style={{ fontSize: 12.5, color: T.inkFaint, fontWeight: 600, flexShrink: 0, paddingTop: wrap ? 1 : 0 }}>{label}</span><span
     style={{
       fontSize: wrap ? 13.5 : 13,
       color: accent ? T.accent : T.ink,

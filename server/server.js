@@ -3252,7 +3252,50 @@ function cleanTransactionUser(user) {
   return {
     fullName: user.fullName || '',
     symbolId: user.symbolId || '',
+    // The country this account belongs to, so a receipt can show whose flag
+    // it is. Read through accountCountryIso rather than off the raw field —
+    // every other country read in this file does the same, and the raw field
+    // is the schema default on any account registered before a country was
+    // recorded.
+    //
+    // Only reached as a FALLBACK now: rows written since the parties snapshot
+    // exists answer from the snapshot instead (see counterpartyFor). Kept
+    // because rows written before it have no snapshot to read, and a receipt
+    // with a live-joined flag is better than one with no flag at all.
+    countryIso: accountCountryIso(user),
   };
+}
+
+// Who the OTHER party to this transaction was, as of when it happened.
+//
+// Prefers metadata.parties — the snapshot POST /api/transactions/send writes
+// at payment time (see that route for why). Falls back to the populated
+// User document for rows written before the snapshot existed.
+//
+// `viewerIsSender` decides which of the two snapshotted sides is the
+// counterparty, and it is derived from the transaction's own fromUserId, never
+// from anything the caller supplies — reversing it is the one mistake that
+// would put the payer's own name and flag on their own receipt under "To".
+function counterpartyFor(transaction, viewerIsSender, populatedCounterparty) {
+  const parties = transaction?.metadata?.parties;
+  const snapshot = parties && (viewerIsSender ? parties.receiver : parties.sender);
+
+  if (snapshot && (snapshot.symbolId || snapshot.fullName)) {
+    return {
+      fullName: snapshot.fullName || '',
+      symbolId: snapshot.symbolId || '',
+      countryIso: String(snapshot.countryIso || '').toUpperCase() || null,
+      currency: snapshot.currency || null,
+      // Tells the client whether it is looking at a recorded fact or at a
+      // live join that may since have drifted. Nothing renders differently
+      // on it today; it exists so a stale-looking receipt can be explained
+      // rather than guessed at.
+      fromSnapshot: true,
+    };
+  }
+
+  const live = cleanTransactionUser(populatedCounterparty);
+  return live ? { ...live, currency: null, fromSnapshot: false } : null;
 }
 
 function cleanTransactionPayload(transaction, sender, receiver) {
@@ -4505,6 +4548,61 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         destinationAmount: numericAmount,
         destinationCurrency,
         amountBasis: basis,
+        // ── Who the two parties WERE, at the moment this payment happened ──
+        //
+        // A receipt is a record of a past event, so the identities on it have
+        // to be the identities as they stood then. Every projection of this
+        // row used to resolve the counterparty by joining live to the User
+        // collection — `.populate('fromUserId', 'fullName symbolId')` — which
+        // means a receipt quietly rewrote itself whenever the other party
+        // renamed their Gloobal ID, changed their display name, or moved
+        // country. Reopening a six-month-old payment showed somebody who did
+        // not exist under that name when it was made.
+        //
+        // Worse, the join could not answer the question at all for the flag:
+        // it selected two fields and countryIso was not one of them, so no
+        // reader downstream had a country to derive a flag from. That is why
+        // a restored receipt had no flag on it — not a rendering bug, a field
+        // that was never sent.
+        //
+        // So both sides are snapshotted here, once, and the projections read
+        // this in preference to the join. countryIso goes through
+        // accountCountryIso for the same reason every other country read in
+        // this route does: an account written before registration recorded a
+        // country carries the bare schema default, and the raw field would
+        // stamp the wrong flag on the receipt permanently.
+        //
+        // Deliberately NOT authoritative for money. Nothing here is read back
+        // to settle, refund or reconcile anything; it exists so a receipt can
+        // name its two parties without a join. The amounts, currencies and
+        // account ids above remain the only financial record.
+        parties: {
+          sender: {
+            symbolId: sender.symbolId,
+            fullName: sender.fullName || '',
+            countryIso: accountCountryIso(sender),
+            currency: senderCurrency,
+          },
+          receiver: {
+            symbolId: receiver.symbolId,
+            fullName: receiver.fullName || '',
+            countryIso: accountCountryIso(receiver),
+            currency: destinationCurrency,
+          },
+        },
+        // The Creator Share this payment carried, in the receiver's own
+        // currency (`cashback`) and the sender's (`cashbackCredit`), with the
+        // rate that produced them.
+        //
+        // GET /api/transactions/:symbolId has always projected
+        // `metadata.cashback` and `metadata.cashbackRate` — and nothing ever
+        // wrote them, so every restored row reported a 0% share on a payment
+        // that really had one. The receipt's Creator Share tab is driven by
+        // the same figures, which is why it vanished the moment a payment was
+        // reopened from history rather than shown fresh.
+        cashback,
+        cashbackCredit,
+        cashbackRate: payeeCashbackRate,
       },
     };
 
@@ -5085,9 +5183,32 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
     })
       .sort({ createdAt: -1 })
       .limit(50)
-      .populate('fromUserId', 'fullName symbolId')
-      .populate('toUserId', 'fullName symbolId')
+      // countryIso is selected so the pre-snapshot FALLBACK in
+      // counterpartyFor can still produce a flag for rows written before
+      // metadata.parties existed. Rows carrying the snapshot never reach it.
+      .populate('fromUserId', 'fullName symbolId countryIso')
+      .populate('toUserId', 'fullName symbolId countryIso')
       .lean();
+
+    // The Creator Share legs belonging to this page of payments.
+    //
+    // A 'share' row is excluded from the list itself (see the query above —
+    // it moves no balance and would double-count as spend), but the receipt
+    // for a payment shows the share as its own tab, with its own reference.
+    // Without this the tab disappeared the moment a payment was reopened from
+    // history instead of shown fresh: the data existed in Mongo and nothing
+    // carried it across.
+    //
+    // One extra query for the whole page, not one per row.
+    const shareLegs = await Transaction.find({
+      type: 'share',
+      'metadata.paymentTransactionId': { $in: transactions.map((t) => t._id) },
+    })
+      .select('referenceId metadata.paymentTransactionId')
+      .lean();
+    const shareByPayment = new Map(
+      shareLegs.map((leg) => [String(leg.metadata?.paymentTransactionId), leg.referenceId])
+    );
 
     const history = transactions.map((transaction) => {
       const senderId = String(transaction.fromUserId?._id || transaction.fromUserId || '');
@@ -5123,7 +5244,29 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
           : null,
         status: transaction.status,
         note: transaction.note || '',
-        counterparty: cleanTransactionUser(counterparty),
+        // As of when the payment happened, not as of now — see
+        // counterpartyFor. This carries countryIso, which is what a receipt
+        // derives its flag from and which this projection previously had no
+        // way to supply at all.
+        counterparty: counterpartyFor(transaction, isSender, counterparty),
+        // The Creator Share this payment carried. Written into metadata by
+        // the send route; null on rows that predate it, which the client
+        // treats as "no share" rather than inventing one.
+        cashbackRate: Number.isFinite(Number(transaction.metadata?.cashbackRate))
+          ? Number(transaction.metadata.cashbackRate)
+          : null,
+        // Each side in its own currency: `cashback` is the receiver-currency
+        // figure withheld from the payee, `cashbackCredit` the sender-currency
+        // figure handed back to the payer.
+        cashback: Number.isFinite(Number(transaction.metadata?.cashback))
+          ? Number(transaction.metadata.cashback)
+          : null,
+        cashbackCredit: Number.isFinite(Number(transaction.metadata?.cashbackCredit))
+          ? Number(transaction.metadata.cashbackCredit)
+          : null,
+        // The share leg's own reference. A payment whose payee shares nothing
+        // has no share leg and keeps this null.
+        shareReferenceId: shareByPayment.get(String(transaction._id)) || null,
         createdAt: transaction.createdAt,
       };
     });
@@ -5210,8 +5353,11 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
     const records = await Transaction.find({ ...directionMatch, type: { $ne: 'share' } })
       .sort({ createdAt: -1 })
       .limit(100)
-      .populate('fromUserId', 'fullName symbolId')
-      .populate('toUserId', 'fullName symbolId')
+      // countryIso is selected so the pre-snapshot FALLBACK in
+      // counterpartyFor can still produce a flag for rows written before
+      // metadata.parties existed. Rows carrying the snapshot never reach it.
+      .populate('fromUserId', 'fullName symbolId countryIso')
+      .populate('toUserId', 'fullName symbolId countryIso')
       .lean();
 
     const transactions = records.map((transaction) => {
@@ -5247,7 +5393,10 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
           : null,
         status: transaction.status,
         note: transaction.note || '',
-        counterparty: cleanTransactionUser(counterparty),
+        // Same snapshot-first rule as /api/transactions/history — see
+        // counterpartyFor. Carries countryIso so this route can feed a
+        // receipt too, not only a list row.
+        counterparty: counterpartyFor(transaction, isSender, counterparty),
         createdAt: transaction.createdAt,
       };
     });

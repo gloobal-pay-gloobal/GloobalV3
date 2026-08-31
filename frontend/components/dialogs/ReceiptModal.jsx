@@ -204,24 +204,30 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        The flag sits as its own circular badge on the box's top
        edge, centered, instead of inline next to the name. */
   }<div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 12, padding: "18px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}>{receipt.flag && <span
+    data-testid="receipt-flag"
     style={{
       position: "absolute",
       top: 0,
       left: "50%",
       transform: "translate(-50%, -50%)",
-      width: 40,
-      height: 40,
-      borderRadius: "50%",
-      background: T.surface,
-      border: `1px solid ${T.line}`,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
-      fontSize: 15,
-      zIndex: 1
+      zIndex: 1,
+      display: "flex"
     }}
-  >{receipt.flag}</span>}<ReceiptRow label={isSent ? "To" : "From"} value={receipt.name} />{receipt.id && <ReceiptRow
+  >{
+    /* The real flag component, not the emoji character.
+       This was `{receipt.flag}` printed as text at fontSize 15 inside a
+       40px circle: too small to read even where it renders, and on any
+       platform without flag glyphs (Windows above all) it is not a flag at
+       all — it is the two regional-indicator letters, "GB", sitting where a
+       flag should be. FlagCircle loads the same flag asset every other flag
+       in the app uses and fits it to the circle without cropping or
+       stretching it. */
+  }<FlagCircle flag={receipt.flag} size={40} /></span>}<ReceiptRow
+    testId="receipt-counterparty"
+    label={isSent ? "To" : "From"}
+    value={receipt.name}
+  />{receipt.id && <ReceiptRow
+    testId="receipt-counterparty-id"
     label={<GloobalWordmark suffix=" ID" />}
     value={<ColoredGloobalId id={receipt.id} />}
     mono
@@ -251,24 +257,25 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        a 0% share is still a real, reportable outcome of this
        transaction, not a reason to hide it. */
   }<div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 12, padding: "18px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}>{receipt.flag && <span
+    data-testid="receipt-flag"
     style={{
       position: "absolute",
       top: 0,
       left: "50%",
       transform: "translate(-50%, -50%)",
-      width: 40,
-      height: 40,
-      borderRadius: "50%",
-      background: T.surface,
-      border: `1px solid ${T.line}`,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
-      fontSize: 15,
-      zIndex: 1
+      zIndex: 1,
+      display: "flex"
     }}
-  >{receipt.flag}</span>}<ReceiptRow label={isSent ? "Shared back to" : "You shared back to"} value={isSent ? "You" : receipt.name} /></div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label="Creator Share rate" value={`${(receipt.shareRate ?? 0).toFixed(2)}%`} accent />{
+  >{
+    /* The real flag component, not the emoji character.
+       This was `{receipt.flag}` printed as text at fontSize 15 inside a
+       40px circle: too small to read even where it renders, and on any
+       platform without flag glyphs (Windows above all) it is not a flag at
+       all — it is the two regional-indicator letters, "GB", sitting where a
+       flag should be. FlagCircle loads the same flag asset every other flag
+       in the app uses and fits it to the circle without cropping or
+       stretching it. */
+  }<FlagCircle flag={receipt.flag} size={40} /></span>}<ReceiptRow label={isSent ? "Shared back to" : "You shared back to"} value={isSent ? "You" : receipt.name} /></div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label="Creator Share rate" value={`${(receipt.shareRate ?? 0).toFixed(2)}%`} accent />{
     /* Credit when I sent (the receiver shares back to me),
        debit when I received (I share back to them) — same
        direction as the hero figure above, always my own

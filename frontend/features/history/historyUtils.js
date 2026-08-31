@@ -91,7 +91,18 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy) {
   const localCurrency = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
   const rowCurrency = t.currency || localCurrency;
   const rowSymbol = t.currency ? CURRENCY_SYMBOL[t.currency] || `${t.currency} ` : ccy;
-  const counterpartyCountry = ALL_COUNTRIES.find((c) => c.flag === t.flag);
+  // The counterparty's own country, and from it their currency.
+  //
+  // Resolved from the ISO code the row now carries (see mapServerTransaction)
+  // and only falls back to the emoji reverse-lookup for rows that predate it —
+  // locally-built ones, and server rows written before the parties snapshot.
+  // Matching on the emoji was never reliable: two countries can be given the
+  // same flag string by a data slip, and a row with no flag at all (which was
+  // every restored row) matched nothing and silently produced a null currency.
+  const counterpartyCountry =
+    (t.counterpartyIso && COUNTRY_BY_ISO[t.counterpartyIso]) ||
+    ALL_COUNTRIES.find((c) => c.flag === t.flag) ||
+    null;
   const counterpartyCurrency = counterpartyCountry ? COUNTRY_CURRENCY[counterpartyCountry.iso] : null;
   const converted = counterpartyCurrency && counterpartyCurrency !== rowCurrency ? convert(t.amount, rowCurrency, counterpartyCurrency) : null;
   return {
@@ -123,10 +134,20 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy) {
     status: t.status === "completed" || t.status === "received" ? "completed" : t.status,
     txnId: t.txnId || genTxnId(),
     // Present on rows saved from a real payment (see onSendComplete in
-    // Send Money); older/seed-less rows simply won't have these, same
-    // as before.
+    // Send Money) and on every row restored from the server (see
+    // mapServerTransaction, which now carries the counterparty's own Gloobal
+    // ID and flag rather than dropping them).
     id: t.id,
-    phone: t.phone
+    phone: t.phone,
+    // The country the flag above belongs to, carried so nothing downstream
+    // has to reverse-engineer a country from an emoji.
+    counterpartyIso: t.counterpartyIso || (counterpartyCountry ? counterpartyCountry.iso : null),
+    // The Creator Share leg, so a reopened receipt still has its share tab.
+    // Absent on rows that carried no share, which is the honest answer —
+    // ReceiptModal shows the tab only when there is one.
+    shareTxnId: t.shareTxnId || "",
+    shareSourceTxnId: t.shareSourceTxnId || "",
+    shareAmount: Number(t.shareAmount) || 0
   };
 }
 

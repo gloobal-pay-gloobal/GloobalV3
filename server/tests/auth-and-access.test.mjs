@@ -187,8 +187,13 @@ async function run() {
   const available = await call("GET", `/api/users/available?symbolId=${encodeURIComponent(victim.id)}`);
   const availableKeys = Object.keys(available.body || {}).sort().join(",");
   check("availability is public — registration needs it", available.status === 200);
+  // `exists` was dropped by audit finding GLB-17 — it was `!available` under a
+  // second name, and two fields carrying one fact is two chances to read the
+  // wrong one. The assertion this replaces pinned the old key set; this one
+  // pins the new, SMALLER set, so the route still cannot start handing back a
+  // name, a number or a balance without failing here.
   check("and answers with a boolean, no name, number or balance",
-    available.body?.exists === true && availableKeys === "available,exists,success,symbolId", availableKeys);
+    available.body?.available === false && availableKeys === "available,success,symbolId", availableKeys);
   check("an unclaimed ID reads as available",
     (await call("GET", `/api/users/available?symbolId=${encodeURIComponent(symbolId(9))}`)).body?.available === true);
   check("aggregate stats stay public", (await call("GET", "/api/stats")).status === 200);

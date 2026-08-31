@@ -124,13 +124,15 @@ describe("C. one account's state never survives into another", () => {
 
 describe("D. a cross-border payment shows what the server actually did", () => {
   // Corridors chosen for their minor units rather than their politics.
+  //
+  // `sends` is what goes in the box, and the box is the RECEIVER's currency:
+  // it is what the payee ends up with. `expectPaid` is the band the SENDER's
+  // side should fall in — a band, not a point, because the app converts with
+  // live-ish rates of its own and pinning an exact figure would make this
+  // fail on a rate move rather than on a defect.
   const corridors = [
-    // The band, not a point: the app converts with live-ish rates of its
-    // own, so pinning an exact figure would make this fail on a rate move
-    // rather than on a defect. What matters is that 5,000 rupees reaches a
-    // US account as tens of dollars and never as five thousand of them.
-    { from: "india", to: "america", sends: 5000, note: "the founder's own worked example", expectReceived: [40, 70] },
-    { from: "america", to: "india", sends: 100, note: "the reverse of it", expectReceived: [7000, 12000] },
+    { from: "india", to: "america", sends: 50, note: "the founder's own worked example", expectPaid: [3500, 6000] },
+    { from: "america", to: "india", sends: 5000, note: "the reverse of it", expectPaid: [40, 80] },
     { from: "india", to: "japan", sends: 5000, note: "2-decimal payer, 0-decimal payee" },
     { from: "japan", to: "india", sends: 5000, note: "0-decimal payer, 2-decimal payee" },
     { from: "britain", to: "mexico", sends: 1000, note: "2-decimal both sides" },
@@ -153,34 +155,34 @@ describe("D. a cross-border payment shows what the server actually did", () => {
       const sendCall = api.calls.find((c) => c.path === "/api/transactions/send");
       assert.ok(sendCall, "a payment must reach the server");
 
-      // The number the person typed is the number the server is asked to
-      // take from THEM, in THEIR currency. This is the assertion that fails
-      // if the two sides of the corridor are ever swapped again.
-      assert.equal(sendCall.body.amountBasis, "source", "an ordinary send is source-denominated");
+      // The number the person typed is the number the PAYEE is credited, in
+      // the PAYEE's currency. This is the assertion that fails if the two
+      // sides of the corridor are ever swapped again.
+      assert.equal(sendCall.body.amountBasis, "destination", "the box holds the receiver's own figure");
       assert.equal(
-        Number(sendCall.body.sourceAmount),
+        Number(sendCall.body.destinationAmount),
         corridor.sends,
-        `the person sent ${corridor.sends} ${sender.currency}, the app asked for ${sendCall.body.sourceAmount}`
+        `the payee was to receive ${corridor.sends} ${receiver.currency}, the app asked for ${sendCall.body.destinationAmount}`
       );
       assert.equal(sendCall.body.sourceCurrency, sender.currency, "the source must be labelled with the sender's currency");
       assert.equal(sendCall.body.destinationCurrency, receiver.currency, "the destination must be labelled with the receiver's");
 
-      // And the receiver is credited the conversion, never the raw figure.
-      // Checked against what the SCREEN said they would get rather than
+      // And the SENDER is charged the conversion, never the raw figure.
+      // Checked against what the SCREEN said they would pay rather than
       // against a rate table of this test's own: the app converts with its
       // own bundled rates, and a test that re-implemented them would be
       // asserting its own arithmetic. What must hold is that the figure the
-      // person was shown is the figure the server was asked for.
+      // person was quoted is the figure the server was asked for.
       assert.equal(
-        Number(sendCall.body.destinationAmount),
-        money(result.receiverQuote),
-        `the screen promised the payee ${result.receiverQuote}, the request carried ${sendCall.body.destinationAmount}`
+        Number(sendCall.body.sourceAmount),
+        money(result.quoted),
+        `the button quoted ${result.quoted}, the request carried ${sendCall.body.sourceAmount}`
       );
       if (sender.currency !== receiver.currency) {
         assert.notEqual(
-          Number(sendCall.body.destinationAmount),
+          Number(sendCall.body.sourceAmount),
           corridor.sends,
-          `the receiver must not be credited ${corridor.sends} ${receiver.currency} — that is the bug this replaces`
+          `the sender must not be charged ${corridor.sends} of their own currency — that is the bug this replaces`
         );
       }
       // What a person is asked to agree to, in one line: their own amount and
@@ -197,12 +199,12 @@ describe("D. a cross-border payment shows what the server actually did", () => {
         );
       }
 
-      if (corridor.expectReceived) {
-        const [low, high] = corridor.expectReceived;
-        const got = Number(sendCall.body.destinationAmount);
+      if (corridor.expectPaid) {
+        const [low, high] = corridor.expectPaid;
+        const got = Number(sendCall.body.sourceAmount);
         assert.ok(
           got >= low && got <= high,
-          `${corridor.sends} ${sender.currency} should land near ${low}-${high} ${receiver.currency}, got ${got}`
+          `${corridor.sends} ${receiver.currency} to the payee should cost near ${low}-${high} ${sender.currency}, got ${got}`
         );
       }
 
@@ -489,6 +491,11 @@ async function loginAsAnotherAccount(page, account) {
 // The location gate sits AFTER both confirmations, so a blocked payment
 // still walks the whole flow — it is refused at the last step, which is
 // exactly where a person would meet it.
+// `sends` is the figure TYPED INTO THE BOX, which since the founder's
+// currency change is denominated in the RECEIVER's own currency — what the
+// payee ends up with, not what leaves the sender. For a same-currency pair
+// (most call sites below) the two are identical, which is why those callers
+// read unchanged; for a corridor they are not, and block D says so explicitly.
 async function sendPayment(page, { sender, receiver, sends, expectBlocked = false }) {
   await page.getByLabel("Send", { exact: true }).click({ force: true });
   await page.getByLabel("Symbol −", { exact: true }).waitFor({ timeout: 25000 });
@@ -498,7 +505,12 @@ async function sendPayment(page, { sender, receiver, sends, expectBlocked = fals
   }
   await page.getByRole("button", { name: "Search", exact: true }).click({ force: true });
 
-  const amountField = page.getByLabel("Amount you send, in your own currency");
+  // The box is denominated in the RECEIVER's currency now — the label names
+  // whose money it is, and carries the code, so a test cannot silently keep
+  // typing into a field that changed meaning underneath it.
+  const amountField = page.getByLabel(
+    `Amount the receiver gets, in their own currency (${receiver.currency})`
+  );
   await amountField.waitFor({ timeout: 25000 });
   await amountField.fill(String(sends));
   await page.waitForTimeout(800);

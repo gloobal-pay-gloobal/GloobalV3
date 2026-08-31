@@ -5,8 +5,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test --test-concurrency=1 tests/asset-seed-integrity.test.mjs tests/auth-and-access.test.mjs tests/coin-supply-invariant.test.mjs tests/concurrency-scale.test.mjs tests/cross-border-settlement.test.mjs tests/cross-currency-transfer.test.mjs tests/corridor-currency-integrity.test.mjs tests/corridor-matrix.test.mjs tests/cross-border-engine.test.mjs tests/unseeded-reference-data.test.mjs tests/currency-decimals-rounding.test.mjs tests/geu-concurrency.test.mjs tests/geu-invariants.test.mjs tests/merchant-share-flow.test.mjs tests/transfer-atomicity.test.mjs",
+    "test": "node --test --test-concurrency=1 tests/asset-seed-integrity.test.mjs tests/audit-trail.test.mjs tests/auth-and-access.test.mjs tests/hardening-fixes.test.mjs tests/coin-supply-invariant.test.mjs tests/concurrency-scale.test.mjs tests/cross-border-settlement.test.mjs tests/cross-currency-transfer.test.mjs tests/corridor-currency-integrity.test.mjs tests/corridor-matrix.test.mjs tests/cross-border-engine.test.mjs tests/unseeded-reference-data.test.mjs tests/currency-decimals-rounding.test.mjs tests/geu-concurrency.test.mjs tests/geu-invariants.test.mjs tests/merchant-share-flow.test.mjs tests/transfer-atomicity.test.mjs",
     "test:seeds": "node --test tests/asset-seed-integrity.test.mjs",
+    "test:audit": "node --test tests/audit-trail.test.mjs",
+    "test:hardening": "node --test tests/hardening-fixes.test.mjs",
     "test:auth": "node --test tests/auth-and-access.test.mjs",
     "test:coin": "node --test tests/coin-supply-invariant.test.mjs",
     "test:concurrency": "node --test tests/concurrency-scale.test.mjs",

@@ -591,7 +591,13 @@ function GloobalId() {
       registered: Boolean(user),
       // fullName is the mobile number on accounts created before the name
       // step existed, and a name that is just the number is not a name.
-      recipientName: user ? (user.fullName && user.fullName !== user.mobileNumber ? user.fullName : "Gloobal User") : null,
+      //
+      // `nameIsMobile` is the server's own answer to that, added when
+      // GET /api/users/resolve started masking the number it returns (audit
+      // finding GLB-17) — comparing against a masked number here would say
+      // "not the same" for every account, and put a real phone number back on
+      // screen as somebody's name.
+      recipientName: user ? (user.fullName && !user.nameIsMobile ? user.fullName : "Gloobal User") : null,
       recipientMobile: (user && user.mobileNumber) || "",
       // The payee's OWN registered country, straight off the resolve
       // response — the same field Send Money's dial-in search reads. Without

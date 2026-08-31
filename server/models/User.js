@@ -169,10 +169,34 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // When the challenge above stops being acceptable.
+  //
+  // Audit fix (GLB-25): currentChallenge was a single slot with no expiry,
+  // cleared only by a successful verification. A challenge minted weeks ago
+  // was still accepted, which is exactly the replay window WebAuthn's
+  // challenge exists to close. Both /api/passkey/*/options routes now stamp
+  // this, and both /verify routes refuse a challenge past it.
+  //
+  // Null on every document written before this field existed. A stored
+  // challenge with no expiry is treated as expired rather than as valid
+  // forever — failing closed on legacy data costs one extra tap through the
+  // options route, and failing open costs the property this field exists for.
+  currentChallengeExpiresAt: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now
   }
 });
+
+// Audit fix (GLB-12): a Gloobal ID released by a rename must not be
+// re-registerable, because saved payees, printed QR codes and referral links
+// still carry it and would silently start paying whoever claimed it next.
+// Registration and rename both ask "has any account ever held this ID?", and
+// that question is answered by scanning symbolIdHistory — so it needs an
+// index, or every registration becomes a collection scan.
+userSchema.index({ 'symbolIdHistory.symbolId': 1 });
 
 module.exports = mongoose.model('User', userSchema);

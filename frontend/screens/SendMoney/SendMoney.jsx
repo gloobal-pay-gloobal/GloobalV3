@@ -112,6 +112,32 @@ function identityDisplayValue(profile, mode) {
 function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = [], onOpenPaidHistory, onSendComplete, onExecuteTransaction, onRemoteSend }) {
   const [top, setTop] = useState15(() => buildSenderProfile(sender));
   const [bottom, setBottom] = useState15(() => buildLocalReceiverPlaceholder(buildSenderProfile(sender)));
+  // `top` is seeded once, from the account that was signed in when this screen
+  // mounted — and the Send button quotes its currency. If a different account
+  // signs in while the screen is still mounted, that seed is stale, and the
+  // button would price the payment in the previous occupant's currency while
+  // the amount box priced it in the new receiver's. In practice the account
+  // switch remounts the whole tree (GloobalArtifactRoot keys its provider off
+  // that event), so this is belt and braces rather than a live defect — but
+  // "belt and braces" is the right amount of care for the one figure on this
+  // screen that says how much of your own money is about to leave.
+  //
+  // Keyed on the account's ISO, which is what decides the currency. The
+  // display name is preserved rather than rebuilt: buildSenderProfile calls
+  // randomName() for the prototype placeholder, and re-running it would rename
+  // the sender mid-flow for no reason.
+  useEffect13(() => {
+    const next = buildSenderProfile(sender);
+    setTop((current) => {
+      if (next.iso === current.iso && next.currency === current.currency) return current;
+      return { ...next, name: current.name };
+    });
+    // And the empty receiver half, which mirrors the sender's country until
+    // somebody is actually searched for. Only while it IS still the empty
+    // half — a resolved recipient carries an id, and their currency is their
+    // own account's, never the sender's.
+    setBottom((current) => (current.id ? current : buildLocalReceiverPlaceholder(next)));
+  }, [sender && sender.iso, sender && sender.dialCode, sender && sender.phoneNumber]);
   const [amount, setAmount] = useState15("");
   const [topOpen, setTopOpen] = useState15(false);
   const [bottomOpen, setBottomOpen] = useState15(true);
@@ -143,16 +169,17 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   // and disables Search while one is in flight.
   const [searchBusy, setSearchBusy] = useState15(false);
   const [searchError, setSearchError] = useState15(null);
-  // Shows a stored mobile number without printing it in full — the
+  // maskMobileNumber used to live here. The masking it did was right — the
   // recipient confirmation has to be recognisable to the sender without
-  // handing out somebody else's number to anyone who types an ID.
-  function maskMobileNumber(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    const tail = raw.slice(-4);
-    const head = raw.startsWith("+") ? raw.slice(0, 3) : "";
-    return `${head}${head ? " " : ""}•••• ${tail}`;
-  }
+  // handing out somebody else's number to anyone who types an ID — but it was
+  // happening in the wrong place: the server sent the number in full and this
+  // screen hid it on the way to the pixels, so the full number was still in
+  // the response, in devtools, and in anything else that called the route.
+  //
+  // GET /api/users/resolve now masks before it answers (audit finding
+  // GLB-17), so `user.mobileNumber` arrives already reduced to a dial code
+  // and two trailing digits. Masking it a second time here would only garble
+  // it.
   const [searchMode, setSearchMode] = useState15("id");
   const [idBuffer, setIdBuffer] = useState15("");
   const [mobileBuffer, setMobileBuffer] = useState15("");
@@ -168,44 +195,66 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   );
   // The two sides of the payment, each named for whose money it is.
   //
-  // The amount box is the SENDER's own currency: someone entering 5000 in
-  // India means five thousand rupees of their own money, and the receiver is
-  // credited whatever that converts to. It used to be the other way round —
-  // the box was "what the receiver is asking for", which reads correctly for
-  // a payment request and is the wrong default for an ordinary send, where
-  // nobody has asked for anything.
+  // ── Which side the amount box is denominated in ──────────────────────────
   //
-  // Payment requests still work, and still pay the exact figure the payee
-  // named: those are sent destination-denominated (see onRemoteSend below),
-  // so the rounding lands on the sender's side rather than shorting the
-  // payee by a minor unit.
-  const senderAmount = useMemo6(() => parseFloat(amount) || 0, [amount]);
-  // A payment request names a figure in the PAYEE's own currency. When one is
-  // handed in, that exact figure is what gets settled — the box below shows
-  // its sender-currency equivalent so the person knows what they are paying,
-  // but the rounding is taken on the sender's side rather than shorting the
-  // payee a minor unit of their own money.
+  // The RECEIVER's. The person types what the payee should end up with, in
+  // the payee's own currency, and the Send button quotes back what that costs
+  // in the sender's. Both halves are on screen at once and each is labelled
+  // with the currency it is actually in, so neither figure can be read as the
+  // other:
   //
-  // Zero for an ordinary send, which is every send today: an amount-bearing
-  // QR still pays in place on the scan screen and never reaches here. The
-  // field exists so that when that handoff does carry an amount, it settles
-  // as a request rather than silently becoming a source-denominated send.
-  const requestedDestinationAmount = Number(prefillReceiver && prefillReceiver.requestedAmount) || 0;
+  //     amount box    ->  $ 0.00     receiver's currency, what they get
+  //     Send button   ->  Send ₹0.00 sender's currency, what you pay
+  //
+  // This is a deliberate reversal. The box used to hold the SENDER's own
+  // figure and the receiver's side was quoted underneath — which reads
+  // correctly for "I want to spend 5,000 rupees" and badly for the thing
+  // people actually mean when paying somebody abroad, which is "they need
+  // 100 dollars". Under the old arrangement the payee's total drifted with
+  // the rate; under this one the sender's total does, and the payee gets
+  // exactly the figure that was agreed.
+  //
+  // It also makes the payment-request case (a scanned QR carrying an amount)
+  // the same shape as an ordinary send rather than a special one: the figure
+  // the payee named goes straight into the box, in the currency they named it
+  // in, with no conversion on the way in and no second rounding on the way
+  // out. See the prefill in the effect below, which no longer converts.
+  //
+  // Nothing about the corridor moves. `convert` is the same helper, called in
+  // the same direction the server settles in for a destination-denominated
+  // payment; the server still recomputes both sides itself and refuses the
+  // payment if its own arithmetic disagrees with what the screen showed.
+
+  // What the payee is credited: exactly what was typed, rounded to the
+  // RECEIVER's own minor unit, because that is the account it has to land in.
+  // A yen balance cannot hold 8,274.29, and quoting a figure the payee's
+  // currency cannot represent means the screen and the request disagree about
+  // what was agreed. The server rounds this side the same way.
   const receiverAmount = useMemo6(
     () => {
-      const raw = convert(amount, top.currency, bottom.currency);
-      // Rounded to the RECEIVER's own minor unit, because that is the
-      // account it has to land in: a yen balance cannot hold 8,274.29, and
-      // quoting a figure the payee's currency cannot represent means the
-      // screen and the request disagree about what was agreed. The server
-      // rounds the same way when it recomputes this side, so the two now
-      // arrive at the same number instead of differing by a fraction of a
-      // unit the payee could never have received.
+      const typed = parseFloat(amount) || 0;
       const decimals = currencyDecimals(bottom.currency);
+      const factor = Math.pow(10, decimals);
+      return Math.round(typed * factor) / factor;
+    },
+    [amount, bottom.currency]
+  );
+  // What it costs the sender, in the sender's own currency. Derived from the
+  // typed figure rather than typed itself, and rounded to the SENDER's minor
+  // unit — this is the number that leaves their balance, so it has to be a
+  // real amount of their own money.
+  //
+  // Every consumer of `senderAmount` on this screen — the Send button, the
+  // pay-method sheet, the receipt, the local ledger leg — wants "what I
+  // paid", and reads correctly against this without changing.
+  const senderAmount = useMemo6(
+    () => {
+      const raw = convert(receiverAmount, bottom.currency, top.currency);
+      const decimals = currencyDecimals(top.currency);
       const factor = Math.pow(10, decimals);
       return Math.round(raw * factor) / factor;
     },
-    [amount, top.currency, bottom.currency]
+    [receiverAmount, top.currency, bottom.currency]
   );
   // The last five payments sent from this screen — `history` (the
   // sendMoneyHistory App.jsx passes in) has always reached this
@@ -247,7 +296,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       flag: prefillReceiver.flag,
       id: prefillReceiver.id || "",
       name: prefillReceiver.name || "Gloobal User",
-      phone: maskMobileNumber(prefillReceiver.mobileNumber),
+      // Already masked. This value originates in GET /api/users/resolve (via
+      // App.jsx's handleSendToScanned), which now masks before it answers —
+      // see the note where maskMobileNumber used to be defined.
+      phone: prefillReceiver.mobileNumber || "",
       currency: prefillReceiver.currency || top.currency,
       // Already a percent by the time it arrives (see handleSendToScanned).
       shareRate: Number(prefillReceiver.shareRate) || 0,
@@ -260,11 +312,15 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       // scanned placeholder identically to a resolved account.
       registered: prefillReceiver.registered !== false
     });
-    // Prefill the box with what this request costs the sender, converted
-    // from the payee's own figure.
+    // Prefill the box with the figure the payee actually named.
+    //
+    // No conversion on the way in any more. The box is denominated in the
+    // RECEIVER's currency now (see the memos above) and a payment request is
+    // already stated in exactly that currency, so converting it here would
+    // have been converting it into the wrong unit — and the send would then
+    // convert it back, rounding twice against a figure the payee named.
     if (Number(prefillReceiver.requestedAmount) > 0) {
-      const payeeCurrency = prefillReceiver.currency || top.currency;
-      setAmount(String(convert(Number(prefillReceiver.requestedAmount), payeeCurrency, top.currency)));
+      setAmount(String(Number(prefillReceiver.requestedAmount)));
     }
     setSearchStage("found");
     setFoundDisplayMode("name");
@@ -335,15 +391,22 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
         // sender's own money and the receiver gets the conversion. A scanned
         // payment request sends "destination" instead, so the payee is
         // credited the exact figure they asked for.
-        amountBasis: requestedDestinationAmount > 0 ? "destination" : "source",
+        // Always destination-denominated: the box holds the receiver's own
+        // figure, so that is the side the person typed and the side the
+        // server must treat as authoritative. `sourceAmount` is sent
+        // alongside it as this screen's own view of the cost — the server
+        // recomputes it from its own rate for a destination basis and does
+        // not take this one, which is what stops a stale client rate from
+        // moving the wrong sum.
+        amountBasis: "destination",
         sourceAmount: senderAmount,
         sourceCurrency: top.currency,
-        destinationAmount: requestedDestinationAmount > 0 ? requestedDestinationAmount : receiverAmount,
+        destinationAmount: receiverAmount,
         destinationCurrency: bottom.currency,
         // Legacy field, kept so an older server build still reads the leg it
         // expects: before the contract above existed, `amount` meant the
         // receiver's face value and nothing said so.
-        amount: requestedDestinationAmount > 0 ? requestedDestinationAmount : receiverAmount,
+        amount: receiverAmount,
         currency: bottom.currency,
         receiver: bottom,
         // The verified PIN, from the ref — `pin` state is "" by now.
@@ -735,8 +798,14 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       // fullName is the mobile number on accounts created before the name
       // step existed (register-symbol overwrites it), and a name that is
       // just the number is not a name worth showing.
-      name: user.fullName && user.fullName !== user.mobileNumber ? user.fullName : "Gloobal User",
-      phone: maskMobileNumber(user.mobileNumber) || (searchMode === "mobile" ? `${c.dialCode} ${grouped}` : ""),
+      // `nameIsMobile` is the server's own answer to "is this account's
+      // fullName just its phone number?" — the comparison this line used to
+      // make locally, which stopped being possible once the number started
+      // arriving masked, and which was never the client's comparison to make.
+      name: user.fullName && !user.nameIsMobile ? user.fullName : "Gloobal User",
+      // Already masked by the server. The fallback is the number the sender
+      // typed themselves, which needs no hiding from them.
+      phone: user.mobileNumber || (searchMode === "mobile" ? `${c.dialCode} ${grouped}` : ""),
       currency: COUNTRY_CURRENCY[recipientCountry.iso] || "USD",
       // The receiver's real rate off their own account, not a random one.
       //
@@ -755,7 +824,13 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   }
   function handleAmountChange(e) {
     const v = e.target.value;
-    if (v === "" || /^\d*\.?\d{0,2}$/.test(v)) {
+    // The box is in the RECEIVER's currency, so the decimal places it accepts
+    // are the receiver's. Fixed at two, a yen payee could be asked for
+    // ¥100.55 — which is not an amount of yen, and which the server refuses
+    // outright. A zero-decimal currency accepts no separator at all.
+    const decimals = currencyDecimals(bottom.currency);
+    const allowed = decimals === 0 ? /^\d*$/ : new RegExp("^\\d*\\.?\\d{0," + decimals + "}$");
+    if (v === "" || allowed.test(v)) {
       setAmount(v);
     }
   }
@@ -1339,19 +1414,28 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
        exactly what's actually on their account, never a
        choice made here. */
   }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 14 }}><span style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>Creator Share</span><ShareRateFlipCircle percent={bottom.shareRate ?? 0} size={28} staticMode /></div>{
-    /* Editable — what the SENDER pays, in the sender's own
-       currency. What the receiver gets is shown right below.
-       Starts genuinely empty (placeholder shows "0.00") so
-       there's nothing to erase before typing. No separate
-       "Sending to" caption here anymore — the name/ID are
-       already shown above in this same card. */
+    /* Editable — what the RECEIVER gets, in the receiver's own
+       currency. What it costs the sender is on the Send button.
+
+       This box lives inside the receiver's card and carries the
+       receiver's symbol, so the figure and the currency beside
+       it always belong to the same person.
+
+       The symbol comes from `bottom.currency`, which is set from
+       the payee's own account when they resolve — never from the
+       sender's country, and never a hardcoded code. It is read
+       straight off state rather than memoised, so changing the
+       recipient re-renders it in the same paint.
+
+       Starts genuinely empty; the placeholder is the receiver's
+       own zero, so a yen payee shows "0" rather than "0.00". */
   }<div className="amount-box green" style={{ marginTop: 4, position: "relative" }}><input
     className="amount-input"
     value={amount}
     onChange={handleAmountChange}
     inputMode="decimal"
-    placeholder="0.00"
-    aria-label="Amount you send, in your own currency"
+    placeholder={fmt(0, bottom.currency)}
+    aria-label={`Amount the receiver gets, in their own currency (${bottom.currency})`}
   /><span
     style={{
       position: "absolute",
@@ -1362,8 +1446,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       color: T.inkSoft,
       lineHeight: 1
     }}
-    aria-label={`Your currency: ${top.currency} \u2014 fixed to their account, can't be changed`}
-  >{CURRENCY_SYMBOL[top.currency] || top.currency}</span></div></>}</div></>}{
+    aria-label={`Receiver's currency: ${bottom.currency} \u2014 fixed to their account, can't be changed`}
+  >{CURRENCY_SYMBOL[bottom.currency] || bottom.currency}</span></div></>}</div></>}{
     /* SWAP — only once a receiver's been found. Flips currency
        sides and, with it, which card is shown big vs as a strip.
        The search bar itself always looks up the receiver, no
@@ -1384,12 +1468,20 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     aria-label="Copy ID"
   >{copiedKey === "top-id" ? <Check3 size={17} /> : <Copy3 size={17} />}</button></div></div><div className="divider" /><div className="rate-row"><div className="rate-left"><span className="live-dot" /><span>
                       1 {top.currency} = {fmt(convert(1, top.currency, bottom.currency), bottom.currency)} {bottom.currency}</span></div><span className="live-text"><Zap4 size={14} fill="currentColor" /> Live</span></div>{
-    /* Read-only — the exact amount that will be paid/debited
-       from the sender's own account, converted from whatever
-       the receiver is asking for above. Shown large since
-       it's the number that matters before paying. */
+    /* Read-only — the exact amount that will be debited from
+       the sender's own account, converted from the figure the
+       receiver is being sent above. Shown large since it's the
+       number that matters before paying.
+
+       This card is the SENDER's, so it states the sender's side.
+       It used to read "Receiver gets" and quote the converted
+       figure, which was right while the box above held the
+       sender's own amount; now that the box holds the receiver's,
+       that caption would have printed the typed number back at
+       the person under a different heading and never shown them
+       what it costs. */
   }<div className="amount-box indigo"><div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: T.accent, marginBottom: 6 }}>
-                    Receiver gets
+                    You pay
                   </div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}><span
     style={{
       fontSize: 34,
@@ -1398,7 +1490,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       letterSpacing: "-0.01em",
       fontVariantNumeric: "tabular-nums"
     }}
-  >{fmt(receiverAmount, bottom.currency)}</span><span
+  >{fmt(senderAmount, top.currency)}</span><span
     style={{
       display: "flex",
       alignItems: "center",
@@ -1412,8 +1504,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       letterSpacing: 0.2,
       flexShrink: 0
     }}
-    aria-label={`Receiver's currency: ${bottom.currency} \u2014 fixed to your account, can't be changed`}
-  >{bottom.currency}</span></div></div></>}</div>}{
+    aria-label={`Your currency: ${top.currency} \u2014 fixed to your account, can't be changed`}
+  >{top.currency}</span></div></div></>}</div>}{
     /* SEND BUTTON — just my own currency and amount now, nothing
        about what the receiver gets. */
   }{searchStage === "found" && <button

@@ -675,6 +675,80 @@ async function run() {
     headerProbe.headers.get("permissions-policy") || "(absent)");
   check("X-Powered-By is not advertised", headerProbe.headers.get("x-powered-by") === null);
 
+  // ──────────────────────────────────────────────────────────────────────
+  console.log("RECEIPT. a transaction records who its two parties were");
+
+  const rcPayer = await seedAccount({ seed: 80, mobileNumber: "+919000000180", countryIso: "IN", balance: 50000, fullName: "Payer Person" });
+  const rcPayee = await seedAccount({ seed: 81, mobileNumber: "+449000000181", countryIso: "GB", balance: 0, fullName: "Payee Person" });
+  await User.updateOne({ _id: rcPayee.user._id }, { $set: { cashbackRate: 0.01 } });
+  await ExchangeRate.deleteMany({});
+  await ExchangeRate.create([
+    { fromCurrency: "GBP", toCurrency: "INR", rate: 105, source: "test-seed", fetchedAt: new Date() },
+    { fromCurrency: "INR", toCurrency: "GBP", rate: 1 / 105, source: "test-seed", fetchedAt: new Date() }
+  ]);
+  await CountryCurrencyPool.deleteMany({});
+
+  const rcPaid = await call("POST", "/api/transactions/send", {
+    token: rcPayer.token,
+    body: {
+      senderSymbolId: rcPayer.id, receiverSymbolId: rcPayee.id,
+      amountBasis: "destination", destinationAmount: 100, pin: PIN, note: "receipt-parties"
+    }
+  });
+  check("the cross-border payment goes through", rcPaid.status === 201,
+    `status=${rcPaid.status} ${rcPaid.body?.message || ""}`);
+
+  const rcStored = await Transaction.findOne({ referenceId: rcPaid.body?.transaction?.referenceId }).lean();
+  const rcParties = rcStored?.metadata?.parties;
+  check("the row records BOTH parties, not just their account ids",
+    Boolean(rcParties?.sender?.symbolId && rcParties?.receiver?.symbolId),
+    JSON.stringify(rcParties));
+  check("each side carries the country a flag is drawn from (was: absent entirely)",
+    rcParties?.sender?.countryIso === "IN" && rcParties?.receiver?.countryIso === "GB",
+    `sender=${rcParties?.sender?.countryIso} receiver=${rcParties?.receiver?.countryIso}`);
+  check("and the Creator Share the receipt's share tab is built from",
+    Number(rcStored?.metadata?.cashbackRate) === 0.01 && Number(rcStored?.metadata?.cashback) > 0,
+    `rate=${rcStored?.metadata?.cashbackRate} cashback=${rcStored?.metadata?.cashback}`);
+
+  // The projection, from each side. This is the assertion that fails if the
+  // two are ever reversed.
+  const payerHistory = await call("GET", `/api/transactions/history/${encodeURIComponent(rcPayer.id)}`, { token: rcPayer.token });
+  const payerRow = (payerHistory.body?.transactions || [])[0];
+  check("the PAYER's row is 'sent' and its counterparty is the rcPayee",
+    payerRow?.direction === "sent" &&
+    payerRow?.counterparty?.symbolId === rcPayee.id &&
+    payerRow?.counterparty?.countryIso === "GB",
+    JSON.stringify(payerRow?.counterparty));
+
+  const payeeHistory = await call("GET", `/api/transactions/history/${encodeURIComponent(rcPayee.id)}`, { token: rcPayee.token });
+  const payeeRow = (payeeHistory.body?.transactions || [])[0];
+  check("the PAYEE's row is 'received' and its counterparty is the rcPayer",
+    payeeRow?.direction === "received" &&
+    payeeRow?.counterparty?.symbolId === rcPayer.id &&
+    payeeRow?.counterparty?.countryIso === "IN",
+    JSON.stringify(payeeRow?.counterparty));
+  check("neither side is ever handed its own identity as the counterparty",
+    payerRow?.counterparty?.symbolId !== rcPayer.id && payeeRow?.counterparty?.symbolId !== rcPayee.id);
+  check("the share leg's own reference reaches the receipt's share tab",
+    typeof payerRow?.shareReferenceId === "string" && payerRow.shareReferenceId.length > 0,
+    `shareReferenceId=${payerRow?.shareReferenceId}`);
+
+  // IMMUTABILITY. The rcPayee renames, and the historical receipt must not move.
+  const rcRenamedTo = symbolId(82);
+  const rcRenamed = await call("PATCH", "/api/profile/change-symbol-id", {
+    token: rcPayee.token, body: { currentSymbolId: rcPayee.id, newSymbolId: rcRenamedTo }
+  });
+  check("the payee can rename", rcRenamed.status === 200, `status=${rcRenamed.status}`);
+
+  const rcAfterRename = await call("GET", `/api/transactions/history/${encodeURIComponent(rcPayer.id)}`, { token: rcPayer.token });
+  const rcFrozenRow = (rcAfterRename.body?.transactions || [])[0];
+  check("the old receipt still names the payee as they were AT THE TIME (was: rewritten by a live join)",
+    rcFrozenRow?.counterparty?.symbolId === rcPayee.id,
+    `now=${rcFrozenRow?.counterparty?.symbolId} then=${rcPayee.id}`);
+  check("and marks that identity as a recorded snapshot, not a live read",
+    rcFrozenRow?.counterparty?.fromSnapshot === true);
+
+
   console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}`);
   return failures;
 }

@@ -170,6 +170,22 @@ async function mintShareLegAndReceipts({ paymentTransaction, sender, receiver, a
         paymentReferenceId: paymentTransaction.referenceId,
         assetSeedId: assetSeedId || null,
         noBalanceMovement: true,
+        // The same two-party snapshot the payment itself carries, copied
+        // across rather than re-derived, so the share leg and the payment it
+        // belongs to can never disagree about who was involved.
+        //
+        // Note the DIRECTION is deliberately inverted relative to the payment:
+        // fromUserId on this row is the merchant (whose cut this represents)
+        // and toUserId is the payer, because a share documents value moving
+        // back TOWARD the payer. `parties` follows the row it is on, so
+        // `parties.sender` here is the merchant — the same rule
+        // counterpartyFor applies everywhere else.
+        parties: paymentTransaction?.metadata?.parties
+          ? {
+              sender: paymentTransaction.metadata.parties.receiver,
+              receiver: paymentTransaction.metadata.parties.sender,
+            }
+          : undefined,
       },
     });
 

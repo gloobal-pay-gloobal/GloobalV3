@@ -129,8 +129,35 @@ function mapServerTransaction(row, viewerSymbolId) {
   // is exactly the bug; showing it honestly in a foreign currency is not.
   const ownAmount = senderSideKnown ? debit : Number(row.amount) || 0;
   const ownCurrency = senderSideKnown ? row.senderCurrency : row.currency || null;
+  // WHO the other party is, carried whole.
+  //
+  // This mapper used to take `counterparty.fullName` and nothing else. The
+  // Gloobal ID and the country were both dropped on the floor, so every row
+  // restored from the server reached the receipt with `id` undefined and
+  // `flag` undefined — and ReceiptModal renders each of those only `&&` they
+  // exist, so a reopened receipt silently showed a name and no identity at
+  // all. It read as a rendering bug and was a mapping one: the fields were
+  // never asked for from the server (they are now — see counterpartyFor) and
+  // never copied out of the response here.
+  //
+  // The flag is derived from the ISO code rather than sent as an emoji, and
+  // through the same COUNTRY_BY_ISO table every other flag in the app comes
+  // from — no country is named here, and an unknown code falls back to
+  // isoToFlag's regional-indicator pair rather than to a default country.
+  const counterpartyIso = String(counterparty.countryIso || "").toUpperCase();
+  const counterpartyFlag = counterpartyIso
+    ? (COUNTRY_BY_ISO[counterpartyIso] && COUNTRY_BY_ISO[counterpartyIso].flag) || isoToFlag(counterpartyIso)
+    : "";
+
   return {
     name: counterpartyName,
+    // The counterparty's own Gloobal ID — the "To"/"From" identity on the
+    // receipt. Never the viewer's: the server picks the opposite side by the
+    // transaction's own fromUserId (counterpartyFor), and this only carries
+    // that answer through.
+    id: counterparty.symbolId || "",
+    flag: counterpartyFlag,
+    counterpartyIso: counterpartyIso || null,
     date: created.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     time: formatClockTime(created),
     amount: ownAmount,
@@ -145,7 +172,25 @@ function mapServerTransaction(row, viewerSymbolId) {
     direction: row.direction === "received" ? "received" : "sent",
     method: "bank",
     txnId: row.referenceId || row.id || "",
-    shareRate: 0,
+    // The Creator Share this payment carried, as the server recorded it.
+    //
+    // Hardcoded 0 before, which is why the receipt's Creator Share tab
+    // vanished on reopen: a payment with a real 1% share came back claiming
+    // it had none. The server stores the rate as a decimal (1% = 0.01) and
+    // every consumer on this side works in percent, so it is converted once,
+    // here at the boundary — the same conversion GloobalApi.resolveUser's
+    // cashbackRate already goes through.
+    shareRate: Number.isFinite(Number(row.cashbackRate)) ? Number(row.cashbackRate) * 100 : 0,
+    // What the share was actually worth, in whichever currency this row is
+    // shown in: the payer sees their own credit back, the payee sees the
+    // figure withheld from their side.
+    shareAmount: isReceived
+      ? Number(row.cashback) || 0
+      : Number(row.cashbackCredit) || Number(row.cashback) || 0,
+    // The share leg's own reference, so the receipt's share tab can name the
+    // movement it is describing instead of reusing the payment's id.
+    shareTxnId: row.shareReferenceId || "",
+    shareSourceTxnId: row.shareReferenceId ? row.referenceId || row.id || "" : "",
     memo: row.note || "",
     ledgerRecordId: null,
     // Server rows predate this device's Personal/Creator split and carry

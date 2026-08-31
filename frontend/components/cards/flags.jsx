@@ -21,7 +21,19 @@ function flagEmojiToIso(flag) {
     return null;
   }
 }
-function FlagEmoji({ flag, size, width, height, radius, background, dropShadow }) {
+// `fit` picks how the flag image sits in the box it is given.
+//
+//   "cover"   (default) fills the box and crops whatever does not fit. Right
+//             for the rectangular chips this app uses everywhere else, where
+//             the box is already close to a flag's own proportions.
+//   "contain" fits the WHOLE flag inside the box, letterboxed, aspect ratio
+//             untouched. Right for a circular badge, where the box is square
+//             and "cover" would slice the left and right off every 3:2 flag —
+//             which for a lot of flags means cropping away the part that
+//             identifies them.
+//
+// Defaulting to "cover" keeps every existing caller pixel-identical.
+function FlagEmoji({ flag, size, width, height, radius, background, dropShadow, fit = "cover" }) {
   const w = width ?? size;
   const h = height ?? size;
   const smoothRadius = radius != null ? radius : Math.max(2, Math.round(Math.min(w, h) * 0.16));
@@ -49,7 +61,7 @@ function FlagEmoji({ flag, size, width, height, radius, background, dropShadow }
       display: "block",
       width: "100%",
       height: "100%",
-      objectFit: "cover",
+      objectFit: fit,
       objectPosition: "center"
     }}
   /> : <span
@@ -66,6 +78,44 @@ function FlagEmoji({ flag, size, width, height, radius, background, dropShadow }
       lineHeight: 1
     }}
   >{flag}</span>}</div>;
+}
+// A flag inside a circle, at whatever aspect ratio the flag actually has.
+//
+// The naive version of this — a square image with `border-radius: 50%` — cuts
+// the left and right off every wide flag, and a raw emoji character in a
+// circle renders as two letters on any platform without flag glyphs (Windows,
+// most notably) and is far too small to read besides. Both were in this app.
+//
+// The inner box is the largest rectangle of ~3:2 that fits inside the circle:
+// for a circle of diameter D that is D*0.83 by D*0.55, whose corners land just
+// inside the rim. `contain` then fits the flag's real shape into that box, so
+// a square flag renders square and a wide one renders wide — neither is
+// stretched, neither is cropped, and neither overflows the circle.
+//
+// `ratio` is exposed because the two call sites want slightly different
+// padding, not because any country needs special-casing.
+function FlagCircle({ flag, size, background, border, widthRatio = 0.83, heightRatio = 0.55 }) {
+  return <span
+    style={{
+      width: size,
+      height: size,
+      borderRadius: "50%",
+      background: background || T.surface,
+      border: border || `1px solid ${T.line}`,
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+      flexShrink: 0
+    }}
+  ><FlagEmoji
+    flag={flag}
+    width={Math.round(size * widthRatio)}
+    height={Math.round(size * heightRatio)}
+    radius={2}
+    fit="contain"
+    background="transparent"
+  /></span>;
 }
 function FlagSignShape({ sign, flag, box }) {
   const dropShadow = { filter: "drop-shadow(0 2px 4px rgba(20,20,40,0.28))" };

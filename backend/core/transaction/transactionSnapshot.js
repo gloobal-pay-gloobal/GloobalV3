@@ -25,6 +25,15 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     name: receiver.name || "Gloobal User",
     flag: receiver.flag || "",
     id: receiver.id || "",
+    // The counterparty's own country code, alongside their flag.
+    //
+    // Carried so the receipt shown IMMEDIATELY after paying has the same
+    // fields as the same receipt reopened from history later — that one is
+    // rebuilt from the server row, which carries countryIso (see
+    // mapServerTransaction). Without it the two versions of one receipt
+    // differed in what they knew, and "the flag is there fresh and gone on
+    // reopen" is exactly the shape of bug that produces.
+    counterpartyIso: receiver.iso || "",
     phone: receiver.phone || "",
     shareRate: txnShareRate,
     // "You send" — the exact amount debited, in the sender's own
@@ -59,6 +68,7 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     // Carried through so the receipt still shows these when reopened
     // later from History.
     id: receiver.id,
+    counterpartyIso: receiver.iso || "",
     phone: receiver.phone,
     time: txnTime,
     txnId: resolvedTxnId,

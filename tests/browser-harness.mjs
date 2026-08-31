@@ -259,7 +259,17 @@ export function convert(amount, from, to) {
 export async function installApi(context, options = {}) {
   const accounts = options.accounts || ACCOUNTS;
   const calls = [];
-  const state = { balances: {}, failNextSend: null };
+  // `ledger` is every payment this fake has accepted, in the shape the real
+  // server stores one: both parties snapshotted at the time, the two sides of
+  // the corridor kept apart, and the Creator Share recorded alongside. The
+  // history routes below project it per viewer, exactly as server.js does.
+  //
+  // It used to be absent entirely — both history routes answered with an empty
+  // array — which meant no browser test could reach "reopen this payment from
+  // history", or "log in as the payee and look at what arrived". Those are the
+  // two places the receipt's counterparty identity was actually being lost, so
+  // the gap in the fake was also the gap in the coverage.
+  const state = { balances: {}, failNextSend: null, ledger: [] };
   for (const account of Object.values(accounts)) state.balances[account.symbolId] = account.balance;
 
   const byId = (id) => Object.values(accounts).find((a) => a.symbolId === id);
@@ -404,6 +414,43 @@ export async function installApi(context, options = {}) {
         (state.balances[receiver.symbolId] + destinationAmount).toFixed(2)
       );
       const reference = "■×□×+○●=○○□+−−=−+□□×";
+      // Recorded before the response is built, so the very next call to a
+      // history route sees it — the same ordering the real server has, where
+      // the row is committed inside the payment's own transaction.
+      const cashbackRate = receiver.cashbackRate ?? 0.01;
+      const cashback = Number((destinationAmount * cashbackRate).toFixed(2));
+      const cashbackCredit = Number(convert(cashback, receiver.currency, sender.currency).toFixed(2));
+      state.ledger.push({
+        id: `txn-${state.ledger.length + 1}`,
+        referenceId: reference,
+        // Both parties as they stood at payment time — the snapshot
+        // metadata.parties holds on the real row.
+        sender: {
+          symbolId: sender.symbolId,
+          fullName: sender.fullName,
+          countryIso: sender.countryIso,
+          currency: sender.currency
+        },
+        receiver: {
+          symbolId: receiver.symbolId,
+          fullName: receiver.fullName,
+          countryIso: receiver.countryIso,
+          currency: receiver.currency
+        },
+        sourceAmount,
+        sourceCurrency: sender.currency,
+        destinationAmount,
+        destinationCurrency: receiver.currency,
+        rate: fxRate(sender.currency, receiver.currency),
+        cashbackRate,
+        cashback,
+        cashbackCredit,
+        // A payee with a share rate produces a share leg, with its own
+        // reference — the thing the receipt's Creator Share tab names.
+        shareReferenceId: cashbackRate > 0 ? `SHARE-${state.ledger.length + 1}` : null,
+        note: body.note || "",
+        createdAt: new Date().toISOString()
+      });
       return json(200, {
         success: true,
         amountBasis: basis,
@@ -429,9 +476,63 @@ export async function installApi(context, options = {}) {
         receiverBalance: state.balances[receiver.symbolId]
       });
     }
-    if (pathname.startsWith("/api/transactions/history/")) return json(200, { transactions: [] });
+    // Projects the ledger for ONE viewer, the way server.js's history route
+    // does: direction from whose id is on the `from` side, and the
+    // counterparty being whichever party the viewer is not. Getting this
+    // backwards is the exact bug the tests exist to catch, so it is written
+    // here the same way it is written in the server — from the row's own
+    // sender id, never from anything the caller passes.
+    const projectFor = (viewer) =>
+      state.ledger
+        .filter((row) => row.sender.symbolId === viewer.symbolId || row.receiver.symbolId === viewer.symbolId)
+        .map((row) => {
+          const isSender = row.sender.symbolId === viewer.symbolId;
+          const other = isSender ? row.receiver : row.sender;
+          return {
+            id: row.id,
+            referenceId: row.referenceId,
+            direction: isSender ? "sent" : "received",
+            amount: row.destinationAmount,
+            currency: row.destinationCurrency,
+            senderCurrency: row.sourceCurrency,
+            debitAmount: row.sourceAmount,
+            fxRate: row.rate,
+            status: "success",
+            note: row.note || "",
+            counterparty: {
+              fullName: other.fullName,
+              symbolId: other.symbolId,
+              // The field whose absence was the whole problem: without a
+              // country there is no flag to put on a receipt.
+              countryIso: other.countryIso,
+              currency: other.currency,
+              fromSnapshot: true
+            },
+            cashbackRate: row.cashbackRate,
+            cashback: row.cashback,
+            cashbackCredit: row.cashbackCredit,
+            shareReferenceId: row.shareReferenceId,
+            createdAt: row.createdAt
+          };
+        })
+        .reverse();
+
+    if (pathname.startsWith("/api/transactions/history/")) {
+      const viewer = byId(decodeURIComponent(pathname.replace("/api/transactions/history/", "")));
+      if (!viewer) return json(404, { message: "Not found" });
+      const rows = projectFor(viewer);
+      return json(200, { success: true, symbolId: viewer.symbolId, count: rows.length, transactions: rows });
+    }
     if (pathname.startsWith("/api/transactions/")) {
-      return json(200, { transactions: [], totalSent: 0, totalReceived: 0 });
+      const viewer = byId(decodeURIComponent(pathname.replace("/api/transactions/", "").split("?")[0]));
+      if (!viewer) return json(200, { transactions: [], totalSent: 0, totalReceived: 0 });
+      const rows = projectFor(viewer);
+      return json(200, {
+        success: true,
+        transactions: rows,
+        totalSent: rows.filter((r) => r.direction === "sent").reduce((n, r) => n + r.amount, 0),
+        totalReceived: rows.filter((r) => r.direction === "received").reduce((n, r) => n + r.amount, 0)
+      });
     }
 
     // --- everything else the dashboard touches on arrival ---

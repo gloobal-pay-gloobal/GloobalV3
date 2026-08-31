@@ -16,6 +16,19 @@ import {
 // so it is switched off. Kept behind a flag rather than deleted because
 // it is a real interactive element (handleHeroCircleTap), not just art —
 // flip this to true to bring it back.
+// How big a Gloobal QR is drawn.
+//
+// 200 was too small to scan past roughly 7-8 inches: a phone camera needs
+// enough pixels per module to resolve the finder patterns, and a Gloobal code
+// is denser than a plain URL because it carries the full ID, the amount and a
+// checksum. 264 is a third larger in each dimension - nearly twice the area.
+//
+// The panel around it is a SQUARE with softly rounded corners rather than a
+// padded rectangle, so the quiet zone is even on all four sides. An uneven
+// quiet zone is not cosmetic: the decoder uses it to find the code's edge.
+var QR_PANEL_SIZE = 264;
+var QR_PANEL_RADIUS = 30;
+
 var SHOW_PHONE_HERO_CIRCLE = false;
 
 // The way out of the scanner for a payment that has no code behind it.
@@ -212,6 +225,24 @@ function mapServerTransaction(row, viewerSymbolId) {
 // it by the time someone reaches that step of registration; it's still
 // editable and still optional (the referral stage has its own "Skip for
 // now"), exactly as if they'd typed it in themselves.
+// The other half of a shared receipt (see GET /t/:referenceId and the share
+// handler in ReceiptModal): the app is opened at /?txn=<reference>.
+//
+// It is looked up in the viewer's OWN history and nowhere else. That is the
+// privacy design: a receipt link travels through WhatsApp and gets forwarded,
+// so anything that fetched the transaction by reference would let whoever
+// ends up holding the link read a stranger's payment. Both people who were
+// part of it already have the row; nobody else does.
+function readSharedTxnFromUrl() {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = new URLSearchParams(window.location.search).get("txn");
+    return raw ? decodeURIComponent(raw).trim() : "";
+  } catch (e) {
+    return "";
+  }
+}
+
 function readReferralCodeFromUrl() {
   if (typeof window === "undefined") return "";
   try {
@@ -542,6 +573,12 @@ function GloobalId() {
   // amountCents) instead of a separate request flow — the scanning
   // side already renders any nonzero amount as "Payment request".
   const [requestAmount, setRequestAmount] = useState19("");
+  // Read from inside the received-payments poll, which does not list
+  // requestAmount among its dependencies - a closed-over copy would be
+  // whatever the amount was when that effect last ran, so a request typed
+  // afterwards would never be recognised as paid.
+  const requestAmountRef = useRef13(requestAmount);
+  requestAmountRef.current = requestAmount;
   const [requestOpen, setRequestOpen] = useState19(false);
   const requestCents = Math.round((parseFloat(requestAmount) || 0) * 100);
   const [scanScreenTab, setScanScreenTab] = useState19("scan");
@@ -601,6 +638,28 @@ function GloobalId() {
       setScanResolving(false);
     }
   };
+  // A payment request is denominated in the REQUESTER's currency, not the
+  // scanner's.
+  //
+  // The QR payload carries an ID, an amount in minor units and a checksum -
+  // and no currency at all. The scan card formatted that bare number with the
+  // SCANNER's own symbol, so a Rs 2,596.05 request read as $2,596.05 to an
+  // American scanning it: a hundred-and-twentyfold overstatement of what they
+  // were about to pay, on the confirm screen.
+  //
+  // No change to the code format is needed. The resolve step already returns
+  // the payee's own registered country (recipientCountryIso), so the currency
+  // is knowable from the account - the better source anyway, since it stays
+  // right for a code printed before its holder moved country.
+  const scanRequestCurrency = (pending) => {
+    const iso = pending && pending.recipientCountryIso;
+    return (iso && COUNTRY_CURRENCY[iso]) || COUNTRY_CURRENCY[dialCountry.iso] || "USD";
+  };
+  const scanRequestSymbol = (pending) => {
+    const code = scanRequestCurrency(pending);
+    return CURRENCY_SYMBOL[code] || `${code} `;
+  };
+
   const handleQrScanned = async (rawCode) => {
     setScanError(null);
     if (usedQrCodes.has(rawCode)) {
@@ -1037,6 +1096,9 @@ function GloobalId() {
   // Dashboard.jsx. "send" and "coverage" don't go through this — they're
   // App.jsx's own activeScreen instead (see goToDashboardDestination).
   const [dashboardDeepLink, setDashboardDeepLink] = useState19(null);
+  // A receipt link someone was sent. Read once here; acted on further down,
+  // below the history it has to search.
+  const [sharedTxnRef, setSharedTxnRef] = useState19(() => readSharedTxnFromUrl());
   // Where the app map wanted to go when it was tapped from a screen that
   // isn't Dashboard and the person isn't currently signed in (e.g. they
   // signed out after registering once, and tap "Send Money" from the
@@ -1542,6 +1604,35 @@ function GloobalId() {
   // which it is (`direction`, computed per viewer); the client was throwing
   // the answer away.
   const [receivedMoneyHistory, setReceivedMoneyHistory] = useState19([]);
+
+  // Placed HERE, below sendMoneyHistory and receivedMoneyHistory, not beside
+  // the state it reads. A hook's dependency array is evaluated on EVERY
+  // render - before the `const`s further down the component body exist.
+  // Declared earlier, this threw "Cannot access 'receivedMoneyHistory' before
+  // initialization" during mount and the app rendered a blank white page.
+  useEffect15(() => {
+    if (!sharedTxnRef || stage !== "dashboard") return;
+    const found =
+      sendMoneyHistory.find((t) => t.txnId === sharedTxnRef) ||
+      receivedMoneyHistory.find((t) => t.txnId === sharedTxnRef);
+    if (!found) {
+      // The history fetch may not have landed yet, so this stays armed and
+      // re-runs when it does. A link for a payment this account was no part
+      // of quietly does nothing, which is the correct outcome.
+      return;
+    }
+    setSharedTxnRef("");
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("txn");
+      window.history.replaceState({}, "", url.toString());
+    } catch (e) {
+      // A browser that refuses replaceState still gets the receipt.
+    }
+    setDashboardHistoryDirection(
+      sendMoneyHistory.some((t) => t.txnId === found.txnId) ? "sending" : "receiving"
+    );
+  }, [sharedTxnRef, stage, sendMoneyHistory, receivedMoneyHistory]);
   useEffect15(() => {
     if (stage !== "dashboard") return;
     const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
@@ -1574,7 +1665,28 @@ function GloobalId() {
             amount: entry.amount,
             currencySymbol: CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "",
             from: entry.name
-          }));
+        }));
+          // A paid request clears itself, which is what makes the code on
+          // screen refresh.
+          //
+          // The QR is deterministic - encodeGloobalQR(id, amount) returns the
+          // same code for the same pair forever - so a request code could
+          // never change while the amount stood. Once someone paid it, the
+          // payer's device added it to usedQrCodes and refused it ever after,
+          // while the receiver went on displaying that exact dead code.
+          //
+          // Clearing the amount IS the refresh: requestCents drops to 0 and
+          // the panel re-mints a plain identity code. No timer - the trigger
+          // is the money landing, the only event that means the code is spent.
+          //
+          // Matched on the amount so an unrelated payment landing first does
+          // not wipe a request the person is still holding up. Both figures
+          // are in this account's own currency, compared in whole minor units.
+          const outstanding = Math.round(parseFloat(requestAmountRef.current || "0") * 100);
+          if (outstanding > 0 && received.some((entry) => Math.round((Number(entry.amount) || 0) * 100) === outstanding)) {
+          setRequestAmount("");
+          setRequestOpen(false);
+          }
         }
       } catch (e) {
         /* read-only; the dashboard works without it */
@@ -3137,7 +3249,23 @@ function GloobalId() {
       padding: 16,
       transition: "background 0.4s ease"
     }}
-  ><div style={{ background: "#fff", borderRadius: T.radiusXl, padding: 18, boxShadow: T.shadowCard }}>{
+  ><div
+    style={{
+      // A square panel sized off the code plus an even margin on all four
+      // sides. That margin IS the quiet zone the decoder needs, so it is
+      // deliberately equal rather than whatever padding looked balanced.
+      background: "#fff",
+      borderRadius: QR_PANEL_RADIUS,
+      padding: 20,
+      width: QR_PANEL_SIZE + 40,
+      height: QR_PANEL_SIZE + 40,
+      boxSizing: "border-box",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      boxShadow: T.shadowCard
+    }}
+  >{
     /* encodeGloobalQR returns null when the requested amount cannot be
        represented exactly, instead of the clamped code it used to return.
        Showing the limit here is the whole point of that change: this panel
@@ -3149,8 +3277,8 @@ function GloobalId() {
   }{(() => {
     const requestQrCode = encodeGloobalQR({ gloobalId: activeShareRole === "merchant" ? creatorId : secureId, amountCents: requestCents });
     return requestQrCode
-      ? <GloobalQRCode code={requestQrCode} size={200} />
-      : <div style={{ width: 200, height: 200, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center", padding: 12 }}><span style={{ fontSize: 13, fontWeight: 800, color: T.negative }}>Amount too large for a code</span><span style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45 }}>A payment request can carry up to {(QR_MAX_AMOUNT_CENTS / 100).toFixed(2)}. Lower the amount to show a code.</span></div>;
+      ? <GloobalQRCode code={requestQrCode} size={QR_PANEL_SIZE} />
+      : <div style={{ width: QR_PANEL_SIZE, height: QR_PANEL_SIZE, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center", padding: 12 }}><span style={{ fontSize: 13, fontWeight: 800, color: T.negative }}>Amount too large for a code</span><span style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45 }}>A payment request can carry up to {(QR_MAX_AMOUNT_CENTS / 100).toFixed(2)}. Lower the amount to show a code.</span></div>;
   })()}</div>{
     /* Same Creator Share edge badge the Receive screen's QR shows —
        one consistent "here's my share rate" affordance wherever your
@@ -3318,7 +3446,18 @@ function GloobalId() {
     /* The scanner itself is no longer here — it is a full-bleed layer on
        the overlay above, behind these controls. What is left is what has
        to sit ON the video: what the camera is doing, and the way out. */
-  }<div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}>{scanResolving ? "Looking this ID up\u2026" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "8px 14px", textAlign: "center", fontWeight: 700 }}>{scanError}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPendingPayment.amountCents > 0 ? "Payment request" : "Gloobal ID"}</div>{scanPendingPayment.amountCents > 0 && <div style={{ fontSize: 32, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: 14 }}>{CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "$"}{(scanPendingPayment.amountCents / 100).toFixed(2)}</div>}{scanPendingPayment.recipientName && <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPendingPayment.recipientName}</div>}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: scanPendingPayment.registered ? 20 : 8 }}><ColoredGloobalId id={scanPendingPayment.gloobalId} /></div>{
+  }<div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}>{scanResolving ? "Looking this ID up\u2026" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "8px 14px", textAlign: "center", fontWeight: 700 }}>{scanError}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPendingPayment.amountCents > 0 ? "Payment request" : "Gloobal ID"}</div>{scanPendingPayment.amountCents > 0 && (() => {
+    const asked = scanPendingPayment.amountCents / 100;
+    const askedCode = scanRequestCurrency(scanPendingPayment);
+    const mine = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
+    // What it will cost from this account. An estimate, and labelled as one:
+    // the server recomputes the corridor at payment time and its figure is
+    // what moves money. Shown only when the currencies differ.
+    const inMine = askedCode !== mine ? convert(asked, askedCode, mine) : null;
+    return <><div style={{ fontSize: 32, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: Number.isFinite(inMine) ? 4 : 14 }}>{scanRequestSymbol(scanPendingPayment)}{fmt(asked, askedCode)}</div>{Number.isFinite(inMine) && <div style={{ fontSize: 13, fontWeight: 700, color: T.inkFaint, marginBottom: 14 }}>
+                    \u2248 {CURRENCY_SYMBOL[mine] || `${mine} `}{fmt(inMine, mine)} from your balance
+                  </div>}</>;
+  })()}{scanPendingPayment.recipientName && <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPendingPayment.recipientName}</div>}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: scanPendingPayment.registered ? 20 : 8 }}><ColoredGloobalId id={scanPendingPayment.gloobalId} /></div>{
     /* Said plainly rather than left to be discovered after paying:
        nobody is registered under this ID, so there is no account on
        the other side for the backend to credit and the payment runs
@@ -3405,7 +3544,10 @@ function GloobalId() {
       scanVerifiedPinRef.current = null;
       setScanPayPinOpen(false);
     }}
-    amountLabel={scanPendingPayment ? `\u2212${CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "$"}${(scanPendingPayment.amountCents / 100).toFixed(2)}` : null}
+    // Same currency as the card that led here - a PIN screen quoting a
+    // different figure from the one just confirmed is how a person approves
+    // an amount they did not read.
+    amountLabel={scanPendingPayment ? `\u2212${scanRequestSymbol(scanPendingPayment)}${fmt(scanPendingPayment.amountCents / 100, scanRequestCurrency(scanPendingPayment))}` : null}
     onVerified={(verifiedPin) => {
       scanVerifiedPinRef.current = verifiedPin || null;
       setScanPayPinOpen(false);

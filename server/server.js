@@ -2458,6 +2458,44 @@ app.get('/r/:symbolId', lookupLimit, async (req, res) => {
   }
 });
 
+// A shared receipt link.
+//
+// Its only job is to check the reference names a real payment and hand the
+// visitor to the app with it attached - exactly what /r/:symbolId does for a
+// referral.
+//
+// It deliberately returns NOTHING about the transaction: no amount, no
+// parties, no currency. A receipt link travels through WhatsApp and gets
+// forwarded, and a route that described the payment would let anyone holding
+// a forwarded link read a stranger's money movement. The app on the other
+// side shows the receipt only if the visitor's OWN history contains it.
+app.get('/t/:referenceId', lookupLimit, async (req, res) => {
+  try {
+    const referenceId = safeDecodeSymbolId(req.params.referenceId).trim();
+
+    if (!referenceId) {
+      return res.status(404).json({ error: 'Receipt link is invalid or expired.' });
+    }
+
+    // Existence only - the projection is deliberately empty of anything
+    // worth leaking.
+    const exists = await Transaction.exists({ referenceId });
+
+    if (!exists) {
+      return res.status(404).json({ error: 'Receipt link is invalid or expired.' });
+    }
+
+    // Re-encoding is required for the same reason as the referral link: the
+    // reference is drawn from the Gloobal symbol set, and an unencoded '+' in
+    // a query string means a space.
+    return res.redirect(`${REFERRAL_APP_BASE_URL}/?txn=${encodeURIComponent(referenceId)}`);
+  } catch (error) {
+    console.error('Receipt link error:', error);
+
+    return res.status(500).json({ error: 'Server error while resolving receipt link.' });
+  }
+});
+
 app.put('/api/profile/:symbolId', writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const cleanSymbolId = String(req.params.symbolId || '').trim();

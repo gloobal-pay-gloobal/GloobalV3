@@ -104,7 +104,14 @@ var DAILY_SPENDING_PALETTES = {
 // they read as what they are: the whole, and the part you are pointing at.
 //
 // Absent (the wallet card), the header renders exactly as it always did.
-function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null, palette = "dark", trailing = null }) {
+// `currencyCode` is what the figures are formatted AGAINST.
+//
+// Without it these two numbers used toFixed(2) while the period total beside
+// them went through fmt(), so one line of the same card read +₹4747232.79 and
+// the other +₹5,727,195.10 — the same currency, formatted two different ways,
+// inches apart. fmt also knows which currencies have no minor unit, so a yen
+// figure stops being printed to two decimal places it does not have.
+function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null, palette = "dark", trailing = null, currencyCode = "USD" }) {
   const C = DAILY_SPENDING_PALETTES[palette] || DAILY_SPENDING_PALETTES.dark;
   const [weekOffset, setWeekOffset] = useState8(0);
   const [selectedDay, setSelectedDay] = useState8(null);
@@ -167,8 +174,8 @@ function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null
   // reads as a stray tick rather than a column.
   const barWidth = showPaid && showReceived ? 7 : 10;
   const displayed = selectedDay !== null ? days[selectedDay] : weekTotal;
-  const paidFigure = (!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{symbol}{displayed.paid.toFixed(2)}</span>;
-  const receivedFigure = (!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{symbol}{displayed.received.toFixed(2)}</span>;
+  const paidFigure = (!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{symbol}{fmt(Number(displayed.paid) || 0, currencyCode)}</span>;
+  const receivedFigure = (!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{symbol}{fmt(Number(displayed.received) || 0, currencyCode)}</span>;
   return <div style={{ position: "relative" }}><div style={{ display: "flex", justifyContent: trailing || !focusDirection ? "space-between" : "flex-start", alignItems: "baseline", gap: 10 }}>{
     /* With a trailing figure the left-hand ones are grouped, so
        space-between splits LEFT GROUP vs trailing rather than pushing the

@@ -1,6 +1,6 @@
 // src/features/history/TransactionHistoryScreen.jsx
 import { useState as useState12, useEffect as useEffect11, useRef as useRef9 } from "react";
-import { Filter as FilterHist, ChevronDown as ChevronDown4 } from "lucide-react";
+import { Filter as FilterHist, ChevronDown as ChevronDown4, Check as CheckPeriod } from "lucide-react";
 
 
 // src/features/history/TransactionHistoryScreen.jsx
@@ -29,11 +29,15 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
   const [receipt, setReceipt] = useState12(null);
   const requestCloseReceipt = useBackClose(!!receipt, () => setReceipt(null));
   const routedHistoryRef = useRef9(false);
-  // Today / This Week / This Month. Everything below — the two summary
-  // tiles, the daily chart and both sides of the pager — reads the same
-  // filtered rows, so the period is one choice rather than three
+  // The selected span, a day out to five years (HISTORY_PERIODS). Everything
+  // below — the totals, the daily chart and both sides of the pager — reads
+  // the same filtered rows, so the period is one choice rather than several
   // separately-scoped views that can disagree with each other.
   const [historyPeriod, setHistoryPeriod] = useState12("week");
+  const [periodPickerOpen, setPeriodPickerOpen] = useState12(false);
+  // The Android back gesture closes the sheet rather than leaving History —
+  // the same treatment every other overlay in the app gets.
+  const requestClosePeriodPicker = useBackClose(periodPickerOpen, () => setPeriodPickerOpen(false));
   // How many rows each side of the pager is currently showing. Two counts,
   // not one: the Received and Paid lists are independent lists, and expanding
   // one has no business expanding the other behind the swipe.
@@ -129,45 +133,44 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
        above this has a Received/Paid toggle, so the same two labels
        appeared twice within about 200px of each other and neither
        instance told you anything the other did not.
-       The period control is a compact segmented strip along the top of
-       the card it governs, which is also the honest place for it — it
-       filters these totals, the chart and the list all at once. The two
+       The period control is a single chip in the card's own corner, which
+       is also the honest place for it — it filters these totals, the chart
+       and the list all at once. The two
        figures below are unlabelled because a signed, coloured figure is
        already unambiguous under this app's one rule: + and green is
        money in, − and red is money out. Screen readers still get the
        full sentence via aria-label, since colour and sign are exactly
        what a reader cannot convey. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 3, padding: 5, background: T.surfaceAlt }}>{
-    /* A funnel, so the row reads as a control rather than as three words
-       someone left at the top of the screen. Decorative to a screen
-       reader — each segment is already a real button with aria-pressed,
-       which is what carries the state. */
-  }<span
-    aria-hidden="true"
-    style={{ display: "flex", alignItems: "center", padding: "0 7px 0 5px", flexShrink: 0 }}
-  ><FilterHist size={13} color={T.inkFaint} /></span>{HISTORY_PERIODS.map((p) => <button
-    key={p.key}
-    onClick={() => setHistoryPeriod(p.key)}
-    aria-pressed={historyPeriod === p.key}
+  }<button
+    onClick={() => setPeriodPickerOpen(true)}
+    aria-label={`Change period. Currently ${historyPeriodMeta(historyPeriod).label}`}
+    aria-haspopup="dialog"
     className="v2-tap"
     style={{
-      flex: 1,
-      border: "none",
+      // ONE box. The three fixed tabs sat on their own tinted band across
+      // the top of this card, which read as a separate control bar stuck
+      // above a chart rather than as part of it — and three tabs was
+      // already the most that would fit, with the period ladder now running
+      // out to five years.
+      //
+      // A funnel and the current period, on the card's own surface: it
+      // takes a corner instead of a row, holds nine options as easily as
+      // three, and the card is a single box again.
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      alignSelf: "flex-start",
+      margin: "12px 0 0 14px",
+      border: `1px solid ${T.line}`,
       borderRadius: 999,
-      padding: "6px 0",
+      background: "transparent",
+      padding: "5px 12px 5px 9px",
       cursor: "pointer",
       fontSize: 11.5,
       fontWeight: 800,
-      // The selected one is lifted onto the card's own surface rather
-      // than tinted a different colour — the same "raised chip" idea the
-      // pay-method filter below already uses, so the two filter rows on
-      // this screen read as the same kind of control.
-      background: historyPeriod === p.key ? T.surface : "transparent",
-      color: historyPeriod === p.key ? T.accent : T.inkFaint,
-      boxShadow: historyPeriod === p.key ? "0 1px 3px rgba(76,29,149,0.14)" : "none",
-      transition: "background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease"
+      color: T.accent
     }}
-  >{p.label}</button>)}</div>{(() => {
+  ><FilterHist size={13} color={T.accent} />{historyPeriodMeta(historyPeriod).label}</button>{(() => {
     /* ONE box, not two. The period total used to sit in its own card
        directly above the chart's card, and the two were describing the
        same filtered rows — the total for the period, and the figure for
@@ -192,6 +195,7 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
       weeks={historyDailyTrend.weeks}
       totals={historyDailyTrend.totals}
       symbol={ccy}
+      currencyCode={ccyCode}
       focusDirection={historyTab === "sending" ? "paid" : "received"}
       palette="light"
       trailing={<span
@@ -296,6 +300,54 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
         fontVariantNumeric: "tabular-nums"
       }}
     ><ChevronDown4 size={15} color={T.accent} />{remaining}</button>}</>}</div></div>;
-  })}</div><ReceiptModal receipt={receipt} onClose={requestCloseReceipt} /></div>;
+  })}</div>{
+    /* The period sheet.
+       Rises from the bottom rather than dropping from the chip: at nine
+       options it is a list, and a list belongs where a thumb is. Each row
+       is a real button carrying aria-pressed, so the current period is
+       announced rather than only shown in accent ink. */
+  }{periodPickerOpen && <div
+    onClick={requestClosePeriodPicker}
+    role="dialog"
+    aria-modal="true"
+    aria-label="Choose period"
+    style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(20,12,36,0.5)", display: "flex", alignItems: "flex-end" }}
+  ><div
+    onClick={(e) => e.stopPropagation()}
+    style={{
+      width: "100%",
+      background: T.surface,
+      borderTopLeftRadius: 22,
+      borderTopRightRadius: 22,
+      padding: "10px 0 calc(14px + env(safe-area-inset-bottom, 0px))",
+      maxHeight: "70vh",
+      overflowY: "auto"
+    }}
+  ><div
+    aria-hidden="true"
+    style={{ width: 38, height: 4, borderRadius: 999, background: T.line, margin: "0 auto 8px" }}
+  />{HISTORY_PERIODS.map((p) => <button
+    key={p.key}
+    onClick={() => {
+      setHistoryPeriod(p.key);
+      setPeriodPickerOpen(false);
+    }}
+    aria-pressed={historyPeriod === p.key}
+    className="v2-tap"
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      width: "100%",
+      border: "none",
+      background: "none",
+      padding: "14px 20px",
+      cursor: "pointer",
+      fontSize: 14,
+      fontWeight: historyPeriod === p.key ? 800 : 600,
+      color: historyPeriod === p.key ? T.accent : T.ink,
+      textAlign: "left"
+    }}
+  >{p.label}{historyPeriod === p.key && <CheckPeriod size={16} color={T.accent} />}</button>)}</div></div>}<ReceiptModal receipt={receipt} onClose={requestCloseReceipt} /></div>;
 }
 

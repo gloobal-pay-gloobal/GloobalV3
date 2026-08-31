@@ -1,14 +1,27 @@
 // src/features/history/historyUtils.js
-// Today / This Week / This Month, the three periods the History screen
-// filters by. `days` counts back INCLUSIVE of today, so "Today" is a
+// The periods the History screen filters by, a day out to five years.
+// `days` counts back INCLUSIVE of today, so "Today" is a
 // single day rather than a day and a bit, and "This Week" is the last
 // seven calendar days rather than the calendar week — someone looking at
 // their history on a Monday wants the week behind them, not the two days
 // since Sunday.
+// `weekPages` is how many pages of the DAILY chart a period offers, and it
+// deliberately stops climbing long before `days` does. Five years is 261
+// weeks; paging a day-by-day bar chart through 261 screens is not a chart
+// anyone reads, and building them all costs real time on every render. Past
+// about three months the chart's job changes from "the whole period" to "the
+// recent weeks within it" — the totals and the list below still cover the
+// full span, and they are what the long periods are actually for.
+var HISTORY_CHART_MAX_PAGES = 8;
 var HISTORY_PERIODS = [
   { key: "today", label: "Today", emptyLabel: "today", days: 1, weekPages: 1 },
   { key: "week", label: "This Week", emptyLabel: "this week", days: 7, weekPages: 2 },
-  { key: "month", label: "This Month", emptyLabel: "this month", days: 30, weekPages: 5 }
+  { key: "month", label: "This Month", emptyLabel: "this month", days: 30, weekPages: 5 },
+  { key: "months3", label: "3 Months", emptyLabel: "in 3 months", days: 90, weekPages: HISTORY_CHART_MAX_PAGES },
+  { key: "months6", label: "6 Months", emptyLabel: "in 6 months", days: 182, weekPages: HISTORY_CHART_MAX_PAGES },
+  { key: "year", label: "1 Year", emptyLabel: "this year", days: 365, weekPages: HISTORY_CHART_MAX_PAGES },
+  { key: "years2", label: "2 Years", emptyLabel: "in 2 years", days: 730, weekPages: HISTORY_CHART_MAX_PAGES },
+  { key: "years5", label: "5 Years", emptyLabel: "in 5 years", days: 1825, weekPages: HISTORY_CHART_MAX_PAGES }
 ];
 function historyPeriodMeta(period) {
   return HISTORY_PERIODS.find((p) => p.key === period) || HISTORY_PERIODS[1];

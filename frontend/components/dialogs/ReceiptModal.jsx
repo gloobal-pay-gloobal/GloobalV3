@@ -68,14 +68,46 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
+  // Share the RECEIPT, not the reference on its own.
+  //
+  // This used to hand the share sheet a bare 20-symbol reference. Pasted into
+  // WhatsApp it arrived as a wall of symbols that said nothing about what it
+  // was, from whom or for how much - and could not be acted on, because there
+  // was nowhere for it to lead.
+  //
+  // Now it opens the phone's own share sheet with a summary and a link. The
+  // summary is the sender deliberately disclosing their own payment, which is
+  // what sharing a receipt IS. The link carries only the reference (see
+  // GET /t/:referenceId) and the app it opens shows the receipt from the
+  // VIEWER'S OWN history, so a forwarded link tells a stranger nothing.
+  const receiptCountryName = (() => {
+    if (!receipt || !receipt.flag) return "";
+    const match = (typeof ALL_COUNTRIES !== "undefined" ? ALL_COUNTRIES : []).find((c) => c.flag === receipt.flag);
+    return match ? match.name : "";
+  })();
+  const receiptShareUrl = rawTxnId ? `${GLOOBAL_API_BASE}/t/${encodeURIComponent(rawTxnId)}` : "";
   const handleShareTxnId = () => {
     if (!rawTxnId) return;
-    if (navigator.share) {
-      navigator.share({ title: "Transaction ID", text: rawTxnId }).catch(() => {
-      });
-    } else {
-      handleCopyTxnId();
-    }
+    const money = `${receipt.currencySymbol || ""}${fmt(Number(receipt.amount || 0), receipt.currencyCode)}${receipt.currencyCode ? ` ${receipt.currencyCode}` : ""}`;
+    const who = receipt.name ? `${isSent ? "To" : "From"}: ${receipt.name}${receiptCountryName ? ` (${receiptCountryName})` : ""}` : "";
+    const lines = [
+      `Gloobal receipt - ${isSent ? "money sent" : "money received"}`,
+      money,
+      who,
+      `${receipt.date || ""}${receipt.time ? ` \u00b7 ${receipt.time}` : ""}`,
+      `Transaction ID: ${rawTxnId}`
+    ].filter(Boolean);
+    const text = lines.join("\n");
+    // The clipboard fallback copies the WHOLE receipt including the link,
+    // rather than the bare id it used to leave behind.
+    shareOrCopy(
+      { title: "Gloobal receipt", text, url: receiptShareUrl },
+      `${text}\n${receiptShareUrl}`,
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1400);
+      }
+    );
   };
   return <div
     onClick={onClose}

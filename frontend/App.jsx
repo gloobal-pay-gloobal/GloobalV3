@@ -16,19 +16,6 @@ import {
 // so it is switched off. Kept behind a flag rather than deleted because
 // it is a real interactive element (handleHeroCircleTap), not just art —
 // flip this to true to bring it back.
-// How big a Gloobal QR is drawn.
-//
-// 200 was too small to scan past roughly 7-8 inches: a phone camera needs
-// enough pixels per module to resolve the finder patterns, and a Gloobal code
-// is denser than a plain URL because it carries the full ID, the amount and a
-// checksum. 264 is a third larger in each dimension - nearly twice the area.
-//
-// The panel around it is a SQUARE with softly rounded corners rather than a
-// padded rectangle, so the quiet zone is even on all four sides. An uneven
-// quiet zone is not cosmetic: the decoder uses it to find the code's edge.
-var QR_PANEL_SIZE = 264;
-var QR_PANEL_RADIUS = 30;
-
 var SHOW_PHONE_HERO_CIRCLE = false;
 
 // The way out of the scanner for a payment that has no code behind it.
@@ -540,7 +527,15 @@ function GloobalId() {
         shareAmount: Number(share && share.amount) || 0,
         shareCurrency: (share && share.currency) || "",
         cashback: Number(result && result.cashback) || 0,
-        cashbackRate: Number(result && result.cashbackRate) || 0
+        cashbackRate: Number(result && result.cashbackRate) || 0,
+        // What actually left this account, in this account's own currency,
+        // as the SERVER computed it. The local history row records these
+        // rather than the typed figure: on a cross-border payment the typed
+        // figure is the receiver's side, and a row holding it without a
+        // currency is what made a ₹200 request appear as −£200.00 in a UK
+        // account's history.
+        debitAmount: Number.isFinite(Number(result && result.debitAmount)) ? Number(result.debitAmount) : null,
+        senderCurrency: (result && result.senderCurrency) || null
       };
     } catch (err) {
       return { ok: false, reason: err.message };
@@ -801,6 +796,13 @@ function GloobalId() {
     // scan never claims money moved, so it has nothing to be dishonest
     // about either way.
     let scanSettledRemotely = true;
+    // The currency this request is denominated in, and whether that is
+    // genuinely known. Both the confirmation card and the settlement below
+    // read these, which is what keeps them in step.
+    const requestCurrency = scanRequestCurrency(scanPendingPayment);
+    const requestCurrencyKnown = Boolean(
+      scanPendingPayment.recipientCountryIso && COUNTRY_CURRENCY[scanPendingPayment.recipientCountryIso]
+    );
     if (amount > 0) {
       let txnId = genTxnId();
       const now = /* @__PURE__ */ new Date();
@@ -829,11 +831,24 @@ function GloobalId() {
         // minted in one currency and scanned in another is ambiguous by
         // construction. Paying what the payer was shown is the honest
         // reading of it.
-        amountBasis: "source",
-        sourceAmount: amount,
-        sourceCurrency: COUNTRY_CURRENCY[dialCountry.iso] || undefined,
-        amount,
-        currency: COUNTRY_CURRENCY[dialCountry.iso] || undefined,
+        // Denominated on the side the payer was actually SHOWN.
+        //
+        // The card used to render a request with the scanner's own symbol,
+        // so "source" — pay what is on screen, in your own money — was the
+        // honest reading. The card now renders it in the REQUESTER's
+        // currency (scanRequestCurrency), which makes "source" settle a
+        // different sum than the one displayed: a ₹200 request read as
+        // "₹200.00, ≈ £1.67 from your balance" and then debited £200.
+        //
+        // "destination" is the server's own name for exactly this case —
+        // "a QR encodes a figure the payee named, and the sender pays
+        // whatever that converts to". The condition below is deliberately
+        // the SAME one the display uses, so what is shown and what is
+        // settled cannot disagree: when the payee's currency is unknown the
+        // card falls back to the scanner's own, and so does this.
+        ...(requestCurrencyKnown
+          ? { amountBasis: "destination", destinationAmount: amount, destinationCurrency: requestCurrency, amount, currency: requestCurrency }
+          : { amountBasis: "source", sourceAmount: amount, sourceCurrency: requestCurrency, amount, currency: requestCurrency }),
         receiver: { gloobalId: scanPendingPayment.gloobalId, name: scanPendingPayment.recipientName },
         pin: scanVerifiedPinRef.current || "",
         payMethodLabel: scanPayMethod,
@@ -882,10 +897,25 @@ function GloobalId() {
       // Held no longer than the send it authorised.
       scanVerifiedPinRef.current = null;
       if (result.ok) {
+        // What LEFT this account, in this account's own currency.
+        //
+        // `amount` is the figure on the card, which for a cross-border
+        // request is the RECEIVER's side (₹200). Recording that with no
+        // currency is why a UK account's history showed −£200.00 for a ₹200
+        // request: the row had a bare number and History labelled it with
+        // the viewer's symbol. Same defect as the restored rows, in the row
+        // written at payment time rather than the one read back.
+        //
+        // The server's own debit figure is preferred; the typed amount and
+        // its real currency are the fallback, so the row is always honestly
+        // labelled even when the payment stayed local.
+        const settledAmount = Number.isFinite(remote && remote.debitAmount) ? remote.debitAmount : amount;
+        const settledCurrency = (remote && remote.senderCurrency) || requestCurrency;
         const historyEntry = {
           name: scanPendingPayment.recipientName || scanPendingPayment.gloobalId,
           date: now.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-          amount,
+          amount: settledAmount,
+          currency: settledCurrency,
           // A skipped/local-only send must not read as "completed" here
           // either — History and the reopened receipt (buildHistoryReceipt
           // passes an unrecognised status straight through) are the only
@@ -1005,7 +1035,23 @@ function GloobalId() {
   // real, different identifier than Personal mode, not the same
   // secureId reused for both. Generated once per account, stably, the
   // same way suggestedRegId is.
-  const [creatorId] = useState19(() => genSuggestedId(12));
+  // The Creator ID IS the account's Gloobal ID.
+  //
+  // It used to be `genSuggestedId(12)` — a fresh random twelve symbols minted
+  // in the browser on every load, stored nowhere and registered with nothing.
+  // The string "creatorId" does not appear in server.js at all. So the code
+  // shown in Creator mode resolved to no account: scanning it produced "No
+  // Gloobal account is registered under this ID", the payment could not
+  // settle against the backend, and the identifier was different again the
+  // next time the app opened.
+  //
+  // The separate identifier was not needed even in principle. Creator Share
+  // is a property of the PAYEE'S ACCOUNT — the send route reads
+  // `receiver.cashbackRate` — so it already applies to any payment made to
+  // this person, whichever code was scanned. Splitting the identity did not
+  // enable Creator Share; it prevented it, by pointing payers at an ID that
+  // belonged to nobody.
+  const creatorId = secureId;
   // Mirrors DashboardScreen's own shareRole (that component owns the
   // toggle and all of its UI) up to this level, purely so the Scan
   // screen — rendered here, outside DashboardScreen — knows which of
@@ -3249,37 +3295,7 @@ function GloobalId() {
       padding: 16,
       transition: "background 0.4s ease"
     }}
-  ><div
-    style={{
-      // A square panel sized off the code plus an even margin on all four
-      // sides. That margin IS the quiet zone the decoder needs, so it is
-      // deliberately equal rather than whatever padding looked balanced.
-      background: "#fff",
-      borderRadius: QR_PANEL_RADIUS,
-      padding: 20,
-      width: QR_PANEL_SIZE + 40,
-      height: QR_PANEL_SIZE + 40,
-      boxSizing: "border-box",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      boxShadow: T.shadowCard
-    }}
-  >{
-    /* encodeGloobalQR returns null when the requested amount cannot be
-       represented exactly, instead of the clamped code it used to return.
-       Showing the limit here is the whole point of that change: this panel
-       displays "Requesting X" from requestCents just below, so a silently
-       clamped code meant the screen contradicted itself — the caption said
-       5000.00 while the code said 0.63. Refusing to draw a code is the
-       honest outcome, and it names the ceiling so the number can be
-       corrected rather than guessed at. */
-  }{(() => {
-    const requestQrCode = encodeGloobalQR({ gloobalId: activeShareRole === "merchant" ? creatorId : secureId, amountCents: requestCents });
-    return requestQrCode
-      ? <GloobalQRCode code={requestQrCode} size={QR_PANEL_SIZE} />
-      : <div style={{ width: QR_PANEL_SIZE, height: QR_PANEL_SIZE, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center", padding: 12 }}><span style={{ fontSize: 13, fontWeight: 800, color: T.negative }}>Amount too large for a code</span><span style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45 }}>A payment request can carry up to {(QR_MAX_AMOUNT_CENTS / 100).toFixed(2)}. Lower the amount to show a code.</span></div>;
-  })()}</div>{
+  ><GloobalQrPanel code={encodeGloobalQR({ gloobalId: activeShareRole === "merchant" ? creatorId : secureId, amountCents: requestCents })} />{
     /* Same Creator Share edge badge the Receive screen's QR shows —
        one consistent "here's my share rate" affordance wherever your
        code is displayed. Sits on the box's own right edge, clear of
@@ -3455,7 +3471,7 @@ function GloobalId() {
     // what moves money. Shown only when the currencies differ.
     const inMine = askedCode !== mine ? convert(asked, askedCode, mine) : null;
     return <><div style={{ fontSize: 32, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: Number.isFinite(inMine) ? 4 : 14 }}>{scanRequestSymbol(scanPendingPayment)}{fmt(asked, askedCode)}</div>{Number.isFinite(inMine) && <div style={{ fontSize: 13, fontWeight: 700, color: T.inkFaint, marginBottom: 14 }}>
-                    \u2248 {CURRENCY_SYMBOL[mine] || `${mine} `}{fmt(inMine, mine)} from your balance
+                    {"\u2248 "}{CURRENCY_SYMBOL[mine] || `${mine} `}{fmt(inMine, mine)} from your balance
                   </div>}</>;
   })()}{scanPendingPayment.recipientName && <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPendingPayment.recipientName}</div>}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: scanPendingPayment.registered ? 20 : 8 }}><ColoredGloobalId id={scanPendingPayment.gloobalId} /></div>{
     /* Said plainly rather than left to be discovered after paying:

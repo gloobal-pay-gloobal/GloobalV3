@@ -594,17 +594,44 @@ describe("a history row reads icon, name, date, amount", () => {
     assert.ok(!/HISTORY_METHOD_META/.test(row), "the method chip must not be rendered on the row");
   });
 
-  test("name and date share the free space, which is what centres the date", () => {
-    // Both need `flex: 1 1 0`. If only the name grows, the date ends up
-    // pinned against the amount rather than in the middle of the row.
+  test("the date sits UNDER the name, not in a column beside it", () => {
+    // These two used to assert a three-column row: mark, then name and date
+    // sharing the free space with the date centred between them, then the
+    // amount. That is not the row any more. The row now reads the way a
+    // chat list reads — name on top, date and time beneath it, amount on the
+    // right — which is what was asked for and what is on screen.
+    //
+    // So the assertion changed shape with the layout rather than being
+    // deleted: the text block is still `flex: 1 1 0` (it takes the space the
+    // mark and the amount leave), but inside it the name and stamp stack as
+    // a COLUMN. A row that went back to putting them side by side would fail
+    // here, which is the regression worth catching.
     const flexers = (row.match(/flex: "1 1 0"/g) || []).length;
-    assert.equal(flexers, 2, "name and date must each be flex: 1 1 0");
-    assert.match(row, /textAlign: "center"/);
+    assert.equal(flexers, 2, "the text block and its inner stack are each flex: 1 1 0");
+    assert.match(
+      row,
+      /flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column"/,
+      "name and stamp must stack vertically"
+    );
+    // And nothing in the row is centred any more — a centred date is the
+    // old layout leaking back in.
+    assert.ok(!/textAlign: "center"/.test(row), "no element in the row is centred");
   });
 
-  test("the amount is right-aligned with a fixed minimum width", () => {
-    // So figures line up as a column regardless of the name beside them.
-    assert.match(row, /minWidth: 86[\s\S]*?textAlign: "right"/);
+  test("the amount is a right-aligned column of its own that never shrinks", () => {
+    // So figures line up regardless of the name beside them, and a long name
+    // can never squeeze an amount into wrapping — a truncated amount is a
+    // wrong amount.
+    //
+    // Right alignment is now `alignItems: "flex-end"` on the column rather
+    // than `textAlign: "right"` on the text, because the column holds two
+    // stacked lines (amount, and the share line under it) that must share
+    // one right edge. The minimum width went 86 -> 92 when the date moved
+    // out of the middle and the amount column took the space.
+    assert.match(
+      row,
+      /flexShrink: 0, minWidth: 92, display: "flex", flexDirection: "column", alignItems: "flex-end"/
+    );
   });
 });
 

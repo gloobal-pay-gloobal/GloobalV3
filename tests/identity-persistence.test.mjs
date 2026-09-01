@@ -41,11 +41,13 @@ describe("1. the referral link identifies the account, not the persona", () => {
     assert.ok(!/shareableGloobalId/.test(line), "referralLink must not use shareableGloobalId");
   });
 
-  test("the ID shown on screen is still allowed to be role-aware", () => {
-    // Deliberately unchanged: the displayed ID and the QR legitimately switch
-    // to the Creator ID, because scanning the two means different things.
-    // Only the REFERRAL link was wrong.
-    assert.match(dash, /const shareableGloobalId = shareRole === "merchant"/);
+  test("the displayed ID is now the account's own too", () => {
+    // This used to assert the opposite: that the displayed ID legitimately
+    // switched to a separate Creator ID. That Creator ID turned out to be a
+    // random client-side value registered with nothing (see
+    // qr-panel-and-identity.test.mjs), so both roles now show the account's
+    // real Gloobal ID — which is what the referral link had always needed.
+    assert.match(dash, /const shareableGloobalId = personalGloobalId;/);
   });
 });
 

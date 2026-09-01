@@ -1745,6 +1745,72 @@ app.get('/api/profile/count', async (req, res) => {
 // figure is that country's actual registered-user count, and totalUsers
 // (a straight countDocuments()) is always exactly the sum of byCountry's
 // values, by construction — one field can never drift from the other.
+// How the whole platform has set its Creator Share.
+//
+// The overview screen used to derive its bars from the viewer's OWN rate
+// alone — 100% in whichever bucket they sat in, 0% everywhere else — and
+// said so plainly underneath ("1 user, 1 rate"). Honest, but it answered a
+// question nobody asked: what people generally choose is the only reason to
+// look at a distribution.
+//
+// COUNTS ONLY. The response carries a total and a per-bucket tally and
+// nothing else: no ids, no names, no per-user rates. A distribution is
+// exactly the shape of data that is safe to publish and easy to leak
+// through, so the aggregation is done in the database and only the tallies
+// come back.
+//
+// cashbackRate is stored as a FRACTION (0.0211 = 2.11%), which is what the
+// send route multiplies by. The buckets are whole percentage points, so it
+// is scaled by 100 here and floored — a rate of exactly 7% lands in the last
+// bucket rather than falling off the end.
+app.get('/api/creator-share/distribution', lookupLimit, async (req, res) => {
+  try {
+    const BUCKETS = 7;
+    const rows = await User.aggregate([
+      {
+        $project: {
+          bucket: {
+            $min: [
+              BUCKETS - 1,
+              { $floor: { $multiply: [{ $ifNull: ['$cashbackRate', 0] }, 100] } }
+            ]
+          }
+        }
+      },
+      // A negative or absurd stored rate is not counted rather than being
+      // folded into bucket 0, where it would quietly inflate a real figure.
+      { $match: { bucket: { $gte: 0, $lte: BUCKETS - 1 } } },
+      { $group: { _id: '$bucket', users: { $sum: 1 } } }
+    ]);
+
+    const counts = new Array(BUCKETS).fill(0);
+    for (const row of rows) {
+      const i = Number(row._id);
+      if (Number.isInteger(i) && i >= 0 && i < BUCKETS) counts[i] = Number(row.users) || 0;
+    }
+    // The total is the sum of what was actually bucketed, NOT
+    // User.countDocuments(). Percentages have to add up to 100 against the
+    // population they describe; dividing by a larger total would show seven
+    // bars summing to less than 100 with no explanation on screen.
+    const totalUsers = counts.reduce((sum, n) => sum + n, 0);
+
+    return res.json({
+      success: true,
+      totalUsers,
+      buckets: counts.map((users, i) => ({
+        from: i,
+        to: i + 1,
+        users,
+        pct: totalUsers > 0 ? Math.round((users / totalUsers) * 1000) / 10 : 0
+      }))
+    });
+  } catch (error) {
+    console.error('Creator Share distribution error:', error);
+
+    return res.status(500).json({ success: false, message: 'Could not load the Creator Share distribution.' });
+  }
+});
+
 app.get('/api/stats', async (req, res) => {
   try {
     const [totalUsers, byCountry] = await Promise.all([

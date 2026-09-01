@@ -245,10 +245,18 @@ describe("the request screen cannot draw a code for the wrong amount", () => {
 
   test("the caller handles a refused code", async () => {
     const { readSource: read } = await import("./harness.mjs");
-    const src = read("frontend/App.jsx");
+    // The message moved with the panel: every screen now draws its QR
+    // through the shared GloobalQrPanel (components/common/gloobalQRCode.jsx)
+    // instead of each sizing and framing its own, so the refusal lives there
+    // once rather than being repeated per caller.
+    const src = read("frontend/components/common/gloobalQRCode.jsx");
     assert.ok(
       /Amount too large for a code/.test(src),
       "the Request panel must say why no code is shown"
+    );
+    assert.ok(
+      /QR_MAX_AMOUNT_CENTS/.test(src),
+      "and must name the ceiling, so the amount can be corrected rather than guessed at"
     );
   });
 });

@@ -560,12 +560,22 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // registered. null means the server could not be reached, which renders as
   // "—" rather than as a number nobody counted.
   const [platformUserCount, setPlatformUserCount] = useState14(null);
+  // How everyone has actually set their Creator Share. Counts per bucket and
+  // nothing else (GET /api/creator-share/distribution). null means it could
+  // not be read, and the bars fall back to this account's own single choice
+  // rather than to invented figures.
+  const [shareDistribution, setShareDistribution] = useState14(null);
   useEffect12(() => {
     if (!showCreatorOverview) return undefined;
     let cancelled = false;
     (async () => {
-      const total = await GloobalApi.getPlatformUserCount();
-      if (!cancelled) setPlatformUserCount(total);
+      const [total, distribution] = await Promise.all([
+        GloobalApi.getPlatformUserCount(),
+        GloobalApi.getCreatorShareDistribution()
+      ]);
+      if (cancelled) return;
+      setPlatformUserCount(total);
+      setShareDistribution(distribution);
     })();
     return () => {
       cancelled = true;
@@ -728,9 +738,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // while the Scan screen (reading the real session) showed the true one.
   // That is the same account displaying two different Gloobal IDs.
   //
-  // The Creator ID is a local-only identifier with no backend record, which
-  // is why it needs an override at all and the personal ID does not.
+  // Kept declared but no longer read: both roles now resolve to the account's
+  // own Gloobal ID (see activeCreatorId below). Removing the state entirely
+  // is a wider edit than this change needs; what matters is that nothing
+  // reads it, so it cannot reintroduce a second identity.
   const [creatorIdOverride, setCreatorIdOverride] = useState14(null);
+  void creatorIdOverride;
+  void setCreatorIdOverride;
   // Declared early so shareableGloobalId (right below) can already be
   // role-aware — same source of truth toggleShareRole/roleSendHistory
   // further down use, just introduced here instead of down there.
@@ -856,12 +870,20 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // showed different IDs depending on where you looked.
   const currentSymbolId = useCurrentSymbolId(myGloobalId);
   const personalGloobalId = currentSymbolId && currentSymbolId.length === 12 ? currentSymbolId : "++++++++++++";
-  // Same real code the Scan screen's "My Code" tab shows for the same
-  // role. Creator mode deliberately shares a different identifier
-  // (creatorId): scanning the two means different things, so this is the
-  // one place the displayed ID is legitimately not the personal one.
-  const activeCreatorId = creatorIdOverride || creatorId;
-  const shareableGloobalId = shareRole === "merchant" ? activeCreatorId : personalGloobalId;
+  // ONE identity, both roles.
+  //
+  // Creator mode used to show a separate `creatorId` — twelve random symbols
+  // minted in the browser, registered with nothing (see App.jsx). Scanning
+  // that code resolved to no account, so it could not be paid; and because
+  // it was regenerated on every load, the same account showed a different
+  // Creator ID each time it opened.
+  //
+  // Creator Share never depended on it: the send route applies
+  // `receiver.cashbackRate`, a property of the payee's ACCOUNT, to any
+  // payment made to them. So both roles now show and share the account's own
+  // Gloobal ID, and a code scanned in either mode reaches a real account.
+  const activeCreatorId = personalGloobalId;
+  const shareableGloobalId = personalGloobalId;
   const gloobalIdTag = shareableGloobalId;
   // Bug fix: this used to point at https://gloobal.id/r/... — a domain
   // that was never wired up to anything (not this app, not the backend,
@@ -990,11 +1012,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       { id: newIdBuffer, previousId, date: now.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" }), time: formatClockTime(now), at: now.getTime() },
       ...h
     ]);
-    // Only the Creator ID is held locally. A personal rename needs no local
-    // copy at all: the PATCH above succeeded, onGloobalIdChange wrote it into
+    // No local copy is kept for either role now that they are one identity.
+    // The PATCH above renamed the account, onGloobalIdChange wrote it into
     // the session, and useCurrentSymbolId re-reads that — so every screen,
-    // including the ones outside this component, moves together.
-    if (isCreatorRename) setCreatorIdOverride(newIdBuffer);
+    // including the ones outside this component, moves together. Holding a
+    // separate override here would put the old divergence straight back:
+    // after a rename, Creator mode would show a value personal mode did not.
+    void isCreatorRename;
     setNewIdBuffer("");
     requestCloseProfileOverlay();
   };
@@ -2354,13 +2378,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       position: "relative",
       display: "flex",
       justifyContent: "center",
-      padding: 22,
-      borderRadius: 20,
-      background: T.surfaceAlt,
-      border: `1px solid ${T.line}`,
       marginBottom: 18
     }}
-  ><GloobalQRCode code={encodeGloobalQR({ gloobalId: gloobalIdTag, amountCents: 0 })} size={230} onSecondsLeftChange={setReceiveQrSecondsLeft} /><div style={{ position: "absolute", top: "50%", right: 0, transform: "translate(50%, -50%)", perspective: 200 }}><button
+  >{
+    /* The SAME panel the Scan screen's My Code tab uses. This used to be a
+       230px code inside its own tinted 22px box while the other was 264px on
+       a white card - same code, same purpose, two sizes and two frames. */
+  }<GloobalQrPanel code={encodeGloobalQR({ gloobalId: gloobalIdTag, amountCents: 0 })} onSecondsLeftChange={setReceiveQrSecondsLeft} /><div style={{ position: "absolute", top: "50%", right: 0, transform: "translate(50%, -50%)", perspective: 200 }}><button
     onClick={() => {
       requestCloseReceive();
       setShowMyShare(true);
@@ -3648,11 +3672,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     aria-label="Maximum share percentage"
     style={{ width: "100%", border: `1.5px solid ${T.line}`, borderRadius: T.radiusMd, padding: "9px 10px", fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "inherit" }}
   /></div></div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 16px" }}><div style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>
-                Real Creator Share choices on this account
-              </div>{computeCreatorShareDistribution(myShareRate).map((row, i) => <div key={row.range} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}><span style={{ width: 40, flexShrink: 0, fontSize: 12, fontWeight: 700, color: T.ink }}>{row.range}</span><span style={{ flex: 1, height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden" }}><span style={{ display: "block", width: `${row.pct}%`, height: "100%", borderRadius: 999, background: GH_CATEGORIES[i % GH_CATEGORIES.length].color, transition: "width 0.3s ease" }} /></span><span style={{ width: 32, flexShrink: 0, textAlign: "right", fontSize: 12, fontWeight: 800, color: T.inkSoft }}>{row.pct}%</span></div>)}</div><div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: T.radiusLg, background: T.accentSoft, padding: "14px 16px" }}><span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: T.surface, display: "flex", alignItems: "center", justifyContent: "center" }}><PieChart size={16} color={T.accent} /></span><span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4 }}>
+                {shareDistribution && shareDistribution.totalUsers > 0
+                  ? `Real Creator Share choices across ${shareDistribution.totalUsers} ${shareDistribution.totalUsers === 1 ? "account" : "accounts"}`
+                  : "Real Creator Share choices on this account"}
+              </div>{creatorShareDistributionRows(shareDistribution, myShareRate).map((row, i) => <div key={row.range} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}><span style={{ width: 40, flexShrink: 0, fontSize: 12, fontWeight: 700, color: T.ink }}>{row.range}</span><span style={{ flex: 1, height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden" }}><span style={{ display: "block", width: `${row.pct}%`, height: "100%", borderRadius: 999, background: GH_CATEGORIES[i % GH_CATEGORIES.length].color, transition: "width 0.3s ease" }} /></span><span style={{ width: 32, flexShrink: 0, textAlign: "right", fontSize: 12, fontWeight: 800, color: T.inkSoft }}>{row.pct}%</span></div>)}</div><div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: T.radiusLg, background: T.accentSoft, padding: "14px 16px" }}><span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: T.surface, display: "flex", alignItems: "center", justifyContent: "center" }}><PieChart size={16} color={T.accent} /></span><span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4 }}>
                 Your own rate is <strong>{myShareRate}%</strong>. You can change it any time from My Share.
               </span></div><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>
-              This account is the only real Creator Share choice tracked so far — 1 user, 1 rate, 100% in that one bucket. Not a projection or an example.
+              {shareDistribution && shareDistribution.totalUsers > 0
+                ? `Every rate actually set on Gloobal, counted. ${shareDistribution.totalUsers} ${shareDistribution.totalUsers === 1 ? "account" : "accounts"} \u2014 not a projection or an example.`
+                : "This account is the only real Creator Share choice tracked so far \u2014 1 user, 1 rate, 100% in that one bucket. Not a projection or an example."}
             </div></div></div>}{
     /* Saving a new Gloobal ID — same verification, required before the
        change actually takes effect. */

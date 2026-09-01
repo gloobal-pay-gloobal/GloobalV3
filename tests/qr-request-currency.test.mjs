@@ -90,18 +90,36 @@ describe("the scan card resolves the currency from the payee", () => {
 });
 
 describe("the code is drawn large enough to scan", () => {
-  test("one named size, used by the panel and the fallback alike", () => {
-    assert.match(app, /var QR_PANEL_SIZE = 264;/);
-    assert.match(app, /<GloobalQRCode code=\{requestQrCode\} size=\{QR_PANEL_SIZE\} \/>/);
+  // These two used to read App.jsx, because App.jsx sized and framed its own
+  // QR panel inline. Three screens each did that separately and all three
+  // came out different, which is the inconsistency GloobalQrPanel exists to
+  // end — so the size and the quiet zone are now asserted where they are
+  // actually defined, once, in the shared component. Asserting them against
+  // App.jsx now would be asserting against a copy that no longer exists.
+  const panel = readSource("frontend/components/common/gloobalQRCode.jsx");
+
+  test("one named size, used by every screen that shows a code", () => {
+    assert.match(panel, /var QR_PANEL_SIZE = 300;/);
+    // The size the panel draws at is the size it was given, not one the
+    // component re-derives — that indirection is the whole point of naming
+    // it once. Matched without pinning the surrounding props, so adding a
+    // callback to the code element does not read as a size regression.
+    assert.match(panel, /<GloobalQRCode\s+code=\{code\}\s+size=\{size\}/);
+    // And App.jsx must go through the shared panel rather than re-rolling one.
+    assert.match(app, /<GloobalQrPanel code=\{encodeGloobalQR\(/);
   });
 
   test("the panel is square, so the quiet zone is even on all four sides", () => {
     // Not cosmetic: the decoder uses the quiet zone to find the code's edge.
-    const at = app.indexOf("borderRadius: QR_PANEL_RADIUS");
-    assert.ok(at > 0, "QR panel radius not applied");
-    const block = app.slice(at - 300, at + 400);
-    assert.match(block, /width: QR_PANEL_SIZE \+ 40/);
-    assert.match(block, /height: QR_PANEL_SIZE \+ 40/);
+    // One padding constant on all four sides is what makes it even — the old
+    // inline version added 40 to width and height to match a padding of 20,
+    // and those two numbers could drift apart. Here they cannot.
+    const at = panel.indexOf("function GloobalQrPanel(");
+    assert.ok(at > 0, "GloobalQrPanel not found");
+    const block = panel.slice(at, at + 900);
+    assert.match(block, /width: size \+ QR_PANEL_QUIET \* 2/);
+    assert.match(block, /height: size \+ QR_PANEL_QUIET \* 2/);
+    assert.match(block, /padding: QR_PANEL_QUIET/);
     assert.match(block, /boxSizing: "border-box"/);
   });
 });
@@ -153,5 +171,61 @@ describe("a paid request clears itself, so the code refreshes", () => {
     const at = code.indexOf("const outstanding = Math.round(parseFloat");
     const block = code.slice(at - 600, at + 400);
     assert.ok(!/setTimeout|setInterval/.test(block), "a request must expire on payment, not on a clock");
+  });
+});
+
+describe("what is settled matches what was shown", () => {
+  // The collision that produced −£200.00 for a ₹200 request: the card was
+  // changed to display the REQUESTER's currency while the payment still went
+  // out "source"-denominated — pay 200 of the SENDER's own money. Both
+  // changes were right on their own; together they moved a sum nobody agreed
+  // to. The server's contract already names this case: amountBasis
+  // 'destination' is "a QR encodes a figure the payee named, and the sender
+  // pays whatever that converts to".
+  const code = app.replace(/^\s*\/\/.*$/gm, "");
+  const at = code.indexOf("const remote = await handleRemoteSend({");
+  const call = code.slice(at, code.indexOf("});", at));
+
+  test("the scan payment is destination-denominated when the payee's currency is known", () => {
+    assert.match(call, /amountBasis: "destination"/);
+    assert.match(call, /destinationAmount: amount/);
+  });
+
+  test("it falls back to source only where the display does too", () => {
+    // The invariant: shown and settled read the SAME condition, so they
+    // cannot disagree.
+    assert.match(call, /requestCurrencyKnown/);
+    assert.match(call, /amountBasis: "source"/);
+    assert.match(code, /const requestCurrencyKnown = Boolean\(/);
+    assert.match(code, /scanPendingPayment\.recipientCountryIso && COUNTRY_CURRENCY\[scanPendingPayment\.recipientCountryIso\]/);
+  });
+
+  test("it never settles in the scanner's own currency by default", () => {
+    // The old line read sourceCurrency: COUNTRY_CURRENCY[dialCountry.iso].
+    assert.ok(
+      !/COUNTRY_CURRENCY\[dialCountry\.iso\]/.test(call),
+      "the scan payment must not be denominated in the scanner's currency"
+    );
+  });
+
+  test("the server hands back what actually left the account", () => {
+    assert.match(code, /debitAmount: Number\.isFinite\(Number\(result && result\.debitAmount\)\)/);
+    assert.match(code, /senderCurrency: \(result && result\.senderCurrency\) \|\| null/);
+  });
+
+  test("the local history row records that debit, with its currency", () => {
+    // A row with a bare number is the bug — History labels it with whatever
+    // the viewer's account uses.
+    assert.match(code, /const settledAmount = Number\.isFinite\(remote && remote\.debitAmount\) \? remote\.debitAmount : amount;/);
+    assert.match(code, /const settledCurrency = \(remote && remote\.senderCurrency\) \|\| requestCurrency;/);
+    assert.match(code, /amount: settledAmount,\s*\n\s*currency: settledCurrency,/);
+  });
+});
+
+describe("the approximate line renders as a character, not an escape", () => {
+  test("the unicode escape is an expression, not JSX text", () => {
+    // JSX text does not process \u escapes — written bare it printed the
+    // literal "\u2248 £1.67 from your balance" on the confirm screen.
+    assert.match(app, /\{"\\u2248 "\}/);
   });
 });

@@ -254,3 +254,48 @@ function GloobalQRCode({ code, size = 200, onSecondsLeftChange }) {
   // now where the brand identity lives on this code instead.
   return <div style={{ width: size, height: size, display: "flex", alignItems: "center", justifyContent: "center" }}>{built ? <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Gloobal QR code"><rect width={size} height={size} fill="#fff" />{qrModules}</svg> : null}</div>;
 }
+
+
+// ONE panel for every Gloobal QR on screen.
+//
+// There were two, drawn differently: the Receive sheet's at 230px on a tinted
+// rounded box, and the Scan screen's My Code at 264px on a white card with
+// 20px of padding. Same code, same purpose, two sizes and two frames — and
+// nothing stopping a third from appearing.
+//
+// The frame is now a hairline and the padding is the minimum a decoder
+// needs, which is what lets the code itself be as large as the screen
+// allows. That padding is the QUIET ZONE: the decoder uses it to find the
+// code's edge, so it is deliberately equal on all four sides rather than
+// whatever looked balanced. A bigger code with an even margin is the whole
+// difference between "hold it close" and "point at it".
+var QR_PANEL_SIZE = 300;
+var QR_PANEL_QUIET = 12;
+var QR_PANEL_RADIUS = 18;
+
+function GloobalQrPanel({ code, size = QR_PANEL_SIZE, onSecondsLeftChange, children }) {
+  return <div
+    style={{
+      position: "relative",
+      width: size + QR_PANEL_QUIET * 2,
+      height: size + QR_PANEL_QUIET * 2,
+      boxSizing: "border-box",
+      padding: QR_PANEL_QUIET,
+      background: "#fff",
+      border: `1px solid ${T.line}`,
+      borderRadius: QR_PANEL_RADIUS,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }}
+  >{code
+    ? <GloobalQRCode code={code} size={size} onSecondsLeftChange={onSecondsLeftChange} />
+    : <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center", padding: 16 }}>{
+        /* Refusing to draw a code is the honest outcome for an amount the
+           payload cannot carry — a silently clamped code would contradict
+           the "Requesting X" caption beside it. The ceiling is NAMED so the
+           number can be corrected rather than guessed at. */
+      }<span style={{ fontSize: 13, fontWeight: 800, color: T.negative }}>Amount too large for a code</span><span style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45 }}>
+          A payment request can carry up to {(QR_MAX_AMOUNT_CENTS / 100).toFixed(2)}. Lower the amount to show a code.
+        </span></div>}{children}</div>;
+}

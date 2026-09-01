@@ -670,6 +670,27 @@ var GloobalApi = {
   // GET /api/transactions/:symbolId — the same projection plus lifetime
   // totals, in one call, so the balance card's PAID and RECEIVED figures
   // can never be built from three different reads of the ledger.
+  // Platform-wide Creator Share distribution — counts per bucket, nothing
+  // else. Returns null when the server cannot be reached, so the caller can
+  // fall back to the single-account view rather than draw invented bars.
+  async getCreatorShareDistribution() {
+    try {
+      const result = await gloobalApiClient.get("/api/creator-share/distribution");
+      if (!result || !Array.isArray(result.buckets)) return null;
+      return {
+        totalUsers: Number(result.totalUsers) || 0,
+        buckets: result.buckets.map((b) => ({
+          from: Number(b.from) || 0,
+          to: Number(b.to) || 0,
+          users: Number(b.users) || 0,
+          pct: Number(b.pct) || 0
+        }))
+      };
+    } catch (e) {
+      return null;
+    }
+  },
+
   async getTransactionSummary(symbolId, type) {
     const result = await gloobalApiClient.get(
       `/api/transactions/${encodeURIComponent(symbolId)}?type=${encodeURIComponent(type || "all")}`

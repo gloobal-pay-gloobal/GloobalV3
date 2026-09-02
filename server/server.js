@@ -31,6 +31,13 @@ const { mintShareLegAndReceipts } = require('./lib/merchantShareFlow');
 const Country = require('./models/Country');
 const AuditLog = require('./models/AuditLog');
 const CountryCurrencyPool = require('./models/CountryCurrencyPool');
+// Read-only here, and only by duplicatePaymentResponse below: a repeated
+// idempotencyKey has to answer with the same settlement and the same
+// receipts the original request answered with, and those live on their own
+// collections. Nothing in this file writes either — settlement is written by
+// lib/settlementEngine.js and receipts by lib/merchantShareFlow.js.
+const Settlement = require('./models/Settlement');
+const Receipt = require('./models/Receipt');
 const GeuSupply = require('./models/GeuSupply');
 const GeuEntryMint = require('./models/GeuEntryMint');
 const GeuGrowthEvent = require('./models/GeuGrowthEvent');
@@ -3418,6 +3425,174 @@ function cleanTransactionPayload(transaction, sender, receiver) {
   };
 }
 
+// One stable order for the `receipts` array on POST /api/transactions/send.
+//
+// The four receipts of a merchant-share payment are written by two
+// Promise.all pairs (see lib/merchantShareFlow.js), so the order they come
+// back in — from the create calls on a first request, or from a find() on a
+// repeat — is not guaranteed to be the same twice. That is harmless in
+// itself: nothing reads the array positionally. It stops being harmless the
+// moment the two responses have to be comparable, which is what RC-3 asks
+// for, so both paths sort through this.
+const RECEIPT_LEG_ORDER = { payment: 0, share: 1 };
+const RECEIPT_ROLE_ORDER = { shared: 0, payer: 1, payee: 2 };
+const byReceiptLegAndRole = (a, b) =>
+  (RECEIPT_LEG_ORDER[a.leg] ?? 9) - (RECEIPT_LEG_ORDER[b.leg] ?? 9) ||
+  (RECEIPT_ROLE_ORDER[a.role] ?? 9) - (RECEIPT_ROLE_ORDER[b.role] ?? 9);
+
+// The answer POST /api/transactions/send gives when it recognises a request
+// it has already carried out — a repeated `idempotencyKey`.
+//
+// ── Why this exists (audit finding RC-3, 2 September 2026) ────────────────
+//
+// Both duplicate paths in that route used to answer with just
+//
+//     { success, duplicate: true, message, transaction: cleanTransactionPayload(...) }
+//
+// and cleanTransactionPayload carries the DESTINATION side only — `amount`
+// and `currency` are the receiver's face value, by design. So the reply to a
+// repeated request was missing sourceAmount, sourceCurrency,
+// destinationAmount, destinationCurrency, debitAmount, senderCurrency,
+// fxRate, amountBasis, cashback, the settlement, the share leg and the
+// receipts. Every one of those is present on the 201.
+//
+// That made the response shape depend on WHICH request the client's answer
+// came from, and the client reads those fields to decide what a payment
+// cost. Its fallback for a missing debitAmount was the typed amount — which
+// on a cross-border payment is the receiver's figure — so one payment could
+// be recorded locally as "₹95,000 out" or "$1,000 out" depending on nothing
+// but whether the first response reached the browser. Same payment, two
+// records, chosen by latency. That is the whole of the intermittency the
+// audit was called to explain.
+//
+// So a duplicate now answers with the same canonical result the original
+// request answered with, rebuilt from what was actually stored.
+//
+// Three rules this follows, and they are the point of it:
+//
+//   1. It READS. Every figure below comes off a persisted document — the
+//      Transaction and its metadata, the LedgerEntry lines, the Settlement,
+//      the share Transaction, the Receipts, the AssetSeed. Nothing is
+//      recomputed from the request, and no FX lookup happens: recomputing
+//      would reintroduce the same class of bug one layer down, because a
+//      rate fetched now is not the rate this payment was settled at.
+//   2. It MOVES NOTHING. No balance, no pool, no row is written. The
+//      payment already happened; this only describes it.
+//   3. It INVENTS NOTHING. A row written before a field existed answers
+//      null for that field, exactly as GET /api/transactions/history
+//      already does. Absent is a fact the client can act on; a fabricated
+//      figure is not.
+//
+// Two fields are deliberately AS OF NOW rather than as of the payment, and
+// they are the same two the 201 reports that way:
+//
+//   newBalance  the sender's balance now, not a property of this payment.
+//               If something else has moved it since, the newer figure is
+//               the right answer, not a stale one.
+//   assetSeed   computeSeed derives interestAccrued/interestAvailable from
+//               elapsed time on every read, by design (see its comment), so
+//               a seed re-read a second later legitimately reports a
+//               fractionally larger unclaimed bonus. Its recorded half —
+//               amountPaid, cashback, cashbackRate, currency — does not move.
+//
+// Everything else in the response is fixed at the moment of payment and must
+// match the 201 exactly.
+async function duplicatePaymentResponse(transaction, sender, receiver) {
+  const metadata = transaction.metadata || {};
+  // Absent stays absent. Number(undefined) is NaN and Number(null) is 0, and
+  // a 0 here would read as "this payment cost nothing".
+  const storedNumber = (value) => (Number.isFinite(Number(value)) ? Number(value) : null);
+
+  const [settlement, shareTransaction, paymentReceipts, plantedSeed, receiverCreditLine] =
+    await Promise.all([
+      Settlement.findOne({ transactionId: transaction._id }).lean(),
+      Transaction.findOne({ type: 'share', 'metadata.paymentTransactionId': transaction._id }).lean(),
+      Receipt.find({ transactionId: transaction._id }).lean(),
+      AssetSeed.findOne({ transactionId: transaction._id }).lean(),
+      // What the payee was ACTUALLY credited, read off the ledger line that
+      // credited them rather than re-derived as amount minus cashback. The
+      // ledger is the record of what moved; the subtraction is a guess at it.
+      LedgerEntry.findOne({
+        transactionId: transaction._id,
+        userId: transaction.toUserId,
+        entryType: 'credit',
+      }).lean(),
+    ]);
+
+  // The share leg's own receipts, which the 201 returns alongside the
+  // payment's. Fetched second because it needs the share leg's id.
+  const shareReceipts = shareTransaction
+    ? await Receipt.find({ transactionId: shareTransaction._id }).lean()
+    : [];
+
+  const senderNow = await User.findById(transaction.fromUserId).select('balance').lean();
+  // Rounded the same way the 201 rounds it (performTransfer's
+  // senderBalanceAfter), against the currency this payment recorded, so the
+  // two responses do not differ by float noise alone.
+  const senderCurrency = metadata.senderCurrency || null;
+  const newBalance = senderCurrency
+    ? toMinorUnit(accountBalanceOf(senderNow || {}), senderCurrency)
+    : accountBalanceOf(senderNow || {});
+
+  return {
+    success: true,
+    duplicate: true,
+    message: 'Duplicate request ignored. Existing transaction returned.',
+    transaction: cleanTransactionPayload(transaction, sender, receiver),
+    newBalance,
+    // Each of these is the same field, under the same name, carrying the
+    // same value as the 201 that created this row.
+    cashback: storedNumber(metadata.cashbackCredit),
+    cashbackCurrency: senderCurrency,
+    cashbackRate: storedNumber(metadata.cashbackRate),
+    payeeReceives: storedNumber(receiverCreditLine?.amount),
+    debitAmount: storedNumber(metadata.debitAmount),
+    senderCurrency,
+    destinationCurrency: metadata.destinationCurrency || transaction.currency || null,
+    fxRate: storedNumber(metadata.fxRate),
+    fxRateSource: metadata.fxRateSource || null,
+    sourceAmount: storedNumber(metadata.sourceAmount),
+    sourceCurrency: metadata.sourceCurrency || senderCurrency,
+    destinationAmount: storedNumber(metadata.destinationAmount),
+    amountBasis: metadata.amountBasis || null,
+    assetSeed: plantedSeed ? computeSeed(plantedSeed) : null,
+    settlement: settlement
+      ? {
+          settlementId: settlement.settlementId,
+          sourceCountryIso: settlement.sourceCountryIso,
+          sourceCurrency: settlement.sourceCurrency,
+          sourceAmount: settlement.sourceAmount,
+          sourceCashbackRelease: settlement.sourceCashbackRelease,
+          destinationCountryIso: settlement.destinationCountryIso,
+          destinationCurrency: settlement.destinationCurrency,
+          destinationAmount: settlement.destinationAmount,
+          destinationCashbackReturn: settlement.destinationCashbackReturn,
+          rate: settlement.rate,
+          rateSource: settlement.rateSource,
+          status: settlement.status,
+        }
+      : null,
+    shareTransaction: shareTransaction
+      ? {
+          referenceId: shareTransaction.referenceId,
+          amount: shareTransaction.amount,
+          currency: shareTransaction.currency,
+        }
+      : null,
+    // Same order the 201 emits them in, so the two responses compare field
+    // for field.
+    receipts: [...paymentReceipts, ...shareReceipts]
+      .sort(byReceiptLegAndRole)
+      .map((r) => ({
+        receiptId: r.receiptId,
+        leg: r.leg,
+        role: r.role,
+        amount: r.amount,
+        currency: r.currency,
+      })),
+  };
+}
+
 // Is this Gloobal ID free to claim?
 //
 // Public, because registration has to ask it before anybody has an account to
@@ -4580,12 +4755,14 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       }).sort({ createdAt: -1 });
 
       if (existingIdempotentTransaction) {
-        return res.status(200).json({
-          success: true,
-          duplicate: true,
-          message: 'Duplicate request ignored. Existing transaction returned.',
-          transaction: cleanTransactionPayload(existingIdempotentTransaction, sender, receiver),
-        });
+        // The same canonical result the original request returned, rebuilt
+        // from what was stored — not the destination-side-only summary this
+        // used to answer with. See duplicatePaymentResponse for why (RC-3).
+        // Nothing below this point runs: no balance moves, no row is
+        // written, and no FX rate is fetched.
+        return res.status(200).json(
+          await duplicatePaymentResponse(existingIdempotentTransaction, sender, receiver)
+        );
       }
     }
 
@@ -5057,12 +5234,12 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         }).sort({ createdAt: -1 });
 
         if (winningTransaction) {
-          return res.status(200).json({
-            success: true,
-            duplicate: true,
-            message: 'Duplicate request ignored. Existing transaction returned.',
-            transaction: cleanTransactionPayload(winningTransaction, sender, receiver),
-          });
+          // Same canonical result as the pre-check path above, for the same
+          // reason (RC-3) — the loser of the index race must not get a
+          // thinner answer than the winner did.
+          return res.status(200).json(
+            await duplicatePaymentResponse(winningTransaction, sender, receiver)
+          );
         }
         // Extremely unlikely (the winner's own transaction should already be
         // committed by the time its index write conflict reaches us here),
@@ -5229,7 +5406,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             currency: shareTransaction.currency,
           }
         : null,
-      receipts: receipts.map((r) => ({
+      // Sorted, so that a repeat of this request (see
+      // duplicatePaymentResponse) can return the same array rather than the
+      // same four receipts in whatever order Mongo hands them back.
+      receipts: [...receipts].sort(byReceiptLegAndRole).map((r) => ({
         receiptId: r.receiptId,
         leg: r.leg,
         role: r.role,

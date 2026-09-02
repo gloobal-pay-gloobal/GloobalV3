@@ -68,6 +68,18 @@ function gloobalSessionSave(user, phoneNumber, biometricEnrolled) {
       (previousUser.mobileNumber && user.mobileNumber && previousUser.mobileNumber === user.mobileNumber)
     )
   );
+  // Was there an ACCOUNT here before this save, as opposed to no account at
+  // all? Not the same question as `previous` being non-null: the very first
+  // thing a registration or a sign-in writes is the bearer token
+  // (gloobalAuthTokenSave, below), which creates a blob holding a token and
+  // nothing else. At the moment the session itself is first saved, that blob
+  // exists but names nobody.
+  //
+  // Hoisted up here from the account-switch notice at the end of this
+  // function, which has always drawn exactly this distinction and states the
+  // reasoning in full. The token now uses the same answer, because the two
+  // questions are the same question.
+  const hadPreviousAccount = Boolean(previousUser && previousUser.symbolId);
   // undefined keeps whatever was already stored, so a save on every render
   // can't wipe a flag the enrolment step just set.
   const enrolled = biometricEnrolled === void 0 ? Boolean(sameAccount && previous.biometricEnrolled) : Boolean(biometricEnrolled);
@@ -79,10 +91,44 @@ function gloobalSessionSave(user, phoneNumber, biometricEnrolled) {
         phoneNumber: phoneNumber || "",
         // Carried across a save for the SAME account — this function is called
         // at several points that know the user but not the token, and dropping
-        // it there would sign the person out mid-flow. A different account
+        // it there would sign the person out mid-flow. A DIFFERENT account
         // signing in on this device gets no token until it earns its own,
         // which is the one case where inheriting would be a real leak.
-        token: (sameAccount && previous.token) || null,
+        //
+        // ── Why `!hadPreviousAccount` is here (2 September 2026) ──────────
+        //
+        // This was `(sameAccount && previous.token) || null`, and it threw
+        // away the token of every brand-new registration.
+        //
+        // The order of a registration is: POST /api/register-symbol returns a
+        // token, GloobalApi.register stores it with gloobalAuthTokenSave —
+        // which writes a blob of `{ savedAt, token }` and NO user, because no
+        // session has been saved yet — and only later, at the biometric step,
+        // does the flow call this function for the first time. At that point
+        // `previousUser` is undefined, so `sameAccount` was false, so the
+        // token the account had just been issued was overwritten with null.
+        //
+        // The account was registered, the PIN was set, and the dashboard then
+        // sent every request with no Authorization header at all: profile,
+        // balance, assets, PayLater and transactions each came back 401, which
+        // surfaced as "Unable to load balance" on a freshly created account.
+        // The person had to go back and sign in to get a token that had
+        // already been minted for them minutes earlier. The same thing
+        // happened to a first-ever sign-in on a device with empty storage,
+        // for the same reason and at the same line.
+        //
+        // The guard itself is right; it was asking the wrong question. It
+        // exists so account A's credential is not inherited by account B, and
+        // that danger requires an account A. A blob with a token and no user
+        // has no A to leak from: gloobalSessionClear removes the whole key on
+        // sign-out (token and identity together), and gloobalAuthTokenSave is
+        // only ever called by registration, login and passkey sign-in — each
+        // for the account being saved here, moments earlier. So a token
+        // sitting next to no identity is, by construction, this account's own.
+        //
+        // Unchanged: a stored session that names a DIFFERENT account still
+        // yields no token. That case keeps the old behaviour exactly.
+        token: (((sameAccount || !hadPreviousAccount) && previous && previous.token) || null),
         savedAt: Date.now(),
         // Same account-scoping as the flag below: a new account signing in
         // on this device starts its own "logged in at", not the previous
@@ -142,7 +188,8 @@ function gloobalSessionSave(user, phoneNumber, biometricEnrolled) {
   // (Dashboard.jsx's idUpdateHistory) never survived long enough to be
   // seen, since it is local state on the very component instance that had
   // just unmounted.
-  const hadPreviousAccount = Boolean(previousUser && previousUser.symbolId);
+  // hadPreviousAccount is computed at the top of this function now — the
+  // token carried above asks the same question and must get the same answer.
   if (!sameAccount && hadPreviousAccount) gloobalNotifyAccountSwitched(user.symbolId);
 }
 

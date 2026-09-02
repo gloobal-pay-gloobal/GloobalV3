@@ -906,11 +906,45 @@ function GloobalId() {
         // the viewer's symbol. Same defect as the restored rows, in the row
         // written at payment time rather than the one read back.
         //
-        // The server's own debit figure is preferred; the typed amount and
-        // its real currency are the fallback, so the row is always honestly
-        // labelled even when the payment stayed local.
-        const settledAmount = Number.isFinite(remote && remote.debitAmount) ? remote.debitAmount : amount;
-        const settledCurrency = (remote && remote.senderCurrency) || requestCurrency;
+        // WHICH SIDE of the payment this row records, decided by whether the
+        // backend settled it — not by which fields happened to arrive.
+        //
+        // Audit fix RC-3. This used to be one expression:
+        //
+        //     Number.isFinite(remote && remote.debitAmount) ? remote.debitAmount : amount
+        //
+        // where `amount` is the figure on the card — the DESTINATION side of
+        // a cross-border request. Both halves were honestly labelled (a
+        // missing debitAmount meant a missing senderCurrency too, so the
+        // currency fell back alongside the number). The defect is subtler
+        // than a mislabel and worse than one: the row SWITCHED SIDES. The
+        // same payment recorded either "₹95,000 out" or "$1,000 out"
+        // depending on which branch ran — and which branch ran depended on
+        // the server, because a repeated idempotencyKey used to be answered
+        // without `debitAmount` at all (see duplicatePaymentResponse in
+        // server.js). One payment, two histories, chosen by latency.
+        //
+        // The two cases are separate now, and the choice is made on a fact
+        // about the payment rather than on the shape of a response:
+        //
+        //   settled remotely — the server is the authority on what left this
+        //     account, and it now always says, on the first response and on
+        //     a repeat alike. Nothing substitutes for it.
+        //   local simulation — no balance moved anywhere, so there is no
+        //     debit to record. The honest row is the figure on the card in
+        //     the currency it was shown in, and it is marked "simulated"
+        //     below so it can never be read as a real payment.
+        //
+        // The `?? amount` is not the old fallback returning: it can only be
+        // reached by a remotely-settled payment whose stored row predates
+        // metadata.debitAmount existing, which no payment made against a
+        // current server can be. It keeps such a row readable and correctly
+        // denominated rather than blank; it never applies to a payment this
+        // build made.
+        const settledAmount = settledRemotely ? (remote.debitAmount ?? amount) : amount;
+        const settledCurrency = settledRemotely
+          ? (remote.senderCurrency || requestCurrency)
+          : requestCurrency;
         const historyEntry = {
           name: scanPendingPayment.recipientName || scanPendingPayment.gloobalId,
           date: now.toLocaleDateString("en-US", { month: "short", day: "numeric" }),

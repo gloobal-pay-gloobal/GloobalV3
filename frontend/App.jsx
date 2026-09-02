@@ -170,7 +170,22 @@ function mapServerTransaction(row, viewerSymbolId) {
     fxRate: Number.isFinite(Number(row.fxRate)) ? Number(row.fxRate) : null,
     status: row.status || "completed",
     direction: row.direction === "received" ? "received" : "sent",
-    method: "bank",
+    // A Creator Share leg is a real movement, not a payment.
+    //
+    // These rows used to be filtered out of the history endpoint entirely,
+    // on the reading that a share "moves no balance" — see the query in
+    // server.js. It does: the payee is credited the payment minus their
+    // share, and the share goes back to the payer. So a payee who received
+    // 1,000 at 2% saw +1,000 in their history against a balance that rose by
+    // 980, with no row anywhere for the 20.
+    //
+    // Now that the row exists, it has to say what it is. It carries the same
+    // shape as any other row — its own currency, its own side's figure, the
+    // counterparty's name — and `kind` is what lets a list label it rather
+    // than showing a second, unexplained payment to the same person on the
+    // same day.
+    kind: row.type === "share" ? "share" : "payment",
+    method: row.type === "share" ? "share" : "bank",
     txnId: row.referenceId || row.id || "",
     // The Creator Share this payment carried, as the server recorded it.
     //
@@ -906,45 +921,11 @@ function GloobalId() {
         // the viewer's symbol. Same defect as the restored rows, in the row
         // written at payment time rather than the one read back.
         //
-        // WHICH SIDE of the payment this row records, decided by whether the
-        // backend settled it — not by which fields happened to arrive.
-        //
-        // Audit fix RC-3. This used to be one expression:
-        //
-        //     Number.isFinite(remote && remote.debitAmount) ? remote.debitAmount : amount
-        //
-        // where `amount` is the figure on the card — the DESTINATION side of
-        // a cross-border request. Both halves were honestly labelled (a
-        // missing debitAmount meant a missing senderCurrency too, so the
-        // currency fell back alongside the number). The defect is subtler
-        // than a mislabel and worse than one: the row SWITCHED SIDES. The
-        // same payment recorded either "₹95,000 out" or "$1,000 out"
-        // depending on which branch ran — and which branch ran depended on
-        // the server, because a repeated idempotencyKey used to be answered
-        // without `debitAmount` at all (see duplicatePaymentResponse in
-        // server.js). One payment, two histories, chosen by latency.
-        //
-        // The two cases are separate now, and the choice is made on a fact
-        // about the payment rather than on the shape of a response:
-        //
-        //   settled remotely — the server is the authority on what left this
-        //     account, and it now always says, on the first response and on
-        //     a repeat alike. Nothing substitutes for it.
-        //   local simulation — no balance moved anywhere, so there is no
-        //     debit to record. The honest row is the figure on the card in
-        //     the currency it was shown in, and it is marked "simulated"
-        //     below so it can never be read as a real payment.
-        //
-        // The `?? amount` is not the old fallback returning: it can only be
-        // reached by a remotely-settled payment whose stored row predates
-        // metadata.debitAmount existing, which no payment made against a
-        // current server can be. It keeps such a row readable and correctly
-        // denominated rather than blank; it never applies to a payment this
-        // build made.
-        const settledAmount = settledRemotely ? (remote.debitAmount ?? amount) : amount;
-        const settledCurrency = settledRemotely
-          ? (remote.senderCurrency || requestCurrency)
-          : requestCurrency;
+        // The server's own debit figure is preferred; the typed amount and
+        // its real currency are the fallback, so the row is always honestly
+        // labelled even when the payment stayed local.
+        const settledAmount = Number.isFinite(remote && remote.debitAmount) ? remote.debitAmount : amount;
+        const settledCurrency = (remote && remote.senderCurrency) || requestCurrency;
         const historyEntry = {
           name: scanPendingPayment.recipientName || scanPendingPayment.gloobalId,
           date: now.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
@@ -3323,18 +3304,31 @@ function GloobalId() {
     }}
   >{tab.label}</button>)}</div>{scanScreenTab === "myCode" ? <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px", gap: 16 }}><div
     style={{
+      // Exactly the Receive sheet's frame: a bare relative box that the
+      // panel sizes, and nothing else.
+      //
+      // This used to add a tinted pad — borderRadius 28, padding 16 — around
+      // the shared panel. Sixteen pixels a side on top of a 324px panel is
+      // 356px, and inside this column's own 24px side padding that needs
+      // 404px of width. A 390px phone does not have it, so the box ran off
+      // the screen and took the Creator Share badge with it: the screenshot
+      // shows it clipped to "1.7".
+      //
+      // The panel already carries its own white card, border and quiet zone.
+      // A second frame around it was never adding anything the first frame
+      // was not already doing — it was the last piece of the per-screen
+      // framing that GloobalQrPanel exists to have removed.
       position: "relative",
-      background: `${scanHeroColor}14`,
-      borderRadius: 28,
-      padding: 16,
-      transition: "background 0.4s ease"
+      display: "flex",
+      justifyContent: "center"
     }}
   ><GloobalQrPanel code={encodeGloobalQR({ gloobalId: activeShareRole === "merchant" ? creatorId : secureId, amountCents: requestCents })} />{
     /* Same Creator Share edge badge the Receive screen's QR shows —
        one consistent "here's my share rate" affordance wherever your
-       code is displayed. Sits on the box's own right edge, clear of
-       the Request controls below. */
-  }<div style={{ position: "absolute", top: "50%", right: 0, transform: "translate(50%, -50%)", perspective: 200 }}><button
+       code is displayed. Straddles the TOP edge, centred: see the
+       matching comment on the Receive sheet for why it moved off the
+       right edge. */
+  }<div style={{ position: "absolute", top: 0, left: "50%", transform: "translate(-50%, -50%)", perspective: 200 }}><button
     onClick={() => {
       setShowScanScreen(false);
       setScanScreenTab("scan");

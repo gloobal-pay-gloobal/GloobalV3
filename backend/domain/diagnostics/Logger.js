@@ -38,7 +38,7 @@ function summarize(eventName, payload) {
     case DomainEvent.SETTLEMENT_POSTED:
       return `settled ${payload.kind} \u20B9${payload.amount}`;
     case DomainEvent.PROVENANCE_COMPLETED:
-      return `txn ${payload.txnId} completed \u2014 complaint window until ${new Date(payload.complaintWindowExpiresAt).toLocaleTimeString()}`;
+      return `txn ${payload.txnId} completed \u2014 complaint window until ${formatClockTime(new Date(payload.complaintWindowExpiresAt))}`;
     case DomainEvent.LOCATION_OBSERVATION_SUBMITTED:
       return `txn ${payload.txnId} \u2014 ${payload.role} location: ${payload.status}`;
     case DomainEvent.TRANSACTION_FAILED:

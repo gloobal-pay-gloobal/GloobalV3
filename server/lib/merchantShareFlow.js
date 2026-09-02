@@ -16,14 +16,23 @@
 // share-leg failure must never fail, reverse, or relabel an
 // already-successful payment.
 //
-// The share leg deliberately moves no real balance. The cashback amount is
-// already reflected as the payer's AssetSeed (planted separately in
-// server.js, same as before this file existed) — recording it a second
-// time as a live credit would double it out of nowhere. This Transaction
-// exists purely so the diversion has its own ID and its own two-sided
-// receipt, the way the diagrams describe it, without touching the money
-// engine that Backend/tests/transfer-atomicity.test.mjs and
-// coin-supply-invariant.test.mjs already guard.
+// The share leg performs no balance write OF ITS OWN, and that is a
+// statement about this file, not about the money. The movement it records
+// has already happened, inside the payment leg: performTransfer credits the
+// payee `amount - cashback` rather than `amount`, and credits `cashbackCredit`
+// back to the payer. Writing a balance here as well would double it.
+//
+// The distinction matters because it was previously lost. This leg was
+// flagged `noBalanceMovement: true`, three history queries read that as "no
+// money moved" and excluded 'share' rows, and the result was a payee whose
+// history said +1,000 while their balance rose by 980 — the 2% they shared
+// visible on the receipt and on no other screen. A ledger you cannot add up
+// against your own balance is not a ledger. The row now appears in history,
+// carrying each side's own currency, so the arithmetic closes.
+//
+// The money engine itself is still untouched here, which is what keeps
+// Backend/tests/transfer-atomicity.test.mjs and coin-supply-invariant.test.mjs
+// meaningful.
 const crypto = require('crypto');
 const Transaction = require('../models/Transaction');
 const Receipt = require('../models/Receipt');
@@ -127,7 +136,28 @@ async function issueSharedReceipt({ transaction, amount, currency, note }) {
  * a failure here means fewer/no receipts exist for this payment, not that
  * the payment is invalid — logged, not surfaced.
  */
-async function mintShareLegAndReceipts({ paymentTransaction, sender, receiver, amount, cashback, currency, assetSeedId }) {
+async function mintShareLegAndReceipts({
+  paymentTransaction,
+  sender,
+  receiver,
+  amount,
+  cashback,
+  currency,
+  // The share leg's two sides, each in its own currency.
+  //
+  // `cashback` above is what the PAYER got back, in the payer's own currency
+  // (server.js passes cashbackCredit). `payeeCashback`/`payeeCurrency` are
+  // the same diversion seen from the payee's side — the figure actually
+  // withheld from what they were credited, in their currency. On a
+  // same-currency payment the two pairs are identical; across a corridor
+  // they are not, and a row that shows one side's figure under the other
+  // side's symbol is the exact defect that put ₹478,000 on a dollar row.
+  cashbackCurrency,
+  payeeCashback,
+  payeeCurrency,
+  cashbackRate,
+  assetSeedId,
+}) {
   try {
     const hasShare = Number.isFinite(cashback) && cashback > 0;
 
@@ -155,11 +185,35 @@ async function mintShareLegAndReceipts({ paymentTransaction, sender, receiver, a
     // payer the seed belongs to — same direction as AssetSeed.userId, and
     // the opposite direction of the payment leg above, because this leg
     // documents value moving back toward the payer, not away from them.
+    // The payment's party snapshot, SWAPPED.
+    //
+    // counterpartyFor() reads parties.receiver when the viewer is the row's
+    // sender and parties.sender when they are its receiver. This leg runs
+    // opposite to the payment — its sender is the payment's receiver — so
+    // reusing the payment's snapshot unswapped would name each party as
+    // themselves. Without a snapshot at all the row reaches the client with
+    // no name and no country, which is to say no flag and "Gloobal User".
+    const paymentParties = paymentTransaction?.metadata?.parties;
+    const shareParties = paymentParties
+      ? { sender: paymentParties.receiver, receiver: paymentParties.sender }
+      : undefined;
+
     const shareTransaction = await Transaction.create({
       fromUserId: receiver._id,
       toUserId: sender._id,
+      // `amount`/`currency` are the RECEIVING side's own money — the same
+      // contract every payment row in this system follows, and what
+      // mapServerTransaction on the client reads for a row it is shown as
+      // 'received'. This leg is received by the payer, so it is their
+      // credit in their currency.
+      //
+      // It used to be `cashback` with the payment's `currency`, which mixed
+      // the two: the figure was already the payer's (server.js passes
+      // cashbackCredit) but the currency was the payee's. Same number and
+      // same symbol on a domestic payment, so it read correctly for years;
+      // wrong by the whole exchange rate the moment the two sides differ.
       amount: cashback,
-      currency,
+      currency: cashbackCurrency || currency,
       type: 'share',
       status: 'success',
       note: `Share on ${paymentTransaction.referenceId}`,
@@ -169,23 +223,25 @@ async function mintShareLegAndReceipts({ paymentTransaction, sender, receiver, a
         paymentTransactionId: paymentTransaction._id,
         paymentReferenceId: paymentTransaction.referenceId,
         assetSeedId: assetSeedId || null,
-        noBalanceMovement: true,
-        // The same two-party snapshot the payment itself carries, copied
-        // across rather than re-derived, so the share leg and the payment it
-        // belongs to can never disagree about who was involved.
+        // This RECORD moves no balance of its own — but the movement it
+        // documents is real and already happened, inside the payment leg's
+        // own writes: the payee was credited amount - cashback rather than
+        // amount, and the payer was credited cashbackCredit back.
         //
-        // Note the DIRECTION is deliberately inverted relative to the payment:
-        // fromUserId on this row is the merchant (whose cut this represents)
-        // and toUserId is the payer, because a share documents value moving
-        // back TOWARD the payer. `parties` follows the row it is on, so
-        // `parties.sender` here is the merchant — the same rule
-        // counterpartyFor applies everywhere else.
-        parties: paymentTransaction?.metadata?.parties
-          ? {
-              sender: paymentTransaction.metadata.parties.receiver,
-              receiver: paymentTransaction.metadata.parties.sender,
-            }
-          : undefined,
+        // The old flag here said `noBalanceMovement: true`, and readers took
+        // it to mean no money moved at all. Three history queries excluded
+        // 'share' rows on that reading, which is why a payee who shared 2%
+        // saw +1,000 in their history while their balance rose by 980, with
+        // the missing 20 on the receipt and nowhere else. The name now says
+        // what is actually true.
+        balanceMovedWithPaymentLeg: true,
+        // The paying side of THIS leg — the payee, whose credit was reduced
+        // — in their own currency. Read by the client exactly as a payment
+        // row's debitAmount/senderCurrency are.
+        debitAmount: Number.isFinite(payeeCashback) ? payeeCashback : cashback,
+        senderCurrency: payeeCurrency || currency,
+        cashbackRate: Number.isFinite(cashbackRate) ? cashbackRate : 0,
+        ...(shareParties ? { parties: shareParties } : {}),
       },
     });
 

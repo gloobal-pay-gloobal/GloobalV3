@@ -119,3 +119,78 @@ describe("every Gloobal QR is drawn by one panel", () => {
     assert.match(qr, /QR_MAX_AMOUNT_CENTS/);
   });
 });
+
+describe("neither screen adds a frame of its own around the panel", () => {
+  // Reported as "the QR on My Code is too big, it's breaking the screen".
+  //
+  // Both screens drew the same 300px panel, but My Code wrapped it in a
+  // tinted pad — borderRadius 28, padding 16. That is 356px inside a column
+  // with 24px of side padding, so the layout wanted 404px on a 390px phone.
+  // The panel itself was never the problem; the second frame around it was,
+  // and it took the Creator Share badge off the edge of the screen with it
+  // (the screenshot showed it clipped mid-way through "1.77%").
+  //
+  // Unifying the panel was supposed to have ended per-screen framing. This
+  // was the piece that survived it.
+
+  test("My Code no longer pads the panel inside a tinted box", () => {
+    const at = app.indexOf('scanScreenTab === "myCode" ?');
+    assert.ok(at > 0, "the My Code branch was not found");
+    // The wrapper is the styled div immediately before the panel.
+    const panelAt = app.indexOf("<GloobalQrPanel", at);
+    const wrapper = app.slice(at, panelAt).replace(/^\s*\/\/.*$/gm, "");
+    assert.ok(
+      !/padding: 16/.test(wrapper),
+      "the panel must not sit inside its own padded box"
+    );
+    assert.ok(
+      !/borderRadius: 28/.test(wrapper),
+      "nor inside a second rounded frame — the panel carries its own"
+    );
+  });
+
+  test("both wrappers are the same bare relative box", () => {
+    // Same frame, stated the same way, so a change to one is visibly a
+    // change to only one.
+    for (const [name, src] of [["App.jsx", app], ["Dashboard.jsx", dash]]) {
+      const panelAt = src.indexOf("<GloobalQrPanel");
+      assert.ok(panelAt > 0, `${name} does not render the panel`);
+      const before = src.slice(Math.max(0, panelAt - 700), panelAt);
+      assert.match(before, /position: "relative"/, `${name}: wrapper must be the positioning context`);
+      assert.match(before, /justifyContent: "center"/, `${name}: wrapper must centre the panel`);
+    }
+  });
+});
+
+describe("the Creator Share badge sits on the top edge, centred", () => {
+  // It used to hang off the RIGHT edge, half of it outside the panel's own
+  // width. That works only while there is spare width beside the panel to
+  // overhang into — and once the panel is as wide as the screen allows,
+  // there is none, so the badge is clipped by the viewport.
+  //
+  // Centred on the top edge it adds nothing to the layout's width at all,
+  // so it cannot be pushed off on any device. It sinks half its height into
+  // the panel, which is white margin rather than code: the QR carries a
+  // 4-module quiet zone (~29px at 300px) and the panel adds 12px of its own,
+  // so it stays clear of the first dark module and cannot affect a scan.
+
+  for (const [name, src] of [["My Code", "app"], ["Receive sheet", "dash"]]) {
+    test(`${name}: top-centre, not right-edge`, () => {
+      const source = src === "app" ? app : dash;
+      const panelAt = source.indexOf("<GloobalQrPanel");
+      // The badge is the absolutely-positioned block right after the panel.
+      const after = source.slice(panelAt, panelAt + 1400).replace(/^\s*\/\/.*$/gm, "");
+      const badgeAt = after.indexOf('position: "absolute"');
+      assert.ok(badgeAt > 0, `${name}: no absolutely-positioned badge after the panel`);
+      const badge = after.slice(badgeAt, after.indexOf("}", badgeAt));
+
+      assert.match(badge, /top: 0/, `${name}: the badge must straddle the top edge`);
+      assert.match(badge, /left: "50%"/, `${name}: and be centred horizontally`);
+      assert.match(badge, /transform: "translate\(-50%, -50%\)"/);
+      assert.ok(
+        !/right: 0/.test(badge),
+        `${name}: the right-edge overhang is what got clipped off screen`
+      );
+    });
+  }
+});

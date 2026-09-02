@@ -2384,7 +2384,20 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* The SAME panel the Scan screen's My Code tab uses. This used to be a
        230px code inside its own tinted 22px box while the other was 264px on
        a white card - same code, same purpose, two sizes and two frames. */
-  }<GloobalQrPanel code={encodeGloobalQR({ gloobalId: gloobalIdTag, amountCents: 0 })} onSecondsLeftChange={setReceiveQrSecondsLeft} /><div style={{ position: "absolute", top: "50%", right: 0, transform: "translate(50%, -50%)", perspective: 200 }}><button
+  }<GloobalQrPanel code={encodeGloobalQR({ gloobalId: gloobalIdTag, amountCents: 0 })} onSecondsLeftChange={setReceiveQrSecondsLeft} />{
+    /* The Creator Share badge straddles the TOP edge of the panel, centred.
+       It used to hang off the right edge, half of it outside the panel's
+       own width. That works until the panel is as wide as the screen
+       allows — then the overhang has nowhere to go and the badge is clipped
+       by the viewport, which is exactly what happened on the My Code tab.
+       Centring it on the top edge means it never extends the layout's width
+       at all, so it cannot be pushed off on any device.
+
+       It sinks 20px into the panel, which is white margin rather than code:
+       the QR carries a 4-module quiet zone (~29px at this size) and the
+       panel adds 12px of its own, so the badge sits clear of the first dark
+       module and cannot interfere with a scan. */
+  }<div style={{ position: "absolute", top: 0, left: "50%", transform: "translate(-50%, -50%)", perspective: 200 }}><button
     onClick={() => {
       requestCloseReceive();
       setShowMyShare(true);

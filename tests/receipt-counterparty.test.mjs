@@ -32,6 +32,7 @@ import {
   openPage,
   teardown
 } from "./browser-harness.mjs";
+import { readSource } from "./harness.mjs";
 
 before(async () => {
   await buildOnce();
@@ -297,99 +298,143 @@ describe("a receipt names the other party, on both sides and after a reload", ()
   });
 });
 
-describe("the flag fits its circle", () => {
-  // Four flags with genuinely different proportions, so "it happens to look
-  // right for 3:2" cannot pass: Nepal is the one non-rectangular national
-  // flag, Switzerland is square, Qatar is unusually wide (11:28), and the UK
-  // is the ordinary case.
-  const shapes = [
-    { iso: "np", note: "Nepal — the only non-rectangular flag" },
-    { iso: "ch", note: "Switzerland — square" },
-    { iso: "qa", note: "Qatar — 11:28, far wider than any other" },
-    { iso: "gb", note: "United Kingdom — the ordinary 1:2" }
-  ];
+describe("the flag is a circular badge", () => {
+  // This suite used to hand-build a copy of FlagCircle's DOM in the page and
+  // measure THAT — a span, an inner box at 0.83 x 0.55, an <img> with
+  // object-fit: contain — across four flag shapes. It measured the copy
+  // accurately and told us nothing about the component: FlagCircle could have
+  // been deleted outright and every assertion would still have passed. It
+  // also needed flagcdn.com to be reachable to prove a geometry fact that has
+  // nothing to do with the image bytes.
+  //
+  // Both are fixed below. The source test pins the decision; the rendered
+  // test measures the real badge in a real receipt, and does it without
+  // depending on the CDN — a flag that fails to load still occupies the box,
+  // so the geometry is checkable either way, and whether the asset arrived is
+  // asserted separately so a CDN outage reads as a CDN outage.
 
-  test("every flag shape sits inside the circle, centred, undistorted", async () => {
-    const { page, context } = await openSender(ACCOUNTS.india);
-    await login(page, ACCOUNTS.india);
+  test("FlagCircle fills the disc, and can still inscribe when asked", () => {
+    const flags = readSource("frontend/components/cards/flags.jsx");
+    const at = flags.indexOf("function FlagCircle(");
+    assert.ok(at > 0, "FlagCircle not found");
+    // Sliced to the function's real end rather than a character count. A
+    // fixed window silently stops covering the code it was written to cover
+    // the moment a comment grows — which it did, on the very commit that
+    // added these assertions.
+    const end = flags.indexOf("\n}\n", at);
+    assert.ok(end > at, "could not find the end of FlagCircle");
+    const fn = flags.slice(at, end + 2);
 
-    // Rendered directly rather than driven to through a payment: this is a
-    // geometry check on the component, and four payments to reach four flags
-    // would take four minutes to prove something one page can prove in one.
-    const measurements = await page.evaluate(async (isos) => {
-      const results = [];
-      const host = document.createElement("div");
-      host.style.cssText = "position:fixed;left:0;top:0;z-index:99999";
-      document.body.appendChild(host);
+    // Filling is the default — this is the change: a flag that used to float
+    // as a small rectangle inside a white disc now IS the disc.
+    assert.match(fn, /mode = "fill"/, "fill must be the default mode");
+    assert.match(fn, /fit=\{inscribed \? "contain" : "cover"\}/);
+    assert.match(fn, /radius=\{inscribed \? 2 : size \/ 2\}/, "the fill mode must be fully round");
+    assert.match(
+      fn,
+      /width=\{inscribed \? Math\.round\(size \* widthRatio\) : size\}/,
+      "filling means the image box IS the circle"
+    );
 
-      for (const iso of isos) {
-        const circle = document.createElement("span");
-        const SIZE = 40;
-        circle.style.cssText =
-          `width:${SIZE}px;height:${SIZE}px;border-radius:50%;display:inline-flex;` +
-          "align-items:center;justify-content:center;overflow:hidden";
-        const box = document.createElement("div");
-        box.style.cssText =
-          `width:${Math.round(SIZE * 0.83)}px;height:${Math.round(SIZE * 0.55)}px;overflow:hidden`;
-        const img = document.createElement("img");
-        img.style.cssText = "display:block;width:100%;height:100%;object-fit:contain;object-position:center";
-        img.src = `https://flagcdn.com/w320/${iso}.png`;
-        box.appendChild(img);
-        circle.appendChild(box);
-        host.appendChild(circle);
+    // And the old behaviour survives as an option rather than being deleted.
+    // `cover` crops a 3:2 flag to its central two-thirds, which is fine when
+    // a name sits beside the badge and wrong when the flag alone must
+    // identify the country. A future surface needs to be able to say so.
+    assert.match(fn, /inscribed = mode === "inscribe"/);
+  });
 
-        await new Promise((resolve) => {
-          if (img.complete && img.naturalWidth) return resolve();
-          img.onload = resolve;
-          img.onerror = resolve;
-        });
+  test("the badge in a real receipt is a circle the flag fills edge to edge", async () => {
+    const { page, context } = await openSender(ACCOUNTS.america);
+    await login(page, ACCOUNTS.america);
+    // America -> India, so the badge carries a flag that is not the viewer's.
+    await pay(page, { sender: ACCOUNTS.america, receiver: ACCOUNTS.india, receiverGets: 500 });
 
-        const c = circle.getBoundingClientRect();
-        const b = box.getBoundingClientRect();
-        results.push({
-          iso,
-          circle: { w: c.width, h: c.height, cx: c.x + c.width / 2, cy: c.y + c.height / 2 },
-          box: { w: b.width, h: b.height, cx: b.x + b.width / 2, cy: b.y + b.height / 2 },
-          natural: { w: img.naturalWidth, h: img.naturalHeight }
-        });
-      }
-      host.remove();
-      return results;
-    }, shapes.map((s) => s.iso));
+    const badge = page.getByTestId("receipt-flag");
+    await badge.waitFor({ timeout: 20000 });
 
-    for (const m of measurements) {
-      const note = shapes.find((s) => s.iso === m.iso).note;
-      const r = m.circle.w / 2;
+    const m = await badge.evaluate((el) => {
+      const img = el.querySelector("img");
+      const box = img ? img.parentElement : null;
+      const r = (n) => (n ? n.getBoundingClientRect() : null);
+      const cs = (n) => (n ? getComputedStyle(n) : null);
+      return {
+        circle: r(el),
+        box: r(box),
+        img: r(img),
+        boxRadius: cs(box) && cs(box).borderRadius,
+        objectFit: cs(img) && cs(img).objectFit,
+        natural: img ? { w: img.naturalWidth, h: img.naturalHeight } : null
+      };
+    });
 
-      // Centred: the flag box shares the circle's centre.
-      assert.ok(
-        Math.abs(m.box.cx - m.circle.cx) < 1 && Math.abs(m.box.cy - m.circle.cy) < 1,
-        `${note}: the flag must be centred in the circle`
-      );
+    assert.ok(m.img, "the badge must render a real flag image, not an emoji character");
 
-      // Inside: the box's own corners are within the circle's radius, so
-      // nothing is clipped by the rim.
-      const corner = Math.hypot(m.box.w / 2, m.box.h / 2);
-      assert.ok(
-        corner <= r + 0.5,
-        `${note}: the flag box corner reaches ${corner.toFixed(1)}px from centre, past the ${r}px rim`
-      );
+    // Round: the container is square and its clip is a full circle.
+    assert.ok(
+      Math.abs(m.circle.width - m.circle.height) < 1,
+      `the badge must be square to be circular; got ${m.circle.width}x${m.circle.height}`
+    );
 
-      // Not too small: it uses most of the width available to it.
-      assert.ok(
-        m.box.w >= m.circle.w * 0.7,
-        `${note}: the flag is only ${m.box.w}px wide inside a ${m.circle.w}px circle`
-      );
+    // Filled: the image box covers the whole disc rather than sitting inside
+    // it. This is the assertion that would have caught the old inscribed
+    // rectangle — 33x22 in a 40px circle — as a failure.
+    assert.ok(
+      m.box.width >= m.circle.width - 1 && m.box.height >= m.circle.height - 1,
+      `the flag must fill the ${m.circle.width}px disc; it is ${m.box.width}x${m.box.height}`
+    );
 
-      // Aspect ratio preserved. `contain` guarantees this, so what is really
-      // being checked is that the image loaded at all — a broken one reports
-      // 0x0 and would sail through a ratio comparison of nothing.
-      assert.ok(
-        m.natural.w > 0 && m.natural.h > 0,
-        `${note}: the flag asset did not load (${m.natural.w}x${m.natural.h})`
-      );
-    }
+    // Round at the image too, not just clipped by an ancestor, so the flag's
+    // own corners are gone rather than merely hidden.
+    const radius = parseFloat(m.boxRadius);
+    assert.ok(
+      Number.isFinite(radius) && radius >= m.circle.width / 2 - 1,
+      `the flag's own box must be fully round; radius is ${m.boxRadius}`
+    );
+
+    // Undistorted: `cover` scales and crops, it never stretches. A `fill`
+    // here would squash every flag into a square.
+    assert.equal(m.objectFit, "cover", "the flag must be cropped to the circle, never stretched");
+
+    // Whether the asset actually arrived is a separate question from the
+    // geometry above, and gets its own message so a blocked CDN cannot be
+    // mistaken for a layout regression.
+    assert.ok(
+      m.natural && m.natural.w > 0 && m.natural.h > 0,
+      `the flag asset did not load (${m.natural && m.natural.w}x${m.natural && m.natural.h}) — ` +
+        "flagcdn.com unreachable? the geometry assertions above still passed"
+    );
 
     await context.close();
+  });
+});
+
+describe("the Creator Share receipt identifies the other side by ID", () => {
+  // A name is not an identifier. The Payment tab has carried the
+  // counterparty's Gloobal ID since it was built; the Creator Share tab named
+  // a person and stopped, which made it the one document in the app that
+  // said who without saying which.
+  test("the share tab carries the counterparty's Gloobal ID", () => {
+    const modal = readSource("frontend/components/dialogs/ReceiptModal.jsx");
+    assert.match(modal, /testId="receipt-share-counterparty-id"/);
+  });
+
+  test("the ID sits under the row that names them, never under \"You\"", () => {
+    // receipt.id belongs to receipt.name. When the viewer SENT the payment
+    // the share came back to them, so the row above reads "Shared back to ·
+    // You" — attaching the counterparty's ID to that row would label the
+    // viewer with someone else's identifier. Hence the extra naming row in
+    // that direction.
+    const modal = readSource("frontend/components/dialogs/ReceiptModal.jsx");
+    assert.match(modal, /\{isSent && <ReceiptRow label="Shared back by" value=\{receipt\.name\} \/>\}/);
+    const at = modal.indexOf('label="Shared back by"');
+    const idAt = modal.indexOf('testId="receipt-share-counterparty-id"');
+    assert.ok(idAt > at, "the ID row must come after the row naming the counterparty");
+  });
+
+  test("a receipt with no counterparty ID simply omits the row", () => {
+    // Locally-simulated payments to a non-Gloobal payee have no ID to show.
+    // An empty "GLOOBAL ID —" row would be worse than none.
+    const modal = readSource("frontend/components/dialogs/ReceiptModal.jsx");
+    assert.match(modal, /\{receipt\.id && <ReceiptRow\s+testId="receipt-share-counterparty-id"/);
   });
 });

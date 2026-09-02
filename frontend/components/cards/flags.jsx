@@ -79,41 +79,85 @@ function FlagEmoji({ flag, size, width, height, radius, background, dropShadow, 
     }}
   >{flag}</span>}</div>;
 }
-// A flag inside a circle, at whatever aspect ratio the flag actually has.
+// A flag as a circular badge.
 //
-// The naive version of this — a square image with `border-radius: 50%` — cuts
-// the left and right off every wide flag, and a raw emoji character in a
-// circle renders as two letters on any platform without flag glyphs (Windows,
-// most notably) and is far too small to read besides. Both were in this app.
+// Two modes, and the difference is what happens to a flag that is not square.
 //
-// The inner box is the largest rectangle of ~3:2 that fits inside the circle:
-// for a circle of diameter D that is D*0.83 by D*0.55, whose corners land just
-// inside the rim. `contain` then fits the flag's real shape into that box, so
-// a square flag renders square and a wide one renders wide — neither is
-// stretched, neither is cropped, and neither overflows the circle.
+//   "fill" (default) — the flag fills the whole disc, cropped to it, the way a
+//   profile photo does. This is what the receipt shows: a flag, circular,
+//   reading as one solid mark at 40px.
 //
-// `ratio` is exposed because the two call sites want slightly different
-// padding, not because any country needs special-casing.
-function FlagCircle({ flag, size, background, border, widthRatio = 0.83, heightRatio = 0.55 }) {
+//   "inscribe" — the flag sits whole inside the disc, at its true aspect
+//   ratio, with the circle's ground visible around it.
+//
+// "inscribe" was the only mode, and the reasoning behind it was sound as far
+// as it went: a 3:2 flag cropped to a circle loses its outer thirds, so the
+// inner box was made the largest ~3:2 rectangle fitting inside the circle
+// (D*0.83 by D*0.55, corners just inside the rim) and `contain` fitted the
+// flag into it whole. Nothing stretched, nothing cropped.
+//
+// What that costs is the thing the badge is for. At 40px the flag ends up 33px
+// by 22px — a small rectangle floating in a white disc, which reads as a
+// rectangle in a circle rather than as a circular badge, and the flag itself
+// is only about half the area it could be. On a receipt sitting on the seam of
+// a card, next to a name, the mark needs to read at a glance.
+//
+// So "fill" is now the default, and the crop is real: a 3:2 flag keeps its
+// central two-thirds. That is fine for the great majority — the field, the
+// bands, the central charge all survive — and it is the same crop every
+// avatar in every app makes. It is NOT free: a hoist-side emblem sitting
+// about a third in (Kuwait's and Sudan's triangles, the UAE's bar) lands on
+// the crop boundary and is partly lost. That is a real trade and the reason
+// "inscribe" is kept rather than deleted — a surface that must identify a
+// country by its flag ALONE should ask for it. The receipt does not: the
+// counterparty's name is on the row beside the badge, so the flag is
+// confirming a country the reader has already been told.
+//
+// The raw emoji character is not an option in either mode. On Windows it
+// renders as two letters rather than a flag, which is why FlagEmoji loads a
+// real asset and only falls back to the character.
+function FlagCircle({ flag, size, background, border, mode = "fill", widthRatio = 0.83, heightRatio = 0.55 }) {
+  const inscribed = mode === "inscribe";
   return <span
     style={{
       width: size,
       height: size,
       borderRadius: "50%",
       background: background || T.surface,
-      border: border || `1px solid ${T.line}`,
+      // The rim is drawn INSIDE the box when filling, as an inset shadow
+      // rather than a real border.
+      //
+      // A 1px border shrinks the content box to size-2, so a child asked for
+      // `size` either overflows it or gets flex-shrunk to 38px inside a 40px
+      // circle — which is a flag that fills the disc everywhere except a hair
+      // at the left and right, the exact defect this mode exists to remove.
+      // An inset shadow occupies no layout at all: the content box stays a
+      // full `size`, the flag fills it, and the rim is painted over the top.
+      //
+      // "inscribe" keeps the real border, because there the flag is meant to
+      // sit inside the rim with the circle's ground showing around it.
+      border: inscribed ? border || `1px solid ${T.line}` : border || "none",
+      boxShadow: inscribed || border ? void 0 : `inset 0 0 0 1px ${T.line}`,
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
+      // Belt and braces with the child's own 50% radius: the parent clips
+      // anything the cover crop pushes past the rim, so the silhouette stays
+      // a circle even if the child's radius is ever overridden.
       overflow: "hidden",
       flexShrink: 0
     }}
   ><FlagEmoji
     flag={flag}
-    width={Math.round(size * widthRatio)}
-    height={Math.round(size * heightRatio)}
-    radius={2}
-    fit="contain"
+    width={inscribed ? Math.round(size * widthRatio) : size}
+    height={inscribed ? Math.round(size * heightRatio) : size}
+    // A full circle, not a rounded square: at this size the difference
+    // between radius 50% and radius 8 is the whole point of the change.
+    radius={inscribed ? 2 : size / 2}
+    // `cover` scales the flag until it covers the box and crops the
+    // overflow — it never stretches, so the flag's proportions are intact
+    // in both modes. Only how much of it you see changes.
+    fit={inscribed ? "contain" : "cover"}
     background="transparent"
   /></span>;
 }

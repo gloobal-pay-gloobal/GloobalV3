@@ -210,7 +210,11 @@ function createFinancialCore({ userId = "demo-user", currency = "INR", openingBa
         monthsAccrued,
         creatorName: seed.business || "Gloobal",
         date: valid ? planted.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
-        time: valid ? planted.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : ""
+        // Through formatClockTime like every other time in the app. This
+        // line was its own formatter — "en-US", hour + minute only — so an
+        // asset seed's time rendered "2:07 PM" while the payment that
+        // planted it rendered "14:07:32". Two clocks, one event.
+        time: valid ? formatClockTime(planted) : ""
       });
       added += 1;
     }

@@ -46,25 +46,33 @@ function filterHistoryByPeriod(rows, period, now) {
   });
 }
 // The "when" line that sits under a name in a history row: date and time
-// together, e.g. "Aug 30 · 13:52".
+// together, e.g. "Aug 30 · 14:07:32".
 //
-// Seconds are cut. formatClockTime writes "14:07:32" because a receipt wants
-// the exact instant, but a list wants a glanceable one, and the third pair of
-// digits is pure noise under a name.
+// Seconds are KEPT. This used to trim them to "14:07" on the reasoning that a
+// list wants a glanceable time and the third pair of digits is noise under a
+// name. The cost of that was one transaction reading two different ways —
+// 14:07 in the list, 14:07:32 on its own receipt — so a person checking a
+// payment against a record had to satisfy themselves the two were the same
+// event. One clock, one shape, everywhere; see formatClockTime.
 //
 // A 24-hour clock on purpose. This half of the line has to survive being read
-// by someone who reads no English, and 13:52 does that where "1:52 PM" does
-// not. (`t.date` is still "Aug 30", which does not — that comes from the row
-// data rather than from here, and is its own thing to fix.)
+// by someone who reads no English, and 14:07:32 does that where "2:07:32 PM"
+// does not. (`t.date` is still "Aug 30", which does not — that comes from the
+// row data rather than from here, and is its own thing to fix.)
 //
 // The separator is a middle dot rather than a comma or the word "at": it
 // belongs to no language, and it keeps the two halves legible as two facts.
+//
+// A row whose stored time predates this (trimmed to HH:MM, or written by an
+// older build in some other shape) is passed through as-is rather than
+// guessed at. Padding "14:07" out to "14:07:00" would invent a second that
+// was never recorded, and on a money record an invented digit is worse than
+// a short one.
 function historyRowStamp(t) {
   if (!t) return "";
   const date = t.date || "";
   if (!t.time) return date;
-  const trimmed = String(t.time).match(/^(\d{1,2}:\d{2})/);
-  const clock = trimmed ? trimmed[1] : String(t.time);
+  const clock = String(t.time);
   return date ? `${date} · ${clock}` : clock;
 }
 // The period total, in ONE currency.

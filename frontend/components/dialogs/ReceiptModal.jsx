@@ -252,8 +252,9 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        platform without flag glyphs (Windows above all) it is not a flag at
        all — it is the two regional-indicator letters, "GB", sitting where a
        flag should be. FlagCircle loads the same flag asset every other flag
-       in the app uses and fits it to the circle without cropping or
-       stretching it. */
+       in the app uses and fills the disc with it — cropped to the circle
+       like an avatar, never stretched. See FlagCircle for what that crop
+       costs and why this surface can afford it. */
   }<FlagCircle flag={receipt.flag} size={40} /></span>}<ReceiptRow
     testId="receipt-counterparty"
     label={isSent ? "To" : "From"}
@@ -305,9 +306,31 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        platform without flag glyphs (Windows above all) it is not a flag at
        all — it is the two regional-indicator letters, "GB", sitting where a
        flag should be. FlagCircle loads the same flag asset every other flag
-       in the app uses and fits it to the circle without cropping or
-       stretching it. */
-  }<FlagCircle flag={receipt.flag} size={40} /></span>}<ReceiptRow label={isSent ? "Shared back to" : "You shared back to"} value={isSent ? "You" : receipt.name} /></div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label="Creator Share rate" value={`${(receipt.shareRate ?? 0).toFixed(2)}%`} accent />{
+       in the app uses and fills the disc with it — cropped to the circle
+       like an avatar, never stretched. See FlagCircle for what that crop
+       costs and why this surface can afford it. */
+  }<FlagCircle flag={receipt.flag} size={40} /></span>}<ReceiptRow label={isSent ? "Shared back to" : "You shared back to"} value={isSent ? "You" : receipt.name} />{
+    /* Who the other side of the share is, by name and by ID.
+       The Payment tab has carried the counterparty's Gloobal ID since it
+       was built; this tab named a person and stopped there, so the Creator
+       Share receipt was the one document in the app that identified someone
+       by display name alone. A name is not an identifier — two people share
+       one, and it is not what you would quote to support or paste into Send
+       Money. The ID is.
+
+       When I RECEIVED the payment, the row above already names the person I
+       shared back to, and the ID goes straight under it. When I SENT it, the
+       row above says "You" — the share came back to me — so the counterparty
+       needs naming before their ID can be attached to anything. Hence the
+       extra row in that direction only: receipt.id belongs to receipt.name in
+       both cases, and it must sit under the row that names them, never under
+       "You". */
+  }{isSent && <ReceiptRow label="Shared back by" value={receipt.name} />}{receipt.id && <ReceiptRow
+    testId="receipt-share-counterparty-id"
+    label={<GloobalWordmark suffix=" ID" />}
+    value={<ColoredGloobalId id={receipt.id} />}
+    mono
+  />}</div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label="Creator Share rate" value={`${(receipt.shareRate ?? 0).toFixed(2)}%`} accent />{
     /* Credit when I sent (the receiver shares back to me),
        debit when I received (I share back to them) — same
        direction as the hero figure above, always my own

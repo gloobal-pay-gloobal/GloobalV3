@@ -170,7 +170,13 @@ function ZeroPercentMark({ size = 38, color: baseColor }) {
         }
         return next;
       });
-    }, 900);
+      // 1800ms, up from 900.
+      //
+      // A dot turned every 0.9s while the turn itself took 0.5s, so with
+      // three dots something was mid-flip almost continuously and the mark
+      // never settled. At 1.8s a dot is at rest for most of its cycle and
+      // the movement reads as occasional rather than restless.
+    }, 1800);
     return () => clearInterval(interval);
   }, []);
   const dot = (i, key) => <span key={key} style={{ display: "inline-block", perspective: 200, margin: "0 0.04em", verticalAlign: "-0.02em" }}><span
@@ -182,7 +188,9 @@ function ZeroPercentMark({ size = 38, color: baseColor }) {
       height: "0.72em",
       borderRadius: "50%",
       transformStyle: "preserve-3d",
-      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
+      // 0.9s, up from 0.5s. Same reasoning as the logo box: a turn that
+      // fast reads as a swap rather than a rotation.
+      transition: "transform 0.9s cubic-bezier(.4,.15,.2,1)",
       transform: flipped[i] ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: colors[i] }} /><span
@@ -196,7 +204,17 @@ function ZeroPercentMark({ size = 38, color: baseColor }) {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      fontSize: "0.55em",
+      // 0.38em, down from 0.55em — and the em here is the MARK's font size,
+      // not the dot's, which is what made this so easy to get wrong.
+      //
+      // The dot is 0.72em across, so a 0.55em glyph filled 76% of it. At
+      // 800 weight a "+" or "×" then reached the rim on all four sides and
+      // the dot stopped reading as a zero with something inside it — it
+      // read as a symbol tile sitting in a row of digits, which is what
+      // broke the flow of "0.00%". At 0.38em the glyph occupies about half
+      // the circle, the way a character sits inside a counter rather than
+      // bursting out of one.
+      fontSize: "0.38em",
       fontWeight: 800,
       color: "#fff"
     }}

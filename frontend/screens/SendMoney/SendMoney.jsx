@@ -1379,7 +1379,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
        counterparty flag, and a row restored from the server carries none
        either, so the box came out blank — a broken avatar rather than a
        design. The country is still on the receipt this row belongs to. */
-  }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#14122B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: "#9C96AF", marginTop: 1 }}>{t.date}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: TXN_OUT_COLOR, flexShrink: 0 }}>
+  }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#14122B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: "#9C96AF", marginTop: 1 }}>{historyRowStamp(t)}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: TXN_OUT_COLOR, flexShrink: 0 }}>
                     −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(Number(t.amount) || 0, top.currency)}
                   </span></div>)}</div></div>}{searchStage === "found" && bottomOpen && <>{bottom.registered === false && <div
     role="alert"

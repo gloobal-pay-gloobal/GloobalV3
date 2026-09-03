@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gloobal — Engineering Report, 2 September 2026</title>
+<style>
+  :root{
+    --ink:#12141a; --ink-soft:#3d4351; --ink-faint:#6b7280; --line:#e3e6ec;
+    --bg:#f6f7f9; --surface:#ffffff; --accent:#7c3aed; --accent-soft:#f3eeff;
+    --ok:#0f7b4f; --ok-bg:#e7f6ee; --warn:#9a6400; --warn-bg:#fdf3df;
+    --bad:#b3261e; --bad-bg:#fdeceb; --neutral:#4b5563; --neutral-bg:#eef0f4;
+    --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.62 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px 80px}
+
+  header.masthead{background:linear-gradient(135deg,#1c1330 0%,#2d1b52 55%,#3b2168 100%);
+       color:#fff;padding:44px 0 38px;margin-bottom:32px}
+  header.masthead .wrap{padding-bottom:0}
+  .eyebrow{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+       color:#c9b8f0;font-weight:700;margin-bottom:10px}
+  h1{margin:0 0 14px;font-size:31px;line-height:1.2;font-weight:800;letter-spacing:-.02em}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:13px;color:#d9cff5}
+  .meta b{color:#fff;font-weight:600}
+
+  h2{margin:44px 0 6px;font-size:21px;font-weight:800;letter-spacing:-.01em;
+     padding-bottom:9px;border-bottom:2px solid var(--line)}
+  h3{margin:30px 0 8px;font-size:16.5px;font-weight:750}
+  h4{margin:22px 0 6px;font-size:14.5px;font-weight:700;color:var(--ink-soft)}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:22px}
+  li{margin:5px 0}
+  a{color:var(--accent)}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+        padding:20px 22px;margin:16px 0;box-shadow:0 1px 2px rgba(16,20,30,.04)}
+
+  .badge{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.07em;
+         text-transform:uppercase;padding:3px 9px;border-radius:999px;
+         vertical-align:2px;white-space:nowrap}
+  .b-fixed{background:var(--ok-bg);color:var(--ok);border:1px solid #bfe4d1}
+  .b-open{background:var(--bad-bg);color:var(--bad);border:1px solid #f5c9c5}
+  .b-pre{background:var(--warn-bg);color:var(--warn);border:1px solid #f0dcb0}
+  .b-nv{background:var(--neutral-bg);color:var(--neutral);border:1px solid #d6dae2}
+  .b-lat{background:#fff3e6;color:#a3541a;border:1px solid #f2d3b3}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px;
+        background:var(--surface);border:1px solid var(--line);border-radius:10px;
+        overflow:hidden}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);
+        vertical-align:top}
+  th{background:#f0f1f5;font-weight:700;font-size:12px;letter-spacing:.03em;
+     text-transform:uppercase;color:var(--ink-soft)}
+  tr:last-child td{border-bottom:none}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+  code{font-family:var(--mono);font-size:12.5px;background:#f0f1f5;
+       padding:1.5px 5px;border-radius:4px;color:#3b2168}
+  pre{background:#16181f;color:#e6e8ee;padding:15px 17px;border-radius:10px;
+      overflow-x:auto;font-family:var(--mono);font-size:12.3px;line-height:1.58;
+      margin:13px 0}
+  pre code{background:none;color:inherit;padding:0;font-size:inherit}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+        gap:12px;margin:18px 0 6px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:11px;
+       padding:15px 16px}
+  .kpi .v{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+  .kpi .l{font-size:11.5px;color:var(--ink-faint);margin-top:5px;
+          text-transform:uppercase;letter-spacing:.05em;font-weight:650}
+  .kpi.ok .v{color:var(--ok)} .kpi.bad .v{color:var(--bad)}
+  .kpi.warn .v{color:var(--warn)} .kpi.acc .v{color:var(--accent)}
+
+  .callout{border-left:4px solid var(--accent);background:var(--accent-soft);
+           padding:13px 17px;border-radius:0 9px 9px 0;margin:16px 0;font-size:14px}
+  .callout.warn{border-left-color:var(--warn);background:var(--warn-bg)}
+  .callout.bad{border-left-color:var(--bad);background:var(--bad-bg)}
+  .callout.ok{border-left-color:var(--ok);background:var(--ok-bg)}
+  .callout strong{font-weight:750}
+
+  .legend{display:flex;flex-wrap:wrap;gap:9px;margin:14px 0 4px}
+
+  .tl{list-style:none;padding:0;margin:14px 0}
+  .tl li{position:relative;padding:0 0 15px 26px;border-left:2px solid var(--line);
+         margin-left:6px}
+  .tl li:last-child{border-left-color:transparent;padding-bottom:0}
+  .tl li::before{content:"";position:absolute;left:-6px;top:6px;width:10px;height:10px;
+         border-radius:50%;background:#c8cdd8;border:2px solid var(--surface)}
+  .tl li.key::before{background:var(--accent)}
+  .tl .t{font-family:var(--mono);font-size:11.5px;color:var(--accent);font-weight:700}
+  .tl .t.none{color:var(--ink-faint)}
+
+  footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
+         font-size:12.5px;color:var(--ink-faint)}
+  .hist{font-size:12.5px;color:var(--ink-faint);font-style:italic}
+
+  @media print{
+    body{background:#fff}
+    header.masthead{background:#2d1b52 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .card,table,pre,.kpi,.callout{break-inside:avoid;page-break-inside:avoid}
+    h2{break-after:avoid;page-break-after:avoid}
+    .wrap{max-width:100%;padding:0 8px 20px}
+    a{color:inherit;text-decoration:none}
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <div class="eyebrow">Gloobal · Engineering</div>
+    <h1>End-of-Day Engineering Report</h1>
+    <div class="meta">
+      <span><b>Date</b> 2 September 2026</span>
+      <span><b>Repository</b> GloobalV3 · main</span>
+      <span><b>Start of day</b> f89de31</span>
+      <span><b>End of day</b> 3fbdae7 (pushed)</span>
+      <span><b>Deployed</b> No</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<div class="callout">
+  This report covers <strong>2 September 2026 only</strong>. Earlier work appears
+  solely where it is needed to explain something examined today, and is marked
+  <span class="hist">[historical context]</span>.
+</div>
+
+<!-- ───────────────────────── 1 ───────────────────────── -->
+<h2>1 · Executive Summary</h2>
+
+<div class="kpis">
+  <div class="kpi acc"><div class="v">7</div><div class="l">Defects found</div></div>
+  <div class="kpi ok"><div class="v">2</div><div class="l">Fixed &amp; merged</div></div>
+  <div class="kpi bad"><div class="v">5</div><div class="l">Still open</div></div>
+  <div class="kpi ok"><div class="v">36/36</div><div class="l">Server payments correct</div></div>
+  <div class="kpi ok"><div class="v">215/215</div><div class="l">Domain tests</div></div>
+  <div class="kpi warn"><div class="v">0</div><div class="l">Deployments</div></div>
+</div>
+
+<h3>What we investigated</h3>
+<p>A full audit of every payment, amount and currency path, opened in response to a
+report that some payments showed incorrect amounts or currencies, some were
+correct, and some appeared to behave differently before and after a re-login. The
+brief was to determine <em>whether</em> this was one root cause or several, and
+whether any of it was genuinely intermittent — not to assume.</p>
+
+<h3>What we found</h3>
+<p>Seven distinct defects in three groups. The most important finding is that
+<strong>the server is correct</strong>: 36 payments were traced end to end across six
+currency corridors in both amount bases, three runs each, and all 36 were
+arithmetically correct with every repeat byte-identical. The defects live almost
+entirely in the client display layer, in two server response projections, and in one
+client session-storage condition.</p>
+<p>Exactly one defect was proven intermittent, and its trigger is deterministic
+given the input — it is not random.</p>
+
+<h3>What we fixed</h3>
+<div class="scroll"><table>
+<thead><tr><th>Ref</th><th>Fix</th><th>Commit</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td><strong>RC-3</strong></td><td>A repeated <code>idempotencyKey</code> now returns the same canonical payment result the original returned</td><td><code>2f450a5</code></td><td><span class="badge b-fixed">Fixed today</span> merged, pushed</td></tr>
+<tr><td><strong>Session</strong></td><td>A fresh registration keeps the bearer token it was just issued</td><td><code>2d05fba</code></td><td><span class="badge b-fixed">Fixed today</span> merged, pushed</td></tr>
+</tbody></table></div>
+
+<h3>What remains unresolved</h3>
+<p>RC-1, RC-2, RC-4, RC-5 and a separate idempotency gap around client-initiated
+retries. All found today, none fixed today, all documented with reproduction
+evidence.</p>
+
+<h3>Overall status</h3>
+<div class="callout ok">
+  Two fixes verified and merged to <code>main</code>. <strong>No money was found to
+  move incorrectly at any point in the audit</strong> — the open defects concern what
+  is <em>displayed</em> and what is <em>recorded for later reading</em>, with two
+  exceptions noted under RC-4.
+</div>
+<div class="callout bad">
+  <strong>Nothing shipped today.</strong> Netlify and Render are still running the
+  pre-fix build. Both fixes are inert in production until a manual deploy.
+</div>
+
+<!-- ───────────────────────── 2 ───────────────────────── -->
+<h2>2 · Detailed Work Completed Today</h2>
+
+<h3>2.1 · Payment / amount / currency audit</h3>
+<div class="card">
+<p><strong>Task.</strong> Trace every way money can be initiated, every place an
+amount is displayed, and the contract carrying a payment from the amount box to the
+stored record and back out to history and receipts.</p>
+<p><strong>Method — five independent lines of evidence, all run today:</strong></p>
+<ol>
+<li><strong>Server contract trace.</strong> The real <code>server.js</code> against a
+throwaway database on the same Atlas cluster, seeded deterministic FX
+(USD 1 · INR 95 · GBP 0.79 · JPY 160), executing a 36-payment matrix: 6 corridors ×
+2 amount bases × 3 runs. Captured the response body, both balances, the stored row
+and metadata, the settlement, the share leg, the receipts and both history
+projections.</li>
+<li><strong>Client display trace.</strong> The shipped helpers — <code>convert</code>,
+<code>fmt</code>, <code>currencyDecimals</code>, <code>buildTransactionSnapshot</code>,
+<code>buildHistoryReceipt</code>, <code>sumHistoryAmount</code> — concatenated exactly
+as <code>build_app.mjs</code> concatenates them and executed against the server's own
+recorded responses.</li>
+<li><strong>Live FX comparison</strong> against the table the server settles on
+(<code>open.er-api.com</code>, 2026-09-02 00:02 UTC).</li>
+<li><strong>Live database inspection, read-only.</strong> No write of any kind.</li>
+<li><strong>Deployment check.</strong> Local build output vs what Netlify serves;
+Render probed for an endpoint unique to the then-current commit.</li>
+</ol>
+<p><strong>Outcome.</strong> Seven defects plus a definitive exclusion of four
+hypotheses. Written up as
+<code>docs/audits/PAYMENT_AMOUNT_CURRENCY_AUDIT_2026-09-02.md</code> (712 lines),
+committed today as <code>bd5b1ab</code>. The audit changed no application code.</p>
+</div>
+
+<h3>2.2 · RC-3 — idempotent duplicate response <span class="badge b-fixed">Fixed today</span></h3>
+<div class="card">
+<div class="scroll"><table>
+<tbody>
+<tr><th style="width:150px">Symptom</th><td>A payment retried with the same <code>idempotencyKey</code> produced a different client-side record than the same payment on a first attempt.</td></tr>
+<tr><th>Root cause</th><td>Both duplicate paths answered with <code>cleanTransactionPayload</code> alone — the destination side of the payment only. Eighteen fields the 201 carries were absent.</td></tr>
+<tr><th>Files</th><td><code>server/server.js</code> · <code>frontend/App.jsx</code> · <code>server/tests/idempotent-duplicate-response.test.mjs</code> (new) · <code>server/package.json</code></td></tr>
+<tr><th>Fix</th><td>A duplicate now answers with the same canonical result the original did, rebuilt from persisted documents. See §4.</td></tr>
+<tr><th>Why safe</th><td>Reads only — no balance, pool, ledger line, settlement, receipt or transaction is written. No FX lookup. Invents nothing: a pre-contract row answers <code>null</code>. The 201 path is unchanged except for sorting an array whose order was never read positionally.</td></tr>
+<tr><th>Tests</th><td>New regression suite <strong>ALL CHECKS PASSED</strong>; verified to fail on baseline; browser <strong>12/12</strong>; full server suite 87/90 with all three failures reproduced on the untouched baseline.</td></tr>
+<tr><th>State</th><td>Commit <code>2f450a5</code> → merged <code>3fbdae7</code> → pushed. <strong>Not deployed.</strong></td></tr>
+</tbody></table></div>
+</div>
+
+<h3>2.3 · Registration / session token <span class="badge b-fixed">Fixed today</span></h3>
+<div class="card">
+<div class="scroll"><table>
+<tbody>
+<tr><th style="width:150px">Symptom</th><td>A brand-new account reached the dashboard signed out. Every dashboard request went without an <code>Authorization</code> header and returned 401 — rendered as <em>"Unable to load balance"</em>. Found while attempting browser verification of RC-3, which it blocked.</td></tr>
+<tr><th>Root cause</th><td><code>sessionStore.js</code> stored the token as <code>(sameAccount &amp;&amp; previous.token) || null</code>. At the first session save of a fresh registration the stored blob holds a token and <strong>no user</strong>, so <code>sameAccount</code> was false and the token was overwritten with <code>null</code>. See §5.</td></tr>
+<tr><th>Files</th><td><code>backend/services/api/sessionStore.js</code> (+50/−3, three functional lines) · <code>financial-principles-tests/tests/registrationSessionToken.test.mjs</code> (new, 264 lines)</td></tr>
+<tr><th>Fix</th><td><code>hadPreviousAccount</code> — already present at the bottom of the same function — hoisted, and the token now reads the same answer.</td></tr>
+<tr><th>Why safe</th><td>The guard protects against account A's credential reaching account B, and that requires an account A. A blob with a token and no identity has no A to leak from: sign-out removes the whole key, and the token is only ever written by registration, login or passkey sign-in for the account saved moments later. A stored session naming a <em>different</em> account still yields no token — unchanged, and covered by tests.</td></tr>
+<tr><th>Tests</th><td>13/13 unit (9/13 fail on baseline); browser <strong>42/42</strong> across three countries, baseline reproducing the symptom in all three.</td></tr>
+<tr><th>State</th><td>Commit <code>2d05fba</code> → merged <code>3fbdae7</code> → pushed. <strong>Not deployed.</strong></td></tr>
+</tbody></table></div>
+</div>
+
+<h3>2.4 · Other work performed today</h3>
+<ul>
+<li><strong>Deployment consistency check.</strong> Local <code>f89de31</code> built to
+<code>index-CtzF5nkc.js</code>/<code>index-5K8Tj4jh.css</code> — byte-identical filenames
+to what Netlify served — and Render answered an endpoint introduced in that commit.
+Deployment mismatch eliminated as a cause.</li>
+<li><strong>Read-only production data inspection.</strong> Two scripts, no writes.
+Quantified RC-5 against real data.</li>
+<li><strong>Baseline reproduction of three pre-existing test failures</strong>, so they
+could be attributed correctly rather than blamed on today's changes.</li>
+<li><strong>Documentation.</strong> The audit report, committed as <code>bd5b1ab</code>.</li>
+</ul>
+
+<!-- ───────────────────────── 3 ───────────────────────── -->
+<h2>3 · Payment Audit Findings From Today</h2>
+
+<div class="legend">
+  <span class="badge b-fixed">Fixed today</span>
+  <span class="badge b-open">Found today — not fixed</span>
+  <span class="badge b-lat">Latent</span>
+  <span class="badge b-pre">Pre-existing</span>
+  <span class="badge b-nv">Not verified</span>
+</div>
+
+<h3>RC-1 · Client FX rate differs from the server's authoritative rate <span class="badge b-open">Found today — not fixed</span></h3>
+<div class="card">
+<p>The client prices every pre-confirmation figure from a static table in
+<code>backend/data/currencies.js</code>, whose own comment calls it "approximate,
+roughly-current figures for display purposes". The server settles on live rates via
+<code>server/lib/fxRates.js</code>. The payer is quoted one number and charged another.</p>
+<div class="scroll"><table>
+<thead><tr><th>Pair</th><th class="num">Client static</th><th class="num">Live</th><th class="num">Client error</th></tr></thead>
+<tbody>
+<tr><td>INR→USD</td><td class="num">0.010482</td><td class="num">0.010526</td><td class="num">−5.00%</td></tr>
+<tr><td>USD→INR</td><td class="num">95.398</td><td class="num">95.001</td><td class="num">+0.42%</td></tr>
+<tr><td>INR→GBP</td><td class="num">0.008347</td><td class="num">0.007783</td><td class="num">+28.5%</td></tr>
+<tr><td>GBP→INR</td><td class="num">119.80</td><td class="num">128.48</td><td class="num">−6.76%</td></tr>
+<tr><td>INR→JPY</td><td class="num">1.6549</td><td class="num">1.6854</td><td class="num">−2.10%</td></tr>
+<tr><td>JPY→INR</td><td class="num">0.6043</td><td class="num">0.5933</td><td class="num">+1.12%</td></tr>
+<tr><td>USD→GBP</td><td class="num">0.800</td><td class="num">0.7394</td><td class="num">+8.19%</td></tr>
+<tr><td>EUR→INR</td><td class="num">103.03</td><td class="num">110.15</td><td class="num">−6.46%</td></tr>
+</tbody></table></div>
+<div class="scroll"><table>
+<thead><tr><th>Payment</th><th class="num">Screen quotes</th><th class="num">Balance actually moves</th><th class="num">Gap</th></tr></thead>
+<tbody>
+<tr><td>INR payer → GBP payee, payee gets £1,000</td><td class="num">₹119,802.33</td><td class="num">~₹128,482.56</td><td class="num">−₹8,680 (6.8% understated)</td></tr>
+<tr><td>GBP payer → INR payee, payee gets ₹1,000</td><td class="num">£8.35</td><td class="num">~£7.78</td><td class="num">+7.3% overstated</td></tr>
+<tr><td>INR payer → USD payee, payee gets $1,000</td><td class="num">₹95,398.15</td><td class="num">~₹95,000.91</td><td class="num">+0.42%</td></tr>
+</tbody></table></div>
+<div class="callout warn"><strong>Observed live in the browser today.</strong> During
+the RC-3 Playwright run the Send button quoted <strong>₹1,198.02</strong> for a 10 GBP
+payment; the server debited <strong>₹1,202.53</strong>.</div>
+<p><strong>Deterministic</strong>, not intermittent. The size of the error varies by
+corridor, which is what made it look inconsistent under manual testing.</p>
+</div>
+
+<h3>RC-2 · The client records its own figure, not the server's <span class="badge b-open">Found today — not fixed</span></h3>
+<div class="card">
+<p><code>handleRemoteSend</code> correctly returns the server's <code>debitAmount</code>
+and <code>senderCurrency</code>. Send Money never reads them: the local ledger post, the
+toast and the fresh receipt are all given the client-computed <code>senderAmount</code>.
+Scan &amp; Pay prefers the server's figure for its history row but still passes the raw
+<strong>destination</strong> amount to <code>executeTransaction</code>, and labels its
+success toast with the payer's currency symbol on the payee's number.</p>
+<div class="callout warn"><strong>Observed live today.</strong> After the RC-3 browser
+payment the dashboard recorded <strong>−₹1,198.02</strong> — the client figure — for a
+payment that cost ₹1,202.53.</div>
+<p>Deterministic. Reconciled away on the next profile read, which is what makes the
+dashboard balance appear to move on its own.</p>
+</div>
+
+<h3>RC-3 · Idempotent duplicate response <span class="badge b-fixed">Fixed today</span></h3>
+<div class="card">
+<p>See §2.2 and §4. This is the only defect proven intermittent today, and its
+trigger is deterministic given the input.</p>
+<div class="callout">
+  <strong>Correction made during the fix.</strong> The audit initially stated that the
+  client reaches this path routinely on a cold-start retry. Tracing the flow showed
+  that is wrong: <code>httpClient</code> performs no automatic retry, and a
+  user-initiated retry mints a fresh key. The 200-duplicate is reached by a genuine
+  replay of the identical request — a double-submit, the concurrent index race, or a
+  network-level replay. The defect and the fix stand; its frequency is lower than
+  first stated. Recorded here rather than quietly dropped.
+</div>
+</div>
+
+<h3>RC-4 · Creator Share currency metadata dropped <span class="badge b-open">Found today — not fixed</span> <span class="badge b-lat">Latent</span></h3>
+<div class="card">
+<p><code>server.js</code> passes <code>cashbackCurrency: senderCurrency</code> into
+<code>mintShareLegAndReceipts</code>. That function's parameter list does not include it,
+so it is silently dropped. The share row is then written with the
+<strong>sender's</strong> amount under the <strong>destination</strong> currency code.</p>
+<div class="scroll"><table>
+<thead><tr><th>Corridor</th><th class="num">Payer really got back</th><th class="num">Share row says</th><th class="num">Share receipts say</th></tr></thead>
+<tbody>
+<tr><td>INR→USD</td><td class="num">1,900 INR</td><td class="num"><strong>1,900 USD</strong></td><td class="num">1,900 USD</td></tr>
+<tr><td>USD→INR</td><td class="num">0.21 USD</td><td class="num"><strong>0.21 INR</strong></td><td class="num">0.21 INR</td></tr>
+<tr><td>INR→GBP</td><td class="num">2,405.06 INR</td><td class="num"><strong>2,405.06 GBP</strong></td><td class="num">2,405.06 GBP</td></tr>
+<tr><td>GBP→INR</td><td class="num">0.17 GBP</td><td class="num"><strong>0.17 INR</strong></td><td class="num">0.17 INR</td></tr>
+<tr><td>INR→JPY</td><td class="num">118.75 INR</td><td class="num"><strong>118.75 JPY</strong></td><td class="num">118.75 JPY</td></tr>
+<tr><td>JPY→INR</td><td class="num">337 JPY</td><td class="num"><strong>337 INR</strong></td><td class="num">337 INR</td></tr>
+</tbody></table></div>
+<p>The 201 response contradicts itself in one body:
+<code>cashback: 1900, cashbackCurrency: "INR"</code> alongside
+<code>shareTransaction: { amount: 1900, currency: "USD" }</code>. The client reads the
+second.</p>
+<div class="callout warn"><strong>Not yet present in live data.</strong> Of 125
+<code>share</code> rows in production, all sampled are single-currency — no
+cross-currency payment to a Creator with a non-zero share rate has occurred. It will
+write bad records silently the first time one does.</div>
+<p>Related, same function: <code>issueReceiptPair</code> writes one amount/currency pair
+to both parties' receipts, so the payer's stored receipt says <code>1000 USD</code> for a
+payment that cost ₹95,000. Nothing reads <code>Receipt</code> today, so this is
+stored-record integrity rather than a visible screen.</p>
+</div>
+
+<h3>RC-5 · Dashboard <code>totalSent</code> sums the wrong side <span class="badge b-open">Found today — not fixed</span></h3>
+<div class="card">
+<p><code>GET /api/transactions/:symbolId</code> sums <code>$amount</code>, the
+<strong>destination</strong> face value, so <code>totalSent</code> adds the counterparty's
+currency on every cross-border row as a bare number — then the dashboard renders it
+with the viewer's own symbol.</p>
+<ul>
+<li>Reproduction harness: a GBP account that really spent <strong>£2,964.45</strong>
+reported <code>totalSent</code> <strong>363,759.48</strong>, shown as GBP.</li>
+<li><strong>Live production data:</strong> the busiest account reports
+<strong>132,151.99 ₹</strong> against <strong>18,679.37 ₹</strong> of actual debits — a
+<strong>7× overstatement</strong>.</li>
+<li>Browser run today: an INR account showed <code>totalSent: 10</code> after a 10 GBP
+payment.</li>
+</ul>
+<p><code>totalReceived</code> is correct in unit but is gross, before the payee's own
+Creator Share was withheld.</p>
+</div>
+
+<h3>Retry with a new idempotency key can produce a second payment <span class="badge b-open">Found today — not fixed</span> <span class="badge b-nv">Not reproduced</span></h3>
+<div class="card">
+<p>A user-initiated retry mints a <strong>new</strong> <code>idempotencyKey</code>. Past the
+server's 15-second identical-resend window, a timeout on a payment that actually
+committed would be seen as a fresh payment. Separate from RC-3 and not addressed by
+it.</p>
+<p><strong>Severity not rated:</strong> established by reading the flow. The scenario
+was <strong>not</strong> reproduced end to end today.</p>
+</div>
+
+<h3>Registration / session token <span class="badge b-fixed">Fixed today</span></h3>
+<div class="card"><p>Found today during RC-3 verification. See §2.3 and §5.</p></div>
+
+<h3>History reconstruction — fresh receipt ≠ reopened receipt <span class="badge b-open">Found today — not fixed</span></h3>
+<div class="card">
+<p><code>mapServerTransaction</code> discards the year from an authoritative ISO
+timestamp at the client boundary, which is why the "2 Years" and "5 Years" history
+filters cannot reach past twelve months. <code>buildHistoryReceipt</code> re-derives the
+counterparty amount with the client rate instead of reading the stored destination
+amount the server already sent — a payment where the payee was credited exactly
+<strong>£1,000</strong> reopens as <strong>£1,003.76</strong>; <strong>¥10,000</strong>
+reopens as <strong>¥9,825.72</strong>. <code>ReceiptModal</code> recomputes the Creator
+Share instead of reading it, and formats it with no currency code.</p>
+</div>
+
+<h3>QR payload carries no currency <span class="badge b-open">Found today — not fixed</span></h3>
+<div class="card">
+<p><code>gloobalQR.js</code> encodes an ID, an amount in minor units and a checksum — no
+currency; the scanner infers it from the payee's registered country via a live
+lookup. Separately, <code>requestCents</code> multiplies by 100 unconditionally and the
+caption prints two decimals — wrong precision and a 100× waste of the payload range
+for a zero-decimal currency. A JPY request above ¥20,971 cannot be encoded at all.</p>
+</div>
+
+<h3>Hypotheses tested and excluded today</h3>
+<div class="scroll"><table>
+<thead><tr><th>Hypothesis</th><th>Verdict</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Deployment mismatch</td><td><strong>Excluded</strong></td><td>Local <code>f89de31</code> build produced byte-identical asset filenames to what Netlify served; Render answered an endpoint unique to that commit</td></tr>
+<tr><td>Service-worker / cached bundle</td><td><strong>Excluded</strong></td><td><code>autoUpdate</code> with a NetworkFirst document handler — bounded to one reload, and the live bundle was current</td></tr>
+<tr><td>Backend arithmetic</td><td><strong>Excluded</strong></td><td>36/36 payments correct, every repeat identical</td></tr>
+<tr><td>Race in the payment write</td><td><strong>Excluded</strong></td><td>Conditional <code>$inc</code> debit, row created inside the same Mongo transaction, unique partial index on <code>(fromUserId, metadata.idempotencyKey)</code></td></tr>
+<tr><td>Genuinely random behaviour</td><td><strong>Excluded</strong></td><td>One <code>Math.random()</code> reaches a financial display, but <code>mapServerTransaction</code> sets <code>shareRate: 0</code> rather than leaving it undefined, so no server-restored row can reach it</td></tr>
+</tbody></table></div>
+
+<h3>Pre-existing conditions confirmed today <span class="badge b-pre">Pre-existing</span></h3>
+<div class="scroll"><table>
+<thead><tr><th>Item</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td><code>concurrency-scale</code> failing under Atlas contention</td><td>Reproduced on the untouched baseline</td></tr>
+<tr><td><code>geu-concurrency</code> failing under Atlas contention</td><td>Reproduced on the untouched baseline</td></tr>
+<tr><td><code>geu-invariants</code> failing because the live FX provider is reachable</td><td>5 failures on baseline and with the fix — identical</td></tr>
+<tr><td><code>scan-undeclared</code> reporting <code>Notification</code></td><td>Documented non-failure in <code>CLAUDE.md</code></td></tr>
+<tr><td><code>probe-screens</code> two SSR-only failures</td><td>Documented in <code>CLAUDE.md</code></td></tr>
+<tr><td>Auto-deploy broken on Render and Netlify</td><td><span class="hist">[historical context]</span> documented in <code>CLAUDE.md</code></td></tr>
+</tbody></table></div>
+
+<!-- ───────────────────────── 4 ───────────────────────── -->
+<h2>4 · RC-3 — Detailed Fix</h2>
+
+<h3>The problem</h3>
+<p>Two paths recognise an already-executed request: a pre-check that finds a
+committed row for the same <code>(fromUserId, idempotencyKey)</code>, and a recovery
+path for the loser of the unique-index race. Both answered:</p>
+<pre><code>{ success, duplicate: true, message, transaction: cleanTransactionPayload(...) }</code></pre>
+
+<h3>Why <code>cleanTransactionPayload</code> was insufficient</h3>
+<p>It is not a summary of a payment — it is the <strong>destination side</strong> of one,
+by design. <code>amount</code> and <code>currency</code> on a <code>Transaction</code> row are the
+receiver's face value; the sender's own side lives in <code>metadata</code>.</p>
+<p>The client reads <code>debitAmount</code> to decide what a payment cost. Its fallback
+was the typed amount — the receiver's figure on a cross-border payment. Both halves
+stayed honestly labelled, which makes the defect subtler than a mislabel and worse:
+<strong>the row switched sides</strong>. The same payment recorded either "₹95,000 out" or
+"$1,000 out" depending on which response the browser received.</p>
+
+<h4>Measured today, before the fix</h4>
+<pre><code>FIRST  201  sourceAmount 95000 INR | destinationAmount 1000 USD | debitAmount 95000
+            fxRate 95 | cashback 1900 INR | payeeReceives 980
+            settlement + share leg + 4 receipts
+
+RETRY  200  { duplicate: true }
+            sourceAmount, sourceCurrency, destinationAmount, destinationCurrency,
+            debitAmount, senderCurrency, fxRate, fxRateSource, amountBasis,
+            cashback, cashbackCurrency, cashbackRate, payeeReceives, newBalance,
+            settlement, shareTransaction, receipts, assetSeed  — ALL ABSENT</code></pre>
+<p>What the client derived from that: <code>debitAmount → null</code>,
+<code>senderCurrency → null</code>, <code>cashback → 0</code>, <code>cashbackRate → 0</code>,
+<code>shareTransactionId → ""</code>.</p>
+
+<h3>What is returned now</h3>
+<div class="scroll"><table>
+<thead><tr><th>Source document</th><th>Fields taken</th></tr></thead>
+<tbody>
+<tr><td><code>Transaction</code> + <code>metadata</code></td><td><code>sourceAmount</code>, <code>sourceCurrency</code>, <code>destinationAmount</code>, <code>destinationCurrency</code>, <code>debitAmount</code>, <code>senderCurrency</code>, <code>fxRate</code>, <code>fxRateSource</code>, <code>amountBasis</code>, <code>cashback</code>, <code>cashbackCurrency</code>, <code>cashbackRate</code>, and the <code>transaction</code> projection</td></tr>
+<tr><td><code>LedgerEntry</code> (receiver's credit line)</td><td><code>payeeReceives</code> — read as what actually moved, not re-derived as amount minus cashback</td></tr>
+<tr><td><code>Settlement</code></td><td>the full settlement projection, both sides plus rate and status</td></tr>
+<tr><td><code>Transaction</code> (<code>type: 'share'</code>)</td><td><code>shareTransaction</code> — reference, amount, currency</td></tr>
+<tr><td><code>Receipt</code> (payment + share legs)</td><td><code>receipts</code>, sorted by leg then role</td></tr>
+<tr><td><code>AssetSeed</code></td><td><code>assetSeed</code> via <code>computeSeed</code></td></tr>
+<tr><td><code>User.balance</code></td><td><code>newBalance</code>, rounded the way the 201 rounds it</td></tr>
+</tbody></table></div>
+
+<h3>Why it is deterministic, writes nothing, and computes no FX</h3>
+<ul>
+<li><strong>No FX lookup.</strong> Every currency and rate comes off the stored row. A
+rate fetched now is not the rate the payment settled at.</li>
+<li><strong>No writes.</strong> Only <code>find</code> / <code>findOne</code> /
+<code>findById</code>.</li>
+<li><strong>No invention.</strong> A row predating a field answers <code>null</code> — the
+same rule the history projection follows.</li>
+<li><strong>Stable ordering.</strong> The four receipts are written by two concurrent
+pairs, so their order is not guaranteed. Both responses now sort by leg then role.</li>
+<li><strong>Two fields are deliberately as-of-now</strong>, exactly as the 201 reports
+them: <code>newBalance</code>, and the time-accruing half of <code>assetSeed</code>. Their
+recorded halves do not move.</li>
+</ul>
+
+<h3>Test results</h3>
+<p><strong>Server regression suite</strong> — 417 lines, <strong>ALL CHECKS PASSED</strong>.
+Covers INR→USD, USD→INR, INR→GBP, GBP→INR in both amount bases; the same-currency
+and no-Creator-Share shapes; three retries per cell compared field for field; the
+concurrent-race path; and exactly-once across transaction, share leg, settlement,
+ledger lines, receipts, history rows and both balances.</p>
+<p><strong>Verified to fail on the untouched baseline</strong> — 21 FAILs per retry,
+every compared field <code>duplicate=undefined</code>.</p>
+<p><strong>Browser verification</strong> — real bundle, local API, <code>page.route</code>
+performing the send twice and handing the app the <strong>duplicate</strong> response.
+<strong>12/12 passed</strong>:</p>
+<pre><code>first response  : sourceAmount=1202.53 INR debitAmount=1202.53 destination=10 GBP
+delivered (retry): sourceAmount=1202.53 INR debitAmount=1202.53 destination=10 GBP  duplicate=true
+
+PASS  the debit was NOT replaced by the destination amount — debit=1202.53 destination=10
+PASS  the receipt does not show the destination figure wearing a rupee sign
+PASS  exactly one Transaction row for this payment
+PASS  the account has exactly one send in total</code></pre>
+<p><strong>Commit</strong> <code>2f450a5</code> — 4 files, +651/−19. Merged in
+<code>3fbdae7</code>, pushed. Not deployed.</p>
+
+<!-- ───────────────────────── 5 ───────────────────────── -->
+<h2>5 · Registration / Session Token Fix</h2>
+
+<h3>The flow that discarded the token</h3>
+<ol>
+<li><code>POST /api/register-symbol</code> answers with a bearer token.</li>
+<li><code>GloobalApi.register</code> stores it through <code>gloobalAuthTokenSave</code>,
+which writes <code>{ savedAt, token }</code> and <strong>no <code>user</code></strong> — no
+session has been saved yet.</li>
+<li><code>POST /api/pin/set</code> succeeds, using that token.</li>
+<li>The biometric step calls <code>saveSession(user, …)</code> — the <strong>first</strong>
+<code>gloobalSessionSave</code> of this account's life.</li>
+</ol>
+<p>At step 4, <code>previousUser</code> is <code>undefined</code>, so <code>sameAccount</code> is
+false, and <code>token: (sameAccount &amp;&amp; previous.token) || null</code> overwrote a valid
+credential with <code>null</code>.</p>
+
+<h3>Why the first dashboard request returned 401</h3>
+<p><code>gloobalApiRequest</code> attaches <code>Authorization</code> only when a token
+exists. With it nulled, profile, transactions, assets, PayLater and interest were all
+sent anonymously. Captured today on the baseline build, across three countries:</p>
+<pre><code>[net] 200 auth=Bearer eyJzdWIiOiI2… /api/profile/…   Profile updated successfully
+[net] 401 auth=(none)               /api/profile/…   Sign in to continue.
+[net] 401 auth=(none)               /api/transactions/…?type=all
+[net] 401 auth=(none)               /api/assets/…</code></pre>
+<p>A first-ever sign-in on a device with empty storage hit the same line for the same
+reason.</p>
+
+<h3>The corrected condition</h3>
+<pre><code>const hadPreviousAccount = Boolean(previousUser &amp;&amp; previousUser.symbolId);
+…
+token: (((sameAccount || !hadPreviousAccount) &amp;&amp; previous &amp;&amp; previous.token) || null),</code></pre>
+<p><code>hadPreviousAccount</code> already existed at the bottom of the same function,
+where the account-switch notice draws exactly this distinction; it is hoisted so the
+token reads the same answer. Three functional lines changed.</p>
+
+<h3>Why account A's token cannot leak into account B</h3>
+<ul>
+<li><code>gloobalSessionClear</code> removes the whole storage key on sign-out — token and
+identity together — so nothing survives for a later account to pick up.</li>
+<li><code>gloobalAuthTokenSave</code> is only ever called by registration, login and
+passkey sign-in, each for the account whose session is saved moments later. A token
+sitting next to no identity is, by construction, that account's own.</li>
+<li>A stored session that <strong>names</strong> a different account still yields no token.
+Untouched, and covered by two tests.</li>
+</ul>
+
+<h3>Remaining edge case, deliberately not changed <span class="badge b-open">Still present</span></h3>
+<div class="callout warn">
+If account B signs in while A's session is still stored — without A signing out first
+— B's own freshly-minted token is discarded, because <code>gloobalAuthTokenSave</code>
+always runs before <code>gloobalSessionSave</code>. B is asked to sign in again; nothing
+leaks. Widening the condition would weaken a deliberate protection, and it is outside
+the reported bug. <strong>No UI path was found that reaches it</strong> — signing in
+normally follows sign-out, which clears everything. Not fixed, and not independently
+verified as reachable.
+</div>
+
+<h3>Regression coverage added — 13 tests, all passing</h3>
+<p>Loads the real <code>sessionStore.js</code> in a <code>vm</code> with an in-memory
+<code>localStorage</code>, the way <code>build_app.mjs</code> loads it, so it exercises the
+shipped file rather than a fork and leaves <code>app_bundle_testonly.mjs</code> untouched.</p>
+<div class="scroll"><table>
+<tbody>
+<tr><td>a fresh registration keeps the token it was just issued</td><td>✓</td><td>a returning account's token is carried across a save that does not know it</td><td>✓</td></tr>
+<tr><td>a fresh registration ends up with an authenticated session</td><td>✓</td><td>an ID rename keeps the session and its token</td><td>✓</td></tr>
+<tr><td>the dashboard's first reads would carry a bearer token</td><td>✓</td><td>signing out clears the token</td><td>✓</td></tr>
+<tr><td>no second sign-in is needed</td><td>✓</td><td><code>clearAuthToken</code> drops the credential, keeps the identity</td><td>✓</td></tr>
+<tr><td>a first-ever sign-in on empty storage keeps its token</td><td>✓</td><td>a different account signing in inherits nothing</td><td>✓</td></tr>
+<tr><td>sign-out then a second account signing in is clean</td><td>✓</td><td>a real switch announces itself; a first registration does not</td><td>✓</td></tr>
+<tr><td>no stored session at all still saves cleanly</td><td>✓</td><td></td><td></td></tr>
+</tbody></table></div>
+
+<h3>Test results</h3>
+<ul>
+<li>Unit <strong>13/13 pass</strong>; on the untouched baseline <strong>9 of 13 fail</strong>.</li>
+<li><code>financial-principles-tests</code> full suite <strong>215/215 pass</strong>.</li>
+<li>Browser, three countries in clean contexts: <strong>42/42 pass</strong> — token stored,
+all six dashboard reads carried an <code>Authorization</code> header, zero 401s, profile
+200, transactions 200, no <em>"Unable to load balance"</em>, card denominated in the
+account's own currency, balance 10,000 on the authenticated read.</li>
+<li>Browser on the baseline build: <strong>15 failures</strong> — <code>token=null</code>,
+unauthenticated reads, 5 of 6 calls 401, and the literal reported symptom in all three
+countries.</li>
+</ul>
+<div class="callout"><strong>Not verified in the browser:</strong> the on-screen balance
+<em>figure</em> stays behind the app's privacy mask, and revealing it prompts for
+biometric — a UI gate unrelated to this fix. The amount was asserted where it arrives,
+in the authenticated profile response the card is built from.</div>
+<p><strong>Commit</strong> <code>2d05fba</code> — 2 files, +314/−3. Merged in
+<code>3fbdae7</code>, pushed. Not deployed.</p>
+
+<!-- ───────────────────────── 6 ───────────────────────── -->
+<h2>6 · Testing Evidence</h2>
+<p>All results below were produced today.</p>
+
+<h3>6.1 · New tests written today</h3>
+<div class="scroll"><table>
+<thead><tr><th>Test / suite</th><th>Result</th><th class="num">Passed</th><th class="num">Failed</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>server/tests/idempotent-duplicate-response.test.mjs</code></td><td><span class="badge b-fixed">Pass</span></td><td class="num">all</td><td class="num">0</td><td>ALL CHECKS PASSED. 4 corridors × 2 bases × 3 retries + same-currency + no-share + concurrent race</td></tr>
+<tr><td>— same suite, on untouched baseline</td><td><span class="badge b-pre">Fail (expected)</span></td><td class="num">—</td><td class="num">21 per retry</td><td>Confirms it catches the defect</td></tr>
+<tr><td><code>financial-principles-tests/tests/registrationSessionToken.test.mjs</code></td><td><span class="badge b-fixed">Pass</span></td><td class="num">13</td><td class="num">0</td><td></td></tr>
+<tr><td>— same suite, on untouched baseline</td><td><span class="badge b-pre">Fail (expected)</span></td><td class="num">4</td><td class="num">9</td><td>Confirms it catches the defect</td></tr>
+</tbody></table></div>
+
+<h3>6.2 · Existing suites run today</h3>
+<div class="scroll"><table>
+<thead><tr><th>Test / suite</th><th>Result</th><th class="num">Passed</th><th class="num">Failed</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>financial-principles-tests</code> (full)</td><td><span class="badge b-fixed">Pass</span></td><td class="num">215</td><td class="num">0</td><td>Includes the 13 new tests</td></tr>
+<tr><td><code>server</code> full suite (<code>npm test</code>)</td><td><span class="badge b-pre">Partial</span></td><td class="num">87</td><td class="num">3</td><td>All 3 failures pre-existing — see 6.4</td></tr>
+<tr><td><code>server/tests/auth-and-access</code></td><td><span class="badge b-fixed">Pass</span></td><td class="num">all</td><td class="num">0</td><td>ALL CHECKS PASSED</td></tr>
+<tr><td><code>server/tests/cross-currency-transfer</code></td><td><span class="badge b-fixed">Pass</span></td><td class="num">all</td><td class="num">0</td><td></td></tr>
+<tr><td><code>server/tests/merchant-share-flow</code></td><td><span class="badge b-fixed">Pass</span></td><td class="num">all</td><td class="num">0</td><td></td></tr>
+<tr><td><code>server/tests/corridor-currency-integrity</code></td><td><span class="badge b-fixed">Pass</span></td><td class="num">all</td><td class="num">0</td><td></td></tr>
+<tr><td><code>server/tests/transfer-atomicity</code></td><td><span class="badge b-fixed">Pass</span></td><td class="num">all</td><td class="num">0</td><td></td></tr>
+<tr><td><code>server/tests/hardening-fixes</code></td><td><span class="badge b-fixed">Pass</span></td><td class="num">all</td><td class="num">0</td><td></td></tr>
+<tr><td><code>tools/frontend/probe-panels.mjs</code></td><td><span class="badge b-fixed">Pass</span></td><td class="num">3</td><td class="num">0</td><td>3/3 panels render</td></tr>
+<tr><td><code>tools/frontend/scan-undeclared.mjs</code></td><td><span class="badge b-pre">Pass (documented)</span></td><td class="num">—</td><td class="num">—</td><td>Only <code>Notification</code> — a documented non-failure</td></tr>
+<tr><td><code>tools/frontend/probe-screens.mjs</code></td><td><span class="badge b-pre">Pass (documented)</span></td><td class="num">—</td><td class="num">2</td><td>Both SSR-only, documented in <code>CLAUDE.md</code></td></tr>
+<tr><td><code>node build_app.mjs</code></td><td><span class="badge b-fixed">Pass</span></td><td class="num">—</td><td class="num">—</td><td>Bundle rebuilt clean after every change</td></tr>
+<tr><td><code>node --check</code> server.js · sessionStore.js</td><td><span class="badge b-fixed">Pass</span></td><td class="num">—</td><td class="num">—</td><td></td></tr>
+</tbody></table></div>
+
+<h3>6.3 · Browser (Playwright) runs today</h3>
+<div class="scroll"><table>
+<thead><tr><th>Run</th><th>Result</th><th class="num">Passed</th><th class="num">Failed</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>RC-3 duplicate-response drive</td><td><span class="badge b-fixed">Pass</span></td><td class="num">12</td><td class="num">0</td><td>Real bundle, local API, duplicate response delivered to the app</td></tr>
+<tr><td>Fresh registration, 3 countries</td><td><span class="badge b-fixed">Pass</span></td><td class="num">42</td><td class="num">0</td><td>India / United States / United Kingdom, clean context each</td></tr>
+<tr><td>Fresh registration on baseline build</td><td><span class="badge b-pre">Fail (expected)</span></td><td class="num">—</td><td class="num">15</td><td>Reproduces the reported symptom in all three countries</td></tr>
+<tr><td>Audit-phase exploratory drive</td><td><span class="badge b-nv">Incomplete</span></td><td class="num">—</td><td class="num">—</td><td>Reached Send Money; did not complete a payment</td></tr>
+</tbody></table></div>
+
+<h3>6.4 · Pre-existing failures — reproduced on the untouched baseline</h3>
+<div class="callout ok"><strong>No new failures were introduced today.</strong> Every
+suite that passed before the changes passes after them. Each failure below was
+confirmed by stashing the day's changes and re-running.</div>
+<div class="scroll"><table>
+<thead><tr><th>Suite</th><th>Failure</th><th>Baseline behaviour</th></tr></thead>
+<tbody>
+<tr><td><code>concurrency-scale</code></td><td>"no unexpected status codes" — 500s instead of 400s</td><td>Sampled 3× on baseline: 1 pass, 2 fail. Mongo write conflicts under 100-way contention on shared Atlas. Financial invariants still hold — balance lands on exactly 0, receiver credited exactly 5000, money conserved, 50 success rows, 100 ledger lines, nothing stranded</td></tr>
+<tr><td><code>geu-concurrency</code></td><td>Same class — 500s, accepted counts short</td><td>Fails on baseline</td></tr>
+<tr><td><code>geu-invariants</code></td><td>5 checks about stale/captured FX rates</td><td><strong>5 failures on baseline and 5 with the fix — identical.</strong> The live FX provider is reachable from this machine, so the test's "stale cached rate" assumptions do not hold</td></tr>
+</tbody></table></div>
+
+<h3>6.5 · Explicitly not verified</h3>
+<div class="scroll"><table>
+<thead><tr><th>Item</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Full UI-driven payment matrix across all six corridors</td><td>The audit-phase browser drive reached Send Money but did not complete a payment; the matrix was completed at the API and display-function layers. Browser coverage of a payment is one corridor (INR→GBP, destination basis)</td></tr>
+<tr><td>The double-payment scenario</td><td>Established by reading the flow; not executed</td></tr>
+<tr><td>The account-switch edge case</td><td>No UI path found that reaches it; not independently exercised</td></tr>
+<tr><td>Render's exact running commit</td><td>Cannot be probed unauthenticated for the RC-3 change — see §10</td></tr>
+<tr><td>On-screen balance figure after registration</td><td>Sits behind the app's privacy mask and a biometric prompt</td></tr>
+</tbody></table></div>
+
+<!-- ───────────────────────── 7 ───────────────────────── -->
+<h2>7 · Issues Still Open</h2>
+<p>Everything below was found today and is <strong>not fixed</strong>.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>Issue</th><th>Severity</th><th>Root cause</th><th>Impact</th><th>Next step</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>RC-1</strong><br>Client FX ≠ server FX</td>
+  <td>High<br><span class="hist">supported by measurement</span></td>
+  <td>Established — static <code>RATES</code> table vs live <code>fxRates.js</code></td>
+  <td>Payer confirms a price up to ~7% away from what leaves their balance. No money moves incorrectly</td>
+  <td>Serve the server's live rate to the client and quote from it; leave the static table as a labelled offline estimate. Drop <code>convert()</code>'s hardcoded 2-dp rounding</td>
+</tr>
+<tr>
+  <td><strong>RC-2</strong><br>Client records its own figure</td>
+  <td>High</td>
+  <td>Established — Send Money discards <code>debitAmount</code>/<code>senderCurrency</code>; Scan &amp; Pay passes the destination amount to the local ledger</td>
+  <td>Receipt, local ledger and dashboard disagree with the money until the next profile read corrects them</td>
+  <td>Read the server's figures for the ledger post, toast and receipt; pass the settled source amount in Scan &amp; Pay; fix its toast currency</td>
+</tr>
+<tr>
+  <td><strong>RC-4</strong><br>Creator Share currency dropped</td>
+  <td>High, <strong>latent</strong></td>
+  <td>Established — <code>cashbackCurrency</code> passed but absent from the parameter list</td>
+  <td>The first cross-currency payment to a Creator with a share rate will silently write a sender-currency amount under the destination currency code</td>
+  <td>Add the parameter; carry it onto the share row and receipts; split <code>issueReceiptPair</code> so each party's copy carries its own side</td>
+</tr>
+<tr>
+  <td><strong>RC-5</strong><br>Dashboard <code>totalSent</code></td>
+  <td>High<br><span class="hist">wrong on live data</span></td>
+  <td>Established — the aggregate sums destination-denominated <code>$amount</code></td>
+  <td>The headline PAID figure is wrong for any account with cross-border sends (7× on the busiest live account)</td>
+  <td>Sum <code>metadata.debitAmount</code>, return the account's own currency, report rows lacking it as an excluded count</td>
+</tr>
+<tr>
+  <td><strong>Retry with a new idempotency key</strong></td>
+  <td><span class="badge b-nv">Not rated</span><br>flow reading only</td>
+  <td>Established by inspection — a retry mints a fresh key, so only the 15-second window stands</td>
+  <td>Potentially a duplicate real payment after a timeout. <strong>Not reproduced</strong></td>
+  <td>Reproduce first. If confirmed, reuse the key across a retry of the same authorised payment</td>
+</tr>
+<tr>
+  <td><strong>History reconstruction</strong><br>fresh ≠ reopened receipt</td>
+  <td>Medium</td>
+  <td>Established — the year is discarded at the client boundary; <code>buildHistoryReceipt</code> re-converts; <code>ReceiptModal</code> recomputes</td>
+  <td>Same payment shows different figures before and after a reload; 2- and 5-year filters cannot reach past twelve months</td>
+  <td>Carry the ISO timestamp through and filter on it; read the stored counterparty amount and share amount</td>
+</tr>
+<tr>
+  <td><strong>QR payload</strong><br>no currency, minor units</td>
+  <td>Medium</td>
+  <td>Established</td>
+  <td>A zero-decimal currency cannot express a request above ~20,971 units; the caption states a precision it does not have</td>
+  <td>Scale <code>requestCents</code> by the requester's own <code>currencyDecimals</code>; name the currency in the ceiling message</td>
+</tr>
+<tr>
+  <td><strong>Session</strong><br>account switch without sign-out</td>
+  <td>Low<br>degraded, not a leak</td>
+  <td>Established</td>
+  <td>B is asked to sign in again. No UI path found that reaches it</td>
+  <td>Leave unless a reachable path is found</td>
+</tr>
+</tbody></table></div>
+
+<!-- ───────────────────────── 8 ───────────────────────── -->
+<h2>8 · Today's Timeline</h2>
+<p>Timestamps appear only where reliable evidence exists. Git commit times are exact;
+surrounding phases are ordered from the session record without invented times.</p>
+<ul class="tl">
+<li><span class="t none">—</span> <strong>Audit opened.</strong> Repository recon; payment routes, models, FX and settlement libraries read</li>
+<li><span class="t none">—</span> Server payment contract traced end to end; 36-payment matrix executed against a throwaway database</li>
+<li><span class="t none">—</span> Idempotent-retry response shape captured — the RC-3 evidence</li>
+<li><span class="t none">—</span> Client display helpers executed against the server's recorded responses; live FX table fetched and compared</li>
+<li><span class="t none">—</span> Read-only inspection of live transaction data; RC-5 quantified against production</li>
+<li><span class="t none">—</span> Deployment consistency verified — both targets on <code>f89de31</code>; deployment excluded as a cause</li>
+<li><span class="t none">—</span> Exploratory browser drive reached Send Money; did not complete a payment</li>
+<li><span class="t none">—</span> Audit report written</li>
+<li class="key"><span class="t none">—</span> <strong>RC-3 work begins.</strong> Branch created; flow traced; reachability claim corrected</li>
+<li><span class="t none">—</span> <code>duplicatePaymentResponse</code> implemented; both duplicate sites and receipts ordering updated; Scan &amp; Pay fallback narrowed</li>
+<li><span class="t none">—</span> Regression suite written; passed; verified to fail on the stashed baseline</li>
+<li><span class="t none">—</span> Full server suite run (87/90); the 3 failures reproduced on the untouched baseline and attributed as pre-existing</li>
+<li><span class="t none">—</span> Browser verification of RC-3: 12/12</li>
+<li class="key"><span class="t">19:06:09</span> <strong>Commit <code>2f450a5</code></strong> — fix: return canonical result for idempotent payments</li>
+<li class="key"><span class="t none">—</span> <strong>Session-token work begins.</strong> Branch created off the RC-3 branch; registration flow traced</li>
+<li><span class="t none">—</span> Condition corrected; 13-test regression suite written; passed; 9/13 fail on the stashed baseline</li>
+<li><span class="t none">—</span> Browser verification across three countries: 42/42; baseline run reproduces the symptom (15 failures)</li>
+<li><span class="t none">—</span> <code>financial-principles-tests</code> 215/215; <code>auth-and-access</code> passed; probes clean</li>
+<li class="key"><span class="t">20:01:15</span> <strong>Commit <code>2d05fba</code></strong> — fix: keep the token a fresh registration was just issued</li>
+<li class="key"><span class="t">20:02:25</span> <strong>Commit <code>bd5b1ab</code></strong> — docs: payment amount/currency audit</li>
+<li class="key"><span class="t">20:02:35</span> <strong>Merge <code>3fbdae7</code></strong> into <code>main</code> (<code>--no-ff</code>)</li>
+<li><span class="t none">—</span> Pre-push verification on <code>main</code>: 215/215, RC-3 suite ALL CHECKS PASSED, syntax and bundle clean</li>
+<li class="key"><span class="t none">—</span> <strong>Pushed</strong> <code>f89de31..3fbdae7</code> to <code>origin/main</code>. No deployment triggered</li>
+</ul>
+
+<!-- ───────────────────────── 9 ───────────────────────── -->
+<h2>9 · Git / Change Summary</h2>
+
+<h3>Branches used today</h3>
+<div class="scroll"><table>
+<thead><tr><th>Branch</th><th>Purpose</th><th>State</th></tr></thead>
+<tbody>
+<tr><td><code>fix/rc3-idempotent-duplicate-response</code></td><td>RC-3</td><td>merged, still present locally</td></tr>
+<tr><td><code>fix/registration-session-token</code></td><td>session token + docs; stacked on the RC-3 branch</td><td>merged, still present locally</td></tr>
+<tr><td><code>main</code></td><td>integration</td><td>pushed to <code>origin/main</code></td></tr>
+</tbody></table></div>
+
+<h3>Commits created today</h3>
+<div class="scroll"><table>
+<thead><tr><th>SHA</th><th class="num">Time (IST)</th><th>Subject</th></tr></thead>
+<tbody>
+<tr><td><code>2f450a5</code></td><td class="num">19:06:09</td><td>fix: return canonical result for idempotent payments</td></tr>
+<tr><td><code>2d05fba</code></td><td class="num">20:01:15</td><td>fix: keep the token a fresh registration was just issued</td></tr>
+<tr><td><code>bd5b1ab</code></td><td class="num">20:02:25</td><td>docs: payment amount/currency audit, 2 September 2026</td></tr>
+<tr><td><code>3fbdae7</code></td><td class="num">20:02:35</td><td>Merge fix/registration-session-token into main</td></tr>
+</tbody></table></div>
+
+<h3>Files changed today (<code>f89de31..3fbdae7</code>) — 7 files, +1,677 / −22</h3>
+<div class="scroll"><table>
+<thead><tr><th>File</th><th class="num">Change</th><th>Belongs to</th></tr></thead>
+<tbody>
+<tr><td><code>server/server.js</code></td><td class="num">+206</td><td>RC-3</td></tr>
+<tr><td><code>frontend/App.jsx</code></td><td class="num">+44</td><td>RC-3</td></tr>
+<tr><td><code>server/package.json</code></td><td class="num">+3/−1</td><td>RC-3 (test wiring)</td></tr>
+<tr><td><code>server/tests/idempotent-duplicate-response.test.mjs</code></td><td class="num">new, 417</td><td>RC-3</td></tr>
+<tr><td><code>backend/services/api/sessionStore.js</code></td><td class="num">+53/−3</td><td>session token</td></tr>
+<tr><td><code>financial-principles-tests/tests/registrationSessionToken.test.mjs</code></td><td class="num">new, 264</td><td>session token</td></tr>
+<tr><td><code>docs/audits/PAYMENT_AMOUNT_CURRENCY_AUDIT_2026-09-02.md</code></td><td class="num">new, 712</td><td>audit</td></tr>
+</tbody></table></div>
+
+<h3>State of each change</h3>
+<div class="scroll"><table>
+<thead><tr><th>Change</th><th>Uncommitted</th><th>Committed</th><th>Pushed</th><th>Merged</th><th>Deployed</th></tr></thead>
+<tbody>
+<tr><td>RC-3 fix</td><td>—</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td></tr>
+<tr><td>Session-token fix</td><td>—</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td></tr>
+<tr><td>Audit report</td><td>—</td><td>✅</td><td>✅</td><td>✅</td><td>n/a</td></tr>
+</tbody></table></div>
+<p>Working tree at end of day: <strong>clean</strong>, apart from the report artifacts
+generated by this reporting task.</p>
+
+<!-- ───────────────────────── 10 ───────────────────────── -->
+<h2>10 · Deployment Status</h2>
+<div class="scroll"><table>
+<thead><tr><th>Stage</th><th>State</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Local</td><td><span class="badge b-fixed">Up to date</span></td><td>Working tree clean at <code>3fbdae7</code></td></tr>
+<tr><td>Committed</td><td><span class="badge b-fixed">Yes</span></td><td>Four commits, listed in §9</td></tr>
+<tr><td>Pushed</td><td><span class="badge b-fixed">Yes</span></td><td><code>f89de31..3fbdae7  main -&gt; main</code>; local and remote both at <code>3fbdae7</code>, 0 ahead / 0 behind after re-fetch</td></tr>
+<tr><td>Merged to <code>main</code></td><td><span class="badge b-fixed">Yes</span></td><td>Merge commit <code>3fbdae7</code></td></tr>
+<tr><td><strong>Deployed to Netlify</strong></td><td><span class="badge b-open">Not deployed</span></td><td>Netlify serves <code>/assets/index-CtzF5nkc.js</code>. A clean production build of <code>3fbdae7</code> produces <code>index-BVnhr67M.js</code>. The served bundle is the <code>f89de31</code> build verified this morning</td></tr>
+<tr><td><strong>Deployed to Render</strong></td><td><span class="badge b-open">No deploy triggered</span> <span class="badge b-nv">Commit not verified</span></td><td>No manual deploy was triggered today. Auto-deploy is documented as broken <span class="hist">[historical context: <code>CLAUDE.md</code> — Render's GitHub App lost repository access at the rename]</span>. The RC-3 change cannot be probed unauthenticated, so Render's exact commit could not be confirmed</td></tr>
+</tbody></table></div>
+<div class="callout bad"><strong>Both fixes have no effect in production yet.</strong>
+The session-token fix is entirely client-side and needs a Netlify deploy; RC-3 changes
+<code>server/</code> and needs a manual Render deploy.</div>
+
+<!-- ───────────────────────── 11 ───────────────────────── -->
+<h2>11 · Recommended Next Work</h2>
+<ol>
+<li><strong>RC-4 — Creator Share currency.</strong> Smallest change, and the only open
+item that will silently write permanently wrong records. Do it before any Creator is
+paid across a corridor.</li>
+<li><strong>RC-2 — stop discarding the server's figures.</strong> Makes the receipt, the
+local ledger and the dashboard agree with the money, and is a prerequisite for the
+right shape of the RC-1 fix.</li>
+<li><strong>RC-1 — one rate.</strong> With RC-2 done, the client rate only affects the
+quote, which is the right place to fix it properly.</li>
+<li><strong>RC-5 — dashboard totals.</strong> Wrong on live data today; a contained
+change to one aggregate.</li>
+<li><strong>Reproduce the new-idempotency-key retry scenario</strong>, then decide. Do not
+fix on an unreproduced hypothesis.</li>
+<li><strong>History and receipt reconstruction.</strong> Removes the before/after-reload
+difference and repairs the long history filters.</li>
+<li><strong>QR minor units.</strong> Contained; the payload currency question is a
+separate product decision.</li>
+</ol>
+<div class="callout"><strong>Deployment decision, separate from the above:</strong> both
+merged fixes are inert until Netlify and Render are deployed manually. That is a call
+for the founder, not a code change.</div>
+
+<footer>
+  Prepared 2 September 2026. All figures were produced by runs performed today; where
+  something was not verified, it says so. Companion document:
+  <code>docs/audits/PAYMENT_AMOUNT_CURRENCY_AUDIT_2026-09-02.md</code>.
+</footer>
+
+</div>
+</body>
+</html>

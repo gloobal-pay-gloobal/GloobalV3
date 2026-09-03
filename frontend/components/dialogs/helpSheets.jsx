@@ -15,7 +15,15 @@
 // Deliberately a bottom sheet rather than a full screen: the sheet leaves
 // the card and the first rows of the dial pad visible behind it, so the
 // symbol glossary can be read while looking at the pad it describes.
-import { HelpCircle as HelpCircle2, X as X6 } from "lucide-react";
+import {
+  HelpCircle as HelpCircle2,
+  X as X6,
+  ShieldCheck as HelpShield,
+  Lightbulb as HelpBulb,
+  SquarePen as HelpCreate,
+  RotateCw as HelpChoose,
+  ChevronRight as HelpNext
+} from "lucide-react";
 
 // The eight symbols, in DIAL_SYMBOLS order, each with the word to say for
 // it. Order matters: it is the order they appear on SymbolDialPad, so the
@@ -134,19 +142,145 @@ function HelpStepRow({ n, children, emphasis }) {
 }
 
 // ── Create Gloobal ID ────────────────────────────────────────────────────
+// The three things a person has to do with a Gloobal ID, in order.
+//
+// Separated from the markup so the sheet reads as a layout rather than as
+// three hand-written blocks that can drift in padding or wording.
+var SYMBOL_ID_STEPS = [
+  {
+    n: 1,
+    Icon: HelpCreate,
+    title: "Create",
+    body: "Use the 8 symbols above to build your 12-symbol ID."
+  },
+  {
+    n: 2,
+    Icon: HelpChoose,
+    title: "Choose",
+    body: "Pick a ready-made ID, or get a new pair."
+  },
+  {
+    n: 3,
+    Icon: HelpShield,
+    title: "Keep",
+    body: "This is how people pay you. It stays the same until you change it."
+  }
+];
+
+// The pairs that are only distinguishable by fill.
+//
+// These four are the whole reason `say` and `note` exist in the glossary
+// above: ○ and ● are one word apart out loud and one fill apart on screen,
+// and so are □ and ■. Given their own panel because a person reading an ID
+// down a phone line has to know it before they start, not discover it when
+// a payment goes to the wrong account.
+var SYMBOL_ID_PAIRS = [
+  [{ ch: "\u25CB", word: "circle is hollow" }, { ch: "\u25A1", word: "square is hollow" }],
+  [{ ch: "\u25CF", word: "dot is filled" }, { ch: "\u25A0", word: "block is filled" }]
+];
+
+// An example ID, read left to right.
+//
+// Eight symbols rather than a full twelve: the point is the READING order
+// and the chevrons that carry it, and twelve at this size wrapped to two
+// lines on a narrow phone, which broke the one thing the row exists to
+// show.
+var SYMBOL_ID_EXAMPLE = ["+", "\u2212", "\u25CB", "\u25A0", "=", "\u00D7", "\u25CF", "\u25A1"];
+
 function SymbolIdHelpSheet({ open, onClose }) {
+  // Each symbol keeps the colour it has on the pad and in the person's own
+  // ID (POSITION_COLORS), so nothing here is tinted a way they have not
+  // already seen it.
+  const toneOf = (i) => POSITION_COLORS[i % POSITION_COLORS.length];
   return <HelpSheet
     open={open}
     onClose={onClose}
     title="Your Gloobal ID"
-    subtitle="Twelve symbols — no letters, no numbers. The same eight symbols exist on every keyboard in every country, so your ID looks and sounds identical wherever you are."
-  ><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>{GLOOBAL_SYMBOL_GLOSSARY.map((s, i) => <div
-    key={s.ch}
+  >{
+    /* The claim, once, with a mark beside it. The old sheet opened with a
+       four-line subtitle explaining keyboards and countries; this says the
+       same thing in one line and lets the tiles below do the explaining,
+       which is what a glossary is for. */
+  }<div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 16 }}><span
+    style={{
+      flexShrink: 0,
+      width: 46,
+      height: 46,
+      borderRadius: "50%",
+      background: T.accentSoft,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }}
+  ><HelpShield size={22} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, lineHeight: 1.45, color: T.ink }}>
+      Make your ID with 12 universal symbols that work everywhere.
+    </span></div>{
+    /* Four across, not two. The symbol is the subject here and the word is
+       its caption, so the tile is a square with the mark large in it —
+       which is also what makes the hollow/filled distinction visible at a
+       glance rather than something to squint at. */
+  }<div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>{GLOOBAL_SYMBOL_GLOSSARY.map((sym, i) => <div
+    key={sym.ch}
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      padding: "14px 4px 11px",
+      borderRadius: T.radiusMd,
+      background: T.surface,
+      border: `1px solid ${T.line}`
+    }}
+  ><span
+    style={{ fontSize: 26, fontWeight: 800, lineHeight: 1, color: toneOf(i), fontFamily: T.fontDisplay }}
+  >{sym.ch}</span><span style={{ fontSize: 11.5, fontWeight: 800, color: T.ink }}>{sym.name}</span></div>)}</div>{
+    /* How to read one. */
+  }<div
+    style={{
+      marginTop: 12,
+      padding: "13px 13px 14px",
+      borderRadius: T.radiusMd,
+      background: T.accentSoft,
+      border: `1px solid ${T.line}`
+    }}
+  ><span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.accent, marginBottom: 10 }}>
+      How to read
+    </span>{
+    /* Chevrons between the symbols, not spaces. A run of eight marks with
+       gaps reads as a set; with arrows it reads as a sequence, which is
+       what an ID is — and the direction is the thing a person has to get
+       right when they say it out loud. Scrolls sideways rather than
+       wrapping, because a wrapped sequence stops looking like one. */
+  }<div style={{ display: "flex", alignItems: "center", gap: 5, overflowX: "auto", paddingBottom: 2 }}>{SYMBOL_ID_EXAMPLE.map((ch, i) => <span key={i} style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>{i > 0 && <HelpNext size={13} color={T.inkFaint} />}<span
+    style={{ fontSize: 19, fontWeight: 800, lineHeight: 1, color: toneOf(i), fontFamily: T.fontDisplay }}
+  >{ch}</span></span>)}</div><div style={{ height: 1, background: T.line, margin: "12px 0" }} /><div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}><span
+    style={{
+      flexShrink: 0,
+      width: 34,
+      height: 34,
+      borderRadius: "50%",
+      background: T.surface,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }}
+  ><HelpBulb size={16} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>
+      Watch the pairs
+    </span><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 10px" }}>{SYMBOL_ID_PAIRS.map((row, r) => row.map((pair, c) => <span
+    key={`${r}-${c}`}
+    style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: T.inkSoft, minWidth: 0 }}
+  ><span
+    style={{ fontSize: 15, fontWeight: 800, lineHeight: 1, flexShrink: 0, color: toneOf(GLOOBAL_SYMBOL_GLOSSARY.findIndex((g) => g.ch === pair.ch)), fontFamily: T.fontDisplay }}
+  >{pair.ch}</span><span style={{ minWidth: 0 }}>{pair.word}</span></span>))}</div></span></div></div>{
+    /* Create, Choose, Keep. */
+  }<div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>{SYMBOL_ID_STEPS.map((step) => <div
+    key={step.n}
     style={{
       display: "flex",
       alignItems: "center",
-      gap: 10,
-      padding: "10px 11px",
+      gap: 12,
+      padding: "13px 13px",
       borderRadius: T.radiusMd,
       background: T.surface,
       border: `1px solid ${T.line}`
@@ -154,39 +288,29 @@ function SymbolIdHelpSheet({ open, onClose }) {
   ><span
     style={{
       flexShrink: 0,
-      width: 32,
-      height: 32,
-      borderRadius: 10,
-      background: T.surfaceAlt,
-      // Same per-position palette the ID itself is drawn in, so a symbol
-      // here is tinted the way the person has already seen it on the pad
-      // and in their own ID rather than in a colour used nowhere else.
-      color: POSITION_COLORS[i % POSITION_COLORS.length],
-      fontSize: 17,
+      width: 26,
+      height: 26,
+      borderRadius: "50%",
+      background: T.accent,
+      color: "#fff",
+      fontSize: 12,
       fontWeight: 800,
-      lineHeight: 1,
       display: "flex",
       alignItems: "center",
       justifyContent: "center"
     }}
-  >{s.ch}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 12, fontWeight: 800, color: T.ink }}>{s.name}{s.note && <span style={{ marginLeft: 5, fontSize: 9, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.inkFaint }}>{s.note}</span>}</span><span style={{ display: "block", marginTop: 1, fontSize: 10.5, color: T.inkFaint }}>{s.say}</span></span></div>)}</div><div
+  >{step.n}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink }}>{step.title}</span><span style={{ display: "block", marginTop: 2, fontSize: 11.5, lineHeight: 1.45, color: T.inkSoft }}>{step.body}</span></span><span
     style={{
-      marginTop: 14,
-      padding: "12px 13px",
-      borderRadius: T.radiusMd,
+      flexShrink: 0,
+      width: 36,
+      height: 36,
+      borderRadius: "50%",
       background: T.accentSoft,
-      border: `1px solid ${T.line}`,
       display: "flex",
-      flexDirection: "column",
-      gap: 9
+      alignItems: "center",
+      justifyContent: "center"
     }}
-  ><span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: T.accent }}>
-        Reading one out
-      </span><span style={{ fontSize: 15, fontWeight: 800, letterSpacing: 2, color: T.ink, fontFamily: T.fontDisplay }}>
-        {"+ − ○ ■ = × ● □ + = − ○"}
-      </span><span style={{ fontSize: 12, lineHeight: 1.55, color: T.inkSoft }}>
-        “plus, minus, circle, block, equals, times, dot, square, plus, equals, minus, circle”. Watch the pairs: ○ circle is hollow, ● dot is filled; □ square is hollow, ■ block is filled.
-      </span></div><div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}><HelpStepRow n="1">Tap the eight symbols on the pad to build your own twelve.</HelpStepRow><HelpStepRow n="2">Or take one of the two ready-made IDs under <strong style={{ fontWeight: 800 }}>Suggested for you</strong> — tap one to use it, or tap the refresh circle on the right of the box for a fresh pair.</HelpStepRow><HelpStepRow n="3">This ID is how people pay you. Keep it; it never changes unless you change it yourself.</HelpStepRow></div></HelpSheet>;
+  ><step.Icon size={16} color={T.accent} /></span></div>)}</div></HelpSheet>;
 }
 
 // ── Referral ID ──────────────────────────────────────────────────────────

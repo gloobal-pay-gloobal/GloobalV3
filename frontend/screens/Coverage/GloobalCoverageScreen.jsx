@@ -204,7 +204,15 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       "--dx": `${f.dx}px`,
       "--dy": `${f.dy}px`
     }}
-  >{f.flag}</span>)}</div><div className="relative w-full" style={{ background: "transparent", minHeight: "100%", zIndex: 1 }}>{
+  >{
+    /* Was `{f.flag}` printed as text. An emoji flag renders as a flag on
+       Apple platforms and as the country's two LETTERS on Windows and most
+       Android builds, which have no flag glyphs — so this decorative drift
+       of flags was a decorative drift of the letters "IN GB KE" for a good
+       share of the people using the app. FlagEmoji draws the real image and
+       keeps the emoji as its own fallback, and it is the one component every
+       other flag in the app already goes through. */
+  }<FlagEmoji flag={f.flag} width={f.size} height={Math.round(f.size * 0.68)} radius={2} background="transparent" /></span>)}</div><div className="relative w-full" style={{ background: "transparent", minHeight: "100%", zIndex: 1 }}>{
     /* Header — plain title now, search bar removed. */
   }<div className="flex items-center gap-2.5 px-5 pt-6 pb-4"><button
     aria-label="Go back"

@@ -22,16 +22,27 @@ import { test, describe, after } from "node:test";
 import assert from "node:assert/strict";
 import { openPage, teardown, ACCOUNTS } from "./browser-harness.mjs";
 
+// Matches a control by aria-label OR by its visible text.
+//
+// getByLabel alone stopped working when the permissions explainer's
+// circular tick (aria-label="Continue", no text) became the app's shared
+// "I am IN" button, whose accessible name is the words on it. Adding an
+// aria-label to that button to keep the old selector working would have
+// been the wrong fix: an accessible name that differs from the visible text
+// breaks voice control, where someone says what they can see.
+const control = (page, label) =>
+  page.getByLabel(label, { exact: true }).or(page.getByRole("button", { name: label, exact: true }));
+
 const visible = async (page, label) =>
-  (await page.getByLabel(label, { exact: true }).count().catch(() => 0)) > 0 &&
-  (await page.getByLabel(label, { exact: true }).first().isVisible().catch(() => false));
+  (await control(page, label).count().catch(() => 0)) > 0 &&
+  (await control(page, label).first().isVisible().catch(() => false));
 
 const tapUntil = async (page, tap, until, budget = 30000) => {
   const deadline = Date.now() + budget;
   while (Date.now() < deadline) {
     if (await visible(page, until)) return;
     if (await visible(page, tap)) {
-      await page.getByLabel(tap, { exact: true }).first().click({ force: true, timeout: 5000 }).catch(() => {});
+      await control(page, tap).first().click({ force: true, timeout: 5000 }).catch(() => {});
     }
     await page.waitForTimeout(400);
   }
@@ -40,7 +51,7 @@ const tapUntil = async (page, tap, until, budget = 30000) => {
 
 async function firstLogin(page, account) {
   await page.waitForTimeout(1200);
-  await tapUntil(page, "Continue", "Flip to log in");
+  await tapUntil(page, "I am IN", "Flip to log in");
   await tapUntil(page, "Flip to log in", "Symbol −");
   for (const symbol of account.symbolId) {
     await page.getByLabel(`Symbol ${symbol}`, { exact: true }).click({ force: true, timeout: 8000 });

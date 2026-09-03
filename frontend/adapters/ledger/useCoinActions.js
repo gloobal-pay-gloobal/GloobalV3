@@ -27,7 +27,14 @@ function useCoinActions() {
   const mintCoin = useCallback9(
     async (symbolId, amount) => {
       const result = await GloobalApi.coinMint(symbolId, amount);
-      core.coinService.mint(result.minted, { meta: { referenceId: result.referenceId } });
+      // Both legs, from the server's own response. `minted` is coin issued;
+      // `paid` is what actually left the bank balance, in this account's
+      // currency. Passing only the first would post the coin figure to the
+      // fiat line — see the note at the top of CoinService.
+      core.coinService.mint(result.minted, {
+        fiatAmount: result.paid,
+        meta: { referenceId: result.referenceId, geuRate: result.geuRate }
+      });
       // Both sides moved, so both are reconciled. Each is a no-op when the
       // posting above already landed on the server's figure, which is the
       // ordinary case — they earn their keep when it did not, for instance
@@ -43,7 +50,10 @@ function useCoinActions() {
   const redeemCoin = useCallback9(
     async (symbolId, amount) => {
       const result = await GloobalApi.coinRedeem(symbolId, amount);
-      core.coinService.redeem(result.redeemed, { meta: { referenceId: result.referenceId } });
+      core.coinService.redeem(result.redeemed, {
+        fiatAmount: result.received,
+        meta: { referenceId: result.referenceId, geuRate: result.geuRate }
+      });
       core.reconcileBankBalance(result.balance);
       core.reconcileCoinBalance(result.coinBalance);
       return result;

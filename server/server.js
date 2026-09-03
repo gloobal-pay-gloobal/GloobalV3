@@ -5572,7 +5572,21 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
 // together anywhere in this file. They are equal in magnitude by the 1:1 issue
 // rate, which is a property of the peg and not licence to treat one as the
 // other.
-const COIN_CURRENCY = 'GC';
+// The ticker, stored as well as shown.
+//
+// Was 'GC'. Gloobal Coin IS the Gloobal Energy Unit — one pegged unit, one
+// name, in the ledger and on the screen. The peg is the definition: 1 GEU =
+// 1 unit of CoinReserve.reserveCurrency (₹1), in both directions, backed
+// 1:1, with no growth mechanism. Growth is a later decision and, when it
+// comes, it gets added HERE rather than to a second currency — see
+// docs/GEU_GROWTH_DESIGN.md for the prototype that already explored it and
+// the questions it left open.
+//
+// Rows written before this change carry 'GC'. They are not rewritten on
+// deploy: see server/scripts/migrate-gc-to-geu.mjs, a one-shot migration run
+// deliberately, because silently rewriting stored money records during a
+// restart is not something that should happen as a side effect of shipping.
+const COIN_CURRENCY = 'GEU';
 
 const coinBalanceOf = (user) => {
   const raw = Number(user?.coinBalance);
@@ -5678,6 +5692,48 @@ const readCoinAmount = (raw) => {
   return { amount };
 };
 
+// How many GEU one unit of an account's own currency buys, and the inverse.
+//
+// ── The rule this encodes ────────────────────────────────────────────────
+//
+// One GEU is one unit of the RESERVE currency (INR today). That is the peg,
+// and it is the same peg for everybody. What differs is what you pay with:
+// a person in India pays ₹1 for 1 GEU, a person in the United States pays
+// $1 and receives about 85 GEU, because $1 IS about ₹85.
+//
+// ── What this replaced, and why it mattered ──────────────────────────────
+//
+// Both routes below used to move the typed number into both fields:
+//
+//     $inc: { balance: -amount, coinBalance: +amount }
+//
+// For an INR account that is correct, because the account currency and the
+// reserve currency are the same and the rate is 1. For every other account
+// it was wrong in the worst available direction: a US account paid $100 and
+// received 100 GEU — about ₹100 of value — losing roughly 98% of what it
+// paid. The reserve was then credited 100 and LABELLED INR, when what
+// actually arrived was $100.
+//
+// Worse, the "fully backed" check could not see it. `backed` compares
+// reserve, issued and heldByAccounts, and all three were incremented by the
+// same wrong number, so they agreed with each other perfectly while the
+// reserve held nothing like the fiat it claimed. Three numbers that are only
+// ever changed together cannot catch an error made once, before they are
+// changed. The green tick was true and meaningless at the same time.
+//
+// ── Fail closed ──────────────────────────────────────────────────────────
+//
+// A missing rate throws. It does not fall back to 1. A fallback of 1 is
+// exactly the bug above, reintroduced silently at the moment the FX service
+// is down — and it moves real balance. Same rule lib/fxRates.js documents
+// for itself and the send route already follows.
+const geuRateFor = async (accountCurrency, reserveCurrency) => {
+  if (accountCurrency === reserveCurrency) return { rate: 1, source: 'identity' };
+  // getRate(from, to) answers "1 unit of `from` is how many `to`", which is
+  // the direction the send route uses it in too.
+  return getRate(accountCurrency, reserveCurrency);
+};
+
 // Total supply and the reserve behind it.
 //
 // Public and unauthenticated, like /api/stats: it answers with three aggregate
@@ -5723,6 +5779,234 @@ app.get('/api/coin/supply', async (req, res) => {
   }
 });
 
+// Below this many holders in a country, that country's HELD AMOUNT is not
+// reported — only its holder count is.
+//
+// The reason is arithmetic, not squeamishness. "India · 1 holder · ₹4,200"
+// is not an aggregate; it is one person's balance with their country
+// printed next to it. Anyone who knows a particular person is the only
+// Gloobal user in their country reads their balance straight off a public
+// screen. At the current size most countries have exactly one holder, so
+// this is the common case rather than an edge one.
+//
+// The withheld amounts are not dropped — they are summed into
+// `withheld` on the response, so the per-country rows plus `withheld`
+// always add back up to `heldByAccounts`. A privacy rule that made the
+// totals stop reconciling would have traded one problem for a worse one.
+const MIN_HOLDERS_FOR_AMOUNT = 2;
+
+// GET /api/coin/holders — who holds the coin, grouped by country.
+//
+// COUNTS AND SUMS ONLY. No ids, no symbolIds, no names, no per-account
+// figures — the same rule /api/creator-share/distribution documents for
+// itself, for the same reason: this is the shape of data that is safe to
+// publish and very easy to leak an individual through, so the grouping is
+// done in the database and only the aggregates come back.
+//
+// `held` is denominated in the reserve currency (the currency the coin is
+// backed by, INR today). `localHeld` is that same figure converted into the
+// country's OWN currency, which is the point of the screen — a holder in
+// Kenya should see what the country holds in shillings, not in rupees.
+//
+// A country whose rate cannot be fetched gets localHeld: null, NOT a
+// copy of the reserve figure and NOT zero. Both of those are readable as
+// real answers; null renders as ∆ on the screen, the same "we could not
+// ask" mark Coverage and the supply banner already use. Same fail-closed
+// rule lib/fxRates.js applies to itself — one country's missing rate does
+// not fail the whole request, because the holder counts are still true.
+//
+// MUST stay declared above /api/coin/:symbolId, for the reason
+// /api/coin/supply's own comment gives: Express matches in declaration
+// order, and behind the parameterised route this 404s with
+// symbolId === 'holders'.
+app.get('/api/coin/holders', lookupLimit, async (req, res) => {
+  try {
+    const reserveDoc = await CoinReserve.load();
+    const reserveCurrency = reserveDoc?.reserveCurrency || 'INR';
+
+    // Only accounts that actually hold coin. A country whose users all hold
+    // zero is not a country with holders, and listing it with 0 · 0 would
+    // pad the list with rows that mean nothing.
+    const rows = await User.aggregate([
+      { $match: { coinBalance: { $gt: 0 } } },
+      {
+        $group: {
+          _id: { $toUpper: { $ifNull: ['$countryIso', ''] } },
+          holders: { $sum: 1 },
+          held: { $sum: '$coinBalance' },
+        },
+      },
+      { $sort: { held: -1, holders: -1 } },
+    ]);
+
+    let withheld = 0;
+    let withheldCountries = 0;
+
+    const countries = await Promise.all(rows.map(async (row) => {
+      const countryIso = String(row._id || '').toUpperCase() || null;
+      const holders = Number(row.holders) || 0;
+      const held = toMinorUnit(row.held || 0);
+      const shown = holders >= MIN_HOLDERS_FOR_AMOUNT;
+
+      if (!shown) {
+        withheld = toMinorUnit(withheld + held);
+        withheldCountries += 1;
+      }
+
+      // No ISO on the account at all — a real state for old rows, and one
+      // worth showing as its own line rather than dropping, since dropping
+      // it would make the country rows stop summing to the total.
+      const localCurrency = countryIso ? localCurrencyFor(countryIso) : null;
+
+      let localHeld = null;
+      if (shown && localCurrency) {
+        if (localCurrency === reserveCurrency) {
+          localHeld = held;
+        } else {
+          try {
+            const { rate } = await getRate(reserveCurrency, localCurrency);
+            localHeld = toMinorUnit(held * rate, localCurrency);
+          } catch (fxError) {
+            // Deliberately not fatal, and deliberately not defaulted to
+            // `held`. This country's count is still true; only its
+            // converted amount is unavailable.
+            console.error(`Holder FX lookup failed for ${reserveCurrency}->${localCurrency}:`, fxError);
+            localHeld = null;
+          }
+        }
+      }
+
+      return {
+        countryIso,
+        holders,
+        // Withheld amounts are absent from the row entirely rather than
+        // sent as 0 — a 0 here would be read as "this country holds
+        // nothing", which is a different claim from "we are not saying".
+        held: shown ? held : null,
+        localCurrency,
+        localHeld,
+      };
+    }));
+
+    const totalHolders = countries.reduce((sum, c) => sum + c.holders, 0);
+    const heldByAccounts = toMinorUnit(rows.reduce((sum, r) => sum + (Number(r.held) || 0), 0));
+
+    return res.json({
+      success: true,
+      reserveCurrency,
+      coinCurrency: COIN_CURRENCY,
+      totalHolders,
+      heldByAccounts,
+      issued: toMinorUnit(reserveDoc?.issued || 0),
+      // Per-country `held` + `withheld` === heldByAccounts, always.
+      withheld,
+      withheldCountries,
+      minHoldersForAmount: MIN_HOLDERS_FOR_AMOUNT,
+      countries,
+    });
+  } catch (error) {
+    console.error('Coin holders error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load coin holders.' });
+  }
+});
+
+// GET /api/coin/holders/:countryIso — the individual holders in one country.
+//
+// ── This one is different from the others, and it is worth being explicit ─
+//
+// Every other aggregate route here answers with tallies and names nobody.
+// This one lists accounts. Asked for directly: tapping a country should open
+// the list of holders in it.
+//
+// What it publishes, per holder, is the Gloobal ID and the amount held. The
+// Gloobal ID is already the app's public handle — it is what you give someone
+// so they can pay you, it appears on receipts, and /api/resolve looks accounts
+// up by it. The holding is the new disclosure. That is a deliberate design
+// choice for a currency that claims to be fully backed: the reserve total is
+// only checkable if the holdings that add up to it are visible, which is the
+// same bargain a public chain makes.
+//
+// What it never publishes: names, mobile numbers, emails, bank details, and
+// anything from an account holding no coin. Someone who has never touched the
+// coin does not appear on a coin screen.
+//
+// It requires a signed-in caller, unlike the country totals. Aggregates are
+// safe to hand to anyone; a list of who holds what is not something to leave
+// open to unauthenticated scraping, even when each row is individually
+// publishable.
+//
+// MUST stay declared above /api/coin/:symbolId — two path segments here
+// versus one there means no collision either way, but it sits with the other
+// holder routes for reading order.
+app.get('/api/coin/holders/:countryIso', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const countryIso = String(req.params.countryIso || '').trim().toUpperCase();
+
+    if (!/^[A-Z]{2}$/.test(countryIso)) {
+      return res.status(400).json({ success: false, message: 'A two-letter country code is required.' });
+    }
+
+    const reserveDoc = await CoinReserve.load();
+    const reserveCurrency = reserveDoc?.reserveCurrency || 'INR';
+    const localCurrency = localCurrencyFor(countryIso);
+
+    // Explicitly projected, one field at a time. A `.select('-password')`
+    // style exclusion publishes every field somebody adds to the schema
+    // later; naming what goes out means a new field is invisible here until
+    // someone decides otherwise.
+    const holders = await User.find(
+      { countryIso, coinBalance: { $gt: 0 } },
+      { _id: 0, symbolId: 1, coinBalance: 1 }
+    )
+      .sort({ coinBalance: -1 })
+      .limit(200)
+      .lean();
+
+    let rate = null;
+
+    if (localCurrency && localCurrency !== reserveCurrency) {
+      try {
+        ({ rate } = await getRate(reserveCurrency, localCurrency));
+      } catch (fxError) {
+        // Not fatal. The holdings are true in reserve terms whether or not
+        // the local conversion can be had; the screen shows ∆ for the
+        // converted column and the real figure underneath it.
+        console.error(`Holder FX lookup failed for ${reserveCurrency}->${localCurrency}:`, fxError);
+      }
+    } else if (localCurrency === reserveCurrency) {
+      rate = 1;
+    }
+
+    const rows = holders.map((h) => {
+      const held = toMinorUnit(h.coinBalance || 0, COIN_CURRENCY);
+      return {
+        symbolId: h.symbolId || null,
+        held,
+        localHeld: rate === null || !localCurrency ? null : toMinorUnit(held * rate, localCurrency),
+      };
+    });
+
+    return res.json({
+      success: true,
+      countryIso,
+      reserveCurrency,
+      coinCurrency: COIN_CURRENCY,
+      localCurrency,
+      holders: rows.length,
+      // Summed from the rows actually returned, so the figure at the top of
+      // the screen is the sum of the list under it and cannot disagree with
+      // it — including when the 200 cap truncates the list, which `truncated`
+      // then says out loud rather than leaving the shortfall unexplained.
+      held: toMinorUnit(rows.reduce((sum, r) => sum + r.held, 0), COIN_CURRENCY),
+      truncated: rows.length >= 200,
+      rows,
+    });
+  } catch (error) {
+    console.error('Country holders error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load holders for that country.' });
+  }
+});
+
 // One account's coin position, plus the supply it sits inside.
 app.get('/api/coin/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
@@ -5733,6 +6017,29 @@ app.get('/api/coin/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId')
     }
 
     const reserveDoc = await CoinReserve.load();
+    const reserveCurrency = reserveDoc?.reserveCurrency || 'INR';
+    const accountCurrency = await resolveOwnCurrency(user);
+
+    // What one unit of this account's own currency buys, so the screen can
+    // say "$1 = 85.60 GEU" instead of the flat "1 GEU = $1" it used to show
+    // every account regardless of where they were. That old line was not a
+    // rounding problem — for a US account it was off by a factor of 85, and
+    // it was the ONLY statement of the rate anywhere in the app.
+    //
+    // null, not 1, when the rate cannot be had. 1 is the wrong answer that
+    // looks like a right one, and the screen renders null as ∆.
+    let geuPerAccountUnit = null;
+    let geuRateSource = null;
+
+    if (accountCurrency) {
+      try {
+        const { rate, source } = await geuRateFor(accountCurrency, reserveCurrency);
+        geuPerAccountUnit = rate;
+        geuRateSource = source;
+      } catch (fxError) {
+        console.error(`GEU display rate lookup failed for ${accountCurrency}->${reserveCurrency}:`, fxError);
+      }
+    }
 
     return res.json({
       success: true,
@@ -5740,7 +6047,10 @@ app.get('/api/coin/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId')
       coinBalance: coinBalanceOf(user),
       balance: accountBalanceOf(user),
       coinCurrency: COIN_CURRENCY,
-      reserveCurrency: reserveDoc?.reserveCurrency || 'INR',
+      accountCurrency,
+      geuPerAccountUnit,
+      geuRateSource,
+      reserveCurrency,
       reserve: toMinorUnit(reserveDoc?.reserve || 0),
       issued: toMinorUnit(reserveDoc?.issued || 0),
     });
@@ -5760,9 +6070,6 @@ app.get('/api/coin/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId')
 app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const { symbolId, amount } = req.body || {};
-    const { amount: coinAmount, error } = readCoinAmount(amount);
-
-    if (error) return res.status(400).json({ success: false, message: error });
 
     const user = await User.findOne({ symbolId: String(symbolId || '').trim() });
 
@@ -5783,10 +6090,63 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
       return res.status(400).json({ success: false, message: 'Gloobal Coin is not supported for your country yet.' });
     }
 
-    const precisionError = assertRepresentableInAccountCurrency(coinAmount, accountCurrency);
+    const reserveCurrency = (await CoinReserve.load())?.reserveCurrency || 'INR';
+
+    // The typed number is FIAT, in this account's own currency — which is what
+    // the screen has always implied by showing that currency's symbol beside
+    // the field and setting MAX to the bank balance. It is rounded in that
+    // currency, not in coin units, because it is the figure that leaves a
+    // balance denominated in it.
+    const fiatAmount = toMinorUnit(Number(amount), accountCurrency);
+
+    if (!Number.isFinite(fiatAmount) || fiatAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid amount greater than 0 is required.' });
+    }
+
+    const precisionError = assertRepresentableInAccountCurrency(fiatAmount, accountCurrency);
 
     if (precisionError) {
       return res.status(400).json({ success: false, message: precisionError, currency: accountCurrency });
+    }
+
+    let geuRate = 1;
+    let geuRateSource = 'identity';
+
+    try {
+      ({ rate: geuRate, source: geuRateSource } = await geuRateFor(accountCurrency, reserveCurrency));
+    } catch (fxError) {
+      console.error(`GEU mint rate lookup failed for ${accountCurrency}->${reserveCurrency}:`, fxError);
+      return res.status(502).json({
+        success: false,
+        message: 'Exchange rate is temporarily unavailable. Please try again in a moment.',
+      });
+    }
+
+    const coinAmount = toMinorUnit(fiatAmount * geuRate, COIN_CURRENCY);
+
+    // A small amount of a strong currency can round away to nothing. Refusing
+    // is the only honest answer: the alternative is taking the fiat and
+    // issuing zero coin for it.
+    if (!Number.isFinite(coinAmount) || coinAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: `That is too small to buy any ${COIN_CURRENCY}.`,
+        currency: accountCurrency,
+      });
+    }
+
+    // The prototype cap is applied to the COIN figure, not to the typed fiat.
+    // It is a limit on how much the prototype ledger can issue at once, and
+    // only in the common unit does it mean the same thing to every account —
+    // capping the typed number instead would let a US account mint 85x what
+    // an Indian one could for the same nominal figure.
+    const maxPrototypeAmount = Number(process.env.PROTOTYPE_TRANSACTION_MAX_AMOUNT || 5000);
+
+    if (Number.isFinite(maxPrototypeAmount) && maxPrototypeAmount > 0 && coinAmount > maxPrototypeAmount) {
+      return res.status(400).json({
+        success: false,
+        message: `Prototype coin limit is ${maxPrototypeAmount} ${COIN_CURRENCY} per operation.`,
+      });
     }
 
     const referenceId = await resolveTransactionReference();
@@ -5798,8 +6158,8 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
       // event, and splitting them into two writes would open a window in which
       // the account had neither.
       const converted = await User.findOneAndUpdate(
-        { _id: user._id, balance: { $gte: coinAmount } },
-        { $inc: { balance: -coinAmount, coinBalance: coinAmount } },
+        { _id: user._id, balance: { $gte: fiatAmount } },
+        { $inc: { balance: -fiatAmount, coinBalance: coinAmount } },
         { returnDocument: 'after', ...sessionOpt }
       );
 
@@ -5808,6 +6168,8 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
         throw new InsufficientBalanceError(accountBalanceOf(current || {}));
       }
 
+      // Both in reserve currency. One GEU is one unit of it, so the coin
+      // figure IS the reserve figure — that identity is the peg.
       const reserveDoc = await CoinReserve.findOneAndUpdate(
         { key: 'global' },
         { $inc: { reserve: coinAmount, issued: coinAmount } },
@@ -5830,7 +6192,17 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
             status: 'success',
             note: 'Minted Gloobal Coin',
             referenceId,
-            metadata: { prototype: true, reserveCurrency: reserveDoc?.reserveCurrency || 'INR' },
+            // The rate is recorded, not just applied. A conversion whose rate
+            // is not on the record cannot be checked afterwards, and this one
+            // decides how much coin a person got for their money.
+            metadata: {
+              prototype: true,
+              reserveCurrency: reserveDoc?.reserveCurrency || 'INR',
+              paidAmount: fiatAmount,
+              paidCurrency: accountCurrency,
+              geuRate,
+              geuRateSource,
+            },
           },
         ],
         session ? { session } : {}
@@ -5846,10 +6218,14 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
             transactionId: transaction._id,
             userId: user._id,
             entryType: 'debit',
-            amount: coinAmount,
-            balanceBefore: toMinorUnit(balanceAfter + coinAmount, accountCurrency),
+            // The fiat leg is denominated in the ACCOUNT's currency and moves
+            // the amount that actually left the balance. It used to record
+            // coinAmount against the reserve currency, which for any non-INR
+            // account named neither the right number nor the right unit.
+            amount: fiatAmount,
+            balanceBefore: toMinorUnit(balanceAfter + fiatAmount, accountCurrency),
             balanceAfter,
-            currency: reserveDoc?.reserveCurrency || 'INR',
+            currency: accountCurrency,
             note: 'Fiat moved into coin reserve',
             metadata: { prototype: true, coinLeg: 'fiat', transactionReferenceId: transaction.referenceId },
           },
@@ -5875,6 +6251,10 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
       success: true,
       atomic,
       minted: coinAmount,
+      paid: fiatAmount,
+      paidCurrency: accountCurrency,
+      geuRate,
+      geuRateSource,
       balance: value.balanceAfter,
       coinBalance: value.coinAfter,
       reserve: toMinorUnit(value.reserveDoc?.reserve || 0),
@@ -5915,7 +6295,39 @@ app.post('/api/coin/redeem', writeLimit, requireAuth, requireSelf('symbolId'), a
       return res.status(400).json({ success: false, message: 'Gloobal Coin is not supported for your country yet.' });
     }
 
-    const precisionError = assertRepresentableInAccountCurrency(coinAmount, accountCurrency);
+    const reserveCurrency = (await CoinReserve.load())?.reserveCurrency || 'INR';
+
+    // The inverse of the mint. The typed number here is COIN — the screen
+    // shows the ticker beside the field and sets MAX to the coin balance —
+    // and what comes back is fiat in this account's own currency.
+    let redeemRate = 1;
+    let redeemRateSource = 'identity';
+
+    try {
+      // getRate(from, to): "1 unit of the reserve currency is how many of
+      // the account's". The exact inverse direction of the mint's lookup.
+      ({ rate: redeemRate, source: redeemRateSource } = await geuRateFor(reserveCurrency, accountCurrency));
+    } catch (fxError) {
+      console.error(`GEU redeem rate lookup failed for ${reserveCurrency}->${accountCurrency}:`, fxError);
+      return res.status(502).json({
+        success: false,
+        message: 'Exchange rate is temporarily unavailable. Please try again in a moment.',
+      });
+    }
+
+    const fiatAmount = toMinorUnit(coinAmount * redeemRate, accountCurrency);
+
+    // The mirror of the mint's zero-check, and it matters more here: burning
+    // coin and paying out nothing destroys value outright.
+    if (!Number.isFinite(fiatAmount) || fiatAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: `That is too little ${COIN_CURRENCY} to pay out in ${accountCurrency}.`,
+        currency: accountCurrency,
+      });
+    }
+
+    const precisionError = assertRepresentableInAccountCurrency(fiatAmount, accountCurrency);
 
     if (precisionError) {
       return res.status(400).json({ success: false, message: precisionError, currency: accountCurrency });
@@ -5928,7 +6340,7 @@ app.post('/api/coin/redeem', writeLimit, requireAuth, requireSelf('symbolId'), a
 
       const converted = await User.findOneAndUpdate(
         { _id: user._id, coinBalance: { $gte: coinAmount } },
-        { $inc: { coinBalance: -coinAmount, balance: coinAmount } },
+        { $inc: { coinBalance: -coinAmount, balance: fiatAmount } },
         { returnDocument: 'after', ...sessionOpt }
       );
 
@@ -5971,7 +6383,14 @@ app.post('/api/coin/redeem', writeLimit, requireAuth, requireSelf('symbolId'), a
             status: 'success',
             note: 'Redeemed Gloobal Coin',
             referenceId,
-            metadata: { prototype: true, reserveCurrency: reserveDoc.reserveCurrency || 'INR' },
+            metadata: {
+              prototype: true,
+              reserveCurrency: reserveDoc.reserveCurrency || 'INR',
+              paidOutAmount: fiatAmount,
+              paidOutCurrency: accountCurrency,
+              geuRate: redeemRate,
+              geuRateSource: redeemRateSource,
+            },
           },
         ],
         session ? { session } : {}
@@ -5994,10 +6413,12 @@ app.post('/api/coin/redeem', writeLimit, requireAuth, requireSelf('symbolId'), a
             transactionId: transaction._id,
             userId: user._id,
             entryType: 'credit',
-            amount: coinAmount,
-            balanceBefore: toMinorUnit(balanceAfter - coinAmount, accountCurrency),
+            // Account currency, and the amount that actually arrived — see
+            // the matching note on the mint's fiat leg.
+            amount: fiatAmount,
+            balanceBefore: toMinorUnit(balanceAfter - fiatAmount, accountCurrency),
             balanceAfter,
-            currency: reserveDoc.reserveCurrency || 'INR',
+            currency: accountCurrency,
             note: 'Fiat returned from coin reserve',
             metadata: { prototype: true, coinLeg: 'fiat', transactionReferenceId: transaction.referenceId },
           },
@@ -6012,6 +6433,10 @@ app.post('/api/coin/redeem', writeLimit, requireAuth, requireSelf('symbolId'), a
       success: true,
       atomic,
       redeemed: coinAmount,
+      received: fiatAmount,
+      receivedCurrency: accountCurrency,
+      geuRate: redeemRate,
+      geuRateSource: redeemRateSource,
       balance: value.balanceAfter,
       coinBalance: value.coinAfter,
       reserve: toMinorUnit(value.reserveDoc?.reserve || 0),
@@ -6203,6 +6628,77 @@ app.post('/api/coin/send', writeLimit, requireAuth, requireSelf('senderSymbolId'
 // requireAuth/requireSelf) rather than inventing parallel ones.
 // ===========================================================================
 
+// ── THE WHOLE /api/geu/* SURFACE IS DISABLED ─────────────────────────────
+//
+// This block is a SUPERSEDED prototype of a growth-bearing GEU. The GEU the
+// app actually issues is Gloobal Coin, above: pegged, 1 GEU = ₹1, backed
+// 1:1, no growth. See docs/GEU_GROWTH_DESIGN.md.
+//
+// It is left in the file rather than deleted for two reasons. Its three
+// models (GeuEntryMint, GeuGrowthEvent, GeuRedemption) are wired into
+// SYMBOL_ID_REFERENCE_FIELDS, the table that keeps stored Gloobal IDs
+// consistent through a rename — removing them means editing that table and
+// stranding any rows that exist. And growth is a decision this project has
+// deferred, not rejected, so the reasoning is worth keeping where it can be
+// found.
+//
+// ── Why the READS are off too, not just the writes ───────────────────────
+//
+// GET /api/geu/ledger/:symbolId queries LedgerEntry by currency string. Now
+// that Coin's ticker IS 'GEU', that route would return Gloobal Coin's ledger
+// entries under a route describing a different currency — one account's real
+// money shown as the output of a system it never touched. The other two
+// reads report on `geuBalance`, a separate field, so they cross no wires, but
+// they would present a second and contradictory "GEU supply" to anyone who
+// asked. Neither is worth keeping for a surface nothing calls.
+//
+// Stored data is untouched. `geuBalance`, GeuSupply and the three event
+// collections keep whatever they hold; this only stops the routes answering.
+//
+// ── The writes were also a live hole ─────────────────────────────────────
+//
+// Turned off 2026-09-03. They were live Express routes on a public server,
+// and together they form a complete self-service path from nothing to
+// spendable balance:
+//
+//   1. POST /api/geu/entry     mints GEU from your own balance.
+//   2. POST /api/geu/growth    mints you up to 0.3% MORE, gated by
+//                              requireAuth + requireSelf — that is, by your
+//                              own login and nothing else. The only brake is
+//                              one event per `growthPeriod`, and the CALLER
+//                              chooses that string. Pass "p1", then "p2",
+//                              then "p3": 0.3% compounding, unbounded.
+//   3. POST /api/geu/redeem    converts geuBalance back into `balance` —
+//                              real spendable fiat (see the $inc at the
+//                              country-pool payout).
+//
+// So the loop closes. Roughly a thousand calls is a twentyfold increase, and
+// writeLimit slows that down without capping it.
+//
+// This is not a flaw someone missed. AUDIT_GEU_REPORT.md §18 item 2 names it
+// precisely — "an account holder can currently request growth for their own
+// account, up to the ceiling, whenever they want... almost certainly not the
+// intended real-world authorization model" — and leaves it open by design,
+// because no admin or system-role concept exists anywhere in this codebase to
+// gate it with. The report is right. What was missing is that the routes were
+// mounted anyway, so an unresolved policy question became a live endpoint.
+//
+// The READ routes stay up: they disclose nothing an account cannot already
+// see and they move no money.
+//
+// To re-enable, set GEU_GROWTH_PROTOTYPE=true — but not before the design
+// questions have answers, above all "who is allowed to submit a growth
+// event", and not while Gloobal Coin also calls itself GEU.
+const GEU_GROWTH_PROTOTYPE = String(process.env.GEU_GROWTH_PROTOTYPE || '').toLowerCase() === 'true';
+
+const requireGeuGrowthPrototype = (req, res, next) => {
+  if (GEU_GROWTH_PROTOTYPE) return next();
+  return res.status(503).json({
+    success: false,
+    message: 'This route belongs to a superseded prototype and is disabled. Gloobal Coin is the live GEU.',
+  });
+};
+
 const GEU_CURRENCY = 'GEU';
 const GEU_REFERENCE_CURRENCY = 'INR';
 // THE 0.3% RULE — a maximum, never a rate that is automatically applied.
@@ -6263,7 +6759,7 @@ async function resolveOwnCurrency(user) {
 // declared above /api/geu/:symbolId for the same reason that route's own
 // comment gives: Express matches in declaration order, and behind the
 // parameterised route this would 404 with symbolId === 'supply'.
-app.get('/api/geu/supply', async (req, res) => {
+app.get('/api/geu/supply', requireGeuGrowthPrototype, async (req, res) => {
   try {
     const supplyDoc = await GeuSupply.load();
 
@@ -6306,7 +6802,7 @@ app.get('/api/geu/supply', async (req, res) => {
 // Declared before /api/geu/:symbolId is irrelevant to Express's matching
 // here (two path segments vs one — no collision either order), but kept in
 // reading order next to it.
-app.get('/api/geu/ledger/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+app.get('/api/geu/ledger/:symbolId', requireGeuGrowthPrototype, lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const user = await User.findOne({ symbolId: String(req.params.symbolId || '').trim() });
     if (!user) return res.status(404).json({ success: false, message: 'Secure ID not found.' });
@@ -6339,7 +6835,7 @@ app.get('/api/geu/ledger/:symbolId', lookupLimit, requireAuth, requireSelf('symb
 });
 
 // GET /api/geu/:symbolId — one account's GEU position.
-app.get('/api/geu/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+app.get('/api/geu/:symbolId', requireGeuGrowthPrototype, lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const user = await User.findOne({ symbolId: String(req.params.symbolId || '').trim() });
     if (!user) return res.status(404).json({ success: false, message: 'Secure ID not found.' });
@@ -6375,7 +6871,7 @@ app.get('/api/geu/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId'),
 // mapping decision, not an assumption made silently — see UNRESOLVED GEU
 // POLICY QUESTIONS for the real-world alternative (genuinely external
 // capital, with no corresponding internal debit) this does NOT implement.
-app.post('/api/geu/entry', writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const { symbolId, amount, idempotencyKey } = req.body || {};
     const sourceAmount = toMinorUnit(Number(amount));
@@ -6600,7 +7096,7 @@ app.post('/api/geu/entry', writeLimit, requireAuth, requireSelf('symbolId'), asy
 // maximum every period has effectively been given exactly that). Flagged
 // here, in the route's own response via `policyNote`, and in the final
 // report — not silently implemented as if it were settled.
-app.post('/api/geu/growth', writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const { symbolId, growthPeriod, requestedGrowthAmount } = req.body || {};
     const cleanPeriod = String(growthPeriod || '').trim().slice(0, 40);
@@ -6785,7 +7281,7 @@ app.post('/api/geu/growth', writeLimit, requireAuth, requireSelf('symbolId'), as
 
 // POST /api/geu/redeem — GEU exit, same-currency or cross-border (brief
 // sections 14/15/16).
-app.post('/api/geu/redeem', writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+app.post('/api/geu/redeem', requireGeuGrowthPrototype, writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const { symbolId, amount, idempotencyKey } = req.body || {};
     const geuAmount = toMinorUnit(Number(amount), GEU_CURRENCY);

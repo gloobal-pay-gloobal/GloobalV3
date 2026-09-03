@@ -1,10 +1,15 @@
 // src/domain/accounts/entities/UserAccount.js
-function createUserAccount(userId, currency = "INR", coinCurrency = "GC") {
+// Defaults to COIN_CURRENCY rather than a literal, so the account's own
+// currency label can never drift from the currency its lines are actually
+// posted in. It said "GC" while CoinService posted "GEU" for exactly as long
+// as it took to notice. (A default parameter is evaluated at call time, so
+// module order in the bundle does not matter here.)
+function createUserAccount(userId, currency = "INR", coinCurrency = COIN_CURRENCY) {
   return {
     userId,
     bank: new LedgerAccount({ id: `user:${userId}:bank`, type: ACCOUNT_TYPE.ASSET, name: "Gloobal Bank", currency, ownerId: userId }),
     // Gloobal Coin held by this account. An ASSET, like the bank account, and
-    // denominated in GC rather than the account's fiat currency — that is what
+    // denominated in GEU rather than the account's fiat currency — that is what
     // stops a coin figure being added to a rupee one anywhere downstream, since
     // Money refuses arithmetic across currencies outright.
     coin: new LedgerAccount({ id: `user:${userId}:coin`, type: ACCOUNT_TYPE.ASSET, name: "Gloobal Coin", currency: coinCurrency, ownerId: userId }),

@@ -30,7 +30,12 @@ function createCoinReserveAccount(currency = "INR") {
 // platform owes, exactly as taking a deposit does. Its balance is the coin
 // supply as this ledger can see it — in a browser modelling one account, that
 // account's holding.
-function createCoinIssuanceAccount(coinCurrency = "GC") {
+// Defaults to COIN_CURRENCY rather than a literal, so the account's own
+// currency label can never drift from the currency its lines are actually
+// posted in. It said "GC" while CoinService posted "GEU" for exactly as long
+// as it took to notice. (A default parameter is evaluated at call time, so
+// module order in the bundle does not matter here.)
+function createCoinIssuanceAccount(coinCurrency = COIN_CURRENCY) {
   return new LedgerAccount({
     id: `platform:coin-issuance:${coinCurrency}`,
     type: ACCOUNT_TYPE.LIABILITY,

@@ -1,7 +1,8 @@
 // src/domain/accounts/AccountRegistry.js
 var AccountRegistry = class {
   #accountsById = /* @__PURE__ */ new Map();
-  constructor({ currency = "INR", coinCurrency = "GC" } = {}) {
+  // See createUserAccount for why this is COIN_CURRENCY and not a literal.
+  constructor({ currency = "INR", coinCurrency = COIN_CURRENCY } = {}) {
     this.reserve = createReserveAccount(currency);
     this.#register(this.reserve);
     // The two platform-side halves of Gloobal Coin. Registered here rather than

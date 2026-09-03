@@ -24,9 +24,29 @@
 // would balance alone and nothing would tie them together.
 //
 // Money refuses arithmetic across currencies (see Money.assertSameCurrency), so
-// no code path can add a GC figure to an INR one even by accident. The two are
-// equal in magnitude because the issue rate is 1:1; they are not the same thing.
-var COIN_CURRENCY = "GC";
+// no code path can add a coin figure to a fiat one even by accident.
+//
+// ── The two legs are NOT the same number ─────────────────────────────────
+//
+// They used to be. This file said "they are equal in magnitude because the
+// issue rate is 1:1", and mint() took a single `amount` and used it for both
+// the fiat line and the coin line.
+//
+// That holds only when the account's own currency IS the reserve currency.
+// One coin is one unit of the RESERVE currency, and `reserveCurrency` here is
+// the currency of the account this ledger belongs to (see FinancialCore,
+// which passes the user's own). So for an account outside the reserve's
+// country the two legs differ by the exchange rate: $100 leaves the bank and
+// about 8,560 coin arrives. Posting 8,560 to both would have credited a US
+// account's bank line with 8,560 dollars for a hundred-dollar purchase.
+//
+// Both amounts are now passed in, from the server's own response, because
+// the server is where the rate was applied and a second local conversion
+// could disagree with it.
+// Matches the server's COIN_CURRENCY exactly. Was "GC" on both sides; the
+// two must never disagree, because this ledger's whole purpose is to tell the
+// same story the database does.
+var COIN_CURRENCY = "GEU";
 
 var CoinService = class {
   constructor(ledgerEngine, accounts, { reserveCurrency = "INR", eventBus = null } = {}) {
@@ -56,11 +76,16 @@ var CoinService = class {
 
   // Fiat in, coin out. `amount` is in major units of the reserve currency, and
   // the same figure is issued as coin because the rate is 1:1.
-  mint(amount, { now, meta } = {}) {
-    const fiat = Money.of(amount, this.reserveCurrency);
-    const coin = Money.of(amount, COIN_CURRENCY);
+  // `coinAmount` is what was issued; `fiatAmount` is what was paid for it, in
+  // this account's own currency. They default to being equal, which is the
+  // correct and complete answer for an account in the reserve's own country
+  // and nowhere else — every caller outside that case must pass both.
+  mint(coinAmount, { now, meta, fiatAmount = coinAmount } = {}) {
+    const fiat = Money.of(fiatAmount, this.reserveCurrency);
+    const coin = Money.of(coinAmount, COIN_CURRENCY);
 
-    if (!fiat.isPositive()) throw new TypeError("CoinService.mint: amount must be positive");
+    if (!fiat.isPositive()) throw new TypeError("CoinService.mint: fiat amount must be positive");
+    if (!coin.isPositive()) throw new TypeError("CoinService.mint: coin amount must be positive");
 
     return this.ledgerEngine.postJournalEntry({
       memo: "Minted Gloobal Coin",
@@ -71,16 +96,17 @@ var CoinService = class {
         DebitEntry(this.accounts.userCoin.id, coin),
         CreditEntry(this.accounts.coinIssuance.id, coin)
       ],
-      meta: { kind: "coin-mint", amount: fiat.amount, ...meta }
+      meta: { kind: "coin-mint", amount: coin.amount, fiatAmount: fiat.amount, ...meta }
     });
   }
 
   // The exact inverse of mint, line for line and direction for direction.
-  redeem(amount, { now, meta } = {}) {
-    const fiat = Money.of(amount, this.reserveCurrency);
-    const coin = Money.of(amount, COIN_CURRENCY);
+  redeem(coinAmount, { now, meta, fiatAmount = coinAmount } = {}) {
+    const fiat = Money.of(fiatAmount, this.reserveCurrency);
+    const coin = Money.of(coinAmount, COIN_CURRENCY);
 
-    if (!fiat.isPositive()) throw new TypeError("CoinService.redeem: amount must be positive");
+    if (!fiat.isPositive()) throw new TypeError("CoinService.redeem: fiat amount must be positive");
+    if (!coin.isPositive()) throw new TypeError("CoinService.redeem: coin amount must be positive");
 
     return this.ledgerEngine.postJournalEntry({
       memo: "Redeemed Gloobal Coin",
@@ -91,7 +117,7 @@ var CoinService = class {
         DebitEntry(this.accounts.coinIssuance.id, coin),
         CreditEntry(this.accounts.userCoin.id, coin)
       ],
-      meta: { kind: "coin-redeem", amount: fiat.amount, ...meta }
+      meta: { kind: "coin-redeem", amount: coin.amount, fiatAmount: fiat.amount, ...meta }
     });
   }
 
@@ -187,10 +213,24 @@ var CoinService = class {
       .slice(0, limit)
       .map((record) => {
         const line = record.lines[0];
+        // The same { date, time } shape every other history row in the app
+        // carries, so this list can go through historyRowStamp like the rest
+        // instead of formatting a date of its own.
+        //
+        // The screen used to call toLocaleDateString(undefined, …) on
+        // postedAt: no time at all, and a device-dependent date, on the one
+        // list that shows coin movements. "Sep 3" cannot tell two purchases
+        // on the same day apart, and `undefined` for the locale means the
+        // same instant reads differently on two phones — both of which the
+        // rest of the app had already been fixed for.
+        const posted = new Date(record.postedAt);
+        const postedValid = !isNaN(posted.getTime());
         return {
           id: record.recordId,
           sequence: record.sequence,
           postedAt: record.postedAt,
+          date: postedValid ? posted.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
+          time: postedValid ? formatClockTime(posted) : "",
           memo: record.memo,
           kind: record.meta?.kind || "coin",
           // A debit to an ASSET account is an increase, which is why this reads

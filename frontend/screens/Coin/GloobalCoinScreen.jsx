@@ -1,6 +1,6 @@
 // src/screens/Coin/GloobalCoinScreen.jsx
 import { useState as useState30, useEffect as useEffect20 } from "react";
-import { ArrowDownLeft as CoinArrowIn, ArrowUpRight as CoinArrowOut, Check as CoinCheck } from "lucide-react";
+import { ArrowDownLeft as CoinArrowIn, ArrowUpRight as CoinArrowOut, Check as CoinCheck, ChevronRight as CoinChevron } from "lucide-react";
 
 // Gloobal Coin — a working, fully backed prototype currency.
 //
@@ -23,6 +23,7 @@ import { ArrowDownLeft as CoinArrowIn, ArrowUpRight as CoinArrowOut, Check as Co
 function GloobalCoinScreen({
   onBack,
   onOpenStats,
+  onOpenHolders,
   heroColor,
   services,
   interested,
@@ -31,6 +32,9 @@ function GloobalCoinScreen({
   symbolId,
   ccy,
   ccyCode = "USD",
+  countryName,
+  geuRate,
+  reserveCurrency,
   bankBalance,
   coinBalance,
   coinHistory,
@@ -52,11 +56,63 @@ function GloobalCoinScreen({
     if (onRefresh) onRefresh();
   }, []);
 
+  // ── The peg, and what it means for an account outside India ───────────
+  //
+  // One GEU is one unit of the RESERVE currency, for everybody. What differs
+  // is what you pay with. `geuRate` is how many GEU one unit of THIS
+  // account's own currency buys — 1 for an Indian account, about 85 for a US
+  // one — and the server is the only place it is ever computed, so the
+  // figure previewed here is the figure the mint will actually apply.
+  //
+  // null means the rate could not be fetched. It is NOT treated as 1: this
+  // screen used to tell a US account "1 GEU = $1, always", which was not a
+  // rounding error but a claim wrong by a factor of eighty-five, and it was
+  // the only statement of the rate anywhere in the app. An unknown rate now
+  // reads as ∆ and the buy is refused rather than guessed at.
+  const pegCode = reserveCurrency || COIN_PEG_CURRENCY;
+  const pegSymbol = CURRENCY_SYMBOL[pegCode] || "";
+  const rateKnown = Number.isFinite(geuRate) && geuRate > 0;
+  const isPegCurrency = rateKnown && geuRate === 1;
+
   const numericAmount = Number(amount);
   const amountIsValid = Number.isFinite(numericAmount) && numericAmount > 0;
+  // What the person actually receives, in the unit they receive it in.
+  // Buying: they type their own currency and get GEU. Cashing out: they type
+  // GEU and get their own currency back. Same rate, both ways.
+  const converted = !amountIsValid || !rateKnown
+    ? null
+    : mode === "mint"
+      ? numericAmount * geuRate
+      : numericAmount / geuRate;
   const ceiling = mode === "mint" ? Number(bankBalance) || 0 : Number(coinBalance) || 0;
   const overCeiling = amountIsValid && numericAmount > ceiling;
-  const canSubmit = amountIsValid && !overCeiling && !busy;
+  // A conversion nobody can compute must not be submitted. The server fails
+  // closed on a missing rate anyway; stopping here means the person is told
+  // before they commit rather than after.
+  const canSubmit = amountIsValid && !overCeiling && !busy && rateKnown && converted > 0;
+
+  // The stamp for a coin row, from the row's own fields when it has them and
+  // from postedAt when it does not.
+  //
+  // CoinService.history() now attaches { date, time } to every row it builds,
+  // which is the shape historyRowStamp wants and the shape every other list
+  // in the app already uses. But rows restored from a ledger persisted before
+  // that change carry only postedAt, and for those historyRowStamp returns an
+  // empty string — a transaction with no date at all, which is worse than the
+  // bare "Sep 3" this replaced.
+  //
+  // Derived through the same two formatters the rest of the app uses, so a
+  // fallback row and a fresh one read identically rather than being a second
+  // date format hiding behind a condition.
+  const coinRowStamp = (row) => {
+    if (row.date || row.time) return historyRowStamp(row);
+    const posted = new Date(row.postedAt);
+    if (isNaN(posted.getTime())) return "";
+    return historyRowStamp({
+      date: posted.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      time: formatClockTime(posted)
+    });
+  };
 
   const submit = () => {
     if (!canSubmit) return;
@@ -71,49 +127,164 @@ function GloobalCoinScreen({
     onBack={onBack}
     onAction={onOpenStats}
     actionLabel="Interest stats"
-  /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 20 }}><ProductScreenHero color={heroColor} />{
-    /* The holding. Not gated behind the passkey the way the bank balance
-       is: coin is minted from a balance that already sits behind that
-       gate, so a second prompt here would guard a figure the person had
-       to authenticate to create in the first place. */
-  }<div
+  /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 20 }}>{
+    /* The two balances, side by side, with the peg between them.
+       ─────────────────────────────────────────────────────────────
+       This screen used to open with the brand hero, then one card
+       holding the coin balance and, in small grey type underneath,
+       "Backed 1:1 by ₹X held in reserve". So the single most important
+       fact about this currency — that a unit of it IS a unit of your own
+       money, not a token whose price you have to look up — was a
+       footnote under the number it explains.
+
+       Showing both accounts at once makes the claim structural instead
+       of textual: your rupees on the left, your units on the right, the
+       same amount either side of a chip that says the rate. There is
+       nothing to read to understand it, which matters on a screen built
+       for someone who reads no English.
+
+       The hero is gone from here rather than shrunk. It stands alone on
+       the splash and on Gloobal Bank; a third appearance directly above
+       two account cards was pushing the accounts themselves under the
+       fold to repeat a signature the person had already seen twice this
+       session. */
+  }<div style={{ display: "flex", gap: 10, flexShrink: 0, marginTop: 8 }}><div
     style={{
-      display: "flex",
-      flexDirection: "column",
-      gap: 4,
-      padding: "18px 20px",
+      flex: 1,
+      minWidth: 0,
+      padding: "14px 15px",
       borderRadius: T.radiusLg,
       background: T.surface,
       border: `1px solid ${T.line}`,
       boxShadow: T.shadowCard
     }}
-  ><span style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>Your Gloobal Coin</span><span style={{ fontSize: 30, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, letterSpacing: 0.2 }}>{Number(coinBalance || 0).toFixed(2)} GC</span><span style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>
-        Backed 1:1 by {ccy}{fmt(Number(coinBalance || 0), ccyCode)} held in reserve
-      </span></div>{
-    /* Supply, as the server reports it. `backed` is a comparison of three
-       independently maintained figures, so a mismatch is a real finding
-       and is shown as one rather than hidden behind the happy path. ∆ is
-       the same "we don't have that figure" mark Coverage uses — a zero
-       here would read as "no coin exists", which is a different claim
-       from "we couldn't ask". */
-  }<div
+  ><span style={{ display: "block", fontSize: 9.5, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>Gloobal Bank</span><span
+    style={{
+      /* Deliberately NOT nowrap+ellipsis, which is what this was.
+         At 21px in half a 390px screen "₹124,500.00" rendered as
+         "₹124,500…." — a balance with its last digits cut off, which is
+         worse than a balance on two lines. An ellipsis is an acceptable
+         way to shorten a NAME; it is not an acceptable way to shorten a
+         number. The card grows instead. */
+      display: "block",
+      fontSize: 19,
+      fontWeight: 800,
+      color: T.ink,
+      fontFamily: T.fontDisplay,
+      letterSpacing: -0.5,
+      marginTop: 6,
+      lineHeight: 1.15,
+      overflowWrap: "anywhere"
+    }}
+  >{ccy}{fmt(Number(bankBalance) || 0, ccyCode)}</span><span
+    style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+  >{
+    /* The same label Gloobal Bank's account card uses, built the same
+       way — country and code, whichever of the two we actually have.
+       Deliberately NOT a currency full-name lookup: no such table
+       exists in this codebase, and writing one to fill a caption would
+       mean 160 hand-typed names nobody would ever check. */
+  }{[countryName, ccyCode].filter(Boolean).join(" · ")}</span></div><div
+    style={{
+      flex: 1,
+      minWidth: 0,
+      padding: "14px 15px",
+      borderRadius: T.radiusLg,
+      background: T.gradWallet,
+      color: "#fff",
+      boxShadow: "0 12px 26px rgba(76,29,149,0.26)"
+    }}
+  ><span style={{ display: "block", fontSize: 9.5, fontWeight: 800, color: "rgba(255,255,255,0.72)", textTransform: "uppercase", letterSpacing: 0.5 }}>Gloobal Coin</span><span
+    style={{
+      /* Same rule as the bank figure beside it — see that comment. */
+      display: "block",
+      fontSize: 19,
+      fontWeight: 800,
+      fontFamily: T.fontDisplay,
+      letterSpacing: -0.5,
+      marginTop: 6,
+      lineHeight: 1.15,
+      overflowWrap: "anywhere"
+    }}
+  >{fmt(Number(coinBalance) || 0)} {COIN_TICKER}</span><span
+    style={{ display: "block", fontSize: 10.5, color: "rgba(255,255,255,0.74)", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+  >{COIN_TICKER_LONG}</span></div></div>{
+    /* The peg, stated once, between the two things it relates. Not a
+       claim the screen is making on its own account — it is the rule the
+       mint and redeem routes below both enforce, which is why the same
+       sentence can be read in either direction. */
+  }<div style={{ display: "flex", justifyContent: "center", flexShrink: 0, marginTop: -8 }}><span
+    style={{
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 7,
+      padding: "6px 13px",
+      borderRadius: 999,
+      background: rateKnown ? T.positiveSoft : T.surfaceAlt,
+      color: rateKnown ? T.positive : T.inkSoft,
+      fontSize: 11.5,
+      fontWeight: 800,
+      textAlign: "center",
+      lineHeight: 1.35
+    }}
+  ><CoinCheck size={12} style={{ flexShrink: 0 }} />{
+    /* Three different true sentences, because there are three states and
+       no one sentence covers them.
+
+       An account in the reserve's own country really does pay one unit for
+       one unit, and saying so plainly is right. An account anywhere else
+       needs the rate, because "1 GEU = ₹1" alone does not tell them what
+       their own money buys. An account whose rate could not be fetched gets
+       neither claim made on its behalf. */
+  }{!rateKnown
+    ? `1 ${COIN_TICKER} = ${pegSymbol}1 · your rate is ∆`
+    : isPegCurrency
+      ? `1 ${COIN_TICKER} = ${ccy}1, always`
+      : `1 ${COIN_TICKER} = ${pegSymbol}1 · ${ccy}1 = ${fmt(geuRate)} ${COIN_TICKER}`}</span></div>{
+    /* Holders — a control, not a banner.
+       ─────────────────────────────────────────────────────────────
+       This slot used to hold a green "Fully backed" strip that asserted
+       the one thing on the screen worth being able to check, and gave no
+       way to check it. It is now the door to the check: it reports the
+       same reconciliation the strip did, and tapping it opens the
+       country-by-country holder list the total is made of.
+
+       The backing state still governs the colour and still shows a
+       mismatch as a mismatch — a green tick nobody can fail is not a
+       check, and that was true of the old strip too. What changed is
+       that a reader who does not believe the tick now has somewhere to
+       go. ∆ where the server did not answer; a 0 here would read as
+       "nobody holds this", which is a different claim. */
+  }<button
+    onClick={onOpenHolders}
+    className="v2-tap"
+    aria-label="Holders"
     style={{
       display: "flex",
       alignItems: "center",
       gap: 12,
+      width: "100%",
+      textAlign: "left",
+      cursor: "pointer",
       padding: "14px 16px",
       borderRadius: T.radiusMd,
       background: supply ? supply.backed ? T.positiveSoft : T.negativeSoft : T.surfaceAlt,
       border: `1px solid ${supply ? supply.backed ? "transparent" : T.negative : T.line}`
     }}
-  ><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 12.5, fontWeight: 800, color: supply ? supply.backed ? T.positive : T.negative : T.inkSoft }}>{!supply ? "Supply unavailable" : supply.backed ? "Fully backed" : "Reserve does not match supply"}</span><span style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.4 }}>{!supply
+  ><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span
+    style={{ fontSize: 12.5, fontWeight: 800, color: supply ? supply.backed ? T.positive : T.negative : T.inkSoft }}
+  >{!supply
+    ? "Holders unavailable"
+    : !supply.backed
+      ? "Reserve does not match supply"
+      : `${supply.holders.toLocaleString("en-US")} ${supply.holders === 1 ? "holder" : "holders"}`}</span><span style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.4 }}>{!supply
     ? "Couldn't reach the server — this is ∆, not zero."
-    : `${supply.issued.toFixed(2)} GC issued against ${ccy}${fmt(supply.reserve, ccyCode)} in reserve · ${supply.holders} ${supply.holders === 1 ? "holder" : "holders"}`}</span></span>{supply && supply.backed && <CoinCheck size={18} color={T.positive} style={{ flexShrink: 0 }} />}</div>{
+    : `${fmt(supply.issued)} ${COIN_TICKER} issued against ${pegSymbol}${fmt(supply.reserve, pegCode)} in reserve · see them by country`}</span></span><CoinChevron size={17} color={supply ? supply.backed ? T.positive : T.negative : T.inkFaint} style={{ flexShrink: 0 }} /></button>{
     /* Mint / Redeem. One control with two directions rather than two
        screens, because they are the same conversion read in opposite
        directions and the ceiling is the only thing that differs. */
   }<div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", gap: 6, padding: 4, borderRadius: 999, background: T.surfaceSunk }}>{[
-    { key: "mint", label: "Buy coin" },
+    { key: "mint", label: "Buy units" },
     { key: "redeem", label: "Cash out" }
   ].map((tab) => <button
     key={tab.key}
@@ -134,7 +305,7 @@ function GloobalCoinScreen({
       background: mode === tab.key ? T.gradButton : "transparent",
       transition: "background 0.18s ease, color 0.18s ease"
     }}
-  >{tab.label}</button>)}</div><div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: T.radiusMd, background: T.surfaceAlt, border: `1px solid ${overCeiling ? T.negative : T.line}` }}><span style={{ fontSize: 15, fontWeight: 800, color: T.inkFaint, flexShrink: 0 }}>{mode === "mint" ? ccy : "GC"}</span><input
+  >{tab.label}</button>)}</div><div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: T.radiusMd, background: T.surfaceAlt, border: `1px solid ${overCeiling ? T.negative : T.line}` }}><span style={{ fontSize: 15, fontWeight: 800, color: T.inkFaint, flexShrink: 0 }}>{mode === "mint" ? ccy : COIN_TICKER}</span><input
     value={amount}
     onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
     inputMode="decimal"
@@ -145,13 +316,39 @@ function GloobalCoinScreen({
     onClick={() => setAmount(String(ceiling))}
     className="v2-tap"
     style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 11.5, fontWeight: 800, color: T.accent, flexShrink: 0 }}
-  >MAX</button></div><div style={{ fontSize: 11, color: overCeiling ? T.negative : T.inkFaint, lineHeight: 1.4 }}>{overCeiling
-    ? mode === "mint"
-      ? `You only have ${ccy}${fmt(ceiling, ccyCode)} to convert.`
-      : `You only hold ${ceiling.toFixed(2)} GC.`
+  >MAX</button></div>{
+    /* What you get, before you commit to getting it.
+       ─────────────────────────────────────────────────────────────
+       This space used to hold only prose about what a mint does. For an
+       Indian account that was enough, because the answer to "how much do
+       I get" was the number already typed. For everyone else the screen
+       never showed the conversion at all — not before and not after.
+       Someone in the US typed 100 with no way to know whether that meant
+       100 units or 8,560 until they looked at their balance afterwards.
+
+       Computed from the same rate the server will apply, so this is a
+       preview of the real arithmetic rather than a second, independent
+       guess at it. ≈ because the server rounds in the destination unit
+       and this does not. */
+  }{amountIsValid && <div
+    style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: T.radiusMd, background: T.surfaceAlt, border: `1px solid ${T.line}` }}
+  ><span style={{ fontSize: 11, fontWeight: 700, color: T.inkFaint, flexShrink: 0 }}>You get</span><span
+    style={{ flex: 1, minWidth: 0, textAlign: "right", fontSize: 15, fontWeight: 800, color: rateKnown ? T.ink : T.inkFaint, fontFamily: T.fontDisplay }}
+  >{!rateKnown
+    ? "∆"
     : mode === "mint"
-      ? `Moves ${ccy} out of Gloobal Bank and into the reserve. You can cash out again at any time.`
-      : `Returns ${ccy} to Gloobal Bank and destroys the coin. Same rate, both ways.`}</div><button
+      ? `≈ ${fmt(converted)} ${COIN_TICKER}`
+      : `≈ ${ccy}${fmt(converted, ccyCode)}`}</span></div>}<div style={{ fontSize: 11, color: overCeiling || !rateKnown ? T.negative : T.inkFaint, lineHeight: 1.4 }}>{!rateKnown
+    ? "Today's exchange rate couldn't be fetched, so this can't be converted yet. That's unknown, not zero."
+    : overCeiling
+      ? mode === "mint"
+        ? `You only have ${ccy}${fmt(ceiling, ccyCode)} to convert.`
+        : `You only hold ${fmt(ceiling)} ${COIN_TICKER}.`
+      : mode === "mint"
+        ? isPegCurrency
+          ? `Moves ${ccy} out of Gloobal Bank and into the reserve. You can cash out again at any time.`
+          : `Your ${ccyCode} is converted at today's rate and held in the reserve as ${pegCode}. You can cash out again at any time.`
+        : `Returns ${ccy} to Gloobal Bank and destroys the ${COIN_TICKER}. Same rate, both ways.`}</div><button
     onClick={submit}
     disabled={!canSubmit}
     className="v2-tap"
@@ -166,7 +363,7 @@ function GloobalCoinScreen({
       fontSize: 14,
       fontWeight: 800
     }}
-  >{busy ? "Working…" : mode === "mint" ? "Buy Gloobal Coin" : "Cash out to Gloobal Bank"}</button></div><button
+  >{busy ? "Working…" : mode === "mint" ? `Buy ${COIN_TICKER_LONG}s` : "Cash out to Gloobal Bank"}</button></div><button
     onClick={onOpenSend}
     disabled={!(Number(coinBalance) > 0)}
     className="v2-tap"
@@ -182,7 +379,7 @@ function GloobalCoinScreen({
       fontWeight: 800,
       boxShadow: T.shadowCard
     }}
-  >{Number(coinBalance) > 0 ? "Send Gloobal Coin" : "Buy coin to start sending"}</button><ProductServicesCard services={services} />{
+  >{Number(coinBalance) > 0 ? `Send ${COIN_TICKER}` : `Buy ${COIN_TICKER} to start sending`}</button><ProductServicesCard services={services} />{
     /* Coin movements, read from the local ledger rather than from a
        separate history fetch — every one of them was posted there by the
        action that caused it, so this list cannot disagree with the
@@ -220,7 +417,7 @@ function GloobalCoinScreen({
       style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, marginTop: i === 0 ? 8 : 0 }}
     ><span
       style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: incoming ? T.positiveSoft : T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}
-    >{incoming ? <CoinArrowIn size={14} color={TXN_IN_COLOR} /> : <CoinArrowOut size={14} color={TXN_OUT_COLOR} />}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.memo}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{new Date(row.postedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: incoming ? TXN_IN_COLOR : TXN_OUT_COLOR, flexShrink: 0 }}>{incoming ? "+" : "−"}{Number(row.amount).toFixed(2)} GC</span></div>;
+    >{incoming ? <CoinArrowIn size={14} color={TXN_IN_COLOR} /> : <CoinArrowOut size={14} color={TXN_OUT_COLOR} />}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.memo}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{coinRowStamp(row)}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: incoming ? TXN_IN_COLOR : TXN_OUT_COLOR, flexShrink: 0 }}>{incoming ? "+" : "−"}{fmt(Number(row.amount) || 0)} {COIN_TICKER}</span></div>;
   })}</div></div>{
     /* Moved to the bottom of the screen at the user's request — the
        tagline card and "I am IN" waitlist button used to sit between the

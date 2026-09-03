@@ -24,7 +24,14 @@ function LivingLogoBoxVisual({
   maxSize = 240,
   contentFill = "66%",
   borderRadius = "22%",
-  flipMs = 500,
+  // How long one turn takes. 900ms, up from 500.
+  //
+  // At 500 the mark snapped between faces — it read as a cut rather than a
+  // rotation, and the thing this box is meant to say (that the logo and the
+  // eight dial symbols are nine faces of one object) only lands if you can
+  // see it turn. Nearly twice as long is still well inside the two seconds
+  // a face is held, so the box is never mid-flip when the next one is due.
+  flipMs = 900,
   symbolFontSize = "33vw",
   symbolMaxWidth = 158
 }) {
@@ -41,7 +48,11 @@ function LivingLogoBoxVisual({
       maxWidth: maxSize,
       maxHeight: maxSize,
       borderRadius,
-      background: "linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%)",
+      // T.gradButton, which is this exact gradient. It was spelled out
+      // literally here AND in launchSplash.jsx's reduced-motion box — the
+      // same three values in two files, which is how the moving box and
+      // the still one would drift apart the first time either was touched.
+      background: T.gradButton,
       boxShadow: "0 2px 0 rgba(76,29,149,0.55), 0 12px 22px rgba(76,29,149,0.38), 0 30px 58px rgba(76,29,149,0.26)",
       transform: "rotateX(10deg) rotateY(-10deg)",
       transition: "transform 0.6s ease",
@@ -65,12 +76,32 @@ function LivingLogoBoxVisual({
     style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", transform: "rotateY(180deg)", display: "flex", alignItems: "center", justifyContent: "center" }}
   >{renderFace(back)}</span></div></div></div>;
 }
-// 2s per face — the "flip one after another every two seconds" cadence
-// from the original ask. The splash truncates this to a single beat
-// because it blocks getting into the app; anywhere the box can just sit on
-// a screen (the Bank/Coin hero) runs this same cadence uncut, cycling the
-// real logo and all 8 dial symbols exactly as first asked for.
-var LIVING_LOGO_FACE_MS = 2000;
+// 3.4s per face, up from 2s.
+//
+// The original "flip one after another every two seconds" cadence was
+// measured against the flip alone; with a 900ms turn (see flipMs above) a
+// 2s face meant the box was actually turning for nearly half the time it
+// was on screen, which is what reads as the mark "flying". At 3.4s each
+// face gets ~2.5s of stillness — long enough to register as a distinct
+// logo, which is the whole point of cycling them — and the box spends most
+// of its life at rest rather than mid-rotation.
+//
+// The full nine-face pass is now ~31s. That is fine here and nowhere near
+// fine on the splash, which is why the splash still shows one beat and
+// times itself separately.
+var LIVING_LOGO_FACE_MS = 3400;
+// The mark's corner, in one place.
+//
+// A rounded square — a squircle, the shape an app icon is — everywhere the
+// logo box appears: the launch splash, Gloobal Bank and Gloobal Coin. Bank
+// and Coin used to render it as a full circle, so the same object was a
+// disc on two screens and a rounded square on the third.
+//
+// A PERCENTAGE, not a pixel value, so the curve stays proportional as the
+// box is resized. At 24% a 172px splash box rounds by 41px and a 124px
+// hero by 30px; a fixed radius would have made the smaller one look boxy
+// and the larger one look barely rounded.
+var LIVING_LOGO_RADIUS = "24%";
 // Owns the continuous-loop timing on top of LivingLogoBoxVisual: a nine-
 // face sequence (logo, then a fresh shuffle of the 8 dial symbols) shared
 // with the splash's own sequence-building logic (see shuffledDialSymbols
@@ -115,7 +146,7 @@ function LivingLogoBox({ size = 168, shape = "square", loop = true }) {
     size={size}
     maxSize={numericSize}
     contentFill="66%"
-    borderRadius={shape === "circle" ? "50%" : "22%"}
+    borderRadius={shape === "circle" ? "50%" : LIVING_LOGO_RADIUS}
     symbolFontSize={numericSize * 0.66 * 0.72}
     symbolMaxWidth={numericSize * 0.66}
   />;
@@ -325,7 +356,16 @@ function FlipSymbolCircle({ size = 34, seed }) {
       setFlipped((f) => !f);
       setSymbol(DIAL_SYMBOLS[Math.floor(Math.random() * DIAL_SYMBOLS.length)]);
       setColor((prev) => randomColor(prev));
-    }, 1600);
+      // 3200ms, up from 1600.
+      //
+      // This mark is not alone on the screen the way the logo box is —
+      // a history page draws ten of them at once, each on its own
+      // independent timer. At 1.6s with a 0.5s turn, something in the
+      // list was mid-flip essentially all of the time, and ten unrelated
+      // things twitching behind a column of amounts is noise rather than
+      // life. At 3.2s each mark is still for most of its cycle and the
+      // list settles between flips.
+    }, 3200);
     return () => clearInterval(interval);
   }, [seeded]);
   return <span style={{ display: "inline-block", perspective: 200, flexShrink: 0 }}><span
@@ -340,7 +380,9 @@ function FlipSymbolCircle({ size = 34, seed }) {
       borderRadius: "50%",
       background: color,
       transformStyle: "preserve-3d",
-      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1), background 0.4s ease",
+      // 0.9s, matching the logo box and the 0.00% dots — one turn speed
+      // for every flipping mark in the app.
+      transition: "transform 0.9s cubic-bezier(.4,.15,.2,1), background 0.7s ease",
       transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span style={{ fontSize: size * 0.42, fontWeight: 800, color: "#fff", transform: flipped ? "rotateY(180deg)" : "none" }}>{symbol}</span></span></span>;

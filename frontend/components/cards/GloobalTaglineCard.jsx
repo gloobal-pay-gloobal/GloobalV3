@@ -91,23 +91,44 @@ var SERVICE_ROW_ICONS = {
 // product that isn't live. This renders what it is given and decides
 // nothing about truth.
 function ProductServicesCard({ services }) {
-  // Bug fix: the "Our Services" label is meant to straddle the card's top
-  // border (position: absolute, translateY(-50%) pulls it half outside the
-  // box) — the same "fieldset legend" look every notch-labelled card here
-  // uses. The card itself used to carry `overflow: hidden` so the row
-  // dividers below wouldn't square off past the rounded corners, but that
-  // same overflow clipped the label's upper half the instant it tried to
-  // poke out above the border, leaving only a sliver of it visible. The fix
-  // moves overflow: hidden onto an inner wrapper around just the rows, so
-  // the label sits in an outer, unclipped box while the dividers still clip
-  // to the rounded corners as before.
-  return <div style={{ position: "relative", marginTop: 14, flexShrink: 0 }}><span
+  // Four tiles, two across — not four full-width rows.
+  //
+  // As rows this card was about 500px on a 390px phone: four services at
+  // ~120px each, for a name, one short note and a status. That is more
+  // vertical space than the account's own balance and its recent
+  // transactions combined, and it sat above both. A list of four short
+  // facts does not need half a screen.
+  //
+  // Every service is still VISIBLE — this is deliberately not a "2 live ›"
+  // summary row. Which capabilities exist, and which are real yet, is the
+  // substance of these screens; collapsing it behind a tap would have made
+  // the screen tidier by making it say less.
+  //
+  // Live and planned are told apart before a word is read: a live tile sits
+  // on T.surface with a tick, a planned one on the sunk grey with a SOON
+  // pill and softened ink. The old rows carried the same information in a
+  // badge you had to reach the end of the line to find.
+  //
+  // Shared by Gloobal Bank and Gloobal Coin, so both change together —
+  // which is the point of the component existing at all.
+  //
+  // `services` arrives already resolved — server rows when the backend
+  // answered, the bundled table otherwise — and already downgraded for a
+  // product that isn't live. This renders what it is given and decides
+  // nothing about truth.
+  return <div style={{ position: "relative", marginTop: 14, flexShrink: 0 }}>{
+    /* The label straddles the top of the GRID rather than a card border,
+       so it needs its own ground to sit on: T.bg, the page behind it,
+       rather than T.surface. As rows it notched into a white card, and
+       reusing that white here would have painted a white smear across the
+       page background. */
+  }<span
     style={{
       position: "absolute",
       top: 0,
       left: 16,
       transform: "translateY(-50%)",
-      background: T.surface,
+      background: T.bg,
       padding: "0 6px",
       borderRadius: 999,
       fontSize: 10.5,
@@ -117,13 +138,42 @@ function ProductServicesCard({ services }) {
       letterSpacing: 0.4,
       zIndex: 1
     }}
-  >Our Services</span><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{(services || []).map((item, i) => {
+  >Our Services</span><div
+    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, paddingTop: 9 }}
+  >{(services || []).map((item) => {
     const Icon = SERVICE_ROW_ICONS[item.label] || ServiceShield;
     const live = item.status === "live";
     return <div
       key={item.label}
-      style={{ display: "flex", alignItems: "center", gap: 14, padding: "15px 18px", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, marginTop: i === 0 ? 6 : 0 }}
-    ><span style={{ width: 38, height: 38, borderRadius: 12, flexShrink: 0, background: live ? T.accentSoft : T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={17} color={live ? T.accent : T.inkFaint} /></span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14, fontWeight: 700, color: live ? T.ink : T.inkSoft }}>{item.label}</span><span style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.35 }}>{item.note}</span></span>{live ? <ServiceCheck size={17} color={T.positive} style={{ flexShrink: 0 }} /> : <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.inkFaint, background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: 999, padding: "4px 9px" }}>Planned</span>}</div>;
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 7,
+        padding: "12px 13px",
+        borderRadius: T.radiusMd,
+        background: live ? T.surface : T.surfaceAlt,
+        border: `1px solid ${T.line}`,
+        boxShadow: live ? T.shadowCard : "none",
+        minWidth: 0
+      }}
+    ><span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}><span
+      style={{
+        width: 28,
+        height: 28,
+        borderRadius: 9,
+        flexShrink: 0,
+        background: live ? T.accentSoft : T.surface,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      }}
+    ><Icon size={14} color={live ? T.accent : T.inkFaint} /></span><span
+      style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 800, color: live ? T.ink : T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+    >{item.label}</span>{live ? <ServiceCheck size={15} color={T.positive} style={{ flexShrink: 0 }} /> : <span
+      style={{ flexShrink: 0, fontSize: 8.5, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: T.inkFaint, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 999, padding: "3px 7px" }}
+    >Soon</span>}</span><span
+      style={{ fontSize: 10.5, color: T.inkFaint, lineHeight: 1.4 }}
+    >{item.note}</span></div>;
   })}</div></div>;
 }
 
@@ -165,5 +215,15 @@ function ProductScreenHeader({ title, onBack, onAction, actionLabel }) {
 // kept so neither call site (GloobalBankScreen, GloobalCoinScreen) needs
 // to change.
 function ProductScreenHero({ color }) {
-  return <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}><LivingLogoBox size={168} shape="circle" /></div>;
+  // 124, down from 168.
+  //
+  // At 168 the circle was 43% of a 390px screen's width and the first
+  // thing below the header, so it pushed everything the screen is
+  // actually FOR — the tagline card, the services, the "I am IN" button —
+  // below the fold. A brand mark at the top of a scrolling screen is a
+  // signature, not the subject.
+  //
+  // LivingLogoBox derives its symbol sizing from this number, so the dial
+  // faces scale with it and nothing else needs touching.
+  return <div style={{ display: "flex", justifyContent: "center", padding: "10px 0" }}><LivingLogoBox size={124} shape="square" /></div>;
 }

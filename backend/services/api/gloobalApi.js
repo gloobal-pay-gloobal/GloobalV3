@@ -721,8 +721,17 @@ var GloobalApi = {
       balance: Number(result.balance) || 0,
       reserve: Number(result.reserve) || 0,
       issued: Number(result.issued) || 0,
-      coinCurrency: result.coinCurrency || "GC",
-      reserveCurrency: result.reserveCurrency || "INR"
+      coinCurrency: result.coinCurrency || "GEU",
+      reserveCurrency: result.reserveCurrency || "INR",
+      accountCurrency: result.accountCurrency || null,
+      // How many coin one unit of this account's own currency buys. NOT
+      // `Number(x) || 0` and NOT defaulted to 1: the server sends null when
+      // it could not get a rate, 1 is the specific wrong answer that reads as
+      // a right one, and the screen renders null as ∆.
+      geuPerAccountUnit: result.geuPerAccountUnit === null || result.geuPerAccountUnit === undefined
+        ? null
+        : Number(result.geuPerAccountUnit),
+      geuRateSource: result.geuRateSource || null
     };
   },
 
@@ -745,8 +754,81 @@ var GloobalApi = {
         heldByAccounts: Number(result.heldByAccounts) || 0,
         holders: Number(result.holders) || 0,
         backed: result.backed === true,
-        coinCurrency: result.coinCurrency || "GC",
+        coinCurrency: result.coinCurrency || "GEU",
         reserveCurrency: result.reserveCurrency || "INR"
+      };
+    } catch (err) {
+      return null;
+    }
+  },
+
+  // GET /api/coin/holders — the coin's holders grouped by country, each
+  // country's holding converted into that country's own currency.
+  //
+  // Returns null on failure for the same reason getCoinSupply does: an empty
+  // country list is a real state (nobody holds coin yet), so a failure that
+  // rendered as one would be indistinguishable from the truth.
+  //
+  // `held` and `localHeld` are each null-or-number by design — the server
+  // withholds a single holder's amount, and reports a country whose exchange
+  // rate it could not fetch as ∆ rather than as zero. `Number(x) || 0` would
+  // flatten both of those into a confident 0, so neither is coerced here.
+  async getCoinHolders() {
+    try {
+      const result = await gloobalApiClient.get("/api/coin/holders", {
+        timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS
+      });
+      if (!result || !Array.isArray(result.countries)) return null;
+      const num = (v) => (v === null || v === undefined ? null : Number(v));
+      return {
+        reserveCurrency: result.reserveCurrency || "INR",
+        totalHolders: Number(result.totalHolders) || 0,
+        heldByAccounts: Number(result.heldByAccounts) || 0,
+        issued: Number(result.issued) || 0,
+        withheld: Number(result.withheld) || 0,
+        withheldCountries: Number(result.withheldCountries) || 0,
+        minHoldersForAmount: Number(result.minHoldersForAmount) || 0,
+        countries: result.countries.map((c) => ({
+          countryIso: c.countryIso || null,
+          holders: Number(c.holders) || 0,
+          held: num(c.held),
+          localCurrency: c.localCurrency || null,
+          localHeld: num(c.localHeld)
+        }))
+      };
+    } catch (err) {
+      return null;
+    }
+  },
+
+  // GET /api/coin/holders/:countryIso — the individual holders in one country.
+  //
+  // Signed-in only, unlike the country totals: an aggregate is safe to hand
+  // to anyone, a list of who holds what is not something to leave open to
+  // unauthenticated scraping even when each row is publishable on its own.
+  //
+  // null on failure, for the same reason every other coin read here returns
+  // null: an empty holder list is a real state and a failure must not be
+  // able to imitate it.
+  async getCountryHolders(countryIso) {
+    try {
+      const result = await gloobalApiClient.get(
+        `/api/coin/holders/${encodeURIComponent(String(countryIso || "").toUpperCase())}`
+      );
+      if (!result || !Array.isArray(result.rows)) return null;
+      return {
+        countryIso: result.countryIso || null,
+        reserveCurrency: result.reserveCurrency || "INR",
+        localCurrency: result.localCurrency || null,
+        holders: Number(result.holders) || 0,
+        held: Number(result.held) || 0,
+        truncated: result.truncated === true,
+        rows: result.rows.map((r) => ({
+          symbolId: r.symbolId || null,
+          held: Number(r.held) || 0,
+          // null means "no rate", which is not zero — see getCoinHolders.
+          localHeld: r.localHeld === null || r.localHeld === undefined ? null : Number(r.localHeld)
+        }))
       };
     } catch (err) {
       return null;
@@ -758,6 +840,14 @@ var GloobalApi = {
     const result = await gloobalApiClient.post("/api/coin/mint", { symbolId, amount });
     return {
       minted: Number(result.minted) || 0,
+      // What actually left the bank, in this account's currency. Left
+      // undefined rather than zeroed when absent, so CoinService falls back
+      // to its documented same-currency default instead of posting a fiat
+      // leg of 0 against a real coin leg — an unbalanced entry that the
+      // journal would reject at the worst possible moment.
+      paid: Number.isFinite(Number(result.paid)) ? Number(result.paid) : void 0,
+      paidCurrency: result.paidCurrency || null,
+      geuRate: Number.isFinite(Number(result.geuRate)) ? Number(result.geuRate) : null,
       balance: Number(result.balance) || 0,
       coinBalance: Number(result.coinBalance) || 0,
       reserve: Number(result.reserve) || 0,
@@ -771,6 +861,12 @@ var GloobalApi = {
     const result = await gloobalApiClient.post("/api/coin/redeem", { symbolId, amount });
     return {
       redeemed: Number(result.redeemed) || 0,
+      // The fiat that arrived, in this account's currency — the mirror of
+      // `paid` on the mint above, and left undefined rather than zeroed for
+      // the same reason.
+      received: Number.isFinite(Number(result.received)) ? Number(result.received) : void 0,
+      receivedCurrency: result.receivedCurrency || null,
+      geuRate: Number.isFinite(Number(result.geuRate)) ? Number(result.geuRate) : null,
       balance: Number(result.balance) || 0,
       coinBalance: Number(result.coinBalance) || 0,
       reserve: Number(result.reserve) || 0,

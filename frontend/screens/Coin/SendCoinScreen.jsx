@@ -51,7 +51,7 @@ function SendCoinScreen({ onBack, coinBalance, onResolveRecipient, onSend, onSho
     setSending(true);
     try {
       const result = await onSend(resolved.symbolId, numericAmount, pin);
-      onShowToast(`Sent ${result.sent.toFixed(2)} GC`);
+      onShowToast(`Sent ${result.sent.toFixed(2)} ${COIN_TICKER}`);
       onBack();
     } catch (err) {
       onShowToast(gloobalApiIsUnreachable(err) ? "Couldn't reach the server. Try again." : err.message);
@@ -60,7 +60,7 @@ function SendCoinScreen({ onBack, coinBalance, onResolveRecipient, onSend, onSho
     }
   };
 
-  return <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><ProductScreenHeader title="Send Gloobal Coin" onBack={onBack} /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px" }}><div style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>You hold</div><div style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 4 }}>{held.toFixed(2)} GC</div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}><span style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>Send to</span><div style={{ display: "flex", gap: 8 }}><input
+  return <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><ProductScreenHeader title="Send Gloobal Coin" onBack={onBack} /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px" }}><div style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>You hold</div><div style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 4 }}>{held.toFixed(2)} {COIN_TICKER}</div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}><span style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>Send to</span><div style={{ display: "flex", gap: 8 }}><input
     value={recipient}
     onChange={(e) => {
       setRecipient(e.target.value);
@@ -83,7 +83,7 @@ function SendCoinScreen({ onBack, coinBalance, onResolveRecipient, onSend, onSho
     placeholder="0.00"
     aria-label="Amount of coin to send"
     style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}
-  /><span style={{ fontSize: 15, fontWeight: 800, color: T.inkFaint, flexShrink: 0 }}>GC</span></div>{overBalance && <span style={{ fontSize: 11, color: T.negative }}>You only hold {held.toFixed(2)} GC.</span>}</div><div style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.5, padding: "0 2px" }}>
+  /><span style={{ fontSize: 15, fontWeight: 800, color: T.inkFaint, flexShrink: 0 }}>{COIN_TICKER}</span></div>{overBalance && <span style={{ fontSize: 11, color: T.negative }}>You only hold {held.toFixed(2)} {COIN_TICKER}.</span>}</div><div style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.5, padding: "0 2px" }}>
       Coin moves straight to their Gloobal ID. The reserve behind it does not move — the same coin exists afterwards, just held by someone else.
     </div><button
     onClick={() => setPinOpen(true)}
@@ -103,7 +103,7 @@ function SendCoinScreen({ onBack, coinBalance, onResolveRecipient, onSend, onSho
   >{sending ? "Sending…" : "Send coin"}</button></div><PayPinModal
     open={pinOpen}
     onClose={() => setPinOpen(false)}
-    amountLabel={`${amountIsValid ? numericAmount.toFixed(2) : "0.00"} GC`}
+    amountLabel={`${amountIsValid ? numericAmount.toFixed(2) : "0.00"} ${COIN_TICKER}`}
     onVerified={completeSend}
   /></div>;
 }

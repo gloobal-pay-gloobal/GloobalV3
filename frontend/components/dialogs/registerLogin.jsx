@@ -7,7 +7,6 @@ import {
   ArrowDownLeft as MoneyInMomentIcon,
   Globe as GlobeMomentIcon,
   ArrowRight as ArrowRightMoment,
-  Check as CheckMoment,
   ChevronLeft,
   Search,
   Phone,
@@ -139,49 +138,66 @@ function PermissionsGateScreen({ onContinue }) {
   ><GlobeMomentIcon size={30} color="rgba(255,255,255,0.92)" strokeWidth={1.4} /><span style={{ fontSize: 17, color: "#fff", fontFamily: T.fontDisplay }}><GloobalWordmark withSymbols /></span><span style={{ display: "flex", gap: 7 }}>{PERMISSIONS.map((p) => <span
     key={p.key}
     style={{ width: 7, height: 7, borderRadius: "50%", background: p.tone, boxShadow: `0 0 0 2px rgba(255,255,255,0.18)` }}
-  />)}</span></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 11, flexShrink: 0 }}>{PERMISSIONS.map((p) => <div
+  />)}</span></div><div style={{ display: "flex", flexDirection: "column", gap: 9, flexShrink: 0 }}>{PERMISSIONS.map((p) => <div
     key={p.key}
     style={{
       position: "relative",
       borderRadius: T.radiusLg,
       background: T.surface,
       boxShadow: T.shadowCard,
-      // A hairline in the tile's own colour, so the tint reads as
+      // A hairline in the row's own colour, so the tint reads as
       // deliberate rather than as a card that failed to load.
       border: `1px solid ${p.tone}22`,
-      padding: "18px 12px 15px",
+      padding: "12px 14px",
       display: "flex",
-      flexDirection: "column",
       alignItems: "center",
-      gap: 13,
+      gap: 12,
       overflow: "hidden"
     }}
   >{
-    /* A wash of the tile's colour behind the icons only — enough to
-       identify it, never enough to fight the icons for attention. */
+    /* A wash of the row's colour behind the icon end only — enough to
+       identify it, never enough to fight the icons for attention. In the
+       two-column version this ran across the top of the tile; on a row it
+       runs from the leading edge, which is where the colour belongs when
+       the eye enters from the left. */
   }<span
     aria-hidden="true"
-    style={{ position: "absolute", top: 0, left: 0, right: 0, height: 62, background: `linear-gradient(${p.tone}14, ${p.tone}00)` }}
-  /><span style={{ position: "relative", display: "flex", alignItems: "center", gap: 8 }}><span
+    style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: 104, background: `linear-gradient(90deg, ${p.tone}16, ${p.tone}00)` }}
+  /><span
     style={{
-      width: 50,
-      height: 50,
-      borderRadius: 16,
+      position: "relative",
+      width: 46,
+      height: 46,
+      borderRadius: 15,
       flexShrink: 0,
       background: `${p.tone}1F`,
       display: "flex",
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><p.Icon size={23} color={p.tone} /></span>{
+  ><p.Icon size={22} color={p.tone} /></span>{
+    /* The label, and — for the one that is mandatory — the ring, now
+       BESIDE it rather than in the card's far corner. On a 2x2 tile the
+       corner was a few millimetres from the word; on a full-width row it
+       would have been at the opposite end of the screen from the thing it
+       qualifies, which is not a marker anyone would connect. */
+  }<span
+    style={{ position: "relative", flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 800, color: T.ink }}
+  >{p.label}{p.required && <span
+    aria-hidden="true"
+    style={{ width: 9, height: 9, borderRadius: "50%", border: `2.5px solid ${TXN_OUT_COLOR}`, boxSizing: "border-box", flexShrink: 0 }}
+  />}</span>{
     /* Dotted, not solid: a dashed run reads as "…and then, later", which
        is exactly the relationship — the capability is asked for AT that
-       moment, not now. */
-  }<span style={{ display: "flex", alignItems: "center", gap: 2.5, flexShrink: 0 }}>{[0, 1, 2].map((d) => <span
+       moment, not now. A row lets this run left-to-right, which is the
+       direction the sentence is actually read in; stacked in a tile it
+       had to be read downward. */
+  }<span style={{ position: "relative", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>{[0, 1, 2].map((d) => <span
     key={d}
     style={{ width: 2.5, height: 2.5, borderRadius: "50%", background: T.inkFaint, opacity: 0.55 }}
   />)}</span><span
     style={{
+      position: "relative",
       width: 34,
       height: 34,
       borderRadius: 11,
@@ -191,22 +207,7 @@ function PermissionsGateScreen({ onContinue }) {
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><p.When size={16} color={T.inkSoft} /></span></span><span style={{ position: "relative", fontSize: 12.5, fontWeight: 800, color: T.ink }}>{p.label}</span>{
-    /* Required, as a ring rather than a filled dot — a bare dot in the
-       corner read as an unread badge, which means something else. */
-  }{p.required && <span
-    aria-hidden="true"
-    style={{
-      position: "absolute",
-      top: 10,
-      right: 10,
-      width: 9,
-      height: 9,
-      borderRadius: "50%",
-      border: `2.5px solid ${TXN_OUT_COLOR}`,
-      boxSizing: "border-box"
-    }}
-  />}</div>)}</div>{
+  ><p.When size={16} color={T.inkSoft} /></span></div>)}</div>{
     /* The one sentence left standing.
        Which permission is mandatory is a consent boundary, and a ring
        nobody can decode is not consent — so it gets exactly one line of
@@ -227,24 +228,24 @@ function PermissionsGateScreen({ onContinue }) {
     style={{ width: 9, height: 9, borderRadius: "50%", border: `2.5px solid ${TXN_OUT_COLOR}`, boxSizing: "border-box", flexShrink: 0 }}
   /><span style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.45 }}>
       Required to send money. The rest are optional.
-    </span></div></div><div style={{ position: "relative", zIndex: 1, padding: "0 20px calc(20px + env(safe-area-inset-bottom, 0px))", flexShrink: 0, display: "flex", justifyContent: "center" }}><button
-    onClick={onContinue}
-    aria-label="Continue"
-    className="v2-tap"
-    style={{
-      width: 64,
-      height: 64,
-      borderRadius: "50%",
-      border: "none",
-      cursor: "pointer",
-      background: T.gradButton,
-      color: "#fff",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      boxShadow: "0 12px 28px rgba(124,58,237,0.36)"
-    }}
-  ><CheckMoment size={27} strokeWidth={3} /></button></div></div>;
+    </span></div></div><div style={{ position: "relative", zIndex: 1, padding: "0 20px calc(20px + env(safe-area-inset-bottom, 0px))", flexShrink: 0 }}>{
+    /* The same "I am IN" button the Gloobal Bank and Gloobal Coin screens
+       carry, rather than a circular tick of this screen's own.
+
+       The component itself, not a copy of it: `interested` and `busy` are
+       always false here, so it renders the plain button and its other two
+       states are simply unused. One definition of what the app's commit
+       button looks like.
+
+       Worth naming the tension this creates. This screen is deliberately
+       almost wordless — single-noun labels, pictograms for when each
+       capability is asked for — because Gloobal is meant to work for
+       someone who reads no English, and there is a test holding it to
+       that. "I am IN" is three English words where a tick was none. It is
+       here because consistency with the app's one commit button was judged
+       to matter more, and because a bare tick asks a person to agree to
+       something without ever saying that they are agreeing. */
+  }<GloobalIamInButton interested={false} busy={false} onClick={onContinue} /></div></div>;
 }
 // src/components/dialogs/registerLogin.jsx
 function PhoneConnector({ country, phoneNumber, onOpenPicker, onOpenDial, dialOpen, onActivate, verifying, showLogin, onLoginTap }) {

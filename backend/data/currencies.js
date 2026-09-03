@@ -208,3 +208,39 @@ var RATES = {
   }
 })();
 
+
+// ── The coin's ticker ────────────────────────────────────────────────────
+//
+// GEU, "Gloobal Energy Unit". One definition, used by every screen that
+// prints it, so the ticker cannot say one thing in one place and something
+// else in another.
+//
+// This now matches what is STORED. It briefly did not: the screens said GEU
+// while the server stamped 'GC' onto every coin row, because server.js also
+// defined a second, different currency called GEU — a growth-bearing
+// prototype with its own balance field and supply document. Two designs were
+// wearing one name.
+//
+// That is resolved. Gloobal Coin IS the Gloobal Energy Unit: pegged, 1 GEU =
+// ₹1 in both directions, backed 1:1, no growth. The other prototype is
+// disabled behind GEU_GROWTH_PROTOTYPE and its reasoning is kept in
+// docs/GEU_GROWTH_DESIGN.md, because growth is deferred rather than
+// rejected — and when it arrives it belongs to THIS unit, not to a second
+// one alongside it.
+var COIN_TICKER = "GEU";
+var COIN_TICKER_LONG = "Gloobal Energy Unit";
+
+// What one GEU is worth, and in what.
+//
+// One GEU is one unit of the reserve currency — that is the peg, and it is
+// the same peg for every account. What differs is what a person pays with:
+// an account in India pays ₹1 for 1 GEU, an account in the United States
+// pays $1 and receives about 85, because $1 IS about ₹85.
+//
+// This constant is the DEFAULT only. The server owns the real value
+// (CoinReserve.reserveCurrency) and sends it with every coin read; screens
+// take that when it is present and fall back to this when the server has not
+// answered yet. If the two ever disagree, the server is right — this exists
+// so a screen has something to render before the first response lands, not
+// as a second opinion.
+var COIN_PEG_CURRENCY = "INR";

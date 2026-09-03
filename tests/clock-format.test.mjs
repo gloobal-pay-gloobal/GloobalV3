@@ -159,3 +159,90 @@ describe("the history row shows the same time as the receipt", () => {
     assert.equal(historyRowStamp({ date: "Aug 30", time: "14:07" }), "Aug 30 · 14:07");
   });
 });
+
+describe("every transaction list shows the time, not just the date", () => {
+  // Asked for as "time is mandatory in transaction list, recent list".
+  //
+  // The History screen already showed "Aug 30 · 14:07:32" through
+  // historyRowStamp. The Gloobal Bank recent list and Send Money's recents
+  // rendered a bare `{t.date}` — so the SAME payment read "Sep 2" on one
+  // screen and "Sep 2 · 14:07:32" on another, and two payments to the same
+  // person on one day were indistinguishable in those lists.
+  const LISTS = [
+    ["frontend/features/history/TransactionRow.jsx", "the History row"],
+    ["frontend/screens/Banks/GloobalBankScreen.jsx", "Gloobal Bank recent"],
+    ["frontend/screens/SendMoney/SendMoney.jsx", "Send Money recent"]
+  ];
+
+  for (const [file, what] of LISTS) {
+    test(`${what} stamps date AND time`, () => {
+      assert.match(
+        readSource(file),
+        /historyRowStamp\(t\)/,
+        `${what} must render the shared stamp rather than a bare date`
+      );
+    });
+  }
+
+  test("none of them renders a bare date instead", () => {
+    // Comments stripped: the files explain the old `{t.date}` to say what
+    // was wrong with it, and grepping prose as code makes the explanation
+    // look like the bug.
+    for (const [file, what] of LISTS) {
+      const code = readSource(file)
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      // A `{t.date}` inside a React key is fine — it is not shown to anyone.
+      const shown = code.replace(/key=\{[^}]*\}/g, "");
+      assert.ok(
+        !/>\{t\.date\}</.test(shown),
+        `${what} still renders a bare date somewhere`
+      );
+    }
+  });
+
+  test("the stamp degrades honestly when a row has no time", () => {
+    // Rows written before the time was recorded carry none. Showing the
+    // date alone is right; inventing "00:00:00" would not be.
+    const utils = readSource("frontend/features/history/historyUtils.js");
+    const start = utils.indexOf("function historyRowStamp(");
+    const end = utils.indexOf("\n}\n", start);
+    // eslint-disable-next-line no-new-func
+    const stamp = new Function(`${utils.slice(start, end + 2)}; return historyRowStamp;`)();
+    assert.equal(stamp({ date: "Sep 2" }), "Sep 2");
+    assert.equal(stamp({ date: "Sep 2", time: "14:07:32" }), "Sep 2 \u00B7 14:07:32");
+  });
+});
+
+describe("the flipping mark in a list is slow enough to sit behind money", () => {
+  const flip = readSource("frontend/components/common/flipIcons.jsx");
+
+  test("it turns every 3.2s, not every 1.6s", () => {
+    // This mark is not alone the way the logo box is: a history page draws
+    // ten of them at once on independent timers. At 1.6s with a 0.5s turn
+    // something in the list was mid-flip essentially always.
+    const at = flip.indexOf("function FlipSymbolCircle(");
+    assert.ok(at > 0, "FlipSymbolCircle not found");
+    const fn = flip.slice(at, flip.indexOf("\nfunction ", at + 10));
+    assert.match(fn, /\}, 3200\);/);
+  });
+
+  test("and turns at the same speed as every other mark in the app", () => {
+    const at = flip.indexOf("function FlipSymbolCircle(");
+    const fn = flip.slice(at, flip.indexOf("\nfunction ", at + 10));
+    assert.match(fn, /transform 0\.9s cubic-bezier/);
+    // The logo box's turn, for comparison — one speed, not three.
+    assert.match(flip, /flipMs = 900,/);
+  });
+
+  test("a mark is still for most of its cycle", () => {
+    const at = flip.indexOf("function FlipSymbolCircle(");
+    const fn = flip.slice(at, flip.indexOf("\nfunction ", at + 10));
+    const every = Number(fn.match(/\}, (\d+)\);/)[1]);
+    const turn = Number(fn.match(/transform ([\d.]+)s cubic-bezier/)[1]) * 1000;
+    assert.ok(
+      every - turn >= 2000,
+      `only ${every - turn}ms of stillness between turns — a list of these still twitches`
+    );
+  });
+});

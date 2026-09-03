@@ -305,6 +305,30 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   const requestCloseSendCoin = useBackClose(showSendCoin, () => setShowSendCoin(false));
   const [coinBusy, setCoinBusy] = useState14(false);
   const [coinSupply, setCoinSupply] = useState14(null);
+  // The country-by-country holder breakdown behind the Coin screen's holders
+  // row. Same null-means-∆ rule as coinSupply above, and for the same reason:
+  // an empty country list is a REAL state (nobody holds coin yet), so a
+  // failed read that rendered as one would be indistinguishable from it.
+  const [showCoinHolders, setShowCoinHolders] = useState14(false);
+  const requestCloseCoinHolders = useBackClose(showCoinHolders, () => setShowCoinHolders(false));
+  const [coinHolders, setCoinHolders] = useState14(null);
+  const [coinHoldersLoading, setCoinHoldersLoading] = useState14(false);
+  // One unit of this account's own currency, in GEU. null until the server
+  // answers and null when it could not get a rate — never 1, which is the
+  // specific wrong answer that looks like a right one for every account
+  // outside the reserve's own country.
+  const [geuRate, setGeuRate] = useState14(null);
+  // The reserve currency, as the server reports it. The frontend has a
+  // default (COIN_PEG_CURRENCY) so a screen can render before the first
+  // response, but the server is authoritative and overrides it here.
+  const [coinPegCurrency, setCoinPegCurrency] = useState14(null);
+  // Which country's holder list is open, if any. A string ISO or null — not
+  // a boolean plus a separate id, which is two pieces of state that can
+  // disagree about whether a screen is showing.
+  const [holderCountry, setHolderCountry] = useState14(null);
+  const requestCloseHolderCountry = useBackClose(!!holderCountry, () => setHolderCountry(null));
+  const [countryHolders, setCountryHolders] = useState14(null);
+  const [countryHoldersLoading, setCountryHoldersLoading] = useState14(false);
   const coinBalance = useCoinBalance();
   const coinHistory = useCoinHistory(8);
   const { mintCoin, redeemCoin, sendCoin, refreshCoin } = useCoinActions();
@@ -1168,7 +1192,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   const refreshCoinPosition = async () => {
     if (currentSymbolId) {
       try {
-        await refreshCoin(currentSymbolId);
+        const position = await refreshCoin(currentSymbolId);
+        setGeuRate(position ? position.geuPerAccountUnit : null);
+        setCoinPegCurrency(position ? position.reserveCurrency : null);
       } catch (err) {
         // A read. The screen already shows the last reconciled figure, which
         // beats blanking it because one request failed.
@@ -1179,6 +1205,27 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // coin exists" instead of "we could not ask".
     setCoinSupply(await GloobalApi.getCoinSupply());
   };
+  const refreshCoinHolders = async () => {
+    setCoinHoldersLoading(true);
+    try {
+      setCoinHolders(await GloobalApi.getCoinHolders());
+    } finally {
+      setCoinHoldersLoading(false);
+    }
+  };
+  const openCountryHolders = async (countryIso) => {
+    setHolderCountry(countryIso);
+    // Cleared before the fetch, not after: leaving the previous country's
+    // rows on screen under a new country's name would be a wrong answer
+    // rendered confidently, which is worse than an empty moment.
+    setCountryHolders(null);
+    setCountryHoldersLoading(true);
+    try {
+      setCountryHolders(await GloobalApi.getCountryHolders(countryIso));
+    } finally {
+      setCountryHoldersLoading(false);
+    }
+  };
   const handleMintCoin = async (amount) => {
     if (!currentSymbolId) {
       showToast2("Finish setting up your Gloobal ID first.");
@@ -1188,7 +1235,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     try {
       const result = await mintCoin(currentSymbolId, amount);
       setCoinSupply(await GloobalApi.getCoinSupply());
-      showToast2(`Bought ${result.minted.toFixed(2)} GC`);
+      showToast2(`Bought ${result.minted.toFixed(2)} ${COIN_TICKER}`);
       return true;
     } catch (err) {
       showToast2(gloobalApiIsUnreachable(err) ? "Couldn't reach the server. Try again." : err.message);
@@ -1206,7 +1253,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     try {
       const result = await redeemCoin(currentSymbolId, amount);
       setCoinSupply(await GloobalApi.getCoinSupply());
-      showToast2(`Cashed out ${result.redeemed.toFixed(2)} GC`);
+      showToast2(`Cashed out ${result.redeemed.toFixed(2)} ${COIN_TICKER}`);
       return true;
     } catch (err) {
       showToast2(gloobalApiIsUnreachable(err) ? "Couldn't reach the server. Try again." : err.message);
@@ -2605,6 +2652,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     balanceVisible={balanceVisible}
     onToggleBalance={handleToggleBalance}
     recentTransactions={recentBankTransactions}
+    gloobalId={personalGloobalId}
+    countryFlag={dialCountry.flag}
+    countryName={dialCountry.name}
+    onCopyId={() => {
+      copyToClipboard(personalGloobalId);
+      showToast2("Copied");
+    }}
   /></ScreenErrorBoundary>}{showGloobalCoinInfo && <ScreenErrorBoundary name="Gloobal Coin" onClose={requestCloseGloobalCoinInfo}><GloobalCoinScreen
     onBack={requestCloseGloobalCoinInfo}
     onOpenStats={() => {
@@ -2626,7 +2680,24 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     onMint={handleMintCoin}
     onRedeem={handleRedeemCoin}
     onOpenSend={() => setShowSendCoin(true)}
+    onOpenHolders={() => setShowCoinHolders(true)}
+    countryName={dialCountry.name}
+    geuRate={geuRate}
+    reserveCurrency={coinPegCurrency}
     onRefresh={refreshCoinPosition}
+  /></ScreenErrorBoundary>}{showCoinHolders && <ScreenErrorBoundary name="Holders" onClose={requestCloseCoinHolders}><CoinHoldersScreen
+    onBack={requestCloseCoinHolders}
+    holders={coinHolders}
+    loading={coinHoldersLoading}
+    onRefresh={refreshCoinHolders}
+    onOpenCountry={openCountryHolders}
+  /></ScreenErrorBoundary>}{holderCountry && <ScreenErrorBoundary name="Country holders" onClose={requestCloseHolderCountry}><CountryHoldersScreen
+    onBack={requestCloseHolderCountry}
+    countryIso={holderCountry}
+    data={countryHolders}
+    loading={countryHoldersLoading}
+    onRetry={() => openCountryHolders(holderCountry)}
+    myGloobalId={personalGloobalId}
   /></ScreenErrorBoundary>}{showSendCoin && <ScreenErrorBoundary name="Send Gloobal Coin" onClose={requestCloseSendCoin}><SendCoinScreen
     onBack={requestCloseSendCoin}
     coinBalance={coinBalance}
@@ -2770,7 +2841,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
                 </button></div>}</div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{profileDetail === "Personal Details" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{
     /* Identity row — flag on the left, real registered name
        on the right, not a generic label:value pair. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 18px" }}><span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>{dialCountry.flag}</span><span style={{ flex: 1, fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</span></div>{[
+  }<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 18px" }}><FlagCircle flag={dialCountry.flag} size={24} /><span style={{ flex: 1, fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</span></div>{[
     // The number this account is registered against. It was the one piece of
     // identity the screen knew and did not show.
     ...(mobileNumber ? [["Mobile", mobileNumber]] : []),

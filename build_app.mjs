@@ -181,6 +181,8 @@ const FRONTEND_MODULES = [
   "screens/Banks/GloobalBankScreen.jsx",
   "screens/Coin/GloobalCoinScreen.jsx",
   "screens/Coin/SendCoinScreen.jsx",
+  "screens/Coin/CoinHoldersScreen.jsx",
+  "screens/Coin/CountryHoldersScreen.jsx",
   "screens/About/AboutUsScreen.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",

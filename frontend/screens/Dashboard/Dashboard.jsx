@@ -59,11 +59,21 @@ function profileInitials(name) {
   if (words.length === 1) return words[0].slice(0, 1).toUpperCase();
   return (words[0][0] + words[words.length - 1][0]).toUpperCase();
 }
+// Dates on this screen are formatted in "en-US", never in the device's own
+// locale.
+//
+// Passing `undefined` as the locale asks the PHONE what a date looks like,
+// so the same record reads "Sep 4, 2026" on one device and "04/09/2026" or
+// "4 Sept 2026" on another — and where the string is STORED rather than
+// derived (the Gloobal ID history writes its stamp at the moment of the
+// change) the record itself carries the format of whichever phone made it.
+// The Coin Activity list had exactly this and it was fixed there; these
+// five were the ones left behind.
 function formatReferralJoinDate(value) {
   const when = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(when.getTime())) return "";
   const sameYear = when.getFullYear() === (/* @__PURE__ */ new Date()).getFullYear();
-  return when.toLocaleDateString(void 0, sameYear
+  return when.toLocaleDateString("en-US", sameYear
     ? { day: "numeric", month: "short" }
     : { day: "numeric", month: "short", year: "numeric" });
 }
@@ -85,6 +95,16 @@ var GH_ID_ROW_RESERVE = 10;
 // unbounded (a network can be hundreds deep), and every row rendered is a
 // row laid out and painted before the first one is visible.
 var REFERRAL_PAGE_SIZE = 10;
+
+// My Share's preview rows, coloured to match the halves of the split bar
+// above them: the shared amount is the green half, the remainder the
+// purple one. Keyed by the row key from myShareSplitRows rather than by
+// position, so reordering the rows there cannot silently recolour them.
+var MY_SHARE_ROW_COLORS = {
+  payment: (T2) => T2.ink,
+  share: (T2) => T2.positive,
+  keep: (T2) => T2.accent
+};
 
 // The live dot that replaced the word ACTIVE on every referral row.
 //
@@ -479,7 +499,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     pinReason: "Confirm it's you to settle to Gloobal Bank.",
     run: () => {
       onSettleAssetsToBank(settlePendingAmount);
-      showToast2(`${ccy}${fmt(settlePendingAmount, ccyCode)} settled to Gloobal Bank`);
+      showToast2(`${fmtMoney(settlePendingAmount, ccyCode)} settled to Gloobal Bank`);
     }
   });
   const CHART_W = 320, CHART_H = 160, CHART_PAD_L = 8, CHART_PAD_R = 8, CHART_PAD_T = 16, CHART_PAD_B = 22;
@@ -799,7 +819,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
         return {
           id: entry.replacedBy,
           previousId: entry.symbolId,
-          date: valid ? when.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" }) : "",
+          date: valid ? when.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "",
           time: valid ? formatClockTime(when) : "",
           at: valid ? when.getTime() : 0
         };
@@ -878,7 +898,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   const ccyCode = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
   // Declared after ccyCode because it needs it — this is the account's own
   // balance, the single most-read number on the screen.
-  const balance = fmt(bankBalance, ccyCode);
+  // The whole amount, formatted the way every other amount in this app
+  // is: figure first, currency after. It used to be fmt() alone with the
+  // symbol interpolated in front of it at the two places that render it,
+  // which is how the largest number on the screen stayed "₹12,500.00"
+  // long after the rows beneath it had become "12,500.00₹".
+  const balance = fmtMoney(bankBalance, ccyCode);
   // THE account's Gloobal ID — the one and only value any screen on this
   // dashboard shows as "your Gloobal ID". It comes from the stored
   // session via useCurrentSymbolId, which re-renders on
@@ -1033,7 +1058,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     }
     const now = /* @__PURE__ */ new Date();
     setIdUpdateHistory((h) => [
-      { id: newIdBuffer, previousId, date: now.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" }), time: formatClockTime(now), at: now.getTime() },
+      { id: newIdBuffer, previousId, date: now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), time: formatClockTime(now), at: now.getTime() },
       ...h
     ]);
     // No local copy is kept for either role now that they are one identity.
@@ -1303,7 +1328,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     pinReason: "Confirm it's you to settle referral earnings.",
     run: () => {
       onSettleReferralToBank(totalReferralEarned);
-      showToast2(`${ccy}${fmt(totalReferralEarned, ccyCode)} settled to Gloobal Bank`);
+      showToast2(`${fmtMoney(totalReferralEarned, ccyCode)} settled to Gloobal Bank`);
     }
   });
   // Personal and Creator are separate books: each role only sees the
@@ -1513,7 +1538,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       textOverflow: "ellipsis",
       zIndex: 1
     }}
-  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : ` ${dialCountry.name}`} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? `${ccy}${balance}` : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
+  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : ` ${dialCountry.name}`} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? balance : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"
@@ -1533,7 +1558,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Spending mini chart — sits below its own divider so it
        reads as a distinct footer section of the wallet card
        rather than competing with the balance above it. */
-  }<div style={{ position: "relative", marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.18)" }}><DailySpendingChart weeks={dailySpending.weeks} totals={dailySpending.totals} symbol={ccy} /></div>{showIdTag && <div
+  }<div style={{ position: "relative", marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.18)" }}><DailySpendingChart weeks={dailySpending.weeks} totals={dailySpending.totals} currencyCode={ccyCode} /></div>{showIdTag && <div
     style={{
       position: "absolute",
       top: 66,
@@ -1632,7 +1657,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><Icon size={15} color={T.accent} /></span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkSoft }}>{label}</span></button>)}</div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{ccy}{fmt(todaysCollection, ccyCode)}</span><div style={{ display: "flex", gap: 10, marginTop: 2 }}><button
+  ><Icon size={15} color={T.accent} /></span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkSoft }}>{label}</span></button>)}</div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{fmtMoney(todaysCollection, ccyCode)}</span><div style={{ display: "flex", gap: 10, marginTop: 2 }}><button
     onClick={() => {
       if (todaysCollection <= 0) return;
       setSettlePendingAmount(todaysCollection);
@@ -2352,7 +2377,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     inputMode="decimal"
     style={{ flex: 1, border: "none", outline: "none", background: "none", fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "inherit" }}
   /></div>{payTarget.cashbackRate > 0 && <div style={{ fontSize: 11.5, color: T.positive, fontWeight: 700, marginBottom: 18 }}>
-                Earn {(payTarget.cashbackRate * 100).toFixed(2)}% back — {ccy}{fmt(((parseFloat(payAmount) || 0) * payTarget.cashbackRate), ccyCode)} instantly added to My Assets and your PayLater limit
+                Earn {(payTarget.cashbackRate * 100).toFixed(2)}% back — {fmtMoney(((parseFloat(payAmount) || 0) * payTarget.cashbackRate), ccyCode)} instantly added to My Assets and your PayLater limit
               </div>}<button
     onClick={() => {
       const amt = parseFloat(payAmount) || 0;
@@ -2383,7 +2408,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   /><PayPinModal
     open={payTargetPinOpen}
     onClose={() => setPayTargetPinOpen(false)}
-    amountLabel={payTarget ? `\u2212${ccy}${fmt((parseFloat(payAmount) || 0), ccyCode)}` : null}
+    amountLabel={payTarget ? `\u2212${fmtMoney((parseFloat(payAmount) || 0), ccyCode)}` : null}
     onVerified={() => {
       setPayTargetPinOpen(false);
       setShowPayTargetBiometric(true);
@@ -2404,7 +2429,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
         onPayBusiness({ key: payTarget.key, label: payTarget.label, chip: payTarget.chip || payTarget.label.slice(0, 2).toUpperCase(), amount: amt, cashbackRate: payTarget.cashbackRate, payMethodLabel: payTargetMethod });
         const cashback = amt * (payTarget.cashbackRate || 0);
         showToast2(
-          cashback > 0 ? `Paid ${ccy}${fmt(amt, ccyCode)} to ${payTarget.label} \u2014 +${ccy}${fmt(cashback, ccyCode)} instant to PayLater & Assets` : `Paid ${ccy}${fmt(amt, ccyCode)} to ${payTarget.label}`
+          cashback > 0 ? `Paid ${fmtMoney(amt, ccyCode)} to ${payTarget.label} \u2014 +${fmtMoney(cashback, ccyCode)} instant to PayLater & Assets` : `Paid ${fmtMoney(amt, ccyCode)} to ${payTarget.label}`
         );
         requestClosePayTarget();
       }, 700);
@@ -2521,27 +2546,53 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     aria-label="Creator Share overview"
     className="v2-tap"
     style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.positive, boxShadow: "0 4px 12px rgba(5,150,105,0.35)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
-  ><BarChart3 size={17} color="#fff" /></button></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "18px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px 6px" }}>{
-    /* My contribution — big open readout, no box around it */
-  }<div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginBottom: 20 }}><div style={{ display: "flex", alignItems: "baseline", gap: 6 }}><span style={{ fontSize: 48, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay }}>{myShareRate.toFixed(2)}</span><span style={{ fontSize: 22, fontWeight: 700, color: T.ink }}>%</span></div><div style={{ fontSize: 13, color: T.inkSoft, textAlign: "center" }}>
-                  For every 100, it's <span style={{ color: T.accent, fontWeight: 800 }}>{myShareRate.toFixed(2)}</span></div></div>{
-    /* Slider */
-  }<div style={{ marginBottom: 20 }}><input
+  ><BarChart3 size={17} color="#fff" /></button></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "18px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px 16px" }}>{
+    /* The rate itself. It reads "2.00% of every payment you receive" —
+       the old subtitle said "For every 100, it's 2.00", which named no
+       currency and no direction, so it could be read as 2.00 of every
+       100 GOING somewhere or COMING back. */
+  }<div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 4 }}><span style={{ fontSize: 52, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay, letterSpacing: -2, lineHeight: 1 }}>{myShareRate.toFixed(2)}</span><span style={{ fontSize: 20, fontWeight: 800, color: T.accent }}>%</span></div><div style={{ textAlign: "center", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, marginTop: 5 }}>of every payment you receive</div>{
+    /* Slider — fine control, 0.01 steps. */
+  }<div style={{ marginTop: 18 }}><input
     type="range"
     min={0}
     max={7}
     step={0.01}
     value={myShareRate}
     onChange={(e) => setMyShareRate(Math.min(7, Math.max(0, parseFloat(e.target.value))))}
-    aria-label="My contribution percentage"
+    aria-label="My Share percentage"
     style={{ width: "100%", accentColor: T.accent, cursor: "pointer" }}
-  /><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: T.inkFaint, marginTop: -2 }}><span>0%</span><span>7%</span></div></div>{
-    /* Preview */
-  }<div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, marginBottom: 14 }}>Preview</div>{[
-    { icon: User, label: "Payment amount", value: `${ccy}1000.00`, color: T.ink },
-    { icon: Store2, label: "User gets", value: `${ccy}${fmt((1e3 * (myShareRate / 100)), ccyCode)}`, color: T.accent },
-    { icon: PieChart, label: "My contribution", value: `${myShareRate.toFixed(2)}%`, color: T.accent }
-  ].map((row, i) => <div key={row.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}><row.icon size={16} color={T.inkFaint} /><span style={{ flex: 1, fontSize: 13.5, color: T.inkSoft, fontWeight: 600 }}>{row.label}</span><span style={{ fontSize: 14, fontWeight: 800, color: row.color }}>{row.value}</span></div>)}</div></div><div style={{ flexShrink: 0, padding: "0 18px calc(18px + env(safe-area-inset-bottom, 0px))" }}><button
+  /><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 700, color: T.inkFaint, marginTop: -2 }}><span>0%</span><span>7%</span></div></div>{
+    /* Presets — the reason the slider can stay this fine. Dragging a thumb
+       across 0–7% at two decimals cannot reliably land on 2.00; a chip
+       does it in one tap, and the slider is then only for the rates
+       between. */
+  }<div style={{ display: "flex", gap: 7, marginTop: 14 }}>{MY_SHARE_PRESETS.map((preset) => {
+    const on = myShareIsPreset(myShareRate, preset);
+    return <button
+      key={preset}
+      onClick={() => setMyShareRate(preset)}
+      className="v2-tap"
+      aria-pressed={on}
+      style={{ flex: 1, padding: "9px 0", borderRadius: 11, fontSize: 12, fontWeight: 800, cursor: "pointer", background: on ? T.accent : T.bg, color: on ? "#fff" : T.inkSoft, border: `1px solid ${on ? T.accent : T.line}` }}
+    >{preset}%</button>;
+  })}</div></div><div>{
+    /* What the rate does to one real payment. */
+  }<div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint, marginBottom: 8 }}>On a {fmtMoney(MY_SHARE_PREVIEW_BASE, ccyCode)} payment</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "14px 16px 4px" }}>{
+    /* The bar is a picture of the money, so its widths come from the rate
+       and not from the slider's position on its track — see
+       myShareBarWidths. At 2% the shared sliver is genuinely a sliver,
+       which is the honest and the more useful picture: it is what the
+       payer will actually see come back. */
+  }{(() => {
+    const w = myShareBarWidths(myShareRate, 0.6);
+    const [payment, share, keep] = myShareSplitRows(myShareRate, MY_SHARE_PREVIEW_BASE, ccyCode);
+    return <div
+      role="img"
+      aria-label={`Of ${fmtMoney(payment.amount, ccyCode)}, you keep ${fmtMoney(keep.amount, ccyCode)} and they get ${fmtMoney(share.amount, ccyCode)}`}
+      style={{ display: "flex", height: 34, borderRadius: 11, overflow: "hidden", border: `1px solid ${T.line}` }}
+    ><span style={{ width: `${w.keep}%`, background: T.accentSoft }} /><span style={{ flex: 1, background: T.positive }} /></div>;
+  })()}<div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}><span style={{ fontSize: 11.5, fontWeight: 800, color: T.accent }}>You keep</span><span style={{ fontSize: 11.5, fontWeight: 800, color: T.positive }}>They get</span></div>{myShareSplitRows(myShareRate, MY_SHARE_PREVIEW_BASE, ccyCode).map((row) => <div key={row.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "11px 0", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>{row.label}</span><span style={{ fontSize: 14.5, fontWeight: 800, color: MY_SHARE_ROW_COLORS[row.key](T), overflowWrap: "anywhere" }}>{fmtMoney(row.amount, ccyCode)}</span></div>)}</div></div></div><div style={{ flexShrink: 0, padding: "0 18px calc(18px + env(safe-area-inset-bottom, 0px))" }}><button
     onClick={() => setShowMyShareBiometric(true)}
     disabled={myShareSaving}
     className="v2-tap"
@@ -2643,8 +2694,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     services={serviceRowsFor(CAPABILITY_KEY.GLOOBAL_BANK)}
     interested={gloobalBankInterested}
     interestBusy={interestBusy === "bank"}
-    onRegisterInterest={() => registerInterest("bank")}
-    ccy={ccy} ccyCode={ccyCode}
+    onRegisterInterest={() => registerInterest("bank")} ccyCode={ccyCode}
     balance={balance}
     balanceUnavailable={balanceUnavailable}
     balanceStatus={balanceStatus}
@@ -2772,7 +2822,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
-  }{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3 }}>{ccy}{fmt(assetDetail.row.value, ccyCode)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${ccy}${fmt(assetDetail.target, ccyCode)}`}</div>{
+  }{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3 }}>{fmtMoney(assetDetail.row.value, ccyCode)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${fmtMoney(assetDetail.target, ccyCode)}`}</div>{
     /* Growth curve: cashback (t=0) compounding at 1%/month up
        to the point it equals 100% of the original spend. */
   }<svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} width="100%" height="150" style={{ marginTop: 14, display: "block" }} preserveAspectRatio="none">{
@@ -2783,9 +2833,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Growth curve */
   }<polyline points={assetDetail.pathPoints} fill="none" stroke={T.positive} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />{
     /* Today marker */
-  }<line x1={assetDetail.todayX} y1={assetDetail.todayY} x2={assetDetail.todayX} y2={assetDetail.baseY} stroke={T.accent} strokeWidth="1.5" strokeDasharray="3 3" /><circle cx={assetDetail.todayX} cy={assetDetail.todayY} r="4.5" fill={T.accent} stroke="#fff" strokeWidth="1.5" /></svg><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: T.inkFaint, marginTop: -4 }}><span>Year 0</span><span>~{(assetDetail.monthsToTarget / 12).toFixed(1)} yrs</span></div><div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>Today</span><span style={{ width: 14, height: 2, background: T.line, marginLeft: 10, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>100% of original spend ({ccy}{fmt(assetDetail.target, ccyCode)})</span></div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>{[
+  }<line x1={assetDetail.todayX} y1={assetDetail.todayY} x2={assetDetail.todayX} y2={assetDetail.baseY} stroke={T.accent} strokeWidth="1.5" strokeDasharray="3 3" /><circle cx={assetDetail.todayX} cy={assetDetail.todayY} r="4.5" fill={T.accent} stroke="#fff" strokeWidth="1.5" /></svg><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: T.inkFaint, marginTop: -4 }}><span>Year 0</span><span>~{(assetDetail.monthsToTarget / 12).toFixed(1)} yrs</span></div><div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>Today</span><span style={{ width: 14, height: 2, background: T.line, marginLeft: 10, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>100% of original spend ({fmtMoney(assetDetail.target, ccyCode)})</span></div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>{[
     ...assetDetail.row.chip === "CS" ? [["Creator", assetDetail.row.creatorName]] : [],
-    ["Paid", `${ccy}${fmt(assetDetail.row.amountPaid, ccyCode)}`],
+    ["Paid", `${fmtMoney(assetDetail.row.amountPaid, ccyCode)}`],
     // Two decimals, not one, and this is load-bearing rather than cosmetic.
     //
     // The My Share slider is step={0.01}, so 2.36% is a rate somebody can
@@ -2799,7 +2849,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // toFixed(2) is exactly lossless against step={0.01}, and matches what My
     // Share and the receipt have always shown. Do not reduce this precision
     // without also constraining the slider, or the two will disagree again.
-    ["Cashback", `${(assetDetail.row.cashbackRate * 100).toFixed(2)}% \xB7 ${ccy}${fmt(assetDetail.row.cashback, ccyCode)}`],
+    ["Cashback", `${(assetDetail.row.cashbackRate * 100).toFixed(2)}% \xB7 ${fmtMoney(assetDetail.row.cashback, ccyCode)}`],
     ["Earned on", assetDetail.row.time ? `${assetDetail.row.date}, ${assetDetail.row.time}` : assetDetail.row.date],
     ["Time to 100%", `${(assetDetail.monthsToTarget / 12).toFixed(1)} yrs`]
   ].map(([label, value]) => <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontSize: 12, color: T.inkFaint }}>{label}</span><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{value}</span></div>)}</div></div></div>}{profileDetail && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileDetail} />{profileDetail !== "History" && <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{profileDetail}</span>}{profileDetail === "History" && <div style={{ display: "flex", gap: 8, flex: 1 }}><button
@@ -2841,7 +2891,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
                 </button></div>}</div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{profileDetail === "Personal Details" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{
     /* Identity row — flag on the left, real registered name
        on the right, not a generic label:value pair. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 18px" }}><FlagCircle flag={dialCountry.flag} size={24} /><span style={{ flex: 1, fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</span></div>{[
+  }<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 18px" }}><FlagEmoji flag={dialCountry.flag} size={24} shape="circle" /><span style={{ flex: 1, fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</span></div>{[
     // The number this account is registered against. It was the one piece of
     // identity the screen knew and did not show.
     ...(mobileNumber ? [["Mobile", mobileNumber]] : []),
@@ -2853,7 +2903,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}><GloobalWordmark suffix=" ID" /></span><span style={{ fontSize: 13, fontWeight: 700, textAlign: "right" }}>{personalGloobalId ? <ColoredGloobalId id={personalGloobalId} /> : "\u2014"}</span></div>{
     /* Join date + time — the real moment this session
        actually started, not a fixed placeholder year. */
-  }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>Joined</span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink, textAlign: "right" }}>{accountCreatedAt.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" })}, {formatClockTime(accountCreatedAt)}</span></div></div>}{profileDetail === "Linked Banks" && <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px" }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Manage your linked banks</div><div style={{ fontSize: 12, color: T.inkFaint, marginTop: 3, lineHeight: 1.5 }}>
+  }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>Joined</span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink, textAlign: "right" }}>{accountCreatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}, {formatClockTime(accountCreatedAt)}</span></div></div>}{profileDetail === "Linked Banks" && <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px" }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Manage your linked banks</div><div style={{ fontSize: 12, color: T.inkFaint, marginTop: 3, lineHeight: 1.5 }}>
                     Add, view, and link bank accounts from your country on the Add Bank screen.
                   </div></div><button
     onClick={() => {
@@ -2889,7 +2939,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
                   </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{subscriptions.map((s, i) => <div
     key={s.key}
     style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 15px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-  ><span style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: s.active ? T.accentSoft : T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: s.active ? T.accent : T.inkFaint }}>{s.chip}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</span><span style={{ display: "block", fontSize: 11, color: T.inkFaint, marginTop: 1 }}>{ccy}{fmt(s.price, ccyCode)}/mo{s.active ? profileToggles.autopay ? " \xB7 Auto-renews" : " \xB7 Manual renewal" : ""}</span></span><ProfileToggle on={s.active} onToggle={() => toggleSubscription(s.key)} label={s.label} /></div>)}</div></div></div>}{profileDetail === "Language" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{PROFILE_LANGUAGES.map((lang, i) => <button
+  ><span style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: s.active ? T.accentSoft : T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: s.active ? T.accent : T.inkFaint }}>{s.chip}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</span><span style={{ display: "block", fontSize: 11, color: T.inkFaint, marginTop: 1 }}>{fmtMoney(s.price, ccyCode)}/mo{s.active ? profileToggles.autopay ? " \xB7 Auto-renews" : " \xB7 Manual renewal" : ""}</span></span><ProfileToggle on={s.active} onToggle={() => toggleSubscription(s.key)} label={s.label} /></div>)}</div></div></div>}{profileDetail === "Language" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{PROFILE_LANGUAGES.map((lang, i) => <button
     key={lang}
     onClick={() => setProfileLanguage(lang)}
     className="v2-row"
@@ -2899,7 +2949,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     onClick={() => setProfileCurrency(code)}
     className="v2-row"
     style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px", border: "none", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, background: "none", cursor: "pointer", textAlign: "left" }}
-  ><span style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 13.5, fontWeight: profileCurrency === code ? 800 : 600, color: profileCurrency === code ? T.accent : T.ink }}>{code}</span>{CURRENCIES[code] && <span style={{ fontSize: 13 }}>{CURRENCIES[code].flag}</span>}</span>{profileCurrency === code && <Check2 size={17} color={T.accent} />}</button>)}</div>}{profileDetail === "Security" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px" }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Biometric login</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Use Face ID or fingerprint to log in</div></span><ProfileToggle on={profileToggles.biometric} onToggle={() => flipToggle("biometric")} label="Biometric login" /></div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>App lock</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Ask for your PIN every time the app opens</div></span><ProfileToggle on={profileToggles.appLock} onToggle={() => flipToggle("appLock")} label="App lock" /></div><button
+  ><span style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 13.5, fontWeight: profileCurrency === code ? 800 : 600, color: profileCurrency === code ? T.accent : T.ink }}>{code}</span>{CURRENCIES[code] && <FlagEmoji flag={CURRENCIES[code].flag} width={20} height={15} radius={4} />}</span>{profileCurrency === code && <Check2 size={17} color={T.accent} />}</button>)}</div>}{profileDetail === "Security" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px" }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Biometric login</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Use Face ID or fingerprint to log in</div></span><ProfileToggle on={profileToggles.biometric} onToggle={() => flipToggle("biometric")} label="Biometric login" /></div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>App lock</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Ask for your PIN every time the app opens</div></span><ProfileToggle on={profileToggles.appLock} onToggle={() => flipToggle("appLock")} label="App lock" /></div><button
     onClick={() => showToast2("PIN change will be available soon")}
     className="v2-row"
     style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px", border: "none", borderTop: `1px solid ${T.line}`, background: "none", cursor: "pointer", textAlign: "left" }}
@@ -3048,7 +3098,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   >{toast}</div>}</div>}{profileOverlay === "referral" && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}><SendMoneyAmbientBg /></div><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileOverlay} /></div><div style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* Earnings summary */
   }<div style={{ position: "relative", background: T.gradWallet, borderRadius: T.radiusLg, padding: "22px 22px 52px", display: "flex", flexDirection: "column", gap: 4, boxShadow: T.shadowRaised }}><span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: 0.3, textTransform: "uppercase" }}>
-                By <SingleOMark before="N" after="W" /></span><span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay }}>{ccy}{fmt(referralNetwork.reduce((sum, m) => sum + m.earned, 0), ccyCode)}</span><div style={{ display: "flex", gap: 18, marginTop: 10 }}><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Invited</div></div><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.filter((m) => m.status === "Active").length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Active</div></div></div><button
+                By <SingleOMark before="N" after="W" /></span><span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay }}>{fmtMoney(referralNetwork.reduce((sum, m) => sum + m.earned, 0), ccyCode)}</span><div style={{ display: "flex", gap: 18, marginTop: 10 }}><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Invited</div></div><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.filter((m) => m.status === "Active").length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Active</div></div></div><button
     onClick={() => setProfileOverlay("share")}
     aria-label="Share your referral link"
     className="v2-tap"
@@ -3080,7 +3130,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     const referralPct = combined > 0 ? Math.round(totalReferralSharing / combined * 100) : 0;
     return <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 16px" }}><div style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>
                     Referral sharing vs. Creator Share
-                  </div><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Referral sharing</span><span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>{ccy}{fmt(totalReferralSharing, ccyCode)}</span></div><span style={{ display: "block", height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden", marginBottom: 14 }}><span style={{ display: "block", width: `${referralPct}%`, height: "100%", borderRadius: 999, background: T.accent, transition: "width 0.3s ease" }} /></span><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Our own Creator Share</span><span style={{ fontSize: 13, fontWeight: 800, color: T.positive }}>{ccy}{fmt(totalCreatorShareEarned, ccyCode)}</span></div><span style={{ display: "block", height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden" }}><span style={{ display: "block", width: `${100 - referralPct}%`, height: "100%", borderRadius: 999, background: T.positive, transition: "width 0.3s ease" }} /></span><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", marginTop: 14, lineHeight: 1.4 }}>
+                  </div><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Referral sharing</span><span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>{fmtMoney(totalReferralSharing, ccyCode)}</span></div><span style={{ display: "block", height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden", marginBottom: 14 }}><span style={{ display: "block", width: `${referralPct}%`, height: "100%", borderRadius: 999, background: T.accent, transition: "width 0.3s ease" }} /></span><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Our own Creator Share</span><span style={{ fontSize: 13, fontWeight: 800, color: T.positive }}>{fmtMoney(totalCreatorShareEarned, ccyCode)}</span></div><span style={{ display: "block", height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden" }}><span style={{ display: "block", width: `${100 - referralPct}%`, height: "100%", borderRadius: 999, background: T.positive, transition: "width 0.3s ease" }} /></span><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", marginTop: 14, lineHeight: 1.4 }}>
                     Creator Share is real, from this account's own payments. Referral sharing is still a seeded example — there are no real referred accounts yet to read this from.
                   </div></div>;
   })()}{
@@ -3107,7 +3157,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       boxShadow: totalReferralEarned > 0 ? "0 8px 20px rgba(124,58,237,0.3)" : "none"
     }}
   ><Landmark5 size={16} />
-              Settle {ccy}{fmt(totalReferralEarned, ccyCode)} to Gloobal Bank
+              Settle {fmtMoney(totalReferralEarned, ccyCode)} to Gloobal Bank
             </button>{
     /* How the network works */
   }<button
@@ -3213,7 +3263,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        "\u2014 / today", a column of dashes that said nothing and took the
        eye straight to it; referral earnings are not credited server-side
        yet, so that was every row, always. */
-  }{m.earnedToday > 0 && <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, flexShrink: 0 }}><span style={{ fontSize: 13.5, fontWeight: 800, color: T.positive }}>+{ccy}{fmt(m.earnedToday, ccyCode)}</span><span style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>today</span></span>}{
+  }{m.earnedToday > 0 && <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, flexShrink: 0 }}><span style={{ fontSize: 13.5, fontWeight: 800, color: T.positive }}>+{fmtMoney(m.earnedToday, ccyCode)}</span><span style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>today</span></span>}{
     /* The live dot, immediately left of the arrow — this is what the word
        ACTIVE used to be. Green and pulsing for an active referral, amber
        and still for a pending one. aria-label carries the word for a
@@ -3684,10 +3734,17 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   >
               Save new <GloobalWordmark suffix=" ID" /></button></div></div>}{
     /* Log of every past Gloobal ID change, newest first, opened from
-       the History icon on the Update Gloobal ID screen. */
+       the History icon on the Update Gloobal ID screen.
+       The IDs are drawn through ColoredGloobalId, the same as on the
+       receipt, the scan confirmation and the holders list. They used to
+       be flat monospace here, which is the one place in the app where a
+       Gloobal ID appeared as plain text — and the colour by position is
+       not decoration, it is how a person tells two IDs apart at a glance
+       when both are rows of the same twelve symbols. Two IDs stacked as
+       "From" and "To" is precisely where that matters most. */
   }{showIdHistory && <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseIdHistory} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Update History</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{combinedIdHistory.length === 0 ? <div style={{ textAlign: "center", padding: "40px 20px", color: T.inkFaint, fontSize: 13 }}>No updates yet</div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{combinedIdHistory.map((h, i) => {
     const older = combinedIdHistory[i + 1];
-    return <div key={i} style={{ padding: "14px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}><div style={{ display: "flex", flexDirection: "column", gap: 3 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0, width: 32 }}>From</span><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, letterSpacing: 0.5, fontFamily: "monospace", wordBreak: "break-all" }}>{h.previousId}</span></div><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: T.accent, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0, width: 32 }}>To</span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink, letterSpacing: 0.5, fontFamily: "monospace", wordBreak: "break-all" }}>{h.id}</span></div></div><div style={{ fontSize: 11, color: T.inkFaint, marginTop: 6, display: "flex", alignItems: "center", gap: 5 }}><span>{older ? `${older.date}, ${older.time}` : `${accountCreatedAt.toLocaleDateString(void 0, { month: "short", day: "numeric", year: "numeric" })}, ${formatClockTime(accountCreatedAt)}`}</span><ArrowRight2 size={10} style={{ flexShrink: 0 }} /><span>{h.date}, {h.time}</span></div></div>;
+    return <div key={i} style={{ padding: "14px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}><div style={{ display: "flex", flexDirection: "column", gap: 3 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0, width: 32 }}>From</span><span style={{ fontSize: 12, opacity: 0.75, wordBreak: "break-all" }}><ColoredGloobalId id={h.previousId} /></span></div><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: T.accent, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0, width: 32 }}>To</span><span style={{ fontSize: 13, wordBreak: "break-all" }}><ColoredGloobalId id={h.id} /></span></div></div><div style={{ fontSize: 11, color: T.inkFaint, marginTop: 6, display: "flex", alignItems: "center", gap: 5 }}><span>{older ? `${older.date}, ${older.time}` : `${accountCreatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}, ${formatClockTime(accountCreatedAt)}`}</span><ArrowRight2 size={10} style={{ flexShrink: 0 }} /><span>{h.date}, {h.time}</span></div></div>;
   })}</div>}</div></div>}{
     /* Revealing the balance — same mandatory Face ID + fingerprint
        screen used for PIN-follow-up everywhere else in the app. */
@@ -3852,8 +3909,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       }}
     ><span style={{ fontSize: 9.5, fontWeight: 700, color: T.inkFaint, letterSpacing: 0.4, textTransform: "uppercase" }}>
                       Total earned
-                    </span><span style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{ccy}{fmt(total, ccyCode)}</span></div></div>;
-  })()}<div style={{ display: "flex", gap: 22, marginTop: 2 }}><div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{ccy}{fmt(selectedMember.earnedToday, ccyCode)}</div><div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>Today</div></div></div><div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: T.accentSoft, flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{ccy}{fmt(selectedMember.earned, ccyCode)}</div><div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>All-time total</div></div></div></div></div></div>}{
+                    </span><span style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{fmtMoney(total, ccyCode)}</span></div></div>;
+  })()}<div style={{ display: "flex", gap: 22, marginTop: 2 }}><div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{fmtMoney(selectedMember.earnedToday, ccyCode)}</div><div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>Today</div></div></div><div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: T.accentSoft, flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{fmtMoney(selectedMember.earned, ccyCode)}</div><div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>All-time total</div></div></div></div></div></div>}{
     /* Explains how earning through the referral network works — opened
        from the option that replaced the old "Invite a friend" CTA. */
   }{showHowItWorks && <div

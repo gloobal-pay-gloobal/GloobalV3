@@ -32,19 +32,32 @@ describe("the share sheet gets a summary and a link", () => {
   test("the message carries amount, currency, counterparty, date and reference", () => {
     const at = receipt.indexOf("const handleShareTxnId = () => {");
     const fn = receipt.slice(at, receipt.indexOf("\n  };", at));
-    assert.match(fn, /receipt\.currencySymbol/);
+    // The symbol is no longer read here: fmtMoney takes the CODE and
+    // produces both the number and the unit, in that order.
     assert.match(fn, /receipt\.currencyCode/);
     assert.match(fn, /Transaction ID: \$\{rawTxnId\}/);
     assert.match(fn, /receipt\.date/);
   });
 
   test("the amount is formatted against its own currency code", () => {
-    // Same rule as every other figure in the app: the symbol and the decimal
+    // Same rule as every other figure in the app: the unit and the decimal
     // places come from the same code, so a shared receipt cannot repeat the
     // cross-border mislabelling.
     const at = receipt.indexOf("const handleShareTxnId = () => {");
     const fn = receipt.slice(at, receipt.indexOf("\n  };", at));
-    assert.match(fn, /fmt\(Number\(receipt\.amount \|\| 0\), receipt\.currencyCode\)/);
+    assert.match(fn, /fmtMoney\(Number\(receipt\.amount \|\| 0\), receipt\.currencyCode\)/);
+  });
+
+  test("and the code is not appended a second time", () => {
+    // The shared text used to read "$20.00 USD" — symbol in front, code
+    // bolted on the end to disambiguate it. fmtMoney carries the unit
+    // itself now, so that tail would print it twice: "20.00$ USD".
+    const at = receipt.indexOf("const handleShareTxnId = () => {");
+    const fn = receipt.slice(at, receipt.indexOf("\n  };", at));
+    assert.ok(
+      !/\$\{receipt\.currencyCode \? ` \$\{receipt\.currencyCode\}`/.test(fn),
+      "the currency code is appended after an amount that already names it"
+    );
   });
 
   test("the link points at the backend receipt route, encoded", () => {

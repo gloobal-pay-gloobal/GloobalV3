@@ -194,7 +194,6 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
     return <div style={{ padding: "14px 16px 16px" }}><DailySpendingChart
       weeks={historyDailyTrend.weeks}
       totals={historyDailyTrend.totals}
-      symbol={ccy}
       currencyCode={ccyCode}
       focusDirection={historyTab === "sending" ? "paid" : "received"}
       palette="light"
@@ -202,7 +201,7 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
         // The label the eye no longer needs, kept for the ear: a screen
         // reader gets neither the colour nor the sign, and without it this
         // is a bare number beside another bare number.
-        aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${ccy}${fmt(active.value, ccyCode)}`}
+        aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${fmtMoney(active.value, ccyCode)}`}
         style={{
           fontSize: 19,
           fontWeight: 800,
@@ -211,7 +210,7 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
           whiteSpace: "nowrap",
           flexShrink: 0
         }}
-      >{active.sign}{ccy}{fmt(active.value, ccyCode)}</span>}
+      >{active.sign}{fmtMoney(active.value, ccyCode)}</span>}
     /></div>;
   })()}</div>{
   }<div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>{["all", "bank", "paylater", "coin"].map((m) => <button

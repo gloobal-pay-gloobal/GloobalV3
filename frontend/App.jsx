@@ -433,6 +433,7 @@ function GloobalId() {
       txnId: entry.txnId,
       amount: entry.amount,
       currencySymbol: CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "",
+      currencyCode: COUNTRY_CURRENCY[dialCountry.iso] || "USD",
       to: entry.name
     });
     offerPaymentNotificationsAfterPayment();
@@ -664,10 +665,6 @@ function GloobalId() {
   const scanRequestCurrency = (pending) => {
     const iso = pending && pending.recipientCountryIso;
     return (iso && COUNTRY_CURRENCY[iso]) || COUNTRY_CURRENCY[dialCountry.iso] || "USD";
-  };
-  const scanRequestSymbol = (pending) => {
-    const code = scanRequestCurrency(pending);
-    return CURRENCY_SYMBOL[code] || `${code} `;
   };
 
   const handleQrScanned = async (rawCode) => {
@@ -971,8 +968,8 @@ function GloobalId() {
     showToast(
       amount > 0
         ? scanSettledRemotely
-          ? `Paid ${ccy}${fmt(amount, ccyCode)} \u2014 verified and locked`
-          : `Not sent \u2014 ${ccy}${fmt(amount, ccyCode)} recorded locally only, no registered Gloobal account to credit`
+          ? `Paid ${fmtMoney(amount, ccyCode)} \u2014 verified and locked`
+          : `Not sent \u2014 ${fmtMoney(amount, ccyCode)} recorded locally only, no registered Gloobal account to credit`
         : "Gloobal ID verified and locked"
     );
   };
@@ -1725,6 +1722,7 @@ function GloobalId() {
             txnId: entry.txnId,
             amount: entry.amount,
             currencySymbol: CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "",
+      currencyCode: COUNTRY_CURRENCY[dialCountry.iso] || "USD",
             from: entry.name
         }));
           // A paid request clears itself, which is what makes the code on
@@ -1892,6 +1890,40 @@ function GloobalId() {
       goToRegistrationStart();
     }
   };
+  // Where the person is right now, as far as THIS component can honestly
+  // tell — which is not always to the screen.
+  //
+  // `stage` and `activeScreen` are App.jsx's own; the Dashboard's internal
+  // screens (My Assets, PayLater, GH Score and the rest) are opened through
+  // dashboardDeepLink and owned by Dashboard.jsx, so from here they all read
+  // as "dashboard". That is coarse but true — those screens ARE inside the
+  // dashboard — and a map that named the wrong screen would be worse than
+  // one that names the right area.
+  //
+  // activeScreen "bank" is deliberately NOT mapped to the gbank entry: that
+  // value opens AddBankScreen, which is a different screen from Gloobal Bank
+  // and would have put "You are here: Gloobal Bank" on top of neither.
+  const appMapCurrentKey = stage !== "dashboard"
+    ? (["phone", "secureId", "referral", "login"].includes(stage) ? stage : null)
+    : activeScreen === "send" ? "send"
+    : activeScreen === "coverage" ? "coverage"
+    : "dashboard";
+  // ── ORDER MATTERS HERE ──────────────────────────────────────────────
+  //
+  // The map builds its branches in the order the SECTIONS first appear in
+  // this array, so that a section added here shows up on the map without
+  // appMap.jsx being touched and the two can never disagree about which
+  // sections exist. The cost of that is this array's order is now a design
+  // decision rather than a filing convenience.
+  //
+  // It is arranged so both states come out right. Signed in, the unlocked
+  // entries begin with Dashboard, so the map reads Your money -> Move money
+  // -> You -> Gloobal. Signed out on a fresh device, everything above is
+  // locked and the first unlocked entry is Mobile Number, so it reads
+  // Get started -> You. Login sits last precisely because its section ("You")
+  // must not be the one that leads — which is what happened when it was
+  // declared fourth.
+  //
   // The app map's full entry list. "pre" entries are the registration
   // flow's own checkpoints (locked once this device has registered
   // before — there's nothing left to do there); "post" entries are the
@@ -1900,28 +1932,23 @@ function GloobalId() {
   // locked — it's still the right place to go on a device that has
   // registered before but is currently signed out.
   const appMapEntries = [
-    { key: "phone", group: "pre", label: "Mobile Number", locked: everRegistered, onPress: goToRegistrationStart },
-    { key: "secureId", group: "pre", label: "Create Gloobal ID", locked: everRegistered, onPress: () => { setIsLoginAttempt(false); flipTo("secureId"); } },
-    { key: "referral", group: "pre", label: "Referral Code", locked: everRegistered, onPress: () => { setIsLoginAttempt(false); flipTo("referral"); } },
-    { key: "login", group: "pre", label: "Login", locked: false, onPress: goToLogin },
-    { key: "dashboard", group: "post", label: "Dashboard", locked: !everRegistered, onPress: () => goToDashboardDestination(null) },
-    { key: "gbank", group: "post", label: "Gloobal Bank", locked: !everRegistered, onPress: () => goToDashboardDestination("bank") },
-    { key: "gcoin", group: "post", label: "Gloobal Coin", locked: !everRegistered, onPress: () => goToDashboardDestination("coin") },
-    { key: "send", group: "post", label: "Send Money", locked: !everRegistered, onPress: () => goToDashboardDestination("send") },
-    { key: "assets", group: "post", label: "My Assets", locked: !everRegistered, onPress: () => goToDashboardDestination("assets") },
-    { key: "paylater", group: "post", label: "PayLater", locked: !everRegistered, onPress: () => goToDashboardDestination("paylater") },
-    { key: "history", group: "post", label: "Transaction History", locked: !everRegistered, onPress: () => goToDashboardDestination("history") },
-    { key: "coverage", group: "post", label: "Gloobal Coverage", locked: !everRegistered, onPress: () => goToDashboardDestination("coverage") },
-    { key: "aboutus", group: "post", label: "About Us", locked: !everRegistered, onPress: () => goToDashboardDestination("aboutus") },
-    // Profile sub-screens. They live behind the Profile tab in normal
-    // navigation, but each is a full-screen overlay in its own right, so the
-    // map can open them directly rather than dropping somebody on Profile
-    // and leaving them to find the row themselves — which is the whole point
-    // of having a map.
-    { key: "ghscore", group: "post", label: "GH Score", locked: !everRegistered, onPress: () => goToDashboardDestination("ghscore") },
-    { key: "share", group: "post", label: "Creator Share", locked: !everRegistered, onPress: () => goToDashboardDestination("share") },
-    { key: "updateId", group: "post", label: "Update Gloobal ID", locked: !everRegistered, onPress: () => goToDashboardDestination("updateId") },
-    { key: "referralnet", group: "post", label: "Referral Network", locked: !everRegistered, onPress: () => goToDashboardDestination("referral") }
+    { key: "dashboard", section: "Your money", group: "post", label: "Dashboard", locked: !everRegistered, onPress: () => goToDashboardDestination(null) },
+    { key: "gbank", section: "Your money", group: "post", label: "Gloobal Bank", locked: !everRegistered, onPress: () => goToDashboardDestination("bank") },
+    { key: "gcoin", section: "Your money", group: "post", label: "Gloobal Coin", locked: !everRegistered, onPress: () => goToDashboardDestination("coin") },
+    { key: "assets", section: "Your money", group: "post", label: "My Assets", locked: !everRegistered, onPress: () => goToDashboardDestination("assets") },
+    { key: "send", section: "Move money", group: "post", label: "Send Money", locked: !everRegistered, onPress: () => goToDashboardDestination("send") },
+    { key: "paylater", section: "Move money", group: "post", label: "PayLater", locked: !everRegistered, onPress: () => goToDashboardDestination("paylater") },
+    { key: "history", section: "Move money", group: "post", label: "Transaction History", locked: !everRegistered, onPress: () => goToDashboardDestination("history") },
+    { key: "share", section: "Move money", group: "post", label: "Creator Share", locked: !everRegistered, onPress: () => goToDashboardDestination("share") },
+    { key: "ghscore", section: "You", group: "post", label: "GH Score", locked: !everRegistered, onPress: () => goToDashboardDestination("ghscore") },
+    { key: "updateId", section: "You", group: "post", label: "Update Gloobal ID", locked: !everRegistered, onPress: () => goToDashboardDestination("updateId") },
+    { key: "referralnet", section: "You", group: "post", label: "Referral Network", locked: !everRegistered, onPress: () => goToDashboardDestination("referral") },
+    { key: "coverage", section: "Gloobal", group: "post", label: "Gloobal Coverage", locked: !everRegistered, onPress: () => goToDashboardDestination("coverage") },
+    { key: "aboutus", section: "Gloobal", group: "post", label: "About Us", locked: !everRegistered, onPress: () => goToDashboardDestination("aboutus") },
+    { key: "phone", section: "Get started", group: "pre", label: "Mobile Number", locked: everRegistered, onPress: goToRegistrationStart },
+    { key: "secureId", section: "Get started", group: "pre", label: "Create Gloobal ID", locked: everRegistered, onPress: () => { setIsLoginAttempt(false); flipTo("secureId"); } },
+    { key: "referral", section: "Get started", group: "pre", label: "Referral Code", locked: everRegistered, onPress: () => { setIsLoginAttempt(false); flipTo("referral"); } },
+    { key: "login", section: "You", group: "pre", label: "Login", locked: false, onPress: goToLogin }
   ];
   const effectiveLoginCountry = loginMobileCountry || dialCountry;
   const [loginMinLen, loginMaxLen] = mobileDigitRange(effectiveLoginCountry.iso);
@@ -3372,7 +3399,7 @@ function GloobalId() {
        screen, one screen already covers "pay someone", not "ask
        someone to pay me". */
   }<div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>{requestCents > 0 && <div style={{ textAlign: "center", fontSize: 12.5, fontWeight: 700, color: T.positive }}>
-        Requesting {CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "$"}{(requestCents / 100).toFixed(2)}
+        Requesting {fmtMoney(requestCents / 100, COUNTRY_CURRENCY[dialCountry.iso] || "USD")}
       </div>}{requestOpen ? <div style={{ display: "flex", gap: 8 }}><input
     value={requestAmount}
     onChange={(e) => {
@@ -3498,8 +3525,8 @@ function GloobalId() {
     // the server recomputes the corridor at payment time and its figure is
     // what moves money. Shown only when the currencies differ.
     const inMine = askedCode !== mine ? convert(asked, askedCode, mine) : null;
-    return <><div style={{ fontSize: 32, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: Number.isFinite(inMine) ? 4 : 14 }}>{scanRequestSymbol(scanPendingPayment)}{fmt(asked, askedCode)}</div>{Number.isFinite(inMine) && <div style={{ fontSize: 13, fontWeight: 700, color: T.inkFaint, marginBottom: 14 }}>
-                    {"\u2248 "}{CURRENCY_SYMBOL[mine] || `${mine} `}{fmt(inMine, mine)} from your balance
+    return <><div style={{ fontSize: 32, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: Number.isFinite(inMine) ? 4 : 14 }}>{fmtMoney(asked, askedCode)}</div>{Number.isFinite(inMine) && <div style={{ fontSize: 13, fontWeight: 700, color: T.inkFaint, marginBottom: 14 }}>
+                    {"\u2248 "}{fmtMoney(inMine, mine)} from your balance
                   </div>}</>;
   })()}{scanPendingPayment.recipientName && <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPendingPayment.recipientName}</div>}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: scanPendingPayment.registered ? 20 : 8 }}><ColoredGloobalId id={scanPendingPayment.gloobalId} /></div>{
     /* Said plainly rather than left to be discovered after paying:
@@ -3591,7 +3618,7 @@ function GloobalId() {
     // Same currency as the card that led here - a PIN screen quoting a
     // different figure from the one just confirmed is how a person approves
     // an amount they did not read.
-    amountLabel={scanPendingPayment ? `\u2212${scanRequestSymbol(scanPendingPayment)}${fmt(scanPendingPayment.amountCents / 100, scanRequestCurrency(scanPendingPayment))}` : null}
+    amountLabel={scanPendingPayment ? `\u2212${fmtMoney(scanPendingPayment.amountCents / 100, scanRequestCurrency(scanPendingPayment))}` : null}
     onVerified={(verifiedPin) => {
       scanVerifiedPinRef.current = verifiedPin || null;
       setScanPayPinOpen(false);
@@ -3798,6 +3825,6 @@ function GloobalId() {
       boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
       pointerEvents: "none"
     }}
-  >{rootToast}</div>}<AppMapLauncher entries={appMapEntries} onLockedPress={handleAppMapLockedPress} /></div>;
+  >{rootToast}</div>}<AppMapLauncher entries={appMapEntries} currentKey={appMapCurrentKey} onLockedPress={handleAppMapLockedPress} /></div>;
 }
 

@@ -34,6 +34,56 @@ function fmt(n, currency) {
     maximumFractionDigits: decimals
   });
 }
+// ── Money reads amount first, currency after ─────────────────────────────
+//
+// "+20$", not "+$20". "1,450.25 CHF", not "CHF 1,450.25".
+//
+// This app is built to be read by someone who reads no English — that is why
+// identifiers are symbols and the clock is 24-hour digits. A leading currency
+// symbol makes the FIRST thing you meet the part that changes by country,
+// and it pushes the digits — the part everyone reads the same way — to second
+// place. Amount first, unit after, is also how a person says it out loud:
+// twenty dollars, not dollars twenty.
+//
+// One function, because this was previously spelled out at about seventy
+// call sites as a symbol interpolation immediately followed by an fmt() call.
+// Seventy chances for one of them to disagree with the others, and no way to
+// change the convention without finding every one.
+//
+// (That sentence originally quoted the old pattern literally. The codemod
+// that did this conversion then rewrote the quotation, because a mechanical
+// search cannot tell an example of a thing from the thing. Same trap as
+// grepping prose to prove code is absent, running the other way.)
+//
+// ── The space rule ───────────────────────────────────────────────────────
+//
+// A glyph sits tight against the number; a word does not.
+//
+//     20.00$   20.00₹   20.00€        one mark, no gap
+//     20.00 CHF   20.00 Rp   20.00 C$  contains letters, needs air
+//
+// "20.00CHF" reads as one token and has to be taken apart by eye. "20.00 $"
+// looks like the symbol drifted loose. The rule is what makes both correct
+// without a per-currency table.
+//
+// CURRENCY_SYMBOL entries are stored with a TRAILING space for several
+// currencies ("CHF ", "Rp ", "kr ") because they were written for prefix use.
+// Trimming here is what stops "20.00 CHF " arriving with a stray gap at the
+// end, which is invisible in a diff and visible on a receipt.
+function currencySuffix(currency) {
+  const symbol = String(CURRENCY_SYMBOL[currency] || currency || "").trim();
+  if (!symbol) return "";
+  return /[A-Za-z]/.test(symbol) ? ` ${symbol}` : symbol;
+}
+
+// The one money formatter. `currency` is the ISO code, never the symbol —
+// same contract as fmt, and for the same reason: ¥ is both JPY and CNY and
+// they disagree about minor units, so a symbol cannot answer how many
+// decimals to show.
+function fmtMoney(n, currency) {
+  return `${fmt(n, currency)}${currencySuffix(currency)}`;
+}
+
 // The ONE clock in the app. HH:MM:SS, 24-hour, zero-padded, always.
 //
 // Built from the Date's own getters rather than toLocaleTimeString, which is

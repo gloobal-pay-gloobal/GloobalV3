@@ -131,13 +131,25 @@ describe("the amount box is the payee's currency and the Send button is the paye
       const buttonText = (await payButton.innerText()).trim();
       const quoted = buttonText.replace(/^(Send|Simulate)\s*/, "").trim();
 
-      assert.ok(
-        quoted.startsWith(SYMBOL[sender.currency]),
+      // Amount first, currency after — "9,539.81₹", not "₹9,539.81". These
+      // two assertions were written against the old symbol-first
+      // convention and kept passing only because nothing on the Send
+      // button had moved yet; when fmtMoney flipped every amount in the
+      // app, this is where it showed.
+      // The suffix is what is left once the number is taken off the front,
+      // and it is compared WHOLE rather than with endsWith: "Mex$" ends
+      // with "$", so an endsWith test would let a peso amount pass as
+      // dollars and would fail a peso amount that should pass.
+      const suffix = quoted.replace(/^[\d.,\s]+/, "").trim();
+      assert.equal(
+        suffix,
+        SYMBOL[sender.currency],
         `the Send button must be in ${sender.currency}; it read "${buttonText}"`
       );
       if (sender.currency !== receiver.currency) {
-        assert.ok(
-          !quoted.startsWith(SYMBOL[receiver.currency]),
+        assert.notEqual(
+          suffix,
+          SYMBOL[receiver.currency],
           `the Send button must not be in the receiver's currency; it read "${buttonText}"`
         );
       }

@@ -22,7 +22,15 @@ function ReceiptRow({ label, value, flag, mono, accent, wrap, testId }) {
       whiteSpace: wrap ? "normal" : "nowrap",
       maxWidth: wrap ? 210 : void 0
     }}
-  >{value}{flag && <span style={{ fontSize: 14, flexShrink: 0 }}>{flag}</span>}</span></div>;
+  >{value}{
+    /* The flag as the real asset, never the emoji character.
+       This printed `{flag}` as text at fontSize 14, which is a flag on a
+       Mac and the two regional-indicator letters — "IN", "GB" — on most
+       Android builds and every Windows browser, sitting on a receipt row
+       where a country should be. Nothing passes this prop today, so it
+       was a trap rather than a bug: the wrong pattern, kept warm, inside
+       the component every receipt row is built from. */
+  }{flag && <FlagEmoji flag={flag} width={18} height={13} radius={3} />}</span></div>;
 }
 function ProfileToggle({ on, onToggle, label }) {
   return <button
@@ -111,7 +119,21 @@ var DAILY_SPENDING_PALETTES = {
 // the other +₹5,727,195.10 — the same currency, formatted two different ways,
 // inches apart. fmt also knows which currencies have no minor unit, so a yen
 // figure stops being printed to two decimal places it does not have.
-function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null, palette = "dark", trailing = null, currencyCode = "USD" }) {
+// `symbol` is gone and `currencyCode` has no default, both on purpose.
+//
+// This took a symbol AND a code, and defaulted the code to "USD". The
+// Dashboard passed only the symbol, so its figures were drawn with the
+// right glyph and USD's minor units — invisible for a rupee account,
+// where two decimals is also correct, and wrong for a yen one, which
+// would have read "¥1,234.00" for an amount yen cannot express. The
+// symbol-first rendering hid it: the glyph came from one prop and the
+// decimals from another, and only the glyph was ever checked.
+//
+// fmtMoney takes the code alone and derives both, so there is nothing
+// left for the two to disagree about. No default: an amount with no
+// currency reads as a bare number, which is visibly incomplete rather
+// than confidently mislabelled as dollars.
+function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "dark", trailing = null, currencyCode }) {
   const C = DAILY_SPENDING_PALETTES[palette] || DAILY_SPENDING_PALETTES.dark;
   const [weekOffset, setWeekOffset] = useState8(0);
   const [selectedDay, setSelectedDay] = useState8(null);
@@ -174,8 +196,8 @@ function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null
   // reads as a stray tick rather than a column.
   const barWidth = showPaid && showReceived ? 7 : 10;
   const displayed = selectedDay !== null ? days[selectedDay] : weekTotal;
-  const paidFigure = (!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{symbol}{fmt(Number(displayed.paid) || 0, currencyCode)}</span>;
-  const receivedFigure = (!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{symbol}{fmt(Number(displayed.received) || 0, currencyCode)}</span>;
+  const paidFigure = (!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{fmtMoney(Number(displayed.paid) || 0, currencyCode)}</span>;
+  const receivedFigure = (!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{fmtMoney(Number(displayed.received) || 0, currencyCode)}</span>;
   return <div style={{ position: "relative" }}><div style={{ display: "flex", justifyContent: trailing || !focusDirection ? "space-between" : "flex-start", alignItems: "baseline", gap: 10 }}>{
     /* With a trailing figure the left-hand ones are grouped, so
        space-between splits LEFT GROUP vs trailing rather than pushing the
@@ -205,7 +227,7 @@ function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null
     const highlighted = selectedDay !== null ? isSelected : isToday;
     return <div key={i} data-day-index={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}><div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 34 }}>{showPaid && <div
       role="img"
-      aria-label={`${SPENDING_DAY_LABELS[i]} paid: ${symbol}${d.paid.toFixed(2)}`}
+      aria-label={`${SPENDING_DAY_LABELS[i]} paid: ${fmtMoney(Number(d.paid) || 0, currencyCode)}`}
       style={{
         width: barWidth,
         height: Math.max(3, d.paid / max * 34),
@@ -216,7 +238,7 @@ function DailySpendingChart({ weeks, totals, symbol = "$", focusDirection = null
       }}
     />}{showReceived && <div
       role="img"
-      aria-label={`${SPENDING_DAY_LABELS[i]} received: ${symbol}${d.received.toFixed(2)}`}
+      aria-label={`${SPENDING_DAY_LABELS[i]} received: ${fmtMoney(Number(d.received) || 0, currencyCode)}`}
       style={{
         width: barWidth,
         height: Math.max(3, d.received / max * 34),

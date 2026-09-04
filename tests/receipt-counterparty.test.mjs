@@ -298,14 +298,14 @@ describe("a receipt names the other party, on both sides and after a reload", ()
   });
 });
 
-describe("the flag is a circular badge", () => {
-  // This suite used to hand-build a copy of FlagCircle's DOM in the page and
+describe("there is one flag component, cut to different shapes", () => {
+  // This suite used to hand-build a copy of the badge's DOM in the page and
   // measure THAT — a span, an inner box at 0.83 x 0.55, an <img> with
   // object-fit: contain — across four flag shapes. It measured the copy
-  // accurately and told us nothing about the component: FlagCircle could have
-  // been deleted outright and every assertion would still have passed. It
-  // also needed flagcdn.com to be reachable to prove a geometry fact that has
-  // nothing to do with the image bytes.
+  // accurately and told us nothing about the component: the component could
+  // have been deleted outright and every assertion would still have passed.
+  // It also needed flagcdn.com to be reachable to prove a geometry fact that
+  // has nothing to do with the image bytes.
   //
   // Both are fixed below. The source test pins the decision; the rendered
   // test measures the real badge in a real receipt, and does it without
@@ -313,37 +313,66 @@ describe("the flag is a circular badge", () => {
   // so the geometry is checkable either way, and whether the asset arrived is
   // asserted separately so a CDN outage reads as a CDN outage.
 
-  test("FlagCircle fills the disc, and can still inscribe when asked", () => {
+  test("FlagCircle is gone; the shape is a prop on the one component", () => {
+    // There was never a second flag — FlagCircle wrapped FlagEmoji — but
+    // there was a second name and a second set of props for one silhouette
+    // of it, reached for by three screens while twenty reached for the
+    // other. A component per shape does not scale past the first shape.
     const flags = readSource("frontend/components/cards/flags.jsx");
-    const at = flags.indexOf("function FlagCircle(");
-    assert.ok(at > 0, "FlagCircle not found");
-    // Sliced to the function's real end rather than a character count. A
-    // fixed window silently stops covering the code it was written to cover
-    // the moment a comment grows — which it did, on the very commit that
-    // added these assertions.
-    const end = flags.indexOf("\n}\n", at);
-    assert.ok(end > at, "could not find the end of FlagCircle");
-    const fn = flags.slice(at, end + 2);
-
-    // Filling is the default — this is the change: a flag that used to float
-    // as a small rectangle inside a white disc now IS the disc.
-    assert.match(fn, /mode = "fill"/, "fill must be the default mode");
-    assert.match(fn, /fit=\{inscribed \? "contain" : "cover"\}/);
-    assert.match(fn, /radius=\{inscribed \? 2 : size \/ 2\}/, "the fill mode must be fully round");
-    assert.match(
-      fn,
-      /width=\{inscribed \? Math\.round\(size \* widthRatio\) : size\}/,
-      "filling means the image box IS the circle"
-    );
-
-    // And the old behaviour survives as an option rather than being deleted.
-    // `cover` crops a 3:2 flag to its central two-thirds, which is fine when
-    // a name sits beside the badge and wrong when the flag alone must
-    // identify the country. A future surface needs to be able to say so.
-    assert.match(fn, /inscribed = mode === "inscribe"/);
+    const code = flags.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    assert.ok(!/function FlagCircle\(/.test(code), "FlagCircle is still defined");
+    assert.match(code, /shape = "chip"/, "FlagEmoji must default to the chip shape");
   });
 
-  test("the badge in a real receipt is a circle the flag fills edge to edge", async () => {
+  test("nothing in the app still calls it", () => {
+    // A component can be deleted and left called; esbuild would not stop
+    // it, because the bundle is one scope and the name simply resolves to
+    // undefined at render.
+    const offenders = [];
+    for (const file of [
+      "frontend/screens/Coin/CountryHoldersScreen.jsx",
+      "frontend/screens/Coin/CoinHoldersScreen.jsx",
+      "frontend/screens/Dashboard/Dashboard.jsx",
+      "frontend/components/dialogs/ReceiptModal.jsx",
+      "frontend/components/cards/flags.jsx"
+    ]) {
+      const code = readSource(file)
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      if (/<FlagCircle/.test(code)) offenders.push(file);
+    }
+    assert.deepEqual(offenders, []);
+  });
+
+  test("the circle squares its box and is fully round", () => {
+    // A circle asked for with only `size` must not fall through to the
+    // chip's width/height handling, or it draws a rounded rectangle with
+    // one dimension missing.
+    const flags = readSource("frontend/components/cards/flags.jsx");
+    assert.match(flags, /const square = shape === "circle" \|\| shape === "square";/);
+    assert.match(flags, /\? \(radius != null \? radius : box \/ 2\)/);
+  });
+
+  test("the circle's rim is painted inside, not bordered", () => {
+    // A 1px border shrinks the content box to size-2, so a flag asked to
+    // fill the disc gets flex-shrunk and leaves a hairline of ground at the
+    // left and right — the exact defect a filled disc exists to remove. An
+    // inset shadow occupies no layout at all.
+    const flags = readSource("frontend/components/cards/flags.jsx");
+    assert.match(flags, /const rim = shape === "circle" \? \(border \|\| `inset 0 0 0 1px \$\{T\.line\}`\) : null;/);
+  });
+
+  test("a caller can still ask for the whole flag inside the disc", () => {
+    // `cover` on a square box keeps a 3:2 flag's central two-thirds, and a
+    // hoist-side emblem about a third in lands on the crop boundary. That
+    // is a real trade, so the escape hatch has to survive the merge of the
+    // two components rather than being lost with FlagCircle's inscribe.
+    const flags = readSource("frontend/components/cards/flags.jsx");
+    assert.match(flags, /fit = "cover"/);
+    assert.match(flags, /objectFit: fit/);
+  });
+
+  test("the badge in a real receipt is registration's flag chip, filled edge to edge", async () => {
     const { page, context } = await openSender(ACCOUNTS.america);
     await login(page, ACCOUNTS.america);
     // America -> India, so the badge carries a flag that is not the viewer's.
@@ -369,31 +398,40 @@ describe("the flag is a circular badge", () => {
 
     assert.ok(m.img, "the badge must render a real flag image, not an emoji character");
 
-    // Round: the container is square and its clip is a full circle.
+    // Landscape, in a flag's own proportions — this is the shape the
+    // country picker on registration uses, and the receipt now uses the
+    // same component rather than a second shape for the same thing.
+    //
+    // The disc that used to be here cropped a 3:2 flag to its central
+    // square, which for a lot of countries removes the part that
+    // identifies them. So the assertion is no longer "square"; it is
+    // "wider than tall, and not by an arbitrary amount".
+    const ratio = m.circle.width / m.circle.height;
     assert.ok(
-      Math.abs(m.circle.width - m.circle.height) < 1,
-      `the badge must be square to be circular; got ${m.circle.width}x${m.circle.height}`
+      ratio > 1.05 && ratio < 1.35,
+      `the badge must be a landscape flag chip like registration's 46x40; got ${m.circle.width}x${m.circle.height} (${ratio.toFixed(2)})`
     );
 
-    // Filled: the image box covers the whole disc rather than sitting inside
-    // it. This is the assertion that would have caught the old inscribed
-    // rectangle — 33x22 in a 40px circle — as a failure.
+    // Filled: the image box IS the chip rather than sitting inside it. This
+    // is the assertion that caught the old inscribed rectangle — 33x22
+    // floating in a 40px box — as a failure, and it still holds.
     assert.ok(
       m.box.width >= m.circle.width - 1 && m.box.height >= m.circle.height - 1,
-      `the flag must fill the ${m.circle.width}px disc; it is ${m.box.width}x${m.box.height}`
+      `the flag must fill the ${m.circle.width}x${m.circle.height} chip; it is ${m.box.width}x${m.box.height}`
     );
 
-    // Round at the image too, not just clipped by an ancestor, so the flag's
-    // own corners are gone rather than merely hidden.
+    // Softly rounded, and rounded at the image's own box rather than merely
+    // clipped by an ancestor — but nowhere near a circle, which is what a
+    // radius at half the height would be.
     const radius = parseFloat(m.boxRadius);
     assert.ok(
-      Number.isFinite(radius) && radius >= m.circle.width / 2 - 1,
-      `the flag's own box must be fully round; radius is ${m.boxRadius}`
+      Number.isFinite(radius) && radius >= 4 && radius < m.circle.height / 2 - 1,
+      `the chip's corners must be rounded, not circular; radius is ${m.boxRadius}`
     );
 
     // Undistorted: `cover` scales and crops, it never stretches. A `fill`
-    // here would squash every flag into a square.
-    assert.equal(m.objectFit, "cover", "the flag must be cropped to the circle, never stretched");
+    // here would squash every flag into the box's proportions.
+    assert.equal(m.objectFit, "cover", "the flag must be cropped to the chip, never stretched");
 
     // Whether the asset actually arrived is a separate question from the
     // geometry above, and gets its own message so a blocked CDN cannot be
@@ -436,5 +474,85 @@ describe("the Creator Share receipt identifies the other side by ID", () => {
     // An empty "GLOOBAL ID —" row would be worse than none.
     const modal = readSource("frontend/components/dialogs/ReceiptModal.jsx");
     assert.match(modal, /\{receipt\.id && <ReceiptRow\s+testId="receipt-share-counterparty-id"/);
+  });
+});
+
+describe("the flag belongs to the receipt, not to either tab", () => {
+  const modal = () => readSource("frontend/components/dialogs/ReceiptModal.jsx");
+  const stripped = () => modal()
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  test("it is drawn once, not once per tab", () => {
+    // It used to be a badge pinned to the top edge of each tab's first box,
+    // so the source carried two copies of it and the screen carried one at
+    // a time. There is only ever ONE counterparty on a receipt — the person
+    // named on the Payment tab is the person shared with on the Creator
+    // Share tab — so one flag, above both, is the true statement.
+    const hits = stripped().match(/data-testid="receipt-flag"/g) || [];
+    assert.equal(hits.length, 1, `the flag is rendered ${hits.length} times`);
+  });
+
+  test("it sits between the two tabs, on their line", () => {
+    const code = stripped();
+    const payment = code.indexOf('label="Payment"');
+    const flag = code.indexOf('data-testid="receipt-flag"');
+    const share = code.indexOf('label="Creator Share"');
+    assert.ok(payment >= 0 && flag >= 0 && share >= 0, "the tab row is not where it was");
+    assert.ok(
+      payment < flag && flag < share,
+      "the flag must be rendered between the two tab buttons"
+    );
+  });
+
+  test("it no longer hangs off a box's edge", () => {
+    // The old badge was position:absolute with a -50% translate, half in
+    // the row's margin and half over the box below — an ornament in a gap
+    // rather than a fact about the transaction.
+    const code = stripped();
+    const at = code.indexOf('data-testid="receipt-flag"');
+    const around = code.slice(at, at + 260);
+    assert.ok(
+      !/position: "absolute"/.test(around),
+      "the flag is still absolutely positioned over the box below it"
+    );
+  });
+
+  test("the hairlines beside it are drawn in a colour that shows", () => {
+    // T.line (#EAE6F7) on the track's own surfaceAlt (#F3F1FA) is a line
+    // you cannot see: drawn, painted, and doing nothing. Caught on a
+    // screenshot, not in review.
+    assert.match(
+      stripped(),
+      /width: 1, height: 14, background: T\.inkFaint, opacity: 0\.35/,
+      "the separators must not be T.line on surfaceAlt"
+    );
+  });
+});
+
+describe("one flag component, taught once", () => {
+  test("the receipt uses the same chip the country picker does", () => {
+    // The app teaches a person what a flag looks like here on the very
+    // first screen — the country picker in registerLogin. A second shape
+    // elsewhere for the same thing is a thing to learn twice.
+    const modal = readSource("frontend/components/dialogs/ReceiptModal.jsx");
+    const register = readSource("frontend/components/dialogs/registerLogin.jsx");
+    assert.match(register, /<FlagEmoji/, "registration no longer uses FlagEmoji — this test is out of date");
+    assert.match(modal, /<FlagEmoji\s+flag=\{receipt\.flag\}/);
+    assert.ok(
+      !/<FlagCircle/.test(modal.replace(/\/\*[\s\S]*?\*\//g, "")),
+      "the receipt still renders a FlagCircle somewhere"
+    );
+  });
+
+  test("and keeps a flag's own proportions", () => {
+    // 30x26 is registration's 46x40 chip scaled to fit the pill track.
+    // A square box here would crop a 3:2 flag to its middle third, which
+    // for a lot of countries removes what identifies them.
+    const modal = readSource("frontend/components/dialogs/ReceiptModal.jsx");
+    const w = Number(modal.match(/width=\{(\d+)\}\s*\n\s*height=\{(\d+)\}/)?.[1]);
+    const h = Number(modal.match(/width=\{(\d+)\}\s*\n\s*height=\{(\d+)\}/)?.[2]);
+    assert.ok(w > 0 && h > 0, "the flag chip's box is not declared as width/height");
+    assert.ok(w > h, `the chip must be landscape; it is ${w}x${h}`);
   });
 });

@@ -5,7 +5,23 @@ import {
   Search as MapSearchIcon,
   X as MapCloseIcon,
   Lock as MapLockIcon,
-  ChevronRight as MapChevronIcon
+  ChevronRight as MapChevronIcon,
+  Home as MapHomeIcon,
+  Landmark as MapBankIcon,
+  Coins as MapCoinIcon,
+  Wallet as MapWalletIcon,
+  Send as MapSendIcon,
+  Clock as MapClockIcon,
+  History as MapHistoryIcon,
+  Star as MapStarIcon,
+  Contact as MapIdIcon,
+  Link2 as MapLinkIcon,
+  ShieldCheck as MapShieldIcon,
+  Globe2 as MapGlobeIcon,
+  Info as MapInfoIcon,
+  Smartphone as MapPhoneIcon,
+  LogIn as MapLoginIcon,
+  Compass as MapFallbackIcon
 } from "lucide-react";
 
 // The floating map button's last settled spot — which screen edge, and how
@@ -183,48 +199,182 @@ function AppMapButton({ onOpen }) {
   ><MapNavIcon size={22} color={T.accent} /></button>;
 }
 
-// One row in either section — a plain button so it's keyboard/screen-
-// reader activatable, dimmed with a lock badge instead of a chevron when
-// `locked`. `first` suppresses the top divider on the section's opening
-// row, the same "borderTop: i===0 ? none : line" shape used throughout
-// this codebase's own boxed lists (e.g. ProductServicesCard).
-function AppMapRow({ entry, onPress, locked, first }) {
+// An icon per destination, keyed by the entry's own key.
+//
+// Keyed rather than carried on the entry itself: which SECTION a screen
+// belongs to is navigation information architecture and lives with the
+// entries in App.jsx, where the app's structure is actually known. Which
+// glyph draws it is presentation and belongs to the view. Same split, and
+// the same keyed-with-a-fallback shape, as SERVICE_ROW_ICONS in
+// GloobalTaglineCard.jsx — an entry App.jsx adds that this map has never
+// heard of still renders, with the compass, rather than throwing on an
+// undefined component.
+var APP_MAP_ICONS = {
+  dashboard: MapHomeIcon,
+  gbank: MapBankIcon,
+  gcoin: MapCoinIcon,
+  assets: MapWalletIcon,
+  send: MapSendIcon,
+  paylater: MapClockIcon,
+  history: MapHistoryIcon,
+  share: MapStarIcon,
+  updateId: MapIdIcon,
+  referralnet: MapLinkIcon,
+  ghscore: MapShieldIcon,
+  login: MapLoginIcon,
+  coverage: MapGlobeIcon,
+  aboutus: MapInfoIcon,
+  phone: MapPhoneIcon,
+  secureId: MapIdIcon,
+  referral: MapLinkIcon
+};
+
+// A colour per branch, drawn from the dial pad's own palette so the map is
+// coloured out of the same set as everything else in the app rather than
+// from a second palette invented here.
+var APP_MAP_BRANCH_COLORS = [T.accent, TXN_OUT_COLOR, T.accent2, T.positive, T.inkFaint];
+
+// One destination. A chip rather than a row, because a branch holds four of
+// them and four full-width rows per branch is the flat list this replaced.
+//
+// The chip for the screen you are ON is filled rather than outlined: on a map
+// whose whole point is "where am I", the current position has to be findable
+// without reading every label.
+function AppMapChip({ entry, color, current, onPress }) {
+  const Icon = APP_MAP_ICONS[entry.key] || MapFallbackIcon;
   return <button
     onClick={() => onPress(entry)}
     className="v2-tap"
+    aria-current={current ? "page" : void 0}
     style={{
-      width: "100%",
-      display: "flex",
+      display: "inline-flex",
       alignItems: "center",
-      gap: 12,
-      padding: "14px 16px",
-      border: "none",
-      borderTop: first ? "none" : `1px solid ${T.line}`,
-      background: "none",
-      textAlign: "left",
+      gap: 7,
+      maxWidth: "100%",
+      minWidth: 0,
+      padding: "8px 12px",
+      borderRadius: 999,
       cursor: "pointer",
-      opacity: locked ? 0.55 : 1
+      font: "inherit",
+      textAlign: "left",
+      background: current ? color : T.surface,
+      border: `1px solid ${current ? color : T.line}`,
+      boxShadow: current ? `0 4px 14px ${color}44` : "0 2px 8px rgba(76,29,149,0.05)",
+      color: current ? "#fff" : T.ink,
+      opacity: entry.locked ? 0.6 : 1
     }}
-  ><span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, color: T.ink }}>{entry.label}</span>{
-    locked ? <MapLockIcon size={15} color={T.inkFaint} /> : <MapChevronIcon size={16} color={T.inkFaint} />
-  }</button>;
+  >{entry.locked
+    ? <MapLockIcon size={13} color={T.inkFaint} style={{ flexShrink: 0 }} />
+    : <Icon size={13} color={current ? "#fff" : color} style={{ flexShrink: 0 }} />
+  }<span
+    style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+  >{entry.label}</span></button>;
 }
 
-function AppMapSection({ title, rows, onPress, locked }) {
+// One branch off the spine: the node, the stub connecting it, the section
+// name, and its destinations.
+//
+// `last` stops the spine at the final node instead of letting it run on into
+// empty space below the map — a line that continues past the last thing on it
+// reads as content that failed to load.
+function AppMapBranch({ title, color, rows, current, onPress, dashed, last }) {
   if (!rows.length) return null;
-  return <div style={{ marginTop: 16 }}>
-    <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: T.inkFaint, marginBottom: 8 }}>{title}</div>
-    <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{rows.map((entry, i) => <AppMapRow key={entry.key} entry={entry} onPress={onPress} locked={locked} first={i === 0} />)}</div>
-  </div>;
+  return <div style={{ position: "relative", paddingLeft: 38, paddingBottom: last ? 2 : 16 }}>{
+    /* The spine, continuing down from the hub. */
+  }<span
+    aria-hidden="true"
+    style={{ position: "absolute", left: 19, top: 0, bottom: last ? "calc(100% - 20px)" : 0, width: 2, background: T.line }}
+  /><span
+    aria-hidden="true"
+    style={{ position: "absolute", left: 19, top: 19, width: 17, height: 2, background: color }}
+  /><span
+    aria-hidden="true"
+    style={{
+      position: "absolute",
+      left: 14,
+      top: 14,
+      width: 12,
+      height: 12,
+      borderRadius: "50%",
+      background: T.bg,
+      // Dashed for the locked branch: it is drawn on the map because the map
+      // should show the whole app, and outlined differently because those
+      // destinations are not open from here.
+      border: `2.5px ${dashed ? "dashed" : "solid"} ${color}`
+    }}
+  /><div
+    style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color, marginBottom: 9, paddingTop: 6 }}
+  >{title}</div><div
+    style={{ display: "flex", flexWrap: "wrap", gap: 7 }}
+  >{rows.map((entry) => <AppMapChip
+    key={entry.key}
+    entry={entry}
+    color={color}
+    current={entry.key === current}
+    onPress={onPress}
+  />)}</div></div>;
 }
 
-// The full-screen searchable list. `entries` already carries each item's
-// locked state and its own onPress; this component only filters, groups,
-// and dispatches taps — deciding what "locked" means, and what a locked
-// tap should do instead, is the caller's job (App.jsx), since that's
-// where the actual registration/session state lives.
-function AppMapOverlay({ entries, query, onQueryChange, onClose, onLockedPress }) {
+// The flat result list, used only while something is typed.
+//
+// A map of three matching items is not a map — the spine, the branches and
+// the "you are here" node all say something about STRUCTURE, and structure is
+// exactly what a filtered subset no longer has. So searching drops to a plain
+// list, which is the right shape for "here is what matched".
+function AppMapResults({ rows, onPress, locked }) {
+  if (!rows.length) return null;
+  return <div style={{ marginTop: 14 }}><div
+    style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: T.inkFaint, marginBottom: 8 }}
+  >{locked ? "Locked" : "Matches"}</div><div
+    style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}
+  >{rows.map((entry, i) => {
+    const Icon = APP_MAP_ICONS[entry.key] || MapFallbackIcon;
+    return <button
+      key={entry.key}
+      onClick={() => onPress(entry)}
+      className="v2-tap"
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 14px",
+        border: "none",
+        borderTop: i === 0 ? "none" : `1px solid ${T.line}`,
+        background: "none",
+        textAlign: "left",
+        cursor: "pointer",
+        font: "inherit",
+        opacity: locked ? 0.55 : 1
+      }}
+    ><span
+      style={{ width: 32, height: 32, borderRadius: 10, flexShrink: 0, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}
+    ><Icon size={16} color={T.accent} /></span><span
+      style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: T.ink }}
+    >{entry.label}</span>{locked
+      ? <MapLockIcon size={15} color={T.inkFaint} />
+      : <MapChevronIcon size={16} color={T.inkFaint} />}</button>;
+  })}</div></div>;
+}
+
+// The map.
+//
+// This screen is called appMap and, until now, drew a flat list of seventeen
+// identical text rows — every one the same shape, so you had to read all of
+// them, and half were under the fold. A list is not a map: it says nothing
+// about what belongs with what, and nothing about where you already are.
+//
+// So it draws one. A hub for where you are, a spine, and a branch per section
+// with its destinations as chips. The whole app fits on one screen, including
+// the locked parts, which is the other thing the list could not do.
+//
+// `entries` already carries each item's section, locked state and its own
+// onPress. This component filters, groups and dispatches; deciding what
+// "locked" means and what a locked tap should do is the caller's job, since
+// App.jsx is where the registration and session state actually lives.
+function AppMapOverlay({ entries, currentKey, query, onQueryChange, onClose, onLockedPress }) {
   const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
   const matches = (e) => !q || e.label.toLowerCase().includes(q);
   const unlocked = entries.filter((e) => !e.locked && matches(e));
   const locked = entries.filter((e) => e.locked && matches(e));
@@ -236,27 +386,83 @@ function AppMapOverlay({ entries, query, onQueryChange, onClose, onLockedPress }
     onClose();
     onLockedPress(entry);
   };
+  // Section order comes from the ORDER THE ENTRIES ARE DECLARED IN, not from
+  // a list kept here. A section added in App.jsx appears on the map without
+  // this file being touched, and the two can never disagree about which
+  // sections exist.
+  const sections = [];
+  for (const entry of unlocked) {
+    const name = entry.section || "Elsewhere";
+    if (!sections.includes(name)) sections.push(name);
+  }
+  const here = entries.find((e) => e.key === currentKey) || null;
+  const HereIcon = here ? APP_MAP_ICONS[here.key] || MapFallbackIcon : MapHomeIcon;
+
   return <div
     role="dialog"
     aria-modal="true"
     aria-label="App map"
     style={{ position: "fixed", inset: 0, zIndex: 10001, background: T.bg, display: "flex", flexDirection: "column" }}
-  ><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", flexShrink: 0 }}><span style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}>Where to?</span><button
+  ><div
+    style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", flexShrink: 0 }}
+  ><span
+    style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}
+  >Where to?</span><button
     onClick={onClose}
     aria-label="Close"
     className="v2-tap"
     style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><MapCloseIcon size={16} color={T.ink} /></button></div><div style={{ padding: "0 18px 12px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 8, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 999, padding: "10px 14px" }}><MapSearchIcon size={16} color={T.inkFaint} /><input
+  ><MapCloseIcon size={16} color={T.ink} /></button></div><div
+    style={{ padding: "0 18px 12px", flexShrink: 0 }}
+  ><div
+    style={{ display: "flex", alignItems: "center", gap: 8, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 999, padding: "10px 14px" }}
+  ><MapSearchIcon size={16} color={T.inkFaint} /><input
     autoFocus
     value={query}
     onChange={(e) => onQueryChange(e.target.value)}
     placeholder="Search screens by name"
     style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 14, color: T.ink, fontFamily: T.fontBody }}
-  /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px calc(24px + env(safe-area-inset-bottom, 0px))" }}>
-    <AppMapSection title="Go to" rows={unlocked} onPress={handleUnlockedPress} locked={false} />
-    <AppMapSection title="Locked" rows={locked} onPress={handleLockedPress} locked={true} />
-    {unlocked.length === 0 && locked.length === 0 && <div style={{ textAlign: "center", color: T.inkFaint, fontSize: 13, marginTop: 40 }}>No screens match "{query}"</div>}
-  </div></div>;
+  /></div></div><div
+    style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px calc(24px + env(safe-area-inset-bottom, 0px))" }}
+  >{searching ? <>
+    <AppMapResults rows={unlocked} onPress={handleUnlockedPress} locked={false} />
+    <AppMapResults rows={locked} onPress={handleLockedPress} locked={true} />
+    {unlocked.length === 0 && locked.length === 0 && <div
+      style={{ textAlign: "center", color: T.inkFaint, fontSize: 13, marginTop: 40 }}
+    >No screens match "{query}"</div>}
+  </> : <>{
+    /* The hub. Only drawn when the caller actually knows where the person
+       is — a "You are here" pointing at a guess is worse on a map than no
+       hub at all, because a map is the one screen a person consults
+       precisely because they are unsure. */
+  }{here && <div
+    style={{ display: "flex", alignItems: "center", gap: 12, background: T.gradWallet, borderRadius: 20, padding: "15px 17px", boxShadow: "0 12px 30px rgba(76,29,149,0.26)" }}
+  ><span
+    style={{ width: 40, height: 40, borderRadius: 13, background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+  ><HereIcon size={20} color="#fff" /></span><span style={{ flex: 1, minWidth: 0 }}><span
+    style={{ display: "block", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: "rgba(255,255,255,0.6)" }}
+  >You are here</span><span
+    style={{ display: "block", fontSize: 16, fontWeight: 800, color: "#fff", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+  >{here.label}</span></span></div>}{here && <div
+    aria-hidden="true"
+    style={{ position: "relative", height: 18 }}
+  ><span style={{ position: "absolute", left: 19, top: 0, bottom: 0, width: 2, background: T.line }} /></div>}{sections.map((name, i) => <AppMapBranch
+    key={name}
+    title={name}
+    color={APP_MAP_BRANCH_COLORS[i % APP_MAP_BRANCH_COLORS.length]}
+    rows={unlocked.filter((e) => (e.section || "Elsewhere") === name)}
+    current={currentKey}
+    onPress={handleUnlockedPress}
+    last={i === sections.length - 1 && locked.length === 0}
+  />)}<AppMapBranch
+    title="Locked"
+    color={T.inkFaint}
+    rows={locked}
+    current={null}
+    onPress={handleLockedPress}
+    dashed
+    last
+  /></>}</div></div>;
 }
 
 // Owns whether the map is open and what's currently typed in its search
@@ -264,7 +470,7 @@ function AppMapOverlay({ entries, query, onQueryChange, onClose, onLockedPress }
 // locked state, and what a locked tap should do) is handed in from
 // App.jsx, which is the one place that actually knows the app's
 // navigation and registration state.
-function AppMapLauncher({ entries, onLockedPress }) {
+function AppMapLauncher({ entries, currentKey, onLockedPress }) {
   const [open, setOpen] = useState22(false);
   const [query, setQuery] = useState22("");
   // The returned function (not a separately-defined one) is what every
@@ -283,6 +489,7 @@ function AppMapLauncher({ entries, onLockedPress }) {
     <AppMapButton onOpen={() => setOpen(true)} />
     {open && <AppMapOverlay
       entries={entries}
+      currentKey={currentKey}
       query={query}
       onQueryChange={setQuery}
       onClose={requestCloseMap}

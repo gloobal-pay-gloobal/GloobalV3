@@ -70,7 +70,6 @@ function GloobalCoinScreen({
   // the only statement of the rate anywhere in the app. An unknown rate now
   // reads as ∆ and the buy is refused rather than guessed at.
   const pegCode = reserveCurrency || COIN_PEG_CURRENCY;
-  const pegSymbol = CURRENCY_SYMBOL[pegCode] || "";
   const rateKnown = Number.isFinite(geuRate) && geuRate > 0;
   const isPegCurrency = rateKnown && geuRate === 1;
 
@@ -176,7 +175,7 @@ function GloobalCoinScreen({
       lineHeight: 1.15,
       overflowWrap: "anywhere"
     }}
-  >{ccy}{fmt(Number(bankBalance) || 0, ccyCode)}</span><span
+  >{fmtMoney(Number(bankBalance) || 0, ccyCode)}</span><span
     style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >{
     /* The same label Gloobal Bank's account card uses, built the same
@@ -237,10 +236,10 @@ function GloobalCoinScreen({
        their own money buys. An account whose rate could not be fetched gets
        neither claim made on its behalf. */
   }{!rateKnown
-    ? `1 ${COIN_TICKER} = ${pegSymbol}1 · your rate is ∆`
+    ? `1 ${COIN_TICKER} = ${fmtMoney(1, pegCode)} · your rate is ∆`
     : isPegCurrency
-      ? `1 ${COIN_TICKER} = ${ccy}1, always`
-      : `1 ${COIN_TICKER} = ${pegSymbol}1 · ${ccy}1 = ${fmt(geuRate)} ${COIN_TICKER}`}</span></div>{
+      ? `1 ${COIN_TICKER} = ${fmtMoney(1, ccyCode)}, always`
+      : `1 ${COIN_TICKER} = ${fmtMoney(1, pegCode)} · ${fmtMoney(1, ccyCode)} = ${fmt(geuRate)} ${COIN_TICKER}`}</span></div>{
     /* Holders — a control, not a banner.
        ─────────────────────────────────────────────────────────────
        This slot used to hold a green "Fully backed" strip that asserted
@@ -279,7 +278,7 @@ function GloobalCoinScreen({
       ? "Reserve does not match supply"
       : `${supply.holders.toLocaleString("en-US")} ${supply.holders === 1 ? "holder" : "holders"}`}</span><span style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.4 }}>{!supply
     ? "Couldn't reach the server — this is ∆, not zero."
-    : `${fmt(supply.issued)} ${COIN_TICKER} issued against ${pegSymbol}${fmt(supply.reserve, pegCode)} in reserve · see them by country`}</span></span><CoinChevron size={17} color={supply ? supply.backed ? T.positive : T.negative : T.inkFaint} style={{ flexShrink: 0 }} /></button>{
+    : `${fmt(supply.issued)} ${COIN_TICKER} issued against ${fmtMoney(supply.reserve, pegCode)} in reserve · see them by country`}</span></span><CoinChevron size={17} color={supply ? supply.backed ? T.positive : T.negative : T.inkFaint} style={{ flexShrink: 0 }} /></button>{
     /* Mint / Redeem. One control with two directions rather than two
        screens, because they are the same conversion read in opposite
        directions and the ceiling is the only thing that differs. */
@@ -338,11 +337,11 @@ function GloobalCoinScreen({
     ? "∆"
     : mode === "mint"
       ? `≈ ${fmt(converted)} ${COIN_TICKER}`
-      : `≈ ${ccy}${fmt(converted, ccyCode)}`}</span></div>}<div style={{ fontSize: 11, color: overCeiling || !rateKnown ? T.negative : T.inkFaint, lineHeight: 1.4 }}>{!rateKnown
+      : `≈ ${fmtMoney(converted, ccyCode)}`}</span></div>}<div style={{ fontSize: 11, color: overCeiling || !rateKnown ? T.negative : T.inkFaint, lineHeight: 1.4 }}>{!rateKnown
     ? "Today's exchange rate couldn't be fetched, so this can't be converted yet. That's unknown, not zero."
     : overCeiling
       ? mode === "mint"
-        ? `You only have ${ccy}${fmt(ceiling, ccyCode)} to convert.`
+        ? `You only have ${fmtMoney(ceiling, ccyCode)} to convert.`
         : `You only hold ${fmt(ceiling)} ${COIN_TICKER}.`
       : mode === "mint"
         ? isPegCurrency

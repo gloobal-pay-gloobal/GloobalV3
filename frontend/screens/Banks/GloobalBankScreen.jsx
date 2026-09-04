@@ -27,7 +27,6 @@ function GloobalBankScreen({
   interested,
   interestBusy,
   onRegisterInterest,
-  ccy,
   ccyCode = "USD",
   balance,
   // Same unconfirmed-balance state the dashboard card shows (see the
@@ -102,7 +101,7 @@ function GloobalBankScreen({
     style={{ position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, marginTop: 5 }}
   ><span
     style={{ fontSize: 29, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, letterSpacing: -0.5, minWidth: 0 }}
-  >{balanceStatus === "loading" ? <BalanceLoading /> : balanceStatus === "error" ? <BalanceError onRetry={onRetryBalance} /> : balanceVisible ? `${ccy}${balance}` : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
+  >{balanceStatus === "loading" ? <BalanceLoading /> : balanceStatus === "error" ? <BalanceError onRetry={onRetryBalance} /> : balanceVisible ? balance : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
     onClick={onToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"
@@ -167,7 +166,7 @@ function GloobalBankScreen({
       style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, marginTop: i === 0 ? 8 : 0 }}
     ><span
       style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: received ? T.positiveSoft : T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}
-    >{received ? <BankArrowDownLeft size={14} color={TXN_IN_COLOR} /> : <BankArrowUpRight size={14} color={TXN_OUT_COLOR} />}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{historyRowStamp(t)}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: received ? TXN_IN_COLOR : TXN_OUT_COLOR, flexShrink: 0 }}>{received ? "+" : "−"}{ccy}{fmt(Number(t.amount || 0), ccyCode)}</span></div>;
+    >{received ? <BankArrowDownLeft size={14} color={TXN_IN_COLOR} /> : <BankArrowUpRight size={14} color={TXN_OUT_COLOR} />}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{historyRowStamp(t)}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: received ? TXN_IN_COLOR : TXN_OUT_COLOR, flexShrink: 0 }}>{received ? "+" : "−"}{fmtMoney(Number(t.amount || 0), ccyCode)}</span></div>;
   })}</div></div>{
     /* Moved to the bottom of the screen at the user's request — the
        tagline card and "I am IN" waitlist button used to sit between the

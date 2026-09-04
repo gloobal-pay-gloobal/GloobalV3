@@ -119,12 +119,15 @@ function showPaymentNotification({ title, body, tag }) {
 }
 
 // Money has arrived. The one people actually want.
-function notifyPaymentReceived({ txnId, amount, currencySymbol, from }) {
+// `currencyCode` is what formats the amount; `currencySymbol` is still
+// accepted because callers and stored payloads carry it, and a notification
+// is not worth breaking over a field on its way out.
+function notifyPaymentReceived({ txnId, amount, currencySymbol, currencyCode, from }) {
   if (!paymentNotificationsGranted()) return false;
   if (paymentAlreadyNotified(txnId)) return false;
   markPaymentNotified(txnId);
   return showPaymentNotification({
-    title: `${currencySymbol || ""}${Number(amount || 0).toFixed(2)} received`,
+    title: `${currencyCode ? fmtMoney(Number(amount || 0), currencyCode) : `${Number(amount || 0).toFixed(2)}${currencySymbol || ""}`} received`,
     body: from ? `From ${from}` : "Money has landed in your Gloobal account.",
     tag: `gloobal-received-${txnId || "unknown"}`
   });
@@ -134,12 +137,12 @@ function notifyPaymentReceived({ txnId, amount, currencySymbol, from }) {
 // wording than an arrival: the person is holding the phone and already saw
 // the success screen, so this exists to be found later in the tray, not to
 // tell them something they do not know.
-function notifyPaymentSent({ txnId, amount, currencySymbol, to }) {
+function notifyPaymentSent({ txnId, amount, currencySymbol, currencyCode, to }) {
   if (!paymentNotificationsGranted()) return false;
   if (paymentAlreadyNotified(txnId)) return false;
   markPaymentNotified(txnId);
   return showPaymentNotification({
-    title: `${currencySymbol || ""}${Number(amount || 0).toFixed(2)} sent`,
+    title: `${currencyCode ? fmtMoney(Number(amount || 0), currencyCode) : `${Number(amount || 0).toFixed(2)}${currencySymbol || ""}`} sent`,
     body: to ? `To ${to}` : "Your Gloobal payment went through.",
     tag: `gloobal-sent-${txnId || "unknown"}`
   });

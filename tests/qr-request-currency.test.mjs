@@ -61,7 +61,14 @@ describe("the scan card resolves the currency from the payee", () => {
     const at = code.indexOf("scanPendingPayment.amountCents > 0 && (() => {");
     assert.ok(at > 0, "the request figure block was not found");
     const block = code.slice(at, at + 1200);
-    assert.match(block, /scanRequestSymbol\(scanPendingPayment\)/);
+    // Asserts the PROPERTY (the figure is denominated in the payee's
+    // currency), not the mechanism. It used to require a scanRequestSymbol()
+    // call, which was a helper that existed only to put a symbol in front of
+    // the number; fmtMoney does both halves now and the helper is gone. A
+    // test pinned to a deleted helper fails on a correct refactor and says
+    // nothing about whether the money is right.
+    assert.match(block, /fmtMoney\(asked, askedCode\)/);
+    assert.match(app, /const askedCode = scanRequestCurrency\(scanPendingPayment\);/);
     assert.ok(
       !/CURRENCY_SYMBOL\[COUNTRY_CURRENCY\[dialCountry\.iso\]/.test(block),
       "the request figure must not be labelled with the scanner's own currency"
@@ -75,7 +82,7 @@ describe("the scan card resolves the currency from the payee", () => {
     const at = code.indexOf("amountLabel={scanPendingPayment");
     assert.ok(at > 0, "amountLabel not found");
     const line = code.slice(at, code.indexOf("\n", at));
-    assert.match(line, /scanRequestSymbol\(scanPendingPayment\)/);
+    assert.match(line, /fmtMoney\(/);
     assert.match(line, /scanRequestCurrency\(scanPendingPayment\)/);
   });
 

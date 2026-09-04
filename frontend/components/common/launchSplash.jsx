@@ -42,26 +42,12 @@ var FADE_MS = 450;
 // Nobody who has asked their device for less motion wants to be held on a
 // static screen for the full 4.75s to look at a mark that never moves.
 var REDUCED_MOTION_HOLD_MS = 1800;
-// The mark, reduced.
-//
-// 52vw / 240px max, which on a phone is more than half the screen's width
-// and — now that the screen carries a headline and a card as well — read as
-// an icon that had been dropped in at the wrong scale rather than as the
-// top of a composition. 40vw / 172px is about a quarter of the height and
-// leaves the other elements room to be the other two beats.
-//
-// The symbol faces are scaled by the SAME ratio (172/240 = 0.717). They are
-// sized in vw independently of the box, so leaving them alone would have
-// made a dial symbol overflow the smaller box entirely.
-var BOX_SIZE = "40vw";
-var BOX_MAX = 172;
-// The shared squircle corner — see LIVING_LOGO_RADIUS in flipIcons.jsx.
-// Read from there rather than restated, so the splash box and the
-// Bank/Coin hero cannot round differently.
-var BOX_RADIUS = LIVING_LOGO_RADIUS;
+// How much of the mark's box the glyph inside it fills. The only survivor of
+// the old hero block: the splash no longer renders a large standalone mark,
+// so BOX_SIZE, BOX_MAX, BOX_RADIUS, SYMBOL_SIZE and SYMBOL_MAX went with it
+// rather than being left behind as tokens nothing reads. The mark is now the
+// chip on the Gloobal Bank card and takes its dimensions from there.
 var CONTENT_FILL = "66%";
-var SYMBOL_SIZE = "24vw";
-var SYMBOL_MAX = 113;
 // Fisher-Yates on a copy of the dial pad's own 8 symbols (constants/
 // theme.js), so which one shows up as the splash's second face is a
 // different one most app launches rather than the same fixed symbol
@@ -164,6 +150,11 @@ function SplashSymbolField() {
 
 function LaunchSplash({ onFinish }) {
   const [phase, setPhase] = useState20("logo");
+  // Separate from `phase` on purpose. The bar has to begin travelling on the
+  // FIRST paint; `phase` does not leave "logo" until the flip starts at
+  // 2200ms, so driving the width from it would have started the countdown
+  // two seconds late and finished it after the screen had already gone.
+  const [running, setRunning] = useState20(false);
   // The full nine-face sequence — real logo first, then all 8 dial
   // symbols in a fresh shuffle — built once per mount (not per render)
   // so the order is stable for the lifetime of this splash. Only faces
@@ -179,6 +170,12 @@ function LaunchSplash({ onFinish }) {
     typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
   );
   useEffect16(() => {
+    // Next frame, not this one: a width set in the same frame as the initial
+    // 0% is not a transition, it is a jump.
+    const raf = requestAnimationFrame(() => setRunning(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  useEffect16(() => {
     const timers = [];
     if (prefersReducedMotion.current) {
       timers.push(setTimeout(() => setPhase("fading"), REDUCED_MOTION_HOLD_MS));
@@ -191,6 +188,18 @@ function LaunchSplash({ onFinish }) {
     return () => timers.forEach(clearTimeout);
   }, []);
   const flipped = phase === "symbol" || phase === "fading";
+  // The bar's whole travel, and it is the real one.
+  //
+  // It is not a fake data-loading indicator — nothing here is loading, and a
+  // bar that pretended otherwise would be a lie told to fill a gap. It is a
+  // countdown to the app appearing, driven by the same constants the phases
+  // are, so it reaches the end exactly when the screen leaves. That is a true
+  // statement about the only thing this screen is doing: taking 4.75 seconds
+  // of a person's time.
+  const runMs = prefersReducedMotion.current
+    ? REDUCED_MOTION_HOLD_MS
+    : HOLD_LOGO_MS + FLIP_MS + HOLD_SYMBOL_MS;
+
   return <div
     role="presentation"
     aria-hidden="true"
@@ -201,166 +210,207 @@ function LaunchSplash({ onFinish }) {
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      // Three beats spread across the screen — mark, headline, card —
-      // rather than one clump in the middle. The old layout centred
-      // everything as a single column, which left the top third and the
-      // bottom third empty and made the mark look oversized by having
-      // nothing to be in proportion to.
-      justifyContent: "space-between",
-      padding: "13vh 20px 6vh",
+      // Centred with a measured gap, not space-between.
+      //
+      // space-between pinned the stack to the top and the copy to the bottom
+      // and left about a third of the screen empty between them — the exact
+      // fault this redesign was meant to fix, reintroduced by the layout
+      // rather than by the content. Centring makes the two blocks one
+      // composition with equal air above and below it.
+      justifyContent: "center",
+      gap: "clamp(38px, 7vh, 72px)",
+      padding: "6vh 20px",
       boxSizing: "border-box",
       overflow: "hidden",
-      // The app's own ground.
-      //
-      // This was briefly a deep purple gradient with a dotted world and a
-      // glowing horizon, built to a reference. It looked like a launch
-      // screen and like nothing else in Gloobal — you opened it and then
-      // the app appeared, in a different colour, on a different surface.
-      // T.bg is what every screen behind this one is, so the splash now
-      // fades into the app rather than cutting to it, and the drifting
-      // symbols carry the character instead of the background.
+      // The app's own ground, so the splash fades INTO the app rather than
+      // cutting to it.
       background: T.bg,
       opacity: phase === "fading" ? 0 : 1,
       transition: `opacity ${FADE_MS}ms ease`,
       pointerEvents: phase === "fading" ? "none" : "auto"
     }}
-  >{
-    /* The drifting dial symbols.
-       The same FinSymbolField that carries the Send Money and dashboard
-       backgrounds, and the same idea as the flowing country flags on the
-       registration flow — but the app's own eight symbols instead of
-       flags, at mixed sizes and colours, wandering across the screen.
+  ><style>{`
+      @keyframes splashCardIn {
+        from { opacity: 0; transform: translateY(26px) rotate(var(--rot)) scale(0.96); }
+        to   { opacity: 1; transform: translateY(0)    rotate(var(--rot)) scale(1); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .splash-card { animation: none !important; opacity: 1 !important;
+                       transform: rotate(var(--rot)) !important; }
+        .splash-progress { transition: none !important; width: 100% !important; }
+      }
+    `}</style><SplashSymbolField />{
+    /* The stack.
+       ─────────────────────────────────────────────────────────────
+       The splash is now made OF the product rather than of graphics
+       about it: the two account surfaces a person will meet on the
+       dashboard, and the hallmark that sits on both product screens,
+       dealt as a stack.
 
-       DIAL_SYMBOLS (the eight) rather than DIAL_PAD_SYMBOLS (which also
-       contains the digits 0-9). The box in the middle of this screen is
-       flipping through those exact eight; putting digits in the field
-       behind it would dilute the one thing the splash is saying.
+       Each card is rotated a couple of degrees and overlaps the one
+       above it. The rotations are deliberately unequal and none of
+       them is zero — three cards at the same angle read as a printing
+       error, and one at 0° reads as the "real" card with two crooked
+       ones behind it.
 
-       Bigger and more numerous than anywhere else in the app because this
-       screen is empty by comparison — a field tuned for the space behind a
-       dashboard disappears entirely on a screen with three elements on it.
-
-       Motion comes from the finDrift keyframes in App.jsx's global style
-       block. The splash renders as a sibling of that component, so they
-       are in the document by the time this paints. That block also stops
-       every aria-hidden animation under prefers-reduced-motion, so this
-       field goes still for free rather than needing its own guard. */
-  }<SplashSymbolField /><div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>{
-    /* The box itself — rounded square, brand gradient — is the "app
-       icon" reference point. Given real 3D depth via a perspective
-       tilt, a layered shadow (tight + diffuse, the way a raised
-       object actually casts light) instead of one flat drop shadow,
-       and a diagonal bevel overlay (light top-left, dark bottom-
-       right) for a glossy, extruded look. Everything inside it
-       (logo/symbol) just flips; the box's shape, tilt, and fill never
-       change. */
-  }{prefersReducedMotion.current ? <div style={{ perspective: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}><div
-    style={{
-      width: BOX_SIZE,
-      height: BOX_SIZE,
-      maxWidth: BOX_MAX,
-      maxHeight: BOX_MAX,
-      borderRadius: BOX_RADIUS,
-      // T.gradButton — the same token LivingLogoBoxVisual uses, so the
-      // reduced-motion box and the flipping one are the same object with
-      // the motion removed rather than two boxes that merely resemble
-      // each other.
-      background: T.gradButton,
-      boxShadow: "0 2px 0 rgba(76,29,149,0.55), 0 12px 22px rgba(76,29,149,0.38), 0 30px 58px rgba(76,29,149,0.26)",
-      transform: "rotateX(10deg) rotateY(-10deg)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
-      position: "relative"
-    }}
-  ><div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0) 32%, rgba(0,0,0,0) 62%, rgba(0,0,0,0.2) 100%)", pointerEvents: "none" }} /><img
-    src={G_LOGO_DATA_URI}
-    alt=""
-    style={{ width: CONTENT_FILL, height: CONTENT_FILL, objectFit: "contain", filter: "brightness(0) invert(1)" }}
-  /></div></div> : (
-    // Same box the Bank/Coin hero renders (LivingLogoBoxVisual, in
-    // flipIcons.jsx) — the splash and "the app logo" everywhere else are
-    // now literally the same component, not just similar-looking copies.
-    <LivingLogoBoxVisual
-      front={sequenceRef.current[0]}
-      back={sequenceRef.current[1]}
-      flipped={flipped}
-      size={BOX_SIZE}
-      maxSize={BOX_MAX}
-      contentFill={CONTENT_FILL}
-      borderRadius={BOX_RADIUS}
-      flipMs={FLIP_MS}
-      symbolFontSize={SYMBOL_SIZE}
-      symbolMaxWidth={SYMBOL_MAX}
-    />
-  )}{
-    /* What Gloobal is, in one line. The 0.00% card that goes with it is
-       NOT here — it is the screen's third beat, down at the bottom over
-       the horizon, so it is a sibling of this whole block rather than a
-       child of it. See the end of this component. */
+       They arrive one after another rather than together, which is
+       what makes it a stack being dealt instead of a picture of three
+       cards. The delays are shorter than the logo hold, so the whole
+       stack is standing before the mark on it has finished its turn. */
   }<div
-    style={{
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      marginTop: 30,
-      width: "min(86vw, 330px)",
-      // The copy arrives after the mark has had a beat on its own, so the
-      // screen is not asking to be read and watched at the same instant.
-      // It stays up through the fade rather than being pulled early — the
-      // whole screen leaves together.
-      opacity: phase === "logo" ? 0 : 1,
-      transform: phase === "logo" ? "translateY(6px)" : "translateY(0)",
-      transition: "opacity 520ms ease, transform 520ms ease"
-    }}
-  ><div
-    style={{
-      textAlign: "center",
-      letterSpacing: 0.1,
-      lineHeight: 1.35
-    }}
-  >{
-    /* Pay red, receive green — and not decoratively. These are
-       TXN_OUT_COLOR and TXN_IN_COLOR, the exact two colours every amount
-       in the app is already printed in: money leaving is red, money
-       arriving is green, on every history row and every receipt. Using
-       them here means the first screen a person sees teaches the colour
-       code they will read for the rest of the app, rather than spending
-       red and green on a decoration that means something else. */
-    /* Back on a light ground, so back to the ordinary pair. A short-lived
-       dark version of this screen needed lifted variants for contrast;
-       those are gone with it rather than left behind as tokens nothing
-       uses. */
-  }<div style={{ fontSize: 26, fontWeight: 800, fontFamily: T.fontDisplay, letterSpacing: -0.3 }}><span style={{ color: TXN_OUT_COLOR }}>Pay</span><span style={{ color: T.ink }}> and </span><span style={{ color: TXN_IN_COLOR }}>receive</span></div><div
-    style={{ fontSize: 15.5, fontWeight: 700, color: T.inkSoft, marginTop: 6 }}
-  >anywhere on Earth</div></div>{
-    /* The Gloobal Bank and Gloobal Coin box, not a rebuild of it.
-       Asked for as "exactly same box", and taking the component is the
-       only way that stays true — a copy of its padding, border, shadow,
-       corner badge and two marks is four values that can drift, and the
-       reason GloobalTaglineCard was extracted in the first place was that
-       Bank and Coin had each written it out separately and were already
-       drifting apart.
-
-       An earlier version of this screen rendered the two marks bare, on
-       the reasoning that a card's surface and border belong in a
-       scrolling column rather than on a full-bleed launch screen. That
-       was a defensible design call and the wrong one to make unilaterally:
-       the box IS the thing being recognised across screens, and the
-       accent tracks the brand purple here the way it tracks each product
-       screen's hero colour there. */
-  }</div></div><div
     style={{
       position: "relative",
       zIndex: 1,
-      width: "min(86vw, 330px)",
-      opacity: phase === "logo" ? 0 : 1,
-      transform: phase === "logo" ? "translateY(10px)" : "translateY(0)",
-      // A beat behind the headline, so the screen resolves top to bottom
-      // rather than all at once.
-      transition: "opacity 520ms ease 120ms, transform 520ms ease 120ms"
+      width: "min(88vw, 340px)",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center"
     }}
-  ><GloobalTaglineCard accentColor={T.accent} /></div></div>;
-}
+  >{
+    /* Gloobal Bank.
+       ─────────────────────────────────────────────────────────────
+       NO BALANCE ON IT, and that is the one decision here worth
+       defending. The mock this was built from carried "1,24,500.00₹"
+       in the exact type, colour and position the real account card
+       uses. On the launch screen of a payments app, held for two
+       seconds before anything else appears, an invented figure in
+       that position is not decoration — it is a number a person can
+       read as their own money, and some of them will.
 
+       So the card keeps its shape and its weight and says something
+       that is true for every person who ever sees it. */
+  }<div
+    className="splash-card"
+    style={{
+      "--rot": "-3.5deg",
+      width: "100%",
+      borderRadius: T.radiusLg,
+      background: T.gradWallet,
+      color: "#fff",
+      padding: "18px 20px",
+      boxShadow: "0 18px 40px rgba(76,29,149,0.28)",
+      transform: "rotate(-3.5deg)",
+      animation: "splashCardIn 640ms cubic-bezier(.2,.7,.3,1) both",
+      display: "flex",
+      alignItems: "center",
+      gap: 16
+    }}
+  >{
+    /* The mark, as the card's chip.
+       ─────────────────────────────────────────────────────────────
+       The stack has no room for a hero, and dropping the mark
+       altogether would have thrown away the one thing this screen
+       has always been for. On a card there is already a place for a
+       brand mark, so it takes it — and it is the SAME component the
+       Bank and Coin heroes use, running the same single choreographed
+       flip this screen has always run: the logo, held, then one of
+       the eight dial symbols. */
+  }<LivingLogoBoxVisual
+    front={sequenceRef.current[0]}
+    back={sequenceRef.current[1]}
+    flipped={flipped}
+    size={54}
+    maxSize={54}
+    contentFill={CONTENT_FILL}
+    // LIVING_LOGO_RADIUS, not a picked number. It is a PERCENTAGE (24%), so
+    // the curve scales with the box — which is the whole reason it is a
+    // token: 17px on this 54px chip is a 31% corner, visibly rounder than
+    // the same mark on the Bank and Coin heroes. Two radii for one mark is
+    // exactly the drift this token exists to prevent.
+    borderRadius={LIVING_LOGO_RADIUS}
+    flipMs={FLIP_MS}
+    symbolFontSize={26}
+    symbolMaxWidth={30}
+  /><span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}><span
+    style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: "rgba(255,255,255,0.66)" }}
+  >Gloobal Bank</span><span
+    style={{ fontSize: 19, fontWeight: 800, fontFamily: T.fontDisplay, letterSpacing: -0.4, lineHeight: 1.15 }}
+  >Your own currency</span></span></div>{
+    /* Gloobal Coin. The peg, which is the whole of what this product
+       is, and a fact rather than a figure — 1 GEU is 1 rupee for
+       everybody, in both directions, on the day this ships and after.
+       The currency comes from COIN_PEG_CURRENCY rather than being
+       typed here, so the splash cannot go on claiming a peg the
+       server has stopped honouring. */
+  }<div
+    className="splash-card"
+    style={{
+      "--rot": "2.5deg",
+      width: "100%",
+      marginTop: -18,
+      borderRadius: T.radiusLg,
+      background: T.surface,
+      border: `1px solid ${T.line}`,
+      padding: "18px 20px",
+      boxShadow: "0 16px 34px rgba(76,29,149,0.16)",
+      transform: "rotate(2.5deg)",
+      animation: "splashCardIn 640ms cubic-bezier(.2,.7,.3,1) 130ms both",
+      display: "flex",
+      flexDirection: "column",
+      gap: 3
+    }}
+  ><span
+    style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkFaint }}
+  >Gloobal Coin · always, both ways</span><span
+    style={{ fontSize: 21, fontWeight: 800, fontFamily: T.fontDisplay, color: T.ink, letterSpacing: -0.5, lineHeight: 1.15 }}
+  >1 {COIN_TICKER} = {fmtMoney(1, COIN_PEG_CURRENCY)}</span></div>{
+    /* The hallmark — the component, not a rebuild of it. Bank and Coin
+       both render this exact card; taking it is what keeps the three
+       from drifting apart, which is the reason it was extracted in the
+       first place. */
+  }<div
+    className="splash-card"
+    style={{
+      "--rot": "-1.5deg",
+      width: "100%",
+      marginTop: -16,
+      transform: "rotate(-1.5deg)",
+      animation: "splashCardIn 640ms cubic-bezier(.2,.7,.3,1) 260ms both"
+    }}
+  ><GloobalTaglineCard accentColor={T.accent} /></div></div>{
+    /* The promise, and the countdown.
+       Pay red, receive green — TXN_OUT_COLOR and TXN_IN_COLOR, the exact
+       two colours every amount in the app is printed in. Money leaving is
+       red and money arriving is green on every history row and every
+       receipt, so the first screen a person sees teaches the colour code
+       they will read for the rest of the app. */
+  }<div
+    style={{
+      position: "relative",
+      zIndex: 1,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 20,
+      // Tied to the first paint, not to the flip.
+      //
+      // This used to key off `phase`, which does not leave "logo" until
+      // 2200ms — so for the first half of the splash the bottom third of the
+      // screen was empty and the stack sat alone at the top looking
+      // top-heavy. It still arrives a beat AFTER the cards, so the screen
+      // resolves top to bottom rather than all at once; the beat is now
+      // 420ms rather than two and a bit seconds.
+      opacity: running ? 1 : 0,
+      transform: running ? "translateY(0)" : "translateY(8px)",
+      transition: "opacity 520ms ease 420ms, transform 520ms ease 420ms"
+    }}
+  ><div style={{ textAlign: "center", lineHeight: 1.35 }}><div
+    style={{ fontSize: 26, fontWeight: 800, fontFamily: T.fontDisplay, letterSpacing: -0.3 }}
+  ><span style={{ color: TXN_OUT_COLOR }}>Pay</span><span style={{ color: T.ink }}> and </span><span style={{ color: TXN_IN_COLOR }}>receive</span></div><div
+    style={{ fontSize: 15.5, fontWeight: 700, color: T.inkSoft, marginTop: 6 }}
+  >anywhere on Earth</div></div><div
+    style={{ width: 104, height: 3, borderRadius: 999, background: T.surfaceSunk, overflow: "hidden" }}
+  ><div
+    className="splash-progress"
+    style={{
+      height: "100%",
+      borderRadius: 999,
+      background: T.gradButton,
+      // Starts at 0 on the first paint and is driven to 100% by the same
+      // clock the phases use — so it finishes as the screen leaves rather
+      // than at some length picked to look busy.
+      width: running ? "100%" : "0%",
+      transition: `width ${runMs}ms linear`
+    }}
+  /></div></div></div>;
+}

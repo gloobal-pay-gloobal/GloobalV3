@@ -1380,7 +1380,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
        either, so the box came out blank — a broken avatar rather than a
        design. The country is still on the receipt this row belongs to. */
   }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#14122B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: "#9C96AF", marginTop: 1 }}>{historyRowStamp(t)}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: TXN_OUT_COLOR, flexShrink: 0 }}>
-                    −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(Number(t.amount) || 0, top.currency)}
+                    −{fmtMoney(Number(t.amount) || 0, top.currency)}
                   </span></div>)}</div></div>}{searchStage === "found" && bottomOpen && <>{bottom.registered === false && <div
     role="alert"
     style={{
@@ -1513,7 +1513,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     onClick={handleSend}
     style={{ padding: "14px 18px", marginTop: topOpen ? 0 : 24 }}
   ><span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}><SendMoneyLucideIcon size={18} />
-                {bottom.registered === false ? "Simulate " : "Send "}{CURRENCY_SYMBOL[top.currency] || ""}{fmt(senderAmount, top.currency)}</span></button>}</>}{
+                {bottom.registered === false ? "Simulate " : "Send "}{fmtMoney(senderAmount, top.currency)}</span></button>}</>}{
     /* Funding source — the four ways a transfer can be paid. Picking
        one moves straight on to the OTP confirmation. */
   }{payMethodOpen && <div
@@ -1589,7 +1589,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   ><GH2HFlipCircle size={22} /></div><div
     style={{
       marginTop: 14,
-      fontSize: receiptAmountFontSize(`\u2212${CURRENCY_SYMBOL[top.currency] || ""}${fmt(senderAmount, top.currency)}`, 26),
+      fontSize: receiptAmountFontSize(`\u2212${fmtMoney(senderAmount, top.currency)}`, 26),
       fontWeight: 800,
       color: T.negative,
       fontFamily: T.fontDisplay,
@@ -1597,7 +1597,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       overflowWrap: "anywhere"
     }}
   >
-                −{CURRENCY_SYMBOL[top.currency] || ""}{fmt(senderAmount, top.currency)}</div></div>{
+                −{fmtMoney(senderAmount, top.currency)}</div></div>{
     /* Same dial pad used for PIN/OTP everywhere else in the app
        (registration, login) instead of this screen's own
        separate keypad — one PIN entry pattern app-wide. Reaching

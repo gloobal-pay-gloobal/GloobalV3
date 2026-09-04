@@ -205,8 +205,8 @@ describe("the screen states the rate instead of asserting a false one", () => {
     // anywhere in the app.
     assert.match(screen, /const isPegCurrency = rateKnown && geuRate === 1;/);
     const chip = screen.slice(screen.indexOf("!rateKnown"), screen.indexOf("</span></div>{", screen.indexOf("!rateKnown")));
-    assert.match(chip, /isPegCurrency\s*\n?\s*\?\s*`1 \$\{COIN_TICKER\} = \$\{ccy\}1, always`/);
-    assert.match(chip, /\$\{ccy\}1 = \$\{fmt\(geuRate\)\} \$\{COIN_TICKER\}/);
+    assert.match(chip, /isPegCurrency\s*\n?\s*\?\s*`1 \$\{COIN_TICKER\} = \$\{fmtMoney\(1, ccyCode\)\}, always`/);
+    assert.match(chip, /\$\{fmtMoney\(1, ccyCode\)\} = \$\{fmt\(geuRate\)\} \$\{COIN_TICKER\}/);
   });
 
   test("the reserve figure is printed in the reserve's currency", () => {
@@ -216,7 +216,7 @@ describe("the screen states the rate instead of asserting a false one", () => {
     // held ₹412,000 — a claim inflated 85-fold.
     assert.match(
       screen,
-      /issued against \$\{pegSymbol\}\$\{fmt\(supply\.reserve, pegCode\)\} in reserve/
+      /issued against \$\{fmtMoney\(supply\.reserve, pegCode\)\} in reserve/
     );
   });
 
@@ -225,7 +225,7 @@ describe("the screen states the rate instead of asserting a false one", () => {
     // 100 units or 8,560 until they looked at their balance afterwards.
     assert.match(screen, /const converted = !amountIsValid \|\| !rateKnown/);
     assert.match(screen, /≈ \$\{fmt\(converted\)\} \$\{COIN_TICKER\}/);
-    assert.match(screen, /≈ \$\{ccy\}\$\{fmt\(converted, ccyCode\)\}/);
+    assert.match(screen, /≈ \$\{fmtMoney\(converted, ccyCode\)\}/);
   });
 
   test("an unknown rate reads as ∆, never as 1 and never as blank", () => {
@@ -267,10 +267,12 @@ describe("one flag component, everywhere", () => {
     // do, rather than trusting that they happen to look alike.
     const flags = readSource("frontend/components/cards/flags.jsx");
     assert.match(flags, /function FlagEmoji\(/);
-    // FlagCircle is a wrapper around it, not a second implementation.
-    const circle = flags.slice(flags.indexOf("function FlagCircle("));
-    assert.match(circle.slice(0, circle.indexOf("\nfunction ")), /<FlagEmoji/);
+    // Literally the same component now, not a wrapper around it: the disc
+    // these screens draw is FlagEmoji with shape="circle".
     assert.match(readSource("frontend/components/dialogs/registerLogin.jsx"), /<FlagEmoji/);
-    assert.match(readSource("frontend/screens/Coin/CountryHoldersScreen.jsx"), /<FlagCircle/);
+    assert.match(
+      readSource("frontend/screens/Coin/CountryHoldersScreen.jsx"),
+      /<FlagEmoji flag=\{country\.flag\} size=\{46\} shape="circle" \/>/
+    );
   });
 });

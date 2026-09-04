@@ -33,11 +33,49 @@ function flagEmojiToIso(flag) {
 //             identifies them.
 //
 // Defaulting to "cover" keeps every existing caller pixel-identical.
-function FlagEmoji({ flag, size, width, height, radius, background, dropShadow, fit = "cover" }) {
-  const w = width ?? size;
-  const h = height ?? size;
-  const smoothRadius = radius != null ? radius : Math.max(2, Math.round(Math.min(w, h) * 0.16));
-  const boxShadow = dropShadow ? dropShadow.replace(/^drop-shadow\(/, "").replace(/\)$/, "") : void 0;
+//
+// ── `shape` ──────────────────────────────────────────────────────────────
+//
+// There is ONE flag in this app. What changes from place to place is the
+// silhouette it is cut to, and that is what `shape` is for:
+//
+//   "chip"   (default) — a rounded rectangle in a flag's own proportions.
+//            The country picker on registration, and every row and pill
+//            that followed it. Radius is derived from the box unless one
+//            is given, so a 22px chip and a 60px one look related.
+//   "square" — same rounding, forced to a square box. For grids where the
+//            cells must line up whatever the flag's aspect ratio is.
+//   "circle" — a disc. Squares the box, sets the radius to half of it, and
+//            paints the rim as an INSET shadow rather than a border,
+//            because a 1px border shrinks the content box and leaves a
+//            hairline of ground at the left and right of a flag that is
+//            supposed to fill the disc.
+//
+// This replaces a second component, FlagCircle, that existed only to draw
+// the third of these. It was never a different flag — it wrapped this one —
+// but it was a second name and a second set of props for the same object,
+// and three screens reached for it while twenty reached for this. One
+// component with a shape is the honest shape of that fact.
+//
+// A circle crops: `cover` on a square box keeps a 3:2 flag's central
+// two-thirds, and a hoist-side emblem about a third in (Kuwait's and
+// Sudan's triangles, the UAE's bar) lands on the crop boundary. Where the
+// flag ALONE has to identify a country, pass fit="contain" and it sits
+// whole inside the disc instead. Where a name sits beside it, the crop is
+// the better mark.
+function FlagEmoji({ flag, size, width, height, radius, background, dropShadow, fit = "cover", shape = "chip", border }) {
+  const square = shape === "circle" || shape === "square";
+  const box = size ?? width ?? height;
+  const w = square ? box : (width ?? size);
+  const h = square ? box : (height ?? size);
+  const smoothRadius = shape === "circle"
+    ? (radius != null ? radius : box / 2)
+    : (radius != null ? radius : Math.max(2, Math.round(Math.min(w, h) * 0.16)));
+  const rim = shape === "circle" ? (border || `inset 0 0 0 1px ${T.line}`) : null;
+  const boxShadow = [
+    dropShadow ? dropShadow.replace(/^drop-shadow\(/, "").replace(/\)$/, "") : null,
+    rim
+  ].filter(Boolean).join(", ") || void 0;
   const iso = flagEmojiToIso(flag);
   const [imgFailed, setImgFailed] = useState(false);
   const showImage = iso && !imgFailed;
@@ -79,95 +117,23 @@ function FlagEmoji({ flag, size, width, height, radius, background, dropShadow, 
     }}
   >{flag}</span>}</div>;
 }
-// A flag as a circular badge.
-//
-// Two modes, and the difference is what happens to a flag that is not square.
-//
-//   "fill" (default) — the flag fills the whole disc, cropped to it, the way a
-//   profile photo does. This is what the receipt shows: a flag, circular,
-//   reading as one solid mark at 40px.
-//
-//   "inscribe" — the flag sits whole inside the disc, at its true aspect
-//   ratio, with the circle's ground visible around it.
-//
-// "inscribe" was the only mode, and the reasoning behind it was sound as far
-// as it went: a 3:2 flag cropped to a circle loses its outer thirds, so the
-// inner box was made the largest ~3:2 rectangle fitting inside the circle
-// (D*0.83 by D*0.55, corners just inside the rim) and `contain` fitted the
-// flag into it whole. Nothing stretched, nothing cropped.
-//
-// What that costs is the thing the badge is for. At 40px the flag ends up 33px
-// by 22px — a small rectangle floating in a white disc, which reads as a
-// rectangle in a circle rather than as a circular badge, and the flag itself
-// is only about half the area it could be. On a receipt sitting on the seam of
-// a card, next to a name, the mark needs to read at a glance.
-//
-// So "fill" is now the default, and the crop is real: a 3:2 flag keeps its
-// central two-thirds. That is fine for the great majority — the field, the
-// bands, the central charge all survive — and it is the same crop every
-// avatar in every app makes. It is NOT free: a hoist-side emblem sitting
-// about a third in (Kuwait's and Sudan's triangles, the UAE's bar) lands on
-// the crop boundary and is partly lost. That is a real trade and the reason
-// "inscribe" is kept rather than deleted — a surface that must identify a
-// country by its flag ALONE should ask for it. The receipt does not: the
-// counterparty's name is on the row beside the badge, so the flag is
-// confirming a country the reader has already been told.
-//
-// The raw emoji character is not an option in either mode. On Windows it
-// renders as two letters rather than a flag, which is why FlagEmoji loads a
-// real asset and only falls back to the character.
-function FlagCircle({ flag, size, background, border, mode = "fill", widthRatio = 0.83, heightRatio = 0.55 }) {
-  const inscribed = mode === "inscribe";
-  return <span
-    style={{
-      width: size,
-      height: size,
-      borderRadius: "50%",
-      background: background || T.surface,
-      // The rim is drawn INSIDE the box when filling, as an inset shadow
-      // rather than a real border.
-      //
-      // A 1px border shrinks the content box to size-2, so a child asked for
-      // `size` either overflows it or gets flex-shrunk to 38px inside a 40px
-      // circle — which is a flag that fills the disc everywhere except a hair
-      // at the left and right, the exact defect this mode exists to remove.
-      // An inset shadow occupies no layout at all: the content box stays a
-      // full `size`, the flag fills it, and the rim is painted over the top.
-      //
-      // "inscribe" keeps the real border, because there the flag is meant to
-      // sit inside the rim with the circle's ground showing around it.
-      border: inscribed ? border || `1px solid ${T.line}` : border || "none",
-      boxShadow: inscribed || border ? void 0 : `inset 0 0 0 1px ${T.line}`,
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      // Belt and braces with the child's own 50% radius: the parent clips
-      // anything the cover crop pushes past the rim, so the silhouette stays
-      // a circle even if the child's radius is ever overridden.
-      overflow: "hidden",
-      flexShrink: 0
-    }}
-  ><FlagEmoji
-    flag={flag}
-    width={inscribed ? Math.round(size * widthRatio) : size}
-    height={inscribed ? Math.round(size * heightRatio) : size}
-    // A full circle, not a rounded square: at this size the difference
-    // between radius 50% and radius 8 is the whole point of the change.
-    radius={inscribed ? 2 : size / 2}
-    // `cover` scales the flag until it covers the box and crops the
-    // overflow — it never stretches, so the flag's proportions are intact
-    // in both modes. Only how much of it you see changes.
-    fit={inscribed ? "contain" : "cover"}
-    background="transparent"
-  /></span>;
-}
 function FlagSignShape({ sign, flag, box }) {
   const dropShadow = { filter: "drop-shadow(0 2px 4px rgba(20,20,40,0.28))" };
   if (sign === "circle" || sign === "square") {
+    // The same two silhouettes FlagEmoji names, asked for by name rather
+    // than by computing box / 2 here — that is the component's own
+    // arithmetic and it was living in a second place.
+    //
+    // The square keeps its explicit 0.22 radius rather than taking the
+    // shape's default 0.16: these are drifting particles read as soft
+    // shapes at a glance, not chips read as flags, and they were tuned
+    // rounder on purpose. Naming the exception is cheaper than silently
+    // restyling the background of the first screen anyone sees.
     return <FlagEmoji
       flag={flag}
       size={box}
-      radius={sign === "circle" ? box / 2 : box * 0.22}
+      shape={sign}
+      radius={sign === "square" ? box * 0.22 : void 0}
       dropShadow="drop-shadow(0 2px 4px rgba(20,20,40,0.28))"
     />;
   }

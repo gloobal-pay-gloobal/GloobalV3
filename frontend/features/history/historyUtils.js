@@ -111,7 +111,6 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy) {
   // number underneath the first one.
   const localCurrency = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
   const rowCurrency = t.currency || localCurrency;
-  const rowSymbol = t.currency ? CURRENCY_SYMBOL[t.currency] || `${t.currency} ` : ccy;
   // The counterparty's own country, and from it their currency.
   //
   // Resolved from the ISO code the row now carries (see mapServerTransaction)
@@ -145,7 +144,14 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy) {
     shareRate: t.shareRate ?? (direction === "sent" ? randomShareRate() : null),
     amount: t.amount,
     // The row's own, not the account's — same rule as the list.
-    currencySymbol: rowSymbol,
+    //
+    // DEPRECATED as a rendering input. Amounts are now built by fmtMoney from
+    // `currencyCode` below, which puts the unit AFTER the number; a bare
+    // symbol cannot express that and cannot answer how many decimals the
+    // currency has. Kept because it is part of receipt payloads already
+    // stored on the server and on restored rows, so removing it would change
+    // the shape of data this app did not write.
+    currencySymbol: CURRENCY_SYMBOL[rowCurrency] || rowCurrency,
     currencyCode: rowCurrency,
     convertedAmount: converted,
     convertedCurrency: converted != null ? counterpartyCurrency : null,

@@ -8,6 +8,33 @@ import {
 
 
 // src/components/dialogs/ReceiptModal.jsx
+
+// One segment of the Payment / Creator Share toggle.
+//
+// Pulled out of the row because the row is no longer two identical things
+// in a loop — the counterparty's flag sits between them — and interleaving
+// a separator into a .map() costs more clarity than the loop was saving.
+function ReceiptTabButton({ label, active, onSelect }) {
+  return <button
+    onClick={onSelect}
+    className="v2-tap"
+    aria-pressed={active}
+    style={{
+      flex: 1,
+      border: "none",
+      borderRadius: 999,
+      padding: "9px 0",
+      fontSize: 12.5,
+      fontWeight: 800,
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+      color: active ? "#fff" : T.inkSoft,
+      background: active ? T.gradButton : "transparent",
+      transition: "background 0.18s ease, color 0.18s ease"
+    }}
+  >{label}</button>;
+}
+
 function ReceiptModal({ receipt, onClose, onDone }) {
   const [copied, setCopied] = useState11(false);
   const [receiptTab, setReceiptTab] = useState11("payment");
@@ -88,7 +115,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   const receiptShareUrl = rawTxnId ? `${GLOOBAL_API_BASE}/t/${encodeURIComponent(rawTxnId)}` : "";
   const handleShareTxnId = () => {
     if (!rawTxnId) return;
-    const money = `${receipt.currencySymbol || ""}${fmt(Number(receipt.amount || 0), receipt.currencyCode)}${receipt.currencyCode ? ` ${receipt.currencyCode}` : ""}`;
+    const money = fmtMoney(Number(receipt.amount || 0), receipt.currencyCode);
     const who = receipt.name ? `${isSent ? "To" : "From"}: ${receipt.name}${receiptCountryName ? ` (${receiptCountryName})` : ""}` : "";
     const lines = [
       `Gloobal receipt - ${isSent ? "money sent" : "money received"}`,
@@ -192,70 +219,84 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        my account the share settles into or out of. */
   }<div style={{ margin: "10px 0 0", padding: "0 6px" }}>{receiptTab === "payment" ? <div
     style={{
-      fontSize: receiptAmountFontSize(`${isSent ? "\u2212" : "+"}${receipt.currencySymbol}${fmt(receipt.amount)}`, 27),
+      fontSize: receiptAmountFontSize(`${isSent ? "\u2212" : "+"}${fmtMoney(receipt.amount, receipt.currencyCode)}`, 27),
       fontWeight: 800,
       color: tint,
       fontFamily: T.fontDisplay,
       lineHeight: 1.15,
       overflowWrap: "anywhere"
     }}
-  >{isSent ? "\u2212" : "+"}{receipt.currencySymbol}{fmt(receipt.amount)}</div> : <div
+  >{isSent ? "\u2212" : "+"}{fmtMoney(receipt.amount, receipt.currencyCode)}</div> : <div
     style={{
-      fontSize: receiptAmountFontSize(`${isSent ? "+" : "\u2212"}${CURRENCY_SYMBOL[shareCurrency] || ""}${fmt(shareAmount)}`, 27),
+      fontSize: receiptAmountFontSize(`${isSent ? "+" : "\u2212"}${fmtMoney(shareAmount, shareCurrency)}`, 27),
       fontWeight: 800,
       color: tint,
       fontFamily: T.fontDisplay,
       lineHeight: 1.15,
       overflowWrap: "anywhere"
     }}
-  >{isSent ? "+" : "\u2212"}{CURRENCY_SYMBOL[shareCurrency] || ""}{fmt(shareAmount)}</div>}</div></div><div style={{ borderTop: `1.5px dashed ${T.line}`, margin: "18px 0" }} />{
+  >{isSent ? "+" : "\u2212"}{fmtMoney(shareAmount, shareCurrency)}</div>}</div></div><div style={{ borderTop: `1.5px dashed ${T.line}`, margin: "18px 0" }} />{
     /* Two receipts, one toggle — Payment always exists, Creator
        Share always exists too, even at 0%. Neither tab is ever
        hidden based on the value. */
-  }<div style={{ display: "flex", gap: 6, padding: 4, borderRadius: 999, background: T.surfaceAlt, marginBottom: 14 }}>{[
-    { key: "payment", label: "Payment" },
-    { key: "share", label: "Creator Share" }
-  ].map((tab) => <button
-    key={tab.key}
-    onClick={() => setReceiptTab(tab.key)}
-    className="v2-tap"
-    style={{
-      flex: 1,
-      border: "none",
-      borderRadius: 999,
-      padding: "9px 0",
-      fontSize: 12.5,
-      fontWeight: 800,
-      cursor: "pointer",
-      color: receiptTab === tab.key ? "#fff" : T.inkSoft,
-      background: receiptTab === tab.key ? T.gradButton : "transparent",
-      transition: "background 0.18s ease, color 0.18s ease"
-    }}
-  >{tab.label}</button>)}</div>{receiptTab === "payment" ? <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{
-    /* Box 1 — who it's to/from, and their Gloobal ID if there is one.
-       The flag sits as its own circular badge on the box's top
-       edge, centered, instead of inline next to the name. */
-  }<div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 12, padding: "18px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}>{receipt.flag && <span
+  }<div style={{ display: "flex", alignItems: "center", gap: 6, padding: 4, borderRadius: 999, background: T.surfaceAlt, marginBottom: 14 }}><ReceiptTabButton
+    label="Payment"
+    active={receiptTab === "payment"}
+    onSelect={() => setReceiptTab("payment")}
+  />{
+    /* The counterparty's flag, on the seam between the two tabs.
+       It used to hang off the top edge of the box BELOW this row —
+       half in the row's margin, half over the box — which made it
+       an ornament floating in a gap rather than a fact about the
+       transaction, and it was drawn twice, once per tab, because
+       each tab's first box carried its own copy.
+       There is only ever one counterparty on a receipt: the person
+       named on the Payment tab is the person shared with on the
+       Creator Share tab. So the flag belongs to the whole document
+       and is drawn once, above both. The hairlines either side are
+       what stop it reading as a hole punched in the pill track.
+       They are inkFaint at 35%, not T.line: the track behind them
+       is surfaceAlt (#F3F1FA) and T.line is #EAE6F7, so a line in
+       it is invisible against its own background — drawn, painted,
+       and doing nothing. Measured on a screenshot, not guessed. */
+  }{receipt.flag && <span style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}><span style={{ width: 1, height: 14, background: T.inkFaint, opacity: 0.35 }} /><span
     data-testid="receipt-flag"
-    style={{
-      position: "absolute",
-      top: 0,
-      left: "50%",
-      transform: "translate(-50%, -50%)",
-      zIndex: 1,
-      display: "flex"
-    }}
+    style={{ display: "flex" }}
   >{
-    /* The real flag component, not the emoji character.
-       This was `{receipt.flag}` printed as text at fontSize 15 inside a
-       40px circle: too small to read even where it renders, and on any
-       platform without flag glyphs (Windows above all) it is not a flag at
-       all — it is the two regional-indicator letters, "GB", sitting where a
-       flag should be. FlagCircle loads the same flag asset every other flag
-       in the app uses and fills the disc with it — cropped to the circle
-       like an avatar, never stretched. See FlagCircle for what that crop
-       costs and why this surface can afford it. */
-  }<FlagCircle flag={receipt.flag} size={40} /></span>}<ReceiptRow
+    /* The same flag chip the country picker on registration uses —
+       FlagEmoji, a rounded rectangle, not a disc.
+       Two reasons it is this and not FlagCircle. One: a flag is a
+       rectangle, so a rectangle shows all of it, while a circular
+       crop slices the left and right thirds off a 3:2 flag and for
+       a lot of countries that is exactly the part that identifies
+       them. Two: this is the shape a person has already been taught
+       a flag looks like in this app, on the very first screen they
+       ever saw. Two shapes for one thing is a thing to learn twice.
+       The proportions are registration's 46x40 chip scaled to fit
+       the pill track, and the drop shadow is copied from it too, so
+       these are the same object at two sizes rather than two
+       objects that happen to both be flags.
+       Never the emoji character: on any platform without flag
+       glyphs (Windows above all) it is not a flag at all — it is
+       the two regional-indicator letters, "GB", sitting where a
+       flag should be. FlagEmoji loads the real asset and falls back
+       to the character only when that fails. */
+  }<FlagEmoji
+    flag={receipt.flag}
+    width={30}
+    height={26}
+    radius={7}
+    dropShadow="drop-shadow(0 2px 6px rgba(76,29,149,0.20))"
+  /></span><span style={{ width: 1, height: 14, background: T.inkFaint, opacity: 0.35 }} /></span>}<ReceiptTabButton
+    label="Creator Share"
+    active={receiptTab === "share"}
+    onSelect={() => setReceiptTab("share")}
+  /></div>{receiptTab === "payment" ? <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{
+    /* Box 1 — who it's to/from, and their Gloobal ID if there is one.
+       The flag no longer hangs off this box's top edge: it is on the
+       tab row above, once for the whole receipt. The top padding is
+       back to 14 because there is nothing overlapping it any more. */
+  }<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow
     testId="receipt-counterparty"
     label={isSent ? "To" : "From"}
     value={receipt.name}
@@ -289,27 +330,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        default to 0 rather than the whole receipt disappearing —
        a 0% share is still a real, reportable outcome of this
        transaction, not a reason to hide it. */
-  }<div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 12, padding: "18px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}>{receipt.flag && <span
-    data-testid="receipt-flag"
-    style={{
-      position: "absolute",
-      top: 0,
-      left: "50%",
-      transform: "translate(-50%, -50%)",
-      zIndex: 1,
-      display: "flex"
-    }}
-  >{
-    /* The real flag component, not the emoji character.
-       This was `{receipt.flag}` printed as text at fontSize 15 inside a
-       40px circle: too small to read even where it renders, and on any
-       platform without flag glyphs (Windows above all) it is not a flag at
-       all — it is the two regional-indicator letters, "GB", sitting where a
-       flag should be. FlagCircle loads the same flag asset every other flag
-       in the app uses and fills the disc with it — cropped to the circle
-       like an avatar, never stretched. See FlagCircle for what that crop
-       costs and why this surface can afford it. */
-  }<FlagCircle flag={receipt.flag} size={40} /></span>}<ReceiptRow label={isSent ? "Shared back to" : "You shared back to"} value={isSent ? "You" : receipt.name} />{
+  }<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label={isSent ? "Shared back to" : "You shared back to"} value={isSent ? "You" : receipt.name} />{
     /* Who the other side of the share is, by name and by ID.
        The Payment tab has carried the counterparty's Gloobal ID since it
        was built; this tab named a person and stopped there, so the Creator
@@ -337,9 +358,9 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        currency. */
   }<ReceiptRow
     label="Amount"
-    value={`${isSent ? "+" : "\u2212"}${CURRENCY_SYMBOL[shareCurrency] || ""}${fmt(shareAmount)}`}
+    value={`${isSent ? "+" : "\u2212"}${fmtMoney(shareAmount, shareCurrency)}`}
     accent
-  /></div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label="From payment" value={`${receipt.currencySymbol}${fmt(receipt.amount)}`} /><ReceiptRow label="Date" value={receipt.date} /><ReceiptRow label="Time" value={receipt.time} mono /></div></div>}{
+  /></div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label="From payment" value={fmtMoney(receipt.amount, receipt.currencyCode)} /><ReceiptRow label="Date" value={receipt.date} /><ReceiptRow label="Time" value={receipt.time} mono /></div></div>}{
     /* Transaction ID — its own box, separate from the boxes above.
        Shown as individually colored symbols (same palette used for
        Secure ID chips elsewhere), centered in the box. Label sits

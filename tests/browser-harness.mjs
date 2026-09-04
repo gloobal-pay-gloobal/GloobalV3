@@ -52,7 +52,42 @@ export async function buildOnce() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gloobal-browser-"));
   execFileSync(process.execPath, [path.join(ROOT, "build_app.mjs")], { cwd: ROOT });
 
-  const entry = path.join(PREVIEW, "src", "__browser_entry.jsx");
+  // The entry file's name carries this process's pid.
+  //
+  // `node --test` runs one PROCESS PER TEST FILE and runs several of them
+  // at once. Every one of those processes called buildOnce, and every one
+  // wrote, built from, and then deleted the SAME path — so on a machine
+  // with enough cores to overlap two of them, process A's `finally` block
+  // deleted the file process B was about to build from, and B failed with
+  // `Could not resolve ".../__browser_entry.jsx"`.
+  //
+  // It reads as a build error in the suite that happened to lose the race,
+  // which is why it looked like a different bug every time it appeared and
+  // like no bug at all on a machine that never overlapped them. A unique
+  // name per process removes the shared resource rather than trying to
+  // sequence access to it.
+  const entry = path.join(PREVIEW, "src", `__browser_entry.${process.pid}.jsx`);
+
+  // A process killed between writing the entry and its `finally` leaves one
+  // of these behind, in a source directory, where it would eventually get
+  // committed. Sweeping them here rather than at exit means the cleanup
+  // also runs after the crash that caused the litter.
+  //
+  // AGE-GATED, and that gate is the whole point: the sibling processes
+  // running the other test files have entry files of their own sitting in
+  // this directory right now, and an unconditional sweep would delete the
+  // file another process is mid-build on — which is precisely the race
+  // this pid-naming was introduced to remove. Ten minutes is far longer
+  // than the window between writing an entry and building from it, and far
+  // shorter than the gap to the next test run.
+  const STALE_MS = 10 * 60 * 1000;
+  for (const name of fs.readdirSync(path.join(PREVIEW, "src"))) {
+    if (!/^__browser_entry\..*\.jsx$/.test(name)) continue;
+    const stale = path.join(PREVIEW, "src", name);
+    try {
+      if (Date.now() - fs.statSync(stale).mtimeMs > STALE_MS) fs.rmSync(stale, { force: true });
+    } catch { /* another process cleaned it up first; nothing to do */ }
+  }
   fs.writeFileSync(
     entry,
     `import React from "react";

@@ -63,12 +63,11 @@ function CoinHoldersScreen({ onBack, holders, loading, onRefresh, onOpenCountry 
 
   const rows = holders ? holders.countries || [] : [];
   const reserveCcy = holders ? holders.reserveCurrency : "INR";
-  const reserveSymbol = CURRENCY_SYMBOL[reserveCcy] || "";
 
   // The reserve figure a country row is denominated in, formatted the way
   // every other amount in the app is. Kept as one helper so the withheld row
   // and the country rows cannot format the same currency two different ways.
-  const inReserve = (n) => `${reserveSymbol}${fmt(Number(n) || 0, reserveCcy)}`;
+  const inReserve = (n) => fmtMoney(Number(n) || 0, reserveCcy);
 
   return <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><ProductScreenHeader
     title="Holders"
@@ -134,7 +133,6 @@ function CoinHoldersScreen({ onBack, holders, loading, onRefresh, onOpenCountry 
   >By country</span><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden", padding: "4px 16px 6px", marginTop: 8 }}>{rows.map((row, i) => {
     const country = row.countryIso ? COUNTRY_BY_ISO[row.countryIso] : null;
     const localCcy = row.localCurrency;
-    const localSymbol = localCcy ? CURRENCY_SYMBOL[localCcy] || "" : "";
     const withheldRow = row.held === null;
 
     // A country with holders opens; one without a recorded ISO cannot be
@@ -165,7 +163,7 @@ function CoinHoldersScreen({ onBack, holders, loading, onRefresh, onOpenCountry 
         font: "inherit",
         color: "inherit"
       }}
-    >{country ? <FlagCircle flag={country.flag} size={34} /> : <span
+    >{country ? <FlagEmoji flag={country.flag} size={34} shape="circle" /> : <span
       style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center" }}
     ><HoldersGlobe size={15} color={T.inkFaint} /></span>}<span style={{ flex: 1, minWidth: 0 }}><span
       style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
@@ -179,7 +177,7 @@ function CoinHoldersScreen({ onBack, holders, loading, onRefresh, onOpenCountry 
       style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}
     >{row.localHeld === null
       ? "∆"
-      : `${localSymbol}${fmt(row.localHeld, localCcy)}`}</span><span
+      : fmtMoney(row.localHeld, localCcy)}</span><span
       style={{ fontSize: 10.5, color: T.inkFaint }}
     >{inReserve(row.held)}</span></>}</span>{openable && <CountryChevronRight
       size={16}

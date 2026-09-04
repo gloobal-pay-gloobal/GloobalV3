@@ -90,7 +90,11 @@ describe("the mark turns slowly enough to read as a turn", () => {
     // box look barely rounded — the curve has to scale with the box.
     assert.match(flip, /var LIVING_LOGO_RADIUS = "24%";/);
     assert.match(flip, /borderRadius=\{shape === "circle" \? "50%" : LIVING_LOGO_RADIUS\}/);
-    assert.match(splash, /var BOX_RADIUS = LIVING_LOGO_RADIUS;/);
+    // Read at the point of use rather than through a BOX_RADIUS alias: the
+    // splash no longer renders a large standalone mark, so the alias went
+    // with it. What matters is unchanged — the corner comes from the shared
+    // token and not from a number typed on this screen.
+    assert.match(splash, /borderRadius=\{LIVING_LOGO_RADIUS\}/);
     const code = splash.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     assert.ok(!/borderRadius: "50%"/.test(code), "nothing on the splash is a disc any more");
   });
@@ -117,7 +121,13 @@ describe("the splash is built from the theme, not from picked colours", () => {
     // now fades INTO the app rather than cutting to it.
     assert.match(splash, /background: T\.bg,/);
     const code = splash.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    assert.ok(!/gradWallet/.test(code), "the deep gradient ground is gone");
+    // The GROUND, specifically — not the file. The splash now deals the
+    // Gloobal Bank card, and that card is T.gradWallet because the Bank
+    // screen's own card is: banning the token outright would have forced the
+    // splash to draw a lookalike gradient of its own, which is the drift
+    // this suite exists to catch rather than an example of avoiding it.
+    const root = code.slice(code.indexOf("position: \"fixed\""), code.indexOf("<style>"));
+    assert.ok(!/gradWallet/.test(root), "the deep gradient ground is gone");
     assert.ok(!/closest-side/.test(code), "so is the horizon it needed");
   });
 
@@ -303,16 +313,107 @@ describe("the splash says what Gloobal is and what it charges", () => {
 
   test("the copy holds its space while hidden, so nothing jumps", () => {
     // Faded in with opacity rather than mounted late. Mounting it would
-    // re-centre the column and make the logo box hop upward the moment the
-    // text arrives.
-    assert.match(splash, /opacity: phase === "logo" \? 0 : 1/);
-    const at = splash.indexOf('opacity: phase === "logo" ? 0 : 1');
+    // re-centre the column and make the stack hop the moment the text
+    // arrives.
+    assert.match(splash, /opacity: running \? 1 : 0/);
+    const at = splash.indexOf("opacity: running ? 1 : 0");
     const block = splash.slice(at, at + 400);
     assert.ok(!/display: "none"/.test(block), "hiding it must not remove it from layout");
   });
 
-  test("the copy arrives after the logo has had its beat", () => {
-    // The screen is not asking to be read and watched at the same instant.
-    assert.match(splash, /transform: phase === "logo" \? "translateY\(6px\)" : "translateY\(0\)"/);
+  test("the copy arrives a beat after the cards, not two seconds after", () => {
+    // It used to key off `phase`, which does not leave "logo" until
+    // HOLD_LOGO_MS — so for the first half of the splash the lower third of
+    // the screen was empty and the stack sat alone at the top. The beat is
+    // still there; it is now a delay on the transition rather than a wait
+    // for the flip.
+    assert.match(splash, /transform: running \? "translateY\(0\)" : "translateY\(8px\)"/);
+    const at = splash.indexOf("opacity: running ? 1 : 0");
+    const block = splash.slice(at, at + 400);
+    const delay = block.match(/transition: "opacity \d+ms ease (\d+)ms/);
+    assert.ok(delay, "the copy must still arrive after the cards");
+    const ms = Number(delay[1]);
+    assert.ok(ms > 0 && ms < 1000, `copy delayed ${ms}ms — a beat, not a wait`);
+  });
+});
+
+describe("the splash is made of the product, not of graphics about it", () => {
+  // Asked for as the card-stack option: the two account surfaces a person
+  // meets on the dashboard, plus the hallmark both product screens carry,
+  // dealt as a stack.
+  const code = splash
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  test("no card invents a balance", () => {
+    // The mock this was built from carried "1,24,500.00" in the exact type,
+    // colour and position the real account card uses. On the launch screen
+    // of a payments app, held for two seconds before anything else appears,
+    // an invented figure in that position is not decoration — it is a number
+    // a person can read as their own money, and some will.
+    //
+    // The one numeral allowed on these cards is the peg, which is a fact
+    // about the currency rather than a claim about anyone's account.
+    const cards = code.slice(code.indexOf("Gloobal Bank</span>"), code.indexOf("GloobalTaglineCard"));
+    // TEXT NODES ONLY. A first version of this scanned the whole slice and
+    // flagged `lineHeight: 1.15` and an rgba alpha — style values, not
+    // amounts. What a person can read is what is between the tags.
+    const text = (cards.match(/>[^<>{}]+</g) || []).join(" ");
+    const figures = text.match(/\d[\d,]*\.\d{2}/g) || [];
+    assert.deepEqual(figures, [], `the stack prints ${figures.join(", ")} — no card may show an amount`);
+  });
+
+  test("the peg is read from the constant, not typed", () => {
+    // So the splash cannot go on claiming a peg the server has stopped
+    // honouring, and cannot spell the ticker differently from every other
+    // screen.
+    assert.match(splash, /1 \{COIN_TICKER\} = \{fmtMoney\(1, COIN_PEG_CURRENCY\)\}/);
+  });
+
+  test("the mark survived, as the card's chip", () => {
+    // The stack has no room for a hero, and dropping the mark would have
+    // thrown away the one thing this screen has always been for. It is the
+    // same component the Bank and Coin heroes use, running the same single
+    // choreographed flip.
+    assert.match(splash, /<LivingLogoBoxVisual/);
+    assert.match(splash, /flipped=\{flipped\}/);
+    assert.match(splash, /flipMs=\{FLIP_MS\}/);
+  });
+
+  test("the hallmark is the component, not a rebuild of it", () => {
+    assert.match(splash, /<GloobalTaglineCard accentColor=\{T\.accent\} \/>/);
+  });
+
+  test("no two cards sit at the same angle", () => {
+    // Three cards at one angle read as a printing error, and one at 0 reads
+    // as the real card with two crooked ones behind it.
+    const rots = (code.match(/"--rot": "(-?[\d.]+)deg"/g) || [])
+      .map((m) => Number(m.match(/(-?[\d.]+)/)[1]));
+    assert.equal(rots.length, 3, "expected three cards in the stack");
+    assert.equal(new Set(rots).size, 3, `angles repeat: ${rots.join(", ")}`);
+    assert.ok(rots.every((r) => r !== 0), "no card sits square");
+  });
+
+  test("the progress bar finishes exactly when the screen leaves", () => {
+    // It is not a fake data-loading indicator — nothing here is loading. It
+    // is a countdown to the app appearing, so it has to be driven by the
+    // same constants the phases are rather than by a duration picked to look
+    // busy.
+    assert.match(splash, /const runMs = prefersReducedMotion\.current/);
+    assert.match(splash, /: HOLD_LOGO_MS \+ FLIP_MS \+ HOLD_SYMBOL_MS;/);
+    assert.match(splash, /transition: `width \$\{runMs\}ms linear`/);
+  });
+
+  test("and it starts on the first paint, not when the flip does", () => {
+    // Driving the width from `phase` started the countdown at HOLD_LOGO_MS
+    // and would have finished it after the screen had already gone.
+    assert.match(splash, /const \[running, setRunning\] = useState20\(false\);/);
+    assert.match(splash, /requestAnimationFrame\(\(\) => setRunning\(true\)\)/);
+    assert.match(splash, /width: running \? "100%" : "0%"/);
+  });
+
+  test("reduced motion gets the stack without the dealing", () => {
+    assert.match(splash, /\.splash-card \{ animation: none !important/);
+    assert.match(splash, /\.splash-progress \{ transition: none !important/);
   });
 });

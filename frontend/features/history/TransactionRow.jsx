@@ -55,11 +55,14 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
   // never disagree — a currency with no minor unit is not printed to two
   // decimals just because the viewer's currency has one.
   const rowCode = t.currency || ccyCode;
-  // Falls back to the code itself rather than to the viewer's symbol: an
-  // unfamiliar "CNY 5,000.00" is readable and true, where "$5,000.00" is
-  // neither.
-  const rowSymbol = t.currency ? CURRENCY_SYMBOL[t.currency] || `${t.currency} ` : ccy;
-  const amount = `${sign}${rowSymbol}${fmt(Number(t.amount || 0), rowCode)}`;
+  // Amount first, currency after: "+20$", not "+$20". fmtMoney owns both
+  // halves, so a row cannot print them in a different order from the receipt
+  // that same row opens.
+  //
+  // It falls back to the CODE itself for a currency with no symbol in the
+  // table, rather than to the viewer's symbol: an unfamiliar "5,000.00 CNY"
+  // is readable and true, where "5,000.00$" is neither.
+  const amount = `${sign}${fmtMoney(Number(t.amount || 0), rowCode)}`;
   return <div
     onClick={onSelect}
     className="v2-tap"

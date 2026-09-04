@@ -246,7 +246,9 @@ describe("the screen renders absence as absence", () => {
     // The whole request was "in there own currencies". The reserve figure
     // underneath is what makes the rows addable — one without the other is
     // either unreadable or unverifiable.
-    assert.match(screen, /\$\{localSymbol\}\$\{fmt\(row\.localHeld, localCcy\)\}/);
+    // fmtMoney carries the unit itself, after the number — see
+    // money-format.test.mjs.
+    assert.match(screen, /fmtMoney\(row\.localHeld, localCcy\)/);
     assert.match(screen, /inReserve\(row\.held\)/);
   });
 

@@ -100,6 +100,23 @@ var REFERRAL_PAGE_SIZE = 10;
 // above them: the shared amount is the green half, the remainder the
 // purple one. Keyed by the row key from myShareSplitRows rather than by
 // position, so reordering the rows there cannot silently recolour them.
+// The bills row's colours, keyed by BILL_ACTIONS' own key.
+//
+// Every tile used to be the same lilac chip around the same violet icon,
+// which meant the icon told you nothing and you read four words to find
+// the one you wanted. A colour per category makes the glyph do that work.
+//
+// Keyed rather than positional — the same shape as APP_MAP_ICONS and
+// MY_SHARE_ROW_COLORS — so reordering BILL_ACTIONS cannot silently swap
+// electricity's amber onto rent. `more` is deliberately grey: it is a
+// door, not a category, and colouring it would make it look like one.
+var BILL_ACTION_COLORS = {
+  recharge: POSITION_COLORS[2],
+  electricity: POSITION_COLORS[4],
+  rent: POSITION_COLORS[3],
+  more: T.inkFaint
+};
+
 var MY_SHARE_ROW_COLORS = {
   payment: (T2) => T2.ink,
   share: (T2) => T2.positive,
@@ -1629,7 +1646,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        screen still reads clean; "More" is the door to everything
        else the business/network offers, without listing it all
        here. */
-  }{shareRole === "user" ? <div style={{ display: "flex", gap: 10 }}>{BILL_ACTIONS.map(({ key, label, Icon }) => <button
+  }{shareRole === "user" ? <div><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint, marginBottom: 9 }}>Bills &amp; recharges</div><div style={{ display: "flex", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "13px 4px" }}>{BILL_ACTIONS.map(({ key, label, Icon }, i) => <button
     key={key}
     onClick={() => key === "recharge" ? setShowRecharge(true) : key === "electricity" ? setShowElectricity(true) : key === "rent" ? setShowRentChoice(true) : key === "more" ? setShowMore(true) : showToast2(`${label} \u2014 coming soon`)}
     aria-label={label}
@@ -1639,25 +1656,24 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      gap: 6,
-      padding: "12px 4px",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      borderRadius: 16,
-      cursor: "pointer",
-      boxShadow: T.shadowCard
+      gap: 8,
+      padding: "4px 0",
+      border: "none",
+      borderLeft: i === 0 ? "none" : `1px solid ${T.line}`,
+      background: "none",
+      cursor: "pointer"
     }}
   ><span
     style={{
-      width: 32,
-      height: 32,
-      borderRadius: 10,
-      background: T.accentSoft,
+      width: 34,
+      height: 34,
+      borderRadius: 11,
+      background: `${BILL_ACTION_COLORS[key] || T.accent}1A`,
       display: "flex",
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><Icon size={15} color={T.accent} /></span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkSoft }}>{label}</span></button>)}</div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{fmtMoney(todaysCollection, ccyCode)}</span><div style={{ display: "flex", gap: 10, marginTop: 2 }}><button
+  ><Icon size={16} color={BILL_ACTION_COLORS[key] || T.accent} /></span><span style={{ fontSize: 11.5, fontWeight: 700, color: key === "more" ? T.inkSoft : T.ink, whiteSpace: "nowrap" }}>{label}</span></button>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{fmtMoney(todaysCollection, ccyCode)}</span><div style={{ display: "flex", gap: 10, marginTop: 2 }}><button
     onClick={() => {
       if (todaysCollection <= 0) return;
       setSettlePendingAmount(todaysCollection);
@@ -1732,8 +1748,24 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        Assets are live. Linked Banks was removed from here —
        it's redundant with the dedicated Add Bank screen, which
        already covers it. */
-  }<div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, justifyItems: "center" }}>{[
-    { key: "gbank", label: "Gloobal Bank", displayLabel: <GloobalWordmark suffix=" Bank" />, onClick: openGloobalBankInfo },
+  }<div>{
+    /* Gloobal Bank is not a peer of the other five and this stops
+       pretending it is. It is the account the rest unlock from, so it
+       gets the whole width and a sentence; the others get tiles.
+       Six identical squares said the six things were the same kind of
+       thing, and the one that is different was the one carrying the
+       app's own logo. */
+  }{(() => {
+    const bankLocked = capabilities.gbank?.locked ?? false;
+    return <button
+      onClick={openGloobalBankInfo}
+      aria-label={bankLocked ? "Gloobal Bank \u2014 locked" : "Gloobal Bank"}
+      className="v2-tap"
+      style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", borderRadius: T.radiusLg, background: T.gradButton, boxShadow: "0 14px 30px rgba(76,29,149,0.28)", padding: "18px 18px 17px", color: "#fff" }}
+    ><span style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 44, height: 44, borderRadius: 14, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><img src={G_LOGO_DATA_URI} alt="" style={{ width: 26, height: 26, objectFit: "contain", filter: "brightness(0) invert(1)" }} /></span><span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, letterSpacing: -0.2, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" Bank" /></span><ChevronRight4 size={17} color="rgba(255,255,255,0.8)" /></span><span style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)", lineHeight: 1.45 }}>
+      Your balance, your transfers, and the account everything else here unlocks from.
+    </span></button>;
+  })()}<div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12 }}>{[
     { key: "gcoin", label: "Gloobal Coin", displayLabel: <GloobalWordmark suffix=" Coin" />, onClick: openGloobalCoinInfo },
     { key: "gpaylater", label: "PayLater", onClick: () => setShowPayLater(true) },
     { key: "myassets", label: "My Assets", onClick: () => setShowAssets(true) },
@@ -1748,31 +1780,25 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     { key: "aboutus", label: "About Us", onClick: () => setShowAboutUs(true) }
   ].map(({ key, label, displayLabel, onClick }) => {
     const locked = capabilities[key]?.locked ?? false;
-    return <div key={key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, width: "100%" }}>{(() => {
-    const heroColor = { gbank: bankHeroColor, gcoin: coinHeroColor, gpaylater: paylaterHeroColor, myassets: assetsHeroColor, myessentials: essentialsHeroColor, aboutus: aboutHeroColor }[key];
-    const TileIcon = ({ size }) => key === "gbank" ? <img src={G_LOGO_DATA_URI} alt="" style={{ width: size * 1.55, height: size * 1.55, objectFit: "contain", filter: "brightness(0) invert(1)" }} /> : key === "gcoin" ? <Coins2 size={size} color={heroColor} /> : key === "gpaylater" ? <CreditCard3 size={size} color={heroColor} /> : key === "myessentials" ? <EssHome size={size} color={heroColor} /> : key === "aboutus" ? <Info size={size} color={heroColor} /> : <TrendingUp2 size={size} color={heroColor} />;
+    const heroColor = { gcoin: coinHeroColor, gpaylater: paylaterHeroColor, myassets: assetsHeroColor, myessentials: essentialsHeroColor, aboutus: aboutHeroColor }[key];
+    const TileIcon = ({ size }) => key === "gcoin" ? <Coins2 size={size} color={heroColor} /> : key === "gpaylater" ? <CreditCard3 size={size} color={heroColor} /> : key === "myessentials" ? <EssHome size={size} color={heroColor} /> : key === "aboutus" ? <Info size={size} color={heroColor} /> : <TrendingUp2 size={size} color={heroColor} />;
     return <button
+      key={key}
       onClick={onClick}
       aria-label={locked ? `${label} \u2014 locked` : label}
       className="v2-tap"
-      style={{
-        position: "relative",
-        width: "100%",
-        maxWidth: 130,
-        aspectRatio: "1",
-        borderRadius: T.radiusLg,
-        border: "none",
-        background: "none",
-        padding: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
-        overflow: "hidden"
-      }}
-    ><span style={{ position: "absolute", top: 6, right: 6, zIndex: 1 }}><ServiceLock locked={locked} size={13} /></span><SyncedFlipIcon Icon={TileIcon} size={48} flipInfo={buttonFlips[key]} frontBackground={key === "gbank" ? heroColor : `${heroColor}22`} /></button>;
-  })()}<span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textAlign: "center" }}>{displayLabel || label}</span></div>;
-  })}</div>{
+      style={{ width: "calc(50% - 6px)", boxSizing: "border-box", textAlign: "left", border: "none", cursor: "pointer", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "15px 14px 14px", opacity: locked ? 0.72 : 1 }}
+    >{
+    /* The label lives INSIDE the tile now. It used to sit outside and
+       below, which left a coloured square with nothing in it and put
+       the name closer to the tile on the next row than to its own. */
+  }<span style={{ display: "block", width: 44, height: 44, marginBottom: 11 }}><SyncedFlipIcon Icon={TileIcon} size={44} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}22`} /></span><span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{displayLabel || label}</span>{
+    /* "Locked" in words, in a pill, rather than a padlock whose colour
+       was the only thing distinguishing it from the unlocked one. The
+       height is reserved on every tile so a locked one does not stand
+       taller than its neighbours and break the row. */
+  }<span style={{ display: "flex", alignItems: "center", marginTop: 7, minHeight: 17 }}>{locked && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(226,63,69,0.08)", borderRadius: 999, padding: "3px 8px 3px 6px", fontSize: 9.5, fontWeight: 800, color: T.negative, whiteSpace: "nowrap" }}><ServiceLock locked size={11} />Locked</span>}</span></button>;
+  })}</div></div>{
     /* One bigger box now instead of the small divider line — the
        cost figure front and center, the HOOMAN-2-HOOMAN mark
        underneath in the same box. Taglines moved outside,
@@ -2776,8 +2802,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        support email already used on the profile About screen. */
   }{showAboutUs && <ScreenErrorBoundary name="About Us" onClose={requestCloseAboutUs}><AboutUsScreen
     onBack={requestCloseAboutUs}
-    heroColor={aboutHeroColor}
     onShowToast={showToast2}
+    gloobalId={personalGloobalId}
   /></ScreenErrorBoundary>}{showAssets && <AssetsScreen
     onClose={requestCloseAssets}
     ccy={ccy} ccyCode={ccyCode}

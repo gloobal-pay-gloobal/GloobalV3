@@ -118,13 +118,86 @@ describe("both figures on the card are formatted the same way", () => {
   test("the chart formats against a currency code, not toFixed", () => {
     // The visible symptom: one line read +₹4747232.79 and the other
     // +₹5,727,195.10 — same currency, two formats, inches apart.
-    assert.match(chart, /fmt\(Number\(displayed\.paid\) \|\| 0, currencyCode\)/);
-    assert.match(chart, /fmt\(Number\(displayed\.received\) \|\| 0, currencyCode\)/);
+    //
+    // fmtMoney, not fmt: the figures are now built by the one function
+    // that also decides which side the currency goes on. They used to be
+    // `−{symbol}{fmt(...)}`, which took the glyph from one prop and the
+    // decimals from another — right symbol, USD's minor units, wrong for
+    // any zero-decimal currency. fmtMoney takes the code alone.
+    assert.match(chart, /fmtMoney\(Number\(displayed\.paid\) \|\| 0, currencyCode\)/);
+    assert.match(chart, /fmtMoney\(Number\(displayed\.received\) \|\| 0, currencyCode\)/);
+    assert.ok(
+      !/\{symbol\}\{fmt\(/.test(chart),
+      "the chart still puts a currency symbol in front of the number"
+    );
     const code = chart.replace(/^\s*\/\/.*$/gm, "");
     assert.ok(!/displayed\.(paid|received)\.toFixed\(2\)/.test(code), "chart figures must not use toFixed");
   });
 
   test("History passes its currency code down", () => {
     assert.match(screen, /currencyCode=\{ccyCode\}/);
+  });
+});
+
+describe("the chart says a thing once, and says nothing where nothing happened", () => {
+  const chart = readSource("frontend/components/cards/misc.jsx");
+  const code = chart.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  test("a day with nothing draws nothing", () => {
+    // This was Math.max(3, value / max * 34), so a day on which nothing
+    // happened was 3px tall — the same 3px as a day with 5,000 against a
+    // 7.7M week. Four of seven days on a quiet week were that floor, and
+    // the chart said money moved on days it did not.
+    for (const direction of ["paid", "received"]) {
+      assert.match(
+        code,
+        new RegExp(`height: d\\.${direction} > 0 \\? Math\\.max\\(3, d\\.${direction} / max \\* 34\\) : \\(isSelected \\? 2 : 0\\)`),
+        `${direction} still gives an empty day a bar`
+      );
+    }
+  });
+
+  test("but a selected empty day still shows what was tapped", () => {
+    // Drawn as a 2px stub, which is visibly not a bar — otherwise tapping
+    // an empty column gives no feedback at all.
+    assert.match(code, /isSelected \? 2 : 0/);
+  });
+
+  test("the days stand on a baseline", () => {
+    // Without it, a day drawing nothing leaves a gap, and a gap reads as
+    // data that failed to load rather than as a day when nothing happened.
+    assert.match(code, /borderBottom: `1px solid \$\{palette === "light" \? T\.line : "rgba\(255,255,255,0\.22\)"\}`/);
+  });
+
+  test("the single-series chart carries ONE figure, not two unlabelled ones", () => {
+    // The header used to hold two figures side by side in the same colour
+    // with nothing saying which was which — the left silently switched
+    // between "the day you tapped" and "the visible week". On a week with
+    // one big day that read "+0.00₹" beside "+7,689,238.68₹".
+    assert.match(code, /const single = !!trailing;/);
+    assert.match(code, /const paidFigure = !single &&/);
+    assert.match(code, /const receivedFigure = !single &&/);
+  });
+
+  test("the tapped day is printed over its own bar instead of being named", () => {
+    // Labelling the two figures was the obvious fix and the wrong one:
+    // "THIS WEEK" over the total repeats the period chip six pixels
+    // above it, and a day name repeats the letter the axis already
+    // highlights. Position needs neither.
+    assert.match(code, /const calloutDay = single && selectedDay !== null \? days\[selectedDay\] : null;/);
+    assert.match(code, /\{isSelected && calloutDay && <span/);
+    assert.ok(
+      !/THIS WEEK|Saturday|Sunday/i.test(code),
+      "the chart names a day or repeats the period label"
+    );
+  });
+
+  test("the two-series chart is left alone", () => {
+    // The wallet card shows paid AND received, where a callout would have
+    // to carry two numbers over one column, and its two figures are told
+    // apart by sign and colour rather than by position. Only the zero
+    // floor and the baseline change there.
+    assert.match(code, /single && selectedDay !== null/);
+    assert.match(code, /height: single \? 64 : 46/);
   });
 });

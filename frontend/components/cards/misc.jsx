@@ -196,8 +196,32 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
   // reads as a stray tick rather than a column.
   const barWidth = showPaid && showReceived ? 7 : 10;
   const displayed = selectedDay !== null ? days[selectedDay] : weekTotal;
-  const paidFigure = (!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{fmtMoney(Number(displayed.paid) || 0, currencyCode)}</span>;
-  const receivedFigure = (!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{fmtMoney(Number(displayed.received) || 0, currencyCode)}</span>;
+  // With a trailing total, the header carries ONE figure and the selected
+  // day is printed above its own bar instead (see `callout` below).
+  //
+  // It used to carry two, side by side, in the same colour, with nothing
+  // saying which was which: the left one silently switched between "the
+  // day you tapped" and "the visible week", the right one was the period
+  // total. On a week with one big day that read as "+0.00₹" beside
+  // "+7,689,238.68₹" and looked like a bug.
+  //
+  // Labelling them was the obvious fix and the wrong one — "THIS WEEK"
+  // over the total repeats the period chip six pixels above it, and a day
+  // name repeats the letter the axis is already highlighting. A figure
+  // sitting on its own bar needs neither.
+  const single = !!trailing;
+  const paidFigure = !single && (!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{fmtMoney(Number(displayed.paid) || 0, currencyCode)}</span>;
+  const receivedFigure = !single && (!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{fmtMoney(Number(displayed.received) || 0, currencyCode)}</span>;
+  // The day the callout speaks for, and the colour it speaks in. Only on
+  // the single-series chart: with two series a callout would have to
+  // carry two numbers over one column.
+  const calloutDay = single && selectedDay !== null ? days[selectedDay] : null;
+  const calloutValue = calloutDay
+    ? (focusDirection === "paid" ? Number(calloutDay.paid) || 0 : Number(calloutDay.received) || 0)
+    : 0;
+  const calloutText = calloutDay
+    ? `${focusDirection === "paid" ? "\u2212" : "+"}${fmtMoney(calloutValue, currencyCode)}`
+    : "";
   return <div style={{ position: "relative" }}><div style={{ display: "flex", justifyContent: trailing || !focusDirection ? "space-between" : "flex-start", alignItems: "baseline", gap: 10 }}>{
     /* With a trailing figure the left-hand ones are grouped, so
        space-between splits LEFT GROUP vs trailing rather than pushing the
@@ -214,8 +238,14 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
       display: "flex",
       alignItems: "flex-end",
       gap: 7,
-      height: 46,
+      // Taller when a callout can appear above a column, so the figure has
+      // somewhere to go without the bars losing height.
+      height: single ? 64 : 46,
       marginTop: 12,
+      // A rule the days stand ON. Without it a day drawing nothing leaves
+      // a gap, and a gap reads as data that failed to load rather than as
+      // a day when nothing happened.
+      borderBottom: `1px solid ${palette === "light" ? T.line : "rgba(255,255,255,0.22)"}`,
       touchAction: "pan-y",
       cursor: dragging ? "grabbing" : "grab",
       transform: `translateX(${dragX * 0.4}px)`,
@@ -225,12 +255,28 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
     const isToday = weekOffset === 0 && i === days.length - 1;
     const isSelected = selectedDay === i;
     const highlighted = selectedDay !== null ? isSelected : isToday;
-    return <div key={i} data-day-index={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}><div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 34 }}>{showPaid && <div
+    return <div key={i} data-day-index={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", gap: 5 }}>{
+      /* The selected day's figure, over the column it belongs to.
+         This is the whole of E2: position says which day it is, so the
+         card needs no day name and no second label.
+
+         The bar box drops its fixed 34px height on this chart so the
+         callout hugs the bar instead of floating a fixed distance above
+         the baseline — on an empty day that gap was the full 34px and the
+         figure looked unattached to anything. The columns still share a
+         baseline because the column itself is bottom-aligned. */
+    }{isSelected && calloutDay && <span style={{ fontSize: 10, fontWeight: 800, color: palette === "light" ? T.accent : "#fff", whiteSpace: "nowrap", marginBottom: 1 }}>{calloutText}</span>}<div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: single ? void 0 : 34 }}>{showPaid && <div
       role="img"
       aria-label={`${SPENDING_DAY_LABELS[i]} paid: ${fmtMoney(Number(d.paid) || 0, currencyCode)}`}
       style={{
         width: barWidth,
-        height: Math.max(3, d.paid / max * 34),
+        // Zero draws NOTHING. This was Math.max(3, …), so a day on
+        // which nothing happened was 3px tall — the same 3px as a day
+        // with 5,000 against a 7.7M week. Four of seven days on a quiet
+        // week were that floor, and the chart said money moved on days
+        // it did not. The 2px stub below is for the SELECTED empty day
+        // only, so tapping it still shows what you tapped.
+        height: d.paid > 0 ? Math.max(3, d.paid / max * 34) : (isSelected ? 2 : 0),
         borderRadius: 3,
         background: highlighted ? C.paid : C.paidMuted,
         boxShadow: isSelected ? `0 0 0 1.5px ${C.selectRing}` : "none",
@@ -241,7 +287,13 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
       aria-label={`${SPENDING_DAY_LABELS[i]} received: ${fmtMoney(Number(d.received) || 0, currencyCode)}`}
       style={{
         width: barWidth,
-        height: Math.max(3, d.received / max * 34),
+        // Zero draws NOTHING. This was Math.max(3, …), so a day on
+        // which nothing happened was 3px tall — the same 3px as a day
+        // with 5,000 against a 7.7M week. Four of seven days on a quiet
+        // week were that floor, and the chart said money moved on days
+        // it did not. The 2px stub below is for the SELECTED empty day
+        // only, so tapping it still shows what you tapped.
+        height: d.received > 0 ? Math.max(3, d.received / max * 34) : (isSelected ? 2 : 0),
         borderRadius: 3,
         background: highlighted ? C.received : C.receivedMuted,
         boxShadow: isSelected ? `0 0 0 1.5px ${C.selectRing}` : "none",

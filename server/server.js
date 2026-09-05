@@ -452,6 +452,16 @@ const publicUserPayload = async (user) => {
     // and this response is what the client sets its OWN flag and currency
     // from.
     countryIso: accountCountryIso(user),
+    // The Security screen's switches. Read back here rather than from a
+    // route of their own so the client learns them from the same response it
+    // already uses to learn everything else about the account — a separate
+    // fetch is a separate chance for the screen to render the wrong state.
+    // Defaults spelled out for accounts written before the field existed,
+    // where the subdocument is simply absent.
+    securitySettings: {
+      biometricLogin: user.securitySettings?.biometricLogin !== false,
+      appLock: user.securitySettings?.appLock === true,
+    },
     referredBy: user.referredBy || null,
     referralCount: user.referralCount || 0,
     cashbackRate: Number(user.cashbackRate) || 0,
@@ -652,6 +662,28 @@ const authenticatedUser = async (req) => {
 
   const user = await User.findById(claims.sub);
   if (!user) return null;
+
+  // Token revocation, for the one case that needs it: a credential change.
+  //
+  // These tokens are stateless HMACs with a seven-day TTL and there is no
+  // token store, so nothing could previously end a session early. That made
+  // "change your PIN" a change that left every other signed-in device
+  // untouched — which is precisely what somebody changing a PIN because it
+  // may be known is trying to prevent.
+  //
+  // Comparing the token's own `iat` against a per-account stamp is the whole
+  // mechanism. It costs no extra lookup (this function already has the User
+  // document), it is inert for every account that has never changed a
+  // credential (the stamp is null), and it revokes one account's sessions
+  // rather than everyone's.
+  //
+  // Strictly-less-than matters: /api/pin/change stamps the account and then
+  // immediately mints a replacement token, and those two can land in the
+  // same millisecond. `<` keeps that fresh token valid; `<=` would sign the
+  // person out of the device they just used to change their PIN.
+  if (user.credentialsInvalidatedAt && typeof claims.iat === 'number') {
+    if (claims.iat < new Date(user.credentialsInvalidatedAt).getTime()) return null;
+  }
 
   // The token names an ID the account no longer uses — it was renamed through
   // /api/profile/change-symbol-id. The account is still the same document, so
@@ -1308,6 +1340,196 @@ app.post('/api/pin/verify', credentialLimit, async (req, res) => {
 
 
 // Reset PIN using verified OTP
+// POST /api/pin/change — the Security screen's "Change PIN".
+//
+// Distinct from /api/pin/reset, and deliberately not a wrapper around it.
+// Reset is account RECOVERY: it is unauthenticated, proves nothing about
+// who is holding the phone beyond an OTP to the account's number, and
+// exists for somebody who has forgotten their PIN. This is a change made by
+// somebody already signed in, and the thing it has to prove is different —
+// that whoever is holding this unlocked session also knows the CURRENT PIN.
+// Wiring the Security button to the reset route would have meant an
+// unlocked phone could set a new PIN with an SMS code instead of the PIN it
+// is replacing.
+//
+// So: a valid token for this account, AND the current PIN, AND the same
+// lockout rules every other PIN check obeys — a wrong current PIN here
+// counts against the same attempt budget as a wrong PIN at login, because
+// otherwise this route is an oracle for guessing it without the lockout.
+app.post(
+  '/api/pin/change',
+  credentialLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const currentPin = String(req.body?.currentPin || '').trim();
+      const newPin = String(req.body?.newPin || '').trim();
+
+      if (!currentPin || !newPin) {
+        return res.status(400).json({
+          success: false,
+          message: 'Your current PIN and a new PIN are both required.',
+        });
+      }
+
+      if (!isValidPinFormat(newPin)) {
+        return res.status(400).json({ success: false, message: 'PIN must be 4 to 6 digits.' });
+      }
+
+      if (currentPin === newPin) {
+        return res.status(400).json({
+          success: false,
+          message: 'The new PIN must be different from your current one.',
+        });
+      }
+
+      const user = req.authUser;
+      const pinRecord = await Pin.findOne({ userId: user._id });
+
+      // No PIN on file is not a case to be helpful about. Setting one here
+      // would let a session that never had a PIN create one without proving
+      // anything — /api/pin/set is the route for that, and it is OTP-gated.
+      if (!pinRecord) {
+        return res.status(404).json({ success: false, message: 'PIN is not set for this account.' });
+      }
+
+      beginPinAttempt(pinRecord);
+
+      if (pinLockRemainingMs(pinRecord) > 0) {
+        const locked = pinLockoutResponse(pinRecord);
+        res.set('Retry-After', String(locked.retryAfterSeconds));
+        return res.status(locked.status).json({
+          success: false,
+          message: locked.message,
+          retryAfterSeconds: locked.retryAfterSeconds,
+          lockedUntil: locked.lockedUntil,
+        });
+      }
+
+      const isMatch = await bcrypt.compare(currentPin, pinRecord.pinHash);
+
+      if (!isMatch) {
+        const failure = await registerPinFailure(pinRecord);
+        if (failure.lockedNow) res.set('Retry-After', String(failure.retryAfterSeconds));
+        recordAudit({
+          userId: user._id, action: 'pin.change.failed', status: 'failed',
+          message: 'Wrong current PIN', req, metadata: { symbolId: user.symbolId },
+        });
+        return res.status(401).json({
+          success: false,
+          message: failure.message,
+          attemptsRemaining: failure.attemptsRemaining,
+          lockedUntil: pinRecord.lockedUntil,
+        });
+      }
+
+      await registerPinSuccess(pinRecord);
+
+      const pinHash = await bcrypt.hash(newPin, 10);
+      await Pin.findOneAndUpdate(
+        { userId: user._id },
+        {
+          pinHash,
+          // The old PIN was correct, so the attempt budget resets — the same
+          // thing registerPinSuccess just did, restated here because this
+          // write would otherwise carry the pre-success document forward.
+          failedAttempts: 0,
+          lockedUntil: null,
+          lastVerifiedAt: null,
+          changedAt: new Date(),
+        },
+        { returnDocument: 'after' }
+      );
+
+      // Every OTHER session for this account stops here. See
+      // credentialsInvalidatedAt in models/User.js and the check in
+      // authenticatedUser: a PIN change that leaves the old sessions signed
+      // in is not much of a PIN change.
+      //
+      // Stamped BEFORE the replacement token is minted, so the new token's
+      // iat cannot be older than the stamp.
+      const invalidatedAt = new Date();
+      await User.updateOne({ _id: user._id }, { $set: { credentialsInvalidatedAt: invalidatedAt } });
+
+      recordAudit({
+        userId: user._id, action: 'pin.change', status: 'success',
+        message: 'PIN changed; other sessions revoked', req,
+        metadata: { symbolId: user.symbolId },
+      });
+
+      const refreshed = await User.findById(user._id);
+
+      return res.status(200).json({
+        success: true,
+        message: 'PIN changed. You have been signed out on your other devices.',
+        // The caller just proved both a session AND the current PIN, so they
+        // keep working rather than being bounced to the login screen by the
+        // revocation they themselves triggered.
+        token: issueAuthToken(refreshed),
+        user: await publicUserPayload(refreshed),
+      });
+    } catch (error) {
+      console.error('PIN change error:', error);
+      return res.status(500).json({ success: false, message: 'Server error while changing your PIN.' });
+    }
+  }
+);
+
+// PATCH /api/profile/security/:symbolId — the Security screen's switches.
+//
+// Stored on the account rather than in browser storage: the setting should
+// be the same wherever somebody signs in, and it should not be flippable by
+// anything that can write to localStorage. Both are read back through
+// publicUserPayload, so every response that already carries a user carries
+// these too and the client never needs a separate fetch to know them.
+app.patch(
+  '/api/profile/security/:symbolId',
+  writeLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const update = {};
+
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'biometricLogin')) {
+        if (typeof req.body.biometricLogin !== 'boolean') {
+          return res.status(400).json({ success: false, message: 'biometricLogin must be true or false.' });
+        }
+        update['securitySettings.biometricLogin'] = req.body.biometricLogin;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'appLock')) {
+        if (typeof req.body.appLock !== 'boolean') {
+          return res.status(400).json({ success: false, message: 'appLock must be true or false.' });
+        }
+        update['securitySettings.appLock'] = req.body.appLock;
+      }
+
+      if (Object.keys(update).length === 0) {
+        return res.status(400).json({ success: false, message: 'Nothing to update.' });
+      }
+
+      const updated = await User.findOneAndUpdate(
+        { _id: req.authUser._id },
+        { $set: update },
+        { returnDocument: 'after' }
+      );
+
+      recordAudit({
+        userId: req.authUser._id, action: 'security.settings.update', status: 'success',
+        message: 'Security settings changed', req,
+        metadata: { symbolId: req.authUser.symbolId, changed: Object.keys(update) },
+      });
+
+      return res.status(200).json({ success: true, user: await publicUserPayload(updated) });
+    } catch (error) {
+      console.error('Security settings error:', error);
+      return res.status(500).json({ success: false, message: 'Could not save that setting.' });
+    }
+  }
+);
+
 app.post('/api/pin/reset', credentialLimit, async (req, res) => {
   try {
     const { symbolId, mobileNumber, pin, newPin } = req.body;

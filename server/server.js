@@ -118,6 +118,19 @@ const {
   tallyUsersByCountry,
 } = require('./lib/coverageAggregation');
 
+// Hooman Projects. The Coverage screen's project area had no persistence of
+// any kind before these — see models/Project.js for what a project is and
+// models/ProjectAttachment.js for why its file lives in MongoDB.
+const Project = require('./models/Project');
+const ProjectAttachment = require('./models/ProjectAttachment');
+const {
+  PROJECT_CATEGORIES,
+  PROJECT_ATTACHMENT_MAX_BYTES,
+  PROJECT_ATTACHMENT_TYPES,
+  validateProjectInput,
+  sanitiseFilename,
+} = require('./lib/projectValidation');
+
 // One answer to "what currency does this country transact in", shared with
 // lib/settlementEngine.js. Prefers the seeded Country row and falls back to
 // the bundled country/currency map, so a database whose reference tables were
@@ -4212,6 +4225,439 @@ app.get('/api/assets/paylater/:symbolId', lookupLimit, requireAuth, requireSelf(
   } catch (error) {
     console.error('PayLater fetch error:', error);
     return res.status(500).json({ message: 'Server error while fetching PayLater.' });
+  }
+});
+
+// ─── Hooman Projects ────────────────────────────────────────────────────────
+//
+// The Coverage screen has shown a "Hooman Projects" area for a while with
+// nothing behind it: eight category names in a hardcoded frontend array,
+// "Real projects in this category" rendered as a literal ∆, and no way to
+// add one. These routes are the backend that area never had.
+//
+// Visibility, in one sentence, because every route below depends on it: a
+// PUBLISHED project is readable by anyone, a DRAFT is readable only by its
+// owner, and only the owner may ever change or delete either. Ownership is
+// compared by document id (never by symbolId), the same rule requireSelf
+// uses, so renaming a Gloobal ID cannot hand somebody else's project away
+// or lock an owner out of their own.
+//
+// Search text is escaped through escapeRegExp, already defined near the top
+// of this file for the mobile-number lookup. Reused rather than redefined:
+// a search box wired straight to a regex engine is a syntax error the first
+// time somebody types "(" and a match-everything query the first time they
+// type ".*".
+
+// The project as the API presents it. Never spreads the raw document: that
+// is how an internal field becomes a public one by accident, and the
+// attachment sub-document in particular must never carry its bytes here.
+const publicProject = (project, viewerId) => ({
+  id: String(project._id),
+  title: project.title,
+  category: project.category,
+  summary: project.summary,
+  summaryWordCount: project.summaryWordCount,
+  countryIso: project.countryIso || null,
+  link: project.link || '',
+  status: project.status,
+  ownerSymbolId: project.ownerSymbolId,
+  // So a client can render edit/delete affordances without having to know
+  // the ownership rule or compare ids itself.
+  isOwner: Boolean(viewerId) && String(project.ownerId) === String(viewerId),
+  attachment: project.attachment
+    ? {
+        filename: project.attachment.filename,
+        contentType: project.attachment.contentType,
+        byteSize: project.attachment.byteSize,
+        // Where to fetch the bytes. A path, not a signed URL, because the
+        // bytes are served by this API and authorised per request.
+        url: '/api/projects/' + String(project._id) + '/attachment',
+      }
+    : null,
+  createdAt: project.createdAt,
+  updatedAt: project.updatedAt,
+});
+
+// Loads a project and decides whether this viewer may see it at all.
+// Returns { project, isOwner } or { status, message } — never a partially
+// authorised result the caller has to remember to check.
+async function loadVisibleProject(id, viewerId) {
+  if (!mongoose.Types.ObjectId.isValid(String(id || ''))) {
+    return { status: 404, message: 'Project not found.' };
+  }
+  const project = await Project.findById(id).lean();
+  if (!project) return { status: 404, message: 'Project not found.' };
+  const isOwner = viewerId && String(project.ownerId) === String(viewerId);
+  // A draft answers 404 rather than 403 to a stranger: 403 would confirm
+  // that a project with this id exists, which is itself something the owner
+  // has not published.
+  if (project.status === 'draft' && !isOwner) {
+    return { status: 404, message: 'Project not found.' };
+  }
+  return { project, isOwner };
+}
+
+// GET /api/projects — the project listing, and the project search.
+//
+// This is project/infrastructure/product search, and it is deliberately NOT
+// the same thing as the category picker's search box on the Coverage
+// screen. That one filters eight fixed category NAMES in the browser and
+// should keep doing exactly that; this one queries stored project records.
+// Merging them would have produced a single box that pretended to search
+// products while actually filtering a hardcoded list.
+//
+// ?q=              free text over title and summary
+// ?category=       one of the eight categories ("Infrastructure" included)
+// ?country=        ISO code
+// ?mine=1          this account's own projects, drafts included (needs a token)
+// ?limit=&cursor=  paging
+app.get('/api/projects', lookupLimit, async (req, res) => {
+  try {
+    const viewer = await authenticatedUser(req);
+    const mine = String(req.query.mine || '') === '1';
+
+    if (mine && !viewer) {
+      return res.status(401).json({ success: false, message: 'Sign in to see your own projects.' });
+    }
+
+    const filter = mine
+      ? { ownerId: viewer._id }
+      // Everyone else sees published rows only. Drafts are excluded HERE, in
+      // the query, rather than filtered out afterwards — a filter after the
+      // fact is one refactor away from being forgotten.
+      : { status: 'published' };
+
+    const q = String(req.query.q || '').trim();
+    if (q) {
+      const pattern = new RegExp(escapeRegExp(q), 'i');
+      // Regex rather than a $text index because this backs a
+      // search-as-you-type box, and $text only matches whole words — typing
+      // "infra" would find nothing until "infrastructure" was complete. The
+      // collection is small enough that this is the right trade today; a
+      // text index is the upgrade when it is not, and the API shape does not
+      // change when that happens.
+      filter.$or = [{ title: pattern }, { summary: pattern }];
+    }
+
+    const category = String(req.query.category || '').trim();
+    if (category) {
+      if (!PROJECT_CATEGORIES.includes(category)) {
+        return res.status(400).json({ success: false, message: 'Unknown category.' });
+      }
+      filter.category = category;
+    }
+
+    const country = String(req.query.country || '').trim().toUpperCase();
+    if (country) {
+      if (!/^[A-Z]{2}$/.test(country)) {
+        return res.status(400).json({ success: false, message: 'country must be a two-letter ISO code.' });
+      }
+      filter.countryIso = country;
+    }
+
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 50)
+      : 20;
+
+    // Keyset paging on _id, which is monotonic with insertion time. Skip/
+    // offset paging would drift as projects are added underneath a reader.
+    const cursor = String(req.query.cursor || '').trim();
+    if (cursor) {
+      if (!mongoose.Types.ObjectId.isValid(cursor)) {
+        return res.status(400).json({ success: false, message: 'Bad cursor.' });
+      }
+      filter._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+    }
+
+    // One extra row, to answer "is there another page" without a count.
+    const rows = await Project.find(filter).sort({ _id: -1 }).limit(limit + 1).lean();
+    const page = rows.slice(0, limit);
+    const nextCursor = rows.length > limit ? String(page[page.length - 1]._id) : null;
+
+    // Per-category counts over the SAME visibility rule, so the number on a
+    // category card and the list behind it can never disagree. Counted in
+    // Mongo rather than from the page above, which is one page of one
+    // category and could not answer this.
+    const countFilter = mine ? { ownerId: viewer._id } : { status: 'published' };
+    const countRows = await Project.aggregate([
+      { $match: countFilter },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+    ]);
+    const counts = Object.fromEntries(PROJECT_CATEGORIES.map((name) => [name, 0]));
+    for (const row of countRows) {
+      if (Object.prototype.hasOwnProperty.call(counts, row._id)) counts[row._id] = row.count;
+    }
+
+    return res.json({
+      success: true,
+      projects: page.map((project) => publicProject(project, viewer && viewer._id)),
+      nextCursor,
+      counts,
+      categories: PROJECT_CATEGORIES,
+    });
+  } catch (error) {
+    console.error('Project list error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load projects.' });
+  }
+});
+
+// GET /api/projects/:id
+app.get('/api/projects/:id', lookupLimit, async (req, res) => {
+  try {
+    const viewer = await authenticatedUser(req);
+    const found = await loadVisibleProject(req.params.id, viewer && viewer._id);
+    if (!found.project) return res.status(found.status).json({ success: false, message: found.message });
+    return res.json({ success: true, project: publicProject(found.project, viewer && viewer._id) });
+  } catch (error) {
+    console.error('Project read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load that project.' });
+  }
+});
+
+// POST /api/projects — create.
+//
+// The owner is taken from the TOKEN, never from the body. A symbolId in the
+// payload would be a field a client could set to somebody else's account,
+// and there is no reason to accept one: the token already names exactly one
+// account and that is whose project this is.
+app.post('/api/projects', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const validated = validateProjectInput(req.body || {});
+    if (!validated.ok) return res.status(400).json({ success: false, message: validated.message });
+
+    // Same resolver every country figure on the Coverage screen goes
+    // through, so a project's country and its creator's can never disagree —
+    // and a legacy account stored as the bare 'IN' default still files its
+    // projects under the country its mobile number actually says.
+    const countryIso = accountCountryIso(req.authUser);
+
+    const project = await Project.create(Object.assign({}, validated.value, {
+      ownerId: req.authUser._id,
+      ownerSymbolId: req.authUser.symbolId,
+      countryIso,
+    }));
+
+    recordAudit({
+      userId: req.authUser._id, action: 'project.create', status: 'success',
+      message: 'Hooman Project created', req,
+      metadata: {
+        projectId: String(project._id),
+        symbolId: req.authUser.symbolId,
+        category: project.category,
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      project: publicProject(project.toObject(), req.authUser._id),
+    });
+  } catch (error) {
+    console.error('Project create error:', error);
+    return res.status(500).json({ success: false, message: 'Could not save that project.' });
+  }
+});
+
+// PATCH /api/projects/:id — owner only, partial update.
+app.patch('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(404).json({ success: false, message: 'Project not found.' });
+    }
+    const existing = await Project.findById(req.params.id).lean();
+    if (!existing) return res.status(404).json({ success: false, message: 'Project not found.' });
+    if (String(existing.ownerId) !== String(req.authUser._id)) {
+      return res.status(403).json({ success: false, message: 'That project is not yours.' });
+    }
+
+    const validated = validateProjectInput(req.body || {}, { partial: true });
+    if (!validated.ok) return res.status(400).json({ success: false, message: validated.message });
+
+    const updated = await Project.findOneAndUpdate(
+      // ownerId in the filter as well as in the check above: the read and
+      // the write are two round trips, and this is what makes the write
+      // itself refuse to touch a row that is not this account's.
+      { _id: existing._id, ownerId: req.authUser._id },
+      { $set: validated.value },
+      { returnDocument: 'after' }
+    ).lean();
+
+    if (!updated) return res.status(404).json({ success: false, message: 'Project not found.' });
+    return res.json({ success: true, project: publicProject(updated, req.authUser._id) });
+  } catch (error) {
+    console.error('Project update error:', error);
+    return res.status(500).json({ success: false, message: 'Could not update that project.' });
+  }
+});
+
+// DELETE /api/projects/:id — owner only. Takes the attachment with it, so a
+// deleted project cannot leave its file behind as an unreferenced blob.
+app.delete('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(404).json({ success: false, message: 'Project not found.' });
+    }
+    const deleted = await Project.findOneAndDelete({
+      _id: req.params.id,
+      ownerId: req.authUser._id,
+    }).lean();
+    if (!deleted) {
+      // Either it does not exist or it is not theirs. Same answer for both,
+      // for the same reason a draft 404s: distinguishing them tells a
+      // stranger that somebody else's project has this id.
+      return res.status(404).json({ success: false, message: 'Project not found.' });
+    }
+    await ProjectAttachment.deleteMany({ projectId: deleted._id });
+    recordAudit({
+      userId: req.authUser._id, action: 'project.delete', status: 'success',
+      message: 'Hooman Project deleted', req,
+      metadata: { projectId: String(deleted._id), symbolId: req.authUser.symbolId },
+    });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Project delete error:', error);
+    return res.status(500).json({ success: false, message: 'Could not delete that project.' });
+  }
+});
+
+// POST /api/projects/:id/attachment — owner only.
+//
+// The file arrives base64-encoded in JSON rather than as multipart, because
+// that needs no new dependency and this server parses JSON already. The body
+// limit is raised for THIS ROUTE ONLY: the global cap is 64kb (nothing else
+// this API accepts is near it) and raising it globally would let every other
+// route allocate megabytes per request.
+//
+// base64 inflates by 4/3, so a 2 MB file needs about 2.67 MB of body; 3mb
+// leaves room for the surrounding JSON.
+app.post(
+  '/api/projects/:id/attachment',
+  writeLimit,
+  requireAuth,
+  express.json({ limit: '3mb' }),
+  async (req, res) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+        return res.status(404).json({ success: false, message: 'Project not found.' });
+      }
+      const project = await Project.findOne({ _id: req.params.id, ownerId: req.authUser._id });
+      if (!project) return res.status(404).json({ success: false, message: 'Project not found.' });
+
+      const claimedType = String((req.body && req.body.contentType) || '').trim().toLowerCase();
+      const extension = PROJECT_ATTACHMENT_TYPES[claimedType];
+      if (!extension) {
+        return res.status(415).json({
+          success: false,
+          message: 'That file type is not accepted. Allowed: '
+            + Object.keys(PROJECT_ATTACHMENT_TYPES).join(', ') + '.',
+        });
+      }
+
+      const base64 = String((req.body && req.body.data) || '');
+      if (!base64) return res.status(400).json({ success: false, message: 'No file was sent.' });
+
+      let buffer = null;
+      try {
+        buffer = Buffer.from(base64, 'base64');
+      } catch (e) {
+        buffer = null;
+      }
+      // Buffer.from silently DROPS characters that are not valid base64
+      // rather than throwing, so a corrupt upload arrives as a short buffer
+      // instead of as an error. An empty result is the case worth refusing.
+      if (!buffer || buffer.length === 0) {
+        return res.status(400).json({ success: false, message: 'That file could not be read.' });
+      }
+      if (buffer.length > PROJECT_ATTACHMENT_MAX_BYTES) {
+        return res.status(413).json({
+          success: false,
+          message: 'Files can be at most '
+            + Math.round(PROJECT_ATTACHMENT_MAX_BYTES / (1024 * 1024)) + ' MB.',
+        });
+      }
+
+      const filename = sanitiseFilename(req.body && req.body.filename, extension);
+
+      // One attachment per project: replacing means the old bytes go. Left
+      // behind, they would be unreachable (nothing references them) and
+      // permanent, which is how a database fills with files nobody can find.
+      await ProjectAttachment.deleteMany({ projectId: project._id });
+
+      const stored = await ProjectAttachment.create({
+        projectId: project._id,
+        ownerId: req.authUser._id,
+        filename,
+        // The allow-listed type, NOT the raw string the client sent.
+        contentType: claimedType,
+        byteSize: buffer.length,
+        data: buffer,
+      });
+
+      project.attachment = {
+        attachmentId: stored._id,
+        filename,
+        contentType: claimedType,
+        byteSize: buffer.length,
+        uploadedAt: new Date(),
+      };
+      await project.save();
+
+      return res.status(201).json({
+        success: true,
+        project: publicProject(project.toObject(), req.authUser._id),
+      });
+    } catch (error) {
+      console.error('Project attachment upload error:', error);
+      return res.status(500).json({ success: false, message: 'Could not store that file.' });
+    }
+  }
+);
+
+// GET /api/projects/:id/attachment — the bytes.
+//
+// Visibility follows the PROJECT, not the attachment: if you can see the
+// project you can fetch its file, and a draft's file is as private as the
+// draft. Served with the allow-listed content type and an attachment
+// disposition, so nothing here is rendered inline by a browser on this
+// origin.
+app.get('/api/projects/:id/attachment', lookupLimit, async (req, res) => {
+  try {
+    const viewer = await authenticatedUser(req);
+    const found = await loadVisibleProject(req.params.id, viewer && viewer._id);
+    if (!found.project) return res.status(found.status).json({ success: false, message: found.message });
+    if (!found.project.attachment) {
+      return res.status(404).json({ success: false, message: 'That project has no file.' });
+    }
+
+    const stored = await ProjectAttachment.findById(found.project.attachment.attachmentId).lean();
+    if (!stored) return res.status(404).json({ success: false, message: 'That file is no longer stored.' });
+
+    // .lean() hands back the RAW BSON value, and for a Buffer field that is
+    // a mongodb Binary rather than a Node Buffer. res.send() does not
+    // recognise a Binary as bytes, so it fell through to the JSON branch and
+    // served `{"buffer":{...}}` — a 27-byte PDF arrived as 38 bytes of JSON
+    // and would not open. Normalising here is what makes the download be the
+    // file that was uploaded.
+    const bytes = Buffer.isBuffer(stored.data)
+      ? stored.data
+      : Buffer.from(stored.data?.buffer ?? stored.data ?? []);
+
+    res.setHeader('Content-Type', stored.contentType);
+    // Length from the buffer actually being written, NOT from the stored
+    // byteSize. The two agreeing is exactly the assumption that just broke,
+    // and a Content-Length that disagrees with the body truncates the
+    // download or hangs the connection.
+    res.setHeader('Content-Length', String(bytes.length));
+    // Always an attachment, never inline: the filename is user-supplied and
+    // the safest thing a browser can do with any of these types is save it.
+    res.setHeader('Content-Disposition', 'attachment; filename="' + stored.filename + '"');
+    // Belt and braces against a browser sniffing its own type out of the
+    // bytes and ignoring the one above.
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.send(bytes);
+  } catch (error) {
+    console.error('Project attachment read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load that file.' });
   }
 });
 

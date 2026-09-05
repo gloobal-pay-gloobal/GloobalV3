@@ -107,6 +107,17 @@ const {
   accountCountryIso,
 } = require('./lib/accountCountry');
 
+// Every figure on the Gloobal Coverage screen, computed in one place.
+// Coverage previously had no backend at all and reduced its numbers in the
+// browser from the current account's own last-100 payments; see that
+// module's header for the seven defects that produced and how each maps to
+// the founder's definitions.
+const {
+  buildCoverage,
+  resolveAccountCountries,
+  tallyUsersByCountry,
+} = require('./lib/coverageAggregation');
+
 // One answer to "what currency does this country transact in", shared with
 // lib/settlementEngine.js. Prefers the seeded Country row and falls back to
 // the bundled country/currency map, so a database whose reference tables were
@@ -166,24 +177,34 @@ async function resolveRegistrationCountryIso(rawIso, mobileNumber) {
   return candidate;
 }
 
-// Real registered-user count per country, grouped in Mongo (not pulled
-// across the wire and counted in JS) so this stays cheap as the user
-// collection grows. Every User document carries countryIso (see
-// models/User.js — resolveRegistrationCountryIso above is what sets it at
-// registration, defaulting to 'IN'), so grouping on that field directly
-// gives each country's actual signed-up total, and the values sum to
-// exactly User.countDocuments() with no separate bookkeeping to drift.
+// Real registered-user count per country.
+//
+// This used to group on the raw `$countryIso` field in Mongo. That was the
+// reason active American users were invisible on the Coverage screen: the
+// field defaults to 'IN' (models/User.js) and the registration screen did
+// not send a country until recently, so every account created before that
+// fix is STORED as India no matter where its owner actually is. The count
+// was real; it was filed under the wrong country.
+//
+// accountCountryIso (lib/accountCountry.js) is the resolver that already
+// solves this everywhere it matters — the send route, /api/users/resolve
+// and the settlement engine all go through it — and it was the one thing
+// the country statistics did not use. It treats a bare stored 'IN' as
+// "never recorded" and reads the country off the account's E.164 mobile
+// number instead, while any other stored value is a real choice and is
+// returned untouched.
+//
+// The grouping therefore moves out of Mongo and into JS, because the rule
+// is a dial-code prefix match against a 194-row table that an aggregation
+// pipeline cannot express. That trades a pipeline for one projection of
+// (countryIso, mobileNumber) per account — acceptable at this system's
+// size, and it stops mattering entirely once
+// scripts/backfill-country-iso.mjs has run and the stored field is already
+// correct. The values still sum to exactly User.countDocuments(), which is
+// the property /api/stats depends on.
 async function countUsersByCountry() {
-  const rows = await User.aggregate([
-    { $group: { _id: '$countryIso', count: { $sum: 1 } } }
-  ]);
-  const byCountry = {};
-  for (const row of rows) {
-    const iso = String(row._id || 'IN').trim().toUpperCase();
-    if (!iso) continue;
-    byCountry[iso] = (byCountry[iso] || 0) + row.count;
-  }
-  return byCountry;
+  const accountCountries = await resolveAccountCountries();
+  return tallyUsersByCountry(accountCountries);
 }
 
 const app = express();
@@ -1808,6 +1829,46 @@ app.get('/api/creator-share/distribution', lookupLimit, async (req, res) => {
     console.error('Creator Share distribution error:', error);
 
     return res.status(500).json({ success: false, message: 'Could not load the Creator Share distribution.' });
+  }
+});
+
+// GET /api/coverage — the whole Gloobal Coverage screen, in one response.
+//
+// Everything this returns is PLATFORM-WIDE. That is the correction at the
+// heart of this route: Coverage's spending figures used to be derived per
+// account, in the browser, from that account's own payment history, so two
+// people looking at "Total spending" saw two different numbers (21.82 and
+// 8.1K were the reported pair) and neither was the number the screen claims
+// to show. The founder's definition — "Global Total Spending = sum of
+// accumulated spending of all countries" — describes one figure that every
+// account must see identically, in the same way Total users already does.
+//
+// Unauthenticated, like /api/stats and /api/coin/supply beside it, and for
+// the same reason: there is nothing per-account in the response. It carries
+// aggregates and country totals only — no ids, no names, no per-user
+// amounts — which is the shape of data that is safe to publish. It is rate
+// limited because it is the most expensive read on this server.
+//
+// ?currency= picks the unit everything is denominated in (default INR, this
+// system's reference unit). Conversion happens HERE, against lib/fxRates.js,
+// preferring each payment's own transaction-time rate where it applies —
+// the app used to convert with a static rate table compiled into the bundle,
+// whose convert() returns 0 for an unknown currency rather than failing.
+app.get('/api/coverage', lookupLimit, async (req, res) => {
+  try {
+    const requested = String(req.query.currency || '').trim().toUpperCase();
+    const currency = /^[A-Z]{3}$/.test(requested) ? requested : undefined;
+
+    const coverage = await buildCoverage({ currency });
+
+    return res.status(200).json({ success: true, ...coverage });
+  } catch (error) {
+    console.error('Coverage aggregation error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Could not load Gloobal Coverage figures.',
+    });
   }
 });
 

@@ -21,6 +21,20 @@
 var GLOOBAL_API_WAKING_MESSAGE =
   "Couldn't reach the server — it may still be waking up. Please try again in a few seconds.";
 
+// A number, or null where the server genuinely sent one.
+//
+// `Number(x) || 0` is the usual shorthand in this file and it is wrong for
+// any figure that can legitimately be unavailable: it turns null into 0, and
+// 0 is a claim ("nobody spent anything") where null is an admission ("this
+// could not be computed"). Coverage renders those two differently — a real
+// figure versus ∆ — so the difference has to survive the boundary. Also
+// keeps a real 0 as 0, which the `||` form silently agrees with by accident.
+function numberOrNull(value) {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 // Cold-start retry.
 //
 // The backend runs on a Render FREE instance, which spins down after about
@@ -444,6 +458,71 @@ var GloobalApi = {
     }
     try {
       return await readStats("/api/profile/count");
+    } catch (e) {
+      return null;
+    }
+  },
+
+  // GET /api/coverage — every figure on the Gloobal Coverage screen, from
+  // the one server-side aggregation that owns them.
+  //
+  // Coverage used to compute its own spending in the browser, by reducing
+  // `sendHistory` — the CURRENT ACCOUNT's outgoing payments, hydrated from a
+  // route capped at 100 rows, summed without reading each row's currency.
+  // So the "global" total was per-account, per-device, currency-blind and
+  // silently truncated: two people saw 21.82 and 8.1K for a figure that is
+  // defined as one platform-wide number. This call replaces that entirely.
+  // There is deliberately no second path to any of these values.
+  //
+  // `currency` is the unit the caller wants everything denominated in. The
+  // conversion happens on the server against real rates — the bundled RATES
+  // table in this app must never be used for these figures, since its
+  // convert() answers 0 for a currency it does not know rather than failing.
+  //
+  // Returns null when the server cannot answer (cold start, offline, a
+  // deploy without this route). The screen renders ∆ for that, which is the
+  // same thing it already does for a figure it does not have — an honest
+  // "no data" rather than a fabricated 0 or a stale client-side guess.
+  async getCoverage(currency) {
+    try {
+      const query = /^[A-Za-z]{3}$/.test(String(currency || ""))
+        ? `?currency=${encodeURIComponent(String(currency).toUpperCase())}`
+        : "";
+      const result = await gloobalApiClient.get(`/api/coverage${query}`, {
+        timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS
+      });
+      if (!result || !result.success) return null;
+
+      const countries = Array.isArray(result.countries) ? result.countries : [];
+      return {
+        currency: String(result.currency || "INR").toUpperCase(),
+        // null is a real answer here and must survive: it means the figure
+        // could not be produced (an unconvertible currency), which is not
+        // the same fact as 0. `Number(x) || 0` would erase that difference.
+        totalSpending: numberOrNull(result.totalSpending),
+        totalSpendingByCountry: result.totalSpendingByCountry && typeof result.totalSpendingByCountry === "object"
+          ? result.totalSpendingByCountry
+          : {},
+        transactionsPerDay: Number(result.transactionsPerDay) || 0,
+        transactionsTotal: Number(result.transactionsTotal) || 0,
+        countries: countries.map((row) => ({
+          countryIso: String(row.countryIso || "").toUpperCase(),
+          users: Number(row.users) || 0,
+          transactions: Number(row.transactions) || 0,
+          transactionsToday: Number(row.transactionsToday) || 0,
+          totalSpending: numberOrNull(row.totalSpending),
+          // Tri-state on purpose. true/false are the server's answer under
+          // the configured rule; null means the rule in force cannot be
+          // evaluated yet (admin_enabled, with no field to read). The screen
+          // must not collapse null into "locked".
+          active: row.active === true ? true : row.active === false ? false : null
+        })).filter((row) => /^[A-Z]{2}$/.test(row.countryIso)),
+        activeCountryRule: result.activeCountryRule || null,
+        // Carried through untouched. `ourSpending.available` is false today
+        // and the screen renders ∆ for it; see the server module's probe for
+        // why a number would be a fabrication.
+        ourSpending: result.ourSpending || { total: null, available: false }
+      };
     } catch (e) {
       return null;
     }

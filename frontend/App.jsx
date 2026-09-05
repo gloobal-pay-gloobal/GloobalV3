@@ -357,6 +357,20 @@ function GloobalId() {
   const [essentialsIHaveEnough, setEssentialsIHaveEnough] = useState19(false);
   const handleToggleEssentialsIHaveEnough = () => setEssentialsIHaveEnough((v) => !v);
   const [sendMoneyHistory, setSendMoneyHistory] = useState19(SEND_MONEY_HISTORY_SEED);
+
+  // Bumped whenever something happened that could move a Gloobal Coverage
+  // figure. GloobalCoverageScreen refetches on it; nothing else reads it.
+  //
+  // This is the entire live-update mechanism, and it is a counter rather
+  // than a poll on purpose. Coverage's figures used to be derived in the
+  // browser from sendMoneyHistory, which is refreshed by the 30-second
+  // dashboard poll and merged APPEND-ONLY — so a row recorded wrong stayed
+  // wrong for the whole session, and a Scan & Pay never moved the total at
+  // all until a full reload. Now the figures come from the server, and this
+  // says when to ask again: after a payment, and on an account change. No
+  // new interval anywhere.
+  const [coverageRefreshToken, setCoverageRefreshToken] = useState19(0);
+  const bumpCoverage = () => setCoverageRefreshToken((n) => n + 1);
   const { openComplaint, submitLocationObservation } = useProvenanceAndDisputes();
   // Best-effort, fire-and-forget location report for a transaction
   // that has ALREADY completed. This is deliberately the only
@@ -442,6 +456,8 @@ function GloobalId() {
     // split in DashboardScreen — not to be confused with the
     // sender/receiver location role used just above.
     setSendMoneyHistory((h) => [{ ...entry, role: activeShareRole }, ...h]);
+    // Money moved, so Gloobal Coverage's figures have. Send Money.
+    bumpCoverage();
     // Posting + completion + provenance + complaint window + asset-seed
     // eligibility already happened atomically inside executeTransaction
     // (called from SendMoneyScreen.completePayment, via
@@ -943,6 +959,10 @@ function GloobalId() {
           role: activeShareRole
         };
         setSendMoneyHistory((h) => [historyEntry, ...h]);
+        // Money moved, so Gloobal Coverage's figures have. Scan & Pay —
+        // the path whose rows carried no counterparty flag and therefore
+        // never reached the old client-side total at all.
+        bumpCoverage();
         reportSenderLocation(txnId);
       } else {
         setScanError(result.reason || "Payment failed \u2014 insufficient balance");
@@ -1016,6 +1036,9 @@ function GloobalId() {
       role: activeShareRole
     };
     setSendMoneyHistory((h) => [historyEntry, ...h]);
+    // Money moved, so Gloobal Coverage's figures have. Pay business — the
+    // other path whose rows the old client-side total silently dropped.
+    bumpCoverage();
     reportSenderLocation(txnId);
   };
   const assetSeeds = useEssentialsGrants();
@@ -1265,6 +1288,21 @@ function GloobalId() {
   // brief window during registration before the account exists
   // server-side at all, and is itself computed once — not on every
   // render — so it does not drift.
+  // Coverage refetches on an account change. Placed HERE, below
+  // registeredUser and secureId rather than beside the counter it bumps,
+  // for the reason this file has already been bitten by twice: a hook's
+  // dependency array is evaluated on EVERY render, before the `const`s
+  // further down the component body exist. Declared up with
+  // coverageRefreshToken, this threw "Cannot access 'secureId' before
+  // initialization" and the app rendered a blank white page.
+  //
+  // The figures are platform-wide, so a new account does not invalidate
+  // them — but it changes the currency they should be read in, and a fresh
+  // session has no answer at all until something asks.
+  useEffect15(() => {
+    bumpCoverage();
+  }, [secureId, registeredUser]);
+
   const registeredCreatedAtRaw = registeredUser && (registeredUser.createdAt || registeredUser.joinedDate);
   let accountCreatedAt = null;
   if (registeredCreatedAtRaw) {
@@ -3648,6 +3686,7 @@ function GloobalId() {
     dialCountry={dialCountry}
     sendHistory={sendMoneyHistory}
     isFullyRegistered={stage === "dashboard"}
+    coverageRefreshToken={coverageRefreshToken}
     onOpenMyShare={() => {
       requestCloseActiveScreen();
       setPendingOpenMyShare(true);

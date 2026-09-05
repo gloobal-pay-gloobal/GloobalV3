@@ -53,14 +53,32 @@ function generateDailySpending(sendHistory, receiveHistory, weekCount = 2) {
   }));
   return { weeks, totals };
 }
-function computeRealCountrySpend(sendHistory) {
-  return dedupeByTxnId(sendHistory).reduce((map, t) => {
-    const iso = ALL_COUNTRIES.find((c) => c.flag === t.flag)?.iso;
-    if (!iso) return map;
-    map[iso] = (map[iso] || 0) + t.amount;
-    return map;
-  }, {});
-}
+// computeRealCountrySpend and computeRealTxnsLastHour used to live here.
+//
+// Both were removed rather than left beside the server figures they were
+// replaced by, because a second way to compute a number is a second answer
+// waiting to disagree with the first — and these two were exactly the wrong
+// answer. GloobalCoverageScreen now reads every spending figure from
+// GET /api/coverage; see server/lib/coverageAggregation.js.
+//
+// What they did, for anyone looking for them in the history:
+//
+//   computeRealCountrySpend  grouped this ONE account's sent payments by
+//     matching each row's flag EMOJI against ALL_COUNTRIES, and summed
+//     `t.amount` without reading `t.currency`. So it added rupees to dollars
+//     as bare numbers, filed each payment under the counterparty's country
+//     rather than the spender's, dropped every row whose flag did not match
+//     (which was every Scan & Pay, since those rows carry no flag), counted
+//     Creator Share legs as spending, and could only ever see the newest 100
+//     rows the history route returns.
+//
+//   computeRealTxnsLastHour  rebuilt a Date from each row's DISPLAY strings
+//     — `new Date("Sep 5" + the current year + "14:33:07")` — because the
+//     real createdAt was discarded when the row was mapped. It stamped the
+//     present year onto every payment, so anything from a previous year was
+//     silently mis-dated.
+//
+// dedupeByTxnId went with them; it existed only to serve these two.
 function buildGloobalBank(country) {
   return {
     id: "gloobal-bank",
@@ -76,29 +94,5 @@ function computeRealActiveUsers(sendHistory, iso, isFullyRegistered) {
   if (!iso) return isFullyRegistered ? 1 : 0;
   if (!isFullyRegistered) return 0;
   return sendHistory.some((t) => ALL_COUNTRIES.find((c) => c.flag === t.flag)?.iso === iso) ? 1 : 0;
-}
-function computeRealTxnsLastHour(sendHistory, iso, now = /* @__PURE__ */ new Date()) {
-  return dedupeByTxnId(sendHistory).filter((t) => {
-    if (iso) {
-      const rowIso = ALL_COUNTRIES.find((c) => c.flag === t.flag)?.iso;
-      if (rowIso !== iso) return false;
-    }
-    if (!t.time) return false;
-    const parsed = /* @__PURE__ */ new Date(`${t.date} ${now.getFullYear()} ${t.time}`);
-    if (isNaN(parsed.getTime())) return false;
-    const diff = now - parsed;
-    return diff >= 0 && diff <= 60 * 60 * 1e3;
-  }).length;
-}
-function dedupeByTxnId(sendHistory) {
-  const seen = /* @__PURE__ */ new Set();
-  const result = [];
-  for (const t of sendHistory) {
-    const key = t.txnId || `${t.flag}-${t.amount}-${t.date}-${t.time}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(t);
-  }
-  return result;
 }
 

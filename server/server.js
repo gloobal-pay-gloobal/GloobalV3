@@ -107,6 +107,30 @@ const {
   accountCountryIso,
 } = require('./lib/accountCountry');
 
+// Every figure on the Gloobal Coverage screen, computed in one place.
+// Coverage previously had no backend at all and reduced its numbers in the
+// browser from the current account's own last-100 payments; see that
+// module's header for the seven defects that produced and how each maps to
+// the founder's definitions.
+const {
+  buildCoverage,
+  resolveAccountCountries,
+  tallyUsersByCountry,
+} = require('./lib/coverageAggregation');
+
+// Hooman Projects. The Coverage screen's project area had no persistence of
+// any kind before these — see models/Project.js for what a project is and
+// models/ProjectAttachment.js for why its file lives in MongoDB.
+const Project = require('./models/Project');
+const ProjectAttachment = require('./models/ProjectAttachment');
+const {
+  PROJECT_CATEGORIES,
+  PROJECT_ATTACHMENT_MAX_BYTES,
+  PROJECT_ATTACHMENT_TYPES,
+  validateProjectInput,
+  sanitiseFilename,
+} = require('./lib/projectValidation');
+
 // One answer to "what currency does this country transact in", shared with
 // lib/settlementEngine.js. Prefers the seeded Country row and falls back to
 // the bundled country/currency map, so a database whose reference tables were
@@ -166,24 +190,34 @@ async function resolveRegistrationCountryIso(rawIso, mobileNumber) {
   return candidate;
 }
 
-// Real registered-user count per country, grouped in Mongo (not pulled
-// across the wire and counted in JS) so this stays cheap as the user
-// collection grows. Every User document carries countryIso (see
-// models/User.js — resolveRegistrationCountryIso above is what sets it at
-// registration, defaulting to 'IN'), so grouping on that field directly
-// gives each country's actual signed-up total, and the values sum to
-// exactly User.countDocuments() with no separate bookkeeping to drift.
+// Real registered-user count per country.
+//
+// This used to group on the raw `$countryIso` field in Mongo. That was the
+// reason active American users were invisible on the Coverage screen: the
+// field defaults to 'IN' (models/User.js) and the registration screen did
+// not send a country until recently, so every account created before that
+// fix is STORED as India no matter where its owner actually is. The count
+// was real; it was filed under the wrong country.
+//
+// accountCountryIso (lib/accountCountry.js) is the resolver that already
+// solves this everywhere it matters — the send route, /api/users/resolve
+// and the settlement engine all go through it — and it was the one thing
+// the country statistics did not use. It treats a bare stored 'IN' as
+// "never recorded" and reads the country off the account's E.164 mobile
+// number instead, while any other stored value is a real choice and is
+// returned untouched.
+//
+// The grouping therefore moves out of Mongo and into JS, because the rule
+// is a dial-code prefix match against a 194-row table that an aggregation
+// pipeline cannot express. That trades a pipeline for one projection of
+// (countryIso, mobileNumber) per account — acceptable at this system's
+// size, and it stops mattering entirely once
+// scripts/backfill-country-iso.mjs has run and the stored field is already
+// correct. The values still sum to exactly User.countDocuments(), which is
+// the property /api/stats depends on.
 async function countUsersByCountry() {
-  const rows = await User.aggregate([
-    { $group: { _id: '$countryIso', count: { $sum: 1 } } }
-  ]);
-  const byCountry = {};
-  for (const row of rows) {
-    const iso = String(row._id || 'IN').trim().toUpperCase();
-    if (!iso) continue;
-    byCountry[iso] = (byCountry[iso] || 0) + row.count;
-  }
-  return byCountry;
+  const accountCountries = await resolveAccountCountries();
+  return tallyUsersByCountry(accountCountries);
 }
 
 const app = express();
@@ -418,6 +452,16 @@ const publicUserPayload = async (user) => {
     // and this response is what the client sets its OWN flag and currency
     // from.
     countryIso: accountCountryIso(user),
+    // The Security screen's switches. Read back here rather than from a
+    // route of their own so the client learns them from the same response it
+    // already uses to learn everything else about the account — a separate
+    // fetch is a separate chance for the screen to render the wrong state.
+    // Defaults spelled out for accounts written before the field existed,
+    // where the subdocument is simply absent.
+    securitySettings: {
+      biometricLogin: user.securitySettings?.biometricLogin !== false,
+      appLock: user.securitySettings?.appLock === true,
+    },
     referredBy: user.referredBy || null,
     referralCount: user.referralCount || 0,
     cashbackRate: Number(user.cashbackRate) || 0,
@@ -618,6 +662,28 @@ const authenticatedUser = async (req) => {
 
   const user = await User.findById(claims.sub);
   if (!user) return null;
+
+  // Token revocation, for the one case that needs it: a credential change.
+  //
+  // These tokens are stateless HMACs with a seven-day TTL and there is no
+  // token store, so nothing could previously end a session early. That made
+  // "change your PIN" a change that left every other signed-in device
+  // untouched — which is precisely what somebody changing a PIN because it
+  // may be known is trying to prevent.
+  //
+  // Comparing the token's own `iat` against a per-account stamp is the whole
+  // mechanism. It costs no extra lookup (this function already has the User
+  // document), it is inert for every account that has never changed a
+  // credential (the stamp is null), and it revokes one account's sessions
+  // rather than everyone's.
+  //
+  // Strictly-less-than matters: /api/pin/change stamps the account and then
+  // immediately mints a replacement token, and those two can land in the
+  // same millisecond. `<` keeps that fresh token valid; `<=` would sign the
+  // person out of the device they just used to change their PIN.
+  if (user.credentialsInvalidatedAt && typeof claims.iat === 'number') {
+    if (claims.iat < new Date(user.credentialsInvalidatedAt).getTime()) return null;
+  }
 
   // The token names an ID the account no longer uses — it was renamed through
   // /api/profile/change-symbol-id. The account is still the same document, so
@@ -1274,6 +1340,196 @@ app.post('/api/pin/verify', credentialLimit, async (req, res) => {
 
 
 // Reset PIN using verified OTP
+// POST /api/pin/change — the Security screen's "Change PIN".
+//
+// Distinct from /api/pin/reset, and deliberately not a wrapper around it.
+// Reset is account RECOVERY: it is unauthenticated, proves nothing about
+// who is holding the phone beyond an OTP to the account's number, and
+// exists for somebody who has forgotten their PIN. This is a change made by
+// somebody already signed in, and the thing it has to prove is different —
+// that whoever is holding this unlocked session also knows the CURRENT PIN.
+// Wiring the Security button to the reset route would have meant an
+// unlocked phone could set a new PIN with an SMS code instead of the PIN it
+// is replacing.
+//
+// So: a valid token for this account, AND the current PIN, AND the same
+// lockout rules every other PIN check obeys — a wrong current PIN here
+// counts against the same attempt budget as a wrong PIN at login, because
+// otherwise this route is an oracle for guessing it without the lockout.
+app.post(
+  '/api/pin/change',
+  credentialLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const currentPin = String(req.body?.currentPin || '').trim();
+      const newPin = String(req.body?.newPin || '').trim();
+
+      if (!currentPin || !newPin) {
+        return res.status(400).json({
+          success: false,
+          message: 'Your current PIN and a new PIN are both required.',
+        });
+      }
+
+      if (!isValidPinFormat(newPin)) {
+        return res.status(400).json({ success: false, message: 'PIN must be 4 to 6 digits.' });
+      }
+
+      if (currentPin === newPin) {
+        return res.status(400).json({
+          success: false,
+          message: 'The new PIN must be different from your current one.',
+        });
+      }
+
+      const user = req.authUser;
+      const pinRecord = await Pin.findOne({ userId: user._id });
+
+      // No PIN on file is not a case to be helpful about. Setting one here
+      // would let a session that never had a PIN create one without proving
+      // anything — /api/pin/set is the route for that, and it is OTP-gated.
+      if (!pinRecord) {
+        return res.status(404).json({ success: false, message: 'PIN is not set for this account.' });
+      }
+
+      beginPinAttempt(pinRecord);
+
+      if (pinLockRemainingMs(pinRecord) > 0) {
+        const locked = pinLockoutResponse(pinRecord);
+        res.set('Retry-After', String(locked.retryAfterSeconds));
+        return res.status(locked.status).json({
+          success: false,
+          message: locked.message,
+          retryAfterSeconds: locked.retryAfterSeconds,
+          lockedUntil: locked.lockedUntil,
+        });
+      }
+
+      const isMatch = await bcrypt.compare(currentPin, pinRecord.pinHash);
+
+      if (!isMatch) {
+        const failure = await registerPinFailure(pinRecord);
+        if (failure.lockedNow) res.set('Retry-After', String(failure.retryAfterSeconds));
+        recordAudit({
+          userId: user._id, action: 'pin.change.failed', status: 'failed',
+          message: 'Wrong current PIN', req, metadata: { symbolId: user.symbolId },
+        });
+        return res.status(401).json({
+          success: false,
+          message: failure.message,
+          attemptsRemaining: failure.attemptsRemaining,
+          lockedUntil: pinRecord.lockedUntil,
+        });
+      }
+
+      await registerPinSuccess(pinRecord);
+
+      const pinHash = await bcrypt.hash(newPin, 10);
+      await Pin.findOneAndUpdate(
+        { userId: user._id },
+        {
+          pinHash,
+          // The old PIN was correct, so the attempt budget resets — the same
+          // thing registerPinSuccess just did, restated here because this
+          // write would otherwise carry the pre-success document forward.
+          failedAttempts: 0,
+          lockedUntil: null,
+          lastVerifiedAt: null,
+          changedAt: new Date(),
+        },
+        { returnDocument: 'after' }
+      );
+
+      // Every OTHER session for this account stops here. See
+      // credentialsInvalidatedAt in models/User.js and the check in
+      // authenticatedUser: a PIN change that leaves the old sessions signed
+      // in is not much of a PIN change.
+      //
+      // Stamped BEFORE the replacement token is minted, so the new token's
+      // iat cannot be older than the stamp.
+      const invalidatedAt = new Date();
+      await User.updateOne({ _id: user._id }, { $set: { credentialsInvalidatedAt: invalidatedAt } });
+
+      recordAudit({
+        userId: user._id, action: 'pin.change', status: 'success',
+        message: 'PIN changed; other sessions revoked', req,
+        metadata: { symbolId: user.symbolId },
+      });
+
+      const refreshed = await User.findById(user._id);
+
+      return res.status(200).json({
+        success: true,
+        message: 'PIN changed. You have been signed out on your other devices.',
+        // The caller just proved both a session AND the current PIN, so they
+        // keep working rather than being bounced to the login screen by the
+        // revocation they themselves triggered.
+        token: issueAuthToken(refreshed),
+        user: await publicUserPayload(refreshed),
+      });
+    } catch (error) {
+      console.error('PIN change error:', error);
+      return res.status(500).json({ success: false, message: 'Server error while changing your PIN.' });
+    }
+  }
+);
+
+// PATCH /api/profile/security/:symbolId — the Security screen's switches.
+//
+// Stored on the account rather than in browser storage: the setting should
+// be the same wherever somebody signs in, and it should not be flippable by
+// anything that can write to localStorage. Both are read back through
+// publicUserPayload, so every response that already carries a user carries
+// these too and the client never needs a separate fetch to know them.
+app.patch(
+  '/api/profile/security/:symbolId',
+  writeLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const update = {};
+
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'biometricLogin')) {
+        if (typeof req.body.biometricLogin !== 'boolean') {
+          return res.status(400).json({ success: false, message: 'biometricLogin must be true or false.' });
+        }
+        update['securitySettings.biometricLogin'] = req.body.biometricLogin;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'appLock')) {
+        if (typeof req.body.appLock !== 'boolean') {
+          return res.status(400).json({ success: false, message: 'appLock must be true or false.' });
+        }
+        update['securitySettings.appLock'] = req.body.appLock;
+      }
+
+      if (Object.keys(update).length === 0) {
+        return res.status(400).json({ success: false, message: 'Nothing to update.' });
+      }
+
+      const updated = await User.findOneAndUpdate(
+        { _id: req.authUser._id },
+        { $set: update },
+        { returnDocument: 'after' }
+      );
+
+      recordAudit({
+        userId: req.authUser._id, action: 'security.settings.update', status: 'success',
+        message: 'Security settings changed', req,
+        metadata: { symbolId: req.authUser.symbolId, changed: Object.keys(update) },
+      });
+
+      return res.status(200).json({ success: true, user: await publicUserPayload(updated) });
+    } catch (error) {
+      console.error('Security settings error:', error);
+      return res.status(500).json({ success: false, message: 'Could not save that setting.' });
+    }
+  }
+);
+
 app.post('/api/pin/reset', credentialLimit, async (req, res) => {
   try {
     const { symbolId, mobileNumber, pin, newPin } = req.body;
@@ -1808,6 +2064,46 @@ app.get('/api/creator-share/distribution', lookupLimit, async (req, res) => {
     console.error('Creator Share distribution error:', error);
 
     return res.status(500).json({ success: false, message: 'Could not load the Creator Share distribution.' });
+  }
+});
+
+// GET /api/coverage — the whole Gloobal Coverage screen, in one response.
+//
+// Everything this returns is PLATFORM-WIDE. That is the correction at the
+// heart of this route: Coverage's spending figures used to be derived per
+// account, in the browser, from that account's own payment history, so two
+// people looking at "Total spending" saw two different numbers (21.82 and
+// 8.1K were the reported pair) and neither was the number the screen claims
+// to show. The founder's definition — "Global Total Spending = sum of
+// accumulated spending of all countries" — describes one figure that every
+// account must see identically, in the same way Total users already does.
+//
+// Unauthenticated, like /api/stats and /api/coin/supply beside it, and for
+// the same reason: there is nothing per-account in the response. It carries
+// aggregates and country totals only — no ids, no names, no per-user
+// amounts — which is the shape of data that is safe to publish. It is rate
+// limited because it is the most expensive read on this server.
+//
+// ?currency= picks the unit everything is denominated in (default INR, this
+// system's reference unit). Conversion happens HERE, against lib/fxRates.js,
+// preferring each payment's own transaction-time rate where it applies —
+// the app used to convert with a static rate table compiled into the bundle,
+// whose convert() returns 0 for an unknown currency rather than failing.
+app.get('/api/coverage', lookupLimit, async (req, res) => {
+  try {
+    const requested = String(req.query.currency || '').trim().toUpperCase();
+    const currency = /^[A-Z]{3}$/.test(requested) ? requested : undefined;
+
+    const coverage = await buildCoverage({ currency });
+
+    return res.status(200).json({ success: true, ...coverage });
+  } catch (error) {
+    console.error('Coverage aggregation error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Could not load Gloobal Coverage figures.',
+    });
   }
 });
 
@@ -4151,6 +4447,439 @@ app.get('/api/assets/paylater/:symbolId', lookupLimit, requireAuth, requireSelf(
   } catch (error) {
     console.error('PayLater fetch error:', error);
     return res.status(500).json({ message: 'Server error while fetching PayLater.' });
+  }
+});
+
+// ─── Hooman Projects ────────────────────────────────────────────────────────
+//
+// The Coverage screen has shown a "Hooman Projects" area for a while with
+// nothing behind it: eight category names in a hardcoded frontend array,
+// "Real projects in this category" rendered as a literal ∆, and no way to
+// add one. These routes are the backend that area never had.
+//
+// Visibility, in one sentence, because every route below depends on it: a
+// PUBLISHED project is readable by anyone, a DRAFT is readable only by its
+// owner, and only the owner may ever change or delete either. Ownership is
+// compared by document id (never by symbolId), the same rule requireSelf
+// uses, so renaming a Gloobal ID cannot hand somebody else's project away
+// or lock an owner out of their own.
+//
+// Search text is escaped through escapeRegExp, already defined near the top
+// of this file for the mobile-number lookup. Reused rather than redefined:
+// a search box wired straight to a regex engine is a syntax error the first
+// time somebody types "(" and a match-everything query the first time they
+// type ".*".
+
+// The project as the API presents it. Never spreads the raw document: that
+// is how an internal field becomes a public one by accident, and the
+// attachment sub-document in particular must never carry its bytes here.
+const publicProject = (project, viewerId) => ({
+  id: String(project._id),
+  title: project.title,
+  category: project.category,
+  summary: project.summary,
+  summaryWordCount: project.summaryWordCount,
+  countryIso: project.countryIso || null,
+  link: project.link || '',
+  status: project.status,
+  ownerSymbolId: project.ownerSymbolId,
+  // So a client can render edit/delete affordances without having to know
+  // the ownership rule or compare ids itself.
+  isOwner: Boolean(viewerId) && String(project.ownerId) === String(viewerId),
+  attachment: project.attachment
+    ? {
+        filename: project.attachment.filename,
+        contentType: project.attachment.contentType,
+        byteSize: project.attachment.byteSize,
+        // Where to fetch the bytes. A path, not a signed URL, because the
+        // bytes are served by this API and authorised per request.
+        url: '/api/projects/' + String(project._id) + '/attachment',
+      }
+    : null,
+  createdAt: project.createdAt,
+  updatedAt: project.updatedAt,
+});
+
+// Loads a project and decides whether this viewer may see it at all.
+// Returns { project, isOwner } or { status, message } — never a partially
+// authorised result the caller has to remember to check.
+async function loadVisibleProject(id, viewerId) {
+  if (!mongoose.Types.ObjectId.isValid(String(id || ''))) {
+    return { status: 404, message: 'Project not found.' };
+  }
+  const project = await Project.findById(id).lean();
+  if (!project) return { status: 404, message: 'Project not found.' };
+  const isOwner = viewerId && String(project.ownerId) === String(viewerId);
+  // A draft answers 404 rather than 403 to a stranger: 403 would confirm
+  // that a project with this id exists, which is itself something the owner
+  // has not published.
+  if (project.status === 'draft' && !isOwner) {
+    return { status: 404, message: 'Project not found.' };
+  }
+  return { project, isOwner };
+}
+
+// GET /api/projects — the project listing, and the project search.
+//
+// This is project/infrastructure/product search, and it is deliberately NOT
+// the same thing as the category picker's search box on the Coverage
+// screen. That one filters eight fixed category NAMES in the browser and
+// should keep doing exactly that; this one queries stored project records.
+// Merging them would have produced a single box that pretended to search
+// products while actually filtering a hardcoded list.
+//
+// ?q=              free text over title and summary
+// ?category=       one of the eight categories ("Infrastructure" included)
+// ?country=        ISO code
+// ?mine=1          this account's own projects, drafts included (needs a token)
+// ?limit=&cursor=  paging
+app.get('/api/projects', lookupLimit, async (req, res) => {
+  try {
+    const viewer = await authenticatedUser(req);
+    const mine = String(req.query.mine || '') === '1';
+
+    if (mine && !viewer) {
+      return res.status(401).json({ success: false, message: 'Sign in to see your own projects.' });
+    }
+
+    const filter = mine
+      ? { ownerId: viewer._id }
+      // Everyone else sees published rows only. Drafts are excluded HERE, in
+      // the query, rather than filtered out afterwards — a filter after the
+      // fact is one refactor away from being forgotten.
+      : { status: 'published' };
+
+    const q = String(req.query.q || '').trim();
+    if (q) {
+      const pattern = new RegExp(escapeRegExp(q), 'i');
+      // Regex rather than a $text index because this backs a
+      // search-as-you-type box, and $text only matches whole words — typing
+      // "infra" would find nothing until "infrastructure" was complete. The
+      // collection is small enough that this is the right trade today; a
+      // text index is the upgrade when it is not, and the API shape does not
+      // change when that happens.
+      filter.$or = [{ title: pattern }, { summary: pattern }];
+    }
+
+    const category = String(req.query.category || '').trim();
+    if (category) {
+      if (!PROJECT_CATEGORIES.includes(category)) {
+        return res.status(400).json({ success: false, message: 'Unknown category.' });
+      }
+      filter.category = category;
+    }
+
+    const country = String(req.query.country || '').trim().toUpperCase();
+    if (country) {
+      if (!/^[A-Z]{2}$/.test(country)) {
+        return res.status(400).json({ success: false, message: 'country must be a two-letter ISO code.' });
+      }
+      filter.countryIso = country;
+    }
+
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 50)
+      : 20;
+
+    // Keyset paging on _id, which is monotonic with insertion time. Skip/
+    // offset paging would drift as projects are added underneath a reader.
+    const cursor = String(req.query.cursor || '').trim();
+    if (cursor) {
+      if (!mongoose.Types.ObjectId.isValid(cursor)) {
+        return res.status(400).json({ success: false, message: 'Bad cursor.' });
+      }
+      filter._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+    }
+
+    // One extra row, to answer "is there another page" without a count.
+    const rows = await Project.find(filter).sort({ _id: -1 }).limit(limit + 1).lean();
+    const page = rows.slice(0, limit);
+    const nextCursor = rows.length > limit ? String(page[page.length - 1]._id) : null;
+
+    // Per-category counts over the SAME visibility rule, so the number on a
+    // category card and the list behind it can never disagree. Counted in
+    // Mongo rather than from the page above, which is one page of one
+    // category and could not answer this.
+    const countFilter = mine ? { ownerId: viewer._id } : { status: 'published' };
+    const countRows = await Project.aggregate([
+      { $match: countFilter },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+    ]);
+    const counts = Object.fromEntries(PROJECT_CATEGORIES.map((name) => [name, 0]));
+    for (const row of countRows) {
+      if (Object.prototype.hasOwnProperty.call(counts, row._id)) counts[row._id] = row.count;
+    }
+
+    return res.json({
+      success: true,
+      projects: page.map((project) => publicProject(project, viewer && viewer._id)),
+      nextCursor,
+      counts,
+      categories: PROJECT_CATEGORIES,
+    });
+  } catch (error) {
+    console.error('Project list error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load projects.' });
+  }
+});
+
+// GET /api/projects/:id
+app.get('/api/projects/:id', lookupLimit, async (req, res) => {
+  try {
+    const viewer = await authenticatedUser(req);
+    const found = await loadVisibleProject(req.params.id, viewer && viewer._id);
+    if (!found.project) return res.status(found.status).json({ success: false, message: found.message });
+    return res.json({ success: true, project: publicProject(found.project, viewer && viewer._id) });
+  } catch (error) {
+    console.error('Project read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load that project.' });
+  }
+});
+
+// POST /api/projects — create.
+//
+// The owner is taken from the TOKEN, never from the body. A symbolId in the
+// payload would be a field a client could set to somebody else's account,
+// and there is no reason to accept one: the token already names exactly one
+// account and that is whose project this is.
+app.post('/api/projects', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const validated = validateProjectInput(req.body || {});
+    if (!validated.ok) return res.status(400).json({ success: false, message: validated.message });
+
+    // Same resolver every country figure on the Coverage screen goes
+    // through, so a project's country and its creator's can never disagree —
+    // and a legacy account stored as the bare 'IN' default still files its
+    // projects under the country its mobile number actually says.
+    const countryIso = accountCountryIso(req.authUser);
+
+    const project = await Project.create(Object.assign({}, validated.value, {
+      ownerId: req.authUser._id,
+      ownerSymbolId: req.authUser.symbolId,
+      countryIso,
+    }));
+
+    recordAudit({
+      userId: req.authUser._id, action: 'project.create', status: 'success',
+      message: 'Hooman Project created', req,
+      metadata: {
+        projectId: String(project._id),
+        symbolId: req.authUser.symbolId,
+        category: project.category,
+      },
+    });
+
+    return res.status(201).json({
+      success: true,
+      project: publicProject(project.toObject(), req.authUser._id),
+    });
+  } catch (error) {
+    console.error('Project create error:', error);
+    return res.status(500).json({ success: false, message: 'Could not save that project.' });
+  }
+});
+
+// PATCH /api/projects/:id — owner only, partial update.
+app.patch('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(404).json({ success: false, message: 'Project not found.' });
+    }
+    const existing = await Project.findById(req.params.id).lean();
+    if (!existing) return res.status(404).json({ success: false, message: 'Project not found.' });
+    if (String(existing.ownerId) !== String(req.authUser._id)) {
+      return res.status(403).json({ success: false, message: 'That project is not yours.' });
+    }
+
+    const validated = validateProjectInput(req.body || {}, { partial: true });
+    if (!validated.ok) return res.status(400).json({ success: false, message: validated.message });
+
+    const updated = await Project.findOneAndUpdate(
+      // ownerId in the filter as well as in the check above: the read and
+      // the write are two round trips, and this is what makes the write
+      // itself refuse to touch a row that is not this account's.
+      { _id: existing._id, ownerId: req.authUser._id },
+      { $set: validated.value },
+      { returnDocument: 'after' }
+    ).lean();
+
+    if (!updated) return res.status(404).json({ success: false, message: 'Project not found.' });
+    return res.json({ success: true, project: publicProject(updated, req.authUser._id) });
+  } catch (error) {
+    console.error('Project update error:', error);
+    return res.status(500).json({ success: false, message: 'Could not update that project.' });
+  }
+});
+
+// DELETE /api/projects/:id — owner only. Takes the attachment with it, so a
+// deleted project cannot leave its file behind as an unreferenced blob.
+app.delete('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+      return res.status(404).json({ success: false, message: 'Project not found.' });
+    }
+    const deleted = await Project.findOneAndDelete({
+      _id: req.params.id,
+      ownerId: req.authUser._id,
+    }).lean();
+    if (!deleted) {
+      // Either it does not exist or it is not theirs. Same answer for both,
+      // for the same reason a draft 404s: distinguishing them tells a
+      // stranger that somebody else's project has this id.
+      return res.status(404).json({ success: false, message: 'Project not found.' });
+    }
+    await ProjectAttachment.deleteMany({ projectId: deleted._id });
+    recordAudit({
+      userId: req.authUser._id, action: 'project.delete', status: 'success',
+      message: 'Hooman Project deleted', req,
+      metadata: { projectId: String(deleted._id), symbolId: req.authUser.symbolId },
+    });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Project delete error:', error);
+    return res.status(500).json({ success: false, message: 'Could not delete that project.' });
+  }
+});
+
+// POST /api/projects/:id/attachment — owner only.
+//
+// The file arrives base64-encoded in JSON rather than as multipart, because
+// that needs no new dependency and this server parses JSON already. The body
+// limit is raised for THIS ROUTE ONLY: the global cap is 64kb (nothing else
+// this API accepts is near it) and raising it globally would let every other
+// route allocate megabytes per request.
+//
+// base64 inflates by 4/3, so a 2 MB file needs about 2.67 MB of body; 3mb
+// leaves room for the surrounding JSON.
+app.post(
+  '/api/projects/:id/attachment',
+  writeLimit,
+  requireAuth,
+  express.json({ limit: '3mb' }),
+  async (req, res) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
+        return res.status(404).json({ success: false, message: 'Project not found.' });
+      }
+      const project = await Project.findOne({ _id: req.params.id, ownerId: req.authUser._id });
+      if (!project) return res.status(404).json({ success: false, message: 'Project not found.' });
+
+      const claimedType = String((req.body && req.body.contentType) || '').trim().toLowerCase();
+      const extension = PROJECT_ATTACHMENT_TYPES[claimedType];
+      if (!extension) {
+        return res.status(415).json({
+          success: false,
+          message: 'That file type is not accepted. Allowed: '
+            + Object.keys(PROJECT_ATTACHMENT_TYPES).join(', ') + '.',
+        });
+      }
+
+      const base64 = String((req.body && req.body.data) || '');
+      if (!base64) return res.status(400).json({ success: false, message: 'No file was sent.' });
+
+      let buffer = null;
+      try {
+        buffer = Buffer.from(base64, 'base64');
+      } catch (e) {
+        buffer = null;
+      }
+      // Buffer.from silently DROPS characters that are not valid base64
+      // rather than throwing, so a corrupt upload arrives as a short buffer
+      // instead of as an error. An empty result is the case worth refusing.
+      if (!buffer || buffer.length === 0) {
+        return res.status(400).json({ success: false, message: 'That file could not be read.' });
+      }
+      if (buffer.length > PROJECT_ATTACHMENT_MAX_BYTES) {
+        return res.status(413).json({
+          success: false,
+          message: 'Files can be at most '
+            + Math.round(PROJECT_ATTACHMENT_MAX_BYTES / (1024 * 1024)) + ' MB.',
+        });
+      }
+
+      const filename = sanitiseFilename(req.body && req.body.filename, extension);
+
+      // One attachment per project: replacing means the old bytes go. Left
+      // behind, they would be unreachable (nothing references them) and
+      // permanent, which is how a database fills with files nobody can find.
+      await ProjectAttachment.deleteMany({ projectId: project._id });
+
+      const stored = await ProjectAttachment.create({
+        projectId: project._id,
+        ownerId: req.authUser._id,
+        filename,
+        // The allow-listed type, NOT the raw string the client sent.
+        contentType: claimedType,
+        byteSize: buffer.length,
+        data: buffer,
+      });
+
+      project.attachment = {
+        attachmentId: stored._id,
+        filename,
+        contentType: claimedType,
+        byteSize: buffer.length,
+        uploadedAt: new Date(),
+      };
+      await project.save();
+
+      return res.status(201).json({
+        success: true,
+        project: publicProject(project.toObject(), req.authUser._id),
+      });
+    } catch (error) {
+      console.error('Project attachment upload error:', error);
+      return res.status(500).json({ success: false, message: 'Could not store that file.' });
+    }
+  }
+);
+
+// GET /api/projects/:id/attachment — the bytes.
+//
+// Visibility follows the PROJECT, not the attachment: if you can see the
+// project you can fetch its file, and a draft's file is as private as the
+// draft. Served with the allow-listed content type and an attachment
+// disposition, so nothing here is rendered inline by a browser on this
+// origin.
+app.get('/api/projects/:id/attachment', lookupLimit, async (req, res) => {
+  try {
+    const viewer = await authenticatedUser(req);
+    const found = await loadVisibleProject(req.params.id, viewer && viewer._id);
+    if (!found.project) return res.status(found.status).json({ success: false, message: found.message });
+    if (!found.project.attachment) {
+      return res.status(404).json({ success: false, message: 'That project has no file.' });
+    }
+
+    const stored = await ProjectAttachment.findById(found.project.attachment.attachmentId).lean();
+    if (!stored) return res.status(404).json({ success: false, message: 'That file is no longer stored.' });
+
+    // .lean() hands back the RAW BSON value, and for a Buffer field that is
+    // a mongodb Binary rather than a Node Buffer. res.send() does not
+    // recognise a Binary as bytes, so it fell through to the JSON branch and
+    // served `{"buffer":{...}}` — a 27-byte PDF arrived as 38 bytes of JSON
+    // and would not open. Normalising here is what makes the download be the
+    // file that was uploaded.
+    const bytes = Buffer.isBuffer(stored.data)
+      ? stored.data
+      : Buffer.from(stored.data?.buffer ?? stored.data ?? []);
+
+    res.setHeader('Content-Type', stored.contentType);
+    // Length from the buffer actually being written, NOT from the stored
+    // byteSize. The two agreeing is exactly the assumption that just broke,
+    // and a Content-Length that disagrees with the body truncates the
+    // download or hangs the connection.
+    res.setHeader('Content-Length', String(bytes.length));
+    // Always an attachment, never inline: the filename is user-supplied and
+    // the safest thing a browser can do with any of these types is save it.
+    res.setHeader('Content-Disposition', 'attachment; filename="' + stored.filename + '"');
+    // Belt and braces against a browser sniffing its own type out of the
+    // bytes and ignoring the one above.
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.send(bytes);
+  } catch (error) {
+    console.error('Project attachment read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load that file.' });
   }
 });
 

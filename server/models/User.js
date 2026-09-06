@@ -185,6 +185,48 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // The moment every token issued BEFORE it stopped being trusted.
+  //
+  // Auth here is a stateless HMAC with a seven-day TTL and there is no token
+  // store, so until now nothing could end a session early — a PIN change
+  // left every other signed-in device exactly as signed in as it was, which
+  // is the one thing a person changing their PIN is usually trying to stop.
+  //
+  // This is the revocation, and it is deliberately the smallest possible
+  // version of one: authenticatedUser compares the token's own `iat` against
+  // this stamp and refuses anything older. It needs no new storage and no
+  // lookup that was not already happening — that function already loads the
+  // User document — and it is scoped to one account rather than a global
+  // key rotation that would sign the whole platform out.
+  //
+  // null on every account that has never changed a credential, which is what
+  // makes this inert for existing sessions: no stamp, nothing to compare,
+  // no behaviour change. Only /api/pin/change and /api/pin/reset set it, and
+  // both mint a fresh token in the same response so the device that made the
+  // change stays signed in.
+  credentialsInvalidatedAt: {
+    type: Date,
+    default: null
+  },
+
+  // The Security screen's two switches, stored.
+  //
+  // They were component-local React state read at exactly one place — the
+  // line that drew the switch — so they reset on every remount and gated
+  // nothing at all. Stored on the account rather than in browser storage so
+  // the setting is the same wherever the person signs in, and so it cannot
+  // be flipped by anything that can write to localStorage.
+  securitySettings: {
+    // Whether this account WANTS the passkey path. It does not create or
+    // destroy a passkey — registration and removal are their own routes —
+    // it decides whether the app offers biometrics or goes straight to the
+    // PIN. Default true, matching the switch's previous default.
+    biometricLogin: { type: Boolean, default: true },
+    // Whether the app should demand a credential when it is opened, rather
+    // than restoring straight to the dashboard.
+    appLock: { type: Boolean, default: false }
+  },
+
   createdAt: {
     type: Date,
     default: Date.now

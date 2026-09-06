@@ -257,12 +257,49 @@ async function gloobalBiometricEnrolledRemote(symbolId) {
 //      server-side. This is a real check, not a bypass — and it is what
 //      keeps a device with no sensor, or a person who chose "set this up
 //      later", able to use their own account.
+// The account's "Biometric login" preference, mirrored here from
+// User.securitySettings.biometricLogin so the gate can read it.
+//
+// A module-level variable for the same reason the identity is read from
+// gloobalSessionLoad() rather than taken as a prop (see the header): this
+// gate is called from screens all over the tree, and threading a setting
+// through every one of them means each caller can quietly forget it.
+// App.jsx sets it whenever the signed-in account changes.
+//
+// Defaults to true, which is both the server's default and the safe way
+// round: an unset preference offers biometrics, it does not silently
+// disable them.
+var gloobalBiometricLoginEnabled = true;
+
+function gloobalSetBiometricLoginEnabled(enabled) {
+  gloobalBiometricLoginEnabled = enabled !== false;
+}
+
+// How long the app may be backgrounded before "App lock" re-locks it.
+//
+// Not zero, because picking a photo or reading a notification backgrounds
+// the tab for a second or two, and a lock screen on every one of those
+// would make the app tiring enough that people would switch the setting
+// off — which protects them less than a slightly forgiving lock does.
+var GLOOBAL_APP_LOCK_GRACE_MS = 30000;
+
 async function requireBiometric(options) {
   const opts = options || {};
   const symbolId = opts.symbolId || gloobalActiveSymbolId();
 
   // (1) Nothing to prompt with on this device — the PIN is the check.
   if (!(await gloobalPlatformAuthenticatorAvailable())) return gloobalRunPinFallback(opts);
+
+  // (1b) The account has switched biometric login off.
+  //
+  // This SKIPS the passkey and goes to the PIN — it does not skip the
+  // check. That distinction is the whole point: every path out of this
+  // function either verifies something or returns false, and turning a
+  // switch off in a settings screen must never be a way to turn a gate
+  // off. The PIN fallback is a real server-side verification
+  // (POST /api/pin/verify), so an account with biometrics disabled is
+  // authorised exactly as strictly as one on a device with no sensor.
+  if (!gloobalBiometricLoginEnabled) return gloobalRunPinFallback(opts);
 
   // (2) Enrolled — the real thing.
   if (!symbolId) return gloobalRunPinFallback(opts);

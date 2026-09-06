@@ -357,6 +357,20 @@ function GloobalId() {
   const [essentialsIHaveEnough, setEssentialsIHaveEnough] = useState19(false);
   const handleToggleEssentialsIHaveEnough = () => setEssentialsIHaveEnough((v) => !v);
   const [sendMoneyHistory, setSendMoneyHistory] = useState19(SEND_MONEY_HISTORY_SEED);
+
+  // Bumped whenever something happened that could move a Gloobal Coverage
+  // figure. GloobalCoverageScreen refetches on it; nothing else reads it.
+  //
+  // This is the entire live-update mechanism, and it is a counter rather
+  // than a poll on purpose. Coverage's figures used to be derived in the
+  // browser from sendMoneyHistory, which is refreshed by the 30-second
+  // dashboard poll and merged APPEND-ONLY — so a row recorded wrong stayed
+  // wrong for the whole session, and a Scan & Pay never moved the total at
+  // all until a full reload. Now the figures come from the server, and this
+  // says when to ask again: after a payment, and on an account change. No
+  // new interval anywhere.
+  const [coverageRefreshToken, setCoverageRefreshToken] = useState19(0);
+  const bumpCoverage = () => setCoverageRefreshToken((n) => n + 1);
   const { openComplaint, submitLocationObservation } = useProvenanceAndDisputes();
   // Best-effort, fire-and-forget location report for a transaction
   // that has ALREADY completed. This is deliberately the only
@@ -442,6 +456,8 @@ function GloobalId() {
     // split in DashboardScreen — not to be confused with the
     // sender/receiver location role used just above.
     setSendMoneyHistory((h) => [{ ...entry, role: activeShareRole }, ...h]);
+    // Money moved, so Gloobal Coverage's figures have. Send Money.
+    bumpCoverage();
     // Posting + completion + provenance + complaint window + asset-seed
     // eligibility already happened atomically inside executeTransaction
     // (called from SendMoneyScreen.completePayment, via
@@ -943,6 +959,10 @@ function GloobalId() {
           role: activeShareRole
         };
         setSendMoneyHistory((h) => [historyEntry, ...h]);
+        // Money moved, so Gloobal Coverage's figures have. Scan & Pay —
+        // the path whose rows carried no counterparty flag and therefore
+        // never reached the old client-side total at all.
+        bumpCoverage();
         reportSenderLocation(txnId);
       } else {
         setScanError(result.reason || "Payment failed \u2014 insufficient balance");
@@ -1016,6 +1036,9 @@ function GloobalId() {
       role: activeShareRole
     };
     setSendMoneyHistory((h) => [historyEntry, ...h]);
+    // Money moved, so Gloobal Coverage's figures have. Pay business — the
+    // other path whose rows the old client-side total silently dropped.
+    bumpCoverage();
     reportSenderLocation(txnId);
   };
   const assetSeeds = useEssentialsGrants();
@@ -1265,6 +1288,127 @@ function GloobalId() {
   // brief window during registration before the account exists
   // server-side at all, and is itself computed once — not on every
   // render — so it does not drift.
+  // Coverage refetches on an account change. Placed HERE, below
+  // registeredUser and secureId rather than beside the counter it bumps,
+  // for the reason this file has already been bitten by twice: a hook's
+  // dependency array is evaluated on EVERY render, before the `const`s
+  // further down the component body exist. Declared up with
+  // coverageRefreshToken, this threw "Cannot access 'secureId' before
+  // initialization" and the app rendered a blank white page.
+  //
+  // The figures are platform-wide, so a new account does not invalidate
+  // them — but it changes the currency they should be read in, and a fresh
+  // session has no answer at all until something asks.
+  useEffect15(() => {
+    bumpCoverage();
+  }, [secureId, registeredUser]);
+
+  // ── The Security screen's two switches, applied ────────────────────────
+  //
+  // Both used to be component-local state in Dashboard.jsx, read at exactly
+  // one place — the line that drew the switch. They are stored on the
+  // account now (User.securitySettings) and arrive on every response that
+  // carries a user; these are the two places that make them mean something.
+  const securitySettings = (registeredUser && registeredUser.securitySettings) || null;
+  // Absent settings default to the server's own defaults rather than to
+  // "off": an account that has never touched the Security screen should
+  // behave exactly as it did before this existed.
+  const biometricLoginOn = securitySettings ? securitySettings.biometricLogin !== false : true;
+  const appLockOn = securitySettings ? securitySettings.appLock === true : false;
+
+  // Biometric login: hands the preference to the gate every screen calls.
+  // Switching it off routes requireBiometric to the PIN, it does not
+  // switch a check off — see the comment at that branch in useBiometric.js.
+  useEffect15(() => {
+    gloobalSetBiometricLoginEnabled(biometricLoginOn);
+  }, [biometricLoginOn]);
+
+  // Writes a Security switch to the account and adopts whatever the server
+  // says the account now holds. Returns a boolean so the switch can roll
+  // itself back rather than sitting in a state the account does not share.
+  //
+  // registeredUser is replaced with the server's own user object rather
+  // than patched locally: the setting has exactly one home, and a client
+  // that edits its copy has quietly created a second.
+  const handleUpdateSecuritySettings = async (settings) => {
+    const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
+    if (!symbolId) return false;
+    try {
+      const updated = await GloobalApi.updateSecuritySettings(symbolId, settings);
+      if (!updated) return false;
+      setRegisteredUser(updated);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  // The real PIN change. The server verifies the CURRENT PIN, applies the
+  // same lockout budget as any other PIN check, and revokes this account's
+  // other sessions — the replacement token it returns is saved by
+  // GloobalApi.changePin so this device stays signed in through its own
+  // revocation.
+  //
+  // The server's message is passed straight back rather than replaced with
+  // a generic one: it is the only thing that can say "3 attempts remaining"
+  // or how long a lockout has left.
+  const handleChangePin = async (currentPin, newPin) => {
+    const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
+    if (!symbolId) return { ok: false, message: "You're not signed in." };
+    try {
+      const result = await GloobalApi.changePin(symbolId, currentPin, newPin);
+      if (result && result.user) setRegisteredUser(result.user);
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        message: GloobalApi.isUnreachable(err)
+          ? GLOOBAL_API_WAKING_MESSAGE
+          : (err && err.message) || "Couldn't change your PIN."
+      };
+    }
+  };
+
+  // App lock: re-lock when the app comes back to the foreground.
+  //
+  // Worth being exact about what this does and does not control, because
+  // the switch's old description ("Ask for your PIN every time the app
+  // opens") described something that ALREADY happens unconditionally: a
+  // restored session lands on the PIN stage, never on the dashboard (see
+  // the session-restore effect above). Making that optional would have
+  // been the only way to give the switch that meaning, and it would have
+  // meant shipping a setting whose "on" state was the status quo and whose
+  // "off" state removed a credential check. A switch is not worth
+  // weakening authentication for.
+  //
+  // So it owns the gap that genuinely existed: nothing re-locked the app
+  // after it had been left open and backgrounded. With this on, returning
+  // to a session that has been away goes back through the same PIN stage a
+  // cold open already uses — no new lock screen, no second code path, and
+  // no way for it to resolve to "unlocked" without a real verification.
+  useEffect15(() => {
+    if (!appLockOn || stage !== "dashboard") return undefined;
+    if (typeof document === "undefined") return undefined;
+    let hiddenAt = 0;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      // A grace period, because switching to the camera roll to pick a
+      // photo, or answering a notification, backgrounds the tab for a
+      // moment. Locking on every such flicker would make the app unusable
+      // and teach people to turn the setting off, which is worse for them
+      // than not having it.
+      if (!hiddenAt || Date.now() - hiddenAt < GLOOBAL_APP_LOCK_GRACE_MS) return;
+      hiddenAt = 0;
+      setIsLoginAttempt(true);
+      setStage("secureId");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [appLockOn, stage]);
+
   const registeredCreatedAtRaw = registeredUser && (registeredUser.createdAt || registeredUser.joinedDate);
   let accountCreatedAt = null;
   if (registeredCreatedAtRaw) {
@@ -3244,6 +3388,9 @@ function GloobalId() {
     // Update History screen used to show only renames made in THIS session,
     // so it was empty again after every login — see idUpdateHistory there.
     idHistory={(registeredUser && registeredUser.symbolIdHistory) || []}
+    securitySettings={securitySettings}
+    onUpdateSecuritySettings={handleUpdateSecuritySettings}
+    onChangePin={handleChangePin}
     sendHistory={sendMoneyHistory}
     receivedHistory={receivedMoneyHistory}
     bankBalance={bankBalance}
@@ -3648,6 +3795,7 @@ function GloobalId() {
     dialCountry={dialCountry}
     sendHistory={sendMoneyHistory}
     isFullyRegistered={stage === "dashboard"}
+    coverageRefreshToken={coverageRefreshToken}
     onOpenMyShare={() => {
       requestCloseActiveScreen();
       setPendingOpenMyShare(true);

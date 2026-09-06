@@ -21,6 +21,20 @@
 var GLOOBAL_API_WAKING_MESSAGE =
   "Couldn't reach the server — it may still be waking up. Please try again in a few seconds.";
 
+// A number, or null where the server genuinely sent one.
+//
+// `Number(x) || 0` is the usual shorthand in this file and it is wrong for
+// any figure that can legitimately be unavailable: it turns null into 0, and
+// 0 is a claim ("nobody spent anything") where null is an admission ("this
+// could not be computed"). Coverage renders those two differently — a real
+// figure versus ∆ — so the difference has to survive the boundary. Also
+// keeps a real 0 as 0, which the `||` form silently agrees with by accident.
+function numberOrNull(value) {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 // Cold-start retry.
 //
 // The backend runs on a Render FREE instance, which spins down after about
@@ -158,6 +172,38 @@ var GloobalApi = {
   // POST /api/pin/set
   async setPin(symbolId, pin) {
     await gloobalApiClient.post("/api/pin/set", { symbolId, secureId: symbolId, pin });
+  },
+
+  // POST /api/pin/change — the Security screen's Change PIN.
+  //
+  // NOT /api/pin/reset. Reset is account recovery: unauthenticated, proving
+  // only an OTP to the account's number. This is a change made by somebody
+  // already signed in, and it requires the CURRENT PIN as well as the
+  // session — otherwise an unlocked phone could set a new PIN with an SMS
+  // code instead of the PIN it is replacing.
+  //
+  // The server revokes this account's OTHER sessions on success and hands
+  // back a replacement token for this one. Saving it is what stops the
+  // device that made the change from being signed out by its own change.
+  async changePin(symbolId, currentPin, newPin) {
+    const result = await gloobalApiClient.post('/api/pin/change', { symbolId, currentPin, newPin });
+    if (result && result.token) gloobalAuthTokenSave(result.token);
+    return { user: result && result.user, message: result && result.message };
+  },
+
+  // PATCH /api/profile/security/:symbolId — the Security screen's switches.
+  //
+  // Server-side rather than browser storage, so the setting is the same
+  // wherever this person signs in and cannot be flipped by anything that
+  // can write to localStorage. Returns the updated user, which is what the
+  // caller stores — the switches are read back off registeredUser, never
+  // held as their own separate copy that could drift from the account.
+  async updateSecuritySettings(symbolId, settings) {
+    const result = await gloobalApiClient.patch(
+      `/api/profile/security/${encodeURIComponent(symbolId)}`,
+      settings
+    );
+    return (result && result.user) || null;
   },
 
   // POST /api/pin/verify — confirms a PIN without logging in.
@@ -447,6 +493,138 @@ var GloobalApi = {
     } catch (e) {
       return null;
     }
+  },
+
+  // GET /api/coverage — every figure on the Gloobal Coverage screen, from
+  // the one server-side aggregation that owns them.
+  //
+  // Coverage used to compute its own spending in the browser, by reducing
+  // `sendHistory` — the CURRENT ACCOUNT's outgoing payments, hydrated from a
+  // route capped at 100 rows, summed without reading each row's currency.
+  // So the "global" total was per-account, per-device, currency-blind and
+  // silently truncated: two people saw 21.82 and 8.1K for a figure that is
+  // defined as one platform-wide number. This call replaces that entirely.
+  // There is deliberately no second path to any of these values.
+  //
+  // `currency` is the unit the caller wants everything denominated in. The
+  // conversion happens on the server against real rates — the bundled RATES
+  // table in this app must never be used for these figures, since its
+  // convert() answers 0 for a currency it does not know rather than failing.
+  //
+  // Returns null when the server cannot answer (cold start, offline, a
+  // deploy without this route). The screen renders ∆ for that, which is the
+  // same thing it already does for a figure it does not have — an honest
+  // "no data" rather than a fabricated 0 or a stale client-side guess.
+  async getCoverage(currency) {
+    try {
+      const query = /^[A-Za-z]{3}$/.test(String(currency || ""))
+        ? `?currency=${encodeURIComponent(String(currency).toUpperCase())}`
+        : "";
+      const result = await gloobalApiClient.get(`/api/coverage${query}`, {
+        timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS
+      });
+      if (!result || !result.success) return null;
+
+      const countries = Array.isArray(result.countries) ? result.countries : [];
+      return {
+        currency: String(result.currency || "INR").toUpperCase(),
+        // null is a real answer here and must survive: it means the figure
+        // could not be produced (an unconvertible currency), which is not
+        // the same fact as 0. `Number(x) || 0` would erase that difference.
+        totalSpending: numberOrNull(result.totalSpending),
+        totalSpendingByCountry: result.totalSpendingByCountry && typeof result.totalSpendingByCountry === "object"
+          ? result.totalSpendingByCountry
+          : {},
+        transactionsPerDay: Number(result.transactionsPerDay) || 0,
+        transactionsTotal: Number(result.transactionsTotal) || 0,
+        countries: countries.map((row) => ({
+          countryIso: String(row.countryIso || "").toUpperCase(),
+          users: Number(row.users) || 0,
+          transactions: Number(row.transactions) || 0,
+          transactionsToday: Number(row.transactionsToday) || 0,
+          totalSpending: numberOrNull(row.totalSpending),
+          // Tri-state on purpose. true/false are the server's answer under
+          // the configured rule; null means the rule in force cannot be
+          // evaluated yet (admin_enabled, with no field to read). The screen
+          // must not collapse null into "locked".
+          active: row.active === true ? true : row.active === false ? false : null
+        })).filter((row) => /^[A-Z]{2}$/.test(row.countryIso)),
+        activeCountryRule: result.activeCountryRule || null,
+        // Carried through untouched. `ourSpending.available` is false today
+        // and the screen renders ∆ for it; see the server module's probe for
+        // why a number would be a fabrication.
+        ourSpending: result.ourSpending || { total: null, available: false }
+      };
+    } catch (e) {
+      return null;
+    }
+  },
+
+  // --- Hooman Projects ---------------------------------------------------
+  //
+  // The Coverage screen's project area had no persistence at all before
+  // these: eight category names in a hardcoded array and a ∆ where a count
+  // should be. Every call here goes to a real stored record.
+
+  // GET /api/projects — the listing AND the project search.
+  //
+  // Distinct from the category picker's own search box on that screen,
+  // which filters eight fixed NAMES in the browser and should keep doing
+  // exactly that. This one queries stored projects; merging the two would
+  // give one box that pretended to search products while filtering a list.
+  async listProjects(options) {
+    const opts = options || {};
+    const params = new URLSearchParams();
+    if (opts.q) params.set("q", opts.q);
+    if (opts.category) params.set("category", opts.category);
+    if (opts.country) params.set("country", opts.country);
+    if (opts.mine) params.set("mine", "1");
+    if (opts.cursor) params.set("cursor", opts.cursor);
+    if (opts.limit) params.set("limit", String(opts.limit));
+    const query = params.toString();
+    try {
+      const result = await gloobalApiClient.get(`/api/projects${query ? `?${query}` : ""}`, {
+        timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS
+      });
+      if (!result || !result.success) return null;
+      return {
+        projects: Array.isArray(result.projects) ? result.projects : [],
+        nextCursor: result.nextCursor || null,
+        counts: result.counts || {},
+        categories: Array.isArray(result.categories) ? result.categories : []
+      };
+    } catch (e) {
+      // null, not an empty list: "the server did not answer" and "there are
+      // no projects" are different facts, and the screen shows ∆ for the
+      // first and a real zero for the second.
+      return null;
+    }
+  },
+
+  // POST /api/projects. Throws on a rejection so the form can show the
+  // server's own message — the 1000-word limit in particular is enforced
+  // there, and its message names the actual count.
+  async createProject(project) {
+    const result = await gloobalApiClient.post("/api/projects", project, {
+      timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS
+    });
+    return (result && result.project) || null;
+  },
+
+  async deleteProject(id) {
+    await gloobalApiClient.delete(`/api/projects/${encodeURIComponent(id)}`);
+  },
+
+  // POST /api/projects/:id/attachment — base64 in JSON, because that needs
+  // no multipart dependency and the server raises its body limit for this
+  // one route. The caller reads the File itself; this only ships the bytes.
+  async uploadProjectAttachment(id, { filename, contentType, base64 }) {
+    const result = await gloobalApiClient.post(
+      `/api/projects/${encodeURIComponent(id)}/attachment`,
+      { filename, contentType, data: base64 },
+      { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS }
+    );
+    return (result && result.project) || null;
   },
 
   async getPlatformUserCount() {

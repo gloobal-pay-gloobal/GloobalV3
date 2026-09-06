@@ -208,7 +208,13 @@ function FlippingMenuIcon({ Icon, size = 92 }) {
     }}
   ><span style={{ fontSize: size * 0.34, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay }}>{symbolChar}</span></span></div></div>;
 }
-function SyncedFlipIcon({ Icon, size, flipInfo, frontBackground }) {
+// `radius` defaults to T.radiusLg, so every existing caller renders
+// pixel-identically; the Accounts tiles pass "50%" to make the flipping
+// face a circle. The radius has to live on the FACES rather than on a
+// wrapper with overflow:hidden — overflow creates a containing block that
+// can flatten preserve-3d, which would kill the flip that is the whole
+// point of this component.
+function SyncedFlipIcon({ Icon, size, flipInfo, frontBackground, radius = T.radiusLg }) {
   const { flipped, content, symbol, color } = flipInfo;
   return <div style={{ width: "100%", height: "100%", perspective: 600 }}><div
     style={{
@@ -223,7 +229,7 @@ function SyncedFlipIcon({ Icon, size, flipInfo, frontBackground }) {
     style={{
       position: "absolute",
       inset: 0,
-      borderRadius: T.radiusLg,
+      borderRadius: radius,
       backfaceVisibility: "hidden",
       background: frontBackground,
       display: "flex",
@@ -234,7 +240,7 @@ function SyncedFlipIcon({ Icon, size, flipInfo, frontBackground }) {
     style={{
       position: "absolute",
       inset: 0,
-      borderRadius: T.radiusLg,
+      borderRadius: radius,
       backfaceVisibility: "hidden",
       transform: "rotateY(180deg)",
       background: color,

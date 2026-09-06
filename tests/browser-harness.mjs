@@ -638,7 +638,24 @@ export async function openPage(options = {}) {
   const errors = [];
   page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
   page.on("console", (m) => {
-    if (m.type() === "error") errors.push(m.text());
+    if (m.type() !== "error") return;
+    // A subresource that failed to load is not a JavaScript fault, and the
+    // suites that assert `deepEqual(errors, [])` mean the latter.
+    //
+    // The page pulls flag bitmaps from flagcdn.com and a webfont from
+    // Google's font hosts. Neither is code, nothing here asserts on either,
+    // and both are third parties: on a machine behind an egress proxy —
+    // which is where this suite is run — every one of those requests fails,
+    // and "the app booted cleanly" fails with it. That is a test that
+    // reports on somebody else's uptime, not on this app.
+    //
+    // Only loads from OUR OWN origins are still faults, because a 404 on
+    // the bundle or a failed API call is a real one.
+    if (m.text().startsWith("Failed to load resource")) {
+      const url = m.location()?.url || "";
+      if (!url.startsWith(origin) && !url.startsWith(API_ORIGIN)) return;
+    }
+    errors.push(m.text());
   });
   await page.goto(origin + "/");
   await page.waitForSelector("#root *", { timeout: 15000 });
@@ -697,12 +714,24 @@ export async function revealBalance(page, account) {
   );
 }
 
-// The balance as a person reads it, currency symbol and all.
+// The balance as a person reads it, currency and all.
+//
+// AMOUNT FIRST, currency after — "10,000.00₹", not "₹10,000.00". This
+// matcher was written symbol-first and stayed that way through the change
+// to fmtMoney, so it stopped matching anything and every suite that reads
+// a balance through it started asserting against `null`. The failure looks
+// like the app not rendering a balance, which is why it survived: the
+// message a stale matcher produces is indistinguishable from the bug it is
+// supposed to catch.
+//
+// Currency codes that are letters ("1,450.25 CHF") are spaced; glyphs are
+// tight. Both shapes are matched, and the space is kept — dropping it would
+// make "1,450.25 CHF" and a hypothetical "1,450.25CHF" compare equal.
 export async function shownBalance(page) {
-  return page.evaluate(() => {
-    const match = document.body.innerText.match(/(?:[₹¥£$€]|Rs\.?)\s?[\d,]+(?:\.\d+)?/);
-    return match ? match[0].replace(/\s+/g, "") : null;
-  });
+  const match = await page.evaluate(
+    () => document.body.innerText.match(/[\d,]+(?:\.\d+)?(?:[₹¥£$€]| ?[A-Z]{3}\b)/)
+  );
+  return match ? match[0] : null;
 }
 
 export const text = (page) => page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim());

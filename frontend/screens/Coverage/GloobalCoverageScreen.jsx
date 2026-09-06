@@ -37,7 +37,24 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   const [showSpendingCurrencyPicker, setShowSpendingCurrencyPicker] = useState16(false);
   const [selectedHoomanCategory, setSelectedHoomanCategory] = useState16("Infrastructure");
   const [showHoomanCategoryPicker, setShowHoomanCategoryPicker] = useState16(false);
+  // Searches the eight CATEGORY NAMES, in the browser. Kept exactly as it
+  // was, and kept separate from the project search below: one filters a
+  // fixed list of names, the other queries stored records, and collapsing
+  // them into one box would give a control that claimed to search projects
+  // while actually filtering a hardcoded array.
   const [hoomanCategoryQuery, setHoomanCategoryQuery] = useState16("");
+  // Searches stored PROJECTS, on the server.
+  const [projectQuery, setProjectQuery] = useState16("");
+  const [projectsData, setProjectsData] = useState16(null);
+  const [projectsLoading, setProjectsLoading] = useState16(false);
+  const [projectsToken, setProjectsToken] = useState16(0);
+  const [showProjectForm, setShowProjectForm] = useState16(false);
+  const [projectTitle, setProjectTitle] = useState16("");
+  const [projectSummary, setProjectSummary] = useState16("");
+  const [projectLink, setProjectLink] = useState16("");
+  const [projectFile, setProjectFile] = useState16(null);
+  const [projectSaving, setProjectSaving] = useState16(false);
+  const [projectError, setProjectError] = useState16(null);
   const [selected, setSelected] = useState16(() => {
     const stored = loadStoredCoverageCountry();
     if (stored) return stored;

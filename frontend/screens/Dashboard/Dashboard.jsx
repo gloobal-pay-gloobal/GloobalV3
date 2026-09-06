@@ -200,7 +200,7 @@ function BalanceError({ onRetry }) {
   >Retry</button>}</span>;
 }
 
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [] }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], securitySettings = null, onUpdateSecuritySettings, onChangePin }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -895,14 +895,89 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       if (onConsumePendingMyShare) onConsumePendingMyShare();
     }
   }, [pendingOpenMyShare]);
+  // The notification and autopay switches, which are still local-only —
+  // nothing reads them yet and they are outside today's scope.
+  //
+  // `biometric` and `appLock` USED to live here too, and that was the whole
+  // defect: component-local state, read at exactly one place (the line that
+  // drew the switch), so they reset on every remount and gated nothing.
+  // Both now come from the account (User.securitySettings, via the
+  // securitySettings prop) and are written back through the server, so they
+  // persist and — more to the point — something actually reads them.
   const [profileToggles, setProfileToggles] = useState14({
-    biometric: true,
-    appLock: false,
     txAlerts: true,
     referralAlerts: true,
     promos: false,
     autopay: true
   });
+  // Mirrors the account's stored setting so the switch moves the moment it
+  // is tapped rather than after the round trip, and rolls back if the
+  // server refuses. Seeded from the prop and re-seeded whenever it changes,
+  // so the account stays the source of truth.
+  const [securityPending, setSecurityPending] = useState14(null);
+  const biometricOn = securityPending && "biometricLogin" in securityPending
+    ? securityPending.biometricLogin
+    : securitySettings
+      ? securitySettings.biometricLogin !== false
+      : true;
+  const appLockOn = securityPending && "appLock" in securityPending
+    ? securityPending.appLock
+    : securitySettings
+      ? securitySettings.appLock === true
+      : false;
+  const flipSecurity = async (key, next) => {
+    if (!onUpdateSecuritySettings) return;
+    setSecurityPending((prev) => Object.assign({}, prev, { [key]: next }));
+    const ok = await onUpdateSecuritySettings({ [key]: next });
+    // Either the account now says what the switch says, or it does not and
+    // the switch has to go back. Leaving an optimistic value standing after
+    // a failed write is how a settings screen ends up lying about a
+    // security setting.
+    setSecurityPending(null);
+    if (!ok) showToast2("Couldn't save that setting — please try again");
+  };
+  const [showChangePin, setShowChangePin] = useState14(false);
+  const [changePinCurrent, setChangePinCurrent] = useState14("");
+  const [changePinNext, setChangePinNext] = useState14("");
+  const [changePinConfirm, setChangePinConfirm] = useState14("");
+  const [changePinError, setChangePinError] = useState14(null);
+  const [changePinBusy, setChangePinBusy] = useState14(false);
+  const closeChangePin = () => {
+    setShowChangePin(false);
+    // PINs never outlive the dialog that collected them.
+    setChangePinCurrent("");
+    setChangePinNext("");
+    setChangePinConfirm("");
+    setChangePinError(null);
+  };
+  const submitChangePin = async () => {
+    if (changePinBusy) return;
+    setChangePinError(null);
+    if (!/^\d{4,6}$/.test(changePinNext)) {
+      setChangePinError("Your new PIN must be 4 to 6 digits.");
+      return;
+    }
+    if (changePinNext !== changePinConfirm) {
+      setChangePinError("The two new PINs don't match.");
+      return;
+    }
+    if (changePinNext === changePinCurrent) {
+      setChangePinError("Your new PIN must be different from your current one.");
+      return;
+    }
+    setChangePinBusy(true);
+    // The server is the authority on all of it — the current PIN, the
+    // format, the lockout. The checks above only save a round trip on the
+    // two mistakes a person can see for themselves; none of them is trusted.
+    const result = await onChangePin(changePinCurrent, changePinNext);
+    setChangePinBusy(false);
+    if (!result || !result.ok) {
+      setChangePinError((result && result.message) || "Couldn't change your PIN.");
+      return;
+    }
+    closeChangePin();
+    showToast2("PIN changed — you're signed out on your other devices");
+  };
   const [profileLanguage, setProfileLanguage] = useState14("English");
   const [profileCurrency, setProfileCurrency] = useState14(COUNTRY_CURRENCY[dialCountry.iso] || "USD");
   const flipToggle = (key) => setProfileToggles((t) => ({ ...t, [key]: !t[key] }));
@@ -1787,17 +1862,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       onClick={onClick}
       aria-label={locked ? `${label} \u2014 locked` : label}
       className="v2-tap"
-      style={{ width: "calc(50% - 6px)", boxSizing: "border-box", textAlign: "left", border: "none", cursor: "pointer", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "15px 14px 14px", opacity: locked ? 0.72 : 1 }}
+      style={{ position: "relative", width: "calc(50% - 6px)", boxSizing: "border-box", border: "none", cursor: "pointer", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 12px 16px", display: "flex", flexDirection: "column", alignItems: "center", opacity: locked ? 0.72 : 1 }}
     >{
-    /* The label lives INSIDE the tile now. It used to sit outside and
-       below, which left a coloured square with nothing in it and put
-       the name closer to the tile on the next row than to its own. */
-  }<span style={{ display: "block", width: 44, height: 44, marginBottom: 11 }}><SyncedFlipIcon Icon={TileIcon} size={44} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}22`} /></span><span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{displayLabel || label}</span>{
-    /* "Locked" in words, in a pill, rather than a padlock whose colour
-       was the only thing distinguishing it from the unlocked one. The
-       height is reserved on every tile so a locked one does not stand
-       taller than its neighbours and break the row. */
-  }<span style={{ display: "flex", alignItems: "center", marginTop: 7, minHeight: 17 }}>{locked && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(226,63,69,0.08)", borderRadius: 999, padding: "3px 8px 3px 6px", fontSize: 9.5, fontWeight: 800, color: T.negative, whiteSpace: "nowrap" }}><ServiceLock locked size={11} />Locked</span>}</span></button>;
+    /* The padlock is a corner badge again, and it is drawn ONLY when the
+       thing is locked.
+       It used to be drawn in both states, closed in both, with red or
+       green as the only difference — so the shape said "locked" on the
+       three services that were open, and colour alone (red against green,
+       the pair a large minority cannot separate) carried the truth.
+       ServiceLock now opens when unlocked, but an open padlock on every
+       available tile is six badges saying nothing. Absent is the quieter
+       way to say "nothing in the way here". */
+  }{locked && <span style={{ position: "absolute", top: 10, right: 10, zIndex: 1, display: "flex" }}><ServiceLock locked size={14} /></span>}{
+    /* A circle, centred, with the icon in it — and the name centred
+       underneath. The label used to sit outside the tile entirely, which
+       left a coloured square with nothing in it and put each name closer
+       to the tile on the next row than to its own. */
+  }<span style={{ display: "block", width: 64, height: 64, flexShrink: 0 }}><SyncedFlipIcon Icon={TileIcon} size={26} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}22`} radius="50%" /></span><span style={{ marginTop: 12, fontSize: 12.5, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.25 }}>{displayLabel || label}</span></button>;
   })}</div></div>{
     /* One bigger box now instead of the small divider line — the
        cost figure front and center, the HOOMAN-2-HOOMAN mark
@@ -2975,8 +3056,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     onClick={() => setProfileCurrency(code)}
     className="v2-row"
     style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px", border: "none", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, background: "none", cursor: "pointer", textAlign: "left" }}
-  ><span style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 13.5, fontWeight: profileCurrency === code ? 800 : 600, color: profileCurrency === code ? T.accent : T.ink }}>{code}</span>{CURRENCIES[code] && <FlagEmoji flag={CURRENCIES[code].flag} width={20} height={15} radius={4} />}</span>{profileCurrency === code && <Check2 size={17} color={T.accent} />}</button>)}</div>}{profileDetail === "Security" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px" }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Biometric login</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Use Face ID or fingerprint to log in</div></span><ProfileToggle on={profileToggles.biometric} onToggle={() => flipToggle("biometric")} label="Biometric login" /></div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>App lock</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Ask for your PIN every time the app opens</div></span><ProfileToggle on={profileToggles.appLock} onToggle={() => flipToggle("appLock")} label="App lock" /></div><button
-    onClick={() => showToast2("PIN change will be available soon")}
+  ><span style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 13.5, fontWeight: profileCurrency === code ? 800 : 600, color: profileCurrency === code ? T.accent : T.ink }}>{code}</span>{CURRENCIES[code] && <FlagEmoji flag={CURRENCIES[code].flag} width={20} height={15} radius={4} />}</span>{profileCurrency === code && <Check2 size={17} color={T.accent} />}</button>)}</div>}{profileDetail === "Security" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px" }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Biometric login</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Use Face ID or fingerprint to log in</div></span><ProfileToggle on={biometricOn} onToggle={() => flipSecurity("biometricLogin", !biometricOn)} label="Biometric login" /></div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>App lock</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Lock again when you come back after leaving the app</div></span><ProfileToggle on={appLockOn} onToggle={() => flipSecurity("appLock", !appLockOn)} label="App lock" /></div><button
+    onClick={() => setShowChangePin(true)}
     className="v2-row"
     style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px", border: "none", borderTop: `1px solid ${T.line}`, background: "none", cursor: "pointer", textAlign: "left" }}
   ><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Change PIN</span><ChevronRightIcon /></button></div>}{profileDetail === "Notifications" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{[
@@ -3774,7 +3855,54 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   })}</div>}</div></div>}{
     /* Revealing the balance — same mandatory Face ID + fingerprint
        screen used for PIN-follow-up everywhere else in the app. */
-  }{showBalanceBiometric && <BiometricVerifyScreen
+  }{
+    /* Change PIN. Was a button whose entire handler was a toast saying
+       the feature would arrive later.
+
+       Three fields, because a PIN change that does not ask for the
+       CURRENT one is not a change, it is a reset — and the reset route
+       already exists for the person who has forgotten theirs, gated on an
+       OTP. This asks for what it is replacing, and the server checks it
+       against the same lockout budget as any other PIN entry so this
+       cannot be used to guess one.
+
+       Everything typed here is discarded when the dialog closes, on
+       success and on cancel alike. */
+  }{showChangePin && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={closeChangePin} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Change PIN</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{[
+    ["Current PIN", changePinCurrent, setChangePinCurrent, "current-pin"],
+    ["New PIN", changePinNext, setChangePinNext, "new-pin"],
+    ["Confirm new PIN", changePinConfirm, setChangePinConfirm, "confirm-pin"]
+  ].map(([label, value, setValue, id], i) => <div key={id} style={{ padding: "14px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}><label htmlFor={id} style={{ display: "block", fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>{label}</label><input
+    id={id}
+    type="password"
+    inputMode="numeric"
+    autoComplete={id === "current-pin" ? "current-password" : "new-password"}
+    value={value}
+    maxLength={6}
+    onChange={(e) => {
+      setChangePinError(null);
+      setValue(e.target.value.replace(/\D/g, "").slice(0, 6));
+    }}
+    style={{ width: "100%", border: "none", outline: "none", background: "none", fontSize: 18, letterSpacing: 6, color: T.ink, fontFamily: "inherit" }}
+  /></div>)}</div>{changePinError && <div role="alert" style={{ fontSize: 12.5, color: T.negative || "#DC2626", padding: "0 4px", lineHeight: 1.5 }}>{changePinError}</div>}<div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.5, padding: "0 4px" }}>
+              Changing your PIN signs you out everywhere else. You'll stay signed in on this device.
+            </div><button
+    onClick={submitChangePin}
+    disabled={changePinBusy || !changePinCurrent || !changePinNext || !changePinConfirm}
+    className="v2-tap"
+    style={{
+      width: "100%",
+      padding: "14px 18px",
+      borderRadius: T.radiusMd,
+      border: "none",
+      background: T.accent,
+      color: "#fff",
+      fontSize: 14,
+      fontWeight: 800,
+      cursor: changePinBusy ? "wait" : "pointer",
+      opacity: changePinBusy || !changePinCurrent || !changePinNext || !changePinConfirm ? 0.5 : 1
+    }}
+  >{changePinBusy ? "Changing…" : "Change PIN"}</button></div></div>}{showBalanceBiometric && <BiometricVerifyScreen
     onBack={() => setShowBalanceBiometric(false)}
     onVerify={handleBalanceBiometricVerify}
     scanning={balanceBiometricScanning}

@@ -19,8 +19,32 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+// Every read of a source file in this suite goes through here, and it
+// NORMALISES LINE ENDINGS.
+//
+// The repository is worked on from Windows, where git's core.autocrlf
+// rewrites the checked-out files to CRLF. Nothing about the app cares —
+// esbuild, node and the browser all read CRLF happily — but the tests that
+// assert on the SHAPE of source do, and several of them slice a function
+// out of a file by searching for a literal "\n}\n". On a CRLF checkout the
+// file actually contains "\r\n}\r\n", the search returns -1, and the slice
+// fails.
+//
+// That failure is nastier than it sounds. The slices happen at MODULE TOP
+// LEVEL, so the whole test file throws while it is being loaded, and node
+// reports it as a bare `'test failed'` at line 1 column 1 with no
+// assertion, no expected-vs-actual and no clue that line endings were
+// involved. It also cannot be reproduced on a Linux checkout, so it looks
+// like the CI machine disagreeing with the developer's machine about the
+// code.
+//
+// Normalising at the single point where the suite touches the disk fixes
+// the entire class rather than one call site, and leaves the working tree
+// alone — whatever endings a checkout has are the checkout's business.
+const read = (file) => fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+
 function readBackendModuleList() {
-  const build = fs.readFileSync(path.join(ROOT, "build_app.mjs"), "utf8");
+  const build = read(path.join(ROOT, "build_app.mjs"));
   const block = build.match(/BACKEND_MODULES\s*=\s*\[([\s\S]*?)\]/);
   if (!block) throw new Error("Could not find BACKEND_MODULES in build_app.mjs");
   return block[1]
@@ -38,7 +62,7 @@ function buildSource() {
     readBackendModuleList().map((f) => path.join(ROOT, "backend", f))
   );
   return files
-    .map((f) => fs.readFileSync(f, "utf8"))
+    .map(read)
     .join("\n")
     // import.meta is a syntax error outside a module, and the API client
     // reads it for VITE_API_URL. Tests never make network calls, so a stub
@@ -67,7 +91,7 @@ export function loadDomain(names) {
 // SHAPE of a call rather than its result (see money-path.test.mjs's note on
 // why the cross-border amount bug needs one).
 export function readSource(relPath) {
-  return fs.readFileSync(path.join(ROOT, relPath), "utf8");
+  return read(path.join(ROOT, relPath));
 }
 
 export { ROOT };

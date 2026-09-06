@@ -78,7 +78,7 @@ describe("B. signing in hydrates the balance the server holds", () => {
     const shown = await shownBalance(page);
     assert.ok(shown, "the dashboard must show a balance");
     assert.equal(money(shown), ACCOUNTS.india.balance, `screen says ${shown}, server says ${ACCOUNTS.india.balance}`);
-    assert.match(shown, /^₹/, `an Indian account must be shown in rupees, got ${shown}`);
+    assert.match(shown, /₹$/, `an Indian account must be shown in rupees, got ${shown}`);
 
     // The point of the 24 August hydration fix: the figure came from a
     // profile read, not from a local opening float that happens to match.
@@ -97,8 +97,8 @@ describe("B. signing in hydrates the balance the server holds", () => {
     await revealBalance(page, ACCOUNTS.japan);
     const shown = await shownBalance(page);
     assert.equal(money(shown), ACCOUNTS.japan.balance);
-    assert.match(shown, /^¥/, `a Japanese account must be shown in yen, got ${shown}`);
-    assert.ok(!/\.\d\d$/.test(shown), `yen has no minor unit, got ${shown}`);
+    assert.match(shown, /¥$/, `a Japanese account must be shown in yen, got ${shown}`);
+    assert.ok(!/\.\d\d¥$/.test(shown), `yen has no minor unit, got ${shown}`);
     await context.close();
   });
 });
@@ -116,7 +116,7 @@ describe("C. one account's state never survives into another", () => {
 
     const shown = await shownBalance(page);
     assert.equal(money(shown), ACCOUNTS.britain.balance, `expected the second account's balance, got ${shown}`);
-    assert.match(shown, /^£/, `a British account must be shown in pounds, got ${shown}`);
+    assert.match(shown, /£$/, `a British account must be shown in pounds, got ${shown}`);
     assert.notEqual(money(shown), ACCOUNTS.india.balance, "the previous account's balance must not survive");
     await context.close();
   });

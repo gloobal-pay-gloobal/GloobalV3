@@ -71,22 +71,46 @@ describe("Gloobal Bank is not a peer of the other five", () => {
 describe("the tiles say what they are and what state they are in", () => {
   const dash = () => code("frontend/screens/Dashboard/Dashboard.jsx");
 
-  test("the label is inside the tile", () => {
+  test("the icon is a circle in the middle of the tile", () => {
+    // The flip faces carry the radius themselves rather than being clipped
+    // by a wrapper: overflow:hidden creates a containing block that can
+    // flatten preserve-3d, which would kill the flip these icons exist for.
+    const src = dash();
+    assert.match(src, /radius="50%"/);
+    assert.match(src, /width: 64, height: 64, flexShrink: 0/);
+    assert.match(code("frontend/components/common/flipIcons.jsx"), /radius = T\.radiusLg/);
+    assert.match(code("frontend/components/common/flipIcons.jsx"), /borderRadius: radius,/);
+  });
+
+  test("the label is inside the tile, centred under the circle", () => {
     // It used to sit outside and below, which left a coloured square with
     // nothing in it and put each name closer to the tile on the next row
     // than to its own.
-    assert.match(dash(), /<span style=\{\{ display: "block", fontSize: 13, fontWeight: 800, color: T\.ink, lineHeight: 1\.25 \}\}>\{displayLabel \|\| label\}<\/span>/);
+    assert.match(dash(), /marginTop: 12, fontSize: 12\.5, fontWeight: 800, color: T\.ink, textAlign: "center"/);
   });
 
-  test("locked is said in words, not in a colour", () => {
-    assert.match(dash(), /<ServiceLock locked size=\{11\} \/>Locked/);
+  test("the padlock is drawn only when something is locked", () => {
+    // It used to be drawn in both states, CLOSED in both, with red or
+    // green as the only difference — so the shape said "locked" on the
+    // three services that were open, and colour alone carried the truth.
+    // ServiceLock opens when unlocked now, but an open padlock on every
+    // available tile is six badges saying nothing.
+    const src = dash();
+    assert.match(src, /\{locked && <span style=\{\{ position: "absolute", top: 10, right: 10/);
+    assert.match(src, /<ServiceLock locked size=\{14\} \/>/);
+    assert.ok(
+      !/<ServiceLock locked=\{locked\}/.test(src),
+      "the badge is drawn in both states again"
+    );
   });
 
-  test("every tile reserves the badge's height", () => {
-    // Otherwise a locked tile stands taller than its neighbours and the
-    // row breaks around it — a layout bug that only appears on the
-    // accounts where something is actually locked.
-    assert.match(dash(), /marginTop: 7, minHeight: 17/);
+  test("no tile is taller than another", () => {
+    // The badge is absolutely positioned, so a locked tile cannot grow and
+    // break the row — which is what a "Locked" pill in the flow did until
+    // its height had to be reserved on every tile.
+    const src = dash();
+    assert.ok(!/minHeight: 17/.test(src), "a reserved-height badge slot is still here");
+    assert.match(src, /position: "absolute", top: 10, right: 10/);
   });
 
   test("the tiles set box-sizing, or the two-up row does not form", () => {

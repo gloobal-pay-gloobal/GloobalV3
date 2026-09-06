@@ -111,10 +111,18 @@ const balanceLine = (page) =>
     };
   });
 
+// AMOUNT FIRST, currency after — the euro sign trails the digits.
+//
+// This was symbol-first, and it stayed symbol-first through the change to
+// fmtMoney, so it matched nothing and every case below compared its
+// expected figure against `null`. A stale matcher fails with exactly the
+// message the real bug would produce ("expected €3,120.55, saw null"),
+// which is how it went unnoticed: the suite was still reporting the
+// hydration bug it was written to catch, long after that bug was fixed.
 const shownMoney = (page) =>
   page.evaluate(() => {
-    const m = document.body.innerText.match(/(?:[₹¥£$€]|Rs\.?)\s?[\d,]+(?:\.\d{1,2})?/);
-    return m ? m[0].replace(/\s+/g, "") : null;
+    const m = document.body.innerText.match(/[\d,]+(?:\.\d{1,2})?(?:[₹¥£$€]| ?[A-Z]{3}\b)/);
+    return m ? m[0] : null;
   });
 
 // Serve the profile read on a delay, or fail it, without disturbing the rest
@@ -155,13 +163,13 @@ describe("first login shows the account's real balance", () => {
   // Four countries, four currencies, four decimal conventions. Each signs in
   // for the first time on a device that has never held a session.
   const cases = [
-    ["US", ACCOUNTS.america, "$900.00"],
-    ["Netherlands", NETHERLANDS, "€3,120.55"],
-    ["India", ACCOUNTS.india, "₹10,000.00"],
-    ["Britain", ACCOUNTS.britain, "£4,200.00"],
+    ["US", ACCOUNTS.america, "900.00$"],
+    ["Netherlands", NETHERLANDS, "3,120.55€"],
+    ["India", ACCOUNTS.india, "10,000.00₹"],
+    ["Britain", ACCOUNTS.britain, "4,200.00£"],
     // Zero-decimal: a yen balance printed with cents has misunderstood the
     // money it is showing.
-    ["Japan", ACCOUNTS.japan, "¥750,000"]
+    ["Japan", ACCOUNTS.japan, "750,000¥"]
   ];
 
   for (const [name, account, expected] of cases) {
@@ -202,25 +210,25 @@ describe("a slow server is a loading state, not a wrong number", () => {
       await revealBalance(page, NETHERLANDS);
 
       // While the read is in flight the line must SAY it is loading. Before
-      // the fix it showed €10,000.00 here - the local ledger's opening
+      // the fix it showed 10,000.00€ here - the local ledger's opening
       // float, in the account's own currency, at full size.
       const during = await balanceLine(page);
       const figureDuring = await shownMoney(page);
       assert.equal(during.loading, true, "a pending read must show a loading state");
       assert.notEqual(
-        figureDuring, "€10,000.00",
+        figureDuring, "10,000.00€",
         "the local ledger's opening float must never be presented as the balance"
       );
 
       // And when it lands, the real figure.
       await page.waitForFunction(
-        () => /€3,120\.55/.test(document.body.innerText),
+        () => /3,120\.55€/.test(document.body.innerText),
         undefined,
         { timeout: 30000 }
       );
       const after = await balanceLine(page);
       assert.equal(after.loading, false, "the loading state must clear once the balance is confirmed");
-      assert.equal(await shownMoney(page), "€3,120.55");
+      assert.equal(await shownMoney(page), "3,120.55€");
     } finally {
       await context.close();
     }
@@ -311,7 +319,7 @@ describe("one account's balance never lands on another", () => {
 
       await revealBalance(page, NETHERLANDS);
       const shown = await shownMoney(page);
-      assert.equal(shown, "€3,120.55", `account B must show its own balance, saw ${shown}`);
+      assert.equal(shown, "3,120.55€", `account B must show its own balance, saw ${shown}`);
       assert.ok(!/\$/.test(shown || ""), "account B must not be shown account A's currency");
     } finally {
       await context.close();

@@ -147,14 +147,69 @@ async function run() {
   const ourLine = (body.match(/Our spending[\s\S]{0,20}/i) || [""])[0];
   check("and shows ∆, not a fabricated figure", /∆/.test(ourLine), JSON.stringify(ourLine));
 
-  console.log("\n5. country status comes from the server, not from === \"IN\"");
-  const activeCount = coverage.countries.filter((c) => c.active === true).length;
-  check(`the server reports ${activeCount} active countries (more than one)`,
-    activeCount > 1, JSON.stringify(coverage.countries.map((c) => `${c.countryIso}:${c.active}`)));
-  // The globe badge was hardcoded to India's single row and could never
-  // read anything but 1.
-  check("the unlocked-country badge is not stuck at 1",
-    new RegExp(`\\b${activeCount}\\b`).test(body), `expected ${activeCount} on screen`);
+  console.log("\n5. country status is decided by registered users, on the server");
+  // The confirmed rule: a country is active when at least one registered
+  // user's authoritative account country resolves to it. The screen used to
+  // decide this with `country.code === "IN"` in three separate places, so no
+  // amount of real data could move it.
+  const active = coverage.countries.filter((c) => c.active === true);
+  const activeCount = active.length;
+  check("the server names the rule it applied",
+    coverage.activeCountryRule === "has_users", coverage.activeCountryRule);
+  check(`more than one country is active (${activeCount})`,
+    activeCount > 1, JSON.stringify(coverage.countries.map((c) => c.countryIso + ":" + c.active)));
+
+  // The load-bearing case: a country active on USERS ALONE, having sent
+  // nothing. Under a transaction-based rule it would be locked, and the
+  // founder's complaint would survive one step further along.
+  const spendless = active.filter((c) => c.transactions === 0);
+  check("at least one country is active with zero transactions",
+    spendless.length > 0, JSON.stringify(spendless.map((c) => c.countryIso + ":u" + c.users)));
+  check("active is true exactly when the country has a user",
+    coverage.countries.every((c) => c.active === (c.users > 0)),
+    JSON.stringify(coverage.countries.map((c) => c.countryIso + ":u" + c.users + ":" + c.active)));
+
+  // The globe badge. It was `COVERAGE_ALL_COUNTRIES.filter(c => c.code ===
+  // "IN").length` — permanently 1, whatever the data said.
+  check("the unlocked-country badge shows the real count, not 1",
+    new RegExp("\\b" + activeCount + "\\b").test(body) && activeCount !== 1,
+    `expected ${activeCount} on screen`);
+
+  // The lock ICON on each country, checked against the backend answer for
+  // that same country — this is the indicator the founder reported as stuck.
+  const openedList = await clickText(page, "See all countries");
+  await page.waitForTimeout(1500);
+  if (!openedList) {
+    // The badge button carries the count rather than a label; fall back to
+    // it by its aria-label, which names what it opens.
+    await clickLabel(page, `See all countries — ${activeCount} unlocked`);
+    await page.waitForTimeout(1500);
+  }
+  const rowStates = await page.evaluate(() =>
+    [...document.querySelectorAll("button")]
+      .map((el) => el.getAttribute("aria-label") || "")
+      .filter((a) => /, (unlocked|locked)$/.test(a))
+      .map((a) => ({ name: a.replace(/, (unlocked|locked)$/, ""), unlocked: /unlocked$/.test(a) })));
+  check("the all-countries list rendered its lock indicators",
+    rowStates.length > 0, `rows=${rowStates.length}`);
+
+  // Compare each rendered row against the server, by country NAME as the
+  // list shows it. Only the countries the server actually knows about are
+  // compared; the rest legitimately render no indicator at all.
+  const serverByName = {};
+  for (const c of coverage.countries) serverByName[c.countryIso] = c.active;
+  const namedRows = rowStates.filter((r) => r.unlocked);
+  check("every country the UI shows as unlocked is active on the server",
+    namedRows.length > 0 && namedRows.length === activeCount,
+    `ui unlocked=${namedRows.length} server active=${activeCount}: ` +
+      JSON.stringify(namedRows.map((r) => r.name)));
+  check("no country is unlocked that the server did not report",
+    namedRows.length <= activeCount, JSON.stringify(namedRows.map((r) => r.name)));
+
+  // Close the list again so the rest of the run starts where it expects to.
+  await clickLabel(page, "Back");
+  await page.waitForTimeout(1000);
+  body = await textOf(page);
 
   console.log("\n6. Hooman Projects is a real, persisted list");
   // Stored FIRST, then the screen is opened, so what is being checked is

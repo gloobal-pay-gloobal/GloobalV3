@@ -24,10 +24,10 @@ edit in D:\gloobalv3  →  git commit  →  git push origin main
          Netlify → frontend                        Render → API (server/)
 ```
 
-Caveat: **neither half is currently automatic.** Render's and Netlify's
-GitHub Apps lost repository access when the repo was renamed, so a push to
-`main` triggers nothing and both sides need a manual deploy. See
-`docs/deployment/README.md`.
+Both halves auto-deployed on a push to `main` when this was last checked
+(7 September 2026) — see the Deployment section for the evidence and for
+what to do if it stops. This reverses the earlier note that neither half
+was automatic.
 
 `D:\gloobalv3` is the single active workspace. Every other Gloobal folder
 on this machine — including `D:\Desktop\Gloobal`, `D:\Gloobal project`,
@@ -209,22 +209,49 @@ Two independent deploy targets, from the same repo. See
 
 Neither path may move.
 
-**Auto-deploy is broken on both targets.** The Render service is configured
-correctly; what is missing is on GitHub's side. Render's GitHub App has no
-repository access to `GloobalV3`, which its own build log states on every
-deploy ("It looks like we don't have access to your repo, but we'll try to
-clone it anyway"). The clone still succeeds because the repo is public, so
-builds work — but GitHub sends push events only to an App that has been
-granted the repository, so no `new_commit` deploy can ever fire. The last
-one was 2026-08-18, immediately before the rename.
+**Auto-deploy was working on both targets on 7 September 2026.** This
+section previously said the opposite — that both GitHub Apps had lost
+repository access after the rename and no push could ever trigger a build.
+That was true when it was written and is not true now.
 
-Netlify is in the same state, despite what this file used to say: a push of
-`8031a95` on 2026-08-28 produced no Netlify build either.
+What was observed. Merge `d6d9841` was pushed to `main` at 16:42 IST with
+no manual deploy from anyone, and within minutes:
 
-So after changing anything under `server/`, trigger a manual deploy from
-the Render dashboard, and expect the Netlify site to sit a commit behind
-until it is deployed too. Evidence and the fix are in
-`docs/deployment/README.md`.
+- the API served `GET /api/coverage`, a route that exists only in that
+  merge, against real production data;
+- the Netlify site served `/assets/index-B6Q6BnlK.js`, and a local
+  production build of `d6d9841` produced a bundle with the same name.
+  Vite's filename hash is derived from the content, so that is not a
+  coincidence — it identifies the deployed bundle as that exact commit.
+
+Note what this does and does not establish. It shows both sides picked up
+one push automatically; it does not prove the underlying GitHub App
+permissions were repaired deliberately, and nobody has re-read those
+settings. Treat auto-deploy as working but verify rather than assume,
+especially after any repository rename or transfer.
+
+How to verify after a push, without opening either dashboard:
+
+```bash
+# Render — a route that only exists in the commit you just pushed
+curl -s https://gloobal-pay.onrender.com/api/coverage | head -c 200
+
+# Netlify — build locally, then compare the bundle filename to the live one
+node build_app.mjs && (cd gloobal-essentials-preview && npm run build)
+ls gloobal-essentials-preview/dist/assets/index-*.js
+curl -s https://gloobalv3.netlify.app/ | grep -o '/assets/index-[^"]*\.js'
+```
+
+Matching filenames mean the live frontend is your commit. The API is on
+Render's free tier and spins down after about fifteen minutes idle, so the
+first request after a quiet spell can take 20-50 seconds — a slow first
+curl is a cold start, not a failed deploy.
+
+If a push does not land, trigger a manual deploy from the Render and
+Netlify dashboards, and check the GitHub App's repository access before
+assuming the service is misconfigured. Background in
+`docs/deployment/README.md`, which still describes the earlier broken
+state and has not been updated.
 
 Render only rebuilds when files under `server/` change, so a docs- or
 frontend-only commit leaving Render on an older commit is correct.

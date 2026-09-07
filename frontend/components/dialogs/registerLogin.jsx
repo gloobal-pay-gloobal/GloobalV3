@@ -96,7 +96,7 @@ function PermissionsGateScreen({ onContinue }) {
       position: "fixed",
       inset: 0,
       zIndex: 50,
-      background: T.bg,
+      background: T.bgPlain,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody
@@ -346,7 +346,7 @@ function CountryPickerScreen({ topCountries, countries, search, onSearch, onSele
       position: "fixed",
       inset: 0,
       zIndex: 100,
-      background: T.bg,
+      background: T.bgPlain,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody
@@ -484,7 +484,7 @@ function PinScreen({ value, length, onChange, onSubmit, onBack, revealed, onTogg
       position: "fixed",
       inset: 0,
       zIndex: 100,
-      background: T.bg,
+      background: T.bgPlain,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody
@@ -585,7 +585,7 @@ function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, 
       position: "fixed",
       inset: 0,
       zIndex: 100,
-      background: T.bg,
+      background: T.bgPlain,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody
@@ -720,7 +720,7 @@ function BiometricVerifyScreen({ onBack, onVerify, scanning, notice, onSkip, ski
       // why the Save button and balance reveal looked like they
       // "weren't working."
       zIndex: 600,
-      background: T.bg,
+      background: T.bgPlain,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody
@@ -932,7 +932,7 @@ function BiometricPinFallbackModal({ open, symbolId, reason, onResolve }) {
       // Above BiometricVerifyScreen (600), which is usually what is on
       // screen when this opens.
       zIndex: 620,
-      background: T.bg,
+      background: T.bgPlain,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody

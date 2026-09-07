@@ -148,6 +148,64 @@ function SplashSymbolField() {
   >{p.symbol}</span>)}</div>;
 }
 
+// ❤️ from भारत — and भारत changes colour.
+//
+// Only the WORD changes. The heart and "from" stay put, so the eye lands on
+// the country rather than on a line that flickers as a whole.
+//
+// The colours are POSITION_COLORS, the same seven the Gloobal ID cycles
+// through everywhere else in the app, so the foot speaks a language the app
+// already speaks instead of inventing a private palette. Each pick excludes
+// the colour currently showing — a random choice out of seven repeats about
+// one time in seven, and a "change" that changes nothing reads as a bug.
+//
+// भारत is 16px against the line's 12px. Four pixels sounds like a lot and is
+// not: Devanagari has a shirorekha and no descender, so at equal px it
+// already reads taller and heavier than Latin. Matching the numbers would
+// have made it bigger than "a little bigger".
+//
+// The screen only runs ~4.75s, so at 2s this changes about twice. That is
+// the point — it should look alive, not like a disco.
+var BHARAT_COLOR_MS = 2000;
+function HeartFromBharat() {
+  const [colorIndex, setColorIndex] = useState20(
+    () => Math.floor(Math.random() * POSITION_COLORS.length)
+  );
+  useEffect16(() => {
+    // A person who has asked their phone to stop animating things has not
+    // asked for an exception here. One colour, held.
+    if (typeof window !== "undefined" &&
+        window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return void 0;
+    }
+    const id = setInterval(() => {
+      setColorIndex((current) => {
+        const next = Math.floor(Math.random() * (POSITION_COLORS.length - 1));
+        return next >= current ? next + 1 : next;
+      });
+    }, BHARAT_COLOR_MS);
+    return () => clearInterval(id);
+  }, []);
+  return <div
+    style={{
+      display: "flex",
+      alignItems: "baseline",
+      gap: 6,
+      fontSize: 12,
+      fontWeight: 700,
+      color: T.inkSoft,
+      whiteSpace: "nowrap"
+    }}
+  ><span style={{ fontSize: 13 }} role="img" aria-label="love">❤️</span><span>from</span><span
+    style={{
+      fontSize: 16,
+      fontWeight: 800,
+      color: POSITION_COLORS[colorIndex],
+      transition: "color 400ms ease"
+    }}
+  >भारत</span></div>;
+}
 function LaunchSplash({ onFinish }) {
   const [phase, setPhase] = useState20("logo");
   // Separate from `phase` on purpose. The bar has to begin travelling on the
@@ -224,7 +282,7 @@ function LaunchSplash({ onFinish }) {
       overflow: "hidden",
       // The app's own ground, so the splash fades INTO the app rather than
       // cutting to it.
-      background: T.bg,
+      background: T.bgPlain,
       opacity: phase === "fading" ? 0 : 1,
       transition: `opacity ${FADE_MS}ms ease`,
       pointerEvents: phase === "fading" ? "none" : "auto"
@@ -287,7 +345,7 @@ function LaunchSplash({ onFinish }) {
       borderRadius: T.radiusLg,
       background: T.gradWallet,
       color: "#fff",
-      padding: "18px 20px",
+      padding: "18px 20px 34px",
       boxShadow: "0 18px 40px rgba(76,29,149,0.28)",
       transform: "rotate(-3.5deg)",
       animation: "splashCardIn 640ms cubic-bezier(.2,.7,.3,1) both",
@@ -325,7 +383,18 @@ function LaunchSplash({ onFinish }) {
     style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: "rgba(255,255,255,0.66)" }}
   >Gloobal Bank</span><span
     style={{ fontSize: 19, fontWeight: 800, fontFamily: T.fontDisplay, letterSpacing: -0.4, lineHeight: 1.15 }}
-  >Your own currency</span></span></div>{
+  >Your own currency</span>{
+    /* Two words, not four.
+       ─────────────────────────────────────────────────────────────
+       Cashless is table stakes for any wallet and limitless is a
+       claim nobody can check in four seconds. Taxless and borderless
+       are the two that are about THIS product and the two the rest of
+       the app is built to deliver — and About Us already carries all
+       four as chips, where there is room to read them. Repeating the
+       full set here would make it a slogan rather than a claim. */
+  }<span
+    style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}
+  >Taxless<span style={{ opacity: 0.5, margin: "0 5px" }}>·</span>Borderless</span></span></div>{
     /* Gloobal Coin. The peg, which is the whole of what this product
        is, and a fact rather than a figure — 1 GEU is 1 rupee for
        everybody, in both directions, on the day this ships and after.
@@ -353,7 +422,13 @@ function LaunchSplash({ onFinish }) {
     style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkFaint }}
   >Gloobal Coin · always, both ways</span><span
     style={{ fontSize: 21, fontWeight: 800, fontFamily: T.fontDisplay, color: T.ink, letterSpacing: -0.5, lineHeight: 1.15 }}
-  >1 {COIN_TICKER} = {fmtMoney(1, COIN_PEG_CURRENCY)}</span></div>{
+  >1 {COIN_TICKER} = {fmtMoney(1, COIN_PEG_CURRENCY)}</span>{
+    /* The ticker, expanded. GEU appears on this screen, on the Coin
+       screen and on every receipt, and until now nothing anywhere
+       said what the three letters are. */
+  }<span
+    style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}
+  >Gloobal Energy Unit</span></div>{
     /* The hallmark — the component, not a rebuild of it. Bank and Coin
        both render this exact card; taking it is what keeps the three
        from drifting apart, which is the reason it was extracted in the
@@ -412,5 +487,23 @@ function LaunchSplash({ onFinish }) {
       width: running ? "100%" : "0%",
       transition: `width ${runMs}ms linear`
     }}
-  /></div></div></div>;
+  /></div></div>{
+    /* ❤️ from भारत.
+       ─────────────────────────────────────────────────────────────
+       Pinned to the safe area rather than sitting in the centred
+       stack, so anything added to the cards above can never shove it
+       off the bottom of a short phone. */
+  }<div
+    style={{
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: "calc(26px + env(safe-area-inset-bottom, 0px))",
+      display: "flex",
+      justifyContent: "center",
+      zIndex: 1,
+      opacity: running ? 1 : 0,
+      transition: "opacity 520ms ease 620ms"
+    }}
+  ><HeartFromBharat /></div></div>;
 }

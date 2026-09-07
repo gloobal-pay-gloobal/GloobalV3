@@ -43,9 +43,23 @@ var COVERAGE_COUNTRIES = COVERAGE_COUNTRIES_RAW.map((c) => ({
 }));
 var ACTIVE_ISO_SET = new Set(COVERAGE_COUNTRIES_RAW.map((c) => c.code));
 var COVERAGE_BY_ISO = Object.fromEntries(COVERAGE_COUNTRIES.map((c) => [c.code, c]));
+// `active` used to be set here, from the hardcoded 22-country list above.
+// It was a SECOND answer to "is this country active on Gloobal", computed
+// on every country and read by nothing — the Coverage screen took its lock
+// state from the hardcoded `code === "IN"` test instead, and now takes it
+// from GET /api/coverage, which decides it from real registered users.
+//
+// Removed rather than left dead: a field named `active` sitting on every
+// country object is exactly what a future reader would reach for, and it
+// would have disagreed with the real answer for every country except the
+// 22 listed here. One rule, and it lives in
+// server/lib/coverageAggregation.js.
+//
+// `coverage` stays. It carries this file's actual subject — the geography
+// (lat/lng/zoom/integrated date) used to draw a country, which is not a
+// status and has no server equivalent.
 var COVERAGE_ALL_COUNTRIES = ALL_COUNTRIES.map((c) => {
   const code = c.iso;
-  const live = ACTIVE_ISO_SET.has(code);
-  return { ...c, code, active: live, coverage: live ? COVERAGE_BY_ISO[code] : null };
+  return { ...c, code, coverage: ACTIVE_ISO_SET.has(code) ? COVERAGE_BY_ISO[code] : null };
 });
 

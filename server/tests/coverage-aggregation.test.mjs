@@ -48,9 +48,6 @@ process.env.PORT = process.env.TEST_PORT || "5197";
 process.env.PROTOTYPE_TRANSACTION_MAX_AMOUNT = "100000";
 process.env.AUTH_TOKEN_SECRET = "test-secret-not-the-production-one";
 process.env.PROTOTYPE_OTP = "123456";
-// The rule under test is the default one. Set explicitly so a developer's
-// own shell export cannot change what this suite is asserting.
-process.env.COVERAGE_ACTIVE_COUNTRY_RULE = "has_users";
 
 const mongoose = require("mongoose");
 
@@ -350,7 +347,9 @@ async function run() {
   check("total is null, not a stand-in figure", our.total === null, `total=${our.total}`);
   check("marked unavailable", our.available === false, `available=${our.available}`);
   check("carries a reason naming the missing record type",
-    typeof our.reason === "string" && our.reason.includes("claim-interest"), our.reason);
+    typeof our.reason === "string" &&
+    /platform-funded disbursement/i.test(our.reason) &&
+    /AssetSeed interest bonus/i.test(our.reason), our.reason);
   check("the computable alternative is offered as a labelled diagnostic, not as the metric",
     typeof our.diagnostics?.receivedByPeople?.total === "number" &&
     our.diagnostics.receivedByPeople.total > 0,
@@ -367,6 +366,64 @@ async function run() {
   check("coverage and stats agree on every country's user count",
     coverage.countries.every((c) => (stats.byCountry[c.countryIso] || 0) === c.users),
     JSON.stringify(stats.byCountry));
+
+  // ── 11 ─────────────────────────────────────────────────────────────────
+  // The active-country rule, confirmed by the founder on 7 September 2026:
+  // a country is active when at least one registered user's AUTHORITATIVE
+  // account country resolves to it. Not transactions, not admin enablement,
+  // and not a hardcoded list — the screen previously showed every country
+  // except India as locked however many people had registered there.
+  console.log("\n11. active countries are decided by registered users, and nothing else");
+  const final = (await get("/api/coverage?currency=INR")).body;
+  check("the response names the rule it applied",
+    final.activeCountryRule === "has_users", final.activeCountryRule);
+
+  const byIso = Object.fromEntries(final.countries.map((c) => [c.countryIso, c]));
+  check("India has users, so India is active",
+    byIso.IN?.users > 0 && byIso.IN?.active === true, JSON.stringify(byIso.IN));
+  check("the US has a user, so the US is active",
+    byIso.US?.users > 0 && byIso.US?.active === true, JSON.stringify(byIso.US));
+  check("GB is active on its user alone, having sent nothing",
+    byIso.GB?.users > 0 && byIso.GB?.transactions === 0 && byIso.GB?.active === true,
+    JSON.stringify(byIso.GB));
+  check("more than one country is active (the reported symptom was exactly one)",
+    final.countries.filter((c) => c.active === true).length > 1,
+    JSON.stringify(final.countries.map((c) => c.countryIso + ":" + c.active)));
+  // The rule stated as an equivalence, which is what stops it drifting into
+  // "everything is active" — a bug every check above would still pass.
+  check("active is true exactly when the country has a user",
+    final.countries.every((c) => c.active === (c.users > 0)),
+    JSON.stringify(final.countries.map((c) => c.countryIso + ":u" + c.users + ":" + c.active)));
+  check("a country nobody registered from is absent from the table",
+    !Object.prototype.hasOwnProperty.call(byIso, "JP"), JSON.stringify(Object.keys(byIso)));
+
+  const usersTotal = final.countries.reduce((sum, c) => sum + c.users, 0);
+  check("the per-country user counts still sum to the platform total",
+    usersTotal === (await get("/api/stats")).body.totalUsers, "sum=" + usersTotal);
+  check("India holds no special status — it is active for the same reason as the others",
+    byIso.IN?.active === true && byIso.US?.active === true && byIso.GB?.active === true);
+
+  // ── 12 ─────────────────────────────────────────────────────────────────
+  // Our Spending must never become a number by accident. Asserted against
+  // the CANDIDATES, not just the final value.
+  console.log("\n12. Our Spending refuses every proxy");
+  const our2 = final.ourSpending;
+  check("still null and unavailable", our2.total === null && our2.available === false);
+  check("the reason names who funded each rejected candidate",
+    /funded by another user/i.test(our2.reason) && /never reaches the database/i.test(our2.reason),
+    our2.reason.slice(0, 90));
+  check("the reason states what a real implementation would need",
+    /system-disbursement event/i.test(our2.reason));
+  // The receiver-side figure is real and large; it must never be presented
+  // as the metric, only as a labelled diagnostic.
+  check("user-to-user credit is NOT offered as Our Spending",
+    our2.total === null && our2.diagnostics.receivedByPeople.total > 0,
+    "metric=" + our2.total + " diagnostic=" + our2.diagnostics.receivedByPeople.total);
+  check("the diagnostic says in words that it is not the system paying anyone",
+    /NOT the system paying/i.test(our2.diagnostics.receivedByPeople.description));
+  check("no payouts are reported as a fabricated 0 metric",
+    our2.diagnostics.seedInterestPaid.seedsWithClaims === 0 && our2.total === null,
+    String(our2.diagnostics.seedInterestPaid.seedsWithClaims));
 
   console.log(`\n${failures === 0 ? "All checks passed." : `${failures} check(s) failed.`}`);
   await mongoose.connection.dropDatabase();

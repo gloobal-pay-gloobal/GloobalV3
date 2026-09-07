@@ -90,44 +90,32 @@ const SPENDING_TRANSACTION_STATUS = 'success';
 // denominated in it and the GEU peg is defined against it (1 GEU = ₹1).
 const REFERENCE_CURRENCY = 'INR';
 
-// ── "Active country" — the one place the rule lives ──────────────────────
+// ── "Active country" — one rule, and this is it ─────────────────────────
 //
-// The business rule is NOT settled. Three readings were on the table and
-// the founder has not picked one, so this module does not pick one either:
-// all three are implemented, the choice is a single named value, and
-// changing it is a config change rather than an edit to any aggregation.
+// A country is ACTIVE when at least one registered user's authoritative
+// account country resolves to it. Confirmed by the founder on 7 September
+// 2026, and the reason the rule exists at all: the Coverage screen showed
+// every country except India as locked, however many people had actually
+// registered there.
 //
-// Until it is confirmed, the default is HAS_USERS. That is the reading that
-// makes the reported problem go away ("active American users exist but the
-// US shows as locked") without asserting anything the data cannot support,
-// and it is the most conservative of the three: every country active under
-// HAS_TRANSACTIONS is also active under HAS_USERS, so switching later can
-// only ever remove countries from the list, never surprise anyone with new
-// ones. ADMIN_ENABLED additionally needs a Country.active field that does
-// not exist yet — see isCountryActive.
-const ACTIVE_COUNTRY_RULES = Object.freeze({
-  HAS_USERS: 'has_users',
-  HAS_TRANSACTIONS: 'has_transactions',
-  ADMIN_ENABLED: 'admin_enabled',
-});
-
-function activeCountryRule() {
-  const configured = String(process.env.COVERAGE_ACTIVE_COUNTRY_RULE || '').trim().toLowerCase();
-  const allowed = Object.values(ACTIVE_COUNTRY_RULES);
-  return allowed.includes(configured) ? configured : ACTIVE_COUNTRY_RULES.HAS_USERS;
-}
-
+// Deliberately NOT transaction-based. A country with users who have not yet
+// paid anyone is still a country Gloobal is present in, and locking it
+// would reproduce the original complaint one step further along — the US
+// would stay locked until an American happened to send money.
+//
+// Deliberately NOT admin-enablement. models/Country.js does carry a
+// `status: 'active' | 'inactive'` field, so that reading is available
+// without a schema change, but it answers a different question ("may this
+// country hold pool balances and settle") and the founder has ruled it out
+// for this screen. Anything reading it here would be a second rule.
+//
+// Three earlier readings were implemented behind an environment switch
+// while the decision was open. The switch is gone: a configurable rule with
+// a decision made is just a way for the deployed answer to differ from the
+// agreed one.
+//
 // `stats` is one row of the countries table built by buildCoverage below.
-// Returns null — not false — under ADMIN_ENABLED, because "no field exists
-// to read" is a different fact from "the field says no", and a screen that
-// renders those the same way is lying about one of them.
-function isCountryActive(stats, rule = activeCountryRule()) {
-  if (rule === ACTIVE_COUNTRY_RULES.HAS_TRANSACTIONS) return (stats.transactions || 0) > 0;
-  if (rule === ACTIVE_COUNTRY_RULES.ADMIN_ENABLED) {
-    // models/Country.js carries no `active` flag today. Adding one is a
-    // schema change that should not happen on a guess about the rule.
-    return typeof stats.adminEnabled === 'boolean' ? stats.adminEnabled : null;
-  }
+function isCountryActive(stats) {
   return (stats.users || 0) > 0;
 }
 
@@ -355,11 +343,19 @@ async function ourSpendingProbe({ accountCountries, receiverTotals }) {
     byCountry: null,
     available: false,
     reason:
-      'No record type represents a platform-funded disbursement to a user. ' +
-      'POST /api/assets/claim-interest credits User.balance directly and writes ' +
-      'no Transaction and no LedgerEntry, so individual payouts leave no trace; ' +
-      'Creator Share is user-funded; Referral carries no monetary field; the ' +
-      'Essentials subsidy never reaches the database.',
+      'No record type represents a platform-funded disbursement to a person. ' +
+      'Every mechanism that credits a user was checked against who funded it: ' +
+      'an ordinary payment and a Creator Share leg are both funded by another ' +
+      'user, not by the system; a coin mint or a GEU redemption converts the ' +
+      "account's own money and moves nothing new to it; Referral carries no " +
+      'monetary field at all; the Essentials subsidy is a browser-side ' +
+      'simulation that never reaches the database. The two genuinely ' +
+      'system-funded mechanisms cannot answer either: GEU growth is disabled ' +
+      '(GEU_GROWTH_PROTOTYPE) and has never produced an event, and the ' +
+      'AssetSeed interest bonus writes no Transaction and no LedgerEntry, so ' +
+      'no individual payout leaves a trace to attribute to a country. ' +
+      'Implementing this needs a new persisted system-disbursement event ' +
+      'carrying recipient, amount, currency and time.',
     // Everything below is EVIDENCE, not the answer. Named so it can never be
     // mistaken for the metric by a client reading this object.
     diagnostics: {
@@ -457,7 +453,6 @@ async function buildCoverage({ currency, now = new Date() } = {}) {
   const receiver = await fold(receiverGroups);
 
   const usersByCountry = tallyUsersByCountry(accountCountries);
-  const rule = activeCountryRule();
 
   // Every country named by ANY source — users, payments sent, payments
   // received — gets a row. A country with users and no payments is still a
@@ -480,7 +475,7 @@ async function buildCoverage({ currency, now = new Date() } = {}) {
       // unknown figure, and 0 would assert nobody there has ever spent.
       totalSpending: spend ? (spend.spendingAvailable ? round2(spend.spending) : null) : 0,
     };
-    return { ...stats, active: isCountryActive(stats, rule) };
+    return { ...stats, active: isCountryActive(stats) };
   });
 
   return {
@@ -512,7 +507,9 @@ async function buildCoverage({ currency, now = new Date() } = {}) {
     transactionsTotal: sender.transactions,
 
     countries,
-    activeCountryRule: rule,
+    // Named in the response so a client never has to infer what "active"
+    // meant, and so a change here is visible to anything consuming it.
+    activeCountryRule: 'has_users',
 
     ourSpending: await ourSpendingProbe({
       accountCountries,
@@ -548,8 +545,6 @@ module.exports = {
   resolveAccountCountries,
   tallyUsersByCountry,
   isCountryActive,
-  activeCountryRule,
-  ACTIVE_COUNTRY_RULES,
   SPENDING_TRANSACTION_TYPES,
   SPENDING_TRANSACTION_STATUS,
   REFERENCE_CURRENCY,

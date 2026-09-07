@@ -36,6 +36,11 @@ memory.txt
 
 server/node_modules/
 server/.env
+# Any throwaway server env (e.g. .env.browsercheck, written by the browser
+# verification run) — these carry a real Atlas connection string with
+# credentials in it, differing from server/.env only in the database name.
+server/.env.*
+!server/.env.example
 
 # --- Developer tooling (tools/) ---
 # Both mailers read their credentials at run time. The *.example files are
@@ -48,3 +53,6 @@ tools/email/__pycache__/
 tools/email/report.md
 tools/email/report.html
 tools/email/progress-report.txt
+
+# Screenshot written by tools/frontend/verify-coverage-ui.mjs on each run.
+tools/frontend/verify-coverage-ui.png

@@ -171,6 +171,104 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     [coverage]
   );
 
+  // ── Hooman Projects, from the server ───────────────────────────────────
+  //
+  // The whole area used to be scaffolding: eight category names in the
+  // array at the bottom of this file, a literal ∆ where a count should be,
+  // and no way to add anything. These are real stored records now (see
+  // server/models/Project.js).
+  //
+  // Refetched on the category, on the search text, and on projectsToken —
+  // which is bumped after a create, so a new project appears without a
+  // reload. Only fetched while the overlay is open: nothing on the main
+  // Coverage screen shows a project, so fetching before it opens would be
+  // a request nobody reads.
+  useEffect14(() => {
+    if (!showHoomanProjects) return undefined;
+    let cancelled = false;
+    setProjectsLoading(true);
+    (async () => {
+      const next = await GloobalApi.listProjects({
+        category: selectedHoomanCategory,
+        q: projectQuery.trim() || undefined
+      });
+      if (cancelled) return;
+      // null means the server could not answer, which is not the same as
+      // "no projects" — the first shows ∆, the second shows a real zero.
+      setProjectsData(next);
+      setProjectsLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showHoomanProjects, selectedHoomanCategory, projectQuery, projectsToken]);
+
+  // Counted the same way the server counts (lib/projectValidation.js's
+  // countWords). The two MUST agree: a form that says "982 / 1000" and is
+  // then rejected by the server is worse than no counter at all. The server
+  // is still the authority — this only tells the person where they stand.
+  const projectSummaryWords = countProjectSummaryWords(projectSummary);
+  const projectSummaryOverLimit = projectSummaryWords > PROJECT_SUMMARY_WORD_LIMIT;
+
+  const resetProjectForm = () => {
+    setProjectTitle("");
+    setProjectSummary("");
+    setProjectLink("");
+    setProjectFile(null);
+    setProjectError(null);
+  };
+
+  const submitProject = async () => {
+    if (projectSaving) return;
+    setProjectError(null);
+    if (!projectTitle.trim()) {
+      setProjectError("Give the project a title.");
+      return;
+    }
+    if (!projectSummary.trim()) {
+      setProjectError("Add a summary describing the project.");
+      return;
+    }
+    if (projectSummaryOverLimit) {
+      setProjectError(`The summary is ${projectSummaryWords} words. The limit is ${PROJECT_SUMMARY_WORD_LIMIT}.`);
+      return;
+    }
+    setProjectSaving(true);
+    try {
+      const created = await GloobalApi.createProject({
+        title: projectTitle.trim(),
+        category: selectedHoomanCategory,
+        summary: projectSummary.trim(),
+        link: projectLink.trim()
+      });
+      // The file is a SECOND request against the project that now exists,
+      // not part of the create. So a failed upload leaves a saved project
+      // with no attachment rather than losing the whole thing — the summary
+      // someone just wrote is the expensive part to lose, not the file.
+      if (created && projectFile) {
+        try {
+          await GloobalApi.uploadProjectAttachment(created.id, projectFile);
+        } catch (uploadError) {
+          setProjectSaving(false);
+          setShowProjectForm(false);
+          resetProjectForm();
+          setProjectsToken((n) => n + 1);
+          setProjectError(null);
+          return;
+        }
+      }
+      setProjectSaving(false);
+      setShowProjectForm(false);
+      resetProjectForm();
+      setProjectsToken((n) => n + 1);
+    } catch (err) {
+      setProjectSaving(false);
+      // The server's own message, not a generic one: it is what names the
+      // real word count when the summary is too long.
+      setProjectError((err && err.message) || "Couldn't save that project.");
+    }
+  };
+
   const totalRealSpend = coverage ? coverage.totalSpending : null;
   const realSpend = countryStatus ? countryStatus.totalSpending : null;
   // Both figures are already in `coverage.currency` — the server converted
@@ -512,10 +610,151 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     }}
   ><span style={{ fontSize: 12, fontWeight: 800, color: T.accent }}>{selectedHoomanCategory}</span><ChevronDown3 size={13} color={T.accent} /></button></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{(() => {
     const cat = HOOMAN_PROJECT_CATEGORIES.find((c) => c.name === selectedHoomanCategory);
-    return <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px" }}><div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{cat.name}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{cat.examples}</div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, paddingTop: 16, borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 12, color: T.inkFaint }}>Real projects in this category</span><span style={{ fontSize: 18, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</span></div></div>;
-  })()}<div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>
-              No real projects exist in any category yet — this is the scaffolding for when that feature is actually built, not a placeholder for real numbers.
-            </div></div>{
+    return <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px" }}><div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{cat.name}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{cat.examples}</div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, paddingTop: 16, borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 12, color: T.inkFaint }}>Projects in this category</span>{
+      /* A real count, from the same response the list below is
+         built from — so the number on this card and the rows
+         under it can never disagree. It was a hardcoded ∆, which
+         went on saying "no data" while real projects were being
+         listed directly beneath it. ∆ survives for the one case
+         it was always meant for: the server did not answer. */
+    }<span style={{ fontSize: 18, fontWeight: 800, color: projectsData ? T.accent : T.inkFaint }} aria-label={projectsData ? void 0 : "No data"}>{projectsData ? projectsData.counts[cat.name] ?? 0 : "∆"}</span></div></div>;
+  })()}{
+    /* Project search. Searches stored PROJECTS on the server — a
+       different thing from the category picker's box above, which
+       filters the eight fixed category NAMES in the browser. Kept
+       as two controls deliberately: one box doing both would be a
+       control that claimed to search projects while filtering a
+       hardcoded array. */
+  }<div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "10px 14px" }}><Search5 size={16} color={T.inkFaint} /><input
+    type="text"
+    value={projectQuery}
+    onChange={(e) => setProjectQuery(e.target.value)}
+    placeholder={`Search projects in ${selectedHoomanCategory}`}
+    aria-label="Search projects"
+    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 14, color: T.ink, fontFamily: "inherit" }}
+  />{projectQuery && <button onClick={() => setProjectQuery("")} aria-label="Clear project search" style={{ border: "none", background: "none", cursor: "pointer", padding: 0, display: "flex" }}><X5 size={14} color={T.inkFaint} /></button>}</div>{
+    /* The projects themselves. Three states, kept distinct: the
+       server could not answer (∆), it answered with nothing (a
+       real empty state), or it answered with rows. Collapsing the
+       first two would show "no projects yet" every time the
+       backend was asleep. */
+  }{projectsLoading && !projectsData ? <div style={{ padding: "24px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Loading…</div> : !projectsData ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>Couldn't reach the server, so we don't know what's here.</div></div> : projectsData.projects.length === 0 ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{projectQuery.trim() ? `Nothing matches "${projectQuery.trim()}"` : `No projects in ${selectedHoomanCategory} yet`}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>{projectQuery.trim() ? "Try a different word." : "Add the first one."}</div></div> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{projectsData.projects.map((project) => <div
+    key={project.id}
+    style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px" }}
+  ><div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}><span style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{project.title}</span>{project.countryIso && COUNTRY_BY_ISO[project.countryIso] && <FlagEmoji flag={COUNTRY_BY_ISO[project.countryIso].flag} width={22} height={16} radius={4} />}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{project.summary}</div>{
+    /* rel="noreferrer" as well as noopener: the target learns
+       nothing about where it was opened from. The server
+       already refused anything that is not http(s), so this
+       href cannot be a javascript: URL. */
+  }{project.link && <a
+    href={project.link}
+    target="_blank"
+    rel="noopener noreferrer"
+    style={{ display: "inline-block", marginTop: 10, fontSize: 12, fontWeight: 700, color: T.accent, textDecoration: "none", wordBreak: "break-all" }}
+  >{project.link}</a>}{project.attachment && <a
+    href={`${GloobalApi.baseUrl}${project.attachment.url}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 12, fontWeight: 700, color: T.accent, textDecoration: "none" }}
+  ><span style={{ wordBreak: "break-all" }}>{project.attachment.filename}</span><span style={{ color: T.inkFaint, fontWeight: 600, flexShrink: 0 }}>{Math.max(1, Math.round(project.attachment.byteSize / 1024))} KB</span></a>}<div style={{ fontSize: 10.5, color: T.inkFaint, marginTop: 12, display: "flex", alignItems: "center", gap: 6 }}><span>{project.summaryWordCount} words</span><span>·</span><span>{new Date(project.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>{project.status === "draft" && <><span>·</span><span style={{ fontWeight: 800, color: T.accent }}>Draft</span></>}</div></div>)}</div>}{
+    /* Add a project. Only offered to a registered account,
+       because the create route requires a token — showing the
+       button to somebody who cannot use it would be an
+       invitation to a 401. */
+  }{isFullyRegistered && <button
+    onClick={() => {
+      resetProjectForm();
+      setShowProjectForm(true);
+    }}
+    className="v2-tap"
+    style={{ width: "100%", padding: "14px 18px", borderRadius: T.radiusMd, border: `1px dashed ${T.line}`, background: "none", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
+  >Add a project to {selectedHoomanCategory}</button>}</div>{
+    /* Add a project.
+
+       The summary counter counts the same way the server does
+       (countProjectSummaryWords mirrors countWords in
+       server/lib/projectValidation.js). The server still decides
+       — this only stops somebody writing 1,400 words before
+       being told. */
+  }{showProjectForm && <div style={{ position: "fixed", inset: 0, zIndex: 350, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
+      setShowProjectForm(false);
+      resetProjectForm();
+    }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>New {selectedHoomanCategory} project</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ padding: "14px 16px" }}><label htmlFor="project-title" style={{ display: "block", fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Title</label><input
+    id="project-title"
+    type="text"
+    value={projectTitle}
+    maxLength={140}
+    onChange={(e) => {
+      setProjectError(null);
+      setProjectTitle(e.target.value);
+    }}
+    placeholder="What is it called?"
+    style={{ width: "100%", border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }}
+  /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}><label htmlFor="project-summary" style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Summary</label><span style={{ fontSize: 11, fontWeight: 700, color: projectSummaryOverLimit ? T.negative || "#DC2626" : T.inkFaint }}>{projectSummaryWords} / {PROJECT_SUMMARY_WORD_LIMIT} words</span></div><textarea
+    id="project-summary"
+    value={projectSummary}
+    rows={8}
+    onChange={(e) => {
+      setProjectError(null);
+      setProjectSummary(e.target.value);
+    }}
+    placeholder="What is it for, and who does it help?"
+    style={{ width: "100%", border: "none", outline: "none", background: "none", fontSize: 14, lineHeight: 1.55, color: T.ink, fontFamily: "inherit", resize: "vertical" }}
+  /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-link" style={{ display: "block", fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Link (optional)</label><input
+    id="project-link"
+    type="url"
+    inputMode="url"
+    value={projectLink}
+    onChange={(e) => {
+      setProjectError(null);
+      setProjectLink(e.target.value);
+    }}
+    placeholder="https://"
+    style={{ width: "100%", border: "none", outline: "none", background: "none", fontSize: 14, color: T.ink, fontFamily: "inherit" }}
+  /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-file" style={{ display: "block", fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>File (optional)</label><input
+    id="project-file"
+    type="file"
+    accept={PROJECT_ATTACHMENT_ACCEPT}
+    onChange={async (e) => {
+      const file = e.target.files && e.target.files[0];
+      setProjectError(null);
+      if (!file) {
+        setProjectFile(null);
+        return;
+      }
+      // Checked here to save a round trip and to say so immediately.
+      // The server re-measures and re-checks the type either way —
+      // neither of these is the rule.
+      if (file.size > PROJECT_ATTACHMENT_MAX_BYTES) {
+        setProjectFile(null);
+        setProjectError("Files can be at most 2 MB.");
+        return;
+      }
+      try {
+        setProjectFile(await readProjectFile(file));
+      } catch (readError) {
+        setProjectFile(null);
+        setProjectError("That file could not be read.");
+      }
+    }}
+    style={{ fontSize: 12.5, color: T.inkSoft, fontFamily: "inherit", maxWidth: "100%" }}
+  />{projectFile && <div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, wordBreak: "break-all" }}>{projectFile.filename}</div>}</div></div>{projectError && <div role="alert" style={{ fontSize: 12.5, color: T.negative || "#DC2626", padding: "0 4px", lineHeight: 1.5 }}>{projectError}</div>}<button
+    onClick={submitProject}
+    disabled={projectSaving || !projectTitle.trim() || !projectSummary.trim() || projectSummaryOverLimit}
+    className="v2-tap"
+    style={{
+      width: "100%",
+      padding: "14px 18px",
+      borderRadius: T.radiusMd,
+      border: "none",
+      background: T.accent,
+      color: "#fff",
+      fontSize: 14,
+      fontWeight: 800,
+      cursor: projectSaving ? "wait" : "pointer",
+      opacity: projectSaving || !projectTitle.trim() || !projectSummary.trim() || projectSummaryOverLimit ? 0.5 : 1
+    }}
+  >{projectSaving ? "Saving…" : "Save project"}</button></div></div>}{
     /* Category picker — search bar plus the full list, only
        reachable by tapping the corner button, so the main
        screen itself only ever shows one category. */
@@ -622,6 +861,52 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     }}
   ><span style={{ fontSize: 14, fontWeight: 700, color: code === coverageCurrency ? T.accent : T.ink }}>{code}</span><span style={{ fontSize: 13, color: T.inkFaint }}>{CURRENCY_SYMBOL[code] || ""}</span></button>)}</div></div></div>}</div>}</div>;
 }
+// The founder's rule, mirrored from server/lib/projectValidation.js.
+//
+// The server is the authority — it rejects an over-long summary whatever
+// this says — but the two counts MUST agree, because a form that reads
+// "982 / 1000" and is then refused has told the person something untrue.
+// If the limit or the definition of a word changes, change both.
+var PROJECT_SUMMARY_WORD_LIMIT = 1000;
+
+// Whitespace-separated runs, empties dropped. Character-for-character the
+// same rule as countWords() in server/lib/projectValidation.js.
+function countProjectSummaryWords(text) {
+  const trimmed = String(text == null ? "" : text).trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).filter(Boolean).length;
+}
+
+// A File, read into the shape GloobalApi.uploadProjectAttachment wants.
+//
+// The server takes base64 in JSON rather than multipart, which needs no
+// upload dependency on either side; this is the whole client half of that.
+// FileReader's data: URL carries a "data:<type>;base64," prefix that has to
+// come off — sending it would corrupt the first bytes of every file.
+function readProjectFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("That file could not be read."));
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const comma = result.indexOf(",");
+      resolve({
+        filename: file.name,
+        contentType: file.type,
+        base64: comma === -1 ? result : result.slice(comma + 1)
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Mirrors PROJECT_ATTACHMENT_TYPES on the server. Used for the file input's
+// `accept` and for the size check below — both are conveniences that save a
+// round trip, and neither is the rule: the server re-checks the type against
+// its own allow-list and re-measures the bytes.
+var PROJECT_ATTACHMENT_ACCEPT = "application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv";
+var PROJECT_ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024;
+
 var HOOMAN_PROJECT_CATEGORIES = [
   { name: "Infrastructure", examples: "Roads, bridges, water systems" },
   { name: "Startup", examples: "Early-stage ventures, incubators" },

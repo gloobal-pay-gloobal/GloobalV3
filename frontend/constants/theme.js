@@ -1,6 +1,47 @@
 // src/constants/theme.js
+// The app's background, and the field printed on it.
+//
+// ── Why the field lives in the TOKEN and not in a layer ──────────────────
+//
+// The obvious way to put the splash's symbol field behind the whole app is
+// one fixed layer at the back. It does not work here. Every full screen in
+// this app is an OPAQUE sheet at `position:fixed; inset:0; background:
+// T.bg`, and they stack: the Dashboard root at zIndex 100, Recharge at 60,
+// the GH menu at 300, ID history at 320. A layer behind them is hidden by
+// the first one that mounts, and making them transparent instead would let
+// each overlay show the screen underneath it rather than the field — a bug,
+// not a style.
+//
+// Painting the field INTO the token means every one of those sheets carries
+// it, overlays included, with no call site changed. The cost is that a
+// painted background cannot animate per mark; the Dashboard adds real
+// drifting marks on top of this for that (AppSymbolField).
+//
+// The marks are the same eight dial symbols in the same eight dial-pad
+// colours as the splash, at 13-24% opacity — about half the splash's.
+//
+// This started at 3.5-7.5%, chosen off the contrast arithmetic alone, and
+// it was invisible. A background you cannot see is not a safe background,
+// it is an absent one, and the whole point was to carry the splash's look
+// through the app. So the real constraint is a floor AND a ceiling.
+//
+// The ceiling: inkFaint (#9C96AF) on the flat colour is already only
+// 2.62:1, under the 4.5:1 small text should clear. At the splash's own 46%
+// a mark behind a timestamp drops it to 1.28:1 — the same line legible in
+// one place and not another, which is worse than uniformly low. At 24% it
+// is 1.86:1 for the darkest colour, so the marks are also placed to sit in
+// the open rather than tile the screen: 16 of them, none dense enough to
+// put a full line of text on top of one.
+var BG_FLAT = "#F6F5FC";
+var BG_FIELD_URI = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22390%22%20height%3D%22844%22%20viewBox%3D%220%200%20390%20844%22%3E%3Ctext%20x%3D%22348.0%22%20y%3D%2247.7%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2246%22%20fill%3D%22%23F59E0B%22%20fill-opacity%3D%220.218%22%20transform%3D%22rotate%28-3%20348.0%2047.7%29%22%3E%E2%96%A0%3C%2Ftext%3E%3Ctext%20x%3D%2286.4%22%20y%3D%2296.2%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2227%22%20fill%3D%22%23F59E0B%22%20fill-opacity%3D%220.233%22%20transform%3D%22rotate%284%2086.4%2096.2%29%22%3E%E2%97%8B%3C%2Ftext%3E%3Ctext%20x%3D%22207.5%22%20y%3D%22106.6%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2243%22%20fill%3D%22%237C3AED%22%20fill-opacity%3D%220.143%22%20transform%3D%22rotate%28-15%20207.5%20106.6%29%22%3E%E2%88%92%3C%2Ftext%3E%3Ctext%20x%3D%2254.9%22%20y%3D%22179.2%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2227%22%20fill%3D%22%237C3AED%22%20fill-opacity%3D%220.195%22%20transform%3D%22rotate%28-13%2054.9%20179.2%29%22%3E%2B%3C%2Ftext%3E%3Ctext%20x%3D%2269.6%22%20y%3D%22228.9%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2230%22%20fill%3D%22%23F59E0B%22%20fill-opacity%3D%220.165%22%20transform%3D%22rotate%2816%2069.6%20228.9%29%22%3E%E2%96%A0%3C%2Ftext%3E%3Ctext%20x%3D%2294.6%22%20y%3D%22279.2%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2269%22%20fill%3D%22%23EC4899%22%20fill-opacity%3D%220.236%22%20transform%3D%22rotate%28-4%2094.6%20279.2%29%22%3E%3D%3C%2Ftext%3E%3Ctext%20x%3D%22108.7%22%20y%3D%22344.8%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2253%22%20fill%3D%22%23EF4444%22%20fill-opacity%3D%220.201%22%20transform%3D%22rotate%28-11%20108.7%20344.8%29%22%3E%E2%96%A1%3C%2Ftext%3E%3Ctext%20x%3D%22369.7%22%20y%3D%22374.4%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2225%22%20fill%3D%22%237C3AED%22%20fill-opacity%3D%220.179%22%20transform%3D%22rotate%28-14%20369.7%20374.4%29%22%3E%E2%96%A0%3C%2Ftext%3E%3Ctext%20x%3D%22103.2%22%20y%3D%22452.5%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2267%22%20fill%3D%22%23C026D3%22%20fill-opacity%3D%220.143%22%20transform%3D%22rotate%2815%20103.2%20452.5%29%22%3E%E2%96%A1%3C%2Ftext%3E%3Ctext%20x%3D%22200.3%22%20y%3D%22511.9%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2258%22%20fill%3D%22%233B6EF5%22%20fill-opacity%3D%220.180%22%20transform%3D%22rotate%28-10%20200.3%20511.9%29%22%3E%3D%3C%2Ftext%3E%3Ctext%20x%3D%22304.0%22%20y%3D%22578.2%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2272%22%20fill%3D%22%23EF4444%22%20fill-opacity%3D%220.148%22%20transform%3D%22rotate%28-13%20304.0%20578.2%29%22%3E%E2%96%A0%3C%2Ftext%3E%3Ctext%20x%3D%2297.6%22%20y%3D%22611.4%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2237%22%20fill%3D%22%237C3AED%22%20fill-opacity%3D%220.169%22%20transform%3D%22rotate%28-1%2097.6%20611.4%29%22%3E%E2%97%8F%3C%2Ftext%3E%3Ctext%20x%3D%22258.3%22%20y%3D%22659.0%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2256%22%20fill%3D%22%233B6EF5%22%20fill-opacity%3D%220.144%22%20transform%3D%22rotate%284%20258.3%20659.0%29%22%3E%E2%97%8B%3C%2Ftext%3E%3Ctext%20x%3D%22220.8%22%20y%3D%22699.2%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2247%22%20fill%3D%22%230EA5E9%22%20fill-opacity%3D%220.207%22%20transform%3D%22rotate%28-6%20220.8%20699.2%29%22%3E%E2%97%8B%3C%2Ftext%3E%3Ctext%20x%3D%22338.7%22%20y%3D%22767.2%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2220%22%20fill%3D%22%23EC4899%22%20fill-opacity%3D%220.133%22%20transform%3D%22rotate%283%20338.7%20767.2%29%22%3E%2B%3C%2Ftext%3E%3Ctext%20x%3D%22234.5%22%20y%3D%22841.0%22%20font-family%3D%22sans-serif%22%20font-weight%3D%22800%22%20font-size%3D%2238%22%20fill%3D%22%237C3AED%22%20fill-opacity%3D%220.207%22%20transform%3D%22rotate%2817%20234.5%20841.0%29%22%3E%2B%3C%2Ftext%3E%3C%2Fsvg%3E";
 var T = {
-  bg: "#F6F5FC",
+  // The painted field. Every screen and overlay that says `background: T.bg`
+  // gets it for free.
+  bg: `${BG_FLAT} url("${BG_FIELD_URI}") center / cover no-repeat`,
+  // The flat colour with no field, for the two places that must not have
+  // one: registration and login (asked for explicitly), and the splash,
+  // which already runs its own live field and would otherwise draw two.
+  bgPlain: BG_FLAT,
   surface: "#FFFFFF",
   surfaceAlt: "#F3F1FA",
   surfaceSunk: "#EEEBF9",

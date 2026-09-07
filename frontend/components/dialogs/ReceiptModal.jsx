@@ -263,19 +263,23 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     data-testid="receipt-flag"
     style={{ display: "flex" }}
   >{
-    /* The same flag chip the country picker on registration uses —
-       FlagEmoji, a rounded rectangle, not a disc.
-       Two reasons it is this and not FlagCircle. One: a flag is a
-       rectangle, so a rectangle shows all of it, while a circular
-       crop slices the left and right thirds off a 3:2 flag and for
-       a lot of countries that is exactly the part that identifies
-       them. Two: this is the shape a person has already been taught
-       a flag looks like in this app, on the very first screen they
-       ever saw. Two shapes for one thing is a thing to learn twice.
-       The proportions are registration's 46x40 chip scaled to fit
-       the pill track, and the drop shadow is copied from it too, so
-       these are the same object at two sizes rather than two
-       objects that happen to both be flags.
+    /* The same FlagEmoji every other flag in this app is, cut to a
+       disc: shape="circle" squares the box, rounds it to half the
+       box, and paints the rim as an inset shadow so no straight
+       edge or corner of the source image survives the crop.
+       It was a rounded rectangle here until the receipt was asked
+       for a circular flag specifically. The cost of the disc is
+       real and worth naming: fit stays "cover", so a 3:2 flag is
+       filled to the circle and its left and right thirds are cropped
+       away — for Kuwait, Sudan, the UAE that is the hoist emblem.
+       "contain" would keep the whole flag but letterbox it, and a
+       letterboxed flag puts its own rectangular edges back inside
+       the disc, which is the thing the circle exists to remove.
+       Filling wins here because the counterparty's country is also
+       written out on the receipt; the flag is a mark, not the only
+       label. Diameter is 26 — the old chip's height, so the pill
+       track it sits in does not change height. Drop shadow is
+       registration's, unchanged.
        Never the emoji character: on any platform without flag
        glyphs (Windows above all) it is not a flag at all — it is
        the two regional-indicator letters, "GB", sitting where a
@@ -283,9 +287,9 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        to the character only when that fails. */
   }<FlagEmoji
     flag={receipt.flag}
-    width={30}
-    height={26}
-    radius={7}
+    shape="circle"
+    size={26}
+    fit="cover"
     dropShadow="drop-shadow(0 2px 6px rgba(76,29,149,0.20))"
   /></span><span style={{ width: 1, height: 14, background: T.inkFaint, opacity: 0.35 }} /></span>}<ReceiptTabButton
     label="Creator Share"

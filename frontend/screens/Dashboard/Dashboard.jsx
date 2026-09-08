@@ -447,40 +447,37 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // specifically from Creator Share grants, since that's what "what
   // came in today" means for a creator checking their day's take.
   const todaysDateLabel = useMemo5(() => (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric" }), []);
+  // What this account COLLECTED today: money customers actually paid it.
+  //
+  // This used to be the Creator Share instead —
+  //
+  //   assetSeeds.filter(t => t.chip === "CS" && t.date === today)
+  //             .reduce((s, t) => s + t.amountPaid * t.cashbackRate, 0)
+  //
+  // — which is the opposite figure twice over. A creator's share is the cut
+  // they hand BACK to whoever paid them, and the seeds it reads are the
+  // shares this account received as a PAYER of someone else. So a creator
+  // who took 5,000 today and shares 2% saw neither 5,000 nor 100: they saw
+  // whatever shares their own spending happened to earn, labelled "Today's
+  // Collection", on the creator side of their own dashboard.
+  //
+  // Now it is the received rows dated today, with the share legs left out —
+  // `kind === "share"` is the flag the server mints them with, the same one
+  // that stops them being double-counted in Recent Activity. A share is not
+  // a collection: it is the seed a payment planted, it lives in My Assets,
+  // and it is already doing a job as PayLater headroom.
   const todaysCollection = useMemo5(
-    () => assetSeeds.filter((t) => t.chip === "CS" && t.date === todaysDateLabel).reduce((s, t) => s + t.amountPaid * t.cashbackRate, 0),
-    [assetSeeds, todaysDateLabel]
+    () => (Array.isArray(receivedHistory) ? receivedHistory : [])
+      .filter((t) => t.kind !== "share" && t.date === todaysDateLabel)
+      .reduce((s, t) => s + (Number(t.amount) || 0), 0),
+    [receivedHistory, todaysDateLabel]
   );
   // Creator's "Recent Activity" card, below Today's Collection —
-  // Received (money customers paid in via Creator Share, newest
-  // first) vs Paid (this role's own outgoing Send Money/Scan & Pay/
-  // Pay a Business, already role-filtered by roleSendHistory below),
-  // toggled by one flip control, showing the 5 most recent either way.
+  // Received vs Paid, toggled by one flip control, showing the 5 most
+  // recent either way. Both sides are whole rows from the server now,
+  // including Creator Share legs — see the note on receivedRows below for
+  // why nothing is synthesised here any more.
   const [recentActivityTab, setRecentActivityTab] = useState14("receiving");
-  const creatorShareRows = useMemo5(
-    // shareRate carried through as a real percent (matching the same
-    // convention "sent" rows already use) so this row's own receipt
-    // shows the actual Creator Share rate that generated it — never
-    // a fabricated 0%, and never a second, separate transaction of
-    // its own; it's the Creator Share tab of the SAME original
-    // payment, read from the receiving side. method reflects where
-    // the money actually landed: PayLater when it (fully or partly)
-    // auto-settled outstanding due, Bank otherwise — never hardcoded.
-    () => assetSeeds.filter((t) => t.chip === "CS").map((t) => {
-      const receivedAmount = t.amountPaid * t.cashbackRate;
-      return {
-        name: t.creatorName || "Someone",
-        date: t.date,
-        time: t.time,
-        amount: receivedAmount,
-        method: t.paylaterSettledAmount > 0 ? "paylater" : "bank",
-        status: "completed",
-        txnId: t.txnId,
-        shareRate: t.cashbackRate * 100
-      };
-    }).reverse(),
-    [assetSeeds]
-  );
   // Everything this account received: the Creator Share tabs above, plus the
   // real person-to-person payments made TO it (mapped from
   // GET /api/transactions/:symbolId in App, split on the backend's own
@@ -491,14 +488,43 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // showed as a debit on BOTH accounts. Newest first, across both sources, so
   // the merged list reads as one history rather than two concatenated ones.
   const receivedRows = useMemo5(() => {
-    const merged = creatorShareRows.concat(Array.isArray(receivedHistory) ? receivedHistory : []);
+    // ONE row per Creator Share, and it is the SERVER's.
+    //
+    // This used to be `creatorShareRows.concat(receivedHistory)` and it
+    // showed every share twice. The two sources are the same event:
+    //
+    //   - creatorShareRows synthesises a row from the local asset seed.
+    //   - receivedHistory already contains the server's share leg, minted by
+    //     merchantShareFlow as a real transaction with type "share",
+    //     direction "received" and metadata.assetSeedId naming the very seed
+    //     the other row was built from.
+    //
+    // The server added that `type` field for exactly this — its own comment
+    // says a client that cannot tell a share from a payment "cannot keep it
+    // out of a payments count" — and mapServerTransaction reads it into
+    // `kind`. Nothing ever filtered on it, so both rows went in, and one
+    // 50.00 share arrived as two 50.00 rows with the same timestamp.
+    //
+    // The server's row wins because the synthesised one is denominated
+    // wrongly. It computed amountPaid * cashbackRate, and amountPaid is the
+    // amount handed to executeTransaction — which on a cross-border payment
+    // is the RECEIVER's face value (App.jsx says so where it picks
+    // debitAmount over `amount` for the same reason). So a 5,000 USD payment
+    // to India would have drawn its share from ₹478,000 and printed the
+    // result with a dollar sign. The server credits cashbackCredit in the
+    // payer's own currency and sends it with that currency attached.
+    //
+    // The server row also carries everything the synthesised one did —
+    // shareRate, method, name, date, time, txnId — so no receipt loses a
+    // field, and unlike a local seed it survives a reinstall.
+    const merged = Array.isArray(receivedHistory) ? receivedHistory.slice() : [];
     return merged.slice().sort((a, b) => {
       const at = parseDemoDate(a.date).getTime();
       const bt = parseDemoDate(b.date).getTime();
       if (isNaN(at) || isNaN(bt) || at === bt) return 0;
       return bt - at;
     });
-  }, [creatorShareRows, receivedHistory]);
+  }, [receivedHistory]);
   const [assetDetailKey, setAssetDetailKey] = useState14(null);
   const requestCloseAssetDetail = useBackClose(!!assetDetailKey, () => setAssetDetailKey(null));
   const [showSettleAssetsBiometric, setShowSettleAssetsBiometric] = useState14(false);
@@ -1748,20 +1774,25 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><Icon size={16} color={BILL_ACTION_COLORS[key] || T.accent} /></span><span style={{ fontSize: 11.5, fontWeight: 700, color: key === "more" ? T.inkSoft : T.ink, whiteSpace: "nowrap" }}>{label}</span></button>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{fmtMoney(todaysCollection, ccyCode)}</span><div style={{ display: "flex", gap: 10, marginTop: 2 }}><button
-    onClick={() => {
-      if (todaysCollection <= 0) return;
-      setSettlePendingAmount(todaysCollection);
-      setShowSettleAssetsBiometric(true);
-    }}
-    disabled={todaysCollection <= 0}
-    className="v2-tap"
-    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, border: "none", borderRadius: T.radiusMd, padding: "12px 0", color: "#fff", fontSize: 12.5, fontWeight: 800, background: todaysCollection > 0 ? T.gradButton : T.gradButtonDisabled, cursor: todaysCollection > 0 ? "pointer" : "not-allowed", opacity: todaysCollection > 0 ? 1 : 0.6 }}
-  ><Landmark3 size={13} color="#fff" />Bank</button><button
-    onClick={openGloobalCoinInfo}
-    className="v2-tap"
-    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, border: `1.5px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 0", color: T.ink, fontSize: 12.5, fontWeight: 800, background: T.surface, cursor: "pointer" }}
-  ><Coins2 size={13} color={T.ink} />Coin</button></div></div>{
+  ><Icon size={16} color={BILL_ACTION_COLORS[key] || T.accent} /></span><span style={{ fontSize: 11.5, fontWeight: 700, color: key === "more" ? T.inkSoft : T.ink, whiteSpace: "nowrap" }}>{label}</span></button>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{fmtMoney(todaysCollection, ccyCode)}</span><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>{
+    /* NO SETTLE BUTTONS HERE.
+       ─────────────────────────────────────────────────────────────
+       This figure is Creator Share — what customers shared back
+       today — and it used to carry "Bank" and "Coin" buttons that
+       settled it straight into the Gloobal Bank balance.
+
+       That is the one thing a share must not do. A share is not
+       money received; it is the seed the payment planted, and the
+       seed IS the PayLater pool — PayLaterService.computeAvailable
+       returns `paylaterLimit: totalAssets`, so every share already
+       raises the limit and pays down any due. Letting the same
+       amount also be settled into the bank spends it twice: once as
+       PayLater headroom and once as cash.
+
+       Settling a share is still possible, in the one place it
+       belongs — My Assets, where the seeds live and where the
+       button can say what it is actually converting. */
+  }Paid in by customers today. Creator Share is not counted here — it is the seed each payment planted, and it lives in <span style={{ fontWeight: 800, color: T.ink }}>My Assets</span>.</div></div>{
     /* Recent Activity — Received (Creator Share earnings, newest
        first) flips to Paid (this role's own outgoing spend) via one
        control; top 5 either way, with "More" jumping straight into

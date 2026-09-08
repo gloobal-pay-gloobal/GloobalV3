@@ -939,8 +939,25 @@ function GloobalId() {
         // labelled even when the payment stayed local.
         const settledAmount = Number.isFinite(remote && remote.debitAmount) ? remote.debitAmount : amount;
         const settledCurrency = (remote && remote.senderCurrency) || requestCurrency;
+        // The payee's country, so this row's receipt has a flag on it like
+        // every other receipt does.
+        //
+        // Resolved exactly the way handleSendToScanned resolves it: from the
+        // country the scan's own resolve call reported for the account behind
+        // the code, falling back to the payer's country only for a code that
+        // resolved to nobody. Same rule, same source, so paying a scanned code
+        // here and handing it to Send Money cannot disagree about where the
+        // person is.
+        //
+        // This row carried no country at all before, so a Scan & Pay receipt
+        // was the one receipt in the app that showed a name and no flag —
+        // ReceiptModal draws the flag only `&&` there is one.
+        const scannedPayeeCountry =
+          COUNTRY_BY_ISO[String(scanPendingPayment.recipientCountryIso || "").toUpperCase()] || dialCountry;
         const historyEntry = {
           name: scanPendingPayment.recipientName || scanPendingPayment.gloobalId,
+          flag: scannedPayeeCountry.flag,
+          counterpartyIso: scannedPayeeCountry.iso,
           date: now.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
           amount: settledAmount,
           currency: settledCurrency,
@@ -1025,6 +1042,16 @@ function GloobalId() {
     }
     const historyEntry = {
       name: label,
+      // A business paid from the More sheet is a merchant on this account's
+      // own ground: the flow carries no country of its own (see the argument
+      // list above — key, label, chip, amount, cashbackRate, method), so the
+      // account's country is the only country there is to name, and it is the
+      // right one for a merchant paid locally. Recorded rather than left
+      // undefined so this row's receipt carries a flag like every other
+      // receipt; without it a Pay-a-Business receipt showed a name and no
+      // flag at all.
+      flag: dialCountry.flag,
+      counterpartyIso: dialCountry.iso,
       date: now.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       amount,
       status: "completed",

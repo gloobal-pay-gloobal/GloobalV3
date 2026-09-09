@@ -135,6 +135,35 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // The short, ASCII-safe code that stands in for this account's Gloobal ID
+  // in a shared invite link, and NOWHERE else.
+  //
+  // The Gloobal ID is twelve characters from the dial-pad symbol alphabet
+  // (− + × = ○ □ ● ■). Every one of those is multi-byte UTF-8, so a URL
+  // carrying one percent-encodes to nine characters per symbol:
+  //
+  //   .../r/%E2%96%A0%E2%96%A0%E2%96%A0%E2%96%A1%E2%9C%95…   (108 chars of path)
+  //
+  // That is what people were pasting into WhatsApp. This field is the fix:
+  // a short opaque handle that resolves back to exactly one account.
+  //
+  // Deliberately NOT a second identity. It is not a payment address, it
+  // never appears on a receipt, it is not accepted anywhere a Gloobal ID is
+  // accepted, and it is not what the referral itself is recorded against —
+  // `referredBy` still stores the referrer's real symbolId, so the account
+  // graph is unchanged. It is a URL-shortening detail with a uniqueness
+  // guarantee, and it must never grow into more than that.
+  //
+  // Sparse, because it is minted lazily (see ensureReferralCode in
+  // server.js): accounts that predate this field hold no value until their
+  // next signed-in response, and a plain unique index would treat every one
+  // of those nulls as a collision with every other.
+  referralCode: {
+    type: String,
+    default: null,
+    trim: true,
+    index: { unique: true, sparse: true }
+  },
   passkeys: [{
     id: {
       type: String,

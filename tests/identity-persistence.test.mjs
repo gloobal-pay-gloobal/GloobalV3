@@ -21,24 +21,56 @@ const app = readSource("frontend/App.jsx");
 const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
 const server = readSource("server/server.js");
 
+// The whole referralLink expression, however many lines it spans. It used
+// to be one line and is now a ternary over three, and a test that reads to
+// the first newline would silently stop checking the branch that matters.
+const referralLinkExpression = (() => {
+  const at = dash.indexOf("const referralLink =");
+  assert.ok(at > 0, "referralLink not found in Dashboard.jsx");
+  const end = dash.indexOf(";", dash.indexOf("`", at));
+  return dash.slice(at, end + 1);
+})();
+
 describe("1. the referral link identifies the account, not the persona", () => {
-  test("it is built from the personal Gloobal ID", () => {
-    // shareableGloobalId becomes the Creator ID in Creator mode. A referral
-    // belongs to the account: the network is fetched with the personal ID,
-    // /r/:symbolId resolves a real user by that field, and referralCount is
-    // counted against it. Sharing the Creator ID handed people a code that
-    // identifies no account at all.
+  test("it is built from this account's own short referral code", () => {
+    // The link used to carry the Gloobal ID itself, which percent-encodes to
+    // 84 characters because every dial-pad symbol is multi-byte UTF-8. It now
+    // carries the short ASCII code the server mints per account
+    // (ensureReferralCode in server.js), which resolves to exactly the same
+    // account — see server/tests/referral-short-link.test.mjs.
     assert.match(
-      dash,
-      /const referralLink = `\$\{GLOOBAL_API_BASE\}\/r\/\$\{encodeURIComponent\(personalGloobalId\)\}`/,
-      "the referral link must carry the account's own Gloobal ID"
+      referralLinkExpression,
+      /referralCode/,
+      "the referral link must be built from the account's short referral code"
+    );
+    assert.match(
+      referralLinkExpression,
+      /\$\{GLOOBAL_API_BASE\}\/r\//,
+      "it must still point at the backend's /r/ route"
+    );
+  });
+
+  test("its fallback is the account's own Gloobal ID", () => {
+    // referralCode arrives on the account payload, so it is empty until the
+    // server has answered once. The fallback covers that window — and it has
+    // to be the PERSONAL id for the same reason the primary path does.
+    assert.match(
+      referralLinkExpression,
+      /personalGloobalId/,
+      "the fallback must carry the account's own Gloobal ID"
     );
   });
 
   test("it is NOT built from the role-aware id", () => {
-    const at = dash.indexOf("const referralLink =");
-    const line = dash.slice(at, dash.indexOf("\n", at));
-    assert.ok(!/shareableGloobalId/.test(line), "referralLink must not use shareableGloobalId");
+    // shareableGloobalId becomes the Creator ID in Creator mode. A referral
+    // belongs to the account: the network is fetched with the personal ID,
+    // /r/ resolves a real user, and referralCount is counted against it.
+    // Sharing the Creator ID handed people a code that identifies no account
+    // at all. Checked across the WHOLE expression, not just its first line.
+    assert.ok(
+      !/shareableGloobalId/.test(referralLinkExpression),
+      "referralLink must not use shareableGloobalId"
+    );
   });
 
   test("the displayed ID is now the account's own too", () => {

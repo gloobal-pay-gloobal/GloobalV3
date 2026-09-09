@@ -3426,6 +3426,12 @@ function GloobalId() {
     // Update History screen used to show only renames made in THIS session,
     // so it was empty again after every login — see idUpdateHistory there.
     idHistory={(registeredUser && registeredUser.symbolIdHistory) || []}
+    // The short handle the invite link uses instead of the Gloobal ID. Comes
+    // back on every response that carries a user, so it is already here by
+    // the time the share sheet can be opened. Empty until the server has
+    // answered once — Dashboard falls back to the long link for that window,
+    // which is exactly what it did before this existed.
+    referralCode={(registeredUser && registeredUser.referralCode) || ""}
     securitySettings={securitySettings}
     onUpdateSecuritySettings={handleUpdateSecuritySettings}
     onChangePin={handleChangePin}

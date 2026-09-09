@@ -320,6 +320,18 @@ export async function installApi(context, options = {}) {
     currency: account.currency,
     balance: state.balances[account.symbolId],
     cashbackRate: 0.01,
+    // The short handle the invite link uses instead of the Gloobal ID. The
+    // real publicUserPayload mints one per account (ensureReferralCode in
+    // server.js) and carries it on every response that carries a user, so a
+    // fake that omitted it would leave the share sheet permanently on its
+    // long-link fallback — and a browser test asserting the short link would
+    // be asserting against a payload the real server never sends.
+    //
+    // Derived from the account rather than random, so a test can name the
+    // code it expects. Ten characters of the same Crockford-style alphabet
+    // the server uses: digits and capitals, no I L O U.
+    referralCode: (account.referralCode || `REF${account.countryIso}`)
+      .toUpperCase().replace(/[ILOU]/g, "X").padEnd(10, "7").slice(0, 10),
     createdAt: "2026-01-01T00:00:00.000Z"
   });
 

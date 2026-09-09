@@ -414,6 +414,105 @@ const serializeSymbolIdHistory = (user) => {
   return entries.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 };
 
+// ─── The short referral code ────────────────────────────────────────────────
+//
+// What it is for, precisely: a shared invite link used to carry the account's
+// Gloobal ID in its path. The ID is twelve symbols from the dial-pad alphabet
+// and every one of them is multi-byte UTF-8, so the link people were actually
+// pasting into WhatsApp looked like this:
+//
+//   https://gloobal-pay.onrender.com/r/%E2%96%A0%E2%96%A0%E2%96%A0%E2%96%A1…
+//
+// 108 characters of percent-encoding for twelve characters of ID. This is the
+// short handle that replaces it in the URL, and only in the URL.
+//
+// The alphabet is Crockford-style: digits and uppercase letters with I, L, O
+// and U removed. I/1 and O/0 are the pairs people mis-transcribe when reading
+// a code aloud or off a screen, and U is dropped because excluding it is what
+// keeps an accidental obscenity out of a random string. Case is not
+// meaningful — lookup upper-cases first — so a link retyped in lower case
+// still resolves.
+const REFERRAL_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+// Ten characters of a 32-symbol alphabet is 32^10, about 1.1 x 10^15. At the
+// scale this system will plausibly reach, the chance of any collision at all
+// stays negligible — and a collision is not trusted to be impossible anyway:
+// the unique index refuses the write and ensureReferralCode simply tries again.
+const REFERRAL_CODE_LENGTH = 10;
+
+// crypto.randomInt, not Math.random. The requirement is that a code is not
+// guessable from another code — someone holding their own invite link must
+// not be able to walk to anybody else's — and that rules out both a sequence
+// and a seeded PRNG.
+const createReferralCode = () => {
+  let code = '';
+  for (let i = 0; i < REFERRAL_CODE_LENGTH; i += 1) {
+    code += REFERRAL_CODE_ALPHABET[crypto.randomInt(REFERRAL_CODE_ALPHABET.length)];
+  }
+  return code;
+};
+
+const REFERRAL_CODE_PATTERN = new RegExp(`^[${REFERRAL_CODE_ALPHABET}]{${REFERRAL_CODE_LENGTH}}$`);
+
+// Gives an account its code if it does not have one, and returns it.
+//
+// Minted LAZILY rather than by a migration, because every account that
+// existed before this field must get one and there is no deploy step in this
+// project that would run a backfill. Every route that hands back a user goes
+// through publicUserPayload, so an account acquires its code the first time
+// its owner signs in or loads their profile, once, and never again.
+//
+// Written with a filter that requires the code still to be absent, so two
+// concurrent requests for the same fresh account cannot both mint: the loser
+// matches nothing, re-reads, and adopts the winner's code. A duplicate-key
+// error means the random value collided with another account's — vanishingly
+// rare, and answered by trying a different one rather than by failing the
+// request that happened to be passing through.
+//
+// Never throws. A code that cannot be minted right now means the invite link
+// falls back to the long form for this one response, which is the behaviour
+// that shipped before this existed — not an error worth failing a login over.
+const ensureReferralCode = async (user) => {
+  if (user.referralCode) return user.referralCode;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const candidate = createReferralCode();
+
+    try {
+      const claimed = await User.findOneAndUpdate(
+        { _id: user._id, $or: [{ referralCode: null }, { referralCode: { $exists: false } }] },
+        { $set: { referralCode: candidate } },
+        { returnDocument: 'after' }
+      );
+
+      if (claimed) {
+        // Keep the in-memory document in step, so a caller that goes on to
+        // read user.referralCode sees what was just stored.
+        user.referralCode = claimed.referralCode;
+        return claimed.referralCode;
+      }
+
+      // No match: another request minted one first. Adopt theirs.
+      const current = await User.findById(user._id).select('referralCode').lean();
+      if (current?.referralCode) {
+        user.referralCode = current.referralCode;
+        return current.referralCode;
+      }
+      return null;
+    } catch (error) {
+      // 11000 is the unique index refusing a collision — try another value.
+      // Anything else is not something a different random string would fix.
+      if (error?.code !== 11000) {
+        console.error('Referral code mint failed:', error);
+        return null;
+      }
+    }
+  }
+
+  console.error(`Referral code mint gave up after 5 collisions for ${user.symbolId}`);
+  return null;
+};
+
 const publicUserPayload = async (user) => {
   const hasPin = Boolean(await Pin.exists({ userId: user._id }));
   const hasPasskey = Array.isArray(user.passkeys) && user.passkeys.length > 0;
@@ -464,6 +563,13 @@ const publicUserPayload = async (user) => {
     },
     referredBy: user.referredBy || null,
     referralCount: user.referralCount || 0,
+    // The short handle the invite link uses in place of this account's
+    // Gloobal ID. Carried on every response that already carries a user, so
+    // the client never needs a fetch of its own to build a share link — and
+    // so an account that predates the field acquires one simply by signing
+    // in. Null only when minting failed, which the client treats as "fall
+    // back to the long link" rather than as an error.
+    referralCode: await ensureReferralCode(user),
     cashbackRate: Number(user.cashbackRate) || 0,
     // Accounts created before the balance field existed have no value stored,
     // and `undefined` would render as a blank balance card rather than a
@@ -2789,17 +2895,44 @@ const safeDecodeSymbolId = (raw) => {
   }
 };
 
+// Two shapes of link arrive here, and both must resolve to the same account:
+//
+//   /r/K7M2QX9BTZ                 a short code minted by ensureReferralCode.
+//                                 What every new share produces.
+//   /r/%E2%96%A0%E2%96%A0…        the account's Gloobal ID, percent-encoded.
+//                                 What every link shared before this existed
+//                                 still looks like, on paper, in WhatsApp
+//                                 history and in anybody's saved messages.
+//
+// The short code is tried first because it is now the common case, and
+// because the two spaces cannot overlap: a Gloobal ID is twelve dial-pad
+// symbols and a referral code is ten characters of ASCII digits and capitals,
+// so no string is a valid member of both. REFERRAL_CODE_PATTERN is what makes
+// that guarantee explicit rather than incidental — a value that is not
+// code-shaped never reaches the code lookup at all.
+//
+// Whichever way the visitor got here, the redirect is unchanged: the app is
+// handed the referrer's real symbolId in ?ref=, because that is what the
+// registration referral dial pad expects to be pre-filled with and what
+// POST /api/register-symbol resolves `referredBy` against. The short code is
+// a URL detail; it never becomes the identity the referral is recorded under.
 app.get('/r/:symbolId', lookupLimit, async (req, res) => {
   try {
-    const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+    const raw = safeDecodeSymbolId(req.params.symbolId).trim();
 
-    if (!symbolId) {
+    if (!raw) {
       return res.status(404).json({
         error: 'Referral link is invalid or expired.'
       });
     }
 
-    const user = await User.findOne({ symbolId });
+    // Upper-cased for the lookup only: codes are minted in capitals, and a
+    // link retyped in lower case off a screen should still find its account.
+    const candidateCode = raw.toUpperCase();
+
+    const user = REFERRAL_CODE_PATTERN.test(candidateCode)
+      ? await User.findOne({ referralCode: candidateCode })
+      : await User.findOne({ symbolId: raw });
 
     if (!user) {
       return res.status(404).json({
@@ -2810,7 +2943,7 @@ app.get('/r/:symbolId', lookupLimit, async (req, res) => {
     // Hand the visitor to the app with the referrer pre-filled. Re-encoding
     // is required: the query value goes through the same symbol set, and an
     // unencoded '+' in a query string means a space.
-    return res.redirect(`${REFERRAL_APP_BASE_URL}/?ref=${encodeURIComponent(symbolId)}`);
+    return res.redirect(`${REFERRAL_APP_BASE_URL}/?ref=${encodeURIComponent(user.symbolId)}`);
   } catch (error) {
     console.error('Referral link error:', error);
 

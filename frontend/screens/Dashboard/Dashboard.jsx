@@ -200,7 +200,7 @@ function BalanceError({ onRetry }) {
   >Retry</button>}</span>;
 }
 
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], securitySettings = null, onUpdateSecuritySettings, onChangePin }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -1073,7 +1073,26 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // Sharing the Creator ID handed people a code that does not identify this
   // account at all — which is why the ID on the share sheet did not match the
   // Gloobal ID on the profile.
-  const referralLink = `${GLOOBAL_API_BASE}/r/${encodeURIComponent(personalGloobalId)}`;
+  //
+  // The link carries the account's SHORT referral code rather than its
+  // Gloobal ID. Both resolve to the same account on the backend, but only one
+  // of them is a sane thing to paste into a message:
+  //
+  //   .../r/K7M2QX9BTZ
+  //   .../r/%E2%96%A0%E2%96%A0%E2%96%A0%E2%96%A1%E2%9C%95%E2%97%8B…
+  //
+  // Every symbol in the Gloobal alphabet is multi-byte UTF-8, so twelve of
+  // them percent-encode to 108 characters of path. That is the whole reason
+  // this field exists — see ensureReferralCode in server.js.
+  //
+  // The fallback is the old long form, and it is a real path rather than a
+  // formality: referralCode arrives on the account payload, so it is empty
+  // for the moment between the app mounting and the first server response,
+  // and stays empty if that response never comes. A link that is long still
+  // works; a link built from an empty string does not.
+  const referralLink = referralCode
+    ? `${GLOOBAL_API_BASE}/r/${encodeURIComponent(referralCode)}`
+    : `${GLOOBAL_API_BASE}/r/${encodeURIComponent(personalGloobalId)}`;
   // The rate this account actually offers, read back from the server.
   //
   // Without this the sheet opened at its hardcoded 1% every time, so someone

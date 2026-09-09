@@ -972,6 +972,17 @@ function GloobalId() {
           time: formatClockTime(now),
           txnId,
           shareRate: shareRatePercent,
+          // The Creator Share leg's OWN reference, as the server minted it.
+          //
+          // The send wrapper has returned this all along (see the
+          // shareTransactionId it maps out of the server's shareTransaction
+          // block) and this row dropped it, so a Scan & Pay receipt reached
+          // ReceiptModal with a share tab and no share reference — the one
+          // case where the tab used to print the PAYMENT's id instead. Empty
+          // on a local-only scan, where no share leg exists to reference.
+          shareTxnId: (settledRemotely && remote.shareTransactionId) || "",
+          shareSourceTxnId: settledRemotely && remote.shareTransactionId ? txnId : "",
+          shareAmount: (settledRemotely && Number(remote.shareAmount)) || 0,
           ledgerRecordId: result.ledgerRecordId,
           role: activeShareRole
         };

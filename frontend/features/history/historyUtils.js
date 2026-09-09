@@ -159,7 +159,16 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy) {
     date: t.date,
     time: t.time || formatClockTime(/* @__PURE__ */ new Date()),
     status: t.status === "completed" || t.status === "received" ? "completed" : t.status,
-    txnId: t.txnId || genTxnId(),
+    // The row's own reference, never a fresh one.
+    //
+    // This used to be `t.txnId || genTxnId()`, which minted a NEW 20-symbol
+    // id every time a row without one was reopened — so the same transaction
+    // showed a different id on every visit, and the id on screen matched no
+    // persisted record anywhere. A receipt is a record of something that
+    // happened; it cannot manufacture the reference for it. A row with no
+    // reference now shows no reference, and ReceiptModal draws the id box
+    // only `&&` there is one.
+    txnId: t.txnId || "",
     // Present on rows saved from a real payment (see onSendComplete in
     // Send Money) and on every row restored from the server (see
     // mapServerTransaction, which now carries the counterparty's own Gloobal

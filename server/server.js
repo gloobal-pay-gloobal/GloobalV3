@@ -3714,6 +3714,47 @@ function cleanTransactionPayload(transaction, sender, receiver) {
   };
 }
 
+// The share leg already minted for a payment, in the same shape the fresh
+// send response returns it (see the `shareTransaction` block in POST
+// /api/transactions/send).
+//
+// Why a duplicate response needs it. A retried send returns the ORIGINAL
+// payment — that is what idempotency means and it does not change here — but
+// it used to return the payment alone. The client then had a receipt with a
+// payment reference and no share reference, and the Creator Share tab fell
+// back to the payment's id, so a retry turned two distinct references into
+// one repeated one. The share leg was there the whole time; nothing asked
+// for it.
+//
+// Reads only. No transaction, receipt, ledger entry or FX conversion is
+// created by this lookup, and a payment with no share leg answers null,
+// which is the honest answer for a payee who shares nothing.
+async function existingShareLegPayload(paymentTransaction) {
+  if (!paymentTransaction?._id) return null;
+
+  try {
+    const shareTransaction = await Transaction.findOne({
+      type: 'share',
+      'metadata.paymentTransactionId': paymentTransaction._id,
+    })
+      .select('referenceId amount currency')
+      .lean();
+
+    if (!shareTransaction) return null;
+
+    return {
+      referenceId: shareTransaction.referenceId,
+      amount: shareTransaction.amount,
+      currency: shareTransaction.currency,
+    };
+  } catch (error) {
+    // Best-effort, exactly as minting the leg is: a payment's duplicate
+    // response must never fail because its share leg could not be read.
+    console.error('Could not read the share leg for a duplicate response:', error);
+    return null;
+  }
+}
+
 // Is this Gloobal ID free to claim?
 //
 // Public, because registration has to ask it before anybody has an account to
@@ -5314,6 +5355,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
           duplicate: true,
           message: 'Duplicate request ignored. Existing transaction returned.',
           transaction: cleanTransactionPayload(existingIdempotentTransaction, sender, receiver),
+          // The share leg that was minted for that original payment, if it
+          // had one. Same reference the first response carried, read back
+          // rather than re-minted.
+          shareTransaction: await existingShareLegPayload(existingIdempotentTransaction),
         });
       }
     }
@@ -5336,6 +5381,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         duplicate: true,
         message: 'Duplicate transaction blocked. Please wait before sending the same amount again.',
         transaction: cleanTransactionPayload(recentDuplicate, sender, receiver),
+        // Same reasoning as the idempotency-key branch above: this response
+        // names an existing payment, so it names that payment's existing
+        // share leg too rather than leaving the client to guess.
+        shareTransaction: await existingShareLegPayload(recentDuplicate),
       });
     }
 
@@ -5791,6 +5840,11 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             duplicate: true,
             message: 'Duplicate request ignored. Existing transaction returned.',
             transaction: cleanTransactionPayload(winningTransaction, sender, receiver),
+            // The winner's share leg, for the same reason the pre-check
+            // branch carries it: the loser of the race is a retry, and a
+            // retry that comes back without the share reference leaves its
+            // receipt printing the payment's id under the share's label.
+            shareTransaction: await existingShareLegPayload(winningTransaction),
           });
         }
         // Extremely unlikely (the winner's own transaction should already be
@@ -6220,6 +6274,32 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
       .populate('toUserId', 'fullName symbolId countryIso')
       .lean();
 
+    // The share leg that belongs to each payment on this page, by its own
+    // reference.
+    //
+    // This is the list the app actually restores its history from
+    // (getTransactionSummary -> mapServerTransaction), and it was the only
+    // one of the two history projections that never carried this field. So
+    // a reopened receipt reached ReceiptModal with no share reference at
+    // all, its Creator Share tab fell back to the PAYMENT's id, and the two
+    // legs of one payment became indistinguishable the moment the receipt
+    // was closed and opened again — even though both references had existed,
+    // distinct and persisted, since the payment was made.
+    //
+    // Same one-query-per-page shape as /api/transactions/history above, and
+    // the same relationship: metadata.paymentTransactionId on the share row.
+    // Nothing is minted here; this only reads what mintShareLegAndReceipts
+    // already wrote.
+    const shareLegs = await Transaction.find({
+      type: 'share',
+      'metadata.paymentTransactionId': { $in: records.map((t) => t._id) },
+    })
+      .select('referenceId metadata.paymentTransactionId')
+      .lean();
+    const shareByPayment = new Map(
+      shareLegs.map((leg) => [String(leg.metadata?.paymentTransactionId), leg.referenceId])
+    );
+
     const transactions = records.map((transaction) => {
       const senderId = String(transaction.fromUserId?._id || transaction.fromUserId || '');
       const isSender = senderId === String(user._id);
@@ -6241,6 +6321,16 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         // the sender on any cross-border payment.
         amount: transaction.amount,
         cashback: Number(transaction.metadata?.cashback) || 0,
+        // The payer's own side of the share, in the payer's currency.
+        //
+        // `cashback` above is the payee-currency figure. mapServerTransaction
+        // wants the payer's for a row it shows as 'sent', and with this field
+        // absent it fell back to the payee's — the same one-side-under-the-
+        // other-side's-symbol defect the debitAmount block below exists to
+        // prevent, on the share figure rather than the payment figure.
+        cashbackCredit: Number.isFinite(Number(transaction.metadata?.cashbackCredit))
+          ? Number(transaction.metadata.cashbackCredit)
+          : null,
         cashbackRate: Number(transaction.metadata?.cashbackRate) || 0,
         currency: transaction.currency,
         // The SENDER's side, in their own currency — the fields this route
@@ -6262,6 +6352,12 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         // counterpartyFor. Carries countryIso so this route can feed a
         // receipt too, not only a list row.
         counterparty: counterpartyFor(transaction, isSender, counterparty),
+        // The share leg's OWN reference, so a receipt rebuilt from this row
+        // can name the share by its own id instead of the payment's. Null on
+        // a payment whose payee shares nothing — there is no second leg, and
+        // the receipt is expected to show no share reference rather than
+        // inventing one.
+        shareReferenceId: shareByPayment.get(String(transaction._id)) || null,
         createdAt: transaction.createdAt,
       };
     });

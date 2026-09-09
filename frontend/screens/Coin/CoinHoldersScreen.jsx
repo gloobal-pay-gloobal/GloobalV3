@@ -69,7 +69,7 @@ function CoinHoldersScreen({ onBack, holders, loading, onRefresh, onOpenCountry 
   // and the country rows cannot format the same currency two different ways.
   const inReserve = (n) => fmtMoney(Number(n) || 0, reserveCcy);
 
-  return <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><ProductScreenHeader
+  return <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><ProductScreenHeader
     title="Holders"
     onBack={onBack}
   /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{

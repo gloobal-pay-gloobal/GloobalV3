@@ -50,7 +50,7 @@ function GloobalBankScreen({
   onCopyId
 }) {
   const rows = Array.isArray(recentTransactions) ? recentTransactions : [];
-  return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><ProductScreenHeader
+  return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><ProductScreenHeader
     title={<OneBankMark />}
     onBack={onBack}
     onAction={onOpenStats}

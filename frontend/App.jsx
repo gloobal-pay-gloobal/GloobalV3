@@ -3911,26 +3911,21 @@ function GloobalId() {
         @keyframes badgePop { from { transform: translateY(-3px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         @keyframes iconAttention { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .phone-flip-btn { animation: phoneFlipPop 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
-        /* Ambient dashboard motion \u2014 floating financial symbols, drifting
-           dots, and slow geometric outlines. Transform/opacity only, so
-           these stay on the compositor thread. */
+        /* finDrift and finGlow are declared by AppSymbolBg itself now, with
+           the component that uses them — see the note there. These copies
+           stay because the registration flow's own flag particles animate
+           on finDrift too, and that flow renders above this block rather
+           than inside the background component. The dot and geo keyframes
+           went with FinDotField and FinGeoField. */
         @keyframes finDrift {
           0% { transform: translate3d(0, 0, 0) rotate(var(--r0)); opacity: 0; }
           12% { opacity: var(--peak-op); }
           88% { opacity: var(--peak-op); }
           100% { transform: translate3d(var(--dx), var(--dy), 0) rotate(var(--r1)); opacity: 0; }
         }
-        @keyframes finDotPulse {
-          0%, 100% { transform: translate3d(0, 0, 0) scale(0.7); opacity: 0; }
-          50% { transform: translate3d(0, -6px, 0) scale(1); opacity: var(--peak-op); }
-        }
         @keyframes finGlow {
           0%, 100% { filter: none; }
           50% { filter: drop-shadow(0 0 6px currentColor) brightness(1.5); }
-        }
-        @keyframes finGeoSpin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
         }
         @media (prefers-reduced-motion: reduce) {
           [aria-hidden="true"] span, [aria-hidden="true"] div { animation: none !important; opacity: 0 !important; }

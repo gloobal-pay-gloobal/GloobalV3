@@ -121,7 +121,7 @@ function GloobalCoinScreen({
     });
   };
 
-  return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><ProductScreenHeader
+  return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><ProductScreenHeader
     title={<SingleOMark before="" after="NE CURRENCY" />}
     onBack={onBack}
     onAction={onOpenStats}

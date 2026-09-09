@@ -282,7 +282,7 @@ function LaunchSplash({ onFinish }) {
       overflow: "hidden",
       // The app's own ground, so the splash fades INTO the app rather than
       // cutting to it.
-      background: T.bgPlain,
+      background: T.bg,
       opacity: phase === "fading" ? 0 : 1,
       transition: `opacity ${FADE_MS}ms ease`,
       pointerEvents: phase === "fading" ? "none" : "auto"

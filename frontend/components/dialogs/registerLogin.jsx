@@ -96,16 +96,24 @@ function PermissionsGateScreen({ onContinue }) {
       position: "fixed",
       inset: 0,
       zIndex: 50,
-      background: T.bgPlain,
+      background: T.bg,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody
     }}
   >{
-    /* The same drifting currency marks every other full-screen surface in
-       the app sits on. A flat backdrop made this screen look like a system
-       dialog interrupting the app rather than a part of it. */
-  }<DashboardAmbientBg /><div
+    /* FLAGS on the way in.
+       ─────────────────────────────────────────────────────────────
+       This rendered DashboardAmbientBg — the dashboard's own
+       background, on the screen you see before a dashboard exists.
+       Registration is where a person picks the country they are
+       joining from, so the field is flags; the symbols start once
+       they are through.
+
+       No `countries` and no `onPick`, so these are decoration only.
+       On Coverage the same component is tappable, and there the
+       flags are the content. */
+  }<FlagFlowBox count={14} opacityBoost={1.6} varied /><div
     style={{
       position: "relative",
       zIndex: 1,
@@ -346,7 +354,7 @@ function CountryPickerScreen({ topCountries, countries, search, onSearch, onSele
       position: "fixed",
       inset: 0,
       zIndex: 100,
-      background: T.bgPlain,
+      background: T.bg,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody
@@ -484,7 +492,7 @@ function PinScreen({ value, length, onChange, onSubmit, onBack, revealed, onTogg
       position: "fixed",
       inset: 0,
       zIndex: 100,
-      background: T.bgPlain,
+      background: T.bg,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody
@@ -585,7 +593,7 @@ function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, 
       position: "fixed",
       inset: 0,
       zIndex: 100,
-      background: T.bgPlain,
+      background: T.bg,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody
@@ -720,7 +728,7 @@ function BiometricVerifyScreen({ onBack, onVerify, scanning, notice, onSkip, ski
       // why the Save button and balance reveal looked like they
       // "weren't working."
       zIndex: 600,
-      background: T.bgPlain,
+      background: T.bg,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody
@@ -932,7 +940,7 @@ function BiometricPinFallbackModal({ open, symbolId, reason, onResolve }) {
       // Above BiometricVerifyScreen (600), which is usually what is on
       // screen when this opens.
       zIndex: 620,
-      background: T.bgPlain,
+      background: T.bg,
       display: "flex",
       flexDirection: "column",
       fontFamily: T.fontBody

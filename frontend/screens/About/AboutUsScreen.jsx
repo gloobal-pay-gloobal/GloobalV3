@@ -39,7 +39,7 @@ function AboutUsScreen({ onBack, onShowToast, gloobalId }) {
     { label: "Community first", note: "Creator Share routes part of a payment back", icon: AboutUsers, color: POSITION_COLORS[1] }
   ];
   const WORDS = ["Cashless", "Taxless", "Borderless", "Limitless"];
-  return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><ProductScreenHeader title="About Us" onBack={onBack} /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
+  return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><ProductScreenHeader title="About Us" onBack={onBack} /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* The hero is the VIEWER'S OWN ID, never an invented one.
        A made-up twelve-symbol string on a page about identity is a fake
        identifier printed at hero size, and nothing on the screen would

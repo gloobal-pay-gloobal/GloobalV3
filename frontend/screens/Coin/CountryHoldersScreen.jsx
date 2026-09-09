@@ -40,7 +40,7 @@ function CountryHoldersScreen({ onBack, countryIso, data, loading, onRetry, myGl
   const localCcy = data ? data.localCurrency : null;
   const rows = data ? data.rows || [] : [];
 
-  return <div style={{ position: "fixed", inset: 0, zIndex: 330, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><ProductScreenHeader
+  return <div style={{ position: "fixed", inset: 0, zIndex: 330, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><ProductScreenHeader
     title={country ? country.name : countryIso || "Holders"}
     onBack={onBack}
   /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{

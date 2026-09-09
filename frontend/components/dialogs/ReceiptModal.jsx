@@ -64,8 +64,26 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     const result = openComplaint({ txnId: receipt.txnId, raisedBy: viewerRole, reason: "Reported from receipt" });
     if (result?.ok) setReportSubmitted(true);
   };
-  const tint = receiptTab === "share" ? isSent ? T.positive : T.negative : isSent ? T.negative : T.positive;
-  const tintSoft = receiptTab === "share" ? isSent ? T.positiveSoft : "rgba(226,63,69,0.12)" : isSent ? "rgba(226,63,69,0.12)" : T.positiveSoft;
+  // The share leg's own reference, stripped of the grouping spaces rows
+  // saved before genTxnId dropped them still carry. See the block below the
+  // tints for what it is and why nothing falls back to the payment's id.
+  const shareTxnRaw = receipt.shareTxnId ? String(receipt.shareTxnId).replace(/\s/g, "") : "";
+  // Is there a Creator Share on this receipt AT ALL?
+  //
+  // Two ways to be sure there is: the share leg's own reference (a server
+  // payment whose payee shares something), or a non-zero rate (a payment
+  // settled locally, where the share is real in this device's ledger but no
+  // server leg exists to reference). A payment at 0% has neither, and it
+  // gets no Creator Share tab — an empty tab on a payment that shares
+  // nothing implies a movement that never happened.
+  const shareRatePercent = Number(receipt.shareRate) || 0;
+  const hasShareEvent = !!shareTxnRaw || shareRatePercent > 0;
+  // Guarded rather than read straight off `receiptTab`, so a receipt opened
+  // while the previous one was left on its share tab cannot land on a tab
+  // this receipt does not have.
+  const onShareTab = hasShareEvent && receiptTab === "share";
+  const tint = onShareTab ? isSent ? T.positive : T.negative : isSent ? T.negative : T.positive;
+  const tintSoft = onShareTab ? isSent ? T.positiveSoft : "rgba(226,63,69,0.12)" : isSent ? "rgba(226,63,69,0.12)" : T.positiveSoft;
   const shareCurrency = receipt.currencyCode;
   const shareAmountBase = receipt.amount;
   const shareAmount = shareAmountBase * ((receipt.shareRate ?? 0) / 100);
@@ -78,14 +96,23 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // print receipt.txnId, so the payment and the share were indistinguishable
   // by reference and neither could be looked up unambiguously.
   //
-  // Falls back to the payment's id when there is no share leg — a payee
-  // sharing 0% mints none — so the Creator Share tab is never left showing
-  // a blank where a reference should be.
-  const shareTxnRaw = receipt.shareTxnId ? String(receipt.shareTxnId).replace(/\s/g, "") : "";
-  const showingShare = receiptTab === "share" && !!shareTxnRaw;
-  const rawTxnId = showingShare
+  // It used to FALL BACK to the payment's id when the share reference was
+  // absent, on the reasoning that a blank looked broken. That fallback is
+  // removed, because what it actually printed was a false statement: the
+  // Creator Share tab claimed a transaction id that belongs to a different
+  // transaction, and the two legs of one payment could not be told apart by
+  // anyone reading the receipt. Four ordinary situations reached it —
+  // reopening any receipt from history, retrying a send, paying a scanned
+  // code, paying a business — so the same-id receipt was the normal case,
+  // not an edge one.
+  //
+  // No reference now means no reference is shown. The id box is drawn only
+  // `&&` there is one (see below), so the tab renders its money and its rate
+  // and simply omits a field it does not have.
+  const showingShare = onShareTab && !!shareTxnRaw;
+  const rawTxnId = onShareTab
     ? shareTxnRaw
-    : receipt.txnId ? receipt.txnId.replace(/\s/g, "") : "";
+    : receipt.txnId ? String(receipt.txnId).replace(/\s/g, "") : "";
   // The payment this share came from, shown beneath it so the two can be
   // traced to each other.
   const shareSourceTxnId = showingShare && receipt.txnId ? receipt.txnId.replace(/\s/g, "") : "";
@@ -209,7 +236,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       cursor: "pointer",
       zIndex: 1
     }}
-  ><Share2 size={13} color={T.inkSoft} /></button><div style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, minHeight: receiptTab === "share" ? 0 : void 0 }}>{receiptTab === "payment" ? `${isSent ? "Money sent" : "Money received"}${receipt.status === "pending" ? " \xB7 Pending" : receipt.status === "simulated" ? " \xB7 Not actually sent" : ""}` : isSent ? <SingleOMark before="Back t" after=" you" /> : "You share back"}</div>{
+  ><Share2 size={13} color={T.inkSoft} /></button><div style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, minHeight: onShareTab ? 0 : void 0 }}>{!onShareTab ? `${isSent ? "Money sent" : "Money received"}${receipt.status === "pending" ? " \xB7 Pending" : receipt.status === "simulated" ? " \xB7 Not actually sent" : ""}` : isSent ? <SingleOMark before="Back t" after=" you" /> : "You share back"}</div>{
     /* Amount — matches whichever receipt is actually showing.
        Payment tab: what I sent/received, signed accordingly.
        Creator Share tab: the opposite direction from Payment —
@@ -217,7 +244,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        (credit, +); I received the payment, so I share back to
        them (debit, −). Always my own currency, since it's always
        my account the share settles into or out of. */
-  }<div style={{ margin: "10px 0 0", padding: "0 6px" }}>{receiptTab === "payment" ? <div
+  }<div style={{ margin: "10px 0 0", padding: "0 6px" }}>{!onShareTab ? <div
     style={{
       fontSize: receiptAmountFontSize(`${isSent ? "\u2212" : "+"}${fmtMoney(receipt.amount, receipt.currencyCode)}`, 27),
       fontWeight: 800,
@@ -236,12 +263,18 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       overflowWrap: "anywhere"
     }}
   >{isSent ? "+" : "\u2212"}{fmtMoney(shareAmount, shareCurrency)}</div>}</div></div><div style={{ borderTop: `1.5px dashed ${T.line}`, margin: "18px 0" }} />{
-    /* Two receipts, one toggle — Payment always exists, Creator
-       Share always exists too, even at 0%. Neither tab is ever
-       hidden based on the value. */
+    /* Two receipts, one toggle. Payment always exists. Creator
+       Share exists whenever the payment actually carried one — a
+       share leg minted server-side, or a non-zero rate applied by
+       this device's own ledger — and its tab is drawn only then.
+       A payment at 0% shares nothing, and a tab offering to show
+       the receipt for a movement that never happened is a claim,
+       not a control. The tab is hidden on value only in that one
+       sense: whether the event exists at all, never on how big it
+       is. */
   }<div style={{ display: "flex", alignItems: "center", gap: 6, padding: 4, borderRadius: 999, background: T.surfaceAlt, marginBottom: 14 }}><ReceiptTabButton
     label="Payment"
-    active={receiptTab === "payment"}
+    active={!onShareTab}
     onSelect={() => setReceiptTab("payment")}
   />{
     /* The counterparty's flag, on the seam between the two tabs.
@@ -291,11 +324,11 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     size={26}
     fit="cover"
     dropShadow="drop-shadow(0 2px 6px rgba(76,29,149,0.20))"
-  /></span><span style={{ width: 1, height: 14, background: T.inkFaint, opacity: 0.35 }} /></span>}<ReceiptTabButton
+  /></span><span style={{ width: 1, height: 14, background: T.inkFaint, opacity: 0.35 }} /></span>}{hasShareEvent && <ReceiptTabButton
     label="Creator Share"
-    active={receiptTab === "share"}
+    active={onShareTab}
     onSelect={() => setReceiptTab("share")}
-  /></div>{receiptTab === "payment" ? <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{
+  />}</div>{!onShareTab ? <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{
     /* Box 1 — who it's to/from, and their Gloobal ID if there is one.
        The flag no longer hangs off this box's top edge: it is on the
        tab row above, once for the whole receipt. The top padding is

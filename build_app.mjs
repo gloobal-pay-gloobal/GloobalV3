@@ -80,6 +80,11 @@ const BACKEND_MODULES = [
   "data/banks.js",
   "utils/particles.js",
   "utils/gloobalQR.js",
+  // The session-handle codec. Sits BESIDE gloobalQR.js rather than
+  // replacing it in place: the old payload is deleted in the same commit
+  // as its last call site (see docs/gloobal-qr-session.md), never before
+  // it, so no working tree is ever half-migrated.
+  "utils/gloobalQRSession.js",
   "utils/creatorShare.js",
   "utils/date.js",
   "utils/demoGenerators.js",

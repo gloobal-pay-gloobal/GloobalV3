@@ -16,6 +16,7 @@ const Interest = require('./models/Interest');
 const Product = require('./models/Product');
 const ProductService = require('./models/ProductService');
 const AssetSeed = require('./models/AssetSeed');
+const QrSession = require('./models/QrSession');
 const FaceTemplate = require('./models/FaceTemplate');
 const { nationalNumberFrom } = require('./constants/dialCodes');
 const faceCrypto = require('./lib/faceCrypto');
@@ -28,6 +29,16 @@ const {
   UnresolvedCurrencyError,
 } = require('./lib/settlementEngine');
 const { mintShareLegAndReceipts } = require('./lib/merchantShareFlow');
+// The Gloobal QR state machine. No Express in it and no credential logic:
+// mint, resolve, claim and consume are four database operations, and the
+// routes below are a thin skin over them. See docs/gloobal-qr-session.md.
+const {
+  mintQrSession,
+  resolveQrSession,
+  claimQrSession,
+  consumeQrSession,
+  QR_SESSION_TTL_MS,
+} = require('./lib/qrSessionFlow');
 const Country = require('./models/Country');
 const AuditLog = require('./models/AuditLog');
 const CountryCurrencyPool = require('./models/CountryCurrencyPool');
@@ -1253,6 +1264,100 @@ const registerPinSuccess = async (pinRecord) => {
   pinRecord.lastVerifiedAt = new Date();
   await pinRecord.save();
 };
+
+// The PIN check, as one function instead of as a paragraph copied into a
+// route.
+//
+// This is precisely the block POST /api/transactions/send runs before it
+// moves money: the Pin record, the lockout counters, bcrypt.compare, the
+// Retry-After header and the audit line. It is lifted here so that a SECOND
+// route can require a REAL credential without a second copy of it drifting
+// from the first.
+//
+// It exists because of what POST /api/qr/session/claim is. That route hands
+// back a merchant's identity and takes a payment code out of circulation, on
+// the strength of the caller having proved who they are — and the thing it
+// must never become is a route that believes a browser saying "verified".
+// The old Scan & Pay flow was honest about this in its own comment: the
+// biometric prompt there "was a 700ms setTimeout that always succeeded". If
+// the server cannot check the credential itself, the credential did not
+// happen.
+//
+// Used by the claim route and nowhere else yet. The existing copies
+// (/api/pin/verify, /api/pin/set, /api/transactions/send, /api/coin/send) are
+// deliberately left alone in this change: they sit on the money path, they
+// differ in their audit action names, and migrating them is a refactor that
+// deserves its own commit and its own test run rather than riding along with
+// a feature.
+//
+// Returns { ok: true } or { ok: false, status, body, retryAfterSeconds }.
+async function verifyAccountPin(user, rawPin, { req, action }) {
+  const cleanPin = String(rawPin || '').trim();
+
+  if (!cleanPin) {
+    return {
+      ok: false,
+      status: 400,
+      body: { success: false, message: 'PIN is required.' },
+    };
+  }
+
+  const pinRecord = await Pin.findOne({ userId: user._id });
+
+  if (!pinRecord) {
+    return {
+      ok: false,
+      status: 404,
+      body: { success: false, message: 'PIN is not set for this Secure ID.' },
+    };
+  }
+
+  beginPinAttempt(pinRecord);
+
+  if (pinLockRemainingMs(pinRecord) > 0) {
+    const locked = pinLockoutResponse(pinRecord);
+    recordAudit({
+      userId: user._id, action: `${action}.blocked`, status: 'blocked',
+      message: 'PIN locked out', req, metadata: { symbolId: user.symbolId },
+    });
+    return {
+      ok: false,
+      status: locked.status,
+      retryAfterSeconds: locked.retryAfterSeconds,
+      body: {
+        success: false,
+        message: locked.message,
+        retryAfterSeconds: locked.retryAfterSeconds,
+        lockedUntil: locked.lockedUntil,
+      },
+    };
+  }
+
+  const isMatch = await bcrypt.compare(cleanPin, pinRecord.pinHash);
+
+  if (!isMatch) {
+    const failure = await registerPinFailure(pinRecord);
+    recordAudit({
+      userId: user._id, action: `${action}.pin_invalid`, status: 'failed',
+      message: `Invalid PIN (attempt ${pinRecord.failedAttempts}/${PIN_MAX_ATTEMPTS})`, req,
+      metadata: { symbolId: user.symbolId, lockedOut: failure.lockedNow },
+    });
+    return {
+      ok: false,
+      status: 401,
+      retryAfterSeconds: failure.lockedNow ? failure.retryAfterSeconds : undefined,
+      body: {
+        success: false,
+        message: failure.message,
+        attemptsRemaining: failure.attemptsRemaining,
+        lockedUntil: pinRecord.lockedUntil,
+      },
+    };
+  }
+
+  await registerPinSuccess(pinRecord);
+  return { ok: true };
+}
 
 // Sets or replaces an account's PIN.
 //
@@ -3658,6 +3763,17 @@ function createPrototypeTransactionReference() {
 // rather than a 500: it is a normal outcome, not a fault. The balance is now
 // checked BY the debit itself (the conditional $inc below), so under
 // concurrency the only way to learn there was not enough is to attempt it.
+// The QR code was spent between the pre-flight check above and the atomic
+// burn inside the transfer — which is to say, somebody else's payment
+// committed first. Nothing of this payment moved: the burn is the first write
+// in performTransfer, so the throw aborts before the debit.
+class QrSessionSpentError extends Error {
+  constructor() {
+    super('This code has already been paid. Scan a new one.');
+    this.name = 'QrSessionSpentError';
+  }
+}
+
 class InsufficientBalanceError extends Error {
   constructor(balance) {
     super('Insufficient balance.');
@@ -5057,6 +5173,246 @@ app.get('/api/projects/:id/attachment', lookupLimit, async (req, res) => {
   }
 });
 
+// ─── Gloobal QR: sessions ────────────────────────────────────────────────────
+//
+// A Gloobal QR is a POINTER to a session held here. It is not money, it is
+// not an instruction, and possession of it authorises nothing. See
+// docs/gloobal-qr-session.md for the model and lib/qrSessionFlow.js for the
+// state machine these three routes are a thin skin over.
+//
+// Until this block existed there were no QR routes AT ALL. The payload was
+// minted, read and trusted entirely inside two browsers, which is the single
+// mistake all four of the old system's weaknesses restate:
+//
+//   - the payload carried a Gloobal ID and an amount, so anyone who knew the
+//     alphabet could mint a request naming any account and any sum;
+//   - its checksum was a positional sum in base 8 — a typo guard, as its own
+//     comment says, not a signature;
+//   - the countdown on screen reset to 60 when it reached zero, so nothing
+//     ever actually expired;
+//   - replay was a Set in one tab, which died on refresh and could not see
+//     the other nine people scanning the same code.
+//
+// The order of the three routes below is the order a payment goes through
+// them, and the ONE rule they exist to make true is in the middle one:
+// whoever verifies first owns the code, and everybody else is told to scan a
+// new one.
+
+// POST /api/qr/session — mint.
+//
+// The payee's identity and their currency come from their own auth token.
+// The body carries at most an amount. That is the whole difference between
+// this and the old payload: there is no field here in which to name somebody
+// else.
+app.post('/api/qr/session', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const { amountCents } = req.body || {};
+
+    // Null is an identity code — "this is me" — and a number is a request.
+    // A string is refused rather than coerced, for the reason
+    // qrCanEncodeAmount already documents on the client side: Number('') and
+    // Number(null) are both 0, so a coercing check turns a broken input into
+    // a valid request for nothing.
+    const requested =
+      amountCents === undefined || amountCents === null ? null : amountCents;
+
+    if (
+      requested !== null &&
+      !(typeof requested === 'number' && Number.isInteger(requested) && requested >= 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'That amount cannot be put in a code.',
+      });
+    }
+
+    // The payee's own registered currency, resolved from their account.
+    //
+    // This field is the fix for a defect the old payload had by
+    // construction: it carried an amount and NO currency, so the scanning
+    // device formatted a bare number with its own symbol and a Rs 2,596.05
+    // request read as $2,596.05 to an American. There is now exactly one
+    // currency for a request, and the server names it.
+    const currency = await resolveOwnCurrency(req.authUser);
+
+    if (!currency) {
+      return res.status(409).json({
+        success: false,
+        message: "Your account's country has no currency set up yet.",
+      });
+    }
+
+    const minted = await mintQrSession({
+      QrSession,
+      payeeId: req.authUser._id,
+      amountCents: requested,
+      currency,
+    });
+
+    if (!minted.ok) {
+      // handle-collision, five times running, which is not something that
+      // happens with 1.3e10 values and a sixty-second life. A clean refusal
+      // rather than a driver error surfacing as a 500 on a shopkeeper's
+      // screen.
+      return res.status(503).json({
+        success: false,
+        message: 'Could not create a code just now. Try again.',
+      });
+    }
+
+    // No cap is applied here on purpose. The prototype transaction limit is
+    // expressed in the SENDER's currency and this amount is in the PAYEE's,
+    // so the two are not the same question; POST /api/transactions/send is
+    // the authority on it and refuses with the right message and the right
+    // figure.
+    return res.status(201).json({
+      success: true,
+      session: {
+        handle: minted.session.handle,
+        amountCents: minted.session.amountCents,
+        currency: minted.session.currency,
+        expiresAt: minted.session.expiresAt,
+        ttlMs: QR_SESSION_TTL_MS,
+      },
+    });
+  } catch (error) {
+    console.error('QR mint error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while creating a code.' });
+  }
+});
+
+// POST /api/qr/session/resolve — is this session live?
+//
+// That is the ONLY question answered. No name, no amount, no country, no
+// Gloobal ID. "we ask verification before showing merchant details" — so
+// nothing identifying leaves this route, and the reveal happens in the claim
+// below or not at all.
+//
+// It exists so that somebody who scans a dead code is told so BEFORE being
+// asked for a fingerprint. Making a person verify their identity in order to
+// be told "this expired" is a small cruelty and a credential prompt for
+// nothing.
+//
+// requireAuth because a Gloobal code is for Gloobal users: "it can be scan by
+// a gloobal user with a gloobal id only". That also narrows the liveness
+// oracle from the whole internet to signed-in accounts, and lookupLimit
+// narrows it again.
+//
+// Every state answers 200. These are answers, not errors — a used code is
+// not a client mistake, and returning 4xx for one would put an error banner
+// over what is really a normal thing to have happened.
+app.post('/api/qr/session/resolve', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const raw = (req.body || {}).handle;
+    const handle = typeof raw === 'number' ? raw : Number.NaN;
+    const resolved = await resolveQrSession({ QrSession, handle });
+    return res.status(200).json({ success: true, ...resolved });
+  } catch (error) {
+    console.error('QR resolve error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while reading that code.' });
+  }
+});
+
+// POST /api/qr/session/claim — verify, then win it, then see who it is.
+//
+// The order in this handler is the security property, so it is worth stating
+// plainly: the PIN is checked FIRST, against the Pin record, with bcrypt and
+// the lockout counters. Only then is the claim attempted. Only if the claim
+// is WON does a merchant's identity leave this server.
+//
+//     "even if 10 people scan same qr who ever verify it first qr belongs to
+//      them and rest get a message of alredy used qr scan new"
+//
+// The winner is decided by one conditional update inside claimQrSession —
+// not by a lock, not by a read followed by a write. Ten devices racing
+// produce one winner and nine losers, with no window in between.
+app.post('/api/qr/session/claim', credentialLimit, requireAuth, async (req, res) => {
+  try {
+    const { handle, pin } = req.body || {};
+    const numericHandle = typeof handle === 'number' ? handle : Number.NaN;
+
+    if (!Number.isInteger(numericHandle)) {
+      return res.status(200).json({ success: false, state: 'invalid' });
+    }
+
+    // Scanning your own code. Read before the claim rather than after it, so
+    // that pointing a camera at your own counter display does not burn the
+    // code your customers are looking at.
+    //
+    // This read does NOT weaken the race: the claim below is still the one
+    // atomic operation that decides an owner. This only avoids spending a
+    // claim on an answer we can give without one.
+    const peek = await QrSession.findOne({ handle: numericHandle }).select('payee').lean();
+    if (peek && String(peek.payee) === String(req.authUser._id)) {
+      return res.status(200).json({ success: false, state: 'self' });
+    }
+
+    // VERIFY FIRST. Everything below this line depends on it.
+    const gate = await verifyAccountPin(req.authUser, pin, { req, action: 'qr.claim' });
+    if (!gate.ok) {
+      if (gate.retryAfterSeconds) res.set('Retry-After', String(gate.retryAfterSeconds));
+      return res.status(gate.status).json(gate.body);
+    }
+
+    const claimed = await claimQrSession({
+      QrSession,
+      handle: numericHandle,
+      userId: req.authUser._id,
+    });
+
+    if (!claimed.ok) {
+      recordAudit({
+        userId: req.authUser._id, action: 'qr.claim.lost', status: 'blocked',
+        message: `QR claim refused: ${claimed.state}`, req,
+        metadata: { symbolId: req.authUser.symbolId, state: claimed.state },
+      });
+      return res.status(200).json({ success: false, state: claimed.state });
+    }
+
+    const payee = await User.findById(claimed.session.payee);
+
+    if (!payee) {
+      // The account behind the code is gone. Nothing to pay, and nothing
+      // honest to show — the claim is already spent, which is the right
+      // outcome for a code that points at nobody.
+      return res.status(200).json({ success: false, state: 'invalid' });
+    }
+
+    recordAudit({
+      userId: req.authUser._id, action: 'qr.claim.won', status: 'success',
+      message: 'QR session claimed', req,
+      metadata: {
+        symbolId: req.authUser.symbolId,
+        payeeSymbolId: payee.symbolId,
+        replayed: Boolean(claimed.replayed),
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      state: 'claimed',
+      // True when this caller had already won and is retrying after a lost
+      // response. Nothing was written the second time; the field exists so a
+      // client can tell a fresh win from a repeat rather than guessing.
+      replayed: Boolean(claimed.replayed),
+      session: {
+        id: String(claimed.session._id),
+        amountCents: claimed.session.amountCents,
+        currency: claimed.session.currency,
+        claimExpiresAt: claimed.session.claimExpiresAt,
+      },
+      // The same payload, with the same masking, that GET /api/users/resolve
+      // hands the paying side — one shape and one privacy policy for "who am
+      // I about to pay", rather than a second one invented here that would
+      // drift from it.
+      merchant: cleanResolvedTransactionUserPayload({ user: payee, matchedBy: 'qrSession' }),
+    });
+  } catch (error) {
+    console.error('QR claim error:', error);
+    return res.status(500).json({ success: false, message: 'Server error while claiming that code.' });
+  }
+});
+
 app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderSymbolId', 'fromSymbolId'), async (req, res) => {
   try {
     const {
@@ -5108,6 +5464,11 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       pin,
       idempotencyKey,
       payMethod,
+      // Present only on a Scan & Pay. Names the QrSession this sender WON by
+      // verifying (POST /api/qr/session/claim); it is not, and can never be,
+      // the authority on who is being paid or how much — those are the
+      // fields above, and the session is checked against them below.
+      qrSessionId,
     } = req.body || {};
 
     const senderIdentifier = String(senderSymbolId || fromSymbolId || symbolId || '').trim();
@@ -5138,6 +5499,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // How it was paid ("Gloobal Bank", "Gloobal PayLater", ...). Recorded so
     // the PayLater screen can list its own charges instead of inventing them.
     const cleanPayMethod = String(payMethod || '').trim().slice(0, 40);
+    const cleanQrSessionId = String(qrSessionId || '').trim();
     // Denominated in the SENDER's own currency (see the check further down).
     // Raised from 5,000 because that ceiling, expressed in the recipient's
     // currency, made the usable limit swing wildly by corridor — about $53
@@ -5273,6 +5635,75 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     }
 
     await registerPinSuccess(pinRecord);
+
+    // ── The QR session, if this is a Scan & Pay ──────────────────────────
+    //
+    // Two checks, in two places, doing two different jobs:
+    //
+    //   HERE       a cheap refusal with a true message, before anything
+    //              moves. This is what the person sees.
+    //   IN performTransfer, ATOMICALLY   the burn. That is what stops two
+    //              concurrent sends spending one code, and it is inside the
+    //              same Mongo transaction as the money so the two cannot
+    //              disagree.
+    //
+    // A check here alone would be a race; a burn there alone would refuse
+    // with a 500 and no explanation. Both, and they are not redundant.
+    let qrSession = null;
+
+    if (cleanQrSessionId) {
+      if (!mongoose.isValidObjectId(cleanQrSessionId)) {
+        return res.status(400).json({
+          success: false,
+          qrState: 'invalid',
+          message: "That code isn't valid. Scan a new one.",
+        });
+      }
+
+      qrSession = await QrSession.findById(cleanQrSessionId);
+
+      // Not yours. Covers a session id that was never claimed, one claimed by
+      // somebody else, and one that does not exist — all of which are the
+      // same thing from here: this sender did not win this code.
+      if (!qrSession || String(qrSession.claimedBy || '') !== String(sender._id)) {
+        return res.status(409).json({
+          success: false,
+          qrState: 'invalid',
+          message: 'That code is not yours to pay. Scan a new one.',
+        });
+      }
+
+      if (qrSession.status === 'consumed') {
+        return res.status(409).json({
+          success: false,
+          qrState: 'consumed',
+          message: 'This code has already been paid. Scan a new one.',
+        });
+      }
+
+      if (qrSession.status !== 'claimed' || !(qrSession.claimExpiresAt > new Date())) {
+        return res.status(409).json({
+          success: false,
+          qrState: 'expired',
+          message: 'This code expired before the payment went through. Scan a new one.',
+        });
+      }
+
+      // The session must name the account actually being paid.
+      //
+      // Without this, a claim won against shop A could be attached to a
+      // payment addressed to shop B — the session would burn, the money
+      // would go somewhere else, and both records would look consistent on
+      // their own. The receiver is resolved above from the request's own
+      // identifier fields; this binds the two together.
+      if (String(qrSession.payee) !== String(receiver._id)) {
+        return res.status(409).json({
+          success: false,
+          qrState: 'invalid',
+          message: 'That code was not issued by this account.',
+        });
+      }
+    }
 
     // Checked after the PIN, not before it: the answer reveals roughly what
     // the account holds, which is not something to hand out to whoever can
@@ -5636,6 +6067,34 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     const performTransfer = async (session) => {
       const sessionOpt = session ? { session } : {};
 
+      // The QR burn, and it goes FIRST — before the debit, inside this
+      // transaction.
+      //
+      // First, because losing this race must cost nothing: if another device
+      // has already spent this code, the right outcome is a refusal with no
+      // money having moved, not a reversal.
+      //
+      // Inside, because the burn and the payment have to be one event. A
+      // consume that committed on its own could burn a code for a payment
+      // that then rolled back, and a payment that committed without one
+      // would leave a spent code looking spendable.
+      //
+      // Note that performTransfer can be called more than once —
+      // withTransaction retries on a transient commit error, and each retry
+      // starts from a rolled-back state, so the session reads as 'claimed'
+      // again and this succeeds again. That is exactly why it must write
+      // through `session` and nothing else.
+      if (qrSession) {
+        const burned = await consumeQrSession({
+          QrSession,
+          sessionId: qrSession._id,
+          userId: sender._id,
+          dbSession: session,
+        });
+
+        if (!burned.ok) throw new QrSessionSpentError();
+      }
+
       const debitedSender = await User.findOneAndUpdate(
         { _id: sender._id, balance: { $gte: debitAmount } },
         { $inc: { balance: -debitAmount } },
@@ -5682,6 +6141,19 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
           session ? { session } : {}
         );
         createdTransactionId = transaction._id;
+
+        // Ties the burnt code to the payment it paid for. Same session, so
+        // it lives or dies with everything else in this block. Purely for
+        // the audit question "was this payment made against a live code?",
+        // which is also why QrSession.purgeAt keeps the row for a week
+        // rather than letting it expire with the code.
+        if (qrSession) {
+          await QrSession.updateOne(
+            { _id: qrSession._id },
+            { $set: { transactionId: transaction._id } },
+            sessionOpt
+          );
+        }
 
         // The hard-liquidity gate: a genuinely cross-border payment can
         // only proceed if the receiver's own-country pool actually has the
@@ -5856,6 +6328,17 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
                 { $set: { status: 'reversed' } }
               );
             }
+            // The code goes back into circulation with the money. On a
+            // deployment WITH transactions this branch never runs and the
+            // abort does it; here the burn really did commit, and leaving it
+            // spent would kill a perfectly good code for a payment that did
+            // not happen.
+            if (qrSession) {
+              await QrSession.updateOne(
+                { _id: qrSession._id, status: 'consumed' },
+                { $set: { status: 'claimed', consumedAt: null, transactionId: null } }
+              );
+            }
           } catch (revertError) {
             // Nothing further can be done in-process; this is the one case
             // that needs to be findable in the logs after the fact.
@@ -5872,6 +6355,18 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     try {
       ({ value: transferred } = await withMongoTransaction(performTransfer));
     } catch (transferError) {
+      if (transferError instanceof QrSessionSpentError) {
+        recordAudit({
+          userId: sender._id, action: 'transaction.send.qr_spent', status: 'blocked',
+          message: 'QR session was consumed by another payment', req,
+          metadata: { symbolId: sender.symbolId, qrSessionId: cleanQrSessionId },
+        });
+        return res.status(409).json({
+          success: false,
+          qrState: 'consumed',
+          message: transferError.message,
+        });
+      }
       if (transferError instanceof InsufficientBalanceError) {
         recordAudit({
           userId: sender._id, action: 'transaction.send.failed', status: 'failed',

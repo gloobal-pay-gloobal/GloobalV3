@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gloobal — Full Engineering Audit · 9 September 2026</title>
+<style>
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --ink:#14171c; --ink2:#454b56; --faint:#767d8a;
+  --line:#e2e5ea; --accent:#1d63d8; --accentSoft:#e8f0fe;
+  --green:#12864f; --greenBg:#e4f6ec;
+  --yellow:#8a6100; --yellowBg:#fdf3d8;
+  --orange:#a2450a; --orangeBg:#fdeade;
+  --red:#b3181f; --redBg:#fde8e8;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --radius:12px;
+  --shadow:0 1px 2px rgba(16,20,28,.05),0 4px 16px rgba(16,20,28,.05);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.62}
+
+/* ---------- layout ---------- */
+.wrap{max-width:1180px;margin:0 auto;padding:0 22px 90px}
+header.hero{background:linear-gradient(160deg,#121722 0%,#1d2740 60%,#243257 100%);color:#fff;padding:52px 0 44px;margin-bottom:32px}
+header.hero .wrap{padding-bottom:0}
+.eyebrow{font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#8fa9dd;font-weight:700;margin:0 0 12px}
+h1{font-size:34px;line-height:1.2;margin:0 0 14px;font-weight:800;letter-spacing:-.02em}
+.hero p.lede{margin:0;color:#c3cfe6;font-size:15.5px;max-width:70ch}
+.meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+.meta span{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:5px 13px;font-size:12.5px;color:#dde5f4}
+.meta span b{color:#fff;font-weight:700}
+.meta code{font-family:var(--mono);font-size:12px;color:#fff}
+
+section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:26px 28px;margin:0 0 22px}
+h2{font-size:21px;margin:0 0 6px;font-weight:750;letter-spacing:-.01em;display:flex;align-items:center;gap:11px}
+h2 .num{display:inline-flex;align-items:center;justify-content:center;min-width:27px;height:27px;border-radius:8px;background:var(--accentSoft);color:var(--accent);font-size:12.5px;font-weight:800;flex:none}
+h3{font-size:15.5px;margin:26px 0 9px;font-weight:750;color:var(--ink)}
+h3:first-of-type{margin-top:16px}
+h4{font-size:13.5px;margin:18px 0 7px;font-weight:750;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em}
+p{margin:0 0 12px;color:var(--ink2)}
+p strong,li strong{color:var(--ink);font-weight:680}
+ul,ol{margin:0 0 12px;padding-left:22px;color:var(--ink2)}
+li{margin-bottom:6px}
+code{font-family:var(--mono);font-size:12.6px;background:#eef0f4;border:1px solid #e0e3e9;border-radius:5px;padding:1px 5px;color:#1d2430;word-break:break-word}
+a{color:var(--accent)}
+
+/* ---------- tables ---------- */
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 16px;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:13.4px;min-width:560px}
+th{background:#f2f4f7;text-align:left;padding:10px 13px;font-weight:750;color:var(--ink);border-bottom:1px solid var(--line);white-space:nowrap;font-size:12.6px}
+td{padding:10px 13px;border-bottom:1px solid #eef0f3;vertical-align:top;color:var(--ink2)}
+tr:last-child td{border-bottom:none}
+tbody tr:nth-child(even){background:#fafbfc}
+td b,td strong{color:var(--ink)}
+.num-col{font-family:var(--mono);text-align:right;white-space:nowrap;color:var(--ink)}
+
+/* ---------- status chips ---------- */
+.s{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.2px;font-weight:750;letter-spacing:.03em;white-space:nowrap;line-height:1.7;border:1px solid transparent}
+.s-fixed,.s-ok{background:var(--greenBg);color:var(--green);border-color:#bde3cd}
+.s-partial{background:var(--yellowBg);color:var(--yellow);border-color:#eddcae}
+.s-open,.s-risky{background:var(--orangeBg);color:var(--orange);border-color:#f2cdb4}
+.s-broken,.s-crit{background:var(--redBg);color:var(--red);border-color:#f4c4c4}
+.s-nv{background:#eceef2;color:#5c636f;border-color:#dcdfe5}
+.s-pre{background:#eae7f6;color:#5b48a8;border-color:#d3ccec}
+.s-proto{background:#e6f2f6;color:#1f6b80;border-color:#c2dfe8}
+
+.rag{display:inline-flex;align-items:center;gap:6px;font-weight:750;font-size:12px;white-space:nowrap}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.d-g{background:#17a05e}.d-y{background:#dcaa1e}.d-o{background:#e07321}.d-r{background:#d93a3a}
+
+.p0,.p1,.p2,.p3{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800;font-family:var(--mono);letter-spacing:.04em}
+.p0{background:var(--redBg);color:var(--red)}
+.p1{background:var(--orangeBg);color:var(--orange)}
+.p2{background:var(--yellowBg);color:var(--yellow)}
+.p3{background:#eceef2;color:#5c636f}
+
+/* ---------- callouts ---------- */
+.call{border-left:4px solid var(--accent);background:#f5f8fe;border-radius:0 10px 10px 0;padding:15px 18px;margin:0 0 16px}
+.call.crit{border-left-color:var(--red);background:#fdf6f6}
+.call.warn{border-left-color:#e07321;background:#fefaf6}
+.call.good{border-left-color:var(--green);background:#f4fbf7}
+.call p:last-child{margin-bottom:0}
+.call .t{font-weight:800;color:var(--ink);font-size:13.5px;margin:0 0 6px;display:block}
+
+/* ---------- stat grid ---------- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px;margin:0 0 18px}
+.stat{background:#fafbfc;border:1px solid var(--line);border-radius:10px;padding:14px 15px}
+.stat .v{font-size:23px;font-weight:800;font-family:var(--mono);color:var(--ink);line-height:1.15;letter-spacing:-.02em}
+.stat .k{font-size:11.2px;color:var(--faint);margin-top:5px;font-weight:600;letter-spacing:.02em}
+.stat.crit .v{color:var(--red)}
+.stat.good .v{color:var(--green)}
+.stat.warn .v{color:var(--orange)}
+
+/* ---------- progress bars ---------- */
+.bars{margin:0 0 8px}
+.bar{display:grid;grid-template-columns:190px 1fr 46px;gap:12px;align-items:center;margin-bottom:8px;font-size:13px}
+.bar .lbl{color:var(--ink);font-weight:640;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .track{background:#eaedf1;border-radius:999px;height:9px;overflow:hidden}
+.bar .fill{height:100%;border-radius:999px}
+.bar .pc{font-family:var(--mono);font-size:12px;text-align:right;color:var(--ink2);font-weight:700}
+.f-g{background:linear-gradient(90deg,#17a05e,#2bbd77)}
+.f-y{background:linear-gradient(90deg,#c9971a,#e0b93f)}
+.f-o{background:linear-gradient(90deg,#d1650f,#ee9147)}
+.f-r{background:linear-gradient(90deg,#c62f2f,#e56565)}
+
+/* ---------- diagrams ---------- */
+.diagram{background:#fafbfc;border:1px solid var(--line);border-radius:10px;padding:20px;margin:0 0 16px;overflow-x:auto}
+.dtitle{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:750;margin-bottom:14px}
+.flow{display:flex;align-items:stretch;gap:0;min-width:520px;flex-wrap:nowrap}
+.node{background:#fff;border:1.5px solid var(--line);border-radius:9px;padding:10px 13px;font-size:12.2px;min-width:110px;flex:1}
+.node .n{font-weight:750;color:var(--ink);font-size:12.4px;display:block;margin-bottom:3px}
+.node .d{color:var(--faint);font-size:11.2px;line-height:1.45}
+.node.acc{border-color:#b8cdf2;background:#f5f8fe}
+.node.ok{border-color:#bde3cd;background:#f4fbf7}
+.node.bad{border-color:#f4c4c4;background:#fdf6f6}
+.arrow{display:flex;align-items:center;color:var(--faint);font-size:17px;padding:0 8px;flex:none;font-family:var(--mono)}
+
+.stack{display:flex;flex-direction:column;gap:8px;min-width:300px}
+.layer{border:1.5px solid var(--line);border-radius:9px;padding:11px 14px;background:#fff;font-size:12.6px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.layer .lname{font-weight:750;color:var(--ink)}
+.layer .lmeta{font-family:var(--mono);font-size:11.4px;color:var(--faint);text-align:right}
+.layer.atomic{border-color:#bde3cd;background:#f4fbf7}
+.layer.best{border-color:#f2cdb4;background:#fdf9f5;border-style:dashed}
+
+.brace{display:flex;align-items:center;gap:10px;margin:6px 0 6px 8px;font-size:11.6px;color:var(--faint);font-weight:650}
+.brace .bl{width:3px;align-self:stretch;background:var(--line);border-radius:2px}
+
+/* ---------- issue cards ---------- */
+.issue{border:1px solid var(--line);border-radius:10px;padding:0;margin:0 0 13px;overflow:hidden;background:#fff}
+.issue > .head{display:flex;align-items:center;gap:11px;padding:12px 16px;background:#fafbfc;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.issue .id{font-family:var(--mono);font-size:12px;font-weight:800;color:var(--ink)}
+.issue .ti{font-weight:700;color:var(--ink);font-size:13.8px;flex:1;min-width:190px}
+.issue .body{padding:14px 16px}
+.issue dl{display:grid;grid-template-columns:132px 1fr;gap:7px 14px;margin:0;font-size:13px}
+.issue dt{font-weight:750;color:var(--faint);font-size:11.4px;text-transform:uppercase;letter-spacing:.05em;padding-top:2px}
+.issue dd{margin:0;color:var(--ink2)}
+.issue.crit{border-color:#f0bcbc}
+.issue.crit > .head{background:var(--redBg)}
+.issue.high{border-color:#f2cdb4}
+.issue.high > .head{background:#fdf3ec}
+
+/* ---------- legend ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:9px;padding:14px 16px;background:#fafbfc;border:1px solid var(--line);border-radius:10px;margin:0 0 18px;font-size:12px;align-items:center}
+.legend .lt{font-weight:750;color:var(--faint);font-size:11.2px;text-transform:uppercase;letter-spacing:.06em;margin-right:4px}
+
+/* ---------- toc ---------- */
+.toc{columns:2;column-gap:26px}
+.toc a{display:block;padding:5px 0;font-size:13.2px;text-decoration:none;color:var(--ink2);border-bottom:1px solid #f0f2f5;break-inside:avoid}
+.toc a:hover{color:var(--accent)}
+.toc a b{color:var(--faint);font-family:var(--mono);font-size:11.5px;margin-right:8px;font-weight:700}
+
+footer{text-align:center;color:var(--faint);font-size:12.2px;padding:26px 20px 0;line-height:1.7}
+
+@media (max-width:760px){
+  h1{font-size:26px}
+  section{padding:20px 17px}
+  .toc{columns:1}
+  .bar{grid-template-columns:125px 1fr 42px;font-size:12px}
+  .issue dl{grid-template-columns:1fr;gap:2px 0}
+  .issue dt{margin-top:8px}
+}
+@media print{
+  body{background:#fff;font-size:10.5px;line-height:1.5}
+  header.hero{background:#1d2740!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;padding:26px 0 22px}
+  section{box-shadow:none;break-inside:auto;page-break-inside:auto;padding:14px 0;border:none;border-top:1.5px solid var(--line);border-radius:0;margin-bottom:6px}
+  .wrap{max-width:100%;padding:0 12px}
+  h2{font-size:15px;margin-top:8px}
+  h3{font-size:12px}
+  table{font-size:9px;min-width:0}
+  th,td{padding:4px 6px}
+  .tw{overflow:visible;break-inside:auto}
+  .issue,.call,.diagram,.stat,.bar{break-inside:avoid;page-break-inside:avoid}
+  .toc{display:none}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Inspection &amp; reporting only · no source modified</p>
+    <h1>Gloobal — Full Engineering Audit</h1>
+    <p class="lede">A complete review of the payment engine, the API, the database, the frontend, the security posture and the test suite, verified against live production where safe.</p>
+    <div class="meta">
+      <span><b>9 September 2026</b></span>
+      <span>Commit <code>0d3989e</code></span>
+      <span>Branch <b>main</b></span>
+      <span>Tree <b>clean</b></span>
+      <span>910 tests run · <b>906 pass</b></span>
+      <span>Overall progress <b>~65%</b></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section>
+  <h2><span class="num">§</span>Contents</h2>
+  <nav class="toc">
+    <a href="#s1"><b>01</b>Executive Summary</a>
+    <a href="#s2"><b>02</b>Current Project Status</a>
+    <a href="#s3"><b>03</b>Progress by Domain</a>
+    <a href="#s4"><b>04</b>Frontend Architecture</a>
+    <a href="#s5"><b>05</b>Backend Architecture</a>
+    <a href="#s6"><b>06</b>Database Architecture</a>
+    <a href="#s7"><b>07</b>Financial Data Flow</a>
+    <a href="#s8"><b>08</b>Gloobal Coverage</a>
+    <a href="#s9"><b>09</b>Historical Data Integrity</a>
+    <a href="#s10"><b>10</b>Security Audit</a>
+    <a href="#s11"><b>11</b>QR Security</a>
+    <a href="#s12"><b>12</b>Hooman Projects</a>
+    <a href="#s13"><b>13</b>Security Screen</a>
+    <a href="#s14"><b>14</b>Testing Coverage</a>
+    <a href="#s15"><b>15</b>Production Readiness</a>
+    <a href="#s16"><b>16</b>Bugs &amp; Complex Errors</a>
+    <a href="#s17"><b>17</b>Architectural Strengths</a>
+    <a href="#s18"><b>18</b>Architectural Weaknesses</a>
+    <a href="#s19"><b>19</b>Critical Open Issues</a>
+    <a href="#s20"><b>20</b>Recommended Roadmap</a>
+    <a href="#s21"><b>21</b>Files of Interest</a>
+    <a href="#s22"><b>22</b>Evidence &amp; Verification</a>
+    <a href="#s23"><b>23</b>Final Risk Summary</a>
+  </nav>
+  <div class="legend" style="margin-top:16px">
+    <span class="lt">Status key</span>
+    <span class="s s-ok">WORKING</span>
+    <span class="s s-partial">PARTIAL</span>
+    <span class="s s-proto">PROTOTYPE</span>
+    <span class="s s-open">OPEN / RISKY</span>
+    <span class="s s-broken">BROKEN</span>
+    <span class="s s-nv">NOT VERIFIED</span>
+    <span class="s s-pre">PRE-EXISTING</span>
+    <span class="s s-fixed">FIXED</span>
+  </div>
+</section>
+
+<!-- ===================== 1 ===================== -->
+<section id="s1">
+  <h2><span class="num">01</span>Executive Summary</h2>
+
+  <div class="call crit">
+    <span class="t">The one sentence that matters</span>
+    <p>Gloobal is a working cross-border payment prototype with a <strong>genuinely well-built money path</strong> and a <strong>deliberately fake second factor</strong>. The money is safe; the account is not.</p>
+  </div>
+
+  <p>The payment engine is better than most production systems of comparable age. The debit is an atomic conditional <code>$inc</code>, the whole transfer runs inside a Mongo transaction with a hand-written compensating path for deployments that lack one, idempotency is enforced by a partial unique index rather than a read-then-write, FX fails closed rather than guessing a rate, and both sides of every corridor are recorded in their own currency. Each of those is a correctness property systems routinely get wrong.</p>
+
+  <p>Against that, the platform <strong>cannot hold real money today</strong>, and the reason is not subtle. There is no SMS gateway. The one-time password is the constant <code>123456</code>. Anyone holding a target's Gloobal ID and mobile number can request a PIN-reset code, supply the constant, set a new PIN, and receive a valid seven-day bearer token. The PIN-reset route is also the one credential path that does not revoke the account's other sessions, so the original holder's devices stay signed in and silent. Neither path writes an audit record.</p>
+
+  <p>Beyond it, this audit found <strong>one live functional bug not previously recorded</strong> — a missing <code>await</code> that silently disables local-currency conversion on both coin-holder routes, confirmed against production — and a small set of currency-mixing defects in peripheral surfaces where different currencies are added as bare numbers. The core payment path does not have that defect; the code around it does.</p>
+
+  <div class="stats">
+    <div class="stat good"><div class="v">90%</div><div class="k">Payments</div></div>
+    <div class="stat good"><div class="v">85%</div><div class="k">Settlement</div></div>
+    <div class="stat good"><div class="v">80%</div><div class="k">Coverage</div></div>
+    <div class="stat warn"><div class="v">40%</div><div class="k">QR security</div></div>
+    <div class="stat crit"><div class="v">25%</div><div class="k">Observability</div></div>
+    <div class="stat crit"><div class="v">20%</div><div class="k">Prod readiness</div></div>
+  </div>
+
+  <div class="call good">
+    <span class="t">Verdict</span>
+    <p><strong>Production-ready as a demonstrable prototype. Not production-ready for real money</strong>, and one finding is why. Eight tasks in the NOW column close the gap. Five are small. One needs a vendor.</p>
+  </div>
+</section>
+
+<!-- ===================== 2 ===================== -->
+<section id="s2">
+  <h2><span class="num">02</span>Current Project Status</h2>
+
+  <h3>Repository baseline</h3>
+  <div class="tw"><table>
+    <tr><th>Property</th><th>Value</th></tr>
+    <tr><td>Branch</td><td><b>main</b></td></tr>
+    <tr><td>HEAD</td><td><code>0d3989e77aa867fcc03e89a32f0f8134de6e2b4e</code></td></tr>
+    <tr><td>Working tree at audit start</td><td><span class="s s-ok">CLEAN</span></td></tr>
+    <tr><td>Staged files</td><td>none</td></tr>
+    <tr><td>Untracked files</td><td>none</td></tr>
+    <tr><td>vs <code>origin/main</code></td><td>0 ahead, 0 behind — <b>in sync</b></td></tr>
+    <tr><td>Commits</td><td>105, spanning 11 Aug – 9 Sep 2026</td></tr>
+    <tr><td>Contributors</td><td>Aditya-Raj-oss (68) · gloobal-pay-gloobal (25) · Sanjeev santosh (11) · netlify[bot] (1)</td></tr>
+    <tr><td>Local / remote branches</td><td>18 / 10 — 17 merged-but-kept</td></tr>
+    <tr><td>Secrets tracked in git</td><td><span class="s s-ok">NONE</span> — only <code>secret.txt.example</code></td></tr>
+  </table></div>
+
+  <div class="call warn">
+    <span class="t">Parallel-session commits</span>
+    <p>Two commits on <code>main</code> (<code>ccb8e12</code> 8 Sep, <code>0d3989e</code> 9 Sep) have no local session transcript, so they were authored from another client or machine. Both are present and merged. Noted as a working-practice risk: concurrent sessions on <code>main</code> have already produced one recorded instance of two sessions holding different views of the tree.</p>
+  </div>
+
+  <h3>Deployment — verified, not assumed</h3>
+  <div class="tw"><table>
+    <tr><th>Target</th><th>Evidence</th><th>Status</th></tr>
+    <tr>
+      <td><b>Netlify</b><br>frontend</td>
+      <td>Local <code>npm run build</code> of HEAD produced <code>index-B8AepYrZ.js</code>. Live site serves <code>/assets/index-B8AepYrZ.js</code>. Vite derives that hash from content, so the match identifies the deployed bundle as this exact commit.</td>
+      <td><span class="s s-ok">CURRENT</span></td>
+    </tr>
+    <tr>
+      <td><b>Render</b><br>API</td>
+      <td><code>GET /api/coverage</code> answers 200 with <code>activeCountryRule: "has_users"</code>, a rule introduced in <code>2248d41</code> — the most recent commit touching <code>server/</code>.</td>
+      <td><span class="s s-ok">CURRENT</span></td>
+    </tr>
+  </table></div>
+  <p>Render only rebuilds when <code>server/</code> changes, so the two most recent (frontend-only) commits correctly left the API where it was. Cold start on the free tier is real: the first <code>/api/coverage</code> call took <b>23.2 seconds</b>. That is the documented spin-up, not a fault.</p>
+
+  <h3>Live production readings (read-only, 09:10 UTC)</h3>
+  <div class="stats">
+    <div class="stat"><div class="v">120</div><div class="k">Registered users</div></div>
+    <div class="stat"><div class="v">20</div><div class="k">Countries with users</div></div>
+    <div class="stat"><div class="v">188</div><div class="k">Successful payments</div></div>
+    <div class="stat"><div class="v">₹9.10M</div><div class="k">Global total spending</div></div>
+    <div class="stat warn"><div class="v">85/188</div><div class="k">Rows with sourceAmount</div></div>
+    <div class="stat good"><div class="v">✓</div><div class="k">Coin supply reconciled</div></div>
+  </div>
+  <p>Every call was a <code>GET</code>. No account was created, no payment made, nothing written. The coin supply invariant <code>issued === heldByAccounts</code> holds exactly in production at 121,373.61 — a real, checked property.</p>
+</section>
+
+<!-- ===================== 3 ===================== -->
+<section id="s3">
+  <h2><span class="num">03</span>Progress by Domain</h2>
+  <p>Every figure is derived from what the code demonstrably does, not estimated.</p>
+
+  <div class="bars">
+    <div class="bar"><span class="lbl">Payments</span><span class="track"><span class="fill f-g" style="width:90%"></span></span><span class="pc">90%</span></div>
+    <div class="bar"><span class="lbl">Deployment</span><span class="track"><span class="fill f-g" style="width:90%"></span></span><span class="pc">90%</span></div>
+    <div class="bar"><span class="lbl">Settlement</span><span class="track"><span class="fill f-g" style="width:85%"></span></span><span class="pc">85%</span></div>
+    <div class="bar"><span class="lbl">Creator Share</span><span class="track"><span class="fill f-g" style="width:85%"></span></span><span class="pc">85%</span></div>
+    <div class="bar"><span class="lbl">Countries / currency</span><span class="track"><span class="fill f-g" style="width:85%"></span></span><span class="pc">85%</span></div>
+    <div class="bar"><span class="lbl">Gloobal Coverage</span><span class="track"><span class="fill f-g" style="width:80%"></span></span><span class="pc">80%</span></div>
+    <div class="bar"><span class="lbl">Hooman Projects</span><span class="track"><span class="fill f-g" style="width:80%"></span></span><span class="pc">80%</span></div>
+    <div class="bar"><span class="lbl">Security settings</span><span class="track"><span class="fill f-g" style="width:80%"></span></span><span class="pc">80%</span></div>
+    <div class="bar"><span class="lbl">FX</span><span class="track"><span class="fill f-y" style="width:75%"></span></span><span class="pc">75%</span></div>
+    <div class="bar"><span class="lbl">Authentication</span><span class="track"><span class="fill f-y" style="width:70%"></span></span><span class="pc">70%</span></div>
+    <div class="bar"><span class="lbl">Ledger</span><span class="track"><span class="fill f-y" style="width:70%"></span></span><span class="pc">70%</span></div>
+    <div class="bar"><span class="lbl">Coin / GEU</span><span class="track"><span class="fill f-y" style="width:65%"></span></span><span class="pc">65%</span></div>
+    <div class="bar"><span class="lbl">Testing</span><span class="track"><span class="fill f-y" style="width:65%"></span></span><span class="pc">65%</span></div>
+    <div class="bar"><span class="lbl">QR</span><span class="track"><span class="fill f-o" style="width:40%"></span></span><span class="pc">40%</span></div>
+    <div class="bar"><span class="lbl">Receipts</span><span class="track"><span class="fill f-o" style="width:35%"></span></span><span class="pc">35%</span></div>
+    <div class="bar"><span class="lbl">PayLater</span><span class="track"><span class="fill f-o" style="width:30%"></span></span><span class="pc">30%</span></div>
+    <div class="bar"><span class="lbl">Observability</span><span class="track"><span class="fill f-r" style="width:25%"></span></span><span class="pc">25%</span></div>
+    <div class="bar"><span class="lbl">Production readiness</span><span class="track"><span class="fill f-r" style="width:20%"></span></span><span class="pc">20%</span></div>
+  </div>
+
+  <div class="tw"><table>
+    <tr><th>Domain</th><th>Status</th><th>Evidence</th><th>Remaining major work</th></tr>
+    <tr><td><b>Authentication</b></td><td><span class="s s-partial">PARTIAL</span></td><td>HMAC tokens, constant-time compare, 5-strike lockout, session revocation, production refuses to boot without a secret</td><td>Real SMS gateway; revoke on PIN reset; audit-log the login paths</td></tr>
+    <tr><td><b>Payments</b></td><td><span class="s s-ok">WORKING</span></td><td>Atomic <code>$inc</code>; transaction with documented fallback; explicit <code>amountBasis</code>; client claims refused on mismatch; 188 live payments</td><td>Pagination; reconciliation for the best-effort tail</td></tr>
+    <tr><td><b>FX</b></td><td><span class="s s-partial">PARTIAL</span></td><td>Live provider, Mongo-cached, 6h TTL, fails closed, transaction-time rate preferred historically</td><td>Bound staleness — <code>stale:true</code> is returned and discarded</td></tr>
+    <tr><td><b>Settlement</b></td><td><span class="s s-ok">WORKING</span></td><td>Conditional <code>$inc</code>, ordered writes, typed refusals, revert reads its own amounts</td><td>Corridor seeding coverage; reconciliation report</td></tr>
+    <tr><td><b>Ledger</b></td><td><span class="s s-partial">PARTIAL</span></td><td>Double-entry rows; balances read back from the writes that produced them</td><td>No uniqueness constraint; no replay; <code>metadata</code> is unvalidated</td></tr>
+    <tr><td><b>Receipts</b></td><td><span class="s s-proto">PROTOTYPE</span></td><td>Rows written on every payment</td><td><b>Nothing reads the collection.</b> Share receipts mislabel currency; best-effort loss is permanent</td></tr>
+    <tr><td><b>Creator Share</b></td><td><span class="s s-ok">WORKING</span></td><td>Payee's own stored rate; split rounded per currency; both sides recorded; swapped party snapshot</td><td>Share-leg idempotency; receipt currency fix</td></tr>
+    <tr><td><b>Gloobal Coverage</b></td><td><span class="s s-ok">WORKING</span></td><td>One server module; whole-collection aggregation; per-currency normalisation; exactness self-reported</td><td>Our Spending needs a disbursement record type that does not exist</td></tr>
+    <tr><td><b>Countries</b></td><td><span class="s s-ok">WORKING</span></td><td><code>accountCountryIso</code> resolver with dial-code fallback; bundled 194-country map; no invented currency</td><td>Run the backfill; one route still reads the raw field</td></tr>
+    <tr><td><b>Hooman Projects</b></td><td><span class="s s-ok">WORKING</span></td><td>Full CRUD; ownership by document id; drafts 404; keyset paging; allow-listed uploads</td><td>Magic-byte validation; Mongo blobs will not scale</td></tr>
+    <tr><td><b>Security settings</b></td><td><span class="s s-ok">WORKING</span></td><td>All three persist and change behaviour; PIN change verifies under lockout and revokes</td><td>App Lock is client-enforced only</td></tr>
+    <tr><td><b>QR</b></td><td><span class="s s-risky">RISKY</span></td><td>Standards-compliant encoder; amount rejected not clamped; recipient resolved server-side</td><td><b>No signature, nonce, expiry or server-side verification</b></td></tr>
+    <tr><td><b>Coin / GEU</b></td><td><span class="s s-partial">PARTIAL</span></td><td>Supply invariant reconciles live; all writes authenticated; the unbounded GEU growth loop is disabled behind a flag</td><td>Local-currency conversion broken; GLB-04 open</td></tr>
+    <tr><td><b>PayLater</b></td><td><span class="s s-proto">PROTOTYPE</span></td><td>Limit and charge list built from real records</td><td><b>No repayment path.</b> Limit and dues are cross-currency sums</td></tr>
+    <tr><td><b>Testing</b></td><td><span class="s s-partial">PARTIAL</span></td><td>72 files; 910 tests run, 906 pass</td><td>Server suite unverified; ~180 source-shape assertions</td></tr>
+    <tr><td><b>Deployment</b></td><td><span class="s s-ok">WORKING</span></td><td>Both targets confirmed current by independent evidence</td><td>Free-tier cold start; no staging</td></tr>
+    <tr><td><b>Observability</b></td><td><span class="s s-broken">BROKEN</span></td><td><code>AuditLog</code> wired with 15 call sites</td><td>Login, registration, PIN set and PIN reset write <b>nothing</b>. No metrics, tracing or alerting</td></tr>
+    <tr><td><b>Production readiness</b></td><td><span class="s s-open">NOT IMPLEMENTED</span></td><td>—</td><td>Real OTP; migrations; reconciliation; monitoring; DR</td></tr>
+  </table></div>
+
+  <div class="call">
+    <span class="t">Overall ≈ 65%</span>
+    <p>The mean of the eighteen domain figures, weighted toward the money path because that is what the product is. Meaningful in one specific sense: <strong>the things a payments platform must get right are mostly done, and the things that let it operate safely mostly are not.</strong></p>
+  </div>
+</section>
+
+<!-- ===================== 4 ===================== -->
+<section id="s4">
+  <h2><span class="num">04</span>Frontend Architecture</h2>
+
+  <p><strong>Monolithic, screen-based, state-centralised, hybrid local-first.</strong> <code>frontend/</code> and <code>backend/</code> are not ES modules — <code>build_app.mjs</code> concatenates them in a declared order into one generated file sharing a single global scope. Top-level <code>var</code> names must be globally unique, React and icon imports use numbered aliases, and module order is semantically significant.</p>
+
+  <div class="tw"><table>
+    <tr><th>File</th><th class="num-col">Lines</th><th class="num-col">useState</th><th class="num-col">useEffect</th></tr>
+    <tr><td><code>screens/Dashboard/Dashboard.jsx</code></td><td class="num-col">4,162</td><td class="num-col">122</td><td class="num-col">15</td></tr>
+    <tr><td><code>App.jsx</code></td><td class="num-col">4,000</td><td class="num-col">84</td><td class="num-col">22</td></tr>
+    <tr><td><code>screens/SendMoney/SendMoney.jsx</code></td><td class="num-col">1,632</td><td class="num-col">—</td><td class="num-col">—</td></tr>
+    <tr><td><code>components/dialogs/registerLogin.jsx</code></td><td class="num-col">1,026</td><td class="num-col">—</td><td class="num-col">—</td></tr>
+    <tr><td><code>screens/Coverage/GloobalCoverageScreen.jsx</code></td><td class="num-col">920</td><td class="num-col">—</td><td class="num-col">—</td></tr>
+  </table></div>
+  <p>Frontend source totals <b>21,909 lines</b>; the browser-side domain layer under <code>backend/</code> adds <b>7,991</b>. There is exactly one React context (<code>LedgerProvider</code>), wrapping the browser financial simulation. Everything else is <code>useState</code> in the two god components, distributed by props — <code>DashboardScreen</code> takes roughly forty.</p>
+
+  <div class="diagram">
+    <div class="dtitle">App startup sequence</div>
+    <div class="stack">
+      <div class="layer"><span class="lname">Launch splash</span><span class="lmeta">launchSplash.jsx</span></div>
+      <div class="layer"><span class="lname">Session restore</span><span class="lmeta">localStorage "gloobal.session.v1" · 30-day max age</span></div>
+      <div class="layer acc"><span class="lname">PIN / biometric stage</span><span class="lmeta">a restored session NEVER lands on the dashboard</span></div>
+      <div class="layer"><span class="lname">Permissions / onboarding gate</span><span class="lmeta">usePaymentLocation · LocationRequiredModal</span></div>
+      <div class="layer ok"><span class="lname">hydrateAccount() — one cycle</span><span class="lmeta">GET /profile → reconcileBankBalance<br>GET /assets → hydrateGrants<br>GET /assets/paylater → reconcileDue</span></div>
+      <div class="layer"><span class="lname">balanceStatus: loading → ready | error</span><span class="lmeta">three states, never two</span></div>
+      <div class="layer"><span class="lname">Dashboard</span><span class="lmeta">4,162 lines · ~40 props</span></div>
+    </div>
+  </div>
+
+  <div class="call good">
+    <span class="t">Why balanceStatus has three states</span>
+    <p>The local ledger always holds <em>a</em> number, so a two-state read rendered "loading" and "confirmed" identically. A first login against a cold Render instance showed a confident, correctly formatted, entirely fictional balance. A figure is now shown only once the server has confirmed it.</p>
+  </div>
+
+  <h3>Where state lives, and what is authoritative</h3>
+  <div class="tw"><table>
+    <tr><th>Concern</th><th>Client location</th><th>Authority</th><th>Reconciliation</th></tr>
+    <tr><td>Session identity</td><td><code>localStorage</code></td><td>Client (not a credential)</td><td>30-day max age</td></tr>
+    <tr><td>Bearer token</td><td>same blob</td><td><b>Server</b></td><td>401 → clear + <code>gloobal:sessionExpired</code></td></tr>
+    <tr><td>Balance</td><td><code>FinancialCore</code> ledger</td><td><b>Server</b> <code>User.balance</code></td><td><code>reconcileBankBalance</code> posts the difference as a real double-entry adjustment</td></tr>
+    <tr><td>Transactions / history</td><td><code>App.jsx</code> state</td><td><b>Server</b></td><td>Re-fetched on poll tick</td></tr>
+    <tr><td>Country</td><td><code>dialCountry</code></td><td><b>Server</b> <code>accountCountryIso</code></td><td>Per-response</td></tr>
+    <tr><td>Coverage</td><td>screen state</td><td><b>Server</b> <code>/api/coverage</code></td><td>Refresh token</td></tr>
+    <tr><td>Security settings</td><td><code>registeredUser</code></td><td><b>Server</b></td><td>Replaced wholesale, never patched locally</td></tr>
+    <tr><td>Projects</td><td>screen state</td><td><b>Server</b></td><td>Per-fetch</td></tr>
+    <tr><td>Receipts</td><td>built from Transaction rows</td><td><b>Server</b> party snapshot</td><td>—</td></tr>
+    <tr><td>QR "already used"</td><td><code>usedQrCodes</code> in-memory Set</td><td><b>Client only</b> <span class="s s-open">RISK</span></td><td>Lost on reload</td></tr>
+  </table></div>
+
+  <div class="call warn">
+    <span class="t">The frontend's defining weakness — one structural duplication</span>
+    <p>A complete double-entry ledger simulation (<code>backend/domain/</code>, 7,991 lines: LedgerEngine, SettlementEngine, RiskEngine, TransactionOrchestrator, CreatorShareService, DisputeService, ProvenanceService) runs in the browser <em>alongside</em> the real server ledger. It is not dead code — the local balance is what the risk check reads. The two are kept in agreement by <code>reconcileBankBalance</code>, which posts the server's number in as an adjusting entry. Correct by construction, but it means every money-shaped rule exists twice and can only be kept honest by hand.</p>
+  </div>
+
+  <p>Secondary duplications, all currently in agreement: the 1,000-word summary limit (server and client, both commented as needing to change together); the QR dial-symbol alphabet (a private copy, because the concatenation build evaluates it before the shared constant is initialised — reaching for the shared value previously produced an empty <code>Set</code> and made every scan fail silently); and two 321-line country data files.</p>
+</section>
+
+<!-- ===================== 5 ===================== -->
+<section id="s5">
+  <h2><span class="num">05</span>Backend Architecture</h2>
+
+  <h3>Two systems that share a repository</h3>
+  <div class="tw"><table>
+    <tr><th></th><th><code>backend/</code></th><th><code>server/</code></th></tr>
+    <tr><td>Runs in</td><td>the browser</td><td>Node on Render</td></tr>
+    <tr><td>Purpose</td><td>domain simulation</td><td>the real API</td></tr>
+    <tr><td>Storage</td><td>none</td><td>MongoDB Atlas</td></tr>
+    <tr><td>Build</td><td>concatenated into the bundle</td><td>deployed as-is</td></tr>
+    <tr><td>Size</td><td>7,991 lines · 80 files</td><td>12,670 lines · 42 source files</td></tr>
+  </table></div>
+  <p>They must not be merged or renamed. <code>server/server.js</code> must stay at exactly that path or the Render deployment breaks.</p>
+
+  <div class="diagram">
+    <div class="dtitle">Request lifecycle</div>
+    <div class="stack">
+      <div class="layer"><span class="lname">express.json</span><span class="lmeta">64kb cap</span></div>
+      <div class="layer"><span class="lname">CORS allowlist</span><span class="lmeta">no Origin passes · unknown Origin refused, not reflected</span></div>
+      <div class="layer ok"><span class="lname">Security headers</span><span class="lmeta">CSP default-src 'none' · HSTS on production only · X-Powered-By removed</span></div>
+      <div class="layer"><span class="lname">rateLimit(name, max, window)</span><span class="lmeta">process-local · first X-Forwarded-For hop only</span></div>
+      <div class="layer acc"><span class="lname">requireAuth</span><span class="lmeta">HMAC verify → User lookup → credentialsInvalidatedAt</span></div>
+      <div class="layer acc"><span class="lname">requireSelf(...sources)</span><span class="lmeta">compares by document id, never by symbolId string</span></div>
+      <div class="layer"><span class="lname">Route handler</span><span class="lmeta">inline, own try/catch</span></div>
+      <div class="layer ok"><span class="lname">withMongoTransaction(work)</span><span class="lmeta">transaction when available · compensating path when not</span></div>
+      <div class="layer bad" style="border:1.5px dashed #f4c4c4;background:#fdf6f6"><span class="lname">✗ no global error handler · ✗ no 404 handler · ✗ no health route</span><span class="lmeta">GET / → HTML 404 · malformed JSON → HTML Bad Request</span></div>
+    </div>
+  </div>
+
+  <div class="call warn">
+    <span class="t">The monolith</span>
+    <p><code>server/server.js</code> is <strong>8,274 lines</strong> holding 62 routes, every model import, the auth primitives, the rate limiter, the audit recorder and all business logic. No router layer, no controller layer, no service layer. The send handler alone is ~1,100 lines. Domain logic that <em>has</em> been extracted lives in <code>server/lib/</code> (2,312 lines, ten modules) — and that extraction is the difference between the parts of this backend that are testable and the parts that are not.</p>
+  </div>
+
+  <h3>Domain map</h3>
+  <div class="tw"><table>
+    <tr><th>#</th><th>Domain</th><th>Source of truth</th><th>Separation</th><th>Known weakness</th></tr>
+    <tr><td>1</td><td>Authentication</td><td>Server</td><td>Mixed</td><td><span class="s s-crit">OTP is a constant</span></td></tr>
+    <tr><td>2</td><td>Users / accounts</td><td>Server</td><td>Mixed</td><td><code>countryIso</code> default masks real country until backfill</td></tr>
+    <tr><td>3</td><td>Payments</td><td>Server</td><td>Mixed — 1,100 lines in one handler</td><td>Best-effort tail unreconciled</td></tr>
+    <tr><td>4</td><td>FX</td><td>Provider → Mongo cache</td><td><span class="s s-ok">CLEAN</span></td><td>Unbounded staleness</td></tr>
+    <tr><td>5</td><td>Settlement</td><td>Server</td><td><span class="s s-ok">CLEAN</span></td><td>Corridor seeding coverage</td></tr>
+    <tr><td>6</td><td>Ledger</td><td>Server</td><td>Mixed</td><td>No uniqueness constraint</td></tr>
+    <tr><td>7</td><td>Receipts</td><td>Server</td><td><span class="s s-ok">CLEAN</span></td><td><b>Write-only</b>; share currency mislabel</td></tr>
+    <tr><td>8</td><td>Creator Share</td><td>Server (payee's rate)</td><td>Partly clean</td><td>Share leg not idempotent</td></tr>
+    <tr><td>9</td><td>Coverage</td><td>Server</td><td><span class="s s-ok">CLEAN</span></td><td>Our Spending not computable</td></tr>
+    <tr><td>10</td><td>Countries / currency</td><td>Seeded table → bundled map</td><td><span class="s s-ok">CLEAN</span></td><td>One route bypasses the resolver</td></tr>
+    <tr><td>11</td><td>Projects</td><td>Server</td><td>Mixed but cohesive</td><td>Bytes unvalidated</td></tr>
+    <tr><td>12</td><td>File attachments</td><td>Server (Mongo Buffer)</td><td>Mixed</td><td>2 MB in-document; will not scale</td></tr>
+    <tr><td>13</td><td>Security settings</td><td>Server</td><td>Mixed</td><td>App Lock client-enforced</td></tr>
+    <tr><td>14</td><td>Coin</td><td>Server</td><td>Mixed</td><td><span class="s s-broken">Missing await</span> · GLB-04</td></tr>
+    <tr><td>15</td><td>GEU</td><td>Server</td><td>Mixed</td><td>Correctly disabled behind a flag</td></tr>
+    <tr><td>16</td><td>PayLater</td><td>Server</td><td>Mixed</td><td>No repayment; cross-currency sums</td></tr>
+    <tr><td>17</td><td>Audit trail</td><td>Server</td><td><span class="s s-ok">CLEAN</span></td><td>15 call sites; login not among them</td></tr>
+    <tr><td>18</td><td>Rate limiting</td><td>Process</td><td>Mixed</td><td>Volatile, per-instance</td></tr>
+  </table></div>
+</section>
+
+<!-- ===================== 6 ===================== -->
+<section id="s6">
+  <h2><span class="num">06</span>Database Architecture</h2>
+  <p>Twenty-five Mongoose models. The financially significant ones:</p>
+
+  <div class="tw"><table>
+    <tr><th>Model</th><th>Authoritative</th><th>Reconstructable</th><th>Duplicates possible</th><th>Key constraints</th></tr>
+    <tr><td><b>User</b></td><td><span class="s s-ok">YES</span> — <code>balance</code> is the money</td><td>In principle from LedgerEntry; no replay exists</td><td>No</td><td><code>symbolId</code>, <code>mobileNumber</code> unique</td></tr>
+    <tr><td><b>Transaction</b></td><td><span class="s s-ok">YES</span></td><td>No</td><td>No</td><td><code>referenceId</code> unique + <b>partial unique on (fromUserId, metadata.idempotencyKey)</b></td></tr>
+    <tr><td><b>LedgerEntry</b></td><td>Derived record</td><td>Yes, from Transaction</td><td><span class="s s-open">YES — no constraint</span></td><td>Two non-unique compound indexes</td></tr>
+    <tr><td><b>Settlement</b></td><td><span class="s s-ok">YES</span> for pools</td><td>Yes, from pool history</td><td>No</td><td><code>settlementId</code> unique</td></tr>
+    <tr><td><b>Receipt</b></td><td>No — <b>nothing reads it</b></td><td>Yes</td><td><span class="s s-open">YES — no constraint</span></td><td>(transactionId, role) NOT unique</td></tr>
+    <tr><td><b>AssetSeed</b></td><td>Yes for interest</td><td>Partly</td><td>No</td><td>Partial unique on <code>transactionId</code></td></tr>
+    <tr><td><b>Country</b></td><td>Yes when seeded</td><td>Yes, from the bundled map</td><td>No</td><td><code>iso</code> unique</td></tr>
+    <tr><td><b>CountryCurrencyPool</b></td><td><span class="s s-ok">YES</span></td><td>From Settlement</td><td>No</td><td>(countryIso, counterCurrency) unique</td></tr>
+    <tr><td><b>Project</b></td><td>Yes</td><td>No</td><td>Yes (by design)</td><td>Two compound indexes</td></tr>
+    <tr><td><b>ProjectAttachment</b></td><td>Yes</td><td>No</td><td>Deleted before replace</td><td><code>projectId</code>, <code>ownerId</code></td></tr>
+    <tr><td><b>AuditLog</b></td><td>Append-only</td><td>No</td><td>Yes (harmless)</td><td>Three indexes</td></tr>
+  </table></div>
+
+  <div class="call warn">
+    <span class="t">Immutability is not enforced anywhere</span>
+    <p><code>Transaction.metadata</code> is <code>Schema.Types.Mixed</code> — and it carries <code>sourceAmount</code>, <code>debitAmount</code>, <code>fxRate</code>, <code>cashback</code> and the party snapshot. <strong>Financial metadata is unvalidated and mutable.</strong> Mongoose applies no casting, no required fields and no type checks inside a Mixed field, so a bad write succeeds silently. Nothing writes it wrongly today; nothing prevents it.</p>
+  </div>
+
+  <div class="diagram">
+    <div class="dtitle">How a payment travels through persistence</div>
+    <div class="stack">
+      <div class="layer"><span class="lname">Resolve both accounts · verify PIN under lockout</span><span class="lmeta">5 strikes → 10 min, per account</span></div>
+      <div class="layer"><span class="lname">Resolve both currencies from each account's own country</span><span class="lmeta">accountCountryIso → resolveCountry</span></div>
+      <div class="layer"><span class="lname">getRate(destination → source)</span><span class="lmeta">fail closed on error → 502</span></div>
+      <div class="layer"><span class="lname">Compute BOTH sides, each rounded to its own precision</span><span class="lmeta">refuse if the client's claimed currencies disagree → 409</span></div>
+      <div class="layer"><span class="lname">Idempotency pre-check + 15-second duplicate window</span><span class="lmeta">index is the real guarantee</span></div>
+      <div class="layer ok"><span class="lname">— ATOMIC BLOCK —</span><span class="lmeta">withMongoTransaction</span></div>
+      <div class="layer ok"><span class="lname">1. debit sender</span><span class="lmeta">findOneAndUpdate({balance:{$gte:d}},{$inc:-d})</span></div>
+      <div class="layer ok"><span class="lname">2. Transaction.create(status 'success')</span><span class="lmeta">before the credit, so settlement can attach</span></div>
+      <div class="layer ok"><span class="lname">3. settleCrossBorderPayment</span><span class="lmeta">pool $inc conditional + Settlement.create</span></div>
+      <div class="layer ok"><span class="lname">4. credit receiver · 5. credit sender cashback</span><span class="lmeta">balances read back from the writes</span></div>
+      <div class="layer ok"><span class="lname">6. LedgerEntry.create([debit, credit, cashback])</span><span class="lmeta">— commit —</span></div>
+      <div class="layer best"><span class="lname">7. AssetSeed.create — best effort</span><span class="lmeta">outside the transaction · not retried</span></div>
+      <div class="layer best"><span class="lname">8. mintShareLegAndReceipts — best effort</span><span class="lmeta">outside the transaction · not idempotent · not reconciled</span></div>
+    </div>
+    <div class="brace"><span class="bl"></span><span>Steps 1–6 are atomic. Everything after the commit is not, is not retried, and is not reconciled. <b>That is GA-06.</b></span></div>
+  </div>
+</section>
+
+<!-- ===================== 7 ===================== -->
+<section id="s7">
+  <h2><span class="num">07</span>Financial Data Flow</h2>
+
+  <h3>Where the authoritative values live</h3>
+  <div class="tw"><table>
+    <tr><th>Value</th><th>Stored as</th><th>Currency</th></tr>
+    <tr><td>What the receiver was credited (face value)</td><td><code>Transaction.amount</code> / <code>.currency</code></td><td>Receiver's</td></tr>
+    <tr><td>What the sender actually paid</td><td><code>metadata.sourceAmount</code> / <code>.sourceCurrency</code></td><td>Sender's</td></tr>
+    <tr><td>Same, legacy alias</td><td><code>metadata.debitAmount</code> / <code>.senderCurrency</code></td><td>Sender's</td></tr>
+    <tr><td>Rate applied</td><td><code>metadata.fxRate</code>, <code>.fxRateSource</code></td><td>—</td></tr>
+    <tr><td>Which side the person typed</td><td><code>metadata.amountBasis</code></td><td>—</td></tr>
+    <tr><td>Creator Share, receiver side</td><td><code>metadata.cashback</code></td><td>Receiver's</td></tr>
+    <tr><td>Creator Share, sender side</td><td><code>metadata.cashbackCredit</code></td><td>Sender's</td></tr>
+    <tr><td>Pool movement</td><td><code>Settlement.*Amount</code></td><td>Each pool's own</td></tr>
+  </table></div>
+
+  <h3>The classic failure modes, audited</h3>
+  <div class="tw"><table>
+    <tr><th>Risk</th><th>Status</th><th>Finding</th></tr>
+    <tr><td>Source vs destination amount confusion</td><td><span class="s s-fixed">CLOSED</span></td><td><code>amountBasis</code> names which side was typed; the other is computed, never accepted</td></tr>
+    <tr><td>Source vs destination currency confusion</td><td><span class="s s-fixed">CLOSED</span></td><td>Both derived from each account's own country; a client claim mismatch returns 409</td></tr>
+    <tr><td>Double conversion</td><td><span class="s s-fixed">CLOSED</span></td><td>One rate, one lookup; the inverse is derived rather than re-fetched</td></tr>
+    <tr><td>Missing conversion</td><td><span class="s s-fixed">CLOSED</span></td><td>Same-currency short-circuits to <code>fxRate: 1</code></td></tr>
+    <tr><td>Client-side FX</td><td><span class="s s-fixed">CLOSED</span></td><td>Server-side only</td></tr>
+    <tr><td>Stale FX</td><td><span class="s s-open">OPEN</span></td><td><code>getRate</code> returns <code>stale:true</code>; <code>server.js:5175</code> destructures only <code>{rate, source}</code>. Staleness unbounded</td></tr>
+    <tr><td>Incorrect historical FX</td><td><span class="s s-fixed">CLOSED</span></td><td>Coverage prefers each payment's own transaction-time rate</td></tr>
+    <tr><td>Duplicate transactions</td><td><span class="s s-fixed">CLOSED</span></td><td>Partial unique index; the losing racer's 11000 is caught and answered as a duplicate</td></tr>
+    <tr><td>Duplicate history rows</td><td><span class="s s-fixed">CLOSED</span></td><td>Share legs excluded from <code>/history</code>, included in <code>/transactions</code> with a type discriminator</td></tr>
+    <tr><td>Duplicate receipts</td><td><span class="s s-open">OPEN</span></td><td>No uniqueness constraint on <code>Receipt</code></td></tr>
+    <tr><td>Balance mismatch</td><td><span class="s s-fixed">CLOSED</span></td><td>Balances read back from the writes that produced them</td></tr>
+    <tr><td>Ledger mismatch</td><td><span class="s s-partial">PARTIAL</span></td><td>Rows correct; no constraint prevents duplicates, no replay verifies them</td></tr>
+    <tr><td>Settlement mismatch</td><td><span class="s s-fixed">CLOSED</span></td><td>Conditional <code>$inc</code>; revert reads its own amounts back</td></tr>
+    <tr><td>Creator Share interaction</td><td><span class="s s-fixed">CLOSED</span></td><td>Payee's own rate; both sides rounded to their own precision</td></tr>
+    <tr><td>Idempotency</td><td><span class="s s-fixed">CLOSED</span></td><td>At the database level</td></tr>
+    <tr><td>Retry behaviour</td><td><span class="s s-partial">PARTIAL</span></td><td>Closed for the transaction; open for the best-effort tail</td></tr>
+    <tr><td>Timeout behaviour</td><td><span class="s s-fixed">CLOSED</span></td><td><code>httpClient.js</code> distinguishes 401 from <code>status===0</code> — a cold start does not sign anyone out</td></tr>
+  </table></div>
+
+  <div class="call good">
+    <span class="t">Rounding</span>
+    <p><code>toMinorUnit(value, currencyCode)</code> reads <code>Currency.decimals</code> through a synchronous cache. A JPY or KRW balance never receives a fraction it cannot hold. Each leg rounds in <em>its own</em> currency, and the sender's debit is the exact figure quoted rather than a re-rounding of the converted value.</p>
+  </div>
+</section>
+
+<!-- ===================== 8 ===================== -->
+<section id="s8">
+  <h2><span class="num">08</span>Gloobal Coverage Architecture</h2>
+  <p><code>server/lib/coverageAggregation.js</code> (551 lines) is the single source. Nothing else may compute a Coverage number, and nothing else does.</p>
+
+  <div class="tw"><table>
+    <tr><th>Metric</th><th>Classification</th><th>Live value / note</th></tr>
+    <tr><td>Global Total Spending</td><td><span class="s s-ok">SERVER-AUTHORITATIVE</span></td><td>₹9,095,563.13</td></tr>
+    <tr><td>Country Total Spending</td><td><span class="s s-ok">SERVER-AUTHORITATIVE</span></td><td><code>null</code>, never <code>0</code>, when unconvertible</td></tr>
+    <tr><td>Global Our Spending</td><td><span class="s s-nv">UNAVAILABLE — HONESTLY</span></td><td><code>available:false</code> with a written reason</td></tr>
+    <tr><td>Country Our Spending</td><td><span class="s s-nv">UNAVAILABLE — HONESTLY</span></td><td>Same</td></tr>
+    <tr><td>Transactions / day</td><td><span class="s s-ok">SERVER-AUTHORITATIVE</span></td><td>UTC calendar day, basis named in the response</td></tr>
+    <tr><td>Total users</td><td><span class="s s-ok">SERVER-AUTHORITATIVE</span></td><td>120</td></tr>
+    <tr><td>Creator Share</td><td><span class="s s-ok">SERVER-AUTHORITATIVE</span></td><td>7 buckets; percentages sum against the bucketed population</td></tr>
+    <tr><td>Active country</td><td><span class="s s-ok">SERVER-AUTHORITATIVE</span></td><td><code>activeCountryRule: "has_users"</code>, named in the response</td></tr>
+    <tr><td>Country lock / unlock</td><td><span class="s s-ok">SERVER-AUTHORITATIVE</span></td><td>Derived from <code>active</code></td></tr>
+    <tr><td>Live refresh</td><td><span class="s s-ok">WORKING</span></td><td>Refresh token bumps the fetch</td></tr>
+    <tr><td>Currency display</td><td><span class="s s-ok">SERVER-AUTHORITATIVE</span></td><td><code>?currency=</code>, conversion server-side</td></tr>
+    <tr><td>Country search</td><td><span class="s s-partial">CLIENT</span></td><td>Filters the returned list</td></tr>
+    <tr><td>Hooman Projects</td><td><span class="s s-ok">SERVER-AUTHORITATIVE</span></td><td>Counts and list share one visibility rule</td></tr>
+  </table></div>
+
+  <div class="call good">
+    <span class="t">The best judgement call in this codebase</span>
+    <p>Our Spending is deliberately <strong>not implemented as a number</strong>. The module checked every mechanism that credits a user and established that each is funded by another user, not by the platform. It returns <code>null</code> plus the reason plus labelled diagnostics — never a stand-in. A plausible-looking number would have been easy and wrong.</p>
+  </div>
+
+  <p><b>Independent production verification.</b> Per-country transaction counts sum to exactly <b>188</b>, matching <code>transactionsTotal</code>. Per-country user counts sum to exactly <b>120</b>, matching <code>/api/stats</code>. Both invariants hold.</p>
+
+  <p><code>/api/coverage</code> and <code>/api/stats</code> are unauthenticated — a documented, reasoned choice, since the payload carries aggregates only, no ids, names or per-user amounts. A business-intelligence disclosure, not a vulnerability. <code>/api/stats</code> carries <b>no rate limit at all</b>, unlike <code>/api/coverage</code>.</p>
+</section>
+
+<!-- ===================== 9 ===================== -->
+<section id="s9">
+  <h2><span class="num">09</span>Historical Data Integrity</h2>
+
+  <div class="stats">
+    <div class="stat"><div class="v">188</div><div class="k">Successful payments</div></div>
+    <div class="stat good"><div class="v">85</div><div class="k">Carrying sourceAmount (45.2%)</div></div>
+    <div class="stat warn"><div class="v">103</div><div class="k">Not carrying it (54.8%)</div></div>
+  </div>
+
+  <div class="diagram">
+    <div class="dtitle">The fallback chain</div>
+    <div class="flow">
+      <div class="node ok"><span class="n">metadata.sourceAmount</span><span class="d">EXACT · 85 rows confirmed live</span></div>
+      <div class="arrow">→</div>
+      <div class="node acc"><span class="n">metadata.debitAmount</span><span class="d">RECONSTRUCTABLE · same meaning, a field copy</span></div>
+      <div class="arrow">→</div>
+      <div class="node bad"><span class="n">amount</span><span class="d">APPROXIMATE · receiver's face value on the sender's country</span></div>
+    </div>
+  </div>
+
+  <div class="tw"><table>
+    <tr><th>Class</th><th>Which rows</th><th>Recoverability</th></tr>
+    <tr><td><span class="s s-ok">EXACT</span></td><td>The 85 with <code>metadata.sourceAmount</code></td><td>Confirmed live</td></tr>
+    <tr><td><span class="s s-partial">RECONSTRUCTABLE</span></td><td>Rows with <code>debitAmount</code> + <code>senderCurrency</code> but no <code>sourceAmount</code></td><td>A field copy. No arithmetic, no rate lookup, no loss</td></tr>
+    <tr><td><span class="s s-open">APPROXIMATE</span></td><td>Rows with neither, on a genuinely cross-border payment</td><td>Falls back to the receiver's face value</td></tr>
+    <tr><td><span class="s s-broken">UNRECOVERABLE</span></td><td>Rows with neither and no stored <code>fxRate</code>, cross-border</td><td>The transaction-time rate is gone. Today's rate would be a fabrication</td></tr>
+  </table></div>
+
+  <div class="call warn">
+    <span class="t">The split between the last three is NOT VERIFIED</span>
+    <p>No route exposes a count of rows carrying <code>debitAmount</code>, and this audit performed no database reads. There is strong reason to expect it is small — for most of the pre-<code>debitAmount</code> era <code>Country</code> and <code>Currency</code> both held zero documents in production, every lookup missed, every account resolved to INR and <code>fxRate</code> was always 1, so those payments were domestic-equivalent and <code>amount</code> <em>is</em> the debit. That is an inference from the code's own recorded history, not a measurement.</p>
+  </div>
+
+  <p><b>Backfill: technically possible and safe for the reconstructable class.</b> A field copy from <code>metadata.debitAmount</code> to <code>metadata.sourceAmount</code>, conditional on the target being absent and the source present. No arithmetic, so no new error. Conditions: a dry-run mode (the pattern <code>backfill-country-iso.mjs</code> already establishes), a backup first, and a hard refusal to touch any row where the two fields both exist and disagree. <strong>No such script exists</strong> — <code>server/scripts/</code> holds five scripts and none addresses <code>sourceAmount</code>.</p>
+
+  <p><b>Conflicting amounts: NOT VERIFIED.</b> Detecting a row where <code>sourceAmount</code> and <code>debitAmount</code> disagree needs a database read.</p>
+
+  <p><code>coverage.rowsWithRecordedSenderAmount</code> <strong>understates</strong> exactness, because the <code>exact</code> flag counts only <code>sourceAmount</code> while the pipeline also accepts the equally exact <code>debitAmount</code>. The reported 45.2% is a floor.</p>
+</section>
+
+<!-- ===================== 10 ===================== -->
+<section id="s10">
+  <h2><span class="num">10</span>Security Audit</h2>
+
+  <h3>Live header verification — both targets</h3>
+  <div class="tw"><table>
+    <tr><th>Header</th><th>API (Render)</th><th>Frontend (Netlify)</th></tr>
+    <tr><td><code>Content-Security-Policy</code></td><td><code>default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'</code></td><td><code>script-src 'self'</code> — <b>no unsafe-inline, no unsafe-eval</b></td></tr>
+    <tr><td><code>Strict-Transport-Security</code></td><td>max-age 1y, includeSubDomains</td><td>+ preload</td></tr>
+    <tr><td><code>X-Content-Type-Options</code></td><td>nosniff</td><td>nosniff</td></tr>
+    <tr><td><code>X-Frame-Options</code></td><td>DENY</td><td>DENY</td></tr>
+    <tr><td><code>Referrer-Policy</code></td><td>no-referrer</td><td>strict-origin-when-cross-origin</td></tr>
+    <tr><td><code>Permissions-Policy</code></td><td>all denied</td><td>camera/geolocation/payment = self</td></tr>
+    <tr><td><code>X-Powered-By</code></td><td>removed</td><td>—</td></tr>
+  </table></div>
+  <p>HSTS on the API proves <code>IS_PRODUCTION_DEPLOY</code> is true there, which proves <code>AUTH_TOKEN_SECRET</code> is set — the process would have called <code>process.exit(1)</code> otherwise.</p>
+
+  <h3>Authorization probes (unauthenticated, read-only)</h3>
+  <div class="tw"><table>
+    <tr><th>Endpoint</th><th>Result</th><th>Correct?</th></tr>
+    <tr><td><code>GET /api/profile/TESTID</code></td><td>401</td><td><span class="s s-ok">YES</span></td></tr>
+    <tr><td><code>GET /api/transactions/history/TESTID</code></td><td>401</td><td><span class="s s-ok">YES</span></td></tr>
+    <tr><td><code>GET /api/users/available?symbolId=x</code></td><td>400</td><td><span class="s s-ok">YES</span> — malformed ID refused before lookup</td></tr>
+    <tr><td><code>GET /api/projects</code></td><td>200</td><td><span class="s s-ok">YES</span> — published only, by query not post-filter</td></tr>
+    <tr><td><code>GET /api/creator-share/distribution</code></td><td>200</td><td>By design — counts only</td></tr>
+    <tr><td><code>GET /api/coin/supply</code></td><td>200</td><td>By design — aggregates only</td></tr>
+    <tr><td><code>GET /api/geu/supply</code></td><td>503</td><td><span class="s s-ok">YES</span> — prototype correctly disabled</td></tr>
+  </table></div>
+
+  <h3>Review by area</h3>
+  <div class="tw"><table>
+    <tr><th>Area</th><th>Status</th><th>Evidence</th></tr>
+    <tr><td>Token signing</td><td><span class="s s-fixed">FIXED</span></td><td>HMAC-SHA256, one algorithm, no <code>alg</code> field to downgrade</td></tr>
+    <tr><td>Token comparison</td><td><span class="s s-fixed">FIXED</span></td><td><code>timingSafeEqual</code> with a length check first</td></tr>
+    <tr><td>Token expiry</td><td><span class="s s-fixed">FIXED</span></td><td>7-day <code>exp</code>, checked every request</td></tr>
+    <tr><td>Token revocation</td><td><span class="s s-partial">PARTIAL</span></td><td>Works on PIN <b>change</b>; <b>not on PIN reset</b></td></tr>
+    <tr><td>Secret management</td><td><span class="s s-fixed">FIXED</span></td><td>Production refuses to boot without a ≥32-char secret</td></tr>
+    <tr><td>Session persistence</td><td><span class="s s-open">OPEN (accepted)</span></td><td>Bearer token in <code>localStorage</code> — XSS-reachable, mitigated by the strict frontend CSP</td></tr>
+    <tr><td>PIN handling</td><td><span class="s s-fixed">FIXED</span></td><td>bcrypt cost 10; 5 strikes → 10 min, per-account so IP rotation does not help</td></tr>
+    <tr><td>PIN reset</td><td><span class="s s-crit">OPEN</span></td><td>Fixed OTP; no session revocation</td></tr>
+    <tr><td>Account enumeration</td><td><span class="s s-partial">PARTIAL</span></td><td>Lookup routes hardened (GLB-17); <code>/api/otp/send</code> still distinguishes 409/404/400</td></tr>
+    <tr><td>Authorization</td><td><span class="s s-fixed">FIXED</span></td><td><code>requireSelf</code> compares document ids — a rename cannot lock an owner out or hand data away</td></tr>
+    <tr><td>WebAuthn / passkeys</td><td><span class="s s-fixed">FIXED</span></td><td>Challenges expire and are single-use (GLB-25)</td></tr>
+    <tr><td>QR integrity</td><td><span class="s s-open">OPEN</span></td><td>See section 11</td></tr>
+    <tr><td>Client-trusted financial data</td><td><span class="s s-fixed">FIXED</span></td><td>Currencies, cashback rate and reference id all server-derived; a client claim is compared and refused</td></tr>
+    <tr><td>Rate limiting</td><td><span class="s s-partial">PARTIAL</span></td><td>Real limiter with a bucket ceiling and eviction; process-local, reset by every cold start</td></tr>
+    <tr><td>Security headers</td><td><span class="s s-fixed">FIXED</span></td><td>Verified live, both targets</td></tr>
+    <tr><td>Sensitive logs</td><td><span class="s s-fixed">FIXED</span></td><td>No PIN, token or descriptor logged</td></tr>
+    <tr><td>Environment secrets</td><td><span class="s s-fixed">FIXED</span></td><td>Nothing tracked; <code>.env</code> gitignored and present only on disk</td></tr>
+    <tr><td>Upload validation</td><td><span class="s s-partial">PARTIAL</span></td><td>Type allow-listed, size capped, filename sanitised; <b>bytes never checked</b></td></tr>
+    <tr><td>Audit logging</td><td><span class="s s-broken">OPEN</span></td><td>15 call sites; <b>login, registration, PIN set and PIN reset write nothing</b></td></tr>
+  </table></div>
+
+  <h3>Status of prior findings</h3>
+  <div class="tw"><table>
+    <tr><th>Finding</th><th>Subject</th><th>Status</th></tr>
+    <tr><td>GLB-04</td><td>Coin fiat leg labelled with hardcoded reserve currency</td><td><span class="s s-pre">OPEN — deferred</span></td></tr>
+    <tr><td>GLB-05</td><td>Asset seeds of different currencies summed</td><td><span class="s s-pre">OPEN — deferred</span></td></tr>
+    <tr><td>GLB-12</td><td>A released Gloobal ID is never reissued</td><td><span class="s s-fixed">FIXED</span></td></tr>
+    <tr><td>GLB-13</td><td>ID validated against its alphabet, not just its length</td><td><span class="s s-fixed">FIXED</span></td></tr>
+    <tr><td>GLB-14</td><td>Five wrong PINs cost ten minutes, not the account</td><td><span class="s s-fixed">FIXED</span></td></tr>
+    <tr><td>GLB-15</td><td>Concurrent settlements cannot overdraw a corridor</td><td><span class="s s-fixed">FIXED</span></td></tr>
+    <tr><td>GLB-16</td><td>Rate limiter documented as process-local and volatile</td><td><span class="s s-fixed">FIXED</span> (as documentation)</td></tr>
+    <tr><td>GLB-17</td><td>Lookup routes disclose the minimum</td><td><span class="s s-fixed">FIXED</span></td></tr>
+    <tr><td>GLB-18</td><td>Transaction reference minted by the server</td><td><span class="s s-fixed">FIXED</span></td></tr>
+    <tr><td>GLB-19</td><td>Zero-decimal currencies never receive a fraction</td><td><span class="s s-fixed">FIXED</span></td></tr>
+    <tr><td>GLB-20</td><td>A registration OTP is single-use</td><td><span class="s s-fixed">FIXED</span></td></tr>
+    <tr><td>GLB-21</td><td>JSON-only security headers</td><td><span class="s s-fixed">FIXED</span> — verified live</td></tr>
+    <tr><td>GLB-22</td><td>A pool cannot open under a meaningless currency pair</td><td><span class="s s-fixed">FIXED</span></td></tr>
+    <tr><td>GLB-24</td><td>Audit writes cannot abort the payment they describe</td><td><span class="s s-fixed">FIXED</span></td></tr>
+    <tr><td>GLB-25</td><td>WebAuthn challenge expires and is single-use</td><td><span class="s s-fixed">FIXED</span></td></tr>
+  </table></div>
+  <p>Every GLB-12…GLB-25 fix has a named assertion in <code>server/tests/hardening-fixes.test.mjs</code>. <strong>That suite was not executed</strong> — it requires a live MongoDB cluster. The <em>fixes</em> are present in code (verified by reading); the <em>test evidence</em> is <span class="s s-nv">NOT VERIFIED</span>.</p>
+</section>
+
+<!-- ===================== 11 ===================== -->
+<section id="s11">
+  <h2><span class="num">11</span>QR Security Audit</h2>
+
+  <div class="diagram">
+    <div class="dtitle">The payload — 20 characters, 8-symbol alphabet</div>
+    <div class="flow">
+      <div class="node acc"><span class="n">12 symbols</span><span class="d">Gloobal ID · plaintext</span></div>
+      <div class="arrow">+</div>
+      <div class="node bad"><span class="n">7 symbols</span><span class="d">amount, base-8 minor units · plaintext, editable</span></div>
+      <div class="arrow">+</div>
+      <div class="node bad"><span class="n">1 symbol</span><span class="d">checksum · positional mod-8, algorithm ships in the bundle</span></div>
+    </div>
+  </div>
+
+  <div class="tw"><table>
+    <tr><th>Question</th><th>Answer</th></tr>
+    <tr><td>Contains a raw payment address?</td><td><span class="s s-open">YES</span> — the Gloobal ID in clear</td></tr>
+    <tr><td>Payload signed?</td><td><span class="s s-broken">NO</span> — the checksum detects a misread; it authenticates nothing</td></tr>
+    <tr><td>QR data verified server-side?</td><td><span class="s s-broken">NO</span> — the server never sees the payload. The client decodes it and posts a <code>receiverSymbolId</code> like any other payment</td></tr>
+    <tr><td>Recipient identity resolved from the server?</td><td><span class="s s-ok">YES</span> — <code>GET /api/users/resolve</code> returns the payee's real name, masked mobile, own country and share rate</td></tr>
+    <tr><td>Amount / currency manipulable?</td><td><b>Amount: yes</b> — plaintext, checksum recomputable. <b>Currency: no</b> — the QR carries none; the payee's registered country decides</td></tr>
+    <tr><td>Could a modified QR redirect funds?</td><td><span class="s s-open">YES</span> — substituting another valid Gloobal ID sends the money there. Defences are non-cryptographic: the payer sees the resolved name/country/flag and must enter a PIN</td></tr>
+    <tr><td>Replay possible?</td><td><span class="s s-open">YES</span> — <code>usedQrCodes</code> is an in-memory Set in <code>App.jsx:579</code>, lost on reload. Server-side the only brake is a 15-second same-amount window</td></tr>
+    <tr><td>Static vs dynamic treated differently?</td><td><span class="s s-broken">NO</span> — one format; zero amount = identity, non-zero = request</td></tr>
+    <tr><td>Expiration?</td><td><span class="s s-broken">NONE</span></td></tr>
+    <tr><td>Nonce / replay protection?</td><td><span class="s s-broken">NONE SERVER-SIDE</span></td></tr>
+  </table></div>
+
+  <div class="call warn">
+    <span class="t">Current security level: integrity-checked plaintext</span>
+    <p>Not authenticated, not bound, not replayable-once. The exposure is bounded by three real things — the payer sees a server-resolved payee before confirming, a PIN is required, and the amount ceiling applies. It is <strong>not</strong> bounded by anything in the QR itself. The gap between this and "Gloobal-only QR scanning" as a security property is a signature, a nonce and a server-side verification step. None exists.</p>
+  </div>
+</section>
+
+<!-- ===================== 12 ===================== -->
+<section id="s12">
+  <h2><span class="num">12</span>Hooman Projects Audit</h2>
+  <div class="tw"><table>
+    <tr><th>Feature</th><th>Status</th><th>Evidence</th></tr>
+    <tr><td>Persistent model</td><td><span class="s s-ok">FUNCTIONAL</span></td><td><code>Project</code> + <code>ProjectAttachment</code> with real indexes</td></tr>
+    <tr><td>Ownership</td><td><span class="s s-ok">FUNCTIONAL</span></td><td>Owner taken from the token, never the body; compared by document id</td></tr>
+    <tr><td>Create / Read / Update / Delete</td><td><span class="s s-ok">FUNCTIONAL</span></td><td>All four routes, owner-scoped; delete is audit-logged</td></tr>
+    <tr><td>Category system</td><td><span class="s s-ok">FUNCTIONAL</span></td><td>Eight frozen categories, validated against the allow-list</td></tr>
+    <tr><td>Search</td><td><span class="s s-ok">FUNCTIONAL</span></td><td>Regex over title and summary, input escaped through <code>escapeRegExp</code></td></tr>
+    <tr><td>Summary word limit</td><td><span class="s s-ok">FUNCTIONAL</span></td><td>1,000 words server-side + a 24,000-character backstop</td></tr>
+    <tr><td>Upload</td><td><span class="s s-ok">FUNCTIONAL</span></td><td>2 MB; 3 MB body cap for base64 inflation</td></tr>
+    <tr><td>Attachment persistence</td><td><span class="s s-ok">FUNCTIONAL</span></td><td>Mongo Buffer; old bytes deleted before replace</td></tr>
+    <tr><td>Authorization (write)</td><td><span class="s s-ok">FUNCTIONAL</span></td><td><code>requireAuth</code> + owner match</td></tr>
+    <tr><td>Download authorization</td><td><span class="s s-ok">FUNCTIONAL</span></td><td>Follows the project — a draft's file is as private as the draft</td></tr>
+    <tr><td>Draft / public behaviour</td><td><span class="s s-ok">FUNCTIONAL</span></td><td>Excluded <b>in the query</b>, not post-filtered; 404 not 403 to strangers</td></tr>
+    <tr><td>File validation</td><td><span class="s s-partial">PARTIAL</span></td><td>Type allow-listed (no SVG — correctly reasoned as a script container). <b>Bytes never inspected</b></td></tr>
+    <tr><td>Production suitability</td><td><span class="s s-partial">PARTIAL</span></td><td>Correct and safe, but 2 MB blobs inside documents is not a file-storage strategy</td></tr>
+  </table></div>
+  <div class="call good">
+    <span class="t">Two details worth naming</span>
+    <p><code>.lean()</code> returns a BSON <code>Binary</code> rather than a Node <code>Buffer</code>, which previously made every download serve <code>{"buffer":{…}}</code> as JSON — the fix normalises it and sets <code>Content-Length</code> from the buffer actually written, not the stored <code>byteSize</code>. And <code>sanitiseFilename</code> strips path separators, control characters and both quote marks before the name reaches a <code>Content-Disposition</code> header.</p>
+  </div>
+</section>
+
+<!-- ===================== 13 ===================== -->
+<section id="s13">
+  <h2><span class="num">13</span>Security Screen Audit</h2>
+  <div class="tw"><table>
+    <tr><th>Setting</th><th>Persists</th><th>Affects behaviour</th><th>Survives reload</th><th>Survives re-login</th><th>Other sessions</th><th>Secure backend path</th></tr>
+    <tr>
+      <td><b>Biometric Login</b></td>
+      <td><span class="s s-ok">YES</span></td>
+      <td><span class="s s-ok">YES</span> — routes <code>requireBiometric</code> to the PIN; never removes a check</td>
+      <td>Yes</td><td>Yes</td><td>Yes</td>
+      <td><code>PATCH /api/profile/security/:symbolId</code> · <code>requireAuth</code> + <code>requireSelf</code> · boolean-typed</td>
+    </tr>
+    <tr>
+      <td><b>App Lock</b></td>
+      <td><span class="s s-ok">YES</span></td>
+      <td><span class="s s-ok">YES</span> — a <code>visibilitychange</code> listener returns a backgrounded session to the PIN stage after a grace period</td>
+      <td>Yes</td><td>Yes</td><td>Yes</td>
+      <td>Same route</td>
+    </tr>
+    <tr>
+      <td><b>Change PIN</b></td>
+      <td><span class="s s-ok">YES</span></td>
+      <td><span class="s s-ok">YES</span></td>
+      <td>Yes</td><td>Yes</td>
+      <td><span class="s s-ok">REVOKES THEM</span></td>
+      <td><code>POST /api/pin/change</code> · verifies the current PIN under the same 5-strike budget, stamps <code>credentialsInvalidatedAt</code>, mints a replacement token</td>
+    </tr>
+  </table></div>
+  <div class="call">
+    <span class="t">Two honest limits</span>
+    <p><b>App Lock is client-enforced</b> — the listener lives in the page and a local attacker with devtools bypasses it. Inherent to a browser app, and the setting is still worth having. And the "ask for your PIN every time the app opens" behaviour the old label described <em>already happens unconditionally</em> — a restored session always lands on the PIN stage. The switch was deliberately given the gap that genuinely existed (re-locking after backgrounding) rather than being wired to make an existing credential check optional.</p>
+  </div>
+</section>
+
+<!-- ===================== 14 ===================== -->
+<section id="s14">
+  <h2><span class="num">14</span>Testing Coverage</h2>
+
+  <div class="tw"><table>
+    <tr><th>Suite</th><th class="num-col">Files</th><th class="num-col">Tests</th><th>Executed here</th><th>Result</th></tr>
+    <tr><td><code>tests/</code> — frontend + domain</td><td class="num-col">37</td><td class="num-col">695</td><td><span class="s s-ok">YES</span></td><td>693 pass · <b>2 fail</b></td></tr>
+    <tr><td><code>financial-principles-tests/</code></td><td class="num-col">14</td><td class="num-col">215</td><td><span class="s s-ok">YES</span></td><td>213 pass · <b>2 fail</b></td></tr>
+    <tr><td><code>server/tests/</code></td><td class="num-col">21</td><td class="num-col">—</td><td><span class="s s-nv">NO</span></td><td>Requires a live MongoDB cluster</td></tr>
+    <tr><td><b>Total</b></td><td class="num-col"><b>72</b></td><td class="num-col"><b>910 run</b></td><td></td><td><b>906 pass · 4 fail</b></td></tr>
+  </table></div>
+
+  <div class="call warn">
+    <span class="t">Why the server suite was deliberately not run</span>
+    <p>Each file creates and drops a throwaway database <em>on the production Atlas cluster</em>. That is a write to production infrastructure, which this audit's terms exclude. Its coverage is reported from source inspection and classified <span class="s s-nv">NOT VERIFIED</span>.</p>
+  </div>
+
+  <h3>The four failures — all stale tests, no application defect</h3>
+  <div class="tw"><table>
+    <tr><th>Test</th><th>Assertion</th><th>Cause</th></tr>
+    <tr><td><code>receipt-counterparty.test.mjs:375</code></td><td>badge must be a landscape 46×40 chip; got 26×26</td><td>Contradicts <code>4fbc7dd</code>, which changed the receipt flag to a disc <b>on request</b></td></tr>
+    <tr><td><code>receipt-counterparty.test.mjs:548</code></td><td>chip must be declared landscape</td><td>Same commit</td></tr>
+    <tr><td><code>coinLedger.test.mjs:223</code></td><td>coin history direction</td><td>GC→GEU rename (<code>033d7f3</code>)</td></tr>
+    <tr><td><code>coinLedger.test.mjs:240</code></td><td>expected <code>'GC'</code>, got <code>'GEU'</code></td><td>Same rename</td></tr>
+  </table></div>
+  <p>All four encode a <strong>superseded requirement</strong>. The application behaves as most recently specified. Real maintenance debt and a red CI, but not bugs. <strong>They were not fixed, per the audit's terms.</strong></p>
+
+  <h3>Coverage by critical area</h3>
+  <div class="tw"><table>
+    <tr><th>Area</th><th>Rating</th><th>Basis</th></tr>
+    <tr><td>Cross-border payments</td><td><span class="s s-ok">GOOD</span></td><td>Five dedicated server suites</td></tr>
+    <tr><td>Duplicate / idempotency</td><td><span class="s s-ok">GOOD</span></td><td>Two suites plus the database constraint itself</td></tr>
+    <tr><td>Historical aggregation</td><td><span class="s s-partial">PARTIAL</span></td><td>438-line suite exists, not run</td></tr>
+    <tr><td>Coverage</td><td><span class="s s-partial">PARTIAL</span></td><td>Same</td></tr>
+    <tr><td>Country resolution</td><td><span class="s s-ok">GOOD</span></td><td>Two suites plus a live cross-check in this audit</td></tr>
+    <tr><td>Projects</td><td><span class="s s-partial">PARTIAL</span></td><td>354-line suite, not run</td></tr>
+    <tr><td>Security settings</td><td><span class="s s-partial">PARTIAL</span></td><td>Inside <code>security-controls</code>, not run</td></tr>
+    <tr><td>QR payments</td><td><span class="s s-partial">PARTIAL</span></td><td>Encoding well covered. <b>Security properties untested — there are none to test</b></td></tr>
+    <tr><td>Receipts</td><td><span class="s s-partial">PARTIAL</span></td><td>Rendering covered; <b>the Receipt collection has no test at all</b></td></tr>
+    <tr><td>Creator Share</td><td><span class="s s-ok">GOOD</span></td><td>Four root suites plus <code>merchant-share-flow</code></td></tr>
+    <tr><td>Concurrency</td><td><span class="s s-partial">GOOD ON PAPER</span></td><td>100-concurrent-send suite exists, not run</td></tr>
+    <tr><td>Observability</td><td><span class="s s-broken">NO MEANINGFUL COVERAGE</span></td><td>Tests the recorder, not what calls it</td></tr>
+    <tr><td>Rate limiting</td><td><span class="s s-broken">NO MEANINGFUL COVERAGE</span></td><td>—</td></tr>
+  </table></div>
+
+  <div class="call warn">
+    <span class="t">Tests that assert existence rather than behaviour</span>
+    <p>Roughly <strong>180 of ~1,000 root assertions</strong> match source text with a regex rather than exercising the code. The heaviest are <code>receipt-counterparty</code> (17), <code>location-gate</code> (13), <code>money-path</code> (12), <code>qa-2026-08-24</code> (11), <code>geu-conversion</code> (10). They break on any refactor that preserves behaviour and pass on any refactor that breaks it — both failing receipt tests are of exactly this kind. Not worthless (several pin invariants that would otherwise be untestable in a concatenated build), but they must not be counted as behavioural coverage.</p>
+  </div>
+</section>
+
+<!-- ===================== 15 ===================== -->
+<section id="s15">
+  <h2><span class="num">15</span>Production Readiness</h2>
+  <div class="tw"><table>
+    <tr><th>#</th><th>Category</th><th>Rating</th><th>Evidence</th></tr>
+    <tr><td>A</td><td>Financial correctness</td><td><span class="rag"><span class="dot d-g"></span>GREEN</span></td><td>Atomic debit, dual-currency contract, per-currency rounding, fail-closed FX. 188 production payments; coverage invariants hold</td></tr>
+    <tr><td>B</td><td>Data integrity</td><td><span class="rag"><span class="dot d-o"></span>ORANGE</span></td><td>Transaction and settlement well constrained. <b>No uniqueness on LedgerEntry or Receipt; metadata unvalidated; cross-currency sums in three surfaces</b></td></tr>
+    <tr><td>C</td><td>Security</td><td><span class="rag"><span class="dot d-r"></span>RED</span></td><td>Excellent headers, tokens, authorization and rate limiting — and <b><code>123456</code> as the second factor with no SMS gateway</b></td></tr>
+    <tr><td>D</td><td>Authentication</td><td><span class="rag"><span class="dot d-o"></span>ORANGE</span></td><td>Token mechanism sound; the credential behind it is not</td></tr>
+    <tr><td>E</td><td>Authorization</td><td><span class="rag"><span class="dot d-g"></span>GREEN</span></td><td><code>requireSelf</code> by document id everywhere; probes returned 401/403 correctly; drafts 404 to strangers</td></tr>
+    <tr><td>F</td><td>Reliability</td><td><span class="rag"><span class="dot d-o"></span>ORANGE</span></td><td>Payment path robust. <b>No health route, no global error handler, no 404 handler</b>; cold start 20–50s</td></tr>
+    <tr><td>G</td><td>Concurrency</td><td><span class="rag"><span class="dot d-g"></span>GREEN</span></td><td>Conditional <code>$inc</code> on balances and pools; partial unique index; 100-concurrent-send test exists</td></tr>
+    <tr><td>H</td><td>Observability</td><td><span class="rag"><span class="dot d-r"></span>RED</span></td><td>15 audit call sites and <b>none on login, registration, PIN set or PIN reset</b>. No metrics, tracing or alerting</td></tr>
+    <tr><td>I</td><td>Persistence</td><td><span class="rag"><span class="dot d-y"></span>YELLOW</span></td><td>Atlas with transactions; sound indexes. No backup policy in the repo, no migration framework</td></tr>
+    <tr><td>J</td><td>File storage</td><td><span class="rag"><span class="dot d-o"></span>ORANGE</span></td><td>Correct and safe, but 2 MB blobs inside Mongo documents. <b>Bytes never validated</b></td></tr>
+    <tr><td>K</td><td>Frontend reliability</td><td><span class="rag"><span class="dot d-o"></span>ORANGE</span></td><td>Error boundaries, three-state balance, 401-vs-timeout. Against that: <b>932 KB single chunk</b>, 4,000- and 4,162-line components</td></tr>
+    <tr><td>L</td><td>Backend architecture</td><td><span class="rag"><span class="dot d-o"></span>ORANGE</span></td><td><code>lib/</code> extractions genuinely clean. <b><code>server.js</code> is 8,274 lines with no layering</b></td></tr>
+    <tr><td>M</td><td>Test coverage</td><td><span class="rag"><span class="dot d-y"></span>YELLOW</span></td><td>910 run, 906 pass. <b>Server suite unverified; 4 stale failures; ~180 source-shape assertions</b></td></tr>
+    <tr><td>N</td><td>Deployment</td><td><span class="rag"><span class="dot d-g"></span>GREEN</span></td><td>Both targets confirmed current by independent evidence</td></tr>
+    <tr><td>O</td><td>Disaster / recovery</td><td><span class="rag"><span class="dot d-r"></span>RED</span></td><td><b>No documented backup, restore procedure, rollback runbook or migration framework.</b> Five ad-hoc scripts</td></tr>
+  </table></div>
+  <div class="stats">
+    <div class="stat good"><div class="v">3</div><div class="k">🟢 Green</div></div>
+    <div class="stat"><div class="v">2</div><div class="k">🟡 Yellow</div></div>
+    <div class="stat warn"><div class="v">7</div><div class="k">🟠 Orange</div></div>
+    <div class="stat crit"><div class="v">3</div><div class="k">🔴 Red</div></div>
+  </div>
+</section>
+
+<!-- ===================== 16 ===================== -->
+<section id="s16">
+  <h2><span class="num">16</span>Bugs and Complex Errors</h2>
+
+  <div class="call crit">
+    <span class="t">New finding — confirmed against live production</span>
+    <p><code>lib/countryCurrency.js:96</code> declares <code>localCurrencyFor</code> as <code>async</code>. <code>server.js:6588</code> and <code>:6680</code> call it <strong>without <code>await</code></strong>. The result is a Promise, which (1) serializes to <code>{}</code>, (2) never equals <code>reserveCurrency</code> so the code always takes the FX branch, and (3) is passed to <code>getRate</code> as a currency code, which fails and is caught — leaving <code>localHeld</code> as <code>null</code>.</p>
+    <p>Live proof: <code>{"countryIso":"IN","holders":6,"held":87876.3,"localCurrency":{},"localHeld":null}</code> — every country row, always. <strong>The feature has never worked, and it fails into its own error branch so nothing surfaces.</strong></p>
+  </div>
+
+  <h4>Data errors</h4>
+  <ul>
+    <li><b>Cross-currency sums, three places.</b> <code>server.js:4336</code> adds seed interest across currencies then credits the raw total (prior finding <b>GLB-05</b>, still open — this creates or destroys value). <code>server.js:6157</code> sums <code>totalSent</code>/<code>totalReceived</code> across currencies (latent — <code>App.jsx:1872</code> reads only <code>transactions</code>). <code>server.js:4393</code> sums PayLater assets across currencies, with charges in the receiver's currency and credits in the sender's.</li>
+    <li><b>Share-leg receipts pair the wrong currency.</b> <code>merchantShareFlow.js:250-256</code> passes <code>amount: cashback</code> (payer's currency) with <code>currency</code> (destination currency). The share <code>Transaction</code> twelve lines above correctly uses <code>cashbackCurrency || currency</code>.</li>
+    <li><b>Two country-resolution rules in one server.</b> <code>/api/coin/holders</code> groups on the raw <code>$countryIso</code> field — the exact defect <code>coverageAggregation.js</code> exists to fix.</li>
+    <li><b>Coverage exactness understated.</b> The <code>exact</code> flag counts only <code>sourceAmount</code>, while the pipeline also accepts the equally exact <code>debitAmount</code>. 85/188 is a floor.</li>
+  </ul>
+
+  <h4>Logic errors</h4>
+  <ul>
+    <li><b>Duplicate object key</b> — <code>server.js:395</code> and <code>:398</code> both set <code>replacedBy</code>. Same value, harmless, and a marker that the literal was edited without being read whole.</li>
+    <li><b><code>Receipt</code> is write-only.</b> No route queries it.</li>
+    <li><b>PayLater has no repayment path</b> — the route says so: "Nothing repays a charge yet."</li>
+  </ul>
+
+  <h4>Concurrency</h4>
+  <p>The money path is sound. Two gaps outside it: <code>mintShareLegAndReceipts</code> runs <em>after</em> the atomic transaction, is not idempotent and has no uniqueness constraint, so a crash between commit and that step leaves a successful payment with no receipt trail, permanently. And <code>/api/assets/claim-interest</code> marks seeds claimed one at a time then credits the balance <em>outside any transaction</em> — a crash between the two marks interest paid without paying it.</p>
+
+  <h4>Frontend</h4>
+  <ul>
+    <li>932 KB single JavaScript chunk, no code splitting; Vite warns on every build.</li>
+    <li><code>Dashboard.jsx</code> takes ~40 props; 122 <code>useState</code> in one component.</li>
+    <li><code>usedQrCodes</code> is per-session in-memory state doing a security job.</li>
+  </ul>
+
+  <h4>Backend &amp; database</h4>
+  <ul>
+    <li>No global error handler, no 404 handler, no health route — malformed JSON returns HTML, breaking the JSON contract every other response keeps.</li>
+    <li><code>Transaction.metadata</code> is unvalidated <code>Mixed</code> and carries financial fields.</li>
+    <li>Rate limiter process-local and volatile; on a free tier that sleeps, a cold start is a fresh budget. <code>/api/stats</code> carries no rate limit at all.</li>
+    <li>No uniqueness constraint on <code>LedgerEntry</code> or <code>Receipt</code>. No migration framework.</li>
+  </ul>
+
+  <h4>Files and uploads</h4>
+  <p>Bytes never validated against the claimed content type — mitigated by the allow-list, <code>Content-Disposition: attachment</code>, <code>nosniff</code> and <code>default-src 'none'</code>, but the file stored is not necessarily the type recorded. 2 MB blobs sit inside Mongo documents.</p>
+</section>
+
+<!-- ===================== 17 ===================== -->
+<section id="s17">
+  <h2><span class="num">17</span>Architectural Strengths</h2>
+  <p>Each claim is supported by code or a production reading.</p>
+  <div class="tw"><table>
+    <tr><th>#</th><th>Strength</th><th>Evidence</th></tr>
+    <tr><td>1</td><td><b>Server-authoritative financial values</b></td><td>Currencies from each account's own country, cashback rate from the payee's record, reference id from the server. A client's claimed currencies are compared and a mismatch returns 409</td></tr>
+    <tr><td>2</td><td><b>Genuine transaction atomicity</b></td><td>Debit, transaction row, settlement, credit, cashback and ledger lines commit together — with a hand-written compensating path tracking exactly which steps applied</td></tr>
+    <tr><td>3</td><td><b>Idempotency enforced by the database</b></td><td>A partial unique index, not a read-then-write. The losing racer's duplicate-key error is caught and answered with the winner's row</td></tr>
+    <tr><td>4</td><td><b>Concurrency handled where it matters</b></td><td>Balances and pools move by conditional <code>$inc</code>. Two payments racing out of one account cannot both pass</td></tr>
+    <tr><td>5</td><td><b>The account-country resolver</b></td><td>One rule shared by the send route, the resolve route, the settlement engine and the coverage aggregation — the country the API reports and the one it settles in cannot diverge</td></tr>
+    <tr><td>6</td><td><b>Fail-closed FX</b></td><td><code>getRate</code> throws rather than returning 1.0; the send route turns that into a 502 rather than moving the wrong amount</td></tr>
+    <tr><td>7</td><td><b>Per-currency precision</b></td><td><code>Currency.decimals</code> read for real. A JPY balance never carries a fraction</td></tr>
+    <tr><td>8</td><td><b>Coverage refuses to fabricate</b></td><td>Our Spending returns <code>null</code> plus a written reason plus labelled diagnostics</td></tr>
+    <tr><td>9</td><td><b>Coherent project visibility</b></td><td>Drafts excluded in the query, 404 rather than 403 to strangers, ownership by document id</td></tr>
+    <tr><td>10</td><td><b>A disciplined API client boundary</b></td><td><code>httpClient.js</code> distinguishes 401 from <code>status===0</code> — the reason a cold start does not sign people out</td></tr>
+    <tr><td>11</td><td><b>The GEU growth loop is disabled rather than shipped</b></td><td>An unresolved authorization question turned into a 503 behind an environment flag instead of a live endpoint</td></tr>
+    <tr><td>12</td><td><b>Security headers, verified live on both targets</b></td><td>The frontend CSP has neither <code>unsafe-inline</code> nor <code>unsafe-eval</code></td></tr>
+    <tr><td>13</td><td><b>Comments that record the failure, not the feature</b></td><td>Large parts of this codebase explain the bug a line prevents. It is why this audit could reconstruct intent so precisely, and it is a real asset</td></tr>
+  </table></div>
+</section>
+
+<!-- ===================== 18 ===================== -->
+<section id="s18">
+  <h2><span class="num">18</span>Architectural Weaknesses</h2>
+  <div class="tw"><table>
+    <tr><th>#</th><th>Weakness</th><th>Impact</th><th>Evidence</th></tr>
+    <tr><td>1</td><td><b>Prototype authentication in a production deployment</b></td><td><span class="s s-crit">CRITICAL</span></td><td>Fixed OTP, no SMS gateway. The whole recovery path is open</td></tr>
+    <tr><td>2</td><td><b>Monolithic server</b></td><td><span class="s s-open">HIGH</span></td><td><code>server.js</code> 8,274 lines, 62 routes, no layering. The send handler alone is ~1,100 lines</td></tr>
+    <tr><td>3</td><td><b>Duplicated financial logic across the client/server boundary</b></td><td><span class="s s-open">HIGH</span></td><td>A 7,991-line browser ledger mirrors the server's, reconciled by hand</td></tr>
+    <tr><td>4</td><td><b>Observability near zero</b></td><td><span class="s s-open">HIGH</span></td><td>Login and PIN reset write no audit record. No metrics, tracing or alerting</td></tr>
+    <tr><td>5</td><td><b>Insufficient database constraints</b></td><td><span class="s s-open">HIGH</span></td><td>No uniqueness on LedgerEntry or Receipt; financial metadata unvalidated Mixed</td></tr>
+    <tr><td>6</td><td><b>Oversized frontend components</b></td><td><span class="s s-partial">MED-HIGH</span></td><td><code>Dashboard.jsx</code> 4,162 / 122 <code>useState</code>; <code>App.jsx</code> 4,000 / 84</td></tr>
+    <tr><td>7</td><td><b>Best-effort tail with no reconciliation</b></td><td><span class="s s-partial">MED-HIGH</span></td><td>Seeds and receipts can be silently lost after a successful payment</td></tr>
+    <tr><td>8</td><td><b>No migration framework</b></td><td><span class="s s-partial">MED-HIGH</span></td><td>Five ad-hoc scripts; schema changes rely on read-time derivation forever</td></tr>
+    <tr><td>9</td><td><b>Incomplete event modelling</b></td><td><span class="s s-partial">MEDIUM</span></td><td><code>TransactionEventOutbox</code> exists only in the browser layer; the server has no outbox</td></tr>
+    <tr><td>10</td><td><b>Hardcoded business rules</b></td><td><span class="s s-partial">MEDIUM</span></td><td>Default balance 10,000; cap 5,000,000; 15-second window; 1,000-word summary; 7 buckets — all literals</td></tr>
+    <tr><td>11</td><td><b>Weak domain boundaries</b></td><td><span class="s s-partial">MEDIUM</span></td><td>Coin, GEU, PayLater and assets interleaved in one file</td></tr>
+    <tr><td>12</td><td><b>Concatenation build</b></td><td><span class="s s-partial">MEDIUM</span></td><td>Global scope, numbered aliases, order-sensitive. Already caused one silent total failure (<code>new Set(undefined)</code> in the QR decoder)</td></tr>
+    <tr><td>13</td><td><b>No code splitting</b></td><td><span class="s s-partial">MEDIUM</span></td><td>932 KB in one chunk for a mobile-first payments app</td></tr>
+    <tr><td>14</td><td><b>Test suite drift</b></td><td><span class="s s-partial">MEDIUM</span></td><td>4 stale failures; ~180 source-shape assertions; server suite needs a live cluster</td></tr>
+    <tr><td>15</td><td><b>Branch sprawl</b></td><td><span class="s s-nv">LOW</span></td><td>17 merged-but-kept local branches</td></tr>
+  </table></div>
+</section>
+
+<!-- ===================== 19 ===================== -->
+<section id="s19">
+  <h2><span class="num">19</span>Critical Open Issues</h2>
+
+  <h3><span class="p0">P0</span> &nbsp;Must fix before real money</h3>
+
+  <div class="issue crit">
+    <div class="head"><span class="id">GA-01</span><span class="ti">The one-time password is a constant</span><span class="p0">P0</span><span class="s s-crit">AUTHENTICATION</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd><code>server.js:940</code> — <code>const prototypeOtp = process.env.PROTOTYPE_OTP || '123456'</code>. No SMS provider in <code>server/package.json</code>. The comment at <code>:953</code> confirms: "There is still no SMS gateway here"</dd>
+      <dt>Root cause</dt><dd>Deliberate prototype decision, never replaced</dd>
+      <dt>Impact</dt><dd><b>Full account takeover</b> from <code>(symbolId, mobileNumber)</code>: <code>POST /api/otp/send</code> purpose <code>pin_reset</code> → <code>POST /api/otp/verify</code> with <code>123456</code> → <code>POST /api/pin/reset</code> → a valid 7-day bearer token. Every route the token reaches is then open, including <code>POST /api/transactions/send</code></dd>
+      <dt>Files</dt><dd><code>server/server.js:885-1010</code>, <code>:1533-1610</code></dd>
+      <dt>Recommended fix</dt><dd>Real SMS delivery with a per-request random code. Keep <code>PROTOTYPE_OTP</code> for local and test runs only, and refuse to honour it when <code>IS_PRODUCTION_DEPLOY</code> is true — the pattern <code>AUTH_TOKEN_SECRET</code> already uses</dd>
+      <dt>Dependencies</dt><dd>An SMS provider account and a delivery budget</dd>
+      <dt>Testing</dt><dd>Delivery; expiry; single-use; the production refusal path; rate limiting under the real flow</dd>
+    </dl></div>
+  </div>
+
+  <div class="issue crit">
+    <div class="head"><span class="id">GA-02</span><span class="ti">PIN reset does not revoke other sessions</span><span class="p0">P0</span><span class="s s-crit">SESSION MGMT</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd><code>credentialsInvalidatedAt</code> is written at exactly one place — <code>server.js:1453</code>, inside <code>POST /api/pin/change</code>. <code>POST /api/pin/reset</code> (<code>:1533-1610</code>) writes it nowhere</dd>
+      <dt>Root cause</dt><dd>Revocation added with PIN <em>change</em> and not carried to PIN <em>reset</em></dd>
+      <dt>Impact</dt><dd>Resetting a PIN — the action taken precisely when a credential may be compromised — leaves every other session valid for up to seven days. With GA-01, an attacker takes the account over and the real owner's devices stay signed in and silent</dd>
+      <dt>Files</dt><dd><code>server/server.js:1533-1610</code></dd>
+      <dt>Recommended fix</dt><dd>Stamp <code>credentialsInvalidatedAt</code> before minting the reply token, exactly as <code>pin/change</code> does</dd>
+      <dt>Dependencies</dt><dd>None. Roughly a two-line change</dd>
+      <dt>Testing</dt><dd>Old token rejected after reset; the reset caller's own new token still works</dd>
+    </dl></div>
+  </div>
+
+  <h3><span class="p1">P1</span> &nbsp;Major reliability, security or data issue</h3>
+
+  <div class="issue high">
+    <div class="head"><span class="id">GA-03</span><span class="ti">Missing <code>await</code> breaks coin local-currency conversion</span><span class="p1">P1</span><span class="s s-broken">LIVE NOW</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd><code>lib/countryCurrency.js:96</code> is <code>async</code>; called without <code>await</code> at <code>server.js:6588</code> and <code>:6680</code>. Live: <code>"localCurrency":{}</code>, <code>"localHeld":null</code> on every country row</dd>
+      <dt>Root cause</dt><dd>The helper became <code>async</code> when it started reading the seeded Country table; two call sites were not updated</dd>
+      <dt>Impact</dt><dd>The entire local-currency conversion feature is dead on both holder routes and has never worked. It fails into its own catch, so nothing surfaces</dd>
+      <dt>Recommended fix</dt><dd>Add <code>await</code> at both sites — <code>:6588</code> is already inside an async map callback, <code>:6680</code> inside an async handler</dd>
+      <dt>Testing</dt><dd>Assert <code>localCurrency</code> is a string and <code>localHeld</code> a number for a seeded country, both routes</dd>
+    </dl></div>
+  </div>
+
+  <div class="issue high">
+    <div class="head"><span class="id">GA-04</span><span class="ti">Asset-seed interest summed across currencies</span><span class="p1">P1</span><span class="s s-pre">GLB-05 · PRE-EXISTING</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd><code>server.js:4336</code> — <code>totalClaimed += interestAvailable</code> over seeds whose <code>currency</code> differs; credited at <code>:4356</code> in the account's own currency. Acknowledged at <code>:4352</code> and in <code>coverageAggregation.js:367</code></dd>
+      <dt>Impact</dt><dd><b>Creates or destroys value.</b> A USD seed's interest credited as INR at 1:1 understates by ~85×; the reverse overstates by the same factor</dd>
+      <dt>Recommended fix</dt><dd>Group by <code>seed.currency</code>, convert each group through <code>getRate</code> into the account's own currency, then sum</dd>
+      <dt>Testing</dt><dd>Mixed-currency seeds; single-currency unchanged; refusal when a rate is unavailable</dd>
+    </dl></div>
+  </div>
+
+  <div class="issue high">
+    <div class="head"><span class="id">GA-05</span><span class="ti">Interest claim is not atomic</span><span class="p1">P1</span><span class="s s-open">DURABILITY</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd><code>server.js:4317-4360</code> — per-seed conditional <code>findOneAndUpdate</code> in a loop, then one <code>User.$inc</code>, with no session</dd>
+      <dt>Impact</dt><dd>A crash between the seed writes and the balance credit marks interest paid without paying it. Unrecoverable without manual repair</dd>
+      <dt>Recommended fix</dt><dd>Wrap in <code>withMongoTransaction</code>, passing the session to every write</dd>
+      <dt>Dependencies</dt><dd>GA-04 should land first — same function</dd>
+    </dl></div>
+  </div>
+
+  <div class="issue high">
+    <div class="head"><span class="id">GA-06</span><span class="ti">Share leg and receipts are outside the transaction and not idempotent</span><span class="p1">P1</span><span class="s s-open">RELIABILITY</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd><code>server.js:5870-5895</code> calls <code>mintShareLegAndReceipts</code> after the commit. No uniqueness on <code>metadata.paymentTransactionId</code>; <code>Receipt(transactionId, role)</code> is not unique</dd>
+      <dt>Impact</dt><dd>A crash after commit leaves a successful payment with no share leg and no receipts, permanently and silently. A re-run would create duplicates with nothing to stop it</dd>
+      <dt>Recommended fix</dt><dd>Partial unique index on <code>(type:'share', metadata.paymentTransactionId)</code> and unique on <code>Receipt(transactionId, leg, role)</code>. Then move the step into the transaction, or add a reconciliation job that finds payments with no receipt trail</dd>
+    </dl></div>
+  </div>
+
+  <div class="issue high">
+    <div class="head"><span class="id">GA-07</span><span class="ti">Share-leg receipts pair the wrong currency with the amount</span><span class="p1">P1</span><span class="s s-nv">LATENT</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd><code>merchantShareFlow.js:250-256</code> — <code>amount: cashback</code> (payer's currency) with <code>currency</code> (destination). The share Transaction at line 216 correctly uses <code>cashbackCurrency || currency</code></dd>
+      <dt>Impact</dt><dd>Every cross-border share receipt records a figure under the wrong currency symbol. Latent only because nothing reads the collection — it becomes a live money-display bug the moment anything does</dd>
+      <dt>Recommended fix</dt><dd>Give <code>issueReceiptPair</code> per-role amount and currency</dd>
+    </dl></div>
+  </div>
+
+  <div class="issue high">
+    <div class="head"><span class="id">GA-08</span><span class="ti">No uniqueness constraint on ledger entries or receipts</span><span class="p1">P1</span><span class="s s-open">DATA INTEGRITY</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd><code>models/LedgerEntry.js:68-69</code> and <code>models/Receipt.js:82-83</code> — compound indexes, neither <code>unique</code></dd>
+      <dt>Impact</dt><dd>Duplicate ledger rows for one leg of one transaction are structurally possible. The ledger is the audit record; it must be the one thing that cannot double</dd>
+      <dt>Recommended fix</dt><dd>Unique on <code>LedgerEntry(transactionId, userId, entryType)</code> and <code>Receipt(transactionId, leg, role)</code>. Scan for existing duplicates first — the scan is itself a finding</dd>
+    </dl></div>
+  </div>
+
+  <div class="issue high">
+    <div class="head"><span class="id">GA-09</span><span class="ti">FX staleness is unbounded</span><span class="p1">P1</span><span class="s s-open">FINANCIAL</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd><code>lib/fxRates.js:106-128</code> returns <code>stale:true</code> with an arbitrarily old cached rate. <code>server.js:5175</code> destructures only <code>{rate, source}</code></dd>
+      <dt>Impact</dt><dd>If the provider stays down, payments keep settling at a rate that gets older without limit. Auditable via <code>fxRateSource</code>, but not gated</dd>
+      <dt>Recommended fix</dt><dd>Return and read <code>stale</code>/<code>fetchedAt</code>; refuse a payment whose rate is older than a stated ceiling, as an unresolvable rate is already refused</dd>
+    </dl></div>
+  </div>
+
+  <div class="issue high">
+    <div class="head"><span class="id">GA-10</span><span class="ti">Login and PIN reset write no audit record</span><span class="p1">P1</span><span class="s s-broken">OBSERVABILITY</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd>15 <code>recordAudit</code> call sites. Logged: <code>transaction.send.*</code>, <code>pin.change*</code>, <code>security.settings.update</code>, <code>project.*</code>, <code>geu.*</code>. <b>Not logged:</b> login, registration, PIN set, PIN reset, passkey, coin, profile change, symbolId change, face enroll/verify</dd>
+      <dt>Impact</dt><dd>The two account-takeover paths (GA-01, GA-02) leave no trace. A compromise cannot be detected or reconstructed</dd>
+      <dt>Recommended fix</dt><dd><code>recordAudit</code> on every credential and identity route, success and failure. The recorder is already fire-and-forget and cannot fail its caller</dd>
+    </dl></div>
+  </div>
+
+  <div class="issue high">
+    <div class="head"><span class="id">GA-11</span><span class="ti">QR payloads are unsigned, unbound and replayable</span><span class="p1">P1</span><span class="s s-open">QR / PAYMENTS</span></div>
+    <div class="body"><dl>
+      <dt>Evidence</dt><dd><code>backend/utils/gloobalQR.js</code> — 12+7+1 plaintext symbols; the checksum algorithm ships in the bundle. <code>App.jsx:579</code> — <code>usedQrCodes</code> is an in-memory Set, checked at <code>:688</code></dd>
+      <dt>Impact</dt><dd>A modified QR redirects funds to any valid Gloobal ID. A request QR can be replayed after the 15-second server window. Replay protection is lost on page reload</dd>
+      <dt>Recommended fix</dt><dd>Server-minted signed payment requests: an HMAC over <code>(payeeId, amount, currency, nonce, exp)</code> issued by a new route and verified server-side at payment time. Keep the identity QR unchanged — it addresses, it does not authorise</dd>
+    </dl></div>
+  </div>
+
+  <h3><span class="p2">P2</span> &nbsp;Important functional issue</h3>
+  <div class="tw"><table>
+    <tr><th>ID</th><th>Title</th><th>Evidence</th><th>Impact</th></tr>
+    <tr><td><b>GA-12</b></td><td>Coin holders use the raw country field</td><td><code>server.js:6563</code> groups on <code>$countryIso</code>, bypassing <code>accountCountryIso</code></td><td>Legacy accounts attributed to India; two country rules in one server</td></tr>
+    <tr><td><b>GA-13</b></td><td><code>totalSent</code>/<code>totalReceived</code> mix currencies</td><td><code>server.js:6157-6193</code></td><td>Latent — <code>App.jsx:1872</code> reads only <code>transactions</code></td></tr>
+    <tr><td><b>GA-14</b></td><td>History has no pagination</td><td><code>.limit(50)</code> and <code>.limit(100)</code>, no cursor</td><td>Older payments unreachable past the cap</td></tr>
+    <tr><td><b>GA-15</b></td><td>Coin fiat legs mislabelled (GLB-04)</td><td>Hardcoded <code>reserveCurrency</code></td><td>A non-INR account's coin ledger lines carry the wrong currency</td></tr>
+    <tr><td><b>GA-16</b></td><td>No global error/404 handler, no health route</td><td><code>GET /</code> → HTML 404; malformed JSON → HTML. Confirmed live</td><td>Response contract broken on the error path; nothing to monitor uptime against</td></tr>
+    <tr><td><b>GA-17</b></td><td><code>/api/otp/send</code> is an enumeration oracle</td><td>409 / 404 / 400 distinguish three states</td><td>Confirms whether a number is registered, and under which country code</td></tr>
+    <tr><td><b>GA-18</b></td><td>Rate limiter volatile and per-instance</td><td><code>server.js:760-790</code>, self-documented</td><td>A free-tier cold start resets every counter</td></tr>
+    <tr><td><b>GA-19</b></td><td><code>Receipt</code> is write-only</td><td>No route queries it</td><td>Storage grows; the receipt trail is unreachable</td></tr>
+    <tr><td><b>GA-20</b></td><td>PayLater: no repayment, mixed currencies</td><td><code>server.js:4434</code>, <code>:4393</code></td><td>Dues only ever grow; the limit is a cross-currency sum</td></tr>
+    <tr><td><b>GA-21</b></td><td>Upload bytes never validated</td><td><code>server.js:4776-4800</code></td><td>Stored file may not be the recorded type. Mitigated by attachment + nosniff + CSP</td></tr>
+    <tr><td><b>GA-22</b></td><td>Financial metadata is unvalidated <code>Mixed</code></td><td><code>models/Transaction.js</code></td><td>No casting or type checking on <code>sourceAmount</code>, <code>fxRate</code>, <code>cashback</code></td></tr>
+  </table></div>
+
+  <h3><span class="p3">P3</span> &nbsp;Quality and maintenance</h3>
+  <div class="tw"><table>
+    <tr><th>ID</th><th>Title</th><th>Evidence</th></tr>
+    <tr><td><b>GA-23</b></td><td>Four stale test failures</td><td>2 contradict <code>4fbc7dd</code>, 2 predate the GC→GEU rename</td></tr>
+    <tr><td><b>GA-24</b></td><td>~180 source-shape assertions</td><td>Regex over source text rather than behaviour</td></tr>
+    <tr><td><b>GA-25</b></td><td>Duplicate <code>replacedBy</code> key</td><td><code>server.js:395</code> and <code>:398</code></td></tr>
+    <tr><td><b>GA-26</b></td><td>932 KB single JS chunk</td><td>Vite warns each build</td></tr>
+    <tr><td><b>GA-27</b></td><td>Monolithic files</td><td><code>server.js</code> 8,274 · <code>Dashboard.jsx</code> 4,162 · <code>App.jsx</code> 4,000</td></tr>
+    <tr><td><b>GA-28</b></td><td>No migration framework</td><td>Five ad-hoc scripts</td></tr>
+    <tr><td><b>GA-29</b></td><td>Documented known-failures list is stale</td><td><code>CLAUDE.md</code> names only <code>Notification</code>; the scan also reports <code>BarcodeDetector</code> (correctly guarded)</td></tr>
+    <tr><td><b>GA-30</b></td><td>Bearer token in <code>localStorage</code></td><td>XSS-reachable; mitigated by the frontend CSP</td></tr>
+    <tr><td><b>GA-31</b></td><td>17 stale local branches</td><td><code>git branch -v</code></td></tr>
+    <tr><td><b>GA-32</b></td><td>Duplicate country data files</td><td><code>countries.js</code> and <code>countries-1.js</code>, both 321 lines</td></tr>
+  </table></div>
+</section>
+
+<!-- ===================== 20 ===================== -->
+<section id="s20">
+  <h2><span class="num">20</span>Recommended Roadmap</h2>
+  <p>Ordered by the stated priority: financial correctness → data integrity → security → auth → reliability → core function → QR → projects → polish → debt.</p>
+
+  <h3>NOW — before any real money</h3>
+  <div class="tw"><table>
+    <tr><th>#</th><th>Task</th><th>Issue</th><th>Why here</th></tr>
+    <tr><td>1</td><td>Fix the two missing <code>await</code>s</td><td>GA-03</td><td>A confirmed live defect, a two-character change, zero risk. First because it costs nothing</td></tr>
+    <tr><td>2</td><td>Revoke sessions on PIN reset</td><td>GA-02</td><td>Two lines. Closes half of the takeover path immediately, before the SMS work starts</td></tr>
+    <tr><td>3</td><td>Group asset-seed interest by currency</td><td>GA-04</td><td>Financial correctness is priority one, and this is the only place still creating or destroying value</td></tr>
+    <tr><td>4</td><td>Wrap the interest claim in a transaction</td><td>GA-05</td><td>Same function — do both in one change</td></tr>
+    <tr><td>5</td><td>Add uniqueness to LedgerEntry and Receipt</td><td>GA-08</td><td>Data integrity. Scan for existing duplicates first; the scan is itself a finding</td></tr>
+    <tr><td>6</td><td><b>Real SMS OTP delivery</b></td><td>GA-01</td><td><b>The production blocker.</b> Later than 1–5 only because it needs a vendor and a budget, and those five need neither</td></tr>
+    <tr><td>7</td><td>Audit-log every credential route</td><td>GA-10</td><td>Must land with 6. An authentication change you cannot observe is not a change you can trust</td></tr>
+    <tr><td>8</td><td>Bound FX staleness</td><td>GA-09</td><td>Financial correctness, needs a policy decision, so it follows the mechanical fixes</td></tr>
+  </table></div>
+
+  <h3>NEXT — before wider use</h3>
+  <div class="tw"><table>
+    <tr><th>#</th><th>Task</th><th>Issue</th><th>Why here</th></tr>
+    <tr><td>9</td><td>Idempotency and reconciliation for the share/receipt tail</td><td>GA-06</td><td>Reliability. Needs the indexes from step 5</td></tr>
+    <tr><td>10</td><td>Fix share-receipt currency</td><td>GA-07</td><td>Correctness, but latent — nothing reads Receipt yet</td></tr>
+    <tr><td>11</td><td>Health route, 404 handler, global error handler</td><td>GA-16</td><td>Reliability, and a prerequisite for any uptime monitoring</td></tr>
+    <tr><td>12</td><td>Move coin holders onto <code>accountCountryIso</code></td><td>GA-12</td><td>Core function. One country rule, not two</td></tr>
+    <tr><td>13</td><td>Paginate the history routes</td><td>GA-14</td><td>Core function. The 50-row cap is already reachable</td></tr>
+    <tr><td>14</td><td>Fix coin ledger currency labels</td><td>GA-15</td><td>Closes GLB-04</td></tr>
+    <tr><td>15</td><td>Magic-byte validation on uploads</td><td>GA-21</td><td>Projects hardening</td></tr>
+    <tr><td>16</td><td>Retire the four stale tests</td><td>GA-23</td><td>A red CI trains people to ignore CI. Cheap, and it unblocks everything after</td></tr>
+    <tr><td>17</td><td><b>Signed, server-verified payment-request QR</b></td><td>GA-11</td><td>Deliberately after the above: a new subsystem, where everything before it is a repair to something that already exists</td></tr>
+  </table></div>
+
+  <h3>LATER — hardening and debt</h3>
+  <div class="tw"><table>
+    <tr><th>#</th><th>Task</th><th>Issue</th></tr>
+    <tr><td>18</td><td>Shared-store rate limiting (Redis or Mongo-backed)</td><td>GA-18</td></tr>
+    <tr><td>19</td><td>Split <code>server.js</code> into routers, controllers and services</td><td>GA-27</td></tr>
+    <tr><td>20</td><td>Split <code>Dashboard.jsx</code> and <code>App.jsx</code>; introduce a state layer</td><td>GA-27</td></tr>
+    <tr><td>21</td><td>Code-split the bundle</td><td>GA-26</td></tr>
+    <tr><td>22</td><td>Migration framework and a documented backup/restore runbook</td><td>GA-28 · category O</td></tr>
+    <tr><td>23</td><td>Metrics, tracing and alerting</td><td>category H</td></tr>
+    <tr><td>24</td><td>Move attachments to object storage</td><td>GA-19 · category J</td></tr>
+    <tr><td>25</td><td>Read <code>Receipt</code> — or delete it</td><td>GA-19</td></tr>
+    <tr><td>26</td><td>PayLater repayment flow</td><td>GA-20</td></tr>
+    <tr><td>27</td><td>Replace source-shape assertions with behavioural ones</td><td>GA-24</td></tr>
+    <tr><td>28</td><td>Housekeeping: duplicate key, stale branches, duplicate country files, CLAUDE.md</td><td>GA-25, 29, 31, 32</td></tr>
+  </table></div>
+</section>
+
+<!-- ===================== 21 ===================== -->
+<section id="s21">
+  <h2><span class="num">21</span>Exact Files and Modules of Interest</h2>
+
+  <h3>Highest risk</h3>
+  <div class="tw"><table>
+    <tr><th>File</th><th class="num-col">Lines</th><th>Why</th></tr>
+    <tr><td><code>server/server.js</code></td><td class="num-col">8,274</td><td>The monolith. Contains GA-01, GA-02, GA-03, GA-04, GA-05, GA-12…GA-17</td></tr>
+    <tr><td><code>server/lib/merchantShareFlow.js</code></td><td class="num-col">267</td><td>GA-06, GA-07</td></tr>
+    <tr><td><code>server/lib/fxRates.js</code></td><td class="num-col">~135</td><td>GA-09</td></tr>
+    <tr><td><code>backend/utils/gloobalQR.js</code></td><td class="num-col">~190</td><td>GA-11</td></tr>
+    <tr><td><code>frontend/App.jsx</code></td><td class="num-col">4,000</td><td>GA-11 (client half), GA-27</td></tr>
+    <tr><td><code>server/models/LedgerEntry.js</code></td><td class="num-col">~70</td><td>GA-08</td></tr>
+    <tr><td><code>server/models/Receipt.js</code></td><td class="num-col">~85</td><td>GA-08, GA-19</td></tr>
+    <tr><td><code>server/models/Transaction.js</code></td><td class="num-col">~140</td><td>GA-22</td></tr>
+  </table></div>
+
+  <h3>Highest quality — read these to understand the system</h3>
+  <div class="tw"><table>
+    <tr><th>File</th><th class="num-col">Lines</th><th>Why</th></tr>
+    <tr><td><code>server/lib/coverageAggregation.js</code></td><td class="num-col">551</td><td>The best module here. Refuses to fabricate Our Spending and says why</td></tr>
+    <tr><td><code>server/lib/settlementEngine.js</code></td><td class="num-col">526</td><td>Conditional <code>$inc</code>, ordered writes, self-describing revert</td></tr>
+    <tr><td><code>server/lib/accountCountry.js</code></td><td class="num-col">—</td><td>One country rule, shared by every consumer that matters</td></tr>
+    <tr><td><code>server/lib/countryCurrency.js</code></td><td class="num-col">116</td><td>Seeded table with a bundled fallback and no invented currency</td></tr>
+    <tr><td><code>server/lib/auditTrail.js</code></td><td class="num-col">—</td><td>Fire-and-forget that cannot fail its caller</td></tr>
+    <tr><td><code>backend/services/api/httpClient.js</code></td><td class="num-col">—</td><td>401 vs <code>status===0</code>. Why a cold start does not sign people out</td></tr>
+    <tr><td><code>server/server.js:5540-5660</code></td><td class="num-col">120</td><td><code>performTransfer</code>. The core of the product</td></tr>
+  </table></div>
+
+  <h3>Key line references</h3>
+  <div class="tw"><table>
+    <tr><th>Location</th><th>Subject</th></tr>
+    <tr><td><code>server/server.js:940</code></td><td>GA-01 — the constant OTP</td></tr>
+    <tr><td><code>server/server.js:1453</code></td><td>The only <code>credentialsInvalidatedAt</code> write</td></tr>
+    <tr><td><code>server/server.js:1533</code></td><td>GA-02 — PIN reset, no revocation</td></tr>
+    <tr><td><code>server/server.js:4336</code></td><td>GA-04 — cross-currency interest sum</td></tr>
+    <tr><td><code>server/server.js:5175</code></td><td>GA-09 — <code>stale</code> discarded</td></tr>
+    <tr><td><code>server/server.js:6588</code>, <code>:6680</code></td><td>GA-03 — the missing <code>await</code>s</td></tr>
+    <tr><td><code>server/server.js:6563</code></td><td>GA-12 — raw country field</td></tr>
+    <tr><td><code>server/lib/merchantShareFlow.js:250</code></td><td>GA-07 — wrong currency on share receipts</td></tr>
+    <tr><td><code>frontend/App.jsx:579</code>, <code>:688</code></td><td>GA-11 — client-side replay guard</td></tr>
+    <tr><td><code>server/models/Transaction.js:130-138</code></td><td>The idempotency index — a strength</td></tr>
+  </table></div>
+</section>
+
+<!-- ===================== 22 ===================== -->
+<section id="s22">
+  <h2><span class="num">22</span>Evidence and Verification</h2>
+
+  <h3>What was executed</h3>
+  <div class="tw"><table>
+    <tr><th>Check</th><th>Result</th></tr>
+    <tr><td><code>git status</code> / <code>log</code> / <code>branch</code></td><td>Clean, in sync, 105 commits</td></tr>
+    <tr><td><code>node build_app.mjs</code></td><td>Built from 74 consolidated imports</td></tr>
+    <tr><td><code>npm run build</code> (Vite production)</td><td><code>dist/assets/index-B8AepYrZ.js</code></td></tr>
+    <tr><td><code>node --test "tests/*.test.mjs"</code></td><td><b>695 tests · 693 pass · 2 fail</b> (420s)</td></tr>
+    <tr><td><code>node --test financial-principles-tests/tests/*</code></td><td><b>215 tests · 213 pass · 2 fail</b> (70s)</td></tr>
+    <tr><td><code>tools/frontend/scan-undeclared.mjs</code></td><td>3,236 bindings; 2 undeclared, both guarded</td></tr>
+    <tr><td><code>tools/frontend/probe-screens.mjs</code></td><td>Coverage 388/388 · AddBank 194/194 · stored-selection 194/194 · 2 expected SSR failures</td></tr>
+    <tr><td><code>tools/frontend/probe-panels.mjs</code></td><td>3/3</td></tr>
+    <tr><td><code>tools/frontend/probe-stages.mjs</code></td><td>Pre-existing regex failure, as documented</td></tr>
+    <tr><td><code>tools/backend/check-backend.mjs</code></td><td>Backend reachable and answering correctly</td></tr>
+  </table></div>
+
+  <h3>Production reads — all <code>GET</code>, no writes</h3>
+  <div class="tw"><table>
+    <tr><th>Endpoint</th><th>Result</th></tr>
+    <tr><td><code>GET /api/coverage</code></td><td>200 in 23.2s (cold start). 120 users, 20 countries, 188 payments, 85 exact rows</td></tr>
+    <tr><td><code>GET /api/stats</code></td><td>200. <code>totalUsers: 120</code> — matches coverage exactly</td></tr>
+    <tr><td><code>GET /api/coin/holders</code></td><td>200. <code>issued === heldByAccounts === 121373.61</code>. <b><code>localCurrency:{}</code> on every row</b></td></tr>
+    <tr><td><code>GET /api/profile/TESTID</code></td><td>401</td></tr>
+    <tr><td><code>GET /api/transactions/history/TESTID</code></td><td>401</td></tr>
+    <tr><td><code>GET /api/projects</code></td><td>200 — published only</td></tr>
+    <tr><td><code>GET /api/geu/supply</code></td><td>503 — correctly disabled</td></tr>
+    <tr><td><code>GET /api/users/available?symbolId=x</code></td><td>400 — malformed ID refused</td></tr>
+    <tr><td><code>GET /</code></td><td>404, HTML</td></tr>
+    <tr><td><code>POST /api/login</code> with malformed JSON</td><td>400, HTML</td></tr>
+    <tr><td>Response headers, both targets</td><td>All expected headers present</td></tr>
+    <tr><td><code>GET https://gloobalv3.netlify.app/</code></td><td>Serves <code>/assets/index-B8AepYrZ.js</code> — <b>matches the local build of HEAD</b></td></tr>
+  </table></div>
+  <p><b>No account was created. No payment was made. No write of any kind was issued.</b></p>
+
+  <h3>What was not verified, and why</h3>
+  <div class="tw"><table>
+    <tr><th>Not verified</th><th>Reason</th></tr>
+    <tr><td><code>server/tests/</code> — 21 files</td><td>Each creates and drops a database on the production Atlas cluster. Excluded by the read-only terms</td></tr>
+    <tr><td>The exact/reconstructable/approximate split within the 103 rows</td><td>Needs a database read. No route exposes it</td></tr>
+    <tr><td>Whether any historical row has conflicting amounts or currencies</td><td>Same</td></tr>
+    <tr><td>Whether <code>backfill-country-iso.mjs</code> has been run in production</td><td>Cannot be determined from outside</td></tr>
+    <tr><td>GLB-12…GLB-25 test evidence</td><td>Lives in the unrun server suite. The <em>fixes</em> were verified by reading the code</td></tr>
+    <tr><td><code>/api/coin/holders/:countryIso</code> GA-03 behaviour</td><td>Requires an authenticated token. The code is identical to the confirmed site</td></tr>
+  </table></div>
+
+  <div class="call">
+    <span class="t">Standard applied</span>
+    <p>Every conclusion rests on source code, a schema, executed test output, a production read, or git history. Where evidence was unavailable, the finding is marked <span class="s s-nv">NOT VERIFIED</span> rather than inferred. No PII appears anywhere in this report.</p>
+  </div>
+</section>
+
+<!-- ===================== 23 ===================== -->
+<section id="s23">
+  <h2><span class="num">23</span>Final Risk Summary</h2>
+  <div class="tw"><table>
+    <tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Overall</th></tr>
+    <tr><td>Account takeover via the constant OTP</td><td><b>Certain</b> if targeted</td><td>Critical</td><td><span class="rag"><span class="dot d-r"></span>CRITICAL</span></td></tr>
+    <tr><td>Compromise undetectable (no audit on auth routes)</td><td><b>Certain</b></td><td>High</td><td><span class="rag"><span class="dot d-r"></span>CRITICAL</span></td></tr>
+    <tr><td>Session survives a PIN reset</td><td><b>Certain</b></td><td>High</td><td><span class="rag"><span class="dot d-r"></span>CRITICAL</span></td></tr>
+    <tr><td>Value created/destroyed by cross-currency interest sums</td><td>Medium</td><td>High</td><td><span class="rag"><span class="dot d-o"></span>HIGH</span></td></tr>
+    <tr><td>Receipt trail permanently lost after a crash</td><td>Low</td><td>High</td><td><span class="rag"><span class="dot d-o"></span>HIGH</span></td></tr>
+    <tr><td>Duplicate ledger rows</td><td>Low</td><td>High</td><td><span class="rag"><span class="dot d-o"></span>HIGH</span></td></tr>
+    <tr><td>Funds redirected by a tampered QR</td><td>Medium</td><td>High</td><td><span class="rag"><span class="dot d-o"></span>HIGH</span></td></tr>
+    <tr><td>Data loss with no restore runbook</td><td>Low</td><td>Critical</td><td><span class="rag"><span class="dot d-o"></span>HIGH</span></td></tr>
+    <tr><td>Payment settled at an indefinitely stale rate</td><td>Low</td><td>Medium</td><td><span class="rag"><span class="dot d-y"></span>MEDIUM</span></td></tr>
+    <tr><td>Coin local-currency display dead</td><td><b>Certain — live now</b></td><td>Low</td><td><span class="rag"><span class="dot d-y"></span>MEDIUM</span></td></tr>
+    <tr><td>History unreachable past the row cap</td><td>Medium</td><td>Medium</td><td><span class="rag"><span class="dot d-y"></span>MEDIUM</span></td></tr>
+    <tr><td>Cold-start latency read as failure</td><td>High</td><td>Low</td><td><span class="rag"><span class="dot d-g"></span>LOW</span></td></tr>
+    <tr><td>Concurrent balance corruption</td><td>Very low</td><td>Critical</td><td><span class="rag"><span class="dot d-g"></span>LOW — properly defended</span></td></tr>
+    <tr><td>Duplicate payment from a retry</td><td>Very low</td><td>High</td><td><span class="rag"><span class="dot d-g"></span>LOW — database-enforced</span></td></tr>
+  </table></div>
+
+  <div class="call crit">
+    <span class="t">The judgement</span>
+    <p><strong>The money is safe. The account is not.</strong></p>
+    <p>The transfer path is genuinely well engineered — atomic, idempotent, currency-correct, and defended at the database level rather than in application logic. Nothing found in this audit threatens the integrity of a payment once it starts.</p>
+    <p>Getting to the point of starting one is the problem. The second factor is a constant, the reset path leaves old sessions alive, and neither writes an audit record. Those three are one story, and they are the entire distance between this system and a production payments platform.</p>
+    <p><strong>Eight tasks in the NOW column close it. Five of them are small. One needs a vendor.</strong></p>
+  </div>
+</section>
+
+<footer>
+  Audit performed 9 September 2026 against commit <code>0d3989e</code>.<br>
+  Read-only throughout: no application source was modified, no temporary file remains, and nothing was committed, pushed or deployed.
+</footer>
+
+</div>
+</body>
+</html>

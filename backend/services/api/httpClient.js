@@ -139,13 +139,47 @@ async function gloobalApiRequest(method, path, body, options) {
     const parsed = contentType.includes("application/json") ? await res.json().catch(() => null) : null;
 
     if (!res.ok) {
-      // 401 means this token is gone — expired, or signed by a key the server
-      // no longer has (AUTH_TOKEN_SECRET is regenerated at boot when the
+      // 401 usually means this token is gone — expired, or signed by a key the
+      // server no longer has (AUTH_TOKEN_SECRET is regenerated at boot when the
       // environment does not set one, so a restart invalidates every token).
       // Dropping it here stops every subsequent call re-sending a credential
       // that is known not to work, and lets the app fall back to its sign-in
       // flow instead of looping on failures it cannot explain.
-      if (res.status === 401 && authToken && typeof gloobalAuthTokenClear === "function") {
+      //
+      // ── Why `credentialCheck` is here (11 September 2026) ────────────────
+      //
+      // "Usually" is doing real work in that first sentence, and treating it
+      // as "always" signed people out for typing a digit wrong.
+      //
+      // Three routes answer 401 for a reason that has nothing to do with the
+      // bearer token: POST /api/pin/verify, POST /api/pin/change and
+      // POST /api/login all return 401 when the PIN carried IN THE BODY is
+      // wrong. The token on those requests is valid — the server went on
+      // using it, and a GET /api/profile with the same token immediately
+      // afterwards still answered 200. This branch threw it away anyway,
+      // fired GLOOBAL_SESSION_EXPIRED_EVENT, and App.jsx redirected to Login.
+      //
+      // So one mistyped digit in Change PIN (or in the PIN fallback that
+      // backs every biometric gate in the app) signed the person out of a
+      // session the server had not revoked, and did it BEFORE the dialog
+      // could show the server's own "4 attempts left" message — which is the
+      // one thing that tells somebody how close they are to a ten-minute
+      // lockout. It also made the lockout budget unusable: each wrong try
+      // cost a full sign-in.
+      //
+      // gloobalApiIsUnreachable's note applies in spirit: a rejection of the
+      // credential in the body says nothing about the validity of the token
+      // in the header, and conflating the two signs people out for a typo.
+      //
+      // The callers that submit a credential in the body pass
+      // `credentialCheck: true` and keep their session. A dead token on one
+      // of those routes still ends the session, because the server marks that
+      // case explicitly (`code: "auth_token_invalid"` from requireAuth) — so
+      // this stays a narrowing of the rule, not a hole in it.
+      const tokenRejected =
+        res.status === 401 &&
+        (!opts.credentialCheck || (parsed && parsed.code === "auth_token_invalid"));
+      if (tokenRejected && authToken && typeof gloobalAuthTokenClear === "function") {
         gloobalAuthTokenClear();
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent(GLOOBAL_SESSION_EXPIRED_EVENT));

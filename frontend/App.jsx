@@ -1428,6 +1428,12 @@ function GloobalId() {
       const updated = await GloobalApi.updateSecuritySettings(symbolId, settings);
       if (!updated) return false;
       setRegisteredUser(updated);
+      // And into the stored session, which is what seeds registeredUser on the
+      // next page load. Without this the account had the new value and this
+      // device's saved copy had the old one, and the copy is the one the
+      // biometric gate reads before a sign-in completes — a disagreement the
+      // person could not see and had no way to correct.
+      GloobalApi.saveSession(updated, phoneNumber);
       return true;
     } catch (e) {
       return false;
@@ -1448,7 +1454,13 @@ function GloobalId() {
     if (!symbolId) return { ok: false, message: "You're not signed in." };
     try {
       const result = await GloobalApi.changePin(symbolId, currentPin, newPin);
-      if (result && result.user) setRegisteredUser(result.user);
+      if (result && result.user) {
+        setRegisteredUser(result.user);
+        // Same reason as handleUpdateSecuritySettings: the stored copy is what
+        // the next load re-enters as, so it must not be left describing the
+        // account as it was before the change.
+        GloobalApi.saveSession(result.user, phoneNumber);
+      }
       return { ok: true };
     } catch (err) {
       return {
@@ -2470,6 +2482,31 @@ function GloobalId() {
       // holding it at a prompt it can never satisfy would lock the person
       // out of their own account.
       if (!(await gloobalPlatformAuthenticatorAvailable())) {
+        flipTo("dashboard");
+        return;
+      }
+      // The account's own "Biometric login" setting, read from the user the
+      // server just returned rather than from registeredUser — setRegisteredUser
+      // above has not been applied to this render yet, so the state variable
+      // still holds the previous account's answer (or none at all on a fresh
+      // device), which is exactly the value not to decide a login on.
+      //
+      // ── Why this check is here (11 September 2026) ──────────────────────
+      //
+      // The switch is labelled "Use Face ID or fingerprint to log in" and it
+      // did not do that. Turning it off set gloobalBiometricLoginEnabled,
+      // which only requireBiometric reads — the in-app gates. This line, the
+      // one login screen the label actually describes, consulted nothing and
+      // sent every sensor-equipped device to the biometric step regardless.
+      // So the setting was honoured everywhere except the thing it names.
+      //
+      // Skipping the step does NOT skip a check: POST /api/login has already
+      // verified this account's PIN against its bcrypt hash one call ago, and
+      // that is the same credential the no-sensor branch immediately above
+      // relies on. An account with biometric login switched off is authorised
+      // exactly as strictly as a device with no fingerprint reader.
+      if (result.user && result.user.securitySettings &&
+          result.user.securitySettings.biometricLogin === false) {
         flipTo("dashboard");
         return;
       }

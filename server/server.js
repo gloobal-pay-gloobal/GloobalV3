@@ -815,6 +815,14 @@ const requireAuth = async (req, res, next) => {
   if (!user) {
     return res.status(401).json({
       success: false,
+      // Names the reason for the 401, because status alone cannot carry it.
+      // POST /api/pin/verify, /api/pin/change and /api/login all answer 401
+      // for a wrong PIN in the BODY while the bearer token in the header is
+      // perfectly good, and the client could not tell the two apart: it
+      // dropped the token on every 401 and signed people out for a typo.
+      // This code is the only 401 that means "the token itself is no use" —
+      // see the credentialCheck branch in backend/services/api/httpClient.js.
+      code: 'auth_token_invalid',
       message: 'Sign in to continue.'
     });
   }

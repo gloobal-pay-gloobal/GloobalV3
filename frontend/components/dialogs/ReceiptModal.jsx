@@ -77,7 +77,22 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // gets no Creator Share tab — an empty tab on a payment that shares
   // nothing implies a movement that never happened.
   const shareRatePercent = Number(receipt.shareRate) || 0;
-  const hasShareEvent = !!shareTxnRaw || shareRatePercent > 0;
+  // A Creator Share receipt does not get a Creator Share tab.
+  //
+  // The leg IS the share. Offering it a share of its own is how one payment
+  // came to show two releases: the row arrived carrying the payment's rate
+  // (fixed at the boundary now — see mapServerTransaction), the check below
+  // read it as "there is a share here", and the tab then computed the rate
+  // again against the share amount and announced it as money shared back.
+  // On the reported payment that was a second release of 49.00 out of a 700
+  // share. No such movement exists in any transaction, ledger entry or
+  // balance — the records carry exactly one release per payment.
+  //
+  // Guarded here as well as at the mapper because the two answer different
+  // questions: the mapper stops a share row claiming a rate, and this stops
+  // ANY share receipt growing a second release, whatever it arrives holding.
+  const isShareReceipt = receipt.kind === "share";
+  const hasShareEvent = !isShareReceipt && (!!shareTxnRaw || shareRatePercent > 0);
   // Guarded rather than read straight off `receiptTab`, so a receipt opened
   // while the previous one was left on its share tab cannot land on a tab
   // this receipt does not have.

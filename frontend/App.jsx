@@ -144,6 +144,9 @@ function mapServerTransaction(row, viewerSymbolId) {
   // through the same COUNTRY_BY_ISO table every other flag in the app comes
   // from — no country is named here, and an unknown code falls back to
   // isoToFlag's regional-indicator pair rather than to a default country.
+  // Is this row the Creator Share leg itself, rather than a payment that
+  // carried one? Read from the server's own `type`, which exists for this.
+  const isShareLeg = row.type === "share";
   const counterpartyIso = String(counterparty.countryIso || "").toUpperCase();
   const counterpartyFlag = counterpartyIso
     ? (COUNTRY_BY_ISO[counterpartyIso] && COUNTRY_BY_ISO[counterpartyIso].flag) || isoToFlag(counterpartyIso)
@@ -195,23 +198,53 @@ function mapServerTransaction(row, viewerSymbolId) {
     // every consumer on this side works in percent, so it is converted once,
     // here at the boundary — the same conversion GloobalApi.resolveUser's
     // cashbackRate already goes through.
-    shareRate: Number.isFinite(Number(row.cashbackRate)) ? Number(row.cashbackRate) * 100 : 0,
+    // A SHARE ROW CARRIES NO SHARE OF ITS OWN.
+    //
+    // This was `row.cashbackRate * 100` for every row, and a share leg is a
+    // row like any other: merchantShareFlow writes the payment's rate into
+    // its metadata so the leg can say which rate produced it. So a Creator
+    // Share arrived on this side claiming a Creator Share rate of its own,
+    // and ReceiptModal treats any shareRate > 0 as "this movement carried a
+    // share" — which grew a Creator Share tab on the Creator Share itself,
+    // recomputing the rate against the share amount and presenting the
+    // result as a release. It is what "it's releasing twice on the same
+    // transaction" looks like from the outside.
+    //
+    // The reported payment, read back from the production records: 10,000
+    // INR at the payee's 7%, one share leg of 700 INR (6.31 EUR to the
+    // payer), three ledger lines. The receipt then offered a second release
+    // of 7% of the 700 — 49.00 — that exists in no transaction, no ledger
+    // entry and no balance. Across all 194 payments and 153 share legs there
+    // are 153 cashback ledger lines, no share leg descended from another,
+    // and the payer's own rate was never applied to anything.
+    //
+    // So no money ever moved for it. The fabrication was entirely in the
+    // reading, and it stops here at the boundary rather than in the one
+    // component that happened to render it, so no other consumer of these
+    // rows can rediscover it.
+    //
+    // `isShareLeg` is the server's own `type`, the field it added precisely
+    // so a client "cannot keep it out of a payments count".
+    shareRate: isShareLeg || !Number.isFinite(Number(row.cashbackRate)) ? 0 : Number(row.cashbackRate) * 100,
     // What the share was actually worth, in whichever currency this row is
     // shown in: the payer sees their own credit back, the payee sees the
-    // figure withheld from their side.
-    shareAmount: isReceived
-      ? Number(row.cashback) || 0
-      : Number(row.cashbackCredit) || Number(row.cashback) || 0,
+    // figure withheld from their side. Zero on a share leg, for the reason
+    // above — the leg IS the share, it does not carry one.
+    shareAmount: isShareLeg
+      ? 0
+      : isReceived
+        ? Number(row.cashback) || 0
+        : Number(row.cashbackCredit) || Number(row.cashback) || 0,
     // The share leg's own reference, so the receipt's share tab can name the
     // movement it is describing instead of reusing the payment's id.
-    shareTxnId: row.shareReferenceId || "",
-    shareSourceTxnId: row.shareReferenceId ? row.referenceId || row.id || "" : "",
+    shareTxnId: isShareLeg ? "" : row.shareReferenceId || "",
+    shareSourceTxnId: !isShareLeg && row.shareReferenceId ? row.referenceId || row.id || "" : "",
     // The short handles the two receipt links are addressed by, as the
     // server minted them. Not references and not ids — see
     // Transaction.receiptCode. A row restored without one shares the long
     // link, exactly as it did before these existed.
     receiptCode: row.receiptCode || "",
-    shareReceiptCode: row.shareReceiptCode || "",
+    shareReceiptCode: isShareLeg ? "" : row.shareReceiptCode || "",
     memo: row.note || "",
     ledgerRecordId: null,
     // Server rows predate this device's Personal/Creator split and carry

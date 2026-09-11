@@ -178,6 +178,14 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy) {
     // The country the flag above belongs to, carried so nothing downstream
     // has to reverse-engineer a country from an emoji.
     counterpartyIso: t.counterpartyIso || (counterpartyCountry ? counterpartyCountry.iso : null),
+    // What this row IS: a payment, or the Creator Share leg of one.
+    //
+    // Carried so the receipt can tell the two apart. A share leg must not be
+    // offered a Creator Share tab of its own — see hasShareEvent in
+    // ReceiptModal, and the note on shareRate in mapServerTransaction. It
+    // was dropped here, so a reopened share receipt reached the modal with
+    // no way to know what it was looking at.
+    kind: t.kind === "share" ? "share" : "payment",
     // The Creator Share leg, so a reopened receipt still has its share tab.
     // Absent on rows that carried no share, which is the honest answer —
     // ReceiptModal shows the tab only when there is one.

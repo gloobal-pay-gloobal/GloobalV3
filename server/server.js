@@ -3058,6 +3058,122 @@ app.get('/r/:symbolId', lookupLimit, async (req, res) => {
   }
 });
 
+// ── The short receipt-share code ────────────────────────────────────────────
+//
+// The same fix REFERRAL_CODE_ALPHABET made for the invite link, applied to
+// the one other place a Gloobal identifier was doing duty as a URL path.
+//
+// A receipt link used to carry the transaction's own reference:
+//
+//   https://gloobal-pay.onrender.com/t/%E2%96%A1%E2%96%A0%3D%E2%97%8B…
+//
+// Twenty symbols of the dial-pad alphabet, every one multi-byte UTF-8, so the
+// path a person actually pasted into WhatsApp ran to about 180 characters and
+// looked like a decoding error. It now reads /t/A7K9M2QX8P.
+//
+// Its own constant rather than a reference to the referral one: these are two
+// independent handles on two different kinds of record, and a change to how
+// invite codes are written must not silently change how receipt links are.
+// The alphabet is the same Crockford-style set for the same reason — digits
+// and capitals with I, L, O and U removed, so a code read off a screen cannot
+// be mis-transcribed and a random string cannot spell anything unfortunate.
+const RECEIPT_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+// Ten characters of a 32-symbol alphabet — 32^10, about 1.1 x 10^15. Long
+// enough that receipt codes cannot be walked (a link is forwarded through
+// WhatsApp, so guessing neighbours must not be a way to find other people's
+// receipts), short enough to read. A collision is not assumed impossible
+// anyway: the unique index refuses the write and the mint retries.
+const RECEIPT_CODE_LENGTH = 10;
+
+// crypto.randomInt, not Math.random and not a counter. The requirement is
+// that no receipt code is reachable from another one.
+const createReceiptCode = () => {
+  let code = '';
+  for (let i = 0; i < RECEIPT_CODE_LENGTH; i += 1) {
+    code += RECEIPT_CODE_ALPHABET[crypto.randomInt(RECEIPT_CODE_ALPHABET.length)];
+  }
+  return code;
+};
+
+const RECEIPT_CODE_PATTERN = new RegExp(`^[${RECEIPT_CODE_ALPHABET}]{${RECEIPT_CODE_LENGTH}}$`);
+
+// Gives a transaction its receipt code if it does not have one, and returns
+// it. Structured exactly like ensureReferralCode, for the same reasons.
+//
+// Minted LAZILY — wherever a reference is projected to the client that could
+// end up being shared — rather than at Transaction.create. Two reasons, both
+// the same reason: every row written before this field existed has to acquire
+// one somehow and there is no backfill step in this project, and minting at
+// the point of projection covers a freshly-created row and a five-month-old
+// one through one mechanism instead of two.
+//
+// Written under a filter that requires the code still to be absent, so two
+// concurrent projections of the same row cannot both mint: the loser matches
+// nothing, re-reads, and adopts the winner's code.
+//
+// Never throws, and never fails the response it is passing through. A code
+// that cannot be minted right now means this one receipt falls back to the
+// long link for this one response — which is the behaviour that shipped
+// before this existed, and which still resolves.
+const ensureReceiptCode = async (transaction) => {
+  if (!transaction || !transaction._id) return null;
+  if (transaction.receiptCode) return transaction.receiptCode;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const candidate = createReceiptCode();
+
+    try {
+      const claimed = await Transaction.findOneAndUpdate(
+        { _id: transaction._id, $or: [{ receiptCode: null }, { receiptCode: { $exists: false } }] },
+        { $set: { receiptCode: candidate } },
+        // timestamps: false because `updatedAt` on a transaction means the
+        // PAYMENT record changed. Giving a row a link handle is not a change
+        // to the payment, and letting it move the timestamp made a retried
+        // send come back with a different updatedAt than the original
+        // response reported for the same transaction — an idempotent retry
+        // that looks like it edited something.
+        { returnDocument: 'after', timestamps: false }
+      );
+
+      if (claimed) {
+        // Keep whatever the caller is holding in step, so a projection built
+        // from it afterwards sees the code that was just stored.
+        transaction.receiptCode = claimed.receiptCode;
+        return claimed.receiptCode;
+      }
+
+      // No match: another request minted one first. Adopt theirs.
+      const current = await Transaction.findById(transaction._id).select('receiptCode').lean();
+      if (current?.receiptCode) {
+        transaction.receiptCode = current.receiptCode;
+        return current.receiptCode;
+      }
+      return null;
+    } catch (error) {
+      // 11000 is the unique index refusing a collision — try another value.
+      // Anything else is not something a different random string would fix.
+      if (error?.code !== 11000) {
+        console.error('Receipt code mint failed:', error);
+        return null;
+      }
+    }
+  }
+
+  console.error(`Receipt code mint gave up after 5 collisions for ${transaction.referenceId}`);
+  return null;
+};
+
+// The same thing for a page of rows: every row that already has a code costs
+// nothing, and only the ones that predate the field are written. Returns a map
+// from row id to code, so a projection can look each one up without another
+// round trip.
+const ensureReceiptCodes = async (transactions) => {
+  const rows = (transactions || []).filter((t) => t && t._id);
+  const codes = await Promise.all(rows.map((t) => ensureReceiptCode(t)));
+  return new Map(rows.map((t, i) => [String(t._id), codes[i] || null]));
+};
+
 // A shared receipt link.
 //
 // Its only job is to check the reference names a real payment and hand the
@@ -3068,27 +3184,57 @@ app.get('/r/:symbolId', lookupLimit, async (req, res) => {
 // parties, no currency. A receipt link travels through WhatsApp and gets
 // forwarded, and a route that described the payment would let anyone holding
 // a forwarded link read a stranger's money movement. The app on the other
-// side shows the receipt only if the visitor's OWN history contains it.
+// side shows the receipt only if the visitor's OWN history contains it. That
+// is unchanged by the short code below — the code shortens the path, it does
+// not unlock anything, and this route answers the same single question it
+// always did: does this handle name a real row, yes or no.
+//
+// Two shapes of link arrive here, and each must resolve to the row it names:
+//
+//   /t/A7K9M2QX8P             a receipt code minted by ensureReceiptCode.
+//                             What every new share produces.
+//   /t/%E2%96%A1%E2%96%A0…    the transaction's own 20-symbol reference,
+//                             percent-encoded. What every receipt shared
+//                             before this existed still looks like, in
+//                             WhatsApp history and in anybody's saved chats.
+//
+// The code is tried first because it is now the common case, and the two
+// spaces cannot overlap: a reference is twenty dial-pad symbols and a code is
+// ten ASCII digits and capitals, so no string is a valid member of both.
+// RECEIPT_CODE_PATTERN is what makes that guarantee explicit rather than
+// incidental — a value that is not code-shaped never reaches the code lookup.
+//
+// Either way the redirect is unchanged: the app is handed the row's REAL
+// referenceId in ?txn=, because that is what App.jsx matches against the
+// viewer's own history rows. The short code is a URL detail; it is never what
+// the receipt is identified by on the other side.
 app.get('/t/:referenceId', lookupLimit, async (req, res) => {
   try {
-    const referenceId = safeDecodeSymbolId(req.params.referenceId).trim();
+    const raw = safeDecodeSymbolId(req.params.referenceId).trim();
 
-    if (!referenceId) {
+    if (!raw) {
       return res.status(404).json({ error: 'Receipt link is invalid or expired.' });
     }
 
-    // Existence only - the projection is deliberately empty of anything
-    // worth leaking.
-    const exists = await Transaction.exists({ referenceId });
+    // Upper-cased for the lookup only: codes are minted in capitals, and a
+    // link retyped in lower case off a screen should still find its receipt.
+    const candidateCode = raw.toUpperCase();
 
-    if (!exists) {
+    // The projection is deliberately empty of anything worth leaking: the
+    // reference this link resolves to, and nothing else. No amount, no
+    // parties, no currency, no note.
+    const found = RECEIPT_CODE_PATTERN.test(candidateCode)
+      ? await Transaction.findOne({ receiptCode: candidateCode }).select('referenceId').lean()
+      : await Transaction.findOne({ referenceId: raw }).select('referenceId').lean();
+
+    if (!found) {
       return res.status(404).json({ error: 'Receipt link is invalid or expired.' });
     }
 
     // Re-encoding is required for the same reason as the referral link: the
     // reference is drawn from the Gloobal symbol set, and an unencoded '+' in
     // a query string means a space.
-    return res.redirect(`${REFERRAL_APP_BASE_URL}/?txn=${encodeURIComponent(referenceId)}`);
+    return res.redirect(`${REFERRAL_APP_BASE_URL}/?txn=${encodeURIComponent(found.referenceId)}`);
   } catch (error) {
     console.error('Receipt link error:', error);
 
@@ -3947,10 +4093,18 @@ function counterpartyFor(transaction, viewerIsSender, populatedCounterparty) {
   return live ? { ...live, currency: null, fromSnapshot: false } : null;
 }
 
-function cleanTransactionPayload(transaction, sender, receiver) {
+// Async because of `receiptCode`, which is minted on first projection rather
+// than at creation (see ensureReceiptCode). Every caller is already inside an
+// async route handler.
+async function cleanTransactionPayload(transaction, sender, receiver) {
   return {
     id: transaction._id,
     referenceId: transaction.referenceId,
+    // The short handle this payment's receipt link is addressed by — NOT a
+    // second reference for the payment. `referenceId` above stays the one
+    // identity the transaction is known by, on the receipt and everywhere
+    // else; this is only what goes in the path of /t/.
+    receiptCode: await ensureReceiptCode(transaction),
     amount: transaction.amount,
     currency: transaction.currency,
     type: transaction.type,
@@ -3986,13 +4140,17 @@ async function existingShareLegPayload(paymentTransaction) {
       type: 'share',
       'metadata.paymentTransactionId': paymentTransaction._id,
     })
-      .select('referenceId amount currency')
+      .select('referenceId receiptCode amount currency')
       .lean();
 
     if (!shareTransaction) return null;
 
     return {
       referenceId: shareTransaction.referenceId,
+      // The share leg's OWN receipt code. A Creator Share is a separate
+      // movement with a separate reference, so it gets a separate short
+      // link — /t/ on the share tab must not lead to the payment.
+      receiptCode: await ensureReceiptCode(shareTransaction),
       amount: shareTransaction.amount,
       currency: shareTransaction.currency,
     };
@@ -5918,7 +6076,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
           success: true,
           duplicate: true,
           message: 'Duplicate request ignored. Existing transaction returned.',
-          transaction: cleanTransactionPayload(existingIdempotentTransaction, sender, receiver),
+          transaction: await cleanTransactionPayload(existingIdempotentTransaction, sender, receiver),
           // The share leg that was minted for that original payment, if it
           // had one. Same reference the first response carried, read back
           // rather than re-minted.
@@ -5944,7 +6102,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         success: false,
         duplicate: true,
         message: 'Duplicate transaction blocked. Please wait before sending the same amount again.',
-        transaction: cleanTransactionPayload(recentDuplicate, sender, receiver),
+        transaction: await cleanTransactionPayload(recentDuplicate, sender, receiver),
         // Same reasoning as the idempotency-key branch above: this response
         // names an existing payment, so it names that payment's existing
         // share leg too rather than leaving the client to guess.
@@ -6467,7 +6625,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             success: true,
             duplicate: true,
             message: 'Duplicate request ignored. Existing transaction returned.',
-            transaction: cleanTransactionPayload(winningTransaction, sender, receiver),
+            transaction: await cleanTransactionPayload(winningTransaction, sender, receiver),
             // The winner's share leg, for the same reason the pre-check
             // branch carries it: the loser of the race is a retry, and a
             // retry that comes back without the share reference leaves its
@@ -6582,7 +6740,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     return res.status(201).json({
       success: true,
       message: 'Prototype transaction completed successfully.',
-      transaction: cleanTransactionPayload(completedTransaction, sender, receiver),
+      transaction: await cleanTransactionPayload(completedTransaction, sender, receiver),
       newBalance: senderBalanceAfter,
       // In the sender's own currency — this is what actually landed back in
       // their balance (see cashbackCredit above), matching the currency
@@ -6643,6 +6801,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       shareTransaction: shareTransaction
         ? {
             referenceId: shareTransaction.referenceId,
+            // Its own short receipt-link handle, for the same reason the
+            // payment above has one and distinct from it.
+            receiptCode: await ensureReceiptCode(shareTransaction),
             amount: shareTransaction.amount,
             currency: shareTransaction.currency,
           }
@@ -6726,11 +6887,18 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
       type: 'share',
       'metadata.paymentTransactionId': { $in: transactions.map((t) => t._id) },
     })
-      .select('referenceId metadata.paymentTransactionId')
+      .select('referenceId receiptCode metadata.paymentTransactionId')
       .lean();
     const shareByPayment = new Map(
-      shareLegs.map((leg) => [String(leg.metadata?.paymentTransactionId), leg.referenceId])
+      shareLegs.map((leg) => [String(leg.metadata?.paymentTransactionId), leg])
     );
+
+    // Give every row on this page its short receipt-link handle, minting one
+    // for any row that predates the field. Rows that already have one cost
+    // nothing, so this is a write only on the first read of an old row. Both
+    // lists are covered: a payment's receipt and its Creator Share tab are
+    // two different movements and each shares its own link.
+    await ensureReceiptCodes([...transactions, ...shareLegs]);
 
     const history = transactions.map((transaction) => {
       const senderId = String(transaction.fromUserId?._id || transaction.fromUserId || '');
@@ -6740,6 +6908,10 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
       return {
         id: transaction._id,
         referenceId: transaction.referenceId,
+        // The short handle this row's receipt link is addressed by. Null on a
+        // row whose code could not be minted this time round, which the
+        // client reads as "fall back to the long link".
+        receiptCode: transaction.receiptCode || null,
         direction: isSender ? 'sent' : 'received',
         // The RECEIVER's side: the face value this payment was denominated
         // in, and the currency it is in. Right for the receiver, and wrong
@@ -6788,7 +6960,11 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
           : null,
         // The share leg's own reference. A payment whose payee shares nothing
         // has no share leg and keeps this null.
-        shareReferenceId: shareByPayment.get(String(transaction._id)) || null,
+        shareReferenceId: shareByPayment.get(String(transaction._id))?.referenceId || null,
+        // And the share leg's own short link handle, distinct from the
+        // payment's — sharing the Creator Share tab must not hand somebody a
+        // link to the payment it came from.
+        shareReceiptCode: shareByPayment.get(String(transaction._id))?.receiptCode || null,
         createdAt: transaction.createdAt,
       };
     });
@@ -6922,11 +7098,17 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
       type: 'share',
       'metadata.paymentTransactionId': { $in: records.map((t) => t._id) },
     })
-      .select('referenceId metadata.paymentTransactionId')
+      .select('referenceId receiptCode metadata.paymentTransactionId')
       .lean();
     const shareByPayment = new Map(
-      shareLegs.map((leg) => [String(leg.metadata?.paymentTransactionId), leg.referenceId])
+      shareLegs.map((leg) => [String(leg.metadata?.paymentTransactionId), leg])
     );
+
+    // Same lazy mint as /api/transactions/history — see the note there. This
+    // is the list the app actually restores its history from, so it is the
+    // one that decides whether a reopened receipt shares a short link or the
+    // long one.
+    await ensureReceiptCodes([...records, ...shareLegs]);
 
     const transactions = records.map((transaction) => {
       const senderId = String(transaction.fromUserId?._id || transaction.fromUserId || '');
@@ -6936,6 +7118,9 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
       return {
         id: String(transaction._id),
         referenceId: transaction.referenceId,
+        // The short handle this row's receipt link is addressed by — a URL
+        // detail, never the reference the row is identified by.
+        receiptCode: transaction.receiptCode || null,
         direction: isSender ? 'sent' : 'received',
         // 'payment' or 'share'. Projected now that share legs appear in this
         // list: the two rows of a shared payment are the same money seen
@@ -6985,7 +7170,9 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         // a payment whose payee shares nothing — there is no second leg, and
         // the receipt is expected to show no share reference rather than
         // inventing one.
-        shareReferenceId: shareByPayment.get(String(transaction._id)) || null,
+        shareReferenceId: shareByPayment.get(String(transaction._id))?.referenceId || null,
+        // The share leg's own short link handle, distinct from the payment's.
+        shareReceiptCode: shareByPayment.get(String(transaction._id))?.receiptCode || null,
         createdAt: transaction.createdAt,
       };
     });

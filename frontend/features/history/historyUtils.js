@@ -183,7 +183,14 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy) {
     // ReceiptModal shows the tab only when there is one.
     shareTxnId: t.shareTxnId || "",
     shareSourceTxnId: t.shareSourceTxnId || "",
-    shareAmount: Number(t.shareAmount) || 0
+    shareAmount: Number(t.shareAmount) || 0,
+    // The short handles the payment's and the share's receipt links are
+    // addressed by, carried through so a receipt reopened from history shares
+    // the same short URL the fresh one did. A row without them (a local-only
+    // payment, or one restored from a server that had not minted them yet)
+    // shares the long link, which still resolves.
+    receiptCode: t.receiptCode || "",
+    shareReceiptCode: t.shareReceiptCode || ""
   };
 }
 

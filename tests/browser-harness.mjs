@@ -495,6 +495,12 @@ export async function installApi(context, options = {}) {
         // A payee with a share rate produces a share leg, with its own
         // reference — the thing the receipt's Creator Share tab names.
         shareReferenceId: cashbackRate > 0 ? `SHARE-${state.ledger.length + 1}` : null,
+        // The short ASCII handles the two receipt LINKS are addressed by —
+        // Transaction.receiptCode, minted server-side. Ten characters of the
+        // real alphabet, and distinct per leg, because a link that led from
+        // the Creator Share tab to the payment would be the defect.
+        receiptCode: `RCPT${String(state.ledger.length + 1).padStart(6, "0")}`,
+        shareReceiptCode: cashbackRate > 0 ? `SHRC${String(state.ledger.length + 1).padStart(6, "0")}` : null,
         note: body.note || "",
         createdAt: new Date().toISOString()
       });
@@ -508,6 +514,9 @@ export async function installApi(context, options = {}) {
         transaction: {
           referenceId: reference,
           transactionId: reference,
+          // The short handle this payment's receipt link uses. Carried
+          // alongside the reference, never instead of it.
+          receiptCode: `RCPT${String(state.ledger.length).padStart(6, "0")}`,
           amount: destinationAmount,
           currency: receiver.currency,
           sourceAmount,
@@ -559,6 +568,8 @@ export async function installApi(context, options = {}) {
             cashback: row.cashback,
             cashbackCredit: row.cashbackCredit,
             shareReferenceId: row.shareReferenceId,
+            receiptCode: row.receiptCode,
+            shareReceiptCode: row.shareReceiptCode,
             createdAt: row.createdAt
           };
         })
@@ -592,6 +603,32 @@ export async function installApi(context, options = {}) {
     }
     if (pathname.startsWith("/api/coin/")) return json(200, { success: true, balance: 0, coin: 0 });
     if (pathname.startsWith("/api/creator/")) return json(200, { cashbackRate: 0.01 });
+
+    // The shared-receipt link, mirroring GET /t/ in server.js: a short code
+    // (or, for a link shared before codes existed, the transaction's own
+    // reference) is resolved to a row, and the visitor is handed to the app
+    // with that row's REAL reference in ?txn=. Nothing about the payment is
+    // in the answer — the app shows the receipt from the viewer's own
+    // history, which is the whole privacy design of the link.
+    //
+    // Here rather than only in server/tests so a browser test can follow the
+    // link it just copied, which is the half of the loop no source-level or
+    // API-level assertion reaches.
+    if (pathname.startsWith("/t/")) {
+      const handle = decodeURIComponent(pathname.slice(3));
+      const row = state.ledger.find(
+        (r) => r.receiptCode === handle.toUpperCase() || r.referenceId === handle
+      );
+      const shareRow = state.ledger.find((r) => r.shareReceiptCode === handle.toUpperCase());
+      const reference = row ? row.referenceId : shareRow ? shareRow.shareReferenceId : null;
+      if (!reference) return json(404, { error: "Receipt link is invalid or expired." });
+      const { origin: appOrigin } = await buildOnce();
+      return route.fulfill({
+        status: 302,
+        headers: { location: `${appOrigin}/?txn=${encodeURIComponent(reference)}` },
+        body: ""
+      });
+    }
 
     return json(200, {});
   });

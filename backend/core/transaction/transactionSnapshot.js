@@ -11,7 +11,7 @@
 // They are two different movements between two different pairs of parties
 // (me -> Jio, then Jio -> me) and a reference that cannot tell them apart
 // cannot be used to look either of them up.
-function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, payMethod, now, shareRatePercent, ledgerRecordId, txnId, shareTxnId = "", shareAmount = 0 }) {
+function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, payMethod, now, shareRatePercent, ledgerRecordId, txnId, shareTxnId = "", shareAmount = 0, receiptCode = "", shareReceiptCode = "" }) {
   const resolvedTxnId = txnId || genTxnId();
   const txnTime = formatClockTime(now);
   const txnShareRate = shareRatePercent ?? 0;
@@ -56,6 +56,13 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     shareTxnId: shareTxnId || "",
     shareSourceTxnId: shareTxnId ? resolvedTxnId : "",
     shareAmount: Number(shareAmount) || 0,
+    // The short handles the two receipt LINKS are addressed by, as the server
+    // minted them (Transaction.receiptCode). Deliberately separate fields from
+    // the two references above: a reference identifies the movement and is
+    // what the receipt prints, a code only addresses a URL. Empty for a
+    // payment that stayed local, which has no server row to link to.
+    receiptCode: receiptCode || "",
+    shareReceiptCode: shareReceiptCode || "",
     ledgerRecordId: ledgerRecordId ?? null
   };
   const historyEntry = {
@@ -75,6 +82,8 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     shareRate: txnShareRate,
     shareTxnId: shareTxnId || "",
     shareAmount: Number(shareAmount) || 0,
+    receiptCode: receiptCode || "",
+    shareReceiptCode: shareReceiptCode || "",
     ledgerRecordId: ledgerRecordId ?? null
   };
   return { receipt, historyEntry };

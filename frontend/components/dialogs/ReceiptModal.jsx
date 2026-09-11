@@ -139,7 +139,34 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     const match = (typeof ALL_COUNTRIES !== "undefined" ? ALL_COUNTRIES : []).find((c) => c.flag === receipt.flag);
     return match ? match.name : "";
   })();
-  const receiptShareUrl = rawTxnId ? `${GLOOBAL_API_BASE}/t/${encodeURIComponent(rawTxnId)}` : "";
+  // The path this receipt's link is addressed by.
+  //
+  // It used to be the transaction's own reference. Every one of the twenty
+  // dial-pad symbols is multi-byte UTF-8, so encodeURIComponent turned a
+  // 20-character reference into about 180 characters of %E2%96%A0 — a link
+  // that filled a WhatsApp message and read as a decoding error:
+  //
+  //   /t/%E2%96%A1%E2%96%A0%3D%E2%97%8B%E2%96%A0%E2%96%A1…
+  //
+  // The server now mints a ten-character ASCII handle for each transaction
+  // (Transaction.receiptCode) and GET /t/ resolves it back to that row, so
+  // the same link reads /t/A7K9M2QX8P.
+  //
+  // Read per TAB, not per receipt: the payment and its Creator Share are two
+  // different movements with two different references, so they have two
+  // different handles, and sharing the share tab must not hand somebody a
+  // link to the payment it came from.
+  //
+  // The reference is still the fallback, and is still what a receipt with no
+  // code shares — a payment that stayed local, or a row restored from before
+  // codes existed. Those links are long, and they still resolve: GET /t/
+  // accepts both shapes. Nothing here changes the Transaction ID itself; it
+  // is minted, stored, displayed and copied exactly as before.
+  const receiptShareCode = onShareTab
+    ? receipt.shareReceiptCode || ""
+    : receipt.receiptCode || "";
+  const receiptSharePath = receiptShareCode || (rawTxnId ? encodeURIComponent(rawTxnId) : "");
+  const receiptShareUrl = receiptSharePath ? `${GLOOBAL_API_BASE}/t/${receiptSharePath}` : "";
   const handleShareTxnId = () => {
     if (!rawTxnId) return;
     const money = fmtMoney(Number(receipt.amount || 0), receipt.currencyCode);

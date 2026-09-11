@@ -13,6 +13,16 @@
 // A receipt link travels through WhatsApp and gets forwarded; anything that
 // fetched the payment by reference would let whoever ends up holding that
 // link read a stranger's money movement.
+//
+// The link itself is now addressed by a short ASCII code rather than by the
+// transaction's own reference — /t/A7K9M2QX8P instead of 180 characters of
+// %E2%96%A0 — and the second half of this file guards what that code is
+// allowed to be. It is a URL handle with a uniqueness guarantee and nothing
+// more: it is not the Transaction ID, the Transaction ID is unchanged, each
+// leg of a payment has its own, and a link shared before it existed still
+// resolves. The end-to-end behaviour lives in
+// server/tests/receipt-short-link.test.mjs; these are the source-level
+// properties that are cheap to assert and expensive to lose.
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -60,10 +70,39 @@ describe("the share sheet gets a summary and a link", () => {
     );
   });
 
-  test("the link points at the backend receipt route, encoded", () => {
-    // Encoding matters: the reference is drawn from the Gloobal symbol set,
-    // and an unencoded '+' in a URL means a space.
-    assert.match(receipt, /\$\{GLOOBAL_API_BASE\}\/t\/\$\{encodeURIComponent\(rawTxnId\)\}/);
+  test("the link points at the backend receipt route", () => {
+    assert.match(receipt, /\$\{GLOOBAL_API_BASE\}\/t\/\$\{receiptSharePath\}/);
+  });
+
+  test("its path is the short receipt code, not the 20-symbol reference", () => {
+    // The whole point of the short link: every symbol in the reference is
+    // multi-byte UTF-8, so a path built from it percent-encodes to ~180
+    // characters of %E2%96%A0 — which is what people were pasting into
+    // WhatsApp. The code is ten ASCII characters.
+    assert.match(receipt, /const receiptShareCode = onShareTab/);
+    assert.match(receipt, /receipt\.shareReceiptCode \|\| ""/);
+    assert.match(receipt, /receipt\.receiptCode \|\| ""/);
+  });
+
+  test("each tab shares its OWN link — the share tab must not link to the payment", () => {
+    // Same rule the two references already follow: a payment and its Creator
+    // Share are different movements, so they are different receipts and
+    // different links.
+    const at = receipt.indexOf("const receiptShareCode = onShareTab");
+    const block = receipt.slice(at, receipt.indexOf("const receiptShareUrl", at));
+    assert.match(block, /receipt\.shareReceiptCode/);
+    assert.match(block, /receipt\.receiptCode/);
+  });
+
+  test("the reference is still the fallback, encoded, for a receipt with no code", () => {
+    // A local-only payment has no server row, and a row restored from before
+    // codes existed has no code. Both still share a working link — GET /t/
+    // accepts either shape. Encoding matters there: the reference is drawn
+    // from the Gloobal symbol set, and an unencoded '+' in a URL means a space.
+    assert.match(
+      receipt,
+      /receiptShareCode \|\| \(rawTxnId \? encodeURIComponent\(rawTxnId\) : ""\)/
+    );
   });
 
   test("the clipboard fallback copies the whole receipt, not the bare id", () => {
@@ -81,9 +120,64 @@ describe("the backend link reveals nothing about the payment", () => {
     assert.ok(at > 0, "GET /t/:referenceId not found");
   });
 
-  test("it checks existence only, and redirects with just the reference", () => {
-    assert.match(route, /Transaction\.exists\(\{ referenceId \}\)/);
-    assert.match(route, /\/\?txn=\$\{encodeURIComponent\(referenceId\)\}/);
+  test("it reads the reference and nothing else, and redirects with just that", () => {
+    // The projection is the privacy property: this route answers one
+    // question — does this handle name a real row — and the reference is the
+    // only field it needs to hand the app.
+    assert.match(route, /\.select\('referenceId'\)/);
+    assert.match(route, /\/\?txn=\$\{encodeURIComponent\(found\.referenceId\)\}/);
+  });
+
+  test("it accepts the short code, and looks it up as a code", () => {
+    assert.match(route, /RECEIPT_CODE_PATTERN\.test\(candidateCode\)/);
+    assert.match(route, /Transaction\.findOne\(\{ receiptCode: candidateCode \}\)/);
+  });
+
+  test("and still accepts the old 20-symbol reference, so shared links keep working", () => {
+    assert.match(route, /Transaction\.findOne\(\{ referenceId: raw \}\)/);
+  });
+
+  test("?txn= carries the row's real reference, never the short code", () => {
+    // The app matches ?txn= against the viewer's own history rows, which are
+    // keyed by reference. The code addresses the URL and stops there.
+    assert.ok(
+      !/txn=\$\{encodeURIComponent\(candidateCode\)/.test(route),
+      "the redirect hands the app the short code instead of the reference"
+    );
+  });
+
+  test("the code is minted with a CSPRNG, not a sequence or a truncated reference", () => {
+    const at = server.indexOf("const createReceiptCode = () => {");
+    assert.ok(at > 0, "createReceiptCode not found");
+    const fn = server.slice(at, server.indexOf("};", at));
+    assert.match(fn, /crypto\.randomInt\(RECEIPT_CODE_ALPHABET\.length\)/);
+    assert.ok(!/Math\.random/.test(fn), "a receipt code must not come from Math.random");
+    assert.ok(!/referenceId/.test(fn), "a receipt code must not be derived from the reference");
+  });
+
+  test("codes are ten characters of an unambiguous ASCII alphabet", () => {
+    assert.match(server, /const RECEIPT_CODE_LENGTH = 10;/);
+    assert.match(server, /const RECEIPT_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';/);
+  });
+
+  test("the code is unique at the database level, not merely by convention", () => {
+    const model = readSource("server/models/Transaction.js");
+    assert.match(model, /receiptCode: \{/);
+    assert.match(
+      model,
+      /\{ receiptCode: 1 \},\s*\{ unique: true, partialFilterExpression: \{ receiptCode: \{ \$type: 'string' \} \} \}/
+    );
+  });
+
+  test("it is not the transaction's reference under another name", () => {
+    // The one thing this change must not become: a second identity for the
+    // money. referenceId stays required and unique and is what the receipt
+    // prints; receiptCode is neither required nor an identifier.
+    const model = readSource("server/models/Transaction.js");
+    const at = model.indexOf("    receiptCode: {");
+    const field = model.slice(at, model.indexOf("},", at));
+    assert.ok(!/required/.test(field), "the receipt code must not be a required identity");
+    assert.match(model, /referenceId: \{\s*type: String,\s*required: true,\s*unique: true/);
   });
 
   test("it never puts amount, currency or parties in the response", () => {

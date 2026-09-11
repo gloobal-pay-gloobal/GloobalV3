@@ -206,6 +206,12 @@ function mapServerTransaction(row, viewerSymbolId) {
     // movement it is describing instead of reusing the payment's id.
     shareTxnId: row.shareReferenceId || "",
     shareSourceTxnId: row.shareReferenceId ? row.referenceId || row.id || "" : "",
+    // The short handles the two receipt links are addressed by, as the
+    // server minted them. Not references and not ids — see
+    // Transaction.receiptCode. A row restored without one shares the long
+    // link, exactly as it did before these existed.
+    receiptCode: row.receiptCode || "",
+    shareReceiptCode: row.shareReceiptCode || "",
     memo: row.note || "",
     ledgerRecordId: null,
     // Server rows predate this device's Personal/Creator split and carry
@@ -555,7 +561,17 @@ function GloobalId() {
       return {
         ok: true,
         transactionId: transaction.referenceId || txnId || "",
+        // The short handle the payment's receipt link is addressed by (see
+        // GET /t/ and Transaction.receiptCode). Carried alongside the
+        // reference, never instead of it: the reference is what the receipt
+        // shows and what history is matched on, and this is only what goes
+        // in the path of a shared URL. Empty when the payment stayed local,
+        // where there is no server row to address.
+        receiptCode: transaction.receiptCode || "",
         shareTransactionId: (share && share.referenceId) || "",
+        // The Creator Share leg's own handle, which is a different link to a
+        // different movement.
+        shareReceiptCode: (share && share.receiptCode) || "",
         shareAmount: Number(share && share.amount) || 0,
         shareCurrency: (share && share.currency) || "",
         cashback: Number(result && result.cashback) || 0,
@@ -982,6 +998,10 @@ function GloobalId() {
           // on a local-only scan, where no share leg exists to reference.
           shareTxnId: (settledRemotely && remote.shareTransactionId) || "",
           shareSourceTxnId: settledRemotely && remote.shareTransactionId ? txnId : "",
+          // The short handles this row's two receipt links use. Empty on a
+          // local-only scan, which has no server row to address.
+          receiptCode: (settledRemotely && remote.receiptCode) || "",
+          shareReceiptCode: (settledRemotely && remote.shareReceiptCode) || "",
           shareAmount: (settledRemotely && Number(remote.shareAmount)) || 0,
           ledgerRecordId: result.ledgerRecordId,
           role: activeShareRole

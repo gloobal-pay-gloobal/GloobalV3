@@ -369,6 +369,11 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     // local simulation or a 0%-share payee.
     let confirmedShareTxnId = "";
     let confirmedShareAmount = 0;
+    // The short ASCII handles the payment's and the share's receipt LINKS are
+    // addressed by. Empty for a local simulation, which has no server row for
+    // a link to lead to — that receipt keeps the long form it always had.
+    let confirmedReceiptCode = "";
+    let confirmedShareReceiptCode = "";
     // Whether the backend actually recorded this payment — false for a
     // `skipped` local simulation, and (consistently) false when there is
     // no onRemoteSend at all to have recorded it. Read below by the final
@@ -440,6 +445,12 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
         if (Number.isFinite(remote.cashback)) confirmedCashback = remote.cashback;
         if (remote.shareTransactionId) confirmedShareTxnId = remote.shareTransactionId;
         if (Number.isFinite(remote.shareAmount)) confirmedShareAmount = remote.shareAmount;
+        // The short handles this payment's two receipt links are addressed
+        // by (Transaction.receiptCode). Server-minted, like the references
+        // beside them, and carried only so the share sheet has a URL that
+        // does not percent-encode to 180 characters.
+        if (remote.receiptCode) confirmedReceiptCode = remote.receiptCode;
+        if (remote.shareReceiptCode) confirmedShareReceiptCode = remote.shareReceiptCode;
       }
     }
     // ONE call: risk-check, posting, provenance, complaint window, and
@@ -484,6 +495,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       receiver: bottom,
       shareTxnId: confirmedShareTxnId,
       shareAmount: confirmedShareAmount,
+      receiptCode: confirmedReceiptCode,
+      shareReceiptCode: confirmedShareReceiptCode,
       amount,
       convertedAmount: senderAmount,
       payMethod,

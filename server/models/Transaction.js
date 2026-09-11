@@ -93,6 +93,40 @@ const transactionSchema = new mongoose.Schema(
       index: true,
     },
 
+    // The short ASCII handle a SHARED RECEIPT LINK is addressed by:
+    // https://gloobal-pay.onrender.com/t/A7K9M2QX8P.
+    //
+    // Why it exists. `referenceId` above is twenty symbols of the Gloobal
+    // dial-pad alphabet, and every one of them is multi-byte UTF-8, so a
+    // receipt link carrying it percent-encoded to ~180 characters of
+    // %E2%96%A0 — which is what people were pasting into WhatsApp. Exactly
+    // the defect User.referralCode fixed for the invite link, in the one
+    // other place a Gloobal identifier was being used as a URL path.
+    //
+    // Deliberately NOT a second identity. It is not the transaction's
+    // reference, it never appears on a receipt, in history, or in any API
+    // field that names the payment, it is not an account id or any other
+    // financial identifier, and nothing accepts it as one. Its entire
+    // contract is: given this handle, GET /t/ can find this row and hand the
+    // app the row's REAL referenceId. It must never grow into more than that.
+    //
+    // No `default: null`, and the unique index below is PARTIAL rather than
+    // sparse. Both halves of that matter, and the first one is not a style
+    // choice: a default of null writes an explicit null into every row, and a
+    // sparse index skips only MISSING fields — an explicit null is indexed
+    // like any other value. With both in place the second transaction ever
+    // written collides with the first on `receiptCode: null`, which is a
+    // duplicate-key error on a payment, not on a link. The partial filter
+    // below indexes only rows that actually hold a code, so rows that have
+    // not been given one yet — every row written before this field existed,
+    // and every row between its insert and its first projection — cannot
+    // collide with each other at all. Same construction, and the same
+    // reasoning, as the idempotencyKey index further down this file.
+    receiptCode: {
+      type: String,
+      trim: true,
+    },
+
     failureReason: {
       type: String,
       trim: true,
@@ -107,6 +141,15 @@ const transactionSchema = new mongoose.Schema(
   {
     timestamps: true,
   }
+);
+
+// One transaction per receipt code, and a code is the only thing GET /t/
+// looks a shared receipt up by — so this is what makes a short link name
+// exactly one receipt rather than a best guess at one. Partial, for the
+// reason spelled out on the field itself.
+transactionSchema.index(
+  { receiptCode: 1 },
+  { unique: true, partialFilterExpression: { receiptCode: { $type: 'string' } } }
 );
 
 transactionSchema.index({ fromUserId: 1, createdAt: -1 });

@@ -89,7 +89,16 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
     }
   }, [historyTab]);
   function openHistoryReceipt(t, direction) {
-    setReceipt(buildHistoryReceipt(t, direction, dialCountry, ccy));
+    // The share's source payment is looked up in the FULL lists, not the
+    // period-filtered ones this screen renders. The payment and the share it
+    // produced happen moments apart, but "This Week" ends at a boundary, and
+    // a share minted just after midnight on Monday would lose its payment to
+    // the filter — leaving a receipt that says the payment is unavailable
+    // while the row for it sits one tap away under another period.
+    setReceipt(buildHistoryReceipt(
+      t, direction, dialCountry, ccy,
+      t.kind === "share" ? findSharePaymentSource(t, sendHistory, receiveHistory) : null
+    ));
   }
   function handleHistoryScroll(e) {
     const el = e.currentTarget;

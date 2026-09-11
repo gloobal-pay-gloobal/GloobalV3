@@ -184,7 +184,13 @@ describe("the receipt's symbol field is no longer what renders it", () => {
       !/receipt\.currencySymbol/.test(modal),
       "the receipt still renders from its stored symbol instead of its code"
     );
-    assert.match(modal, /fmtMoney\(receipt\.amount, receipt\.currencyCode\)/);
+    // The hero figure now formats `paymentAmount`/`paymentCurrency` rather
+    // than the row's own fields, because a Creator Share receipt's Payment
+    // tab describes the payment the share CAME FROM — a different row, in a
+    // possibly different currency. Both still come from a CODE, which is
+    // what this test is about.
+    assert.match(modal, /fmtMoney\(paymentAmount, paymentCurrency\)/);
+    assert.match(modal, /const paymentCurrency = isShareReceipt/);
   });
 
   test("but the field is still populated, so stored payloads keep their shape", () => {

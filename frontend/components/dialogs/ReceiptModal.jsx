@@ -37,12 +37,20 @@ function ReceiptTabButton({ label, active, onSelect }) {
 
 function ReceiptModal({ receipt, onClose, onDone }) {
   const [copied, setCopied] = useState11(false);
-  const [receiptTab, setReceiptTab] = useState11("payment");
+  // A Creator Share receipt opens on its share.
+  //
+  // Initialised from the prop AND reset by the effect below. Two places on
+  // purpose: the effect runs after paint, so on its own it would show one
+  // frame of the Payment tab before switching — a flicker on the document
+  // that is least about a payment.
+  const [receiptTab, setReceiptTab] = useState11(
+    () => (receipt && receipt.kind === "share" ? "share" : "payment")
+  );
   const { getLocationForViewer, getComplaintWindow, openComplaint } = useProvenanceAndDisputes();
   const [reportSubmitted, setReportSubmitted] = useState11(false);
   useEffect10(() => {
     if (receipt) {
-      setReceiptTab("payment");
+      setReceiptTab(receipt.kind === "share" ? "share" : "payment");
       setReportSubmitted(false);
     }
   }, [receipt]);
@@ -77,31 +85,100 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // gets no Creator Share tab — an empty tab on a payment that shares
   // nothing implies a movement that never happened.
   const shareRatePercent = Number(receipt.shareRate) || 0;
-  // A Creator Share receipt does not get a Creator Share tab.
-  //
-  // The leg IS the share. Offering it a share of its own is how one payment
-  // came to show two releases: the row arrived carrying the payment's rate
-  // (fixed at the boundary now — see mapServerTransaction), the check below
-  // read it as "there is a share here", and the tab then computed the rate
-  // again against the share amount and announced it as money shared back.
-  // On the reported payment that was a second release of 49.00 out of a 700
-  // share. No such movement exists in any transaction, ledger entry or
-  // balance — the records carry exactly one release per payment.
-  //
-  // Guarded here as well as at the mapper because the two answer different
-  // questions: the mapper stops a share row claiming a rate, and this stops
-  // ANY share receipt growing a second release, whatever it arrives holding.
   const isShareReceipt = receipt.kind === "share";
-  const hasShareEvent = !isShareReceipt && (!!shareTxnRaw || shareRatePercent > 0);
+
+  // The payment the Payment tab describes.
+  //
+  // On a payment receipt that is this row. On a share receipt it is the
+  // payment the share came from — 500 to Jio, not the 10 share — resolved by
+  // reference in historyUtils, and null when it could not be found.
+  const paymentKnown = !isShareReceipt || receipt.sourceAmount != null;
+  const paymentAmount = isShareReceipt
+    ? Number(receipt.sourceAmount) || 0
+    : receipt.amount;
+  const paymentCurrency = isShareReceipt
+    ? receipt.sourceCurrencyCode || receipt.currencyCode
+    : receipt.currencyCode;
+  const paymentIsSent = isShareReceipt ? receipt.sourceDirection === "sent" : isSent;
+
+  // Which tab leads.
+  //
+  // Payment receipt: Payment, the flag, then Creator Share — the order the
+  // money moved in. Share receipt: the document is about the share, so
+  // Creator Share leads and Payment follows, carrying the payment it came
+  // from. The ORDER is what says which kind of receipt you opened before you
+  // have read a figure; lighting a tab does not, because a lit tab in second
+  // place still reads as the second thing.
+  const leadingTab = isShareReceipt ? "share" : "payment";
+  const trailingTab = isShareReceipt ? "payment" : "share";
+  const tabLabel = (tab) => (tab === "share" ? "Creator Share" : "Payment");
+
+  // A Creator Share receipt gets a Creator Share tab, and it is the one it
+  // opens on — but the tab shows the share, it never COMPUTES one.
+  //
+  // That distinction is the whole of it, and it is worth being exact about,
+  // because the tab was removed from share receipts outright to stop a real
+  // fabrication: the row arrived carrying the payment's rate, this check read
+  // it as "there is a share here", and the tab computed the rate AGAIN
+  // against the share amount and announced the result as money shared back.
+  // On the reported payment that was a second release of 49.00 out of a 700
+  // share — a movement that exists in no transaction, no ledger entry and no
+  // balance. In the Jio example it is 2% of 10, printed as 0.20.
+  //
+  // Two things now make the tab safe rather than absent:
+  //
+  //   - mapServerTransaction zeroes `shareRate` on a share leg, so no share
+  //     row can claim a rate of its own; and
+  //   - `shareAmount` below READS the row's own figure on a share receipt
+  //     instead of multiplying anything, so there is no second computation
+  //     left to be wrong.
+  //
+  // What the tab shows is the share that actually happened, and the Payment
+  // tab beside it shows the payment it came from. Removing the tab stopped
+  // the fabrication but left the other half of the defect standing: the
+  // share still opened as a document headed "Money received", as though Jio
+  // had paid you 10 for something.
+  //
+  // A PAYMENT receipt still gets the tab only when a share really happened —
+  // a share leg minted server-side, or a non-zero rate applied by this
+  // device's own ledger. A payment at 0% shares nothing, and a tab offering
+  // the receipt for a movement that never happened is a claim, not a control.
+  const hasShareEvent = isShareReceipt || !!shareTxnRaw || shareRatePercent > 0;
+
+  // `direction` means two different things, and conflating them puts the
+  // wrong sign on the hero figure.
+  //
+  // On a PAYMENT receipt it describes the payment, and the share always runs
+  // the other way: I paid Jio, so Jio's share comes back to ME. On a SHARE
+  // receipt it describes the share itself and needs no inverting — direction
+  // "received" IS the share arriving.
+  const shareIsCredit = isShareReceipt ? !isSent : isSent;
   // Guarded rather than read straight off `receiptTab`, so a receipt opened
   // while the previous one was left on its share tab cannot land on a tab
   // this receipt does not have.
   const onShareTab = hasShareEvent && receiptTab === "share";
-  const tint = onShareTab ? isSent ? T.positive : T.negative : isSent ? T.negative : T.positive;
-  const tintSoft = onShareTab ? isSent ? T.positiveSoft : "rgba(226,63,69,0.12)" : isSent ? "rgba(226,63,69,0.12)" : T.positiveSoft;
+  const tint = onShareTab
+    ? (shareIsCredit ? T.positive : T.negative)
+    : (paymentIsSent ? T.negative : T.positive);
+  const tintSoft = onShareTab
+    ? (shareIsCredit ? T.positiveSoft : "rgba(226,63,69,0.12)")
+    : (paymentIsSent ? "rgba(226,63,69,0.12)" : T.positiveSoft);
   const shareCurrency = receipt.currencyCode;
   const shareAmountBase = receipt.amount;
-  const shareAmount = shareAmountBase * ((receipt.shareRate ?? 0) / 100);
+  // READ on a share receipt, computed on a payment receipt.
+  //
+  // On a share receipt the row IS the share, so its own figure is the
+  // figure. This is the line that makes the Creator Share tab safe to show
+  // on a share receipt at all — see hasShareEvent above.
+  const shareAmount = isShareReceipt
+    ? (Number(receipt.shareAmount) || Number(receipt.amount) || 0)
+    : shareAmountBase * ((receipt.shareRate ?? 0) / 100);
+  // The rate to DISPLAY. On a share receipt it comes off the payment, for
+  // the reason historyUtils spells out: the share row's own rate is zeroed
+  // at the boundary by design, so reading it here would print 0.00%.
+  const displayShareRate = isShareReceipt
+    ? (receipt.sourceShareRate ?? null)
+    : shareRatePercent;
   // Each tab shows ITS OWN transaction's reference.
   //
   // The Creator Share is a separate movement between a different pair of
@@ -124,13 +201,25 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // No reference now means no reference is shown. The id box is drawn only
   // `&&` there is one (see below), so the tab renders its money and its rate
   // and simply omits a field it does not have.
-  const showingShare = onShareTab && !!shareTxnRaw;
-  const rawTxnId = onShareTab
-    ? shareTxnRaw
-    : receipt.txnId ? String(receipt.txnId).replace(/\s/g, "") : "";
-  // The payment this share came from, shown beneath it so the two can be
-  // traced to each other.
-  const shareSourceTxnId = showingShare && receipt.txnId ? receipt.txnId.replace(/\s/g, "") : "";
+  // Which reference each tab names, and it swaps with the document.
+  //
+  // PAYMENT receipt: the payment's id is the row's own, the share's is
+  // shareTxnId. SHARE receipt: the other way round — the row IS the share,
+  // so its own id is the share's, and the payment's comes off the row the
+  // lookup found.
+  const ownTxnId = receipt.txnId ? String(receipt.txnId).replace(/\s/g, "") : "";
+  const shareSideTxnId = isShareReceipt ? ownTxnId : shareTxnRaw;
+  const paymentSideTxnId = isShareReceipt ? receipt.sourceTxnId || "" : ownTxnId;
+  const showingShare = onShareTab && !!shareSideTxnId;
+  const rawTxnId = onShareTab ? shareSideTxnId : paymentSideTxnId;
+  // No cross-reference line under the id.
+  //
+  // There was one — "From payment <id>" in small grey type beneath the
+  // share's own reference. The two tabs are a single swipe apart and each
+  // already shows the id of the thing it is about, in its own box under its
+  // own label, so the line said the same thing twice and in the worse of the
+  // two places. It was also laid out as a flex ROW sibling of the reference,
+  // so the two drew on top of each other.
   const handleCopyTxnId = () => {
     if (!rawTxnId) return;
     copyToClipboard(rawTxnId);
@@ -178,8 +267,8 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // accepts both shapes. Nothing here changes the Transaction ID itself; it
   // is minted, stored, displayed and copied exactly as before.
   const receiptShareCode = onShareTab
-    ? receipt.shareReceiptCode || ""
-    : receipt.receiptCode || "";
+    ? (isShareReceipt ? receipt.receiptCode || "" : receipt.shareReceiptCode || "")
+    : (isShareReceipt ? receipt.sourceReceiptCode || "" : receipt.receiptCode || "");
   const receiptSharePath = receiptShareCode || (rawTxnId ? encodeURIComponent(rawTxnId) : "");
   const receiptShareUrl = receiptSharePath ? `${GLOOBAL_API_BASE}/t/${receiptSharePath}` : "";
   const handleShareTxnId = () => {
@@ -278,7 +367,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       cursor: "pointer",
       zIndex: 1
     }}
-  ><Share2 size={13} color={T.inkSoft} /></button><div style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, minHeight: onShareTab ? 0 : void 0 }}>{!onShareTab ? `${isSent ? "Money sent" : "Money received"}${receipt.status === "pending" ? " \xB7 Pending" : receipt.status === "simulated" ? " \xB7 Not actually sent" : ""}` : isSent ? <SingleOMark before="Back t" after=" you" /> : "You share back"}</div>{
+  ><Share2 size={13} color={T.inkSoft} /></button><div style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, minHeight: onShareTab ? 0 : void 0 }}>{!onShareTab ? (paymentKnown ? `${paymentIsSent ? "Money sent" : "Money received"}${receipt.status === "pending" ? " \xB7 Pending" : receipt.status === "simulated" ? " \xB7 Not actually sent" : ""}` : "Payment not available") : shareIsCredit ? <SingleOMark before="Back t" after=" you" /> : "You share back"}</div>{
     /* Amount — matches whichever receipt is actually showing.
        Payment tab: what I sent/received, signed accordingly.
        Creator Share tab: the opposite direction from Payment —
@@ -286,25 +375,35 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        (credit, +); I received the payment, so I share back to
        them (debit, −). Always my own currency, since it's always
        my account the share settles into or out of. */
-  }<div style={{ margin: "10px 0 0", padding: "0 6px" }}>{!onShareTab ? <div
+  }<div style={{ margin: "10px 0 0", padding: "0 6px" }}>{!onShareTab ? (paymentKnown ? <div
     style={{
-      fontSize: receiptAmountFontSize(`${isSent ? "\u2212" : "+"}${fmtMoney(receipt.amount, receipt.currencyCode)}`, 27),
+      fontSize: receiptAmountFontSize(`${paymentIsSent ? "\u2212" : "+"}${fmtMoney(paymentAmount, paymentCurrency)}`, 27),
       fontWeight: 800,
       color: tint,
       fontFamily: T.fontDisplay,
       lineHeight: 1.15,
       overflowWrap: "anywhere"
     }}
-  >{isSent ? "\u2212" : "+"}{fmtMoney(receipt.amount, receipt.currencyCode)}</div> : <div
+    data-testid="receipt-hero-payment"
+  >{paymentIsSent ? "\u2212" : "+"}{fmtMoney(paymentAmount, paymentCurrency)}</div> : <div
+    style={{ fontSize: 13, fontWeight: 700, color: T.inkFaint, lineHeight: 1.4, padding: "6px 0" }}
+    data-testid="receipt-payment-unavailable"
+  >{
+    /* The payment row is not on this device. Saying so is the only honest
+       option: the share and its rate are both known, so the payment COULD
+       be reconstructed by division — and that is exactly the figure that
+       would be quietly wrong for every share that rounded. */
+  }This payment isn't on this device. The Creator Share above is complete.</div>) : <div
     style={{
-      fontSize: receiptAmountFontSize(`${isSent ? "+" : "\u2212"}${fmtMoney(shareAmount, shareCurrency)}`, 27),
+      fontSize: receiptAmountFontSize(`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shareAmount, shareCurrency)}`, 27),
       fontWeight: 800,
       color: tint,
       fontFamily: T.fontDisplay,
       lineHeight: 1.15,
       overflowWrap: "anywhere"
     }}
-  >{isSent ? "+" : "\u2212"}{fmtMoney(shareAmount, shareCurrency)}</div>}</div></div><div style={{ borderTop: `1.5px dashed ${T.line}`, margin: "18px 0" }} />{
+    data-testid="receipt-hero-share"
+  >{shareIsCredit ? "+" : "\u2212"}{fmtMoney(shareAmount, shareCurrency)}</div>}</div></div><div style={{ borderTop: `1.5px dashed ${T.line}`, margin: "18px 0" }} />{
     /* Two receipts, one toggle. Payment always exists. Creator
        Share exists whenever the payment actually carried one — a
        share leg minted server-side, or a non-zero rate applied by
@@ -315,9 +414,9 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        sense: whether the event exists at all, never on how big it
        is. */
   }<div style={{ display: "flex", alignItems: "center", gap: 6, padding: 4, borderRadius: 999, background: T.surfaceAlt, marginBottom: 14 }}><ReceiptTabButton
-    label="Payment"
-    active={!onShareTab}
-    onSelect={() => setReceiptTab("payment")}
+    label={tabLabel(leadingTab)}
+    active={leadingTab === "share" ? onShareTab : !onShareTab}
+    onSelect={() => setReceiptTab(leadingTab)}
   />{
     /* The counterparty's flag, on the seam between the two tabs.
        It used to hang off the top edge of the box BELOW this row —
@@ -366,10 +465,10 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     size={26}
     fit="cover"
     dropShadow="drop-shadow(0 2px 6px rgba(76,29,149,0.20))"
-  /></span><span style={{ width: 1, height: 14, background: T.inkFaint, opacity: 0.35 }} /></span>}{hasShareEvent && <ReceiptTabButton
-    label="Creator Share"
-    active={onShareTab}
-    onSelect={() => setReceiptTab("share")}
+  /></span><span style={{ width: 1, height: 14, background: T.inkFaint, opacity: 0.35 }} /></span>}{(trailingTab !== "share" || hasShareEvent) && <ReceiptTabButton
+    label={tabLabel(trailingTab)}
+    active={trailingTab === "share" ? onShareTab : !onShareTab}
+    onSelect={() => setReceiptTab(trailingTab)}
   />}</div>{!onShareTab ? <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{
     /* Box 1 — who it's to/from, and their Gloobal ID if there is one.
        The flag no longer hangs off this box's top edge: it is on the
@@ -409,7 +508,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        default to 0 rather than the whole receipt disappearing —
        a 0% share is still a real, reportable outcome of this
        transaction, not a reason to hide it. */
-  }<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label={isSent ? "Shared back to" : "You shared back to"} value={isSent ? "You" : receipt.name} />{
+  }<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label={shareIsCredit ? "Shared back to" : "You shared back to"} value={shareIsCredit ? "You" : receipt.name} />{
     /* Who the other side of the share is, by name and by ID.
        The Payment tab has carried the counterparty's Gloobal ID since it
        was built; this tab named a person and stopped there, so the Creator
@@ -425,21 +524,29 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        extra row in that direction only: receipt.id belongs to receipt.name in
        both cases, and it must sit under the row that names them, never under
        "You". */
-  }{isSent && <ReceiptRow label="Shared back by" value={receipt.name} />}{receipt.id && <ReceiptRow
+  }{shareIsCredit && <ReceiptRow label="Shared back by" value={receipt.name} />}{receipt.id && <ReceiptRow
     testId="receipt-share-counterparty-id"
     label={<GloobalWordmark suffix=" ID" />}
     value={<ColoredGloobalId id={receipt.id} />}
     mono
-  />}</div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label="Creator Share rate" value={`${(receipt.shareRate ?? 0).toFixed(2)}%`} accent />{
+  />}</div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow
+    label="Creator Share rate"
+    value={displayShareRate == null ? "\u2014" : `${displayShareRate.toFixed(2)}%`}
+    accent
+  />{
     /* Credit when I sent (the receiver shares back to me),
        debit when I received (I share back to them) — same
        direction as the hero figure above, always my own
        currency. */
   }<ReceiptRow
     label="Amount"
-    value={`${isSent ? "+" : "\u2212"}${fmtMoney(shareAmount, shareCurrency)}`}
+    value={`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shareAmount, shareCurrency)}`}
     accent
-  /></div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label="From payment" value={fmtMoney(receipt.amount, receipt.currencyCode)} /><ReceiptRow label="Date" value={receipt.date} /><ReceiptRow label="Time" value={receipt.time} mono /></div></div>}{
+  /></div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow
+    label="From payment"
+    value={paymentKnown ? fmtMoney(paymentAmount, paymentCurrency) : "Not on this device"}
+    testId="receipt-share-from-payment"
+  /><ReceiptRow label="Date" value={receipt.date} /><ReceiptRow label="Time" value={receipt.time} mono /></div></div>}{
     /* Transaction ID — its own box, separate from the boxes above.
        Shown as individually colored symbols (same palette used for
        Secure ID chips elsewhere), centered in the box. Label sits
@@ -490,7 +597,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       justifyContent: "center",
       cursor: "pointer"
     }}
-  >{copied ? <Check size={13} color={T.positive} /> : <Copy size={13} color={T.inkSoft} />}</button><div style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", justifyContent: "center", gap: 4, fontFamily: "monospace", fontSize: 14, fontWeight: 800, maxWidth: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>{rawTxnId.split("").map((ch, i) => <span key={i} style={{ flexShrink: 0, color: POSITION_COLORS[(i + txnColorOffset) % POSITION_COLORS.length], transition: "color 0.4s ease" }}>{ch}</span>)}</div>{shareSourceTxnId && <div style={{ marginTop: 8, fontSize: 10.5, fontWeight: 600, color: T.inkFaint, textAlign: "center", lineHeight: 1.45, wordBreak: "break-all" }}>{"From payment "}<span style={{ fontFamily: "monospace", fontWeight: 800 }}>{shareSourceTxnId}</span></div>}</div>}{
+  >{copied ? <Check size={13} color={T.positive} /> : <Copy size={13} color={T.inkSoft} />}</button><div style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", justifyContent: "center", gap: 4, fontFamily: "monospace", fontSize: 14, fontWeight: 800, maxWidth: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>{rawTxnId.split("").map((ch, i) => <span key={i} style={{ flexShrink: 0, color: POSITION_COLORS[(i + txnColorOffset) % POSITION_COLORS.length], transition: "color 0.4s ease" }}>{ch}</span>)}</div></div>}{
     /* Provenance & complaint window — each viewer only ever sees
        their OWN resolved city/state (never the other party's), plus
        a short, explicit window to report an issue. Reporting opens a

@@ -100,7 +100,46 @@ function sumHistoryAmount(rows, targetCurrency) {
   }, 0);
   return Math.round(total * 100) / 100;
 }
-function buildHistoryReceipt(t, direction, dialCountry, ccy) {
+// The payment a Creator Share came from.
+//
+// A share leg carries its own amount (Jio's 10 back to me) and, since the
+// projection started surfacing it, the REFERENCE of the payment that
+// produced it — but not that payment's figure. The receipt's Payment tab
+// needs the figure, so it finds the row. It is always findable from the
+// viewer's own history, because whichever side a share sits on, the payment
+// that produced it sits on the other one: I pay Jio 500, the 500 is on my
+// paid side and the 10 lands on my received side. Jio sees the mirror.
+//
+// Found by REFERENCE, never by arithmetic. shareAmount / shareRate happens
+// to give 500 for that example and gives a number that never existed for
+// most others — the share is rounded to the minor unit when it is credited,
+// so 9.99 at 2% reads back as 499.50, and a 0% share divides by zero. A
+// receipt may not print a figure it reconstructed. That is the same class of
+// fabrication as the 49.00 second release mapServerTransaction now stops at
+// the boundary, arrived at from the other direction.
+//
+// Returns null when the source row is not in the lists — an older payment, a
+// device that has not synced it. The receipt then says the payment is not
+// available rather than showing the wrong one.
+function findSharePaymentSource(row, sendHistory, receiveHistory) {
+  const reference = row && row.shareSourceTxnId
+    ? String(row.shareSourceTxnId).replace(/\s/g, "")
+    : "";
+  if (!reference) return null;
+
+  const search = (list, direction) => {
+    for (const candidate of Array.isArray(list) ? list : []) {
+      if (candidate === row) continue;
+      const id = candidate.txnId ? String(candidate.txnId).replace(/\s/g, "") : "";
+      if (id && id === reference) return { row: candidate, direction };
+    }
+    return null;
+  };
+
+  return search(sendHistory, "sent") || search(receiveHistory, "received");
+}
+
+function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = null) {
   // The currency THIS ROW's amount is in, which is not always the viewer's.
   //
   // A restored cross-border row carries its own currency (see
@@ -198,7 +237,27 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy) {
     // payment, or one restored from a server that had not minted them yet)
     // shares the long link, which still resolves.
     receiptCode: t.receiptCode || "",
-    shareReceiptCode: t.shareReceiptCode || ""
+    shareReceiptCode: t.shareReceiptCode || "",
+    // ── The payment a Creator Share receipt describes on its Payment tab ──
+    //
+    // Real figures off the real row, all of them, and null when the row was
+    // not found. Nothing here is derived from the share and its rate.
+    //
+    // The RATE is read from the payment too, not from the share row, and
+    // that is not a style choice: mapServerTransaction deliberately zeroes
+    // `shareRate` on a share leg — the leg IS the share and must not be able
+    // to claim one — so the share row's own rate is 0 by design. The rate
+    // that produced it lives on the payment, which is where this reads it.
+    sourceAmount: sourcePayment ? Number(sourcePayment.row.amount) || 0 : null,
+    sourceCurrencyCode: sourcePayment
+      ? sourcePayment.row.currency || rowCurrency
+      : null,
+    sourceDirection: sourcePayment ? sourcePayment.direction : null,
+    sourceShareRate: sourcePayment ? Number(sourcePayment.row.shareRate) || 0 : null,
+    sourceTxnId: sourcePayment && sourcePayment.row.txnId
+      ? String(sourcePayment.row.txnId).replace(/\s/g, "")
+      : "",
+    sourceReceiptCode: sourcePayment ? sourcePayment.row.receiptCode || "" : ""
   };
 }
 

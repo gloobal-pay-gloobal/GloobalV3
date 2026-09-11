@@ -7001,6 +7001,20 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
         // payment's — sharing the Creator Share tab must not hand somebody a
         // link to the payment it came from.
         shareReceiptCode: shareByPayment.get(String(transaction._id))?.receiptCode || null,
+        // And the other direction: on a SHARE LEG, the reference of the
+        // payment that produced it.
+        //
+        // mintShareLegAndReceipts has written this into the leg's metadata
+        // since it was built — `paymentReferenceId`, right beside the note
+        // that reads "Share on <ref>" — but neither projection surfaced it,
+        // so a share leg arrived on the client with no way back to its
+        // payment. The Creator Share receipt needs it: its Payment tab
+        // describes the payment the share came from, and a receipt may not
+        // reconstruct that figure by dividing the share by its rate (9.99 at
+        // 2% reads back as 499.50, and a 0% share divides by zero).
+        //
+        // Null on a payment, which has no payment above it.
+        paymentReferenceId: transaction.metadata?.paymentReferenceId || null,
         createdAt: transaction.createdAt,
       };
     });
@@ -7209,6 +7223,20 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         shareReferenceId: shareByPayment.get(String(transaction._id))?.referenceId || null,
         // The share leg's own short link handle, distinct from the payment's.
         shareReceiptCode: shareByPayment.get(String(transaction._id))?.receiptCode || null,
+        // And the other direction: on a SHARE LEG, the reference of the
+        // payment that produced it.
+        //
+        // mintShareLegAndReceipts has written this into the leg's metadata
+        // since it was built — `paymentReferenceId`, right beside the note
+        // that reads "Share on <ref>" — but neither projection surfaced it,
+        // so a share leg arrived on the client with no way back to its
+        // payment. The Creator Share receipt needs it: its Payment tab
+        // describes the payment the share came from, and a receipt may not
+        // reconstruct that figure by dividing the share by its rate (9.99 at
+        // 2% reads back as 499.50, and a 0% share divides by zero).
+        //
+        // Null on a payment, which has no payment above it.
+        paymentReferenceId: transaction.metadata?.paymentReferenceId || null,
         createdAt: transaction.createdAt,
       };
     });

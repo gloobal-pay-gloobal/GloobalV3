@@ -1,408 +1,363 @@
 // tests/creator-share-receipt.test.mjs
 //
-// What a Creator Share looks like on the screens, driven in a real browser
-// against a REAL server — not the suite's fake API.
+// A Creator Share has its own receipt.
 //
-//   node --test tests/creator-share-receipt.test.mjs
+// ── The Jio example, which is the whole of it ────────────────────────────
 //
-// ── Why a live server ────────────────────────────────────────────────────
+// I pay Jio 500. Jio's Creator Share is 2%, so 10 comes back to me. That is
+// ONE event with two legs, and my history holds a row for each:
 //
-// The fake API in browser-harness.mjs answers a send with
-// `shareTransaction: null`, so no Creator Share leg ever reaches the app
-// through it — and the defect this file exists for lives entirely in how the
-// app reads that leg. A test against the fake could not see it. So the fake
-// is overridden here by a proxy that forwards every call to a server.js
-// running against a throwaway database, and the screens below are produced by
-// the same Creator Share code that runs in production.
+//   paid side      Jio  −500     tap it → a PAYMENT receipt
+//   received side  Jio   +10     tap it → a CREATOR SHARE receipt
 //
-// ── The report ───────────────────────────────────────────────────────────
+// The second one did not exist. `kind` — the field the server sends as
+// `type: "share"` precisely so a client can tell the two apart, and which
+// App.jsx's mapServerTransaction already reads — was never passed into the
+// receipt. So tapping the 10 opened a document headed
 //
-//   "A has Creator Share 1%. B has 7%. A sends B a payment. B releases B's
-//    share back to A. But the system then releases another Creator Share
-//    from the same transaction. It's releasing twice on the same
-//    transaction."
+//     MONEY RECEIVED
+//     +10.00
 //
-// The money was never released twice. A read-only pass over the production
-// records settled that: across 194 payments and 153 share legs there are 153
-// cashback ledger lines, no payment carries more than one leg, no leg
-// descends from another leg, and the payer's own rate appears on no
-// transaction at all. server/tests/creator-share-single-release.test.mjs
-// holds those invariants down.
+// as though Jio had paid me for something. And because the Creator Share tab
+// computes `amount × shareRate`, it then took 2% OF THE 10 and printed 0.20:
+// a figure that has never existed anywhere in this app, on a document that
+// looks like a record of it.
 //
-// What was released twice was on the screen. The Creator Share leg arrives
-// carrying the payment's own rate (merchantShareFlow writes it into the
-// leg's metadata so the leg can say which rate produced it),
-// mapServerTransaction copied it into `shareRate` like it does for any row,
-// and ReceiptModal treats any shareRate > 0 as "this movement carried a
-// share". So opening the 700 that had just been shared back showed a Creator
-// Share tab reading
+// That is the defect this suite exists to prevent coming back, and it is the
+// same one as the My Share bar drawn from a slider and the daily chart
+// drawing 3px for zero — a picture that lies.
 //
-//   YOU SHARE BACK  −49.00
-//   Creator Share rate  7.00%
-//   From payment  700.00
+// ── What the receipt does now ────────────────────────────────────────────
 //
-// — a second release, of a share of the share, that exists nowhere else.
+// Both receipts carry both tabs and the flag between them. Which document it
+// IS decides the order and which tab opens:
 //
-// The rule: a Creator Share receipt shows no Creator Share of its own, and
-// one payment shows exactly one share.
+//   payment receipt   [ Payment ] 🇮🇳 [ Creator Share ]
+//   share receipt     [ Creator Share ] 🇮🇳 [ Payment ]
+//
+// and the share receipt's Payment tab shows the 500 that produced the share
+// — found by REFERENCE in the viewer's own history, never by dividing the
+// share by its rate.
 
-import { test, describe, before, after } from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { openPage, teardown, login, API_ORIGIN, ACCOUNTS } from "./browser-harness.mjs";
+import { readSource } from "./harness.mjs";
 
-const BACKEND = join(dirname(fileURLToPath(import.meta.url)), "..", "server");
-const require = createRequire(join(BACKEND, "server.js"));
-require("dotenv").config({ path: join(BACKEND, ".env"), quiet: true });
+const src = (p) => readSource(p);
+const code = (p) => src(p)
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^\s*\/\/.*$/gm, "");
 
-if (!process.env.MONGO_URI) {
-  console.error("MONGO_URI is not set — this test needs server/.env.");
-  process.exit(1);
+const MODAL = "frontend/components/dialogs/ReceiptModal.jsx";
+const UTILS = "frontend/features/history/historyUtils.js";
+const SCREEN = "frontend/features/history/TransactionHistoryScreen.jsx";
+
+// findSharePaymentSource is pure and depends on nothing, so it can be lifted
+// out of the module and called directly. Sliced on the literal "\n}\n", which
+// is why harness.mjs normalises line endings — see its note on the CRLF
+// failure that reports as a bare 'test failed' at 1:1.
+function loadFinder() {
+  const s = src(UTILS);
+  const at = s.indexOf("function findSharePaymentSource");
+  assert.ok(at !== -1, "findSharePaymentSource is gone");
+  const end = s.indexOf("\n}\n", at);
+  assert.ok(end !== -1, "could not slice findSharePaymentSource");
+  const body = s.slice(at, end + 3);
+  return new Function(`${body}\nreturn findSharePaymentSource;`)();
 }
 
-const TEST_DB = "gloobal_creator_share_receipt_check";
-const [beforeQuery, query] = process.env.MONGO_URI.split("?");
-process.env.MONGO_URI = `${beforeQuery.replace(/\/[^/]*$/, "/")}${TEST_DB}${query ? "?" + query : ""}`;
-process.env.PORT = process.env.TEST_PORT || "5217";
-process.env.PROTOTYPE_TRANSACTION_MAX_AMOUNT = "1000000";
-process.env.AUTH_TOKEN_SECRET = "test-secret-not-the-production-one";
-process.env.PROTOTYPE_OTP = "123456";
-
-const mongoose = require("mongoose");
-
-// server.js calls app.listen and exports nothing, so there is no handle to
-// close when the tests are done — and an open listener keeps the process
-// alive, which under `node --test` means the run never prints its summary.
-// Recording the servers as they start is the smallest way to get one; the
-// patch is removed immediately after the module has loaded, so nothing else
-// in the process sees it.
-const http = require("node:http");
-const listeners = [];
-const realListen = http.Server.prototype.listen;
-http.Server.prototype.listen = function patchedListen(...args) {
-  listeners.push(this);
-  return realListen.apply(this, args);
-};
-require(join(BACKEND, "server.js"));
-http.Server.prototype.listen = realListen;
-
-const User = require(join(BACKEND, "models/User"));
-const Pin = require(join(BACKEND, "models/Pin"));
-const Otp = require(join(BACKEND, "models/Otp"));
-const Transaction = require(join(BACKEND, "models/Transaction"));
-const Receipt = require(join(BACKEND, "models/Receipt"));
-const LedgerEntry = require(join(BACKEND, "models/LedgerEntry"));
-const AssetSeed = require(join(BACKEND, "models/AssetSeed"));
-
-const LIVE = `http://127.0.0.1:${process.env.PORT}`;
-
-// The founder's two people. Their countries differ from each other so a flag
-// on a receipt can be told apart from the viewer's own.
-const PAYER = ACCOUNTS.india;    // Creator Share 1%
-const PAYEE = ACCOUNTS.india2;   // Creator Share 2%
-// The reported pair's real configuration, read off the production records:
-// the payer shares 1%, the payee 7%, and the payment is 10,000. The payer's
-// 1% is in the fixture precisely so the assertions can prove it is never used.
-const PAYER_RATE = 0.01;
-const PAYEE_RATE = 0.07;
-const PAYMENT = 10000;
-const SHARE = 700;               // 7% of 10,000 — the payee's rate, not the payer's
-const OPENING = 100000;
-
-const post = (path, body, token) =>
-  fetch(`${LIVE}${path}`, {
-    method: "POST",
-    headers: Object.assign({ "Content-Type": "application/json" }, token ? { Authorization: `Bearer ${token}` } : {}),
-    body: JSON.stringify(body),
-  }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
-
-const tokens = {};
-
-async function registerAccount(acct) {
-  await post("/api/otp/send", { mobileNumber: acct.mobileNumber, purpose: "registration" });
-  await post("/api/otp/verify", { mobileNumber: acct.mobileNumber, otp: "123456", purpose: "registration" });
-  const r = await post("/api/register-symbol", {
-    fullName: acct.fullName, mobileNumber: acct.mobileNumber, symbolId: acct.symbolId, countryIso: acct.countryIso,
-  });
-  assert.ok(tokens[acct.symbolId] = r.body?.token,
-    `could not register ${acct.fullName}: ${r.status} ${JSON.stringify(r.body)}`);
-  await post("/api/pin/set", { symbolId: acct.symbolId, pin: acct.pin }, r.body?.token);
-}
-
-const untilConnected = () =>
-  new Promise((resolve, reject) => {
-    if (mongoose.connection.readyState === 1) return resolve();
-    mongoose.connection.once("connected", resolve);
-    mongoose.connection.once("error", reject);
-    setTimeout(() => reject(new Error("timed out connecting to MongoDB")), 40000);
+describe("the receipt is told what kind of row it is", () => {
+  test("kind is passed through to the receipt", () => {
+    // The one missing line. Everything below depends on it.
+    assert.match(code(UTILS), /kind: t\.kind === "share" \? "share" : "payment"/);
   });
 
-// Point the app at the live server. Registered AFTER openPage's own route so
-// Playwright prefers this one — the fake is still installed underneath and
-// simply never consulted.
-async function proxyToLiveServer(context) {
-  await context.route(`${API_ORIGIN}/**`, async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    const headers = { ...request.headers() };
-    delete headers.host; delete headers.origin; delete headers.referer;
-    const response = await fetch(`${LIVE}${url.pathname}${url.search}`, {
-      method: request.method(), headers, body: request.postData() || undefined, redirect: "manual",
-    });
-    await route.fulfill({
-      status: response.status,
-      headers: { "content-type": response.headers.get("content-type") || "application/json" },
-      body: Buffer.from(await response.arrayBuffer()),
-    });
+  test("the modal reads it", () => {
+    assert.match(code(MODAL), /const isShareReceipt = receipt\.kind === "share";/);
   });
-}
+});
 
-const tap = async (locator) => {
-  await locator.waitFor({ timeout: 20000 });
-  await locator.evaluate((node) => node.click());
-};
-
-// Everything the open receipt says, and the flag it is showing.
-async function readReceipt(page) {
-  return page.evaluate(() => {
-    const dialog = document.querySelector('[aria-label="Transaction receipt"]');
-    const img = document.querySelector('[data-testid="receipt-flag"] img');
-    return {
-      text: dialog ? dialog.innerText.replace(/\s+/g, " ").trim() : "",
-      flag: img ? img.getAttribute("src") : null,
-      tabs: [...document.querySelectorAll('[aria-pressed]')].map((b) => b.textContent.trim()),
-    };
+describe("a share receipt opens on its share", () => {
+  test("the initial tab comes from the receipt, not from a constant", () => {
+    const modal = code(MODAL);
+    assert.match(
+      modal,
+      /useState11\(\s*\(\) => \(receipt && receipt\.kind === "share" \? "share" : "payment"\)\s*\)/,
+      "the opening tab is hardcoded again"
+    );
   });
-}
 
-const flagIsoOf = (src) => {
-  const m = String(src || "").match(/flagcdn\.com\/w\d+\/([a-z]{2})\.png/);
-  return m ? m[1].toUpperCase() : null;
-};
+  test("and the reset-on-new-receipt effect agrees with it", () => {
+    // Two places, and they have to say the same thing. If only the effect
+    // knew, the modal would paint one frame of the Payment tab and then
+    // switch — a flicker on the document that is least about a payment.
+    assert.match(
+      code(MODAL),
+      /setReceiptTab\(receipt\.kind === "share" \? "share" : "payment"\)/
+    );
+  });
+});
 
-// The History screen is a two-column pager and BOTH columns are in the DOM at
-// once — receiving first, sending second. So a row has to be picked by its
-// position, not by `.first()`, which always returns the receiving one however
-// far the pager has been scrolled. Each column here holds exactly one row per
-// counterparty, which is what makes first/last unambiguous.
-const historyRow = (page, name, column) => {
-  const rows = page.getByRole("button", { name: new RegExp(`^${name},`) });
-  return column === "sending" ? rows.last() : rows.first();
-};
+describe("Creator Share leads on a share receipt", () => {
+  test("the tab order is derived, not fixed", () => {
+    const modal = code(MODAL);
+    assert.match(modal, /const leadingTab = isShareReceipt \? "share" : "payment";/);
+    assert.match(modal, /const trailingTab = isShareReceipt \? "payment" : "share";/);
+  });
 
-// Signs in and opens the History screen, on whichever column is asked for.
-async function openHistory(page, account, column) {
-  await page.getByRole("button", { name: "Profile", exact: true }).click({ force: true });
-  await tap(page.getByRole("button", { name: /^History$/i }).first());
-  await page.waitForTimeout(2000);
-  if (column === "sending") {
-    await page.evaluate(() => {
-      const scroller = [...document.querySelectorAll("div")].find(
-        (d) => d.scrollWidth > d.clientWidth + 50 && d.clientWidth > 200
+  test("both tab buttons render from that order", () => {
+    // The failure this catches is one button converted and the other left
+    // hardcoded, which renders "Creator Share" twice.
+    const modal = code(MODAL);
+    assert.match(modal, /label=\{tabLabel\(leadingTab\)\}/);
+    assert.match(modal, /label=\{tabLabel\(trailingTab\)\}/);
+    assert.ok(!/label="Payment"/.test(modal), "a tab label is hardcoded again");
+    assert.ok(!/label="Creator Share"/.test(modal), "a tab label is hardcoded again");
+  });
+
+  test("the flag still sits between them", () => {
+    // It belongs to the document, not to a tab — there is only ever one
+    // counterparty on a receipt. Reordering the tabs must not have moved it.
+    const modal = code(MODAL);
+    const at = modal.indexOf('data-testid="receipt-flag"');
+    assert.ok(at !== -1, "the flag is gone from the receipt");
+    const lead = modal.indexOf("label={tabLabel(leadingTab)}");
+    const trail = modal.indexOf("label={tabLabel(trailingTab)}");
+    assert.ok(lead < at && at < trail, "the flag is no longer between the two tabs");
+  });
+});
+
+describe("the Creator Share tab is present without being fabricated", () => {
+  test("a share receipt gets the tab; a payment gets it only if a share happened", () => {
+    // The tab was REMOVED from share receipts to stop a real fabrication: a
+    // second release of 49.00 out of a 700 share, computed by applying the
+    // rate to the share. Removing it worked but left the other half standing
+    // — the share still opened headed "Money received". It is back, and safe,
+    // because the figure below is READ rather than multiplied.
+    assert.match(
+      code(MODAL),
+      /const hasShareEvent = isShareReceipt \|\| !!shareTxnRaw \|\| shareRatePercent > 0;/
+    );
+  });
+
+  test("a payment at 0% still has no Creator Share tab", () => {
+    // Their guard, preserved. A tab offering the receipt for a movement that
+    // never happened is a claim, not a control.
+    const modal = code(MODAL);
+    assert.match(modal, /shareRatePercent > 0/);
+    assert.match(modal, /\(trailingTab !== "share" \|\| hasShareEvent\) && <ReceiptTabButton/);
+  });
+
+  test("the rate shown on a share receipt comes from the payment", () => {
+    // mapServerTransaction zeroes shareRate on a share leg by design — the
+    // leg IS the share and must not claim one — so reading it here would
+    // print 0.00%. The rate that produced the share lives on the payment.
+    const modal = code(MODAL);
+    assert.match(modal, /const displayShareRate = isShareReceipt\s*\?\s*\(receipt\.sourceShareRate \?\? null\)\s*:\s*shareRatePercent;/);
+    assert.match(code(UTILS), /sourceShareRate: sourcePayment \? Number\(sourcePayment\.row\.shareRate\) \|\| 0 : null/);
+  });
+
+  test("an unknown rate shows a dash, not a zero", () => {
+    // 0.00% is a statement that the payee shares nothing. A rate we could not
+    // find is not that.
+    assert.match(code(MODAL), /displayShareRate == null \? "\\u2014"/);
+  });
+});
+
+describe("the share figure is never computed twice", () => {
+  test("a share receipt reads the row's own amount", () => {
+    // The 0.20 bug. On a share receipt the row IS the share, so applying the
+    // rate again applies it to a number that has already had it applied.
+    assert.match(
+      code(MODAL),
+      /const shareAmount = isShareReceipt\s*\?\s*\(Number\(receipt\.shareAmount\) \|\| Number\(receipt\.amount\) \|\| 0\)\s*:\s*shareAmountBase \* \(\(receipt\.shareRate \?\? 0\) \/ 100\)/
+    );
+  });
+});
+
+describe("the sign is right on both documents", () => {
+  test("direction is read two different ways, deliberately", () => {
+    // On a PAYMENT receipt `direction` describes the payment and the share
+    // runs the other way. On a SHARE receipt it describes the share itself.
+    // Conflating them prints the wrong sign on the hero figure.
+    assert.match(code(MODAL), /const shareIsCredit = isShareReceipt \? !isSent : isSent;/);
+  });
+
+  test("every share-side sign and label reads shareIsCredit, not isSent", () => {
+    const modal = code(MODAL);
+    for (const fragment of [
+      'label={shareIsCredit ? "Shared back to" : "You shared back to"}',
+      'value={shareIsCredit ? "You" : receipt.name}',
+      '{shareIsCredit && <ReceiptRow label="Shared back by"'
+    ]) {
+      assert.ok(modal.includes(fragment), `still on isSent: ${fragment}`);
+    }
+  });
+
+  test("the label and the value of the counterparty row agree", () => {
+    // These two sit at opposite ends of a long comment, and converting only
+    // the label is exactly what happened first: a share Jio sent ME read
+    // "Shared back to: Jio / Shared back by: Jio". Caught in a render, not in
+    // review, which is why it is asserted here.
+    const modal = code(MODAL);
+    const at = modal.indexOf('label={shareIsCredit ? "Shared back to"');
+    assert.ok(at !== -1);
+    const window = modal.slice(at, at + 400);
+    assert.ok(
+      /value=\{shareIsCredit \? "You" : receipt\.name\}/.test(window),
+      "the row's label and value are reading different fields"
+    );
+  });
+});
+
+describe("the source payment is found, never derived", () => {
+  const PAYMENT = { txnId: "AAA111", amount: 500, currency: "INR", name: "Jio" };
+  const SHARE = { txnId: "BBB222", amount: 10, shareSourceTxnId: "AAA111", kind: "share" };
+
+  test("it matches the payment by reference", () => {
+    const find = loadFinder();
+    const found = find(SHARE, [PAYMENT], []);
+    assert.equal(found.row, PAYMENT);
+    assert.equal(found.direction, "sent");
+  });
+
+  test("it looks on both sides, because the creator sees the mirror", () => {
+    // I pay Jio: the payment is on my PAID side. Jio sees the same pair with
+    // the payment on their RECEIVED side and the share on their paid side.
+    const find = loadFinder();
+    const found = find(SHARE, [], [PAYMENT]);
+    assert.equal(found.direction, "received");
+  });
+
+  test("it never matches the share against itself", () => {
+    const find = loadFinder();
+    const selfReferential = { ...SHARE, shareSourceTxnId: "BBB222" };
+    assert.equal(find(selfReferential, [selfReferential], []), null);
+  });
+
+  test("whitespace in a reference does not stop it matching", () => {
+    // Gloobal references are rendered in spaced groups in places, and a row
+    // that carries the spaced form would otherwise silently never match.
+    const find = loadFinder();
+    assert.ok(find({ ...SHARE, shareSourceTxnId: "AAA 111" }, [PAYMENT], []));
+    assert.ok(find(SHARE, [{ ...PAYMENT, txnId: "AAA 111" }], []));
+  });
+
+  test("a share with no source reference finds nothing", () => {
+    const find = loadFinder();
+    assert.equal(find({ ...SHARE, shareSourceTxnId: "" }, [PAYMENT], []), null);
+    assert.equal(find({}, [PAYMENT], []), null);
+    assert.equal(find(null, [PAYMENT], []), null);
+  });
+
+  test("a missing payment returns null rather than a guess", () => {
+    const find = loadFinder();
+    assert.equal(find(SHARE, [], []), null);
+    assert.equal(find(SHARE, null, undefined), null);
+  });
+
+  test("nothing anywhere divides a share by its rate", () => {
+    // shareAmount / shareRate would give 500 for this example and a number
+    // that never existed for most others: the share is rounded to the minor
+    // unit when it is credited, so 9.99 at 2% reads back as 499.50 — and a 0%
+    // share divides by zero. A receipt may not print a reconstructed figure.
+    for (const p of [UTILS, MODAL]) {
+      const s = code(p);
+      assert.ok(
+        !/shareAmount\s*\/\s*/.test(s) && !/\/\s*\(\s*receipt\.shareRate/.test(s),
+        `${p} reconstructs the payment from the share and the rate`
       );
-      if (scroller) scroller.scrollLeft = scroller.scrollWidth;
-    });
-    await page.waitForTimeout(900);
-  }
-}
-
-async function signIn(account) {
-  const opened = await openPage({
-    account,
-    permissions: ["geolocation"],
-    geolocation: { latitude: 19.076, longitude: 72.8777 },
-  });
-  await proxyToLiveServer(opened.context);
-  await opened.page.reload();
-  await opened.page.waitForSelector("#root *", { timeout: 20000 });
-  await login(opened.page, account);
-  await opened.page.waitForTimeout(4000);
-  return opened.page;
-}
-
-let payerPage = null;
-let payeePage = null;
-
-before(async () => {
-  await untilConnected();
-  if (mongoose.connection.name !== TEST_DB) {
-    throw new Error(`refusing to run against "${mongoose.connection.name}" — expected ${TEST_DB}`);
-  }
-  await Promise.all([
-    User.deleteMany({}), Pin.deleteMany({}), Otp.deleteMany({}),
-    Transaction.deleteMany({}), Receipt.deleteMany({}), LedgerEntry.deleteMany({}), AssetSeed.deleteMany({}),
-  ]);
-  await registerAccount(PAYER);
-  await registerAccount(PAYEE);
-  await User.updateOne({ symbolId: PAYER.symbolId }, { $set: { countryIso: "IN", balance: OPENING, cashbackRate: PAYER_RATE } });
-  await User.updateOne({ symbolId: PAYEE.symbolId }, { $set: { countryIso: "IN", balance: OPENING, cashbackRate: PAYEE_RATE } });
-
-  const sent = await post("/api/transactions/send",
-    { senderSymbolId: PAYER.symbolId, receiverSymbolId: PAYEE.symbolId, amount: PAYMENT, note: "Founder scenario", pin: PAYER.pin },
-    tokens[PAYER.symbolId]);
-  assert.equal(sent.status, 201, `the fixture payment failed: ${JSON.stringify(sent.body)}`);
-  assert.equal(sent.body?.cashback, SHARE, "the fixture payment did not release the payee's 7%");
-  assert.equal(sent.body?.cashbackRate, PAYEE_RATE, "the server applied a rate that is not the payee's");
-});
-
-after(async () => {
-  await teardown();
-  try { await mongoose.connection.dropDatabase(); } catch (e) { /* best effort */ }
-  try { await mongoose.disconnect(); } catch (e) { /* already down */ }
-  for (const listener of listeners) {
-    await new Promise((resolve) => listener.close(resolve));
-  }
-});
-
-describe("the payer's side of one shared payment", () => {
-  before(async () => { payerPage = await signIn(PAYER); });
-
-  test("the payment receipt offers a Creator Share tab, at the PAYEE's rate", async () => {
-    await openHistory(payerPage, PAYER, "sending");
-    await tap(historyRow(payerPage, PAYEE.fullName, "sending"));
-    await payerPage.getByTestId("receipt-counterparty").waitFor({ timeout: 20000 });
-    const receipt = await readReceipt(payerPage);
-    assert.ok(receipt.tabs.includes("Creator Share"), `tabs were ${JSON.stringify(receipt.tabs)}`);
-    await tap(payerPage.getByRole("button", { name: "Creator Share", exact: true }).first());
-    await payerPage.waitForTimeout(700);
-    const share = await readReceipt(payerPage);
-    assert.match(share.text, /7\.00%/, "the payee's 7% is not what the share tab shows");
-    assert.ok(!/1\.00%/.test(share.text), "the PAYER's own 1% is being applied to a payment they made");
-    assert.match(share.text, /700\.00/, "the share tab does not show the 700 that actually moved");
+    }
   });
 
-  test("and both tabs carry the counterparty's flag", async () => {
-    const share = await readReceipt(payerPage);
-    assert.equal(flagIsoOf(share.flag), PAYEE.countryIso, `share tab flag was ${share.flag}`);
-    await tap(payerPage.getByRole("button", { name: "Payment", exact: true }).first());
-    await payerPage.waitForTimeout(500);
-    const payment = await readReceipt(payerPage);
-    assert.equal(flagIsoOf(payment.flag), PAYEE.countryIso, `payment tab flag was ${payment.flag}`);
+  test("the receipt carries the real figures off the real row", () => {
+    const utils = code(UTILS);
+    assert.match(utils, /sourceAmount: sourcePayment \? Number\(sourcePayment\.row\.amount\) \|\| 0 : null/);
+    assert.match(utils, /sourceDirection: sourcePayment \? sourcePayment\.direction : null/);
   });
 
-  test("the Creator Share itself does NOT offer a second Creator Share", async () => {
-    // The defect, stated as the test that catches it. Opening the 20 that
-    // came back used to show a Creator Share tab computing 2% of the 20 and
-    // announcing "YOU SHARE BACK −0.40" — a release that never happened.
-    const done = payerPage.getByRole("button", { name: /^(Done|Close)$/i });
-    if (await done.count()) await tap(done.first());
-    await payerPage.waitForTimeout(1200);
-
-    await openHistory(payerPage, PAYER, "receiving");
-    await tap(historyRow(payerPage, PAYEE.fullName, "receiving"));
-    await payerPage.getByTestId("receipt-counterparty").waitFor({ timeout: 20000 });
-    const receipt = await readReceipt(payerPage);
-
-    assert.match(receipt.text, /Creator Share/, "this is not the Creator Share row");
+  test("the lookup uses the full history, not the period-filtered lists", () => {
+    // A share minted just after midnight would lose its payment to a "This
+    // Week" boundary, and the receipt would say the payment is unavailable
+    // while the row for it sits one tap away under another period.
+    const screen = code(SCREEN);
+    assert.match(screen, /findSharePaymentSource\(t, sendHistory, receiveHistory\)/);
     assert.ok(
-      !receipt.tabs.includes("Creator Share"),
-      `a Creator Share receipt is offering a Creator Share of its own: tabs ${JSON.stringify(receipt.tabs)}`
+      !/findSharePaymentSource\(t, periodSendHistory/.test(screen),
+      "the source lookup is reading the period-filtered lists"
     );
-    assert.ok(!/49\.00/.test(receipt.text), `a second release of 49.00 is still being shown:\n${receipt.text}`);
-    assert.ok(
-      !/SHARE BACK/i.test(receipt.text),
-      `the share receipt claims the viewer shared it back:\n${receipt.text}`
+  });
+});
+
+describe("when the payment cannot be found, the receipt says so", () => {
+  test("there is an explicit unavailable state", () => {
+    const modal = code(MODAL);
+    assert.match(modal, /const paymentKnown = !isShareReceipt \|\| receipt\.sourceAmount != null;/);
+    assert.match(modal, /data-testid="receipt-payment-unavailable"/);
+  });
+
+  test("the From payment row says it too, rather than showing the share", () => {
+    assert.match(
+      code(MODAL),
+      /value=\{paymentKnown \? fmtMoney\(paymentAmount, paymentCurrency\) : "Not on this device"\}/
     );
   });
 
-  test("that Creator Share receipt still shows the counterparty's flag", async () => {
-    const receipt = await readReceipt(payerPage);
-    assert.equal(flagIsoOf(receipt.flag), PAYEE.countryIso, `flag was ${receipt.flag}`);
-  });
-
-  test("and it still names its own reference, not the payment's", async () => {
-    const receipt = await readReceipt(payerPage);
-    const legs = await Transaction.find({ type: "share" }).lean();
-    assert.equal(legs.length, 1, `there should be exactly one share leg, found ${legs.length}`);
-    const shown = receipt.text.replace(/\s+/g, "");
-    assert.ok(shown.includes(legs[0].referenceId), "the share receipt does not print the share's own reference");
+  test("a payment receipt is never in that state", () => {
+    // paymentKnown is unconditionally true for a payment receipt, so the
+    // ordinary document can never inherit the share receipt's fallback.
+    assert.match(code(MODAL), /!isShareReceipt \|\| receipt\.sourceAmount != null/);
   });
 });
 
-describe("the payee's side of the same payment", () => {
-  before(async () => { payeePage = await signIn(PAYEE); });
-
-  test("the received payment shows one Creator Share, at their own rate", async () => {
-    await openHistory(payeePage, PAYEE, "receiving");
-    await tap(historyRow(payeePage, PAYER.fullName, "receiving"));
-    await payeePage.getByTestId("receipt-counterparty").waitFor({ timeout: 20000 });
-    const receipt = await readReceipt(payeePage);
-    assert.ok(receipt.tabs.includes("Creator Share"), `tabs were ${JSON.stringify(receipt.tabs)}`);
-    await tap(payeePage.getByRole("button", { name: "Creator Share", exact: true }).first());
-    await payeePage.waitForTimeout(700);
-    const share = await readReceipt(payeePage);
-    assert.match(share.text, /7\.00%/, "the payee's own 7% is not what is shown");
-    assert.ok(!/1\.00%/.test(share.text), "the payer's 1% has been applied to money the payee received");
-    assert.equal(flagIsoOf(share.flag), PAYER.countryIso, `share tab flag was ${share.flag}`);
+describe("the Payment tab describes the payment, whichever row was tapped", () => {
+  test("the hero figure reads the payment fields, not the row's", () => {
+    const modal = code(MODAL);
+    assert.match(modal, /const paymentAmount = isShareReceipt\s*\?\s*Number\(receipt\.sourceAmount\) \|\| 0\s*:\s*receipt\.amount;/);
+    assert.match(modal, /const paymentIsSent = isShareReceipt \? receipt\.sourceDirection === "sent" : isSent;/);
+    assert.match(modal, /data-testid="receipt-hero-payment"/);
   });
 
-  test("the share they released does not release again", async () => {
-    const done = payeePage.getByRole("button", { name: /^(Done|Close)$/i });
-    if (await done.count()) await tap(done.first());
-    await payeePage.waitForTimeout(1200);
-
-    await openHistory(payeePage, PAYEE, "sending");
-    await tap(historyRow(payeePage, PAYER.fullName, "sending"));
-    await payeePage.getByTestId("receipt-counterparty").waitFor({ timeout: 20000 });
-    const receipt = await readReceipt(payeePage);
-    assert.match(receipt.text, /Creator Share/, "this is not the Creator Share row");
-    assert.ok(
-      !receipt.tabs.includes("Creator Share"),
-      `a Creator Share receipt is offering a Creator Share of its own: tabs ${JSON.stringify(receipt.tabs)}`
+  test("its currency is the payment's own", () => {
+    // A cross-border share and its payment can be in different currencies —
+    // the same defect the scan card had, one document along.
+    assert.match(
+      code(MODAL),
+      /const paymentCurrency = isShareReceipt\s*\?\s*receipt\.sourceCurrencyCode \|\| receipt\.currencyCode\s*:\s*receipt\.currencyCode;/
     );
-    assert.ok(!/49\.00/.test(receipt.text), `a second release of 49.00 is still being shown:\n${receipt.text}`);
-    assert.equal(flagIsoOf(receipt.flag), PAYER.countryIso, `flag was ${receipt.flag}`);
-  });
-});
-
-describe("nothing on either screen moved any money", () => {
-  test("exactly one Creator Share transaction exists for the payment", async () => {
-    assert.equal(await Transaction.countDocuments({ type: "send" }), 1);
-    assert.equal(await Transaction.countDocuments({ type: "share" }), 1,
-      "a second Creator Share transaction was written");
-    assert.equal(await LedgerEntry.countDocuments({}), 3,
-      "the payment should move money in exactly three lines");
-    assert.equal(await AssetSeed.countDocuments({}), 1);
   });
 
-  test("no Creator Share descends from another Creator Share", async () => {
-    // The mechanism the report describes, asked of the records directly. It
-    // would leave a share leg whose parent is a share leg.
-    const shares = await Transaction.find({ type: "share" }).lean();
-    const shareIds = new Set(shares.map((t) => String(t._id)));
-    const nested = shares.filter((t) => shareIds.has(String(t.metadata?.paymentTransactionId)));
-    assert.equal(nested.length, 0, `${nested.length} share leg(s) descend from another share leg`);
-    const legLines = await LedgerEntry.countDocuments({ transactionId: { $in: shares.map((t) => t._id) } });
-    assert.equal(legLines, 0, "a share leg wrote a ledger entry of its own");
+  test("the transaction-ID box has one child again", () => {
+    // It held the reference AND a "From payment" line beneath it, while being
+    // display:flex with no direction — so the two laid out side by side and
+    // drew over each other. Removing the line removes the collision; a
+    // flexDirection fix would have been treating the symptom.
+    const modal = code(MODAL);
+    assert.ok(!/From payment "/.test(modal), "the second child is back");
   });
 
-  test("the payer's own 1% was never applied to anything", async () => {
-    const atPayerRate = await Transaction.countDocuments({ "metadata.cashbackRate": PAYER_RATE });
-    assert.equal(atPayerRate, 0, "a transaction was recorded at the PAYER's Creator Share rate");
-    const payment = await Transaction.findOne({ type: "send" }).lean();
-    assert.equal(payment.metadata.cashbackRate, PAYEE_RATE, "the payment used a rate that is not the payee's");
-    const leg = await Transaction.findOne({ type: "share" }).lean();
-    assert.equal(leg.amount, SHARE, `the share leg is ${leg.amount}, not the payee's 7% of the payment`);
+  test("no cross-reference line under the transaction ID", () => {
+    // There was one — "From payment <id>" in small grey type beneath the
+    // share's own reference. It is gone. The two tabs are a single swipe
+    // apart and each already shows the id of the thing it is about, in its
+    // own box under its own label, so the line said the same thing twice and
+    // in the worse of the two places.
+    const modal = code(MODAL);
+    assert.ok(!/shareSourceTxnId/.test(modal), "the cross-reference line is back");
+    assert.ok(!/From payment "/.test(modal), "the cross-reference line is back");
   });
 
-  test("and the balances are the ones a single 7% release produces", async () => {
-    const payer = await User.findOne({ symbolId: PAYER.symbolId }).lean();
-    const payee = await User.findOne({ symbolId: PAYEE.symbolId }).lean();
-    assert.equal(payer.balance, OPENING - PAYMENT + SHARE, `payer balance ${payer.balance}`);
-    assert.equal(payee.balance, OPENING + PAYMENT - SHARE, `payee balance ${payee.balance}`);
+  test("the payment's own reference is still carried, for its tab", () => {
+    // sourceTxnId survives the removal of the cross-reference LINE, because
+    // the Payment tab of a share receipt is the payment — so the id box on
+    // that tab has to name the payment's reference, not the share's.
+    assert.match(code(UTILS), /sourceTxnId: sourcePayment && sourcePayment\.row\.txnId/);
+    assert.match(code(UTILS), /sourceReceiptCode: sourcePayment \? sourcePayment\.row\.receiptCode \|\| "" : ""/);
   });
 
-  test("reading both accounts back again writes nothing further", async () => {
-    // Every screen above has been opened, and both histories hydrated more
-    // than once in the process. If a read could mint a release, it would have.
-    assert.equal(await Transaction.countDocuments({ type: "share" }), 1);
-    assert.equal(await LedgerEntry.countDocuments({}), 3);
-    const leg = await Transaction.findOne({ type: "share" }).lean();
-    const payment = await Transaction.findOne({ type: "send" }).lean();
-    const gap = new Date(leg.createdAt) - new Date(payment.createdAt);
-    assert.ok(gap >= 0 && gap < 5000,
-      `the share leg was written ${gap}ms after its payment — a leg minted by a later read`);
+  test("each tab names its own reference, and they swap with the document", () => {
+    const modal = code(MODAL);
+    assert.match(modal, /const shareSideTxnId = isShareReceipt \? ownTxnId : shareTxnRaw;/);
+    assert.match(modal, /const paymentSideTxnId = isShareReceipt \? receipt\.sourceTxnId \|\| "" : ownTxnId;/);
   });
 });

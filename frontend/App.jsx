@@ -238,7 +238,17 @@ function mapServerTransaction(row, viewerSymbolId) {
     // The share leg's own reference, so the receipt's share tab can name the
     // movement it is describing instead of reusing the payment's id.
     shareTxnId: isShareLeg ? "" : row.shareReferenceId || "",
-    shareSourceTxnId: !isShareLeg && row.shareReferenceId ? row.referenceId || row.id || "" : "",
+    // The reference of the payment this row is attached to.
+    //
+    // On a PAYMENT that carried a share: its own reference, which is what the
+    // share leg points back at. On a SHARE LEG: the payment it came from,
+    // which the server writes into the leg's metadata and now surfaces as
+    // `paymentReferenceId` — it was dropped before, so a share leg reached
+    // this side with no way back to its payment and the Creator Share
+    // receipt had nothing to show on its Payment tab.
+    shareSourceTxnId: isShareLeg
+      ? row.paymentReferenceId || ""
+      : row.shareReferenceId ? row.referenceId || row.id || "" : "",
     // The short handles the two receipt links are addressed by, as the
     // server minted them. Not references and not ids — see
     // Transaction.receiptCode. A row restored without one shares the long

@@ -159,6 +159,27 @@ async function run() {
   check("after all of that the PIN is still the old one", stillOld.body?.verified === true,
     JSON.stringify(stillOld.body?.message));
 
+  // ── The two meanings of 401, told apart ────────────────────────────────
+  //
+  // A wrong PIN in the BODY and a dead token in the HEADER both answer 401,
+  // and the client has to react to them in opposite ways: show the attempts
+  // remaining, or end the session. With nothing but the status to go on it
+  // did the second for both, so one mistyped digit in Change PIN threw away a
+  // session the server had not revoked — before the screen could show the
+  // "4 attempts left" that says how close the account is to a lockout.
+  //
+  // These three checks are what the client now reads. See the credentialCheck
+  // branch in backend/services/api/httpClient.js.
+  check("a wrong current PIN does NOT mark the token invalid",
+    wrongCurrent.body?.code !== 'auth_token_invalid', JSON.stringify(wrongCurrent.body?.code));
+  const sameTokenAfterWrongPin = await get(`/api/profile/${encodeURIComponent(ALICE)}`, aliceToken);
+  check("and the token really is still good — the 401 was about the PIN, not the session",
+    sameTokenAfterWrongPin.status === 200, `status=${sameTokenAfterWrongPin.status}`);
+  const deadToken = await get(`/api/profile/${encodeURIComponent(ALICE)}`, "not.a.token");
+  check("a genuinely dead token says so, so the client can still end that session",
+    deadToken.status === 401 && deadToken.body?.code === 'auth_token_invalid',
+    `status=${deadToken.status} code=${deadToken.body?.code}`);
+
   check("a badly formatted new PIN is refused",
     (await post("/api/pin/change", { symbolId: ALICE, currentPin: OLD_PIN, newPin: "12" }, aliceToken)).status === 400);
   check("reusing the same PIN is refused",
@@ -192,6 +213,8 @@ async function run() {
   const secondAfter = await get(`/api/profile/${encodeURIComponent(ALICE)}`, secondDeviceToken);
   check("the other device's token is now rejected", secondAfter.status === 401,
     `status=${secondAfter.status}`);
+  check("and it is rejected as a dead TOKEN, which is what ends that session client-side",
+    secondAfter.body?.code === 'auth_token_invalid', JSON.stringify(secondAfter.body?.code));
   const changerAfter = await get(`/api/profile/${encodeURIComponent(ALICE)}`, changed.body?.token);
   check("the replacement token from the change still works", changerAfter.status === 200,
     `status=${changerAfter.status}`);

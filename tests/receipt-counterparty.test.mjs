@@ -463,7 +463,12 @@ describe("the Creator Share receipt identifies the other side by ID", () => {
     // viewer with someone else's identifier. Hence the extra naming row in
     // that direction.
     const modal = readSource("frontend/components/dialogs/ReceiptModal.jsx");
-    assert.match(modal, /\{isSent && <ReceiptRow label="Shared back by" value=\{receipt\.name\} \/>\}/);
+    // The condition was `isSent` and is now `shareIsCredit`, which is the
+    // same question asked correctly. `isSent` describes the PAYMENT, and on a
+    // payment receipt the share always runs the other way — so it happened to
+    // be right. It is wrong on a CREATOR SHARE receipt, where `direction`
+    // describes the share itself. See creator-share-receipt.test.mjs.
+    assert.match(modal, /\{shareIsCredit && <ReceiptRow label="Shared back by" value=\{receipt\.name\} \/>\}/);
     const at = modal.indexOf('label="Shared back by"');
     const idAt = modal.indexOf('testId="receipt-share-counterparty-id"');
     assert.ok(idAt > at, "the ID row must come after the row naming the counterparty");
@@ -494,13 +499,17 @@ describe("the flag belongs to the receipt, not to either tab", () => {
   });
 
   test("it sits between the two tabs, on their line", () => {
+    // The buttons no longer carry literal labels: on a Creator Share receipt
+    // the share leads and the payment follows, so which label goes where is
+    // derived. What must stay true whatever the order is that the flag sits
+    // BETWEEN them — it belongs to the document, not to a tab.
     const code = stripped();
-    const payment = code.indexOf('label="Payment"');
+    const leading = code.indexOf("label={tabLabel(leadingTab)}");
     const flag = code.indexOf('data-testid="receipt-flag"');
-    const share = code.indexOf('label="Creator Share"');
-    assert.ok(payment >= 0 && flag >= 0 && share >= 0, "the tab row is not where it was");
+    const trailing = code.indexOf("label={tabLabel(trailingTab)}");
+    assert.ok(leading >= 0 && flag >= 0 && trailing >= 0, "the tab row is not where it was");
     assert.ok(
-      payment < flag && flag < share,
+      leading < flag && flag < trailing,
       "the flag must be rendered between the two tab buttons"
     );
   });

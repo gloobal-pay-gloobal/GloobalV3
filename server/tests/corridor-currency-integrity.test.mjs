@@ -269,7 +269,19 @@ test("a seeded-but-short pool reports the released currency, never undefined", a
   assert.equal(res.status, 503);
   assert.match(res.body.message, /US\/USD/, "names the country AND its real currency");
   assert.doesNotMatch(res.body.message, /undefined/, 'the "US/undefined" regression');
-  assert.match(res.body.message, /try again later/, "a real shortage is a wait-and-retry");
+  // This used to assert /try again later/. That was wrong, and a read-only
+  // pass over production is what showed it: a corridor drained by real
+  // settlement regains liquidity only when payments run the other way
+  // through the same pair, and nothing else replenishes it. Telling the
+  // payer to wait is telling them to wait for something that will not
+  // happen on its own — the identical defect UnseededCorridorPoolError was
+  // introduced to fix for the never-opened case. The message now names the
+  // corridor fully and offers the one thing that can actually work.
+  assert.doesNotMatch(res.body.message, /try again later/,
+    "a drained corridor does not refill by waiting");
+  assert.match(res.body.message, /settling with INR/,
+    "names WHICH of the country's corridors is short");
+  assert.match(res.body.message, /smaller payment/i, "offers the action that exists");
 
   const sender = await User.findOne({ symbolId: IN_USER }).lean();
   assert.equal(sender.balance, 500000, "sender was not debited");
@@ -291,10 +303,13 @@ test("a pool drained to exactly zero reads as exhausted, not as never opened", a
   const res = await sendInr(5000);
 
   assert.equal(res.status, 503);
-  assert.match(res.body.message, /try again later/, "an emptied corridor is a wait-and-retry");
+  // The distinction this test exists for is unchanged: an emptied corridor
+  // must not be reported as one that was never opened. What changed is the
+  // advice — see the note in the test above.
   assert.doesNotMatch(res.body.message, /not open yet/, "must NOT be misreported as never opened");
-  assert.match(res.body.message, /US\/USD/);
+  assert.match(res.body.message, /US\/USD settling with INR/);
   assert.doesNotMatch(res.body.message, /undefined/);
+  assert.doesNotMatch(res.body.message, /try again later/);
 });
 
 test("a legacy zero row with real balances elsewhere is never flagged as unseeded", async () => {
@@ -313,17 +328,28 @@ test("a legacy zero row with real balances elsewhere is never flagged as unseede
   assert.equal(res.body.settlement.destinationCurrency, "USD");
 });
 
-test("InsufficientPoolLiquidityError carries currency, and nothing reads counterCurrency", () => {
-  const err = new InsufficientPoolLiquidityError({
+test("InsufficientPoolLiquidityError names the corridor, and degrades without it", () => {
+  // The old form of this test pinned counterCurrency as a property that had
+  // never existed, because an earlier message interpolated it and printed
+  // "undefined" to the payer. The field exists now and every throw site
+  // passes it — a country holds one pool per counterpart currency, so
+  // without it the error names several corridors and identifies none. What
+  // must still hold is the half that caused the original regression: the
+  // message never prints "undefined", whether the field is set or not.
+  const named = new InsufficientPoolLiquidityError({
+    countryIso: "US", currency: "USD", counterCurrency: "INR", requested: 58.82, available: 10,
+  });
+  assert.equal(named.currency, "USD");
+  assert.equal(named.countryIso, "US");
+  assert.equal(named.counterCurrency, "INR");
+  assert.match(named.message, /settling with INR/);
+  assert.doesNotMatch(named.message, /undefined/);
+
+  const unnamed = new InsufficientPoolLiquidityError({
     countryIso: "US", currency: "USD", requested: 58.82, available: 10,
   });
-  assert.equal(err.currency, "USD");
-  assert.equal(err.countryIso, "US");
-  assert.equal(
-    err.counterCurrency, undefined,
-    "the property the old message read has never existed — that is the bug, pinned"
-  );
-  assert.doesNotMatch(err.message, /undefined/);
+  assert.equal(unnamed.counterCurrency, undefined);
+  assert.doesNotMatch(unnamed.message, /undefined/, "the \"US/undefined\" regression, pinned");
 });
 
 // ── 3. the corridor opens by itself when the pool was never there at all ────

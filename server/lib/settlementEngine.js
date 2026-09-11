@@ -70,14 +70,28 @@ const { accountCountryIso } = require('./accountCountry');
 // the previous absence of this export is what made that check a latent
 // TypeError.
 class InsufficientPoolLiquidityError extends Error {
-  constructor({ countryIso, currency, requested, available }) {
+  constructor({ countryIso, currency, counterCurrency, requested, available }) {
     super(
-      `Country pool ${countryIso} has ${available} ${currency} available, ` +
-        `which cannot fund a release of ${requested} ${currency}.`
+      `Country pool ${countryIso} (${currency}, settling with ${counterCurrency || 'an unnamed currency'}) ` +
+        `has ${available} ${currency} available, which cannot fund a release of ${requested} ${currency}.`
     );
     this.name = 'InsufficientPoolLiquidityError';
     this.countryIso = countryIso;
     this.currency = currency;
+    // WHICH of the country's corridors ran short.
+    //
+    // A country holds one pool per counterpart currency, so "IN/INR" names
+    // ten different corridors on the live database and identifies none of
+    // them. Diagnosing a refusal from the payer's screenshot took a database
+    // read to work out that the short corridor was the USD one while the
+    // other nine held millions. The error already knew; it simply did not
+    // say. The counterpart currency is available at every throw site and is
+    // the only field that makes the message actionable.
+    //
+    // An earlier message interpolated `counterCurrency` before the class
+    // carried it and printed "undefined" to the payer, which is why the
+    // message above degrades explicitly rather than trusting it to be set.
+    this.counterCurrency = counterCurrency;
     this.requested = requested;
     this.available = available;
   }
@@ -373,6 +387,7 @@ async function settleCrossBorderPayment({
     throw new InsufficientPoolLiquidityError({
       countryIso: destinationCountry.iso,
       currency: destinationCurrency,
+      counterCurrency: senderCurrency,
       requested: destinationAmount,
       available: destinationPool.availableBalance,
     });
@@ -437,6 +452,7 @@ async function settleCrossBorderPayment({
     throw new InsufficientPoolLiquidityError({
       countryIso: destinationCountry.iso,
       currency: destinationCurrency,
+      counterCurrency: senderCurrency,
       requested: destinationAmount,
       available: Number(current?.availableBalance) || 0,
     });

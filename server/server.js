@@ -6587,16 +6587,44 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       if (transferError instanceof InsufficientPoolLiquidityError) {
         recordAudit({
           userId: sender._id, action: 'transaction.send.failed', status: 'failed',
-          message: `Insufficient pool liquidity (${transferError.countryIso}/${transferError.currency})`, req,
+          message:
+            `Insufficient pool liquidity (${transferError.countryIso}/${transferError.currency} ` +
+            `settling with ${transferError.counterCurrency || 'unknown'})`,
+          req,
           metadata: {
             symbolId: sender.symbolId, receiverSymbolId: receiver.symbolId,
             countryIso: transferError.countryIso, currency: transferError.currency,
+            // Which of the country's corridors ran short. A country holds one
+            // pool per counterpart currency, so without this the audit row
+            // names ten corridors at once and identifies none of them.
+            counterCurrency: transferError.counterCurrency || null,
             requested: transferError.requested, available: transferError.available,
           },
         });
+        // What this message has to get right, and used to get wrong.
+        //
+        // It named the corridor as "IN/INR", which is ten different corridors
+        // on the live database — one per counterpart currency — and it told
+        // the payer to try again later. For a corridor drained by real
+        // settlement, later is not a thing that helps: a pool regains
+        // liquidity only when payments run the other way through that same
+        // pair, and nothing else replenishes it. That is the identical defect
+        // UnseededCorridorPoolError was introduced to fix for the closed-
+        // corridor case, on the drained-corridor case.
+        //
+        // So it now names the pair, and offers the one thing the payer can
+        // actually do: send less. The figures stay in the audit row rather
+        // than on the payer's screen — how much liquidity a corridor holds is
+        // the network's business, not the counterparty's.
+        const shortCorridor = transferError.counterCurrency
+          ? `${transferError.countryIso}/${transferError.currency} settling with ${transferError.counterCurrency}`
+          : `${transferError.countryIso}/${transferError.currency}`;
         return res.status(503).json({
           success: false,
-          message: `This payment corridor (${transferError.countryIso}/${transferError.currency}) doesn't have enough settlement liquidity right now. Please try again later.`,
+          message:
+            `This payment corridor (${shortCorridor}) does not have enough settlement liquidity ` +
+            'for a payment this size. Nothing has left your balance. A smaller payment may still ' +
+            'go through; a payment this size needs the corridor to be topped up first.',
         });
       }
 
@@ -9032,6 +9060,11 @@ app.post('/api/geu/redeem', requireGeuGrowthPrototype, writeLimit, requireAuth, 
             throw new InsufficientPoolLiquidityError({
               countryIso: pool.countryIso,
               currency: pool.localCurrency,
+              // Carried for the same reason the send path carries it: the
+              // error names one of the country's several corridors, and
+              // without this it names none of them. The redemption message
+              // itself is unchanged.
+              counterCurrency: pool.counterCurrency,
               requested: localCurrencyAmount,
               available: pool.availableBalance,
             });

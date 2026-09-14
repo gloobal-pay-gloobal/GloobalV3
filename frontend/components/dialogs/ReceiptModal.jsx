@@ -48,6 +48,10 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   );
   const { getLocationForViewer, getComplaintWindow, openComplaint } = useProvenanceAndDisputes();
   const [reportSubmitted, setReportSubmitted] = useState11(false);
+  // "Working", not "done": the share sheet can be dismissed, and a button
+  // that flipped to a success state on tap would claim the report had gone
+  // somewhere when the person had just cancelled it.
+  const [auditBusy, setAuditBusy] = useState11(false);
   useEffect10(() => {
     if (receipt) {
       setReceiptTab(receipt.kind === "share" ? "share" : "payment");
@@ -176,6 +180,37 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // The rate to DISPLAY. On a share receipt it comes off the payment, for
   // the reason historyUtils spells out: the share row's own rate is zeroed
   // at the boundary by design, so reading it here would print 0.00%.
+  // ── What this transaction was exchanged at ─────────────────────────────
+  //
+  // Drawn only when the two sides really are different currencies. A
+  // "conversion" block on a domestic payment showing 1.000000 states that an
+  // exchange took place, and none did.
+  //
+  // Every figure is a recorded one: the server stores the receiver's face
+  // value, the sender's own debit, and the rate, as three separate facts.
+  // Multiplying one by another to fill in the third would give a number that
+  // disagrees with the ledger by a rounding unit, and a receipt whose halves
+  // do not reconcile is worse than one that shows a single side.
+  const fxSenderCurrency = receipt.senderSideCurrency || null;
+  const fxReceiverCurrency = receipt.receiverSideCurrency || null;
+  const showsConversion = Boolean(
+    fxSenderCurrency && fxReceiverCurrency &&
+    fxSenderCurrency !== fxReceiverCurrency &&
+    receipt.senderAmount != null && receipt.receiverAmount != null
+  );
+  // Stated in the direction it was RECORDED: 1 unit of the receiver's
+  // currency into the sender's.
+  //
+  // Inverting it would read more naturally to a sender ("1 USD = 83.61 INR"
+  // rather than "1 INR = 0.011960 USD") and that is exactly why it is not
+  // done. An inverted rate is a computed rate: it rounds, so it would not
+  // match the figure on the record, and somebody reconciling this receipt
+  // against a statement would find two rates for one payment. The two amount
+  // rows above it carry the intuition; this line carries the fact.
+  const fxRateLabel = receipt.fxRate != null && showsConversion
+    ? `1 ${fxReceiverCurrency} = ${Number(receipt.fxRate).toFixed(6)} ${fxSenderCurrency}`
+    : null;
+
   const displayShareRate = isShareReceipt
     ? (receipt.sourceShareRate ?? null)
     : shareRatePercent;
@@ -295,7 +330,6 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     );
   };
   return <div
-    onClick={onClose}
     role="dialog"
     aria-modal="true"
     aria-label="Transaction receipt"
@@ -303,29 +337,68 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       position: "fixed",
       inset: 0,
       zIndex: 500,
-      background: "rgba(20,12,36,0.55)",
+      background: T.surface,
       display: "flex",
-      alignItems: "flex-end",
+      alignItems: "stretch",
       justifyContent: "center",
       animation: "receipt-overlay-in 0.2s ease"
     }}
-  ><style>{`
+  >{
+    /* A SCREEN, not a bottom sheet.
+       It was a sheet at 88vh with a grab handle and a dimmed backdrop you
+       could tap to dismiss. A receipt is a document people read top to
+       bottom, scroll back up in, switch tabs on and send to somebody — and
+       at 88vh the last thing on it was always half under the fold, with the
+       Done button somewhere below that. The two tabs are also a horizontal
+       control inside a vertically-swipeable sheet, which is a fight.
+       The backdrop tap went with it. There is no "outside" on a full screen,
+       and a dismiss gesture with nothing visible to aim at is a way to lose
+       a receipt by accident. Back and Done are the two ways out, and both
+       are drawn. */
+  }<style>{`
         @keyframes receipt-overlay-in { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes receipt-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes receipt-sheet-up { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
       `}</style><div
-    onClick={(e) => e.stopPropagation()}
     style={{
       width: "100%",
       maxWidth: 430,
+      height: "100%",
       background: T.surface,
-      borderRadius: "28px 28px 0 0",
-      padding: "12px 24px calc(28px + env(safe-area-inset-bottom, 0px))",
       position: "relative",
-      animation: "receipt-sheet-up 0.28s cubic-bezier(.32,.72,0,1)",
-      maxHeight: "88vh",
-      overflowY: "auto"
+      display: "flex",
+      flexDirection: "column",
+      animation: "receipt-sheet-up 0.24s cubic-bezier(.32,.72,0,1)"
     }}
-  ><div style={{ width: 36, height: 4, borderRadius: 999, background: T.line, margin: "2px auto 18px" }} /><div
+  >{
+    /* Header: back, title, and nothing else. The share control stays where
+       it is, on the amount card, because it shares the TAB you are looking
+       at and belongs beside that tab's figure rather than above both. */
+  }<div style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "calc(10px + env(safe-area-inset-top, 0px)) 12px 10px",
+      borderBottom: `1px solid ${T.line}`,
+      flexShrink: 0
+    }}
+  >{
+    /* The app's one back button, not a second one drawn here. Same circle,
+       same glyph, same size as the twenty other screens that have one —
+       navButtons.jsx exists because there used to be several. */
+  }<NavBackButton onClick={onClose} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>
+      {isShareReceipt ? "Creator Share receipt" : "Receipt"}
+    </span></div>{
+    /* The document itself. Scrolls between the fixed header and the fixed
+       footer, so Done is reachable from anywhere on a long receipt instead
+       of being the thing you have to scroll to find. */
+  }<div style={{
+      flex: 1,
+      minHeight: 0,
+      overflowY: "auto",
+      WebkitOverflowScrolling: "touch",
+      padding: "14px 24px 20px"
+    }}
+  ><div
     style={{
       position: "relative",
       textAlign: "center",
@@ -476,7 +549,12 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        back to 14 because there is nothing overlapping it any more. */
   }<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow
     testId="receipt-counterparty"
-    label={isSent ? "To" : "From"}
+    // paymentIsSent, not isSent. This tab describes the PAYMENT, and on a
+    // Creator Share receipt `direction` describes the share — so a share Jio
+    // sent me read "From Jio" on a tab about money I sent TO Jio. The same
+    // conflation the hero figure had; this row was missed when that was
+    // fixed.
+    label={paymentIsSent ? "To" : "From"}
     value={receipt.name}
   />{receipt.id && <ReceiptRow
     testId="receipt-counterparty-id"
@@ -485,7 +563,22 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     mono
   />}</div>{
     /* Box 3 — payment method, date, time, status together */
-  }<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}>{receipt.method && <ReceiptRow label="Payment method" value={receipt.method} />}<ReceiptRow label="Date" value={receipt.date} /><ReceiptRow label="Time" value={receipt.time} mono /><ReceiptRow label="Status" value={receipt.status === "pending" ? "Pending" : receipt.status === "simulated" ? "Not sent — simulated" : "Completed"} /></div>{receipt.status === "simulated" && <div
+  }{showsConversion && <div
+    data-testid="receipt-conversion"
+    style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}
+  ><div style={{ fontSize: 10, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>
+      Currency conversion
+    </div><ReceiptRow
+    label="Sender paid"
+    value={fmtMoney(receipt.senderAmount, fxSenderCurrency)}
+  /><ReceiptRow
+    label="Receiver got"
+    value={fmtMoney(receipt.receiverAmount, fxReceiverCurrency)}
+  />{fxRateLabel && <ReceiptRow label="Rate applied" value={fxRateLabel} accent />}<div style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.45 }}>{
+    /* A rate with no date attached is a rate the reader assumes is today's.
+       This one is the rate the payment settled at, and saying so is the
+       difference between a record and an estimate. */
+  }As settled at the time of this transaction, not a current rate.</div></div>}<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}>{receipt.method && <ReceiptRow label="Payment method" value={receipt.method} />}<ReceiptRow label="Date" value={receipt.date} /><ReceiptRow label="Time" value={receipt.time} mono /><ReceiptRow label="Status" value={receipt.status === "pending" ? "Pending" : receipt.status === "simulated" ? "Not sent — simulated" : "Completed"} /></div>{receipt.status === "simulated" && <div
     role="alert"
     style={{
       display: "flex",
@@ -636,12 +729,53 @@ function ReceiptModal({ receipt, onClose, onDone }) {
             Report an issue with this transaction
           </button> : <p style={{ fontSize: 11.5, color: T.inkFaint }}>
             The verification window for this transaction has closed.
-          </p>}</div>}<button
+          </p>}</div>}</div>{
+    /* Done, pinned below the scroll area rather than sitting at the end of
+       it. On a long receipt — a cross-border payment with a conversion block
+       and a Creator Share — the old inline button was several screens down,
+       so the way out of the document depended on how much the document had
+       to say. */
+  }<div style={{
+      flexShrink: 0,
+      borderTop: `1px solid ${T.line}`,
+      padding: "12px 24px calc(14px + env(safe-area-inset-bottom, 0px))"
+    }}
+  >{
+    /* The audit report. A secondary control, ABOVE Done rather than beside
+       it: Done is what most people want most of the time, and two buttons of
+       equal weight at the foot of a receipt is a decision nobody asked to
+       make. */
+  }<button
+    onClick={async () => {
+      if (auditBusy) return;
+      setAuditBusy(true);
+      try {
+        await shareAuditReport(receipt, { generatedAt: formatAuditTimestamp() });
+      } finally {
+        setAuditBusy(false);
+      }
+    }}
+    className="v2-tap"
+    data-testid="receipt-audit-report"
+    disabled={auditBusy}
+    style={{
+      width: "100%",
+      padding: "11px 0",
+      marginBottom: 10,
+      borderRadius: 14,
+      border: `1px solid ${T.line}`,
+      background: "transparent",
+      color: T.inkSoft,
+      fontSize: 13,
+      fontWeight: 700,
+      cursor: auditBusy ? "default" : "pointer",
+      opacity: auditBusy ? 0.6 : 1
+    }}
+  >{auditBusy ? "Preparing\u2026" : "Audit report (PDF)"}</button><button
     onClick={onDone || onClose}
     className="v2-tap"
     style={{
       width: "100%",
-      marginTop: 22,
       padding: "13px 0",
       borderRadius: 16,
       border: "none",
@@ -653,6 +787,6 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     }}
   >
           Done
-        </button></div></div>;
+        </button></div></div></div>;
 }
 

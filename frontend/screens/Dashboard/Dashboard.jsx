@@ -1709,7 +1709,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       boxShadow: T.shadowFloat,
       whiteSpace: "nowrap"
     }}
-  ><div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6, opacity: 0.7, textTransform: "uppercase" }}><GloobalWordmark suffix=" ID" /></div><div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.3, marginTop: 1, fontFamily: T.fontDisplay }}>{gloobalIdTag}</div></div>}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, justifyItems: "center" }}>{DASHBOARD_ACTIONS.map(({ key, label, Icon }) => {
+  ><div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6, opacity: 0.7, textTransform: "uppercase" }}><GloobalWordmark suffix=" ID" /></div><div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.3, marginTop: 1, fontFamily: T.fontDisplay }}>{gloobalIdTag}</div></div>}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, justifyItems: "center" }}>{
+    /* The four tiles' keyframes, rendered once for the group rather than
+       once per tile. They live with the component that uses them — see the
+       note in actionTileMotion.jsx about the day @keyframes finDrift lived
+       in App.jsx and a background rendered eighteen invisible particles. */
+  }<ActionTileMotionStyle />{DASHBOARD_ACTIONS.map(({ key, label, Icon }) => {
     const onClick = key === "send" ? onOpenSend : key === "bank" ? onOpenBank : key === "receive" ? () => setShowReceive(true) : key === "scan" ? onOpenScan : void 0;
     const actionColor = { send: sendActionColor, bank: bankActionColor, scan: scanActionColor, receive: receiveActionColor }[key];
     return <div key={key} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}><button
@@ -1731,7 +1736,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
         cursor: onClick ? "pointer" : "default",
         overflow: "hidden"
       }}
-    ><SyncedFlipIcon Icon={Icon} size={44} flipInfo={buttonFlips[key]} frontBackground={`${actionColor}22`} />{(key === "send" || key === "receive") && <span style={{ position: "absolute", top: 6, right: 6, zIndex: 2 }}><GH2HFlipCircle size={22} /></span>}{
+    ><SyncedFlipIcon Icon={Icon} size={44} flipInfo={buttonFlips[key]} frontBackground={`${actionColor}22`} {...(actionTileIconMotion(key) ? { iconClassName: actionTileIconMotion(key).className, iconStyle: actionTileIconMotion(key).style } : {})} /><ActionTileSweep tileKey={key} color={actionColor} />{(key === "send" || key === "receive") && <span style={{ position: "absolute", top: 6, right: 6, zIndex: 2 }}><GH2HFlipCircle size={22} /></span>}{
       /* Direction dot, tucked under the GH2H mark: red on Send, green on
          Receive. Same two colours as every amount in the app (see
          TXN_IN_COLOR / TXN_OUT_COLOR), so the tile you tap and the figure

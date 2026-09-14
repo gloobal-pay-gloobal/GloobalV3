@@ -1,5 +1,5 @@
 // src/screens/Banks/GloobalBankScreen.jsx
-import { ArrowDownLeft as BankArrowDownLeft, ArrowUpRight as BankArrowUpRight, Copy as BankCopy } from "lucide-react";
+import { Copy as BankCopy } from "lucide-react";
 
 // Gloobal Bank — the account this app actually runs on, and the screen
 // people land on from the Accounts tab.
@@ -155,18 +155,33 @@ function GloobalBankScreen({
   >Recent Transactions</span><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden", padding: "6px 18px 12px" }}>{rows.length === 0 ? <div style={{ padding: "18px 0 8px", textAlign: "center", fontSize: 12, color: T.inkFaint, lineHeight: 1.5 }}>
         No transactions yet — send your first payment
       </div> : rows.map((t, i) => {
-    // Date AND time, through historyRowStamp — the same "Aug 30 \u00B7 14:07:32"
-    // every History row shows. This showed the bare date, so the same
-    // payment read "Sep 2" here and "Sep 2 \u00B7 14:07:32" one screen away,
-    // and two payments to the same person on one day were indistinguishable
-    // on this list.
     const received = t.direction === "received";
-    return <div
+    // The shared row, not a copy of it.
+    //
+    // This list was hand-written with a 30px tinted disc holding a direction
+    // arrow, against the 29px flipping mark and 14.5/11 type every other
+    // transaction list uses \u2014 so the same payment was drawn one way here
+    // and another way one screen away.
+    //
+    // It is also the SECOND drift this list has had, and the first one is why
+    // the fix is a shared component rather than matched numbers: it once
+    // showed a bare date, so a payment read "Sep 2" here and
+    // "Sep 2 \u00B7 14:07:32" on History, and two payments to the same person
+    // on one day were indistinguishable. That was repaired by calling
+    // `historyRowStamp` here too \u2014 a copy matched by hand, which is
+    // exactly the kind that drifts again. The row now calls it itself, off
+    // this same `t`.
+    return <TransactionRow
       key={t.key}
-      style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, marginTop: i === 0 ? 8 : 0 }}
-    ><span
-      style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: received ? T.positiveSoft : T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}
-    >{received ? <BankArrowDownLeft size={14} color={TXN_IN_COLOR} /> : <BankArrowUpRight size={14} color={TXN_OUT_COLOR} />}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{historyRowStamp(t)}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: received ? TXN_IN_COLOR : TXN_OUT_COLOR, flexShrink: 0 }}>{received ? "+" : "−"}{fmtMoney(Number(t.amount || 0), ccyCode)}</span></div>;
+      t={t}
+      color={received ? TXN_IN_COLOR : TXN_OUT_COLOR}
+      sign={received ? "+" : "−"}
+      ccyCode={ccyCode}
+      isFirst={i === 0}
+      // The card already pads itself, so the rows line up with its own
+      // heading instead of stepping in from it.
+      inset={0}
+    />;
   })}</div></div>{
     /* Moved to the bottom of the screen at the user's request — the
        tagline card and "I am IN" waitlist button used to sit between the

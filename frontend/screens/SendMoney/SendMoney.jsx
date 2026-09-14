@@ -143,6 +143,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   const [bottomOpen, setBottomOpen] = useState15(true);
   const [copiedKey, setCopiedKey] = useState15(null);
   const [toast, setToast] = useState15(null);
+  // The server's own words for why a payment did not happen, held so the
+  // processing screen can show them. Cleared whenever the status leaves
+  // "failed", so a stale reason can never appear under a new attempt.
+  const [failureReason, setFailureReason] = useState15(null);
   const [payMethodBankColor, setPayMethodBankColor] = useState15(() => randomLogoFlipColor());
   useEffect13(() => {
     const interval = setInterval(() => {
@@ -423,10 +427,16 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       if (remote && remote.ok === false && !remote.skipped) {
         verifiedPinRef.current = null;
         setTransactionStatus("failed");
-        showToast2(remote.reason || "The server rejected this payment.");
+        // The reason goes to the SCREEN, not to a toast, and the status is
+        // no longer wound back on a timer.
+        //
+        // A toast that clears itself after 1.8 seconds is the wrong carrier
+        // for "your money did not move": look away and a failure is
+        // indistinguishable from a success. The processing screen now turns
+        // into the failure and waits to be acknowledged.
+        setFailureReason(remote.reason || "The server rejected this payment.");
         // Let the same request be retried — the server never posted it.
         appliedRequestIdRef.current = null;
-        setTimeout(() => setTransactionStatus("idle"), 1800);
         return;
       }
       // A `skipped` send never reached the backend, so it has nothing to
@@ -475,8 +485,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     if (!result.ok) {
       verifiedPinRef.current = null;
       setTransactionStatus("failed");
-      showToast2(result.reason || "Insufficient balance");
-      setTimeout(() => setTransactionStatus("idle"), 1500);
+      setFailureReason(result.reason || "Insufficient balance");
       return;
     }
     showToast2(
@@ -559,6 +568,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     // an idempotency key that a genuine retry would then be deduplicated
     // against.
     requestIdRef.current = generateRequestId();
+    setFailureReason(null);
     setTransactionStatus("processing");
     completePayment();
   };
@@ -1381,20 +1391,27 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
        state this snapshot doesn't carry. */
   }{searchStage === "dialing" && recentSentTransactions.length > 0 && <div style={{ marginTop: 20 }}><div style={{ fontSize: 12, fontWeight: 800, color: "#8B899E", textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 10px 4px" }}>
               Recent
-            </div><div className="card" style={{ padding: "6px 18px 10px" }}>{recentSentTransactions.map((t, i) => <div
+            </div><div className="card" style={{ padding: "6px 18px 10px" }}>{recentSentTransactions.map((t, i) => <TransactionRow
     key={t.txnId || `${t.name}-${t.date}-${i}`}
-    style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", borderTop: i === 0 ? "none" : "1px solid #EFEFF5" }}
-  >{
-    /* The same living flip-symbol mark every other transaction list in
-       the app uses (History rows, My Assets, the Referral Network). This
-       was `<Flag emoji={t.flag} />`, which rendered an empty tinted
-       square on most rows: a locally-recorded send carries no
-       counterparty flag, and a row restored from the server carries none
-       either, so the box came out blank — a broken avatar rather than a
-       design. The country is still on the receipt this row belongs to. */
-  }<FlipSymbolCircle size={36} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#14122B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span><span style={{ display: "block", fontSize: 10.5, color: "#9C96AF", marginTop: 1 }}>{historyRowStamp(t)}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: TXN_OUT_COLOR, flexShrink: 0 }}>
-                    −{fmtMoney(Number(t.amount) || 0, top.currency)}
-                  </span></div>)}</div></div>}{searchStage === "found" && bottomOpen && <>{bottom.registered === false && <div
+    t={t}
+    color={TXN_OUT_COLOR}
+    sign="&#8722;"
+    // The ACCOUNT's currency, as the fallback only.
+    //
+    // This list used to format every row with `top.currency` outright, and
+    // that is the ₹478,000-shown-as-$478,000 bug, still alive in this one
+    // list after it was fixed everywhere else: these rows come straight off
+    // `history`, and a restored cross-border payment whose sender-side debit
+    // was never recorded honestly keeps the RECEIVER's figure (see
+    // mapServerTransaction). Printing that figure with the sender's symbol
+    // relabels somebody's rupees as dollars. TransactionRow prefers the
+    // row's own currency and falls back to this one, so a domestic row is
+    // unchanged and a foreign one now says what it actually is.
+    ccyCode={top.currency}
+    isFirst={i === 0}
+    // The card pads itself; these rows sit flush inside it.
+    inset={0}
+  />)}</div></div>}{searchStage === "found" && bottomOpen && <>{bottom.registered === false && <div
     role="alert"
     style={{
       display: "flex",
@@ -1623,7 +1640,31 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     maxLength={6}
     masked={!pinRevealed}
     onToggleMask={() => setPinRevealed((v) => !v)}
-  /></div></div></div>}{toast && <div className="toast">{toast.startsWith("Sending") && <span className="toast-icon"><Check3 size={12} strokeWidth={3} /></span>}<span>{toast}</span></div>}<ReceiptModal
+  /></div></div></div>}{toast && <div className="toast">{toast.startsWith("Sending") && <span className="toast-icon"><Check3 size={12} strokeWidth={3} /></span>}<span>{toast}</span></div>}{
+    /* The screen between "verified" and the receipt.
+       `amountLabel` is the SENDER's own figure — what actually leaves the
+       balance — not the receiver's face value. On a cross-border payment the
+       two are different numbers, and the one a person is waiting to lose is
+       theirs. Same `senderAmount` the Send button and the ledger leg read. */
+  }<PaymentProcessing
+    status={transactionStatus}
+    recipientName={bottom.name}
+    amountLabel={`\u2212${fmtMoney(senderAmount, top.currency)}`}
+    flag={bottom.flag}
+    reason={failureReason}
+    onRetry={() => {
+      // Straight back to the amount screen rather than re-posting from
+      // here. Both failure paths returned before anything moved, and the
+      // send needs a fresh idempotency key and a fresh verification — the
+      // PIN was dropped when the attempt failed.
+      setFailureReason(null);
+      setTransactionStatus("idle");
+    }}
+    onClose={() => {
+      setFailureReason(null);
+      setTransactionStatus("idle");
+    }}
+  /><ReceiptModal
     receipt={receipt}
     onClose={requestCloseReceipt}
     onDone={() => {

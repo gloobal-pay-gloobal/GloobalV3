@@ -162,8 +162,15 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = nul
     (t.counterpartyIso && COUNTRY_BY_ISO[t.counterpartyIso]) ||
     ALL_COUNTRIES.find((c) => c.flag === t.flag) ||
     null;
-  const counterpartyCurrency = counterpartyCountry ? COUNTRY_CURRENCY[counterpartyCountry.iso] : null;
-  const converted = counterpartyCurrency && counterpartyCurrency !== rowCurrency ? convert(t.amount, rowCurrency, counterpartyCurrency) : null;
+  // The live conversion that used to be computed here is gone.
+  //
+  // `convert(t.amount, rowCurrency, counterpartyCurrency)` read TODAY's rate
+  // and attached it to a payment that settled at whatever the rate was on the
+  // day. Nothing ever rendered it — ReceiptModal referenced the fields zero
+  // times — so the defect stayed invisible for as long as the feature did.
+  // The receipt now carries the transaction's OWN recorded rate and both
+  // sides' recorded figures instead; see the fields at the bottom of this
+  // object.
   return {
     direction,
     // 'sent' | 'received'
@@ -192,8 +199,32 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = nul
     // the shape of data this app did not write.
     currencySymbol: CURRENCY_SYMBOL[rowCurrency] || rowCurrency,
     currencyCode: rowCurrency,
-    convertedAmount: converted,
-    convertedCurrency: converted != null ? counterpartyCurrency : null,
+    // ── What this transaction was exchanged at ───────────────────────────
+    //
+    // Replaces `convertedAmount`/`convertedCurrency`, which were computed
+    // here by calling convert() and then rendered by nothing at all — dead
+    // since the day they were written, which is the only reason the defect in
+    // them never surfaced.
+    //
+    // The defect: convert() reads TODAY's rate. Reopening a cross-border
+    // receipt in six months would have shown next year's rate against last
+    // year's payment, presented as a record of what happened. What the
+    // receipt needs is the rate this transaction actually settled at, and the
+    // server records it — along with both sides' real figures, so nothing is
+    // multiplied out here either.
+    //
+    // All four are null on a row that predates the fields or never crossed a
+    // border; ReceiptModal draws the section only when both currencies are
+    // known AND differ.
+    senderAmount: Number.isFinite(Number(t.senderAmount)) ? Number(t.senderAmount) : null,
+    senderSideCurrency: t.senderSideCurrency || null,
+    receiverAmount: Number.isFinite(Number(t.receiverAmount)) ? Number(t.receiverAmount) : null,
+    receiverSideCurrency: t.receiverSideCurrency || null,
+    // Converts 1 unit of the RECEIVER's currency into the SENDER's — the
+    // direction the settlement engine and the cashback split are built
+    // around. Carried in that direction and displayed in it; see the note in
+    // ReceiptModal on why it is not inverted for readability.
+    fxRate: Number.isFinite(Number(t.fxRate)) ? Number(t.fxRate) : null,
     method: HISTORY_METHOD_META[t.method]?.label,
     date: t.date,
     time: t.time || formatClockTime(/* @__PURE__ */ new Date()),

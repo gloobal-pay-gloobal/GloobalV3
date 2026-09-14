@@ -214,7 +214,18 @@ function FlippingMenuIcon({ Icon, size = 92 }) {
 // wrapper with overflow:hidden — overflow creates a containing block that
 // can flatten preserve-3d, which would kill the flip that is the whole
 // point of this component.
-function SyncedFlipIcon({ Icon, size, flipInfo, frontBackground, radius = T.radiusLg }) {
+// `iconClassName` / `iconStyle` land on a span around the FRONT face's glyph
+// only, never on the face itself.
+//
+// That distinction is the whole of it. This component's front face IS the
+// tile's tinted background — the caller passes `frontBackground` and gets
+// back one element that is both the tint and the icon. So a caller wanting
+// the glyph to move (see actionTileMotion.jsx: send flies off, receive drops
+// in) cannot animate this component's root: that would carry the tile's own
+// background off with it, and wrapping the root in a sized-by-content span
+// collapses it outright, because the root is width/height 100% and has
+// nothing to fill.
+function SyncedFlipIcon({ Icon, size, flipInfo, frontBackground, radius = T.radiusLg, iconClassName, iconStyle }) {
   const { flipped, content, symbol, color } = flipInfo;
   return <div style={{ width: "100%", height: "100%", perspective: 600 }}><div
     style={{
@@ -236,7 +247,9 @@ function SyncedFlipIcon({ Icon, size, flipInfo, frontBackground, radius = T.radi
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><Icon size={size} /></span><span
+  >{iconClassName || iconStyle
+    ? <span className={iconClassName} style={iconStyle}><Icon size={size} /></span>
+    : <Icon size={size} />}</span><span
     style={{
       position: "absolute",
       inset: 0,

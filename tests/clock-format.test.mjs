@@ -168,21 +168,44 @@ describe("every transaction list shows the time, not just the date", () => {
   // rendered a bare `{t.date}` — so the SAME payment read "Sep 2" on one
   // screen and "Sep 2 · 14:07:32" on another, and two payments to the same
   // person on one day were indistinguishable in those lists.
+  // Coin Activity joined this list when it stopped hand-rolling its own row.
+  // It resolves its stamp through coinRowStamp, which exists only to supply a
+  // date for a row old enough to predate the field — and then hands off to
+  // historyRowStamp like everything else.
   const LISTS = [
     ["frontend/features/history/TransactionRow.jsx", "the History row"],
     ["frontend/screens/Banks/GloobalBankScreen.jsx", "Gloobal Bank recent"],
-    ["frontend/screens/SendMoney/SendMoney.jsx", "Send Money recent"]
+    ["frontend/screens/SendMoney/SendMoney.jsx", "Send Money recent"],
+    ["frontend/screens/Coin/GloobalCoinScreen.jsx", "Coin Activity"]
   ];
 
   for (const [file, what] of LISTS) {
     test(`${what} stamps date AND time`, () => {
-      assert.match(
-        readSource(file),
-        /historyRowStamp\(t\)/,
+      // Two ways to satisfy this, and the second is the stronger one.
+      //
+      // Bank, Send and Coin used to call historyRowStamp themselves, because
+      // they each drew their own row. They now render <TransactionRow/>,
+      // which calls it for them — so the guarantee is no longer that each
+      // list remembered to stamp its rows, but that there is only one row and
+      // it always does. Asserting the old spelling would have forced the
+      // shared component back out into four copies.
+      const src = readSource(file);
+      assert.ok(
+        /historyRowStamp\(t\)/.test(src) || /<TransactionRow/.test(src),
         `${what} must render the shared stamp rather than a bare date`
       );
     });
   }
+
+  test("and the row they all share is the one that stamps", () => {
+    // The other half of the assertion above: if TransactionRow ever stops
+    // calling historyRowStamp, the four lists that now delegate to it would
+    // all silently lose their times at once.
+    assert.match(
+      readSource("frontend/features/history/TransactionRow.jsx"),
+      /const stamp = historyRowStamp\(t\);/
+    );
+  });
 
   test("none of them renders a bare date instead", () => {
     // Comments stripped: the files explain the old `{t.date}` to say what

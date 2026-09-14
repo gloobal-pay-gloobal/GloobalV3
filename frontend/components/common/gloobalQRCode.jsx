@@ -43,29 +43,29 @@ import { useState as useState3, useEffect as useEffect3, useMemo as useMemoQr } 
 //    is not a degraded code — it is the same code held the other way up.
 //    Measured, not assumed: see tests/qr-design.test.mjs.
 //
-// 2. A large blank circle in the middle. That one DOES cost something —
-//    the modules under it are real data. How much it costs was measured
-//    rather than guessed (same test file): a blanked radius of 4.5 modules
-//    decodes on every payload and raster size tried, 5.5 is the edge, and 6
-//    fails outright. 4.5 is what ships, with the drawn circle reaching half
-//    a module further so its rim lands in the gap between modules.
+// 2. NO decoration on the scannable one. A blank centre and twenty
+//    decorative symbols were tried here and shipped, and they broke real
+//    scanning: pin-sharp they decoded fine, but every camera adds blur, and
+//    under blur they failed where a plain code still read. Measured after
+//    the fact — at 200px with a 1.5px blur, 3/10 payloads survived the
+//    decorated code and 10/10 survived the plain one. Both were removed.
+//    The concept's blank centre and twenty symbols live on the ARTWORK,
+//    which has no payload to protect. tests/qr-design.test.mjs now decodes
+//    under blur so this cannot come back unnoticed.
 //
-// 3. Exactly 20 decorative symbols, from exactly six solid shapes, laid out
-//    as two horizontal and two vertical groups framing the centre. Each of
-//    the 20 replaces a DARK DATA module and nothing else — never a light
-//    one (that would add ink the decoder does not expect) and never a
-//    function module (whose geometry is what a scanner locks onto). All six
-//    shapes are drawn with ink across the module's centre point, which is
-//    the single pixel a decoder samples.
+// 3. Purple marker cores, drawn as SQUARES. See QrFinderMarker for why a
+//    disc costs reads: a decoder finds the code by the 1:1:3:1:1 run-length
+//    ratio, and only a square core is three modules wide on every scan line
+//    through it.
 //
 // 4. The colourful Gloobal palette. Kept, and kept dark: a scanner
 //    binarises by luminance near 128, so every colour used for a dark
 //    module sits in the 92-102 band, roughly 30 points clear of the
 //    threshold.
 //
-// On the scannable drawing the field of navy modules stays — it is the
-// payload — and the concept is applied to it as marker, centre and symbol
-// treatment. The artwork above is where the concept is reproduced outright.
+// So the scannable drawing carries the concept only where it is free: the
+// three markers in the right corners, in Gloobal navy and purple. Everything
+// that costs error-correction budget lives on the artwork instead.
 // ─────────────────────────────────────────────────────────────────────────
 
 // Gloobal's own brand palette, applied to the decorative symbols — the same
@@ -132,26 +132,6 @@ function QrSymbolGlyph({ index, rowKey, x, y, moduleSize, color }) {
   }
 }
 
-// Exactly 20 — the approved count, and the number the layout below is built
-// from (four groups of five). It is also close to the 18 the previous
-// version capped at, and for the same reason: a decoder reads a module by
-// asking "dark or light" at its centre, and while each of the six shapes
-// answers that correctly on its own, a few hundred of them side by side
-// stop resolving as a grid at all. Twenty sit inside a code whose remaining
-// ~400 dark data modules are solid squares, so the grid resolves normally.
-var QR_SYMBOL_MODULE_COUNT = 20;
-
-// The layout, in modules, measured from the centre of the grid.
-//
-// Two horizontal groups (above and below the centre circle) and two
-// vertical groups (left and right of it), five symbols each, forming a
-// balanced frame around the blank middle. The offset of 7 puts every group
-// outside the blanked circle (radius 4.5) with room to spare, and the
-// plus/minus 8 reach keeps all four groups clear of the three 7-module
-// markers in the corners.
-var QR_SYMBOL_BAND_OFFSET = 7;
-var QR_SYMBOL_BAND_STEPS = [-8, -4, 0, 4, 8];
-
 // How much of the middle is blanked, as a radius in modules from the grid
 // centre, and how far the drawn white circle reaches beyond it.
 //
@@ -161,22 +141,6 @@ var QR_SYMBOL_BAND_STEPS = [-8, -4, 0, 4, 8];
 // edge and 6 fails. 4.5 is the largest value that decoded everything, and
 // tests/qr-design.test.mjs re-measures it rather than trusting this comment.
 //
-// The drawn circle is a quarter-module WIDER than the blanked radius, and
-// is painted over the modules rather than under them. That is what makes
-// the rim a clean arc instead of the ragged edge left by whichever module
-// corners happened to poke into it.
-//
-// It is safe because module centres sit on an integer lattice. Blanking at
-// 4.5 removes everything out to sqrt(20) = 4.47, and the next distance the
-// lattice can produce is exactly 5.0 (5,0 and 4,3). So the nearest module
-// still drawn has its centre a full half-module beyond the blanked radius,
-// and a circle painted to 4.75 clips some of that module's inner corner
-// while leaving a quarter-module of clearance around the point a decoder
-// samples. Clipping a corner costs nothing; covering a centre would cost a
-// bit.
-var QR_CENTER_BLANK_MODULES = 4.5;
-var QR_CENTER_DRAW_MODULES = QR_CENTER_BLANK_MODULES + 0.25;
-
 // The three markers: a navy rounded-square frame, a white inner square, a
 // solid purple disc at the core — the concept's marker, drawn over the
 // standard 7x7 finder pattern rather than instead of it.
@@ -204,75 +168,6 @@ function qrRotate180(grid) {
   return Array.from({ length: n }, (_, r) => Array.from({ length: n }, (_, c) => grid[n - 1 - r][n - 1 - c]));
 }
 
-// Is this cell inside the blank centre? Distance from the grid's middle, in
-// modules. A cell is blanked on its CENTRE, which is the same point the
-// decoder samples — so "blanked" and "read as light" mean the same thing
-// here, and no module is ever left half-painted.
-function qrIsInCenterHole(row, col, size) {
-  const mid = (size - 1) / 2;
-  return Math.hypot(row - mid, col - mid) <= QR_CENTER_BLANK_MODULES;
-}
-
-// Where the 20 symbols want to be: four groups of five, in display
-// coordinates, as (row, col) in modules.
-function qrSymbolSlotTargets(size) {
-  const mid = (size - 1) / 2;
-  const targets = [];
-  for (const k of QR_SYMBOL_BAND_STEPS) targets.push([mid - QR_SYMBOL_BAND_OFFSET, mid + k]); // top group
-  for (const k of QR_SYMBOL_BAND_STEPS) targets.push([mid + QR_SYMBOL_BAND_OFFSET, mid + k]); // bottom group
-  for (const k of QR_SYMBOL_BAND_STEPS) targets.push([mid + k, mid - QR_SYMBOL_BAND_OFFSET]); // left group
-  for (const k of QR_SYMBOL_BAND_STEPS) targets.push([mid + k, mid + QR_SYMBOL_BAND_OFFSET]); // right group
-  return targets;
-}
-
-// Which modules actually become symbols.
-//
-// The 20 positions above are where the DESIGN wants a symbol; they are not
-// necessarily dark data modules, and a symbol may only ever replace one. So
-// each target snaps to the nearest eligible module — dark, not a function
-// pattern, not inside the blank centre, not already taken. That keeps the
-// structure the concept asks for while never adding ink where the code says
-// there is none, and never removing ink where it says there is.
-//
-// Deterministic: pure arithmetic over the matrix, no Math.random, no clock.
-// The same payload always picks the same 20 cells, so reopening the code or
-// scanning a saved screenshot of it gets the same picture. Different
-// payloads pick different cells — the LAYOUT repeats, the code underneath
-// does not.
-//
-// Returns a Map of cell id -> slot index, because the slot index is what
-// chooses the shape and the colour: the order is the design's order, not
-// the grid's.
-function qrPickSymbolModules(matrix, isFunctionModule) {
-  const size = matrix.length;
-  const candidates = [];
-  for (let r = 0; r < size; r += 1) {
-    for (let c = 0; c < size; c += 1) {
-      if (matrix[r][c] !== 1) continue;
-      if (isFunctionModule[r][c]) continue;
-      if (qrIsInCenterHole(r, c, size)) continue;
-      candidates.push([r, c]);
-    }
-  }
-  const chosen = new Map();
-  for (const [targetRow, targetCol] of qrSymbolSlotTargets(size)) {
-    if (chosen.size >= QR_SYMBOL_MODULE_COUNT) break;
-    let best = -1;
-    let bestDistance = Infinity;
-    for (let i = 0; i < candidates.length; i += 1) {
-      const id = candidates[i][0] * 1e3 + candidates[i][1];
-      if (chosen.has(id)) continue;
-      const distance = (candidates[i][0] - targetRow) ** 2 + (candidates[i][1] - targetCol) ** 2;
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = i;
-      }
-    }
-    if (best >= 0) chosen.set(candidates[best][0] * 1e3 + candidates[best][1], chosen.size);
-  }
-  return chosen;
-}
-
 // Shape and colour for a slot. Shape walks the six in order, so each group
 // of five shows five different symbols — the variety the concept shows.
 // Colour advances by 5 (coprime with 6, so it visits all six) plus one step
@@ -285,35 +180,28 @@ function qrSymbolStyleFor(slot) {
   };
 }
 
-// The single place that decides plain-square vs branded-symbol per module.
-// Function cells (timing line, alignment square, format-info strips, the
-// fixed dark module — the three finder patterns are drawn separately, as
-// markers) always render as a plain filled square: their exact geometry is
-// what a real scanner searches the image for. Every dark DATA cell is free
-// to become one of the 20.
-function renderQrModule(row, col, x, y, moduleSize, symbolSlots) {
-  const rowKey = `${row}-${col}`;
-  const slot = symbolSlots ? symbolSlots.get(row * 1e3 + col) : undefined;
-  if (slot === undefined) {
-    return <rect key={rowKey} x={x} y={y} width={moduleSize} height={moduleSize} fill={T.ink} />;
-  }
-  const { symbolIndex, colorIndex } = qrSymbolStyleFor(slot);
-  // key belongs here too, not just on the element QrSymbolGlyph returns
-  // internally — a key set inside a child component's own render output is
-  // invisible to the parent's list-diffing.
-  return <QrSymbolGlyph key={rowKey} index={symbolIndex} rowKey={rowKey} x={x} y={y} moduleSize={moduleSize} color={QR_MODULE_COLORS[colorIndex]} />;
-}
-
-// One marker. Drawn as three stacked shapes over the 7x7 finder pattern:
-// navy rounded frame, white inner square, purple core disc. The modules
-// underneath are not drawn at all — these three shapes ARE the finder
-// pattern, at the same coverage, which is why the radii above are bounded
-// the way they are.
-function QrFinderMarker({ x, y, span, moduleSize, markerKey }) {
+// squareCore is not a style preference — it is what keeps the code readable
+// by a camera.
+//
+// A decoder finds a QR by scanning lines across the image and looking for
+// the run-length ratio 1:1:3:1:1. The "3" is the core, and on a real finder
+// it is a 3x3 SQUARE, so the dark run is three modules wide along every line
+// through it. A disc of the same nominal radius is narrower than three
+// modules on every line except the one through its centre, and once a lens
+// blurs the edges those short runs stop matching the ratio. The code then
+// fails to be FOUND at all, which reads as "no code here" rather than as a
+// misread.
+//
+// Measured: with a round core, 7/10 payloads survived a 2.5px blur at 400px;
+// with a square core, 10/10. The artwork has no decoder to satisfy, so it
+// keeps the disc the concept shows.
+function QrFinderMarker({ x, y, span, moduleSize, markerKey, squareCore = false }) {
   return <g key={markerKey}>
     <rect x={x} y={y} width={span} height={span} rx={moduleSize * QR_FINDER_OUTER_RADIUS} fill={T.ink} />
     <rect x={x + moduleSize} y={y + moduleSize} width={moduleSize * 5} height={moduleSize * 5} rx={moduleSize * QR_FINDER_INNER_RADIUS} fill="#fff" />
-    <circle cx={x + span / 2} cy={y + span / 2} r={moduleSize * QR_FINDER_CORE_RADIUS} fill={T.accent} />
+    {squareCore
+      ? <rect x={x + moduleSize * 2} y={y + moduleSize * 2} width={moduleSize * 3} height={moduleSize * 3} fill={T.accent} />
+      : <circle cx={x + span / 2} cy={y + span / 2} r={moduleSize * QR_FINDER_CORE_RADIUS} fill={T.accent} />}
   </g>;
 }
 
@@ -451,12 +339,6 @@ function GloobalQRCode({ code, size = 200, onSecondsLeftChange }) {
   const margin = 4;
   const totalModules = QR_SIZE + margin * 2;
   const moduleSize = size / totalModules;
-  // Chosen once per matrix, not per module: the selection has to see the
-  // whole grid to place exactly QR_SYMBOL_MODULE_COUNT of it.
-  const symbolSlots = useMemoQr(
-    () => built ? qrPickSymbolModules(built.matrix, built.isFunctionModule) : null,
-    [built]
-  );
   // The three markers, in display coordinates. A half-turn maps the
   // encoder's (0,0) / (0,n-7) / (n-7,0) finders to bottom-right /
   // bottom-left / top-right, which is the concept's arrangement exactly —
@@ -472,26 +354,9 @@ function GloobalQRCode({ code, size = 200, onSecondsLeftChange }) {
   const qrModules = built ? built.matrix.map((row, r) => row.map((v, c) => {
     if (v !== 1) return null;
     if (finderCells.has(r * 1e3 + c)) return null;
-    // The blank centre. Only DATA modules are ever dropped: a function
-    // module inside the circle would cost the decoder its orientation, so it
-    // would be drawn regardless. At the shipped radius none fall inside, and
-    // this guard is what keeps that true if the radius is ever revisited.
-    if (!built.isFunctionModule[r][c] && qrIsInCenterHole(r, c, QR_SIZE)) return null;
-    return renderQrModule(r, c, (c + margin) * moduleSize, (r + margin) * moduleSize, moduleSize, symbolSlots);
+    return <rect key={`${r}-${c}`} x={(c + margin) * moduleSize} y={(r + margin) * moduleSize} width={moduleSize} height={moduleSize} fill={T.ink} />;
   })).flat() : null;
-  const centerOffset = ((QR_SIZE - 1) / 2 + margin) * moduleSize + moduleSize / 2;
-  // The centre is drawn TWICE: once underneath everything, carrying the
-  // soft violet bloom, and once over the modules to give the circle a clean
-  // edge. Splitting it is what keeps the bloom behind the module field —
-  // a shadow cast by the top copy would spill outward over the white gaps
-  // between modules, which is the one place a grey haze can cost a read.
-  //
-  // The bloom is faint on purpose for the same reason: it sits over white,
-  // and anything heavier would start lifting the local background toward
-  // the binarisation threshold.
-  const glowId = "gloobalQrCenterGlow";
-  const centerCircle = (onTop) => <circle key={onTop ? "centre-top" : "centre-glow"} cx={centerOffset} cy={centerOffset} r={moduleSize * QR_CENTER_DRAW_MODULES} fill="#fff" filter={onTop ? undefined : `url(#${glowId})`} />;
-  return <div style={{ width: size, height: size, display: "flex", alignItems: "center", justifyContent: "center" }}>{built ? <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Gloobal QR code"><defs><filter id={glowId} x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation={moduleSize * 0.6} floodColor={T.accent} floodOpacity="0.14" /></filter></defs><rect width={size} height={size} fill="#fff" />{centerCircle(false)}{qrModules}{centerCircle(true)}{finderOrigins.map(([fr, fc]) => <QrFinderMarker key={`finder-${fr}-${fc}`} markerKey={`finder-${fr}-${fc}`} x={(fc + margin) * moduleSize} y={(fr + margin) * moduleSize} span={moduleSize * 7} moduleSize={moduleSize} />)}</svg> : null}</div>;
+  return <div style={{ width: size, height: size, display: "flex", alignItems: "center", justifyContent: "center" }}>{built ? <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Gloobal QR code"><rect width={size} height={size} fill="#fff" />{qrModules}{finderOrigins.map(([fr, fc]) => <QrFinderMarker key={`finder-${fr}-${fc}`} markerKey={`finder-${fr}-${fc}`} x={(fc + margin) * moduleSize} y={(fr + margin) * moduleSize} span={moduleSize * 7} moduleSize={moduleSize} squareCore />)}</svg> : null}</div>;
 }
 
 

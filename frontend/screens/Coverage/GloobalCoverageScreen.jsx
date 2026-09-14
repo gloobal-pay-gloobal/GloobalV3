@@ -55,6 +55,11 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   const [projectFile, setProjectFile] = useState16(null);
   const [projectSaving, setProjectSaving] = useState16(false);
   const [projectError, setProjectError] = useState16(null);
+  // Set when a just-created project was filed under a different country from
+  // the one being viewed, so the screen can say why the country changed under
+  // the person rather than just changing it. Holds the ISO it was filed in;
+  // cleared on the next country change the person makes themselves.
+  const [projectFiledIn, setProjectFiledIn] = useState16(null);
   const [selected, setSelected] = useState16(() => {
     const stored = loadStoredCoverageCountry();
     if (stored) return stored;
@@ -178,11 +183,26 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // and no way to add anything. These are real stored records now (see
   // server/models/Project.js).
   //
-  // Refetched on the category, on the search text, and on projectsToken —
-  // which is bumped after a create, so a new project appears without a
-  // reload. Only fetched while the overlay is open: nothing on the main
-  // Coverage screen shows a project, so fetching before it opens would be
-  // a request nobody reads.
+  // Refetched on the country, on the category, on the search text, and on
+  // projectsToken — which is bumped after a create, so a new project appears
+  // without a reload. Only fetched while the overlay is open: nothing on the
+  // main Coverage screen shows a project, so fetching before it opens would
+  // be a request nobody reads.
+  //
+  // ── Why the country is here ──────────────────────────────────────────
+  //
+  // This whole screen is one country at a time. `selected` picks it, every
+  // figure on it is that country's, and the button that opens this overlay
+  // sits INSIDE that country's panel. Projects were the one thing that
+  // ignored it: the list showed every project on the platform, so opening
+  // Hooman Projects from Pakistan and from India produced identical lists,
+  // and a card could carry a flag for a country other than the one being
+  // looked at.
+  //
+  // The route has supported ?country= since it was written, and so has
+  // GloobalApi.listProjects. The screen simply never sent one — which is
+  // why nothing looked broken: the wrong answer was a valid answer to a
+  // different question.
   useEffect14(() => {
     if (!showHoomanProjects) return undefined;
     let cancelled = false;
@@ -190,6 +210,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     (async () => {
       const next = await GloobalApi.listProjects({
         category: selectedHoomanCategory,
+        country: country.code,
         q: projectQuery.trim() || undefined
       });
       if (cancelled) return;
@@ -201,7 +222,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     return () => {
       cancelled = true;
     };
-  }, [showHoomanProjects, selectedHoomanCategory, projectQuery, projectsToken]);
+  }, [showHoomanProjects, selectedHoomanCategory, country.code, projectQuery, projectsToken]);
 
   // Counted the same way the server counts (lib/projectValidation.js's
   // countWords). The two MUST agree: a form that says "982 / 1000" and is
@@ -261,6 +282,27 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       setShowProjectForm(false);
       resetProjectForm();
       setProjectsToken((n) => n + 1);
+      // Follow the project to wherever the SERVER filed it.
+      //
+      // A project's country is not asked for on the form — the server takes
+      // it from the creator's own resolved account country (see the note on
+      // countryIso in models/Project.js), so that a project and its creator
+      // can never disagree about where they are. Which means the country a
+      // person happens to be LOOKING at when they add one has no bearing on
+      // where it lands.
+      //
+      // Once the list below became per-country, that turned into a way to
+      // lose something: add a project while reading about India, and it is
+      // saved under your own country and is not in the list you are staring
+      // at. No error, no row — it simply did not appear.
+      //
+      // `created.countryIso` is the server's own answer rather than a guess
+      // from dialCountry, which is the account's dialling country and not
+      // necessarily the one the account resolves to.
+      if (created && created.countryIso && created.countryIso !== country.code) {
+        setProjectFiledIn(created.countryIso);
+        setSelected(created.countryIso);
+      }
     } catch (err) {
       setProjectSaving(false);
       // The server's own message, not a generic one: it is what names the
@@ -337,8 +379,17 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     }, 2e3);
     return () => clearInterval(interval);
   }, []);
+  // The one path a PERSON changes country by. The create path above sets
+  // `selected` directly and deliberately does not come through here: it must
+  // not clear the notice it just raised, and it should not overwrite the
+  // stored country — following a save is not the same as choosing where to
+  // look.
   function selectCountry(code) {
     setSelected(code);
+    // A chosen country ends the explanation for a country that was chosen
+    // for them. Without this the notice would reappear months later, saying
+    // "Saved in Pakistan" to somebody who merely navigated back to it.
+    setProjectFiledIn(null);
     setFlipped(true);
     saveStoredCoverageCountry(code);
     heroRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -585,13 +636,31 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       style={{ border: "none", borderTop: i === 0 ? "none" : `1px solid ${C.line}`, background: "none", cursor: "pointer" }}
     ><div className="relative rounded-lg overflow-hidden flex-shrink-0" style={{ width: 40, height: 29, border: `1px solid ${C.line}`, opacity: rowUnlocked ? 1 : 0.55 }}><CoverageFlag code={c.code} width={40} height={29} /></div><span className="flex-1 min-w-0 text-[13.5px] font-semibold truncate" style={{ color: C.ink }}>{c.name}</span>{rowUnlocked !== null && <span className="flex-shrink-0" style={{ color: rowUnlocked ? C.positive : C.negative }} aria-label={rowUnlocked ? "Unlocked" : "Locked"}>{rowUnlocked ? <Unlock2 size={14} /> : <Lock6 size={14} />}</span>}</button>;
   })}</div></div>}</div>{
-    /* Hooman Projects — 8 categories, all honestly ∆ right now since
-       there's no real "project" concept anywhere in this app's data
-       model yet, not even one created by this account. Scaffolding
-       for when that feature actually exists. */
-  }{showHoomanProjects && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => setShowHoomanProjects(false)} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}>
+    /* Hooman Projects — eight categories of real stored records, scoped to
+       the country this screen is currently showing.
+
+       This comment used to say the categories were "all honestly ∆ right
+       now since there's no real project concept anywhere in this app's
+       data model yet". That stopped being true when models/Project.js and
+       /api/projects were written; the note is kept in this shape because
+       the ∆ it describes still has a job — it is what the card shows when
+       the server does not answer, which is a different fact from zero. */
+  }{showHoomanProjects && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => setShowHoomanProjects(false)} /><span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>{
+    /* Title and country STACKED, not side by side.
+
+       Side by side is what this was first, and a render showed why it
+       cannot be: three things share this row — the back button, the title,
+       and the category pill — and the title wraps to two lines at phone
+       width. The country was the last in and lost, rendering as "Pa…",
+       which is a label that has stopped saying the one thing it exists to
+       say. Below the title it has the whole width. */
+  }<span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.15 }}>
               H<SingleOMark before="" after="" /><SingleOMark before="" after="" />man Projects
             </span>{
+    /* Whose projects these are. The overlay covers the country panel it
+       was opened from, so without this the one piece of context that
+       decides what is in the list is the thing the list does not say. */
+  }<span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}><FlagEmoji flag={country.flag} width={18} height={13} radius={3} /><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{country.name}</span></span></span>{
     /* Current category — top-right corner, tap to search/pick a
        different one. Only one shown at a time, not all 8. */
   }<button
@@ -610,7 +679,23 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     }}
   ><span style={{ fontSize: 12, fontWeight: 800, color: T.accent }}>{selectedHoomanCategory}</span><ChevronDown3 size={13} color={T.accent} /></button></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{(() => {
     const cat = HOOMAN_PROJECT_CATEGORIES.find((c) => c.name === selectedHoomanCategory);
-    return <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px" }}><div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{cat.name}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{cat.examples}</div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, paddingTop: 16, borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 12, color: T.inkFaint }}>Projects in this category</span>{
+    return <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px" }}>{
+      /* Shown only after a create that landed somewhere other than the
+         country being viewed, which is not an error and not something the
+         person did wrong — it is simply where their account is. Saying it
+         is what turns an unexplained country change into an explained one.
+         It clears itself the next time they pick a country by hand. */
+    }{projectFiledIn === country.code && <div
+      role="status"
+      style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "10px 12px", borderRadius: T.radiusMd, background: T.accentSoft }}
+    ><FlagEmoji flag={country.flag} width={18} height={13} radius={3} /><span style={{ fontSize: 11.5, fontWeight: 600, color: T.accent, lineHeight: 1.45 }}>
+        Saved in {country.name} — projects are filed where your account is registered, so that is where this one lives.
+      </span></div>}<div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{cat.name}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{cat.examples}</div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, paddingTop: 16, borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 12, color: T.inkFaint }}>{
+      /* Names the country, because the number is that country's.
+         "Projects in this category" was true when the list was the whole
+         platform's; against a per-country list it is a label that quietly
+         drops the more surprising half of what it counts. */
+    }Projects in {country.name}</span>{
       /* A real count, from the same response the list below is
          built from — so the number on this card and the rows
          under it can never disagree. It was a hardcoded ∆, which
@@ -638,7 +723,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        real empty state), or it answered with rows. Collapsing the
        first two would show "no projects yet" every time the
        backend was asleep. */
-  }{projectsLoading && !projectsData ? <div style={{ padding: "24px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Loading…</div> : !projectsData ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>Couldn't reach the server, so we don't know what's here.</div></div> : projectsData.projects.length === 0 ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{projectQuery.trim() ? `Nothing matches "${projectQuery.trim()}"` : `No projects in ${selectedHoomanCategory} yet`}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>{projectQuery.trim() ? "Try a different word." : "Add the first one."}</div></div> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{projectsData.projects.map((project) => <div
+  }{projectsLoading && !projectsData ? <div style={{ padding: "24px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Loading…</div> : !projectsData ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>Couldn't reach the server, so we don't know what's here.</div></div> : projectsData.projects.length === 0 ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{projectQuery.trim() ? `Nothing in ${country.name} matches "${projectQuery.trim()}"` : `No ${selectedHoomanCategory} projects in ${country.name} yet`}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>{projectQuery.trim() ? "Try a different word." : "Add the first one."}</div></div> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{projectsData.projects.map((project) => <div
     key={project.id}
     style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px" }}
   ><div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}><span style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{project.title}</span>{project.countryIso && COUNTRY_BY_ISO[project.countryIso] && <FlagEmoji flag={COUNTRY_BY_ISO[project.countryIso].flag} width={22} height={16} radius={4} />}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{project.summary}</div>{

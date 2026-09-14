@@ -5045,11 +5045,30 @@ app.get('/api/projects', lookupLimit, async (req, res) => {
     const page = rows.slice(0, limit);
     const nextCursor = rows.length > limit ? String(page[page.length - 1]._id) : null;
 
-    // Per-category counts over the SAME visibility rule, so the number on a
-    // category card and the list behind it can never disagree. Counted in
-    // Mongo rather than from the page above, which is one page of one
+    // Per-category counts over the SAME filter as the listing, so the number
+    // on a category card and the list behind it can never disagree. Counted
+    // in Mongo rather than from the page above, which is one page of one
     // category and could not answer this.
+    //
+    // Everything except `category` and `_id` carries over, and which of those
+    // is dropped matters:
+    //
+    //   category  dropped because this IS the per-category breakdown. Keeping
+    //             it would return one number — the selected category's — and
+    //             zero for the other seven.
+    //   _id       the paging cursor. Keeping it would make the count shrink
+    //             as the reader paged down, which is a count of the rows
+    //             below this point rather than a count of anything.
+    //
+    // `country` and `q` used to be dropped here too, and that was a bug of
+    // exactly the kind the comment above promises cannot happen: the card
+    // read "Projects in this category: 12" while the list under it showed
+    // two, because the count was over every published project on the platform
+    // and the list was one country's, filtered by a search term. It was
+    // invisible for as long as the client sent neither.
     const countFilter = mine ? { ownerId: viewer._id } : { status: 'published' };
+    if (filter.countryIso) countFilter.countryIso = filter.countryIso;
+    if (filter.$or) countFilter.$or = filter.$or;
     const countRows = await Project.aggregate([
       { $match: countFilter },
       { $group: { _id: '$category', count: { $sum: 1 } } },

@@ -185,8 +185,17 @@ var GloobalApi = {
   // The server revokes this account's OTHER sessions on success and hands
   // back a replacement token for this one. Saving it is what stops the
   // device that made the change from being signed out by its own change.
+  //
+  // credentialCheck: a wrong CURRENT PIN comes back 401, and without this
+  // the client read that as "your token is dead", cleared it and bounced to
+  // Login — so a typo signed the person out instead of showing them the
+  // server's "4 attempts left". See the 401 branch in httpClient.js.
   async changePin(symbolId, currentPin, newPin) {
-    const result = await gloobalApiClient.post('/api/pin/change', { symbolId, currentPin, newPin });
+    const result = await gloobalApiClient.post(
+      '/api/pin/change',
+      { symbolId, currentPin, newPin },
+      { credentialCheck: true }
+    );
     if (result && result.token) gloobalAuthTokenSave(result.token);
     return { user: result && result.user, message: result && result.message };
   },
@@ -207,8 +216,17 @@ var GloobalApi = {
   },
 
   // POST /api/pin/verify — confirms a PIN without logging in.
+  //
+  // credentialCheck, for the same reason as changePin above and with wider
+  // blast radius: this is the PIN fallback behind EVERY biometric gate in
+  // the app (requireBiometric, frontend/hooks/useBiometric.js). One wrong
+  // digit at a payment confirmation used to end the session outright.
   async verifyPin(symbolId, pin) {
-    const result = await gloobalApiClient.post("/api/pin/verify", { symbolId, pin });
+    const result = await gloobalApiClient.post(
+      "/api/pin/verify",
+      { symbolId, pin },
+      { credentialCheck: true }
+    );
     if (!result || !result.verified) throw new Error((result && result.message) || "That PIN wasn't recognized.");
     return true;
   },
@@ -226,7 +244,11 @@ var GloobalApi = {
       const result = await gloobalApiClient.post(
         "/api/login",
         { symbolId: identifier, secureId: identifier, identifier, pin },
-        { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS }
+        // credentialCheck: a wrong PIN here is a 401 about the PIN, not about
+        // any token this device is still holding. Signing in on a device that
+        // already had a live session must not destroy that session because
+        // the first attempt was mistyped.
+        { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS, credentialCheck: true }
       );
       gloobalRateClear("login");
       // Every protected route needs this. Stored before the caller sees the

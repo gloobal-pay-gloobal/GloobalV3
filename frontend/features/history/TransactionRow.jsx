@@ -17,10 +17,21 @@
 // belongs — amounts line up under each other and can be compared down the
 // list without reading anything else.
 //
-// This same component now renders all three lists — History, the Home tab's
-// recent activity, and the Recent list on the Receive sheet. They used to be
-// three hand-written copies that drifted apart in icon size, font size and
-// date placement.
+// This same component now renders every transaction list in the app —
+// History, the Home tab's recent activity, the Recent list on the Receive
+// sheet, Send Money's Recent, Gloobal Bank's Recent Transactions and the Coin
+// Activity ledger. They used to be six hand-written copies that drifted apart
+// in mark size, font size and date placement: 29px here, 30 on Bank and Coin,
+// 36 on Send; 14.5/11 type here against 13/10.5 on the other three; and two
+// entirely different marks — this flipping symbol disc, and a soft-tinted
+// circle holding a direction arrow.
+//
+// The arrow is the one thing that migration drops, and it is worth saying why
+// that is not a loss of information. On a Bank or Coin row, direction was
+// stated three times: by the arrow, by the sign on the amount, and by the
+// colour of the amount. Two of those three survive here unchanged. What the
+// arrow bought on top of them was a second mark idiom on a list of the same
+// kind of thing, which is the drift itself.
 //
 // The payment-method chip ("Bank", "PayLater", "Coin") stays gone. It
 // repeated on effectively every row, so it carried close to no information.
@@ -39,7 +50,14 @@ var TXN_ROW_MARK_SIZE = 29;
 // straight into an unpadded card and needs it; the Dashboard's two lists sit
 // inside cards that already pad themselves and pass 0, so the rows line up
 // with the card's own heading instead of stepping in from it.
-function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelect, inset = 14 }) {
+//
+// `amountText` is for a row that is not denominated in a currency at all.
+// The Coin ledger is the only one: it is counted in GC, which has no ISO code
+// and no symbol, so fmtMoney cannot format it and must not be asked to —
+// handing it "GC" would print the ticker through the currency table's
+// fallback path and quietly imply GC is money. A caller that passes it owns
+// the whole figure; everything else below still reads the same.
+function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelect, inset = 14, amountText }) {
   const stamp = historyRowStamp(t);
   // The row's OWN currency wins over the viewer's account currency.
   //
@@ -62,12 +80,19 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
   // It falls back to the CODE itself for a currency with no symbol in the
   // table, rather than to the viewer's symbol: an unfamiliar "5,000.00 CNY"
   // is readable and true, where "5,000.00$" is neither.
-  const amount = `${sign}${fmtMoney(Number(t.amount || 0), rowCode)}`;
+  const amount = amountText != null
+    ? `${sign}${amountText}`
+    : `${sign}${fmtMoney(Number(t.amount || 0), rowCode)}`;
   return <div
     onClick={onSelect}
     className="v2-tap"
-    role="button"
-    tabIndex={0}
+    // Only a row that actually opens something is a button. Three of the six
+    // lists this now renders — Send's Recent, Bank, Coin — are read-only, and
+    // announcing those to a screen reader as buttons, and putting each one in
+    // the tab order, would promise a receipt that never opens. Send's Recent
+    // is read-only deliberately: see the comment at its call site.
+    role={onSelect ? "button" : undefined}
+    tabIndex={onSelect ? 0 : undefined}
     aria-label={`${t.name}, ${amount}, ${stamp}${t.status === "simulated" ? " — not actually sent, simulated only" : ""}`}
     style={{ display: "flex", alignItems: "center", gap: 12, padding: `9px ${inset}px`, cursor: onSelect ? "pointer" : "default" }}
   >{

@@ -162,8 +162,18 @@ const FRONTEND_MODULES = [
   "components/cards/misc.jsx",
   "components/charts/ghRing.jsx",
   "components/common/flipIcons.jsx",
+  // The four action tiles' own motion: send flies off, receive drops in,
+  // scan sweeps, bank settles. Sits outside the flip rather than replacing
+  // it, so the two compose.
+  "components/common/actionTileMotion.jsx",
   "components/common/misc.jsx",
+  // The audit report: one transaction, as a PDF. Ahead of ReceiptModal,
+  // which is the only thing that opens one.
+  "features/receipts/auditReport.js",
   "components/dialogs/ReceiptModal.jsx",
+  // The screen between "verified" and the receipt. Renders the
+  // transactionStatus SendMoney was already tracking and nothing drew.
+  "components/dialogs/PaymentProcessing.jsx",
   // The two explain-this-screen sheets opened from the registration
   // screens' top-right corner. Needs hooks/useBackClose.js (above) and is
   // rendered from App.jsx (below).

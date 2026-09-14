@@ -1,6 +1,6 @@
 // src/screens/Coin/GloobalCoinScreen.jsx
 import { useState as useState30, useEffect as useEffect20 } from "react";
-import { ArrowDownLeft as CoinArrowIn, ArrowUpRight as CoinArrowOut, Check as CoinCheck, ChevronRight as CoinChevron } from "lucide-react";
+import { Check as CoinCheck, ChevronRight as CoinChevron } from "lucide-react";
 
 // Gloobal Coin — a working, fully backed prototype currency.
 //
@@ -411,12 +411,35 @@ function GloobalCoinScreen({
         No coin activity yet — buy your first Gloobal Coin above
       </div> : (coinHistory || []).map((row, i) => {
     const incoming = row.direction === "in";
-    return <div
+    // The shared transaction row, the same one History, Home, Receive, Send
+    // and Gloobal Bank use. This list was a hand-written copy at a 30px disc
+    // and 13/10.5 type, and the coin ledger is a transaction list like any
+    // other — a person should not have to re-learn the shape of a row when
+    // they move between two tabs of the same app.
+    //
+    // Two things this ledger names differently have to be translated rather
+    // than passed through, and both are named here rather than pushed into
+    // the shared row, which should not have to know that a coin exists:
+    //
+    //   `memo` is this list's word for the counterparty column, and
+    //   `coinRowStamp` resolves a date from `postedAt` for a row that
+    //   predates rows carrying their own date/time.
+    const stamp = coinRowStamp(row);
+    return <TransactionRow
       key={row.id}
-      style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, marginTop: i === 0 ? 8 : 0 }}
-    ><span
-      style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: incoming ? T.positiveSoft : T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}
-    >{incoming ? <CoinArrowIn size={14} color={TXN_IN_COLOR} /> : <CoinArrowOut size={14} color={TXN_OUT_COLOR} />}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.memo}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>{coinRowStamp(row)}</span></span><span style={{ fontSize: 13, fontWeight: 800, color: incoming ? TXN_IN_COLOR : TXN_OUT_COLOR, flexShrink: 0 }}>{incoming ? "+" : "−"}{fmt(Number(row.amount) || 0)} {COIN_TICKER}</span></div>;
+      // Already a finished "Sep 3 · 14:07:32", so it goes in as the date with
+      // no time beside it — historyRowStamp passes a stampless row straight
+      // through rather than composing it a second time.
+      t={{ name: row.memo, date: stamp }}
+      color={incoming ? TXN_IN_COLOR : TXN_OUT_COLOR}
+      sign={incoming ? "+" : "−"}
+      isFirst={i === 0}
+      inset={0}
+      // GC is a token, not a currency: no ISO code, no symbol, and nothing
+      // fmtMoney could correctly do with it. The figure is formatted here,
+      // by the same `fmt` that renders the balance above it.
+      amountText={`${fmt(Number(row.amount) || 0)} ${COIN_TICKER}`}
+    />;
   })}</div></div>{
     /* Moved to the bottom of the screen at the user's request — the
        tagline card and "I am IN" waitlist button used to sit between the

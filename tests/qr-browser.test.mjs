@@ -252,10 +252,25 @@ describe("the camera is asked for honestly", () => {
 
 // ---------------------------------------------------------------------------
 
+// My Code now opens on the Gloobal ARTWORK — the approved concept, which
+// carries no payload and does not scan. The scannable code is one button
+// away. Every test in this file is about the code that actually pays, so
+// each one reveals it first; the artwork has its own coverage in
+// qr-design.test.mjs.
 async function openMyCode(page) {
   await page.getByLabel("Scanner", { exact: true }).click({ force: true });
   await page.getByRole("button", { name: "My Code", exact: true }).waitFor({ timeout: 20000 });
   await page.getByRole("button", { name: "My Code", exact: true }).click({ force: true });
+  await revealScannableCode(page);
+}
+
+// Idempotent: if the scannable code is already showing (the panel keeps its
+// state while the amount is edited), this does nothing rather than toggling
+// back to the artwork.
+async function revealScannableCode(page) {
+  const toggle = page.getByRole("button", { name: "Show scannable code", exact: true });
+  await toggle.waitFor({ timeout: 20000 }).catch(() => {});
+  if (await toggle.count()) await toggle.click({ force: true });
   await page.locator('svg[aria-label="Gloobal QR code"]').waitFor({ timeout: 20000 });
 }
 

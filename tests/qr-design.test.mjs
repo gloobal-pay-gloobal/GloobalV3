@@ -58,6 +58,8 @@ const ACCENT = "#7c3aed";
 const EXPECTED_SYMBOLS = 20;
 const EXPECTED_MARKERS = 3;
 const SHAPES = ["minus", "plus", "times", "equals", "circle", "square"];
+const ARTWORK_LABEL = "Gloobal code artwork";
+const ARTWORK_SELECTOR = 'svg[aria-label="Gloobal code artwork"]';
 
 before(async () => {
   await buildOnce();
@@ -77,9 +79,9 @@ after(async () => {
 // pattern-matching an attribute string that could be written many ways.
 // ---------------------------------------------------------------------------
 
-async function describeQr(page) {
-  return page.evaluate((palette) => {
-    const svg = document.querySelector('svg[aria-label="Gloobal QR code"]');
+async function describeQr(page, label = "Gloobal QR code") {
+  return page.evaluate(({ palette, label }) => {
+    const svg = document.querySelector(`svg[aria-label="${label}"]`);
     if (!svg) return null;
     const norm = (v) => {
       if (!v) return "";
@@ -170,7 +172,7 @@ async function describeQr(page) {
       docWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth
     };
-  }, SYMBOL_COLORS);
+  }, { palette: SYMBOL_COLORS, label });
 }
 
 // The classifier lives on this side so the six shapes are named once, in
@@ -197,10 +199,20 @@ function classify(symbol) {
   return "unknown";
 }
 
+// My Code opens on the ARTWORK — the approved concept, which carries no
+// payload. The scannable code is one button away.
 async function openMyCode(page) {
   await page.getByLabel("Scanner", { exact: true }).click({ force: true });
   await page.getByRole("button", { name: "My Code", exact: true }).waitFor({ timeout: 20000 });
   await page.getByRole("button", { name: "My Code", exact: true }).click({ force: true });
+  await page.locator(ARTWORK_SELECTOR).waitFor({ timeout: 20000 });
+}
+
+// Idempotent, so it can be called after an amount edit without toggling back.
+async function revealScannableCode(page) {
+  const toggle = page.getByRole("button", { name: "Show scannable code", exact: true });
+  await toggle.waitFor({ timeout: 20000 }).catch(() => {});
+  if (await toggle.count()) await toggle.click({ force: true });
   await page.locator('svg[aria-label="Gloobal QR code"]').waitFor({ timeout: 20000 });
 }
 
@@ -254,6 +266,7 @@ describe("the drawn code matches the approved design", () => {
     shared = await openPage({ account: ACCOUNTS.india });
     await login(shared.page, ACCOUNTS.india);
     await openMyCode(shared.page);
+    await revealScannableCode(shared.page);
     drawn = await describeQr(shared.page);
     assert.ok(drawn, "no Gloobal QR was drawn at all");
   });
@@ -428,6 +441,154 @@ describe("the drawn code matches the approved design", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The artwork — the approved concept, reproduced outright
+//
+// This is what My Code opens on. It carries no payload and does not scan;
+// that is the deal that lets it match the concept exactly, and the last test
+// in this block states it out loud rather than leaving it implied.
+// ---------------------------------------------------------------------------
+
+describe("the artwork is the approved concept, exactly", () => {
+  let art;
+  let artPage;
+
+  before(async () => {
+    artPage = await openPage({ account: ACCOUNTS.india });
+    await login(artPage.page, ACCOUNTS.india);
+    await openMyCode(artPage.page);
+    art = await describeQr(artPage.page, ARTWORK_LABEL);
+    assert.ok(art, "My Code did not open on the artwork");
+  });
+
+  after(async () => {
+    if (artPage) await artPage.context.close();
+  });
+
+  test("it is what My Code opens on, before any button is pressed", () => {
+    assert.ok(art.symbols.length > 0, "the artwork drew nothing");
+  });
+
+  test("NO data modules — the empty field the concept shows", () => {
+    // The whole point. Anything in plainModules is a navy payload square,
+    // and the concept has none.
+    assert.deepEqual(
+      art.plainModules,
+      [],
+      `the artwork must have no data modules; found ${art.plainModules.length}`
+    );
+  });
+
+  test("exactly twenty decorative symbols", () => {
+    assert.equal(art.symbols.length, EXPECTED_SYMBOLS);
+  });
+
+  test("only the six approved solid shapes, all six present", () => {
+    const kinds = art.symbols.map(classify);
+    assert.equal(kinds.filter((k) => k === "unknown").length, 0, "an unapproved shape was drawn");
+    for (const shape of SHAPES) assert.ok(kinds.includes(shape), `the ${shape} is missing`);
+  });
+
+  test("no open circle and no open square", () => {
+    for (const symbol of art.symbols) {
+      for (const part of symbol.parts) {
+        assert.notEqual(part.fill, "none", "a symbol is drawn as an outline");
+        assert.ok(!part.stroke || part.stroke === "none", "a symbol carries a stroke");
+      }
+    }
+    assert.deepEqual(art.allStrokes.filter((x) => x !== "none"), [], "nothing may be stroked");
+  });
+
+  test("three markers at top-right, bottom-left, bottom-right — none top-left", () => {
+    assert.equal(art.markers.length, EXPECTED_MARKERS);
+    const [, , width, height] = art.viewBox;
+    const corners = art.markers.map((m) => {
+      const frame = m.parts.slice().sort((a, b) => b.w - a.w)[0];
+      return `${frame.cy < height / 2 ? "top" : "bottom"}-${frame.cx < width / 2 ? "left" : "right"}`;
+    });
+    assert.deepEqual(corners.slice().sort(), ["bottom-left", "bottom-right", "top-right"]);
+  });
+
+  test("each marker is a navy rounded frame, white inner square, purple disc", () => {
+    for (const marker of art.markers) {
+      const frame = marker.parts.slice().sort((a, b) => b.w - a.w)[0];
+      assert.equal(frame.fill, INK);
+      assert.ok(frame.rx > 0, "the frame must be rounded");
+      assert.ok(marker.parts.some((p) => p.tag === "rect" && (p.fill === "#ffffff" || p.fill === "#fff")));
+      const disc = marker.parts.find((p) => p.tag === "circle");
+      assert.ok(disc && disc.fill === ACCENT, "the marker centre must be the Gloobal purple");
+    }
+  });
+
+  test("a large clear centre circle, with nothing drawn through it", () => {
+    const [, , width, height] = art.viewBox;
+    const cx = width / 2;
+    const cy = height / 2;
+    const centre = art.whiteCircles.find((c) => Math.abs(c.cx - cx) < 1 && Math.abs(c.cy - cy) < 1);
+    assert.ok(centre, "there is no centre circle");
+    const radius = centre.w / 2;
+    // Visually dominant on the artwork in a way the scannable code cannot be:
+    // nearly half the width across its diameter.
+    assert.ok(radius > width * 0.2, `the centre circle is only ${(radius / width * 100).toFixed(1)}% across its radius`);
+    for (const item of [...art.symbols, ...art.markers]) {
+      for (const part of item.parts) {
+        assert.ok(Math.hypot(part.cx - cx, part.cy - cy) > radius, "something is drawn inside the centre circle");
+      }
+    }
+  });
+
+  test("four groups of five", () => {
+    const [, , width, height] = art.viewBox;
+    const cx = width / 2;
+    const cy = height / 2;
+    const groups = { top: 0, bottom: 0, left: 0, right: 0 };
+    for (const symbol of art.symbols) {
+      const p = symbol.parts[0];
+      const dx = p.cx - cx;
+      const dy = p.cy - cy;
+      if (Math.abs(dy) >= Math.abs(dx)) groups[dy < 0 ? "top" : "bottom"] += 1;
+      else groups[dx < 0 ? "left" : "right"] += 1;
+    }
+    assert.deepEqual(groups, { top: 5, bottom: 5, left: 5, right: 5 });
+  });
+
+  test("the symbols keep clear of the three markers", () => {
+    for (const marker of art.markers) {
+      const frame = marker.parts.slice().sort((a, b) => b.w - a.w)[0];
+      const half = frame.w / 2;
+      for (const symbol of art.symbols) {
+        const p = symbol.parts[0];
+        assert.ok(
+          !(Math.abs(p.cx - frame.cx) <= half && Math.abs(p.cy - frame.cy) <= half),
+          "a symbol overlaps a marker"
+        );
+      }
+    }
+  });
+
+  test("IT DOES NOT SCAN — and the app never pretends otherwise", async () => {
+    // Recorded deliberately. The artwork carries no payload, so a decoder
+    // must find nothing in it. If this ever starts passing a payload back,
+    // something has begun drawing real data into the decorative view and the
+    // two drawings have been conflated.
+    const payload = await readQrPayload(artPage.page, 480);
+    assert.equal(payload, null, `the artwork must not decode, but jsQR read: ${payload}`);
+
+    // And the way to a working code is present, named in plain words.
+    const toggle = artPage.page.getByRole("button", { name: "Show scannable code", exact: true });
+    assert.equal(await toggle.count(), 1, "there must be a plainly-labelled way to the scannable code");
+  });
+
+  test("pressing the button swaps artwork for a code that DOES scan", async () => {
+    await revealScannableCode(artPage.page);
+    const payload = await readQrPayload(artPage.page, 480);
+    assert.ok(payload, "the revealed code must decode");
+    assert.equal(domain.decodeGloobalQR(payload).gloobalId, ACCOUNTS.india.symbolId);
+    // And the artwork is gone while the code is up — never both at once.
+    assert.equal(await artPage.page.locator(ARTWORK_SELECTOR).count(), 0, "artwork and code must not show together");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The part that actually matters
 // ---------------------------------------------------------------------------
 
@@ -441,6 +602,7 @@ describe("the redesigned code still scans", () => {
     const { page, context } = await openPage({ account: ACCOUNTS.japan });
     await login(page, ACCOUNTS.japan);
     await openMyCode(page);
+    await revealScannableCode(page);
 
     const results = [];
     for (const size of RASTERS) results.push([size, await readQrPayload(page, size)]);
@@ -460,6 +622,7 @@ describe("the redesigned code still scans", () => {
     const { page, context } = await openPage({ account: ACCOUNTS.india });
     await login(page, ACCOUNTS.india);
     await openMyCode(page);
+    await revealScannableCode(page);
     for (const amount of [100, 1000, 5000]) {
       await requestAmount(page, amount);
       const payload = await readQrPayload(page);
@@ -481,6 +644,7 @@ describe("the redesigned code still scans", () => {
     const first = await openPage({ account: ACCOUNTS.india });
     await login(first.page, ACCOUNTS.india);
     await openMyCode(first.page);
+    await revealScannableCode(first.page);
     const a = await describeQr(first.page);
     const aPayload = await readQrPayload(first.page);
     await first.context.close();
@@ -488,6 +652,7 @@ describe("the redesigned code still scans", () => {
     const second = await openPage({ account: ACCOUNTS.japan });
     await login(second.page, ACCOUNTS.japan);
     await openMyCode(second.page);
+    await revealScannableCode(second.page);
     const b = await describeQr(second.page);
     const bPayload = await readQrPayload(second.page);
     await second.context.close();
@@ -524,6 +689,7 @@ describe("the redesigned code still scans", () => {
       const { page, context } = await openPage({ account: ACCOUNTS.britain });
       await login(page, ACCOUNTS.britain);
       await openMyCode(page);
+      await revealScannableCode(page);
       drawnTwice.push({
         payload: await readQrPayload(page),
         shapes: (await describeQr(page)).symbols.map(classify)
@@ -555,8 +721,8 @@ describe("the code holds up across viewports", () => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await login(page, ACCOUNTS.india);
       await openMyCode(page);
-      const shot = await describeQr(page);
-      assert.ok(shot, `no code drawn at ${viewport.name}`);
+      const shot = await describeQr(page, ARTWORK_LABEL);
+      assert.ok(shot, `no artwork drawn at ${viewport.name}`);
 
       // Square, so nothing is stretched. A QR read from a stretched image
       // is a QR whose module grid no longer lines up.
@@ -581,6 +747,7 @@ describe("the code holds up across viewports", () => {
       assert.equal(shot.symbols.length, EXPECTED_SYMBOLS, `${viewport.name}: symbol count changed`);
       assert.equal(shot.markers.length, EXPECTED_MARKERS, `${viewport.name}: marker count changed`);
 
+      await revealScannableCode(page);
       const payload = await readQrPayload(page);
       assert.ok(payload, `${viewport.name}: the code could not be read`);
       assert.equal(domain.decodeGloobalQR(payload).gloobalId, ACCOUNTS.india.symbolId);

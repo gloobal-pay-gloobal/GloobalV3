@@ -229,8 +229,8 @@ async function requestAmount(page, amount) {
 
 // Rasterise what is on screen and read the pixels back, rather than asking
 // the app what it encoded.
-async function readQrPayload(page, size = 480) {
-  const raster = await page.evaluate(async (size) => {
+async function readQrPayload(page, size = 480, blur = 0) {
+  const raster = await page.evaluate(async ({ size, blur }) => {
     const svg = document.querySelector('svg[aria-label="Gloobal QR code"]');
     if (!svg) return null;
     const xml = new XMLSerializer().serializeToString(svg);
@@ -247,9 +247,13 @@ async function readQrPayload(page, size = 480) {
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, size, size);
+    // A camera never delivers a pin-sharp image. Applying the blur here, at
+    // rasterise time, is what makes this test resemble a phone rather than a
+    // screenshot.
+    if (blur) ctx.filter = `blur(${blur}px)`;
     ctx.drawImage(img, 0, 0, size, size);
     return Array.from(ctx.getImageData(0, 0, size, size).data);
-  }, size);
+  }, { size, blur });
   if (!raster) return null;
   const found = jsQR(Uint8ClampedArray.from(raster), size, size, { inversionAttempts: "attemptBoth" });
   return found ? found.data : null;
@@ -261,7 +265,13 @@ async function readQrPayload(page, size = 480) {
 let shared;
 let drawn;
 
-describe("the drawn code matches the approved design", () => {
+describe("the scannable code is built to be READ, not decorated", () => {
+  // This suite exists because of a real defect. The scannable code once
+  // carried the concept's blank centre and twenty decorative symbols. Every
+  // test passed — they rasterised pin-sharp SVG — and it still failed on
+  // real phones, because a camera adds blur and the decoration had eaten
+  // the error-correction budget that blur needs. The assertions below are
+  // the ones that would have caught it.
   before(async () => {
     shared = await openPage({ account: ACCOUNTS.india });
     await login(shared.page, ACCOUNTS.india);
@@ -275,168 +285,62 @@ describe("the drawn code matches the approved design", () => {
     if (shared) await shared.context.close();
   });
 
-  test("exactly twenty decorative symbols", () => {
-    assert.equal(
-      drawn.symbols.length,
-      EXPECTED_SYMBOLS,
-      `the design calls for ${EXPECTED_SYMBOLS} decorative symbols, ${drawn.symbols.length} were drawn`
-    );
-  });
-
-  test("only the six approved solid shapes are used", () => {
-    const kinds = drawn.symbols.map(classify);
-    const unknown = kinds.filter((k) => k === "unknown");
-    assert.equal(unknown.length, 0, `${unknown.length} symbol(s) are not one of the six approved shapes`);
-    for (const kind of new Set(kinds)) {
-      assert.ok(SHAPES.includes(kind), `${kind} is not an approved shape`);
-    }
-    // And all six actually appear — a layout that quietly collapsed to two
-    // shapes would otherwise pass the check above.
-    for (const shape of SHAPES) {
-      assert.ok(kinds.includes(shape), `the ${shape} symbol is missing from the drawing`);
+  test("it decodes THROUGH BLUR, at the sizes a phone actually sees", async () => {
+    // The regression test. Each pair is (rendered width, blur radius); the
+    // decorated version failed most of these while passing every sharp one.
+    for (const [size, blur] of [[400, 1.5], [300, 1.5], [250, 1.5], [200, 1.5], [400, 2.5], [200, 0.8], [160, 0.8]]) {
+      const payload = await readQrPayload(shared.page, size, blur);
+      assert.ok(payload, `no decode at ${size}px with ${blur}px of blur`);
+      assert.equal(
+        domain.decodeGloobalQR(payload).gloobalId,
+        ACCOUNTS.india.symbolId,
+        `wrong account at ${size}px / ${blur}px blur`
+      );
     }
   });
 
-  test("no open circle and no open square", () => {
-    // The two banned forms are exactly the ones that would need an unfilled
-    // interior, so the evidence is the absence of any outline-only drawing:
-    // nothing is stroked, and nothing is filled "none".
-    for (const symbol of drawn.symbols) {
-      for (const part of symbol.parts) {
-        assert.notEqual(part.fill, "none", "a decorative symbol is drawn as an outline, not a solid");
-        assert.ok(!part.stroke || part.stroke === "none", "a decorative symbol carries a stroke");
-      }
-    }
-    assert.deepEqual(
-      drawn.allFills.filter((f) => f === "none"),
-      [],
-      "something in the code is drawn unfilled"
-    );
-    assert.deepEqual(
-      drawn.allStrokes.filter((s) => s !== "none"),
-      [],
-      "the open forms used a stroked inset ring; nothing may be stroked now"
-    );
+  test("NO decorative symbols on the scannable code", () => {
+    // Every symbol replaced a real data module and cost budget. They belong
+    // on the artwork, which has none to spend.
+    assert.deepEqual(drawn.symbols, [], `${drawn.symbols.length} decorative symbols are on the scannable code`);
   });
 
-  test("exactly three finder markers, and the top-left corner is empty", () => {
-    assert.equal(drawn.markers.length, EXPECTED_MARKERS, "there must be exactly three markers");
+  test("NO blank centre on the scannable code", () => {
+    const [, , width, height] = drawn.viewBox;
+    const centre = drawn.whiteCircles.find(
+      (c) => Math.abs(c.cx - width / 2) < 1 && Math.abs(c.cy - height / 2) < 1
+    );
+    assert.equal(centre, undefined, "the scannable code must not have its centre punched out");
+  });
+
+  test("three markers, in the concept's corners — the part that is free", () => {
+    assert.equal(drawn.markers.length, EXPECTED_MARKERS);
     const [, , width, height] = drawn.viewBox;
     const corners = drawn.markers.map((m) => {
-      // The marker's frame is its largest part.
       const frame = m.parts.slice().sort((a, b) => b.w - a.w)[0];
       return `${frame.cy < height / 2 ? "top" : "bottom"}-${frame.cx < width / 2 ? "left" : "right"}`;
     });
-    assert.deepEqual(
-      corners.slice().sort(),
-      ["bottom-left", "bottom-right", "top-right"],
-      `markers are at ${corners.join(", ")}`
-    );
-    assert.ok(!corners.includes("top-left"), "the top-left corner must carry no marker");
+    assert.deepEqual(corners.slice().sort(), ["bottom-left", "bottom-right", "top-right"]);
   });
 
-  test("each marker is a navy frame, a white inner square and a purple disc", () => {
+  test("the marker cores are purple SQUARES, not discs", () => {
+    // A decoder locates a QR by the 1:1:3:1:1 run-length ratio. Only a
+    // square core is three modules wide on every scan line through it; a
+    // disc is narrower everywhere but its centre line, and blur turns that
+    // into a code the decoder never finds. Measured: 7/10 payloads survived
+    // a 2.5px blur with a disc, 10/10 with a square.
     for (const marker of drawn.markers) {
-      const frame = marker.parts.slice().sort((a, b) => b.w - a.w)[0];
-      assert.equal(frame.fill, INK, "the marker frame must be the app's navy ink");
-      assert.ok(frame.rx > 0, "the marker frame must be a ROUNDED square");
-      assert.ok(
-        marker.parts.some((p) => p.tag === "rect" && (p.fill === "#ffffff" || p.fill === "#fff")),
-        "the marker must have a white inner square"
-      );
       const disc = marker.parts.find((p) => p.tag === "circle");
-      assert.ok(disc, "the marker must have a circular centre");
-      assert.equal(disc.fill, ACCENT, "the marker centre must be the Gloobal purple");
-      // Concentric with the frame, or it is not the same marker the design
-      // shows.
-      assert.ok(Math.abs(disc.cx - frame.cx) < 0.6 && Math.abs(disc.cy - frame.cy) < 0.6);
-      assert.ok(disc.w < frame.w * 0.6, "the disc must sit inside the white square, not fill the marker");
+      assert.equal(disc, undefined, "a marker core is drawn as a disc — that costs real scans");
+      const core = marker.parts.find((p) => p.fill === ACCENT);
+      assert.ok(core, "the marker must still have a purple core");
+      assert.equal(core.tag, "rect");
+      assert.ok(Math.abs(core.w - core.h) < 0.01, "the core must be square");
     }
   });
 
-  test("a large blank circle holds the centre, and nothing is drawn through it", () => {
-    const [, , width, height] = drawn.viewBox;
-    const cx = width / 2;
-    const cy = height / 2;
-    const centre = drawn.whiteCircles.find((c) => Math.abs(c.cx - cx) < 1 && Math.abs(c.cy - cy) < 1);
-    assert.ok(centre, "there is no white circle at the centre of the code");
-
-    const radius = centre.w / 2;
-    // Visually dominant: no other single blank area in the drawing comes
-    // close, and it is a real fraction of the code rather than a token dot.
-    assert.ok(
-      radius > width * 0.1,
-      `the centre circle is only ${(radius / width * 100).toFixed(1)}% of the code's width across its radius`
-    );
-
-    // Nothing drawn inside it. The radius is shrunk slightly before the
-    // comparison because the circle deliberately reaches half a module past
-    // the last blanked module, so a module's corner may legitimately touch
-    // the rim — its CENTRE may not be inside.
-    const clear = radius * 0.92;
-    for (const kind of ["symbols", "markers"]) {
-      for (const item of drawn[kind]) {
-        for (const part of item.parts) {
-          assert.ok(
-            Math.hypot(part.cx - cx, part.cy - cy) > clear,
-            `a ${kind.slice(0, -1)} is drawn inside the centre circle`
-          );
-        }
-      }
-    }
-    for (const module of drawn.plainModules) {
-      assert.ok(
-        Math.hypot(module.cx - cx, module.cy - cy) > clear,
-        "a module is drawn inside the centre circle"
-      );
-    }
-  });
-
-  test("the twenty symbols form two horizontal and two vertical groups", () => {
-    const [, , width, height] = drawn.viewBox;
-    const cx = width / 2;
-    const cy = height / 2;
-    // Each symbol belongs to the group it is furthest from centre along.
-    // Five per group is the design's arrangement; a random scatter would not
-    // land 5/5/5/5.
-    const groups = { top: 0, bottom: 0, left: 0, right: 0 };
-    for (const symbol of drawn.symbols) {
-      const p = symbol.parts[0];
-      const dx = p.cx - cx;
-      const dy = p.cy - cy;
-      if (Math.abs(dy) >= Math.abs(dx)) groups[dy < 0 ? "top" : "bottom"] += 1;
-      else groups[dx < 0 ? "left" : "right"] += 1;
-    }
-    assert.deepEqual(groups, { top: 5, bottom: 5, left: 5, right: 5 }, `groups came out ${JSON.stringify(groups)}`);
-  });
-
-  test("the symbols keep clear of the three markers", () => {
-    for (const marker of drawn.markers) {
-      const frame = marker.parts.slice().sort((a, b) => b.w - a.w)[0];
-      const half = frame.w / 2;
-      for (const symbol of drawn.symbols) {
-        const p = symbol.parts[0];
-        const inside = Math.abs(p.cx - frame.cx) <= half && Math.abs(p.cy - frame.cy) <= half;
-        assert.ok(!inside, "a decorative symbol overlaps a finder marker");
-      }
-    }
-  });
-
-  test("the palette is the app's own, with purple reserved for the markers", () => {
-    for (const symbol of drawn.symbols) {
-      for (const fill of symbol.fills) {
-        assert.ok(SYMBOL_COLORS.includes(fill), `${fill} is not one of the six Gloobal accent colours`);
-      }
-    }
-    // T.accent is the identity colour: it is what the marker centres are,
-    // and it is read from the app's own theme rather than repeated here.
-    assert.equal(ACCENT, String(domain.T.accent).toLowerCase(), "the test's purple has drifted from T.accent");
-    assert.equal(INK, String(domain.T.ink).toLowerCase(), "the test's navy has drifted from T.ink");
-  });
-
-  test("no text, no labels, nothing else added to the code", () => {
-    const stray = drawn.plainModules.filter((m) => m.fill !== INK);
-    assert.deepEqual(stray, [], "something other than a navy module is drawn in the module field");
+  test("the module field is navy and nothing else", () => {
+    assert.deepEqual(drawn.plainModules.filter((m) => m.fill !== INK), []);
   });
 });
 
@@ -635,12 +539,10 @@ describe("the redesigned code still scans", () => {
     await context.close();
   });
 
-  test("the layout repeats but the payload underneath does not", async () => {
-    // The design is a fixed arrangement — twenty symbols in four groups —
-    // so two accounts DO produce the same picture at a glance. What must
-    // not be the same is what the picture carries. This is the assertion
-    // that separates "the visual pattern may repeat" from "every generated
-    // QR is identical".
+  test("two accounts get the same frame but different payloads", async () => {
+    // The markers are fixed by the design, so two codes look alike at a
+    // glance. What must NOT be alike is what they carry — the assertion that
+    // separates "the frame repeats" from "every generated QR is identical".
     const first = await openPage({ account: ACCOUNTS.india });
     await login(first.page, ACCOUNTS.india);
     await openMyCode(first.page);
@@ -657,24 +559,12 @@ describe("the redesigned code still scans", () => {
     const bPayload = await readQrPayload(second.page);
     await second.context.close();
 
-    assert.equal(a.symbols.length, b.symbols.length, "both must draw the same number of symbols");
-    // The shape MIX is the design's, so it repeats exactly: the twenty slots
-    // walk the six shapes in order, which gives four each of the first two
-    // and three each of the rest whatever payload is underneath. Compared as
-    // counts rather than as a sequence, because the order symbols appear in
-    // the SVG is the order the matrix is scanned in — which is a property of
-    // the code, not of the design.
-    const tally = (drawing) => {
-      const counts = {};
-      for (const kind of drawing.symbols.map(classify)) counts[kind] = (counts[kind] || 0) + 1;
-      return counts;
-    };
-    assert.deepEqual(tally(a), tally(b), "the shape mix is fixed by the design, so it must repeat");
-    assert.deepEqual(
-      tally(a),
-      { minus: 4, plus: 4, times: 3, equals: 3, circle: 3, square: 3 },
-      "twenty slots walking six shapes in order is 4/4/3/3/3/3"
-    );
+    // Both scannable codes are undecorated, so the only thing distinguishing
+    // them is the payload — which is the point. The repeating VISUAL pattern
+    // now lives on the artwork, and is asserted in the artwork suite.
+    assert.deepEqual(a.symbols, [], "the scannable code carries no decoration");
+    assert.deepEqual(b.symbols, [], "the scannable code carries no decoration");
+    assert.equal(a.markers.length, b.markers.length, "both draw the same three markers");
     assert.notEqual(aPayload, bPayload, "two accounts must not produce the same encoded code");
     assert.equal(domain.decodeGloobalQR(aPayload).gloobalId, ACCOUNTS.india.symbolId);
     assert.equal(domain.decodeGloobalQR(bPayload).gloobalId, ACCOUNTS.japan.symbolId);

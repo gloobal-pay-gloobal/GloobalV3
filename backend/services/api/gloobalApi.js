@@ -1035,6 +1035,68 @@ var GloobalApi = {
     }
   },
 
+  // GET /api/coin/:symbolId/history — coin movements that survive a reload.
+  //
+  // The in-browser ledger this replaces is an array in memory, so Coin
+  // Activity emptied itself every time the tab was refreshed. That was
+  // tolerable for a list and not tolerable for a receipt: a receipt you
+  // cannot reopen tomorrow is a confirmation message.
+  //
+  // null, not [], when the server cannot answer — the same distinction every
+  // other reader in this file keeps, because "we could not ask" and "there
+  // is nothing" render differently and only one of them is a fact about the
+  // account.
+  async getCoinHistory(symbolId, options) {
+    const opts = options || {};
+    const params = new URLSearchParams();
+    if (opts.limit) params.set("limit", String(opts.limit));
+    if (opts.cursor) params.set("cursor", opts.cursor);
+    const query = params.toString();
+    try {
+      const result = await gloobalApiClient.get(
+        `/api/coin/${encodeURIComponent(symbolId)}/history${query ? `?${query}` : ""}`,
+        { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS }
+      );
+      if (!result || !result.success || !Array.isArray(result.rows)) return null;
+      return {
+        rows: result.rows.map((r) => ({
+          id: r.id || null,
+          referenceId: r.referenceId || null,
+          type: r.type || null,
+          direction: r.direction === "in" ? "in" : "out",
+          coinAmount: Number(r.coinAmount) || 0,
+          coinCurrency: r.coinCurrency || COIN_CURRENCY,
+          // null rather than 0 throughout: a send moves no fiat, and 0 would
+          // read as "it cost nothing" rather than "no money was involved".
+          fiatAmount: Number.isFinite(Number(r.fiatAmount)) ? Number(r.fiatAmount) : null,
+          fiatCurrency: r.fiatCurrency || null,
+          // The rate this movement converted at. Never today's rate — see the
+          // note in historyUtils about a receipt that recomputed its own FX
+          // and so showed next year's rate against last year's payment.
+          geuRate: Number.isFinite(Number(r.geuRate)) ? Number(r.geuRate) : null,
+          geuRateSource: r.geuRateSource || null,
+          // "coin-per-fiat" on a buy, "fiat-per-coin" on a sell — the two
+          // routes record opposite directions under the same `geuRate` name.
+          // Carried through rather than normalised, because normalising means
+          // inverting a rounded rate, and the inverse of a rounded rate does
+          // not reproduce the amounts sitting beside it on the receipt.
+          geuRateBasis: r.geuRateBasis === "coin-per-fiat" || r.geuRateBasis === "fiat-per-coin"
+            ? r.geuRateBasis
+            : null,
+          reserveCurrency: r.reserveCurrency || null,
+          note: r.note || "",
+          counterpartySymbolId: r.counterpartySymbolId || null,
+          counterpartyName: r.counterpartyName || null,
+          counterpartyCountryIso: r.counterpartyCountryIso || null,
+          createdAt: r.createdAt || null
+        })),
+        nextCursor: result.nextCursor || null
+      };
+    } catch (e) {
+      return null;
+    }
+  },
+
   // POST /api/coin/mint — fiat out of the bank balance, coin in.
   async coinMint(symbolId, amount) {
     const result = await gloobalApiClient.post("/api/coin/mint", { symbolId, amount });

@@ -90,6 +90,22 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // nothing implies a movement that never happened.
   const shareRatePercent = Number(receipt.shareRate) || 0;
   const isShareReceipt = receipt.kind === "share";
+  // A Gloobal Coin buy, sell or send.
+  //
+  // It reaches this component through the same door as a payment and reuses
+  // everything that already fits: the hero figure, the counterparty box
+  // (`name`/`id`, filled by coinReceipt.js so that box needs no third
+  // shape), the date/time/status box, and the audit report. What it adds is
+  // one block — the holder, and the other side of the exchange — because a
+  // coin buy is the one movement here whose two legs are in different units
+  // and whose counterparty is not a person.
+  //
+  // It gets no Creator Share tab, and not by a special case: hasShareEvent
+  // below reads a rate and a share reference, and coinReceipt.js states both
+  // as absent rather than leaving them undefined, precisely so a coin
+  // receipt opened after a payment cannot inherit the previous one's.
+  const isCoinReceipt = receipt.kind === "coin";
+  const coinRateLine = isCoinReceipt ? coinRateSentence(receipt) : null;
 
   // The payment the Payment tab describes.
   //
@@ -115,7 +131,12 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // place still reads as the second thing.
   const leadingTab = isShareReceipt ? "share" : "payment";
   const trailingTab = isShareReceipt ? "payment" : "share";
-  const tabLabel = (tab) => (tab === "share" ? "Creator Share" : "Payment");
+  // A coin movement is not a payment and must not be labelled as one. It has
+  // no second tab either — the chip is the document's own name, which is the
+  // only thing left for it to say.
+  const tabLabel = (tab) => (tab === "share"
+    ? "Creator Share"
+    : receipt.kind === "coin" ? (receipt.title || "Gloobal Coin") : "Payment");
 
   // A Creator Share receipt gets a Creator Share tab, and it is the one it
   // opens on — but the tab shows the share, it never COMPUTES one.
@@ -440,7 +461,14 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       cursor: "pointer",
       zIndex: 1
     }}
-  ><Share2 size={13} color={T.inkSoft} /></button><div style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, minHeight: onShareTab ? 0 : void 0 }}>{!onShareTab ? (paymentKnown ? `${paymentIsSent ? "Money sent" : "Money received"}${receipt.status === "pending" ? " \xB7 Pending" : receipt.status === "simulated" ? " \xB7 Not actually sent" : ""}` : "Payment not available") : shareIsCredit ? <SingleOMark before="Back t" after=" you" /> : "You share back"}</div>{
+  ><Share2 size={13} color={T.inkSoft} /></button><div style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, minHeight: onShareTab ? 0 : void 0 }}>{!onShareTab ? (isCoinReceipt
+    ? /* Never "Money received" on a coin buy. Money did not arrive — it
+         LEFT, and coin arrived in its place. The hero figure below is the
+         coin, so the line above it has to name the exchange rather than
+         describe a direction that is true of the coin and false of the
+         money. The receipt's own title is that name. */
+      receipt.title || "Gloobal Coin"
+    : paymentKnown ? `${paymentIsSent ? "Money sent" : "Money received"}${receipt.status === "pending" ? " \xB7 Pending" : receipt.status === "simulated" ? " \xB7 Not actually sent" : ""}` : "Payment not available") : shareIsCredit ? <SingleOMark before="Back t" after=" you" /> : "You share back"}</div>{
     /* Amount — matches whichever receipt is actually showing.
        Payment tab: what I sent/received, signed accordingly.
        Creator Share tab: the opposite direction from Payment —
@@ -485,8 +513,13 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        the receipt for a movement that never happened is a claim,
        not a control. The tab is hidden on value only in that one
        sense: whether the event exists at all, never on how big it
-       is. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 6, padding: 4, borderRadius: 999, background: T.surfaceAlt, marginBottom: 14 }}><ReceiptTabButton
+       is.
+
+       A COIN receipt gets no toggle at all. It has one tab by
+       construction — a coin movement carries no Creator Share —
+       and a lone tab is not a toggle, it is a button that does
+       nothing, restating the line already above it. */
+  }{!isCoinReceipt && <div style={{ display: "flex", alignItems: "center", gap: 6, padding: 4, borderRadius: 999, background: T.surfaceAlt, marginBottom: 14 }}><ReceiptTabButton
     label={tabLabel(leadingTab)}
     active={leadingTab === "share" ? onShareTab : !onShareTab}
     onSelect={() => setReceiptTab(leadingTab)}
@@ -542,7 +575,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     label={tabLabel(trailingTab)}
     active={trailingTab === "share" ? onShareTab : !onShareTab}
     onSelect={() => setReceiptTab(trailingTab)}
-  />}</div>{!onShareTab ? <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{
+  />}</div>}{!onShareTab ? <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{
     /* Box 1 — who it's to/from, and their Gloobal ID if there is one.
        The flag no longer hangs off this box's top edge: it is on the
        tab row above, once for the whole receipt. The top padding is
@@ -562,6 +595,47 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     value={<ColoredGloobalId id={receipt.id} />}
     mono
   />}</div>{
+    /* Box 1b — the holder, and the other leg of a coin exchange.
+
+       Only on a coin receipt, and it carries the three facts a coin buy
+       could not previously answer: who bought it, under which Gloobal ID,
+       from which country — none of which the movement itself records, since
+       they are properties of the account — and then what the coin cost, in
+       real money, at the rate it actually converted at.
+
+       The rate is printed in the direction it was RECORDED. The mint route
+       stores GEU-per-fiat and the redeem route stores fiat-per-GEU under the
+       same field name; coinRateSentence reads the basis the server now sends
+       and writes the matching sentence rather than inverting one into the
+       other. Inverting means dividing, and one over a rounded rate is a
+       number that does not reproduce the two amounts printed directly above
+       it. */
+  }{isCoinReceipt && <div
+    data-testid="receipt-coin"
+    style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}
+  >{receipt.holderName && <ReceiptRow label="Held by" value={receipt.holderName} />}{receipt.holderSymbolId && <ReceiptRow
+    label={<GloobalWordmark suffix=" ID" />}
+    value={<ColoredGloobalId id={receipt.holderSymbolId} />}
+    mono
+  />}{receipt.holderCountryName && <ReceiptRow
+    label="Country"
+    value={receipt.holderCountryName}
+    flag={receipt.holderCountryFlag}
+  />}{
+    /* The fiat leg. Absent on a send, which moves no money at all — and
+       absent rather than shown as zero, because a zero here would read as
+       "this cost nothing" rather than "no money was involved". */
+  }{receipt.fiatAmount != null && receipt.fiatCurrencyCode && <ReceiptRow
+    label={receipt.fiatDirection === "out" ? "Paid" : "Received"}
+    value={fmtMoney(receipt.fiatAmount, receipt.fiatCurrencyCode)}
+  />}<ReceiptRow
+    label={receipt.fiatDirection === "out" ? "Coin bought" : receipt.fiatDirection === "in" ? "Coin sold" : "Coin moved"}
+    value={`${fmt(receipt.amount)} ${receipt.currencyCode}`}
+  />{coinRateLine && <ReceiptRow label="Rate applied" value={coinRateLine} accent />}{coinRateLine && <div style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.45 }}>{
+    /* The same sentence the payment receipt's conversion block carries, for
+       the same reason: a rate with no date attached is one the reader takes
+       to be today's. */
+  }As converted at the time of this transaction, not a current rate.</div>}</div>}{
     /* Box 3 — payment method, date, time, status together */
   }{showsConversion && <div
     data-testid="receipt-conversion"

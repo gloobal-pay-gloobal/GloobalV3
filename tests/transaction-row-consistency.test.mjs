@@ -157,19 +157,33 @@ describe("a row that opens nothing is not announced as a button", () => {
     assert.match(src, /tabIndex=\{onSelect \? 0 : undefined\}/);
   });
 
-  test("the three read-only lists pass no onSelect", () => {
+  test("the two read-only lists pass no onSelect", () => {
     // Send's Recent is read-only deliberately — a repeat-send would need the
     // receiver's live currency and registration state this snapshot does not
-    // carry. Bank and Coin have no receipt to open at all.
+    // carry. Gloobal Bank has no receipt to open.
+    //
+    // Coin Activity USED to be in this list and no longer is: its rows now
+    // open a coin receipt. That is not this rule weakening — the rule is that
+    // a row which opens nothing must not claim to be a button, and the test
+    // below holds Coin to exactly that.
     for (const file of [
       LIST_FILES["Send Money Recent"],
-      LIST_FILES["Gloobal Bank Recent Transactions"],
-      LIST_FILES["Coin Activity"]
+      LIST_FILES["Gloobal Bank Recent Transactions"]
     ]) {
       for (const call of code(file).match(/<TransactionRow[\s\S]{0,600}?\/>/g) || []) {
         assert.ok(!/onSelect=/.test(call), `${file} made a read-only row focusable`);
       }
     }
+  });
+
+  test("a coin row opens a receipt only when there is one to open", () => {
+    // A row restored from the in-browser ledger carries no server reference,
+    // so there is no movement for a receipt to be OF. Passing undefined
+    // rather than a no-op handler is what keeps role="button" and the tab
+    // stop off it — a control that does nothing is worse than no control.
+    const src = code(LIST_FILES["Coin Activity"]);
+    assert.match(src, /onSelect=\{row\.receipt \? \(\) => setCoinReceipt\(row\.receipt\) : undefined\}/);
+    assert.match(src, /receipt: null/, "a locally-posted coin row now claims a receipt");
   });
 });
 

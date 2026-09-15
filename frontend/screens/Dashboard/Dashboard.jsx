@@ -1351,7 +1351,30 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // writes a balance into component state: the ledger is where the number
   // lives and useCoinBalance reads it back out, so the figure on screen is
   // always the one the entries add up to.
+  // Coin movements that survive a reload.
+  //
+  // `useCoinHistory` reads the in-browser ledger, and LedgerStore is a plain
+  // array in memory — its own comment says "a real deployment would run this
+  // against a durable store, not an in-memory array that resets on page
+  // reload". So Coin Activity emptied itself on every refresh, and the one
+  // row that survived a reconcile was a synthetic
+  // "coin-server-reconciliation" line rather than anything the person did.
+  //
+  // Tolerable for a list; not tolerable once each row opens a receipt. The
+  // durable record already existed — every mint, redeem and send writes a
+  // Transaction with a server-minted referenceId — and this reads it back.
+  //
+  // null, never [], when the server cannot answer: "we could not ask" and
+  // "you have never bought any" are different facts and only one of them is
+  // about the account.
+  const [serverCoinHistory, setServerCoinHistory] = useState14(null);
+  const refreshCoinLedger = async () => {
+    if (!currentSymbolId) return;
+    const history = await GloobalApi.getCoinHistory(currentSymbolId, { limit: 25 });
+    if (history) setServerCoinHistory(history.rows);
+  };
   const refreshCoinPosition = async () => {
+    await refreshCoinLedger();
     if (currentSymbolId) {
       try {
         const position = await refreshCoin(currentSymbolId);
@@ -1397,8 +1420,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     try {
       const result = await mintCoin(currentSymbolId, amount);
       setCoinSupply(await GloobalApi.getCoinSupply());
-      showToast2(`Bought ${result.minted.toFixed(2)} ${COIN_TICKER}`);
-      return true;
+      await refreshCoinLedger();
+      // The whole result, not `true`.
+      //
+      // Everything a receipt needs was already in this response and was being
+      // dropped one line below: the reference id, the fiat that actually left
+      // the bank, the currency it left in, and the rate it converted at. The
+      // caller decides what to do with it; returning a bare boolean meant the
+      // only record of a coin purchase was a toast that cleared itself.
+      return result;
     } catch (err) {
       showToast2(gloobalApiIsUnreachable(err) ? "Couldn't reach the server. Try again." : err.message);
       return false;
@@ -1415,8 +1445,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     try {
       const result = await redeemCoin(currentSymbolId, amount);
       setCoinSupply(await GloobalApi.getCoinSupply());
-      showToast2(`Cashed out ${result.redeemed.toFixed(2)} ${COIN_TICKER}`);
-      return true;
+      await refreshCoinLedger();
+      return result;
     } catch (err) {
       showToast2(gloobalApiIsUnreachable(err) ? "Couldn't reach the server. Try again." : err.message);
       return false;
@@ -2887,6 +2917,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     bankBalance={bankBalance}
     coinBalance={coinBalance}
     coinHistory={coinHistory}
+    // The durable history, from the server. Preferred over the in-memory
+    // ledger above, which empties on every page reload — see refreshCoinLedger.
+    serverCoinHistory={serverCoinHistory}
+    // Who the receipt is for. None of these are on the coin movement itself:
+    // a Transaction row records ids, not a person's name, ID string or
+    // country, so they come from the account or the receipt cannot show them.
+    holderName={myName}
+    holderSymbolId={currentSymbolId}
+    holderCountryFlag={dialCountry.flag}
     supply={coinSupply}
     busy={coinBusy}
     onMint={handleMintCoin}

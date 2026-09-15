@@ -38,6 +38,13 @@ function GloobalCoinScreen({
   bankBalance,
   coinBalance,
   coinHistory,
+  // The durable history, from GET /api/coin/:symbolId/history. Preferred
+  // over `coinHistory` above, which is the in-browser ledger and empties on
+  // every page reload — see refreshCoinLedger in Dashboard.jsx.
+  serverCoinHistory,
+  holderName,
+  holderSymbolId,
+  holderCountryFlag,
   supply,
   busy,
   onMint,
@@ -47,6 +54,23 @@ function GloobalCoinScreen({
 }) {
   const [mode, setMode] = useState30("mint");
   const [amount, setAmount] = useState30("");
+  // The receipt for a coin movement, open over this screen.
+  //
+  // Buying coin used to produce a toast and nothing else, so the one movement
+  // in this app that is literally a currency exchange was the only one with
+  // no record anybody could open.
+  const [coinReceipt, setCoinReceipt] = useState30(null);
+
+  // Who the receipt is for. Assembled once here rather than at each of the
+  // two call sites below, so the receipt opened straight after a purchase and
+  // the one reopened from the list a week later cannot describe the holder
+  // differently.
+  const coinReceiptViewer = {
+    name: holderName,
+    symbolId: holderSymbolId,
+    countryName,
+    countryFlag: holderCountryFlag
+  };
 
   // Read once when the screen opens. The balance is already in the ledger from
   // whenever it was last reconciled, so this is a refresh rather than a load —
@@ -113,11 +137,77 @@ function GloobalCoinScreen({
     });
   };
 
+  // What Coin Activity actually lists.
+  //
+  // The server's history when it answered, the in-browser ledger when it did
+  // not. Preferring the server is the point of this: the ledger is an array
+  // in memory, so before this the list was empty every time the tab was
+  // reloaded and no row could open a receipt for a purchase made yesterday.
+  //
+  // Falling back rather than showing nothing keeps the offline case honest —
+  // a mint posted locally in this session is still real and still the
+  // person's — and the two are normalised to one row shape here so the list
+  // below renders one thing, not two.
+  const coinActivityRows = serverCoinHistory
+    ? serverCoinHistory.map((row) => {
+        const receipt = coinReceiptFrom(row, coinReceiptViewer);
+        return {
+          id: row.id || row.referenceId,
+          // The receipt's own title, so a row and the document it opens
+          // cannot name the same movement two different ways.
+          memo: receipt.title,
+          direction: row.direction,
+          amount: row.coinAmount,
+          date: receipt.date,
+          time: receipt.time,
+          receipt
+        };
+      })
+    : (coinHistory || []).map((row) => ({
+        ...row,
+        // A locally-posted row carries no server reference, and a receipt
+        // without one has nothing to identify the movement by — so these
+        // stay unopenable rather than opening a document that cannot say
+        // which transaction it describes.
+        receipt: null
+      }));
+
   const submit = () => {
     if (!canSubmit) return;
     const run = mode === "mint" ? onMint : onRedeem;
-    Promise.resolve(run(numericAmount)).then((ok) => {
-      if (ok !== false) setAmount("");
+    Promise.resolve(run(numericAmount)).then((result) => {
+      if (result === false) return;
+      setAmount("");
+      // Build the receipt from the SERVER's response, which carries the
+      // reference id, the fiat that actually moved, the currency it moved in
+      // and the rate it converted at. Not from `numericAmount` and the
+      // screen's own `geuRate`: those are what the person asked for and what
+      // the screen last displayed, and a receipt is a record of what
+      // happened, not of what was requested. On a cross-rate they differ.
+      if (!result || !result.referenceId) return;
+      const minted = mode === "mint";
+      setCoinReceipt(coinReceiptFrom({
+        id: result.referenceId,
+        referenceId: result.referenceId,
+        type: minted ? "coin_mint" : "coin_redeem",
+        direction: minted ? "in" : "out",
+        coinAmount: minted ? result.minted : result.redeemed,
+        coinCurrency: COIN_TICKER,
+        fiatAmount: minted ? result.paid : result.received,
+        fiatCurrency: minted ? result.paidCurrency : result.receivedCurrency,
+        geuRate: result.geuRate,
+        // Which way the rate points, matching what the history route sends
+        // for the same movement — the mint route records GEU per unit of
+        // fiat, the redeem route records fiat per GEU, under one field name.
+        geuRateBasis: minted ? "coin-per-fiat" : "fiat-per-coin",
+        reserveCurrency,
+        note: minted ? "Minted Gloobal Coin" : "Redeemed Gloobal Coin",
+        // The server does not return a timestamp on mint or redeem, so this
+        // is the only honest source for one and it is accurate to the second
+        // the response landed. The receipt reopened from history later shows
+        // the server's own createdAt.
+        createdAt: new Date().toISOString()
+      }, coinReceiptViewer));
     });
   };
 
@@ -407,9 +497,9 @@ function GloobalCoinScreen({
       letterSpacing: 0.4,
       zIndex: 1
     }}
-  >Coin Activity</span><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden", padding: "6px 18px 12px" }}>{!(coinHistory || []).length ? <div style={{ padding: "18px 0 8px", textAlign: "center", fontSize: 12, color: T.inkFaint, lineHeight: 1.5 }}>
+  >Coin Activity</span><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden", padding: "6px 18px 12px" }}>{!coinActivityRows.length ? <div style={{ padding: "18px 0 8px", textAlign: "center", fontSize: 12, color: T.inkFaint, lineHeight: 1.5 }}>
         No coin activity yet — buy your first Gloobal Coin above
-      </div> : (coinHistory || []).map((row, i) => {
+      </div> : coinActivityRows.map((row, i) => {
     const incoming = row.direction === "in";
     // The shared transaction row, the same one History, Home, Receive, Send
     // and Gloobal Bank use. This list was a hand-written copy at a 30px disc
@@ -439,6 +529,12 @@ function GloobalCoinScreen({
       // fmtMoney could correctly do with it. The figure is formatted here,
       // by the same `fmt` that renders the balance above it.
       amountText={`${fmt(Number(row.amount) || 0)} ${COIN_TICKER}`}
+      // Only a row backed by a server record opens. A row restored from the
+      // in-browser ledger has no reference id, so there is no movement for a
+      // receipt to be OF — and TransactionRow drops role="button" and the tab
+      // stop when onSelect is absent, so an unopenable row does not announce
+      // itself as a control.
+      onSelect={row.receipt ? () => setCoinReceipt(row.receipt) : undefined}
     />;
   })}</div></div>{
     /* Moved to the bottom of the screen at the user's request — the
@@ -451,5 +547,14 @@ function GloobalCoinScreen({
     interested={interested}
     busy={interestBusy}
     onClick={onRegisterInterest}
-  /></div></div>;
+  /></div>{
+    /* The receipt, over everything. Opened two ways — straight after a buy
+       or sell, and by tapping a row in Coin Activity — and built by the same
+       mapper both times, so the document a person sees at the till and the
+       one they reopen a week later are the same document. */
+  }<ReceiptModal
+    receipt={coinReceipt}
+    onClose={() => setCoinReceipt(null)}
+    onDone={() => setCoinReceipt(null)}
+  /></div>;
 }

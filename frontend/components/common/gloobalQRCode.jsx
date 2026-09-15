@@ -2,36 +2,54 @@
 import { useState as useState3, useEffect as useEffect3, useMemo as useMemoQr } from "react";
 
 // ─────────────────────────────────────────────────────────────────────────
-// The Gloobal QR, drawn to the approved concept.
+// The Gloobal QR panel.
 //
 // NOTHING about what the code CARRIES changed. encodeGloobalQR still builds
-// the payload, qrBuildMatrix still turns it into a real ISO 18004 Version
-// 4-M matrix, and the scanner still reads that matrix with jsQR /
-// BarcodeDetector. This file is only the presentation layer: how that
-// already-correct matrix is painted.
+// the payload — twelve ID symbols, seven amount symbols, one checksum — and
+// decodeGloobalQR still reads it. This file is only the presentation layer.
 //
-//     encodeGloobalQR  ->  qrBuildMatrix  ->  THIS FILE  ->  pixels
+// ── THE FACE IS NOW THE CODE ─────────────────────────────────────────────
 //
-// ── TWO DRAWINGS, ONE AT A TIME ──────────────────────────────────────────
+// It was not. This file used to hold two drawings and show one at a time:
 //
-// The concept shows an empty white field between the markers. A working QR
-// must fill that field with payload. Both cannot be true of one image, so
-// there are two:
+//   GloobalQrArtwork  the approved concept drawn literally — three markers,
+//                     a blank centre, twenty decorative symbols. It carried
+//                     no data and did not scan.
+//   GloobalQRCode     a real ISO 18004 matrix, one button away.
 //
-//   GloobalQrArtwork  the concept, exactly — three markers, a big blank
-//                     centre, twenty symbols, nothing else. Carries no data
-//                     and DOES NOT SCAN. It is the face of the code.
-//   GloobalQRCode     the real, camera-scannable QR. What actually gets
-//                     paid.
+// That split existed because the concept shows an empty field between the
+// markers and a working QR has to fill that field with payload, so the two
+// could not be one image. It was an honest arrangement — the button said
+// which was which — but it meant the picture a payer was shown first was a
+// picture of nothing, and the thing that actually got paid was hidden behind
+// a tap.
 //
-// GloobalQrPanel shows the artwork first and puts the scannable code one
-// button away. They are never shown together and never blended, so there is
-// no state in which something unscannable sits unlabelled where a payer
-// expects a code.
+// GloobalCode (common/gloobalCode.jsx) removes the premise. It carries the
+// same twenty symbols as REAL DATA, read back by decodeGloobalCode, so the
+// concept's own layout is now the payload rather than a drawing of it:
 //
-// Everything below this line is about the SCANNABLE one. Four things the
-// concept asks for, and how each is achieved on it without costing a scan
-// — the artwork gets them for free, since it has no payload to protect:
+//     encodeGloobalQR  ->  GloobalCode  ->  pixels
+//     pixels  ->  decodeGloobalCode  ->  decodeGloobalQR
+//
+// So the panel shows one thing, and that thing scans. What this costs is
+// stated plainly rather than buried: a Gloobal code is NOT a QR code and no
+// general-purpose scanner will read it. Only this app can. That is a smaller
+// loss than it sounds — the payload is a string of Gloobal dial symbols, so
+// a third-party scanner that did read the old QR got back "■□×●−+=○□●×■…"
+// and could do nothing with it — but it is a real one, and it is why the ISO
+// code below has not been deleted.
+//
+// ── What GloobalQRCode is still for ──────────────────────────────────────
+//
+// One button, labelled for what it is: a compatibility code. decodeGloobalCode
+// is new, and it has been measured against rendered, resampled and blurred
+// images rather than against a thousand real phones. Until it has real miles
+// on it, a payer whose camera cannot read the new code needs somewhere to go
+// that is not "ask them to type the ID". That is the only reason this stays.
+//
+// Everything below this line is about that compatibility code. Four things
+// the concept asks for, and how each is achieved on it without costing a
+// scan:
 //
 // 1. THREE markers, at top-right, bottom-left and bottom-right, with
 //    nothing in the top-left. A standard QR puts its three finder patterns
@@ -43,15 +61,15 @@ import { useState as useState3, useEffect as useEffect3, useMemo as useMemoQr } 
 //    is not a degraded code — it is the same code held the other way up.
 //    Measured, not assumed: see tests/qr-design.test.mjs.
 //
-// 2. NO decoration on the scannable one. A blank centre and twenty
-//    decorative symbols were tried here and shipped, and they broke real
-//    scanning: pin-sharp they decoded fine, but every camera adds blur, and
-//    under blur they failed where a plain code still read. Measured after
-//    the fact — at 200px with a 1.5px blur, 3/10 payloads survived the
-//    decorated code and 10/10 survived the plain one. Both were removed.
-//    The concept's blank centre and twenty symbols live on the ARTWORK,
-//    which has no payload to protect. tests/qr-design.test.mjs now decodes
-//    under blur so this cannot come back unnoticed.
+// 2. NO decoration on it. A blank centre and twenty decorative symbols were
+//    tried here and shipped, and they broke real scanning: pin-sharp they
+//    decoded fine, but every camera adds blur, and under blur they failed
+//    where a plain code still read. Measured after the fact — at 200px with
+//    a 1.5px blur, 3/10 payloads survived the decorated code and 10/10
+//    survived the plain one. Both were removed. The concept's blank centre
+//    and twenty symbols are now carried by GloobalCode, where they are the
+//    data rather than a picture of it. tests/qr-design.test.mjs decodes this
+//    one under blur so the decoration cannot come back unnoticed.
 //
 // 3. Purple marker cores, drawn as SQUARES. See QrFinderMarker for why a
 //    disc costs reads: a decoder finds the code by the 1:1:3:1:1 run-length
@@ -63,84 +81,10 @@ import { useState as useState3, useEffect as useEffect3, useMemo as useMemoQr } 
 //    module sits in the 92-102 band, roughly 30 points clear of the
 //    threshold.
 //
-// So the scannable drawing carries the concept only where it is free: the
-// three markers in the right corners, in Gloobal navy and purple. Everything
-// that costs error-correction budget lives on the artwork instead.
+// So the compatibility code carries the concept only where it is free: the
+// three markers in the right corners, in Gloobal navy and purple.
 // ─────────────────────────────────────────────────────────────────────────
 
-// Gloobal's own brand palette, applied to the decorative symbols — the same
-// six hues GloobalWordmark's dots already pick from (common/brand.jsx).
-// Kept as its own top-level copy rather than reused directly, since that
-// array is local to GloobalWordmark's function body and this module has no
-// way to reach into it.
-//
-// Luminance matters here, not hue. A scanner binarises the camera image
-// against a threshold near 128, so every colour used for a dark module has
-// to sit comfortably BELOW it or that module reads as light and flips a
-// bit. The orange was #EA580C, luminance 123 — only five points of margin,
-// which survives a clean screenshot and does not survive a real camera with
-// glare or an exposure shift. Swapped for a deeper orange (luminance ~97)
-// so all six now sit in the 92-102 band.
-var QR_MODULE_COLORS = ["#2563EB", "#DC2626", "#C2410C", "#059669", "#9333EA", "#DB2777"];
-
-// The six approved shapes, in the order the slot index walks them:
-// 0 minus, 1 plus, 2 multiplication, 3 equals, 4 circle, 5 square.
-//
-// All SOLID. The dial pad's two OPEN forms (hollow circle, hollow square)
-// are deliberately absent: the concept excludes them, and they were already
-// the two that could not be drawn honestly at module scale — a true ring
-// leaves its own centre unpainted, which is the exact point a decoder
-// samples, so the previous version had to fake them as solid shapes with a
-// darker inset overlay. Dropping them removes that pretence rather than
-// losing anything.
-var QR_SYMBOL_SHAPE_COUNT = 6;
-
-// One shape per index. Every one of the six paints across the module's
-// centre — verified by round-trip decode, and the reason the equals bars
-// below meet exactly at cy rather than straddling it with a gap: an
-// isolated encode -> render -> real jsQR decode failed with the gap and
-// passed once the bars were extended to close it. Always returns one root
-// element (a single shape, or a group of two) so the caller can key it
-// directly.
-function QrSymbolGlyph({ index, rowKey, x, y, moduleSize, color }) {
-  const cx = x + moduleSize / 2;
-  const cy = y + moduleSize / 2;
-  const thick = moduleSize * 0.36;
-  switch (index % QR_SYMBOL_SHAPE_COUNT) {
-    case 0:
-      // solid minus
-      return <rect key={rowKey} x={x + moduleSize * 0.08} y={cy - thick / 2} width={moduleSize * 0.84} height={thick} fill={color} />;
-    case 1:
-      // solid plus
-      return <g key={rowKey}><rect x={cx - thick / 2} y={y + moduleSize * 0.08} width={thick} height={moduleSize * 0.84} fill={color} /><rect x={x + moduleSize * 0.08} y={cy - thick / 2} width={moduleSize * 0.84} height={thick} fill={color} /></g>;
-    case 2:
-      // solid multiplication
-      return <g key={rowKey}><rect x={cx - thick / 2} y={cy - moduleSize * 0.46} width={thick} height={moduleSize * 0.92} fill={color} transform={`rotate(45 ${cx} ${cy})`} /><rect x={cx - thick / 2} y={cy - moduleSize * 0.46} width={thick} height={moduleSize * 0.92} fill={color} transform={`rotate(-45 ${cx} ${cy})`} /></g>;
-    case 3:
-      // solid equals — the two bars meet exactly at the module's vertical
-      // centre. See the note above on why the gap could not stay.
-      return <g key={rowKey}><rect x={x + moduleSize * 0.08} y={cy - thick * 0.95} width={moduleSize * 0.84} height={thick * 0.95} fill={color} /><rect x={x + moduleSize * 0.08} y={cy} width={moduleSize * 0.84} height={thick * 0.95} fill={color} /></g>;
-    case 4:
-      // solid circle
-      return <circle key={rowKey} cx={cx} cy={cy} r={moduleSize * 0.46} fill={color} />;
-    case 5:
-    default:
-      // solid square — same footprint as the plain module it replaces, with
-      // a touch of corner rounding for the branded softness the rest of the
-      // app's cards and pills already use.
-      return <rect key={rowKey} x={x + moduleSize * 0.06} y={y + moduleSize * 0.06} width={moduleSize * 0.88} height={moduleSize * 0.88} rx={moduleSize * 0.14} fill={color} />;
-  }
-}
-
-// How much of the middle is blanked, as a radius in modules from the grid
-// centre, and how far the drawn white circle reaches beyond it.
-//
-// 4.5 is not a taste decision. Blanking the centre deletes real data and
-// spends the code's error-correction budget, so the ceiling was measured:
-// across every payload and raster size tried, 4.5 and 5 decode, 5.5 is the
-// edge and 6 fails. 4.5 is the largest value that decoded everything, and
-// tests/qr-design.test.mjs re-measures it rather than trusting this comment.
-//
 // The three markers: a navy rounded-square frame, a white inner square, a
 // solid purple disc at the core — the concept's marker, drawn over the
 // standard 7x7 finder pattern rather than instead of it.
@@ -168,18 +112,6 @@ function qrRotate180(grid) {
   return Array.from({ length: n }, (_, r) => Array.from({ length: n }, (_, c) => grid[n - 1 - r][n - 1 - c]));
 }
 
-// Shape and colour for a slot. Shape walks the six in order, so each group
-// of five shows five different symbols — the variety the concept shows.
-// Colour advances by 5 (coprime with 6, so it visits all six) plus one step
-// per completed group, which stops a shape from always arriving in the same
-// colour the way a plain slot%6 pairing would.
-function qrSymbolStyleFor(slot) {
-  return {
-    symbolIndex: slot % QR_SYMBOL_SHAPE_COUNT,
-    colorIndex: (slot * 5 + Math.floor(slot / QR_SYMBOL_SHAPE_COUNT)) % QR_MODULE_COLORS.length
-  };
-}
-
 // squareCore is not a style preference — it is what keeps the code readable
 // by a camera.
 //
@@ -193,8 +125,9 @@ function qrSymbolStyleFor(slot) {
 // misread.
 //
 // Measured: with a round core, 7/10 payloads survived a 2.5px blur at 400px;
-// with a square core, 10/10. The artwork has no decoder to satisfy, so it
-// keeps the disc the concept shows.
+// with a square core, 10/10. squareCore is always passed on the real code;
+// the parameter survives only because removing it would change nothing and
+// the default documents which shape is the risky one.
 function QrFinderMarker({ x, y, span, moduleSize, markerKey, squareCore = false }) {
   return <g key={markerKey}>
     <rect x={x} y={y} width={span} height={span} rx={moduleSize * QR_FINDER_OUTER_RADIUS} fill={T.ink} />
@@ -205,120 +138,13 @@ function QrFinderMarker({ x, y, span, moduleSize, markerKey, squareCore = false 
   </g>;
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// The artwork
-//
-// This is the approved concept drawn literally: three markers, a big blank
-// centre, twenty symbols in four groups of five, and nothing else. No data
-// modules, because there is no data — IT DOES NOT SCAN, and it is not
-// supposed to. It is the face of the code, not the code.
-//
-// Why this exists as its own thing rather than as a restyling of the real
-// QR: the concept shows an empty white field between the markers, and a
-// working QR must fill that field with payload. Those two cannot both be
-// true in one image. Measured, not assumed — this app's payload is 20
-// symbols of up to 3 UTF-8 bytes each, and no arrangement of 20 decorative
-// marks encodes 55 bytes in a form any standard decoder reads.
-//
-// So the two are drawn separately and the panel below shows one at a time:
-// this for the look, GloobalQRCode for the payment. Nothing here is ever
-// presented as scannable, and the panel's button says which is which.
-//
-// Geometry is in a fixed 100x100 space and scaled to whatever size the
-// panel asks for, so the layout is resolution-independent and identical on
-// every screen.
-var QR_ART_VIEWBOX = 100;
-var QR_ART_MARKER_SPAN = 18;
-var QR_ART_MARKER_INSET = 7;
-var QR_ART_CENTER_RADIUS = 24;
-// Each group sits 34 units from the middle, with five symbols stepped 10
-// apart. Those numbers are what keep the groups clear of BOTH the centre
-// circle (radius 25, nearest symbol at 34) and the three markers: the
-// markers occupy 7..25 and 75..93 on each axis, and every symbol lands
-// between 30 and 70.
-var QR_ART_BAND_OFFSET = 34;
-var QR_ART_BAND_STEPS = [-20, -10, 0, 10, 20];
-var QR_ART_SYMBOL_SIZE = 5.5;
-
-// The twenty positions, as (cx, cy) in the 100x100 space: two horizontal
-// groups above and below the centre, two vertical groups either side.
-function qrArtworkSlots() {
-  const mid = QR_ART_VIEWBOX / 2;
-  const slots = [];
-  for (const k of QR_ART_BAND_STEPS) slots.push([mid + k, mid - QR_ART_BAND_OFFSET]); // top
-  for (const k of QR_ART_BAND_STEPS) slots.push([mid + k, mid + QR_ART_BAND_OFFSET]); // bottom
-  for (const k of QR_ART_BAND_STEPS) slots.push([mid - QR_ART_BAND_OFFSET, mid + k]); // left
-  for (const k of QR_ART_BAND_STEPS) slots.push([mid + QR_ART_BAND_OFFSET, mid + k]); // right
-  return slots;
-}
-
-// Marker origins: top-right, bottom-left, bottom-right. The top-left corner
-// is deliberately empty — that absence is part of the design, and here it
-// costs nothing, because unlike the real code there is no finder pattern
-// that has to live there.
-function qrArtworkMarkerOrigins() {
-  const far = QR_ART_VIEWBOX - QR_ART_MARKER_INSET - QR_ART_MARKER_SPAN;
-  return [[far, QR_ART_MARKER_INSET], [QR_ART_MARKER_INSET, far], [far, far]];
-}
-
-function GloobalQrArtwork({ size = 200 }) {
-  const mid = QR_ART_VIEWBOX / 2;
-  // QrFinderMarker sizes itself off a module, exactly as it does on the real
-  // code: a 7-module finder means one module is a seventh of the span. Reusing
-  // it rather than redrawing means the marker proportions here and on the
-  // scannable code cannot drift apart.
-  const markerModule = QR_ART_MARKER_SPAN / 7;
-  const glowId = "gloobalQrArtGlow";
-  return <div style={{ width: size, height: size, display: "flex", alignItems: "center", justifyContent: "center" }}>
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${QR_ART_VIEWBOX} ${QR_ART_VIEWBOX}`}
-      role="img"
-      aria-label="Gloobal code artwork"
-    >
-      <defs><filter id={glowId} x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="0" stdDeviation="2.2" floodColor={T.accent} floodOpacity="0.16" /></filter></defs>
-      <rect width={QR_ART_VIEWBOX} height={QR_ART_VIEWBOX} fill="#fff" />
-      <circle cx={mid} cy={mid} r={QR_ART_CENTER_RADIUS} fill="#fff" filter={`url(#${glowId})`} />
-      {qrArtworkSlots().map(([cx, cy], slot) => {
-        const { symbolIndex, colorIndex } = qrSymbolStyleFor(slot);
-        return <QrSymbolGlyph
-          key={`art-${slot}`}
-          index={symbolIndex}
-          rowKey={`art-${slot}`}
-          x={cx - QR_ART_SYMBOL_SIZE / 2}
-          y={cy - QR_ART_SYMBOL_SIZE / 2}
-          moduleSize={QR_ART_SYMBOL_SIZE}
-          color={QR_MODULE_COLORS[colorIndex]}
-        />;
-      })}
-      {qrArtworkMarkerOrigins().map(([x, y]) => <QrFinderMarker
-        key={`art-finder-${x}-${y}`}
-        markerKey={`art-finder-${x}-${y}`}
-        x={x}
-        y={y}
-        span={QR_ART_MARKER_SPAN}
-        moduleSize={markerModule}
-      />)}
-    </svg>
-  </div>;
-}
-
 // Renders the matrix as plain SVG — a real, camera-scannable QR code, drawn
-// with no external dependency at all. The 60-second countdown
-// (onSecondsLeftChange) is kept as-is, a separate concern from whether the
-// code itself scans.
-function GloobalQRCode({ code, size = 200, onSecondsLeftChange }) {
-  const [secondsLeft, setSecondsLeft] = useState3(60);
-  useEffect3(() => {
-    if (onSecondsLeftChange) onSecondsLeftChange(secondsLeft);
-  }, [secondsLeft, onSecondsLeftChange]);
-  useEffect3(() => {
-    const interval = setInterval(() => {
-      setSecondsLeft((s) => s <= 1 ? 60 : s - 1);
-    }, 1e3);
-    return () => clearInterval(interval);
-  }, []);
+// with no external dependency at all.
+//
+// The 60-second countdown used to live here. It moved to the panel, because
+// the panel now has two codes to show and the number in the Receive header
+// has to keep ticking whichever one is up.
+function GloobalQRCode({ code, size = 200 }) {
   const built = useMemoQr(() => {
     try {
       const raw = qrBuildMatrix(code || " ");
@@ -356,7 +182,7 @@ function GloobalQRCode({ code, size = 200, onSecondsLeftChange }) {
     if (finderCells.has(r * 1e3 + c)) return null;
     return <rect key={`${r}-${c}`} x={(c + margin) * moduleSize} y={(r + margin) * moduleSize} width={moduleSize} height={moduleSize} fill={T.ink} />;
   })).flat() : null;
-  return <div style={{ width: size, height: size, display: "flex", alignItems: "center", justifyContent: "center" }}>{built ? <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Gloobal QR code"><rect width={size} height={size} fill="#fff" />{qrModules}{finderOrigins.map(([fr, fc]) => <QrFinderMarker key={`finder-${fr}-${fc}`} markerKey={`finder-${fr}-${fc}`} x={(fc + margin) * moduleSize} y={(fr + margin) * moduleSize} span={moduleSize * 7} moduleSize={moduleSize} squareCore />)}</svg> : null}</div>;
+  return <div style={{ width: size, maxWidth: "100%", aspectRatio: "1 / 1", display: "flex", alignItems: "center", justifyContent: "center" }}>{built ? <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Gloobal QR code" style={{ display: "block", maxWidth: "100%", height: "auto" }}><rect width={size} height={size} fill="#fff" />{qrModules}{finderOrigins.map(([fr, fc]) => <QrFinderMarker key={`finder-${fr}-${fc}`} markerKey={`finder-${fr}-${fc}`} x={(fc + margin) * moduleSize} y={(fr + margin) * moduleSize} span={moduleSize * 7} moduleSize={moduleSize} squareCore />)}</svg> : null}</div>;
 }
 
 
@@ -381,28 +207,52 @@ var QR_PANEL_SIZE = 300;
 var QR_PANEL_QUIET = 12;
 var QR_PANEL_RADIUS = 28;
 
-// The panel shows ONE of two things: the approved artwork, or the code that
-// actually pays. The artwork leads because that is the decision taken about
-// how this screen should look; the button under it is how anyone gets to
-// the working code, and it is deliberately plain-spoken rather than an icon,
-// because a person holding a phone out to be scanned needs to find it
-// without guessing.
+// What the panel shows, and the one thing it will not do.
 //
-// The two are never shown at once and never blended. That is the whole
-// safety property here: there is no state in which a picture that cannot be
-// scanned is sitting where a payer expects the code to be, unlabelled.
+// The Gloobal code leads, and it is not a picture of a code — it carries the
+// same twenty symbols encodeGloobalQR produced, and decodeGloobalCode reads
+// them back. So the state this panel used to have, where the thing on screen
+// was decorative and the working code was behind a tap, no longer exists.
+// Whatever is on screen here scans.
 //
-// The 60-second countdown belongs to GloobalQRCode, so it runs while the
-// code is on screen and pauses while the artwork is. That is the honest
-// behaviour — the countdown measures the freshness of a code that is being
-// shown, and nothing is being shown to scan while the artwork is up.
+// The button is the compatibility code, and it is labelled as one. It is not
+// a design toggle and it does not lead: a person holding their phone out to
+// be paid should never have to find it. It is there because decodeGloobalCode
+// is new — measured against rendered, resampled and blurred images, not
+// against a thousand real phones — and until it has real miles on it a payer
+// whose camera cannot read the new code needs somewhere to go. Delete the
+// button and GloobalQRCode with it once the new decoder has earned that.
+//
+// The countdown moved here from GloobalQRCode so it keeps ticking whichever
+// code is up. Note what it measures, because the number in the Receive header
+// implies something that is not true: a Receive code is
+// encodeGloobalQR({ gloobalId, amountCents: 0 }), which is deterministic —
+// the same twenty symbols today and next year. Nothing expires and nothing
+// is reissued at zero. That is a pre-existing claim this panel inherited, not
+// one it introduces, and it wants either a real rotating handle behind it or
+// the number taken off the header.
 function GloobalQrPanel({ code, size = QR_PANEL_SIZE, onSecondsLeftChange, children }) {
-  const [qrShowScannable, setQrShowScannable] = useState3(false);
+  const [qrShowCompat, setQrShowCompat] = useState3(false);
+  const [qrSecondsLeft, setQrSecondsLeft] = useState3(60);
+  useEffect3(() => {
+    const interval = setInterval(() => {
+      setQrSecondsLeft((s) => s <= 1 ? 60 : s - 1);
+    }, 1e3);
+    return () => clearInterval(interval);
+  }, []);
+  useEffect3(() => {
+    if (onSecondsLeftChange) onSecondsLeftChange(qrSecondsLeft);
+  }, [qrSecondsLeft, onSecondsLeftChange]);
   return <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div
     style={{
       position: "relative",
+      // A ceiling, not a fixed size. 300 + 12 + 12 is 324, which does not fit
+      // a 320px phone — the panel overflowed and the code inside it was
+      // squeezed out of square. aspectRatio keeps the frame square while the
+      // width gives way.
       width: size + QR_PANEL_QUIET * 2,
-      height: size + QR_PANEL_QUIET * 2,
+      maxWidth: "100%",
+      aspectRatio: "1 / 1",
       boxSizing: "border-box",
       padding: QR_PANEL_QUIET,
       background: "#fff",
@@ -413,9 +263,14 @@ function GloobalQrPanel({ code, size = QR_PANEL_SIZE, onSecondsLeftChange, child
       justifyContent: "center"
     }}
   >{code
-    ? (qrShowScannable
-        ? <GloobalQRCode code={code} size={size} onSecondsLeftChange={onSecondsLeftChange} />
-        : <GloobalQrArtwork size={size} />)
+    ? (qrShowCompat
+        ? <GloobalQRCode code={code} size={size} />
+        // Both tokens passed explicitly. gloobalCode.jsx carries its own
+        // default navy for standalone use, and it is NOT the app's ink — the
+        // payload was drawing in #1C1B33 while every other dark thing on the
+        // screen was #15132A, which is the kind of near-miss nobody sees and
+        // everybody feels.
+        : <GloobalCode value={code} size={size} ink={T.ink} accent={T.accent} />)
     : <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center", padding: 16 }}>{
         /* Refusing to draw a code is the honest outcome for an amount the
            payload cannot carry — a silently clamped code would contradict
@@ -426,18 +281,22 @@ function GloobalQrPanel({ code, size = QR_PANEL_SIZE, onSecondsLeftChange, child
         </span></div>}{children}</div>{code
     ? <button
         type="button"
-        onClick={() => setQrShowScannable((shown) => !shown)}
-        aria-pressed={qrShowScannable}
+        onClick={() => setQrShowCompat((shown) => !shown)}
+        aria-pressed={qrShowCompat}
         style={{
           border: `1px solid ${T.line}`,
-          background: qrShowScannable ? T.accentSoft : "#fff",
-          color: T.accent,
+          background: qrShowCompat ? T.accentSoft : "#fff",
+          color: T.inkFaint,
           borderRadius: 999,
-          padding: "9px 18px",
-          fontSize: 12.5,
-          fontWeight: 800,
+          padding: "8px 16px",
+          fontSize: 11.5,
+          fontWeight: 700,
           cursor: "pointer"
         }}
-      >{qrShowScannable ? "Show Gloobal design" : "Show scannable code"}</button>
+      >{/* Named for what it does, not for which drawing it is. "Show
+             scannable code" was the old label and it is now a lie in both
+             directions — the Gloobal code scans, and this one is the
+             fallback. */}
+        {qrShowCompat ? "Back to Gloobal code" : "Camera can’t read it?"}</button>
     : null}</div>;
 }

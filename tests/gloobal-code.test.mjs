@@ -47,6 +47,34 @@ function num(name) {
   return Number(m[1]);
 }
 
+// The alphabet, the mask table and the two mask functions are plain JS with
+// no JSX in them, so they can be lifted out of the module and RUN. Everything
+// below that asserts on masking asserts on the real functions rather than on
+// the text of them — a mask is the one thing in this file where a test that
+// only reads source would pass while the codes it produces were wrong.
+const { GLOOBAL_CODE_SYMBOLS, GLOOBAL_CODE_MASK, mask, unmask } = (() => {
+  const s = src();
+  const grab = (name) => {
+    const at = s.indexOf(`function ${name}(`);
+    assert.ok(at !== -1, `${name} is gone`);
+    // Brace-match from the opening brace of the declaration.
+    let i = s.indexOf("{", at), depth = 0;
+    for (let j = i; j < s.length; j++) {
+      if (s[j] === "{") depth++;
+      else if (s[j] === "}" && --depth === 0) return s.slice(at, j + 1);
+    }
+    throw new Error(`${name} is unbalanced`);
+  };
+  const alphabet = s.match(/var GLOOBAL_CODE_SYMBOLS = \[[^\]]*\];/)[0];
+  const length = s.match(/var GLOOBAL_CODE_LENGTH = \d+;/)[0];
+  const table = s.match(/var GLOOBAL_CODE_MASK = \[[^\]]*\];/)[0];
+  return new Function(
+    `${alphabet}${length}${table}${grab("maskGloobalCode")}${grab("unmaskGloobalCode")}
+     return { GLOOBAL_CODE_SYMBOLS, GLOOBAL_CODE_MASK,
+              mask: maskGloobalCode, unmask: unmaskGloobalCode };`
+  )();
+})();
+
 describe("twenty symbols, and exactly twenty", () => {
   test("the length is stated once", () => {
     assert.equal(num("GLOOBAL_CODE_LENGTH"), 20);
@@ -70,13 +98,28 @@ describe("twenty symbols, and exactly twenty", () => {
     // symbol is not a worse code, it is a DIFFERENT handle — and drawing it
     // produces a picture somebody can scan and be told their payment failed
     // for no reason they can see.
-    const s = code();
-    assert.match(s, /symbols\.length === GLOOBAL_CODE_LENGTH &&/);
-    assert.match(s, /if \(!valid\) return null;/);
+    //
+    // Validation now lives inside maskGloobalCode, which the component calls
+    // before it draws anything — so this asserts the real behaviour rather
+    // than the shape of the check, and it holds wherever the check sits.
+    assert.equal(mask("−".repeat(19)), null);
+    assert.equal(mask("−".repeat(21)), null);
+    assert.equal(mask(""), null);
+    assert.equal(mask(null), null);
+    assert.equal(mask(undefined), null);
   });
 
   test("and so does a value carrying a symbol outside the alphabet", () => {
-    assert.match(code(), /symbols\.every\(\(s\) => GLOOBAL_CODE_SYMBOLS\.indexOf\(s\) !== -1\)/);
+    assert.equal(mask("−".repeat(19) + "X"), null);
+    assert.equal(mask("−".repeat(19) + "✕"), null); // U+2715, not the U+00D7 the alphabet uses
+  });
+
+  test("the component draws nothing when masking refuses", () => {
+    // The one line that connects the two: a refused mask must stop the draw,
+    // not fall through to a partially-drawn code.
+    const s = code();
+    assert.match(s, /const masked = maskGloobalCode\(value\);/);
+    assert.match(s, /if \(!masked\) return null;/);
   });
 
   test("the alphabet is the app's own eight", () => {
@@ -227,6 +270,93 @@ describe("the reading order is stated, not implied", () => {
     assert.ok(body.indexOf("GC_FIELD - GC_EDGE - GC_MARKER + colW * col") <
               body.indexOf("bandStart + rowH * col"),
               "the bands are pushed in the wrong order");
+  });
+});
+
+// ── The mask ─────────────────────────────────────────────────────────────
+//
+// The payload's amount field is a fixed-width base-8 number, so the single
+// most common code this app mints — a Receive code, amount zero — carries
+// seven identical symbols in a row. Unmasked, that draws a dashed rule where
+// twenty distinct symbols should be, and a run of identical low-ink glyphs is
+// also the decoder's worst case: lose one cell boundary and every symbol
+// after it shifts.
+describe("the mask breaks up a run before it is drawn", () => {
+  test("mask and unmask are exact inverses, at every position", () => {
+    // Not a spot check. An off-by-one in either direction does not fail
+    // loudly — it decodes cleanly to the WRONG Gloobal ID — so every symbol
+    // is round-tripped through every one of the twenty cells.
+    for (let i = 0; i < GLOOBAL_CODE_MASK.length; i++) {
+      for (const symbol of GLOOBAL_CODE_SYMBOLS) {
+        const payload = GLOOBAL_CODE_SYMBOLS[0].repeat(i) + symbol +
+          GLOOBAL_CODE_SYMBOLS[0].repeat(GLOOBAL_CODE_MASK.length - i - 1);
+        assert.equal(unmask(mask(payload)), payload, `cell ${i}, symbol ${symbol}`);
+      }
+    }
+  });
+
+  test("the mask has one entry per cell", () => {
+    assert.equal(GLOOBAL_CODE_MASK.length, num("GLOOBAL_CODE_LENGTH"));
+    assert.ok(GLOOBAL_CODE_MASK.every((m) => Number.isInteger(m) && m >= 0 && m < 8),
+      "every offset must be a rotation of the eight-symbol alphabet");
+  });
+
+  test("the seven amount cells take seven DIFFERENT offsets", () => {
+    // This is the property the whole table is chosen for, and it is the one
+    // that stops the app's commonest code drawing as a dashed line. The
+    // payload is 12 ID symbols, then 7 amount symbols, then a checksum.
+    const amount = GLOOBAL_CODE_MASK.slice(12, 19);
+    assert.equal(amount.length, 7);
+    assert.equal(new Set(amount).size, 7, `amount offsets repeat: ${amount.join(",")}`);
+  });
+
+  test("a zero amount no longer draws a run of dashes", () => {
+    // The real shape of a Receive code: any ID, then seven zeros, then a
+    // checksum. Every one of those seven zeros must reach the page as a
+    // different glyph.
+    const drawn = Array.from(mask("■□×●−+=○□●×■" + "−".repeat(7) + "●"));
+    const amountCells = drawn.slice(12, 19);
+    assert.equal(new Set(amountCells).size, 7, `drew a run: ${amountCells.join(" ")}`);
+    assert.ok(!amountCells.includes("−") || amountCells.filter((s) => s === "−").length === 1);
+  });
+
+  test("no constant payload draws three of the same glyph in a row", () => {
+    // The general form of the same guarantee, checked against the worst input
+    // the format admits: all twenty cells carrying one symbol.
+    for (const symbol of GLOOBAL_CODE_SYMBOLS) {
+      const drawn = Array.from(mask(symbol.repeat(20)));
+      for (let i = 2; i < drawn.length; i++) {
+        assert.ok(!(drawn[i] === drawn[i - 1] && drawn[i] === drawn[i - 2]),
+          `payload of all ${symbol} draws ${drawn[i]} three times from cell ${i - 2}`);
+      }
+    }
+  });
+
+  test("the decoder carries the same table, entry for entry", () => {
+    // Two copies exist on purpose — the decoder has to run without the
+    // frontend bundle — so the check that keeps them honest lives here. A
+    // table that differs by one entry decodes to a valid-looking ID that
+    // belongs to nobody, which is worse than not decoding at all.
+    const d = readSource("backend/utils/gloobalCodeDecode.js");
+    const theirs = d.match(/var GCD_MASK = \[([^\]]*)\];/);
+    assert.ok(theirs, "GCD_MASK is gone from the decoder");
+    assert.deepEqual(
+      theirs[1].split(",").map((x) => Number(x.trim())),
+      GLOOBAL_CODE_MASK
+    );
+  });
+
+  test("the mask is not presented as secrecy", () => {
+    // It adds no bits and hides nothing — anyone with this file can undo it.
+    // Saying so here stops a later reader treating a masked code as concealed
+    // and building something on that.
+    assert.match(src(), /is not security/i);
+  });
+
+  test("masking happens inside the component, not at the call sites", () => {
+    // If a caller had to remember to mask, one of them eventually would not,
+    // and the code it drew would scan to a different Gloobal ID.
+    assert.match(code(), /function GloobalCode\(\{[\s\S]*?const masked = maskGloobalCode\(value\);/);
   });
 });
 

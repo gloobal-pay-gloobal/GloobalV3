@@ -55,6 +55,12 @@ var GCD_MARKER = 20;
 var GCD_EDGE = 4;
 var GCD_GLYPH = 6.8;
 var GCD_SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
+// The renderer's position mask, undone per cell. Its own copy for the same
+// reason as the geometry above — this file has to run without the frontend
+// bundle — and the test suite asserts it is identical to GLOOBAL_CODE_MASK,
+// because a mask that differs by one entry does not fail loudly: it decodes
+// to a valid-looking Gloobal ID that belongs to nobody.
+var GCD_MASK = [0, 3, 6, 1, 4, 7, 2, 5, 3, 6, 1, 4, 7, 2, 5, 0, 6, 1, 4, 7];
 
 // Marker centres in canonical space: top-right, bottom-left, bottom-right.
 var GCD_TR = { x: GCD_FIELD - GCD_EDGE - GCD_MARKER / 2, y: GCD_EDGE + GCD_MARKER / 2 };
@@ -145,6 +151,90 @@ function gloobalCodeGrayscale(data, width, height) {
     gray[i] = 0.2126 * data[p] + 0.7152 * data[p + 1] + 0.0722 * data[p + 2];
   }
   return gray;
+}
+
+// A one-pixel separable box blur, applied before binarising to images that
+// measure as pin-sharp.
+//
+// ── Why a decoder deliberately softens its own input ─────────────────────
+//
+// Because a PIN-SHARP image is the hard case here, not the easy one, and that
+// is counter-intuitive enough to be worth stating.
+//
+// Everything downstream samples the binarised bitmap on a grid recovered from
+// the three markers. A camera image has edges a pixel or two wide, so a sample
+// landing near an edge reads an intermediate value and the grid lands where
+// the arithmetic says. A rasterised SVG has edges ONE pixel wide, and then the
+// sample either catches the stroke or misses it entirely — so the same code at
+// a slightly different scale reads differently, not gradually but abruptly.
+//
+// Measured across three payloads at eight raster sizes, sharp:
+//
+//     200px  ok      260px  ok      360px  ok      480px  ok
+//     220px  ok      300px  ALL THREE MISREAD      600px  ok
+//
+// Not "failed to find" — MISREAD: the decoder returned twenty confident
+// symbols and the payload checksum threw them out. 300px is not a number
+// anybody would think to test, and it is exactly what a screenshot of the
+// Receive panel is, because QR_PANEL_SIZE is 300.
+//
+// One pixel of blur removes the cliff. The alternative — every caller
+// remembering to rasterise at a lucky size — is the kind of rule that holds
+// until the first person who has not read this comment.
+//
+// ── Softening is a SECOND ATTEMPT, not a policy ──────────────────────────
+//
+// Two things were tried before this and both were wrong, which is worth
+// recording because both looked obviously right at the time.
+//
+// Softening every image fixed the sharp misread and cost real decodes at the
+// small end — an image that has already been through a lens does not want a
+// second blur, and the decoder's own corpus went from 54/54 to 46/54 at
+// 200-220px.
+//
+// Softening only images that MEASURE as sharp sounded like the fix. It is
+// not, because the two populations do not separate. Edges-per-unit-of-ink was
+// the best measure found: rasterised sharp ran 0.245-0.374 and through a lens
+// 0.392-1.009. Eighteen thousandths is not a gap, it is an overlap that had
+// not been sampled hard enough yet, and a branch sitting in it would be a
+// coin toss that misbehaves on exactly the images nobody tested.
+//
+// So the decoder does not classify. It DECODES, and if the caller rejects
+// what came back, it decodes again from the softened image and offers that
+// instead. The caller can reject because the caller knows something this file
+// does not: the payload carries a checksum. A misread is not a plausible
+// answer to qrScanner.jsx, it is an invalid one, and that is a far better
+// signal than any measurement of the pixels.
+//
+// Cost: nothing at all on the overwhelming majority of frames, where the
+// first attempt is accepted. One extra pass when it is not.
+//
+// With no `accept` given, only the first attempt runs, so the bare call
+// behaves exactly as it did before any of this — which is what keeps the
+// decoder's own suite an honest record of the raw decoder rather than of the
+// retry.
+
+function gloobalCodeSoften(gray, width, height) {
+  const tmp = new Float64Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    for (let x = 0; x < width; x++) {
+      const a = gray[row + (x > 0 ? x - 1 : 0)];
+      const b = gray[row + x];
+      const c = gray[row + (x < width - 1 ? x + 1 : width - 1)];
+      tmp[row + x] = (a + b + c) / 3;
+    }
+  }
+  const out = new Float64Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const up = (y > 0 ? y - 1 : 0) * width;
+    const mid = y * width;
+    const down = (y < height - 1 ? y + 1 : height - 1) * width;
+    for (let x = 0; x < width; x++) {
+      out[mid + x] = (tmp[up + x] + tmp[mid + x] + tmp[down + x]) / 3;
+    }
+  }
+  return out;
 }
 
 // ── Connected components ─────────────────────────────────────────────────
@@ -513,12 +603,10 @@ function gloobalCodeClassify(patch) {
 // distinct on purpose: "no_markers" is a framing problem the person fixes by
 // moving the phone, "unreadable_cell" is not, and telling them apart is the
 // difference between a useful prompt and "try again".
-function decodeGloobalCode(image) {
-  if (!image || !image.data || !image.width || !image.height) {
-    return { ok: false, reason: "no_image" };
-  }
-  const { data, width, height } = image;
-  const gray = gloobalCodeGrayscale(data, width, height);
+// One pass: threshold, find, rectify, read. Split out of decodeGloobalCode so
+// the same pass can be run twice over two different greyscales without either
+// copy of it drifting from the other.
+function gloobalCodeReadGray(gray, width, height) {
   const bits = gloobalCodeBinarise(gray, width, height);
   const markers = gloobalCodeFindMarkers(bits, width, height);
   if (markers.length < 3) return { ok: false, reason: "no_markers", markers: markers.length };
@@ -536,7 +624,36 @@ function decodeGloobalCode(image) {
     const patch = gloobalCodeSampleCell(bits, width, height, map, cells[i].cx, cells[i].cy);
     const symbol = gloobalCodeClassify(patch);
     if (!symbol) return { ok: false, reason: "unreadable_cell", cell: i };
-    value += symbol;
+    // Unmask as each cell is read, so `value` is the PAYLOAD throughout and
+    // no caller has to know the mask exists. Undone here rather than over the
+    // finished string for one reason: there is then no intermediate variable
+    // holding a twenty-symbol string that looks like a payload and is not.
+    const digit = GCD_SYMBOLS.indexOf(symbol);
+    value += GCD_SYMBOLS[(digit - GCD_MASK[i] + GCD_SYMBOLS.length) % GCD_SYMBOLS.length];
   }
   return { ok: true, value };
+}
+
+function decodeGloobalCode(image, options) {
+  if (!image || !image.data || !image.width || !image.height) {
+    return { ok: false, reason: "no_image" };
+  }
+  const { data, width, height } = image;
+  const raw = gloobalCodeGrayscale(data, width, height);
+  const first = gloobalCodeReadGray(raw, width, height);
+  // `accept` is how a caller that can VALIDATE a payload tells this decoder
+  // that a confident-looking answer was nonetheless wrong. See the note above
+  // on why the retry is driven by the caller's checksum rather than by any
+  // measurement of the image.
+  const accept = options && typeof options.accept === "function" ? options.accept : null;
+  if (!accept) return first;
+  if (first.ok && accept(first.value)) return first;
+  const second = gloobalCodeReadGray(gloobalCodeSoften(raw, width, height), width, height);
+  if (second.ok && accept(second.value)) return second;
+  // Neither attempt produced something the caller would take. Report the
+  // FIRST one's failure rather than the retry's: it is the one that describes
+  // the image as it actually arrived, and "no_markers" versus
+  // "unreadable_cell" is the difference between a framing problem the person
+  // can fix and one they cannot.
+  return first.ok ? { ok: false, reason: "rejected", value: first.value } : first;
 }

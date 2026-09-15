@@ -129,19 +129,26 @@ const FRONTEND_MODULES = [
   "components/cards/flags.jsx",
   "components/common/backgrounds.jsx",
   "components/common/brand.jsx",
+  // The Gloobal code: 20 symbols, one ink, read by shape. This is what
+  // GloobalQrPanel now draws, so it is emitted BEFORE the panel — function
+  // declarations hoist across the concatenated scope, but the geometry and
+  // the mask table beside them are `var` initialisers that do not, and
+  // "definitions precede use" is cheaper to keep than to debug.
+  "components/common/gloobalCode.jsx",
   // NOTE: the monolith had two sections that differ only by case
   // (gloobalQRCode.jsx / GloobalQRCode.jsx). On a case-insensitive
   // filesystem they are one file, so they are merged here.
   "components/common/gloobalQRCode.jsx",
-  // The Gloobal code: 20 symbols, one ink, read by shape. Beside the
-  // payload QR rather than replacing it — nothing renders this yet.
-  "components/common/gloobalCode.jsx",
   "components/common/coloredId.jsx",
   "components/common/icons.jsx",
   // The pull-to-refresh wrapper. Needs the theme (emitted first) and is
   // rendered by the Dashboard, so it sits ahead of every screen.
   "components/common/PullToRefresh.jsx",
   "components/dialogs/registerLogin.jsx",
+  // The dial's synthesised mechanical feedback. Emitted before the dial that
+  // calls it — the functions hoist, but DIAL_SOUND_VOICES and DIAL_DETENT_DEG
+  // beside them are `var` initialisers that do not.
+  "components/common/dialSound.js",
   "components/inputs/dialPads.jsx",
   "components/payments/PayOptionsSheet.jsx",
   "components/payments/PayPinModal.jsx",

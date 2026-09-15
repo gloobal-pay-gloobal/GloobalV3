@@ -39,6 +39,80 @@
 var GLOOBAL_CODE_SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
 var GLOOBAL_CODE_LENGTH = 20;
 
+// ── The mask, and the run of identical symbols it exists to break ────────
+//
+// The payload is a Gloobal ID, then a seven-symbol amount, then a checksum.
+// The amount is a fixed-width base-8 number, so a request for NOTHING — which
+// is exactly what the Receive screen mints, every time, for everybody — has
+// seven leading zeros, and zero is "−". The real code for a zero-amount
+// Receive is:
+//
+//     ■ □ × ● − + = ○ □ ● × ■ − − − − − − − ●
+//                               ^^^^^^^^^^^^^
+//
+// Seven dashes in a row, ten of which sit along the bottom band where cells
+// are side by side. Drawn, that is not twenty symbols with a quiet stretch —
+// it is a dashed RULE, and the two failures it causes are different in kind:
+//
+//   To a reader, every Receive code looks like every other Receive code,
+//   because the only part that varies is the twelve ID cells and the eye
+//   goes to the line.
+//   To the decoder, a run of identical low-ink glyphs is the one input where
+//   a single lost cell boundary is unrecoverable. Miscount the dashes by one
+//   and every symbol after it shifts; the checksum then rejects a code the
+//   camera actually saw, and the person is told to try again.
+//
+// So the drawn symbol is not the payload symbol. Each cell is rotated through
+// the alphabet by a fixed amount that depends on its POSITION:
+//
+//     drawn[i] = SYMBOLS[(payload[i] + MASK[i]) % 8]
+//
+// The mask is a permutation-ish walk rather than a repeating pattern, and the
+// seven amount cells (12..18) take seven DISTINCT offsets — 7,2,5,0,6,1,4 —
+// so the worst case in the whole format, seven identical payload symbols,
+// draws as seven different glyphs. That is the property this array is chosen
+// for, and gloobal-code.test.mjs asserts it directly rather than trusting the
+// numbers to stay shuffled through a future edit.
+//
+// This is the same device as a QR code's data mask and it buys the same
+// thing. It adds no bits, carries no secret, and is not security: anyone
+// holding this file can undo it, and nothing anywhere should treat a masked
+// code as concealed. It exists so that no payload, however regular, draws a
+// picture that is hard to read.
+var GLOOBAL_CODE_MASK = [0, 3, 6, 1, 4, 7, 2, 5, 3, 6, 1, 4, 7, 2, 5, 0, 6, 1, 4, 7];
+
+// Payload -> what gets drawn. Returns null for anything that is not exactly
+// twenty symbols of the alphabet, so a caller cannot half-mask a bad code and
+// get a plausible-looking picture out of it.
+function maskGloobalCode(value) {
+  const symbols = Array.from(String(value == null ? "" : value));
+  if (symbols.length !== GLOOBAL_CODE_LENGTH) return null;
+  let out = "";
+  for (let i = 0; i < symbols.length; i++) {
+    const digit = GLOOBAL_CODE_SYMBOLS.indexOf(symbols[i]);
+    if (digit === -1) return null;
+    out += GLOOBAL_CODE_SYMBOLS[(digit + GLOOBAL_CODE_MASK[i]) % GLOOBAL_CODE_SYMBOLS.length];
+  }
+  return out;
+}
+
+// What was drawn -> payload. The exact inverse; the two are round-tripped
+// over every position in the tests, because an off-by-one in either direction
+// produces a code that decodes cleanly to the WRONG Gloobal ID rather than
+// failing.
+function unmaskGloobalCode(value) {
+  const symbols = Array.from(String(value == null ? "" : value));
+  if (symbols.length !== GLOOBAL_CODE_LENGTH) return null;
+  const base = GLOOBAL_CODE_SYMBOLS.length;
+  let out = "";
+  for (let i = 0; i < symbols.length; i++) {
+    const digit = GLOOBAL_CODE_SYMBOLS.indexOf(symbols[i]);
+    if (digit === -1) return null;
+    out += GLOOBAL_CODE_SYMBOLS[(digit - GLOOBAL_CODE_MASK[i] + base) % base];
+  }
+  return out;
+}
+
 // Laid out on a 100x100 field, so every figure below reads as a percentage
 // of the code's own width and the whole thing scales by one number.
 var GC_FIELD = 100;
@@ -234,10 +308,13 @@ function GloobalCodeMarker({ x, y, ink, accent }) {
 // picture somebody could scan and be told their payment failed for no
 // reason they could see.
 function GloobalCode({ value, size = 240, ink = "#1C1B33", accent, background = "#FFFFFF" }) {
-  const symbols = Array.from(String(value || ""));
-  const valid = symbols.length === GLOOBAL_CODE_LENGTH &&
-    symbols.every((s) => GLOOBAL_CODE_SYMBOLS.indexOf(s) !== -1);
-  if (!valid) return null;
+  // Masking happens HERE rather than at the call sites, and that placement is
+  // the point: `value` is always the plain payload, every caller passes the
+  // same thing it would have passed before the mask existed, and there is no
+  // way to render an unmasked code by forgetting a step.
+  const masked = maskGloobalCode(value);
+  if (!masked) return null;
+  const symbols = Array.from(masked);
   const cells = gloobalCodeCells();
   return <svg
     width={size}
@@ -245,7 +322,19 @@ function GloobalCode({ value, size = 240, ink = "#1C1B33", accent, background = 
     viewBox={`0 0 ${GC_FIELD} ${GC_FIELD}`}
     role="img"
     aria-label="Gloobal code"
-    style={{ display: "block", background, borderRadius: size * 0.09 }}
+    // `size` is the code's PREFERRED size, not a floor. A 300px code inside a
+    // 320px phone had nowhere to go and was squeezed to 298 wide by 300 tall —
+    // and a non-uniform squeeze is fatal here rather than merely ugly: the
+    // decoder resolves orientation from the three markers and recovers the
+    // grid with an affine map, so an aspect change is not a transform it can
+    // undo. maxWidth with height:auto lets it shrink UNIFORMLY instead.
+    style={{
+      display: "block",
+      background,
+      borderRadius: size * 0.09,
+      maxWidth: "100%",
+      height: "auto"
+    }}
   >{GC_MARKERS.map((m, i) => <GloobalCodeMarker key={`m${i}`} x={m.x} y={m.y} ink={ink} accent={accent} />)}{
     symbols.map((symbol, i) => <GloobalCodeGlyph
       key={i}

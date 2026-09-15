@@ -121,11 +121,27 @@ describe("the code is drawn large enough to scan", () => {
     // One padding constant on all four sides is what makes it even — the old
     // inline version added 40 to width and height to match a padding of 20,
     // and those two numbers could drift apart. Here they cannot.
+    //
+    // Square is now held by aspect-ratio rather than by a second fixed
+    // dimension, and that is a fix rather than a restyling: 300 + 12 + 12 is
+    // 324, which does not fit a 320px phone, so the panel overflowed and the
+    // code inside it came out 298 wide by 300 tall. A non-uniform squeeze is
+    // fatal to the Gloobal code — its decoder recovers the grid with an
+    // affine map, which absorbs rotation, scale and shear but not a change of
+    // aspect — so "square" has to survive being too big for the screen, which
+    // a fixed height does not.
     const at = panel.indexOf("function GloobalQrPanel(");
     assert.ok(at > 0, "GloobalQrPanel not found");
-    const block = panel.slice(at, at + 900);
+    // Read to the end of the frame's style block rather than a fixed number
+    // of characters: the panel grew by twenty lines when the countdown moved
+    // into it, and a window measured in characters silently stopped covering
+    // the thing it was checking.
+    const styleAt = panel.indexOf("position: \"relative\"", at);
+    assert.ok(styleAt > at, "the panel frame's style block is gone");
+    const block = panel.slice(styleAt, panel.indexOf("}", panel.indexOf("justifyContent", styleAt)));
     assert.match(block, /width: size \+ QR_PANEL_QUIET \* 2/);
-    assert.match(block, /height: size \+ QR_PANEL_QUIET \* 2/);
+    assert.match(block, /maxWidth: "100%"/);
+    assert.match(block, /aspectRatio: "1 \/ 1"/);
     assert.match(block, /padding: QR_PANEL_QUIET/);
     assert.match(block, /boxSizing: "border-box"/);
   });

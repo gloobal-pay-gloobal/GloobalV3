@@ -82,8 +82,19 @@ describe("every Gloobal QR is drawn by one panel", () => {
     assert.match(qr, /border: `1px solid \$\{T\.line\}`/);
     assert.match(qr, /padding: QR_PANEL_QUIET/);
     assert.match(qr, /width: size \+ QR_PANEL_QUIET \* 2/);
-    assert.match(qr, /height: size \+ QR_PANEL_QUIET \* 2/);
     assert.match(qr, /boxSizing: "border-box"/);
+    // Square by ASPECT RATIO rather than by a matching fixed height, and that
+    // is a fix rather than a style change. 300 + 12 + 12 is 324, which does
+    // not fit a 320px phone: the panel overflowed and the code inside it was
+    // squeezed to 298 wide by 300 tall. A non-uniform squeeze is fatal to the
+    // Gloobal code — its decoder recovers the grid with an affine map, which
+    // absorbs rotation, scale and shear but not a change of aspect.
+    assert.match(qr, /maxWidth: "100%"/);
+    assert.match(qr, /aspectRatio: "1 \/ 1"/);
+    assert.ok(
+      !/height: size \+ QR_PANEL_QUIET \* 2/.test(qr),
+      "a fixed height is back, and it cannot fit a 320px screen"
+    );
   });
 
   test("the code is bigger than either panel drew before", () => {
@@ -105,10 +116,29 @@ describe("every Gloobal QR is drawn by one panel", () => {
   });
 
   test("the Receive sheet keeps its countdown", () => {
-    // The panel forwards onSecondsLeftChange; losing it would silently stop
-    // the "43s" timer on that screen.
-    assert.match(qr, /onSecondsLeftChange=\{onSecondsLeftChange\}/);
+    // The countdown moved from GloobalQRCode into the panel, because the
+    // panel now has two codes to show and the "43s" in the Receive header has
+    // to keep ticking whichever one is up. Asserted as the interval plus the
+    // callback rather than as a forwarded prop, so it survives the next move.
+    assert.match(qr, /const \[qrSecondsLeft, setQrSecondsLeft\] = useState3\(60\)/);
+    assert.match(qr, /setQrSecondsLeft\(\(s\) => s <= 1 \? 60 : s - 1\)/);
+    assert.match(qr, /if \(onSecondsLeftChange\) onSecondsLeftChange\(qrSecondsLeft\)/);
     assert.match(dash, /onSecondsLeftChange=\{setReceiveQrSecondsLeft\}/);
+  });
+
+  test("the countdown is not presented as an expiry, because nothing expires", () => {
+    // Recorded rather than fixed, because fixing it is a product decision.
+    //
+    // A Receive code is encodeGloobalQR({ gloobalId, amountCents: 0 }), which
+    // is deterministic — the same twenty symbols today and next year. Nothing
+    // is reissued when the number reaches zero and nothing stops working. The
+    // "43s" in the Receive header therefore implies a freshness this code
+    // does not have.
+    //
+    // It is pre-existing and this suite is where it is written down. The two
+    // honest resolutions are a real rotating handle behind the countdown, or
+    // taking the number off the header.
+    assert.match(qr, /Nothing expires and nothing\s*\n?\s*\/\/ is reissued at zero/);
   });
 
   test("an unencodable amount says so, and names the ceiling", () => {

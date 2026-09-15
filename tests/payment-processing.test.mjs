@@ -43,10 +43,28 @@ describe("it renders the state that was already being tracked", () => {
   test("it draws nothing except while processing or failed", () => {
     // Including "completed": the receipt is what shows then, and this screen
     // sits at a higher z-index than the receipt does.
-    assert.match(
-      code(SCREEN),
-      /if \(status !== "processing" && status !== "failed"\) return null;/
-    );
+    //
+    // The two states are named once, as `blocking`, because a second thing
+    // now depends on the same condition — the app map's floating launcher is
+    // hidden for exactly as long as this screen is up. Two copies of the
+    // predicate would eventually disagree, and the way they would disagree is
+    // a navigation button reappearing on top of a payment in flight.
+    const s = code(SCREEN);
+    assert.match(s, /const blocking = status === "processing" \|\| status === "failed";/);
+    assert.match(s, /if \(!blocking\) return null;/);
+  });
+
+  test("it tells the app a blocking screen is up, and takes it back down", () => {
+    // The app map's launcher sits at z-index 10000 so it is always reachable,
+    // which is right on an ordinary screen and wrong here: the only thing it
+    // does is jump elsewhere, and doing that mid-payment abandons a POST that
+    // is already on the wire. It was visibly hovering over this screen.
+    const s = code(SCREEN);
+    assert.match(s, /gloobal:blockingOverlay/);
+    // Fired on mount AND on unmount — a signal with no matching clear leaves
+    // the launcher gone for the rest of the session.
+    assert.match(s, /fire\(true\);/);
+    assert.match(s, /return \(\) => fire\(false\);/);
   });
 
   test("it sits above the receipt, and the receipt is what follows it", () => {

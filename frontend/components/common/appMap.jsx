@@ -1,5 +1,5 @@
 // src/components/common/appMap.jsx
-import { useState as useState22, useRef as useRef16 } from "react";
+import { useState as useState22, useRef as useRef16, useEffect as useEffect26 } from "react";
 import {
   Map as MapNavIcon,
   Search as MapSearchIcon,
@@ -103,6 +103,31 @@ function AppMapButton({ onOpen }) {
   const [dragPoint, setDragPoint] = useState22(null);
   const dragRef = useRef16(null);
   const btnRef = useRef16(null);
+  // How many blocking screens are currently up.
+  //
+  // A COUNT rather than a boolean, because two of them can overlap — a
+  // payment failing while something else is already open — and a boolean
+  // would have the first one to close unhide the button over the second.
+  const [blockedBy, setBlockedBy] = useState22(0);
+
+  // This button sits at z-index 10000 so it is always reachable, which is
+  // right for a navigation aid on an ordinary screen and wrong on top of a
+  // payment in flight: the only thing it does is jump elsewhere, and doing
+  // that mid-payment abandons a POST that is already on the wire. It was
+  // visibly hovering over the processing screen.
+  //
+  // Hidden rather than merely dimmed or lowered: a lower z-index would still
+  // leave it tappable through a translucent overlay, and this is the one
+  // control on screen that must not be pressed just then.
+  useEffect26(() => {
+    if (typeof window === "undefined") return void 0;
+    const onBlocking = (e) => {
+      const active = !!(e && e.detail && e.detail.active);
+      setBlockedBy((n) => Math.max(0, n + (active ? 1 : -1)));
+    };
+    window.addEventListener("gloobal:blockingOverlay", onBlocking);
+    return () => window.removeEventListener("gloobal:blockingOverlay", onBlocking);
+  }, []);
 
   const handlePointerDown = (e) => {
     dragRef.current = { startX: e.clientX, startY: e.clientY, moved: 0, startedAt: Date.now() };
@@ -173,6 +198,8 @@ function AppMapButton({ onOpen }) {
         ...mapIconEdgeStyle(pos),
         transition: "left 0.3s cubic-bezier(.34,1.2,.4,1), right 0.3s cubic-bezier(.34,1.2,.4,1), top 0.3s cubic-bezier(.34,1.2,.4,1), bottom 0.3s cubic-bezier(.34,1.2,.4,1)"
       };
+
+  if (blockedBy > 0) return null;
 
   return <button
     ref={btnRef}

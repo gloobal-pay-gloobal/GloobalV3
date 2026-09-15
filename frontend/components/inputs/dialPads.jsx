@@ -1,7 +1,9 @@
 // src/components/inputs/dialPads.jsx
 import { useState as useState5, useEffect as useEffect5, useRef as useRef3 } from "react";
 import {
-  Delete
+  Delete,
+  Ear as DialSoundOnIcon,
+  EarOff as DialSoundOffIcon
 } from "lucide-react";
 
 
@@ -79,6 +81,40 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
   }, []);
   const idleTimerRef = useRef3(null);
   const backTimerRef = useRef3(null);
+  // ── Sound ──────────────────────────────────────────────────────────────
+  //
+  // The preference is READ ONCE into state rather than read on every tick,
+  // because a tick can fire twenty times a second during a spin and
+  // localStorage is a synchronous main-thread call — on the same thread that
+  // is animating the ring. dialSound.js re-reads it itself as a guard, which
+  // is what keeps two dials mounted at once from disagreeing.
+  const [soundOn, setSoundOn] = useState5(dialSoundEnabled);
+  // Rotation since the last detent, in degrees. A ref rather than state: it
+  // changes on every pointermove and every momentum frame, and rendering for
+  // it would re-render the whole dial sixty times a second for a number
+  // nothing draws.
+  const detentRef = useRef3(0);
+  // One tick per DIAL_DETENT_DEG of travel, in either direction.
+  //
+  // Accumulated rather than derived from the absolute angle, so the feel is
+  // the same whether the ring is turned slowly by hand or coasting on
+  // momentum — and so a reversal does not fire a tick for ground already
+  // covered. The while-loop drains whole detents but the rate limiter inside
+  // dialSoundTick drops the surplus, which is why a violent flick sounds like
+  // a fast ratchet rather than a buzz.
+  const feelRotation = (delta) => {
+    if (!soundOn) return;
+    detentRef.current += delta;
+    let crossed = 0;
+    while (Math.abs(detentRef.current) >= DIAL_DETENT_DEG) {
+      detentRef.current -= Math.sign(detentRef.current) * DIAL_DETENT_DEG;
+      crossed += 1;
+      // One call per detent, capped: past about four detents in a single
+      // frame the limiter would refuse them all anyway, and the loop is only
+      // there to keep the accumulator honest.
+      if (crossed <= 4) dialSoundTick();
+    }
+  };
   const [symbolColors, setSymbolColors] = useState5(() => Array(symbolKeys.length).fill(null));
   useEffect5(() => {
     const interval = setInterval(() => {
@@ -143,6 +179,11 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
       v *= 0.95;
       rotationRef.current += v;
       setRotation(rotationRef.current);
+      // The ticks decelerate with the wheel because they are driven by
+      // DISTANCE travelled, not by a timer. That is the whole difference
+      // between feedback that belongs to the gesture and a click track
+      // playing over it.
+      feelRotation(v);
       if (Math.abs(v) < 0.05) {
         momentumRef.current = null;
         return;
@@ -175,6 +216,10 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
     const angle = angleFromCenter(e.clientX, e.clientY);
     dragRef.current = { lastAngle: angle, lastTime: performance.now(), velocity: 0, moved: 0, startX: e.clientX, startY: e.clientY };
     suppressClickRef.current = false;
+    // A fresh grab starts from a detent, so the first click of a new drag
+    // comes after a full DIAL_DETENT_DEG of travel rather than immediately
+    // because the last gesture happened to stop just short of one.
+    detentRef.current = 0;
   }
   function handlePointerMove(e) {
     const d = dragRef.current;
@@ -191,6 +236,7 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
     d.lastTime = now;
     rotationRef.current += stepDelta;
     setRotation(rotationRef.current);
+    feelRotation(stepDelta);
     const pixelDist = Math.hypot(e.clientX - d.startX, e.clientY - d.startY);
     if (pixelDist > 8) suppressClickRef.current = true;
   }
@@ -210,8 +256,17 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
   const press = (k) => {
     if (suppressClickRef.current) return;
     registerActivity();
-    if (k === "cross") onChange(value.slice(0, -1));
-    else if (k && value.length < length) onChange(value + k);
+    // The sound follows the STATE CHANGE, never the tap. A press on a full
+    // field and a delete on an empty one both do nothing, and a click that
+    // plays anyway tells the person a symbol went in or came out when it did
+    // not — which on this particular field is worth more than the sound is.
+    if (k === "cross") {
+      if (soundOn && value.length > 0) dialSoundDelete();
+      onChange(value.slice(0, -1));
+    } else if (k && value.length < length) {
+      if (soundOn) dialSoundPress();
+      onChange(value + k);
+    }
   };
   // The ring was overflowing narrow screens. Every dimension below is
   // derived from one scale factor, so the dial keeps its proportions
@@ -234,7 +289,15 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
           .symbol-dial-face { animation: none !important; }
           .symbol-dial-flip-inner { transition: none !important; }
         }
-      `}</style><div style={{ display: "flex", gap: 8 }}>{Array.from({ length }).map((_, i) => <span
+      `}</style>{
+    /* The value dots, with the sound toggle at the right.
+       Placed OUT HERE rather than inside the housing on purpose: the housing
+       owns a pointer-drag gesture across its whole surface, and a control
+       sitting inside it would be something a person could press by accident
+       on the way into a spin. Out here it cannot be hit unless it is aimed
+       at. The dots stay optically centred because the button is positioned
+       absolutely and takes no space in the row. */
+  }<div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%" }}><div style={{ display: "flex", gap: 8 }}>{Array.from({ length }).map((_, i) => <span
     key={i}
     style={{
       width: 10,
@@ -246,7 +309,51 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
       boxShadow: i < value.length ? "0 2px 6px rgba(124,58,237,0.35)" : "none",
       transition: "background 0.15s ease, box-shadow 0.15s ease"
     }}
-  />)}</div>{
+  />)}</div><button
+    type="button"
+    onClick={() => {
+      const next = !soundOn;
+      setSoundOn(next);
+      setDialSoundEnabled(next);
+      // Play one tick on the way ON, from inside this click. Two reasons, and
+      // the second is the one that matters: it answers "did that do
+      // anything?" immediately, AND it is the user gesture that lets the
+      // AudioContext be created at all. Every mobile browser starts a context
+      // built outside a gesture in the "suspended" state and leaves it there,
+      // which is the classic bug where UI sound works on a laptop and is
+      // silent on a phone.
+      if (next) dialSoundConfirm();
+    }}
+    aria-pressed={soundOn}
+    aria-label={soundOn ? "Turn dial sound off" : "Turn dial sound on"}
+    title={soundOn ? "Dial sound on" : "Dial sound off"}
+    className="v2-tap"
+    style={{
+      position: "absolute",
+      right: 0,
+      top: "50%",
+      transform: "translateY(-50%)",
+      width: 32,
+      height: 32,
+      borderRadius: "50%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer",
+      padding: 0,
+      // On: the dial's own purple, filled softly, so it reads as live.
+      // Off: a plain outline in the muted ink — present, clearly not active,
+      // and never a red "error" state, because silence is a choice rather
+      // than a fault.
+      background: soundOn ? T.accentSoft : T.surface,
+      border: `1px solid ${soundOn ? "rgba(124,58,237,0.32)" : T.line}`,
+      boxShadow: soundOn ? "0 2px 8px rgba(124,58,237,0.18)" : "none",
+      color: soundOn ? T.accent : T.inkFaint,
+      transition: "background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease"
+    }}
+  >{soundOn
+    ? <DialSoundOnIcon size={16} strokeWidth={2.2} />
+    : <DialSoundOffIcon size={16} strokeWidth={2.2} />}</button></div>{
     /* The housing is a literal two-sided coin: one face is the dial pad,
        the other is the brand mark. Whenever the dial has sat idle for a
        random stretch of time, it's the whole white circle that flips

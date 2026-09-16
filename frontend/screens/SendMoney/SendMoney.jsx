@@ -378,6 +378,12 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     // a link to lead to — that receipt keeps the long form it always had.
     let confirmedReceiptCode = "";
     let confirmedShareReceiptCode = "";
+    // The figures the server RECORDED for this payment — its debit, its
+    // credit and its rate. Receipt display only (buildTransactionSnapshot's
+    // `recorded`); the local ledger post and the toast below keep reading
+    // this screen's own senderAmount. Null for a local simulation, which then
+    // shows no conversion block rather than a client-computed one.
+    let confirmedRecorded = null;
     // Whether the backend actually recorded this payment — false for a
     // `skipped` local simulation, and (consistently) false when there is
     // no onRemoteSend at all to have recorded it. Read below by the final
@@ -461,6 +467,13 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
         // does not percent-encode to 180 characters.
         if (remote.receiptCode) confirmedReceiptCode = remote.receiptCode;
         if (remote.shareReceiptCode) confirmedShareReceiptCode = remote.shareReceiptCode;
+        confirmedRecorded = {
+          debitAmount: remote.debitAmount,
+          senderCurrency: remote.senderCurrency,
+          destinationAmount: remote.destinationAmount,
+          destinationCurrency: remote.destinationCurrency,
+          fxRate: remote.fxRate
+        };
       }
     }
     // ONE call: risk-check, posting, provenance, complaint window, and
@@ -512,7 +525,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       now,
       shareRatePercent: confirmedShareRatePercent,
       ledgerRecordId: result.ledgerRecordId,
-      txnId: confirmedTxnId
+      txnId: confirmedTxnId,
+      recorded: confirmedRecorded
     });
     // Held no longer than the send it authorised.
     verifiedPinRef.current = null;

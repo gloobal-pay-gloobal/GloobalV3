@@ -304,12 +304,89 @@ export async function installApi(context, options = {}) {
   // history", or "log in as the payee and look at what arrived". Those are the
   // two places the receipt's counterparty identity was actually being lost, so
   // the gap in the fake was also the gap in the coverage.
-  const state = { balances: {}, failNextSend: null, ledger: [] };
+  //
+  // `photos` is the server's ProfilePhoto collection: symbolId → data URL.
+  // Seeded from `options.photos` ({ [symbolId]: dataUrl }).
+  //
+  // `notifications` is the Notification collection: every row carries the
+  // `userSymbolId` it belongs to plus the public N shape the routes return
+  // ({ id, type, title, message, readAt, createdAt, metadata }). The send
+  // route below writes one per party; `options.notifications` seeds rows in
+  // the same shape (id/createdAt/readAt/type are filled in when omitted).
+  const state = { balances: {}, failNextSend: null, ledger: [], photos: {}, notifications: [] };
   for (const account of Object.values(accounts)) state.balances[account.symbolId] = account.balance;
+  Object.assign(state.photos, options.photos || {});
+  for (const seed of options.notifications || []) {
+    state.notifications.push({
+      type: "payment",
+      readAt: null,
+      metadata: {},
+      ...seed,
+      id: seed.id || `ntf-${state.notifications.length + 1}`,
+      createdAt: seed.createdAt || new Date(Date.now() - (state.notifications.length + 1) * 60000).toISOString()
+    });
+  }
 
   const byId = (id) => Object.values(accounts).find((a) => a.symbolId === id);
   const byIdentifier = (id) =>
     Object.values(accounts).find((a) => a.symbolId === id || a.mobileNumber === id);
+
+  // Who is calling, from the bearer token /api/login minted below
+  // (`test-token-<mobileNumber>`). The real server's requireAuth does the
+  // same job with an HMAC; the routes that are scoped to "the signed-in
+  // account" — photos and notifications — read the caller from here and
+  // never from anything in the path or body.
+  const callerOf = (request) => {
+    const header = request.headers()["authorization"] || "";
+    const match = header.match(/^Bearer test-token-(.+)$/);
+    return match ? Object.values(accounts).find((a) => a.mobileNumber === match[1]) || null : null;
+  };
+
+  // The public N shape: `userSymbolId` is storage, not payload.
+  const publicNotification = ({ userSymbolId, ...n }) => n;
+  const notificationsOf = (account) =>
+    state.notifications
+      .filter((n) => n.userSymbolId === account.symbolId)
+      // Reversed first so rows written in the same millisecond still come
+      // back newest first: the sort is stable.
+      .reverse()
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  const unreadCountOf = (account) => notificationsOf(account).filter((n) => !n.readAt).length;
+
+  // One row per (user, transactionId) — the unique partial index on the real
+  // collection. A duplicate is a silent no-op, as E11000 is on the server.
+  const addNotification = (userSymbolId, n) => {
+    const transactionId = n.metadata && n.metadata.transactionId;
+    if (
+      transactionId &&
+      state.notifications.some((x) => x.userSymbolId === userSymbolId && x.metadata && x.metadata.transactionId === transactionId)
+    ) {
+      return;
+    }
+    state.notifications.push({
+      id: `ntf-${state.notifications.length + 1}`,
+      userSymbolId,
+      type: "payment",
+      readAt: null,
+      createdAt: new Date().toISOString(),
+      ...n
+    });
+  };
+
+  // The photo validation PUT /api/profile/:symbolId/photo applies.
+  const PHOTO_PATTERN = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/;
+  const checkPhoto = (photo) => {
+    const match = typeof photo === "string" ? photo.match(PHOTO_PATTERN) : null;
+    if (!match) return { status: 400, code: "invalid_photo", message: "That photo could not be read." };
+    const bytes = Buffer.from(photo.slice(photo.indexOf(",") + 1), "base64");
+    if (bytes.length > 200000) return { status: 413, code: "photo_too_large", message: "That photo is too large." };
+    const magic =
+      match[1] === "jpeg"
+        ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+        : bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+    if (!magic) return { status: 400, code: "invalid_photo", message: "That photo could not be read." };
+    return null;
+  };
 
   const publicUser = (account) => ({
     symbolId: account.symbolId,
@@ -390,6 +467,80 @@ export async function installApi(context, options = {}) {
     }
     if (pathname.startsWith("/api/passkey/")) return json(200, { registered: false, enrolled: false, credentials: [] });
     if (pathname.startsWith("/api/face/")) return json(200, { enrolled: false });
+
+    // --- profile photos ---
+    // Ahead of the /api/profile/ catch-all below, which would read
+    // "<id>/photo" as a Gloobal ID and answer 404.
+    const setPhotoMatch = pathname.match(/^\/api\/profile\/([^/]+)\/photo$/);
+    if (setPhotoMatch && request.method() === "PUT") {
+      const caller = callerOf(request);
+      if (!caller) return json(401, { success: false, message: "Authentication required.", code: "auth_required" });
+      const id = decodeURIComponent(setPhotoMatch[1]);
+      if (caller.symbolId !== id) return json(403, { success: false, message: "Not allowed.", code: "forbidden" });
+      const photo = body && body.photo;
+      if (photo === null || photo === undefined) {
+        delete state.photos[id];
+        return json(200, { success: true, hasPhoto: false });
+      }
+      const problem = checkPhoto(photo);
+      if (problem) return json(problem.status, { success: false, message: problem.message, code: problem.code });
+      state.photos[id] = photo;
+      return json(200, { success: true, hasPhoto: true });
+    }
+    const getPhotoMatch = pathname.match(/^\/api\/users\/([^/]+)\/photo$/);
+    if (getPhotoMatch && request.method() === "GET") {
+      if (!callerOf(request)) return json(401, { success: false, message: "Authentication required.", code: "auth_required" });
+      // By CURRENT Gloobal ID only — not a mobile number.
+      const account = byId(decodeURIComponent(getPhotoMatch[1]));
+      if (!account) return json(404, { success: false, message: "No user found.", code: "user_not_found" });
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "private, max-age=300" },
+        body: JSON.stringify({ success: true, symbolId: account.symbolId, photo: state.photos[account.symbolId] || null })
+      });
+    }
+
+    // --- notifications ---
+    if (pathname === "/api/notifications" || pathname.startsWith("/api/notifications/")) {
+      const caller = callerOf(request);
+      if (!caller) return json(401, { success: false, message: "Authentication required.", code: "auth_required" });
+      const method = request.method();
+      if (pathname === "/api/notifications" && method === "GET") {
+        const rawLimit = Number(url.searchParams.get("limit"));
+        const limit = Number.isFinite(rawLimit) && url.searchParams.get("limit") !== null
+          ? Math.min(50, Math.max(1, Math.floor(rawLimit)))
+          : 30;
+        const beforeTime = Date.parse(url.searchParams.get("before") || "");
+        const rows = notificationsOf(caller)
+          .filter((n) => !Number.isFinite(beforeTime) || Date.parse(n.createdAt) < beforeTime)
+          .slice(0, limit)
+          .map(publicNotification);
+        return json(200, { success: true, notifications: rows, unreadCount: unreadCountOf(caller) });
+      }
+      if (pathname === "/api/notifications/unread-count" && method === "GET") {
+        return json(200, { success: true, unreadCount: unreadCountOf(caller) });
+      }
+      if (pathname === "/api/notifications/read-all" && method === "POST") {
+        let updated = 0;
+        const now = new Date().toISOString();
+        for (const n of notificationsOf(caller)) {
+          if (n.readAt) continue;
+          n.readAt = now;
+          updated += 1;
+        }
+        return json(200, { success: true, updated, unreadCount: unreadCountOf(caller) });
+      }
+      const readMatch = pathname.match(/^\/api\/notifications\/([^/]+)\/read$/);
+      if (readMatch && method === "PATCH") {
+        const id = decodeURIComponent(readMatch[1]);
+        const n = state.notifications.find((x) => x.id === id && x.userSymbolId === caller.symbolId);
+        if (!n) return json(404, { success: false, message: "Notification not found.", code: "notification_not_found" });
+        if (!n.readAt) n.readAt = new Date().toISOString();
+        return json(200, { success: true, notification: publicNotification(n), unreadCount: unreadCountOf(caller) });
+      }
+      return json(404, { success: false, message: "Not found." });
+    }
 
     // --- identity ---
     if (pathname.startsWith("/api/profile/")) {
@@ -488,7 +639,12 @@ export async function installApi(context, options = {}) {
         sourceCurrency: sender.currency,
         destinationAmount,
         destinationCurrency: receiver.currency,
-        rate: fxRate(sender.currency, receiver.currency),
+        // In the direction the real server stores `metadata.fxRate`
+        // (getRate(destinationCurrency, senderCurrency)): 1 unit of the
+        // RECEIVER's currency = rate units of the SENDER's. It was recorded
+        // the other way round here, which made the fake disagree with the
+        // server on every cross-border receipt's "Rate applied" line.
+        rate: fxRate(receiver.currency, sender.currency),
         cashbackRate,
         cashback,
         cashbackCredit,
@@ -504,6 +660,44 @@ export async function installApi(context, options = {}) {
         note: body.note || "",
         createdAt: new Date().toISOString()
       });
+      // One notification per party, after the transfer is recorded — as the
+      // real route writes them next to recordAudit. The ledger row's own id is
+      // the transactionId (the fake's reference is shared by every payment, so
+      // it cannot be the de-dup key). Amounts are this fake's own figures:
+      // what left the sender in their currency, what reached the receiver in
+      // theirs.
+      const ledgerRow = state.ledger[state.ledger.length - 1];
+      const notificationMeta = {
+        transactionId: ledgerRow.id,
+        referenceId: ledgerRow.referenceId,
+        receiptCode: ledgerRow.receiptCode || null
+      };
+      addNotification(sender.symbolId, {
+        title: "Money sent",
+        message: `You sent ${sourceAmount} ${sender.currency} to ${receiver.fullName}`,
+        createdAt: ledgerRow.createdAt,
+        metadata: {
+          ...notificationMeta,
+          direction: "sent",
+          amount: sourceAmount,
+          currency: sender.currency,
+          counterpartyName: receiver.fullName,
+          counterpartySymbolId: receiver.symbolId
+        }
+      });
+      addNotification(receiver.symbolId, {
+        title: "Money received",
+        message: `You received ${destinationAmount} ${receiver.currency} from ${sender.fullName}`,
+        createdAt: ledgerRow.createdAt,
+        metadata: {
+          ...notificationMeta,
+          direction: "received",
+          amount: destinationAmount,
+          currency: receiver.currency,
+          counterpartyName: sender.fullName,
+          counterpartySymbolId: sender.symbolId
+        }
+      });
       return json(200, {
         success: true,
         amountBasis: basis,
@@ -511,6 +705,19 @@ export async function installApi(context, options = {}) {
         sourceCurrency: sender.currency,
         destinationAmount,
         destinationCurrency: receiver.currency,
+        // The top-level figures the real route returns (server.js, the 201
+        // response of POST /api/transactions/send): what left the sender in
+        // their own currency, the rate in its stored direction, where it came
+        // from, and what the payee was credited after their Creator Share.
+        // Same values the ledger row above records, so a test can compare a
+        // receipt against either.
+        debitAmount: sourceAmount,
+        senderCurrency: sender.currency,
+        fxRate: ledgerRow.rate,
+        fxRateSource: sender.currency === receiver.currency ? "identity" : "test-fixture",
+        payeeReceives: ZERO_DECIMAL.has(receiver.currency)
+          ? Math.round(destinationAmount - cashback)
+          : Number((destinationAmount - cashback).toFixed(2)),
         transaction: {
           referenceId: reference,
           transactionId: reference,

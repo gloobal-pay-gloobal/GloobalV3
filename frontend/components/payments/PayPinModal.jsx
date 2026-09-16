@@ -103,6 +103,83 @@ function PayPinModal({ open, onClose, amountLabel, onVerified }) {
     onToggleMask={() => setPinRevealed((v) => !v)}
   /></div></div></div>;
 }
+// ── Profile photo sizing (shared: registration here, Dashboard's change) ──
+//
+// Downscaled before it is ever handed upward. A phone camera photo is
+// 3-8 MB, and base64 inflates that by a third — well past the ~5 MB
+// localStorage quota the profile is cached into, and far past what the
+// server accepts: PUT /api/profile/:symbolId/photo takes a JPEG or PNG data
+// URL of at most 200 KB decoded. The account's ONE photo lives there, so a
+// picture that cannot fit the cap is a picture nobody else will ever see.
+//
+// 512px on the long edge at JPEG 0.82 lands around 40-60 KB, which is far
+// more than a 96px avatar needs. An unusually detailed picture that is
+// still over the cap steps down (384px, 256px, 192px) until it fits.
+// Anything that fails to decode falls back to the original data URL rather
+// than losing the pick — it still shows locally; it just cannot be uploaded.
+var PROFILE_PHOTO_MAX_BYTES = 200000;
+var PROFILE_PHOTO_UPLOAD_PATTERN = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/;
+var PROFILE_PHOTO_FIT_STEPS = [[512, 0.82], [384, 0.75], [256, 0.7], [192, 0.6]];
+
+// Decoded size of a base64 data URL, without decoding it.
+function profilePhotoDecodedBytes(dataUrl) {
+  if (typeof dataUrl !== "string") return Infinity;
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) return Infinity;
+  const b64Length = dataUrl.length - comma - 1;
+  const padding = dataUrl.endsWith("==") ? 2 : dataUrl.endsWith("=") ? 1 : 0;
+  return Math.floor((b64Length * 3) / 4) - padding;
+}
+
+// Would the server accept this as a photo? Size is checked first, so a huge
+// string is never run through the pattern.
+function profilePhotoUploadable(dataUrl) {
+  return (
+    typeof dataUrl === "string" &&
+    profilePhotoDecodedBytes(dataUrl) <= PROFILE_PHOTO_MAX_BYTES &&
+    PROFILE_PHOTO_UPLOAD_PATTERN.test(dataUrl)
+  );
+}
+
+function downscaleProfilePhoto(dataUrl, maxEdge = 512, quality = 0.82) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext("2d");
+        // JPEG has no alpha: a transparent PNG would otherwise export with a
+        // black background.
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      } catch (err) {
+        // Tainted canvas, no 2d context, or a browser that refuses the
+        // export — the original still works, it just costs more storage.
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+// The photo to keep and upload: the first step that fits the server's cap.
+async function fitProfilePhotoForUpload(dataUrl) {
+  let out = dataUrl;
+  for (const [edge, quality] of PROFILE_PHOTO_FIT_STEPS) {
+    out = await downscaleProfilePhoto(dataUrl, edge, quality);
+    if (profilePhotoUploadable(out)) return out;
+    // Decoding failed outright: every further step would fail the same way.
+    if (out === dataUrl) break;
+  }
+  return out;
+}
+
 function ProfileSetupScreen({ onBack, onSubmit, photo, onChangePhoto, docType, onSelectDocType, name, onChangeName }) {
   const fileInputRef = useRef4(null);
   const isDefaultPhoto = photo === G_LOGO_DATA_URI;
@@ -126,45 +203,11 @@ function ProfileSetupScreen({ onBack, onSubmit, photo, onChangePhoto, docType, o
     { key: "license", label: "Driving Licence", Icon: Car2 },
     { key: "passport", label: "Passport", Icon: Globe2 }
   ];
-  // Downscaled before it is ever handed upward. A phone camera photo is
-  // 3-8 MB, and base64 inflates that by a third — well past the ~5 MB
-  // localStorage quota the profile is saved into. The write throws
-  // QuotaExceededError, which is swallowed, so the photo would appear to
-  // be accepted and then silently be gone on the next load; a near-quota
-  // write can also crowd out the saved session, which shares the same
-  // origin storage. Now that a photo is mandatory, that was the common
-  // case rather than an edge one.
-  //
-  // 512px on the long edge at JPEG 0.82 lands around 40-60 KB, which is
-  // far more than a 96px avatar needs. Anything that fails to decode
-  // falls back to the original data URL rather than losing the pick.
-  const PHOTO_MAX_EDGE = 512;
-  const downscalePhoto = (dataUrl) =>
-    new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(img.width, img.height));
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.round(img.width * scale));
-          canvas.height = Math.max(1, Math.round(img.height * scale));
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL("image/jpeg", 0.82));
-        } catch (err) {
-          // Tainted canvas, no 2d context, or a browser that refuses the
-          // export — the original still works, it just costs more storage.
-          resolve(dataUrl);
-        }
-      };
-      img.onerror = () => resolve(dataUrl);
-      img.src = dataUrl;
-    });
   const handleFile = (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = async () => onChangePhoto(await downscalePhoto(reader.result));
+    reader.onload = async () => onChangePhoto(await fitProfilePhotoForUpload(reader.result));
     reader.readAsDataURL(file);
     e.target.value = "";
   };

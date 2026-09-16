@@ -5,6 +5,7 @@ import {
   Check,
   Share2
 } from "lucide-react";
+import { Link2 as ReceiptLinkIcon } from "lucide-react";
 
 
 // src/components/dialogs/ReceiptModal.jsx
@@ -52,10 +53,29 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // that flipped to a success state on tap would claim the report had gone
   // somewhere when the person had just cancelled it.
   const [auditBusy, setAuditBusy] = useState11(false);
+  // The receipt-image share. Busy while the picture is drawn and handed to
+  // the share sheet (the button is disabled meanwhile, so a double tap cannot
+  // draw two); `shareFeedback` is the one line saying what happened.
+  const [imageShareBusy, setImageShareBusy] = useState11(false);
+  const [shareFeedback, setShareFeedback] = useState11("");
+  // The link share's own tick, apart from the Transaction ID copy's.
+  const [linkCopied, setLinkCopied] = useState11(false);
+  // Who is looking at this receipt: their Gloobal ID for the image's
+  // "Sent by / Received by" line. Read from the stored session, the same
+  // place every other screen asks.
+  const viewerSymbolId = useCurrentSymbolId();
+  // The counterparty's photo, read from the server by their Gloobal ID and
+  // held only in profileAvatar.jsx's in-memory cache — never copied onto the
+  // receipt, the history row, or anything persisted. A coin buy or sell has
+  // no counterparty id (the other side is the reserve, not a person), and a
+  // simulated payment's payee is not a registered account, so neither asks.
+  const counterpartyPhotoId = receipt && receipt.id && receipt.status !== "simulated" ? String(receipt.id) : "";
+  const { photo: counterpartyPhoto, loading: counterpartyPhotoLoading } = useCounterpartyPhoto(counterpartyPhotoId);
   useEffect10(() => {
     if (receipt) {
       setReceiptTab(receipt.kind === "share" ? "share" : "payment");
       setReportSubmitted(false);
+      setShareFeedback("");
     }
   }, [receipt]);
   const [txnColorOffset, setTxnColorOffset] = useState11(0);
@@ -198,6 +218,20 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   const shareAmount = isShareReceipt
     ? (Number(receipt.shareAmount) || Number(receipt.amount) || 0)
     : shareAmountBase * ((receipt.shareRate ?? 0) / 100);
+  // What the share tab DISPLAYS.
+  //
+  // On a PAYMENT receipt the row carries the share the server actually
+  // recorded (the share leg's amount straight after paying, cashbackCredit /
+  // cashback on a restored row), and that figure wins. The multiplication
+  // above is only the fallback for a receipt with no recorded share — a
+  // payment this device settled locally — because it rounds differently from
+  // the server's minor-unit figure. A recorded 0 counts as "not recorded":
+  // every builder defaults an absent share to 0, and a 0% payment has no
+  // share tab to show it on anyway.
+  const recordedShareAmount = Number(receipt.shareAmount);
+  const shownShareAmount = !isShareReceipt && Number.isFinite(recordedShareAmount) && recordedShareAmount > 0
+    ? recordedShareAmount
+    : shareAmount;
   // The rate to DISPLAY. On a share receipt it comes off the payment, for
   // the reason historyUtils spells out: the share row's own rate is zeroed
   // at the boundary by design, so reading it here would print 0.00%.
@@ -345,10 +379,85 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       { title: "Gloobal receipt", text, url: receiptShareUrl },
       `${text}\n${receiptShareUrl}`,
       () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1400);
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 1400);
       }
     );
+  };
+  // ── Share the receipt as a PICTURE ─────────────────────────────────────
+  //
+  // The Share button on the amount card hands the phone's share sheet a PNG
+  // of the receipt (features/receipts/receiptImage.js) — the thing people
+  // actually forward after paying someone — or downloads it where a browser
+  // cannot share files. The text-and-link share above is still one tap away
+  // on the Transaction ID box, and is what runs if drawing the image fails.
+  //
+  // The image describes the TAB being looked at, the same rule the link
+  // follows: a payment receipt's Creator Share tab shares the share, not the
+  // payment it came from, and vice versa on a share receipt. Every figure on
+  // the derived documents below is one this component already shows on that
+  // tab; nothing new is computed for the picture.
+  const imageReceiptForTab = () => {
+    if (isCoinReceipt || onShareTab === isShareReceipt) return receipt;
+    const noConversion = { senderAmount: null, senderSideCurrency: null, receiverAmount: null, receiverSideCurrency: null, fxRate: null };
+    if (onShareTab) {
+      return {
+        ...receipt,
+        ...noConversion,
+        kind: "share",
+        direction: shareIsCredit ? "received" : "sent",
+        amount: shownShareAmount,
+        shareAmount: shownShareAmount,
+        currencyCode: shareCurrency,
+        txnId: shareSideTxnId,
+        receiptCode: receipt.shareReceiptCode || ""
+      };
+    }
+    if (!paymentKnown) return receipt;
+    return {
+      ...receipt,
+      ...noConversion,
+      kind: "payment",
+      direction: paymentIsSent ? "sent" : "received",
+      amount: paymentAmount,
+      currencyCode: paymentCurrency,
+      txnId: paymentSideTxnId,
+      receiptCode: receipt.sourceReceiptCode || ""
+    };
+  };
+  const handleShareReceiptImage = async () => {
+    if (imageShareBusy) return;
+    setImageShareBusy(true);
+    setShareFeedback("");
+    let outcome = "failed";
+    try {
+      const session = typeof gloobalSessionLoad === "function" ? gloobalSessionLoad() : null;
+      const storedName = session && session.user && typeof session.user.fullName === "string" ? session.user.fullName.trim() : "";
+      // Accounts made before the name step carry their mobile number as
+      // fullName; a phone number is not a name to print on a shared picture.
+      const viewerName = storedName && !/^\+?\d[\d\s-]*$/.test(storedName) ? storedName : "";
+      outcome = await shareReceiptImage(imageReceiptForTab(), {
+        viewerName,
+        viewerSymbolId: viewerSymbolId || "",
+        // The photo this screen already loaded. `undefined` while it is still
+        // loading lets shareReceiptImage wait on the same cached request
+        // instead of drawing the fallback; null means "no photo", said once.
+        photo: !counterpartyPhotoId ? null : counterpartyPhotoLoading ? undefined : counterpartyPhoto
+      });
+    } catch (e) {
+      outcome = "failed";
+    } finally {
+      setImageShareBusy(false);
+    }
+    if (outcome === "shared") setShareFeedback("Receipt image shared.");
+    else if (outcome === "downloaded") setShareFeedback("Receipt image saved to your downloads.");
+    else if (outcome === "cancelled") setShareFeedback("");
+    else {
+      // Only a real failure falls back to the text and link — a person who
+      // dismissed the share sheet did not ask for a second one.
+      setShareFeedback("Couldn't make the receipt image, so the receipt link was shared instead.");
+      handleShareTxnId();
+    }
   };
   return <div
     role="dialog"
@@ -442,8 +551,11 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       zIndex: 1
     }}
   ><GH2HFlipCircle size={22} /></div><button
-    onClick={handleShareTxnId}
-    aria-label="Share transaction"
+    onClick={handleShareReceiptImage}
+    aria-label="Share receipt image"
+    aria-busy={imageShareBusy}
+    disabled={imageShareBusy}
+    data-testid="receipt-share-image"
     className="v2-tap"
     style={{
       position: "absolute",
@@ -458,7 +570,8 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      cursor: "pointer",
+      cursor: imageShareBusy ? "default" : "pointer",
+      opacity: imageShareBusy ? 0.5 : 1,
       zIndex: 1
     }}
   ><Share2 size={13} color={T.inkSoft} /></button><div style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, minHeight: onShareTab ? 0 : void 0 }}>{!onShareTab ? (isCoinReceipt
@@ -496,7 +609,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        would be quietly wrong for every share that rounded. */
   }This payment isn't on this device. The Creator Share above is complete.</div>) : <div
     style={{
-      fontSize: receiptAmountFontSize(`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shareAmount, shareCurrency)}`, 27),
+      fontSize: receiptAmountFontSize(`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shownShareAmount, shareCurrency)}`, 27),
       fontWeight: 800,
       color: tint,
       fontFamily: T.fontDisplay,
@@ -504,7 +617,11 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       overflowWrap: "anywhere"
     }}
     data-testid="receipt-hero-share"
-  >{shareIsCredit ? "+" : "\u2212"}{fmtMoney(shareAmount, shareCurrency)}</div>}</div></div><div style={{ borderTop: `1.5px dashed ${T.line}`, margin: "18px 0" }} />{
+  >{shareIsCredit ? "+" : "\u2212"}{fmtMoney(shownShareAmount, shareCurrency)}</div>}</div></div>{shareFeedback && <div
+    role="status"
+    data-testid="receipt-share-feedback"
+    style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textAlign: "center", lineHeight: 1.4 }}
+  >{shareFeedback}</div>}<div style={{ borderTop: `1.5px dashed ${T.line}`, margin: "18px 0" }} />{
     /* Two receipts, one toggle. Payment always exists. Creator
        Share exists whenever the payment actually carried one — a
        share leg minted server-side, or a non-zero rate applied by
@@ -580,7 +697,13 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        The flag no longer hangs off this box's top edge: it is on the
        tab row above, once for the whole receipt. The top padding is
        back to 14 because there is nothing overlapping it any more. */
-  }<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow
+  }<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}>{
+    /* The counterparty's face, beside the rows that name them. Only when
+       there is a Gloobal ID to read it by (see counterpartyPhotoId): the
+       fallback disc on a coin buy would put a person-shaped mark where the
+       other side is the reserve. Drawn straight away with the fallback and
+       swapped for the photo when it lands, so the receipt never waits. */
+  }{counterpartyPhotoId && <span data-testid="receipt-counterparty-avatar" style={{ display: "flex", flexShrink: 0 }}><ProfileAvatar photo={counterpartyPhoto} name={receipt.name} size={48} /></span>}<div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minWidth: 0 }}><ReceiptRow
     testId="receipt-counterparty"
     // paymentIsSent, not isSent. This tab describes the PAYMENT, and on a
     // Creator Share receipt `direction` describes the share — so a share Jio
@@ -594,7 +717,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     label={<GloobalWordmark suffix=" ID" />}
     value={<ColoredGloobalId id={receipt.id} />}
     mono
-  />}</div>{
+  />}</div></div>{
     /* Box 1b — the holder, and the other leg of a coin exchange.
 
        Only on a coin receipt, and it carries the three facts a coin buy
@@ -707,7 +830,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        currency. */
   }<ReceiptRow
     label="Amount"
-    value={`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shareAmount, shareCurrency)}`}
+    value={`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shownShareAmount, shareCurrency)}`}
     accent
   /></div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow
     label="From payment"
@@ -745,7 +868,32 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       letterSpacing: 0.4,
       whiteSpace: "nowrap"
     }}
-  >{showingShare ? "Share transaction ID" : "Transaction ID"}</span><button
+  >{showingShare ? "Share transaction ID" : "Transaction ID"}</span>{
+    /* The text-and-link share: the summary plus the /t/<code> link, through
+       the phone's share sheet or the clipboard. Mirrors the copy button on
+       the opposite corner. The Share button on the amount card sends the
+       receipt as a picture instead. */
+  }<button
+    onClick={handleShareTxnId}
+    aria-label="Share receipt link"
+    data-testid="receipt-share-link"
+    className="v2-tap"
+    style={{
+      position: "absolute",
+      top: 0,
+      left: 14,
+      transform: "translateY(-50%)",
+      width: 28,
+      height: 28,
+      borderRadius: "50%",
+      border: `1px solid ${T.line}`,
+      background: T.surfaceAlt,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer"
+    }}
+  >{linkCopied ? <Check size={13} color={T.positive} /> : <ReceiptLinkIcon size={13} color={T.inkSoft} />}</button><button
     onClick={handleCopyTxnId}
     aria-label="Copy transaction ID"
     className="v2-tap"

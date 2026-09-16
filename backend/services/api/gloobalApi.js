@@ -1159,6 +1159,81 @@ var GloobalApi = {
     };
   },
 
+  // --- Profile photos ---------------------------------------------------
+  //
+  // One copy per account, held on the server (ProfilePhoto). Nothing about a
+  // photo is ever copied onto a transaction, receipt or notification — the
+  // receipt and the scan card read the counterparty's photo through
+  // getUserPhoto at the moment they draw it. Face-verification data is a
+  // different thing entirely and is not reachable from here.
+
+  // GET /api/users/:symbolId/photo → the account's photo as a data URL, or
+  // null when it has none. A 404 (no account under that CURRENT Gloobal ID)
+  // is also null: "no photo to show" is the only thing a caller can do with
+  // it. Every other failure throws, so a caller that caches can tell "this
+  // person has no photo" from "the server could not be asked".
+  async getUserPhoto(symbolId) {
+    try {
+      const result = await gloobalApiClient.get(`/api/users/${encodeURIComponent(symbolId)}/photo`);
+      const photo = result && result.photo;
+      return typeof photo === "string" && photo.startsWith("data:image/") ? photo : null;
+    } catch (err) {
+      if (err instanceof GloobalApiError && err.status === 404) return null;
+      throw err;
+    }
+  },
+
+  // PUT /api/profile/:symbolId/photo — a JPEG/PNG data URL, or null to
+  // remove the photo. Only the account itself may set it; the server checks.
+  async setProfilePhoto(symbolId, photoDataUrlOrNull) {
+    const result = await gloobalApiClient.put(`/api/profile/${encodeURIComponent(symbolId)}/photo`, {
+      photo: photoDataUrlOrNull || null
+    });
+    return { hasPhoto: Boolean(result && result.hasPhoto) };
+  },
+
+  // --- Notifications ----------------------------------------------------
+  //
+  // Server-held, per account, created by the payment route after a transfer
+  // commits. Every one of these is scoped by the bearer token, so none of
+  // them takes a Gloobal ID.
+
+  // GET /api/notifications?limit=&before= — newest first.
+  async getNotifications({ limit, before } = {}) {
+    const params = [];
+    if (limit !== undefined && limit !== null) params.push(`limit=${encodeURIComponent(limit)}`);
+    if (before) params.push(`before=${encodeURIComponent(before instanceof Date ? before.toISOString() : before)}`);
+    const result = await gloobalApiClient.get(`/api/notifications${params.length ? `?${params.join("&")}` : ""}`);
+    return {
+      notifications: Array.isArray(result && result.notifications) ? result.notifications : [],
+      unreadCount: Number(result && result.unreadCount) || 0
+    };
+  },
+
+  // GET /api/notifications/unread-count → number.
+  async getUnreadNotificationCount() {
+    const result = await gloobalApiClient.get("/api/notifications/unread-count");
+    return Number(result && result.unreadCount) || 0;
+  },
+
+  // PATCH /api/notifications/:id/read — idempotent.
+  async markNotificationRead(id) {
+    const result = await gloobalApiClient.patch(`/api/notifications/${encodeURIComponent(id)}/read`, {});
+    return {
+      notification: (result && result.notification) || null,
+      unreadCount: Number(result && result.unreadCount) || 0
+    };
+  },
+
+  // POST /api/notifications/read-all.
+  async markAllNotificationsRead() {
+    const result = await gloobalApiClient.post("/api/notifications/read-all", {});
+    return {
+      updated: Number(result && result.updated) || 0,
+      unreadCount: Number(result && result.unreadCount) || 0
+    };
+  },
+
   // --- Session (local, not server-issued) -------------------------------
 
   saveSession: gloobalSessionSave,

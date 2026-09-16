@@ -149,7 +149,22 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = nul
   // which is what assuming the local currency did — produced a second wrong
   // number underneath the first one.
   const localCurrency = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
-  const rowCurrency = t.currency || localCurrency;
+  // The recorded conversion figures, null-safe: Number(null) is 0, and a
+  // missing figure must stay missing rather than become a zero.
+  const recordedFigure = (value) =>
+    value != null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+  const recordedSenderAmount = recordedFigure(t.senderAmount);
+  const recordedReceiverAmount = recordedFigure(t.receiverAmount);
+  // A payment I SENT is headlined with what the server recorded leaving my
+  // account, when the row carries it. For a restored row that is the same
+  // figure as t.amount; for a row this session wrote straight after paying it
+  // is the server's debit rather than this device's own estimate of it, so
+  // the receipt reopened from History matches the one shown at payment time.
+  const recordedHeadline = t.kind !== "share" && direction === "sent" &&
+    recordedSenderAmount != null && t.senderSideCurrency
+    ? { amount: recordedSenderAmount, currency: t.senderSideCurrency }
+    : null;
+  const rowCurrency = (recordedHeadline && recordedHeadline.currency) || t.currency || localCurrency;
   // The counterparty's own country, and from it their currency.
   //
   // Resolved from the ISO code the row now carries (see mapServerTransaction)
@@ -188,7 +203,7 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = nul
     // guess a rate for; it's the same original payment's Creator
     // Share tab, read from the receiving side.
     shareRate: t.shareRate ?? (direction === "sent" ? randomShareRate() : null),
-    amount: t.amount,
+    amount: recordedHeadline ? recordedHeadline.amount : t.amount,
     // The row's own, not the account's — same rule as the list.
     //
     // DEPRECATED as a rendering input. Amounts are now built by fmtMoney from
@@ -216,15 +231,15 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = nul
     // All four are null on a row that predates the fields or never crossed a
     // border; ReceiptModal draws the section only when both currencies are
     // known AND differ.
-    senderAmount: Number.isFinite(Number(t.senderAmount)) ? Number(t.senderAmount) : null,
+    senderAmount: recordedSenderAmount,
     senderSideCurrency: t.senderSideCurrency || null,
-    receiverAmount: Number.isFinite(Number(t.receiverAmount)) ? Number(t.receiverAmount) : null,
+    receiverAmount: recordedReceiverAmount,
     receiverSideCurrency: t.receiverSideCurrency || null,
     // Converts 1 unit of the RECEIVER's currency into the SENDER's — the
     // direction the settlement engine and the cashback split are built
     // around. Carried in that direction and displayed in it; see the note in
     // ReceiptModal on why it is not inverted for readability.
-    fxRate: Number.isFinite(Number(t.fxRate)) ? Number(t.fxRate) : null,
+    fxRate: recordedFigure(t.fxRate),
     method: HISTORY_METHOD_META[t.method]?.label,
     date: t.date,
     time: t.time || formatClockTime(/* @__PURE__ */ new Date()),

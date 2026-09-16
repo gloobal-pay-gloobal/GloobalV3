@@ -157,6 +157,10 @@ const FRONTEND_MODULES = [
   "components/cards/misc.jsx",
   "components/charts/ghRing.jsx",
   "components/common/flipIcons.jsx",
+  // The round profile photo with its Gloobal-logo fallback, and the signed-in
+  // cache of counterparties' photos read from the server. Ahead of the scan
+  // card (App.jsx), the receipt and the receipt image, which all draw one.
+  "components/common/profileAvatar.jsx",
   // The static receive QR card. Needs gloobalPayLink.js (backend) and
   // G_LOGO_DATA_URI; ahead of Dashboard, which will show it.
   "components/common/gloobalReceiveQrCard.jsx",
@@ -171,6 +175,9 @@ const FRONTEND_MODULES = [
   // A Gloobal Coin buy or sell, as a receipt. Ahead of ReceiptModal, which
   // renders it, and ahead of the Coin screen, which opens it.
   "features/receipts/coinReceipt.js",
+  // The shareable receipt image (PNG), branding drawn inside it. Ahead of
+  // ReceiptModal, which shares it.
+  "features/receipts/receiptImage.js",
   "components/dialogs/ReceiptModal.jsx",
   // The screen between "verified" and the receipt. Renders the
   // transactionStatus SendMoney was already tracking and nothing drew.
@@ -181,6 +188,9 @@ const FRONTEND_MODULES = [
   "components/dialogs/helpSheets.jsx",
   // The blocking screen shown when a payment stops for want of a location.
   "components/dialogs/LocationRequiredModal.jsx",
+  // The in-app notification list, read from the server. Rendered from the
+  // Dashboard (below).
+  "components/dialogs/NotificationsSheet.jsx",
   "features/assets/AssetsScreen.jsx",
   "features/essentials/EssentialsScreen.jsx",
   "features/history/TransactionRow.jsx",

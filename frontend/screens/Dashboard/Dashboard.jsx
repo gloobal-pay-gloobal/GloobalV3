@@ -277,7 +277,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     const file = e.target.files && e.target.files[0];
     if (!file || !onChangeProfilePhoto) return;
     const reader = new FileReader();
-    reader.onload = () => onChangeProfilePhoto(reader.result);
+    // Downscaled to fit the server's photo cap, exactly as the registration
+    // step does. This used to hand the raw camera photo straight up — a
+    // multi-megabyte data URL that overflowed the localStorage cache and
+    // could never be accepted as the account's one server copy.
+    reader.onload = async () => onChangeProfilePhoto(await fitProfilePhotoForUpload(reader.result));
     reader.readAsDataURL(file);
     e.target.value = "";
   };

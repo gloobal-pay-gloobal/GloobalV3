@@ -11,11 +11,45 @@
 // They are two different movements between two different pairs of parties
 // (me -> Jio, then Jio -> me) and a reference that cannot tell them apart
 // cannot be used to look either of them up.
-function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, payMethod, now, shareRatePercent, ledgerRecordId, txnId, shareTxnId = "", shareAmount = 0, receiptCode = "", shareReceiptCode = "" }) {
+// ── `recorded`: what the SERVER stored for this payment ─────────────────────
+//
+// { debitAmount, senderCurrency, destinationAmount, destinationCurrency,
+//   fxRate } off the send response (see handleRemoteSend in App.jsx), or null
+// for a payment that stayed local. These are receipt DISPLAY figures only:
+// nothing here feeds the local ledger's debit, the toast, or the history
+// row's `amount` — those keep the figures they always had.
+//
+// When present they are what the receipt says: the headline is what actually
+// left the sender (debitAmount, in senderCurrency), and the conversion block
+// shows the server's two sides and its rate — the same five facts
+// mapServerTransaction reads back off the history row, so the receipt shown
+// straight after paying and the same receipt reopened later cannot disagree.
+// When absent, the conversion fields stay null and ReceiptModal draws no
+// conversion block at all rather than one worked out with a client rate.
+function snapshotRecordedFigure(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, payMethod, now, shareRatePercent, ledgerRecordId, txnId, shareTxnId = "", shareAmount = 0, receiptCode = "", shareReceiptCode = "", recorded = null }) {
   const resolvedTxnId = txnId || genTxnId();
   const txnTime = formatClockTime(now);
   const txnShareRate = shareRatePercent ?? 0;
   const methodKey = !payMethod ? "bank" : payMethod.includes("PayLater") ? "paylater" : payMethod.includes("Coin") ? "coin" : "bank";
+  const rec = recorded || {};
+  const recordedDebit = snapshotRecordedFigure(rec.debitAmount);
+  const recordedSenderCurrency = recordedDebit != null && rec.senderCurrency ? String(rec.senderCurrency) : null;
+  const recordedDestination = snapshotRecordedFigure(rec.destinationAmount);
+  const recordedDestinationCurrency = recordedDestination != null && rec.destinationCurrency ? String(rec.destinationCurrency) : null;
+  const recordedFx = {
+    senderAmount: recordedSenderCurrency ? recordedDebit : null,
+    senderSideCurrency: recordedSenderCurrency,
+    receiverAmount: recordedDestinationCurrency ? recordedDestination : null,
+    receiverSideCurrency: recordedDestinationCurrency,
+    fxRate: recordedSenderCurrency && recordedDestinationCurrency ? snapshotRecordedFigure(rec.fxRate) : null
+  };
+  const headlineCurrency = recordedSenderCurrency || sender.currency || "USD";
   const receipt = {
     direction: "sent",
     // Defensive defaults on every field the receipt renders. A single
@@ -37,10 +71,13 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     phone: receiver.phone || "",
     shareRate: txnShareRate,
     // "You send" — the exact amount debited, in the sender's own
-    // currency, converted from what was typed.
-    amount: Number(convertedAmount) || 0,
-    currencySymbol: CURRENCY_SYMBOL[sender.currency] || "",
-    currencyCode: sender.currency || "USD",
+    // currency. The server's recorded debit when it confirmed one, otherwise
+    // this screen's own figure (a local simulation has no other).
+    amount: recordedSenderCurrency ? recordedDebit : Number(convertedAmount) || 0,
+    currencySymbol: CURRENCY_SYMBOL[headlineCurrency] || "",
+    currencyCode: headlineCurrency,
+    // The recorded conversion, or nulls (see `recorded` above).
+    ...recordedFx,
     // "They receive" — the amount actually typed, in the receiver's
     // currency (what they asked for).
     convertedAmount: parseFloat(amount) || null,
@@ -84,6 +121,10 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     shareAmount: Number(shareAmount) || 0,
     receiptCode: receiptCode || "",
     shareReceiptCode: shareReceiptCode || "",
+    // Carried so this payment reopened from History in the same session
+    // shows the same recorded conversion as the receipt did. Display fields
+    // only — `amount` above is untouched.
+    ...recordedFx,
     ledgerRecordId: ledgerRecordId ?? null
   };
   return { receipt, historyEntry };

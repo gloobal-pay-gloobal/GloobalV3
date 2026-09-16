@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useState as useState19, useEffect as useEffect15, useRef as useRef13, useCallback as useCallback11 } from "react";
+import { useState as useState19, useEffect as useEffect15, useRef as useRef13, useCallback as useCallback11, useEffect as useEffect30, useRef as useRef22 } from "react";
 import {
   ChevronLeft as ChevronLeft4,
   Lock as Lock7,
@@ -52,13 +52,12 @@ function ScanSendButton({ onClick, overVideo = false }) {
   ><ArrowUpRight5 size={17} />Send</button>;
 }
 
-// Where the profile picture lives. Locally, keyed by Gloobal ID, because
-// the backend has nowhere to put it: PUT /api/profile/:symbolId accepts
-// `fullName` and `email` and nothing else, and inventing a photo field
-// client-side would just be a body the server discards. The name is
-// stored alongside it purely so a restored session can show both without
-// waiting on a network round trip — the backend remains the authority on
-// the name itself.
+// The local CACHE of the profile picture, keyed by Gloobal ID. The photo
+// itself now has one home: the server (PUT /api/profile/:symbolId/photo),
+// which is what lets somebody scanning this account's QR see it — see
+// syncOwnProfilePhoto below. The copy here is so a restored session can show
+// the name and photo without waiting on a network round trip; the backend
+// remains the authority on both.
 var GLOOBAL_PROFILE_KEY_PREFIX = "gloobal.profile.";
 
 // Every localStorage access is guarded: it throws outright in Safari
@@ -87,6 +86,127 @@ function loadLocalProfile(symbolId) {
   }
 }
 
+// ── The account's own photo, on the server ─────────────────────────────────
+//
+// One copy per account lives on the server; the localStorage profile above is
+// a cache of it. Nothing here ever blocks a sign-in or a screen, and nothing
+// here signs anyone out by itself: a failed read or write (Render cold start,
+// offline, 5xx — status 0 or otherwise) is swallowed and retried at the next
+// sign-in. Only a 401 ends a session, and that is httpClient's decision about
+// the token, not this code's about a photo.
+//
+// "Pending" = the person's latest choice (a photo, or no photo) has not yet
+// been confirmed by the server. While it is set, the local choice wins over
+// whatever the server holds; once the server accepts it, the server copy is
+// the one every device adopts.
+var GLOOBAL_PROFILE_PHOTO_PENDING_PREFIX = "gloobal.profilePhotoPending.";
+// symbolId → in-flight upload promise, so a sync never races a write.
+var OWN_PROFILE_PHOTO_PUSHES = new Map();
+
+function ownProfilePhotoPending(symbolId) {
+  if (!symbolId) return false;
+  try {
+    return window.localStorage.getItem(GLOOBAL_PROFILE_PHOTO_PENDING_PREFIX + symbolId) === "1";
+  } catch (e) {
+    return false;
+  }
+}
+
+function setOwnProfilePhotoPending(symbolId, pending) {
+  if (!symbolId) return;
+  try {
+    if (pending) window.localStorage.setItem(GLOOBAL_PROFILE_PHOTO_PENDING_PREFIX + symbolId, "1");
+    else window.localStorage.removeItem(GLOOBAL_PROFILE_PHOTO_PENDING_PREFIX + symbolId);
+  } catch (e) {
+    // No storage: the upload below is still attempted; it just is not
+    // remembered for a retry.
+  }
+}
+
+// A real photo, or null. The Gloobal logo placeholder is "no photo".
+function ownRealProfilePhoto(photo) {
+  return profileAvatarIsPhoto(photo) ? photo : null;
+}
+
+// Best-effort write of the account's photo (or its removal, for null).
+// Resolves true when the server accepted it; never rejects.
+function pushOwnProfilePhoto(symbolId, photo) {
+  if (!symbolId) return Promise.resolve(false);
+  const real = ownRealProfilePhoto(photo);
+  // A picture that could not be downscaled under the cap would only be
+  // refused; it stays a local-only picture rather than a retry loop.
+  if (real && !profilePhotoUploadable(real)) {
+    setOwnProfilePhotoPending(symbolId, false);
+    return Promise.resolve(false);
+  }
+  setOwnProfilePhotoPending(symbolId, true);
+  // No token yet (or any more): left pending for the next signed-in sync.
+  if (typeof gloobalAuthToken !== "function" || !gloobalAuthToken()) return Promise.resolve(false);
+  const push = Promise.resolve()
+    .then(() => GloobalApi.setProfilePhoto(symbolId, real))
+    .then(
+      () => {
+        if (OWN_PROFILE_PHOTO_PUSHES.get(symbolId) === push) setOwnProfilePhotoPending(symbolId, false);
+        // Surfaces that read this account's photo through the counterparty
+        // cache see the new one at once rather than after a reload.
+        COUNTERPARTY_PHOTO_CACHE.set(symbolId, real);
+        return true;
+      },
+      () => false
+    )
+    .finally(() => {
+      if (OWN_PROFILE_PHOTO_PUSHES.get(symbolId) === push) OWN_PROFILE_PHOTO_PUSHES.delete(symbolId);
+    });
+  OWN_PROFILE_PHOTO_PUSHES.set(symbolId, push);
+  return push;
+}
+
+// Once per signed-in session: reconcile the local cache with the server.
+// Resolves to a photo the screen should now show, or null for "leave it".
+// Rejects only when the server could not be read, so the caller can retry.
+async function syncOwnProfilePhoto(symbolId) {
+  if (!symbolId) return null;
+  if (OWN_PROFILE_PHOTO_PUSHES.has(symbolId)) await OWN_PROFILE_PHOTO_PUSHES.get(symbolId);
+  const local = loadLocalProfile(symbolId);
+  const localPhoto = ownRealProfilePhoto(local && local.photo);
+  // The person's own latest choice has not reached the server yet: send it.
+  if (ownProfilePhotoPending(symbolId)) {
+    await pushOwnProfilePhoto(symbolId, localPhoto);
+    return null;
+  }
+  const serverPhoto = await GloobalApi.getUserPhoto(symbolId);
+  // A change made while that read was in flight wins over it.
+  if (ownProfilePhotoPending(symbolId) || OWN_PROFILE_PHOTO_PUSHES.has(symbolId)) return null;
+  if (serverPhoto) {
+    // The server copy is the photo: adopt it and cache it locally.
+    if (!local || local.photo !== serverPhoto) {
+      persistLocalProfile(symbolId, (local && local.name) || "", serverPhoto);
+    }
+    COUNTERPARTY_PHOTO_CACHE.set(symbolId, serverPhoto);
+    return serverPhoto;
+  }
+  if (!localPhoto) return null;
+  // A photo that only ever lived on this device (chosen before the server
+  // held photos): upload it, shrinking it first if it predates downscaling.
+  let fitted = localPhoto;
+  if (!profilePhotoUploadable(fitted)) {
+    fitted = await fitProfilePhotoForUpload(localPhoto);
+    if (fitted !== localPhoto && profilePhotoUploadable(fitted)) {
+      persistLocalProfile(symbolId, (local && local.name) || "", fitted);
+    }
+  }
+  await pushOwnProfilePhoto(symbolId, fitted);
+  return fitted !== localPhoto ? fitted : null;
+}
+
+// The payee's photo on the scan confirm card. Read from the server by the
+// Gloobal ID the SERVER resolved — never from anything in the QR — and drawn
+// with the fallback straight away, so neither the card nor Pay waits on it.
+function ScanPayeeAvatar({ gloobalId, name }) {
+  const { photo } = useCounterpartyPhoto(gloobalId);
+  return <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><ProfileAvatar photo={photo} name={name} size={72} /></div>;
+}
+
 // Turns one row of GET /api/transactions/:symbolId into the shape this
 // app's history list renders. The backend's projection is already
 // per-viewer — `direction` and `counterparty` are computed relative to the
@@ -98,6 +218,15 @@ function loadLocalProfile(symbolId) {
 // no concept of PayLater vs bank), and cashback is withheld per
 // transaction but not returned on this projection, so shareRate is 0
 // rather than a guess.
+// A figure the server recorded, or null. `Number(null)` is 0, which is
+// finite — so a plain isFinite check would turn "the server did not say"
+// into "the server said zero".
+function gloobalRecordedFigure(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function mapServerTransaction(row, viewerSymbolId) {
   const created = row.createdAt ? new Date(row.createdAt) : new Date();
   const counterparty = row.counterparty || {};
@@ -147,6 +276,17 @@ function mapServerTransaction(row, viewerSymbolId) {
   // Is this row the Creator Share leg itself, rather than a payment that
   // carried one? Read from the server's own `type`, which exists for this.
   const isShareLeg = row.type === "share";
+  // Whether this row can state both recorded sides of its conversion — see
+  // senderAmount/receiverAmount below.
+  // Local rather than gloobalRecordedFigure: this function is also evaluated
+  // on its own, sliced out of this file, by tests/cross-border-history.
+  const recordedFigureKnown = (value) => value != null && value !== "" && Number.isFinite(Number(value));
+  const recordedSidesKnown =
+    !isShareLeg &&
+    recordedFigureKnown(row.debitAmount) &&
+    recordedFigureKnown(row.amount) &&
+    Boolean(row.senderCurrency) &&
+    Boolean(row.currency);
   const counterpartyIso = String(counterparty.countryIso || "").toUpperCase();
   const counterpartyFlag = counterpartyIso
     ? (COUNTRY_BY_ISO[counterpartyIso] && COUNTRY_BY_ISO[counterpartyIso].flag) || isoToFlag(counterpartyIso)
@@ -171,6 +311,27 @@ function mapServerTransaction(row, viewerSymbolId) {
     counterpartyAmount: Number(row.amount) || 0,
     counterpartyCurrency: row.currency || null,
     fxRate: Number.isFinite(Number(row.fxRate)) ? Number(row.fxRate) : null,
+    // ── Both sides of the conversion, as the server recorded them ─────────
+    //
+    // For the receipt's conversion block, which buildHistoryReceipt reads
+    // under exactly these names. Nothing was mapped here before, so every
+    // receipt reopened from history reached ReceiptModal with four nulls and
+    // the block could never draw — a cross-border payment reopened later
+    // looked domestic.
+    //
+    // Sender side: debitAmount/senderCurrency. Receiver side: amount/currency
+    // (the receiver's face value). Both are carried for EITHER viewer — the
+    // payee's receipt of a cross-border payment shows the same two recorded
+    // facts the payer's does.
+    //
+    // Null, not guessed, when the row cannot state them: a row written before
+    // debitAmount was stored gets no conversion block at all, and neither does
+    // a Creator Share leg, which is a movement of its own figure in one
+    // currency and not a conversion of the payment it came from.
+    senderAmount: Number.isFinite(Number(row.debitAmount)) && recordedSidesKnown ? Number(row.debitAmount) : null,
+    senderSideCurrency: row.senderCurrency || null,
+    receiverAmount: Number.isFinite(Number(row.amount)) && recordedSidesKnown ? Number(row.amount) : null,
+    receiverSideCurrency: row.currency || null,
     status: row.status || "completed",
     direction: row.direction === "received" ? "received" : "sent",
     // A Creator Share leg is a real movement, not a payment.
@@ -640,8 +801,19 @@ function GloobalId() {
         // figure is the receiver's side, and a row holding it without a
         // currency is what made a ₹200 request appear as −£200.00 in a UK
         // account's history.
-        debitAmount: Number.isFinite(Number(result && result.debitAmount)) ? Number(result.debitAmount) : null,
-        senderCurrency: (result && result.senderCurrency) || null
+        debitAmount: gloobalRecordedFigure(result && result.debitAmount),
+        senderCurrency: (result && result.senderCurrency) || null,
+        // The rest of what the server recorded, passed through untouched for
+        // the RECEIPT (see buildTransactionSnapshot's `recorded`): the
+        // receiver's credited face value, its currency, and the rate in the
+        // direction it was stored — 1 unit of destinationCurrency =
+        // fxRate units of senderCurrency. Null when the server did not say,
+        // and the receipt then shows no conversion rather than inventing one.
+        destinationAmount: gloobalRecordedFigure(result && result.destinationAmount),
+        destinationCurrency: (result && result.destinationCurrency) || null,
+        fxRate: gloobalRecordedFigure(result && result.fxRate),
+        fxRateSource: (result && result.fxRateSource) || null,
+        payeeReceives: gloobalRecordedFigure(result && result.payeeReceives)
       };
     } catch (err) {
       return { ok: false, reason: err.message };
@@ -988,6 +1160,13 @@ function GloobalId() {
   // A receipt link someone was sent. Read once here; acted on further down,
   // below the history it has to search.
   const [sharedTxnRef, setSharedTxnRef] = useState19(() => readSharedTxnFromUrl());
+  // The receipt that link opened, if it named a payment in this account's own
+  // history. Never fetched by reference; see the effect that sets it.
+  const [linkedReceipt, setLinkedReceipt] = useState19(null);
+  // The Gloobal ID whose history has been read at least once this session, so
+  // a link that matches nothing can be told apart from one whose history has
+  // simply not arrived yet.
+  const sharedTxnHistorySettledRef = useRef13("");
   // A /p/<digits> link the app was opened at. Read once here; acted on
   // below, once the person reaches the dashboard.
   const [payLink, setPayLink] = useState19(() => readPayLinkFromUrl());
@@ -1053,6 +1232,10 @@ function GloobalId() {
     setProfilePhoto(photo);
     const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
     if (symbolId) persistLocalProfile(symbolId, documentedName.trim(), photo);
+    // And to the account's one server copy, so the people who scan this
+    // account see it too. Fired, not awaited; a failure stays pending and is
+    // retried at the next sign-in. The logo placeholder sends null.
+    if (symbolId) pushOwnProfilePhoto(symbolId, photo);
   };
   const [docType, setDocType] = useState19(null);
   const [documentedName, setDocumentedName] = useState19("");
@@ -1079,6 +1262,32 @@ function GloobalId() {
   // What the backend returned for this account. The whole app keys off
   // registeredUser.symbolId once past registration.
   const [registeredUser, setRegisteredUser] = useState19(null);
+  // Reconcile this account's photo with the server once per signed-in
+  // session: on reaching the dashboard (after a PIN login, a passkey login or
+  // a finished registration — the only ways there, and all of them leave a
+  // token behind). Keyed by Gloobal ID so a changed ID syncs again. Never
+  // blocks the dashboard; a failed read is retried on the next arrival.
+  const ownPhotoSyncedForRef = useRef22(null);
+  const ownPhotoSymbolId = (registeredUser && registeredUser.symbolId) || secureId;
+  useEffect30(() => {
+    if (stage !== "dashboard" || !ownPhotoSymbolId) return undefined;
+    if (ownPhotoSyncedForRef.current === ownPhotoSymbolId) return undefined;
+    if (typeof gloobalAuthToken !== "function" || !gloobalAuthToken()) return undefined;
+    const symbolId = ownPhotoSymbolId;
+    ownPhotoSyncedForRef.current = symbolId;
+    let alive = true;
+    syncOwnProfilePhoto(symbolId).then(
+      (photo) => {
+        if (alive && photo) setProfilePhoto(photo);
+      },
+      () => {
+        if (ownPhotoSyncedForRef.current === symbolId) ownPhotoSyncedForRef.current = null;
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [stage, ownPhotoSymbolId]);
   // Bug fix: accountCreatedAt used to be its own useState(() => new Date())
   // — a client-side "now" with no connection to the account at all. It
   // looked fine as long as nothing ever remounted GloobalId, but the
@@ -1640,24 +1849,48 @@ function GloobalId() {
     const found =
       sendMoneyHistory.find((t) => t.txnId === sharedTxnRef) ||
       receivedMoneyHistory.find((t) => t.txnId === sharedTxnRef);
+    const consumeSharedTxnLink = () => {
+      setSharedTxnRef("");
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("txn");
+        window.history.replaceState({}, "", url.toString());
+      } catch (e) {
+        // A browser that refuses replaceState still gets the receipt.
+      }
+    };
     if (!found) {
       // The history fetch may not have landed yet, so this stays armed and
-      // re-runs when it does. A link for a payment this account was no part
-      // of quietly does nothing, which is the correct outcome.
+      // re-runs when it does (the fetch always hands both lists a new array).
+      // Once THIS account's history has actually been read and the reference
+      // is still not in it, the link is for a payment this account was no
+      // part of: it quietly does nothing — no lookup by reference, no Send
+      // Money, nothing prefilled — and the parameter is cleared so it cannot
+      // fire later against a different account.
+      const viewerId = (registeredUser && registeredUser.symbolId) || secureId || "";
+      if (viewerId && sharedTxnHistorySettledRef.current === viewerId) consumeSharedTxnLink();
       return;
     }
-    setSharedTxnRef("");
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("txn");
-      window.history.replaceState({}, "", url.toString());
-    } catch (e) {
-      // A browser that refuses replaceState still gets the receipt.
-    }
-    setDashboardHistoryDirection(
-      sendMoneyHistory.some((t) => t.txnId === found.txnId) ? "sending" : "receiving"
-    );
+    consumeSharedTxnLink();
+    const inSent = sendMoneyHistory.some((t) => t.txnId === found.txnId);
+    setDashboardHistoryDirection(inSent ? "sending" : "receiving");
+    // And open that transaction's receipt, READ-ONLY, built exactly the way
+    // tapping its History row builds it (buildHistoryReceipt, with the share's
+    // source payment looked up by reference in the same two lists). Nothing
+    // here posts, sends, prefills or fetches: the row is already this
+    // viewer's own, and a receipt has no action that moves money.
+    const localCurrency = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
+    setLinkedReceipt(buildHistoryReceipt(
+      found,
+      inSent ? "sent" : "received",
+      dialCountry,
+      CURRENCY_SYMBOL[localCurrency] || localCurrency,
+      found.kind === "share" ? findSharePaymentSource(found, sendMoneyHistory, receivedMoneyHistory) : null
+    ));
   }, [sharedTxnRef, stage, sendMoneyHistory, receivedMoneyHistory]);
+  // The receipt a shared link opened (see just above), shown over the
+  // dashboard until closed. Back closes it like any other overlay.
+  const requestCloseLinkedReceipt = useBackClose(!!linkedReceipt, () => setLinkedReceipt(null));
   // The pay link, handled exactly like a scanned QR: the same lookup, then
   // Send Money prefilled. Never sends anything by itself.
   useEffect15(() => {
@@ -1708,6 +1941,9 @@ function GloobalId() {
           const seen = new Set(local.map((entry) => entry.txnId).filter(Boolean));
           return local.concat(rows.filter((entry) => !entry.txnId || !seen.has(entry.txnId)));
         };
+        // Set before the lists, so the shared-receipt effect re-running on
+        // them knows this account's history is now in.
+        sharedTxnHistorySettledRef.current = symbolId;
         setSendMoneyHistory((local) => seedUnder(local, sent));
         setReceivedMoneyHistory((local) => seedUnder(local, received));
         // First pass for this session: record what is already there as seen
@@ -2076,6 +2312,11 @@ function GloobalId() {
       // that now exists. Done here rather than at the profile step because
       // that step runs before the account does.
       persistLocalProfile(newSymbolId, documentedName.trim(), profilePhoto);
+      // The token exists from the register call, so the photo chosen at the
+      // profile step can now become the account's server copy. Best-effort
+      // and not awaited: a registration never waits on, or fails over, a
+      // photo. Anything that does not land is retried at the next sign-in.
+      pushOwnProfilePhoto(newSymbolId, profilePhoto);
       // This — not the register call above — is what actually sets the
       // name. POST /api/register-symbol destructures `fullName` out of the
       // body and then throws it away: it does
@@ -2505,6 +2746,12 @@ function GloobalId() {
     // Re-keyed rather than moved: the name and photo are looked up by
     // Gloobal ID, so under the old key they would simply stop being found.
     persistLocalProfile(newSymbolId, documentedName.trim(), profilePhoto);
+    // An upload still owed to the server follows the account to its new ID.
+    const previousSymbolId = registeredUser && registeredUser.symbolId;
+    if (previousSymbolId && previousSymbolId !== newSymbolId && ownProfilePhotoPending(previousSymbolId)) {
+      setOwnProfilePhotoPending(newSymbolId, true);
+      setOwnProfilePhotoPending(previousSymbolId, false);
+    }
   };
   const handleStartOver = () => {
     // Explicit sign-out: drop the remembered identity too, or the mount
@@ -2545,6 +2792,10 @@ function GloobalId() {
     setDocumentedName("");
     setDocType(null);
     setProfilePhoto(G_LOGO_DATA_URI);
+    // Other people's photos were read under this account's token, and the
+    // next account's own photo must be reconciled afresh.
+    clearCounterpartyPhotoCache();
+    ownPhotoSyncedForRef.current = null;
     setVerifying(false);
     setPhoneNumber("");
     setPhoneDialOpen(false);
@@ -3397,7 +3648,7 @@ function GloobalId() {
     style={{ display: "flex", alignItems: "center", gap: 8, border: "none", background: "none", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer", textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
   ><ImageIcon size={16} />
                   Upload from gallery
-                </button><ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Gloobal ID</div>{
+                </button><ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Gloobal ID</div><ScanPayeeAvatar gloobalId={scanPayee.gloobalId} name={scanPayee.name} />{
     /* The name the server returned for this account — a QR carries no name,
        so nothing printed on a sticker can put one here. */
   }<div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPayee.name}</div><div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 20 }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button
@@ -3409,7 +3660,10 @@ function GloobalId() {
     className="v2-tap"
     style={{ width: "100%", border: "none", background: "none", padding: "12px 0 0", fontSize: 12.5, color: T.inkFaint, cursor: "pointer" }}
   >Scan again</button></div>}</div>}</div>;
-  })()}<LocationRequiredModal
+  })()}{
+    /* A shared receipt link, opened on a payment in this account's own
+       history. The same read-only document History shows. */
+  }{stage === "dashboard" && linkedReceipt && <ReceiptModal receipt={linkedReceipt} onClose={requestCloseLinkedReceipt} />}<LocationRequiredModal
     open={Boolean(locationGate)}
     reason={locationGate && locationGate.reason}
     busy={locationGateBusy}

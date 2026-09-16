@@ -123,6 +123,12 @@ const {
 // models/ProjectAttachment.js for why its file lives in MongoDB.
 const Project = require('./models/Project');
 const ProjectAttachment = require('./models/ProjectAttachment');
+
+// Profile photos (one server-side copy per account, never stamped onto a
+// payment — see models/ProfilePhoto.js) and the in-app payment notifications
+// POST /api/transactions/send writes once a transfer has committed.
+const ProfilePhoto = require('./models/ProfilePhoto');
+const Notification = require('./models/Notification');
 const {
   PROJECT_CATEGORIES,
   PROJECT_ATTACHMENT_MAX_BYTES,
@@ -227,7 +233,21 @@ const app = express();
 // A body cap, because express.json() defaults to 100kb and nothing this API
 // accepts is anywhere near that — the largest legitimate payload is a face
 // descriptor. It bounds what a single request can make the process allocate.
-app.use(express.json({ limit: '64kb' }));
+//
+// One exception, skipped here rather than raised globally: the profile photo
+// upload (PUT /api/profile/:symbolId/photo) carries up to 200 KB of image as
+// base64, and parses its own body with its own 300kb cap. It has to be
+// skipped rather than simply given a bigger parser on the route, because a
+// global parser runs first — it would refuse the upload with 413 before the
+// route's parser ever saw it. Skipping also means the photo body is only read
+// AFTER requireAuth/requireSelf, so a stranger cannot make the process
+// allocate 300 KB at all.
+const PROFILE_PHOTO_UPLOAD_PATH = /^\/api\/profile\/[^/]+\/photo\/?$/i;
+const globalJsonParser = express.json({ limit: '64kb' });
+app.use((req, res, next) => {
+  if (req.method === 'PUT' && PROFILE_PHOTO_UPLOAD_PATH.test(req.path)) return next();
+  return globalJsonParser(req, res, next);
+});
 
 // CORS was `cors()` with no argument, which answers every origin with
 // `Access-Control-Allow-Origin: *`. That let any page on the internet call this
@@ -3223,6 +3243,156 @@ app.put('/api/profile/:symbolId', writeLimit, requireAuth, requireSelf('symbolId
     });
   }
 });
+
+// ─── Profile photo ──────────────────────────────────────────────────────────
+//
+// One copy per account, in ProfilePhoto (see that model for why it is not a
+// User field and why it is never copied onto a payment).
+//
+// Accepted only as a JPEG or PNG data URL. Those are the two formats a phone
+// camera or a canvas produces, and neither can carry script — SVG is refused
+// for exactly that reason, as it is for project attachments. The declared
+// type is checked against the decoded file's own magic bytes, so a data URL
+// that says image/png but holds something else is refused rather than stored
+// and handed to every account that looks this person up.
+const PROFILE_PHOTO_MAX_BYTES = 200000;
+const PROFILE_PHOTO_DATA_URL = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/;
+const PROFILE_PHOTO_MAGIC = {
+  jpeg: [0xff, 0xd8, 0xff],
+  png: [0x89, 0x50, 0x4e, 0x47],
+};
+
+// 200 KB of image is ~267 KB of base64; 300kb leaves room for the JSON
+// around it. Wrapped so a body the parser itself refuses (too large, or not
+// JSON) answers in this API's own error shape rather than Express's default
+// HTML error page.
+const profilePhotoJsonParser = express.json({ limit: '300kb' });
+const parseProfilePhotoBody = (req, res, next) => {
+  profilePhotoJsonParser(req, res, (error) => {
+    if (!error) return next();
+    if (error.type === 'entity.too.large') {
+      return res.status(413).json({
+        success: false,
+        code: 'photo_too_large',
+        message: 'That photo is too large. Please choose a smaller one.',
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      code: 'invalid_photo',
+      message: 'That photo could not be read.',
+    });
+  });
+};
+
+// Returns { ok: true, dataUrl, mimeType, bytes } or { ok: false, status, code, message }.
+function validateProfilePhoto(photo) {
+  const invalid = {
+    ok: false, status: 400, code: 'invalid_photo',
+    message: 'Photos must be a JPEG or PNG image.',
+  };
+  if (typeof photo !== 'string') return invalid;
+
+  const match = PROFILE_PHOTO_DATA_URL.exec(photo);
+  if (!match) return invalid;
+
+  const kind = match[1];
+  const base64 = photo.slice(photo.indexOf(',') + 1);
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0;
+
+  // Sized from the string before anything is decoded, so an oversized upload
+  // is refused without allocating its bytes.
+  if (Math.floor((base64.length * 3) / 4) - padding > PROFILE_PHOTO_MAX_BYTES) {
+    return {
+      ok: false, status: 413, code: 'photo_too_large',
+      message: 'That photo is too large. Please choose a smaller one.',
+    };
+  }
+
+  const bytes = Buffer.from(base64, 'base64');
+  const magic = PROFILE_PHOTO_MAGIC[kind];
+  if (bytes.length < magic.length || !magic.every((b, i) => bytes[i] === b)) return invalid;
+
+  return { ok: true, dataUrl: photo, mimeType: `image/${kind}`, bytes: bytes.length };
+}
+
+// PUT /api/profile/:symbolId/photo — the owner sets or removes their photo.
+// `{ photo: null }` removes it; a missing `photo` is a malformed request, not
+// a removal, so a client bug cannot silently wipe somebody's picture.
+app.put(
+  '/api/profile/:symbolId/photo',
+  writeLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  parseProfilePhotoBody,
+  async (req, res) => {
+    try {
+      // Keyed by the token's own account, which requireSelf has just proved
+      // is the account the path names (including across a symbolId rename).
+      const userId = req.authUser._id;
+      const photo = req.body ? req.body.photo : undefined;
+
+      if (photo === null) {
+        await ProfilePhoto.deleteOne({ userId });
+        return res.json({ success: true, hasPhoto: false });
+      }
+
+      const validated = validateProfilePhoto(photo);
+      if (!validated.ok) {
+        return res.status(validated.status).json({
+          success: false, code: validated.code, message: validated.message,
+        });
+      }
+
+      const fields = { dataUrl: validated.dataUrl, mimeType: validated.mimeType, bytes: validated.bytes };
+      try {
+        await ProfilePhoto.updateOne({ userId }, { $set: fields }, { upsert: true });
+      } catch (writeError) {
+        // Two uploads racing for an account with no row yet can both try the
+        // insert; the unique userId index refuses the second. The row exists
+        // by then, so a plain update is the retry.
+        if (writeError?.code !== 11000) throw writeError;
+        await ProfilePhoto.updateOne({ userId }, { $set: fields });
+      }
+
+      return res.json({ success: true, hasPhoto: true });
+    } catch (error) {
+      console.error('Profile photo update error:', error);
+      return res.status(500).json({ success: false, message: 'Could not save that photo right now.' });
+    }
+  }
+);
+
+// GET /api/users/:symbolId/photo — any signed-in account; this is how a payer
+// sees who they are paying, and how a receipt shows the other party.
+//
+// Looked up by the account's CURRENT symbolId only — not by mobile number or
+// email, so this cannot be used to turn a phone number into a face. An ID
+// retired by a rename no longer resolves either.
+app.get('/api/users/:symbolId/photo', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+    const user = symbolId ? await User.findOne({ symbolId }).select('_id symbolId').lean() : null;
+
+    if (!user) {
+      return res.status(404).json({
+        success: false, code: 'user_not_found', message: 'No account found for that Gloobal ID.',
+      });
+    }
+
+    const stored = await ProfilePhoto.findOne({ userId: user._id }).select('dataUrl').lean();
+
+    // Private: the response is only for the signed-in viewer. Five minutes is
+    // short enough that a changed photo shows up soon, long enough that a
+    // history list does not refetch the same face on every render.
+    res.set('Cache-Control', 'private, max-age=300');
+    return res.json({ success: true, symbolId: user.symbolId, photo: stored?.dataUrl || null });
+  } catch (error) {
+    console.error('Profile photo read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load that photo right now.' });
+  }
+});
+
 async function getWebAuthnServer() {
   return await import('@simplewebauthn/server');
 }
@@ -6229,6 +6399,27 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       },
     });
 
+    // One notification each for the payer and the payee. Awaited so the
+    // payee's inbox already holds it by the time the payer sees "sent", but
+    // best-effort: the money has moved and the record exists, so nothing
+    // about a notification can be allowed to turn this into an error. Both
+    // idempotent-replay answers above return before reaching here, and the
+    // unique index on (userId, metadata.transactionId) covers any retry that
+    // somehow does not.
+    try {
+      await recordPaymentNotifications({
+        transaction: completedTransaction,
+        sender,
+        receiver,
+        debitAmount,
+        senderCurrency,
+        payeeReceives,
+        destinationCurrency,
+      });
+    } catch (notificationError) {
+      console.error('Payment notification error (non-fatal):', notificationError);
+    }
+
     // Plant a My Assets seed for cashback-earning payments. The rate is the
     // *payee's* own choice (User.cashbackRate, set via
     // PATCH /api/creator/cashback-rate) — never a figure the paying client
@@ -6391,6 +6582,225 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       success: false,
       message: 'Could not send prototype transaction right now.',
     });
+  }
+});
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+//
+// Payment notifications, written by POST /api/transactions/send once the
+// transfer has committed. Every figure is the server's own: the payer is told
+// what actually left their balance (debitAmount, in their own currency), the
+// payee what was actually credited to theirs (payeeReceives, in theirs) —
+// never a client-side conversion, which on a cross-border payment would
+// disagree with both balances.
+
+// A display name that is safe to show the OTHER party. Accounts from before
+// the name step carry their own phone number as fullName, and putting that in
+// a counterparty's inbox would hand out the full number the resolve route
+// deliberately masks (GLB-17). Such an account is named by its Gloobal ID.
+function notificationDisplayName(partySnapshot, user) {
+  const name = String(partySnapshot?.fullName || user?.fullName || '').trim();
+  const symbolId = partySnapshot?.symbolId || user?.symbolId || '';
+  const looksLikePhone = /^\+?[\d\s()-]{6,}$/.test(name);
+  const isOwnMobile = Boolean(user?.mobileNumber) && normalizeText(name) === normalizeText(user.mobileNumber);
+  if (!name || looksLikePhone || isOwnMobile) return symbolId;
+  return name.slice(0, 80);
+}
+
+// In the currency's own precision — a zero-decimal currency never reads "500.00".
+function formatNotificationAmount(amount, currency) {
+  const places = decimalsFor(currency);
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: places,
+    maximumFractionDigits: places,
+  }).format(Number(amount) || 0);
+}
+
+// Writes the payer's and the payee's notification for one payment. Upserted
+// under $setOnInsert on (userId, transactionId), so a repeat is a no-op
+// rather than a second row or an overwrite of one already read; a concurrent
+// insert losing to the unique index (E11000) is the same outcome and is not
+// an error. Only ever called for the payment leg — share legs are not money
+// the payee sent or the payer received, and are not announced.
+async function recordPaymentNotifications({
+  transaction,
+  sender,
+  receiver,
+  debitAmount,
+  senderCurrency,
+  payeeReceives,
+  destinationCurrency,
+}) {
+  const transactionId = String(transaction._id);
+  const parties = transaction.metadata?.parties || {};
+  const senderName = notificationDisplayName(parties.sender, sender);
+  const receiverName = notificationDisplayName(parties.receiver, receiver);
+  // Never throws; null just means the notification links by referenceId.
+  const receiptCode = (await ensureReceiptCode(transaction)) || null;
+
+  const entries = [
+    {
+      userId: sender._id,
+      title: 'Money sent',
+      message: `You sent ${formatNotificationAmount(debitAmount, senderCurrency)} ${senderCurrency} to ${receiverName}`,
+      direction: 'sent',
+      amount: debitAmount,
+      currency: senderCurrency,
+      counterpartyName: receiverName,
+      counterpartySymbolId: receiver.symbolId,
+    },
+    {
+      userId: receiver._id,
+      title: 'Money received',
+      message: `You received ${formatNotificationAmount(payeeReceives, destinationCurrency)} ${destinationCurrency} from ${senderName}`,
+      direction: 'received',
+      amount: payeeReceives,
+      currency: destinationCurrency,
+      counterpartyName: senderName,
+      counterpartySymbolId: sender.symbolId,
+    },
+  ];
+
+  const results = await Promise.allSettled(
+    entries.map((entry) =>
+      Notification.updateOne(
+        { userId: entry.userId, 'metadata.transactionId': transactionId },
+        {
+          // Dotted paths, not a whole `metadata` object: the filter already
+          // seeds metadata.transactionId into the inserted document, and
+          // replacing `metadata` wholesale would conflict with it.
+          $setOnInsert: {
+            type: 'payment',
+            title: entry.title,
+            message: entry.message,
+            readAt: null,
+            'metadata.referenceId': transaction.referenceId || null,
+            'metadata.receiptCode': receiptCode,
+            'metadata.direction': entry.direction,
+            'metadata.amount': entry.amount,
+            'metadata.currency': entry.currency,
+            'metadata.counterpartyName': entry.counterpartyName,
+            'metadata.counterpartySymbolId': entry.counterpartySymbolId,
+          },
+        },
+        { upsert: true }
+      )
+    )
+  );
+
+  for (const result of results) {
+    if (result.status === 'rejected' && result.reason?.code !== 11000) {
+      console.error(`Payment notification write failed for ${transaction.referenceId}:`, result.reason);
+    }
+  }
+}
+
+const isoOrNull = (value) => (value ? new Date(value).toISOString() : null);
+
+function publicNotification(doc) {
+  const metadata = doc.metadata || {};
+  return {
+    id: String(doc._id),
+    type: doc.type,
+    title: doc.title,
+    message: doc.message,
+    readAt: isoOrNull(doc.readAt),
+    createdAt: isoOrNull(doc.createdAt),
+    metadata: {
+      transactionId: metadata.transactionId ?? null,
+      referenceId: metadata.referenceId ?? null,
+      receiptCode: metadata.receiptCode ?? null,
+      direction: metadata.direction ?? null,
+      amount: typeof metadata.amount === 'number' ? metadata.amount : null,
+      currency: metadata.currency ?? null,
+      counterpartyName: metadata.counterpartyName ?? null,
+      counterpartySymbolId: metadata.counterpartySymbolId ?? null,
+    },
+  };
+}
+
+// Every notification route is scoped by the token's own account id and by
+// nothing the request names, so there is no way to ask about somebody else's
+// inbox — and a row that is not yours answers exactly like a row that does
+// not exist, for the same reason a stranger's draft project 404s.
+const unreadNotificationCount = (userId) => Notification.countDocuments({ userId, readAt: null });
+
+const notificationNotFound = (res) =>
+  res.status(404).json({ success: false, code: 'notification_not_found', message: 'Notification not found.' });
+
+// GET /api/notifications?limit=30&before=<ISO date> — newest first.
+app.get('/api/notifications', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const userId = req.authUser._id;
+    const requested = Number.parseInt(String(req.query.limit ?? ''), 10);
+    const limit = Number.isFinite(requested) ? Math.min(50, Math.max(1, requested)) : 30;
+
+    const filter = { userId };
+    // `before` pages backwards by creation time. An unparseable value is
+    // ignored rather than refused, so a bad cursor shows the first page.
+    if (req.query.before !== undefined) {
+      const before = new Date(String(req.query.before));
+      if (!Number.isNaN(before.getTime())) filter.createdAt = { $lt: before };
+    }
+
+    const [rows, unreadCount] = await Promise.all([
+      Notification.find(filter).sort({ createdAt: -1, _id: -1 }).limit(limit).lean(),
+      unreadNotificationCount(userId),
+    ]);
+
+    return res.json({ success: true, notifications: rows.map(publicNotification), unreadCount });
+  } catch (error) {
+    console.error('Notification list error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load notifications right now.' });
+  }
+});
+
+// GET /api/notifications/unread-count — the badge, without the list.
+app.get('/api/notifications/unread-count', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    return res.json({ success: true, unreadCount: await unreadNotificationCount(req.authUser._id) });
+  } catch (error) {
+    console.error('Notification count error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load notifications right now.' });
+  }
+});
+
+// PATCH /api/notifications/:id/read — idempotent. Only an unread row is
+// stamped, so marking one read twice keeps the time it was first read.
+app.patch('/api/notifications/:id/read', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const id = String(req.params.id || '');
+    if (!mongoose.Types.ObjectId.isValid(id)) return notificationNotFound(res);
+
+    const userId = req.authUser._id;
+    await Notification.updateOne({ _id: id, userId, readAt: null }, { $set: { readAt: new Date() } });
+
+    const [row, unreadCount] = await Promise.all([
+      Notification.findOne({ _id: id, userId }).lean(),
+      unreadNotificationCount(userId),
+    ]);
+    if (!row) return notificationNotFound(res);
+
+    return res.json({ success: true, notification: publicNotification(row), unreadCount });
+  } catch (error) {
+    console.error('Notification read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not update that notification right now.' });
+  }
+});
+
+// POST /api/notifications/read-all
+app.post('/api/notifications/read-all', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const userId = req.authUser._id;
+    const result = await Notification.updateMany({ userId, readAt: null }, { $set: { readAt: new Date() } });
+    return res.json({
+      success: true,
+      updated: result.modifiedCount || 0,
+      unreadCount: await unreadNotificationCount(userId),
+    });
+  } catch (error) {
+    console.error('Notification read-all error:', error);
+    return res.status(500).json({ success: false, message: 'Could not update notifications right now.' });
   }
 });
 

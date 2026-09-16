@@ -294,6 +294,21 @@ function readSharedTxnFromUrl() {
   }
 }
 
+// A Gloobal QR opened by a phone's own camera app lands here as
+// /p/<12 digits> (see backend/utils/gloobalPayLink.js). Read once on load;
+// acted on once the person is signed in. Returns null when the path is not a
+// pay link at all, or { gloobalId } where gloobalId is null for a malformed one.
+function readPayLinkFromUrl() {
+  if (typeof window === "undefined") return null;
+  try {
+    const path = window.location.pathname || "";
+    if (!/^\/p(\/|$)/.test(path)) return null;
+    return { gloobalId: readGloobalPayIdFromPath(path) };
+  } catch (e) {
+    return null;
+  }
+}
+
 function readReferralCodeFromUrl() {
   if (typeof window === "undefined") return "";
   try {
@@ -635,63 +650,30 @@ function GloobalId() {
   const handleReportTransactionIssue = (txnId, reason) => openComplaint({ txnId, raisedBy: "sender", reason });
   const bankBalance = useBankBalance();
   const { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance, reconcilePaylaterDue, hydrateGrantsFromServer, resetForAccountSwitch } = useTransactionActions();
-  const [usedQrCodes, setUsedQrCodes] = useState19(() => /* @__PURE__ */ new Set());
   const [showScanScreen, setShowScanScreen] = useState19(false);
   // Backdrop color behind the QR/scan area — same "pick one random
   // hero color per session" pattern as the Bank/Coin/About Us info
   // screens, so the scanner isn't locked to a single fixed tint.
   const [scanHeroColor] = useState19(() => randomLogoFlipColor());
-  // Scan & Pay now follows the same options -> PIN -> biometric
-  // sequence Send Money established, for real payments (amountCents >
-  // 0). A zero-amount scan is just an identity confirm — no money
-  // moves, so it skips straight to biometric, same as before.
-  const [scanPayOptionsOpen, setScanPayOptionsOpen] = useState19(false);
-  const [scanPayPinOpen, setScanPayPinOpen] = useState19(false);
-  // The PIN the backend has already confirmed, held out of visible state so
-  // the modal can wipe its on-screen digits while the value travels the one
-  // step further POST /api/transactions/send needs it to. Same arrangement as
-  // Send Money's verifiedPinRef, and cleared the moment the send settles or
-  // the payment is abandoned.
-  const scanVerifiedPinRef = useRef13(null);
-  const [scanPayMethod, setScanPayMethod] = useState19(null);
-  // "My Code" can double as a payment request: typing an amount here
-  // embeds it into the SAME QR (encodeGloobalQR already supports
-  // amountCents) instead of a separate request flow — the scanning
-  // side already renders any nonzero amount as "Payment request".
-  const [requestAmount, setRequestAmount] = useState19("");
-  // Read from inside the received-payments poll, which does not list
-  // requestAmount among its dependencies - a closed-over copy would be
-  // whatever the amount was when that effect last ran, so a request typed
-  // afterwards would never be recognised as paid.
-  const requestAmountRef = useRef13(requestAmount);
-  requestAmountRef.current = requestAmount;
-  const [requestOpen, setRequestOpen] = useState19(false);
-  const requestCents = Math.round((parseFloat(requestAmount) || 0) * 100);
-  const [scanScreenTab, setScanScreenTab] = useState19("scan");
   const [scanCameraAccessGranted, setScanCameraAccessGranted] = useState19(false);
-  const [scanPendingPayment, setScanPendingPayment] = useState19(null);
+  // The account a scanned Gloobal QR resolved to, as the SERVER named it.
+  // A Gloobal QR is a static pay link (see backend/utils/gloobalPayLink.js):
+  // it names an account and nothing else — no amount, no name, no session —
+  // so the only thing to do with one is confirm who it is and open Send Money.
+  const [scanPayee, setScanPayee] = useState19(null);
   const [scanError, setScanError] = useState19(null);
-  const [showScanBiometric, setShowScanBiometric] = useState19(false);
-  const [scanBiometricScanning, setScanBiometricScanning] = useState19(false);
-  // A scanned code decodes to a Gloobal ID, and an ID is not proof that
-  // anybody holds it — the checksum only says the string wasn't mangled.
-  // So the scan now runs the SAME backend lookup typed entry does in Send
-  // Money (GET /api/users/resolve), and the confirmation card shows the
-  // registered name it comes back with instead of twelve symbols the
-  // person has no way to recognise.
-  //
-  // A 404 is not made fatal. This screen's demo code is a generated ID
-  // that no account holds, and the app already supports paying an
-  // unregistered counterparty as a local-ledger simulation (the same
-  // `skipped` case Send Money's onRemoteSend reports). Refusing here
-  // would remove the only way to exercise Scan & Pay in an environment
-  // with no camera. It is labelled as unregistered instead, so the
-  // difference is visible rather than hidden.
+  // Set after a lookup failed. The camera stays paused until the person taps
+  // the button, because unpausing resets the scanner's dedupe and the same
+  // code, still in frame, would otherwise be looked up again instantly and
+  // forever. `retry` is the label: "Try again" for a network failure, "Scan
+  // again" for an answer (not found, own code).
+  const [scanRetry, setScanRetry] = useState19(null);
   const [scanResolving, setScanResolving] = useState19(false);
-  // The gallery path. Same decoder and same handler as the live camera, so
-  // a code that reads from an image behaves identically to one held up to
-  // the lens — including the resolve, the payment-request branch and the
-  // unregistered-ID warning.
+  // Guards re-entry synchronously: BarcodeDetector and jsQR can both hand a
+  // code up before React has re-rendered with scanResolving set.
+  const scanBusyRef = useRef13(false);
+  // The gallery path. Same handler as the live camera, so a code that reads
+  // from an image behaves identically to one held up to the lens.
   const scanGalleryInputRef = useRef13(null);
   const handleScanGalleryFile = async (event) => {
     const file = event.target.files && event.target.files[0];
@@ -700,389 +682,116 @@ function GloobalId() {
     event.target.value = "";
     if (!file) return;
     setScanError(null);
-    setScanResolving(true);
+    setScanRetry(null);
+    let payload = null;
     try {
-      const payload = await decodeGloobalQrFromImageFile(file);
-      if (!payload) {
-        // Said plainly. A tap that appears to do nothing is the failure this
-        // whole path replaces.
-        setScanError("No Gloobal code found in that image.");
-        return;
-      }
-      // Move into the scan view before resolving. `scanCameraAccessGranted`
-      // is a view flag, not a permission claim — the real camera request
-      // happens inside QrCameraScanner when it mounts — and everything a
-      // decoded code produces (the resolving state, the payment-request
-      // card, the unregistered warning) is rendered on the other side of
-      // it. Decoding a code and leaving the person on the "Allow Camera
-      // Access" panel would be its own version of the tap that did nothing.
-      setScanCameraAccessGranted(true);
-      await handleQrScanned(payload);
+      payload = await decodeGloobalQrFromImageFile(file);
     } catch (e) {
       setScanError("That image could not be read.");
-    } finally {
-      setScanResolving(false);
+      return;
     }
+    if (!payload) {
+      setScanError("No QR code found in that image.");
+      return;
+    }
+    // Move into the scan view before resolving: the resolving state, the
+    // confirm card and any error are all rendered on that side.
+    setScanCameraAccessGranted(true);
+    await handleQrScanned(payload);
   };
-  // A payment request is denominated in the REQUESTER's currency, not the
-  // scanner's.
-  //
-  // The QR payload carries an ID, an amount in minor units and a checksum -
-  // and no currency at all. The scan card formatted that bare number with the
-  // SCANNER's own symbol, so a Rs 2,596.05 request read as $2,596.05 to an
-  // American scanning it: a hundred-and-twentyfold overstatement of what they
-  // were about to pay, on the confirm screen.
-  //
-  // No change to the code format is needed. The resolve step already returns
-  // the payee's own registered country (recipientCountryIso), so the currency
-  // is knowable from the account - the better source anyway, since it stays
-  // right for a code printed before its holder moved country.
-  const scanRequestCurrency = (pending) => {
-    const iso = pending && pending.recipientCountryIso;
-    return (iso && COUNTRY_CURRENCY[iso]) || COUNTRY_CURRENCY[dialCountry.iso] || "USD";
+
+  // One lookup for every way into paying a Gloobal QR — the camera, the
+  // gallery, and a /p/<digits> link opened from a phone's own camera app.
+  // Resolves to { ok: true, payee } or { ok: false, error, retryable }.
+  const resolveGloobalPayee = async (gloobalId) => {
+    let user = null;
+    try {
+      user = await GloobalApi.resolveUser(gloobalId);
+    } catch (err) {
+      // Only a definite "nobody" is an answer about the QR. A cold start,
+      // timeout or 5xx says nothing about the account behind it.
+      const notFound =
+        (err instanceof GloobalApiError && err.status === 404) ||
+        (!(err instanceof GloobalApiError) && err && err.message === "No user found.");
+      if (notFound) return { ok: false, error: "No Gloobal account uses this QR." };
+      return { ok: false, retryable: true, error: (err && err.message) || "Couldn't look this QR up. Check your connection." };
+    }
+    if (!user || !user.symbolId) return { ok: false, error: "No Gloobal account uses this QR." };
+    const myId = (registeredUser && registeredUser.symbolId) || secureId;
+    if (myId && (user.symbolId === myId || gloobalId === myId)) {
+      return { ok: false, error: "This is your own Gloobal QR." };
+    }
+    return {
+      ok: true,
+      payee: {
+        // The ID the backend holds NOW, not the one printed in the QR.
+        gloobalId: user.symbolId,
+        // fullName is the mobile number on accounts created before the name
+        // step existed; `nameIsMobile` is the server's own answer to that
+        // (GET /api/users/resolve masks the number it returns).
+        name: user.fullName && !user.nameIsMobile ? user.fullName : "Gloobal User",
+        mobileNumber: user.mobileNumber || "",
+        // The payee's OWN registered country — never inferred from the payer's.
+        countryIso: user.countryIso || null,
+        // As a percent, the unit the rest of the app carries it in.
+        shareRate: (Number(user.cashbackRate) || 0) * 100
+      }
+    };
+  };
+  // Hands a resolved payee to Send Money, which opens past its search step on
+  // the amount. Nothing is sent from here; the amount is entered there.
+  const [sendPrefillReceiver, setSendPrefillReceiver] = useState19(null);
+  const openSendToPayee = (payee) => {
+    const payeeCountry = COUNTRY_BY_ISO[String(payee.countryIso || "").toUpperCase()] || dialCountry;
+    setSendPrefillReceiver({
+      country: payeeCountry.name,
+      flag: payeeCountry.flag,
+      iso: payeeCountry.iso,
+      id: payee.gloobalId,
+      name: payee.name,
+      mobileNumber: payee.mobileNumber,
+      currency: COUNTRY_CURRENCY[payeeCountry.iso] || "USD",
+      shareRate: payee.shareRate,
+      registered: true
+    });
+    setShowScanScreen(false);
+    setScanPayee(null);
+    setScanError(null);
+    setScanRetry(null);
+    setScanCameraAccessGranted(false);
+    setActiveScreen("send");
   };
 
   const handleQrScanned = async (rawCode) => {
+    if (scanBusyRef.current || scanRetry) return;
     setScanError(null);
-    if (usedQrCodes.has(rawCode)) {
-      setScanError("This QR code has already been used.");
+    const parsed = parseGloobalPayPayload(rawCode);
+    if (!parsed) {
+      // Never opened or followed — a QR's text is only ever parsed.
+      setScanError(
+        /^upi:/i.test(String(rawCode || "").trim())
+          ? "This is a UPI QR. Gloobal can't pay UPI codes."
+          : "This isn't a Gloobal QR code."
+      );
       return;
     }
-    const decoded = decodeGloobalQR(rawCode);
-    if (!decoded) {
-      setScanError("This isn't a valid Gloobal QR code.");
-      return;
-    }
+    scanBusyRef.current = true;
     setScanResolving(true);
-    let user = null;
     try {
-      user = await GloobalApi.resolveUser(decoded.gloobalId);
-    } catch (err) {
-      // Only a definite 404 means "nobody holds this ID". A cold start or
-      // a 5xx is not an answer about the recipient, and treating it as one
-      // would put "unregistered" under a perfectly real account.
-      if (!(err instanceof GloobalApiError && err.status === 404)) {
-        setScanResolving(false);
-        setScanError(err.message);
-        return;
-      }
-    }
-    setScanResolving(false);
-    setScanPendingPayment({
-      ...decoded,
-      rawCode,
-      // The ID the backend holds NOW — someone whose code was printed
-      // before they changed their Gloobal ID is still paid correctly.
-      gloobalId: (user && user.symbolId) || decoded.gloobalId,
-      registered: Boolean(user),
-      // fullName is the mobile number on accounts created before the name
-      // step existed, and a name that is just the number is not a name.
-      //
-      // `nameIsMobile` is the server's own answer to that, added when
-      // GET /api/users/resolve started masking the number it returns (audit
-      // finding GLB-17) — comparing against a masked number here would say
-      // "not the same" for every account, and put a real phone number back on
-      // screen as somebody's name.
-      recipientName: user ? (user.fullName && !user.nameIsMobile ? user.fullName : "Gloobal User") : null,
-      recipientMobile: (user && user.mobileNumber) || "",
-      // The payee's OWN registered country, straight off the resolve
-      // response — the same field Send Money's dial-in search reads. Without
-      // it, handleSendToScanned below had nothing to describe the recipient
-      // with and fell back to the SENDER's country, so scanning an American
-      // account's QR from India opened Send Money on an Indian flag and ₹.
-      // Null when the ID resolved to nobody, which is the honest answer for
-      // an unregistered code and is what keeps the fallback below a fallback.
-      recipientCountryIso: (user && user.countryIso) || null,
-      // As a percent, the unit the rest of the app carries it in — the
-      // backend returns a decimal.
-      recipientShareRate: (Number(user && user.cashbackRate) || 0) * 100
-    });
-  };
-  // A scanned Gloobal ID carrying no amount is an identity, not a bill. The
-  // useful thing to do with one is send to it, so it hands the resolved
-  // recipient straight to Send Money — which opens past its own search step,
-  // on the amount, with the person already filled in.
-  //
-  // Kept separate from the amount-bearing path above: a QR with an amount in
-  // it is a payment request and still pays in place, since the sender has
-  // nothing left to decide.
-  const [sendPrefillReceiver, setSendPrefillReceiver] = useState19(null);
-  const handleSendToScanned = () => {
-    if (!scanPendingPayment) return;
-    // The country the payee is registered in, from the resolve call the scan
-    // already made. The QR itself carries no country, but the account behind
-    // it does, and that is the only authority on it — a recipient's country
-    // can never be inferred from the payer's.
-    //
-    // The sender's country is the last resort and applies only to a code that
-    // resolved to nobody (an unregistered ID, which cannot be paid for real
-    // anyway). Everything the receiver half of Send Money shows — flag,
-    // country, currency, and through that the FX conversion and the payment
-    // summary — comes off this one value.
-    const scannedCountry =
-      COUNTRY_BY_ISO[String(scanPendingPayment.recipientCountryIso || "").toUpperCase()] || dialCountry;
-    setSendPrefillReceiver({
-      country: scannedCountry.name,
-      flag: scannedCountry.flag,
-      iso: scannedCountry.iso,
-      id: scanPendingPayment.gloobalId,
-      name: scanPendingPayment.recipientName || "Gloobal User",
-      mobileNumber: scanPendingPayment.recipientMobile || "",
-      currency: COUNTRY_CURRENCY[scannedCountry.iso] || "USD",
-      shareRate: scanPendingPayment.recipientShareRate || 0,
-      // Carried through so Send Money can warn before the person pays,
-      // the same way the scan confirmation card already does — an
-      // unregistered ID handed to Send Money used to arrive indistinguishable
-      // from a real one, which is what let this screen skip its own honest
-      // "unregistered" label entirely.
-      registered: Boolean(scanPendingPayment.registered)
-    });
-    setShowScanScreen(false);
-    setScanPendingPayment(null);
-    setScanError(null);
-    setActiveScreen("send");
-  };
-  // Scan & Pay runs through the exact same canonical executeTransaction
-  // lifecycle as Send Money and Pay a Business — no separate posting
-  // path. A real txnId is minted up front and the whole risk-check +
-  // post + provenance + complaint-window + grant-eligibility sequence
-  // happens in one atomic call, synchronously, before the UI shows
-  // success. The paid QR also becomes a normal history entry, so it's
-  // reportable from the same Receipt/History UI Send Money already
-  // uses — no new screens.
-  //
-  // Same gate as Send Money, for the same reason: this path posts a real
-  // transaction. It was a 700ms setTimeout that always succeeded, so the
-  // biometric prompt here was decoration. A refusal now leaves the QR
-  // unspent and nothing posted.
-  const handleScanBiometricVerify = async () => {
-    // Scan & Pay posts through executeTransaction directly rather than
-    // handleRemoteSend, so it needs the gate in its own right.
-    if (!(await passesLocationGate({ retry: () => handleScanBiometricVerify() }))) return;
-    if (scanBiometricScanning || !scanPendingPayment) return;
-    setScanBiometricScanning(true);
-    const verified = await requireBiometric({ pinReason: "Confirm this payment with your PIN." });
-    setScanBiometricScanning(false);
-    setShowScanBiometric(false);
-    if (!verified) {
-      // The PIN authorised a payment that is not happening.
-      scanVerifiedPinRef.current = null;
-      setScanError("Couldn't verify it's you — payment cancelled.");
-      return;
-    }
-    const amount = scanPendingPayment.amountCents / 100;
-    const ccy = CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "$";
-    // The ISO code behind that symbol. Money is formatted against the code,
-    // never the symbol: a currency with no minor unit printed to two decimals
-    // (¥750,000.00) states a precision the currency does not have.
-    const ccyCode = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
-    // Declared out here, not inside the `if (amount > 0)` block below, so
-    // the final toast — which runs after that block, for both the
-    // zero-amount and paid cases — can still tell a real send from a
-    // skipped/simulated one. Defaults true: a zero-amount identity-only
-    // scan never claims money moved, so it has nothing to be dishonest
-    // about either way.
-    let scanSettledRemotely = true;
-    // The currency this request is denominated in, and whether that is
-    // genuinely known. Both the confirmation card and the settlement below
-    // read these, which is what keeps them in step.
-    const requestCurrency = scanRequestCurrency(scanPendingPayment);
-    const requestCurrencyKnown = Boolean(
-      scanPendingPayment.recipientCountryIso && COUNTRY_CURRENCY[scanPendingPayment.recipientCountryIso]
-    );
-    if (amount > 0) {
-      let txnId = genTxnId();
-      const now = /* @__PURE__ */ new Date();
-      // The backend goes FIRST and is authoritative, exactly as it does in
-      // Send Money's completePayment.
-      //
-      // This whole branch used to be local only: executeTransaction posted to
-      // this browser's ledger, the screen announced "Paid … — verified and
-      // locked", a history row appeared, and MongoDB never heard about any of
-      // it. The person scanned was never credited, and the next dashboard load
-      // quietly reversed the payer's balance back, because the profile read
-      // reconciles the local ledger against the server's figure. A payment
-      // that announces itself and then un-happens is worse than one that
-      // fails outright.
-      const remote = await handleRemoteSend({
-        txnId,
-        // Source-denominated, because that is what this screen showed. A
-        // Gloobal QR payload carries an amount in minor units and NO
-        // currency (see encodeGloobalQR), so the scanning side renders it
-        // with the scanner's own symbol — which means the figure the payer
-        // read and agreed to was in their own currency. Settling it as the
-        // payee's currency instead, which is what the old single-`amount`
-        // contract did, moved a different sum than the one on screen.
-        //
-        // The residual limitation is the payload's, not this call's: a code
-        // minted in one currency and scanned in another is ambiguous by
-        // construction. Paying what the payer was shown is the honest
-        // reading of it.
-        // Denominated on the side the payer was actually SHOWN.
-        //
-        // The card used to render a request with the scanner's own symbol,
-        // so "source" — pay what is on screen, in your own money — was the
-        // honest reading. The card now renders it in the REQUESTER's
-        // currency (scanRequestCurrency), which makes "source" settle a
-        // different sum than the one displayed: a ₹200 request read as
-        // "₹200.00, ≈ £1.67 from your balance" and then debited £200.
-        //
-        // "destination" is the server's own name for exactly this case —
-        // "a QR encodes a figure the payee named, and the sender pays
-        // whatever that converts to". The condition below is deliberately
-        // the SAME one the display uses, so what is shown and what is
-        // settled cannot disagree: when the payee's currency is unknown the
-        // card falls back to the scanner's own, and so does this.
-        ...(requestCurrencyKnown
-          ? { amountBasis: "destination", destinationAmount: amount, destinationCurrency: requestCurrency, amount, currency: requestCurrency }
-          : { amountBasis: "source", sourceAmount: amount, sourceCurrency: requestCurrency, amount, currency: requestCurrency }),
-        receiver: { gloobalId: scanPendingPayment.gloobalId, name: scanPendingPayment.recipientName },
-        pin: scanVerifiedPinRef.current || "",
-        payMethodLabel: scanPayMethod,
-        memo: "Scan & Pay",
-        clientRequestId: generateRequestId()
-      });
-      if (remote && remote.ok === false && !remote.skipped) {
-        scanVerifiedPinRef.current = null;
-        setScanError(remote.reason || "The server rejected this payment.");
-        return;
-      }
-      // `skipped` is the honest case, not a failure: the scanned ID belongs to
-      // no registered account — the confirmation card already says so — which
-      // leaves the backend no counterparty to credit. Those stay a local
-      // simulation, exactly as they were.
-      const settledRemotely = Boolean(remote && remote.ok && !remote.skipped);
-      scanSettledRemotely = settledRemotely;
-      if (settledRemotely && remote.transactionId) txnId = remote.transactionId;
-      // The payee's real Creator Share, as the server applied it. A scanned
-      // code carries no rate of its own, so this used to be hardcoded 0 and
-      // the payer's asset seed was silently skipped on every scanned payment
-      // to a creator.
-      const shareRatePercent =
-        settledRemotely && Number.isFinite(remote.cashbackRate) ? remote.cashbackRate * 100 : 0;
-      // My Essentials daily pool applies here — before the real
-      // payment, as its own separate step (see
-      // TransactionOrchestrator#applyEssentialsPoolSubsidy). Not a
-      // payment method the person picks; it's a standing daily
-      // subsidy from the platform's own reserve that just makes
-      // part of this Scan & Pay already covered by the time the
-      // real risk check runs. Capped at today's baseline for this
-      // country; whatever's left resets tomorrow.
-      const dailyEssentialsLimit = computeEssentialsBaseline(dialCountry.iso).dailyTotal;
-      applyEssentialsPoolSubsidy({ requestedAmount: amount, dailyLimit: dailyEssentialsLimit, now });
-      const result = executeTransaction({
-        txnId,
-        amount,
-        payMethodLabel: scanPayMethod,
-        memo: "Scan & Pay",
-        name: scanPendingPayment.recipientName || scanPendingPayment.gloobalId,
-        shareRatePercent,
-        time: formatClockTime(now),
-        now,
-        clientRequestId: generateRequestId()
-      });
-      // Held no longer than the send it authorised.
-      scanVerifiedPinRef.current = null;
+      const result = await resolveGloobalPayee(parsed.gloobalId);
       if (result.ok) {
-        // What LEFT this account, in this account's own currency.
-        //
-        // `amount` is the figure on the card, which for a cross-border
-        // request is the RECEIVER's side (₹200). Recording that with no
-        // currency is why a UK account's history showed −£200.00 for a ₹200
-        // request: the row had a bare number and History labelled it with
-        // the viewer's symbol. Same defect as the restored rows, in the row
-        // written at payment time rather than the one read back.
-        //
-        // The server's own debit figure is preferred; the typed amount and
-        // its real currency are the fallback, so the row is always honestly
-        // labelled even when the payment stayed local.
-        const settledAmount = Number.isFinite(remote && remote.debitAmount) ? remote.debitAmount : amount;
-        const settledCurrency = (remote && remote.senderCurrency) || requestCurrency;
-        // The payee's country, so this row's receipt has a flag on it like
-        // every other receipt does.
-        //
-        // Resolved exactly the way handleSendToScanned resolves it: from the
-        // country the scan's own resolve call reported for the account behind
-        // the code, falling back to the payer's country only for a code that
-        // resolved to nobody. Same rule, same source, so paying a scanned code
-        // here and handing it to Send Money cannot disagree about where the
-        // person is.
-        //
-        // This row carried no country at all before, so a Scan & Pay receipt
-        // was the one receipt in the app that showed a name and no flag —
-        // ReceiptModal draws the flag only `&&` there is one.
-        const scannedPayeeCountry =
-          COUNTRY_BY_ISO[String(scanPendingPayment.recipientCountryIso || "").toUpperCase()] || dialCountry;
-        const historyEntry = {
-          name: scanPendingPayment.recipientName || scanPendingPayment.gloobalId,
-          flag: scannedPayeeCountry.flag,
-          counterpartyIso: scannedPayeeCountry.iso,
-          date: now.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-          amount: settledAmount,
-          currency: settledCurrency,
-          // A skipped/local-only send must not read as "completed" here
-          // either — History and the reopened receipt (buildHistoryReceipt
-          // passes an unrecognised status straight through) are the only
-          // record of this payment a person can go back and check, and
-          // "completed" next to money that was never posted is exactly the
-          // fake-success this status exists to prevent.
-          status: settledRemotely ? "completed" : "simulated",
-          method: scanPayMethod && scanPayMethod.includes("PayLater") ? "paylater" : "bank",
-          time: formatClockTime(now),
-          txnId,
-          shareRate: shareRatePercent,
-          // The Creator Share leg's OWN reference, as the server minted it.
-          //
-          // The send wrapper has returned this all along (see the
-          // shareTransactionId it maps out of the server's shareTransaction
-          // block) and this row dropped it, so a Scan & Pay receipt reached
-          // ReceiptModal with a share tab and no share reference — the one
-          // case where the tab used to print the PAYMENT's id instead. Empty
-          // on a local-only scan, where no share leg exists to reference.
-          shareTxnId: (settledRemotely && remote.shareTransactionId) || "",
-          shareSourceTxnId: settledRemotely && remote.shareTransactionId ? txnId : "",
-          // The short handles this row's two receipt links use. Empty on a
-          // local-only scan, which has no server row to address.
-          receiptCode: (settledRemotely && remote.receiptCode) || "",
-          shareReceiptCode: (settledRemotely && remote.shareReceiptCode) || "",
-          shareAmount: (settledRemotely && Number(remote.shareAmount)) || 0,
-          ledgerRecordId: result.ledgerRecordId,
-          role: activeShareRole
-        };
-        setSendMoneyHistory((h) => [historyEntry, ...h]);
-        // Money moved, so Gloobal Coverage's figures have. Scan & Pay —
-        // the path whose rows carried no counterparty flag and therefore
-        // never reached the old client-side total at all.
-        bumpCoverage();
-        reportSenderLocation(txnId);
+        setScanPayee(result.payee);
       } else {
-        setScanError(result.reason || "Payment failed \u2014 insufficient balance");
-        // A rejected payment must not be reported as a paid one. This
-        // used to set scanError and then fall straight through to the
-        // lines below, which close the very screen scanError is rendered
-        // on and announce "Paid ..." — so a failed payment looked like a
-        // successful one and its reason was destroyed on the same tick.
-        // The screen now stays open with the reason on it.
-        return;
+        setScanError(result.error);
+        setScanRetry(result.retryable ? "Try again" : "Scan again");
       }
+    } finally {
+      scanBusyRef.current = false;
+      setScanResolving(false);
     }
-    // Only now is the code spent: once a payment was actually posted,
-    // or — for a zero-amount scan — once the identity was confirmed.
-    // Marking it used before the risk check burned the QR on a payment
-    // that never happened and left no way to retry it.
-    setUsedQrCodes((prev) => new Set(prev).add(scanPendingPayment.rawCode));
-    // Covers the zero-amount branch too, which never reaches the clear inside
-    // the payment path above.
-    scanVerifiedPinRef.current = null;
-    setShowScanScreen(false);
-    setScanPendingPayment(null);
-    showToast(
-      amount > 0
-        ? scanSettledRemotely
-          ? `Paid ${fmtMoney(amount, ccyCode)} \u2014 verified and locked`
-          : `Not sent \u2014 ${fmtMoney(amount, ccyCode)} recorded locally only, no registered Gloobal account to credit`
-        : "Gloobal ID verified and locked"
-    );
+  };
+  const handleSendToScanned = () => {
+    if (scanPayee) openSendToPayee(scanPayee);
   };
   // Business/travel "Pay" flow (Dashboard's More sheet) also runs
   // through executeTransaction — the same one canonical lifecycle as
@@ -1189,19 +898,9 @@ function GloobalId() {
   // belonged to nobody.
   const creatorId = secureId;
   // Mirrors DashboardScreen's own shareRole (that component owns the
-  // toggle and all of its UI) up to this level, purely so the Scan
-  // screen — rendered here, outside DashboardScreen — knows which of
-  // the two Gloobal IDs to show/act as under "My Code".
+  // toggle and all of its UI) up to this level, so history rows written
+  // here record which role the payment was made as.
   const [activeShareRole, setActiveShareRole] = useState19("user");
-  // Same mirror pattern — DashboardScreen owns myShareRate (the
-  // Creator Share % this account offers), the QR edge badge here just
-  // needs to read the current value.
-  const [activeMyShareRate, setActiveMyShareRate] = useState19(1);
-  const [scanShareIconFlipped, setScanShareIconFlipped] = useState19(false);
-  useEffect15(() => {
-    const interval = setInterval(() => setScanShareIconFlipped((f) => !f), 2500);
-    return () => clearInterval(interval);
-  }, []);
   const [suggestedRegId] = useState19(() => genSuggestedId(12));
   // Which explain-this-screen sheet is open: null, "symbols", or
   // "referral". One piece of state rather than two booleans, because the
@@ -1257,6 +956,14 @@ function GloobalId() {
   const [countrySearch, setCountrySearch] = useState19("");
   const [activeScreen, setActiveScreen] = useState19(null);
   const requestCloseActiveScreen = useBackClose(activeScreen !== null, () => setActiveScreen(null));
+  // A scanned or linked payee belongs to the Send Money visit it opened.
+  // However Send Money is left — its close button, the back button, a
+  // session expiry — the payee must not reappear on the next visit.
+  const activeScreenRef = useRef13(activeScreen);
+  activeScreenRef.current = activeScreen;
+  useEffect15(() => {
+    if (activeScreen !== "send") setSendPrefillReceiver(null);
+  }, [activeScreen]);
   const [showDiagnostics, setShowDiagnostics] = useState19(() => typeof window !== "undefined" && window.location.hash === "#diagnostics");
   useEffect15(() => {
     const onHashChange = () => setShowDiagnostics(window.location.hash === "#diagnostics");
@@ -1281,6 +988,9 @@ function GloobalId() {
   // A receipt link someone was sent. Read once here; acted on further down,
   // below the history it has to search.
   const [sharedTxnRef, setSharedTxnRef] = useState19(() => readSharedTxnFromUrl());
+  // A /p/<digits> link the app was opened at. Read once here; acted on
+  // below, once the person reaches the dashboard.
+  const [payLink, setPayLink] = useState19(() => readPayLinkFromUrl());
   // Where the app map wanted to go when it was tapped from a screen that
   // isn't Dashboard and the person isn't currently signed in (e.g. they
   // signed out after registering once, and tap "Send Money" from the
@@ -1948,6 +1658,37 @@ function GloobalId() {
       sendMoneyHistory.some((t) => t.txnId === found.txnId) ? "sending" : "receiving"
     );
   }, [sharedTxnRef, stage, sendMoneyHistory, receivedMoneyHistory]);
+  // The pay link, handled exactly like a scanned QR: the same lookup, then
+  // Send Money prefilled. Never sends anything by itself.
+  useEffect15(() => {
+    if (!payLink || stage !== "dashboard") return;
+    const link = payLink;
+    setPayLink(null);
+    try {
+      window.history.replaceState(null, "", "/");
+    } catch (e) {
+      // Still handled; only the address bar keeps the link.
+    }
+    if (!link.gloobalId) {
+      showToast("That Gloobal pay link isn't valid.");
+      return;
+    }
+    (async () => {
+      const result = await resolveGloobalPayee(link.gloobalId);
+      if (!result.ok) {
+        showToast(result.error);
+      } else if (activeScreenRef.current !== null) {
+        // The lookup outlived a cold start and the person has already moved
+        // on to another screen — never swap a payee under them.
+        showToast("Pay link ignored — you'd already opened another screen.");
+      } else {
+        openSendToPayee(result.payee);
+      }
+    })();
+    // resolveGloobalPayee/openSendToPayee are per-render closures; this runs
+    // once per link, on the render that first has both a link and a session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payLink, stage]);
   useEffect15(() => {
     if (stage !== "dashboard") return;
     const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
@@ -1982,27 +1723,6 @@ function GloobalId() {
       currencyCode: COUNTRY_CURRENCY[dialCountry.iso] || "USD",
             from: entry.name
         }));
-          // A paid request clears itself, which is what makes the code on
-          // screen refresh.
-          //
-          // The QR is deterministic - encodeGloobalQR(id, amount) returns the
-          // same code for the same pair forever - so a request code could
-          // never change while the amount stood. Once someone paid it, the
-          // payer's device added it to usedQrCodes and refused it ever after,
-          // while the receiver went on displaying that exact dead code.
-          //
-          // Clearing the amount IS the refresh: requestCents drops to 0 and
-          // the panel re-mints a plain identity code. No timer - the trigger
-          // is the money landing, the only event that means the code is spent.
-          //
-          // Matched on the amount so an unrelated payment landing first does
-          // not wipe a request the person is still holding up. Both figures
-          // are in this account's own currency, compared in whole minor units.
-          const outstanding = Math.round(parseFloat(requestAmountRef.current || "0") * 100);
-          if (outstanding > 0 && received.some((entry) => Math.round((Number(entry.amount) || 0) * 100) === outstanding)) {
-          setRequestAmount("");
-          setRequestOpen(false);
-          }
         }
       } catch (e) {
         /* read-only; the dashboard works without it */
@@ -3550,182 +3270,42 @@ function GloobalId() {
     essentialsIHaveEnough={essentialsIHaveEnough}
     onToggleEssentialsIHaveEnough={handleToggleEssentialsIHaveEnough}
     onShareRoleChange={setActiveShareRole}
-    onMyShareRateChange={setActiveMyShareRate}
     onGloobalIdChange={handleGloobalIdChanged}
   />}{
-    /* Scan to pay — real decode/lock logic, simulated camera input
-       since there's no actual camera access here. Tapping the demo
-       target is standing in for "the camera detected this code." */
+    /* Scan to pay. The camera reads a Gloobal QR (a static pay link), the
+       server names the account behind it, and Send Money takes the amount.
+       Nothing is paid from this screen. */
   }{showScanScreen && (() => {
-    // Leaving the scanner abandons whatever was pending on it, PIN included.
-    // One definition, used by the back button AND by Send — two copies of a
-    // teardown this security-relevant is two chances to forget the PIN line.
     const closeScanScreen = () => {
-      scanVerifiedPinRef.current = null;
       setShowScanScreen(false);
-      setScanPendingPayment(null);
+      setScanPayee(null);
       setScanError(null);
+      setScanRetry(null);
       setScanCameraAccessGranted(false);
-      setScanScreenTab("scan");
     };
     // The camera is the screen, not a picture on it, whenever it is actually
-    // scanning — not while showing My Code, not before permission, and not
-    // once a code has been read and there is a payment card to look at.
-    const scanLive = scanScreenTab === "scan" && scanCameraAccessGranted && !scanPendingPayment;
-    // Over live video every control needs its own contrast; on the light
-    // page they keep the app's normal colours.
-    const overVideoInk = scanLive ? "#fff" : T.inkFaint;
+    // scanning — not before permission, and not once a code has resolved and
+    // there is a confirm card to look at.
+    const scanLive = scanCameraAccessGranted && !scanPayee;
     return <div style={{ position: "fixed", inset: 0, zIndex: 400, background: scanLive ? "#000" : T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>{!scanLive && <DashboardAmbientBg />}{
     /* The camera layer. A direct child of the overlay rather than an item
        in the column below, which is what lets it run edge to edge behind
-       the back button and the tabs instead of stopping under them. */
+       the back button. Paused while a lookup runs and after a failed one,
+       until the person taps to go again. */
   }{scanLive && <QrCameraScanner
     fullScreen
     active={showScanScreen}
-    paused={scanResolving}
+    paused={scanResolving || Boolean(scanRetry)}
     onDetected={handleQrScanned}
-  />}<div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={closeScanScreen} />{
-    /* No title. It said "Scan to pay" directly above a two-button strip
-       whose first button says "Scan" — the same word twice in 40 pixels —
-       and over a full-screen camera a heading is just something in the way
-       of the thing it is describing. */
-  }</div>{
-    /* Scan / My Code — same two-way pattern as any scanner: scan
-       someone else's code, or show your own for them to scan.
-       "My Code" shows a real, separate ID per role — Personal mode
-       shares secureId (the same one the Receive screen uses),
-       Creator mode shares creatorId — never the same code for both,
-       since scanning them means different things (a plain transfer
-       vs. one that carries Creator Share). */
-  }<div style={{ position: "relative", zIndex: 1, display: "flex", gap: 8, padding: "0 18px 14px", flexShrink: 0 }}>{[
-    { key: "scan", label: "Scan" },
-    { key: "myCode", label: "My Code" }
-  ].map((tab) => <button
-    key={tab.key}
-    onClick={() => setScanScreenTab(tab.key)}
-    className="v2-tap"
-    style={{
-      flex: 1,
-      border: "none",
-      borderRadius: 999,
-      padding: "10px 0",
-      // Over live video the inactive chip needs its own ground: T.surfaceAlt
-      // is a near-white that vanishes on a bright frame and glares on a dark
-      // one. A translucent black chip reads on both.
-      background: scanScreenTab === tab.key ? T.gradButton : scanLive ? "rgba(0,0,0,0.45)" : T.surfaceAlt,
-      color: scanScreenTab === tab.key ? "#fff" : overVideoInk,
-      backdropFilter: scanLive && scanScreenTab !== tab.key ? "blur(6px)" : undefined,
-      fontSize: 13,
-      fontWeight: 800,
-      cursor: "pointer",
-      transition: "background 0.18s ease, color 0.18s ease"
-    }}
-  >{tab.label}</button>)}</div>{scanScreenTab === "myCode" ? <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "0 24px", gap: 16 }}><div
-    style={{
-      // Exactly the Receive sheet's frame: a bare relative box that the
-      // panel sizes, and nothing else.
-      //
-      // This used to add a tinted pad — borderRadius 28, padding 16 — around
-      // the shared panel. Sixteen pixels a side on top of a 324px panel is
-      // 356px, and inside this column's own 24px side padding that needs
-      // 404px of width. A 390px phone does not have it, so the box ran off
-      // the screen and took the Creator Share badge with it: the screenshot
-      // shows it clipped to "1.7".
-      //
-      // The panel already carries its own white card, border and quiet zone.
-      // A second frame around it was never adding anything the first frame
-      // was not already doing — it was the last piece of the per-screen
-      // framing that GloobalQrPanel exists to have removed.
-      position: "relative",
-      display: "flex",
-      justifyContent: "center"
-    }}
-  ><GloobalQrPanel code={encodeGloobalQR({ gloobalId: activeShareRole === "merchant" ? creatorId : secureId, amountCents: requestCents })} />{
-    /* Same Creator Share edge badge the Receive screen's QR shows —
-       one consistent "here's my share rate" affordance wherever your
-       code is displayed. Straddles the TOP edge, centred: see the
-       matching comment on the Receive sheet for why it moved off the
-       right edge. */
-  }<div style={{ position: "absolute", top: 0, left: "50%", transform: "translate(-50%, -50%)", perspective: 200 }}><button
-    onClick={() => {
-      setShowScanScreen(false);
-      setScanScreenTab("scan");
-      setPendingOpenMyShare(true);
-    }}
-    aria-label={`My Share, currently ${activeMyShareRate}%`}
-    className="v2-tap"
-    style={{ display: "flex", border: "none", background: "none", padding: 0, cursor: "pointer" }}
-  ><span
-    style={{
-      position: "relative",
-      width: 40,
-      height: 40,
-      borderRadius: "50%",
-      transformStyle: "preserve-3d",
-      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
-      transform: scanShareIconFlipped ? "rotateY(180deg)" : "rotateY(0deg)"
-    }}
-  ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: T.gradButton, boxShadow: "0 4px 12px rgba(124,58,237,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}><PieChart size={17} color="#fff" /></span><span
-    style={{
-      position: "absolute",
-      inset: 0,
-      borderRadius: "50%",
-      backfaceVisibility: "hidden",
-      transform: "rotateY(180deg)",
-      background: T.gradButton,
-      boxShadow: "0 4px 12px rgba(124,58,237,0.3)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }}
-  ><span style={{ fontSize: 11.5, fontWeight: 800, color: "#fff" }}>{activeMyShareRate}%</span></span></span></button></div></div><div style={{ textAlign: "center" }}><div style={{ fontSize: 13, color: T.inkFaint, marginBottom: 6 }}>{activeShareRole === "merchant" ? "Your Creator ID" : "Your Gloobal ID"}</div><ColoredGloobalId id={activeShareRole === "merchant" ? creatorId : secureId} /></div>{
-    /* Request — turns this same code into a payment request by
-       embedding an amount (encodeGloobalQR already supports
-       amountCents; the scanning side already renders it as "Payment
-       request" with a Pay button instead of a plain Confirm — this
-       is just the missing UI to set that amount from here). Covers
-       generate (type an amount, the code above updates immediately)
-       and receive (share/show that same code); nothing here sends a
-       request to a specific person — that's Send Money, a different
-       screen, one screen already covers "pay someone", not "ask
-       someone to pay me". */
-  }<div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>{requestCents > 0 && <div style={{ textAlign: "center", fontSize: 12.5, fontWeight: 700, color: T.positive }}>
-        Requesting {fmtMoney(requestCents / 100, COUNTRY_CURRENCY[dialCountry.iso] || "USD")}
-      </div>}{requestOpen ? <div style={{ display: "flex", gap: 8 }}><input
-    value={requestAmount}
-    onChange={(e) => {
-      const v = e.target.value;
-      if (v === "" || /^\d*\.?\d{0,2}$/.test(v)) setRequestAmount(v);
-    }}
-    placeholder="Amount to request"
-    inputMode="decimal"
-    autoFocus
-    style={{ flex: 1, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px", fontSize: 14, fontWeight: 700, color: T.ink, background: T.surface, outline: "none" }}
-  /><button
-    onClick={() => setRequestOpen(false)}
-    className="v2-tap"
-    style={{ border: "none", borderRadius: T.radiusMd, padding: "0 20px", background: T.gradButton, color: "#fff", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
-  >
-            Done
-          </button></div> : <button
-    onClick={() => setRequestOpen(true)}
-    className="v2-tap"
-    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", border: `1.5px solid ${T.line}`, borderRadius: 999, padding: "12px 0", background: T.surface, color: T.ink, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
-  ><ArrowDownLeft2 size={15} color={T.accent} />{requestCents > 0 ? "Change requested amount" : "Request an amount"}</button>}{requestCents > 0 && !requestOpen && <button
-    onClick={() => {
-      setRequestAmount("");
-      setRequestOpen(false);
-    }}
-    className="v2-tap"
-    style={{ border: "none", background: "none", padding: 0, fontSize: 12, fontWeight: 700, color: T.inkFaint, cursor: "pointer", alignSelf: "center" }}
-  >
-          Clear request
-        </button>}</div></div> : <>{!scanCameraAccessGranted ? (
-    // Matches the reference screenshot's real permission-request
-    // pattern. There's no actual camera API in this environment,
-    // so "Allow Access" can't request a genuine permission — it
-    // moves into the same simulated-scan flow below, honestly,
-    // rather than pretending to grant something real.
+  />}<div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={closeScanScreen} /></div><input
+      ref={scanGalleryInputRef}
+      type="file"
+      accept="image/*"
+      onChange={handleScanGalleryFile}
+      style={{ display: "none" }}
+    />{!scanCameraAccessGranted ? (
+    // "Allow Access" only moves into the scan view; the real camera request
+    // happens when QrCameraScanner mounts there.
     <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", padding: "10px 24px 0" }}>{
     /* The "Scan any QR code" headline is gone. The screen below it already
        shows a scanner icon the size of a saucer and a button that says
@@ -3788,13 +3368,7 @@ function GloobalId() {
                 </button>{scanError && <div
       role="alert"
       style={{ fontSize: 12.5, color: T.negative, textAlign: "center", fontWeight: 700, maxWidth: 260, lineHeight: 1.45 }}
-    >{scanError}</div>}<input
-      ref={scanGalleryInputRef}
-      type="file"
-      accept="image/*"
-      onChange={handleScanGalleryFile}
-      style={{ display: "none" }}
-    /></div><div style={{ paddingBottom: "calc(26px + env(safe-area-inset-bottom, 0px))" }}>{
+    >{scanError}</div>}</div><div style={{ paddingBottom: "calc(26px + env(safe-area-inset-bottom, 0px))" }}>{
     /* Was a div reading "Enter Mobile Number to Pay" that was styled to
        look like a text field but was not one — no input, no handler, no
        tap target. It could not be typed into and it did nothing, which is
@@ -3804,92 +3378,38 @@ function GloobalId() {
        This is that promise kept. It opens the real Send flow, where a
        number or a Gloobal ID can actually be entered. */
   }<ScanSendButton onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></div></div>
-  ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: scanLive ? "flex-end" : "center", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))", gap: 16 }}>{!scanPendingPayment ? <>{
-    /* The scanner itself is no longer here — it is a full-bleed layer on
-       the overlay above, behind these controls. What is left is what has
-       to sit ON the video: what the camera is doing, and the way out. */
-  }<div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}>{scanResolving ? "Looking this ID up\u2026" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "8px 14px", textAlign: "center", fontWeight: 700 }}>{scanError}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPendingPayment.amountCents > 0 ? "Payment request" : "Gloobal ID"}</div>{scanPendingPayment.amountCents > 0 && (() => {
-    const asked = scanPendingPayment.amountCents / 100;
-    const askedCode = scanRequestCurrency(scanPendingPayment);
-    const mine = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
-    // What it will cost from this account. An estimate, and labelled as one:
-    // the server recomputes the corridor at payment time and its figure is
-    // what moves money. Shown only when the currencies differ.
-    const inMine = askedCode !== mine ? convert(asked, askedCode, mine) : null;
-    return <><div style={{ fontSize: 32, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: Number.isFinite(inMine) ? 4 : 14 }}>{fmtMoney(asked, askedCode)}</div>{Number.isFinite(inMine) && <div style={{ fontSize: 13, fontWeight: 700, color: T.inkFaint, marginBottom: 14 }}>
-                    {"\u2248 "}{fmtMoney(inMine, mine)} from your balance
-                  </div>}</>;
-  })()}{scanPendingPayment.recipientName && <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPendingPayment.recipientName}</div>}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: scanPendingPayment.registered ? 20 : 8 }}><ColoredGloobalId id={scanPendingPayment.gloobalId} /></div>{
-    /* Said plainly rather than left to be discovered after paying:
-       nobody is registered under this ID, so there is no account on
-       the other side for the backend to credit and the payment runs
-       against the local ledger only. */
-  }{!scanPendingPayment.registered && <div style={{ fontSize: 11.5, fontWeight: 700, color: T.negative, marginBottom: 20, lineHeight: 1.45 }}>
-                    No Gloobal account is registered under this ID.
-                  </div>}<button
+  ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: scanLive ? "flex-end" : "center", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))", gap: 16 }}>{!scanPayee ? <><div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}>{scanResolving ? "Looking this QR up…" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div role="alert" style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "8px 14px", textAlign: "center", fontWeight: 700 }}>{scanError}</div>}{scanRetry && <button
     onClick={() => {
-      if (scanPendingPayment.amountCents > 0) {
-        setScanPayOptionsOpen(true);
-      } else {
-        setShowScanBiometric(true);
-      }
+      setScanError(null);
+      setScanRetry(null);
     }}
     className="v2-tap"
-    style={{
-      width: "100%",
-      border: "none",
-      borderRadius: T.radiusMd,
-      padding: "14px 0",
-      background: T.gradButton,
-      color: "#fff",
-      fontSize: 14,
-      fontWeight: 800,
-      cursor: "pointer"
+    style={{ border: "none", borderRadius: 999, padding: "10px 24px", background: "rgba(255,255,255,0.94)", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
+  >{scanRetry}</button>}<button
+    onClick={() => {
+      // Kept on this side too: after one upload the view is here, and a
+      // phone with no working camera would otherwise have no way back in.
+      setScanError(null);
+      setScanRetry(null);
+      if (scanGalleryInputRef.current) scanGalleryInputRef.current.click();
     }}
-  >
-                  Verify & {scanPendingPayment.amountCents > 0 ? "Pay" : "Confirm"}</button>{
-    /* Only for a code that names somebody real and asks for nothing:
-       an unregistered ID has no account to send to, and a code with
-       an amount on it is already a bill to settle above. */
-  }{scanPendingPayment.registered && scanPendingPayment.amountCents === 0 && <button
+    className="v2-tap"
+    style={{ display: "flex", alignItems: "center", gap: 8, border: "none", background: "none", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer", textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
+  ><ImageIcon size={16} />
+                  Upload from gallery
+                </button><ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Gloobal ID</div>{
+    /* The name the server returned for this account — a QR carries no name,
+       so nothing printed on a sticker can put one here. */
+  }<div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPayee.name}</div><div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 20 }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button
     onClick={handleSendToScanned}
     className="v2-tap"
-    style={{
-      width: "100%",
-      marginTop: 10,
-      borderRadius: T.radiusMd,
-      padding: "13px 0",
-      border: `1.5px solid ${T.accent}`,
-      background: "none",
-      color: T.accent,
-      fontSize: 13.5,
-      fontWeight: 800,
-      cursor: "pointer"
-    }}
-  >
-                  Send money to this ID</button>}<button
-    onClick={() => setScanPendingPayment(null)}
+    style={{ width: "100%", border: "none", borderRadius: T.radiusMd, padding: "14px 0", background: T.gradButton, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}
+  >Pay</button><button
+    onClick={() => setScanPayee(null)}
     className="v2-tap"
     style={{ width: "100%", border: "none", background: "none", padding: "12px 0 0", fontSize: 12.5, color: T.inkFaint, cursor: "pointer" }}
-  >
-                  Cancel
-                </button></div>}</div>}</>}</div>;
-  })()}<PayOptionsSheet
-    open={scanPayOptionsOpen}
-    onClose={() => setScanPayOptionsOpen(false)}
-    onChoose={(label) => {
-      // Same single fact as the Dashboard's own pay sheet \u2014 see
-      // deriveCapabilityStates. Asserted here independently before, which
-      // is how "Coin isn't live" and Coin's four ticked services coexisted.
-      const coinPayable = deriveCapabilityStates({ hasOpenedGloobalBank: true }).gcoin.payments;
-      if (label === "Gloobal Coin" && !coinPayable) {
-        showToast("Paying with Gloobal Coin isn't wired to this flow yet \u2014 paying via Gloobal Bank instead");
-      }
-      setScanPayMethod(label === "Gloobal Coin" && !coinPayable ? null : label);
-      setScanPayOptionsOpen(false);
-      setScanPayPinOpen(true);
-    }}
-  /><LocationRequiredModal
+  >Scan again</button></div>}</div>}</div>;
+  })()}<LocationRequiredModal
     open={Boolean(locationGate)}
     reason={locationGate && locationGate.reason}
     busy={locationGateBusy}
@@ -3898,28 +3418,7 @@ function GloobalId() {
     // is nothing to undo, and the modal only ever appears in place of a
     // payment that did not happen.
     onClose={() => setLocationGate(null)}
-  /><PayPinModal
-    open={scanPayPinOpen}
-    onClose={() => {
-      // Backing out of the PIN abandons the payment, so the PIN it would have
-      // authorised must not survive to a later attempt that passed no check.
-      scanVerifiedPinRef.current = null;
-      setScanPayPinOpen(false);
-    }}
-    // Same currency as the card that led here - a PIN screen quoting a
-    // different figure from the one just confirmed is how a person approves
-    // an amount they did not read.
-    amountLabel={scanPendingPayment ? `\u2212${fmtMoney(scanPendingPayment.amountCents / 100, scanRequestCurrency(scanPendingPayment))}` : null}
-    onVerified={(verifiedPin) => {
-      scanVerifiedPinRef.current = verifiedPin || null;
-      setScanPayPinOpen(false);
-      setShowScanBiometric(true);
-    }}
-  />{showScanBiometric && <BiometricVerifyScreen
-    onBack={() => setShowScanBiometric(false)}
-    onVerify={handleScanBiometricVerify}
-    scanning={scanBiometricScanning}
-  />}{activeScreen === "send" && <div style={{ position: "fixed", inset: 0, zIndex: 190, overflowY: "auto", WebkitOverflowScrolling: "touch" }}><SendMoney_default
+  />{activeScreen === "send" && <div style={{ position: "fixed", inset: 0, zIndex: 190, overflowY: "auto", WebkitOverflowScrolling: "touch" }}><SendMoney_default
     onClose={() => {
       setSendPrefillReceiver(null);
       requestCloseActiveScreen();

@@ -5,11 +5,11 @@ import {
   TXN_ID_LENGTH,
   genTxnId,
   genSuggestedId,
-  QR_TOTAL_LENGTH,
-  QR_ID_LENGTH,
-  QR_MAX_AMOUNT_CENTS,
-  encodeGloobalQR,
-  decodeGloobalQR
+  GLOOBAL_PAY_ID_LENGTH,
+  isGloobalPayId,
+  buildGloobalPayUrl,
+  parseGloobalPayPayload,
+  readGloobalPayIdFromPath
 } from "../app_bundle_testonly.mjs";
 
 // A Gloobal transaction ID is twenty of the eight Gloobal symbols and nothing
@@ -59,41 +59,26 @@ test("a suggested Gloobal ID uses the same alphabet at its own length", () => {
   for (const ch of id) assert.ok(SYMBOL_SET.has(ch));
 });
 
-// --- QR payloads ---------------------------------------------------------
+// --- QR pay link ---------------------------------------------------------
 //
-// The Receive screen encodes the account's current Gloobal ID; Scan decodes it
-// back before resolving it against the backend. A payload that does not survive
-// that round trip is a code that cannot be paid.
+// The Receive screen's static QR is a pay link naming the account's Gloobal
+// ID; Scan parses it back before resolving it against the backend. A link
+// that does not survive that round trip is a code that cannot be paid.
 
-test("a Gloobal ID survives the QR round trip unchanged", () => {
+test("a Gloobal ID survives the pay-link round trip unchanged", () => {
   for (let i = 0; i < 100; i++) {
-    const gloobalId = genSuggestedId(QR_ID_LENGTH);
-    const code = encodeGloobalQR({ gloobalId, amountCents: 0 });
-    assert.equal(code.length, QR_TOTAL_LENGTH);
-    const decoded = decodeGloobalQR(code);
-    assert.notEqual(decoded, null, "a freshly encoded code must decode");
-    assert.equal(decoded.gloobalId, gloobalId);
-    assert.equal(decoded.amountCents, 0);
+    const gloobalId = genSuggestedId(GLOOBAL_PAY_ID_LENGTH);
+    assert.ok(isGloobalPayId(gloobalId));
+    const url = buildGloobalPayUrl(gloobalId);
+    assert.notEqual(url, null, "a valid ID must produce a link");
+    assert.equal(parseGloobalPayPayload(url).gloobalId, gloobalId);
+    assert.equal(readGloobalPayIdFromPath(new URL(url).pathname), gloobalId);
   }
 });
 
-test("an amount encoded into a QR comes back as the same amount", () => {
-  for (const amountCents of [0, 1, 7, 42, QR_MAX_AMOUNT_CENTS]) {
-    const gloobalId = genSuggestedId(QR_ID_LENGTH);
-    const decoded = decodeGloobalQR(encodeGloobalQR({ gloobalId, amountCents }));
-    assert.notEqual(decoded, null);
-    assert.equal(decoded.amountCents, amountCents);
-  }
-});
-
-test("a mangled QR decodes to null rather than to somebody else's Gloobal ID", () => {
-  const gloobalId = genSuggestedId(QR_ID_LENGTH);
-  const code = encodeGloobalQR({ gloobalId, amountCents: 10 });
-  // One symbol changed inside the ID portion: the checksum must catch it,
-  // because the alternative is paying an account nobody scanned.
-  const swapped = DIAL_SYMBOLS.find((s) => s !== code[0]);
-  assert.equal(decodeGloobalQR(swapped + code.slice(1)), null);
-  assert.equal(decodeGloobalQR(code.slice(0, -1)), null, "wrong length is not a valid code");
-  assert.equal(decodeGloobalQR("not a gloobal code"), null);
-  assert.equal(decodeGloobalQR(null), null);
+test("anything that is not a Gloobal pay link parses to null", () => {
+  assert.equal(parseGloobalPayPayload("not a gloobal code"), null);
+  assert.equal(parseGloobalPayPayload("https://example.com/p/012345670123"), null);
+  assert.equal(parseGloobalPayPayload(null), null);
+  assert.equal(buildGloobalPayUrl("abc"), null);
 });

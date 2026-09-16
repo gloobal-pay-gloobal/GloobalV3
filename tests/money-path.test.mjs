@@ -25,12 +25,11 @@ const domain = loadDomain([
   "convert",
   "RATES",
   "buildTransactionSnapshot",
-  "encodeGloobalQR",
-  "decodeGloobalQR",
   "computePaylaterAvailable",
-  "DIAL_SYMBOLS",
-  "QR_ID_LENGTH",
-  "QR_MAX_AMOUNT_CENTS"
+  "GLOOBAL_PAY_SYMBOLS",
+  "GLOOBAL_PAY_ID_LENGTH",
+  "buildGloobalPayUrl",
+  "parseGloobalPayPayload"
 ]);
 
 const INR = "INR";
@@ -396,83 +395,22 @@ describe("receipt — payment and Creator Share are separate transactions", () =
   });
 });
 
-describe("QR payload", () => {
-  // A Gloobal ID is drawn from the dial-pad alphabet, not from letters and
-  // digits — the encoder pads and validates against DIAL_SYMBOLS, so an
-  // alphanumeric string is not a valid payload and will not round-trip.
+describe("QR pay link", () => {
+  // The static receive QR carries a Gloobal ID and nothing else — no amount.
   const validId = Array.from(
-    { length: domain.QR_ID_LENGTH },
-    (_, i) => domain.DIAL_SYMBOLS[i % domain.DIAL_SYMBOLS.length]
+    { length: domain.GLOOBAL_PAY_ID_LENGTH },
+    (_, i) => domain.GLOOBAL_PAY_SYMBOLS[i % domain.GLOOBAL_PAY_SYMBOLS.length]
   ).join("");
+
   test("carries the Gloobal ID through unchanged", () => {
-    const decoded = domain.decodeGloobalQR(
-      domain.encodeGloobalQR({ gloobalId: validId, amountCents: 0 })
-    );
+    const decoded = domain.parseGloobalPayPayload(domain.buildGloobalPayUrl(validId));
     assert.equal(decoded.gloobalId, validId);
   });
 
-  // This test was `todo` when it was written, against a 3-digit amount
-  // field in a 4-symbol alphabet: the range was 4^3-1 = 63 minor units,
-  // and anything larger was silently CLAMPED, so a request for 500.00
-  // produced a code for 0.63. That is fixed (gloobalQR.js, 24 Aug 2026) —
-  // the amount is now 7 digits in the full 8-symbol DIAL_SYMBOLS base,
-  // giving 8^7-1 = 2,097,151, and an amount still out of range is
-  // rejected rather than altered. The `todo` marker is removed because
-  // the test passes now; the history stays here because the failure mode
-  // it guards against is the one worth never repeating.
-  test("carries the requested amount through unchanged", () => {
-    const decoded = domain.decodeGloobalQR(
-      domain.encodeGloobalQR({ gloobalId: validId, amountCents: 12345 })
-    );
-    assert.equal(decoded.amountCents, 12345);
-  });
-
-  test("amounts within the encodable range do round-trip", () => {
-    // Guards the arithmetic itself at both ends of the range, including a
-    // figure above PROTOTYPE_TRANSACTION_MAX_AMOUNT (5,000 units) so the
-    // encodable range is verified to cover every amount the app will
-    // actually let someone request.
-    for (const cents of [0, 1, 42, 500000, domain.QR_MAX_AMOUNT_CENTS]) {
-      const decoded = domain.decodeGloobalQR(
-        domain.encodeGloobalQR({ gloobalId: validId, amountCents: cents })
-      );
-      assert.equal(decoded.amountCents, cents, `failed at ${cents} cents`);
-    }
-  });
-
-  test("the encodable range covers every amount the app can request", () => {
-    // The point of the widening. If PROTOTYPE_TRANSACTION_MAX_AMOUNT is
-    // ever raised past what a code can carry, this fails before anyone
-    // discovers it by generating an unusable request.
-    assert.ok(
-      domain.QR_MAX_AMOUNT_CENTS >= 5000 * 100,
-      `range is ${domain.QR_MAX_AMOUNT_CENTS} minor units, below the 5,000-unit transaction cap`
-    );
-  });
-
-  test("an over-range amount is rejected, never altered", () => {
-    // A payment instrument may not quietly change the number it was given.
-    // Refusing to produce a code is the only acceptable outcome here —
-    // clamping (the old behaviour) and wrapping would both hand the payer
-    // a code for an amount nobody asked for.
-    const code = domain.encodeGloobalQR({
-      gloobalId: validId,
-      amountCents: domain.QR_MAX_AMOUNT_CENTS + 1
-    });
-    assert.equal(code, null, "an unrepresentable amount must not produce a code");
-  });
-
-  test("a zero-amount code is an identity request, not a payment", () => {
-    const decoded = domain.decodeGloobalQR(
-      domain.encodeGloobalQR({ gloobalId: validId, amountCents: 0 })
-    );
-    assert.equal(decoded.amountCents, 0);
-  });
-
-  test("rejects anything that is not a Gloobal code", () => {
+  test("rejects anything that is not a Gloobal pay link", () => {
     // Scanning a random QR from the world must not resolve to a payee.
     for (const junk of ["", "https://example.com", "GLB|", "nonsense"]) {
-      assert.equal(domain.decodeGloobalQR(junk), null, `should reject: ${junk}`);
+      assert.equal(domain.parseGloobalPayPayload(junk), null, `should reject: ${junk}`);
     }
   });
 });

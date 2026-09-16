@@ -580,7 +580,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   const [showIdTag, setShowIdTag] = useState14(false);
   const [toast, setToast] = useState14(null);
   const [showReceive, setShowReceive] = useState14(false);
-  const [receiveQrSecondsLeft, setReceiveQrSecondsLeft] = useState14(60);
   const requestCloseReceive = useBackClose(showReceive, () => setShowReceive(false));
   const [myShareRate, setMyShareRate] = useState14(1);
   useEffect12(() => {
@@ -2627,8 +2626,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       }, 700);
     }}
     scanning={payTargetBiometricScanning}
-  />}{showReceive && <div style={{ position: "fixed", inset: 0, zIndex: 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px 6px", flexShrink: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" ID" withSymbols /></span><div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, fontVariantNumeric: "tabular-nums" }}>{receiveQrSecondsLeft}s
-              </span><NavHistoryButton
+  />}{showReceive && <div style={{ position: "fixed", inset: 0, zIndex: 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px 6px", flexShrink: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" ID" withSymbols /></span><div style={{ display: "flex", alignItems: "center", gap: 8 }}><NavHistoryButton
     onClick={() => {
       requestCloseReceive();
       setActiveTab("profile");
@@ -2637,49 +2635,29 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       setHistoryMethodFilter("all");
     }}
     label="Received history"
-  /><NavCloseButton onClick={requestCloseReceive} /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 22px calc(30px + env(safe-area-inset-bottom, 0px))" }}><div
-    style={{
-      position: "relative",
-      display: "flex",
-      justifyContent: "center",
-      marginBottom: 18
-    }}
-  >{
-    /* The SAME panel the Scan screen's My Code tab uses. This used to be a
-       230px code inside its own tinted 22px box while the other was 264px on
-       a white card - same code, same purpose, two sizes and two frames. */
-  }<GloobalQrPanel code={encodeGloobalQR({ gloobalId: gloobalIdTag, amountCents: 0 })} onSecondsLeftChange={setReceiveQrSecondsLeft} />{
-    /* The Creator Share badge straddles the TOP edge of the panel, centred.
-       It used to hang off the right edge, half of it outside the panel's
-       own width. That works until the panel is as wide as the screen
-       allows — then the overhang has nowhere to go and the badge is clipped
-       by the viewport, which is exactly what happened on the My Code tab.
-       Centring it on the top edge means it never extends the layout's width
-       at all, so it cannot be pushed off on any device.
-
-       It sinks 20px into the panel, which is white margin rather than code:
-       the QR carries a 4-module quiet zone (~29px at this size) and the
-       panel adds 12px of its own, so the badge sits clear of the first dark
-       module and cannot interfere with a scan. */
-  }<div style={{ position: "absolute", top: 0, left: "50%", transform: "translate(-50%, -50%)", perspective: 200 }}><button
+  /><NavCloseButton onClick={requestCloseReceive} /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 16px calc(30px + env(safe-area-inset-bottom, 0px))" }}><GloobalReceiveQrCard gloobalId={gloobalIdTag} name={myName} onToast={showToast2} />{
+    /* My Share sits in its own row under the card, never over it: the
+       card is a plain scannable QR and nothing may overlap its modules. */
+  }<div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}><button
     onClick={() => {
       requestCloseReceive();
       setShowMyShare(true);
     }}
     aria-label={`My Share, currently ${myShareRate}%`}
     className="v2-tap"
-    style={{ display: "flex", border: "none", background: "none", padding: 0, cursor: "pointer" }}
+    style={{ display: "flex", alignItems: "center", gap: 10, border: `1px solid ${T.line}`, background: T.surface, borderRadius: 999, padding: "5px 14px 5px 5px", cursor: "pointer", perspective: 200 }}
   ><span
     style={{
       position: "relative",
-      width: 40,
-      height: 40,
+      width: 32,
+      height: 32,
       borderRadius: "50%",
+      flexShrink: 0,
       transformStyle: "preserve-3d",
       transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
       transform: myShareIconFlipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
-  ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: T.gradButton, boxShadow: "0 4px 12px rgba(124,58,237,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}><PieChart size={17} color="#fff" /></span><span
+  ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: T.gradButton, display: "flex", alignItems: "center", justifyContent: "center" }}><PieChart size={15} color="#fff" /></span><span
     style={{
       position: "absolute",
       inset: 0,
@@ -2687,30 +2665,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       backfaceVisibility: "hidden",
       transform: "rotateY(180deg)",
       background: T.gradButton,
-      boxShadow: "0 4px 12px rgba(124,58,237,0.3)",
       display: "flex",
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><span style={{ fontSize: 11.5, fontWeight: 800, color: "#fff" }}>{myShareRate}%</span></span></span></button></div></div><div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 10,
-      background: T.surfaceAlt,
-      border: `1px solid ${T.line}`,
-      borderRadius: T.radiusMd,
-      padding: "14px 16px"
-    }}
-  ><span style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}><FlagEmoji flag={dialCountry.flag} width={30} height={23} radius={6} /><span style={{ fontSize: 15, fontWeight: 700, fontFamily: T.fontDisplay, letterSpacing: 0.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><ColoredGloobalId id={gloobalIdTag} /></span></span><button
-    onClick={() => {
-      copyToClipboard(gloobalIdTag);
-      showToast2("Copied");
-    }}
-    aria-label="Copy Gloobal ID"
-    style={{ width: 34, height: 34, borderRadius: 10, border: "none", background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
-  ><Copy2 size={15} color={T.accent} /></button></div>{
+  ><span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff" }}>{myShareRate}%</span></span></span><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>My Share {myShareRate}%</span></button></div>{
     /* Recent — the last five payments actually received on this
        Gloobal ID, right on the Receive sheet itself rather than only
        reachable through the header's history icon. Same source

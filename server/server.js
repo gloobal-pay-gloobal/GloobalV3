@@ -28,9 +28,6 @@ const {
   UnresolvedCurrencyError,
 } = require('./lib/settlementEngine');
 const { mintShareLegAndReceipts } = require('./lib/merchantShareFlow');
-// The Gloobal QR state machine. No Express in it and no credential logic:
-// mint, resolve, claim and consume are four database operations, and the
-// routes below are a thin skin over them. See docs/gloobal-qr-session.md.
 const Country = require('./models/Country');
 const AuditLog = require('./models/AuditLog');
 const CountryCurrencyPool = require('./models/CountryCurrencyPool');
@@ -3816,10 +3813,6 @@ function createPrototypeTransactionReference() {
 // rather than a 500: it is a normal outcome, not a fault. The balance is now
 // checked BY the debit itself (the conditional $inc below), so under
 // concurrency the only way to learn there was not enough is to attempt it.
-// The QR code was spent between the pre-flight check above and the atomic
-// burn inside the transfer — which is to say, somebody else's payment
-// committed first. Nothing of this payment moved: the burn is the first write
-// in performTransfer, so the throw aborts before the debit.
 
 class InsufficientBalanceError extends Error {
   constructor(balance) {
@@ -5830,19 +5823,6 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // the database actually did rather than what this request predicted.
     const performTransfer = async (session) => {
       const sessionOpt = session ? { session } : {};
-
-      // The QR burn, and it goes FIRST — before the debit, inside this
-      // transaction.
-      //
-      // First, because losing this race must cost nothing: if another device
-      // has already spent this code, the right outcome is a refusal with no
-      // money having moved, not a reversal.
-      //
-      // Inside, because the burn and the payment have to be one event. A
-      // consume that committed on its own could burn a code for a payment
-      // that then rolled back, and a payment that committed without one
-      // would leave a spent code looking spendable.
-      //
 
       const debitedSender = await User.findOneAndUpdate(
         { _id: sender._id, balance: { $gte: debitAmount } },

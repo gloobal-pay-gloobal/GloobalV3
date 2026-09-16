@@ -73,16 +73,13 @@ const BACKEND_MODULES = [
   "domain/FinancialCore.js",
   "domain/capabilities/CapabilityState.js",
   "utils/color.js",
-  "domain/qr/qrEncoder.js",
   "data/mockData.js",
   "data/coverage.js",
   "data/ghScoreCategories.js",
   "data/banks.js",
   "utils/particles.js",
-  "utils/gloobalQR.js",
-  // Reading a Gloobal code back out of an image. Pure, so it runs in a test
-  // and could run in a worker; nothing calls it yet.
-  "utils/gloobalCodeDecode.js",
+  // The static Gloobal QR pay link: build, strict parse, deep-link read.
+  "utils/gloobalPayLink.js",
   "utils/creatorShare.js",
   "utils/date.js",
   "utils/demoGenerators.js",
@@ -129,16 +126,6 @@ const FRONTEND_MODULES = [
   "components/cards/flags.jsx",
   "components/common/backgrounds.jsx",
   "components/common/brand.jsx",
-  // The Gloobal code: 20 symbols, one ink, read by shape. This is what
-  // GloobalQrPanel now draws, so it is emitted BEFORE the panel — function
-  // declarations hoist across the concatenated scope, but the geometry and
-  // the mask table beside them are `var` initialisers that do not, and
-  // "definitions precede use" is cheaper to keep than to debug.
-  "components/common/gloobalCode.jsx",
-  // NOTE: the monolith had two sections that differ only by case
-  // (gloobalQRCode.jsx / GloobalQRCode.jsx). On a case-insensitive
-  // filesystem they are one file, so they are merged here.
-  "components/common/gloobalQRCode.jsx",
   "components/common/coloredId.jsx",
   "components/common/icons.jsx",
   // The pull-to-refresh wrapper. Needs the theme (emitted first) and is
@@ -170,6 +157,9 @@ const FRONTEND_MODULES = [
   "components/cards/misc.jsx",
   "components/charts/ghRing.jsx",
   "components/common/flipIcons.jsx",
+  // The static receive QR card. Needs gloobalPayLink.js (backend) and
+  // G_LOGO_DATA_URI; ahead of Dashboard, which will show it.
+  "components/common/gloobalReceiveQrCard.jsx",
   // The four action tiles' own motion: send flies off, receive drops in,
   // scan sweeps, bank settles. Sits outside the flip rather than replacing
   // it, so the two compose.

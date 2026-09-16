@@ -1,314 +1,587 @@
 // tests/qr-browser.test.mjs
 //
-// The QR path, end to end, through a real browser.
+// The static Gloobal QR, end to end, through a real browser.
 //
-// qr-amount.test.mjs already tests the codec directly and thoroughly. What
-// it cannot answer is whether the code a person is actually shown carries
-// what the screen says it does — the 24 August defect was exactly that gap:
-// the caption read "Requesting 5000.00" while the code encoded 0.63, and
-// every unit test of the encoder passed.
-//
-// So this renders the real QR in the real app, rasterises what is on screen,
-// decodes those pixels with jsQR — the same library the in-app scanner uses
-// — and puts the result back through the app's own decoder. Nothing here
-// trusts the encoder's return value; it reads the picture.
+// gloobal-pay-qr.test.mjs tests the pay link and its parser directly. What it
+// cannot answer is whether the code a person is actually SHOWN carries what
+// the screen says it does, and whether the scanner does the right thing with
+// it. So this renders the real Receive sheet in the real app, screenshots the
+// QR the person sees, decodes those pixels with jsQR in Node — an independent
+// decoder, not the app's own call — and feeds real image files back through
+// the scanner's gallery input.
 //
 // ── What cannot be automated ─────────────────────────────────────────────
 //
-// There is no camera. Chromium in this environment has no capture device,
-// and a fake video stream would be testing Chromium's fake stream rather
-// than the app. So the camera boundary itself is NOT covered: the tests
-// below stop at "the app asks for the camera and says so honestly when it
-// cannot have one".
-//
-// Nor is there a way around it. "Upload from gallery" turns out not to open
-// a picker at all — it only reveals the camera view — so a code cannot be
-// read from a file either (there is a test below that records this). What
-// IS covered is the half that matters most: the picture the app draws is
-// decoded, from its pixels, by jsQR — the same library the scanner runs on
-// every video frame — and the result is put back through the app's own
-// decoder. If a code scans wrong on a phone, it is not because the code is
-// wrong.
-//
-// Real-camera scanning remains a manual check on a device.
+// There is no camera. Chromium here has no capture device, and a fake video
+// stream would be testing Chromium's fake stream rather than the app. The
+// gallery path runs the same handler (handleQrScanned) on the same library
+// (jsQR), so everything up to the lens is covered. Real-camera scanning
+// remains a manual check on a device.
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import zlib from "node:zlib";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { ACCOUNTS, ROOT_DIR, buildOnce, login, openPage, teardown, text } from "./browser-harness.mjs";
 import { loadDomain } from "./harness.mjs";
 
-// jsQR is installed for the preview project (the app bundles it for the
-// scanner), so it is resolved from there rather than added to the root.
-const preview = createRequire(path.join(ROOT_DIR, "gloobal-essentials-preview", "package.json"));
+const previewDir = path.join(ROOT_DIR, "gloobal-essentials-preview");
+const preview = createRequire(path.join(previewDir, "package.json"));
 const jsQRModule = preview("jsqr");
 const jsQR = jsQRModule.default || jsQRModule;
+const { encode: uqrEncode } = await import(
+  pathToFileURL(path.join(previewDir, "node_modules", "uqr", "dist", "index.mjs")).href
+);
 
-const domain = loadDomain([
-  "decodeGloobalQR",
-  "encodeGloobalQR",
-  "qrChecksumOf",
-  "QR_LEGACY_SYMBOLS",
-  "QR_LEGACY_BASE",
-  "QR_LEGACY_DIGIT_TO_SYMBOL"
-]);
+const { parseGloobalPayPayload } = loadDomain(["parseGloobalPayPayload"]);
 
-// A pre-v2 code, built the way the old encoder built one: twelve ID symbols,
-// three base-4 amount symbols, one checksum. Constructed from the app's OWN
-// checksum function rather than a copy of it, so this cannot drift into
-// testing a reimplementation.
-function legacyCode(gloobalId, cents) {
-  const digits = cents.toString(domain.QR_LEGACY_BASE).padStart(3, "0");
-  const amountPart = digits.split("").map((d) => domain.QR_LEGACY_SYMBOLS[Number(d)]).join("");
-  const payload = gloobalId + amountPart;
-  return payload + domain.qrChecksumOf(payload, domain.QR_LEGACY_BASE, domain.QR_LEGACY_DIGIT_TO_SYMBOL);
-}
+// The server's canonical symbol order (server/server.js). Written out here
+// rather than imported so the expected URL is not computed by the code under
+// test.
+const SYMBOL_ORDER = ["−", "+", "×", "=", "○", "□", "●", "■"];
+const digitsOf = (id) => Array.from(id).map((c) => SYMBOL_ORDER.indexOf(c)).join("");
+const payUrlOf = (account) => `https://gloobalv3.netlify.app/p/${digitsOf(account.symbolId)}`;
 
-let tmp;
+// A = the payer / viewer, B = the payee. Different countries on purpose, so
+// a payee currency taken from the payer would show.
+const A = ACCOUNTS.india;
+const B = ACCOUNTS.japan;
+
+const QR_SVG = 'svg[aria-label="Gloobal QR code"]';
+const LOCATION = { permissions: ["geolocation"], geolocation: { latitude: 19.076, longitude: 72.8777 } };
 
 before(async () => {
   await buildOnce();
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gloobal-qr-"));
 });
 
 after(async () => {
   await teardown();
-  if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-// The amounts the founder's own testing used, plus the one that used to be
-// silently clamped.
-const AMOUNTS = [100, 500, 1000, 5000];
+// ---------------------------------------------------------------------------
+// PNG in and out, in Node, with no dependency beyond zlib.
+// ---------------------------------------------------------------------------
 
-describe("a requested amount survives the round trip through a real code", () => {
-  for (const amount of AMOUNTS) {
-    test(`requesting ${amount} produces a code that decodes to ${amount}`, async () => {
-      const { page, context } = await openPage({ account: ACCOUNTS.india });
-      await login(page, ACCOUNTS.india);
-      await openMyCode(page);
-      await requestAmount(page, amount);
+function decodePng(buffer) {
+  const sig = buffer.subarray(0, 8).toString("hex");
+  assert.equal(sig, "89504e470d0a1a0a", "not a PNG");
+  let offset = 8;
+  let width = 0, height = 0, bitDepth = 0, colorType = 0, interlace = 0;
+  const idat = [];
+  while (offset < buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.subarray(offset + 4, offset + 8).toString("ascii");
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      interlace = data[12];
+    } else if (type === "IDAT") {
+      idat.push(data);
+    } else if (type === "IEND") {
+      break;
+    }
+    offset += 12 + length;
+  }
+  assert.equal(bitDepth, 8, `unsupported PNG bit depth ${bitDepth}`);
+  assert.equal(interlace, 0, "interlaced PNG not supported");
+  const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
+  assert.ok(channels, `unsupported PNG colour type ${colorType}`);
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = width * channels;
+  const out = new Uint8ClampedArray(width * height * 4);
+  let prev = Buffer.alloc(stride);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    const line = Buffer.from(raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1)));
+    for (let i = 0; i < stride; i++) {
+      const left = i >= channels ? line[i - channels] : 0;
+      const up = prev[i];
+      const upLeft = i >= channels ? prev[i - channels] : 0;
+      let add = 0;
+      if (filter === 1) add = left;
+      else if (filter === 2) add = up;
+      else if (filter === 3) add = (left + up) >> 1;
+      else if (filter === 4) {
+        const p = left + up - upLeft;
+        const pa = Math.abs(p - left), pb = Math.abs(p - up), pc = Math.abs(p - upLeft);
+        add = pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft;
+      }
+      line[i] = (line[i] + add) & 0xff;
+    }
+    for (let x = 0; x < width; x++) {
+      const s = x * channels;
+      const d = (y * width + x) * 4;
+      if (channels === 1 || channels === 2) {
+        out[d] = out[d + 1] = out[d + 2] = line[s];
+        out[d + 3] = channels === 2 ? line[s + 1] : 255;
+      } else {
+        out[d] = line[s];
+        out[d + 1] = line[s + 1];
+        out[d + 2] = line[s + 2];
+        out[d + 3] = channels === 4 ? line[s + 3] : 255;
+      }
+      // Composite onto white, as the app's image decoder does.
+      const a = out[d + 3] / 255;
+      if (a < 1) {
+        for (let k = 0; k < 3; k++) out[d + k] = Math.round(out[d + k] * a + 255 * (1 - a));
+        out[d + 3] = 255;
+      }
+    }
+    prev = line;
+  }
+  return { width, height, data: out };
+}
 
-      const payload = await readQrPayload(page);
-      assert.ok(payload, `no code was drawn for ${amount}`);
+function encodePng(width, height, rgba) {
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(body) >>> 0);
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    raw[y * (width * 4 + 1)] = 0;
+    Buffer.from(rgba.buffer, rgba.byteOffset + y * width * 4, width * 4).copy(raw, y * (width * 4 + 1) + 1);
+  }
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0))
+  ]);
+}
 
-      const decoded = domain.decodeGloobalQR(payload);
-      assert.ok(decoded, `the code drawn for ${amount} did not decode: ${payload}`);
-      assert.equal(
-        decoded.gloobalId,
-        ACCOUNTS.india.symbolId,
-        "the code must carry the account that drew it"
+// Any text as a plain QR PNG, via uqr — for the codes the app would never
+// draw (a foreign host, a UPI link, an unknown account).
+function qrPng(value, scale = 8) {
+  const { size, data } = uqrEncode(value, { ecc: "M", border: 0 });
+  const total = size + 8;
+  const px = total * scale;
+  const rgba = new Uint8ClampedArray(px * px * 4).fill(255);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (!data[y][x]) continue;
+      for (let py = (y + 4) * scale; py < (y + 5) * scale; py++) {
+        for (let pxx = (x + 4) * scale; pxx < (x + 5) * scale; pxx++) {
+          const i = (py * px + pxx) * 4;
+          rgba[i] = rgba[i + 1] = rgba[i + 2] = 0;
+        }
+      }
+    }
+  }
+  return encodePng(px, px, rgba);
+}
+
+function readQrFromPng(buffer) {
+  const { width, height, data } = decodePng(buffer);
+  const found = jsQR(data, width, height, { inversionAttempts: "attemptBoth" });
+  return found ? found.data : null;
+}
+
+// ---------------------------------------------------------------------------
+// Flow helpers
+// ---------------------------------------------------------------------------
+
+// Dispatched rather than clicked: the dashboard's drifting currency marks sit
+// above the controls in the stacking order and Playwright refuses clicks it
+// believes something else would receive.
+async function tap(locator) {
+  await locator.waitFor({ timeout: 20000 });
+  await locator.evaluate((node) => node.click());
+}
+
+async function waitForText(page, pattern, timeout = 20000) {
+  const deadline = Date.now() + timeout;
+  let body = "";
+  while (Date.now() < deadline) {
+    body = await text(page);
+    if (pattern.test(body)) return body;
+    await page.waitForTimeout(250);
+  }
+  assert.fail(`timed out waiting for ${pattern}; screen ends: ${body.slice(-500)}`);
+}
+
+async function openReceive(page) {
+  await tap(page.getByRole("button", { name: "Receive", exact: true }));
+  await page.getByRole("heading", { name: "Your Gloobal QR", exact: true }).waitFor({ timeout: 20000 });
+  await page.locator(QR_SVG).first().waitFor({ state: "visible", timeout: 20000 });
+}
+
+async function openScanner(page) {
+  await tap(page.getByRole("button", { name: "Scanner", exact: true }));
+  await page.getByText("Upload from gallery", { exact: false }).waitFor({ timeout: 20000 });
+}
+
+// The Scan overlay's back control. The overlay is the last thing App.jsx
+// renders, so its Back is the last one in the document.
+async function closeScanner(page) {
+  await tap(page.getByRole("button", { name: "Back", exact: true }).last());
+  await page.getByText("Upload from gallery", { exact: false }).waitFor({ state: "detached", timeout: 20000 });
+}
+
+async function uploadToScanner(page, buffer, name = "qr.png") {
+  const picker = page.locator('input[type=file][accept="image/*"]');
+  await picker.last().waitFor({ state: "attached", timeout: 20000 });
+  await picker.last().setInputFiles({ name, mimeType: "image/png", buffer });
+}
+
+// The confirm card's own buttons: the ones that sit beside "Scan again".
+async function confirmCardButton(page, label) {
+  const handle = await page.waitForFunction(
+    (label) => {
+      const buttons = Array.from(document.querySelectorAll("button"));
+      return (
+        buttons.find(
+          (b) =>
+            b.textContent.trim() === label &&
+            Array.from(b.parentElement.querySelectorAll("button")).some((s) => s.textContent.trim() === "Scan again") &&
+            Array.from(b.parentElement.querySelectorAll("button")).some((s) => s.textContent.trim() === "Pay")
+        ) || null
       );
-      // The whole defect in one assertion: cents, exactly, with no clamp.
-      assert.equal(
-        decoded.amountCents,
-        amount * 100,
-        `screen asked for ${amount}, code carries ${decoded.amountCents / 100}`
-      );
+    },
+    label,
+    { timeout: 20000 }
+  );
+  return handle.asElement();
+}
 
-      // And the screen must agree with the code it is showing.
+function hasConfirmCard(page) {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll("button")).some(
+      (b) =>
+        b.textContent.trim() === "Pay" &&
+        Array.from(b.parentElement.querySelectorAll("button")).some((s) => s.textContent.trim() === "Scan again")
+    )
+  );
+}
+
+async function screenshotQr(page) {
+  const svg = page.locator(QR_SVG);
+  assert.equal(await svg.count(), 1, "exactly one Gloobal QR must be drawn");
+  return svg.screenshot();
+}
+
+// B's shared PNG, produced once by the real Share button and reused by the
+// scan tests.
+const sharedPngs = new Map();
+async function sharedPngFor(account) {
+  if (sharedPngs.has(account.symbolId)) return sharedPngs.get(account.symbolId);
+  const { page, context } = await openPage({ account });
+  // No Web Share: the card must fall back to saving the PNG.
+  await page.addInitScript(() => {
+    try {
+      Object.defineProperty(Navigator.prototype, "canShare", { configurable: true, value: undefined });
+    } catch (e) {}
+  });
+  await page.evaluate(() => {
+    try {
+      Object.defineProperty(Navigator.prototype, "canShare", { configurable: true, value: undefined });
+    } catch (e) {}
+  });
+  await login(page, account);
+  await openReceive(page);
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 20000 }),
+    tap(page.getByRole("button", { name: "Share Gloobal QR", exact: true }))
+  ]);
+  assert.equal(download.suggestedFilename(), "gloobal-qr.png");
+  const buffer = fs.readFileSync(await download.path());
+  await context.close();
+  sharedPngs.set(account.symbolId, buffer);
+  return buffer;
+}
+
+// ---------------------------------------------------------------------------
+
+describe("the Receive sheet shows one scannable QR for the signed-in account", () => {
+  const decodedFromScreen = new Map();
+  for (const [label, account] of [["account A", A], ["account B", B]]) {
+    test(`${label}: the QR on screen decodes to its own pay link`, async () => {
+      const { page, context } = await openPage({ account });
+      await login(page, account);
+      await openReceive(page);
+
+      assert.equal(await page.locator(QR_SVG).count(), 1, "exactly one Gloobal QR");
       const body = await text(page);
-      assert.ok(
-        body.includes(amount.toLocaleString("en-US")) || body.includes(String(amount)),
-        `the screen must still show the amount it encoded; got: ${body.slice(-200)}`
-      );
+      assert.match(body, /Your Gloobal QR/);
+      assert.ok(body.replace(/\s+/g, "").includes(account.symbolId), `the Gloobal ID must be shown; got ${body.slice(0, 400)}`);
+
+      const decoded = readQrFromPng(await screenshotQr(page));
+      assert.equal(decoded, payUrlOf(account), "the pixels on screen must carry this account's pay link");
+      assert.deepEqual(parseGloobalPayPayload(decoded), { gloobalId: account.symbolId });
+      decodedFromScreen.set(label, parseGloobalPayPayload(decoded).gloobalId);
       await context.close();
     });
   }
 
-  test("an amount too large to encode is refused, not quietly reduced", async () => {
-    // The honest outcome. Before the fix this drew a code for 0.63 under a
-    // caption that said something else entirely.
-    const { page, context } = await openPage({ account: ACCOUNTS.india });
-    await login(page, ACCOUNTS.india);
-    await openMyCode(page);
-    await requestAmount(page, 99999999999);
+  test("A's and B's on-screen QRs decode to different accounts", (t) => {
+    if (decodedFromScreen.size < 2) return t.skip("depends on the two tests above, which did not both pass");
+    assert.equal(decodedFromScreen.get("account A"), A.symbolId);
+    assert.equal(decodedFromScreen.get("account B"), B.symbolId);
+    assert.notEqual(decodedFromScreen.get("account A"), decodedFromScreen.get("account B"));
+  });
 
-    const payload = await readQrPayload(page);
-    if (payload) {
-      const decoded = domain.decodeGloobalQR(payload);
-      assert.equal(
-        decoded.amountCents,
-        99999999999 * 100,
-        "a code that IS drawn must carry the amount asked for, not a clamped one"
+  for (const [width, height] of [[320, 640], [390, 844]]) {
+    test(`at ${width}×${height} the sheet fits and the QR is large and readable`, async () => {
+      const { page, context } = await openPage({ account: A });
+      await page.setViewportSize({ width, height });
+      await login(page, A);
+      await openReceive(page);
+
+      const overflow = await page.evaluate(() => {
+        const el = document.scrollingElement;
+        return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
+      });
+      assert.ok(
+        overflow.scrollWidth <= overflow.clientWidth,
+        `horizontal scroll at ${width}px: ${JSON.stringify(overflow)}`
       );
-    } else {
-      const body = await text(page);
-      assert.match(body, /too large|limit|maximum/i, "refusing to draw a code must say why");
-    }
-    await context.close();
+      const box = await page.locator(QR_SVG).boundingBox();
+      assert.ok(box && box.width >= 200, `QR only ${box && box.width}px wide at ${width}px`);
+      assert.ok(box.x >= 0 && box.x + box.width <= width, `QR runs off screen: ${JSON.stringify(box)}`);
+      const card = await page.locator('section[aria-labelledby="gloobal-receive-qr-title"]').boundingBox();
+      assert.ok(card.x >= 0 && card.x + card.width <= width, `card runs off screen: ${JSON.stringify(card)}`);
+
+      assert.equal(readQrFromPng(await screenshotQr(page)), payUrlOf(A));
+      await context.close();
+    });
+  }
+
+  test("Share saves a PNG that decodes to the same pay link", async () => {
+    const png = await sharedPngFor(B);
+    assert.equal(readQrFromPng(png), payUrlOf(B));
+    assert.deepEqual(parseGloobalPayPayload(readQrFromPng(png)), { gloobalId: B.symbolId });
   });
 });
 
-describe("the legacy code format still decodes", () => {
-  // Codes printed before the v2 payload existed are still in circulation on
-  // paper. Dropping them would be a silent breakage for whoever holds one.
-  test("a legacy 16-character code decodes to its original amount", () => {
-    const legacy = legacyCode(ACCOUNTS.india.symbolId, 63);
-    assert.equal(legacy.length, 16);
-    const decoded = domain.decodeGloobalQR(legacy);
-    assert.ok(decoded, "a legacy code must still scan");
-    assert.equal(decoded.gloobalId, ACCOUNTS.india.symbolId);
-    assert.equal(decoded.amountCents, 63, "the legacy amount must survive");
-    assert.equal(decoded.format, "legacy");
-  });
+describe("scanning a Gloobal QR hands off to Send Money and sends nothing", () => {
+  test("A scans B's shared PNG: server-named payee, Pay opens Send Money prefilled", async () => {
+    const png = await sharedPngFor(B);
+    const { page, context, api } = await openPage({ account: A });
+    await login(page, A);
+    await openScanner(page);
+    await uploadToScanner(page, png);
 
-  test("the two formats are told apart by length, not guessed at", () => {
-    const modern = domain.encodeGloobalQR({ gloobalId: ACCOUNTS.india.symbolId, amountCents: 500000 });
-    assert.equal(domain.decodeGloobalQR(modern).format, "v2");
-    assert.equal(domain.decodeGloobalQR(legacyCode(ACCOUNTS.india.symbolId, 1)).format, "legacy");
-  });
-});
-
-describe("the scan side of the flow, as far as it can be automated", () => {
-  test("a code generated by one account is read by another from an image file", async () => {
-    // The camera cannot be automated (see the header), but the gallery path
-    // now runs the identical decode on the identical library with a real
-    // file — everything up to the lens. It replaces a control that used to
-    // open no picker at all.
-    const receiver = await openPage({ account: ACCOUNTS.japan });
-    await login(receiver.page, ACCOUNTS.japan);
-    await openMyCode(receiver.page);
-    await requestAmount(receiver.page, 1000);
-
-    const file = path.join(tmp, "request-1000.png");
-    await receiver.page.locator('svg[aria-label="Gloobal QR code"]').screenshot({ path: file });
-    await receiver.context.close();
-
-    const sender = await openPage({ account: ACCOUNTS.india });
-    await login(sender.page, ACCOUNTS.india);
-    await sender.page.getByLabel("Scanner", { exact: true }).click({ force: true });
-    const picker = sender.page.locator("input[type=file]");
-    await picker.waitFor({ state: "attached", timeout: 20000 });
-    await picker.setInputFiles(file);
-    await sender.page.waitForTimeout(6000);
-
-    const body = await text(sender.page);
-    // The scanned account's own Gloobal ID on screen is what proves the
-    // image resolved to that account rather than to nothing. Whitespace is
-    // stripped because the ID is rendered symbol by symbol, spaced out.
-    const squashed = body.replace(/\s+/g, "");
+    await (await confirmCardButton(page, "Pay")).waitForElementState("visible");
+    const card = await text(page);
+    assert.match(card, new RegExp(B.fullName), `the payee's server name must be shown; got ${card.slice(-400)}`);
+    assert.ok(card.replace(/\s+/g, "").includes(B.symbolId), "the payee's Gloobal ID must be shown");
     assert.ok(
-      squashed.includes(ACCOUNTS.japan.symbolId),
-      `the scanned account must appear on screen; got: ${body.slice(-400)}`
+      api.calls.some((c) => c.path === "/api/users/resolve" && decodeURIComponent(c.query).includes(B.symbolId)),
+      "the payee must be resolved by the server"
     );
-    assert.match(body, /payment request/i, `the request must be recognised as one; got: ${body.slice(-400)}`);
-    assert.match(body, /1,?000/, `the requested amount must be carried across; got: ${body.slice(-400)}`);
-    await sender.context.close();
-  });
 
-  test("an image with no code in it says so instead of doing nothing", async () => {
-    const blank = path.join(tmp, "blank.png");
-    const { page, context } = await openPage({ account: ACCOUNTS.india });
-    await login(page, ACCOUNTS.india);
-    // A picture of the dashboard: a real image, definitely no Gloobal code.
-    await page.screenshot({ path: blank });
-    await page.getByLabel("Scanner", { exact: true }).click({ force: true });
-    const picker = page.locator("input[type=file]");
-    await picker.waitFor({ state: "attached", timeout: 20000 });
-    await picker.setInputFiles(blank);
-    await page.waitForTimeout(4000);
-    const body = await text(page);
-    assert.match(
-      body,
-      /No Gloobal code found|could not be read/i,
-      `a codeless image must be reported; got: ${body.slice(-300)}`
+    await (await confirmCardButton(page, "Pay")).click({ force: true });
+    // Amount box in the PAYEE's own currency — never the scanner's.
+    const amountField = page.getByLabel(`Amount the receiver gets, in their own currency (${B.currency})`);
+    await amountField.waitFor({ timeout: 20000 });
+    assert.equal(await amountField.inputValue(), "", "a static QR carries no amount");
+    const sendScreen = await text(page);
+    assert.match(sendScreen, new RegExp(B.fullName), "Send Money must be prefilled with the payee");
+
+    await page.waitForTimeout(2500);
+    assert.equal(
+      api.calls.filter((c) => c.path === "/api/transactions/send").length,
+      0,
+      "scanning and tapping Pay must not send anything"
     );
     await context.close();
   });
 
-  test("a code this app drew is readable by the library this app scans with", async () => {
-    // The strongest statement available without a camera: the picture on
-    // screen is decodable by jsQR — the same decoder the scanner runs on
-    // each video frame — and what comes out is what the app meant to put in.
-    const { page, context } = await openPage({ account: ACCOUNTS.japan });
-    await login(page, ACCOUNTS.japan);
-    await openMyCode(page);
-    await requestAmount(page, 1000);
+  test("the same image scans twice: nothing is ever 'already used'", async () => {
+    const png = await sharedPngFor(B);
+    const { page, context, api } = await openPage({ account: A });
+    await login(page, A);
 
-    const payload = await readQrPayload(page);
-    assert.ok(payload, "the code must be readable as an image");
-    const decoded = domain.decodeGloobalQR(payload);
-    assert.equal(decoded.gloobalId, ACCOUNTS.japan.symbolId);
-    assert.equal(decoded.amountCents, 100000);
+    await openScanner(page);
+    await uploadToScanner(page, png);
+    await confirmCardButton(page, "Pay");
+    assert.match(await text(page), new RegExp(B.fullName));
+
+    await (await confirmCardButton(page, "Scan again")).click({ force: true });
+    const leftCard = Date.now() + 10000;
+    while ((await hasConfirmCard(page)) && Date.now() < leftCard) await page.waitForTimeout(200);
+    assert.equal(await hasConfirmCard(page), false, "Scan again must return to scanning");
+    // After "Scan again" the overlay is the live camera view, which has no
+    // gallery control — the second upload goes in through a reopened scanner.
+    await closeScanner(page);
+    await openScanner(page);
+    await uploadToScanner(page, png);
+    await confirmCardButton(page, "Pay");
+    const body = await text(page);
+    assert.match(body, new RegExp(B.fullName));
+    assert.doesNotMatch(body, /already (been )?used|expired/i);
+    assert.equal(api.calls.filter((c) => c.path === "/api/users/resolve").length >= 2, true);
+    assert.equal(api.calls.filter((c) => c.path === "/api/transactions/send").length, 0);
     await context.close();
   });
 });
 
-describe("the camera is asked for honestly", () => {
+describe("the scanner refuses what is not a payable Gloobal QR, and says why", () => {
+  test("no QR, a foreign host, a UPI code, your own QR, an unknown account", async () => {
+    const { page, context, api } = await openPage({ account: A });
+    await login(page, A);
+
+    // A picture of the dashboard: a real image with no code in it.
+    const blank = await page.screenshot();
+    const cases = [
+      { name: "an image with no QR", png: blank, expect: /No QR code found in that image\./ },
+      { name: "a pay link on another host", png: qrPng("https://evil.example/p/012345670123"), expect: /This isn['’]t a Gloobal QR code\./ },
+      { name: "a UPI code", png: qrPng("upi://pay?pa=x@y"), expect: /This is a UPI QR\. Gloobal can['’]t pay UPI codes\./ },
+      { name: "your own QR", png: qrPng(payUrlOf(A)), expect: /This is your own Gloobal QR\./ },
+      // "=" × 12 → digits 333333333333: well formed, and nobody in the fake has it.
+      { name: "a well-formed ID nobody has", png: qrPng("https://gloobalv3.netlify.app/p/333333333333"), expect: /No Gloobal account uses this QR\./ }
+    ];
+
+    for (const c of cases) {
+      await openScanner(page);
+      await uploadToScanner(page, c.png, `${c.name}.png`);
+      await waitForText(page, c.expect);
+      assert.equal(await hasConfirmCard(page), false, `${c.name} must not reach the confirm card`);
+      await closeScanner(page);
+    }
+
+    // The foreign and UPI codes are parsed and refused locally; they are never
+    // looked up, let alone followed.
+    const lookups = api.calls.filter((c) => c.path === "/api/users/resolve").map((c) => decodeURIComponent(c.query));
+    assert.ok(!lookups.some((q) => /evil|upi/i.test(q)), `a foreign code was sent to the server: ${lookups}`);
+    assert.equal(api.calls.filter((c) => c.path === "/api/transactions/send").length, 0);
+    await context.close();
+  });
+
   test("with no camera available the scanner says so rather than pretending", async () => {
-    const { page, context } = await openPage({ account: ACCOUNTS.india, permissions: [] });
-    await login(page, ACCOUNTS.india);
-    await page.getByLabel("Scanner", { exact: true }).click({ force: true });
-    await page.waitForTimeout(2500);
-    const body = await text(page);
-    assert.match(body, /camera/i, "the scanner must name the camera it needs");
+    const { page, context } = await openPage({ account: A, permissions: [] });
+    await login(page, A);
+    await openScanner(page);
+    await tap(page.getByRole("button", { name: "Allow Access", exact: true }));
+    const body = await waitForText(page, /No camera available|Camera access blocked|Camera didn['’]t start/i);
     assert.doesNotMatch(body, /scanning\.\.\./i, "it must not claim to be scanning with no camera");
     await context.close();
   });
 });
 
-// ---------------------------------------------------------------------------
+describe("a /p/<digits> link opens Send Money", () => {
+  async function openAtPayLink(account, payee, options = {}) {
+    const opened = await openPage({ account, ...options });
+    const { tmp } = await buildOnce();
+    const html = fs.readFileSync(path.join(tmp, "index.html"));
+    // The harness server only serves "/"; a real deploy rewrites every path
+    // to the app (netlify.toml), so this does the same for /p/*.
+    await opened.context.route(`${opened.origin}/p/**`, (route) =>
+      route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html })
+    );
+    await opened.page.goto(`${opened.origin}/p/${digitsOf(payee.symbolId)}`);
+    await opened.page.waitForSelector("#root *", { timeout: 15000 });
+    await login(opened.page, account);
+    return opened;
+  }
 
-// My Code now opens on the Gloobal ARTWORK — the approved concept, which
-// carries no payload and does not scan. The scannable code is one button
-// away. Every test in this file is about the code that actually pays, so
-// each one reveals it first; the artwork has its own coverage in
-// qr-design.test.mjs.
-async function openMyCode(page) {
-  await page.getByLabel("Scanner", { exact: true }).click({ force: true });
-  await page.getByRole("button", { name: "My Code", exact: true }).waitFor({ timeout: 20000 });
-  await page.getByRole("button", { name: "My Code", exact: true }).click({ force: true });
-  await revealScannableCode(page);
-}
-
-// Idempotent: if the scannable code is already showing (the panel keeps its
-// state while the amount is edited), this does nothing rather than toggling
-// back to the artwork.
-async function revealScannableCode(page) {
-  const toggle = page.getByRole("button", { name: "Show scannable code", exact: true });
-  await toggle.waitFor({ timeout: 20000 }).catch(() => {});
-  if (await toggle.count()) await toggle.click({ force: true });
-  await page.locator('svg[aria-label="Gloobal QR code"]').waitFor({ timeout: 20000 });
-}
-
-async function requestAmount(page, amount) {
-  await page.getByRole("button", { name: "Request an amount", exact: true }).click({ force: true });
-  const field = page.getByPlaceholder("Amount to request");
-  await field.waitFor({ timeout: 20000 });
-  await field.fill(String(amount));
-  // The code is redrawn as the field changes; give React the frame.
-  await page.waitForTimeout(1200);
-}
-
-// Draw what is on screen and read the pixels back, rather than asking the
-// app what it encoded. Scaled up because jsQR needs more than one device
-// pixel per module to find the finder patterns reliably.
-async function readQrPayload(page) {
-  const raster = await page.evaluate(async () => {
-    const svg = document.querySelector('svg[aria-label="Gloobal QR code"]');
-    if (!svg) return null;
-    const xml = new XMLSerializer().serializeToString(svg);
-    const url = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(xml)));
-    const img = new Image();
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-      img.src = url;
-    });
-    const size = 480;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, size, size);
-    ctx.drawImage(img, 0, 0, size, size);
-    return { size, data: Array.from(ctx.getImageData(0, 0, size, size).data) };
+  test("signed in as A, /p/<B> opens Send Money prefilled with B and the URL becomes /", async () => {
+    const { page, context, api, origin } = await openAtPayLink(A, B);
+    const amountField = page.getByLabel(`Amount the receiver gets, in their own currency (${B.currency})`);
+    await amountField.waitFor({ timeout: 25000 });
+    assert.match(await text(page), new RegExp(B.fullName));
+    assert.equal(page.url(), `${origin}/`, "the pay link must be cleared from the address bar");
+    await page.waitForTimeout(1500);
+    assert.equal(api.calls.filter((c) => c.path === "/api/transactions/send").length, 0, "a link never sends by itself");
+    await context.close();
   });
-  if (!raster) return null;
-  const found = jsQR(Uint8ClampedArray.from(raster.data), raster.size, raster.size);
-  return found ? found.data : null;
-}
+
+  test("the normal payment controls still apply: OTP first, and the ceiling refuses", async () => {
+    // Treasury can afford it, so the refusal is the ceiling and not the balance.
+    const sender = ACCOUNTS.treasury;
+    const payee = ACCOUNTS.india2;
+    const { page, context, api } = await openAtPayLink(sender, payee, LOCATION);
+
+    const amountField = page.getByLabel(`Amount the receiver gets, in their own currency (${payee.currency})`);
+    await amountField.waitFor({ timeout: 25000 });
+    await amountField.fill("5000001");
+    await page.waitForTimeout(800);
+    await tap(page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last());
+
+    const paySheet = page.getByRole("dialog", { name: "Choose how to pay" });
+    await paySheet.waitFor({ timeout: 20000 });
+    await tap(paySheet.getByRole("button", { name: /Bank$/i }).first());
+
+    await page.getByLabel("Digit 1", { exact: true }).waitFor({ timeout: 25000 });
+    assert.equal(
+      api.calls.filter((c) => c.path === "/api/transactions/send").length,
+      0,
+      "nothing may be sent before the OTP step"
+    );
+    for (const digit of sender.pin) await tap(page.getByLabel(`Digit ${digit}`, { exact: true }));
+    await page.waitForTimeout(2500);
+
+    const biometric = page.getByLabel("Verify with fingerprint and Face ID", { exact: true });
+    if (await biometric.count()) {
+      await tap(biometric.first());
+      await page.waitForTimeout(1500);
+      if (await page.getByLabel("Digit 1", { exact: true }).count()) {
+        for (const digit of sender.pin) await tap(page.getByLabel(`Digit ${digit}`, { exact: true }));
+        const submit = page.getByLabel("Log in", { exact: true });
+        if (await submit.count()) await tap(submit.last());
+      }
+    }
+
+    const deadline = Date.now() + 12000;
+    const seen = [];
+    while (Date.now() < deadline) {
+      seen.push(await text(page));
+      await page.waitForTimeout(500);
+    }
+    const everShown = seen.join(" │ ");
+    const sendCall = api.calls.find((c) => c.path === "/api/transactions/send");
+    assert.ok(sendCall, "the payment must reach the server to be judged");
+    assert.equal(sendCall.body.receiverSymbolId || sendCall.body.toSymbolId || sendCall.body.recipient, payee.symbolId);
+    assert.match(everShown, /limit is 5000000 INR/i, "the ceiling must refuse it");
+    assert.doesNotMatch(seen[seen.length - 1], /MONEY SENT/i, "a refused payment must not produce a receipt");
+    await context.close();
+  });
+});
+
+describe("there is one QR surface, not two", () => {
+  test("no My Code tab, no fallback toggle, one QR while Receive is open, none on the scanner", async () => {
+    const { page, context } = await openPage({ account: A });
+    await login(page, A);
+
+    const noLegacy = async (where) => {
+      const body = await text(page);
+      assert.doesNotMatch(body, /My Code/, `${where}: a My Code tab is back`);
+      assert.doesNotMatch(body, /Camera can['’]t read it\?/, `${where}: the fallback toggle is back`);
+      assert.equal(await page.getByRole("button", { name: "My Code" }).count(), 0, `${where}: My Code button`);
+    };
+
+    await noLegacy("dashboard");
+    assert.equal(await page.locator(QR_SVG).count(), 0, "the dashboard itself draws no QR");
+
+    await openReceive(page);
+    await noLegacy("Receive");
+    assert.equal(await page.locator(QR_SVG).count(), 1, "exactly one QR while Receive is open");
+    assert.equal(await page.locator("svg[aria-label*='QR' i], canvas[aria-label*='QR' i], img[alt*='QR' i]").count(), 1);
+    await tap(page.getByRole("button", { name: "Close", exact: true }).last());
+    await page.getByRole("heading", { name: "Your Gloobal QR", exact: true }).waitFor({ state: "detached", timeout: 20000 });
+
+    await openScanner(page);
+    await noLegacy("Scanner");
+    assert.equal(await page.locator(QR_SVG).count(), 0, "the scanner shows no QR of its own");
+    await tap(page.getByRole("button", { name: "Allow Access", exact: true }));
+    await page.waitForTimeout(1500);
+    await noLegacy("Scanner (camera view)");
+    assert.equal(await page.locator(QR_SVG).count(), 0);
+    await context.close();
+  });
+});

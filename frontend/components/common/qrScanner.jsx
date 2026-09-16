@@ -17,18 +17,9 @@ import {
 // package.json and imported by nothing. So scanning appeared to work while
 // no frame was ever read from a lens.
 //
-// Deliberately emits the raw decoded string and nothing else. The whole
-// downstream flow — decodeGloobalQR, the already-used-code guard, resolving
-// the payee, the PIN and biometric steps, the payment itself — already
-// exists behind App.jsx's handleQrScanned, and a tap on the old demo tile
-// called exactly that. This component is a drop-in replacement for that
-// tap: same callback, same argument, so nothing downstream changes.
-//
-// That property is what lets a SECOND code format be added without touching
-// anything below. Two decoders now read every frame — jsQR for the ISO QR
-// codes already in circulation, decodeGloobalCode for the Gloobal codes this
-// app mints now — and both hand the same twenty-symbol payload to the same
-// callback. Nothing downstream knows or needs to know which one read it.
+// Deliberately emits the raw decoded string and nothing else. Parsing the
+// payload (parseGloobalPayPayload), resolving the payee and opening Send
+// Money all live behind App.jsx's handleQrScanned.
 
 // How often to actually decode. Drawing and decoding every frame on a
 // 60fps phone burns battery and main-thread time for no benefit — a QR
@@ -60,7 +51,7 @@ var QR_SCAN_IDEAL_HEIGHT = 1080;
 // reliability is governed by PIXELS PER MODULE, and downscaling destroys
 // exactly that.
 //
-// The arithmetic, for a version-4 Gloobal code (33 modules + 8 quiet = 41
+// The arithmetic, for a version-4 QR code (33 modules + 8 quiet = 41
 // units across), assuming the code fills a comfortable part of the frame:
 //
 //   sensor       old: whole frame -> 640      new: centre crop, native res
@@ -97,51 +88,6 @@ var QR_SCAN_ROI = 0.62;
 // on screen is ever unreadable — it just resolves a beat later.
 var QR_SCAN_WIDE_EVERY = 4;
 var QR_SCAN_MAX_DIM = 640;
-
-// ── Reading the Gloobal code ─────────────────────────────────────────────
-//
-// The app now mints Gloobal codes (common/gloobalCode.jsx): twenty symbols
-// in an L, read by shape. They are NOT QR codes, so jsQR and BarcodeDetector
-// are blind to them — every frame has to be offered to decodeGloobalCode as
-// well, and this is where that happens.
-//
-// jsQR is kept, and not out of caution about the new decoder. Every code
-// minted before this change is an ISO QR sitting in somebody's screenshot,
-// printed on somebody's counter, or behind the panel's compatibility button,
-// and those must keep scanning. Two decoders, one frame, first answer wins.
-//
-// ── Why a second canvas at a fixed size ──────────────────────────────────
-//
-// The crop above is drawn 1:1 from the sensor and can reach 1024px square,
-// because a QR's reliability is governed by pixels per MODULE and more is
-// strictly better. decodeGloobalCode is different, and its envelope was
-// measured rather than assumed — three payloads, eight raster sizes, six blur
-// radii:
-//
-//     px \ blur      0   0.5     1   1.5     2   2.5
-//        200         ok    ok    ok    ok  FAIL  FAIL
-//        260         ok    ok    ok   part  part FAIL
-//        300         ok    ok    ok    ok  part  part
-//        360         ok    ok    ok    ok    ok    ok
-//        480         ok    ok    ok    ok    ok    ok
-//
-// 360 is where the bottom row goes clean and stays clean. Below it the code
-// survives a sharp image and gives way under real blur, which is the wrong
-// way round for a camera; above it nothing improves.
-//
-// So the same source rectangle is drawn a second time at a fixed 360px, and
-// that is what the Gloobal decoder sees. It costs one small drawImage and one
-// getImageData, and it means the decoder meets the same picture on a 4K
-// sensor as on a 720p one — rather than a picture whose size, and therefore
-// whose reliability, depends on the phone.
-var QR_SCAN_GLOOBAL_DIM = 360;
-
-// And not on every pass. decodeGloobalCode walks the frame four times over —
-// luminance, integral image, connected components, then twenty patch samples
-// — which is heavier than jsQR on the same pixels. Every other decode is
-// still about ten looks a second, and a code held up to a camera does not
-// come and go in 200ms.
-var QR_SCAN_GLOOBAL_EVERY = 2;
 
 // `fullScreen` makes the camera the screen rather than a picture on it.
 //
@@ -229,18 +175,13 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
   const rafRef = useRef17(null);
   const frameRef = useRef17(0);
   const decodeCountRef = useRef17(0);
-  // The fixed-size raster the Gloobal decoder reads. Off-DOM and kept on a
-  // ref so it is allocated once rather than per frame; see
-  // QR_SCAN_GLOOBAL_DIM for why it is a second canvas and not the one above.
-  const gloobalCanvasRef = useRef17(null);
   // BarcodeDetector.detect is async while the frame loop is not, so without
   // this a slow detect would have several more queued behind it within a few
   // frames and the main thread would fall over.
   const detectBusyRef = useRef17(false);
   // The last code handed upward. Without this, a QR held steadily in front
   // of the camera fires onDetected ~20 times a second — which downstream
-  // means repeatedly re-resolving the same payee, and (worse) racing the
-  // "this code has already been used" guard against itself.
+  // means repeatedly re-resolving the same payee.
   const lastCodeRef = useRef17(null);
   // Read inside the animation loop, which closes over its first render.
   // A ref rather than the prop directly so pausing takes effect on the
@@ -397,48 +338,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       // dark mode displaying someone's Receive screen), which is a real
       // case for an app whose users scan each other's screens.
       const found = jsQR(image.data, w, h, { inversionAttempts: "attemptBoth" });
-      if (found && found.data) {
-        handOff(found.data);
-        return;
-      }
-
-      // No QR in this frame. The Gloobal code is what this app mints now, so
-      // it gets the same frame — redrawn at the size its decoder was measured
-      // at. handOff takes the PAYLOAD, which is what decodeGloobalCode returns
-      // (it undoes the render mask itself), so the two decoders hand the same
-      // kind of string to the same callback and nothing downstream can tell
-      // which one read the code.
-      if (decodeCountRef.current % QR_SCAN_GLOOBAL_EVERY !== 0) return;
-      if (typeof decodeGloobalCode !== "function") return;
-      if (!gloobalCanvasRef.current) {
-        if (typeof document === "undefined") return;
-        gloobalCanvasRef.current = document.createElement("canvas");
-        gloobalCanvasRef.current.width = QR_SCAN_GLOOBAL_DIM;
-        gloobalCanvasRef.current.height = QR_SCAN_GLOOBAL_DIM;
-      }
-      const gctx = gloobalCanvasRef.current.getContext("2d", { willReadFrequently: true });
-      if (!gctx) return;
-      // White behind it for the same reason the file path fills white: the
-      // source rectangle may be narrower than the square it is drawn into on
-      // a wide-frame pass, and an unpainted edge is transparent black, which
-      // drags the adaptive threshold across the whole image.
-      gctx.fillStyle = "#ffffff";
-      gctx.fillRect(0, 0, QR_SCAN_GLOOBAL_DIM, QR_SCAN_GLOOBAL_DIM);
-      gctx.drawImage(video, sx, sy, sw, sh, 0, 0, QR_SCAN_GLOOBAL_DIM, QR_SCAN_GLOOBAL_DIM);
-      let gimage;
-      try {
-        gimage = gctx.getImageData(0, 0, QR_SCAN_GLOOBAL_DIM, QR_SCAN_GLOOBAL_DIM);
-      } catch (e) {
-        return;
-      }
-      // The checksum is handed to the decoder as its acceptance test, not
-      // applied afterwards. decodeGloobalCode cannot tell a confident misread
-      // from a correct read — nothing in the pixels distinguishes them — but
-      // decodeGloobalQR can, and given that answer the decoder retries the
-      // frame through a different preprocessing rather than making the person
-      // hold the phone still and try again.
-      const gloobal = decodeGloobalCode(gimage, { accept: (v) => !!decodeGloobalQR(v) });
-      if (gloobal && gloobal.ok && gloobal.value) handOff(gloobal.value);
+      if (found && found.data) handOff(found.data);
     };
 
     (async () => {
@@ -693,7 +593,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
 }
 
 
-// Read a Gloobal code out of a still image the person picked from their
+// Read a QR code out of a still image the person picked from their
 // gallery.
 //
 // This exists because "Upload from gallery" was a button that only revealed
@@ -702,7 +602,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
 // camera is broken, blocked or absent, and a code that arrived as a
 // screenshot in a chat rather than on somebody's screen.
 //
-// Same decoder, same options as the live loop above, so an image that scans
+// Same jsQR options as the live loop above, so an image that scans
 // here would have scanned there. Resolves to the payload string, or null
 // when the file holds no readable code — the caller says so rather than
 // leaving a tap that appears to do nothing.
@@ -741,36 +641,7 @@ function decodeGloobalQrFromImageFile(file) {
           return resolve(null);
         }
         const found = jsQR(pixels.data, w, h, { inversionAttempts: "attemptBoth" });
-        if (found && found.data) return resolve(found.data);
-
-        // Same two decoders as the live loop, in the same order, so a picture
-        // that reads here would have read there. The Gloobal pass gets its own
-        // fixed-size raster for the reason QR_SCAN_GLOOBAL_DIM gives — and a
-        // screenshot is the case where it matters most, since a phone photo of
-        // a code arrives at whatever size the sensor felt like.
-        if (typeof decodeGloobalCode !== "function") return resolve(null);
-        const gcanvas = document.createElement("canvas");
-        gcanvas.width = QR_SCAN_GLOOBAL_DIM;
-        gcanvas.height = QR_SCAN_GLOOBAL_DIM;
-        const gctx = gcanvas.getContext("2d", { willReadFrequently: true });
-        if (!gctx) return resolve(null);
-        gctx.fillStyle = "#ffffff";
-        gctx.fillRect(0, 0, QR_SCAN_GLOOBAL_DIM, QR_SCAN_GLOOBAL_DIM);
-        // Fitted rather than stretched. A code squashed to a square decodes
-        // as nothing — the marker geometry is what orientation is resolved
-        // from, and a non-uniform scale is not a rotation.
-        const fit = Math.min(QR_SCAN_GLOOBAL_DIM / image.width, QR_SCAN_GLOOBAL_DIM / image.height);
-        const fw = Math.max(1, Math.round(image.width * fit));
-        const fh = Math.max(1, Math.round(image.height * fit));
-        gctx.drawImage(image, Math.round((QR_SCAN_GLOOBAL_DIM - fw) / 2), Math.round((QR_SCAN_GLOOBAL_DIM - fh) / 2), fw, fh);
-        let gpixels;
-        try {
-          gpixels = gctx.getImageData(0, 0, QR_SCAN_GLOOBAL_DIM, QR_SCAN_GLOOBAL_DIM);
-        } catch (e) {
-          return resolve(null);
-        }
-        const gloobal = decodeGloobalCode(gpixels, { accept: (v) => !!decodeGloobalQR(v) });
-        resolve(gloobal && gloobal.ok && gloobal.value ? gloobal.value : null);
+        resolve(found && found.data ? found.data : null);
       };
       image.src = String(reader.result || "");
     };

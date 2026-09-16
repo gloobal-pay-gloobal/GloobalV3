@@ -131,10 +131,12 @@ describe("the gate maps each outcome to the right consequence", () => {
 describe("every payment path asks — a gate with a way around it is not a gate", () => {
   const app = readSource("frontend/App.jsx");
 
-  // The three handlers that move money. Send Money reaches the backend via
-  // handleRemoteSend; Scan & Pay and Pay a Business post through
-  // executeTransaction directly and would otherwise slip past.
-  for (const handler of ["handleRemoteSend", "handleScanBiometricVerify", "handlePayBusiness"]) {
+  // The handlers that move money. Send Money reaches the backend via
+  // handleRemoteSend; Pay a Business posts through executeTransaction
+  // directly and would otherwise slip past. (A scanned Gloobal QR no longer
+  // pays by itself — it only opens Send Money, so it goes through
+  // handleRemoteSend like any other send.)
+  for (const handler of ["handleRemoteSend", "handlePayBusiness"]) {
     test(`${handler} consults the gate`, () => {
       const start = app.indexOf(`const ${handler} = `);
       assert.ok(start > -1, `${handler} not found — did it get renamed?`);

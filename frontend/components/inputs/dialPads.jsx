@@ -60,9 +60,7 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
   // separate, independently-hardcoded copy, which is exactly how it
   // could drift out of sync with what real IDs are built from.
   // Referencing DIAL_SYMBOLS directly means they can never disagree
-  // again. Not the same set QR encoding uses for its own amount/
-  // checksum digits (see QR_ENCODING_SYMBOLS) — that's a separate,
-  // smaller alphabet scoped to the QR payload's own bookkeeping only.
+  // again.
   const symbolKeys = DIAL_SYMBOLS;
   const [rotation, setRotation] = useState5(0);
   const rotationRef = useRef3(0);

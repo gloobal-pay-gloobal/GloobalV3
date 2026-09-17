@@ -2,9 +2,13 @@
 //
 // The receipt, end to end in a real browser against the fake API:
 //
-//   1. The counterparty's server-held profile photo is on the receipt (and a
-//      clean fallback when they have none) — read by their Gloobal ID, never
-//      stored on the receipt, the history row, or localStorage.
+//   1. NO photograph is on the receipt, and none is fetched for it. This
+//      suite used to assert the opposite — the counterparty's server-held
+//      photo drawn on the receipt, with a branded fallback disc where they
+//      had none. Both are gone: a receipt is a record that gets forwarded,
+//      and a face is the one thing on it that is not a fact about the
+//      payment. What is asserted now is the absence, including the absence
+//      of the REQUEST — see "no face, and no request for one" below.
 //   2. Every figure in the conversion block is one the SERVER recorded:
 //      the sender's debit and currency, the receiver's amount and currency,
 //      and the rate in its stored direction (1 receiver-currency unit =
@@ -13,8 +17,10 @@
 //      reload when the row comes back from the server. The expected values
 //      are read off the fake server's own ledger, never recomputed here.
 //   3. Share sends a PNG of the receipt. With no Web Share for files the
-//      browser downloads it; the downloaded file is decoded here and the
-//      pixel at the avatar's centre must be the seeded photo's colour.
+//      browser downloads it, and the downloaded file is decoded here. It
+//      used to be checked by sampling the pixel at the avatar's centre; with
+//      no avatar to sample, what is checked is that the PNG decodes, carries
+//      the conversion, and contains no photograph.
 //   4. A receipt link (/?txn=<reference>) opens that transaction's receipt,
 //      read-only, when it is in the viewer's own history — and does nothing
 //      (no send, no Send Money, no lookup) for an account it is not.
@@ -289,17 +295,6 @@ async function readReceipt(page) {
   });
 }
 
-async function waitForAvatar(page, state) {
-  await page.waitForFunction(
-    (state) => {
-      const avatar = document.querySelector('[data-testid="receipt-counterparty-avatar"] [data-testid="profile-avatar"]');
-      const img = avatar && avatar.querySelector("img");
-      return Boolean(avatar && avatar.getAttribute("data-avatar-state") === state && img && img.complete && img.naturalWidth > 0);
-    },
-    state,
-    { timeout: 20000 }
-  );
-}
 
 // The conversion the fake server RECORDED for its only payment.
 function recordedConversion(api) {
@@ -324,63 +319,82 @@ const sendsOf = (api) => api.calls.filter((c) => c.path === "/api/transactions/s
 
 // ---------------------------------------------------------------------------
 
-describe("the recipient's photo, and no conversion on a same-currency payment", () => {
-  test("India -> India with a seeded photo: photo avatar, correct amount, no conversion block", async () => {
+describe("no face, and no request for one", () => {
+  // The inverse of what this block used to assert. It is deliberately
+  // stronger than "the avatar element is gone": a receipt that still fetched
+  // the photo and simply did not draw it would pass a DOM check and would
+  // still be reaching for someone's face on every receipt opened.
+  test("India -> India: no avatar, and the server is never asked for a photo", async () => {
     const A = ACCOUNTS.india;
     const B = ACCOUNTS.india2;
+    // Seeded WITH a photo on purpose. If anything still asks for it, it is
+    // there to be found, so this fails loudly rather than passing because
+    // there was nothing to fetch.
     const { page, context, api } = await openInstrumented(A, { photos: { [B.symbolId]: RED } });
     await login(page, A);
     await pay(page, { sender: A, receiver: B, receiverGets: 500 });
-    await waitForAvatar(page, "photo");
 
     const receipt = await readReceipt(page);
     assert.equal(receipt.name, B.fullName);
     assert.equal(receipt.conversion, null, "a same-currency payment must not show a conversion block");
     assert.equal(figure(receipt.hero), api.state.ledger[0].sourceAmount);
     assert.equal(figure(receipt.hero), 500);
-    assert.equal(receipt.avatarState, "photo");
-    assert.equal(receipt.avatarSrc, RED, "the avatar must draw exactly the photo the server holds");
-    const box = await page.getByTestId("receipt-counterparty-avatar").boundingBox();
-    assert.ok(box && box.width >= 44 && box.width <= 52, `avatar size ${JSON.stringify(box)}`);
-    if (shotPath("receipt-same-currency-photo.png")) {
-      await page.screenshot({ path: shotPath("receipt-same-currency-photo.png") });
-    }
 
-    // Never persisted anywhere: not in storage, not on the recorded payment.
+    assert.equal(
+      await page.getByTestId("receipt-counterparty-avatar").count(), 0,
+      "the receipt still draws a counterparty avatar"
+    );
+
+    // Given time to make the call if it were going to. The old test polled up
+    // to fifteen seconds for this exact request to appear; the same budget is
+    // spent here proving it does not.
+    await page.waitForTimeout(2000);
+    const photoRead = api.calls.some((c) => decodeURIComponent(c.path) === `/api/users/${B.symbolId}/photo`);
+    assert.ok(!photoRead, "the receipt asked the server for the payee's photo");
+
+    // And the photo is nowhere on the page, in storage, or on the record.
     const base64 = RED.slice(RED.indexOf(",") + 1);
-    const stored = await page.evaluate(() => {
+    const leaked = await page.evaluate((b64) => {
       let all = "";
       for (let i = 0; i < localStorage.length; i++) all += localStorage.getItem(localStorage.key(i)) || "";
-      return all;
-    });
-    assert.ok(!stored.includes(base64), "the counterparty's photo was written to localStorage");
+      return { storage: all.includes(b64), dom: document.documentElement.innerHTML.includes(b64) };
+    }, base64);
+    assert.ok(!leaked.storage, "the counterparty's photo was written to localStorage");
+    assert.ok(!leaked.dom, "the counterparty's photo is in the receipt's markup");
     assert.ok(!JSON.stringify(sendsOf(api).map((c) => c.body)).includes(base64), "the photo was sent with the payment");
     assert.ok(!JSON.stringify(api.state.ledger).includes(base64), "the photo reached the transaction record");
 
-    // Reopened from History: still the photo, still no conversion.
+    // Reopened from History: still no avatar, still no request, still no
+    // conversion block.
+    const before = api.calls.length;
     await reopenFromHistory(page, B.fullName);
-    await waitForAvatar(page, "photo");
     const reopened = await readReceipt(page);
     assert.equal(reopened.conversion, null);
     assert.equal(figure(reopened.hero), 500);
+    assert.equal(await page.getByTestId("receipt-counterparty-avatar").count(), 0);
+    assert.ok(
+      !api.calls.slice(before).some((c) => decodeURIComponent(c.path).endsWith("/photo")),
+      "reopening the receipt asked for a photo"
+    );
+    if (shotPath("receipt-same-currency-no-photo.png")) {
+      await page.screenshot({ path: shotPath("receipt-same-currency-no-photo.png") });
+    }
     await context.close();
   });
 
-  test("India -> India with no photo: a clean fallback avatar", async () => {
+  test("and the counterparty is still named, with their flag", async () => {
+    // What replaced the avatar. The flag moved out of the tab row — which is
+    // no longer drawn on a receipt with no Creator Share — onto the row that
+    // names the person, so it appears exactly once either way.
     const A = ACCOUNTS.india;
     const B = ACCOUNTS.india2;
-    const { page, context, api } = await openInstrumented(A);
+    const { page, context } = await openInstrumented(A);
     await login(page, A);
     await pay(page, { sender: A, receiver: B, receiverGets: 250 });
-    const photoRead = () => api.calls.some((c) => decodeURIComponent(c.path) === `/api/users/${B.symbolId}/photo`);
-    for (let i = 0; i < 100 && !photoRead(); i++) await page.waitForTimeout(150);
-    assert.ok(photoRead(), "the receipt must ask the server for the payee's photo by their Gloobal ID");
-    await waitForAvatar(page, "fallback");
     const receipt = await readReceipt(page);
-    assert.equal(receipt.avatarState, "fallback");
-    assert.ok(receipt.avatarLoaded, "the fallback mark must be a loaded image, not a broken one");
     assert.equal(receipt.name, B.fullName);
-    assert.equal(receipt.conversion, null);
+    const flags = await page.locator('[data-testid="receipt-counterparty"] img, [data-testid="receipt-flag"]').count();
+    assert.ok(flags >= 1, "the counterparty's flag is not drawn anywhere on the receipt");
     await context.close();
   });
 });
@@ -449,10 +463,11 @@ describe("Share sends the receipt as a picture", () => {
   test("cross-currency, payee has a photo: PNG download with the photo, tagline and conversion inside", async () => {
     const A = ACCOUNTS.india;
     const B = ACCOUNTS.america;
+    // Seeded with a photo the server WOULD hand over, so "no photo in the
+    // PNG" is a real finding rather than an artefact of there being none.
     const { page, context, api } = await openInstrumented(A, { photos: { [B.symbolId]: RED } });
     await login(page, A);
     await pay(page, { sender: A, receiver: B, receiverGets: 10 });
-    await waitForAvatar(page, "photo");
 
     const { download, bytes, canvas } = await shareImage(page);
     assert.match(download.suggestedFilename(), /^gloobal-receipt-[A-Za-z0-9-]+\.png$/);
@@ -465,9 +480,16 @@ describe("Share sends the receipt as a picture", () => {
     const png = decodePng(bytes);
     assert.equal(png.width, canvas.width);
     assert.equal(png.height, canvas.height);
-    const [cx, cy] = canvas.avatarCenter.split(",").map(Number);
-    const centre = pixelAt(png, cx, cy);
-    assert.ok(isRed(centre), `the avatar centre should be the payee's red photo, it is rgb(${centre})`);
+    // The avatar is gone, so there is no centre pixel to sample. What is
+    // checked instead is that the seeded photo's colour is nowhere in the
+    // picture at all — a whole-image scan rather than one pixel, which is the
+    // stronger statement and the one the change actually makes.
+    assert.equal(canvas.avatarCenter, "", "the canvas still publishes an avatar centre");
+    let redPixels = 0;
+    for (let i = 0; i < png.data.length; i += 4) {
+      if (isRed([png.data[i], png.data[i + 1], png.data[i + 2]])) redPixels += 1;
+    }
+    assert.equal(redPixels, 0, `the payee's photo colour appears in ${redPixels} pixels of the shared PNG`);
 
     const model = JSON.parse(canvas.model);
     const everything = JSON.stringify(model);
@@ -480,7 +502,7 @@ describe("Share sends the receipt as a picture", () => {
     assert.equal(figure(model.conversion.sentText), row.sourceAmount);
     assert.equal(figure(model.conversion.receivedText), row.destinationAmount);
     assert.equal(figure(model.amountText), row.sourceAmount, "the image headline is the server's debit");
-    assert.equal(model.hasPhoto, true);
+    assert.equal(model.hasPhoto, undefined, "the image model still carries a photo flag");
     assert.equal(model.counterpartyId, B.symbolId);
     assert.equal(model.viewerSymbolId, A.symbolId);
     assert.ok(!everything.includes("data:image"), "the photo data must not ride along in the model record");
@@ -489,34 +511,49 @@ describe("Share sends the receipt as a picture", () => {
     assert.match(await page.getByTestId("receipt-share-feedback").innerText(), /saved/i);
     assert.equal(sendsOf(api).length, 1, "sharing must never send");
 
-    // The text-and-link share is still there, and carries no tagline.
+    // The link travels with the picture, in the SAME action.
+    //
+    // There used to be a second button here — "Share receipt link" — and this
+    // block tapped it. It is gone: one receipt offering two share buttons
+    // meant that whichever you pressed, you did not send the other half.
+    // This browser has no share target, so the share falls to its download
+    // path, and on that path the link goes to the clipboard in the same
+    // gesture. One tap, both halves, by whichever route the platform allows.
+    assert.equal(await page.getByLabel("Share receipt link", { exact: true }).count(), 0,
+      "the second share button is back");
     await page.evaluate(() => { window.__copied = []; });
-    await tap(page.getByLabel("Share receipt link", { exact: true }));
+    await shareImage(page);
     await page.waitForFunction(() => window.__copied.length > 0, undefined, { timeout: 10000 });
     const copied = await page.evaluate(() => window.__copied[window.__copied.length - 1]);
     assert.match(copied, /\/t\/RCPT000001/);
+    assert.match(copied, /Transaction ID: /, "the summary did not travel with the link");
     assert.ok(!/Hooman|Cashless|Textless|Borderless|Limitless/i.test(copied), `the shared text carries the tagline:\n${copied}`);
     await context.close();
   });
 
-  test("payee without a photo: the avatar centre is the fallback, not red", async () => {
+  test("and with no photo on the server, nothing is drawn in its place either", async () => {
+    // The fallback was the worse half of the old behaviour: where there was
+    // no picture, a brand-gradient disc was drawn instead — the largest mark
+    // on the panel, carrying nothing, present only because the layout had a
+    // hole shaped like a face. This asserts the hole is gone too, not merely
+    // that the photo is.
     const A = ACCOUNTS.india;
     const B = ACCOUNTS.india2;
     const { page, context, api } = await openInstrumented(A);
     await login(page, A);
     await pay(page, { sender: A, receiver: B, receiverGets: 300 });
-    await waitForAvatar(page, "fallback");
+    assert.equal(await page.getByTestId("receipt-counterparty-avatar").count(), 0);
     const { bytes, canvas } = await shareImage(page);
     assert.deepEqual([...bytes.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
     const png = decodePng(bytes);
-    const [cx, cy] = canvas.avatarCenter.split(",").map(Number);
-    const centre = pixelAt(png, cx, cy);
-    assert.ok(!isRed(centre), `no photo, yet the avatar centre is red: rgb(${centre})`);
+    assert.equal(png.width, canvas.width);
     const model = JSON.parse(canvas.model);
-    assert.equal(model.hasPhoto, false);
+    assert.equal(model.hasPhoto, undefined);
+    assert.equal(model.photo, undefined);
     assert.equal(model.conversion, null, "a same-currency image must not show a conversion");
     assert.equal(figure(model.amountText), api.state.ledger[0].sourceAmount);
     assert.ok(JSON.stringify(model).includes("Hooman to Hooman"));
+    if (shotPath("share-same-currency-no-photo.png")) fs.writeFileSync(shotPath("share-same-currency-no-photo.png"), bytes);
     await context.close();
   });
 });

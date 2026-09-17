@@ -5,7 +5,6 @@ import {
   Check,
   Share2
 } from "lucide-react";
-import { Link2 as ReceiptLinkIcon } from "lucide-react";
 
 
 // src/components/dialogs/ReceiptModal.jsx
@@ -59,18 +58,26 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   const [imageShareBusy, setImageShareBusy] = useState11(false);
   const [shareFeedback, setShareFeedback] = useState11("");
   // The link share's own tick, apart from the Transaction ID copy's.
-  const [linkCopied, setLinkCopied] = useState11(false);
   // Who is looking at this receipt: their Gloobal ID for the image's
   // "Sent by / Received by" line. Read from the stored session, the same
   // place every other screen asks.
   const viewerSymbolId = useCurrentSymbolId();
-  // The counterparty's photo, read from the server by their Gloobal ID and
-  // held only in profileAvatar.jsx's in-memory cache — never copied onto the
-  // receipt, the history row, or anything persisted. A coin buy or sell has
-  // no counterparty id (the other side is the reserve, not a person), and a
-  // simulated payment's payee is not a registered account, so neither asks.
-  const counterpartyPhotoId = receipt && receipt.id && receipt.status !== "simulated" ? String(receipt.id) : "";
-  const { photo: counterpartyPhoto, loading: counterpartyPhotoLoading } = useCounterpartyPhoto(counterpartyPhotoId);
+  // No counterparty photo is read here any more.
+  //
+  // It used to call the server by the other party's Gloobal ID to fetch their
+  // picture, and draw it beside their name. Two reasons it is gone, and the
+  // second is the one that settled it:
+  //
+  //   A receipt is a record, and this one is shared — as a link and as a PNG.
+  //   A face is the single thing on it that is not a fact about the payment,
+  //   and it travels further than the sender means it to.
+  //   The fallback was worse than the photo. Where there was no picture the
+  //   component drew a brand-gradient disc, so the largest mark on the block
+  //   carried nothing at all and was there only because the layout had a
+  //   hole shaped like a face.
+  //
+  // profileAvatar.jsx stays — the scan card and the dashboard still use it.
+  // What is removed is this screen's request for it.
   useEffect10(() => {
     if (receipt) {
       setReceiptTab(receipt.kind === "share" ? "share" : "payment");
@@ -202,6 +209,19 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // while the previous one was left on its share tab cannot land on a tab
   // this receipt does not have.
   const onShareTab = hasShareEvent && receiptTab === "share";
+  // Which currency the hero figure is in, and whether saying so adds
+  // anything. See the note beside the line that draws it.
+  //
+  // Whether fmtMoney already ends in the code is a property of the CURRENCY,
+  // not of the amount — it appends the code exactly for those with no symbol
+  // of their own — so it is probed with a fixed 1 rather than with the hero
+  // figure. That keeps this independent of where the hero amounts are worked
+  // out further down the component.
+  const heroCurrencyRaw = onShareTab ? receipt.currencyCode : (paymentKnown ? paymentCurrency : null);
+  const heroCurrencyCode = heroCurrencyRaw &&
+    !String(fmtMoney(1, heroCurrencyRaw)).endsWith(String(heroCurrencyRaw))
+    ? String(heroCurrencyRaw)
+    : "";
   const tint = onShareTab
     ? (shareIsCredit ? T.positive : T.negative)
     : (paymentIsSent ? T.negative : T.positive);
@@ -361,27 +381,39 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     : (isShareReceipt ? receipt.sourceReceiptCode || "" : receipt.receiptCode || "");
   const receiptSharePath = receiptShareCode || (rawTxnId ? encodeURIComponent(rawTxnId) : "");
   const receiptShareUrl = receiptSharePath ? `${GLOOBAL_API_BASE}/t/${receiptSharePath}` : "";
-  const handleShareTxnId = () => {
-    if (!rawTxnId) return;
-    const money = fmtMoney(Number(receipt.amount || 0), receipt.currencyCode);
-    const who = receipt.name ? `${isSent ? "To" : "From"}: ${receipt.name}${receiptCountryName ? ` (${receiptCountryName})` : ""}` : "";
-    const lines = [
-      `Gloobal receipt - ${isSent ? "money sent" : "money received"}`,
+  // The words that travel with the picture.
+  //
+  // Built from the TAB's receipt, not the raw row, so the summary and the
+  // image describe the same movement. They did not before: the picture was
+  // built per tab and this text was not, so sharing a payment's Creator Share
+  // tab sent a picture of the share captioned with the payment's figure.
+  //
+  // `for` is the per-tab receipt; rawTxnId is already per-tab.
+  const receiptShareSummary = (For) => {
+    const r = For || receipt;
+    const sent = r.direction === "sent";
+    const money = fmtMoney(Number(r.amount || 0), r.currencyCode);
+    const who = r.name ? `${sent ? "To" : "From"}: ${r.name}${receiptCountryName ? ` (${receiptCountryName})` : ""}` : "";
+    return [
+      `Gloobal receipt - ${sent ? "money sent" : "money received"}`,
       money,
       who,
-      `${receipt.date || ""}${receipt.time ? ` \u00b7 ${receipt.time}` : ""}`,
+      `${r.date || ""}${r.time ? ` \u00b7 ${r.time}` : ""}`,
       `Transaction ID: ${rawTxnId}`
-    ].filter(Boolean);
-    const text = lines.join("\n");
+    ].filter(Boolean).join("\n");
+  };
+  // Text and link only. This is no longer a button — it is what runs when the
+  // picture could not be drawn, so that a failure still sends the receipt
+  // rather than nothing.
+  const handleShareTxnId = () => {
+    if (!rawTxnId) return;
+    const text = receiptShareSummary(imageReceiptForTab());
     // The clipboard fallback copies the WHOLE receipt including the link,
     // rather than the bare id it used to leave behind.
     shareOrCopy(
       { title: "Gloobal receipt", text, url: receiptShareUrl },
       `${text}\n${receiptShareUrl}`,
-      () => {
-        setLinkCopied(true);
-        setTimeout(() => setLinkCopied(false), 1400);
-      }
+      () => setShareFeedback("Receipt and link copied.")
     );
   };
   // ── Share the receipt as a PICTURE ─────────────────────────────────────
@@ -436,20 +468,28 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       // Accounts made before the name step carry their mobile number as
       // fullName; a phone number is not a name to print on a shared picture.
       const viewerName = storedName && !/^\+?\d[\d\s-]*$/.test(storedName) ? storedName : "";
-      outcome = await shareReceiptImage(imageReceiptForTab(), {
+      // No photo is passed, and receiptImage.js no longer fetches one of its
+      // own. The shared picture carries the payment and nobody's face.
+      // ONE share, carrying both halves. The picture and the /t/ link go out
+      // in a single sheet; there is no second share button any more.
+      const tabReceipt = imageReceiptForTab();
+      outcome = await shareReceiptImage(tabReceipt, {
         viewerName,
         viewerSymbolId: viewerSymbolId || "",
-        // The photo this screen already loaded. `undefined` while it is still
-        // loading lets shareReceiptImage wait on the same cached request
-        // instead of drawing the fallback; null means "no photo", said once.
-        photo: !counterpartyPhotoId ? null : counterpartyPhotoLoading ? undefined : counterpartyPhoto
+        summary: rawTxnId ? receiptShareSummary(tabReceipt) : "",
+        link: receiptShareUrl
       });
     } catch (e) {
       outcome = "failed";
     } finally {
       setImageShareBusy(false);
     }
-    if (outcome === "shared") setShareFeedback("Receipt image shared.");
+    if (outcome === "shared") setShareFeedback(receiptShareUrl ? "Receipt and link shared." : "Receipt shared.");
+    // Said out loud rather than swallowed: some share targets refuse a link
+    // alongside a file, and a person who expected both should be told which
+    // one went, not left to discover it in the chat they sent it to.
+    else if (outcome === "shared-without-link") setShareFeedback("Receipt shared. This app wouldn't take the link with it — use Copy to send it.");
+    else if (outcome === "downloaded-link-copied") setShareFeedback("Receipt saved to your downloads, and the link copied.");
     else if (outcome === "downloaded") setShareFeedback("Receipt image saved to your downloads.");
     else if (outcome === "cancelled") setShareFeedback("");
     else {
@@ -617,7 +657,23 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       overflowWrap: "anywhere"
     }}
     data-testid="receipt-hero-share"
-  >{shareIsCredit ? "+" : "\u2212"}{fmtMoney(shownShareAmount, shareCurrency)}</div>}</div></div>{shareFeedback && <div
+  >{shareIsCredit ? "+" : "\u2212"}{fmtMoney(shownShareAmount, shareCurrency)}</div>}{
+    /* The currency CODE under the figure.
+       fmtMoney draws the symbol, and a symbol is not the currency: \u20b9 is
+       shared by India, Pakistan, Nepal, Sri Lanka and Mauritius, $ by more
+       than twenty, and kr by four. On a cross-border receipt \u2014 the only kind
+       this app makes \u2014 "1,106.61\u20b9" alone does not say which rupee left the
+       account, and this is the document somebody keeps.
+       The shared PNG has carried this line since it was written; the screen
+       it is a picture of did not, so the two disagreed about how completely
+       the same payment was described.
+       Suppressed when the formatted figure already ends in the code, which
+       is what fmtMoney does for currencies with no symbol of their own
+       ("1,450.25 CHF") \u2014 printing it twice reads as a mistake. */
+  }{heroCurrencyCode && <div
+    data-testid="receipt-hero-currency"
+    style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, letterSpacing: 0.6, marginTop: 2 }}
+  >{heroCurrencyCode}</div>}</div></div>{shareFeedback && <div
     role="status"
     data-testid="receipt-share-feedback"
     style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textAlign: "center", lineHeight: 1.4 }}
@@ -697,13 +753,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        The flag no longer hangs off this box's top edge: it is on the
        tab row above, once for the whole receipt. The top padding is
        back to 14 because there is nothing overlapping it any more. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}>{
-    /* The counterparty's face, beside the rows that name them. Only when
-       there is a Gloobal ID to read it by (see counterpartyPhotoId): the
-       fallback disc on a coin buy would put a person-shaped mark where the
-       other side is the reserve. Drawn straight away with the fallback and
-       swapped for the photo when it lands, so the receipt never waits. */
-  }{counterpartyPhotoId && <span data-testid="receipt-counterparty-avatar" style={{ display: "flex", flexShrink: 0 }}><ProfileAvatar photo={counterpartyPhoto} name={receipt.name} size={48} /></span>}<div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minWidth: 0 }}><ReceiptRow
+  }<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minWidth: 0 }}><ReceiptRow
     testId="receipt-counterparty"
     // paymentIsSent, not isSent. This tab describes the PAYMENT, and on a
     // Creator Share receipt `direction` describes the share — so a share Jio
@@ -869,31 +919,16 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       whiteSpace: "nowrap"
     }}
   >{showingShare ? "Share transaction ID" : "Transaction ID"}</span>{
-    /* The text-and-link share: the summary plus the /t/<code> link, through
-       the phone's share sheet or the clipboard. Mirrors the copy button on
-       the opposite corner. The Share button on the amount card sends the
-       receipt as a picture instead. */
+    /* There was a second share button here: the summary plus the /t/ link,
+       through the share sheet or the clipboard. It is gone. One receipt
+       offering two share buttons meant that whichever you pressed, you did
+       not send the other half — and neither half is the receipt on its own.
+       The Share button on the amount card now carries the picture AND the
+       link in a single sheet (receiptShareAttempts, features/receipts/
+       receiptImage.js), and handleShareTxnId survives only as what runs when
+       the picture cannot be drawn. Copying the ID is still its own button on
+       the opposite corner: copying is not sharing. */
   }<button
-    onClick={handleShareTxnId}
-    aria-label="Share receipt link"
-    data-testid="receipt-share-link"
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: 0,
-      left: 14,
-      transform: "translateY(-50%)",
-      width: 28,
-      height: 28,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surfaceAlt,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer"
-    }}
-  >{linkCopied ? <Check size={13} color={T.positive} /> : <ReceiptLinkIcon size={13} color={T.inkSoft} />}</button><button
     onClick={handleCopyTxnId}
     aria-label="Copy transaction ID"
     className="v2-tap"

@@ -39,35 +39,62 @@ describe("the share sheet gets a summary and a link", () => {
     assert.match(receipt, /\{ title: "Gloobal receipt", text, url: receiptShareUrl \}/);
   });
 
+  // The summary used to be built inside handleShareTxnId, which was a button
+  // of its own. There is one share button now and the summary rides with the
+  // picture, so it is built once in receiptShareSummary and read by both —
+  // which is where these assertions point.
+  const summaryFn = (() => {
+    const at = receipt.indexOf("const receiptShareSummary = (");
+    assert.ok(at !== -1, "receiptShareSummary is gone — where is the shared text built?");
+    return receipt.slice(at, receipt.indexOf("\n  };", at));
+  })();
+
   test("the message carries amount, currency, counterparty, date and reference", () => {
-    const at = receipt.indexOf("const handleShareTxnId = () => {");
-    const fn = receipt.slice(at, receipt.indexOf("\n  };", at));
     // The symbol is no longer read here: fmtMoney takes the CODE and
     // produces both the number and the unit, in that order.
-    assert.match(fn, /receipt\.currencyCode/);
-    assert.match(fn, /Transaction ID: \$\{rawTxnId\}/);
-    assert.match(fn, /receipt\.date/);
+    assert.match(summaryFn, /r\.currencyCode/);
+    assert.match(summaryFn, /Transaction ID: \$\{rawTxnId\}/);
+    assert.match(summaryFn, /r\.date/);
+    assert.match(summaryFn, /r\.name/);
   });
 
   test("the amount is formatted against its own currency code", () => {
     // Same rule as every other figure in the app: the unit and the decimal
     // places come from the same code, so a shared receipt cannot repeat the
     // cross-border mislabelling.
-    const at = receipt.indexOf("const handleShareTxnId = () => {");
-    const fn = receipt.slice(at, receipt.indexOf("\n  };", at));
-    assert.match(fn, /fmtMoney\(Number\(receipt\.amount \|\| 0\), receipt\.currencyCode\)/);
+    assert.match(summaryFn, /fmtMoney\(Number\(r\.amount \|\| 0\), r\.currencyCode\)/);
   });
 
   test("and the code is not appended a second time", () => {
     // The shared text used to read "$20.00 USD" — symbol in front, code
     // bolted on the end to disambiguate it. fmtMoney carries the unit
     // itself now, so that tail would print it twice: "20.00$ USD".
-    const at = receipt.indexOf("const handleShareTxnId = () => {");
-    const fn = receipt.slice(at, receipt.indexOf("\n  };", at));
     assert.ok(
-      !/\$\{receipt\.currencyCode \? ` \$\{receipt\.currencyCode\}`/.test(fn),
+      !/\$\{r\.currencyCode \? ` \$\{r\.currencyCode\}`/.test(summaryFn),
       "the currency code is appended after an amount that already names it"
     );
+  });
+
+  test("the summary describes the TAB, so it agrees with the picture beside it", () => {
+    // It did not before. The picture was built per tab and this text was not,
+    // so sharing a payment's Creator Share tab sent a picture of the share
+    // captioned with the payment's figure. Now one call supplies both.
+    assert.match(summaryFn, /const r = For \|\| receipt;/);
+    const call = receipt.slice(receipt.indexOf("outcome = await shareReceiptImage("));
+    assert.match(call.slice(0, 400), /summary: rawTxnId \? receiptShareSummary\(tabReceipt\) : ""/);
+    assert.match(call.slice(0, 400), /link: receiptShareUrl/);
+    const fallback = receipt.slice(receipt.indexOf("const handleShareTxnId = () => {"));
+    assert.match(fallback.slice(0, 400), /receiptShareSummary\(imageReceiptForTab\(\)\)/);
+  });
+
+  test("there is one share entry point, not two", () => {
+    // The receipt had a picture share on the amount card AND a text-and-link
+    // share on the Transaction ID box. Whichever you pressed, you did not
+    // send the other half.
+    assert.doesNotMatch(receipt, /data-testid="receipt-share-link"/);
+    assert.equal((receipt.match(/aria-label="Share receipt/g) || []).length, 1);
+    // handleShareTxnId survives, but only as the failure path.
+    assert.equal((receipt.match(/handleShareTxnId\(\)/g) || []).length, 1);
   });
 
   test("the link points at the backend receipt route", () => {

@@ -85,6 +85,14 @@ async function installShareProbe(context) {
         return Promise.resolve();
       },
     });
+    // Headless Chromium has no share target, so canShare answers false for
+    // everything and the picture would never be offered. Accept the richest
+    // payload — the rung that carries file + text + url — which is what a
+    // phone that can share files does.
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: (data) => Boolean(data && data.files && data.files.length),
+    });
   });
 }
 
@@ -167,10 +175,15 @@ async function reopenFromHistory(page, counterpartyName) {
 
 // Taps Share on the open receipt and returns the link that reached the share
 // sheet or the clipboard, whichever the browser advertised.
+//
+// There is ONE share button now. It used to be two — a picture on the amount
+// card and a text-and-link share on the Transaction ID box — and this suite
+// tapped the second. Both halves go out together, so the same tap that sends
+// the picture is the one that carries the link, and that is what is asserted.
 async function shareOpenReceipt(page) {
   await page.evaluate(() => { window.__copied = []; window.__shared = null; });
-  await tap(page.getByLabel("Share transaction", { exact: true }).first());
-  await page.waitForFunction(() => (window.__copied || []).length > 0, { timeout: 10000 });
+  await tap(page.getByTestId("receipt-share-image").first());
+  await page.waitForFunction(() => window.__shared || (window.__copied || []).length > 0, { timeout: 30000 });
   const shared = await page.evaluate(() => window.__shared);
   const copied = await page.evaluate(() => window.__copied[window.__copied.length - 1]);
   const whole = (shared && shared.text ? `${shared.text}\n${shared.url || ""}` : copied) || copied;
@@ -222,6 +235,50 @@ describe("the link the receipt's Share button produces", () => {
     const segment = url.split("/t/")[1];
     assert.equal(segment, PAYMENT_CODE, `path segment is ${segment}`);
     assert.ok(segment.length <= 10, `the code should be 8-10 characters, it was ${segment.length}`);
+  });
+
+  test("one tap sends the picture AND the link, in a single share", async () => {
+    // The point of the merge. There used to be two share buttons, and
+    // whichever you pressed you sent one half: a picture that cannot be
+    // clicked through to the transaction, or a link that cannot be looked at
+    // in a chat. This asserts one sheet carrying both.
+    await page.evaluate(() => { window.__shared = null; window.__copied = []; });
+    await tap(page.getByTestId("receipt-share-image").first());
+    await page.waitForFunction(() => window.__shared, { timeout: 30000 });
+    const payload = await page.evaluate(() => {
+      const d = window.__shared || {};
+      const f = (d.files || [])[0];
+      return {
+        keys: Object.keys(d),
+        url: d.url || "",
+        text: d.text || "",
+        title: d.title || "",
+        fileName: f ? f.name : "",
+        fileType: f ? f.type : "",
+        fileSize: f ? f.size : 0,
+        fileCount: (d.files || []).length
+      };
+    });
+    assert.equal(payload.fileCount, 1, `the share carried ${payload.fileCount} files`);
+    assert.equal(payload.fileType, "image/png");
+    assert.match(payload.fileName, /^gloobal-receipt-.+\.png$/);
+    // A real rendered receipt, not an empty canvas.
+    assert.ok(payload.fileSize > 5000, `the picture was only ${payload.fileSize} bytes`);
+    assert.ok(payload.url.startsWith(`${API_ORIGIN}/t/`), `no link in the share: ${payload.url}`);
+    assert.equal(payload.title, "Gloobal receipt");
+    // And the summary that used to be the other button's whole payload.
+    assert.match(payload.text, /Transaction ID: /);
+    assert.ok(Array.from(payload.text.match(/Transaction ID: (.*)/)[1].trim()).length === 20,
+      "the summary quotes something other than the 20-symbol reference");
+  });
+
+  test("the receipt offers exactly one share button", async () => {
+    const shares = await page.evaluate(() =>
+      [...document.querySelectorAll("button")]
+        .map((b) => b.getAttribute("aria-label") || "")
+        .filter((l) => /share/i.test(l))
+    );
+    assert.deepEqual(shares, ["Share receipt image"], `share buttons on screen: ${JSON.stringify(shares)}`);
   });
 
   test("the URL carries no percent-encoded Unicode", async () => {
@@ -339,7 +396,7 @@ async function loginAfterFollowingLink(target) {
 // over the shared page; this is the same thing for the second context.
 async function shareOpenReceiptOn(target) {
   await target.evaluate(() => { window.__copied = []; window.__shared = null; });
-  await tap(target.getByLabel("Share transaction", { exact: true }).first());
+  await tap(target.getByTestId("receipt-share-image").first());
   await target.waitForFunction(() => (window.__copied || []).length > 0, { timeout: 10000 });
   const shared = await target.evaluate(() => window.__shared);
   const copied = await target.evaluate(() => window.__copied[window.__copied.length - 1]);

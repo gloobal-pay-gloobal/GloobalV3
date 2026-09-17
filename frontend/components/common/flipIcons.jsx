@@ -264,9 +264,23 @@ function SyncedFlipIcon({ Icon, size, flipInfo, frontBackground, radius = T.radi
     }}
   >{content === "logo" ? <img src={G_LOGO_DATA_URI} alt="" style={{ width: "62%", height: "62%", objectFit: "contain", filter: "brightness(0) invert(1)" }} /> : <span style={{ fontSize: size * 0.7, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay }}>{symbol}</span>}</span></div></div>;
 }
+// ── The GH2H mark ────────────────────────────────────────────────────────
+//
+// The letters and their colours were local to GH2HFlipCircle, which was fine
+// while the tiles were the only thing that drew them. They are module-level
+// now because the receive QR paints the same mark in its fourth corner (see
+// gloobalQrCornerFace in common/gloobalReceiveQrCard.jsx), and a second copy
+// of the four letters is a second thing to remember to change.
+//
+// flipIcons.jsx is emitted before gloobalReceiveQrCard.jsx in build_app.mjs's
+// FRONTEND_MODULES, which matters: these are `var` initialisers, and unlike
+// function declarations they do not hoist across the concatenated bundle.
+var GH2H_LETTERS = ["G", "H", "2", "H"];
+var GH2H_LETTER_COLORS = ["#3B82F6", "#9333EA", "#059669", "#EC4899"];
+
 function GH2HFlipCircle({ size = 40 }) {
-  const LETTERS = ["G", "H", "2", "H"];
-  const LETTER_COLORS = ["#3B82F6", "#9333EA", "#059669", "#EC4899"];
+  const LETTERS = GH2H_LETTERS;
+  const LETTER_COLORS = GH2H_LETTER_COLORS;
   const [step, setStep] = useState9(0);
   const [symbolChar, setSymbolChar] = useState9(() => DIAL_SYMBOLS[Math.floor(Math.random() * DIAL_SYMBOLS.length)]);
   useEffect9(() => {

@@ -413,7 +413,15 @@ describe("the receipt is not labelled as a payment", () => {
   test("and there is no tab row at all on a coin receipt", () => {
     // One tab is not a toggle. It is a button that does nothing, restating
     // the line already above it.
-    assert.match(modal(), /\{!isCoinReceipt && <div style=\{\{ display: "flex", alignItems: "center", gap: 6, padding: 4, borderRadius: 999/);
+    //
+    // The condition widened rather than changed: it was `!isCoinReceipt`, and
+    // the same reasoning turned out to apply to a PAYMENT that carried no
+    // Creator Share — also one tab, also drawing a full-width pill that does
+    // nothing. Both now fall out of one rule, so this asserts the rule and
+    // then asserts the coin case still satisfies it.
+    const m = modal();
+    assert.match(m, /const showReceiptTabs = !isCoinReceipt && hasShareEvent;/);
+    assert.match(m, /\{showReceiptTabs && <div style=\{\{ display: "flex", alignItems: "center", gap: 6, padding: 4, borderRadius: 999/);
   });
 
   test("the coin block is drawn only for a coin receipt", () => {

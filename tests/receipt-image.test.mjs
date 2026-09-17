@@ -19,7 +19,7 @@ const source = readSource(SRC);
 const domain = loadDomain(["fmt", "fmtMoney", "currencyDecimals", "G_LOGO_DATA_URI", "ALL_COUNTRIES", "T", "POSITION_COLORS"]);
 const M = new Function(
   ...Object.keys(domain),
-  `${source}\nreturn { buildReceiptImageModel, renderReceiptImage, receiptImageToBlob, shareReceiptImage, receiptImageFilename, RECEIPT_IMAGE_BRAND };`
+  `${source}\nreturn { buildReceiptImageModel, renderReceiptImage, receiptImageToBlob, shareReceiptImage, receiptImageFilename, receiptShareAttempts, RECEIPT_IMAGE_BRAND };`
 )(...Object.values(domain));
 
 const REF = "■+×=●■+×=●■+×=●■+×=●";
@@ -108,6 +108,39 @@ describe("buildReceiptImageModel", () => {
     assert.equal(m.kind, "share");
     assert.equal(m.kindLabel, "Creator Share");
     assert.equal(m.amountText, domain.fmtMoney(10, "INR"));
+    // And it SAYS so over the figure. The direction is true — the money came
+    // in — but a share receipt labelled "Money received" reads as an ordinary
+    // payment that happens to carry a share of exactly its own size.
+    assert.equal(m.heroLabel, "Creator Share");
+  });
+
+  describe("the Creator Share chip", () => {
+    // It is on every receipt, and the chip is the only place the share
+    // appears, so these two strings are the whole contract.
+    test("carries rate AND amount on an ordinary payment, at zero included", () => {
+      const paid = M.buildReceiptImageModel(base({ amount: 500, shareRate: 2, shareAmount: 10 }));
+      assert.equal(paid.shareChipLabel, "Creator share");
+      assert.equal(paid.shareChipValue, `2% · ${domain.fmtMoney(10, "INR")}`);
+
+      const none = M.buildReceiptImageModel(base({ amount: 500, shareRate: 0 }));
+      assert.equal(none.shareRate, 0);
+      assert.equal(none.shareChipValue, `0% · ${domain.fmtMoney(0, "INR")}`);
+      assert.ok(none.shareChipValue, "the chip has nothing to draw at 0%");
+    });
+
+    test("carries the rate only on a share receipt, where the figure IS the amount", () => {
+      const m = M.buildReceiptImageModel(base({ kind: "share", direction: "received", amount: 10, shareAmount: 10, shareRate: 2.5 }));
+      assert.equal(m.shareChipLabel, "Share rate");
+      assert.equal(m.shareChipValue, "2.5%");
+      assert.equal(m.amountText, domain.fmtMoney(10, "INR"));
+    });
+
+    test("the renderer draws the chip from those fields, not from its own wording", () => {
+      const chip = source.slice(source.indexOf("The Creator Share chip, on every receipt"), source.indexOf("The white panel"));
+      assert.match(chip, /m\.shareChipLabel/);
+      assert.match(chip, /m\.shareChipValue/);
+      assert.doesNotMatch(chip, /"CREATOR SHARE"/);
+    });
   });
 
   test("a pending or simulated payment is never labelled successful", () => {
@@ -115,34 +148,61 @@ describe("buildReceiptImageModel", () => {
     assert.notEqual(M.buildReceiptImageModel(base({ status: "simulated" })).headline, "Payment Successful");
   });
 
-  describe("photo", () => {
-    test("inline PNG and JPEG data URLs are accepted", () => {
-      for (const p of [PNG, JPEG]) {
-        const m = M.buildReceiptImageModel(base(), { photo: p });
-        assert.equal(m.photo, p);
-        assert.equal(m.hasPhoto, true);
+  describe("nobody's face is on it", () => {
+    // This block used to assert the OPPOSITE: which photo formats were
+    // accepted onto the image and which were rejected. The photo is gone, so
+    // the honest replacement is not a weaker version of those tests — it is
+    // their inverse. The model must carry no photo whatever it is handed,
+    // including the formats that used to be waved through.
+    test("no photo reaches the model, whatever is passed", () => {
+      for (const photo of [PNG, JPEG, domain.G_LOGO_DATA_URI, "https://example.com/me.jpg", null, undefined]) {
+        const m = M.buildReceiptImageModel(base(), { photo, viewerName: "Aditya" });
+        assert.equal(m.photo, undefined, "the model still has a photo field");
+        assert.equal(m.hasPhoto, undefined, "the model still has a hasPhoto field");
+        assert.ok(
+          !JSON.stringify(m).includes("data:image"),
+          "an image data URL reached the model"
+        );
       }
     });
-    test("the default G logo is not a photo", () => {
-      const m = M.buildReceiptImageModel(base(), { photo: domain.G_LOGO_DATA_URI });
-      assert.equal(m.photo, null);
-      assert.equal(m.hasPhoto, false);
+
+    test("and the module never asks the server for one", () => {
+      // The stronger half. Sharing a receipt used to call loadCounterpartyPhoto
+      // — a request for the other party's picture — purely to feed the avatar.
+      // With the avatar gone that request buys nothing, and not making it is
+      // the point: a shared receipt no longer reaches for anyone's face.
+      const src = readSource("frontend/features/receipts/receiptImage.js");
+      assert.ok(!/loadCounterpartyPhoto\s*\(/.test(src), "the receipt image still fetches a photo");
+      assert.ok(!/drawImage\(\s*photo/.test(src), "the receipt image still draws a photo");
     });
-    test("svg, remote, script and junk values are rejected", () => {
-      for (const p of [
-        "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
-        "data:image/svg+xml,<svg onload=alert(1)>",
-        "javascript:alert(1)",
-        "https://example.com/me.jpg",
-        "data:text/html;base64,PGgxPg==",
-        "data:image/png;base64,abc\"onerror=alert(1)",
-        "", null, undefined, 42, {}
-      ]) {
-        const m = M.buildReceiptImageModel(base(), { photo: p });
-        assert.equal(m.photo, null, String(p));
-        assert.equal(m.hasPhoto, false);
-      }
+
+    test("the receipt screen does not pass one either", () => {
+      const src = readSource("frontend/components/dialogs/ReceiptModal.jsx");
+      assert.ok(!/useCounterpartyPhoto\s*\(/.test(src), "the receipt screen still loads a counterparty photo");
+      assert.ok(!/<ProfileAvatar/.test(src), "the receipt screen still draws an avatar");
     });
+  });
+
+  test("the reference is a full-length transaction ID, carried whole", () => {
+    // The fixture used to be 12 symbols — a Gloobal ID's length, not a
+    // transaction reference's — and the render rig inherited that, so the
+    // Transaction ID block was only ever drawn at 60% of its real content.
+    // Read the real length from the generator so neither can drift again.
+    const gen = readSource("backend/utils/idGenerators.js");
+    const length = Number(gen.match(/var TXN_ID_LENGTH = (\d+);/)[1]);
+    assert.equal(length, 20);
+    assert.equal(Array.from(REF).length, length, "the fixture is not a real transaction ID length");
+
+    const m = M.buildReceiptImageModel(base({ txnId: REF }));
+    assert.equal(m.reference, REF);
+    assert.equal(Array.from(m.reference).length, length, "the model shortened the reference");
+    assert.doesNotMatch(m.reference, /…/, "the model ellipsised the reference");
+
+    // Spaces are a display concern; the value is the symbols alone. A
+    // reference saved before that rule was settled still arrives grouped.
+    const spaced = M.buildReceiptImageModel(base({ txnId: "■+×=● ○□−■+ ×=●○□ −■+×= " }));
+    assert.equal(Array.from(spaced.reference).length, length);
+    assert.doesNotMatch(spaced.reference, /\s/);
   });
 
   test("brand strings are exact", () => {
@@ -186,11 +246,78 @@ describe("renderReceiptImage and sharing, by source", () => {
     assert.doesNotMatch(source, /buildGloobalQrMatrix|gloobalQr|buildGloobalPayUrl/);
   });
 
-  test("the share sends only the image, with no text duplicating the tagline", () => {
-    const share = source.slice(source.indexOf("async function shareReceiptImage"));
-    assert.match(share, /navigator\.share\(\{ files: \[file\], title: "Gloobal receipt" \}\)/);
-    assert.doesNotMatch(share, /text:/);
-    assert.match(share, /AbortError/);
+  describe("one share, carrying the picture and the link", () => {
+    // This block used to assert the opposite — that the share sent ONLY the
+    // image and contained no `text:` at all. That guard was about the tagline
+    // not being repeated in the share sheet, and it is kept below as its own
+    // assertion. What changed is the product: there were two share buttons on
+    // one receipt, so whichever you pressed you did not send the other half.
+    const FILE = { name: "gloobal-receipt-A7K9M2QX8P.png" };
+    const SUMMARY = "Gloobal receipt - money sent\n500.00₹";
+    const LINK = "https://gloobal-pay.onrender.com/t/A7K9M2QX8P";
+
+    test("the first thing offered carries all three", () => {
+      const [first] = M.receiptShareAttempts(FILE, SUMMARY, LINK);
+      assert.deepEqual(first[0], { files: [FILE], title: "Gloobal receipt", text: SUMMARY, url: LINK });
+      assert.equal(first[1], "shared");
+    });
+
+    test("every rung keeps the picture — the link is what gets dropped", () => {
+      const rungs = M.receiptShareAttempts(FILE, SUMMARY, LINK);
+      assert.ok(rungs.length >= 3, `only ${rungs.length} attempts`);
+      for (const [payload] of rungs) {
+        assert.deepEqual(payload.files, [FILE], "a rung dropped the picture");
+        assert.equal(payload.title, "Gloobal receipt");
+      }
+      // Narrowing, never widening: once a field is gone it does not return.
+      const carries = rungs.map(([p]) => (p.url ? 2 : p.text ? 1 : 0));
+      for (let i = 1; i < carries.length; i += 1) {
+        assert.ok(carries[i] <= carries[i - 1], `rung ${i} asks for more than rung ${i - 1}`);
+      }
+    });
+
+    test("the link survives as text on the rung where url is refused", () => {
+      const rungs = M.receiptShareAttempts(FILE, SUMMARY, LINK);
+      const folded = rungs.find(([p]) => !p.url && p.text && p.text.includes(LINK));
+      assert.ok(folded, "no rung folds the link into the text");
+      assert.ok(folded[0].text.includes(SUMMARY), "folding the link lost the summary");
+      assert.equal(folded[1], "shared");
+    });
+
+    test("the last rung reports that the link did NOT go", () => {
+      const rungs = M.receiptShareAttempts(FILE, SUMMARY, LINK);
+      const last = rungs[rungs.length - 1];
+      assert.equal(last[0].url, undefined);
+      assert.equal(last[0].text, undefined);
+      // The caller has to be able to tell the person. Reporting "shared" here
+      // would drop the link silently, which is the failure this whole change
+      // exists to stop.
+      assert.equal(last[1], "shared-without-link");
+    });
+
+    test("with no link there is nothing to warn about", () => {
+      const rungs = M.receiptShareAttempts(FILE, SUMMARY, "");
+      for (const [payload, outcome] of rungs) {
+        assert.equal(payload.url, undefined);
+        assert.equal(outcome, "shared", "warned about a link that was never asked for");
+      }
+    });
+
+    test("a dismissed sheet stops the ladder instead of re-opening it", () => {
+      const share = source.slice(source.indexOf("async function shareReceiptImage"));
+      assert.match(share, /AbortError/);
+      // The catch must RETURN, not continue — a loop that swallowed the
+      // rejection would put a second sheet in front of someone who just
+      // closed one.
+      const loop = share.slice(share.indexOf("for (const [payload"));
+      assert.match(loop, /catch \(error\) \{\s*(\/\/[^\n]*\n\s*)*return error/);
+    });
+
+    test("the tagline is still not repeated in the share sheet", () => {
+      const share = source.slice(source.indexOf("function receiptShareAttempts"));
+      assert.doesNotMatch(share, /Cashless/);
+      assert.doesNotMatch(share, /brand\.tagline/);
+    });
   });
 
   test("the download filename is safe ASCII", () => {

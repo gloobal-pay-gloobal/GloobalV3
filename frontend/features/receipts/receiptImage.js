@@ -26,10 +26,11 @@
 //   - Nothing on it reads as a request for money. No QR, no link, no "pay"
 //     wording — a forwarded receipt must never be mistaken for something to
 //     act on. The reference and receipt code identify it; that is all.
-//   - A photo is drawn only if it is an inline PNG/JPEG data URL. Anything
-//     else (the default G logo, SVG, a remote URL, a script URL) is ignored
-//     and the Gloobal fallback disc is drawn instead. Data URLs also keep
-//     the canvas untainted, so toBlob keeps working.
+//   - Nobody's face is on it. The counterparty's photo was drawn here and
+//     is not any more — see "Who it was" below for why the fallback disc was
+//     the worse half of that. Nothing in this file loads a photo, so a
+//     forwarded receipt cannot carry one and the canvas cannot be tainted by
+//     one either.
 
 var RECEIPT_IMAGE_BRAND = {
   wordmark: "GLOOBAL",
@@ -38,14 +39,6 @@ var RECEIPT_IMAGE_BRAND = {
 };
 
 var RECEIPT_IMAGE_DOT_COLORS = ["#2563EB", "#DC2626", "#EA580C", "#059669", "#9333EA", "#DB2777"];
-
-var RECEIPT_IMAGE_PHOTO_PATTERN = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/;
-
-function receiptImagePhotoOrNull(photo) {
-  if (typeof photo !== "string") return null;
-  if (typeof G_LOGO_DATA_URI !== "undefined" && photo === G_LOGO_DATA_URI) return null;
-  return RECEIPT_IMAGE_PHOTO_PATTERN.test(photo) ? photo : null;
-}
 
 function receiptImageCountry(receipt) {
   const list = typeof ALL_COUNTRIES !== "undefined" && Array.isArray(ALL_COUNTRIES) ? ALL_COUNTRIES : [];
@@ -66,7 +59,7 @@ function receiptImageMoney(amount, currency) {
   return currency ? fmtMoney(n, currency) : fmt(n);
 }
 
-function buildReceiptImageModel(receipt, { photo, viewerName, viewerSymbolId } = {}) {
+function buildReceiptImageModel(receipt, { viewerName, viewerSymbolId } = {}) {
   const r = receipt || {};
   const isShare = r.kind === "share";
   const isCoin = r.kind === "coin";
@@ -107,11 +100,74 @@ function buildReceiptImageModel(receipt, { photo, viewerName, viewerSymbolId } =
     }
     : null;
 
-  const safePhoto = receiptImagePhotoOrNull(photo);
+  // ── The Creator Share, always ────────────────────────────────────────
+  //
+  // Always, including when it is zero. A row that disappears at 0% and a row
+  // that reads 0% say different things to somebody reading a forwarded
+  // receipt: the first leaves them to assume a share was taken and not shown.
+  // Only the second is true.
+  //
+  // The AMOUNT is read, not worked out, by the same rule ReceiptModal states
+  // at `shownShareAmount`: the figure the server recorded wins, and the
+  // multiplication below is only the fallback for a payment this device
+  // settled locally and for which no share leg exists. The two round
+  // differently in the last minor unit, and a receipt whose share does not
+  // reconcile with the ledger is worse than one that shows the plainer
+  // figure. A recorded 0 counts as "not recorded" — every builder defaults an
+  // absent share to 0 — so it falls through to the multiplication, which is
+  // also 0 when the rate is 0.
+  const shareRatePercent = Number(r.shareRate) || 0;
+  const recordedShare = Number(r.shareAmount);
+  const shareAmountValue = isShare
+    ? (Number(r.shareAmount) || Number(r.amount) || 0)
+    : (Number.isFinite(recordedShare) && recordedShare > 0
+      ? recordedShare
+      : (Number(r.amount) || 0) * (shareRatePercent / 100));
+  // Trimmed rather than fixed to two places: "20%" not "20.00%", but "2.5%"
+  // keeps its half.
+  const shareRateText = `${Number(shareRatePercent.toFixed(2))}%`;
 
   return {
     headline,
     status,
+    // What the purple zone says above the figure. On a completed payment it
+    // names the DIRECTION, because the status is carried by the mark at the
+    // foot; on anything else it is the headline, so a pending or simulated
+    // payment says so at the top of the card as well as the bottom.
+    //
+    // A Creator Share says so instead of "Money received". The direction is
+    // true but it is not what this row IS, and with the share chip now on
+    // every receipt, a share receipt labelled "Money received" reads as an
+    // ordinary payment that happens to carry a share of exactly its own size.
+    heroLabel: status === "completed"
+      ? (isShare ? "Creator Share" : isCoin ? (r.title || "Gloobal Coin") : isSent ? "Money sent" : "Money received")
+      : headline,
+    // The figure as the card prints it: a MINUS on money that left, nothing
+    // on money that arrived.
+    //
+    // A sign, not a colour — this figure is white on the brand gradient, and
+    // a red-for-out/green-for-in scheme would either fight that ground or be
+    // invisible on it. The minus survives a greyscale print, a screenshot and
+    // a colour-blind reader, which is what a record has to do.
+    //
+    // No "+" on the received side. A leading plus on a receipt reads as an
+    // adjustment or a credit note rather than as money arriving, and the
+    // label above it already says which way it went.
+    //
+    // amountText stays unsigned: it is the formatted figure, and the sign is
+    // a presentation decision about direction, made here in the model so the
+    // renderer keeps making none.
+    heroAmountText: isSent && amountText ? `−${amountText}` : amountText,
+    shareRate: shareRatePercent,
+    shareRateText,
+    shareAmountText: receiptImageMoney(shareAmountValue, currency),
+    shareText: `${shareRateText} \u00b7 ${receiptImageMoney(shareAmountValue, currency)}`,
+    // What the chip on the purple says. On a share receipt the figure above
+    // IS the share amount, so repeating it under a "Creator Share" eyebrow
+    // says the same thing three times; the rate is the part not already
+    // shown. Everywhere else the chip carries both, at zero included.
+    shareChipLabel: isShare ? "Share rate" : "Creator share",
+    shareChipValue: isShare ? shareRateText : `${shareRateText} \u00b7 ${receiptImageMoney(shareAmountValue, currency)}`,
     kind: isShare ? "share" : isCoin ? "coin" : "payment",
     kindLabel: isShare ? "Creator Share" : "",
     direction: isSent ? "sent" : "received",
@@ -132,8 +188,6 @@ function buildReceiptImageModel(receipt, { photo, viewerName, viewerSymbolId } =
     reference: r.txnId ? String(r.txnId).replace(/\s/g, "") : "",
     receiptCode: r.receiptCode ? String(r.receiptCode) : "",
     conversion,
-    photo: safePhoto,
-    hasPhoto: !!safePhoto,
     brand: { ...RECEIPT_IMAGE_BRAND }
   };
 }
@@ -302,6 +356,25 @@ function receiptImageDrawHooman(ctx, cx, baseline, size, color, dotColors, hooma
   ctx.restore();
 }
 
+// An uppercase eyebrow with real tracking. ctx.letterSpacing exists in
+// Chromium only, and a label set solid reads as a mistake at this size, so
+// the gaps are placed by hand. Returns the width drawn.
+function receiptImageDrawTracked(ctx, text, cx, baseline, { size = 11, weight = 800, color = "#FFFFFF", tracking = 1.6, align = "center" } = {}) {
+  ctx.font = `${weight} ${size}px ${RECEIPT_IMAGE_FONT_BODY}`;
+  const chars = Array.from(String(text || ""));
+  const widths = chars.map((ch) => ctx.measureText(ch).width + tracking);
+  const total = widths.reduce((a, b) => a + b, 0) - (chars.length ? tracking : 0);
+  let x = align === "center" ? cx - total / 2 : align === "right" ? cx - total : cx;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = color;
+  chars.forEach((ch, i) => {
+    ctx.fillText(ch, x, baseline);
+    x += widths[i];
+  });
+  return total;
+}
+
 // Symbols one colour each, the way ColoredGloobalId draws them. Shrinks to
 // fit, then ellipsises.
 function receiptImageDrawSymbols(ctx, text, x, baseline, maxWidth, { size = 17, align = "left", colored = true, color } = {}) {
@@ -352,9 +425,8 @@ async function renderReceiptImage(model, { scale = 2 } = {}) {
 
   const logoSrc = typeof G_LOGO_DATA_URI !== "undefined" ? G_LOGO_DATA_URI : null;
   const country = m.counterpartyCountry;
-  const [logo, photo, flag] = await Promise.all([
+  const [logo, flag] = await Promise.all([
     receiptImageLoad(logoSrc),
-    m.hasPhoto ? receiptImageLoad(m.photo) : Promise.resolve(null),
     // flagcdn serves `Access-Control-Allow-Origin: *`, so an anonymous load
     // keeps the canvas exportable. If it ever stops, the load fails rather
     // than tainting, and the country is written out without its flag.
@@ -381,373 +453,374 @@ async function renderReceiptImage(model, { scale = 2 } = {}) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   const ops = [];
-  let y = MARGIN;
+  // Assigned once the card's height is known, and read by the ops, which all
+  // run after that. The perforation notches are filled with this same
+  // gradient object rather than a stand-in purple, so they match the card
+  // exactly at whatever height it ends up.
+  let cardGradient = null;
 
-  // ── Header band ──
-  const HEADER_H = 92;
-  const headerTop = y;
+  // ── N3: the figure on the brand, the facts on white ─────────────────────
+  //
+  // The card used to be white with a purple strip across the top, and the
+  // headline, the tick and the amount all competed for the same middle. This
+  // inverts it. The whole card is the brand gradient and carries exactly one
+  // thing — what happened and how much — and every fact that has to be read
+  // back later sits on a white panel floating inside it.
+  //
+  // The split is the point: the purple is glanceable at thumbnail size in a
+  // chat, and the white panel is the part somebody forwards to an accountant.
+  // Nothing appears in both.
+  const CARD_TOP = MARGIN;
+  const PANEL_INSET = 14;
+  const PANEL_X = CX + PANEL_INSET;
+  const PANEL_W = CW - PANEL_INSET * 2;
+  const PANEL_PAD = 24;
+  const PW = PANEL_W - PANEL_PAD * 2;
+  const PLX = PANEL_X + PANEL_PAD;
+  const PRX = PANEL_X + PANEL_W - PANEL_PAD;
+  const PCX = CX + CW / 2;
+
+  // ── The brand zone ──
+  let y = CARD_TOP + 44;
+
+  const wordBase = y;
   ops.push(() => {
-    const g = ctx.createLinearGradient(CX, headerTop, CX + CW, headerTop + HEADER_H);
-    g.addColorStop(0, "#1E1B4B");
-    g.addColorStop(0.42, "#3E2E8E");
-    g.addColorStop(0.8, "#7C3AED");
-    g.addColorStop(1, "#C026D3");
-    ctx.save();
-    receiptImageRoundRect(ctx, CX, headerTop, CW, HEADER_H, [28, 28, 0, 0]);
-    ctx.fillStyle = g;
-    ctx.fill();
-    ctx.clip();
-    // Two soft light discs, for depth rather than decoration.
-    ctx.globalAlpha = 0.1;
-    ctx.fillStyle = "#FFFFFF";
-    ctx.beginPath();
-    ctx.arc(CX + CW - 40, headerTop - 10, 90, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 0.06;
-    ctx.beginPath();
-    ctx.arc(CX + CW - 150, headerTop + HEADER_H + 30, 70, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    const markSize = 30;
-    const logoH = 40;
+    const markSize = 23;
+    const logoH = 30;
     const logoW = whiteLogo ? logoH * (whiteLogo.width / whiteLogo.height) : 0;
     const wordW = receiptImageDrawWordmark(ctx, 0, 0, markSize, "#FFFFFF", [dotA, dotB], { measureOnly: true });
-    const groupW = logoW + (logoW ? 10 : 0) + wordW;
-    const gx = CX + (CW - groupW) / 2;
-    const midY = headerTop + HEADER_H / 2;
-    if (whiteLogo) ctx.drawImage(whiteLogo, gx, midY - logoH / 2, logoW, logoH);
-    receiptImageDrawWordmark(ctx, gx + logoW + (logoW ? 10 : 0), midY + markSize * 0.36, markSize, "#FFFFFF", [dotA, dotB]);
+    const groupW = logoW + (logoW ? 9 : 0) + wordW;
+    const gx = PCX - groupW / 2;
+    if (whiteLogo) ctx.drawImage(whiteLogo, gx, wordBase - logoH * 0.78, logoW, logoH);
+    receiptImageDrawWordmark(ctx, gx + logoW + (logoW ? 9 : 0), wordBase, markSize, "#FFFFFF", [dotA, dotB]);
   });
-  y += HEADER_H;
-  const cardTop = headerTop;
+  y = wordBase + 40;
 
-  // ── Status: tick + headline + amount ──
-  const tickR = 24;
-  const tickY = y + 34 + tickR;
+  const eyebrowBase = y;
   ops.push(() => {
-    const tone = m.status === "pending" ? "#F59E0B" : m.status === "simulated" ? INK_FAINT : POSITIVE;
-    const halo = m.status === "pending" ? "#FEF3C7" : m.status === "simulated" ? SURFACE_ALT : POSITIVE_SOFT;
-    const cx = W / 2;
-    ctx.beginPath();
-    ctx.arc(cx, tickY, tickR + 9, 0, Math.PI * 2);
-    ctx.fillStyle = halo;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx, tickY, tickR, 0, Math.PI * 2);
-    ctx.fillStyle = tone;
-    ctx.fill();
-    ctx.strokeStyle = "#FFFFFF";
-    ctx.lineWidth = 4.5;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    if (m.status === "pending") {
-      ctx.moveTo(cx, tickY - 11);
-      ctx.lineTo(cx, tickY);
-      ctx.lineTo(cx + 8, tickY + 6);
-    } else if (m.status === "simulated") {
-      ctx.moveTo(cx, tickY - 11);
-      ctx.lineTo(cx, tickY + 3);
-      ctx.moveTo(cx, tickY + 10);
-      ctx.lineTo(cx, tickY + 10.5);
-    } else {
-      ctx.moveTo(cx - 10, tickY + 1);
-      ctx.lineTo(cx - 3, tickY + 8);
-      ctx.lineTo(cx + 11, tickY - 7);
-    }
-    ctx.stroke();
+    receiptImageDrawTracked(ctx, String(m.heroLabel || "").toUpperCase(), PCX, eyebrowBase, {
+      size: 11.5, weight: 800, color: "rgba(255,255,255,0.72)", tracking: 2.4
+    });
   });
-  y = tickY + tickR + 9;
+  y = eyebrowBase + 54;
 
-  const headlineBase = y + 38;
+  const figureBase = y;
   ops.push(() => {
+    const text = m.heroAmountText || m.amountText || "—";
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
-    const size = receiptImageFit(ctx, m.headline, (z) => `800 ${z}px ${RECEIPT_IMAGE_FONT_BODY}`, 24, 16, INNER);
-    ctx.font = `800 ${size}px ${RECEIPT_IMAGE_FONT_BODY}`;
-    ctx.fillStyle = INK;
-    ctx.fillText(receiptImageEllipsis(ctx, m.headline, INNER), W / 2, headlineBase);
-  });
-  y = headlineBase;
-
-  if (m.kindLabel) {
-    const chipTop = y + 12;
-    ops.push(() => {
-      ctx.font = `800 11px ${RECEIPT_IMAGE_FONT_BODY}`;
-      const label = m.kindLabel.toUpperCase();
-      const w = ctx.measureText(label).width + 22;
-      receiptImageRoundRect(ctx, W / 2 - w / 2, chipTop, w, 22, 11);
-      ctx.fillStyle = theme.accentSoft || "#F1ECFC";
-      ctx.fill();
-      ctx.fillStyle = ACCENT;
-      ctx.textAlign = "center";
-      ctx.fillText(label, W / 2, chipTop + 15);
-    });
-    y = chipTop + 22;
-  }
-
-  const amountBase = y + 58;
-  ops.push(() => {
-    const text = m.amountText || "—";
-    ctx.textAlign = "center";
-    const size = receiptImageFit(ctx, text, (z) => `700 ${z}px ${RECEIPT_IMAGE_FONT_DISPLAY}`, 50, 26, INNER);
+    const size = receiptImageFit(ctx, text, (z) => `700 ${z}px ${RECEIPT_IMAGE_FONT_DISPLAY}`, 52, 26, PW);
     ctx.font = `700 ${size}px ${RECEIPT_IMAGE_FONT_DISPLAY}`;
-    ctx.fillStyle = INK;
-    ctx.fillText(receiptImageEllipsis(ctx, text, INNER), W / 2, amountBase);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillText(receiptImageEllipsis(ctx, text, PW), PCX, figureBase);
   });
-  y = amountBase;
+  y = figureBase;
 
   // The ISO code under the figure, because a bare $ or ¥ is ambiguous. Not
-  // repeated when the figure already ends in it ("1,450.25 CHF"). Date and
-  // time live in the detail rows only, not twice.
+  // repeated when the figure already ends in it ("1,450.25 CHF").
   const showCode = !!(m.currency && !String(m.amountText || "").endsWith(m.currency));
-  const metaBase = y + 28;
   if (showCode) {
+    const codeBase = y + 26;
     ops.push(() => {
-      ctx.textAlign = "center";
-      ctx.font = `700 13px ${RECEIPT_IMAGE_FONT_BODY}`;
-      ctx.fillStyle = INK_SOFT;
-      ctx.fillText(m.currency, W / 2, metaBase);
+      receiptImageDrawTracked(ctx, m.currency, PCX, codeBase, {
+        size: 12.5, weight: 700, color: "rgba(255,255,255,0.78)", tracking: 1.8
+      });
     });
+    y = codeBase;
   }
-  y = (showCode ? metaBase : y) + 26;
 
-  // ── Counterparty panel ──
-  const PANEL_X = CX + PAD - 6;
-  const PANEL_W = INNER + 12;
-  const partyTop = y;
-  const AV_R = 38;
-  const partyH = 112;
-  const avatarCx = PANEL_X + 20 + AV_R;
-  const avatarCy = partyTop + partyH / 2;
-  canvas.dataset.avatarCenter = [avatarCx * s, avatarCy * s, AV_R * s].map((n) => Math.round(n)).join(",");
+  // ── The Creator Share chip, on every receipt ──
+  //
+  // Including at zero, and that is the whole reason it is here rather than in
+  // the detail rows. A chip that vanishes when the rate is 0% leaves a reader
+  // to assume a share was taken and not shown; "0% · 0.00₹" is the only
+  // version of that which is true. At zero it is drawn quieter, not hidden.
+  const shareTop = y + 26;
+  const SHARE_H = 30;
   ops.push(() => {
-    receiptImageRoundRect(ctx, PANEL_X, partyTop, PANEL_W, partyH, 18);
-    ctx.fillStyle = SURFACE_ALT;
+    const zero = !(Number(m.shareRate) > 0);
+    const label = String(m.shareChipLabel || "Creator share");
+    const value = String(m.shareChipValue || m.shareText || "");
+    ctx.font = `700 12.5px ${RECEIPT_IMAGE_FONT_BODY}`;
+    const labelW = ctx.measureText(label).width;
+    ctx.font = `700 13px ${RECEIPT_IMAGE_FONT_BODY}`;
+    const valueW = ctx.measureText(value).width;
+    const chipW = labelW + 10 + valueW + 32;
+    const chipX = PCX - chipW / 2;
+    receiptImageRoundRect(ctx, chipX, shareTop, chipW, SHARE_H, SHARE_H / 2);
+    ctx.fillStyle = zero ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.18)";
     ctx.fill();
+    ctx.strokeStyle = zero ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.30)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    const base = shareTop + SHARE_H / 2 + 4.5;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = `700 12.5px ${RECEIPT_IMAGE_FONT_BODY}`;
+    ctx.fillStyle = zero ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.78)";
+    ctx.fillText(label, chipX + 16, base);
+    ctx.textAlign = "left";
+    ctx.font = `700 13px ${RECEIPT_IMAGE_FONT_BODY}`;
+    ctx.fillStyle = zero ? "rgba(255,255,255,0.72)" : "#FFFFFF";
+    ctx.fillText(value, chipX + 16 + labelW + 10, base);
+  });
+  y = shareTop + SHARE_H;
 
-    // Avatar ring
-    ctx.beginPath();
-    ctx.arc(avatarCx, avatarCy, AV_R + 4, 0, Math.PI * 2);
+  // ── The white panel ──
+  const panelTop = y + 26;
+  const panelBox = { h: 0 };
+  ops.push(() => {
+    receiptImageRoundRect(ctx, PANEL_X, panelTop, PANEL_W, panelBox.h, 22);
     ctx.fillStyle = "#FFFFFF";
     ctx.fill();
+  });
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(avatarCx, avatarCy, AV_R, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-    if (photo) {
-      const iw = photo.naturalWidth || photo.width;
-      const ih = photo.naturalHeight || photo.height;
-      const side = Math.min(iw, ih);
-      ctx.drawImage(photo, (iw - side) / 2, (ih - side) / 2, side, side, avatarCx - AV_R, avatarCy - AV_R, AV_R * 2, AV_R * 2);
-    } else {
-      const g = ctx.createLinearGradient(avatarCx - AV_R, avatarCy - AV_R, avatarCx + AV_R, avatarCy + AV_R);
-      g.addColorStop(0, "#1E1B4B");
-      g.addColorStop(0.45, "#3E2E8E");
-      g.addColorStop(0.8, "#7C3AED");
-      g.addColorStop(1, "#C026D3");
-      ctx.fillStyle = g;
-      ctx.fillRect(avatarCx - AV_R, avatarCy - AV_R, AV_R * 2, AV_R * 2);
-      if (whiteLogo) {
-        const lw = AV_R * 1.2;
-        const lh = lw * (whiteLogo.height / whiteLogo.width);
-        ctx.drawImage(whiteLogo, avatarCx - lw / 2, avatarCy - lh / 2, lw, lh);
+  let py = panelTop + 10;
+
+  // ── The rows ─────────────────────────────────────────────────────────────
+  //
+  // Every fact as a label/value row, the conversion included. An earlier pass
+  // led with a large centred name and gave the conversion a filled box of its
+  // own; both pulled the eye away from the figure on the purple, which is the
+  // one thing this card exists to show. Flat rows read faster, and they let
+  // the conversion sit WITH the other facts instead of announcing itself as a
+  // separate event.
+  //
+  // The rate keeps its stored direction — see ReceiptModal's fxRateLabel.
+  // Printing "1 EUR = 91.80 INR" when the server recorded the other way round
+  // means inverting a number and calling it a record, which is the one thing
+  // this file must never do.
+  const panelRows = [];
+  panelRows.push({ label: m.counterpartyLabel, value: m.counterpartyName || "—", flag: true });
+  if (m.counterpartyId) panelRows.push({ label: "Gloobal ID", value: m.counterpartyId, symbols: true });
+  if (m.conversion) {
+    panelRows.push({ label: "Sent", value: m.conversion.sentText });
+    panelRows.push({ label: "Received", value: m.conversion.receivedText });
+    panelRows.push({ label: "Rate applied", value: m.conversion.rateText, accent: true });
+  }
+  if (m.viewerName) panelRows.push({ label: m.viewerLabel, value: m.viewerName });
+  const whenText = [m.date, m.time].filter(Boolean).join(" · ");
+  if (whenText) {
+    panelRows.push({ label: m.date && m.time ? "Date · Time" : (m.date ? "Date" : "Time"), value: whenText });
+  }
+  if (m.receiptCode) panelRows.push({ label: "Receipt code", value: m.receiptCode, mono: true });
+
+  const ROW_H = 40;
+  const rowsTop = py;
+  ops.push(() => {
+    panelRows.forEach((row, i) => {
+      const top = rowsTop + i * ROW_H;
+      const base = top + ROW_H / 2 + 5;
+      if (i > 0) {
+        ctx.beginPath();
+        ctx.moveTo(PLX, top);
+        ctx.lineTo(PRX, top);
+        ctx.strokeStyle = LINE;
+        ctx.lineWidth = 1;
+        ctx.stroke();
       }
-    }
-    ctx.restore();
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.font = `600 13.5px ${RECEIPT_IMAGE_FONT_BODY}`;
+      ctx.fillStyle = INK_SOFT;
+      ctx.fillText(row.label, PLX, base);
+      const labelW = ctx.measureText(row.label).width;
 
-    const tx = avatarCx + AV_R + 20;
-    const tw = PANEL_X + PANEL_W - 18 - tx;
-    const hasId = !!m.counterpartyId;
-    const hasCountry = !!(m.counterpartyCountry && (m.counterpartyCountry.name || flag));
-    const lines = 2 + (hasCountry ? 1 : 0) + (hasId ? 1 : 0);
-    const blockH = 14 + 26 + (hasCountry ? 22 : 0) + (hasId ? 24 : 0);
-    let ty = avatarCy - blockH / 2 + (lines ? 10 : 0);
+      // The flag rides at the right edge and the name is measured to stop
+      // short of it, rather than the name being placed and the flag pushed
+      // past the panel — which is how a long name loses its country.
+      const fr = 8.5;
+      const wantsFlag = !!(row.flag && flag);
+      const rightEdge = wantsFlag ? PRX - fr * 2 - 8 : PRX;
+      const maxW = rightEdge - PLX - labelW - 20;
 
-    ctx.textAlign = "left";
-    ctx.font = `800 11px ${RECEIPT_IMAGE_FONT_BODY}`;
-    ctx.fillStyle = INK_FAINT;
-    ctx.fillText(m.counterpartyLabel.toUpperCase(), tx, ty);
-    ty += 26;
+      if (row.symbols) {
+        receiptImageDrawSymbols(ctx, row.value, rightEdge, base, maxW, { size: 15, align: "right" });
+      } else {
+        ctx.textAlign = "right";
+        ctx.font = row.mono
+          ? `700 14.5px ui-monospace, 'Cascadia Mono', Consolas, monospace`
+          : `700 14.5px ${RECEIPT_IMAGE_FONT_BODY}`;
+        ctx.fillStyle = row.accent ? ACCENT : INK;
+        ctx.fillText(receiptImageEllipsis(ctx, row.value, maxW), rightEdge, base);
+      }
 
-    const name = m.counterpartyName || "—";
-    const nameSize = receiptImageFit(ctx, name, (z) => `800 ${z}px ${RECEIPT_IMAGE_FONT_BODY}`, 21, 15, tw);
-    ctx.font = `800 ${nameSize}px ${RECEIPT_IMAGE_FONT_BODY}`;
-    ctx.fillStyle = INK;
-    ctx.fillText(receiptImageEllipsis(ctx, name, tw), tx, ty);
-
-    if (hasCountry) {
-      ty += 22;
-      let fx = tx;
-      if (flag) {
-        const fr = 8;
+      if (wantsFlag) {
+        const fx = PRX - fr;
+        const fy = base - 5;
         ctx.save();
         ctx.beginPath();
-        ctx.arc(tx + fr, ty - 5, fr, 0, Math.PI * 2);
+        ctx.arc(fx, fy, fr, 0, Math.PI * 2);
         ctx.clip();
         const iw = flag.naturalWidth || flag.width;
         const ih = flag.naturalHeight || flag.height;
         const side = Math.min(iw, ih);
-        ctx.drawImage(flag, (iw - side) / 2, (ih - side) / 2, side, side, tx, ty - 5 - fr, fr * 2, fr * 2);
+        ctx.drawImage(flag, (iw - side) / 2, (ih - side) / 2, side, side, fx - fr, fy - fr, fr * 2, fr * 2);
         ctx.restore();
         ctx.beginPath();
-        ctx.arc(tx + fr, ty - 5, fr, 0, Math.PI * 2);
+        ctx.arc(fx, fy, fr, 0, Math.PI * 2);
         ctx.strokeStyle = LINE;
         ctx.lineWidth = 1;
         ctx.stroke();
-        fx = tx + fr * 2 + 7;
       }
-      if (m.counterpartyCountry.name) {
-        ctx.font = `600 13px ${RECEIPT_IMAGE_FONT_BODY}`;
-        ctx.fillStyle = INK_SOFT;
-        ctx.fillText(receiptImageEllipsis(ctx, m.counterpartyCountry.name, tx + tw - fx), fx, ty);
-      }
-    }
-    if (hasId) {
-      ty += 24;
-      receiptImageDrawSymbols(ctx, m.counterpartyId, tx, ty, tw, { size: 16 });
-    }
+    });
   });
-  y = partyTop + partyH + 14;
+  py = rowsTop + panelRows.length * ROW_H;
 
-  // ── Conversion ──
+  // The one line the rows cannot carry. A rate with no date attached invites
+  // being read as today's, and a forwarded receipt is read long after the day
+  // it was made.
   if (m.conversion) {
-    const convTop = y;
-    const rowsC = [
-      ["Sent", m.conversion.sentText],
-      ["Received", m.conversion.receivedText],
-      ["Rate applied", m.conversion.rateText]
-    ];
-    const convH = 16 + 18 + rowsC.length * 30 + 26 + 22;
+    const noteBase = py + 18;
     ops.push(() => {
-      receiptImageRoundRect(ctx, PANEL_X, convTop, PANEL_W, convH, 18);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.font = `600 11px ${RECEIPT_IMAGE_FONT_BODY}`;
+      ctx.fillStyle = INK_FAINT;
+      ctx.fillText("As settled at the time of this transaction, not a current rate.", PLX, noteBase);
+    });
+    py = noteBase + 4;
+  }
+
+  // ── Transaction ID, in its own block ──
+  //
+  // Not one of the rows above. It is the thing somebody quotes back when this
+  // payment has to be found again, it is twelve coloured symbols rather than
+  // a word, and right-aligned in a row it shrank until it could not be read
+  // off a screenshot. Outlined rather than filled: on a white panel a filled
+  // block reads as a second card.
+  if (m.reference) {
+    const refTop = py + 20;
+    const REF_H = 66;
+    ops.push(() => {
+      receiptImageRoundRect(ctx, PLX, refTop, PW, REF_H, 14);
       ctx.strokeStyle = LINE;
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      const lx = PANEL_X + 18;
-      const rx = PANEL_X + PANEL_W - 18;
-      let ry = convTop + 30;
-      ctx.textAlign = "left";
-      ctx.font = `800 11px ${RECEIPT_IMAGE_FONT_BODY}`;
-      ctx.fillStyle = INK_FAINT;
-      ctx.fillText("CURRENCY CONVERSION", lx, ry);
-      ry += 8;
-      rowsC.forEach(([label, value], i) => {
-        ry += 30;
-        ctx.textAlign = "left";
-        ctx.font = `600 14px ${RECEIPT_IMAGE_FONT_BODY}`;
-        ctx.fillStyle = INK_SOFT;
-        ctx.fillText(label, lx, ry);
-        ctx.textAlign = "right";
-        ctx.font = `${i === 2 ? 800 : 700} 15px ${RECEIPT_IMAGE_FONT_BODY}`;
-        ctx.fillStyle = i === 2 ? ACCENT : INK;
-        ctx.fillText(receiptImageEllipsis(ctx, value, rx - lx - 110), rx, ry);
+      receiptImageDrawTracked(ctx, String(m.referenceLabel).toUpperCase(), PCX, refTop + 25, {
+        size: 10, weight: 800, color: INK_FAINT, tracking: 2
       });
-      ry += 24;
-      ctx.textAlign = "left";
-      ctx.font = `600 11.5px ${RECEIPT_IMAGE_FONT_BODY}`;
-      ctx.fillStyle = INK_FAINT;
-      ctx.fillText("As settled at the time of this transaction, not a current rate.", lx, ry);
+      receiptImageDrawSymbols(ctx, m.reference, PCX, refTop + 50, PW - 32, { size: 18, align: "center" });
     });
-    y = convTop + convH + 14;
+    py = refTop + REF_H;
   }
 
-  // ── Details ──
-  const rows = [];
-  if (m.viewerName) rows.push({ label: m.viewerLabel, value: m.viewerName });
-  if (m.date) rows.push({ label: "Date", value: m.date });
-  if (m.time) rows.push({ label: "Time", value: m.time });
-  if (m.receiptCode) rows.push({ label: "Receipt code", value: m.receiptCode, mono: true });
-  if (m.reference) rows.push({ label: m.referenceLabel, value: m.reference, symbols: true });
-  const ROW_H = 40;
-  const detailsTop = y;
-  const detailsH = rows.length ? rows.length * ROW_H + 8 : 0;
-  if (rows.length) {
-    ops.push(() => {
-      receiptImageRoundRect(ctx, PANEL_X, detailsTop, PANEL_W, detailsH, 18);
-      ctx.strokeStyle = LINE;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      const lx = PANEL_X + 18;
-      const rx = PANEL_X + PANEL_W - 18;
-      rows.forEach((row, i) => {
-        const top = detailsTop + 4 + i * ROW_H;
-        const base = top + ROW_H / 2 + 5;
-        if (i > 0) {
-          ctx.beginPath();
-          ctx.moveTo(lx, top);
-          ctx.lineTo(rx, top);
-          ctx.strokeStyle = LINE;
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        }
-        ctx.textAlign = "left";
-        ctx.font = `600 14px ${RECEIPT_IMAGE_FONT_BODY}`;
-        ctx.fillStyle = INK_SOFT;
-        ctx.fillText(row.label, lx, base);
-        const labelW = ctx.measureText(row.label).width;
-        const maxW = rx - lx - labelW - 20;
-        if (row.symbols) {
-          receiptImageDrawSymbols(ctx, row.value, rx, base, maxW, { size: 16, align: "right" });
-        } else {
-          ctx.textAlign = "right";
-          ctx.font = row.mono ? `700 15px ui-monospace, 'Cascadia Mono', Consolas, monospace` : `700 15px ${RECEIPT_IMAGE_FONT_BODY}`;
-          ctx.fillStyle = INK;
-          ctx.fillText(receiptImageEllipsis(ctx, row.value, maxW), rx, base);
-        }
-      });
-    });
-    y = detailsTop + detailsH;
-  }
-
-  // ── Footer, inside the card ──
-  const footerTop = y + 26;
-  const hoomanBase = footerTop + 44;
-  const taglineBase = hoomanBase + 28;
+  // ── Status ──
+  const pillTop = py + 22;
+  const PILL_H = 34;
   ops.push(() => {
-    // Perforation-style divider: the receipt tears off here.
+    const done = m.status === "completed";
+    const tone = m.status === "pending" ? "#B45309" : m.status === "simulated" ? INK_SOFT : POSITIVE;
+    const wash = m.status === "pending" ? "#FEF3C7" : m.status === "simulated" ? SURFACE_ALT : POSITIVE_SOFT;
+    const text = m.status === "pending" ? "Pending" : m.status === "simulated" ? "Not sent · Simulated" : "Completed";
+    ctx.font = `800 13.5px ${RECEIPT_IMAGE_FONT_BODY}`;
+    const w = ctx.measureText(text).width + 52;
+    const x = PCX - w / 2;
+    receiptImageRoundRect(ctx, x, pillTop, w, PILL_H, PILL_H / 2);
+    ctx.fillStyle = wash;
+    ctx.fill();
+    const cy = pillTop + PILL_H / 2;
+    const mx = x + 20;
+    ctx.strokeStyle = tone;
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    if (done) {
+      ctx.moveTo(mx - 6, cy);
+      ctx.lineTo(mx - 1.5, cy + 4.5);
+      ctx.lineTo(mx + 7, cy - 5);
+    } else if (m.status === "pending") {
+      ctx.arc(mx, cy, 6.5, 0, Math.PI * 2);
+      ctx.moveTo(mx, cy - 3.5);
+      ctx.lineTo(mx, cy);
+      ctx.lineTo(mx + 3.5, cy + 2);
+    } else {
+      ctx.moveTo(mx, cy - 6);
+      ctx.lineTo(mx, cy + 1);
+      ctx.moveTo(mx, cy + 5);
+      ctx.lineTo(mx, cy + 5.5);
+    }
+    ctx.stroke();
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = tone;
+    ctx.fillText(text, mx + 15, cy + 5);
+  });
+  py = pillTop + PILL_H;
+
+  // ── Footer, inside the white panel ──
+  const footerTop = py + 24;
+  const hoomanBase = footerTop + 40;
+  const taglineBase = hoomanBase + 26;
+  ops.push(() => {
+    // Perforation-style divider: the receipt tears off here. The notches are
+    // filled with the PURPLE the panel floats on, not the page colour — this
+    // divider is inside the card now, and a page-coloured notch would read as
+    // two holes punched in the brand.
     ctx.save();
     ctx.setLineDash([6, 6]);
     ctx.strokeStyle = LINE;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(CX + 18, footerTop);
-    ctx.lineTo(CX + CW - 18, footerTop);
+    ctx.moveTo(PANEL_X + 16, footerTop);
+    ctx.lineTo(PANEL_X + PANEL_W - 16, footerTop);
     ctx.stroke();
     ctx.restore();
-    ctx.fillStyle = theme.bg || "#F6F5FC";
-    [CX, CX + CW].forEach((nx) => {
+    ctx.fillStyle = cardGradient || (theme.bg || "#F6F5FC");
+    [PANEL_X, PANEL_X + PANEL_W].forEach((nx) => {
       ctx.beginPath();
-      ctx.arc(nx, footerTop, 10, 0, Math.PI * 2);
+      ctx.arc(nx, footerTop, 9, 0, Math.PI * 2);
       ctx.fill();
     });
 
-    receiptImageDrawHooman(ctx, W / 2, hoomanBase, 19, ACCENT === "#7C3AED" ? "#4C1D95" : ACCENT, hoomanDots, m.brand.hooman);
+    receiptImageDrawHooman(ctx, PCX, hoomanBase, 18, ACCENT === "#7C3AED" ? "#4C1D95" : ACCENT, hoomanDots, m.brand.hooman);
 
     ctx.textAlign = "center";
-    ctx.font = `600 13.5px ${RECEIPT_IMAGE_FONT_BODY}`;
+    ctx.textBaseline = "alphabetic";
+    ctx.font = `600 12.5px ${RECEIPT_IMAGE_FONT_BODY}`;
     ctx.fillStyle = INK_SOFT;
-    ctx.fillText(m.brand.tagline, W / 2, taglineBase);
+    ctx.fillText(m.brand.tagline, PCX, taglineBase);
   });
-  const cardBottom = taglineBase + 30;
+
+  const panelBottom = taglineBase + 26;
+  panelBox.h = panelBottom - panelTop;
+  const cardBottom = panelBottom + PANEL_INSET;
   const H = cardBottom + MARGIN;
 
   canvas.width = Math.round(W * s);
   canvas.height = Math.round(H * s);
   ctx.setTransform(s, 0, 0, s, 0, 0);
 
-  // Page and card.
+  // Page.
   ctx.fillStyle = theme.bg || "#F6F5FC";
   ctx.fillRect(0, 0, W, H);
+
+  // The card, gradient all the way down.
   ctx.save();
-  ctx.shadowColor = "rgba(76,29,149,0.14)";
-  ctx.shadowBlur = 24;
-  ctx.shadowOffsetY = 8;
-  receiptImageRoundRect(ctx, CX, cardTop, CW, cardBottom - cardTop, 28);
+  ctx.shadowColor = "rgba(76,29,149,0.22)";
+  ctx.shadowBlur = 26;
+  ctx.shadowOffsetY = 10;
+  receiptImageRoundRect(ctx, CX, CARD_TOP, CW, cardBottom - CARD_TOP, 28);
+  cardGradient = ctx.createLinearGradient(CX, CARD_TOP, CX + CW, cardBottom);
+  cardGradient.addColorStop(0, "#1E1B4B");
+  cardGradient.addColorStop(0.38, "#3E2E8E");
+  cardGradient.addColorStop(0.74, "#7C3AED");
+  cardGradient.addColorStop(1, "#C026D3");
+  ctx.fillStyle = cardGradient;
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  receiptImageRoundRect(ctx, CX, CARD_TOP, CW, cardBottom - CARD_TOP, 28);
+  ctx.clip();
+  ctx.globalAlpha = 0.12;
   ctx.fillStyle = "#FFFFFF";
+  ctx.beginPath();
+  ctx.arc(CX + CW - 30, CARD_TOP - 20, 95, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.07;
+  ctx.beginPath();
+  ctx.arc(CX + 20, CARD_TOP + 150, 80, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
@@ -760,7 +833,7 @@ async function renderReceiptImage(model, { scale = 2 } = {}) {
     ctx.restore();
   }
 
-  canvas.dataset.receiptModel = JSON.stringify({ ...m, photo: m.hasPhoto ? "[data-url]" : null });
+  canvas.dataset.receiptModel = JSON.stringify(m);
   return canvas;
 }
 
@@ -782,38 +855,99 @@ function receiptImageFilename(receipt) {
 
 // Share first, download second — the same order and the same canShare
 // check as the receive-QR card and the audit report.
+// ── One share, carrying both ─────────────────────────────────────────────
+//
+// The receipt had two share buttons: this one sent the picture, and a second
+// one on the Transaction ID box sent the summary and the /t/ link. Two share
+// sheets for one receipt, and whichever you picked, you did not send the
+// other half — the picture cannot be clicked through to the transaction, and
+// the link is not something you can look at in a chat.
+//
+// They are one action now, and this builds the payload for it.
+//
+// The ladder is the awkward part, and it exists because navigator.share is
+// not uniform. A target that accepts files does not necessarily accept `url`
+// alongside them, and the whole payload is rejected when any part of it is
+// unsupported — so asking for everything at once and giving up on a `false`
+// from canShare would lose the picture on exactly the platforms that can
+// show it. Each rung drops the least valuable thing that could be causing
+// the refusal, and canShare decides, not a browser sniff:
+//
+//   1. picture + summary + link, the thing that was asked for
+//   2. the same, with the link folded into the text — `text` is the field
+//      that survives when `url` does not, and a pasted link is still a link
+//   3. picture and summary alone, reported back as its own outcome so the
+//      caller can say the link did not go rather than silently dropping it
+//
+// Nothing here opens a second share sheet. A person who wanted one share and
+// got two is the thing this replaced.
+function receiptShareAttempts(file, summary, link) {
+  const title = "Gloobal receipt";
+  const out = [];
+  if (link && summary) out.push([{ files: [file], title, text: summary, url: link }, "shared"]);
+  else if (link) out.push([{ files: [file], title, url: link }, "shared"]);
+  if (link) out.push([{ files: [file], title, text: summary ? `${summary}\n${link}` : link }, "shared"]);
+  if (summary && !link) out.push([{ files: [file], title, text: summary }, "shared"]);
+  out.push([{ files: [file], title }, link ? "shared-without-link" : "shared"]);
+  return out;
+}
+
 async function shareReceiptImage(receipt, opts = {}) {
   try {
     if (!receipt || typeof document === "undefined") return "failed";
-    let photo = opts.photo;
-    if (photo === undefined && receipt.id && typeof loadCounterpartyPhoto === "function") {
-      photo = await loadCounterpartyPhoto(receipt.id).catch(() => null);
-    }
-    const model = buildReceiptImageModel(receipt, { ...opts, photo });
+    // No photo is fetched. This used to call loadCounterpartyPhoto — a
+    // request to the server for the other party's picture — purely so the
+    // panel above could draw it. With the avatar gone that request buys
+    // nothing, and not making it is the better half of the change: sharing a
+    // receipt no longer reaches for anyone's face.
+    const model = buildReceiptImageModel(receipt, opts);
     const canvas = await renderReceiptImage(model, { scale: opts.scale || 2 });
     const blob = await receiptImageToBlob(canvas);
     const filename = receiptImageFilename(receipt);
 
+    const summary = typeof opts.summary === "string" ? opts.summary.trim() : "";
+    const link = typeof opts.link === "string" ? opts.link.trim() : "";
+
     if (typeof File !== "undefined" && typeof navigator !== "undefined" && navigator.canShare && navigator.share) {
       const file = new File([blob], filename, { type: "image/png" });
-      if (navigator.canShare({ files: [file] })) {
+      for (const [payload, outcome] of receiptShareAttempts(file, summary, link)) {
+        let allowed = false;
         try {
-          await navigator.share({ files: [file], title: "Gloobal receipt" });
-          return "shared";
+          allowed = navigator.canShare(payload);
+        } catch {
+          allowed = false;
+        }
+        if (!allowed) continue;
+        try {
+          await navigator.share(payload);
+          return outcome;
         } catch (error) {
+          // A refusal here is the SHEET's answer, not the payload's, so the
+          // ladder stops: retrying a shorter payload would re-open a sheet
+          // the person just dismissed.
           return error && error.name === "AbortError" ? "cancelled" : "failed";
         }
       }
     }
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    // No file sharing at all. The picture is downloaded, and the link goes to
+    // the clipboard in the same gesture rather than needing a second button —
+    // one action still carries both halves, just by two different routes.
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    if (link && typeof copyToClipboard === "function") {
+      try {
+        copyToClipboard(summary ? `${summary}\n${link}` : link);
+        return "downloaded-link-copied";
+      } catch {
+      }
+    }
     return "downloaded";
   } catch {
     return "failed";

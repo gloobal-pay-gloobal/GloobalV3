@@ -185,6 +185,82 @@ function zoomRangeOf(caps) {
   return { min, max, step: Number.isFinite(step) && step > 0 ? step : (max - min) / 100 };
 }
 
+// ── Why the camera did not start ─────────────────────────────────────────
+//
+// This used to be one line, and it was wrong in a way that blamed the
+// person for something they had not done:
+//
+//   name === "NotAllowedError" ? "denied" : ...
+//
+// NotAllowedError does NOT mean "they said no". It is what getUserMedia
+// throws for the whole family of "this did not get a yes", and a refusal is
+// only one member of it. The one that prompted this: on Android, with a
+// floating bubble or overlay from another app on screen, Chrome REFUSES TO
+// SHOW the permission prompt at all — it puts up "This site can't ask for
+// your permission. Close any bubbles or overlays from other apps." and
+// rejects with NotAllowedError. Nobody denied anything; the question was
+// never put. Telling that person their camera access is blocked and to go
+// hunting in browser settings sends them somewhere that will not help, for
+// a state they did not cause and cannot fix there.
+//
+// A dismissed prompt (swiped away, backgrounded) lands in the same place.
+//
+// So the error's name is where classification STARTS, not where it ends.
+// The Permissions API is asked for the actual decision on record, and
+// crucially it is only trusted when it answers — `permissions.query` is
+// missing on older WebKit, throws for "camera" on some engines, and lies on
+// others, which is why nothing here depends on it alone:
+//
+//   granted / prompt  -> the decision was never "no". The prompt could not
+//                        be shown or was dismissed: recoverable, retryable.
+//   denied            -> on record as refused. Browser settings is the only
+//                        way back, and saying so is correct here.
+//   no answer         -> fall back to the message the engine wrote. Chrome
+//                        says "Permission dismissed" for a prompt that was
+//                        never answered and "Permission denied by system"
+//                        when ANDROID, not the site, is withholding the
+//                        camera — neither is the person refusing this site.
+//
+// When nothing can be established, this returns "blocked" rather than
+// "denied": one offers a retry and a thing to check, the other accuses. The
+// cost of being wrong in the recoverable direction is one wasted tap; in
+// the other it is telling someone to fix a setting that is not set.
+async function classifyCameraFailure(err) {
+  const name = err && err.name;
+  if (name === "NotFoundError" || name === "DevicesNotFoundError" || name === "OverconstrainedError") {
+    return "unavailable";
+  }
+  // The camera exists and was granted, but something else holds it — another
+  // app, another tab, a driver that fell over. Retrying is exactly right.
+  if (name === "NotReadableError" || name === "TrackStartError" || name === "AbortError") return "busy";
+  if (name !== "NotAllowedError" && name !== "SecurityError") return "error";
+  const recorded = await cameraPermissionState();
+  if (recorded === "denied") return "denied";
+  if (recorded === "granted" || recorded === "prompt") return "blocked";
+  const message = String((err && err.message) || "").toLowerCase();
+  if (message.includes("dismiss") || message.includes("system")) return "blocked";
+  // Chrome's wording for a real refusal is "Permission denied"; anything
+  // that says so plainly, and nothing else, is taken at its word.
+  if (message.includes("denied")) return "denied";
+  return "blocked";
+}
+
+// The decision on record, or null when the browser will not say.
+//
+// Deliberately tolerant: an engine without the Permissions API, without the
+// "camera" descriptor, or that throws on the query all mean the same thing
+// here — no answer — and none of them should surface as an error.
+async function cameraPermissionState() {
+  try {
+    if (typeof navigator === "undefined" || !navigator.permissions || !navigator.permissions.query) return null;
+    const status = await navigator.permissions.query({ name: "camera" });
+    const state = status && status.state;
+    return state === "granted" || state === "denied" || state === "prompt" ? state : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // One look for every control that sits ON the live picture.
 //
 // NavIconButton is the app's circular-control shell everywhere else, and it
@@ -262,8 +338,13 @@ function zoomStopsOf(range) {
 // were, in the scan screen — this only asks for it, so the row can hold all
 // three controls without the scanner learning anything about files.
 function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen = false, onUploadRequested = null }) {
-  // "starting" | "running" | "denied" | "unavailable" | "error"
+  // "starting" | "running" | "blocked" | "busy" | "denied" | "unavailable" | "error"
   const [state, setState] = useState32("starting");
+  // Bumped by "Try again". The camera effect reads it, so asking again is a
+  // real second getUserMedia call — the point of the retry is that the
+  // condition which stopped the prompt (an overlay on screen, another app
+  // holding the lens) is one the person can clear and then ask again.
+  const [retryToken, setRetryToken] = useState32(0);
   // Torch is only offered where the hardware actually has one. A dead button
   // is worse than no button, especially the one thing a person reaches for
   // when a scan is failing in the dark.
@@ -517,11 +598,8 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
         rafRef.current = requestAnimationFrame(tick);
       } catch (err) {
         if (cancelled) return;
-        const name = err && err.name;
-        // NotAllowedError is a refusal — actionable, and the person needs
-        // to know it was their choice and how to undo it. NotFoundError is
-        // a device with no camera. Anything else is genuinely unexpected.
-        setState(name === "NotAllowedError" || name === "SecurityError" ? "denied" : name === "NotFoundError" || name === "OverconstrainedError" ? "unavailable" : "error");
+        const next = await classifyCameraFailure(err);
+        if (!cancelled) setState(next);
       }
     })();
 
@@ -529,10 +607,15 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       cancelled = true;
       stop();
     };
-    // NOT onDetected — see onDetectedRef above. Only `active` and `stop`
-    // genuinely require a new camera stream.
+    // NOT onDetected — see onDetectedRef above. Only `active`, `stop` and a
+    // deliberate retry genuinely require a new camera stream.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, stop]);
+  }, [active, stop, retryToken]);
+
+  const retryCamera = useCallback10(() => {
+    setState("starting");
+    setRetryToken((n) => n + 1);
+  }, []);
 
   // Lets the same code be scanned again deliberately (back out of a payment,
   // scan the same person again) without the dedupe above blocking it.
@@ -626,14 +709,40 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
     }
   }, []);
 
-  if (state === "denied" || state === "unavailable" || state === "error") {
-    const title = state === "denied" ? "Camera access blocked" : state === "unavailable" ? "No camera available" : "Camera didn't start";
-    const body = state === "denied"
-      ? "Gloobal needs the camera to read a QR code. Allow camera access for this site in your browser settings, then come back."
-      : state === "unavailable"
-        ? "This device has no camera the browser can use, or the page isn't on a secure (https) connection."
-        : "Something went wrong starting the camera. Close this and try again.";
-    const card = <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "28px 24px", textAlign: "center" }}><div style={{ width: 64, height: 64, borderRadius: "50%", background: T.negativeSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><CameraOff1 size={26} color={T.negative} /></div><div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{title}</div><div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, maxWidth: 280 }}>{body}</div>{
+  if (state === "blocked" || state === "busy" || state === "denied" || state === "unavailable" || state === "error") {
+    // Each of these is a different thing to do next, which is the whole
+    // reason they are different states. "blocked" is the one that used to be
+    // mislabelled as a denial: it names the overlay, because that is the
+    // thing on the person's screen right now, and it offers the retry that
+    // makes it true.
+    const title = state === "blocked"
+      ? "Camera permission couldn't be requested"
+      : state === "busy"
+        ? "The camera is in use"
+        : state === "denied"
+          ? "Camera access blocked"
+          : state === "unavailable" ? "No camera available" : "Camera didn't start";
+    const body = state === "blocked"
+      ? "Close any floating bubbles or overlays from other apps, then try again. Your camera permission hasn't been turned off."
+      : state === "busy"
+        ? "Another app or tab is using the camera. Close it, then try again."
+        : state === "denied"
+          ? "Gloobal needs the camera to read a QR code. Allow camera access for this site in your browser settings, then come back."
+          : state === "unavailable"
+            ? "This device has no camera the browser can use, or the page isn't on a secure (https) connection."
+            : "Something went wrong starting the camera.";
+    // Offered wherever asking again could actually work. Not on "denied" —
+    // the answer is already on record, so a retry there just fails again and
+    // teaches the person the button is a lie — and not on "unavailable",
+    // where there is no camera to ask for.
+    const canRetry = state === "blocked" || state === "busy" || state === "error";
+    const card = <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "28px 24px", textAlign: "center" }}><div style={{ width: 64, height: 64, borderRadius: "50%", background: T.negativeSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><CameraOff1 size={26} color={T.negative} /></div><div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{title}</div><div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, maxWidth: 280 }}>{body}</div>{canRetry && <button
+      type="button"
+      onClick={retryCamera}
+      aria-label="Try again"
+      className="v2-tap"
+      style={{ border: "none", borderRadius: 999, padding: "12px 32px", background: T.gradButton, color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
+    >Try Again</button>}{
       /* The way out of a dead camera. The control row below lives in the
          video branch, which this state never reaches, so without this a
          phone whose camera cannot start has no route to a code at all —
@@ -648,8 +757,22 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
     // Full screen, this component is a positioned layer inside the scan
     // overlay rather than an item in its column, so an unpositioned card
     // would land at the top of the screen under the tabs. Centre it.
+    // The layer this card sits on, and why it is not zIndex 1.
+    //
+    // The scan screen draws its own column — the instruction line and the
+    // Send button — AFTER this component, at the same zIndex 1 and covering
+    // the whole screen. Later sibling, same layer, so it won. The card was
+    // visible underneath and its buttons were not reachable: a tap aimed at
+    // Try Again landed on the invisible instruction column instead. Measured
+    // rather than reasoned about — elementFromPoint at the button's own
+    // centre returned that column, not the button.
+    //
+    // So the card goes above it, and the WRAPPER stops taking taps: it
+    // covers the whole screen, and at zIndex 2 an interactive wrapper would
+    // swallow the Send button underneath exactly as this card was swallowed.
+    // Only the card itself is interactive.
     return fullScreen
-      ? <div style={{ position: "absolute", inset: 0, zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 24px" }}><div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard }}>{card}</div></div>
+      ? <div style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 24px", pointerEvents: "none" }}><div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, pointerEvents: "auto" }}>{card}</div></div>
       : card;
   }
 

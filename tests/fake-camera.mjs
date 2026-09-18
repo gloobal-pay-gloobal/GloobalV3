@@ -101,7 +101,14 @@ function normalise(config) {
     settles: config.settles && typeof config.settles === "object" ? { ...config.settles } : {},
     unreported: Array.isArray(config.unreported) ? config.unreported.slice() : [],
     width: config.width || 1280,
-    height: config.height || 720
+    height: config.height || 720,
+    // How the camera refuses to open at all: a DOMException name, the
+    // message the engine would carry, how many asks it refuses before
+    // relenting, and what the Permissions API says about it meanwhile.
+    fail: config.fail || null,
+    failMessage: config.failMessage || "",
+    failTimes: config.failTimes == null ? null : config.failTimes,
+    permission: config.permission || null
   };
 }
 
@@ -174,8 +181,42 @@ function installFakeCameraInPage(cfg) {
     Object.defineProperty(navigator, "mediaDevices", { value: {}, configurable: true });
   }
 
+  // The decision the Permissions API reports, when the config names one.
+  // `permission: null` leaves whatever the browser already does, which is
+  // how the "engine will not answer" path gets exercised; "unsupported"
+  // removes navigator.permissions outright, which is the older-WebKit case.
+  if (cfg.permission === "unsupported") {
+    try {
+      Object.defineProperty(navigator, "permissions", { value: undefined, configurable: true });
+    } catch (e) { /* leave it */ }
+  } else if (cfg.permission === "throws") {
+    try {
+      Object.defineProperty(navigator, "permissions", {
+        value: { query: () => Promise.reject(new Error("not queryable")) },
+        configurable: true
+      });
+    } catch (e) { /* leave it */ }
+  } else if (cfg.permission) {
+    try {
+      Object.defineProperty(navigator, "permissions", {
+        value: { query: () => Promise.resolve({ state: cfg.permission }) },
+        configurable: true
+      });
+    } catch (e) { /* leave it */ }
+  }
+
   navigator.mediaDevices.getUserMedia = function (constraints) {
     requests.push(clone(constraints || {}));
+
+    // A camera that refuses to open. `failTimes` lets it refuse only the
+    // first N asks, which is what a retry has to survive to prove anything:
+    // the overlay is cleared, the same call is made again, and this time it
+    // works.
+    if (cfg.fail && requests.length <= (cfg.failTimes == null ? Infinity : cfg.failTimes)) {
+      const err = new Error(cfg.failMessage || "");
+      err.name = cfg.fail;
+      return Promise.reject(err);
+    }
 
     const canvas = document.createElement("canvas");
     canvas.width = cfg.width;

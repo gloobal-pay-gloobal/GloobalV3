@@ -128,20 +128,39 @@ function ownRealProfilePhoto(photo) {
   return profileAvatarIsPhoto(photo) ? photo : null;
 }
 
-// Best-effort write of the account's photo (or its removal, for null).
-// Resolves true when the server accepted it; never rejects.
+// Write of the account's photo (or its removal, for null).
+//
+// Resolves to an OUTCOME and never rejects. It used to resolve a bare
+// `false` for every kind of failure, which is why a save that never reached
+// the server was indistinguishable — to the caller and to the person — from
+// one that did: the screen had already been changed optimistically and
+// nothing ever contradicted it.
+//
+//   { ok: true }                     the server has it
+//   { ok: false, reason: "unprepared" }  this image cannot be sent at all
+//   { ok: false, reason: "offline" }     no token to send it with
+//   { ok: false, reason: "failed" }      the server could not be reached
+//
+// "unprepared" is the one that is NOT worth retrying, and it is the one the
+// caller must undo rather than leave on screen. The other two are transient,
+// stay pending, and are retried.
 function pushOwnProfilePhoto(symbolId, photo) {
-  if (!symbolId) return Promise.resolve(false);
+  if (!symbolId) return Promise.resolve({ ok: false, reason: "offline" });
   const real = ownRealProfilePhoto(photo);
-  // A picture that could not be downscaled under the cap would only be
-  // refused; it stays a local-only picture rather than a retry loop.
+  // A picture that could not be downscaled under the cap would only ever be
+  // refused. This used to clear the pending flag and resolve false, which
+  // read as "nothing more to do" — so the picture stayed in the local cache,
+  // on screen, and on this device only, for good. It is reported instead,
+  // and the caller puts the confirmed photo back.
   if (real && !profilePhotoUploadable(real)) {
     setOwnProfilePhotoPending(symbolId, false);
-    return Promise.resolve(false);
+    return Promise.resolve({ ok: false, reason: "unprepared" });
   }
   setOwnProfilePhotoPending(symbolId, true);
   // No token yet (or any more): left pending for the next signed-in sync.
-  if (typeof gloobalAuthToken !== "function" || !gloobalAuthToken()) return Promise.resolve(false);
+  if (typeof gloobalAuthToken !== "function" || !gloobalAuthToken()) {
+    return Promise.resolve({ ok: false, reason: "offline" });
+  }
   const push = Promise.resolve()
     .then(() => GloobalApi.setProfilePhoto(symbolId, real))
     .then(
@@ -150,9 +169,11 @@ function pushOwnProfilePhoto(symbolId, photo) {
         // Surfaces that read this account's photo through the counterparty
         // cache see the new one at once rather than after a reload.
         COUNTERPARTY_PHOTO_CACHE.set(symbolId, real);
-        return true;
+        return { ok: true };
       },
-      () => false
+      // A cold Render instance takes 20-50s to wake and this is where that
+      // lands. The flag stays set, so the next sync sends it again.
+      () => ({ ok: false, reason: "failed" })
     )
     .finally(() => {
       if (OWN_PROFILE_PHOTO_PUSHES.get(symbolId) === push) OWN_PROFILE_PHOTO_PUSHES.delete(symbolId);
@@ -170,8 +191,15 @@ async function syncOwnProfilePhoto(symbolId) {
   const local = loadLocalProfile(symbolId);
   const localPhoto = ownRealProfilePhoto(local && local.photo);
   // The person's own latest choice has not reached the server yet: send it.
+  // A failure here is thrown rather than swallowed, so the caller clears its
+  // "already synced" mark and tries again on the next arrival — this used to
+  // resolve null either way, which retired the retry for the whole session
+  // after a single failed attempt.
   if (ownProfilePhotoPending(symbolId)) {
-    await pushOwnProfilePhoto(symbolId, localPhoto);
+    const outcome = await pushOwnProfilePhoto(symbolId, localPhoto);
+    if (!outcome.ok && outcome.reason !== "unprepared") {
+      throw new Error("The profile photo could not be saved.");
+    }
     return null;
   }
   const serverPhoto = await GloobalApi.getUserPhoto(symbolId);
@@ -1228,14 +1256,37 @@ function GloobalId() {
   // memory and was gone on the next load, which is exactly the "first one
   // saves, updates don't" report. Same storage the first one used, so an
   // updated photo is no more special than the original.
-  const handleChangeProfilePhoto = (photo) => {
+  // Returns what happened, so the screen can SAY it. The push used to be
+  // fired and not awaited: the new picture went up the moment it was picked
+  // and nothing ever took it back down, so a save that never reached the
+  // server looked exactly like one that did — which is the whole of the
+  // "photo doesn't save" report that no amount of retrying could explain.
+  //
+  // The picture is still shown immediately; what changed is that a failure
+  // now contradicts it.
+  const handleChangeProfilePhoto = async (photo) => {
+    const previous = profilePhoto;
     setProfilePhoto(photo);
     const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
-    if (symbolId) persistLocalProfile(symbolId, documentedName.trim(), photo);
-    // And to the account's one server copy, so the people who scan this
-    // account see it too. Fired, not awaited; a failure stays pending and is
-    // retried at the next sign-in. The logo placeholder sends null.
-    if (symbolId) pushOwnProfilePhoto(symbolId, photo);
+    if (!symbolId) return { ok: false, reason: "offline" };
+    // Written before the push so a reload mid-flight still shows the attempt,
+    // and so the retry below has the bytes to send.
+    persistLocalProfile(symbolId, documentedName.trim(), photo);
+    const outcome = await pushOwnProfilePhoto(symbolId, photo);
+    if (outcome.ok) return outcome;
+    // This image can never be sent. Leaving it would be a photo that is this
+    // account's everywhere on this device and nowhere else — so the confirmed
+    // one goes back, on screen and in the cache.
+    if (outcome.reason === "unprepared") {
+      setProfilePhoto(previous);
+      persistLocalProfile(symbolId, documentedName.trim(), previous);
+      return outcome;
+    }
+    // Transient. The choice stays on screen and stays pending; clearing the
+    // synced mark is what gets it retried on the next arrival at the
+    // dashboard rather than only at the next sign-in.
+    ownPhotoSyncedForRef.current = null;
+    return outcome;
   };
   const [docType, setDocType] = useState19(null);
   const [documentedName, setDocumentedName] = useState19("");

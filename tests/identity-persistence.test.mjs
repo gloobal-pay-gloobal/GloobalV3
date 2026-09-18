@@ -145,7 +145,7 @@ describe("4. an updated profile photo is written, not just displayed", () => {
     // Was `onChangeProfilePhoto={setProfilePhoto}` — state only. The first
     // photo appeared to stick only because the documentation step calls
     // persistLocalProfile right after it.
-    const at = app.indexOf("const handleChangeProfilePhoto = (photo) => {");
+    const at = app.indexOf("const handleChangeProfilePhoto = async (photo) => {");
     assert.ok(at > 0, "handleChangeProfilePhoto not found");
     const fn = app.slice(at, app.indexOf("\n  };", at));
     assert.match(fn, /setProfilePhoto\(photo\)/);
@@ -153,7 +153,7 @@ describe("4. an updated profile photo is written, not just displayed", () => {
   });
 
   test("it writes under the account's current id", () => {
-    const at = app.indexOf("const handleChangeProfilePhoto = (photo) => {");
+    const at = app.indexOf("const handleChangeProfilePhoto = async (photo) => {");
     const fn = app.slice(at, app.indexOf("\n  };", at));
     assert.match(fn, /\(registeredUser && registeredUser\.symbolId\) \|\| secureId/);
   });
@@ -175,8 +175,8 @@ describe("4. an updated profile photo is written, not just displayed", () => {
   test("it does nothing rather than writing under a missing id", () => {
     // Writing to `gloobal.profile.undefined` would be a photo nobody can
     // ever read back, and would look identical to the bug being fixed.
-    const at = app.indexOf("const handleChangeProfilePhoto = (photo) => {");
+    const at = app.indexOf("const handleChangeProfilePhoto = async (photo) => {");
     const fn = app.slice(at, app.indexOf("\n  };", at));
-    assert.match(fn, /if \(symbolId\) persistLocalProfile/);
+    assert.match(fn, /if \(!symbolId\) return \{ ok: false, reason: "offline" \};/);
   });
 });

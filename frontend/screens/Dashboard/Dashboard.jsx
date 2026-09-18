@@ -281,7 +281,17 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // step does. This used to hand the raw camera photo straight up — a
     // multi-megabyte data URL that overflowed the localStorage cache and
     // could never be accepted as the account's one server copy.
-    reader.onload = async () => onChangeProfilePhoto(await fitProfilePhotoForUpload(reader.result));
+    // The answer is waited for and said out loud. It used to be dropped on
+    // the floor, so a photo that never reached the server still looked
+    // saved: the picture was on screen and nothing ever said otherwise.
+    reader.onload = async () => {
+      const outcome = await onChangeProfilePhoto(await fitProfilePhotoForUpload(reader.result));
+      if (!outcome || outcome.ok) return showToast2("Photo updated");
+      if (outcome.reason === "unprepared") {
+        return showToast2("That picture couldn't be prepared — try another one");
+      }
+      showToast2("Couldn't save your photo just now — we'll try again shortly");
+    };
     reader.readAsDataURL(file);
     e.target.value = "";
   };

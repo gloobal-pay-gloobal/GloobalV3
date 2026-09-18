@@ -526,7 +526,12 @@ describe("Share sends the receipt as a picture", () => {
     await page.waitForFunction(() => window.__copied.length > 0, undefined, { timeout: 10000 });
     const copied = await page.evaluate(() => window.__copied[window.__copied.length - 1]);
     assert.match(copied, /\/t\/RCPT000001/);
-    assert.match(copied, /Transaction ID: /, "the summary did not travel with the link");
+    // The link, and nothing but. The PNG that just landed in the downloads
+    // folder already prints the amount, the counterparty, the date and the
+    // Transaction ID — copying all of that out as text beside the file put
+    // the same receipt on the clipboard a second time.
+    assert.ok(!/Transaction ID: /.test(copied), `the receipt was copied out as text too:\n${copied}`);
+    assert.equal(copied.trim(), (copied.trim().match(/\S+/) || [""])[0], `more than a link was copied:\n${copied}`);
     assert.ok(!/Hooman|Cashless|Textless|Borderless|Limitless/i.test(copied), `the shared text carries the tagline:\n${copied}`);
     await context.close();
   });

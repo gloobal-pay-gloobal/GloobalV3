@@ -5,7 +5,8 @@ import {
   CameraOff as CameraOff1,
   ScanLine as ScanLine1,
   Flashlight as Flashlight1,
-  FlashlightOff as FlashlightOff1
+  FlashlightOff as FlashlightOff1,
+  Image as ImageIcon2
 } from "lucide-react";
 
 // The real camera scanner.
@@ -156,11 +157,111 @@ async function tuneCameraTrack(track) {
   }
   return {
     torch: Boolean(caps.torch),
-    focus: Array.isArray(caps.focusMode) && caps.focusMode.length > 0
+    focus: Array.isArray(caps.focusMode) && caps.focusMode.length > 0,
+    // The optical zoom range, read from the lens rather than assumed. A track
+    // that cannot zoom has no `zoom` key at all, and one that can reports
+    // min/max in ITS own units — 1..8 on one phone, 100..800 on another — so
+    // nothing here hard-codes a number or a multiplier. `null` means no zoom,
+    // and the control is not drawn at all, the same rule the torch follows.
+    zoom: zoomRangeOf(caps)
   };
 }
 
-function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen = false }) {
+// The lens's own zoom range, or null.
+//
+// Deliberately strict: a range needs a max above the min to be worth a
+// control, and a capability object that reports zoom as something other than
+// a numeric range (some engines report a bare boolean) is treated as no zoom
+// rather than guessed at. `step` is what the device says, falling back to a
+// hundredth of the span — small enough to feel continuous, and it is only a
+// fallback for devices that omit it.
+function zoomRangeOf(caps) {
+  const z = caps && caps.zoom;
+  if (!z || typeof z !== "object") return null;
+  const min = Number(z.min);
+  const max = Number(z.max);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return null;
+  const step = Number(z.step);
+  return { min, max, step: Number.isFinite(step) && step > 0 ? step : (max - min) / 100 };
+}
+
+// One look for every control that sits ON the live picture.
+//
+// NavIconButton is the app's circular-control shell everywhere else, and it
+// is the wrong one here: its light T.surface fill and card shadow disappear
+// against a camera feed. This is that idiom translated for video — dark,
+// blurred, white-on-top — and it is shared so the three controls in the row
+// cannot drift apart. `lit` is the torch's on-state, which inverts.
+function scannerControlStyle(lit) {
+  return {
+    width: 52,
+    height: 52,
+    borderRadius: "50%",
+    border: lit ? "none" : "1px solid rgba(255,255,255,0.35)",
+    background: lit ? "#FFFFFF" : "rgba(0,0,0,0.45)",
+    backdropFilter: "blur(6px)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    padding: 0,
+    transition: "background 0.18s ease, border 0.18s ease"
+  };
+}
+
+// The zoom label.
+//
+// Shown as a multiple of the lens's own minimum, not as its raw value: a
+// device reporting 100..800 means 1x..8x, and "100" on a button means
+// nothing to anybody. One decimal only when it needs one, so the common
+// case reads 1x / 2x / 4x rather than 1.0x.
+function formatZoom(level, range) {
+  if (!range) return "";
+  const base = range.min > 0 ? range.min : 1;
+  const times = (level == null ? range.min : level) / base;
+  const rounded = Math.round(times * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}x`;
+}
+
+// Where the lens actually is, clamped to what it said it could do.
+//
+// getSettings() is the authority; `fallback` is only used when the device
+// does not report zoom back (some engines accept the constraint and report
+// nothing), and even that is clamped rather than trusted outright.
+function currentZoomOf(track, range, fallback) {
+  if (!range) return null;
+  let value = typeof fallback === "number" ? fallback : range.min;
+  try {
+    const settings = track && track.getSettings ? track.getSettings() : null;
+    if (settings && Number.isFinite(Number(settings.zoom))) value = Number(settings.zoom);
+  } catch (e) {
+    // No getSettings, or it does not report zoom: keep the fallback.
+  }
+  if (!Number.isFinite(value)) value = range.min;
+  return Math.min(range.max, Math.max(range.min, value));
+}
+
+// The stops a zoom button offers.
+//
+// A slider is the wrong control on a screen someone is holding at arm's
+// length with one hand, pointed at a code: it needs a drag, and a drag on a
+// live viewfinder moves the phone. Three taps through min → middle → max
+// covers what scanning a small or distant code actually needs, and every
+// value is inside the range the lens reported.
+function zoomStopsOf(range) {
+  if (!range) return [];
+  const mid = range.min + (range.max - range.min) / 2;
+  const stops = [range.min, mid, range.max];
+  // A lens with a tiny range can produce stops that round to the same label;
+  // duplicates are dropped so the button never appears to do nothing.
+  return stops.filter((v, i) => i === 0 || Math.abs(v - stops[i - 1]) > (range.step || 0) / 2);
+}
+
+// `onUploadRequested` puts the gallery picker in the control row beside the
+// torch and the zoom. The picker's <input> and its decoding stay where they
+// were, in the scan screen — this only asks for it, so the row can hold all
+// three controls without the scanner learning anything about files.
+function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen = false, onUploadRequested = null }) {
   // "starting" | "running" | "denied" | "unavailable" | "error"
   const [state, setState] = useState32("starting");
   // Torch is only offered where the hardware actually has one. A dead button
@@ -168,6 +269,13 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
   // when a scan is failing in the dark.
   const [torchAvailable, setTorchAvailable] = useState32(false);
   const [torchOn, setTorchOn] = useState32(false);
+  // Same rule as the torch: the range comes from the lens, and a lens that
+  // cannot zoom gets no control. This is real optical zoom through
+  // applyConstraints — NOT a CSS transform on the video, which would scale
+  // the picture the decoder reads without adding a single pixel of detail
+  // and would make a distant code harder to read, not easier.
+  const [zoomRange, setZoomRange] = useState32(null);
+  const [zoomLevel, setZoomLevel] = useState32(null);
   const videoRef = useRef17(null);
   const canvasRef = useRef17(null);
   const streamRef = useRef17(null);
@@ -384,6 +492,13 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
         // has a torch to offer.
         const caps = await tuneCameraTrack(track);
         if (!cancelled) setTorchAvailable(Boolean(caps.torch));
+        // The lens starts where it starts: the opening zoom is read back from
+        // the track rather than assumed to be the minimum, because a device
+        // can hand back a stream already zoomed.
+        if (!cancelled) {
+          setZoomRange(caps.zoom || null);
+          setZoomLevel(caps.zoom ? currentZoomOf(track, caps.zoom) : null);
+        }
         const video = videoRef.current;
         if (video) {
           video.srcObject = stream;
@@ -451,6 +566,35 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
     }
   }, [torchOn]);
 
+  // Step the lens to the next zoom stop.
+  //
+  // The same three rules the torch follows, for the same reasons: one
+  // constraint on its own so an unsupported key cannot take the others down
+  // with it, every value clamped to the range the LENS reported rather than
+  // a number chosen here, and the resulting state read back from the track
+  // instead of assumed — a device can accept a zoom constraint and settle on
+  // a different value, and a button reading 3x over a 2x picture is the same
+  // lie as an ON torch over a dark flash.
+  //
+  // A rejection leaves the displayed level where the track actually is, so a
+  // lens that refuses simply does not move rather than showing a level it is
+  // not at.
+  const stepZoom = useCallback10(async () => {
+    const track = trackRef.current;
+    if (!track || !zoomRange || typeof track.applyConstraints !== "function") return;
+    const stops = zoomStopsOf(zoomRange);
+    if (stops.length === 0) return;
+    const at = stops.findIndex((v) => Math.abs(v - (zoomLevel == null ? stops[0] : zoomLevel)) <= (zoomRange.step || 0) / 2 + 1e-9);
+    const next = stops[(at === -1 ? 0 : at + 1) % stops.length];
+    const wanted = Math.min(zoomRange.max, Math.max(zoomRange.min, next));
+    try {
+      await track.applyConstraints({ advanced: [{ zoom: wanted }] });
+      setZoomLevel(currentZoomOf(track, zoomRange, wanted));
+    } catch (e) {
+      setZoomLevel(currentZoomOf(track, zoomRange, zoomLevel));
+    }
+  }, [zoomRange, zoomLevel]);
+
   // Tap the viewfinder to focus there.
   //
   // Continuous autofocus hunts for whatever is most contrasty in the frame,
@@ -489,7 +633,18 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       : state === "unavailable"
         ? "This device has no camera the browser can use, or the page isn't on a secure (https) connection."
         : "Something went wrong starting the camera. Close this and try again.";
-    const card = <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "28px 24px", textAlign: "center" }}><div style={{ width: 64, height: 64, borderRadius: "50%", background: T.negativeSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><CameraOff1 size={26} color={T.negative} /></div><div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{title}</div><div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, maxWidth: 280 }}>{body}</div></div>;
+    const card = <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "28px 24px", textAlign: "center" }}><div style={{ width: 64, height: 64, borderRadius: "50%", background: T.negativeSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><CameraOff1 size={26} color={T.negative} /></div><div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{title}</div><div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, maxWidth: 280 }}>{body}</div>{
+      /* The way out of a dead camera. The control row below lives in the
+         video branch, which this state never reaches, so without this a
+         phone whose camera cannot start has no route to a code at all —
+         the gallery is exactly the thing that still works. */
+    }{onUploadRequested && <button
+      type="button"
+      onClick={onUploadRequested}
+      aria-label="Upload a QR code from your gallery"
+      className="v2-tap"
+      style={{ display: "flex", alignItems: "center", gap: 8, border: "none", background: "none", color: T.accent, fontSize: 13.5, fontWeight: 700, cursor: "pointer", padding: 0 }}
+    ><ImageIcon2 size={16} />Upload from gallery</button>}</div>;
     // Full screen, this component is a positioned layer inside the scan
     // overlay rather than an item in its column, so an unpositioned card
     // would land at the top of the screen under the tabs. Centre it.
@@ -521,42 +676,89 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}
     ><div
       style={{
+        position: "relative",
         width: "min(72vw, 300px)",
         aspectRatio: "1",
         borderRadius: 26,
-        border: "2px solid rgba(255,255,255,0.92)",
+        // The full outline is now a hairline and the four corners carry the
+        // shape. A solid frame reads as a border around the picture; corners
+        // read as an instruction about where to put the code, which is what
+        // this is for. The square itself is unchanged — it is still exactly
+        // the region the decoder crops to (QR_SCAN_ROI), so what the eye is
+        // told to fill is still what the sensor actually reads.
+        border: "1px solid rgba(255,255,255,0.28)",
         boxShadow: "0 0 0 100vmax rgba(0,0,0,0.45)"
       }}
-    /></div>{
-      /* The torch. Rendered only where the device reports one, and placed
-         directly under the framing square: it is reached for mid-scan, with
-         the phone already up, so it has to be where the eyes already are
-         rather than in a corner. */
-    }{torchAvailable && <button
+    >{[
+      { top: -1, left: -1, borderWidth: "3px 0 0 3px", borderRadius: "26px 0 0 0" },
+      { top: -1, right: -1, borderWidth: "3px 3px 0 0", borderRadius: "0 26px 0 0" },
+      { bottom: -1, right: -1, borderWidth: "0 3px 3px 0", borderRadius: "0 0 26px 0" },
+      { bottom: -1, left: -1, borderWidth: "0 0 3px 3px", borderRadius: "0 0 0 26px" }
+    ].map((corner, i) => <span
+      key={i}
+      style={{
+        position: "absolute",
+        width: 34,
+        height: 34,
+        borderStyle: "solid",
+        borderColor: "#FFFFFF",
+        ...corner
+      }}
+    />)}</div></div>{
+      /* The controls, in one row under the framing square.
+
+         They were not a row before: the torch alone sat at
+         `top: calc(50% + min(36vw, 150px) + 28px)` — a VERTICAL offset
+         computed from the viewport's WIDTH. On a narrow-but-short screen
+         (a small phone in landscape, a split view) that pushes the only
+         light switch off the bottom of the screen. Anchoring to the bottom
+         with the safe-area inset cannot do that at any size, and it is
+         where a thumb already rests.
+
+         Each control draws only when the device can do the thing, so this
+         row is one, two or three buttons wide and stays centred either way.
+         There is no disabled state anywhere in it: a dead button is worse
+         than no button, especially mid-scan. */
+    }<div
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: "calc(132px + env(safe-area-inset-bottom, 0px))",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 18,
+        zIndex: 2,
+        pointerEvents: "none"
+      }}
+    >{onUploadRequested && <button
+      type="button"
+      onClick={onUploadRequested}
+      aria-label="Upload a QR code from your gallery"
+      className="v2-tap"
+      style={{ ...scannerControlStyle(false), pointerEvents: "auto" }}
+    ><ImageIcon2 size={22} color="#FFFFFF" /></button>}{torchAvailable && <button
       type="button"
       onClick={toggleTorch}
       aria-label={torchOn ? "Turn off flashlight" : "Turn on flashlight"}
       aria-pressed={torchOn}
       className="v2-tap"
+      style={{ ...scannerControlStyle(torchOn), pointerEvents: "auto" }}
+    >{torchOn ? <FlashlightOff1 size={22} color="#14122B" /> : <Flashlight1 size={22} color="#FFFFFF" />}</button>}{zoomRange && <button
+      type="button"
+      onClick={stepZoom}
+      aria-label={`Zoom, currently ${formatZoom(zoomLevel, zoomRange)}`}
+      className="v2-tap"
       style={{
-        position: "absolute",
-        left: "50%",
-        top: "calc(50% + min(36vw, 150px) + 28px)",
-        transform: "translateX(-50%)",
-        width: 52,
-        height: 52,
-        borderRadius: "50%",
-        border: torchOn ? "none" : "1px solid rgba(255,255,255,0.35)",
-        background: torchOn ? "#FFFFFF" : "rgba(0,0,0,0.45)",
-        backdropFilter: "blur(6px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
-        transition: "background 0.18s ease, border 0.18s ease",
-        zIndex: 2
+        ...scannerControlStyle(false),
+        pointerEvents: "auto",
+        fontSize: 13,
+        fontWeight: 800,
+        color: "#FFFFFF",
+        fontFamily: T.fontDisplay
       }}
-    >{torchOn ? <FlashlightOff1 size={22} color="#14122B" /> : <Flashlight1 size={22} color="#FFFFFF" />}</button>}<canvas ref={canvasRef} style={{ display: "none" }} /></>;
+    >{formatZoom(zoomLevel, zoomRange)}</button>}</div><canvas ref={canvasRef} style={{ display: "none" }} /></>;
   }
 
   return <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div

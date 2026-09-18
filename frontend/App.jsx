@@ -3599,7 +3599,21 @@ function GloobalId() {
     active={showScanScreen}
     paused={scanResolving || Boolean(scanRetry)}
     onDetected={handleQrScanned}
-  />}<div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={closeScanScreen} /></div><input
+    onUploadRequested={() => {
+      setScanError(null);
+      setScanRetry(null);
+      if (scanGalleryInputRef.current) scanGalleryInputRef.current.click();
+    }}
+  />}<div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={closeScanScreen} />{
+    /* A title, once the camera is up. It is not restating the tab: over a
+       live picture with a square drawn on it, this is the only thing saying
+       what the square is for. On the permission screen below it would be
+       the restatement, so it is not drawn there. */
+  }{scanLive && <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>
+          Scan QR
+        </span><span style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>
+          Point at any Gloobal code
+        </span></span>}</div><input
       ref={scanGalleryInputRef}
       type="file"
       accept="image/*"
@@ -3687,19 +3701,13 @@ function GloobalId() {
     }}
     className="v2-tap"
     style={{ border: "none", borderRadius: 999, padding: "10px 24px", background: "rgba(255,255,255,0.94)", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
-  >{scanRetry}</button>}<button
-    onClick={() => {
-      // Kept on this side too: after one upload the view is here, and a
-      // phone with no working camera would otherwise have no way back in.
-      setScanError(null);
-      setScanRetry(null);
-      if (scanGalleryInputRef.current) scanGalleryInputRef.current.click();
-    }}
-    className="v2-tap"
-    style={{ display: "flex", alignItems: "center", gap: 8, border: "none", background: "none", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer", textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
-  ><ImageIcon size={16} />
-                  Upload from gallery
-                </button><ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Gloobal ID</div><ScanPayeeAvatar gloobalId={scanPayee.gloobalId} name={scanPayee.name} />{
+  >{scanRetry}</button>}{
+    /* Upload moved into the scanner's own control row, beside the torch and
+       the zoom — one row of controls under the square rather than a circle
+       on the picture and a text button below it. It is still reachable when
+       the camera cannot start: QrCameraScanner draws it on that card too,
+       from the same handler. */
+  }<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Gloobal ID</div><ScanPayeeAvatar gloobalId={scanPayee.gloobalId} name={scanPayee.name} />{
     /* The name the server returned for this account — a QR carries no name,
        so nothing printed on a sticker can put one here. */
   }<div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPayee.name}</div><div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 20 }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button

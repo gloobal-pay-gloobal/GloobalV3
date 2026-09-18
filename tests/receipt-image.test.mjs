@@ -246,24 +246,43 @@ describe("renderReceiptImage and sharing, by source", () => {
     assert.doesNotMatch(source, /buildGloobalQrMatrix|gloobalQr|buildGloobalPayUrl/);
   });
 
-  describe("one share, carrying the picture and the link", () => {
-    // This block used to assert the opposite — that the share sent ONLY the
-    // image and contained no `text:` at all. That guard was about the tagline
-    // not being repeated in the share sheet, and it is kept below as its own
-    // assertion. What changed is the product: there were two share buttons on
-    // one receipt, so whichever you pressed you did not send the other half.
+  describe("one share: the picture and the link, and nothing written out", () => {
+    // Two rewrites of this block, and it is worth saying what each was for.
+    // It first asserted the share sent ONLY the image — that guard was about
+    // the tagline, and survives below as its own assertion. It then allowed a
+    // written summary alongside, because the receipt had a SECOND share
+    // button for text and the link, and whichever you pressed you did not
+    // send the other half. Merging them was right; carrying the summary into
+    // the merged payload was not. The picture already prints the amount, the
+    // counterparty, the date and the Transaction ID, so the summary repeated
+    // the receipt underneath itself in every message. It is gone, and these
+    // assert that it stays gone.
     const FILE = { name: "gloobal-receipt-A7K9M2QX8P.png" };
-    const SUMMARY = "Gloobal receipt - money sent\n500.00₹";
     const LINK = "https://gloobal-pay.onrender.com/t/A7K9M2QX8P";
+    // What the summary used to look like, kept as the thing to search for.
+    const SUMMARY_MARKER = /Transaction ID: |money sent|money received|^To: |^From: /m;
 
-    test("the first thing offered carries all three", () => {
-      const [first] = M.receiptShareAttempts(FILE, SUMMARY, LINK);
-      assert.deepEqual(first[0], { files: [FILE], title: "Gloobal receipt", text: SUMMARY, url: LINK });
+    test("the first thing offered is the picture and the link", () => {
+      const [first] = M.receiptShareAttempts(FILE, LINK);
+      assert.deepEqual(first[0], { files: [FILE], title: "Gloobal receipt", url: LINK });
       assert.equal(first[1], "shared");
     });
 
+    test("no rung writes the receipt out as text", () => {
+      // The founder requirement, asserted on every payload rather than on the
+      // first: a rung that quietly kept the summary would still duplicate the
+      // receipt on exactly the platforms that refuse `url`.
+      for (const link of [LINK, ""]) {
+        for (const [payload] of M.receiptShareAttempts(FILE, link)) {
+          const text = payload.text || "";
+          assert.ok(!SUMMARY_MARKER.test(text), `a rung shares the receipt as text: ${text}`);
+          if (text) assert.equal(text, LINK, "the only text a rung may carry is the link itself");
+        }
+      }
+    });
+
     test("every rung keeps the picture — the link is what gets dropped", () => {
-      const rungs = M.receiptShareAttempts(FILE, SUMMARY, LINK);
+      const rungs = M.receiptShareAttempts(FILE, LINK);
       assert.ok(rungs.length >= 3, `only ${rungs.length} attempts`);
       for (const [payload] of rungs) {
         assert.deepEqual(payload.files, [FILE], "a rung dropped the picture");
@@ -277,15 +296,15 @@ describe("renderReceiptImage and sharing, by source", () => {
     });
 
     test("the link survives as text on the rung where url is refused", () => {
-      const rungs = M.receiptShareAttempts(FILE, SUMMARY, LINK);
+      const rungs = M.receiptShareAttempts(FILE, LINK);
       const folded = rungs.find(([p]) => !p.url && p.text && p.text.includes(LINK));
       assert.ok(folded, "no rung folds the link into the text");
-      assert.ok(folded[0].text.includes(SUMMARY), "folding the link lost the summary");
+      assert.equal(folded[0].text, LINK, "the folded rung carries more than the link");
       assert.equal(folded[1], "shared");
     });
 
     test("the last rung reports that the link did NOT go", () => {
-      const rungs = M.receiptShareAttempts(FILE, SUMMARY, LINK);
+      const rungs = M.receiptShareAttempts(FILE, LINK);
       const last = rungs[rungs.length - 1];
       assert.equal(last[0].url, undefined);
       assert.equal(last[0].text, undefined);
@@ -295,10 +314,12 @@ describe("renderReceiptImage and sharing, by source", () => {
       assert.equal(last[1], "shared-without-link");
     });
 
-    test("with no link there is nothing to warn about", () => {
-      const rungs = M.receiptShareAttempts(FILE, SUMMARY, "");
+    test("with no link there is one rung, the picture, and nothing to warn about", () => {
+      const rungs = M.receiptShareAttempts(FILE, "");
+      assert.equal(rungs.length, 1, `a linkless receipt offered ${rungs.length} rungs`);
       for (const [payload, outcome] of rungs) {
         assert.equal(payload.url, undefined);
+        assert.equal(payload.text, undefined);
         assert.equal(outcome, "shared", "warned about a link that was never asked for");
       }
     });
@@ -311,6 +332,25 @@ describe("renderReceiptImage and sharing, by source", () => {
       // closed one.
       const loop = share.slice(share.indexOf("for (const [payload"));
       assert.match(loop, /catch \(error\) \{\s*(\/\/[^\n]*\n\s*)*return error/);
+    });
+
+    test("the share path no longer reads a summary at all", () => {
+      // Not merely unused by the ladder — not plumbed. An `opts.summary` left
+      // in place is an invitation to pass one again.
+      const share = source.slice(source.indexOf("async function shareReceiptImage"));
+      assert.ok(!/opts\.summary/.test(share), "shareReceiptImage still accepts a summary");
+      assert.ok(!/\bsummary\b/.test(share), "the summary is still threaded through the share path");
+    });
+
+    test("the download fallback copies the link alone, not the receipt again", () => {
+      // The other route out of one share action: no file sharing, so the PNG
+      // goes to the downloads folder and the link goes to the clipboard. The
+      // picture is beside it — writing its contents out as text is the same
+      // duplication by a different door.
+      const share = source.slice(source.indexOf("async function shareReceiptImage"));
+      const fallback = share.slice(share.indexOf("const objectUrl = URL.createObjectURL"));
+      assert.match(fallback, /copyToClipboard\(link\)/);
+      assert.ok(!/copyToClipboard\(summary/.test(fallback), "the clipboard fallback still writes the summary");
     });
 
     test("the tagline is still not repeated in the share sheet", () => {

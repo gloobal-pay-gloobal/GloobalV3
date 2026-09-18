@@ -7,7 +7,9 @@
 // symbols that said nothing about what it was, from whom or for how much —
 // and could not be acted on, because there was nowhere for it to lead.
 //
-// It now shares a short summary plus a link back into the app. The privacy
+// It now shares a PNG of the receipt plus a link back into the app — and no
+// written summary: the picture states the amount, the counterparty, the date
+// and the reference already, so the text was the receipt twice. The privacy
 // design is the part worth guarding, and it is this: the LINK carries only
 // the reference, and the app shows the receipt from the VIEWER'S OWN history.
 // A receipt link travels through WhatsApp and gets forwarded; anything that
@@ -32,7 +34,7 @@ const app = readSource("frontend/App.jsx");
 const receipt = readSource("frontend/components/dialogs/ReceiptModal.jsx");
 const server = readSource("server/server.js");
 
-describe("the share sheet gets a summary and a link", () => {
+describe("the share sheet gets the picture and a link", () => {
   test("it goes through shareOrCopy, so the phone's own apps are offered", () => {
     // navigator.share directly meant no clipboard fallback on desktop.
     assert.match(receipt, /shareOrCopy\(/);
@@ -40,9 +42,11 @@ describe("the share sheet gets a summary and a link", () => {
   });
 
   // The summary used to be built inside handleShareTxnId, which was a button
-  // of its own. There is one share button now and the summary rides with the
-  // picture, so it is built once in receiptShareSummary and read by both —
-  // which is where these assertions point.
+  // of its own. It was then built once and read by both that function and the
+  // picture share — and that is what changed here: the picture share sends no
+  // text, because the picture already says everything the summary said. The
+  // summary survives for handleShareTxnId alone, which now runs only when the
+  // picture could not be drawn and text is all there is to send.
   const summaryFn = (() => {
     const at = receipt.indexOf("const receiptShareSummary = (");
     assert.ok(at !== -1, "receiptShareSummary is gone — where is the shared text built?");
@@ -75,16 +79,26 @@ describe("the share sheet gets a summary and a link", () => {
     );
   });
 
-  test("the summary describes the TAB, so it agrees with the picture beside it", () => {
+  test("the summary describes the TAB, so it agrees with the receipt it came from", () => {
     // It did not before. The picture was built per tab and this text was not,
     // so sharing a payment's Creator Share tab sent a picture of the share
-    // captioned with the payment's figure. Now one call supplies both.
+    // captioned with the payment's figure. The text no longer travels with a
+    // picture at all, but the no-picture path is still per tab.
     assert.match(summaryFn, /const r = For \|\| receipt;/);
-    const call = receipt.slice(receipt.indexOf("outcome = await shareReceiptImage("));
-    assert.match(call.slice(0, 400), /summary: rawTxnId \? receiptShareSummary\(tabReceipt\) : ""/);
-    assert.match(call.slice(0, 400), /link: receiptShareUrl/);
     const fallback = receipt.slice(receipt.indexOf("const handleShareTxnId = () => {"));
     assert.match(fallback.slice(0, 400), /receiptShareSummary\(imageReceiptForTab\(\)\)/);
+  });
+
+  test("the picture share carries the picture and the LINK, and no written receipt", () => {
+    // The founder's requirement, at the call site. The PNG already prints the
+    // amount, the counterparty, the date and the Transaction ID in Gloobal's
+    // own type; a `summary:` beside it put the whole receipt into the message
+    // a second time as plain text under the image.
+    const at = receipt.indexOf("outcome = await shareReceiptImage(");
+    assert.ok(at > 0, "the picture share call is gone");
+    const call = receipt.slice(at, receipt.indexOf("});", at));
+    assert.match(call, /link: receiptShareUrl/);
+    assert.ok(!/summary/.test(call), `the share call still carries a summary:\n${call}`);
   });
 
   test("there is one share entry point, not two", () => {

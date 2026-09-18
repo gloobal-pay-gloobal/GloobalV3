@@ -855,39 +855,45 @@ function receiptImageFilename(receipt) {
 
 // Share first, download second — the same order and the same canShare
 // check as the receive-QR card and the audit report.
-// ── One share, carrying both ─────────────────────────────────────────────
+// ── One share: the picture and the link ──────────────────────────────────
 //
 // The receipt had two share buttons: this one sent the picture, and a second
-// one on the Transaction ID box sent the summary and the /t/ link. Two share
-// sheets for one receipt, and whichever you picked, you did not send the
-// other half — the picture cannot be clicked through to the transaction, and
-// the link is not something you can look at in a chat.
+// one on the Transaction ID box sent a written summary and the /t/ link. Two
+// share sheets for one receipt, and whichever you picked, you did not send
+// the other half — the picture cannot be clicked through to the transaction,
+// and the link is not something you can look at in a chat.
 //
 // They are one action now, and this builds the payload for it.
+//
+// The written summary is NOT in it. The picture already states the amount,
+// the counterparty, the date and the Transaction ID, in Gloobal's own type —
+// so a `text` field repeating all of it put the same receipt in the message
+// twice, once as a document and once as a wall of plain text under it. The
+// picture is the receipt; the link is where it leads. Nothing else goes.
 //
 // The ladder is the awkward part, and it exists because navigator.share is
 // not uniform. A target that accepts files does not necessarily accept `url`
 // alongside them, and the whole payload is rejected when any part of it is
-// unsupported — so asking for everything at once and giving up on a `false`
-// from canShare would lose the picture on exactly the platforms that can
-// show it. Each rung drops the least valuable thing that could be causing
-// the refusal, and canShare decides, not a browser sniff:
+// unsupported — so asking for both at once and giving up on a `false` from
+// canShare would lose the picture on exactly the platforms that can show it.
+// Each rung drops the least valuable thing that could be causing the
+// refusal, and canShare decides, not a browser sniff:
 //
-//   1. picture + summary + link, the thing that was asked for
-//   2. the same, with the link folded into the text — `text` is the field
-//      that survives when `url` does not, and a pasted link is still a link
-//   3. picture and summary alone, reported back as its own outcome so the
-//      caller can say the link did not go rather than silently dropping it
+//   1. picture + link, the thing that was asked for
+//   2. the same, with the link folded into `text` — the field that survives
+//      when `url` does not, and a pasted link is still a link
+//   3. the picture alone, reported back as its own outcome so the caller can
+//      say the link did not go rather than silently dropping it
 //
 // Nothing here opens a second share sheet. A person who wanted one share and
 // got two is the thing this replaced.
-function receiptShareAttempts(file, summary, link) {
+function receiptShareAttempts(file, link) {
   const title = "Gloobal receipt";
   const out = [];
-  if (link && summary) out.push([{ files: [file], title, text: summary, url: link }, "shared"]);
-  else if (link) out.push([{ files: [file], title, url: link }, "shared"]);
-  if (link) out.push([{ files: [file], title, text: summary ? `${summary}\n${link}` : link }, "shared"]);
-  if (summary && !link) out.push([{ files: [file], title, text: summary }, "shared"]);
+  if (link) {
+    out.push([{ files: [file], title, url: link }, "shared"]);
+    out.push([{ files: [file], title, text: link }, "shared"]);
+  }
   out.push([{ files: [file], title }, link ? "shared-without-link" : "shared"]);
   return out;
 }
@@ -905,12 +911,11 @@ async function shareReceiptImage(receipt, opts = {}) {
     const blob = await receiptImageToBlob(canvas);
     const filename = receiptImageFilename(receipt);
 
-    const summary = typeof opts.summary === "string" ? opts.summary.trim() : "";
     const link = typeof opts.link === "string" ? opts.link.trim() : "";
 
     if (typeof File !== "undefined" && typeof navigator !== "undefined" && navigator.canShare && navigator.share) {
       const file = new File([blob], filename, { type: "image/png" });
-      for (const [payload, outcome] of receiptShareAttempts(file, summary, link)) {
+      for (const [payload, outcome] of receiptShareAttempts(file, link)) {
         let allowed = false;
         try {
           allowed = navigator.canShare(payload);
@@ -943,7 +948,9 @@ async function shareReceiptImage(receipt, opts = {}) {
     setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
     if (link && typeof copyToClipboard === "function") {
       try {
-        copyToClipboard(summary ? `${summary}\n${link}` : link);
+        // The link alone. The downloaded PNG is the receipt; pasting its
+        // contents again as text beside it is the duplication this removed.
+        copyToClipboard(link);
         return "downloaded-link-copied";
       } catch {
       }

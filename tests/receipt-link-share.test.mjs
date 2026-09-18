@@ -186,7 +186,13 @@ async function shareOpenReceipt(page) {
   await page.waitForFunction(() => window.__shared || (window.__copied || []).length > 0, { timeout: 30000 });
   const shared = await page.evaluate(() => window.__shared);
   const copied = await page.evaluate(() => window.__copied[window.__copied.length - 1]);
-  const whole = (shared && shared.text ? `${shared.text}\n${shared.url || ""}` : copied) || copied;
+  // Everything the person would have in front of them, minus the picture.
+  // The share used to always carry text, so this read `text` first and fell
+  // back to the clipboard; now a successful share may carry only a `url`, and
+  // reading text-or-clipboard would report the string "undefined".
+  const whole = shared
+    ? [shared.text || "", shared.url || ""].filter(Boolean).join("\n")
+    : String(copied == null ? "" : copied);
   const url = (shared && shared.url) || (String(copied).match(/https?:\/\/\S+/) || [])[0] || "";
   return { url: String(url), whole: String(whole) };
 }
@@ -266,10 +272,12 @@ describe("the link the receipt's Share button produces", () => {
     assert.ok(payload.fileSize > 5000, `the picture was only ${payload.fileSize} bytes`);
     assert.ok(payload.url.startsWith(`${API_ORIGIN}/t/`), `no link in the share: ${payload.url}`);
     assert.equal(payload.title, "Gloobal receipt");
-    // And the summary that used to be the other button's whole payload.
-    assert.match(payload.text, /Transaction ID: /);
-    assert.ok(Array.from(payload.text.match(/Transaction ID: (.*)/)[1].trim()).length === 20,
-      "the summary quotes something other than the 20-symbol reference");
+    // And NOT the summary the other button used to send. It rode along here
+    // for a while and it was the receipt written out twice — the picture
+    // above it already prints the amount, the counterparty, the date and the
+    // reference. What goes now is the image and the link.
+    assert.equal(payload.text, "", `the share still writes the receipt out as text:\n${payload.text}`);
+    assert.deepEqual(payload.keys.sort(), ["files", "title", "url"]);
   });
 
   test("the receipt offers exactly one share button", async () => {
@@ -309,12 +317,18 @@ describe("the link the receipt's Share button produces", () => {
     }
   });
 
-  test("the shared message still quotes that full reference, not the code", async () => {
-    // The summary is the whole point of sharing a receipt: what was paid, to
-    // whom, and under which reference. Only the LINK got shorter.
+  test("and the shared message quotes no reference at all — the picture holds it", async () => {
+    // This asserted the opposite: that the shared TEXT still quoted the full
+    // 20-symbol reference rather than the short code. The reference has not
+    // moved — it is printed on the receipt (the test above) and drawn into
+    // the PNG that gets shared. What went is the written copy of it beside
+    // the picture, and with it the rest of the summary.
     const { whole } = await shareOpenReceipt(page);
     const printed = await printedTransactionId(page);
-    assert.ok(whole.includes(`Transaction ID: ${printed}`), `the message was:\n${whole}`);
+    assert.ok(!whole.includes(`Transaction ID: ${printed}`), `the message still writes the receipt out:\n${whole}`);
+    assert.ok(!/money sent|money received/i.test(whole), `the message still narrates the payment:\n${whole}`);
+    // What is left is the link, and only the link.
+    assert.equal(whole.trim(), `${API_ORIGIN}/t/${PAYMENT_CODE}`, `the message was:\n${whole}`);
   });
 
   test("the same receipt reopened from history shares the same short link", async () => {

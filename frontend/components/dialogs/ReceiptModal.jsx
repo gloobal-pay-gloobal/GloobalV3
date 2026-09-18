@@ -472,11 +472,18 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       // own. The shared picture carries the payment and nobody's face.
       // ONE share, carrying both halves. The picture and the /t/ link go out
       // in a single sheet; there is no second share button any more.
+      //
+      // No `summary`. It used to ride along, and it repeated — line for line
+      // — what the picture already prints: the amount, the counterparty, the
+      // date, the Transaction ID. One receipt arrived twice in the same
+      // message, once as a document and once as plain text under it. The
+      // picture carries the payment and the branding; the link carries where
+      // it leads. receiptShareSummary still exists for handleShareTxnId,
+      // which runs only when there is no picture to send.
       const tabReceipt = imageReceiptForTab();
       outcome = await shareReceiptImage(tabReceipt, {
         viewerName,
         viewerSymbolId: viewerSymbolId || "",
-        summary: rawTxnId ? receiptShareSummary(tabReceipt) : "",
         link: receiptShareUrl
       });
     } catch (e) {

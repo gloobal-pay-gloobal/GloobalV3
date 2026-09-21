@@ -32,7 +32,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
-import { ACCOUNTS, buildOnce, login, openPage, teardown } from "./browser-harness.mjs";
+import { ACCOUNTS, buildOnce, login, openPage, teardown, skipPaymentUnlock } from "./browser-harness.mjs";
 
 const SHOTS = process.env.GLOOBAL_RECEIPT_SHOTS || "";
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -241,6 +241,7 @@ async function pay(page, { sender, receiver, receiverGets }) {
     }
   }
 
+  await skipPaymentUnlock(page);
   await page.getByTestId("receipt-counterparty").waitFor({ timeout: 45000 });
 }
 

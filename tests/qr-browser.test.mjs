@@ -540,6 +540,8 @@ describe("a /p/<digits> link opens Send Money", () => {
     const deadline = Date.now() + 12000;
     const seen = [];
     while (Date.now() < deadline) {
+      // Past the question-and-scratch card, to the receipt this suite checks.
+      if (await page.getByTestId("payment-unlock").count()) await page.getByTestId("payment-unlock").getByRole("button", { name: "Skip", exact: true }).click();
       seen.push(await text(page));
       await page.waitForTimeout(500);
     }

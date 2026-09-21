@@ -128,6 +128,8 @@ async function run() {
   check("a 'no' sent with points: 25 is stored as 10", cheat.status === 200 && cheat.body?.answer?.points === 10, cheat.text.slice(0, 160));
   const sum = await call("POST", "/api/hooman/answers", { body: { pillar: "self", item: "education", kind: "math", a: 34, b: 35, value: 69, day: "2026-09-21" }, token: alice.token });
   check("a right sum is worth 25", sum.body?.answer?.points === 25 && sum.body?.answer?.correct === true);
+  const three = await call("POST", "/api/hooman/answers", { body: { pillar: "self", item: "education", kind: "math", a: 34, b: 35, c: 36, value: 105, day: "2026-09-22" }, token: alice.token });
+  check("a three-number sum is checked too", three.body?.answer?.correct === true, three.text.slice(0, 160));
   const q = await call("GET", "/api/hooman/question", { token: alice.token });
   check("a knowledge question arrives without its answer", q.status === 200 && q.body?.question?.id && q.body.question.answer === undefined, q.text.slice(0, 160));
 
@@ -137,8 +139,21 @@ async function run() {
   check("two same-day answers on the score screen leave one row",
     (await HoomanAnswer.countDocuments({ item: "sleep", source: "score" })) === 1);
   check("and it is the correction", (await HoomanAnswer.findOne({ item: "sleep" }).lean())?.value === "yes");
+  // Payments are real rows: an answer after a payment must name one the
+  // person actually made. Written straight to the model — this file tests the
+  // Hooman routes, not the send route.
+  const aliceUser = await User.findOne({ symbolId: alice.id }).lean();
+  const bobUser = await User.findOne({ symbolId: bob.id }).lean();
+  const payment = (from, to, referenceId) => Transaction.create({ fromUserId: from._id, toUserId: to._id, amount: 10, type: "send", status: "success", referenceId });
+  await payment(aliceUser, bobUser, "TXN-A");
+  await payment(aliceUser, bobUser, "TXN-B");
+  await payment(bobUser, aliceUser, "TXN-BOB");
   const pay = (txn, value = "yes") => call("POST", "/api/hooman/answers", { body: yes("mental", { value, source: "payment", transactionId: txn }), token: alice.token });
   await pay("TXN-A"); await pay("TXN-B", "no"); await pay("TXN-B", "no");
+  const invented = await pay("TXN-NEVER");
+  check("a payment that does not exist is refused", invented.status === 400 && invented.body?.code === "hooman_bad_transaction", `status=${invented.status}`);
+  const someoneElses = await pay("TXN-BOB");
+  check("so is somebody else's payment", someoneElses.status === 400 && someoneElses.body?.code === "hooman_bad_transaction", `status=${someoneElses.status}`);
   check("two payments are two rows, and a retried save of one is not a third",
     (await HoomanAnswer.countDocuments({ item: "mental", source: "payment" })) === 2);
   const nameless = await call("POST", "/api/hooman/answers", { body: yes("mental", { source: "payment" }), token: alice.token });
@@ -160,7 +175,8 @@ async function run() {
   check("and cannot save without his own agreement", bobTries.status === 403);
 
   console.log("\n6. no payment is touched");
-  check("no Transaction was created or changed by any of this", (await Transaction.countDocuments({})) === 0);
+  check("no Transaction was created or changed by any of this — only the three this file wrote",
+    (await Transaction.countDocuments({})) === 3 && (await Transaction.countDocuments({ status: "success", amount: 10 })) === 3);
 
   console.log("\n7. delete removes everything");
   const del = await call("DELETE", "/api/hooman", { token: alice.token });

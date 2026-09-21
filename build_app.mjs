@@ -185,6 +185,9 @@ const FRONTEND_MODULES = [
   // The screen between "verified" and the receipt. Renders the
   // transactionStatus SendMoney was already tracking and nothing drew.
   "components/dialogs/PaymentProcessing.jsx",
+  // After a payment: one question, then scratch to see the Creator Share.
+  // Ahead of SendMoney, which shows it before the receipt.
+  "components/dialogs/PaymentUnlock.jsx",
   // The two explain-this-screen sheets opened from the registration
   // screens' top-right corner. Needs hooks/useBackClose.js (above) and is
   // rendered from App.jsx (below).

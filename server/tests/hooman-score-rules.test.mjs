@@ -37,6 +37,21 @@ describe("what an answer is worth — decided by the server", () => {
     assert.deepEqual([wrong.correct, wrong.points], [false, 10]);
   });
 
+  test("a three-number sum (after a payment) is checked as well", () => {
+    const right = ok({ pillar: "self", item: "education", kind: "math", a: 34, b: 35, c: 36, value: 105 });
+    const wrong = ok({ pillar: "self", item: "education", kind: "math", a: 34, b: 35, c: 36, value: 107 });
+    assert.deepEqual([right.correct, right.points], [true, 25]);
+    assert.deepEqual([wrong.correct, wrong.points], [false, 10]);
+    assert.equal(refused({ pillar: "self", item: "education", kind: "math", a: 1, b: 2, c: "x", value: 3 }).code, "hooman_bad_answer");
+  });
+
+  test("after a knowledge answer the right option is known, but never stored", () => {
+    const q = BANK.questions.find((x) => x.id === "cap-au");
+    const r = H.evaluateHoomanAnswer({ pillar: "self", item: "education", kind: "knowledge", questionId: "cap-au", choice: (q.answer + 1) % 4 }, { bank: BANK, now: NOW });
+    assert.equal(r.rightChoice, q.answer);
+    assert.equal(r.record.rightChoice, undefined);
+  });
+
   test("a knowledge answer is checked against the server's own answer key", () => {
     const q = BANK.questions.find((x) => x.id === "cap-au");
     const right = ok({ pillar: "self", item: "education", kind: "knowledge", questionId: "cap-au", choice: q.answer });

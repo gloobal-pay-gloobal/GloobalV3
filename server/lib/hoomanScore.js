@@ -141,20 +141,27 @@ function evaluateHoomanAnswer(input, { bank, now = new Date() } = {}) {
   let value;
   let correct = null;
   let questionId = null;
+  // For a knowledge question: which option was right. Returned to the app
+  // AFTER it has answered, so it can show the right one. Never stored.
+  let rightChoice = null;
 
   if (kind === 'yesno') {
     if (body.value !== 'yes' && body.value !== 'no') return fail('hooman_bad_answer', 'Answer yes or no.');
     value = body.value;
   } else if (kind === 'math') {
-    if (!isWholeNumber(body.a) || !isWholeNumber(body.b) || !isWholeNumber(body.value)) {
+    // Two numbers on the score screen; three after a payment (34 + 35 + 36).
+    // `c` is optional, and absent means a two-number sum.
+    const hasC = body.c !== undefined && body.c !== null;
+    if (!isWholeNumber(body.a) || !isWholeNumber(body.b) || !isWholeNumber(body.value) || (hasC && !isWholeNumber(body.c))) {
       return fail('hooman_bad_answer', 'That sum is not valid.');
     }
     const a = Number(body.a);
     const b = Number(body.b);
+    const c = hasC ? Number(body.c) : 0;
     const given = Number(body.value);
-    if (a < 0 || b < 0 || a > 999 || b > 999) return fail('hooman_bad_answer', 'That sum is not valid.');
+    if (a < 0 || b < 0 || c < 0 || a > 999 || b > 999 || c > 999) return fail('hooman_bad_answer', 'That sum is not valid.');
     value = String(given);
-    correct = given === a + b;
+    correct = given === a + b + c;
   } else {
     // knowledge
     const questions = (bank && Array.isArray(bank.questions)) ? bank.questions : [];
@@ -166,12 +173,14 @@ function evaluateHoomanAnswer(input, { bank, now = new Date() } = {}) {
     value = String(choice);
     correct = choice === question.answer;
     questionId = question.id;
+    rightChoice = question.answer;
   }
 
   const good = kind === 'yesno' ? value === 'yes' : correct === true;
 
   return {
     ok: true,
+    rightChoice,
     record: {
       pillar,
       item,

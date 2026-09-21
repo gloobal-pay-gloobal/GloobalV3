@@ -6896,6 +6896,17 @@ app.post('/api/hooman/answers', writeLimit, requireAuth, async (req, res) => {
     if (!evaluated.ok) return res.status(400).json({ success: false, code: evaluated.code, message: evaluated.message });
     const record = evaluated.record;
 
+    // An answer given after a payment must name a payment this person made.
+    // Every payment counts once — so the payment has to be real, and theirs.
+    if (record.source === 'payment'
+      && !(await Transaction.exists({ referenceId: record.transactionId, fromUserId: userId }))) {
+      return res.status(400).json({
+        success: false,
+        code: 'hooman_bad_transaction',
+        message: 'That payment was not found on your account.',
+      });
+    }
+
     if (hoomanPillarLocks(record.pillar)
       && await HoomanAnswer.exists({ userId, pillar: record.pillar, item: record.item })) {
       return res.status(409).json({
@@ -6929,7 +6940,7 @@ app.post('/api/hooman/answers', writeLimit, requireAuth, async (req, res) => {
 
     return res.json({
       success: true,
-      answer: { points: record.points, correct: record.correct },
+      answer: { points: record.points, correct: record.correct, rightChoice: evaluated.rightChoice },
       score: computeHoomanScore(await hoomanAnswersFor(userId)),
     });
   } catch (error) {

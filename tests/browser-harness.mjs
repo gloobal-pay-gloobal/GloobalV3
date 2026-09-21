@@ -588,6 +588,11 @@ export async function installApi(context, options = {}) {
         const evaluated = HOOMAN.evaluateHoomanAnswer(body, { bank: HOOMAN_BANK });
         if (!evaluated.ok) return json(400, { success: false, code: evaluated.code, message: evaluated.message });
         const record = evaluated.record;
+        // After a payment: it has to be one this person made (server.js checks
+        // Transaction.referenceId + fromUserId; this fake checks its ledger).
+        if (record.source === "payment" && !state.ledger.some((row) => row.referenceId === record.transactionId && row.sender && row.sender.symbolId === caller.symbolId)) {
+          return json(400, { success: false, code: "hooman_bad_transaction", message: "That payment was not found on your account." });
+        }
         if (HOOMAN.pillarLocks(record.pillar) && mine.answers.some((a) => a.pillar === record.pillar && a.item === record.item)) {
           return json(409, { success: false, code: "hooman_answer_locked", message: "Finance answers lock after your first response." });
         }
@@ -599,7 +604,7 @@ export async function installApi(context, options = {}) {
         } else if (!mine.answers.some((a) => a.source === "payment" && a.transactionId === record.transactionId)) {
           mine.answers.push({ ...record, createdAt: now });
         }
-        return json(200, { success: true, answer: { points: record.points, correct: record.correct }, score: scoreOf() });
+        return json(200, { success: true, answer: { points: record.points, correct: record.correct, rightChoice: evaluated.rightChoice }, score: scoreOf() });
       }
       return json(404, { success: false, message: "Not found." });
     }
@@ -1053,3 +1058,22 @@ export async function shownBalance(page) {
 }
 
 export const text = (page) => page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim());
+
+// After a settled payment the app opens the question-and-scratch card
+// (PaymentUnlock) before the receipt. Suites that are about the receipt, not
+// the card, pass it with Skip — the same button a person uses. Returns true
+// if the card was there. tests/payment-unlock.test.mjs tests the card itself.
+export async function skipPaymentUnlock(page, { timeout = 45000 } = {}) {
+  const card = page.getByTestId("payment-unlock");
+  const receipt = page.getByTestId("receipt-counterparty");
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (await card.count()) {
+      await card.getByRole("button", { name: "Skip", exact: true }).click();
+      return true;
+    }
+    if (await receipt.count()) return false;
+    await page.waitForTimeout(250);
+  }
+  return false;
+}

@@ -84,6 +84,8 @@ describe("after a payment", () => {
       assert.equal(await reveal.isDisabled(), true, "Reveal works before answering");
       assert.equal(await page.getByTestId("unlock-share").count(), 0, "the share is on the page before answering");
       assert.match(await page.getByTestId("unlock-scratch").innerText(), /ANSWER TO UNLOCK/);
+      assert.match(await page.getByTestId("payment-unlock").innerText(), /Payment completed/);
+      assert.match(await page.getByTestId("unlock-amount").innerText(), /^\u2212/, "the amount paid is not shown as money out");
 
       await firstOption(page).click();
       await page.getByText("SCRATCH HERE").waitFor({ timeout: 10000 });

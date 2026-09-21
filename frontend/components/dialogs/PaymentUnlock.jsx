@@ -346,16 +346,31 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
       data-testid="payment-unlock"
       style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}
     >
-      <div style={{ background: T.gradWallet, color: "#FFFFFF", padding: "calc(16px + env(safe-area-inset-top, 0px)) 18px 22px", flexShrink: 0, position: "relative", textAlign: "center" }}>
-        <button
-          type="button"
-          onClick={onDone}
-          style={{ position: "absolute", right: 12, top: "calc(10px + env(safe-area-inset-top, 0px))", border: "none", background: "rgba(255,255,255,0.14)", color: "#FFFFFF", borderRadius: 999, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-        >
-          Skip
-        </button>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.6, opacity: 0.85, marginTop: 22 }}>PAYMENT COMPLETE</div>
-        {amountLabel ? <div style={{ fontFamily: T.fontDisplay, fontSize: 30, fontWeight: 800, marginTop: 6, fontVariantNumeric: "tabular-nums" }}>{amountLabel}</div> : null}
+      {/* The header: a rounded card rather than an edge-to-edge band, so
+          the screen has no hard corners. Green tick for "it went through";
+          the amount in red with a minus, because it is money that LEFT —
+          the same colour and sign History uses for money out. */}
+      <div style={{ padding: "calc(12px + env(safe-area-inset-top, 0px)) 16px 0", flexShrink: 0, maxWidth: 480, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
+        <div style={{ position: "relative", background: T.surface, borderRadius: T.radiusXl, boxShadow: T.shadowCard, padding: "18px 16px 20px", textAlign: "center" }}>
+          <button
+            type="button"
+            onClick={onDone}
+            style={{ position: "absolute", right: 12, top: 12, border: "none", background: T.surfaceAlt, color: T.inkSoft, borderRadius: 999, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+          >
+            Skip
+          </button>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 26 }}>
+            <span aria-hidden="true" style={{ width: 24, height: 24, borderRadius: "50%", background: T.positive, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <CheckUnlock size={15} color="#FFFFFF" strokeWidth={3} />
+            </span>
+            <span style={{ fontSize: 15, fontWeight: 800, color: T.positive }}>Payment completed</span>
+          </div>
+          {amountLabel ? (
+            <div data-testid="unlock-amount" style={{ fontFamily: T.fontDisplay, fontSize: 32, fontWeight: 800, marginTop: 8, color: T.negative, fontVariantNumeric: "tabular-nums" }}>
+              {`\u2212${amountLabel}`}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 16px calc(20px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column", gap: 14, maxWidth: 480, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>

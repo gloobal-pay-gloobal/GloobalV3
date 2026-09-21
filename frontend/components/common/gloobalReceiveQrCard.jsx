@@ -407,7 +407,7 @@ var GLOOBAL_QR_CARD_BUTTON = {
 // How long each colour holds before the badge turns over.
 var GLOOBAL_QR_DISC_CYCLE_MS = 2000;
 
-function GloobalReceiveQrCard({ gloobalId, name, onToast }) {
+function GloobalReceiveQrCard({ gloobalId, name, onToast, headerAction = null }) {
   const [sharing, setSharing] = useState36(false);
   // The badge's colour, turning over every two seconds.
   //
@@ -514,12 +514,19 @@ function GloobalReceiveQrCard({ gloobalId, name, onToast }) {
         gap: 14
       }}
     >
-      <h2
-        id="gloobal-receive-qr-title"
-        style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, color: T.ink }}
-      >
-        Your Gloobal QR
-      </h2>
+      {/* Title centred, with an optional action (My Share) on its right.
+          Three columns so the title stays centred whether or not the
+          action is there. */}
+      <div style={{ width: "100%", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 8 }}>
+        <span aria-hidden="true" />
+        <h2
+          id="gloobal-receive-qr-title"
+          style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}
+        >
+          Your Gloobal QR
+        </h2>
+        <div data-testid="qr-header-action" style={{ justifySelf: "end", display: "flex" }}>{headerAction}</div>
+      </div>
 
       <div style={{ width: "min(300px, 100%)", aspectRatio: "1 / 1", background: "#FFFFFF" }}>
         {animalLayout ? (
@@ -529,13 +536,14 @@ function GloobalReceiveQrCard({ gloobalId, name, onToast }) {
         )}
       </div>
 
-      {/* The picker. Chips scroll sideways on a narrow phone rather than
-          wrapping into a block that pushes the buttons off the screen. */}
+      {/* The picker: colour dots only, no words. Each dot's name is its
+          accessible label (and tooltip). Scrolls sideways if it ever
+          outgrows a narrow phone. */}
       <div
         role="radiogroup"
         aria-label="QR picture"
         data-testid="qr-style-picker"
-        style={{ display: "flex", gap: 8, width: "100%", overflowX: "auto", padding: "2px 2px 6px", boxSizing: "border-box", scrollbarWidth: "none" }}
+        style={{ display: "flex", justifyContent: "safe center", gap: 5, width: "100%", overflowX: "auto", padding: "4px 2px 6px", boxSizing: "border-box", scrollbarWidth: "none" }}
       >
         {[{ key: "classic", label: "Classic", color: null }, ...GLOOBAL_QR_ANIMALS].map((opt) => {
           const selected = (animalLayout ? qrStyle : "classic") === opt.key;
@@ -545,34 +553,32 @@ function GloobalReceiveQrCard({ gloobalId, name, onToast }) {
               type="button"
               role="radio"
               aria-checked={selected}
+              aria-label={opt.label}
+              title={opt.label}
               onClick={() => chooseQrStyle(opt.key)}
               style={{
                 flexShrink: 0,
+                width: 26,
+                height: 26,
+                borderRadius: "50%",
+                padding: 0,
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
-                minHeight: 36,
-                padding: "0 12px",
-                borderRadius: 999,
-                border: selected ? `2px solid ${opt.color || T.ink}` : `1px solid ${T.line}`,
-                background: selected ? (opt.color ? `${opt.color}14` : T.surfaceAlt) : "#FFFFFF",
-                color: T.ink,
-                fontSize: 12.5,
-                fontWeight: 800,
+                justifyContent: "center",
+                border: selected ? `2px solid ${opt.color ? gloobalAnimalQrInk(opt.color) : T.ink}` : "2px solid transparent",
+                background: "#FFFFFF",
                 cursor: "pointer"
               }}
             >
               <span
                 aria-hidden="true"
                 style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: opt.color ? "50%" : 3,
-                  background: opt.color ? gloobalAnimalQrInk(opt.color) : "#000",
-                  flexShrink: 0
+                  width: 16,
+                  height: 16,
+                  borderRadius: opt.color ? "50%" : 4,
+                  background: opt.color ? gloobalAnimalQrInk(opt.color) : "#000"
                 }}
               />
-              {opt.label}
             </button>
           );
         })}

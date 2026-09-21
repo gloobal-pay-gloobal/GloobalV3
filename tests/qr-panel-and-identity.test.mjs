@@ -94,13 +94,19 @@ describe("every Gloobal QR is drawn by one component", () => {
   });
 
   test("nothing on the Receive sheet is positioned over the QR", () => {
-    // The Creator Share badge used to straddle the QR panel's top edge. It
-    // now sits in its own row under the card, so no overlay can cover a
-    // module.
+    // The Creator Share badge used to straddle the QR panel's top edge. My
+    // Share now rides in the card's title row (headerAction), beside "Your
+    // Gloobal QR" and above the code, so no overlay can cover a module.
     const code = stripComments(dash);
     const at = code.indexOf("<GloobalReceiveQrCard");
     assert.ok(at > 0, "the card was not found");
-    const next = code.slice(at, code.indexOf("My Share", at));
-    assert.doesNotMatch(next, /position: "absolute"/, "something is absolutely positioned between the card and My Share");
+    const tag = code.slice(at, code.indexOf("/>{", code.indexOf("headerAction", at)));
+    assert.match(tag, /headerAction=\{/, "My Share is not in the card's title row");
+    assert.match(tag, /My Share, currently/);
+    const cardCode = stripComments(card);
+    const title = cardCode.indexOf('id="gloobal-receive-qr-title"');
+    const action = cardCode.indexOf("{headerAction}");
+    const qr = cardCode.indexOf("<GloobalAnimalQrSvg", title);
+    assert.ok(title > 0 && action > title && qr > action, "the action is not in the title row above the code");
   });
 });

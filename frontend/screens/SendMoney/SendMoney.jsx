@@ -35,18 +35,37 @@ function Flag({ emoji, size = "md", badge }) {
 // this screen and PayPinModal compared a typed PIN against. Both now ask
 // POST /api/pin/verify instead, so nothing reads it: a hardcoded PIN that
 // unlocks payments has no business sitting in the bundle, even unused.
+// The sender half of the screen: the SIGNED-IN account, as the rest of the
+// app knows it — its name, its Gloobal ID and its own mobile number.
+//
+// This used to be a demo card: a randomName(), an "IN91••••••" placeholder
+// for the ID, and a phone built from whatever was in the dial pad. Tapping
+// the swap button showed those invented details as if they were the
+// sender's. Now every field comes from the account App.jsx passes in
+// (`fullName`, `symbolId`, `mobileNumber`), with plain fallbacks when a field
+// is genuinely missing — never an invented one.
+function senderProfileMaskMobile(mobile, dialCode) {
+  const digits = String(mobile || "").replace(/\D/g, "");
+  if (!digits) return "";
+  const dial = String(dialCode || "").replace(/\D/g, "");
+  const local = dial && digits.startsWith(dial) ? digits.slice(dial.length) : digits;
+  if (local.length <= 4) return `+${dial}${local}`;
+  // The same shape the receiver's number arrives in from the server:
+  // dial code, two digits, dots, the last two.
+  return `+${dial}${local.slice(0, 2)}${"\u2022".repeat(Math.max(2, local.length - 4))}${local.slice(-2)}`;
+}
 function buildSenderProfile(sender) {
   const s = sender || { name: "United States", iso: "US", dialCode: "+1", flag: "\u{1F1FA}\u{1F1F8}", phoneNumber: "" };
-  const digits = (s.phoneNumber || "").trim();
+  const mobile = s.mobileNumber || `${s.dialCode || ""}${String(s.phoneNumber || "").replace(/\D/g, "")}`;
   return {
     country: s.name,
     flag: s.flag,
-    phone: digits ? `${s.dialCode} ${digits}` : `${s.dialCode} \u2022\u2022\u2022\u2022 \u2022\u2022 \u2022\u2022`,
-    id: `${s.iso}${s.dialCode.replace("+", "")}\u2022\u2022\u2022\u2022\u2022\u2022`,
+    phone: senderProfileMaskMobile(mobile, s.dialCode),
+    id: s.symbolId || "",
     currency: COUNTRY_CURRENCY[s.iso] || "USD",
     dialCode: s.dialCode,
     iso: s.iso,
-    name: randomName()
+    name: s.fullName && String(s.fullName).trim() ? String(s.fullName).trim() : "You"
   };
 }
 // The empty receiver half, before anybody has been searched for. It shows the
@@ -110,7 +129,10 @@ function identityDisplayValue(profile, mode) {
   }
 }
 function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = [], onOpenPaidHistory, onSendComplete, onExecuteTransaction, onRemoteSend }) {
-  const [top, setTop] = useState15(() => buildSenderProfile(sender));
+  // The account's CURRENT Gloobal ID — the same source the Dashboard reads,
+  // so a rename made this session shows here too.
+  const liveSenderId = useCurrentSymbolId(sender && sender.symbolId);
+  const [top, setTop] = useState15(() => buildSenderProfile({ ...sender, symbolId: liveSenderId || (sender && sender.symbolId) }));
   const [bottom, setBottom] = useState15(() => buildLocalReceiverPlaceholder(buildSenderProfile(sender)));
   // `top` is seeded once, from the account that was signed in when this screen
   // mounted — and the Send button quotes its currency. If a different account
@@ -122,22 +144,21 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   // "belt and braces" is the right amount of care for the one figure on this
   // screen that says how much of your own money is about to leave.
   //
-  // Keyed on the account's ISO, which is what decides the currency. The
-  // display name is preserved rather than rebuilt: buildSenderProfile calls
-  // randomName() for the prototype placeholder, and re-running it would rename
-  // the sender mid-flow for no reason.
+  // Keyed on the account's country, name, number and current Gloobal ID —
+  // all real now, so rebuilding the card when one changes shows the change
+  // rather than inventing anything.
   useEffect13(() => {
-    const next = buildSenderProfile(sender);
+    const next = buildSenderProfile({ ...sender, symbolId: liveSenderId || (sender && sender.symbolId) });
     setTop((current) => {
-      if (next.iso === current.iso && next.currency === current.currency) return current;
-      return { ...next, name: current.name };
+      if (next.iso === current.iso && next.currency === current.currency && next.id === current.id && next.name === current.name && next.phone === current.phone) return current;
+      return next;
     });
     // And the empty receiver half, which mirrors the sender's country until
     // somebody is actually searched for. Only while it IS still the empty
     // half — a resolved recipient carries an id, and their currency is their
     // own account's, never the sender's.
     setBottom((current) => (current.id ? current : buildLocalReceiverPlaceholder(next)));
-  }, [sender && sender.iso, sender && sender.dialCode, sender && sender.phoneNumber]);
+  }, [sender && sender.iso, sender && sender.dialCode, sender && sender.phoneNumber, sender && sender.mobileNumber, sender && sender.fullName, liveSenderId]);
   const [amount, setAmount] = useState15("");
   const [topOpen, setTopOpen] = useState15(false);
   const [bottomOpen, setBottomOpen] = useState15(true);

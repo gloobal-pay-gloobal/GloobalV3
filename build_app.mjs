@@ -163,6 +163,9 @@ const FRONTEND_MODULES = [
   "components/common/profileAvatar.jsx",
   // The static receive QR card. Needs gloobalPayLink.js (backend) and
   // G_LOGO_DATA_URI; ahead of Dashboard, which will show it.
+  // The animal pictures for the receive QR, and the layout rules that keep
+  // each one scannable. Plain JS; ahead of the card, which draws them.
+  "components/common/gloobalAnimalQr.js",
   "components/common/gloobalReceiveQrCard.jsx",
   // The four action tiles' own motion: send flies off, receive drops in,
   // scan sweeps, bank settles. Sits outside the flip rather than replacing
@@ -182,6 +185,9 @@ const FRONTEND_MODULES = [
   // The screen between "verified" and the receipt. Renders the
   // transactionStatus SendMoney was already tracking and nothing drew.
   "components/dialogs/PaymentProcessing.jsx",
+  // After a payment: one question, then scratch to see the Creator Share.
+  // Ahead of SendMoney, which shows it before the receipt.
+  "components/dialogs/PaymentUnlock.jsx",
   // The two explain-this-screen sheets opened from the registration
   // screens' top-right corner. Needs hooks/useBackClose.js (above) and is
   // rendered from App.jsx (below).

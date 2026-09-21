@@ -575,6 +575,8 @@ async function sendPayment(page, { sender, receiver, sends, expectBlocked = fals
   const deadline = Date.now() + (expectBlocked ? 14000 : 10000);
   const seen = [];
   while (Date.now() < deadline) {
+    // Past the question-and-scratch card, to the receipt this suite checks.
+    if (await page.getByTestId("payment-unlock").count()) await page.getByTestId("payment-unlock").getByRole("button", { name: "Skip", exact: true }).click();
     const now = await text(page);
     if (!seen.length || seen[seen.length - 1] !== now) seen.push(now);
     await page.waitForTimeout(500);

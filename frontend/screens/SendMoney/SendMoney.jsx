@@ -163,6 +163,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   const copyTimer = useRef11(null);
   const pinErrorTimer = useRef11(null);
   const [receipt, setReceipt] = useState15(null);
+  // The post-payment question and scratch card, shown before the receipt.
+  const [unlock, setUnlock] = useState15(null);
   const requestCloseReceipt = useBackClose(!!receipt, () => {
     setReceipt(null);
     setTransactionStatus("idle");
@@ -546,6 +548,12 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     // The receipt is set before the status flips, so "completed" is never
     // observable without one to show for it.
     setReceipt(finalReceipt);
+    // A payment that really settled opens on the question-and-scratch card
+    // first (PaymentUnlock), and the receipt after it. A locally-recorded one
+    // goes straight to its receipt: it earned no share to reveal.
+    if (settledRemotely && typeof gloobalAuthToken === "function" && gloobalAuthToken()) {
+      setUnlock({ receipt: finalReceipt, amountLabel: fmtMoney(senderAmount, top.currency) });
+    }
     setTransactionStatus("completed");
     if (onSendComplete) onSendComplete(finalHistoryEntry);
   }
@@ -1678,8 +1686,13 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       setFailureReason(null);
       setTransactionStatus("idle");
     }}
-  /><ReceiptModal
-    receipt={receipt}
+  />{unlock && <PaymentUnlock
+    receipt={unlock.receipt}
+    amountLabel={unlock.amountLabel}
+    onToast={showToast2}
+    onDone={() => setUnlock(null)}
+  />}<ReceiptModal
+    receipt={unlock ? null : receipt}
     onClose={requestCloseReceipt}
     onDone={() => {
       setReceipt(null);

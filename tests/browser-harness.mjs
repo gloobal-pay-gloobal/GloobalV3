@@ -32,6 +32,12 @@ import { ROOT } from "./harness.mjs";
 
 const PREVIEW = path.join(ROOT, "gloobal-essentials-preview");
 
+// The Hooman Score rules the real routes apply — loaded, not copied, so the
+// fake below scores answers exactly as server.js does.
+const serverRequire = createRequire(path.join(ROOT, "server", "package.json"));
+const HOOMAN = serverRequire("./lib/hoomanScore.js");
+const HOOMAN_BANK = serverRequire("./data/hoomanQuestionBank.json");
+
 // Re-exported so the suites can read repo files (netlify.toml) without
 // importing two harnesses.
 export const ROOT_DIR = ROOT;
@@ -313,7 +319,16 @@ export async function installApi(context, options = {}) {
   // ({ id, type, title, message, readAt, createdAt, metadata }). The send
   // route below writes one per party; `options.notifications` seeds rows in
   // the same shape (id/createdAt/readAt/type are filled in when omitted).
-  const state = { balances: {}, failNextSend: null, ledger: [], photos: {}, notifications: [] };
+  // `hooman` is the HoomanAnswer + HoomanProfile collections, per symbolId:
+  // { consented, answers: [{ ...record, createdAt }] }. Seed with
+  // `options.hooman` in the same shape (answers may omit createdAt).
+  const state = { balances: {}, failNextSend: null, ledger: [], photos: {}, notifications: [], hooman: {} };
+  for (const [symbolId, seed] of Object.entries(options.hooman || {})) {
+    state.hooman[symbolId] = {
+      consented: Boolean(seed.consented),
+      answers: (seed.answers || []).map((a) => ({ source: "score", correct: null, ...a, createdAt: a.createdAt || new Date().toISOString() }))
+    };
+  }
   for (const account of Object.values(accounts)) state.balances[account.symbolId] = account.balance;
   Object.assign(state.photos, options.photos || {});
   for (const seed of options.notifications || []) {
@@ -538,6 +553,58 @@ export async function installApi(context, options = {}) {
         if (!n) return json(404, { success: false, message: "Notification not found.", code: "notification_not_found" });
         if (!n.readAt) n.readAt = new Date().toISOString();
         return json(200, { success: true, notification: publicNotification(n), unreadCount: unreadCountOf(caller) });
+      }
+      return json(404, { success: false, message: "Not found." });
+    }
+
+    // --- Hooman Score --- (mirrors the /api/hooman routes in server.js)
+    if (pathname === "/api/hooman" || pathname.startsWith("/api/hooman/")) {
+      const caller = callerOf(request);
+      if (!caller) return json(401, { success: false, message: "Authentication required.", code: "auth_required" });
+      const method = request.method();
+      const mine = state.hooman[caller.symbolId] || (state.hooman[caller.symbolId] = { consented: false, answers: [] });
+      const scoreOf = () => HOOMAN.computeHoomanScore(mine.answers);
+      if (pathname === "/api/hooman" && method === "GET") {
+        return json(200, { success: true, consented: mine.consented, score: scoreOf() });
+      }
+      if (pathname === "/api/hooman" && method === "DELETE") {
+        const deleted = mine.answers.length;
+        mine.answers = [];
+        mine.consented = false;
+        return json(200, { success: true, deleted, consented: false });
+      }
+      if (pathname === "/api/hooman/consent" && method === "POST") {
+        if (!body || body.accept !== true) return json(400, { success: false, code: "hooman_consent_not_given", message: "Nothing was agreed to." });
+        mine.consented = true;
+        return json(200, { success: true, consented: true });
+      }
+      if (pathname === "/api/hooman/question" && method === "GET") {
+        const recent = new Set(String(url.searchParams.get("exclude") || "").split(",").filter(Boolean));
+        const pool = HOOMAN_BANK.questions.filter((q) => !recent.has(q.id));
+        return json(200, { success: true, question: HOOMAN.publicQuestion((pool.length ? pool : HOOMAN_BANK.questions)[0]) });
+      }
+      if (pathname === "/api/hooman/answers" && method === "POST") {
+        if (!mine.consented) return json(403, { success: false, code: "hooman_consent_required", message: "Agree to saving your Hooman Score first." });
+        const evaluated = HOOMAN.evaluateHoomanAnswer(body, { bank: HOOMAN_BANK });
+        if (!evaluated.ok) return json(400, { success: false, code: evaluated.code, message: evaluated.message });
+        const record = evaluated.record;
+        // After a payment: it has to be one this person made (server.js checks
+        // Transaction.referenceId + fromUserId; this fake checks its ledger).
+        if (record.source === "payment" && !state.ledger.some((row) => row.referenceId === record.transactionId && row.sender && row.sender.symbolId === caller.symbolId)) {
+          return json(400, { success: false, code: "hooman_bad_transaction", message: "That payment was not found on your account." });
+        }
+        if (HOOMAN.pillarLocks(record.pillar) && mine.answers.some((a) => a.pillar === record.pillar && a.item === record.item)) {
+          return json(409, { success: false, code: "hooman_answer_locked", message: "Finance answers lock after your first response." });
+        }
+        const now = new Date().toISOString();
+        if (record.source === "score") {
+          const same = mine.answers.find((a) => a.source === "score" && a.pillar === record.pillar && a.item === record.item && a.day === record.day);
+          if (same) Object.assign(same, record);
+          else mine.answers.push({ ...record, createdAt: now });
+        } else if (!mine.answers.some((a) => a.source === "payment" && a.transactionId === record.transactionId)) {
+          mine.answers.push({ ...record, createdAt: now });
+        }
+        return json(200, { success: true, answer: { points: record.points, correct: record.correct, rightChoice: evaluated.rightChoice }, score: scoreOf() });
       }
       return json(404, { success: false, message: "Not found." });
     }
@@ -991,3 +1058,22 @@ export async function shownBalance(page) {
 }
 
 export const text = (page) => page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim());
+
+// After a settled payment the app opens the question-and-scratch card
+// (PaymentUnlock) before the receipt. Suites that are about the receipt, not
+// the card, pass it with Skip — the same button a person uses. Returns true
+// if the card was there. tests/payment-unlock.test.mjs tests the card itself.
+export async function skipPaymentUnlock(page, { timeout = 45000 } = {}) {
+  const card = page.getByTestId("payment-unlock");
+  const receipt = page.getByTestId("receipt-counterparty");
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (await card.count()) {
+      await card.getByRole("button", { name: "Skip", exact: true }).click();
+      return true;
+    }
+    if (await receipt.count()) return false;
+    await page.waitForTimeout(250);
+  }
+  return false;
+}

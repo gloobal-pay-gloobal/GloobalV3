@@ -255,11 +255,52 @@ function GloobalQrSvg({ value, logo = true, discColor, markStep = 0 }) {
   );
 }
 
+// An animal code, drawn from gloobalAnimalQrLayout. No centre badge and no
+// corner mark: the picture is the decoration, and anything painted over it
+// would cost the modules it was placed to keep.
+function GloobalAnimalQrSvg({ layout, label }) {
+  const rects = (list) => list.map(([x, y]) => `M${x} ${y}h1v1h-1z`).join("");
+  const dots = (list, d) => {
+    const r = d / 2;
+    return list.map(([x, y]) => `M${x + 0.5 - r} ${y + 0.5}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`).join("");
+  };
+  return (
+    <svg
+      viewBox={`0 0 ${layout.total} ${layout.total}`}
+      width="100%"
+      height="100%"
+      role="img"
+      aria-label="Gloobal QR code"
+      data-qr-style="animal"
+      data-qr-animal={label || undefined}
+      style={{ display: "block" }}
+    >
+      <rect x="0" y="0" width={layout.total} height={layout.total} fill="#FFFFFF" />
+      <path d={rects(layout.squares)} fill="#000" shapeRendering="crispEdges" />
+      <path d={rects(layout.fill)} fill={layout.color} shapeRendering="crispEdges" />
+      <path d={dots(layout.dots, GLOOBAL_ANIMAL_QR_OUT_DOT)} fill="#000" />
+      <path d={dots(layout.holes, GLOOBAL_ANIMAL_QR_IN_DOT)} fill="#FFFFFF" />
+    </svg>
+  );
+}
+
 // The same symbol as a PNG, for sharing. Integer pixels per module so no
 // module edge lands between pixels and blurs.
-function gloobalQrToPngBlob(value, { moduleScale = 12, discColor, markStep = 0 } = {}) {
+function gloobalQrToPngBlob(value, { moduleScale = 12, discColor, markStep = 0, animal = null } = {}) {
   return new Promise((resolve) => {
     try {
+      // The animal code, when one is chosen and the link fits it: the same
+      // layout the screen shows, painted at an integer scale.
+      const animalLayout = animal ? gloobalAnimalQrLayout(value, animal) : null;
+      if (animalLayout && typeof document !== "undefined") {
+        const scale = Math.max(1, Math.round(moduleScale));
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = animalLayout.total * scale;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(null);
+        gloobalAnimalQrPaint(ctx, animalLayout, scale);
+        return canvas.toBlob((blob) => resolve(blob || null), "image/png");
+      }
       const matrix = buildGloobalQrMatrix(value);
       if (!matrix || typeof document === "undefined") return resolve(null);
       const scale = Math.max(1, Math.round(moduleScale));
@@ -388,7 +429,16 @@ function GloobalReceiveQrCard({ gloobalId, name, onToast }) {
     }, GLOOBAL_QR_DISC_CYCLE_MS);
     return () => clearInterval(id);
   }, []);
+  // Which picture: an animal key, or "classic" for the plain code with the
+  // logo badge. Remembered on this device; every choice carries the same link.
+  const [qrStyle, setQrStyle] = useState36(() => gloobalAnimalQrLoadChoice());
+  const chooseQrStyle = (next) => {
+    setQrStyle(next);
+    gloobalAnimalQrSaveChoice(next);
+  };
   const payload = buildGloobalPayUrl(gloobalId);
+  const animalLayout = payload && qrStyle !== "classic" ? gloobalAnimalQrLayout(payload, qrStyle) : null;
+  const animalChoice = animalLayout ? gloobalAnimalQrFind(qrStyle) : null;
 
   if (!payload) {
     return (
@@ -415,7 +465,7 @@ function GloobalReceiveQrCard({ gloobalId, name, onToast }) {
       // The colour showing at the moment Share was pressed. A PNG cannot
       // cycle, and picking a fixed brand colour instead would hand somebody a
       // file that does not match the code they were looking at.
-      const blob = await gloobalQrToPngBlob(payload, { discColor, markStep });
+      const blob = await gloobalQrToPngBlob(payload, { discColor, markStep, animal: animalLayout ? qrStyle : null });
       if (!blob) {
         onToast?.("Couldn't create the QR image");
         return;
@@ -472,7 +522,60 @@ function GloobalReceiveQrCard({ gloobalId, name, onToast }) {
       </h2>
 
       <div style={{ width: "min(300px, 100%)", aspectRatio: "1 / 1", background: "#FFFFFF" }}>
-        <GloobalQrSvg value={payload} discColor={discColor} markStep={markStep} />
+        {animalLayout ? (
+          <GloobalAnimalQrSvg layout={animalLayout} label={animalChoice && animalChoice.label} />
+        ) : (
+          <GloobalQrSvg value={payload} discColor={discColor} markStep={markStep} />
+        )}
+      </div>
+
+      {/* The picker. Chips scroll sideways on a narrow phone rather than
+          wrapping into a block that pushes the buttons off the screen. */}
+      <div
+        role="radiogroup"
+        aria-label="QR picture"
+        data-testid="qr-style-picker"
+        style={{ display: "flex", gap: 8, width: "100%", overflowX: "auto", padding: "2px 2px 6px", boxSizing: "border-box", scrollbarWidth: "none" }}
+      >
+        {[{ key: "classic", label: "Classic", color: null }, ...GLOOBAL_QR_ANIMALS].map((opt) => {
+          const selected = (animalLayout ? qrStyle : "classic") === opt.key;
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => chooseQrStyle(opt.key)}
+              style={{
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                minHeight: 36,
+                padding: "0 12px",
+                borderRadius: 999,
+                border: selected ? `2px solid ${opt.color || T.ink}` : `1px solid ${T.line}`,
+                background: selected ? (opt.color ? `${opt.color}14` : T.surfaceAlt) : "#FFFFFF",
+                color: T.ink,
+                fontSize: 12.5,
+                fontWeight: 800,
+                cursor: "pointer"
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: opt.color ? "50%" : 3,
+                  background: opt.color ? gloobalAnimalQrInk(opt.color) : "#000",
+                  flexShrink: 0
+                }}
+              />
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
 
       <div style={{ width: "100%", minWidth: 0, textAlign: "center", display: "flex", flexDirection: "column", gap: 4 }}>

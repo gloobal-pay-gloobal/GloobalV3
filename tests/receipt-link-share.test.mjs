@@ -38,7 +38,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { openPage, teardown, login, API_ORIGIN, ACCOUNTS } from "./browser-harness.mjs";
+import { openPage, teardown, login, API_ORIGIN, ACCOUNTS, skipPaymentUnlock } from "./browser-harness.mjs";
 
 const PAYER = ACCOUNTS.india;
 const PAYEE = ACCOUNTS.britain;
@@ -144,6 +144,7 @@ async function pay(page, { sender, receiver, receiverGets }) {
     }
   }
 
+  await skipPaymentUnlock(page);
   await page.getByTestId("receipt-counterparty").waitFor({ timeout: 45000 });
 }
 

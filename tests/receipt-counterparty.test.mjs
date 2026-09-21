@@ -30,8 +30,7 @@ import {
   buildOnce,
   login,
   openPage,
-  teardown
-} from "./browser-harness.mjs";
+  teardown, skipPaymentUnlock } from "./browser-harness.mjs";
 import { readSource } from "./harness.mjs";
 
 before(async () => {
@@ -88,6 +87,7 @@ async function pay(page, { sender, receiver, receiverGets }) {
     }
   }
 
+  await skipPaymentUnlock(page);
   await page.getByTestId("receipt-counterparty").waitFor({ timeout: 45000 });
 }
 

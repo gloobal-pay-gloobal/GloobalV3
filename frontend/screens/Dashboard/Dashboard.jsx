@@ -2804,18 +2804,22 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       setHistoryMethodFilter("all");
     }}
     label="Received history"
-  /><NavCloseButton onClick={requestCloseReceive} /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 16px calc(30px + env(safe-area-inset-bottom, 0px))" }}><GloobalReceiveQrCard gloobalId={gloobalIdTag} name={myName} onToast={showToast2} />{
-    /* My Share sits in its own row under the card, never over it: the
-       card is a plain scannable QR and nothing may overlap its modules. */
-  }<div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}><button
-    onClick={() => {
-      requestCloseReceive();
-      setShowMyShare(true);
-    }}
-    aria-label={`My Share, currently ${myShareRate}%`}
-    className="v2-tap"
-    style={{ display: "flex", alignItems: "center", gap: 10, border: `1px solid ${T.line}`, background: T.surface, borderRadius: 999, padding: "5px 14px 5px 5px", cursor: "pointer", perspective: 200 }}
-  ><span
+  /><NavCloseButton onClick={requestCloseReceive} /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 16px calc(30px + env(safe-area-inset-bottom, 0px))" }}><GloobalReceiveQrCard gloobalId={gloobalIdTag}
+    name={myName}
+    onToast={showToast2}
+    headerAction={
+      /* My Share, as an icon only, on the title row beside "Your Gloobal
+         QR" — out of the QR itself, so nothing overlaps a module. It flips
+         to show the current rate on its back face. */
+      <button
+        onClick={() => {
+          requestCloseReceive();
+          setShowMyShare(true);
+        }}
+        aria-label={`My Share, currently ${myShareRate}%`}
+        className="v2-tap"
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "none", padding: 0, cursor: "pointer", perspective: 200 }}
+      ><span
     style={{
       position: "relative",
       width: 32,
@@ -2838,7 +2842,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff" }}>{myShareRate}%</span></span></span><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>My Share {myShareRate}%</span></button></div>{
+  ><span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff" }}>{myShareRate}%</span></span></span></button>
+    }
+  />{
     /* Recent — the last five payments actually received on this
        Gloobal ID, right on the Receive sheet itself rather than only
        reachable through the header's history icon. Same source

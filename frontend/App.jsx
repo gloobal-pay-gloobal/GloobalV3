@@ -3736,7 +3736,9 @@ function GloobalId() {
       setSendPrefillReceiver(null);
       requestCloseActiveScreen();
     }}
-    sender={{ ...dialCountry, phoneNumber }}
+    // The signed-in account itself: the sender card shows these, not
+    // placeholders.
+    sender={{ ...dialCountry, phoneNumber, fullName: documentedName, symbolId: secureId, mobileNumber: (registeredUser && registeredUser.mobileNumber) || fullMobileNumber }}
     prefillReceiver={sendPrefillReceiver}
     history={sendMoneyHistory}
     onSendComplete={handleSendMoneyComplete}

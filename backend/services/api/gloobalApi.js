@@ -1234,6 +1234,44 @@ var GloobalApi = {
     };
   },
 
+  // --- Hooman Score -----------------------------------------------------
+  //
+  // Per account, scoped by the bearer token. Nothing is saved until the
+  // person agrees (setHoomanConsent), and deleteHoomanData removes every
+  // answer and the agreement. The score never affects any payment.
+
+  // GET /api/hooman → { consented, score }.
+  async getHoomanScore() {
+    const result = await gloobalApiClient.get("/api/hooman");
+    return { consented: Boolean(result && result.consented), score: (result && result.score) || null };
+  },
+
+  // POST /api/hooman/consent — only an explicit yes is sent.
+  async setHoomanConsent() {
+    const result = await gloobalApiClient.post("/api/hooman/consent", { accept: true });
+    return Boolean(result && result.consented);
+  },
+
+  // POST /api/hooman/answers — the ANSWER, never its points: the server
+  // decides what an answer is worth. → { answer: { points, correct }, score }.
+  async saveHoomanAnswer(answer) {
+    const result = await gloobalApiClient.post("/api/hooman/answers", answer || {});
+    return { answer: (result && result.answer) || null, score: (result && result.score) || null };
+  },
+
+  // GET /api/hooman/question — a knowledge question without its answer.
+  async getHoomanQuestion(exclude = []) {
+    const list = Array.isArray(exclude) ? exclude.filter(Boolean) : [];
+    const result = await gloobalApiClient.get(`/api/hooman/question${list.length ? `?exclude=${encodeURIComponent(list.join(","))}` : ""}`);
+    return (result && result.question) || null;
+  },
+
+  // DELETE /api/hooman — every answer, and the agreement.
+  async deleteHoomanData() {
+    const result = await gloobalApiClient.delete("/api/hooman");
+    return { deleted: Number(result && result.deleted) || 0 };
+  },
+
   // --- Session (local, not server-issued) -------------------------------
 
   saveSession: gloobalSessionSave,

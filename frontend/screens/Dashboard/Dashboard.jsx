@@ -803,14 +803,157 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
           [qId]: m[qId] || { a: 12 + Math.floor(Math.random() * 70), b: 11 + Math.floor(Math.random() * 70) }
         }));
       }
-      setGhMathInput(existing ? String(existing.value) : "");
+      // Only a sum pre-fills the box — a knowledge answer's value is the
+      // index of the option picked after a payment, not a number to show.
+      setGhMathInput(existing && existing.type === "math" ? String(existing.value) : "");
     }
     setGhScreen("question");
   };
+  // --- Hooman Score: saved per account ------------------------------------
+  //
+  // Answers used to live only in this component's state, so the score reset
+  // on every reload. They are now saved to the account (GloobalApi
+  // .saveHoomanAnswer) — but only after the person agrees, once, in the
+  // consent sheet. "Not now" keeps answers on this phone for the session.
+  //
+  // The server decides what each answer is worth and returns the whole
+  // score; the screen then shows the server's figures. A local answer is
+  // marked `saved: false` (and carries the request `body`) until the server
+  // confirms it, so a slow or failed save never loses what was tapped.
+  //
+  // Nothing here touches payments. The score never changes anybody's share.
+  const [hoomanConsented, setHoomanConsented] = useState14(null); // null = not known yet
+  const [hoomanConsentAsk, setHoomanConsentAsk] = useState14([]); // answers waiting on a yes
+  const [hoomanSessionOnly, setHoomanSessionOnly] = useState14(false);
+  const [hoomanDeleteAsk, setHoomanDeleteAsk] = useState14(false);
+  const [hoomanBusy, setHoomanBusy] = useState14(false);
+  // Only a signed-in account has anywhere to save to. Checking first also
+  // keeps a signed-out visit from sending a request that would 401.
+  const hoomanSignedIn = () => typeof gloobalAuthToken === "function" && !!gloobalAuthToken();
+  const ghAnswersFromScore = (score) => {
+    const out = {};
+    const items = score && score.items ? score.items : {};
+    for (const [qId, entry] of Object.entries(items)) {
+      if (!entry || !entry.latest) continue;
+      out[qId] = {
+        type: entry.latest.kind,
+        value: entry.latest.value,
+        correct: entry.latest.correct,
+        points: Number(entry.points) || 0,
+        day: entry.latest.day,
+        count: entry.count,
+        source: entry.latest.source,
+        saved: true
+      };
+    }
+    return out;
+  };
+  // Server answers first, then anything tapped here that is still unsaved.
+  // `confirmed` names the local answer this response settles, by its `at`
+  // stamp — so an answer re-tapped while the first save was in flight is
+  // kept rather than overwritten by the older reply.
+  const ghApplyServerScore = (score, confirmed) => setGhAnswers((prev) => {
+    const next = ghAnswersFromScore(score);
+    for (const [qId, ans] of Object.entries(prev)) {
+      if (!ans || ans.saved !== false) continue;
+      if (confirmed && confirmed.qId === qId && confirmed.at === ans.at) continue;
+      next[qId] = ans;
+    }
+    return next;
+  });
+  const ghLoadSaved = async () => {
+    if (!hoomanSignedIn()) return;
+    try {
+      const { consented, score } = await GloobalApi.getHoomanScore();
+      setHoomanConsented(consented);
+      if (consented && score) ghApplyServerScore(score, null);
+    } catch (e) {
+      /* offline or cold start — the screen keeps what it has */
+    }
+  };
+  // (The effect that calls ghLoadSaved sits below currentSymbolId's
+  // declaration — its dependency list is read during render.)
+  const ghSendAnswer = async (body, at) => {
+    try {
+      const { score } = await GloobalApi.saveHoomanAnswer(body);
+      if (score) ghApplyServerScore(score, { qId: `${body.pillar}.${body.item}`, at });
+    } catch (e) {
+      const status = e && e.status;
+      if (status === 403) {
+        // Agreement withdrawn elsewhere (another phone deleted the data).
+        setHoomanConsented(false);
+        setHoomanConsentAsk((list) => [...list, { body, at }]);
+      } else if (status === 409) {
+        showToast2("Finance answers lock after your first response");
+        ghLoadSaved();
+      } else if (status === 401) {
+        /* signed out — httpClient already handles the redirect */
+      } else {
+        showToast2("Couldn't save that answer — it still counts on this phone");
+      }
+    }
+  };
+  const ghPersist = (body, at) => {
+    if (!hoomanSignedIn() || hoomanSessionOnly) return;
+    if (hoomanConsented === true) {
+      ghSendAnswer(body, at);
+      return;
+    }
+    setHoomanConsentAsk((list) => [...list, { body, at }]);
+  };
+  const ghAcceptConsent = async () => {
+    setHoomanBusy(true);
+    try {
+      await GloobalApi.setHoomanConsent();
+      setHoomanConsented(true);
+      setHoomanSessionOnly(false);
+      const waiting = hoomanConsentAsk;
+      setHoomanConsentAsk([]);
+      for (const { body, at } of waiting) if (body) await ghSendAnswer(body, at);
+      showToast2("Your Hooman Score is saved to your account");
+    } catch (e) {
+      showToast2("Couldn't turn on saving right now — try again when you're online");
+    } finally {
+      setHoomanBusy(false);
+    }
+  };
+  const ghDeclineConsent = () => {
+    setHoomanSessionOnly(true);
+    setHoomanConsentAsk([]);
+  };
+  // "Save to my account", offered later from the overview: every answer
+  // tapped this session that the server has not seen yet.
+  const ghAskToSave = () => {
+    const waiting = Object.values(ghAnswers).filter((a) => a && a.saved === false && a.body).map((a) => ({ body: a.body, at: a.at }));
+    setHoomanSessionOnly(false);
+    setHoomanConsentAsk(waiting.length ? waiting : [{ body: null, at: null }]);
+  };
+  const ghDeleteSaved = async () => {
+    setHoomanBusy(true);
+    try {
+      await GloobalApi.deleteHoomanData();
+      setGhAnswers({});
+      setGhNotes({});
+      setHoomanConsented(false);
+      setHoomanSessionOnly(false);
+      setHoomanDeleteAsk(false);
+      setGhScreen("categories");
+      setGhActiveCategory(null);
+      showToast2("Your Hooman Score answers are deleted");
+    } catch (e) {
+      showToast2("Couldn't delete right now — try again when you're online");
+    } finally {
+      setHoomanBusy(false);
+    }
+  };
   const ghAnswerYesNo = (catKey, itemKey, value) => {
     const qId = `${catKey}.${itemKey}`;
-    const nextAnswers = { ...ghAnswers, [qId]: { type: "yesno", value, points: value === "yes" ? 25 : 10, day: ghTodayKey() } };
+    const at = Date.now();
+    const day = ghTodayKey();
+    const body = { pillar: catKey, item: itemKey, kind: "yesno", value, day, source: "score" };
+    const nextAnswers = { ...ghAnswers, [qId]: { type: "yesno", value, points: value === "yes" ? 25 : 10, day, saved: false, at, body } };
     setGhAnswers(nextAnswers);
+    ghPersist(body, at);
     if (value === "no") {
       setGhNoteOpen(true);
       return;
@@ -825,9 +968,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     const qId = `${catKey}.${itemKey}`;
     const cat = GH_CATEGORIES.find((c) => c.key === catKey);
     const nums = cat.dailyRotation ? ghMathNumsFor(catKey, cat.items.find((it) => it.key === itemKey)) : ghMathNums[qId];
-    const correct = nums && Number(ghMathInput) === nums.a + nums.b;
-    const nextAnswers = { ...ghAnswers, [qId]: { type: "math", value: ghMathInput, correct, points: correct ? 25 : 10, day: ghTodayKey() } };
+    const correct = !!nums && Number(ghMathInput) === nums.a + nums.b;
+    const at = Date.now();
+    const day = ghTodayKey();
+    // The sum itself goes to the server, which checks it — not our verdict.
+    const body = nums && /^\d{1,6}$/.test(String(ghMathInput).trim())
+      ? { pillar: catKey, item: itemKey, kind: "math", a: nums.a, b: nums.b, value: String(ghMathInput).trim(), day, source: "score" }
+      : null;
+    const nextAnswers = { ...ghAnswers, [qId]: { type: "math", value: ghMathInput, correct, points: correct ? 25 : 10, day, saved: body ? false : undefined, at, body } };
     setGhAnswers(nextAnswers);
+    if (body) ghPersist(body, at);
     setGhScreen(Object.keys(nextAnswers).length === ghTotalQuestions ? "complete" : "items");
   };
   // Creator-side renames only. The personal Gloobal ID deliberately has no
@@ -1135,6 +1285,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       cancelled = true;
     };
   }, [currentSymbolId]);
+  // Saved Hooman Score: on sign-in / account change, and again each time the
+  // score screen opens so answers given on another phone show up.
+  useEffect12(() => {
+    ghLoadSaved();
+  }, [currentSymbolId, profileOverlay === "ghscore"]);
   const ghCategoryScore = (catKey) => {
     const cat = GH_CATEGORIES.find((c) => c.key === catKey);
     const answered = cat.items.filter((it) => ghAnswers[`${catKey}.${it.key}`]);
@@ -2036,7 +2191,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        seconds, tap opens the Edit ID / GH Score menu. */
   }<span style={{ position: "absolute", top: 14, right: 14, zIndex: 1 }}><div style={{ width: GH_HERO_CIRCLE_SIZE, height: GH_HERO_CIRCLE_SIZE, flexShrink: 0, perspective: 600 }}><button
     onClick={() => setShowGhCircleMenu((v) => !v)}
-    aria-label={`GH Score, ${ghRawTotal} of ${ghMaxTotal} \u2014 tap for options`}
+    aria-label={`Hooman Score, ${ghRawTotal} of ${ghMaxTotal} \u2014 tap for options`}
     style={{
       position: "relative",
       width: "100%",
@@ -3510,7 +3665,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
         setGhScreen("categories");
         setGhActiveCategory(null);
       } else requestCloseGhScore();
-    }} style={{ flexShrink: 0  }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, minWidth: 0 }}><GloobalWordmark suffix=" Human Score" /></span>{ghScreen === "categories" && <button
+    }} style={{ flexShrink: 0  }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, minWidth: 0 }}>Hooman Score</span>{ghScreen === "categories" && <button
     onClick={() => setGhShowColorSheet(true)}
     aria-label="Change colours"
     className="v2-tap"
@@ -3582,7 +3737,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
         textAlign: "left"
       }}
     ><span style={{ width: 38, height: 38, borderRadius: 12, flexShrink: 0, background: hexToRgba(color, 0.14), display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={17} color={color} /></span><span style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>{cat.label}</div><div style={{ height: 5, borderRadius: 999, background: T.surfaceAlt, marginTop: 7, overflow: "hidden" }}><div style={{ height: "100%", width: `${score || 0}%`, borderRadius: 999, background: color, transition: "width 0.4s ease" }} /></div></span><span style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: 13.5, fontWeight: 800, color: score === null ? T.inkFaint : color }}>{score === null ? "\u2014" : score}</div><div style={{ fontSize: 10, fontWeight: 700, color: T.inkFaint, marginTop: 1 }}>{answeredCount}/{cat.items.length}</div></span></button>;
-  })}</div></>}{
+  })}</div>{
+    /* Where the answers are kept, and the way to delete them. Quiet on
+       purpose — it is a setting, not a call to action. */
+  }{hoomanSignedIn() && <div data-testid="hooman-saving" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "2px 4px" }}><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>{hoomanConsented ? "Saved to your account \xB7 only you can see it" : "Answers stay on this phone for now"}</span>{hoomanConsented ? <button
+    onClick={() => setHoomanDeleteAsk(true)}
+    className="v2-tap"
+    style={{ border: "none", background: "none", padding: "6px 0", fontSize: 11.5, fontWeight: 800, color: T.negative, cursor: "pointer" }}
+  >Delete my answers</button> : <button
+    onClick={ghAskToSave}
+    className="v2-tap"
+    style={{ border: "none", background: "none", padding: "6px 0", fontSize: 11.5, fontWeight: 800, color: T.accent, cursor: "pointer" }}
+  >Save to my account</button>}</div>}</>}{
     /* ---------- The check-ins for one pillar ---------- */
   }{ghScreen === "items" && ghActiveCategory && (() => {
     const cat = GH_CATEGORIES.find((c) => c.key === ghActiveCategory);
@@ -3600,6 +3766,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
         statusText = "Not answered yet";
       } else if (ans.type === "yesno") {
         statusText = `${ans.value === "yes" ? "Yes" : "No"}${ans.day === ghTodayKey() ? " \xB7 today" : " \xB7 tap to refresh"}`;
+      } else if (ans.type === "knowledge") {
+        // Answered after a payment: a quiz question, not a typed sum.
+        statusText = `Quiz \u2014 ${ans.correct ? "right" : "not quite"}${ans.day === ghTodayKey() ? " \xB7 today" : " \xB7 tap to refresh"}`;
       } else {
         statusText = `${ans.value} (${ans.correct ? "correct" : "not quite"})${ans.day === ghTodayKey() ? " \xB7 today" : " \xB7 tap to refresh"}`;
       }
@@ -3749,7 +3918,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   }{ghScreen === "complete" && <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 22, padding: "12px 4px 24px", textAlign: "center" }}><span style={{ fontSize: 12, fontWeight: 800, color: T.accent, letterSpacing: 0.4, textTransform: "uppercase" }}>
                   All check-ins complete
                 </span><GHSegmentedRing size={208} thickness={18} gapDeg={4} segments={ghRingSegments}><div className="gh-score-reveal" style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span style={{ fontSize: 46, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1 }}>{ghRawTotal}</span><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, marginTop: 3 }}>out of {ghMaxTotal}</span><span style={{ fontSize: 14, fontWeight: 800, color: T.positive, marginTop: 5 }}>{ghTier(ghOverallScore())}</span></div></GHSegmentedRing><p style={{ fontSize: 13, color: T.inkSoft, margin: 0, maxWidth: 280 }}>
-                  Your <GloobalWordmark suffix=" Human Score" /> is ready. You can revisit any pillar any time — Self, Community, and Environment refresh daily.
+                  Your Hooman Score is ready. You can revisit any pillar any time — Self, Community, and Environment refresh daily.
                 </p><button
     onClick={() => setGhScreen("categories")}
     className="v2-tap"
@@ -3768,6 +3937,76 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   >
                   View My Pillars
                 </button></div>}</div>{
+    /* ---------- Hooman Score: consent, and delete ----------
+       One bottom sheet, two uses. Consent is asked once, the first time an
+       answer would be saved; "Not now" keeps answers on this phone for the
+       session. Delete removes every saved answer and the agreement. */
+  }{(() => {
+    const askingConsent = hoomanConsentAsk.length > 0 && !hoomanSessionOnly;
+    const open = askingConsent || hoomanDeleteAsk;
+    const close = () => {
+      if (hoomanBusy) return;
+      if (askingConsent) ghDeclineConsent();
+      else setHoomanDeleteAsk(false);
+    };
+    return <><div
+      onClick={close}
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 60,
+        background: "rgba(20,18,43,0.38)",
+        opacity: open ? 1 : 0,
+        pointerEvents: open ? "auto" : "none",
+        transition: "opacity 0.25s ease"
+      }}
+    /><div
+      role="dialog"
+      aria-modal={open ? "true" : undefined}
+      aria-hidden={open ? undefined : "true"}
+      aria-labelledby="hooman-sheet-title"
+      data-testid={askingConsent ? "hooman-consent" : hoomanDeleteAsk ? "hooman-delete" : undefined}
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 70,
+        background: T.surface,
+        borderRadius: `${T.radiusXl}px ${T.radiusXl}px 0 0`,
+        padding: "22px 20px calc(20px + env(safe-area-inset-bottom, 0px))",
+        boxShadow: T.shadowRaised,
+        transform: open ? "translateY(0)" : "translateY(105%)",
+        visibility: open ? "visible" : "hidden",
+        transition: open ? "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)" : "transform 0.22s ease, visibility 0s linear 0.22s",
+        display: "flex",
+        flexDirection: "column",
+        gap: 12
+      }}
+    ><div id="hooman-sheet-title" style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{hoomanDeleteAsk && !askingConsent ? "Delete your Hooman Score?" : "Save your Hooman Score?"}</div>{hoomanDeleteAsk && !askingConsent ? <div style={{ fontSize: 13, lineHeight: 1.5, color: T.inkSoft }}>Every answer you have saved is removed from your account, and saving turns off. Your score starts again from nothing. This can't be undone. Your payments and shares are not affected.</div> : <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13, lineHeight: 1.5, color: T.inkSoft }}><span>Your answers are saved to your account so your score keeps building — across days and phones.</span><span>Some questions are personal, like how you're sleeping or feeling. Only you can see your answers, and you can delete them any time.</span><span style={{ fontWeight: 700, color: T.ink }}>Your score never changes how much you're paid.</span></div>}<div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}><button
+      onClick={hoomanDeleteAsk && !askingConsent ? ghDeleteSaved : ghAcceptConsent}
+      disabled={hoomanBusy || !open}
+      className="v2-tap"
+      style={{
+        width: "100%",
+        padding: "14px 16px",
+        borderRadius: 999,
+        border: "none",
+        background: hoomanDeleteAsk && !askingConsent ? T.negative : T.ink,
+        color: "#fff",
+        fontSize: 14,
+        fontWeight: 800,
+        cursor: hoomanBusy ? "default" : "pointer",
+        opacity: hoomanBusy ? 0.6 : 1
+      }}
+    >{hoomanBusy ? "One moment\u2026" : hoomanDeleteAsk && !askingConsent ? "Delete my answers" : "Save my answers"}</button><button
+      onClick={close}
+      disabled={hoomanBusy || !open}
+      className="v2-tap"
+      style={{ width: "100%", padding: "12px 16px", borderRadius: 999, border: "none", background: T.surfaceAlt, color: T.ink, fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+    >{hoomanDeleteAsk && !askingConsent ? "Keep them" : "Not now"}</button></div></div></>;
+  })()}{
     /* ---------- Colour popover — anchored to the header icon.
        Tap-outside-to-close area is invisible now, no dark scrim
        behind the sheet. ---------- */

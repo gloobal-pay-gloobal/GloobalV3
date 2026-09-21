@@ -2204,7 +2204,7 @@ function GloobalId() {
     { key: "paylater", section: "Move money", group: "post", label: "PayLater", locked: !everRegistered, onPress: () => goToDashboardDestination("paylater") },
     { key: "history", section: "Move money", group: "post", label: "Transaction History", locked: !everRegistered, onPress: () => goToDashboardDestination("history") },
     { key: "share", section: "Move money", group: "post", label: "Creator Share", locked: !everRegistered, onPress: () => goToDashboardDestination("share") },
-    { key: "ghscore", section: "You", group: "post", label: "GH Score", locked: !everRegistered, onPress: () => goToDashboardDestination("ghscore") },
+    { key: "ghscore", section: "You", group: "post", label: "Hooman Score", locked: !everRegistered, onPress: () => goToDashboardDestination("ghscore") },
     { key: "updateId", section: "You", group: "post", label: "Update Gloobal ID", locked: !everRegistered, onPress: () => goToDashboardDestination("updateId") },
     { key: "referralnet", section: "You", group: "post", label: "Referral Network", locked: !everRegistered, onPress: () => goToDashboardDestination("referral") },
     { key: "coverage", section: "Gloobal", group: "post", label: "Gloobal Coverage", locked: !everRegistered, onPress: () => goToDashboardDestination("coverage") },

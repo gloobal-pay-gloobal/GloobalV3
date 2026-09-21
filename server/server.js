@@ -129,6 +129,16 @@ const ProjectAttachment = require('./models/ProjectAttachment');
 // POST /api/transactions/send writes once a transfer has committed.
 const ProfilePhoto = require('./models/ProfilePhoto');
 const Notification = require('./models/Notification');
+const HoomanAnswer = require('./models/HoomanAnswer');
+const HoomanProfile = require('./models/HoomanProfile');
+const {
+  HOOMAN_WINDOW_DAYS,
+  pillarLocks: hoomanPillarLocks,
+  publicQuestion: hoomanPublicQuestion,
+  evaluateHoomanAnswer,
+  computeHoomanScore,
+} = require('./lib/hoomanScore');
+const HOOMAN_QUESTION_BANK = require('./data/hoomanQuestionBank.json');
 const {
   PROJECT_CATEGORIES,
   PROJECT_ATTACHMENT_MAX_BYTES,
@@ -6801,6 +6811,146 @@ app.post('/api/notifications/read-all', writeLimit, requireAuth, async (req, res
   } catch (error) {
     console.error('Notification read-all error:', error);
     return res.status(500).json({ success: false, message: 'Could not update notifications right now.' });
+  }
+});
+
+// ── Hooman Score ────────────────────────────────────────────────────────────
+//
+// Per account, scoped by the bearer token like notifications, so none of these
+// takes a Gloobal ID. The rules — what an answer is worth, how the score is
+// averaged — live in lib/hoomanScore.js; these routes only store and fetch.
+//
+// Nothing is saved until the person agrees (POST /api/hooman/consent), and
+// DELETE /api/hooman removes every answer and the agreement with it.
+//
+// The score never affects money. No payment route reads anything here.
+
+const hoomanAnswersFor = (userId, now = new Date()) => {
+  const cutoff = new Date(now.getTime() - HOOMAN_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  // The window, plus Finance answers of any age: those lock after the first
+  // answer, so the first one counts for good.
+  return HoomanAnswer.find({ userId, $or: [{ createdAt: { $gte: cutoff } }, { pillar: 'finance' }] })
+    .sort({ createdAt: -1 })
+    .limit(5000)
+    .lean();
+};
+
+const hoomanHasConsent = async (userId) => Boolean(await HoomanProfile.exists({ userId }));
+
+// GET /api/hooman — the score, and whether answers are being saved at all.
+app.get('/api/hooman', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const userId = req.authUser._id;
+    const [consented, answers] = await Promise.all([hoomanHasConsent(userId), hoomanAnswersFor(userId)]);
+    return res.json({ success: true, consented, score: computeHoomanScore(answers) });
+  } catch (error) {
+    console.error('Hooman score error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load your Hooman Score right now.' });
+  }
+});
+
+// GET /api/hooman/question — one knowledge question, WITHOUT its answer.
+// `exclude` is a comma-separated list of ids recently shown, so the same
+// question does not come up twice in a row.
+app.get('/api/hooman/question', lookupLimit, requireAuth, async (req, res) => {
+  const recent = new Set(String(req.query.exclude || '').split(',').map((id) => id.trim()).filter(Boolean));
+  const pool = HOOMAN_QUESTION_BANK.questions.filter((q) => !recent.has(q.id));
+  const from = pool.length ? pool : HOOMAN_QUESTION_BANK.questions;
+  const question = from[Math.floor(Math.random() * from.length)];
+  return res.json({ success: true, question: hoomanPublicQuestion(question) });
+});
+
+// POST /api/hooman/consent — { accept: true } records the agreement.
+app.post('/api/hooman/consent', writeLimit, requireAuth, async (req, res) => {
+  try {
+    if (!req.body || req.body.accept !== true) {
+      return res.status(400).json({ success: false, code: 'hooman_consent_not_given', message: 'Nothing was agreed to.' });
+    }
+    const userId = req.authUser._id;
+    await HoomanProfile.updateOne(
+      { userId },
+      { $setOnInsert: { userId, consentedAt: new Date(), consentVersion: 1 } },
+      { upsert: true }
+    );
+    return res.json({ success: true, consented: true });
+  } catch (error) {
+    console.error('Hooman consent error:', error);
+    return res.status(500).json({ success: false, message: 'Could not save that right now.' });
+  }
+});
+
+// POST /api/hooman/answers — one answer. The body carries the ANSWER, never
+// the points: the server works out what it is worth.
+app.post('/api/hooman/answers', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const userId = req.authUser._id;
+    if (!(await hoomanHasConsent(userId))) {
+      return res.status(403).json({
+        success: false,
+        code: 'hooman_consent_required',
+        message: 'Agree to saving your Hooman Score first.',
+      });
+    }
+
+    const evaluated = evaluateHoomanAnswer(req.body, { bank: HOOMAN_QUESTION_BANK });
+    if (!evaluated.ok) return res.status(400).json({ success: false, code: evaluated.code, message: evaluated.message });
+    const record = evaluated.record;
+
+    if (hoomanPillarLocks(record.pillar)
+      && await HoomanAnswer.exists({ userId, pillar: record.pillar, item: record.item })) {
+      return res.status(409).json({
+        success: false,
+        code: 'hooman_answer_locked',
+        message: 'Finance answers lock after your first response.',
+      });
+    }
+
+    if (record.source === 'score') {
+      // A second answer to the same check-in on the same day corrects the
+      // first. The unique index on (user, check-in, day) backs this up if two
+      // requests race; the loser simply retries as an update.
+      const filter = { userId, pillar: record.pillar, item: record.item, day: record.day, source: 'score' };
+      const update = { $set: { ...record, userId } };
+      try {
+        await HoomanAnswer.updateOne(filter, update, { upsert: true });
+      } catch (error) {
+        if (error && error.code === 11000) await HoomanAnswer.updateOne(filter, update);
+        else throw error;
+      }
+    } else {
+      // After a payment: every payment counts, each payment once. A retried
+      // save of the same payment's answer returns what was already stored.
+      try {
+        await HoomanAnswer.create({ ...record, userId });
+      } catch (error) {
+        if (!(error && error.code === 11000)) throw error;
+      }
+    }
+
+    return res.json({
+      success: true,
+      answer: { points: record.points, correct: record.correct },
+      score: computeHoomanScore(await hoomanAnswersFor(userId)),
+    });
+  } catch (error) {
+    console.error('Hooman answer error:', error);
+    return res.status(500).json({ success: false, message: 'Could not save that answer right now.' });
+  }
+});
+
+// DELETE /api/hooman — every answer, and the agreement. After this nothing is
+// saved again until the person agrees again.
+app.delete('/api/hooman', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const userId = req.authUser._id;
+    const [answers] = await Promise.all([
+      HoomanAnswer.deleteMany({ userId }),
+      HoomanProfile.deleteOne({ userId }),
+    ]);
+    return res.json({ success: true, deleted: answers.deletedCount || 0, consented: false });
+  } catch (error) {
+    console.error('Hooman delete error:', error);
+    return res.status(500).json({ success: false, message: 'Could not delete your answers right now.' });
   }
 });
 

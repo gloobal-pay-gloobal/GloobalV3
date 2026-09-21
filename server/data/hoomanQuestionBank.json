@@ -1,0 +1,549 @@
+{
+  "version": 1,
+  "note": "Knowledge questions for the Hooman Score Education check-in. The server holds the answers; the app is sent questions without them. Reviewed facts only - see docs in the app repo before adding.",
+  "questions": [
+    {
+      "id": "cur-thb",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "฿",
+      "options": [
+        "Thailand",
+        "Vietnam",
+        "Cambodia",
+        "Indonesia"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-inr",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "₹",
+      "options": [
+        "India",
+        "Nepal",
+        "Sri Lanka",
+        "Bangladesh"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-gbp",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "£",
+      "options": [
+        "United Kingdom",
+        "Ireland",
+        "Canada",
+        "Australia"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-krw",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "₩",
+      "options": [
+        "South Korea",
+        "Japan",
+        "China",
+        "Vietnam"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-ngn",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "₦",
+      "options": [
+        "Nigeria",
+        "Ghana",
+        "Kenya",
+        "Ethiopia"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-php",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "₱",
+      "options": [
+        "Philippines",
+        "Indonesia",
+        "Malaysia",
+        "Thailand"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-vnd",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "₫",
+      "options": [
+        "Vietnam",
+        "Laos",
+        "Cambodia",
+        "Myanmar"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-rub",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "₽",
+      "options": [
+        "Russia",
+        "Poland",
+        "Ukraine",
+        "Kazakhstan"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-ils",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "₪",
+      "options": [
+        "Israel",
+        "Jordan",
+        "Lebanon",
+        "Egypt"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-uah",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "₴",
+      "options": [
+        "Ukraine",
+        "Belarus",
+        "Moldova",
+        "Georgia"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-try",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "₺",
+      "options": [
+        "Turkey",
+        "Greece",
+        "Bulgaria",
+        "Romania"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cur-eur",
+      "category": "currency",
+      "lang": 0,
+      "glyph": "€",
+      "options": [
+        "France",
+        "Switzerland",
+        "Norway",
+        "Poland"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "flag-br",
+      "category": "flag",
+      "lang": 0,
+      "glyph": "🇧🇷",
+      "options": [
+        "Argentina",
+        "Brazil",
+        "Colombia",
+        "Portugal"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "flag-jp",
+      "category": "flag",
+      "lang": 0,
+      "glyph": "🇯🇵",
+      "options": [
+        "Japan",
+        "South Korea",
+        "Bangladesh",
+        "Palau"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "flag-ke",
+      "category": "flag",
+      "lang": 0,
+      "glyph": "🇰🇪",
+      "options": [
+        "Kenya",
+        "Malawi",
+        "Sudan",
+        "Zimbabwe"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "flag-ch",
+      "category": "flag",
+      "lang": 0,
+      "glyph": "🇨🇭",
+      "options": [
+        "Switzerland",
+        "Denmark",
+        "Austria",
+        "Georgia"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "flag-ca",
+      "category": "flag",
+      "lang": 0,
+      "glyph": "🇨🇦",
+      "options": [
+        "Canada",
+        "Peru",
+        "Austria",
+        "Lebanon"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "flag-vn",
+      "category": "flag",
+      "lang": 0,
+      "glyph": "🇻🇳",
+      "options": [
+        "Vietnam",
+        "China",
+        "Morocco",
+        "Somalia"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "flag-za",
+      "category": "flag",
+      "lang": 0,
+      "glyph": "🇿🇦",
+      "options": [
+        "South Africa",
+        "Kenya",
+        "Ghana",
+        "Zimbabwe"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "flag-mx",
+      "category": "flag",
+      "lang": 0,
+      "glyph": "🇲🇽",
+      "options": [
+        "Mexico",
+        "Italy",
+        "Ireland",
+        "Hungary"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "cap-au",
+      "category": "capital",
+      "lang": 1,
+      "glyph": "🇦🇺",
+      "prompt": "Capital?",
+      "options": [
+        "Sydney",
+        "Canberra",
+        "Melbourne",
+        "Perth"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "cap-tr",
+      "category": "capital",
+      "lang": 1,
+      "glyph": "🇹🇷",
+      "prompt": "Capital?",
+      "options": [
+        "Istanbul",
+        "Ankara",
+        "Izmir",
+        "Bursa"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "cap-br",
+      "category": "capital",
+      "lang": 1,
+      "glyph": "🇧🇷",
+      "prompt": "Capital?",
+      "options": [
+        "Rio de Janeiro",
+        "São Paulo",
+        "Brasília",
+        "Salvador"
+      ],
+      "answer": 2
+    },
+    {
+      "id": "cap-ca",
+      "category": "capital",
+      "lang": 1,
+      "glyph": "🇨🇦",
+      "prompt": "Capital?",
+      "options": [
+        "Toronto",
+        "Ottawa",
+        "Montreal",
+        "Vancouver"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "cap-ch",
+      "category": "capital",
+      "lang": 1,
+      "glyph": "🇨🇭",
+      "prompt": "Capital?",
+      "options": [
+        "Zurich",
+        "Geneva",
+        "Bern",
+        "Basel"
+      ],
+      "answer": 2
+    },
+    {
+      "id": "cap-nz",
+      "category": "capital",
+      "lang": 1,
+      "glyph": "🇳🇿",
+      "prompt": "Capital?",
+      "options": [
+        "Auckland",
+        "Wellington",
+        "Christchurch",
+        "Dunedin"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "cap-us",
+      "category": "capital",
+      "lang": 1,
+      "glyph": "🇺🇸",
+      "prompt": "Capital?",
+      "options": [
+        "New York",
+        "Washington, D.C.",
+        "Los Angeles",
+        "Chicago"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "cap-in",
+      "category": "capital",
+      "lang": 1,
+      "glyph": "🇮🇳",
+      "prompt": "Capital?",
+      "options": [
+        "Mumbai",
+        "New Delhi",
+        "Kolkata",
+        "Bengaluru"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "cap-ma",
+      "category": "capital",
+      "lang": 1,
+      "glyph": "🇲🇦",
+      "prompt": "Capital?",
+      "options": [
+        "Casablanca",
+        "Marrakesh",
+        "Rabat",
+        "Tangier"
+      ],
+      "answer": 2
+    },
+    {
+      "id": "cap-ng",
+      "category": "capital",
+      "lang": 1,
+      "glyph": "🇳🇬",
+      "prompt": "Capital?",
+      "options": [
+        "Lagos",
+        "Abuja",
+        "Kano",
+        "Ibadan"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "geo-everest",
+      "category": "world",
+      "lang": 1,
+      "prompt": "Tallest mountain?",
+      "options": [
+        "K2",
+        "Everest",
+        "Kangchenjunga",
+        "Denali"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "geo-pacific",
+      "category": "world",
+      "lang": 1,
+      "prompt": "Largest ocean?",
+      "options": [
+        "Atlantic",
+        "Indian",
+        "Pacific",
+        "Arctic"
+      ],
+      "answer": 2
+    },
+    {
+      "id": "geo-sahara",
+      "category": "world",
+      "lang": 1,
+      "prompt": "Largest hot desert?",
+      "options": [
+        "Gobi",
+        "Sahara",
+        "Kalahari",
+        "Arabian"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "geo-russia",
+      "category": "world",
+      "lang": 1,
+      "prompt": "Largest country?",
+      "options": [
+        "Canada",
+        "China",
+        "Russia",
+        "United States"
+      ],
+      "answer": 2
+    },
+    {
+      "id": "geo-vatican",
+      "category": "world",
+      "lang": 1,
+      "prompt": "Smallest country?",
+      "options": [
+        "Monaco",
+        "Nauru",
+        "Vatican City",
+        "San Marino"
+      ],
+      "answer": 2
+    },
+    {
+      "id": "sci-h2o",
+      "category": "science",
+      "lang": 0,
+      "glyph": "H₂O",
+      "options": [
+        "Water",
+        "Salt",
+        "Sugar",
+        "Air"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "sci-au",
+      "category": "science",
+      "lang": 0,
+      "glyph": "Au",
+      "options": [
+        "Gold",
+        "Silver",
+        "Copper",
+        "Iron"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "sci-fe",
+      "category": "science",
+      "lang": 0,
+      "glyph": "Fe",
+      "options": [
+        "Iron",
+        "Lead",
+        "Tin",
+        "Zinc"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "sci-o2",
+      "category": "science",
+      "lang": 0,
+      "glyph": "O₂",
+      "options": [
+        "Oxygen",
+        "Ozone",
+        "Nitrogen",
+        "Carbon"
+      ],
+      "answer": 0
+    },
+    {
+      "id": "sci-planets",
+      "category": "science",
+      "lang": 1,
+      "prompt": "Planets in our solar system?",
+      "options": [
+        "7",
+        "8",
+        "9",
+        "10"
+      ],
+      "answer": 1
+    },
+    {
+      "id": "sci-mars",
+      "category": "science",
+      "lang": 1,
+      "prompt": "Humans who have walked on Mars?",
+      "options": [
+        "0",
+        "2",
+        "6",
+        "12"
+      ],
+      "answer": 0
+    }
+  ]
+}

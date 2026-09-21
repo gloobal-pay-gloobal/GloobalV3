@@ -27,7 +27,7 @@ async function tap(locator) {
 }
 
 // The real screens the whole way, stopping where the unlock card opens.
-async function pay(page, receiverGets = 500) {
+async function pay(page, receiverGets = 500, { beforeSend } = {}) {
   await page.getByLabel("Send", { exact: true }).click({ force: true });
   await page.getByLabel("Symbol −", { exact: true }).waitFor({ timeout: 25000 });
   for (const symbol of RECEIVER.symbolId) {
@@ -38,6 +38,7 @@ async function pay(page, receiverGets = 500) {
   await field.waitFor({ timeout: 25000 });
   await field.fill(String(receiverGets));
   await page.waitForTimeout(700);
+  if (beforeSend) await beforeSend();
   await page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last().click({ force: true });
   const paySheet = page.getByRole("dialog", { name: "Choose how to pay" });
   await paySheet.waitFor({ timeout: 20000 });
@@ -96,6 +97,29 @@ describe("after a payment", () => {
         assert.ok(receiptText.includes(share.slice(1)), `the receipt does not carry the revealed share ${share}`);
       }
       assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("before paying, a green dot says the receiver shares — the rate is kept for the scratch card", async () => {
+    const { page, context } = await open();
+    try {
+      await login(page, SENDER);
+      let dot = null;
+      await pay(page, 500, {
+        beforeSend: async () => {
+          const el = page.getByTestId("share-dot");
+          dot = { shares: await el.getAttribute("data-shares"), label: await el.getAttribute("aria-label") };
+          const row = await el.locator("xpath=..").innerText();
+          assert.doesNotMatch(row, /%/, "the rate is still printed beside Creator Share");
+        }
+      });
+      assert.equal(dot.shares, "yes");
+      assert.doesNotMatch(dot.label, /\d/, "the dot's label gives the rate away");
+      await firstOption(page).click();
+      await page.getByRole("button", { name: "Reveal my share", exact: true }).click();
+      assert.match(await page.getByTestId("unlock-rate").innerText(), /^\d+\.\d{2}% Creator Share$/);
     } finally {
       await context.close();
     }
@@ -219,6 +243,12 @@ describe("the questions", () => {
   test("no finance check-in and no 'Are you okay?' after a payment", () => {
     const keys = paymentUnlockCheckins().map(({ cat, item }) => `${cat.key}.${item.key}`);
     assert.deepEqual(keys, ["self.health", "environment.water"]);
+  });
+
+  test("a receiver who shares nothing gets a red dot, one who shares gets a green one", () => {
+    const send = readSource("frontend/screens/SendMoney/SendMoney.jsx");
+    assert.match(send, /background: \(bottom\.shareRate \?\? 0\) > 0 \? T\.positive : T\.negative/);
+    assert.ok(!/ShareRateFlipCircle percent=\{bottom\.shareRate/.test(send), "the percentage pill is back on the Send screen");
   });
 
   test("the screen says the share does not depend on the answer", () => {

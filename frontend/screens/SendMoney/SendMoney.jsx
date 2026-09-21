@@ -1459,13 +1459,32 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     aria-label="Copy ID"
   >{copiedKey === "bottom-id" ? <Check3 size={17} /> : <Copy3 size={17} />}</button></div></div>{
     /* Creator Share — this is the RECEIVER's own rate, not
-       something the sender picks. Prefilled and read-only,
-       connected straight to bottom.shareRate (set once
-       when this receiver was found). 0% shows as "0.00%",
-       1.15% shows as "1.15%", 7% shows as "7.00%" — always
-       exactly what's actually on their account, never a
-       choice made here. */
-  }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 14 }}><span style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>Creator Share</span><ShareRateFlipCircle percent={bottom.shareRate ?? 0} size={28} staticMode /></div>{
+       something the sender picks, read straight from
+       bottom.shareRate (set once when this receiver was found).
+       Shown as a green or red dot only; the percentage itself is
+       revealed on the scratch card after paying. */
+  }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 14 }}><span style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>Creator Share</span>{
+    /* A dot, not the rate. Green: this receiver shares something back.
+       Red: they share nothing. The exact percentage is kept for the
+       scratch card after the payment (PaymentUnlock), where it is revealed
+       with the share it earned — so the sender still learns BEFORE paying
+       whether anything comes back, just not how much. */
+  }<span
+    data-testid="share-dot"
+    data-shares={(bottom.shareRate ?? 0) > 0 ? "yes" : "no"}
+    role="img"
+    aria-label={(bottom.shareRate ?? 0) > 0 ? "This receiver shares back — revealed after you pay" : "This receiver shares nothing back"}
+    title={(bottom.shareRate ?? 0) > 0 ? "Shares back — scratch after paying to see how much" : "Shares nothing back"}
+    style={{
+      width: 14,
+      height: 14,
+      borderRadius: "50%",
+      flexShrink: 0,
+      marginRight: 7,
+      background: (bottom.shareRate ?? 0) > 0 ? T.positive : T.negative,
+      boxShadow: `0 0 0 5px ${(bottom.shareRate ?? 0) > 0 ? T.positiveSoft : T.negativeSoft}`
+    }}
+  /></div>{
     /* Editable — what the RECEIVER gets, in the receiver's own
        currency. What it costs the sender is on the Send button.
 

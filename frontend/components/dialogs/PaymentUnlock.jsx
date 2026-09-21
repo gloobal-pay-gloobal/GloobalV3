@@ -132,6 +132,7 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
     ? recorded
     : (Number(receipt && receipt.amount) || 0) * ((Number(receipt && receipt.shareRate) || 0) / 100);
   const shareCurrency = receipt && receipt.currencyCode;
+  const shareRate = Math.max(0, Number(receipt && receipt.shareRate) || 0);
 
   // Full-screen, so the app map's floating launcher steps aside while this is
   // up — the same channel PaymentProcessing uses.
@@ -427,8 +428,13 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
             {revealed || unlocked ? (
               <>
                 <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: T.inkFaint }}>YOUR CREATOR SHARE</div>
-                <div data-testid="unlock-share" style={{ fontFamily: T.fontDisplay, fontSize: 32, fontWeight: 800, color: shareText ? T.positive : T.inkSoft, fontVariantNumeric: "tabular-nums" }}>
+                <div data-testid="unlock-share" style={{ fontFamily: T.fontDisplay, fontSize: shareText ? 32 : 22, fontWeight: 800, color: shareText ? T.positive : T.inkSoft, fontVariantNumeric: "tabular-nums" }}>
                   {shareText || "No share on this one"}
+                </div>
+                {/* The rate, hidden on the Send screen behind a green or red
+                    dot, is revealed here with the share it earned. */}
+                <div data-testid="unlock-rate" style={{ fontSize: 12.5, fontWeight: 800, color: T.accent }}>
+                  {`${shareRate.toFixed(2)}% Creator Share`}
                 </div>
                 <div style={{ fontSize: 11.5, color: T.inkFaint }}>Paid in full, whatever you answer.</div>
               </>

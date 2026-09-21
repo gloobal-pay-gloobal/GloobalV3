@@ -163,6 +163,9 @@ const FRONTEND_MODULES = [
   "components/common/profileAvatar.jsx",
   // The static receive QR card. Needs gloobalPayLink.js (backend) and
   // G_LOGO_DATA_URI; ahead of Dashboard, which will show it.
+  // The animal pictures for the receive QR, and the layout rules that keep
+  // each one scannable. Plain JS; ahead of the card, which draws them.
+  "components/common/gloobalAnimalQr.js",
   "components/common/gloobalReceiveQrCard.jsx",
   // The four action tiles' own motion: send flies off, receive drops in,
   // scan sweeps, bank settles. Sits outside the flip rather than replacing

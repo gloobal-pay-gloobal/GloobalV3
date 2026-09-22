@@ -1240,6 +1240,101 @@ function GloobalId() {
     return () => window.removeEventListener(GLOOBAL_SESSION_EXPIRED_EVENT, onSessionExpired);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // The in-app notification list, over whatever screen is showing. Opened
+  // from the Profile tab's "Notifications" row, and by tapping a
+  // promotional or system push.
+  // Back-button handling belongs to the sheet itself (it calls useBackClose
+  // internally, like LocationRequiredModal) — registering a second entry
+  // here would push two history states for one overlay and take two backs
+  // to dismiss it.
+  const [showNotifications, setShowNotifications] = useState19(false);
+  useEffect15(() => {
+    const onOpenNotifications = () => setShowNotifications(true);
+    window.addEventListener("gloobal:openNotifications", onOpenNotifications);
+    return () => window.removeEventListener("gloobal:openNotifications", onOpenNotifications);
+  }, []);
+  // --- Web Push ----------------------------------------------------------
+  //
+  // Three separate concerns, deliberately not merged, because each is
+  // triggered by something different and getting the ORDER wrong between
+  // them is how a subscription ends up pointing at the wrong account.
+  //
+  // 1. Reconcile once per signed-in session. A PushSubscription belongs to
+  //    the browser profile, not the person, and the browser can rotate it
+  //    while the app is closed — an event nothing in the page can observe
+  //    after the fact. Re-POSTing on arrival is the only way the server's
+  //    row stays true. It never prompts (see useWebPush.js) and tolerates
+  //    a cold Render without touching the session.
+  //    The signed-in ID is read straight from the session store rather than
+  //    from `registeredUser`: that state is declared further down this
+  //    component, and a dependency array is evaluated on EVERY render,
+  //    before the consts below it exist (the same trap the shared-receipt
+  //    effect's comment documents). gloobalCurrentSymbolId() is a plain
+  //    read of the stored session and has no such ordering problem.
+  const pushSyncedForRef = useRef13("");
+  useEffect15(() => {
+    if (stage !== "dashboard") return;
+    const signedInId = gloobalCurrentSymbolId() || "";
+    if (!signedInId || pushSyncedForRef.current === signedInId) return;
+    pushSyncedForRef.current = signedInId;
+    gloobalPushSyncOnStart();
+    // The installed app's home-screen badge, from the server's own unread
+    // count — the same number NotificationsSheet shows, so the icon and
+    // the list can never disagree. A no-op on any browser without the
+    // Badging API, and silent when the server cannot be reached: a badge
+    // is not worth a toast.
+    GloobalApi.getUnreadNotificationCount()
+      .then(gloobalPushSetAppBadge)
+      .catch(() => {});
+    // `secureId` (declared above, unlike registeredUser) is in the deps so
+    // this re-runs if the dashboard renders a beat before the session ID
+    // has landed, rather than giving up for the whole session.
+  }, [stage, secureId]);
+  // 2. Messages from the service worker. `gloobal:push-click` is a tap on a
+  //    notification while a tab was already open — the worker focused this
+  //    one rather than cold-booting a second copy of the app, so the
+  //    routing has to happen here. A payment goes down the SAME deep link a
+  //    "?txn=" URL uses: set the shared reference and let the effect further
+  //    down find it in this account's own history and open the read-only
+  //    receipt. Anything else opens the notification list.
+  //    `gloobal:push-resubscribe` is the browser having rotated this
+  //    device's subscription; the worker cannot re-register it (no access
+  //    to the bearer token), so it asks the page to.
+  useEffect15(() => {
+    if (typeof navigator === "undefined" || !navigator.serviceWorker) return undefined;
+    const onWorkerMessage = (event) => {
+      const data = (event && event.data) || {};
+      if (data.type === "gloobal:push-resubscribe") {
+        pushSyncedForRef.current = "";
+        gloobalPushSyncOnStart();
+        return;
+      }
+      if (data.type !== "gloobal:push-click") return;
+      const txnId = data.payload && data.payload.transactionId;
+      if (txnId && data.payload.category !== "promotional") {
+        setSharedTxnRef(String(txnId));
+        return;
+      }
+      setShowNotifications(true);
+    };
+    navigator.serviceWorker.addEventListener("message", onWorkerMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onWorkerMessage);
+  }, []);
+  // 3. A different account is now signed in on this device. The
+  //    subscription itself is unchanged — same browser, same endpoint — but
+  //    the server row naming it still points at the previous account, and
+  //    leaving it there would push one person's payments to another
+  //    person's notification tray. Unsubscribe then re-subscribe, in that
+  //    order, so there is never a moment with two live rows for one
+  //    endpoint.
+  useEffect15(() => {
+    const onAccountSwitch = () => {
+      pushSyncedForRef.current = "";
+      gloobalPushUnsubscribe().then(() => gloobalPushSyncOnStart());
+    };
+    window.addEventListener(GLOOBAL_ACCOUNT_SWITCH_EVENT, onAccountSwitch);
+    return () => window.removeEventListener(GLOOBAL_ACCOUNT_SWITCH_EVENT, onAccountSwitch);
+  }, []);
   const [pendingOpenMyShare, setPendingOpenMyShare] = useState19(false);
   const [secureIdRevealed, setSecureIdRevealed] = useState19(false);
   const [referralRevealed, setReferralRevealed] = useState19(false);
@@ -2805,6 +2900,20 @@ function GloobalId() {
     }
   };
   const handleStartOver = () => {
+    // Web Push FIRST, before anything below clears the token.
+    //
+    // Dropping the server's subscription row is an authenticated call, and
+    // the order is not cosmetic: run it after clearSession() and it comes
+    // back 401, the row survives, and this device goes on receiving the
+    // signed-out person's payment notifications — on a shared phone, into
+    // somebody else's hands. It is deliberately not awaited (sign-out must
+    // not wait on a cold Render) and cannot throw; see useWebPush.js.
+    pushSyncedForRef.current = "";
+    gloobalPushUnsubscribe();
+    // The badge is the previous account's unread count. Left on the icon
+    // it would be the one piece of their state still visible to whoever
+    // signs in next.
+    gloobalPushSetAppBadge(0);
     // Explicit sign-out: drop the remembered identity too, or the mount
     // effect restores it straight back to the lock screen.
     GloobalApi.clearSession();
@@ -3722,7 +3831,16 @@ function GloobalId() {
   })()}{
     /* A shared receipt link, opened on a payment in this account's own
        history. The same read-only document History shows. */
-  }{stage === "dashboard" && linkedReceipt && <ReceiptModal receipt={linkedReceipt} onClose={requestCloseLinkedReceipt} />}<LocationRequiredModal
+  }{stage === "dashboard" && linkedReceipt && <ReceiptModal receipt={linkedReceipt} onClose={requestCloseLinkedReceipt} />}{
+    /* The server-held notification list. Tapping a payment row hands the
+       transaction reference straight to the shared-receipt state above, so
+       it opens through the same lookup a "?txn=" link uses rather than a
+       second receipt path of its own. */
+  }<NotificationsSheet
+    open={showNotifications}
+    onClose={() => setShowNotifications(false)}
+    onOpenTransaction={(txnId) => setSharedTxnRef(txnId)}
+  /><LocationRequiredModal
     open={Boolean(locationGate)}
     reason={locationGate && locationGate.reason}
     busy={locationGateBusy}

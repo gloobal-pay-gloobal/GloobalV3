@@ -11,9 +11,12 @@
 //
 // Notifying a closed app needs Web Push: a VAPID key pair, a PushSubscription
 // stored against the account server-side, a `push` handler in the service
-// worker, and a backend route that sends. The service worker exists already
-// (vite-plugin-pwa), the other three do not. Nothing here pretends
-// otherwise, and the permission ask below does not promise it.
+// worker, and a backend route that sends. All four now exist — see
+// hooks/useWebPush.js for the subscription this file's permission grant
+// registers, and gloobal-essentials-preview/src/sw.js for the handler. This
+// file remains the local half, and it is still the half that matters while
+// the app is merely backgrounded rather than closed, because it needs no
+// round trip and no push service to deliver.
 //
 // ── When the permission is asked ─────────────────────────────────────────
 //
@@ -78,12 +81,23 @@ async function askForPaymentNotifications() {
   if (Notification.permission !== "default") return Notification.permission;
   if (paymentNotificationsAlreadyAsked()) return Notification.permission;
   notifyWriteJson(GLOOBAL_NOTIFY_ASKED_KEY, true);
+  let outcome;
   try {
-    return await Notification.requestPermission();
+    outcome = await Notification.requestPermission();
   } catch (e) {
     // Older Safari's callback-only signature rejects the promise form.
-    return Notification.permission;
+    outcome = Notification.permission;
   }
+  // Yes is the only moment this app ever gets to register for Web Push:
+  // subscribing needs granted permission, and this is the one prompt there
+  // is. Doing it here rather than on the next load means notifications for
+  // a closed app start working from the payment that earned the yes, not
+  // from the next time they happen to open Gloobal. It is deliberately not
+  // awaited — the subscribe round-trips to Render, which may be cold, and
+  // nothing on the payment screen should wait on that. It cannot throw
+  // (see useWebPush.js), so there is nothing to catch.
+  if (outcome === "granted") gloobalPushSubscribe();
+  return outcome;
 }
 
 // One notification per transaction, ever — including across reloads, which
@@ -102,20 +116,57 @@ function markPaymentNotified(txnId) {
   notifyWriteJson(GLOOBAL_NOTIFIED_TXNS_KEY, seen.slice(0, GLOOBAL_NOTIFIED_TXNS_MAX));
 }
 
+// Two ways to put a notification in the tray, and the order between them
+// is not a preference.
+//
+// `new Notification()` — the one this used to use alone — throws outright
+// on Android Chrome whenever the page is installed as a PWA, which is
+// precisely the case that matters most here. The platform requires
+// ServiceWorkerRegistration.showNotification instead, and a worker is
+// already registered (vite-plugin-pwa), so that is the primary path now.
+// `new Notification()` survives as the fallback for desktop Safari and any
+// browser where the worker has not activated yet.
+//
+// The service-worker path is asynchronous, so this returns true as soon as
+// it has committed to showing one rather than when the tray updates. The
+// callers use the return value only for their own dedupe bookkeeping, and
+// they have already marked the transaction seen before calling.
 function showPaymentNotification({ title, body, tag }) {
   if (!paymentNotificationsGranted()) return false;
-  try {
-    // `tag` collapses repeats of the same payment into one entry in the
-    // tray rather than stacking duplicates.
-    new Notification(title, { body, tag, icon: G_LOGO_DATA_URI, badge: G_LOGO_DATA_URI });
+  // `tag` collapses repeats of the same payment into one entry in the
+  // tray rather than stacking duplicates.
+  const options = { body, tag, icon: G_LOGO_DATA_URI, badge: G_LOGO_DATA_URI };
+  // Both paths refused. Failing quietly is correct: a missing notification
+  // must never surface as a broken payment.
+  const showDirectly = () => {
+    try {
+      new Notification(title, options);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+  if (typeof navigator !== "undefined" && navigator.serviceWorker && navigator.serviceWorker.ready) {
+    // `serviceWorker.ready` NEVER REJECTS. When no worker is registered for
+    // this scope it simply stays pending for ever — which is the normal state
+    // on the dev server (devOptions.enabled is false) and on any origin where
+    // registration failed. So `.catch` alone could not deliver the fallback
+    // this function's header promises: nothing was shown, nothing threw, and
+    // the payment notification was silently lost while the function still
+    // answered true.
+    //
+    // Racing a short timer restores that fallback. `settled` makes the two
+    // paths exclusive, so a worker that becomes ready late cannot add a
+    // second banner for a payment already announced.
+    let settled = false;
+    const claim = () => (settled ? false : (settled = true));
+    navigator.serviceWorker.ready
+      .then((registration) => (claim() ? registration.showNotification(title, options) : undefined))
+      .catch(() => { if (claim()) showDirectly(); });
+    setTimeout(() => { if (claim()) showDirectly(); }, 1500);
     return true;
-  } catch (e) {
-    // Android Chrome refuses `new Notification()` outright when the page is
-    // installed as a PWA, requiring the service worker's own
-    // showNotification instead. Failing quietly is correct: a missing
-    // notification must never surface as a broken payment.
-    return false;
   }
+  return showDirectly();
 }
 
 // Money has arrived. The one people actually want.

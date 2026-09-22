@@ -129,6 +129,10 @@ const ProjectAttachment = require('./models/ProjectAttachment');
 // POST /api/transactions/send writes once a transfer has committed.
 const ProfilePhoto = require('./models/ProfilePhoto');
 const Notification = require('./models/Notification');
+// Web Push. The model holds one row per subscribed browser; the service is the
+// only thing that talks to a push service and is inert when VAPID is unset.
+const PushSubscription = require('./models/PushSubscription');
+const pushService = require('./services/pushService');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
 const {
@@ -6416,8 +6420,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // idempotent-replay answers above return before reaching here, and the
     // unique index on (userId, metadata.transactionId) covers any retry that
     // somehow does not.
+    let notificationLegs = [];
     try {
-      await recordPaymentNotifications({
+      notificationLegs = await recordPaymentNotifications({
         transaction: completedTransaction,
         sender,
         receiver,
@@ -6425,9 +6430,22 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         senderCurrency,
         payeeReceives,
         destinationCurrency,
-      });
+      }) || [];
     } catch (notificationError) {
       console.error('Payment notification error (non-fatal):', notificationError);
+    }
+
+    // Web Push, in its OWN try/catch on purpose. Folding it into the block
+    // above would mean a push failure was logged as a notification failure,
+    // and — worse — that a throw from the notification write skipped nothing
+    // while a throw from the push looked like the inbox row had failed too.
+    // Two effects, two catches, two log prefixes.
+    //
+    // Only the legs just created are pushed; see recordPaymentNotifications.
+    try {
+      await sendPaymentPushes(notificationLegs, completedTransaction);
+    } catch (pushError) {
+      console.error('Payment push error (non-fatal):', pushError);
     }
 
     // Plant a My Assets seed for cashback-earning payments. The rate is the
@@ -6658,6 +6676,9 @@ async function recordPaymentNotifications({
       currency: senderCurrency,
       counterpartyName: receiverName,
       counterpartySymbolId: receiver.symbolId,
+      pushTitle: 'Payment Sent',
+      pushBody: `${formatNotificationAmount(debitAmount, senderCurrency)} ${senderCurrency} sent to ${receiverName}`,
+      pushType: 'payment.sent',
     },
     {
       userId: receiver._id,
@@ -6668,6 +6689,13 @@ async function recordPaymentNotifications({
       currency: destinationCurrency,
       counterpartyName: senderName,
       counterpartySymbolId: sender.symbolId,
+      // What the DEVICE is shown, which is not what the inbox row says. The
+      // inbox is a list and reads in the first person ("You received ..."); a
+      // push is a single banner and reads as a headline. Both figures are the
+      // server's own, formatted once above.
+      pushTitle: 'Payment Received',
+      pushBody: `${formatNotificationAmount(payeeReceives, destinationCurrency)} ${destinationCurrency} received from ${senderName}`,
+      pushType: 'payment.received',
     },
   ];
 
@@ -6698,11 +6726,82 @@ async function recordPaymentNotifications({
     )
   );
 
-  for (const result of results) {
+  // Which legs this call actually created, in the same order as `entries`.
+  //
+  // THIS IS THE IDEMPOTENCY KEY FOR PUSH. `upsertedCount === 1` is Mongo
+  // telling us the row did not exist until this write — so this call, and no
+  // other, is the one allowed to buzz that person's phone. A replay, a race
+  // that lost, or a rejection with E11000 all mean the row was already there
+  // and the device has already been told. Reusing the unique index this way is
+  // deliberate: a second de-duplication mechanism could disagree with the
+  // first, and then the inbox and the lock screen would tell different stories.
+  const legs = [];
+
+  results.forEach((result, index) => {
+    const entry = entries[index];
     if (result.status === 'rejected' && result.reason?.code !== 11000) {
       console.error(`Payment notification write failed for ${transaction.referenceId}:`, result.reason);
     }
+
+    const created = result.status === 'fulfilled' && result.value?.upsertedCount === 1;
+
+    legs.push({
+      userId: entry.userId,
+      direction: entry.direction,
+      created,
+      notificationId: created && result.value?.upsertedId ? String(result.value.upsertedId._id || result.value.upsertedId) : null,
+      type: entry.pushType,
+      title: entry.pushTitle,
+      body: entry.pushBody,
+    });
+  });
+
+  return legs;
+}
+
+// ── Web Push for a payment ──────────────────────────────────────────────────
+//
+// Fires only for legs recordPaymentNotifications says it just created, so a
+// retried or duplicated payment event produces no second banner. Best-effort
+// and silent on failure: the money has moved and the inbox row exists either
+// way, and pushService itself never throws.
+async function sendPaymentPushes(legs, transaction) {
+  const created = (Array.isArray(legs) ? legs : []).filter((leg) => leg.created);
+  if (created.length === 0) return { sent: 0, removed: 0, failed: 0, skipped: 0 };
+  if (!pushService.isPushEnabled()) return { sent: 0, removed: 0, failed: 0, skipped: created.length };
+
+  const transactionId = String(transaction._id);
+  const timestamp = Date.now();
+  const totals = { sent: 0, removed: 0, failed: 0, skipped: 0 };
+
+  for (const leg of created) {
+    const result = await pushService.sendPushToUser(
+      leg.userId,
+      {
+        v: 1,
+        category: 'transactional',
+        type: leg.type,
+        notificationId: leg.notificationId,
+        transactionId,
+        title: leg.title,
+        body: leg.body,
+        // The app already reads ?txn= and opens that receipt, so tapping the
+        // banner lands on the payment it is about rather than the home screen.
+        url: `/?txn=${transactionId}`,
+        // One tag per payment, so the payer's and payee's devices each collapse
+        // a duplicate rather than stacking two identical banners.
+        tag: `gloobal-txn-${transactionId}`,
+        timestamp,
+      },
+      { category: 'transactional' }
+    );
+    totals.sent += result.sent;
+    totals.removed += result.removed;
+    totals.failed += result.failed;
+    totals.skipped += result.skipped;
   }
+
+  return totals;
 }
 
 const isoOrNull = (value) => (value ? new Date(value).toISOString() : null);
@@ -6811,6 +6910,333 @@ app.post('/api/notifications/read-all', writeLimit, requireAuth, async (req, res
   } catch (error) {
     console.error('Notification read-all error:', error);
     return res.status(500).json({ success: false, message: 'Could not update notifications right now.' });
+  }
+});
+
+// ─── Web Push ───────────────────────────────────────────────────────────────
+//
+// The device half of the notifications above: the same payment writes an inbox
+// row and, for whichever legs it actually created, a banner on the phone.
+//
+// Every route here except the admin broadcast is scoped by req.authUser._id and
+// by nothing the request names. In particular /api/push/subscribe $sets the
+// userId from the token — a body that supplies one is ignored, because letting
+// a caller name the owner of a subscription would let them point somebody
+// else's payment notifications at their own browser.
+//
+// A foreign endpoint is answered as "nothing to remove" rather than 403, for
+// the same reason a stranger's notification 404s: a 403 would confirm that the
+// endpoint exists and belongs to someone.
+
+const pushDisabled = (res) =>
+  res.status(503).json({
+    success: false,
+    code: 'push_disabled',
+    message: 'Push notifications are not configured on this server.',
+  });
+
+// A tap target has to be a path inside this app. An absolute URL — or the
+// protocol-relative '//evil.example' that looks like a path and is not — would
+// turn a notification into an open redirect away from Gloobal.
+const safeNotificationPath = (value, fallback = '/') => {
+  const path = typeof value === 'string' ? value.trim() : '';
+  if (!path) return fallback;
+  if (!path.startsWith('/') || path.startsWith('//')) return fallback;
+  if (path.length > 500) return fallback;
+  return path;
+};
+
+// GET /api/push/public-key — what the browser needs to call
+// pushManager.subscribe(). The PRIVATE key never leaves pushService.
+app.get('/api/push/public-key', lookupLimit, requireAuth, (req, res) => {
+  const enabled = pushService.isPushEnabled();
+  return res.json({ success: true, enabled, publicKey: enabled ? pushService.getVapidPublicKey() : null });
+});
+
+// POST /api/push/subscribe — upserted on the endpoint alone.
+//
+// On { endpoint }, not on { endpoint, userId }: an endpoint identifies one
+// browser profile, and signing a second account in on the same phone must
+// MOVE the subscription, not add a second row that would deliver both
+// accounts' payments to the same lock screen. See models/PushSubscription.js.
+app.post('/api/push/subscribe', writeLimit, requireAuth, async (req, res) => {
+  try {
+    if (!pushService.isPushEnabled()) return pushDisabled(res);
+
+    const validated = pushService.validateSubscriptionInput(req.body);
+    if (!validated.ok) {
+      return res.status(400).json({
+        success: false,
+        code: 'push_subscription_invalid',
+        message: validated.error,
+      });
+    }
+
+    const { endpoint, keys } = validated.value;
+    const userAgent = String(req.body?.userAgent || req.get('user-agent') || '').slice(0, 255);
+
+    const update = {
+      $set: {
+        userId: req.authUser._id,
+        'keys.p256dh': keys.p256dh,
+        'keys.auth': keys.auth,
+        userAgent,
+        lastSeenAt: new Date(),
+        // A browser that has just handed us a fresh subscription is reachable
+        // again, whatever the old row's failure history said.
+        failureCount: 0,
+      },
+    };
+
+    // Only an explicit boolean changes the marketing choice. A client that
+    // simply re-subscribes on every page load must not silently reset a
+    // preference the person set in the UI, and a brand-new row is not opted in.
+    if (typeof req.body?.promotional === 'boolean') {
+      update.$set.promotionalOptIn = req.body.promotional;
+    } else {
+      update.$setOnInsert = { promotionalOptIn: false };
+    }
+
+    try {
+      await PushSubscription.updateOne({ endpoint }, update, { upsert: true });
+    } catch (error) {
+      // Two subscribes racing on the same endpoint: the loser is told the row
+      // already exists, which is exactly the row it wanted. Apply the same
+      // update to it without upserting.
+      if (error?.code !== 11000) throw error;
+      await PushSubscription.updateOne({ endpoint }, { $set: update.$set });
+    }
+
+    const row = await PushSubscription.findOne({ endpoint }).select('_id promotionalOptIn').lean();
+
+    return res.json({
+      success: true,
+      ok: true,
+      subscriptionId: row ? String(row._id) : null,
+      promotional: Boolean(row?.promotionalOptIn),
+    });
+  } catch (error) {
+    console.error('Push subscribe error:', error);
+    return res.status(500).json({ success: false, message: 'Could not save that subscription right now.' });
+  }
+});
+
+// POST /api/push/unsubscribe — only ever your own row.
+app.post('/api/push/unsubscribe', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint.trim() : '';
+    if (!endpoint || endpoint.length > 2000) {
+      return res.status(400).json({
+        success: false,
+        code: 'push_subscription_invalid',
+        message: 'endpoint is required.',
+      });
+    }
+
+    const result = await PushSubscription.deleteOne({ endpoint, userId: req.authUser._id });
+    return res.json({ success: true, ok: true, removed: result.deletedCount || 0 });
+  } catch (error) {
+    console.error('Push unsubscribe error:', error);
+    return res.status(500).json({ success: false, message: 'Could not remove that subscription right now.' });
+  }
+});
+
+// PATCH /api/push/preferences — the marketing opt-in, across every browser this
+// account has subscribed from. Turning it off on the phone turns it off on the
+// laptop, because it is a choice about being marketed to, not about a device.
+app.patch('/api/push/preferences', writeLimit, requireAuth, async (req, res) => {
+  try {
+    if (typeof req.body?.promotional !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        code: 'push_preference_invalid',
+        message: 'promotional must be true or false.',
+      });
+    }
+
+    const promotional = req.body.promotional;
+    const result = await PushSubscription.updateMany(
+      { userId: req.authUser._id },
+      { $set: { promotionalOptIn: promotional } }
+    );
+
+    return res.json({ success: true, ok: true, promotional, updated: result.modifiedCount || 0 });
+  } catch (error) {
+    console.error('Push preferences error:', error);
+    return res.status(500).json({ success: false, message: 'Could not update that preference right now.' });
+  }
+});
+
+// GET /api/push/status — what the settings screen renders.
+app.get('/api/push/status', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const userId = req.authUser._id;
+    const [subscriptions, optedIn] = await Promise.all([
+      PushSubscription.countDocuments({ userId }),
+      PushSubscription.countDocuments({ userId, promotionalOptIn: true }),
+    ]);
+
+    return res.json({
+      success: true,
+      enabled: pushService.isPushEnabled(),
+      subscriptions,
+      promotional: optedIn > 0,
+    });
+  } catch (error) {
+    console.error('Push status error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load push status right now.' });
+  }
+});
+
+// POST /api/push/test — "did that actually work?", to the caller's own devices
+// and no one else's.
+app.post('/api/push/test', writeLimit, requireAuth, async (req, res) => {
+  try {
+    if (!pushService.isPushEnabled()) return pushDisabled(res);
+
+    const timestamp = Date.now();
+    const result = await pushService.sendPushToUser(
+      req.authUser._id,
+      {
+        v: 1,
+        category: 'transactional',
+        type: 'system',
+        notificationId: null,
+        transactionId: null,
+        title: 'Gloobal',
+        body: 'Push notifications are working on this device.',
+        url: '/',
+        tag: `gloobal-system-${timestamp}`,
+        timestamp,
+      },
+      { category: 'transactional' }
+    );
+
+    return res.json({ success: true, ok: true, ...result });
+  } catch (error) {
+    console.error('Push test error:', error);
+    return res.status(500).json({ success: false, message: 'Could not send a test push right now.' });
+  }
+});
+
+// POST /api/push/promotional — the admin broadcast.
+//
+// NOT a user route, so no requireAuth: there is no signed-in account behind it.
+// It is gated by a shared secret in x-push-admin-token instead, compared in
+// constant time. With PUSH_ADMIN_TOKEN unset there is no admin channel at all
+// and the route answers 404 — an unconfigured door should not advertise itself
+// as a locked one.
+const PROMOTIONAL_RECIPIENT_CAP = 500;
+
+const adminTokenMatches = (supplied) => {
+  const expected = String(process.env.PUSH_ADMIN_TOKEN || '');
+  if (!expected) return false;
+  const a = Buffer.from(String(supplied || ''), 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  // timingSafeEqual throws on a length mismatch, so the lengths are compared
+  // first — that leaks the length of the token and nothing else.
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+};
+
+app.post('/api/push/promotional', writeLimit, async (req, res) => {
+  try {
+    if (!String(process.env.PUSH_ADMIN_TOKEN || '')) {
+      return res.status(404).json({ success: false, code: 'not_found', message: 'Not found.' });
+    }
+    if (!adminTokenMatches(req.get('x-push-admin-token'))) {
+      return res.status(403).json({ success: false, code: 'forbidden', message: 'Not allowed.' });
+    }
+    if (!pushService.isPushEnabled()) return pushDisabled(res);
+
+    const title = String(req.body?.title || '').trim();
+    const body = String(req.body?.body || '').trim();
+    if (!title || !body) {
+      return res.status(400).json({
+        success: false,
+        code: 'push_promotional_invalid',
+        message: 'title and body are required.',
+      });
+    }
+    const url = safeNotificationPath(req.body?.url, '/');
+
+    // Recipients may be named either way; both are resolved to account ids
+    // here and capped, so one call can never fan out across the whole database.
+    const symbolIds = Array.isArray(req.body?.symbolIds) ? req.body.symbolIds : [];
+    const rawUserIds = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
+
+    const ids = new Set();
+    for (const value of rawUserIds) {
+      const id = String(value || '').trim();
+      if (mongoose.Types.ObjectId.isValid(id)) ids.add(id);
+    }
+    for (const value of symbolIds.slice(0, PROMOTIONAL_RECIPIENT_CAP)) {
+      const raw = String(value || '').trim();
+      if (!raw) continue;
+      const decoded = safeDecodeSymbolId(raw).trim() || raw;
+      const owner = await User.findOne({ symbolId: decoded }).select('_id').lean();
+      if (owner) ids.add(String(owner._id));
+    }
+
+    const recipients = [...ids].slice(0, PROMOTIONAL_RECIPIENT_CAP);
+    if (recipients.length === 0) {
+      return res.status(400).json({
+        success: false,
+        code: 'push_promotional_invalid',
+        message: 'No recipients resolved from symbolIds or userIds.',
+      });
+    }
+
+    const totals = { sent: 0, removed: 0, failed: 0, skipped: 0 };
+    let notified = 0;
+    const timestamp = Date.now();
+
+    for (const userId of recipients) {
+      // The inbox row first, so the banner's notificationId names something
+      // that already exists when the device taps through. No
+      // metadata.transactionId, so these sit outside the payment unique index
+      // entirely and a second campaign is not refused as a duplicate.
+      let notification = null;
+      try {
+        notification = await Notification.create({
+          userId,
+          type: 'offer',
+          title: title.slice(0, 100),
+          message: body.slice(0, 500),
+          metadata: { url, campaign: 'promotional' },
+        });
+        notified += 1;
+      } catch (error) {
+        console.error('Promotional notification write failed:', error.message);
+      }
+
+      const notificationId = notification ? String(notification._id) : null;
+      const result = await pushService.sendPushToUser(
+        userId,
+        {
+          v: 1,
+          category: 'promotional',
+          type: 'promo',
+          notificationId,
+          transactionId: null,
+          title: title.slice(0, 100),
+          body: body.slice(0, 500),
+          url,
+          tag: `gloobal-promo-${notificationId}`,
+          timestamp,
+        },
+        { category: 'promotional' }
+      );
+      totals.sent += result.sent;
+      totals.removed += result.removed;
+      totals.failed += result.failed;
+      totals.skipped += result.skipped;
+    }
+
+    return res.json({ success: true, ok: true, recipients: recipients.length, notified, ...totals });
+  } catch (error) {
+    console.error('Push promotional error:', error);
+    return res.status(500).json({ success: false, message: 'Could not send that broadcast right now.' });
   }
 });
 

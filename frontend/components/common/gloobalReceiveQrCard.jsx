@@ -91,7 +91,10 @@ function gloobalQrLogoBox(size) {
 // 2.2 all scored exactly that, so this is a free choice among sizes that
 // cost the scan nothing.
 var GLOOBAL_QR_CORNER_EDGE = 1.5;
-var GLOOBAL_QR_CORNER_R = 2.8;
+// Then cut to 1.6 on request: the mark should read like a © beside the code,
+// a little larger than one, not like a badge on it. Same fixed outer edge, so
+// it sits tucked into the corner and covers fewer modules than before.
+var GLOOBAL_QR_CORNER_R = 1.6;
 
 function gloobalQrCornerBadge(size) {
   const total = size + GLOOBAL_QR_QUIET_ZONE * 2;

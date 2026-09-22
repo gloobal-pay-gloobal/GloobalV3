@@ -144,6 +144,23 @@ async function gloobalPushSubscribe({ promotional } = {}) {
     // rejects, but it also never resolves if registration failed outright,
     // which is why it is inside the try with everything else.
     const registration = await navigator.serviceWorker.ready;
+    // PushManager.permissionState() answers about PUSH, which is not the
+    // same question as Notification.permission. A browser can hold
+    // notifications granted while push itself is blocked — by policy, by a
+    // profile setting, or because the origin lost the permission after the
+    // page read it. Asking the push manager directly is the only way to see
+    // that, and it saves a subscribe() that would throw. Where it does not
+    // exist, Notification.permission (already checked above) stands.
+    if (typeof registration.pushManager.permissionState === "function") {
+      try {
+        const pushPerm = await registration.pushManager.permissionState({ userVisibleOnly: true });
+        if (pushPerm === "denied") return gloobalPushResult("denied");
+        if (pushPerm === "prompt") return gloobalPushResult("default");
+      } catch (e) {
+        // Older implementations reject rather than answer. Not a reason to
+        // abandon a subscribe that Notification.permission already allows.
+      }
+    }
     const existing = await registration.pushManager.getSubscription();
     if (existing && gloobalPushKeyMatches(existing, applicationServerKey)) {
       // Still valid for the current key. Reuse it — re-subscribing would

@@ -1272,12 +1272,18 @@ function GloobalId() {
   //    effect's comment documents). gloobalCurrentSymbolId() is a plain
   //    read of the stored session and has no such ordering problem.
   const pushSyncedForRef = useRef13("");
+  // What the last reconcile concluded: "ok" | "default" | "denied" |
+  // "unsupported" | "unreachable". NotificationsSheet renders an Enable
+  // row off this, which is the only route an EXISTING account has — someone
+  // who onboarded before the Alerts card existed never saw a prompt, and
+  // nothing else in the app offers one outside the post-payment fallback.
+  const [pushState, setPushState] = useState19("");
   useEffect15(() => {
     if (stage !== "dashboard") return;
     const signedInId = gloobalCurrentSymbolId() || "";
     if (!signedInId || pushSyncedForRef.current === signedInId) return;
     pushSyncedForRef.current = signedInId;
-    gloobalPushSyncOnStart();
+    gloobalPushSyncOnStart().then((r) => setPushState(r && r.ok ? "ok" : (r && r.reason) || ""));
     // The installed app's home-screen badge, from the server's own unread
     // count — the same number NotificationsSheet shows, so the icon and
     // the list can never disagree. A no-op on any browser without the
@@ -1290,6 +1296,28 @@ function GloobalId() {
     // this re-runs if the dashboard renders a beat before the session ID
     // has landed, rather than giving up for the whole session.
   }, [stage, secureId]);
+  // 1b. The same reconcile again whenever the tab comes back to the front.
+  //     Granting notifications in browser site settings fires no event the
+  //     page can hear, so without this the permission is "granted" and the
+  //     device stays unsubscribed until the next cold load — which is
+  //     exactly how it fails for someone who turns it on in Chrome's own UI
+  //     while Gloobal is open. The once-per-session ref is cleared first so
+  //     the reconcile actually runs; gloobalPushSubscribe() reuses a valid
+  //     subscription and the subscribe route upserts on the endpoint, so a
+  //     visibility flip costs one idempotent POST and never a second row.
+  //     It still cannot prompt: syncOnStart returns early unless permission
+  //     is already granted.
+  useEffect15(() => {
+    if (stage !== "dashboard") return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!gloobalCurrentSymbolId()) return;
+      pushSyncedForRef.current = "";
+      gloobalPushSyncOnStart().then((r) => setPushState(r && r.ok ? "ok" : (r && r.reason) || ""));
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [stage]);
   // 2. Messages from the service worker. `gloobal:push-click` is a tap on a
   //    notification while a tab was already open — the worker focused this
   //    one rather than cold-booting a second copy of the app, so the
@@ -1306,7 +1334,7 @@ function GloobalId() {
       const data = (event && event.data) || {};
       if (data.type === "gloobal:push-resubscribe") {
         pushSyncedForRef.current = "";
-        gloobalPushSyncOnStart();
+        gloobalPushSyncOnStart().then((r) => setPushState(r && r.ok ? "ok" : (r && r.reason) || ""));
         return;
       }
       if (data.type !== "gloobal:push-click") return;
@@ -1330,7 +1358,14 @@ function GloobalId() {
   useEffect15(() => {
     const onAccountSwitch = () => {
       pushSyncedForRef.current = "";
-      gloobalPushUnsubscribe().then(() => gloobalPushSyncOnStart());
+      // The result is captured for the same reason the startup reconcile
+      // captures it: pushState drives the Enable row, and the account that
+      // just arrived may be in a different state from the one that left.
+      // Leaving it stale would offer Enable to an account already
+      // subscribed, or hide it from one that needs it.
+      gloobalPushUnsubscribe()
+        .then(() => gloobalPushSyncOnStart())
+        .then((r) => setPushState(r && r.ok ? "ok" : (r && r.reason) || ""));
     };
     window.addEventListener(GLOOBAL_ACCOUNT_SWITCH_EVENT, onAccountSwitch);
     return () => window.removeEventListener(GLOOBAL_ACCOUNT_SWITCH_EVENT, onAccountSwitch);
@@ -3840,6 +3875,7 @@ function GloobalId() {
     open={showNotifications}
     onClose={() => setShowNotifications(false)}
     onOpenTransaction={(txnId) => setSharedTxnRef(txnId)}
+    pushState={pushState}
   /><LocationRequiredModal
     open={Boolean(locationGate)}
     reason={locationGate && locationGate.reason}

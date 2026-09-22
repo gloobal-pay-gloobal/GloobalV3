@@ -71,7 +71,40 @@ function gloobalNotifSheetWhen(iso) {
   return then.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount }) {
+// The one place an EXISTING account can turn notifications on.
+//
+// Someone who onboarded before the Alerts card existed was never asked,
+// and the only other prompt in the app sits behind a completed payment.
+// `pushState` is what the last reconcile concluded (App.jsx), so this row
+// says the true thing in each case rather than offering a button that the
+// browser would ignore:
+//
+//   "default"     — never asked. A button; the tap is the deliberate action.
+//   "denied"      — the browser said no, and there is NO programmatic way
+//                   back. Only a settings path, described in words.
+//   "unsupported" — no Push API here at all. Say so; offer nothing.
+//   "ok" / ""     — already subscribed, or nothing to report. Render nothing.
+function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, pushState }) {
+  const [askState, setAskState] = useState40(pushState || "");
+  const [asking, setAsking] = useState40(false);
+  useEffect40(() => { setAskState(pushState || ""); }, [pushState]);
+
+  // Reuses askForPaymentNotifications(), which holds the once-only guard
+  // and subscribes on a yes. No second prompt can come from here.
+  const enableAlerts = async () => {
+    if (asking) return;
+    setAsking(true);
+    try {
+      await askForPaymentNotifications();
+      setAskState(
+        typeof Notification === "undefined"
+          ? "unsupported"
+          : Notification.permission === "granted" ? "ok" : Notification.permission
+      );
+    } finally {
+      setAsking(false);
+    }
+  };
   const requestClose = useBackClose(Boolean(open), onClose || (() => {}));
   const [rows, setRows] = useState40([]);
   const [unread, setUnread] = useState40(0);
@@ -176,7 +209,30 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount })
     onClick={markAll}
     className="v2-tap"
     style={{ display: "flex", alignItems: "center", gap: 5, border: "none", background: "none", color: T.accent, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
-  ><CheckCheckNotifSheet size={14} />Mark all read</button>}</div><div
+  ><CheckCheckNotifSheet size={14} />Mark all read</button>}</div>{(askState === "default" || askState === "denied" || askState === "unsupported") && <div
+    style={{
+      margin: "0 16px 10px",
+      padding: "11px 13px",
+      borderRadius: T.radiusMd,
+      background: T.surfaceAlt,
+      border: `1px solid ${T.line}`,
+      display: "flex",
+      alignItems: "center",
+      gap: 10
+    }}
+  ><BellNotifSheet size={15} color={askState === "default" ? T.accent : T.inkFaint} /><span
+    style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: T.inkSoft, lineHeight: 1.45 }}
+  >{askState === "default"
+    ? "Get told when money arrives, even when Gloobal is closed."
+    : askState === "denied"
+      ? "Notifications are blocked for Gloobal in your browser. Turn them back on in the site settings for this page."
+      : "This browser can't show notifications when Gloobal is closed."
+  }</span>{askState === "default" && <button
+    onClick={enableAlerts}
+    disabled={asking}
+    className="v2-tap"
+    style={{ flexShrink: 0, border: "none", borderRadius: 999, background: T.accent, color: "#fff", fontSize: 11.5, fontWeight: 800, padding: "7px 13px", cursor: asking ? "default" : "pointer", opacity: asking ? 0.6 : 1 }}
+  >{asking ? "…" : "Enable"}</button>}</div>}<div
     style={{ overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 16px", display: "flex", flexDirection: "column", gap: 8 }}
   >{status === "loading" && <span
     style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", padding: "28px 0" }}

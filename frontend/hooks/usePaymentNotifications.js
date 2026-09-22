@@ -96,7 +96,17 @@ async function askForPaymentNotifications() {
   // awaited — the subscribe round-trips to Render, which may be cold, and
   // nothing on the payment screen should wait on that. It cannot throw
   // (see useWebPush.js), so there is nothing to catch.
-  if (outcome === "granted") gloobalPushSubscribe();
+  // Subscribe only if there is an account to own the subscription.
+  //
+  // The onboarding permissions screen is the FIRST screen in the app —
+  // before the phone number, before registration — so a yes there happens
+  // with no session at all. POST /api/push/subscribe is requireAuth, and
+  // the route takes the owner from the token and nowhere else, so calling
+  // it here would spend a round trip on a guaranteed 401 and register
+  // nothing. The device is not lost: gloobalPushSyncOnStart() reconciles
+  // on arrival at the dashboard, which is the first moment a subscription
+  // can legitimately belong to anybody.
+  if (outcome === "granted" && gloobalAuthToken()) gloobalPushSubscribe();
   return outcome;
 }
 

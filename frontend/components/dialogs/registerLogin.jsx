@@ -88,8 +88,41 @@ function PermissionsGateScreen({ onContinue }) {
     { key: "location", label: "Location", Icon: MapPin3, When: SendMomentIcon, tone: POSITION_COLORS[0], required: true },
     { key: "camera", label: "Camera", Icon: Camera2, When: QrMomentIcon, tone: POSITION_COLORS[2] },
     { key: "contacts", label: "Contacts", Icon: Contact3, When: PeopleMomentIcon, tone: POSITION_COLORS[3] },
-    { key: "notifications", label: "Alerts", Icon: Bell4, When: MoneyInMomentIcon, tone: POSITION_COLORS[4] }
+    // The one card on this screen that actually asks for anything. The
+    // other three are still illustrative, because each already requests
+    // its own permission at the moment it is used (the map picker, the QR
+    // scanner, the contact picker) and asking twice would spend a prompt
+    // for nothing. Notifications had no such moment: the only real request
+    // lived behind a completed payment, so a new person could not be
+    // subscribed until after their first one — and the first payment is
+    // exactly the one worth being told about.
+    { key: "notifications", label: "Alerts", Icon: Bell4, When: MoneyInMomentIcon, tone: POSITION_COLORS[4], actionable: true }
   ];
+
+  // What the browser says right now, re-read after the prompt closes.
+  // "unavailable" covers a browser with no Notification API at all, which
+  // must render as an ordinary illustrative card rather than a dead button.
+  const [notifyState, setNotifyState] = useState6(
+    paymentNotificationsSupported() ? Notification.permission : "unavailable"
+  );
+  const [notifyBusy, setNotifyBusy] = useState6(false);
+
+  // Deliberate tap only — this screen never prompts on its own. Reuses
+  // askForPaymentNotifications(), which owns the once-only guard and
+  // already fires gloobalPushSubscribe() on a yes, so a person who says
+  // yes here is subscribed before they have sent or received anything.
+  // Declining changes nothing else: Continue never consults this.
+  const askForAlerts = async () => {
+    if (notifyBusy || notifyState === "unavailable") return;
+    if (notifyState === "granted") return;
+    setNotifyBusy(true);
+    try {
+      const outcome = await askForPaymentNotifications();
+      setNotifyState(paymentNotificationsSupported() ? Notification.permission : outcome);
+    } finally {
+      setNotifyBusy(false);
+    }
+  };
 
   return <div
     style={{
@@ -148,8 +181,19 @@ function PermissionsGateScreen({ onContinue }) {
     style={{ width: 7, height: 7, borderRadius: "50%", background: p.tone, boxShadow: `0 0 0 2px rgba(255,255,255,0.18)` }}
   />)}</span></div><div style={{ display: "flex", flexDirection: "column", gap: 9, flexShrink: 0 }}>{PERMISSIONS.map((p) => <div
     key={p.key}
+    {...(p.actionable && notifyState !== "unavailable" ? {
+      onClick: askForAlerts,
+      role: "button",
+      tabIndex: 0,
+      "aria-pressed": notifyState === "granted",
+      onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); askForAlerts(); } }
+    } : {})}
+    className={p.actionable && notifyState === "default" ? "v2-tap" : undefined}
     style={{
       position: "relative",
+      // Only the card that does something looks like it does something.
+      cursor: p.actionable && notifyState === "default" ? "pointer" : "default",
+      opacity: p.actionable && notifyBusy ? 0.6 : 1,
       borderRadius: T.radiusLg,
       background: T.surface,
       boxShadow: T.shadowCard,
@@ -191,7 +235,17 @@ function PermissionsGateScreen({ onContinue }) {
        qualifies, which is not a marker anyone would connect. */
   }<span
     style={{ position: "relative", flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 800, color: T.ink }}
-  >{p.label}{p.required && <span
+  >{p.actionable ? <span style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}><span>{
+    notifyState === "granted" ? "Notifications on" : "Stay updated"
+  }</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.3 }}>{
+    notifyState === "granted"
+      ? "You'll be told when money arrives."
+      : notifyState === "denied"
+        ? "Blocked — turn on in browser settings."
+        : notifyState === "unavailable"
+          ? "Not available in this browser."
+          : "Get notified when you receive money, even when Gloobal is closed."
+  }</span></span> : p.label}{p.required && <span
     aria-hidden="true"
     style={{ width: 9, height: 9, borderRadius: "50%", border: `2.5px solid ${TXN_OUT_COLOR}`, boxSizing: "border-box", flexShrink: 0 }}
   />}</span>{
@@ -215,7 +269,38 @@ function PermissionsGateScreen({ onContinue }) {
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><p.When size={16} color={T.inkSoft} /></span></div>)}</div>{
+  >{
+    /* Granted turns the "…and then, later" pictogram into a tick in the
+       row's own colour: the moment it was illustrating has happened, so
+       showing it still to come would be a lie. Everything else — default,
+       denied, unavailable — keeps the pictogram, because for all three the
+       capability is still something that gets asked for later (at the
+       payment, in browser settings, or never). */
+    p.actionable
+      ? (notifyState === "granted"
+          ? <Check4 size={16} color={p.tone} strokeWidth={2.6} />
+          : <p.When size={16} color={T.inkSoft} />)
+      : <p.When size={16} color={T.inkSoft} />
+  }</span>{
+    /* The only affordance on this screen that says "tap me". The other
+       three cards are illustrations of a later moment; this one is a
+       control, and it has to look like one or nobody will press it —
+       which is exactly how the first run of this test failed. */
+  }{p.actionable && notifyState === "default" && <span
+    className="v2-tap"
+    style={{
+      position: "relative",
+      flexShrink: 0,
+      marginLeft: 2,
+      borderRadius: 999,
+      background: p.tone,
+      color: "#fff",
+      fontSize: 11,
+      fontWeight: 800,
+      padding: "6px 12px",
+      opacity: notifyBusy ? 0.6 : 1
+    }}
+  >{notifyBusy ? "…" : "Enable"}</span>}</div>)}</div>{
     /* The one sentence left standing.
        Which permission is mandatory is a consent boundary, and a ring
        nobody can decode is not consent — so it gets exactly one line of

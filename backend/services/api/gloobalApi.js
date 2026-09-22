@@ -1234,6 +1234,95 @@ var GloobalApi = {
     };
   },
 
+  // --- Web Push ---------------------------------------------------------
+  //
+  // The same notifications as above, delivered to a device whose app is
+  // closed. A PushSubscription belongs to a browser profile, not to a
+  // person, so every one of these is scoped by the bearer token and the
+  // server stores the row against whichever account that token names —
+  // which is why signing out has to unsubscribe before the token dies, and
+  // switching accounts has to re-subscribe.
+  //
+  // `enabled: false` from the server is the normal answer on a deployment
+  // with no VAPID keys configured, not an error. Callers treat it as "push
+  // is off here" and carry on.
+
+  // GET /api/push/public-key → { enabled, publicKey }.
+  async getPushPublicKey() {
+    const result = await gloobalApiClient.get("/api/push/public-key");
+    return {
+      enabled: Boolean(result && result.enabled),
+      publicKey: (result && result.publicKey) || null
+    };
+  },
+
+  // POST /api/push/subscribe — the browser's own subscription JSON
+  // ({ endpoint, keys: { p256dh, auth } }), plus whether this device also
+  // wants promotional pushes. The user agent is sent so a person can
+  // recognise their own devices in a future settings list.
+  async savePushSubscription(subscriptionJson, { promotional } = {}) {
+    const sub = subscriptionJson || {};
+    const body = {
+      endpoint: sub.endpoint,
+      keys: sub.keys || {},
+      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : ""
+    };
+    // `promotional` is sent ONLY when the caller actually expressed a choice.
+    //
+    // The route treats any boolean as an explicit one and $sets
+    // promotionalOptIn from it; only an ABSENT key leaves an existing
+    // preference alone (it falls back to $setOnInsert, so a brand-new row is
+    // still created opted out). Sending Boolean(promotional) unconditionally
+    // therefore sent `false` on every start-up reconcile —
+    // gloobalPushSyncOnStart() passes no argument — and silently wiped an
+    // opt-in the person had set through the UI, which is exactly what the
+    // route's own comment says must not happen.
+    if (typeof promotional === "boolean") body.promotional = promotional;
+    const result = await gloobalApiClient.post("/api/push/subscribe", body);
+    return {
+      subscriptionId: (result && result.subscriptionId) || null,
+      promotional: Boolean(result && result.promotional)
+    };
+  },
+
+  // POST /api/push/unsubscribe — drops the server's row for this endpoint.
+  async deletePushSubscription(endpoint) {
+    const result = await gloobalApiClient.post("/api/push/unsubscribe", { endpoint: endpoint || "" });
+    return { removed: Number(result && result.removed) || 0 };
+  },
+
+  // PATCH /api/push/preferences — transactional pushes are not optional
+  // (they are the receipt of money moving); only the promotional flag is.
+  async setPushPreferences(promotional) {
+    const result = await gloobalApiClient.patch("/api/push/preferences", { promotional: Boolean(promotional) });
+    return {
+      promotional: Boolean(result && result.promotional),
+      updated: Number(result && result.updated) || 0
+    };
+  },
+
+  // GET /api/push/status → { enabled, subscriptions, promotional }.
+  async getPushStatus() {
+    const result = await gloobalApiClient.get("/api/push/status");
+    return {
+      enabled: Boolean(result && result.enabled),
+      subscriptions: Number(result && result.subscriptions) || 0,
+      promotional: Boolean(result && result.promotional)
+    };
+  },
+
+  // POST /api/push/test — sends a push to the caller's own devices and
+  // nobody else's. `removed` counts subscriptions the push service
+  // rejected as gone, which the server prunes as it sends.
+  async sendTestPush() {
+    const result = await gloobalApiClient.post("/api/push/test", {});
+    return {
+      sent: Number(result && result.sent) || 0,
+      removed: Number(result && result.removed) || 0,
+      failed: Number(result && result.failed) || 0
+    };
+  },
+
   // --- Hooman Score -----------------------------------------------------
   //
   // Per account, scoped by the bearer token. Nothing is saved until the

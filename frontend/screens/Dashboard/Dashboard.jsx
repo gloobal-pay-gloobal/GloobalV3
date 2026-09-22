@@ -2413,7 +2413,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     const rowColor = POSITION_COLORS[i % POSITION_COLORS.length];
     return <button
       key={label}
-      onClick={() => setProfileDetail(label)}
+      // "Notifications" is the one row with a real screen behind it — the
+      // server-held list, rendered from App.jsx so a push click can open
+      // the same sheet. The rest still open their placeholder detail view.
+      onClick={() => (label === "Notifications"
+        ? window.dispatchEvent(new Event("gloobal:openNotifications"))
+        : setProfileDetail(label))}
       className="v2-row"
       style={{
         width: "100%",

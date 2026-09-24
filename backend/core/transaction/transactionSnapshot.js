@@ -49,6 +49,23 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     receiverSideCurrency: recordedDestinationCurrency,
     fxRate: recordedSenderCurrency && recordedDestinationCurrency ? snapshotRecordedFigure(rec.fxRate) : null
   };
+  // Both sides of the Creator Share, as the server stored them on the share
+  // leg — the payer's (shareAmount, in rec.shareCurrency) and the payee's
+  // (rec.sharePayeeAmount, in rec.sharePayeeCurrency). The same four fields
+  // mapServerTransaction reads off the history row, so the Creator Share tab
+  // shown straight after paying states what the reopened one does. Only for
+  // a share the server actually minted; each side null unless recorded with
+  // its currency. Nothing here derives one side from the other.
+  const recordedPayeeShare = shareTxnId ? snapshotRecordedFigure(rec.sharePayeeAmount) : null;
+  const recordedPayeeShareCurrency = recordedPayeeShare != null && rec.sharePayeeCurrency ? String(rec.sharePayeeCurrency) : null;
+  const recordedPayerShare = shareTxnId && rec.shareCurrency ? snapshotRecordedFigure(shareAmount) : null;
+  const recordedPayerShareCurrency = recordedPayerShare != null ? String(rec.shareCurrency) : null;
+  const recordedShare = {
+    shareSenderAmount: recordedPayeeShareCurrency ? recordedPayeeShare : null,
+    shareSenderCurrency: recordedPayeeShareCurrency,
+    shareReceiverAmount: recordedPayerShareCurrency ? recordedPayerShare : null,
+    shareReceiverCurrency: recordedPayerShareCurrency
+  };
   const headlineCurrency = recordedSenderCurrency || sender.currency || "USD";
   const receipt = {
     direction: "sent",
@@ -78,6 +95,8 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     currencyCode: headlineCurrency,
     // The recorded conversion, or nulls (see `recorded` above).
     ...recordedFx,
+    // The share's two recorded sides, or nulls (see recordedShare above).
+    ...recordedShare,
     // "They receive" — the amount actually typed, in the receiver's
     // currency (what they asked for).
     convertedAmount: parseFloat(amount) || null,
@@ -125,6 +144,7 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     // shows the same recorded conversion as the receipt did. Display fields
     // only — `amount` above is untouched.
     ...recordedFx,
+    ...recordedShare,
     ledgerRecordId: ledgerRecordId ?? null
   };
   return { receipt, historyEntry };

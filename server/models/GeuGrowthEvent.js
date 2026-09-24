@@ -59,9 +59,12 @@ const geuGrowthEventSchema = new mongoose.Schema(
     // Why this event happened. Not an open string: brief section 27 flags
     // "what determines actual growth" as an unresolved policy question, so
     // this implementation does not invent a set of automatic triggers —
-    // every event today is POSITIVE_ADJUSTMENT / ZERO_ADJUSTMENT /
-    // NEGATIVE_ADJUSTMENT depending only on the sign of actualGrowthAmount,
-    // recorded by the route itself, never chosen by the caller.
+    // every event today is POSITIVE_ADJUSTMENT / NEGATIVE_ADJUSTMENT
+    // depending only on the sign of actualGrowthAmount, recorded by the route
+    // itself, never chosen by the caller. A zero growth is rejected (400) and
+    // writes no event — no transaction may be worth nothing — so
+    // ZERO_ADJUSTMENT is no longer written; it stays in the enum only so rows
+    // recorded before that rule remain valid.
     reason: {
       type: String,
       enum: ['POSITIVE_ADJUSTMENT', 'ZERO_ADJUSTMENT', 'NEGATIVE_ADJUSTMENT'],

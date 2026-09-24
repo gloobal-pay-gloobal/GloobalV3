@@ -30,6 +30,7 @@ const SRC = "frontend/features/receipts/auditReport.js";
 // (auditReportBlob needs Blob and is not called here — the bytes are the
 // thing under test; the Blob is a one-line wrapper around them.)
 const api = new Function(
+  readSource("frontend/features/receipts/receiptCurrency.js") + "\n" +
   readSource(SRC) +
   "\nreturn { auditReportBytes, buildAuditReport, auditTextWidth, auditAscii," +
   " auditPaintReference, auditReportFilename, AUDIT_SYMBOLS, SYMBOL_PAINTERS };"
@@ -141,10 +142,14 @@ describe("money is written with codes, never with symbols", () => {
 });
 
 describe("the conversion section states an exchange only when one happened", () => {
+  // The fields every receipt builder actually sets (buildHistoryReceipt,
+  // buildTransactionSnapshot). This fixture used to use sourceCurrency /
+  // destinationCurrency / sourceSideAmount / fxRateLabel, which no builder
+  // sets, so the suite passed while no real report ever had the section.
   const cross = payment({
-    sourceCurrency: "INR", destinationCurrency: "USD",
-    sourceSideAmount: 500, destinationSideAmount: 5.98,
-    fxRateLabel: "1 USD = 83.6120 INR"
+    senderAmount: 500, senderSideCurrency: "INR",
+    receiverAmount: 5.98, receiverSideCurrency: "USD",
+    fxRate: 83.612
   });
 
   test("a cross-border payment shows both sides and the rate", () => {
@@ -152,7 +157,7 @@ describe("the conversion section states an exchange only when one happened", () 
     assert.match(t, /CURRENCY CONVERSION/);
     assert.match(t, /\(500\.00 INR\)/);
     assert.match(t, /\(5\.98 USD\)/);
-    assert.match(t, /\(1 USD = 83\.6120 INR\)/);
+    assert.match(t, /\(1 USD = 83\.612000 INR\)/);
   });
 
   test("and says the rate is the settled one", () => {
@@ -163,12 +168,12 @@ describe("the conversion section states an exchange only when one happened", () 
   test("a domestic payment has no conversion section at all", () => {
     // Not "1.000000". A conversion section on a domestic payment states that
     // an exchange took place, and none did.
-    const t = asLatin1(bytes(payment({ sourceCurrency: "INR", destinationCurrency: "INR" })));
+    const t = asLatin1(bytes(payment({ senderAmount: 500, senderSideCurrency: "INR", receiverAmount: 500, receiverSideCurrency: "INR", fxRate: 1 })));
     assert.ok(!/CURRENCY CONVERSION/.test(t));
   });
 
   test("a payment with only one side named has no conversion section", () => {
-    const t = asLatin1(bytes(payment({ sourceCurrency: "INR" })));
+    const t = asLatin1(bytes(payment({ senderAmount: 500, senderSideCurrency: "INR", receiverAmount: 5.98 })));
     assert.ok(!/CURRENCY CONVERSION/.test(t));
   });
 

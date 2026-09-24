@@ -84,19 +84,18 @@ function buildReceiptImageModel(receipt, { viewerName, viewerSymbolId } = {}) {
   const counterpartyId = r.id ? String(r.id).replace(/\s/g, "") : "";
   const viewer = viewerName ? String(viewerName) : "";
 
-  const fxSender = r.senderSideCurrency || null;
-  const fxReceiver = r.receiverSideCurrency || null;
-  const hasConversion = Boolean(
-    !isCoin && fxSender && fxReceiver && fxSender !== fxReceiver &&
-    r.senderAmount != null && r.receiverAmount != null && r.fxRate != null &&
-    Number.isFinite(Number(r.senderAmount)) && Number.isFinite(Number(r.receiverAmount)) &&
-    Number.isFinite(Number(r.fxRate))
-  );
-  const conversion = hasConversion
+  // The same facts, by the same rule, as the receipt screen draws for this
+  // document (receiptCurrency.js): a payment's conversion on a payment, the
+  // share's own two sides on a share. The two used to disagree — this file
+  // refused a conversion with no recorded rate that the screen showed, and a
+  // share picture carried one currency of a movement with two. A missing
+  // rate now means no rate row, never a rate worked out from the amounts.
+  const facts = isShare ? receiptShareConversion(r) : receiptPaymentConversion(r);
+  const conversion = facts
     ? {
-      sentText: receiptImageMoney(r.senderAmount, fxSender),
-      receivedText: receiptImageMoney(r.receiverAmount, fxReceiver),
-      rateText: `1 ${fxReceiver} = ${Number(r.fxRate).toFixed(6)} ${fxSender}`
+      sentText: receiptImageMoney(facts.paidAmount, facts.paidCurrency),
+      receivedText: receiptImageMoney(facts.gotAmount, facts.gotCurrency),
+      rateText: facts.rateLabel
     }
     : null;
 
@@ -596,7 +595,7 @@ async function renderReceiptImage(model, { scale = 2 } = {}) {
   if (m.conversion) {
     panelRows.push({ label: "Sent", value: m.conversion.sentText });
     panelRows.push({ label: "Received", value: m.conversion.receivedText });
-    panelRows.push({ label: "Rate applied", value: m.conversion.rateText, accent: true });
+    if (m.conversion.rateText) panelRows.push({ label: "Rate applied", value: m.conversion.rateText, accent: true });
   }
   if (m.viewerName) panelRows.push({ label: m.viewerLabel, value: m.viewerName });
   const whenText = [m.date, m.time].filter(Boolean).join(" · ");

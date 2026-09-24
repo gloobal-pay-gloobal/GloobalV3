@@ -266,25 +266,26 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // Multiplying one by another to fill in the third would give a number that
   // disagrees with the ledger by a rounding unit, and a receipt whose halves
   // do not reconcile is worse than one that shows a single side.
-  const fxSenderCurrency = receipt.senderSideCurrency || null;
-  const fxReceiverCurrency = receipt.receiverSideCurrency || null;
-  const showsConversion = Boolean(
-    fxSenderCurrency && fxReceiverCurrency &&
-    fxSenderCurrency !== fxReceiverCurrency &&
-    receipt.senderAmount != null && receipt.receiverAmount != null
-  );
-  // Stated in the direction it was RECORDED: 1 unit of the receiver's
-  // currency into the sender's.
   //
-  // Inverting it would read more naturally to a sender ("1 USD = 83.61 INR"
-  // rather than "1 INR = 0.011960 USD") and that is exactly why it is not
-  // done. An inverted rate is a computed rate: it rounds, so it would not
-  // match the figure on the record, and somebody reconciling this receipt
-  // against a statement would find two rates for one payment. The two amount
-  // rows above it carry the intuition; this line carries the fact.
-  const fxRateLabel = receipt.fxRate != null && showsConversion
-    ? `1 ${fxReceiverCurrency} = ${Number(receipt.fxRate).toFixed(6)} ${fxSenderCurrency}`
-    : null;
+  // The rate is stated in the direction it was RECORDED: 1 unit of the
+  // receiver's currency into the sender's. Inverting it would read more
+  // naturally to a sender ("1 USD = 83.61 INR" rather than "1 INR = 0.011960
+  // USD") and that is exactly why it is not done. An inverted rate is a
+  // computed rate: it rounds, so it would not match the figure on the record,
+  // and somebody reconciling this receipt against a statement would find two
+  // rates for one payment.
+  //
+  // Read through receiptCurrency.js, the same functions the shared picture
+  // and the audit PDF use, so the three cannot disagree about whether this
+  // transaction crossed a currency. On a Creator Share receipt the payment is
+  // the SOURCE payment, not this row — the share row carries no conversion of
+  // its own, and reading it here is why the Payment tab of every share
+  // receipt used to look domestic.
+  const paymentConversion = paymentKnown ? receiptPaymentConversion(receipt) : null;
+  // And the share's own two sides: what the payee gave, in their currency,
+  // and what the payer got, in theirs. The Creator Share tab showed only the
+  // viewer's side of a movement that had two.
+  const shareConversion = receiptShareConversion(receipt);
 
   const displayShareRate = isShareReceipt
     ? (receipt.sourceShareRate ?? null)
@@ -431,11 +432,19 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // tab; nothing new is computed for the picture.
   const imageReceiptForTab = () => {
     if (isCoinReceipt || onShareTab === isShareReceipt) return receipt;
-    const noConversion = { senderAmount: null, senderSideCurrency: null, receiverAmount: null, receiverSideCurrency: null, fxRate: null };
+    // The payment's conversion is dropped from a derived share document (a
+    // share is not a conversion of its payment). The share's own two sides —
+    // shareSender* / shareReceiver* / shareFxRate — ride along untouched on
+    // the spread, and the picture reads those for a share.
+    const noConversion ={ senderAmount: null, senderSideCurrency: null, receiverAmount: null, receiverSideCurrency: null, fxRate: null };
     if (onShareTab) {
       return {
         ...receipt,
         ...noConversion,
+        // Resolved BEFORE the payment's fields are stripped: on a receipt
+        // shown straight after paying, the share's rate is the payment's own
+        // recorded one, and it is read off those fields (receiptShareFxRate).
+        shareFxRate: receiptShareFxRate(receipt),
         kind: "share",
         direction: shareIsCredit ? "received" : "sent",
         amount: shownShareAmount,
@@ -446,9 +455,16 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       };
     }
     if (!paymentKnown) return receipt;
+    // The payment tab of a share receipt: the conversion is the SOURCE
+    // payment's recorded one, the same figures this tab draws on screen.
     return {
       ...receipt,
       ...noConversion,
+      senderAmount: receipt.sourceSenderAmount ?? null,
+      senderSideCurrency: receipt.sourceSenderSideCurrency || null,
+      receiverAmount: receipt.sourceReceiverAmount ?? null,
+      receiverSideCurrency: receipt.sourceReceiverSideCurrency || null,
+      fxRate: receipt.sourceFxRate ?? null,
       kind: "payment",
       direction: paymentIsSent ? "sent" : "received",
       amount: paymentAmount,
@@ -817,18 +833,18 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        to be today's. */
   }As converted at the time of this transaction, not a current rate.</div>}</div>}{
     /* Box 3 — payment method, date, time, status together */
-  }{showsConversion && <div
+  }{paymentConversion && <div
     data-testid="receipt-conversion"
     style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}
   ><div style={{ fontSize: 10, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>
       Currency conversion
     </div><ReceiptRow
     label="Sender paid"
-    value={fmtMoney(receipt.senderAmount, fxSenderCurrency)}
+    value={fmtMoney(paymentConversion.paidAmount, paymentConversion.paidCurrency)}
   /><ReceiptRow
     label="Receiver got"
-    value={fmtMoney(receipt.receiverAmount, fxReceiverCurrency)}
-  />{fxRateLabel && <ReceiptRow label="Rate applied" value={fxRateLabel} accent />}<div style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.45 }}>{
+    value={fmtMoney(paymentConversion.gotAmount, paymentConversion.gotCurrency)}
+  />{paymentConversion.rateLabel && <ReceiptRow label="Rate applied" value={paymentConversion.rateLabel} accent />}<div style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.45 }}>{
     /* A rate with no date attached is a rate the reader assumes is today's.
        This one is the rate the payment settled at, and saying so is the
        difference between a record and an estimate. */
@@ -889,7 +905,28 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     label="Amount"
     value={`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shownShareAmount, shareCurrency)}`}
     accent
-  /></div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow
+  /></div>{
+    /* The share's own currency conversion, when it crossed one.
+       The payee gives the share in their currency and the payer gets it
+       in theirs; both figures are recorded, and the rate is the payment's
+       own. Absent on a same-currency share, and absent \u2014 rather than
+       worked out \u2014 when either side was never recorded (a legacy row, or
+       the receipt shown straight after paying, whose response carries
+       only the payer's side). */
+  }{shareConversion && <div
+    data-testid="receipt-share-conversion"
+    style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}
+  ><div style={{ fontSize: 10, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>
+      Currency conversion
+    </div><ReceiptRow
+    label="Share given"
+    value={fmtMoney(shareConversion.paidAmount, shareConversion.paidCurrency)}
+  /><ReceiptRow
+    label="Share received"
+    value={fmtMoney(shareConversion.gotAmount, shareConversion.gotCurrency)}
+  />{shareConversion.rateLabel && <ReceiptRow label="Rate applied" value={shareConversion.rateLabel} accent />}<div style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.45 }}>
+      As settled at the time of this transaction, not a current rate.
+    </div></div>}<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow
     label="From payment"
     value={paymentKnown ? fmtMoney(paymentAmount, paymentCurrency) : "Not on this device"}
     testId="receipt-share-from-payment"

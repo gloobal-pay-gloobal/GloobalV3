@@ -443,6 +443,135 @@ describe("a cross-currency receipt shows only the server's recorded figures", ()
   });
 });
 
+// ---------------------------------------------------------------------------
+// The Creator Share's own currency facts.
+//
+// Founder report: the Creator Share receipt shown straight after paying
+// carried only the payer's side of the share, while the same receipt reopened
+// from History carried both. The send response now returns the share leg's
+// stored payee side (shareLegPayeeSide in server.js; mirrored by the fake),
+// so all three — fresh, reopened in session, reopened after reload — state
+// the same two recorded sides and the payment's recorded rate.
+// ---------------------------------------------------------------------------
+
+async function readShareConversion(page) {
+  return page.evaluate(() => {
+    const box = document.querySelector('[data-testid="receipt-share-conversion"]');
+    if (!box) return null;
+    const rows = {};
+    for (const child of box.children) {
+      if (child.children.length === 2 && child.children[0].tagName === "SPAN") {
+        rows[child.children[0].innerText.trim()] = child.children[1].innerText.trim();
+      }
+    }
+    return rows;
+  });
+}
+
+async function openShareTab(page) {
+  await tap(page.getByRole("button", { name: "Creator Share", exact: true }).first());
+  await page.getByTestId("receipt-hero-share").waitFor({ timeout: 20000 });
+}
+
+async function openPaymentTab(page) {
+  await tap(page.getByRole("button", { name: "Payment", exact: true }).first());
+  await page.getByTestId("receipt-hero-payment").waitFor({ timeout: 20000 });
+}
+
+function assertShareMatchesServer(rows, api, where) {
+  const { row, rateLine } = recordedConversion(api);
+  assert.ok(rows, `${where}: the Creator Share conversion block is missing`);
+  assert.equal(figure(rows["Share given"]), row.cashback, `${where}: share given ${rows["Share given"]}`);
+  assert.match(rows["Share given"], new RegExp(row.destinationCurrency === "USD" ? "\\$|USD" : row.destinationCurrency));
+  assert.equal(figure(rows["Share received"]), row.cashbackCredit, `${where}: share received ${rows["Share received"]}`);
+  assert.equal(rows["Rate applied"], rateLine, `${where}: share rate line`);
+}
+
+describe("the Creator Share states both recorded sides, fresh and reopened", () => {
+  test("India -> USA: Payment tab, Creator Share tab, picture and PDF, then History", async () => {
+    const A = ACCOUNTS.india;
+    const B = ACCOUNTS.america;
+    const { page, context, api } = await openInstrumented(A);
+    await login(page, A);
+    await pay(page, { sender: A, receiver: B, receiverGets: 10 });
+
+    const { row, rateLine } = recordedConversion(api);
+    assert.ok(row.cashback > 0 && row.cashbackCredit > 0, "fixture: the payee shares something");
+
+    // 1. Fresh Payment tab: the payment's conversion.
+    await page.getByTestId("receipt-conversion").waitFor({ timeout: 20000 });
+    assertConversionMatchesServer(await readReceipt(page), api, "fresh payment tab");
+
+    // 2. Fresh Creator Share tab: BOTH sides — this is the reported case.
+    await openShareTab(page);
+    await page.getByTestId("receipt-share-conversion").waitFor({ timeout: 20000 });
+    assertShareMatchesServer(await readShareConversion(page), api, "fresh share tab");
+    if (shotPath("receipt-fresh-share-conversion.png")) {
+      await page.getByTestId("receipt-share-conversion").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: shotPath("receipt-fresh-share-conversion.png") });
+    }
+
+    // 3. The picture of the share tab carries the same figures.
+    await page.evaluate(() => { window.__receiptCanvases = []; });
+    await Promise.all([
+      page.waitForEvent("download", { timeout: 30000 }),
+      tap(page.getByTestId("receipt-share-image"))
+    ]);
+    const canvas = await page.evaluate(() => window.__receiptCanvases[window.__receiptCanvases.length - 1] || null);
+    assert.ok(canvas, "the share-tab picture was not drawn");
+    const model = JSON.parse(canvas.model);
+    assert.equal(model.kind, "share");
+    assert.ok(model.conversion, "the share picture has no conversion");
+    assert.equal(figure(model.conversion.sentText), row.cashback);
+    assert.equal(figure(model.conversion.receivedText), row.cashbackCredit);
+    assert.equal(model.conversion.rateText, rateLine);
+
+    // 4. The audit PDF names the payment's conversion and the share's.
+    const [pdf] = await Promise.all([
+      page.waitForEvent("download", { timeout: 30000 }),
+      tap(page.getByTestId("receipt-audit-report"))
+    ]);
+    const pdfText = fs.readFileSync(await pdf.path()).toString("latin1");
+    assert.match(pdfText, /CURRENCY CONVERSION/);
+    assert.match(pdfText, /\(Share given\)/);
+    assert.match(pdfText, /\(Share received\)/);
+    assert.ok(pdfText.includes(`(${rateLine})`), "the PDF does not carry the recorded rate");
+
+    // 5. Reopened from History in this session.
+    await reopenFromHistory(page, B.fullName);
+    assertConversionMatchesServer(await readReceipt(page), api, "reopened payment tab");
+    await openShareTab(page);
+    assertShareMatchesServer(await readShareConversion(page), api, "reopened share tab");
+
+    // 6. After a reload, rebuilt from the server's history row.
+    await closeReceipt(page);
+    await page.reload();
+    await page.waitForSelector("#root *", { timeout: 20000 });
+    await login(page, A);
+    await page.waitForTimeout(2500);
+    await reopenFromHistory(page, B.fullName);
+    await openShareTab(page);
+    assertShareMatchesServer(await readShareConversion(page), api, "share tab after reload");
+    await openPaymentTab(page);
+    assertConversionMatchesServer(await readReceipt(page), api, "payment tab after reload");
+    assert.equal(sendsOf(api).length, 1, "reading a receipt must never send");
+    await context.close();
+  });
+
+  test("India -> India: the share tab states its currency and no conversion", async () => {
+    const A = ACCOUNTS.india;
+    const B = ACCOUNTS.india2;
+    const { page, context } = await openInstrumented(A);
+    await login(page, A);
+    await pay(page, { sender: A, receiver: B, receiverGets: 500 });
+    assert.equal((await readReceipt(page)).conversion, null);
+    await openShareTab(page);
+    assert.equal(await readShareConversion(page), null, "a same-currency share must not show a conversion");
+    assert.match(await page.getByTestId("receipt-hero-share").innerText(), /₹|INR/);
+    await context.close();
+  });
+});
+
 describe("Share sends the receipt as a picture", () => {
   async function shareImage(page) {
     await page.evaluate(() => { window.__receiptCanvases = []; });

@@ -240,6 +240,29 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = nul
     // around. Carried in that direction and displayed in it; see the note in
     // ReceiptModal on why it is not inverted for readability.
     fxRate: recordedFigure(t.fxRate),
+    // ── Both sides of the Creator Share, as recorded ─────────────────────
+    //
+    // The payee's side (what they gave, in their currency) and the payer's
+    // (what they got, in theirs) — see mapServerTransaction. The rate is the
+    // PAYMENT's recorded one, attached only when the payment's currencies are
+    // exactly the share's, reversed (receiptShareRateFromPayment). On a share
+    // receipt the payment is the source row the lookup found; not found, no
+    // rate line, never one worked out from the two amounts.
+    shareSenderAmount: recordedFigure(t.shareSenderAmount),
+    shareSenderCurrency: t.shareSenderCurrency || null,
+    shareReceiverAmount: recordedFigure(t.shareReceiverAmount),
+    shareReceiverCurrency: t.shareReceiverCurrency || null,
+    shareFxRate: t.kind === "share"
+      ? (sourcePayment
+        ? receiptShareRateFromPayment(
+          t.shareSenderCurrency, t.shareReceiverCurrency,
+          sourcePayment.row.senderSideCurrency, sourcePayment.row.receiverSideCurrency, sourcePayment.row.fxRate
+        )
+        : null)
+      : receiptShareRateFromPayment(
+        t.shareSenderCurrency, t.shareReceiverCurrency,
+        t.senderSideCurrency, t.receiverSideCurrency, t.fxRate
+      ),
     method: HISTORY_METHOD_META[t.method]?.label,
     date: t.date,
     time: t.time || formatClockTime(/* @__PURE__ */ new Date()),
@@ -300,6 +323,16 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = nul
       : null,
     sourceDirection: sourcePayment ? sourcePayment.direction : null,
     sourceShareRate: sourcePayment ? Number(sourcePayment.row.shareRate) || 0 : null,
+    // The source payment's own recorded conversion, for the share receipt's
+    // Payment tab. The share row's senderAmount/receiverAmount above are null
+    // by design (a share leg is not a conversion of its payment), and the
+    // Payment tab used to read them anyway — so the payment a share came from
+    // always looked domestic on the share's receipt.
+    sourceSenderAmount: sourcePayment ? recordedFigure(sourcePayment.row.senderAmount) : null,
+    sourceSenderSideCurrency: sourcePayment ? sourcePayment.row.senderSideCurrency || null : null,
+    sourceReceiverAmount: sourcePayment ? recordedFigure(sourcePayment.row.receiverAmount) : null,
+    sourceReceiverSideCurrency: sourcePayment ? sourcePayment.row.receiverSideCurrency || null : null,
+    sourceFxRate: sourcePayment ? recordedFigure(sourcePayment.row.fxRate) : null,
     sourceTxnId: sourcePayment && sourcePayment.row.txnId
       ? String(sourcePayment.row.txnId).replace(/\s/g, "")
       : "",

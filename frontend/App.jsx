@@ -338,7 +338,11 @@ function mapServerTransaction(row, viewerSymbolId) {
     // Kept for the receipt, which shows both sides of a cross-border payment.
     counterpartyAmount: Number(row.amount) || 0,
     counterpartyCurrency: row.currency || null,
-    fxRate: Number.isFinite(Number(row.fxRate)) ? Number(row.fxRate) : null,
+    // recordedFigureKnown, not Number.isFinite(Number(...)): Number(null) is
+    // 0, so a row with no recorded rate came through as a rate of ZERO and a
+    // cross-border receipt printed "1 INR = 0.000000 EUR" — a figure that
+    // exists nowhere. Absent stays absent.
+    fxRate: recordedFigureKnown(row.fxRate) ? Number(row.fxRate) : null,
     // ── Both sides of the conversion, as the server recorded them ─────────
     //
     // For the receipt's conversion block, which buildHistoryReceipt reads
@@ -360,6 +364,26 @@ function mapServerTransaction(row, viewerSymbolId) {
     senderSideCurrency: row.senderCurrency || null,
     receiverAmount: Number.isFinite(Number(row.amount)) && recordedSidesKnown ? Number(row.amount) : null,
     receiverSideCurrency: row.currency || null,
+    // ── Both sides of the Creator Share, as the server recorded them ─────
+    //
+    // The share runs the other way from the payment: the payee gives it, in
+    // their currency, and the payer gets it, in theirs. The server stores
+    // both. On a PAYMENT row they are `cashback` (payee's side, in the
+    // payment's receiving currency) and `cashbackCredit` (payer's side, in
+    // senderCurrency); on a SHARE LEG they are debitAmount/senderCurrency
+    // (the payee who gave it) and amount/currency (the payer who got it).
+    //
+    // Only `shareAmount` below — the viewer's own side — was carried before,
+    // so every Creator Share tab showed one currency of a movement that had
+    // two. Null where the row does not record a side; nothing is converted.
+    shareSenderAmount: isShareLeg
+      ? (recordedFigureKnown(row.debitAmount) ? Number(row.debitAmount) : null)
+      : (recordedFigureKnown(row.cashback) ? Number(row.cashback) : null),
+    shareSenderCurrency: (isShareLeg ? row.senderCurrency : row.currency) || null,
+    shareReceiverAmount: isShareLeg
+      ? (recordedFigureKnown(row.amount) ? Number(row.amount) : null)
+      : (recordedFigureKnown(row.cashbackCredit) ? Number(row.cashbackCredit) : null),
+    shareReceiverCurrency: (isShareLeg ? row.currency : row.senderCurrency) || null,
     status: row.status || "completed",
     direction: row.direction === "received" ? "received" : "sent",
     // A Creator Share leg is a real movement, not a payment.
@@ -750,6 +774,16 @@ function GloobalId() {
     memo,
     clientRequestId
   }) => {
+    // No payment of nothing, from any caller. Checked before the location
+    // gate and before the skipped/local-simulation exits, so a zero or
+    // negative amount never reaches the server, the local ledger, History or
+    // a receipt. The server refuses it again; this is not the authority.
+    const typedLegAmount = amountBasis === "source"
+      ? (sourceAmount ?? amount)
+      : (destinationAmount ?? amount);
+    if (!isPositivePaymentAmount(typedLegAmount)) {
+      return { ok: false, reason: "Enter an amount greater than zero." };
+    }
     // Before anything else, including the skipped/local-simulation exits
     // below — a simulated send still writes a history row, and a gate with
     // an exception is not a gate.
@@ -821,6 +855,13 @@ function GloobalId() {
         shareReceiptCode: (share && share.receiptCode) || "",
         shareAmount: Number(share && share.amount) || 0,
         shareCurrency: (share && share.currency) || "",
+        // The share's OTHER side — what the payee gave, in their currency —
+        // as the server stored it on the share leg. shareAmount/shareCurrency
+        // above are the payer's side. Null when the server did not say, and
+        // the receipt then shows the share's one known side rather than a
+        // figure worked out from the payment.
+        sharePayeeAmount: gloobalRecordedFigure(share && share.payeeAmount),
+        sharePayeeCurrency: (share && share.payeeCurrency) || null,
         cashback: Number(result && result.cashback) || 0,
         cashbackRate: Number(result && result.cashbackRate) || 0,
         // What actually left this account, in this account's own currency,

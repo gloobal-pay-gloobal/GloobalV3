@@ -212,13 +212,20 @@ that one).
    concurrent growth or redemption), this matches nothing and the request is
    refused with 409 rather than silently applied against a stale ceiling.
 6. `reason` is derived **only** from the sign of the applied amount —
-   `POSITIVE_ADJUSTMENT` / `ZERO_ADJUSTMENT` / `NEGATIVE_ADJUSTMENT` — never
+   `POSITIVE_ADJUSTMENT` / `NEGATIVE_ADJUSTMENT` — never
    chosen by the caller, and never a word implying interest, yield, or a
    guaranteed return (brief §9). Every successful response also carries an
    explicit `policyNote` string surfacing the authorization caveat in §18.
-7. A zero-amount event is still recorded (a real, auditable "nothing moved
-   this period" fact) but writes no `LedgerEntry` line, since nothing
-   actually moved.
+7. **A zero growth is rejected (400)** before anything is written — no
+   `Transaction`, no `GeuGrowthEvent`, no `LedgerEntry`, no balance change.
+   Every transaction amount must be strictly greater than 0 (the
+   `Transaction` schema enforces it beneath every route), and a zero growth
+   would have been a zero-value transaction. This replaces the earlier
+   design, in which a zero request was recorded as a `ZERO_ADJUSTMENT`
+   event; `ZERO_ADJUSTMENT` stays in the model's enum only so rows written
+   under that design remain valid. Because a rejected zero writes no event,
+   it does not occupy its `growthPeriod`. (`POST /api/geu/entry` likewise
+   rejects a source amount whose converted GEU figure rounds to 0.)
 8. **There is no scheduler, cron job, or `setInterval` anywhere that calls
    this route or multiplies a balance by `1.003`.** Growth only happens when
    this endpoint is called with an explicit request. `tests/geu-invariants.test.mjs`

@@ -4210,6 +4210,24 @@ async function cleanTransactionPayload(transaction, sender, receiver) {
 // Reads only. No transaction, receipt, ledger entry or FX conversion is
 // created by this lookup, and a payment with no share leg answers null,
 // which is the honest answer for a payee who shares nothing.
+// The PAYEE's side of a Creator Share leg, as mintShareLegAndReceipts stored
+// it: what was withheld from their credit, in their own currency. The leg's
+// amount/currency are the payer's side; these are the other half.
+//
+// Returned beside amount/currency so the receipt shown straight after paying
+// can state both sides of the share, the way the same receipt reopened from
+// history already does (the history projection reads these same two fields).
+// Read off the stored leg, never worked out: null when the leg predates them.
+function shareLegPayeeSide(shareTransaction) {
+  const payeeAmount = Number(shareTransaction?.metadata?.debitAmount);
+  return {
+    payeeAmount: shareTransaction?.metadata?.debitAmount != null && Number.isFinite(payeeAmount)
+      ? payeeAmount
+      : null,
+    payeeCurrency: shareTransaction?.metadata?.senderCurrency || null,
+  };
+}
+
 async function existingShareLegPayload(paymentTransaction) {
   if (!paymentTransaction?._id) return null;
 
@@ -4218,7 +4236,7 @@ async function existingShareLegPayload(paymentTransaction) {
       type: 'share',
       'metadata.paymentTransactionId': paymentTransaction._id,
     })
-      .select('referenceId receiptCode amount currency')
+      .select('referenceId receiptCode amount currency metadata.debitAmount metadata.senderCurrency')
       .lean();
 
     if (!shareTransaction) return null;
@@ -4231,6 +4249,7 @@ async function existingShareLegPayload(paymentTransaction) {
       receiptCode: await ensureReceiptCode(shareTransaction),
       amount: shareTransaction.amount,
       currency: shareTransaction.currency,
+      ...shareLegPayeeSide(shareTransaction),
     };
   } catch (error) {
     // Best-effort, exactly as minting the leg is: a payment's duplicate
@@ -6589,6 +6608,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             receiptCode: await ensureReceiptCode(shareTransaction),
             amount: shareTransaction.amount,
             currency: shareTransaction.currency,
+            ...shareLegPayeeSide(shareTransaction),
           }
         : null,
       receipts: receipts.map((r) => ({
@@ -9311,6 +9331,12 @@ app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, r
 
     const referenceAmount = toMinorUnit(sourceAmount * exchangeRate, GEU_REFERENCE_CURRENCY);
     const geuAmount = toMinorUnit(referenceAmount, GEU_CURRENCY);
+    // The source amount was checked above; the CONVERTED figure was not, and
+    // a small enough source rounds to zero GEU. Refused rather than recorded
+    // as a zero-value transaction that still debits the fiat side.
+    if (!Number.isFinite(geuAmount) || geuAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'That amount is too small to convert into GEU.' });
+    }
     const entryId = createGeuId('GLOOBAL-GEU-ENTRY-');
     const referenceId = await resolveTransactionReference();
 
@@ -9482,6 +9508,14 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth, 
     }
     if (!Number.isFinite(requested)) {
       return res.status(400).json({ success: false, message: 'requestedGrowthAmount must be a finite number.' });
+    }
+    // A growth of zero moves nothing, and recording it wrote a zero-value
+    // Transaction (the ZERO_ADJUSTMENT case). No transaction may be worth
+    // nothing, so it is refused here, before any write — no Transaction, no
+    // growth event, no ledger line. Negative growth is a real movement (GEU
+    // destroyed) and is recorded as its absolute value, as before.
+    if (requested === 0) {
+      return res.status(400).json({ success: false, message: 'requestedGrowthAmount must not be 0 — a zero growth moves nothing and records no transaction.' });
     }
 
     const user = await User.findOne({ symbolId: String(symbolId || '').trim() });

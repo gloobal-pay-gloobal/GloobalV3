@@ -95,6 +95,12 @@ describe("after a payment", () => {
       await page.getByRole("button", { name: "View receipt", exact: true }).click();
       await page.getByTestId("receipt-counterparty").waitFor({ timeout: 15000 });
       if (/^\+/.test(share)) {
+        // The share lives on the receipt's Creator Share tab. This branch
+        // never ran before: the fake server returned no share leg, so the
+        // card read "No share on this one". It now returns the leg the real
+        // server does, and the share is read where the receipt shows it.
+        await tap(page.getByRole("button", { name: "Creator Share", exact: true }).first());
+        await page.getByTestId("receipt-hero-share").waitFor({ timeout: 15000 });
         const receiptText = await page.locator("body").innerText();
         assert.ok(receiptText.includes(share.slice(1)), `the receipt does not carry the revealed share ${share}`);
       }

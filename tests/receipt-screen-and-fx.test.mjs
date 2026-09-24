@@ -38,6 +38,7 @@ import { readSource } from "./harness.mjs";
 const MODAL = "frontend/components/dialogs/ReceiptModal.jsx";
 const UTILS = "frontend/features/history/historyUtils.js";
 const APP = "frontend/App.jsx";
+const CURRENCY = "frontend/features/receipts/receiptCurrency.js";
 
 const code = (p) => readSource(p)
   .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -105,10 +106,15 @@ describe("the conversion is recorded, never computed", () => {
   test("the block is drawn only when two different currencies are known", () => {
     // A conversion section on a domestic payment showing 1.000000 states that
     // an exchange took place, and none did.
+    //
+    // The rule now lives in receiptCurrency.js, shared with the picture and
+    // the PDF so the three cannot disagree; the screen draws the block only
+    // from what that returns.
     assert.match(
-      code(MODAL),
-      /fxSenderCurrency && fxReceiverCurrency &&\s*fxSenderCurrency !== fxReceiverCurrency &&\s*receipt\.senderAmount != null && receipt\.receiverAmount != null/
+      code(CURRENCY),
+      /if \(paid == null \|\| got == null \|\| !paidCcy \|\| !gotCcy \|\| paidCcy === gotCcy\) return null;/
     );
+    assert.match(code(MODAL), /\{paymentConversion && <div\s+data-testid="receipt-conversion"/);
   });
 
   test("the rate is stated in the direction it was recorded", () => {
@@ -118,8 +124,8 @@ describe("the conversion is recorded, never computed", () => {
     // and somebody reconciling against a statement would find two rates for
     // one payment.
     assert.match(
-      code(MODAL),
-      /`1 \$\{fxReceiverCurrency\} = \$\{Number\(receipt\.fxRate\)\.toFixed\(6\)\} \$\{fxSenderCurrency\}`/
+      code(CURRENCY),
+      /`1 \$\{receiverCurrency\} = \$\{rate\.toFixed\(6\)\} \$\{senderCurrency\}`/
     );
   });
 

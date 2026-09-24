@@ -19,7 +19,7 @@ const source = readSource(SRC);
 const domain = loadDomain(["fmt", "fmtMoney", "currencyDecimals", "G_LOGO_DATA_URI", "ALL_COUNTRIES", "T", "POSITION_COLORS"]);
 const M = new Function(
   ...Object.keys(domain),
-  `${source}\nreturn { buildReceiptImageModel, renderReceiptImage, receiptImageToBlob, shareReceiptImage, receiptImageFilename, receiptShareAttempts, RECEIPT_IMAGE_BRAND };`
+  `${readSource("frontend/features/receipts/receiptCurrency.js")}\n${source}\nreturn { buildReceiptImageModel, renderReceiptImage, receiptImageToBlob, shareReceiptImage, receiptImageFilename, receiptShareAttempts, RECEIPT_IMAGE_BRAND };`
 )(...Object.values(domain));
 
 const REF = "■+×=●■+×=●■+×=●■+×=●";
@@ -87,8 +87,8 @@ describe("buildReceiptImageModel", () => {
     assert.equal(m.conversion.rateText, "1 INR = 0.500000 EUR");
   });
 
-  test("no conversion without every server figure", () => {
-    for (const drop of ["senderAmount", "senderSideCurrency", "receiverAmount", "receiverSideCurrency", "fxRate"]) {
+  test("no conversion without both recorded sides", () => {
+    for (const drop of ["senderAmount", "senderSideCurrency", "receiverAmount", "receiverSideCurrency"]) {
       const r = base({ senderAmount: 11.23, senderSideCurrency: "EUR", receiverAmount: 1000, receiverSideCurrency: "INR", fxRate: 0.01123 });
       r[drop] = null;
       assert.equal(M.buildReceiptImageModel(r).conversion, null, `without ${drop}`);

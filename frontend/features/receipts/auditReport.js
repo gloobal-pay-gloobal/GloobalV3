@@ -279,6 +279,13 @@ function auditContentStream(report) {
     row(report.share.directionLabel, auditMoney(report.share.amount, report.share.currency));
     row("Rate", report.share.rateLabel);
     if (report.share.counterpartyName) row(report.share.counterpartyLabel, report.share.counterpartyName);
+    // The share's two recorded sides, when it crossed a currency: what the
+    // payee gave in theirs, what the payer got in theirs.
+    if (report.share.conversion) {
+      row("Share given", auditMoney(report.share.conversion.sourceAmount, report.share.conversion.sourceCurrency));
+      row("Share received", auditMoney(report.share.conversion.destinationAmount, report.share.conversion.destinationCurrency));
+      row("Rate applied", report.share.conversion.rateLabel);
+    }
   }
 
   // ── References ────────────────────────────────────────────────────────
@@ -380,17 +387,22 @@ function buildAuditReport(receipt, options) {
     ? Number(receipt.shareAmount) || Number(receipt.amount) || 0
     : (Number(receipt.amount) || 0) * ((Number(receipt.shareRate) || 0) / 100);
 
-  const conversion =
-    receipt.sourceCurrency && receipt.destinationCurrency &&
-    receipt.sourceCurrency !== receipt.destinationCurrency
-      ? {
-          sourceAmount: receipt.sourceSideAmount,
-          sourceCurrency: receipt.sourceCurrency,
-          destinationAmount: receipt.destinationSideAmount,
-          destinationCurrency: receipt.destinationCurrency,
-          rateLabel: receipt.fxRateLabel || "—"
-        }
-      : null;
+  // Read through receiptCurrency.js, the same way the screen and the picture
+  // read it. This used to test sourceCurrency / destinationCurrency /
+  // sourceSideAmount / destinationSideAmount / fxRateLabel — names no receipt
+  // builder has ever set — so the section never appeared on a real report,
+  // however cross-border the payment was.
+  const toSection = (facts) => facts
+    ? {
+        sourceAmount: facts.paidAmount,
+        sourceCurrency: facts.paidCurrency,
+        destinationAmount: facts.gotAmount,
+        destinationCurrency: facts.gotCurrency,
+        rateLabel: facts.rateLabel || "—"
+      }
+    : null;
+  const conversion = paymentAmount == null ? null : toSection(receiptPaymentConversion(receipt));
+  const shareConversion = toSection(receiptShareConversion(receipt));
 
   return {
     generatedAt: opts.generatedAt || "",
@@ -413,7 +425,8 @@ function buildAuditReport(receipt, options) {
           currency: receipt.currencyCode,
           rateLabel: shareRate == null ? "—" : `${Number(shareRate).toFixed(2)}%`,
           counterpartyLabel: shareIsCredit ? "Shared back by" : "Shared back to",
-          counterpartyName: receipt.name
+          counterpartyName: receipt.name,
+          conversion: shareConversion
         }
       : null,
     references: [

@@ -801,7 +801,21 @@ export async function installApi(context, options = {}) {
           status: "success",
           createdAt: new Date().toISOString()
         },
-        shareTransaction: null,
+        // The share leg as the real 201 carries it (server.js): its own
+        // reference and link handle, the payer's side in amount/currency, and
+        // the payee's side in payeeAmount/payeeCurrency (shareLegPayeeSide).
+        // It was null here, so no browser test could see the Creator Share
+        // tab of a receipt shown straight after paying as it really is.
+        shareTransaction: ledgerRow.shareReferenceId
+          ? {
+              referenceId: ledgerRow.shareReferenceId,
+              receiptCode: ledgerRow.shareReceiptCode,
+              amount: cashbackCredit,
+              currency: sender.currency,
+              payeeAmount: cashback,
+              payeeCurrency: receiver.currency
+            }
+          : null,
         senderBalance: state.balances[sender.symbolId],
         receiverBalance: state.balances[receiver.symbolId]
       });

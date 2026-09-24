@@ -495,7 +495,13 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
           senderCurrency: remote.senderCurrency,
           destinationAmount: remote.destinationAmount,
           destinationCurrency: remote.destinationCurrency,
-          fxRate: remote.fxRate
+          fxRate: remote.fxRate,
+          // Both sides of the Creator Share as the server stored them on the
+          // share leg: the payer's (shareAmount/shareCurrency) and the
+          // payee's. Receipt display only, like the five above.
+          shareCurrency: remote.shareCurrency,
+          sharePayeeAmount: remote.sharePayeeAmount,
+          sharePayeeCurrency: remote.sharePayeeCurrency
         };
       }
     }

@@ -178,6 +178,10 @@ const FRONTEND_MODULES = [
   // it, so the two compose.
   "components/common/actionTileMotion.jsx",
   "components/common/misc.jsx",
+  // What a receipt says about currency — the payment's conversion and the
+  // Creator Share's — read one way by the screen, the picture and the PDF.
+  // Ahead of all three.
+  "features/receipts/receiptCurrency.js",
   // The audit report: one transaction, as a PDF. Ahead of ReceiptModal,
   // which is the only thing that opens one.
   "features/receipts/auditReport.js",

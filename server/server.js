@@ -4210,6 +4210,24 @@ async function cleanTransactionPayload(transaction, sender, receiver) {
 // Reads only. No transaction, receipt, ledger entry or FX conversion is
 // created by this lookup, and a payment with no share leg answers null,
 // which is the honest answer for a payee who shares nothing.
+// The PAYEE's side of a Creator Share leg, as mintShareLegAndReceipts stored
+// it: what was withheld from their credit, in their own currency. The leg's
+// amount/currency are the payer's side; these are the other half.
+//
+// Returned beside amount/currency so the receipt shown straight after paying
+// can state both sides of the share, the way the same receipt reopened from
+// history already does (the history projection reads these same two fields).
+// Read off the stored leg, never worked out: null when the leg predates them.
+function shareLegPayeeSide(shareTransaction) {
+  const payeeAmount = Number(shareTransaction?.metadata?.debitAmount);
+  return {
+    payeeAmount: shareTransaction?.metadata?.debitAmount != null && Number.isFinite(payeeAmount)
+      ? payeeAmount
+      : null,
+    payeeCurrency: shareTransaction?.metadata?.senderCurrency || null,
+  };
+}
+
 async function existingShareLegPayload(paymentTransaction) {
   if (!paymentTransaction?._id) return null;
 
@@ -4218,7 +4236,7 @@ async function existingShareLegPayload(paymentTransaction) {
       type: 'share',
       'metadata.paymentTransactionId': paymentTransaction._id,
     })
-      .select('referenceId receiptCode amount currency')
+      .select('referenceId receiptCode amount currency metadata.debitAmount metadata.senderCurrency')
       .lean();
 
     if (!shareTransaction) return null;
@@ -4231,6 +4249,7 @@ async function existingShareLegPayload(paymentTransaction) {
       receiptCode: await ensureReceiptCode(shareTransaction),
       amount: shareTransaction.amount,
       currency: shareTransaction.currency,
+      ...shareLegPayeeSide(shareTransaction),
     };
   } catch (error) {
     // Best-effort, exactly as minting the leg is: a payment's duplicate
@@ -6589,6 +6608,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             receiptCode: await ensureReceiptCode(shareTransaction),
             amount: shareTransaction.amount,
             currency: shareTransaction.currency,
+            ...shareLegPayeeSide(shareTransaction),
           }
         : null,
       receipts: receipts.map((r) => ({

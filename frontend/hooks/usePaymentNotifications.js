@@ -110,6 +110,57 @@ async function askForPaymentNotifications() {
   return outcome;
 }
 
+// The Notifications sheet's Enable button (24 September 2026).
+//
+// It used to call askForPaymentNotifications() and ignore what came back,
+// which made it a no-op in the commonest case. That function is guarded to
+// ask ONCE EVER, so the app never nags — and the onboarding Alerts card or
+// the post-payment offer has usually spent that one ask already. If the
+// person dismissed it, permission is still "default", the guard returns
+// without calling requestPermission(), the sheet sets "default" again, and
+// the button simply reappears. Even a real grant then dropped the subscribe
+// result on the floor, so a server with push switched off still looked
+// like success.
+//
+// A tap on Enable is the deliberate request that guard exists to wait for,
+// so this path prompts regardless of it (the browser still has the final
+// say, and returns immediately if it has quietly blocked the origin), then
+// AWAITS the subscribe and reports the real outcome:
+//   { state: "ok" }                       subscribed, server row written
+//   { state: "denied" }                   blocked; only site settings help
+//   { state: "dismissed" }                prompt closed or suppressed
+//   { state: "unsupported" }              no Notification/Push API here
+//   { state: "signedOut" }                nobody to own a subscription
+//   { state: "disabled" | "unreachable" | "failed", error }
+//                                         granted, but the subscribe did not
+//                                         complete — see gloobalPushSubscribe
+// requestPermission() is the first await, so it runs inside the tap's user
+// activation as browsers require.
+async function enablePaymentNotificationsFromTap() {
+  if (!paymentNotificationsSupported() || !gloobalPushSupported()) return { state: "unsupported" };
+  let permission = Notification.permission;
+  if (permission === "default") {
+    notifyWriteJson(GLOOBAL_NOTIFY_ASKED_KEY, true);
+    try {
+      permission = await Notification.requestPermission();
+    } catch (e) {
+      permission = Notification.permission;
+    }
+  }
+  if (permission === "denied") return { state: "denied" };
+  if (permission !== "granted") return { state: "dismissed" };
+  if (!gloobalAuthToken()) return { state: "signedOut" };
+  const result = await gloobalPushSubscribe();
+  if (result && result.ok) return { state: "ok" };
+  const reason = (result && result.reason) || "failed";
+  // "default" here means PushManager still says "prompt" although
+  // Notification.permission is granted — the same dead end as a dismissal.
+  return {
+    state: reason === "default" ? "dismissed" : reason,
+    error: (result && result.error) || null
+  };
+}
+
 // One notification per transaction, ever — including across reloads, which
 // is why the seen list is persisted rather than held in memory. The received
 // poll re-reads the same rows every time it runs, so without this every

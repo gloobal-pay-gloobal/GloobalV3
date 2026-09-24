@@ -83,24 +83,54 @@ function gloobalNotifSheetWhen(iso) {
 //   "denied"      — the browser said no, and there is NO programmatic way
 //                   back. Only a settings path, described in words.
 //   "unsupported" — no Push API here at all. Say so; offer nothing.
+//   "dismissed"   — the prompt was closed, or the browser suppressed it.
+//                   Enable again, plus the settings path in case it is the
+//                   browser that is holding the prompt back.
+//   "disabled"    — permission is granted but the server has no VAPID keys,
+//                   so no device can be subscribed. Said plainly, because
+//                   the in-app list still fills and would otherwise look
+//                   like working notifications.
+//   "unreachable" / "failed" — granted, but the subscribe did not finish.
+//                   A Try again button; the failure is also logged.
+//   "signedOut"   — nothing to own a subscription yet.
 //   "ok" / ""     — already subscribed, or nothing to report. Render nothing.
+var GLOOBAL_NOTIF_ASK_MESSAGES = {
+  default: "Get told when money arrives, even when Gloobal is closed.",
+  dismissed: "Notifications weren't turned on. Tap Enable to try again. If no prompt appears, allow notifications for this site in your browser settings.",
+  denied: "Notifications are blocked for Gloobal in your browser. Turn them back on in the site settings for this page.",
+  unsupported: "This browser can't show notifications when Gloobal is closed.",
+  disabled: "Notifications are allowed on this device, but Gloobal can't send them to devices yet. Payments still appear in this list.",
+  unreachable: "Couldn't reach Gloobal to finish turning notifications on.",
+  failed: "Couldn't turn on notifications on this device.",
+  signedOut: "Sign in to turn on notifications for your account."
+};
+var GLOOBAL_NOTIF_ASK_BUTTON = {
+  default: "Enable",
+  dismissed: "Enable",
+  disabled: "Try again",
+  unreachable: "Try again",
+  failed: "Try again"
+};
 function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, pushState }) {
   const [askState, setAskState] = useState40(pushState || "");
   const [asking, setAsking] = useState40(false);
   useEffect40(() => { setAskState(pushState || ""); }, [pushState]);
 
-  // Reuses askForPaymentNotifications(), which holds the once-only guard
-  // and subscribes on a yes. No second prompt can come from here.
+  // enablePaymentNotificationsFromTap() prompts (the tap is the deliberate
+  // request), subscribes, and returns what actually happened — see its
+  // header in usePaymentNotifications.js for why this is no longer
+  // askForPaymentNotifications(), whose once-only guard made the button a
+  // silent no-op for anyone who had dismissed an earlier prompt.
   const enableAlerts = async () => {
     if (asking) return;
     setAsking(true);
     try {
-      await askForPaymentNotifications();
-      setAskState(
-        typeof Notification === "undefined"
-          ? "unsupported"
-          : Notification.permission === "granted" ? "ok" : Notification.permission
-      );
+      const result = await enablePaymentNotificationsFromTap();
+      if (result.error) console.warn("Gloobal: enabling notifications did not complete —", result.state, result.error);
+      setAskState(result.state);
+    } catch (err) {
+      console.warn("Gloobal: enabling notifications failed —", err);
+      setAskState("failed");
     } finally {
       setAsking(false);
     }
@@ -209,7 +239,7 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, p
     onClick={markAll}
     className="v2-tap"
     style={{ display: "flex", alignItems: "center", gap: 5, border: "none", background: "none", color: T.accent, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
-  ><CheckCheckNotifSheet size={14} />Mark all read</button>}</div>{(askState === "default" || askState === "denied" || askState === "unsupported") && <div
+  ><CheckCheckNotifSheet size={14} />Mark all read</button>}</div>{GLOOBAL_NOTIF_ASK_MESSAGES[askState] && <div
     style={{
       margin: "0 16px 10px",
       padding: "11px 13px",
@@ -220,19 +250,15 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, p
       alignItems: "center",
       gap: 10
     }}
-  ><BellNotifSheet size={15} color={askState === "default" ? T.accent : T.inkFaint} /><span
+  ><BellNotifSheet size={15} color={GLOOBAL_NOTIF_ASK_BUTTON[askState] ? T.accent : T.inkFaint} /><span
+    role="status"
     style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: T.inkSoft, lineHeight: 1.45 }}
-  >{askState === "default"
-    ? "Get told when money arrives, even when Gloobal is closed."
-    : askState === "denied"
-      ? "Notifications are blocked for Gloobal in your browser. Turn them back on in the site settings for this page."
-      : "This browser can't show notifications when Gloobal is closed."
-  }</span>{askState === "default" && <button
+  >{GLOOBAL_NOTIF_ASK_MESSAGES[askState]}</span>{GLOOBAL_NOTIF_ASK_BUTTON[askState] && <button
     onClick={enableAlerts}
     disabled={asking}
     className="v2-tap"
     style={{ flexShrink: 0, border: "none", borderRadius: 999, background: T.accent, color: "#fff", fontSize: 11.5, fontWeight: 800, padding: "7px 13px", cursor: asking ? "default" : "pointer", opacity: asking ? 0.6 : 1 }}
-  >{asking ? "…" : "Enable"}</button>}</div>}<div
+  >{asking ? "…" : GLOOBAL_NOTIF_ASK_BUTTON[askState]}</button>}</div>}<div
     style={{ overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 16px", display: "flex", flexDirection: "column", gap: 8 }}
   >{status === "loading" && <span
     style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", padding: "28px 0" }}

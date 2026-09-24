@@ -6790,7 +6790,13 @@ async function sendPaymentPushes(legs, transaction) {
   if (created.length === 0) return { sent: 0, removed: 0, failed: 0, skipped: 0 };
   if (!pushService.isPushEnabled()) return { sent: 0, removed: 0, failed: 0, skipped: created.length };
 
-  const transactionId = String(transaction._id);
+  // The payment's referenceId, not its Mongo _id. `?txn=` and the worker's
+  // push-click message are both matched against the history row's txnId,
+  // which is the referenceId (see mapServerTransaction in App.jsx and the
+  // /t/:referenceId redirect above). Sending the _id meant tapping a
+  // notification found no row, and the link was dropped without opening
+  // any receipt. _id stays as a fallback for a row minted without one.
+  const transactionId = String(transaction.referenceId || transaction._id);
   const timestamp = Date.now();
   const totals = { sent: 0, removed: 0, failed: 0, skipped: 0 };
 
@@ -6809,7 +6815,10 @@ async function sendPaymentPushes(legs, transaction) {
         // banner lands on the payment it is about rather than the home screen.
         url: `/?txn=${transactionId}`,
         // One tag per payment, so the payer's and payee's devices each collapse
-        // a duplicate rather than stacking two identical banners.
+        // a duplicate rather than stacking two identical banners. The open
+        // app's own arrival banner (notifyPaymentReceived) uses this same
+        // tag, so a push and a foreground poll for one payment collapse
+        // into a single tray entry instead of two.
         tag: `gloobal-txn-${transactionId}`,
         timestamp,
       },

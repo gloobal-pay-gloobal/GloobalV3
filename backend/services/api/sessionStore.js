@@ -253,6 +253,30 @@ function gloobalAuthTokenClear() {
   gloobalAuthTokenSave(null);
 }
 
+// Whether a stored bearer token is still inside its own lifetime, read from
+// the `exp` claim in its payload (`<base64url JSON>.<signature>`, minted by
+// issueAuthToken in server/server.js).
+//
+// This is NOT verification — the browser cannot check the HMAC and must not
+// pretend to. The server re-checks signature and expiry on every request,
+// and a token it rejects comes back 401, which httpClient.js turns into
+// GLOOBAL_SESSION_EXPIRED_EVENT and a trip to Login. This only answers "is
+// it worth resuming on this token at all", so a session whose token is
+// visibly expired goes straight to the PIN screen instead of flashing the
+// dashboard for one failed request first. Anything unreadable counts as
+// not live.
+function gloobalAuthTokenLooksLive(token) {
+  try {
+    const payload = String(token || "").split(".")[0];
+    if (!payload) return false;
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(b64 + "===".slice((b64.length + 3) % 4)));
+    return Boolean(claims) && typeof claims.exp === "number" && claims.exp > Date.now();
+  } catch (e) {
+    return false;
+  }
+}
+
 // Flip the biometric-enrolment flag on its own, without needing the user
 // object to hand. The enrolment and verification paths both learn the
 // truth at moments where they only know the symbolId (see

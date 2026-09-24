@@ -1729,6 +1729,38 @@ function GloobalId() {
     }
     gloobalSetBiometricSymbolId(restored.user.symbolId || null);
     setIsLoginAttempt(true);
+    // Resume straight into the dashboard when this device still holds a
+    // live bearer token for the account (24 September 2026).
+    //
+    // This effect used to send EVERY restored session to the PIN stage.
+    // Nothing was deleted — the session and its token were sitting intact
+    // in localStorage — but closing the tab, the browser or the installed
+    // app and reopening it always landed on a sign-in screen, which is
+    // indistinguishable from being logged out. The founder reported it as
+    // exactly that, and it also meant a tap on a closed-app notification
+    // opened onto Login instead of the account it was about.
+    //
+    // Resuming on the token does not skip a check: the token was minted
+    // only in exchange for a real credential (PIN, verified OTP or passkey)
+    // and is what every request already rides on while the app stays open.
+    // The server still verifies it on each call; the first dashboard read
+    // (hydrateAccount's getProfile) comes back 401 if it has been
+    // revoked or has expired, and GLOOBAL_SESSION_EXPIRED_EVENT sends the
+    // person to Login — the same path an open app takes when its token dies.
+    //
+    // Falls back to the PIN stage, as before, when:
+    //   - there is no token, or it has visibly passed its expiry;
+    //   - the account has App lock on. That switch reads "Lock again when
+    //     you come back after leaving the app", and a cold reopen is the
+    //     plainest case of coming back — honouring it here keeps the
+    //     stricter setting strictly stricter.
+    const appLockOnRestore = Boolean(
+      restored.user.securitySettings && restored.user.securitySettings.appLock === true
+    );
+    if (restored.user.symbolId && gloobalAuthTokenLooksLive(restored.token) && !appLockOnRestore) {
+      setStage("dashboard");
+      return;
+    }
     setStage("secureId");
   }, []);
 

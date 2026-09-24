@@ -371,6 +371,14 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   const appliedRequestIdRef = useRef11(null);
   async function completePayment() {
     if (appliedRequestIdRef.current === requestIdRef.current) return;
+    // Refused before anything is sent, posted, recorded or receipted: no
+    // server call, no local ledger leg, no history row, no receipt.
+    if (!isPositivePaymentAmount(receiverAmount) || !isPositivePaymentAmount(senderAmount)) {
+      verifiedPinRef.current = null;
+      setTransactionStatus("failed");
+      setFailureReason("Enter an amount greater than zero.");
+      return;
+    }
     appliedRequestIdRef.current = requestIdRef.current;
     const now = /* @__PURE__ */ new Date();
     const txnId = genTxnId();
@@ -910,6 +918,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   const requestClosePayMethod = useBackClose(payMethodOpen, () => setPayMethodOpen(false));
   const [payMethod, setPayMethod] = useState15(null);
   function handleSend() {
+    // A payment of nothing is not a payment. Stopped before the pay-method
+    // sheet and PIN, so nobody is asked to authorise it; completePayment and
+    // the server both refuse it again, so this is not the only guard.
+    if (!isPositivePaymentAmount(receiverAmount) || !isPositivePaymentAmount(senderAmount)) return;
     setPayMethod(null);
     setPayMethodOpen(true);
   }

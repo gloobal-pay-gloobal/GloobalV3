@@ -33,3 +33,15 @@ function computePaylaterAvailable(assetSeeds, paylaterHistory, realPaylaterDue =
   return { totalAssets, paylaterLimit: totalAssets, paylaterDue, paylaterAvailable: Math.max(0, totalAssets - paylaterDue) };
 }
 
+
+// A payment amount is valid only when it is a finite number strictly greater
+// than zero. Zero and negatives are refused everywhere a payment starts on
+// this side — the Send button, completePayment, handleRemoteSend — and the
+// server refuses them again on POST /api/transactions/send, which is the
+// authority; the Transaction schema refuses a non-positive amount beneath
+// every route.
+function isPositivePaymentAmount(value) {
+  if (value === null || value === void 0 || value === "") return false;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n > 0;
+}

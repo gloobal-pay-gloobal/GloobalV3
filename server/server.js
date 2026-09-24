@@ -9331,6 +9331,12 @@ app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, r
 
     const referenceAmount = toMinorUnit(sourceAmount * exchangeRate, GEU_REFERENCE_CURRENCY);
     const geuAmount = toMinorUnit(referenceAmount, GEU_CURRENCY);
+    // The source amount was checked above; the CONVERTED figure was not, and
+    // a small enough source rounds to zero GEU. Refused rather than recorded
+    // as a zero-value transaction that still debits the fiat side.
+    if (!Number.isFinite(geuAmount) || geuAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'That amount is too small to convert into GEU.' });
+    }
     const entryId = createGeuId('GLOOBAL-GEU-ENTRY-');
     const referenceId = await resolveTransactionReference();
 
@@ -9502,6 +9508,14 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth, 
     }
     if (!Number.isFinite(requested)) {
       return res.status(400).json({ success: false, message: 'requestedGrowthAmount must be a finite number.' });
+    }
+    // A growth of zero moves nothing, and recording it wrote a zero-value
+    // Transaction (the ZERO_ADJUSTMENT case). No transaction may be worth
+    // nothing, so it is refused here, before any write — no Transaction, no
+    // growth event, no ledger line. Negative growth is a real movement (GEU
+    // destroyed) and is recorded as its absolute value, as before.
+    if (requested === 0) {
+      return res.status(400).json({ success: false, message: 'requestedGrowthAmount must not be 0 — a zero growth moves nothing and records no transaction.' });
     }
 
     const user = await User.findOne({ symbolId: String(symbolId || '').trim() });

@@ -774,6 +774,16 @@ function GloobalId() {
     memo,
     clientRequestId
   }) => {
+    // No payment of nothing, from any caller. Checked before the location
+    // gate and before the skipped/local-simulation exits, so a zero or
+    // negative amount never reaches the server, the local ledger, History or
+    // a receipt. The server refuses it again; this is not the authority.
+    const typedLegAmount = amountBasis === "source"
+      ? (sourceAmount ?? amount)
+      : (destinationAmount ?? amount);
+    if (!isPositivePaymentAmount(typedLegAmount)) {
+      return { ok: false, reason: "Enter an amount greater than zero." };
+    }
     // Before anything else, including the skipped/local-simulation exits
     // below — a simulated send still writes a history row, and a gate with
     // an exception is not a gate.

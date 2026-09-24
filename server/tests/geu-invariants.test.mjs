@@ -267,15 +267,18 @@ async function run() {
   check("closingBalance is 100450", growth6.body?.closingBalance === 100450, `closingBalance=${growth6.body?.closingBalance}`);
 
   // ---------------------------------------------------------------------
-  console.log("\n7. a zero growth event — explicitly distinct from 'no event happened'");
+  console.log("\n7. a zero growth event is refused — no transaction may be worth nothing");
   // ---------------------------------------------------------------------
+  // It used to be accepted as a ZERO_ADJUSTMENT and wrote a zero-value
+  // Transaction. A transaction amount must be strictly greater than 0, so a
+  // zero growth is now a 400 and nothing is written at all.
+  const txnsBeforeZero = await Transaction.countDocuments({});
+  const eventsBeforeZero = await GeuGrowthEvent.countDocuments({});
   const growth7 = await post("/api/geu/growth", { symbolId: ALICE, growthPeriod: "2026-08-03", requestedGrowthAmount: 0 }, aliceToken);
-  check("zero growth accepted (201) — a real, recorded event", growth7.status === 201, `status=${growth7.status}`);
-  check("reason is ZERO_ADJUSTMENT", growth7.body?.reason === "ZERO_ADJUSTMENT", `reason=${growth7.body?.reason}`);
-  check("closingBalance unchanged at 100450", growth7.body?.closingBalance === 100450, `closingBalance=${growth7.body?.closingBalance}`);
-  const zeroGrowthLedgerLines = await LedgerEntry.countDocuments({ metadata: { $exists: true }, currency: "GEU", "metadata.growthEventId": growth7.body?.growthEventId });
-  check("a zero-amount growth event writes NO ledger line (nothing moved, brief: negative/zero/positive all supported but nothing is invented)",
-    zeroGrowthLedgerLines === 0, `lines=${zeroGrowthLedgerLines}`);
+  check("zero growth refused (400)", growth7.status === 400, `status=${growth7.status}`);
+  check("no Transaction written for a zero growth", (await Transaction.countDocuments({})) === txnsBeforeZero);
+  check("no growth event written for a zero growth", (await GeuGrowthEvent.countDocuments({})) === eventsBeforeZero);
+  check("balance unchanged at 100450", (await User.findOne({ symbolId: ALICE }).lean())?.geuBalance === 100450);
 
   // ---------------------------------------------------------------------
   console.log("\n8. a negative adjustment — supported without a hard floor at zero-growth being invented");

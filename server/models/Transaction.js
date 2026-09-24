@@ -16,10 +16,21 @@ const transactionSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Strictly greater than zero. A transaction of nothing is not a
+    // transaction: every route validates its own amount before it writes, and
+    // this is the last line under all of them, so no route — present or
+    // future — can mint a zero-value or negative row. It was `min: 0`, which
+    // let a zero through (the GEU growth route wrote one for every
+    // ZERO_ADJUSTMENT). Validators run on create; existing rows are only ever
+    // changed through findOneAndUpdate, which does not re-validate, so rows
+    // already stored are unaffected.
     amount: {
       type: Number,
       required: true,
-      min: 0,
+      validate: {
+        validator: (value) => Number.isFinite(value) && value > 0,
+        message: 'Transaction amount must be greater than 0.',
+      },
     },
 
     currency: {

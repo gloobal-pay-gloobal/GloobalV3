@@ -214,7 +214,9 @@ function createFinancialCore({ userId = "demo-user", currency = "INR", openingBa
         // line was its own formatter — "en-US", hour + minute only — so an
         // asset seed's time rendered "2:07 PM" while the payment that
         // planted it rendered "14:07:32". Two clocks, one event.
-        time: valid ? formatClockTime(planted) : ""
+        time: valid ? formatClockTime(planted) : "",
+        // The server's plantedAt, the instant My Assets sorts by.
+        occurredAt: valid ? planted.toISOString() : null
       });
       added += 1;
     }

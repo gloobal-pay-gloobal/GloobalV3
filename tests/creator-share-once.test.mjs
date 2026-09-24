@@ -50,7 +50,9 @@ describe("a share appears exactly once in Recent Activity", () => {
     const src = code(dash());
     assert.match(
       src,
-      /const merged = Array\.isArray\(receivedHistory\) \? receivedHistory\.slice\(\) : \[\];/,
+      // One source, ordered by the shared newest-first rule
+      // (transactionOrder.js) — see tests/transaction-order.test.mjs.
+      /return sortTransactionsNewestFirst\(receivedHistory\);/,
       "the received list is being built from more than one source again"
     );
     assert.ok(

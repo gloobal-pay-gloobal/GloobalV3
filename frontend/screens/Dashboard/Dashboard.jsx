@@ -450,7 +450,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       const value = cashback * Math.pow(1 + ASSET_GROWTH_RATE_MONTHLY, t.monthsAccrued);
       const monthsToTarget = Math.log(t.amountPaid / cashback) / Math.log(1 + ASSET_GROWTH_RATE_MONTHLY);
       return { ...t, cashback, value, monthsToTarget };
-    }),
+    }).sort(compareTransactionsNewestFirst),
+    // Newest seed first, by the instant it was planted (occurredAt), the
+    // same rule as every transaction list. The grants arrive in insertion
+    // order — server seeds newest-first at hydration, then each new payment's
+    // seed appended at the END — so without this the newest was at the
+    // bottom under older ones.
     [assetSeeds]
   );
   const totalAssets = assetRows.reduce((s, r) => s + r.value, 0);
@@ -531,13 +536,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // The server row also carries everything the synthesised one did —
     // shareRate, method, name, date, time, txnId — so no receipt loses a
     // field, and unlike a local seed it survives a reinstall.
-    const merged = Array.isArray(receivedHistory) ? receivedHistory.slice() : [];
-    return merged.slice().sort((a, b) => {
-      const at = parseDemoDate(a.date).getTime();
-      const bt = parseDemoDate(b.date).getTime();
-      if (isNaN(at) || isNaN(bt) || at === bt) return 0;
-      return bt - at;
-    });
+    //
+    // Ordered by the shared newest-first rule (transactionOrder.js), on each
+    // row's recorded instant. This compared parseDemoDate(row.date) — the day
+    // alone — so every row on the same day tied and kept arrival order.
+    return sortTransactionsNewestFirst(receivedHistory);
   }, [receivedHistory]);
   const [assetDetailKey, setAssetDetailKey] = useState14(null);
   const requestCloseAssetDetail = useBackClose(!!assetDetailKey, () => setAssetDetailKey(null));
@@ -1675,7 +1678,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // "user" so nothing that already existed disappears.
   // (shareRole itself is declared earlier, alongside gloobalIdOverride,
   // so shareableGloobalId can already be role-aware.)
-  const roleSendHistory = useMemo5(() => sendHistory.filter((t) => (t.role || "user") === shareRole), [sendHistory, shareRole]);
+  // Newest first by the shared rule, like every other list here: this feeds
+  // the Home "Paid" tab, History's sending column and Recent Transactions.
+  const roleSendHistory = useMemo5(
+    () => sortTransactionsNewestFirst(sendHistory.filter((t) => (t.role || "user") === shareRole)),
+    [sendHistory, shareRole]
+  );
   const dailySpending = useMemo5(() => generateDailySpending(roleSendHistory, receivedRows), [roleSendHistory, receivedRows]);
   // The five most recent transactions on the Gloobal Bank account, both
   // directions in one list. Home's activity card splits them by a
@@ -1683,21 +1691,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // Bank screen is a question about an account, so its list is the
   // account's, merged and ordered by when things happened.
   //
-  // Rows carry a display date ("Aug 13") rather than a timestamp, so the
-  // ordering goes through parseDemoDate — the same reader the history
-  // filters and the spending chart already use. A row whose date won't
-  // parse sorts last instead of throwing the whole list out of order.
+  // Ordered by the shared newest-first rule (transactionOrder.js) on each
+  // row's recorded instant. It used to go through parseDemoDate(row.date),
+  // which is the DAY only: every same-day row tied, and the stable sort left
+  // them in concat order — all sent, then all received — which read as
+  // 16:14:07, 14:13:38, 16:13:01, 14:13:37 on a single day.
   //
   // Placed here rather than beside the Bank screen's other state because
   // it reads roleSendHistory, which is declared immediately above.
   const recentBankTransactions = useMemo5(() => {
-    const stamp = (row) => {
-      const parsed = parseDemoDate(row.date);
-      return isNaN(parsed.getTime()) ? -Infinity : parsed.getTime();
-    };
     const sent = roleSendHistory.map((t, i) => ({ ...t, direction: "sent", key: t.txnId || `sent-${t.name}-${t.date}-${i}` }));
     const received = receivedRows.map((t, i) => ({ ...t, direction: "received", key: t.txnId || `recv-${t.name}-${t.date}-${i}` }));
-    return sent.concat(received).sort((a, b) => stamp(b) - stamp(a)).slice(0, 5);
+    return sortTransactionsNewestFirst(sent.concat(received)).slice(0, 5);
   }, [roleSendHistory, receivedRows]);
   useEffect12(() => {
     if (onShareRoleChange) onShareRoleChange(shareRole);

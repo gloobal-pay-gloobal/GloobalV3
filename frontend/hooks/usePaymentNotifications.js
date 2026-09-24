@@ -179,6 +179,52 @@ function showPaymentNotification({ title, body, tag }) {
   return showDirectly();
 }
 
+// ── The received-poll baseline ───────────────────────────────────────────
+//
+// The first successful poll of a dashboard session decides what counts as
+// history (marked seen, silent) and what counts as news (notified). It used
+// to mark EVERYTHING seen, which is right only if that first poll was also
+// the first attempt. When the first attempt failed — a Render cold start —
+// or was superseded by the next 30-second tick before it answered, the
+// eventual first success could include a payment that landed while the app
+// sat open, and it was swallowed as history.
+//
+// So the baseline remembers when this session started watching (`since`, set
+// by the first ATTEMPT, never advanced by a failure) and which attempt primed
+// it:
+//   - the first attempt itself succeeded → everything is history, exactly as
+//     before, with no reliance on clocks;
+//   - a later attempt is the first success → rows created at or after
+//     `since` arrived while the app was open and are news; older rows, and
+//     rows with no usable createdAt, are history.
+// Once primed, every row goes to notifyPaymentReceived, whose persisted seen
+// list and `gloobal-txn-` tag already stop a second banner for one payment.
+//
+// `baseline` is a plain { primed, since } object owned by the caller (a ref
+// in App.jsx), reset to { primed: false, since: null } when the dashboard is
+// left. `rows` is [{ entry, createdAtMs }].
+function gloobalReceivedBaselineBegin(baseline, nowMs) {
+  if (baseline.since === null) baseline.since = nowMs;
+  return nowMs;
+}
+function gloobalReceivedBaselineSplit(baseline, attemptStartedAt, rows) {
+  if (baseline.primed) return { news: rows.map((r) => r.entry), history: [] };
+  baseline.primed = true;
+  if (attemptStartedAt === baseline.since) return { news: [], history: rows.map((r) => r.entry) };
+  const news = [];
+  const history = [];
+  rows.forEach((r) => {
+    if (Number.isFinite(r.createdAtMs) && r.createdAtMs >= baseline.since) news.push(r.entry);
+    else history.push(r.entry);
+  });
+  return { news, history };
+}
+
+// Both banners below use the server push's tag, `gloobal-txn-<referenceId>`
+// (sendPaymentPushes in server/server.js). With the app open, one payment
+// can reach this device twice — the Web Push and this page's own poll — and
+// a shared tag makes the second replace the first instead of stacking.
+
 // Money has arrived. The one people actually want.
 // `currencyCode` is what formats the amount; `currencySymbol` is still
 // accepted because callers and stored payloads carry it, and a notification
@@ -190,7 +236,7 @@ function notifyPaymentReceived({ txnId, amount, currencySymbol, currencyCode, fr
   return showPaymentNotification({
     title: `${currencyCode ? fmtMoney(Number(amount || 0), currencyCode) : `${Number(amount || 0).toFixed(2)}${currencySymbol || ""}`} received`,
     body: from ? `From ${from}` : "Money has landed in your Gloobal account.",
-    tag: `gloobal-received-${txnId || "unknown"}`
+    tag: `gloobal-txn-${txnId || "unknown"}`
   });
 }
 
@@ -205,7 +251,7 @@ function notifyPaymentSent({ txnId, amount, currencySymbol, currencyCode, to }) 
   return showPaymentNotification({
     title: `${currencyCode ? fmtMoney(Number(amount || 0), currencyCode) : `${Number(amount || 0).toFixed(2)}${currencySymbol || ""}`} sent`,
     body: to ? `To ${to}` : "Your Gloobal payment went through.",
-    tag: `gloobal-sent-${txnId || "unknown"}`
+    tag: `gloobal-txn-${txnId || "unknown"}`
   });
 }
 

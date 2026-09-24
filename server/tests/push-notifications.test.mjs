@@ -314,6 +314,10 @@ async function run() {
   check("payment accepted", payment.status === 201, `status=${payment.status} ${j(payment.body?.message)}`);
   const txn = await Transaction.findOne({ referenceId: payment.body?.transaction?.referenceId }).lean();
   const txnId = String(txn?._id);
+  // What the push names the payment by: its referenceId, because that is what
+  // App.jsx matches ?txn= and a push-click against. The inbox rows below are
+  // still keyed on the _id (metadata.transactionId).
+  const txnRef = String(txn?.referenceId);
 
   check("exactly two pushes went out", pushes.length === 2, `count=${pushes.length} -> ${j(pushes.map((p) => p.endpoint))}`);
   check("one to the payer's device, one to the payee's",
@@ -332,9 +336,9 @@ async function run() {
     check("payee: body carries the SERVER's credited figure",
       toPayee.body === `${(2500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR received from ${byKey.A.name}`,
       toPayee.body);
-    check("payee: url opens that receipt", toPayee.url === `/?txn=${txnId}`, toPayee.url);
-    check("payee: tag is the per-payment tag", toPayee.tag === `gloobal-txn-${txnId}`, toPayee.tag);
-    check("payee: transactionId is the payment's id as a string", toPayee.transactionId === txnId);
+    check("payee: url opens that receipt", toPayee.url === `/?txn=${txnRef}`, toPayee.url);
+    check("payee: tag is the per-payment tag", toPayee.tag === `gloobal-txn-${txnRef}`, toPayee.tag);
+    check("payee: transactionId is the payment's referenceId", toPayee.transactionId === txnRef && txnRef !== txnId);
     check("payee: notificationId names a real inbox row of theirs",
       Boolean(toPayee.notificationId) &&
         String((await Notification.findById(toPayee.notificationId).lean())?.userId) === userIds.B,
@@ -347,7 +351,7 @@ async function run() {
     check("payer: body carries the SERVER's debited figure",
       toPayer.body === `${(2500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR sent to ${byKey.B.name}`,
       toPayer.body);
-    check("payer: same transaction, same url", toPayer.transactionId === txnId && toPayer.url === `/?txn=${txnId}`);
+    check("payer: same transaction, same url", toPayer.transactionId === txnRef && toPayer.url === `/?txn=${txnRef}`);
     check("payer: notificationId is their own row",
       String((await Notification.findById(toPayer.notificationId).lean())?.userId) === userIds.A);
   }

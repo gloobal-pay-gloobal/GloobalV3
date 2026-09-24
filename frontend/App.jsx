@@ -1770,6 +1770,38 @@ function GloobalId() {
     }
     gloobalSetBiometricSymbolId(restored.user.symbolId || null);
     setIsLoginAttempt(true);
+    // Resume straight into the dashboard when this device still holds a
+    // live bearer token for the account (24 September 2026).
+    //
+    // This effect used to send EVERY restored session to the PIN stage.
+    // Nothing was deleted — the session and its token were sitting intact
+    // in localStorage — but closing the tab, the browser or the installed
+    // app and reopening it always landed on a sign-in screen, which is
+    // indistinguishable from being logged out. The founder reported it as
+    // exactly that, and it also meant a tap on a closed-app notification
+    // opened onto Login instead of the account it was about.
+    //
+    // Resuming on the token does not skip a check: the token was minted
+    // only in exchange for a real credential (PIN, verified OTP or passkey)
+    // and is what every request already rides on while the app stays open.
+    // The server still verifies it on each call; the first dashboard read
+    // (hydrateAccount's getProfile) comes back 401 if it has been
+    // revoked or has expired, and GLOOBAL_SESSION_EXPIRED_EVENT sends the
+    // person to Login — the same path an open app takes when its token dies.
+    //
+    // Falls back to the PIN stage, as before, when:
+    //   - there is no token, or it has visibly passed its expiry;
+    //   - the account has App lock on. That switch reads "Lock again when
+    //     you come back after leaving the app", and a cold reopen is the
+    //     plainest case of coming back — honouring it here keeps the
+    //     stricter setting strictly stricter.
+    const appLockOnRestore = Boolean(
+      restored.user.securitySettings && restored.user.securitySettings.appLock === true
+    );
+    if (restored.user.symbolId && gloobalAuthTokenLooksLive(restored.token) && !appLockOnRestore) {
+      setStage("dashboard");
+      return;
+    }
     setStage("secureId");
   }, []);
 
@@ -2027,14 +2059,15 @@ function GloobalId() {
   // ran once per dashboard entry, so money landing while the app sat open
   // went unseen until an unrelated refresh happened to fire.
   const [receivedPollToken, setReceivedPollToken] = useState19(0);
-  // Whether the dedupe list has been primed for this session.
+  // Whether the dedupe list has been primed for this session, and since when
+  // this session has been watching (see gloobalReceivedBaselineSplit).
   //
   // Without this the first poll would notify for the ENTIRE received
   // history at once — every payment ever received, all in the tray, the
-  // moment someone turns notifications on. The first pass therefore marks
-  // what already exists as seen WITHOUT showing anything, and only genuinely
-  // new arrivals after that point notify.
-  const receivedNotifyPrimedRef = useRef13(false);
+  // moment someone turns notifications on. The first successful pass
+  // therefore marks what already exists as seen WITHOUT showing anything,
+  // and only genuinely new arrivals notify.
+  const receivedBaselineRef = useRef13({ primed: false, since: null });
   useEffect15(() => {
     if (stage !== "dashboard") return;
     const interval = setInterval(() => {
@@ -2048,7 +2081,7 @@ function GloobalId() {
   }, [stage]);
   // A sign-out must re-prime for whoever signs in next.
   useEffect15(() => {
-    if (stage !== "dashboard") receivedNotifyPrimedRef.current = false;
+    if (stage !== "dashboard") receivedBaselineRef.current = { primed: false, since: null };
   }, [stage]);
 
   // Money this account RECEIVED, kept apart from what it sent.
@@ -2149,6 +2182,8 @@ function GloobalId() {
     const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
     if (!symbolId) return;
     let cancelled = false;
+    const baseline = receivedBaselineRef.current;
+    const attemptStartedAt = gloobalReceivedBaselineBegin(baseline, Date.now());
     (async () => {
       try {
         const { transactions } = await GloobalApi.getTransactionSummary(symbolId, "all");
@@ -2168,20 +2203,24 @@ function GloobalId() {
         sharedTxnHistorySettledRef.current = symbolId;
         setSendMoneyHistory((local) => seedUnder(local, sent));
         setReceivedMoneyHistory((local) => seedUnder(local, received));
-        // First pass for this session: record what is already there as seen
-        // and say nothing. Only what arrives AFTER this point is news.
-        if (!receivedNotifyPrimedRef.current) {
-          received.forEach((entry) => markPaymentNotified(entry.txnId));
-          receivedNotifyPrimedRef.current = true;
-        } else {
-          received.forEach((entry) => notifyPaymentReceived({
-            txnId: entry.txnId,
-            amount: entry.amount,
-            currencySymbol: CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "",
-      currencyCode: COUNTRY_CURRENCY[dialCountry.iso] || "USD",
-            from: entry.name
+        // First successful pass for this session: what was already there is
+        // history, marked seen in silence. If earlier attempts failed, rows
+        // created since this session started watching are news instead of
+        // history — see gloobalReceivedBaselineSplit. A response that arrives
+        // after this run was superseded returns at `cancelled` above, so it
+        // never primes the baseline.
+        const receivedRows = mapped
+          .map((entry, i) => ({ entry, createdAtMs: transactions[i] && transactions[i].createdAt ? new Date(transactions[i].createdAt).getTime() : NaN }))
+          .filter((row) => row.entry.direction === "received");
+        const { news, history } = gloobalReceivedBaselineSplit(baseline, attemptStartedAt, receivedRows);
+        history.forEach((entry) => markPaymentNotified(entry.txnId));
+        news.forEach((entry) => notifyPaymentReceived({
+          txnId: entry.txnId,
+          amount: entry.amount,
+          currencySymbol: CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "",
+          currencyCode: COUNTRY_CURRENCY[dialCountry.iso] || "USD",
+          from: entry.name
         }));
-        }
       } catch (e) {
         /* read-only; the dashboard works without it */
       }

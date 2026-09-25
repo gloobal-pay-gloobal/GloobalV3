@@ -186,9 +186,18 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   const [receipt, setReceipt] = useState15(null);
   // The post-payment question and scratch card, shown before the receipt.
   const [unlock, setUnlock] = useState15(null);
+  // Closing the receipt leaves Send Money too.
+  //
+  // It used to only dismiss the document, dropping the person back onto the
+  // form they had just paid from — with the recipient still loaded and the
+  // amount still typed. That was survivable while the receipt also carried a
+  // Done button, which did close both; Done is gone (back is the one way out
+  // of a document now), so this is what back has to mean. The payment is
+  // finished: there is nothing left to do on the form behind it.
   const requestCloseReceipt = useBackClose(!!receipt, () => {
     setReceipt(null);
     setTransactionStatus("idle");
+    onClose();
   });
   const [searchStage, setSearchStage] = useState15(() => prefillReceiver ? "found" : "dialing");
   // Recipient lookup against GET /api/users/resolve. searchError carries

@@ -246,7 +246,7 @@ async function pay(page, { sender, receiver, receiverGets }) {
 }
 
 async function closeReceipt(page) {
-  const done = page.getByRole("button", { name: /^(Done|Close)$/i });
+  const done = page.getByRole("dialog", { name: "Transaction receipt" }).getByRole("button", { name: /^Back$/i });
   if (await done.count()) await tap(done.first());
   await page.waitForTimeout(1000);
 }

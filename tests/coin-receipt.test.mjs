@@ -421,7 +421,9 @@ describe("the receipt is not labelled as a payment", () => {
     // then asserts the coin case still satisfies it.
     const m = modal();
     assert.match(m, /const showReceiptTabs = !isCoinReceipt && hasShareEvent;/);
-    assert.match(m, /\{showReceiptTabs && <div style=\{\{ display: "flex", alignItems: "center", gap: 6, padding: 4, borderRadius: 999/);
+    assert.match(m, /\{showReceiptTabs \? <div style=\{\{ display: "flex", flex: 1, gap: 4, padding: 3, borderRadius: 999/);
+    // And without them, the document's own name — never a lone pill.
+    assert.match(m, /: <span style=\{\{ fontSize: 15, fontWeight: 800, color: T\.ink \}\}>\{tabLabel\(leadingTab\)\}<\/span>/);
   });
 
   test("the coin block is drawn only for a coin receipt", () => {

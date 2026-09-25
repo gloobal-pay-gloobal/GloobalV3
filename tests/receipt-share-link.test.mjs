@@ -106,7 +106,10 @@ describe("the share sheet gets the picture and a link", () => {
     // share on the Transaction ID box. Whichever you pressed, you did not
     // send the other half.
     assert.doesNotMatch(receipt, /data-testid="receipt-share-link"/);
-    assert.equal((receipt.match(/aria-label="Share receipt/g) || []).length, 1);
+    // Either spelling: the control is a component now (ReceiptIconAction),
+    // so the label reaches the DOM through a prop rather than as a literal
+    // attribute. What is being counted is share entry points, not syntax.
+    assert.equal((receipt.match(/aria-?[Ll]abel="Share receipt/g) || []).length, 1);
     // handleShareTxnId survives, but only as the failure path.
     assert.equal((receipt.match(/handleShareTxnId\(\)/g) || []).length, 1);
   });

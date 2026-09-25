@@ -153,7 +153,7 @@ async function pay(page, { sender, receiver, receiverGets }) {
 // receipt later, and the one where the code has to have survived the round
 // trip through the history projection.
 async function reopenFromHistory(page, counterpartyName) {
-  const done = page.getByRole("button", { name: /^(Done|Close)$/i });
+  const done = page.getByRole("dialog", { name: "Transaction receipt" }).getByRole("button", { name: /^Back$/i });
   if (await done.count()) await tap(done.first());
   await page.waitForTimeout(1200);
 

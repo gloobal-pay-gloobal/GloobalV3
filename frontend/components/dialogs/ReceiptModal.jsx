@@ -5,6 +5,7 @@ import {
   Check,
   Share2,
   FileText,
+  Eye,
   RefreshCw as RefreshCw7
 } from "lucide-react";
 
@@ -121,7 +122,7 @@ function ReceiptTabButton({ label, active, onSelect }) {
   >{label}</button>;
 }
 
-function ReceiptModal({ receipt, onClose, onDone }) {
+function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest }) {
   const [copied, setCopied] = useState11(false);
   // A Creator Share receipt opens on its share.
   //
@@ -171,6 +172,15 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       setShareFeedback("");
     }
   }, [receipt]);
+  // "View Creator Share receipt", from the card that has just been scratched.
+  //
+  // A counter rather than a boolean, because the request can be made more than
+  // once in a receipt's life and a boolean that is already true fires nothing.
+  // Zero — the initial value — is not a request, so a receipt that opens with
+  // no reveal behind it is unaffected.
+  useEffect10(() => {
+    if (shareTabRequest) setReceiptTab("share");
+  }, [shareTabRequest]);
   const [txnColorOffset, setTxnColorOffset] = useState11(0);
   useEffect10(() => {
     const interval = setInterval(() => {
@@ -288,7 +298,19 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // line already beside it. A coin movement carries no Creator Share by
   // construction, and neither does a payment at 0%, so both get their
   // document's name in the header instead of a pill with a single segment.
-  const showReceiptTabs = !isCoinReceipt && hasShareEvent;
+  // Is there a share to reveal, and is anyone offering to reveal it?
+  //
+  // Both halves matter. `hasShareEvent` is the payment's own answer — a payee
+  // who shares nothing back has nothing behind a coupon, and a button
+  // promising otherwise is a lie the scratch card would have to tell. And
+  // `onRevealShare` is only passed by the screen that has just paid: from
+  // History the share is simply on its tab, which is what "it reveals itself
+  // quietly" means for somebody who walked away.
+  const canReveal = typeof onRevealShare === "function" && hasShareEvent;
+  // While the coupon is still unopened the receipt keeps the share to itself:
+  // no Creator Share tab, and no "Creator share 2.78₹ back" on the head. A
+  // coupon over a figure printed two inches above it is not a coupon.
+  const showReceiptTabs = !isCoinReceipt && hasShareEvent && !canReveal;
 
   // `direction` means two different things, and conflating them puts the
   // wrong sign on the hero figure.
@@ -662,7 +684,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // there is really one — see hasShareEvent.
   const heroChip = onShareTab
     ? (displayShareRate == null ? "" : `${receipt.name || "They"} share${/s$/i.test(String(receipt.name || "")) ? "" : "s"} ${displayShareRate.toFixed(2)}% of every payment`)
-    : (hasShareEvent && shownShareAmount > 0
+    : (hasShareEvent && !canReveal && shownShareAmount > 0
       ? `Creator share ${fmtMoney(shownShareAmount, shareCurrency)} ${shareIsCredit ? "back" : "shared"}`
       : "");
   const dateTimeValue = [receipt.date, receipt.time].filter(Boolean).join(" \xB7 ");
@@ -1103,6 +1125,37 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     solid
     onClick={handlePayAgain}
   />}</div>{
+    /* Reveal my share.
+       Offered only when this payment really carried a Creator Share, and only
+       while it is still a surprise — `onRevealShare` is passed by the screen
+       that has just paid, and never by History, so a receipt reopened a week
+       later simply has its Creator Share tab and no coupon.
+       It sits UNDER the receipt rather than on it: the receipt is a record and
+       is complete without this. This is the part that is for fun. */
+  }{canReveal && <button
+    onClick={onRevealShare}
+    data-testid="receipt-reveal-share"
+    className="v2-tap"
+    style={{
+      marginTop: 10,
+      width: "100%",
+      minHeight: 52,
+      borderRadius: 16,
+      border: "none",
+      background: T.gradButton,
+      color: "#fff",
+      fontSize: 14.5,
+      fontWeight: 800,
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      boxShadow: "0 12px 26px -16px rgba(76,29,149,0.9)"
+    }}
+  ><Eye size={17} aria-hidden="true" />Reveal my share</button>}{canReveal && <div
+    style={{ textAlign: "center", fontSize: 10.5, fontWeight: 700, color: T.inkFaint, marginTop: 7, lineHeight: 1.4 }}
+  >{`${receipt.name || "They"} share${/s$/i.test(String(receipt.name || "")) ? "" : "s"} a little of every payment back`}</div>}{
     /* What the document is signed with. Same two lines the app opens on. */
   }<div style={{ marginTop: "auto", textAlign: "center", padding: "10px 0 2px" }}><div style={{ fontSize: 11.5, letterSpacing: 1.2, color: T.ink }}><HoomanMark /></div><div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, color: T.inkFaint, marginTop: 4, textTransform: "none" }}>
           Cashless · Taxless · Borderless · Limitless

@@ -1,14 +1,22 @@
 // tests/payment-unlock.test.mjs
 //
-// After a payment: one question, then scratch to see the Creator Share.
+// Reveal my share: the receipt, then one question, then the coupon.
+//
+// The order is the thing this file exists to hold. The question used to open
+// OVER the receipt, before anyone had seen what they had paid — a game as the
+// toll gate on a document somebody had just paid for. The receipt lands first
+// now and is complete on its own; the coupon is offered under it.
 //
 // What this pins:
-//   - a settled payment opens on the question before the receipt;
-//   - the scratch card stays locked until a question is answered, and the
-//     share is not on the page until then;
-//   - answering never changes the share — the revealed figure is the one on
-//     the receipt, and Skip reaches the same receipt;
-//   - with the Hooman Score saved, the answer is saved as a PAYMENT answer
+//   - the receipt is what a payment opens on, with nothing in front of it;
+//   - Reveal my share is there only when the payee really shares something
+//     back, and while it is unopened the receipt keeps the figure to itself —
+//     no Creator Share tab, no share on the head;
+//   - answering turns the card to the coupon, and so does Skip;
+//   - the revealed figure is the receipt's own, and View Creator Share
+//     receipt lands on that tab;
+//   - closing without scratching gives the tab back and does not ask again;
+//   - with the Hooman Score saved, the answer is stored as a PAYMENT answer
 //     naming that payment; without it, nothing is sent;
 //   - the questions themselves: three-number sums with one right answer among
 //     four, and no finance or "Are you okay?" check-in after a payment.
@@ -20,13 +28,17 @@ import { readSource } from "./harness.mjs";
 
 const SENDER = ACCOUNTS.india;
 const RECEIVER = ACCOUNTS.japan;
+// The same payee, sharing nothing. `cashbackRate` reaches both the resolve
+// route (the dot on the Send screen) and the send route (the share leg), so
+// this is one number away from a payment that earns nothing back.
+const ACCOUNTS_NO_SHARE = { ...ACCOUNTS, japan: { ...ACCOUNTS.japan, cashbackRate: 0 } };
 
 async function tap(locator) {
   await locator.waitFor({ timeout: 20000 });
   await locator.evaluate((node) => node.click());
 }
 
-// The real screens the whole way, stopping where the unlock card opens.
+// The real screens the whole way, stopping on the receipt.
 async function pay(page, receiverGets = 500, { beforeSend } = {}) {
   await page.getByLabel("Send", { exact: true }).click({ force: true });
   await page.getByLabel("Symbol −", { exact: true }).waitFor({ timeout: 25000 });
@@ -56,7 +68,15 @@ async function pay(page, receiverGets = 500, { beforeSend } = {}) {
       if (await submit.count()) await tap(submit.last());
     }
   }
-  await page.getByTestId("payment-unlock").waitFor({ timeout: 45000 });
+  await page.getByTestId("receipt-counterparty").waitFor({ timeout: 45000 });
+}
+
+// Open the coupon flow from the receipt and answer the question.
+async function revealAndAnswer(page) {
+  await tap(page.getByTestId("receipt-reveal-share"));
+  await page.getByTestId("unlock-face-question").waitFor({ timeout: 15000 });
+  await firstOption(page).click();
+  await page.getByTestId("unlock-face-coupon").waitFor({ timeout: 15000 });
 }
 
 const firstOption = (page) => page.getByTestId("unlock-question").locator("button[aria-pressed]").first();
@@ -64,6 +84,18 @@ const firstOption = (page) => page.getByTestId("unlock-question").locator("butto
 // other payment suites use.
 const open = (extra = {}) => openPage({ account: SENDER, permissions: ["geolocation"], geolocation: { latitude: 19.076, longitude: 72.8777 }, ...extra });
 const hooman = (api) => api.calls.filter((c) => c.method === "POST" && c.path === "/api/hooman/answers");
+
+// Scratch the coupon with a finger until it opens itself.
+async function scratch(page) {
+  const box = await page.getByTestId("unlock-scratch").boundingBox();
+  await page.mouse.move(box.x + 5, box.y + 10);
+  await page.mouse.down();
+  for (let row = 10; row < box.height; row += 26) {
+    await page.mouse.move(box.x + box.width - 5, box.y + row, { steps: 8 });
+    await page.mouse.move(box.x + 5, box.y + row + 13, { steps: 8 });
+  }
+  await page.mouse.up();
+}
 
 before(async () => {
   await buildOnce();
@@ -73,96 +105,98 @@ after(async () => {
 });
 
 describe("after a payment", () => {
-  test("the question comes first, the card is locked, and the share is hidden until it is answered", async () => {
+  test("the receipt comes first, and the share is behind the button", async () => {
     const { page, context, errors } = await open();
     try {
       await login(page, SENDER);
       await pay(page);
-      assert.equal(await page.getByTestId("receipt-counterparty").count(), 0, "the receipt opened over the question");
-      await firstOption(page).waitFor({ timeout: 10000 });
-      const reveal = page.getByRole("button", { name: "Reveal my share", exact: true });
-      assert.equal(await reveal.isDisabled(), true, "Reveal works before answering");
-      assert.equal(await page.getByTestId("unlock-share").count(), 0, "the share is on the page before answering");
-      assert.match(await page.getByTestId("unlock-scratch").innerText(), /ANSWER TO UNLOCK/);
-      assert.match(await page.getByTestId("payment-unlock").innerText(), /Payment completed/);
-      assert.match(await page.getByTestId("unlock-amount").innerText(), /^\u2212/, "the amount paid is not shown as money out");
-
-      await firstOption(page).click();
-      await page.getByText("SCRATCH HERE").waitFor({ timeout: 10000 });
-      assert.equal(await reveal.isDisabled(), false);
-      await reveal.click();
-      const share = (await page.getByTestId("unlock-share").innerText()).trim();
-      await page.getByRole("button", { name: "View receipt", exact: true }).click();
-      await page.getByTestId("receipt-counterparty").waitFor({ timeout: 15000 });
-      if (/^\+/.test(share)) {
-        // The share lives on the receipt's Creator Share tab. This branch
-        // never ran before: the fake server returned no share leg, so the
-        // card read "No share on this one". It now returns the leg the real
-        // server does, and the share is read where the receipt shows it.
-        await tap(page.getByRole("button", { name: "Creator Share", exact: true }).first());
-        await page.getByTestId("receipt-hero-share").waitFor({ timeout: 15000 });
-        const receiptText = await page.locator("body").innerText();
-        assert.ok(receiptText.includes(share.slice(1)), `the receipt does not carry the revealed share ${share}`);
-      }
+      // Nothing in front of the receipt.
+      assert.equal(await page.getByTestId("payment-unlock").count(), 0, "something opened over the receipt");
+      const reveal = page.getByTestId("receipt-reveal-share");
+      await reveal.waitFor({ timeout: 10000 });
+      // And nothing on the receipt gives the figure away before the coupon.
+      assert.equal(await page.getByTestId("receipt-hero-chip").count(), 0, "the head prints the share above the coupon");
+      assert.equal(
+        await page.getByRole("button", { name: "Creator Share", exact: true }).count(),
+        0,
+        "the Creator Share tab is offered while the coupon is unopened"
+      );
+      await revealAndAnswer(page);
+      await scratch(page);
+      await page.getByTestId("unlock-earned").waitFor({ timeout: 15000 });
+      const earned = (await page.getByTestId("unlock-earned").innerText()).trim();
+      assert.match(earned, /^\+/, "the share is not shown as money in");
       assert.deepEqual(errors, []);
     } finally {
       await context.close();
     }
   });
 
-  test("before paying, a green dot says the receiver shares — the rate is kept for the scratch card", async () => {
-    const { page, context } = await open();
+  test("a payee who shares nothing is offered no coupon at all", async () => {
+    // The button is a promise. A payment at 0% has nothing behind the foil,
+    // and a coupon over an empty box is worse than no coupon.
+    const { page, context } = await open({ accounts: ACCOUNTS_NO_SHARE });
     try {
       await login(page, SENDER);
-      let dot = null;
-      await pay(page, 500, {
-        beforeSend: async () => {
-          const el = page.getByTestId("share-dot");
-          dot = { shares: await el.getAttribute("data-shares"), label: await el.getAttribute("aria-label") };
-          const row = await el.locator("xpath=..").innerText();
-          assert.doesNotMatch(row, /%/, "the rate is still printed beside Creator Share");
-        }
-      });
-      assert.equal(dot.shares, "yes");
-      assert.doesNotMatch(dot.label, /\d/, "the dot's label gives the rate away");
-      await firstOption(page).click();
-      await page.getByRole("button", { name: "Reveal my share", exact: true }).click();
-      assert.match(await page.getByTestId("unlock-rate").innerText(), /^\d+\.\d{2}% Creator Share$/);
+      await pay(page);
+      assert.equal(await page.getByTestId("receipt-reveal-share").count(), 0, "a 0% payment offered a coupon");
+      const dot = page.getByTestId("share-dot");
+      if (await dot.count()) assert.equal(await dot.getAttribute("data-shares"), "no");
     } finally {
       await context.close();
     }
   });
 
-  test("Skip goes straight to the same receipt", async () => {
+  test("the revealed figure is the one on the receipt, and its tab is one tap away", async () => {
     const { page, context } = await open();
     try {
       await login(page, SENDER);
       await pay(page);
+      await revealAndAnswer(page);
+      await scratch(page);
+      const earned = (await page.getByTestId("unlock-earned").innerText()).trim();
+      await tap(page.getByTestId("unlock-view-share-receipt"));
+      await page.getByTestId("receipt-hero-share").waitFor({ timeout: 15000 });
+      const hero = (await page.getByTestId("receipt-hero-share").innerText()).trim();
+      assert.equal(hero.replace(/\s/g, ""), earned.replace(/\s/g, ""), "the card and the receipt disagree about the share");
+      // And the offer is spent: the receipt is a receipt again.
+      assert.equal(await page.getByTestId("receipt-reveal-share").count(), 0, "the coupon is offered a second time");
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("Skip reaches the same coupon and saves nothing", async () => {
+    const { page, context, api } = await open({ hooman: { [SENDER.symbolId]: { consented: true, answers: [] } } });
+    try {
+      await login(page, SENDER);
+      await pay(page);
+      await tap(page.getByTestId("receipt-reveal-share"));
+      await page.getByTestId("unlock-face-question").waitFor({ timeout: 15000 });
       await page.getByRole("button", { name: "Skip", exact: true }).click();
-      await page.getByTestId("receipt-counterparty").waitFor({ timeout: 15000 });
-      assert.equal(await page.getByTestId("payment-unlock").count(), 0);
+      await page.getByTestId("unlock-face-coupon").waitFor({ timeout: 15000 });
+      await page.waitForTimeout(400);
+      assert.equal(hooman(api).length, 0, "skipping saved an answer");
     } finally {
       await context.close();
     }
   });
 
-  test("scratching with a finger clears the foil and shows the share", async () => {
+  test("walking away leaves the share on its tab, and asks nothing next time", async () => {
     const { page, context } = await open();
     try {
       await login(page, SENDER);
       await pay(page);
-      await firstOption(page).click();
-      await page.getByText("SCRATCH HERE").waitFor({ timeout: 10000 });
-      const box = await page.getByTestId("unlock-scratch").boundingBox();
-      await page.mouse.move(box.x + 5, box.y + 10);
-      await page.mouse.down();
-      for (let row = 10; row < box.height; row += 26) {
-        await page.mouse.move(box.x + box.width - 5, box.y + row, { steps: 8 });
-        await page.mouse.move(box.x + 5, box.y + row + 13, { steps: 8 });
-      }
-      await page.mouse.up();
-      await page.getByRole("button", { name: "View receipt", exact: true }).waitFor({ timeout: 10000 });
-      assert.equal(await page.getByTestId("unlock-share").count(), 1);
+      await tap(page.getByTestId("receipt-reveal-share"));
+      await page.getByTestId("unlock-face-question").waitFor({ timeout: 15000 });
+      await page.getByRole("button", { name: "Close", exact: true }).click();
+      await page.getByTestId("receipt-counterparty").waitFor({ timeout: 15000 });
+      assert.equal(await page.getByTestId("receipt-reveal-share").count(), 0, "the coupon was offered again");
+      // The tab is back, because there is nothing left to keep from them.
+      const shareTab = page.getByRole("button", { name: "Creator Share", exact: true });
+      await shareTab.waitFor({ timeout: 10000 });
+      await shareTab.click();
+      await page.getByTestId("receipt-hero-share").waitFor({ timeout: 15000 });
     } finally {
       await context.close();
     }
@@ -173,8 +207,7 @@ describe("after a payment", () => {
     try {
       await login(page, SENDER);
       await pay(page);
-      await firstOption(page).click();
-      await page.getByText("SCRATCH HERE").waitFor({ timeout: 10000 });
+      await revealAndAnswer(page);
       await page.waitForTimeout(500);
       const sent = hooman(api);
       assert.equal(sent.length, 1, "expected exactly one saved answer");
@@ -196,15 +229,40 @@ describe("after a payment", () => {
     try {
       await login(page, SENDER);
       await pay(page);
+      await tap(page.getByTestId("receipt-reveal-share"));
+      await page.getByTestId("unlock-face-question").waitFor({ timeout: 15000 });
       await firstOption(page).click();
-      await page.getByText("SCRATCH HERE").waitFor({ timeout: 10000 });
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(300);
       assert.equal(hooman(api).length, 0);
       await page.getByRole("button", { name: "Add this to my Hooman Score", exact: true }).click();
       await page.getByText("Saved to your Hooman Score").waitFor({ timeout: 10000 });
       assert.equal(api.calls.filter((c) => c.path === "/api/hooman/consent").length, 1);
       assert.equal(hooman(api).length, 1);
       assert.equal(api.state.hooman[SENDER.symbolId].answers.length, 1);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("before paying, a green dot says the receiver shares — the rate is kept for the coupon", async () => {
+    const { page, context } = await open();
+    try {
+      await login(page, SENDER);
+      let dot = null;
+      await pay(page, 500, {
+        beforeSend: async () => {
+          const el = page.getByTestId("share-dot");
+          dot = { shares: await el.getAttribute("data-shares"), label: await el.getAttribute("aria-label") };
+          const row = await el.locator("xpath=..").innerText();
+          assert.doesNotMatch(row, /%/, "the rate is still printed beside Creator Share");
+        }
+      });
+      assert.equal(dot.shares, "yes");
+      assert.doesNotMatch(dot.label, /\d/, "the dot's label gives the rate away");
+      await revealAndAnswer(page);
+      await scratch(page);
+      await page.getByTestId("unlock-rate").waitFor({ timeout: 15000 });
+      assert.match(await page.getByTestId("unlock-rate").innerText(), /^\d+\.\d{2}% of what you paid$/);
     } finally {
       await context.close();
     }
@@ -259,7 +317,29 @@ describe("the questions", () => {
     assert.ok(!/ShareRateFlipCircle percent=\{bottom\.shareRate/.test(send), "the percentage pill is back on the Send screen");
   });
 
-  test("the screen says the share does not depend on the answer", () => {
-    assert.match(SRC, /Paid in full, whatever you answer\./);
+  test("the answer never changes the share, and the card says so", () => {
+    assert.match(SRC, /it's yours whatever you do/);
+    // Skip turns the card the same way an answer does — see the button.
+    assert.match(SRC, /picked === null && turnTo\("coupon"\)/);
+  });
+
+  test("the coupon is offered by the screen that paid, never by History", () => {
+    // "It reveals itself quietly": walk away and the share is simply on its
+    // tab next time. That is not a stored flag — it is that only Send Money
+    // passes the offer at all.
+    const send = readSource("frontend/screens/SendMoney/SendMoney.jsx");
+    assert.match(send, /onRevealShare=\{unlock \? \(\) => setUnlockOpen\(true\) : void 0\}/);
+    const history = readSource("frontend/features/history/TransactionHistoryScreen.jsx");
+    assert.ok(!/onRevealShare/.test(history), "History is offering the coupon");
+  });
+
+  test("nothing on the card advances on a clock except the two turns", () => {
+    // The card turns itself twice — after the verdict has been read, and
+    // after the figure has been seen where it was hidden. Neither invents
+    // anything: both wait on something that has already happened.
+    const timers = SRC.match(/after\(/g) || [];
+    assert.ok(timers.length >= 3, "the turns are gone");
+    assert.match(SRC, /var PAYMENT_UNLOCK_VERDICT_MS = 950;/);
+    assert.match(SRC, /var PAYMENT_UNLOCK_REVEAL_MS = 900;/);
   });
 });

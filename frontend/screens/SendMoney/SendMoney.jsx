@@ -185,7 +185,15 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   const pinErrorTimer = useRef11(null);
   const [receipt, setReceipt] = useState15(null);
   // The post-payment question and scratch card, shown before the receipt.
+  // The Creator Share this payment earned, offered under its receipt.
+  //
+  // `unlock` is the offer (the receipt the share belongs to); `unlockOpen` is
+  // whether the card is up; `shareTabRequest` is bumped when the scratched
+  // card asks the receipt to show its Creator Share tab. The offer is dropped
+  // once taken, so the button does not come back on a receipt already opened.
   const [unlock, setUnlock] = useState15(null);
+  const [unlockOpen, setUnlockOpen] = useState15(false);
+  const [shareTabRequest, setShareTabRequest] = useState15(0);
   // Closing the receipt leaves Send Money too.
   //
   // It used to only dismiss the document, dropping the person back onto the
@@ -592,9 +600,14 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     // The receipt is set before the status flips, so "completed" is never
     // observable without one to show for it.
     setReceipt(finalReceipt);
-    // A payment that really settled opens on the question-and-scratch card
-    // first (PaymentUnlock), and the receipt after it. A locally-recorded one
-    // goes straight to its receipt: it earned no share to reveal.
+    // A payment that really settled carries a share to reveal, so its receipt
+    // is offered the Reveal my share button (PaymentUnlock is what that opens).
+    // A locally-recorded one goes straight to its receipt and is offered
+    // nothing: it earned no share, because it never reached the server.
+    //
+    // The receipt comes FIRST either way. This used to open the question over
+    // the top of it, which made a game the toll gate on a document somebody
+    // had just paid for.
     if (settledRemotely && typeof gloobalAuthToken === "function" && gloobalAuthToken()) {
       setUnlock({ receipt: finalReceipt, amountLabel: fmtMoney(senderAmount, top.currency) });
     }
@@ -1753,20 +1766,32 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       setFailureReason(null);
       setTransactionStatus("idle");
     }}
-  />{unlock && <PaymentUnlock
-    receipt={unlock.receipt}
-    amountLabel={unlock.amountLabel}
-    onToast={showToast2}
-    onDone={() => setUnlock(null)}
-  />}<ReceiptModal
-    receipt={unlock ? null : receipt}
+  /><ReceiptModal
+    receipt={receipt}
     onClose={requestCloseReceipt}
     onDone={() => {
       setReceipt(null);
       setTransactionStatus("idle");
       onClose();
     }}
-  />{
+    onRevealShare={unlock ? () => setUnlockOpen(true) : void 0}
+    shareTabRequest={shareTabRequest}
+  />{unlock && unlockOpen && <PaymentUnlock
+    receipt={unlock.receipt}
+    onToast={showToast2}
+    onClose={() => {
+      // Closed at any face, and the offer goes with it: whether they
+      // scratched, skipped or walked away, the share is on the Creator Share
+      // tab from here on. Nobody is asked the same question twice.
+      setUnlockOpen(false);
+      setUnlock(null);
+    }}
+    onViewShareReceipt={() => {
+      setUnlockOpen(false);
+      setUnlock(null);
+      setShareTabRequest((n) => n + 1);
+    }}
+  />}{
     /* Face ID + fingerprint — required after PIN, before the payment
        actually completes. Backing out just cancels the payment;
        nothing has been sent yet at this point. */

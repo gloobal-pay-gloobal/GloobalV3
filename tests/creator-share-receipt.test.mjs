@@ -153,7 +153,10 @@ describe("the Creator Share tab is present without being fabricated", () => {
     // The guard moved up a level with the ticket redesign: rather than
     // drawing the pill and hiding one of its two segments, a receipt with
     // nothing to toggle between draws no pill at all.
-    assert.match(modal, /const showReceiptTabs = !isCoinReceipt && hasShareEvent;/);
+    assert.match(modal, /const showReceiptTabs = !isCoinReceipt && hasShareEvent && !canReveal;/);
+    // The third clause is the coupon's: while the share is still behind one,
+    // the tab that would print it is not drawn either.
+    assert.match(modal, /const canReveal = typeof onRevealShare === "function" && hasShareEvent;/);
     assert.match(modal, /\{showReceiptTabs \? <div style/);
   });
 

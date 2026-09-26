@@ -256,7 +256,15 @@ function gloobalRecordedFigure(value) {
 }
 
 function mapServerTransaction(row, viewerSymbolId) {
-  const created = row.createdAt ? new Date(row.createdAt) : new Date();
+  // The server's own record of when this happened — the instant every list
+  // sorts by (transactionOrder.js) and the instant the row's date and time
+  // are printed from, so the order a person sees and the times they read are
+  // the same fact. It was only ever turned into those two display strings
+  // and then dropped, so no list had anything finer than "Aug 13" to sort
+  // on. No `createdAt` means no instant: it used to fall back to `new
+  // Date()`, stamping a record with whenever it happened to be read.
+  const createdParsed = row.createdAt ? new Date(row.createdAt) : null;
+  const created = createdParsed && !Number.isNaN(createdParsed.getTime()) ? createdParsed : null;
   const counterparty = row.counterparty || {};
   // fullName is the mobile number on accounts made before the name step
   // existed, so a "name" that is just the number is not worth showing.
@@ -329,8 +337,10 @@ function mapServerTransaction(row, viewerSymbolId) {
     id: counterparty.symbolId || "",
     flag: counterpartyFlag,
     counterpartyIso: counterpartyIso || null,
-    date: created.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-    time: formatClockTime(created),
+    // ISO, from the server's createdAt; null when the row has none.
+    occurredAt: created ? created.toISOString() : null,
+    date: created ? created.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
+    time: created ? formatClockTime(created) : "",
     amount: ownAmount,
     // Carried on the row so nothing downstream has to guess. A row with an
     // amount and no currency is what made this bug possible.
@@ -732,7 +742,7 @@ function GloobalId() {
     // transaction belongs to, for the role-separated history/chart
     // split in DashboardScreen — not to be confused with the
     // sender/receiver location role used just above.
-    setSendMoneyHistory((h) => [{ ...entry, role: activeShareRole }, ...h]);
+    setSendMoneyHistory((h) => sortTransactionsNewestFirst([{ ...entry, role: activeShareRole }, ...h]));
     // Money moved, so Gloobal Coverage's figures have. Send Money.
     bumpCoverage();
     // Posting + completion + provenance + complaint window + asset-seed
@@ -1081,12 +1091,14 @@ function GloobalId() {
       status: "completed",
       method: methodKey,
       time: formatClockTime(now),
+      // The instant this payment happened — what every list sorts by.
+      occurredAt: now.toISOString(),
       txnId,
       shareRate: (cashbackRate || 0) * 100,
       ledgerRecordId: result.ledgerRecordId,
       role: activeShareRole
     };
-    setSendMoneyHistory((h) => [historyEntry, ...h]);
+    setSendMoneyHistory((h) => sortTransactionsNewestFirst([historyEntry, ...h]));
     // Money moved, so Gloobal Coverage's figures have. Pay business — the
     // other path whose rows the old client-side total silently dropped.
     bumpCoverage();
@@ -2194,9 +2206,28 @@ function GloobalId() {
         // Both lists seed UNDER whatever this session already holds, keyed by
         // txnId, for the same reason: a payment made moments ago is in local
         // state and may not be in the fetched page yet.
+        //
+        // Then ONE newest-first sort (transactionOrder.js). This used to be a
+        // bare concat, so a row that arrived on a later poll — a payment
+        // received after the first load — landed at the END of its list,
+        // under rows hours older than it.
+        //
+        // A local row the server has now recorded takes the SERVER's instant
+        // (and the date and time printed from it): the local one is this
+        // device's clock, the server's is the record, and sorting one list
+        // on two clocks is how two rows can swap places on a reload.
         const seedUnder = (local, rows) => {
+          const serverByTxn = new Map(rows.filter((entry) => entry.txnId).map((entry) => [entry.txnId, entry]));
+          const reconciled = local.map((entry) => {
+            const server = entry.txnId ? serverByTxn.get(entry.txnId) : null;
+            return server && server.occurredAt
+              ? { ...entry, occurredAt: server.occurredAt, date: server.date, time: server.time }
+              : entry;
+          });
           const seen = new Set(local.map((entry) => entry.txnId).filter(Boolean));
-          return local.concat(rows.filter((entry) => !entry.txnId || !seen.has(entry.txnId)));
+          return sortTransactionsNewestFirst(
+            reconciled.concat(rows.filter((entry) => !entry.txnId || !seen.has(entry.txnId)))
+          );
         };
         // Set before the lists, so the shared-receipt effect re-running on
         // them knows this account's history is now in.

@@ -1,6 +1,6 @@
 // src/domain/essentials/entities/EssentialsWallet.js
 var EssentialsGrant = class {
-  constructor({ key, business, chip, amountPaid, cashbackRate, date, time, creatorName, monthsAccrued = 0, txnId = null, paylaterSettledAmount = 0 }) {
+  constructor({ key, business, chip, amountPaid, cashbackRate, date, time, creatorName, monthsAccrued = 0, txnId = null, paylaterSettledAmount = 0, occurredAt = null }) {
     this.key = key;
     this.business = business;
     this.chip = chip;
@@ -22,6 +22,12 @@ var EssentialsGrant = class {
     // reflects where the money actually landed instead of always
     // saying "Bank".
     this.paylaterSettledAmount = paylaterSettledAmount;
+    // When this grant was planted, as an ISO instant: the payment's own
+    // `now` for a grant minted here, the server's plantedAt for one restored
+    // from it. What the My Assets list sorts by (transactionOrder.js) — the
+    // date/time above are display strings, and "Aug 13" cannot order two
+    // seeds planted the same day. Null only when nothing recorded one.
+    this.occurredAt = occurredAt;
     Object.freeze(this);
   }
   // Current accrued value of this single grant, compounding monthly —

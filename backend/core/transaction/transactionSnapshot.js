@@ -104,6 +104,10 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     method: payMethod || "Gloobal Bank",
     date: now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
     time: txnTime,
+    // The instant this payment happened, which every transaction list sorts
+    // by (transactionOrder.js). Replaced by the server's createdAt once the
+    // history fetch has the row.
+    occurredAt: now.toISOString(),
     status: "completed",
     txnId: resolvedTxnId,
     // The share leg's OWN reference, and the payment it came from. Empty
@@ -124,6 +128,7 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
   const historyEntry = {
     name: receiver.name,
     date: now.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    occurredAt: now.toISOString(),
     amount: convertedAmount,
     flag: receiver.flag,
     status: "completed",

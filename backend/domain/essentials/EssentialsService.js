@@ -34,8 +34,11 @@ var EssentialsService = class {
       const existing = this.#grants.find((g) => g.txnId === txnId);
       if (existing) return existing;
     }
-    const date = (now || /* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    const grant = new EssentialsGrant({ key: `${key}-${Date.now()}`, business, chip, amountPaid, cashbackRate, date, time, creatorName, monthsAccrued: 0, txnId, paylaterSettledAmount });
+    // One instant for the grant's printed date and its sort key, so the two
+    // cannot disagree. The payment's own `now` when the caller has one.
+    const plantedAt = now || /* @__PURE__ */ new Date();
+    const date = plantedAt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const grant = new EssentialsGrant({ key: `${key}-${Date.now()}`, business, chip, amountPaid, cashbackRate, date, time, creatorName, monthsAccrued: 0, txnId, paylaterSettledAmount, occurredAt: plantedAt.toISOString() });
     this.#grants.push(grant);
     const money = Money.of(grant.accruedValue(this.monthlyGrowthRate), currency);
     if (money.isPositive()) {
@@ -74,10 +77,10 @@ var EssentialsService = class {
   // ledger is rebuilt from empty on each page load, so on a fresh load
   // there is nothing to double-count against. The caller's own id-based
   // guard is what keeps a second call in the same session from re-posting.
-  restoreGrant({ userAccounts, key, business, chip, amountPaid, cashbackRate, date, time, creatorName, monthsAccrued = 0, currency = "INR" }) {
+  restoreGrant({ userAccounts, key, business, chip, amountPaid, cashbackRate, date, time, creatorName, monthsAccrued = 0, currency = "INR", occurredAt = null }) {
     if (!cashbackRate) return null;
     if (this.#grants.some((g) => g.key === key)) return null;
-    const grant = new EssentialsGrant({ key, business, chip, amountPaid, cashbackRate, date, time, creatorName, monthsAccrued, txnId: null, paylaterSettledAmount: 0 });
+    const grant = new EssentialsGrant({ key, business, chip, amountPaid, cashbackRate, date, time, creatorName, monthsAccrued, txnId: null, paylaterSettledAmount: 0, occurredAt });
     this.#grants.push(grant);
     const money = Money.of(grant.accruedValue(this.monthlyGrowthRate), currency);
     if (money.isPositive()) {

@@ -211,6 +211,9 @@ const FRONTEND_MODULES = [
   "features/essentials/EssentialsScreen.jsx",
   "features/history/TransactionRow.jsx",
   "features/history/historyUtils.js",
+  // The one newest-first rule every transaction list sorts by. Function
+  // declarations only, so its position is not load-order sensitive.
+  "features/history/transactionOrder.js",
   "features/history/TransactionHistoryScreen.jsx",
   "features/paylater/PayLaterLedger.jsx",
   "features/paylater/PayLaterScreen.jsx",

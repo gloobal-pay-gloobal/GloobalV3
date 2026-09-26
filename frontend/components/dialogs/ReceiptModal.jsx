@@ -6,6 +6,8 @@ import {
   Share2,
   FileText,
   Eye,
+  MapPin,
+  Flag as FlagIcon2,
   RefreshCw as RefreshCw7
 } from "lucide-react";
 
@@ -135,6 +137,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   );
   const { getLocationForViewer, getComplaintWindow, openComplaint } = useProvenanceAndDisputes();
   const [reportSubmitted, setReportSubmitted] = useState11(false);
+  // Which of the two quiet things under the ticket is open: "where", "report",
+  // or neither. One at a time, so the foot of the receipt never grows by two
+  // blocks at once.
+  const [detail, setDetail] = useState11(null);
   // "Working", not "done": the share sheet can be dismissed, and a button
   // that flipped to a success state on tap would claim the report had gone
   // somewhere when the person had just cancelled it.
@@ -170,6 +176,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       setReceiptTab(receipt.kind === "share" ? "share" : "payment");
       setReportSubmitted(false);
       setShareFeedback("");
+      setDetail(null);
     }
   }, [receipt]);
   // "View Creator Share receipt", from the card that has just been scratched.
@@ -194,6 +201,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   const myLocation = receipt.txnId ? getLocationForViewer(receipt.txnId, viewerRole) : null;
   const complaintWindow = receipt.txnId ? getComplaintWindow(receipt.txnId) : null;
   const withinComplaintWindow = complaintWindow ? Date.now() <= new Date(complaintWindow.expiresAt).getTime() : false;
+  // The Report icon is drawn whenever this transaction HAS a complaint window,
+  // open or closed: a window that has closed is a fact worth being able to
+  // read, and hiding the control would leave somebody looking for it.
+  const canReport = !!complaintWindow;
   const handleReportIssue = () => {
     if (!receipt.txnId) return;
     const result = openComplaint({ txnId: receipt.txnId, raisedBy: viewerRole, reason: "Reported from receipt" });
@@ -779,7 +790,15 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       borderRadius: T.radiusXl,
       overflow: "hidden",
       position: "relative",
-      boxShadow: T.shadowCard
+      boxShadow: T.shadowCard,
+      // Never squeezed.
+      //
+      // This is a flex child of a scrolling column, so by default it SHRINKS
+      // to make room for whatever is under it — and because it also clips its
+      // own overflow, shrinking cut the ticket off mid-row: a receipt ending
+      // halfway through "Date · Time" with the buttons sitting under the cut.
+      // The column scrolls; the document does not shorten itself.
+      flexShrink: 0
     }}
   >{
     /* ── The head of the ticket ──────────────────────────────────────────
@@ -1057,45 +1076,12 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        resolved city/state (never the other party's), plus a short, explicit
        window to report an issue. Reporting opens a case; it never reverses
        money or flags fraud automatically. */
-  }{complaintWindow && <div
-    style={{
-      padding: "12px 14px",
-      borderRadius: T.radiusMd,
-      background: T.surface,
-      border: `1px solid ${T.line}`,
-      display: "flex",
-      flexDirection: "column",
-      gap: 8
-    }}
-  >{myLocation && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>
-            Completed near
-          </span><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>
-            {myLocation.city}{myLocation.state ? `, ${myLocation.state}` : ""}{myLocation.approximate ? " (approx.)" : ""}
-          </span></div>}{reportSubmitted ? <p style={{ fontSize: 12, color: T.positive, fontWeight: 600 }}>
-            Reported — a case has been opened. This doesn't change your balance or eligibility; the other side has up to 24 hours to respond.
-          </p> : withinComplaintWindow ? <button
-    onClick={handleReportIssue}
-    className="v2-tap"
-    style={{
-      width: "100%",
-      padding: "10px 0",
-      borderRadius: 12,
-      border: `1px solid ${T.line}`,
-      background: T.surfaceAlt,
-      color: T.ink,
-      fontSize: 12.5,
-      fontWeight: 700,
-      cursor: "pointer"
-    }}
-  >
-            Report an issue with this transaction
-          </button> : <p style={{ fontSize: 11.5, color: T.inkFaint }}>
-            The verification window for this transaction has closed.
-          </p>}</div>}{
+  }{
+
     /* Audit, Share, Pay again — three icons rather than three sentences.
        There is no Done: back is the only way out of a document, and a second
        control that does the same thing is a decision nobody asked to make. */
-  }<div style={{ display: "flex", gap: 9 }}><ReceiptIconAction
+  }<div style={{ display: "flex", gap: 7, flexShrink: 0 }}><ReceiptIconAction
     testId="receipt-audit-report"
     icon={<FileText size={20} color={T.accent} />}
     label={auditBusy ? "Preparing…" : "Audit"}
@@ -1118,13 +1104,51 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     disabled={imageShareBusy}
     busy={imageShareBusy}
     onClick={handleShareReceiptImage}
-  />{canPayAgain && <ReceiptIconAction
+  />{
+    /* Where it happened, and how to complain about it — two icons rather than
+       a card of their own under the ticket.
+       They were a bordered box carrying one line of text and a full-width
+       button, which on a cross-border receipt pushed the ticket into a scroll
+       nobody was expecting. Both are one tap here, and both open in the line
+       under this row rather than taking permanent space: the place is a fact
+       most people never need, and the complaint is a door most people never
+       open. */
+  }{myLocation && <ReceiptIconAction
+    testId="receipt-where"
+    icon={<MapPin size={20} color={T.accent} />}
+    label="Where"
+    onClick={() => setDetail((d) => (d === "where" ? null : "where"))}
+  />}{canReport && <ReceiptIconAction
+    testId="receipt-report"
+    icon={reportSubmitted ? <Check size={20} color={T.positive} /> : <FlagIcon2 size={20} color={T.accent} />}
+    label={reportSubmitted ? "Reported" : "Report"}
+    onClick={() => setDetail((d) => (d === "report" ? null : "report"))}
+  />}{canPayAgain && <ReceiptIconAction
     testId="receipt-pay-again"
     icon={<RefreshCw7 size={20} color="#fff" />}
     label={paymentIsSent ? "Pay again" : "Pay back"}
     solid
     onClick={handlePayAgain}
   />}</div>{
+    /* What the two of them have to say, in one line under the row. */
+  }{detail === "where" && myLocation && <div
+    data-testid="receipt-where-line"
+    style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textAlign: "center", lineHeight: 1.45, flexShrink: 0 }}
+  >{`Completed near ${myLocation.city}${myLocation.state ? `, ${myLocation.state}` : ""}${myLocation.approximate ? " (approx.)" : ""}`}</div>}{detail === "report" && <div
+    data-testid="receipt-report-line"
+    style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 12px", borderRadius: 12, background: T.surface, border: `1px solid ${T.line}`, flexShrink: 0 }}
+  >{reportSubmitted ? <p style={{ fontSize: 11.5, color: T.positive, fontWeight: 700, lineHeight: 1.45, margin: 0 }}>
+          Reported — a case has been opened. This doesn't change your balance or eligibility; the other side has up to 24 hours to respond.
+        </p> : withinComplaintWindow ? <>
+        <p style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700, lineHeight: 1.45, margin: 0 }}>
+          Something wrong with this payment? Opening a case does not move any money — the other side has 24 hours to respond.
+        </p><button
+    onClick={handleReportIssue}
+    className="v2-tap"
+    style={{ width: "100%", padding: "9px 0", borderRadius: 12, border: `1px solid ${T.line}`, background: T.surfaceAlt, color: T.ink, fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}
+  >Report an issue</button></> : <p style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 700, margin: 0 }}>
+          The verification window for this transaction has closed.
+        </p>}</div>}{
     /* Reveal my share.
        Offered only when this payment really carried a Creator Share, and only
        while it is still a surprise — `onRevealShare` is passed by the screen

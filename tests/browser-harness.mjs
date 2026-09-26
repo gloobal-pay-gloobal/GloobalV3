@@ -411,7 +411,11 @@ export async function installApi(context, options = {}) {
     countryIso: account.countryIso,
     currency: account.currency,
     balance: state.balances[account.symbolId],
-    cashbackRate: 0.01,
+    // The payee's OWN rate, as the real resolve route returns it. It was
+    // hardcoded, so no test could describe a payee who shares nothing back —
+    // and "shares nothing" is half of what the receipt's Reveal my share
+    // button has to get right.
+    cashbackRate: account.cashbackRate ?? 0.01,
     // The short handle the invite link uses instead of the Gloobal ID. The
     // real publicUserPayload mints one per account (ensureReferralCode in
     // server.js) and carries it on every response that carries a user, so a
@@ -782,6 +786,16 @@ export async function installApi(context, options = {}) {
         senderCurrency: sender.currency,
         fxRate: ledgerRow.rate,
         fxRateSource: sender.currency === receiver.currency ? "identity" : "test-fixture",
+        // The Creator Share as the real 201 reports it at the top level
+        // (server.js): what was credited back to the PAYER, in the payer's own
+        // currency, and the rate the payee's account charged. The app takes
+        // the rate from here — the server is the authority on it, not the
+        // lookup the Send screen did before paying — so a fake that omits it
+        // makes every fresh receipt say the payee shares 0.00% while showing a
+        // share that plainly came from somewhere.
+        cashback: cashbackCredit,
+        cashbackCurrency: sender.currency,
+        cashbackRate,
         payeeReceives: ZERO_DECIMAL.has(receiver.currency)
           ? Math.round(destinationAmount - cashback)
           : Number((destinationAmount - cashback).toFixed(2)),
@@ -1078,16 +1092,10 @@ export const text = (page) => page.evaluate(() => document.body.innerText.replac
 // the card, pass it with Skip — the same button a person uses. Returns true
 // if the card was there. tests/payment-unlock.test.mjs tests the card itself.
 export async function skipPaymentUnlock(page, { timeout = 45000 } = {}) {
-  const card = page.getByTestId("payment-unlock");
-  const receipt = page.getByTestId("receipt-counterparty");
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if (await card.count()) {
-      await card.getByRole("button", { name: "Skip", exact: true }).click();
-      return true;
-    }
-    if (await receipt.count()) return false;
-    await page.waitForTimeout(250);
-  }
+  // Kept as the one place the suites wait for a payment to land, but there is
+  // nothing to skip any more: the receipt comes first now, and the question
+  // and its coupon are behind "Reveal my share" underneath it. Callers that
+  // used this to get past the old gate still work unchanged.
+  await page.getByTestId("receipt-counterparty").waitFor({ timeout });
   return false;
 }

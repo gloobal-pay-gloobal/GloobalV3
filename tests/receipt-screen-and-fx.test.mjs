@@ -30,6 +30,14 @@
 // It was a bottom sheet at 88vh with a grab handle, a dimmed backdrop that
 // dismissed on tap, and Done at the end of the scroll. A receipt is a
 // document: people read it top to bottom, switch tabs on it, and send it on.
+//
+// It is now a ticket. What that costs the tests here: there is no "Receipt"
+// title any more (the lit tab says which document you are on, in the one
+// place you can also change it from), and no Done (back is the way out of a
+// document; a second control doing the same thing is a decision nobody asked
+// to make). Both were pinned by tests below, and both are pinned the other
+// way round now — the old assertions are not deleted, they are inverted, so
+// a Done button reappearing still fails something.
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -168,24 +176,54 @@ describe("the receipt is a screen", () => {
     assert.match(modal, /<NavBackButton onClick=\{onClose\} \/>/);
   });
 
-  test("the header names which document you are on", () => {
-    assert.match(modal, /isShareReceipt \? "Creator Share receipt" : "Receipt"/);
+  test("the header does not name the document — the lit tab does", () => {
+    // "Receipt" above a Payment / Creator Share toggle said, in a line of its
+    // own, what the toggle underneath it was already showing.
+    assert.ok(!/isShareReceipt \? "Creator Share receipt" : "Receipt"/.test(modal), "the title is back");
+    assert.match(modal, /<ReceiptTabButton\s+label=\{tabLabel\(leadingTab\)\}/);
   });
 
-  test("Done sits below the scroll area, not at the end of it", () => {
-    // On a cross-border payment with a conversion block and a Creator Share,
-    // an inline Done is several screens down — so the way out of the document
-    // depended on how much the document had to say.
-    const done = modal.indexOf("Done\n");
-    const scroll = modal.indexOf("overflowY: \"auto\"");
-    assert.ok(scroll > 0 && done > scroll, "Done is not after the scroll region");
-    assert.match(modal, /flexShrink: 0,\s*borderTop: `1px solid \$\{T\.line\}`/);
+  test("the tabs are the header, beside the back button", () => {
+    const header = modal.slice(modal.indexOf("<NavBackButton onClick={onClose} />"));
+    const tabs = header.indexOf("<ReceiptTabButton");
+    const scroll = header.indexOf('overflowY: "auto"');
+    assert.ok(tabs > 0 && tabs < scroll, "the tabs are not in the header row");
   });
 
-  test("both ways out go to the same place", () => {
-    // Back and Done both close. One destination, two affordances.
+  test("there is no Done — back is the way out", () => {
+    // One destination, one affordance. The receipt is closed by the same
+    // control every other screen in the app is closed by.
+    assert.ok(!/>\s*Done\s*</.test(modal), "the Done button is back");
+    assert.ok(!/onClick=\{onDone \|\| onClose\}/.test(modal), "a second control still closes the receipt");
     assert.match(modal, /<NavBackButton onClick=\{onClose\} \/>/);
-    assert.match(modal, /onClick=\{onDone \|\| onClose\}/);
+  });
+
+  test("Pay again hands the counterparty to Send Money, and no amount", () => {
+    // A second payment to somebody is rarely the same size as the first, and
+    // a form that opens holding a figure is a form that gets sent holding it.
+    assert.match(modal, /new CustomEvent\("gloobal:payAgain", \{ detail \}\)/);
+    assert.ok(!/requestedAmount/.test(modal), "Pay again is carrying an amount");
+    const detail = modal.slice(modal.indexOf("const detail = {"), modal.indexOf("(onDone || onClose)();"));
+    for (const field of ["gloobalId", "name", "mobileNumber", "countryIso", "shareRate"]) {
+      assert.match(detail, new RegExp(`${field}:`), `Pay again drops ${field}`);
+    }
+    // Closed first, then announced: App.jsx clears a pending payee whenever
+    // the send screen is not the open one.
+    assert.ok(modal.indexOf("(onDone || onClose)();") < modal.indexOf('dispatchEvent(new CustomEvent("gloobal:payAgain"'));
+    const app = code(APP);
+    assert.match(app, /window\.addEventListener\("gloobal:payAgain", onPayAgain\)/);
+    assert.match(app, /openSendToPayee\(payee\)/);
+  });
+
+  test("the three things you can do with it are icons on one row", () => {
+    for (const id of ["receipt-audit-report", "receipt-share-image", "receipt-pay-again"]) {
+      assert.match(modal, new RegExp(`testId="${id}"`), `${id} is gone`);
+    }
+  });
+
+  test("the ticket is signed Hooman to Hooman", () => {
+    assert.match(modal, /<HoomanMark \/>/);
+    assert.match(modal, /Cashless · Taxless · Borderless · Limitless/);
   });
 
   test("the safe areas are respected top and bottom", () => {

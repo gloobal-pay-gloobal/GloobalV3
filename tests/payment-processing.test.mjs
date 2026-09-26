@@ -77,12 +77,37 @@ describe("it renders the state that was already being tracked", () => {
 });
 
 describe("nothing on the screen is invented", () => {
-  test("there is no staged checklist", () => {
-    // The specific shape this must never become.
+  test("the stages are three, and the third never ticks here", () => {
+    // There IS a checklist now, and the rule that kept one off the screen is
+    // what makes it safe: nothing on it advances on a clock, and no row claims
+    // to have happened until it has.
+    //
+    //   verified — already true when this screen opens (PIN, then biometric)
+    //   sending  — true for as long as this screen is up; it IS the request
+    //   settling — grey, and never ticked here: the moment the server
+    //              answers, this screen is gone and the receipt is the tick
     const s = code(SCREEN);
-    for (const staged of ["Confirming", "Verified ✓", "Step 1", "step:"]) {
+    assert.match(s, /<ProcessingStage state="done">Verified/);
+    assert.match(s, /<ProcessingStage state="now">/);
+    assert.match(s, /<ProcessingStage state="next">Settling/);
+    assert.ok(!/state="done">Settling/.test(s), "the third row is ticking on a screen that cannot know");
+    // And the specific shape this must never become.
+    for (const staged of ["Confirming", "Step 1", "step:"]) {
       assert.ok(!s.includes(staged), `a fabricated stage appeared: ${staged}`);
     }
+  });
+
+  test("a stage's state comes from the payment, never from a clock", () => {
+    // The one setTimeout in the file is asserted below; this is the other
+    // half of it — no stage is a piece of state that something advances.
+    const s = code(SCREEN);
+    assert.ok(!/setStage|setStep|stageIndex/.test(s), "a stage is being advanced by something");
+  });
+
+  test("everything sits in one card in the middle of the screen", () => {
+    const s = code(SCREEN);
+    assert.match(s, /data-testid="processing-card"/);
+    assert.match(s, /borderRadius: T\.radiusXl/);
   });
 
   test("no timer advances anything except the slow notice", () => {

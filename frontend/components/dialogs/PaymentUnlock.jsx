@@ -1,13 +1,17 @@
 // src/components/dialogs/PaymentUnlock.jsx
 import { useState as useState39, useEffect as useEffect32, useRef as useRef23 } from "react";
-import { Lock as LockUnlock, Check as CheckUnlock } from "lucide-react";
-// ── After a payment: one question, then scratch to see your share ─────────
+import { Check as CheckUnlock } from "lucide-react";
+// ── Reveal my share: one question, a coupon, and the share ────────────────
 //
-// Shown once, straight after a payment settles and before the receipt. One
-// short question — a Hooman check-in, a sum, or (for people who save their
-// Hooman Score) a knowledge question — answered with one tap, no keyboard.
-// Answering unlocks a scratch card; under it is the Creator Share this
-// payment earned.
+// Opened from the RECEIPT, by the button under it, and only on a payment that
+// really carried a Creator Share. That order matters and it is the second one
+// this screen has had: it used to come up before the receipt, which made a
+// game the toll gate on a document somebody had just paid for. The receipt now
+// lands first and is complete on its own; this is offered beside it.
+//
+// One card, turned over twice. The question — a Hooman check-in, a sum, or
+// (for people who save their Hooman Score) a knowledge question, answered with
+// one tap and no keyboard — then the coupon, then the share itself.
 //
 // What the answer does and does not do. It counts toward the person's own
 // Hooman Score (when they have agreed to save it), one answer per payment.
@@ -30,6 +34,10 @@ var paymentUnlockRecentQuestions = [];
 // Below this share of the foil still covered, the rest clears by itself.
 var PAYMENT_UNLOCK_CLEAR_AT = 0.5;
 var PAYMENT_UNLOCK_FOIL_SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
+// The two heads the card wears, and they are the receipt's own: violet while
+// the share is still a question, green once it is money.
+var PAYMENT_UNLOCK_HEAD_OUT = "linear-gradient(135deg,#312E81 0%,#4F46E5 55%,#7C3AED 100%)";
+var PAYMENT_UNLOCK_HEAD_IN = "linear-gradient(135deg,#064E3B 0%,#047857 55%,#0FA372 100%)";
 
 function paymentUnlockCheckins() {
   const out = [];
@@ -109,7 +117,23 @@ function paymentUnlockPaintFoil(ctx, w, h, random = Math.random) {
   ctx.globalAlpha = 1;
 }
 
-function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
+// The card, turning.
+//
+// Three faces, one after the other: the question, the coupon, the share. A
+// face is swapped at the halfway point of a quarter-turn, so the card reads
+// as one object being turned over rather than three cards being replaced —
+// and because the swap happens edge-on, the faces can be different heights
+// without the turn showing a seam.
+var PAYMENT_UNLOCK_TURN_MS = 240;
+// How long the answer's verdict is left on screen before the card turns. Long
+// enough to read "Right!" or to see which one it was; short enough that it
+// does not feel like a wait for permission.
+var PAYMENT_UNLOCK_VERDICT_MS = 950;
+// And the pause after the foil is gone, so the figure is seen where it was
+// hidden before the card turns to make something of it.
+var PAYMENT_UNLOCK_REVEAL_MS = 900;
+
+function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
   const signedIn = typeof gloobalAuthToken === "function" && !!gloobalAuthToken();
   const transactionId = receipt && receipt.txnId;
   // null while deciding (a knowledge question needs one round trip), then the
@@ -121,10 +145,24 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
   const [saved, setSaved] = useState39(false);
   const [saving, setSaving] = useState39(false);
   const [revealed, setRevealed] = useState39(false);
+  // The instruction goes as soon as it is being followed: a pill reading
+  // SCRATCH HERE over the very figure being uncovered is the label getting in
+  // the way of the thing it labelled.
+  const [scratching, setScratching] = useState39(false);
+  // "question" | "coupon" | "share"
+  const [face, setFace] = useState39("question");
+  const [turning, setTurning] = useState39(false);
   const canvasRef = useRef23(null);
   const wrapRef = useRef23(null);
   const lastPoint = useRef23(null);
   const moves = useRef23(0);
+  const timers = useRef23([]);
+  const after = (ms, fn) => {
+    const id = setTimeout(fn, ms);
+    timers.current.push(id);
+    return id;
+  };
+  useEffect32(() => () => timers.current.forEach(clearTimeout), []);
 
   // The share. The server settled it with the payment; this only reads it.
   const recorded = Number(receipt && receipt.shareAmount);
@@ -133,6 +171,7 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
     : (Number(receipt && receipt.amount) || 0) * ((Number(receipt && receipt.shareRate) || 0) / 100);
   const shareCurrency = receipt && receipt.currencyCode;
   const shareRate = Math.max(0, Number(receipt && receipt.shareRate) || 0);
+  const payeeName = (receipt && receipt.name) || "them";
 
   // Full-screen, so the app map's floating launcher steps aside while this is
   // up — the same channel PaymentProcessing uses.
@@ -186,8 +225,11 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
     };
   }, []);
 
-  // Paint the foil once the card has a size.
+  // Paint the foil when the coupon face arrives — not before, because the
+  // canvas does not exist until then and its size is what the pattern is
+  // drawn to.
   useEffect32(() => {
+    if (face !== "coupon") return;
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
     if (!canvas || !wrap) return;
@@ -200,9 +242,15 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
     if (!ctx) return;
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     paymentUnlockPaintFoil(ctx, w, h);
-  }, []);
+  }, [face]);
 
-  const unlocked = picked !== null && verdict !== "checking";
+  const turnTo = (next) => {
+    setTurning(true);
+    after(PAYMENT_UNLOCK_TURN_MS, () => {
+      setFace(next);
+      setTurning(false);
+    });
+  };
 
   const body = (extra) => ({ source: "payment", transactionId, day: typeof ghTodayKey === "function" ? ghTodayKey() : undefined, ...extra });
   const answerBody = (choice) => {
@@ -238,9 +286,11 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
       setVerdict(result && typeof result.correct === "boolean"
         ? { correct: result.correct, rightChoice: result.rightChoice }
         : { correct: null, unchecked: true });
+      after(PAYMENT_UNLOCK_VERDICT_MS, () => turnTo("coupon"));
       return;
     }
     if (consented && transactionId) save(payload);
+    after(PAYMENT_UNLOCK_VERDICT_MS, () => turnTo("coupon"));
   };
 
   // "Save to my Hooman Score" for someone who has not agreed yet: the same
@@ -276,8 +326,13 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
     }
     return total ? clear / total : 1;
   };
+  const reveal = () => {
+    if (revealed) return;
+    setRevealed(true);
+    after(PAYMENT_UNLOCK_REVEAL_MS, () => turnTo("share"));
+  };
   const scratchAt = (event) => {
-    if (!unlocked || revealed) return;
+    if (revealed) return;
     const canvas = canvasRef.current;
     const ctx = canvas && canvas.getContext("2d");
     if (!ctx) return;
@@ -294,7 +349,8 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
     ctx.stroke();
     lastPoint.current = point;
     moves.current += 1;
-    if (moves.current % 6 === 0 && clearedShare() >= PAYMENT_UNLOCK_CLEAR_AT) setRevealed(true);
+    if (moves.current === 1) setScratching(true);
+    if (moves.current % 6 === 0 && clearedShare() >= PAYMENT_UNLOCK_CLEAR_AT) reveal();
   };
 
   const shareText = share > 0 ? `+${fmtMoney(share, shareCurrency)}` : null;
@@ -338,178 +394,233 @@ function PaymentUnlock({ receipt, amountLabel, onDone, onToast }) {
     else feedback = `Not quite — it's ${question.question.options[verdict.rightChoice]}`;
   }
 
+  // The head of the card, in the palette of the face it belongs to.
+  const cardHead = (tone, eyebrow, line) => (
+    <div style={{ padding: "14px 16px 15px", color: "#fff", background: tone === "green" ? PAYMENT_UNLOCK_HEAD_IN : PAYMENT_UNLOCK_HEAD_OUT, textAlign: "center" }}>
+      <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 2, opacity: 0.85 }}>{eyebrow}</div>
+      <div style={{ fontSize: 15, fontWeight: 800, marginTop: 5, lineHeight: 1.3 }}>{line}</div>
+    </div>
+  );
+
+  // One line, under the card, that says what the answer was worth. It is not
+  // in the card because it is not part of the coupon — the share is the same
+  // either way, and a point on a score is a different kind of thing.
+  const pointLine = saved ? (
+    <div
+      data-testid="unlock-point"
+      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 12px", borderRadius: 12, background: T.positiveSoft, color: "#0B7A57", fontSize: 11.5, fontWeight: 800 }}
+    >
+      <CheckUnlock size={13} strokeWidth={3} aria-hidden="true" />Answered — 1 point on your Hooman Score
+    </div>
+  ) : null;
+
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Payment complete"
+      aria-label="Your Creator Share"
       data-testid="payment-unlock"
-      style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 540,
+        background: "rgba(23,16,54,0.55)",
+        backdropFilter: "blur(2px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px))",
+        perspective: 1200
+      }}
     >
-      {/* The header: a rounded card rather than an edge-to-edge band, so
-          the screen has no hard corners. Green tick for "it went through";
-          the amount in red with a minus, because it is money that LEFT —
-          the same colour and sign History uses for money out. */}
-      <div style={{ padding: "calc(12px + env(safe-area-inset-top, 0px)) 16px 0", flexShrink: 0, maxWidth: 480, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
-        <div style={{ position: "relative", background: T.surface, borderRadius: T.radiusXl, boxShadow: T.shadowCard, padding: "18px 16px 20px", textAlign: "center" }}>
-          <button
-            type="button"
-            onClick={onDone}
-            style={{ position: "absolute", right: 12, top: 12, border: "none", background: T.surfaceAlt, color: T.inkSoft, borderRadius: 999, padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-          >
-            Skip
-          </button>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 26 }}>
-            <span aria-hidden="true" style={{ width: 24, height: 24, borderRadius: "50%", background: T.positive, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <CheckUnlock size={15} color="#FFFFFF" strokeWidth={3} />
-            </span>
-            <span style={{ fontSize: 15, fontWeight: 800, color: T.positive }}>Payment completed</span>
-          </div>
-          {amountLabel ? (
-            <div data-testid="unlock-amount" style={{ fontFamily: T.fontDisplay, fontSize: 32, fontWeight: 800, marginTop: 8, color: T.negative, fontVariantNumeric: "tabular-nums" }}>
-              {`\u2212${amountLabel}`}
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 16px calc(20px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column", gap: 14, maxWidth: 480, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
-        {/* The question */}
-        <div data-testid="unlock-question" style={{ background: T.surface, borderRadius: T.radiusLg, boxShadow: T.shadowCard, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-          {!question ? (
-            <div style={{ minHeight: 150, display: "flex", alignItems: "center", justifyContent: "center", color: T.inkFaint, fontSize: 13, fontWeight: 700 }}>One quick question…</div>
-          ) : question.kind === "math" ? (
+      <style>{`
+        @keyframes unlock-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) { [data-unlock-card] { transition: none !important; animation: none !important; } }
+      `}</style>
+      <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div
+          data-unlock-card
+          data-testid={`unlock-face-${face}`}
+          style={{
+            background: T.surface,
+            borderRadius: T.radiusXl,
+            overflow: "hidden",
+            boxShadow: T.shadowFloat,
+            transformStyle: "preserve-3d",
+            transform: turning ? "rotateY(90deg)" : "rotateY(0deg)",
+            transition: `transform ${PAYMENT_UNLOCK_TURN_MS}ms ${turning ? "ease-in" : "ease-out"}`,
+            animation: "unlock-in 0.28s cubic-bezier(.32,.72,0,1)"
+          }}
+        >
+          {face === "question" ? (
             <>
-              <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 1.2, color: T.accent }}>{"Σ NUMBERS"}</div>
-              <div aria-label={`${question.sum.a} plus ${question.sum.b} plus ${question.sum.c}`} style={{ alignSelf: "center", fontFamily: T.fontDisplay, fontSize: 30, fontWeight: 800, color: T.ink, fontVariantNumeric: "tabular-nums", textAlign: "right", lineHeight: 1.15 }}>
-                <div>{question.sum.a}</div>
-                <div><span style={{ color: T.accent, marginRight: 8 }}>+</span>{question.sum.b}</div>
-                <div><span style={{ color: T.accent, marginRight: 8 }}>+</span>{question.sum.c}</div>
-                <div style={{ borderTop: `2px solid ${T.line}`, marginTop: 4, paddingTop: 2, color: T.inkFaint }}>?</div>
+              {cardHead("violet", "ONE QUESTION · WORTH A POINT", question && question.kind === "math"
+                ? `${question.sum.a} + ${question.sum.b} + ${question.sum.c}`
+                : question && question.kind === "checkin"
+                  ? question.text
+                  : question && question.kind === "knowledge"
+                    ? (question.question.prompt || "Which one?")
+                    : "One quick question…")}
+              <div data-testid="unlock-question" style={{ padding: "14px 16px 6px", display: "flex", flexDirection: "column", gap: 12 }}>
+                {!question ? (
+                  <div style={{ minHeight: 120, display: "flex", alignItems: "center", justifyContent: "center", color: T.inkFaint, fontSize: 13, fontWeight: 700 }}>Just a moment…</div>
+                ) : question.kind === "math" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {question.sum.options.map((n) => optionButton(`m${n}`, n, n))}
+                  </div>
+                ) : question.kind === "knowledge" ? (
+                  <>
+                    {question.question.glyph && typeof flagEmojiToIso === "function" && flagEmojiToIso(question.question.glyph) ? (
+                      <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
+                        <FlagEmoji flag={question.question.glyph} width={96} height={64} fit="contain" />
+                      </div>
+                    ) : question.question.glyph ? (
+                      <div style={{ textAlign: "center", fontFamily: T.fontDisplay, fontSize: 44, fontWeight: 800, color: T.accent }}>{question.question.glyph}</div>
+                    ) : null}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      {question.question.order.map((i) => optionButton(`k${i}`, question.question.options[i], i))}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {optionButton("yes", "Yes", "yes")}
+                    {optionButton("no", "No", "no")}
+                  </div>
+                )}
+                {feedback ? (
+                  <div role="status" style={{ fontSize: 13, fontWeight: 800, color: verdict && verdict.correct === false ? T.negative : verdict && verdict.correct ? T.positive : T.inkSoft, textAlign: "center" }}>{feedback}</div>
+                ) : null}
+                {signedIn && !consented && picked !== null && question && question.kind !== "knowledge" && !saved ? (
+                  <button
+                    type="button"
+                    onClick={agreeAndSave}
+                    disabled={saving}
+                    style={{ border: "none", background: "none", color: T.accent, fontSize: 12.5, fontWeight: 800, cursor: "pointer", padding: 4 }}
+                  >
+                    {saving ? "Saving…" : "Add this to my Hooman Score"}
+                  </button>
+                ) : null}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {question.sum.options.map((n) => optionButton(`m${n}`, n, n))}
-              </div>
+              {/* Skip turns the card the same way answering does. It costs the
+                  point and nothing else: the share was earned by paying. */}
+              <button
+                type="button"
+                onClick={() => picked === null && turnTo("coupon")}
+                style={{ width: "100%", border: "none", borderTop: `1px solid ${T.line}`, background: "transparent", color: T.inkFaint, fontSize: 13, fontWeight: 800, padding: "13px 0", cursor: "pointer" }}
+              >
+                Skip
+              </button>
             </>
-          ) : question.kind === "knowledge" ? (
+          ) : face === "coupon" ? (
             <>
-              <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 1.2, color: T.accent }}>{String(question.question.category || "quiz").toUpperCase()}</div>
-              <div style={{ minHeight: 84, borderRadius: T.radiusMd, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", gap: 12, padding: 10 }}>
-                {question.question.glyph && typeof flagEmojiToIso === "function" && flagEmojiToIso(question.question.glyph)
-                  ? <FlagEmoji flag={question.question.glyph} width={84} height={56} fit="contain" />
-                  : question.question.glyph
-                    ? <span style={{ fontFamily: T.fontDisplay, fontSize: 44, fontWeight: 800, color: T.accent }}>{question.question.glyph}</span>
-                    : null}
-                {question.question.prompt
-                  ? <span style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{question.question.prompt}</span>
-                  : <span style={{ fontSize: 36, fontWeight: 800, color: T.inkFaint }}>?</span>}
+              {cardHead("violet", "YOUR CREATOR SHARE", `From your payment to ${payeeName}`)}
+              <div
+                ref={wrapRef}
+                data-testid="unlock-scratch"
+                style={{ position: "relative", height: 170, margin: 14, borderRadius: T.radiusLg, overflow: "hidden", background: T.surface, boxShadow: `inset 0 0 0 1px ${T.line}` }}
+              >
+                <div aria-live="polite" style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: 16, textAlign: "center" }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: T.inkFaint }}>BACK TO YOU</div>
+                  <div data-testid="unlock-share" style={{ fontFamily: T.fontDisplay, fontSize: shareText ? 32 : 22, fontWeight: 800, color: shareText ? T.positive : T.inkSoft, fontVariantNumeric: "tabular-nums" }}>
+                    {shareText || "No share on this one"}
+                  </div>
+                </div>
+                <canvas
+                  ref={canvasRef}
+                  aria-hidden="true"
+                  onPointerDown={(e) => {
+                    lastPoint.current = null;
+                    e.currentTarget.setPointerCapture?.(e.pointerId);
+                    scratchAt(e);
+                  }}
+                  onPointerMove={(e) => {
+                    if (e.buttons || e.pointerType === "touch") scratchAt(e);
+                  }}
+                  onPointerUp={() => { lastPoint.current = null; }}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    touchAction: "none",
+                    cursor: revealed ? "default" : "grab",
+                    opacity: revealed ? 0 : 1,
+                    transition: "opacity 0.45s ease",
+                    pointerEvents: revealed ? "none" : "auto"
+                  }}
+                />
+                {!revealed && !scratching ? (
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(15,12,40,0.45)", color: "#FFFFFF", borderRadius: 999, padding: "8px 14px", fontSize: 12, fontWeight: 800, letterSpacing: 1.2 }}>
+                      SCRATCH HERE
+                    </span>
+                  </div>
+                ) : null}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {question.question.order.map((i) => optionButton(`k${i}`, question.question.options[i], i))}
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, textAlign: "center", padding: "0 16px 6px" }}>
+                Use your finger — it's yours whatever you do
               </div>
+              {/* Nobody is made to scratch. Some people will not want to, and a
+                  coupon that can only be opened one way is a toll. */}
+              <button
+                type="button"
+                onClick={reveal}
+                data-testid="unlock-reveal"
+                style={{ width: "100%", border: "none", borderTop: `1px solid ${T.line}`, background: "transparent", color: T.accent, fontSize: 13, fontWeight: 800, padding: "13px 0", cursor: "pointer" }}
+              >
+                Just show me
+              </button>
             </>
           ) : (
             <>
-              <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 1.2, color: T.accent }}>{`HOOMAN · ${String(question.cat.label || "").toUpperCase()}`}</div>
-              <div style={{ fontFamily: T.fontDisplay, fontSize: 19, fontWeight: 800, color: T.ink, textAlign: "center", padding: "14px 4px", textWrap: "balance" }}>{question.text}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {optionButton("yes", "Yes", "yes")}
-                {optionButton("no", "No", "no")}
+              <div style={{ padding: "18px 16px 20px", color: "#fff", background: PAYMENT_UNLOCK_HEAD_IN, textAlign: "center" }}>
+                <div aria-hidden="true" style={{ fontSize: 17, letterSpacing: 6 }}>★ ✦ ★</div>
+                <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 2, opacity: 0.85, marginTop: 9 }}>CREATOR SHARE EARNED</div>
+                <div data-testid="unlock-earned" style={{ fontFamily: T.fontDisplay, fontSize: 38, fontWeight: 800, letterSpacing: -1.4, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+                  {shareText || "Nothing this time"}
+                </div>
+                <div data-testid="unlock-rate" style={{ fontSize: 11.5, fontWeight: 800, opacity: 0.92, marginTop: 2 }}>
+                  {`${shareRate.toFixed(2)}% of what you paid`}
+                </div>
+              </div>
+              <div style={{ padding: "14px 18px 4px", textAlign: "center" }}>
+                <div style={{ fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, color: T.ink }}>Nice one</div>
+                <div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 5, lineHeight: 1.45 }}>
+                  {`${payeeName} shares a part of every payment back. It's in your Gloobal balance already.`}
+                </div>
+              </div>
+              <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", gap: 9 }}>
+                <button
+                  type="button"
+                  onClick={onViewShareReceipt}
+                  data-testid="unlock-view-share-receipt"
+                  style={{ minHeight: 50, borderRadius: 16, border: "none", background: `linear-gradient(135deg,#047857 0%,${T.positive} 100%)`, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}
+                >
+                  View Creator Share receipt
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  style={{ minHeight: 46, borderRadius: 14, border: `1px solid ${T.line}`, background: T.surface, color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
+                >
+                  Back to the payment receipt
+                </button>
               </div>
             </>
           )}
-          {feedback ? (
-            <div role="status" style={{ fontSize: 13, fontWeight: 800, color: verdict && verdict.correct === false ? T.negative : verdict && verdict.correct ? T.positive : T.inkSoft, textAlign: "center" }}>{feedback}</div>
-          ) : null}
-          {signedIn && !consented && picked !== null && question && question.kind !== "knowledge" && !saved ? (
-            <button
-              type="button"
-              onClick={agreeAndSave}
-              disabled={saving}
-              style={{ border: "none", background: "none", color: T.accent, fontSize: 12.5, fontWeight: 800, cursor: "pointer", padding: 4 }}
-            >
-              {saving ? "Saving…" : "Add this to my Hooman Score"}
-            </button>
-          ) : null}
         </div>
-
-        {/* The scratch card */}
-        <div
-          ref={wrapRef}
-          data-testid="unlock-scratch"
-          style={{ position: "relative", height: 170, borderRadius: T.radiusLg, overflow: "hidden", background: T.surface, boxShadow: T.shadowCard, flexShrink: 0 }}
-        >
-          <div aria-live="polite" style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 16, textAlign: "center" }}>
-            {revealed || unlocked ? (
-              <>
-                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: T.inkFaint }}>YOUR CREATOR SHARE</div>
-                <div data-testid="unlock-share" style={{ fontFamily: T.fontDisplay, fontSize: shareText ? 32 : 22, fontWeight: 800, color: shareText ? T.positive : T.inkSoft, fontVariantNumeric: "tabular-nums" }}>
-                  {shareText || "No share on this one"}
-                </div>
-                {/* The rate, hidden on the Send screen behind a green or red
-                    dot, is revealed here with the share it earned. */}
-                <div data-testid="unlock-rate" style={{ fontSize: 12.5, fontWeight: 800, color: T.accent }}>
-                  {`${shareRate.toFixed(2)}% Creator Share`}
-                </div>
-                <div style={{ fontSize: 11.5, color: T.inkFaint }}>Paid in full, whatever you answer.</div>
-              </>
-            ) : null}
-          </div>
-          <canvas
-            ref={canvasRef}
-            aria-hidden="true"
-            onPointerDown={(e) => {
-              lastPoint.current = null;
-              e.currentTarget.setPointerCapture?.(e.pointerId);
-              scratchAt(e);
-            }}
-            onPointerMove={(e) => {
-              if (e.buttons || e.pointerType === "touch") scratchAt(e);
-            }}
-            onPointerUp={() => { lastPoint.current = null; }}
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              touchAction: "none",
-              cursor: unlocked && !revealed ? "grab" : "default",
-              opacity: revealed ? 0 : 1,
-              transition: "opacity 0.45s ease",
-              pointerEvents: revealed ? "none" : "auto"
-            }}
-          />
-          {!revealed ? (
-            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(15,12,40,0.45)", color: "#FFFFFF", borderRadius: 999, padding: "8px 14px", fontSize: 12, fontWeight: 800, letterSpacing: 1.2 }}>
-                {unlocked ? "SCRATCH HERE" : <><LockUnlock size={13} aria-hidden="true" />ANSWER TO UNLOCK</>}
-              </span>
-            </div>
-          ) : null}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => (revealed ? onDone() : setRevealed(true))}
-          disabled={!unlocked && !revealed}
-          style={{
-            minHeight: 52,
-            borderRadius: 999,
-            border: "none",
-            background: unlocked || revealed ? T.gradButton : T.gradButtonDisabled,
-            color: "#FFFFFF",
-            fontSize: 15,
-            fontWeight: 800,
-            cursor: unlocked || revealed ? "pointer" : "default",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            flexShrink: 0
-          }}
-        >
-          {revealed ? <><CheckUnlock size={16} aria-hidden="true" />View receipt</> : "Reveal my share"}
-        </button>
+        {pointLine}
+        {/* A way out at every face, including the first: the receipt behind is
+            complete, and this is the part that is for fun. */}
+        {face !== "share" ? (
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ border: "none", background: "none", color: "rgba(255,255,255,0.85)", fontSize: 12.5, fontWeight: 800, cursor: "pointer", padding: 6 }}
+          >
+            Close
+          </button>
+        ) : null}
       </div>
     </div>
   );

@@ -246,7 +246,7 @@ async function pay(page, { sender, receiver, receiverGets }) {
 }
 
 async function closeReceipt(page) {
-  const done = page.getByRole("button", { name: /^(Done|Close)$/i });
+  const done = page.getByRole("dialog", { name: "Transaction receipt" }).getByRole("button", { name: /^Back$/i });
   if (await done.count()) await tap(done.first());
   await page.waitForTimeout(1000);
 }
@@ -469,6 +469,19 @@ async function readShareConversion(page) {
 }
 
 async function openShareTab(page) {
+  // On a receipt straight off a payment the share is still behind its coupon,
+  // and the tab is not drawn while that offer stands — see Reveal my share in
+  // ReceiptModal. Taking the offer away (Close, at the question) is what hands
+  // the tab back, and it is also what a person walking away from the coupon
+  // does. A receipt reopened from History never has the offer at all, so this
+  // does nothing there.
+  const reveal = page.getByTestId("receipt-reveal-share");
+  if (await reveal.count()) {
+    await tap(reveal.first());
+    await page.getByTestId("unlock-face-question").waitFor({ timeout: 15000 });
+    await tap(page.getByRole("button", { name: "Close", exact: true }).first());
+    await page.waitForTimeout(400);
+  }
   await tap(page.getByRole("button", { name: "Creator Share", exact: true }).first());
   await page.getByTestId("receipt-hero-share").waitFor({ timeout: 20000 });
 }

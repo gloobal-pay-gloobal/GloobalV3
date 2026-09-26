@@ -113,10 +113,24 @@ async function readReceipt(page) {
     ? (await idRow.locator("> span").nth(1).innerText()).replace(/\s+/g, "")
     : "";
 
+  // Defensively, and the race is real: the <img> is there until flagcdn.com
+  // refuses the request, and then FlagEmoji swaps it for the emoji. A count()
+  // that says "yes" can be followed by a getAttribute that waits thirty
+  // seconds for an element that has just been removed.
   const flagImg = page.getByTestId("receipt-flag").locator("img").first();
-  const flagSrc = (await flagImg.count()) ? await flagImg.getAttribute("src") : "";
+  const flagSrc = await flagImg.getAttribute("src", { timeout: 2000 }).catch(() => "");
+  // The country the badge is actually showing, whichever way it is drawn.
+  //
+  // FlagEmoji loads the real bitmap from flagcdn.com and falls back to the
+  // emoji character when that fails — and on a machine behind an egress proxy
+  // (which is where this suite runs) it always fails. Reading ONLY the image
+  // made every cross-border case here report "it showed null", which reads as
+  // the receipt naming the wrong country when the truth is that somebody
+  // else's CDN is unreachable. The emoji carries the same two letters, as
+  // regional indicators, so the country is still checkable either way.
+  const flagText = (await page.getByTestId("receipt-flag").innerText()).trim();
 
-  return { label, name, gloobalId, flagSrc };
+  return { label, name, gloobalId, flagSrc, flagText };
 }
 
 const flagIsoOf = (src) => {
@@ -124,10 +138,20 @@ const flagIsoOf = (src) => {
   return m ? m[1].toUpperCase() : null;
 };
 
+// A flag emoji is two regional-indicator letters; this reads them back.
+const flagIsoOfEmoji = (text) => {
+  const points = [...String(text || "")].map((ch) => ch.codePointAt(0)).filter((cp) => cp >= 0x1f1e6 && cp <= 0x1f1ff);
+  if (points.length < 2) return null;
+  return points.slice(0, 2).map((cp) => String.fromCharCode(cp - 0x1f1e6 + 65)).join("");
+};
+
+// Whichever way the badge was drawn.
+const shownIso = (receipt) => flagIsoOf(receipt.flagSrc) || flagIsoOfEmoji(receipt.flagText);
+
 // Closes the receipt and walks Profile -> History, then opens the row for
 // `counterpartyName` from the given column.
 async function reopenFromHistory(page, { counterpartyName, column }) {
-  const done = page.getByRole("button", { name: /^(Done|Close)$/i });
+  const done = page.getByRole("dialog", { name: "Transaction receipt" }).getByRole("button", { name: /^Back$/i });
   if (await done.count()) await tap(done.first());
   await page.waitForTimeout(1200);
 
@@ -184,18 +208,18 @@ describe("a receipt names the other party, on both sides and after a reload", ()
       assert.equal(sent.name, B.fullName, `it must name the payee, it named "${sent.name}"`);
       assert.equal(sent.gloobalId, B.symbolId, `it must carry the payee's Gloobal ID, it carried "${sent.gloobalId}"`);
       assert.equal(
-        flagIsoOf(sent.flagSrc),
+        shownIso(sent),
         B.countryIso,
-        `it must show ${B.countryIso}'s flag, it showed ${flagIsoOf(sent.flagSrc)} (${sent.flagSrc})`
+        `it must show ${B.countryIso}'s flag, it showed ${shownIso(sent)} (${sent.flagSrc})`
       );
       assert.notEqual(sent.gloobalId, A.symbolId, "the payer's own ID must never appear as the counterparty");
-      assert.notEqual(flagIsoOf(sent.flagSrc), A.countryIso, "nor the payer's own flag");
+      assert.notEqual(shownIso(sent), A.countryIso, "nor the payer's own flag");
 
       // ---- 2. THE SAME PAYMENT, REOPENED FROM SAVED HISTORY
       await reopenFromHistory(page, { counterpartyName: B.fullName, column: "sending" });
       const reopened = await readReceipt(page);
       assert.deepEqual(
-        { label: reopened.label, name: reopened.name, id: reopened.gloobalId, iso: flagIsoOf(reopened.flagSrc) },
+        { label: reopened.label, name: reopened.name, id: reopened.gloobalId, iso: shownIso(reopened) },
         { label: "To", name: B.fullName, id: B.symbolId, iso: B.countryIso },
         "the reopened receipt must say exactly what the immediate one said"
       );
@@ -218,7 +242,7 @@ describe("a receipt names the other party, on both sides and after a reload", ()
     await pay(page, { sender: A, receiver: B, receiverGets: 20 });
 
     // Sign out of A and in as B, on the same device.
-    const done = page.getByRole("button", { name: /^(Done|Close)$/i });
+    const done = page.getByRole("dialog", { name: "Transaction receipt" }).getByRole("button", { name: /^Back$/i });
     if (await done.count()) await tap(done.first());
     await page.waitForTimeout(1000);
     await page.getByRole("button", { name: "Profile", exact: true }).click({ force: true });
@@ -250,14 +274,14 @@ describe("a receipt names the other party, on both sides and after a reload", ()
     assert.equal(received.name, A.fullName, `it must name the payer, it named "${received.name}"`);
     assert.equal(received.gloobalId, A.symbolId, `it must carry the payer's Gloobal ID, it carried "${received.gloobalId}"`);
     assert.equal(
-      flagIsoOf(received.flagSrc),
+      shownIso(received),
       A.countryIso,
-      `it must show ${A.countryIso}'s flag, it showed ${flagIsoOf(received.flagSrc)}`
+      `it must show ${A.countryIso}'s flag, it showed ${shownIso(received)}`
     );
     // The bug this replaces, stated as an assertion: the receiver's own
     // identity appearing where the sender's belongs.
     assert.notEqual(received.gloobalId, B.symbolId, "the payee's own ID must never appear as the sender");
-    assert.notEqual(flagIsoOf(received.flagSrc), B.countryIso, "nor the payee's own flag");
+    assert.notEqual(shownIso(received), B.countryIso, "nor the payee's own flag");
 
     await context.close();
   });
@@ -274,8 +298,16 @@ describe("a receipt names the other party, on both sides and after a reload", ()
     await login(page, A);
     await pay(page, { sender: A, receiver: B, receiverGets: 100 });
 
-    const shareTab = page.getByRole("button", { name: /Creator Share/i });
-    assert.ok(await shareTab.count(), "the immediate receipt must offer the Creator Share tab");
+    // On the FRESH receipt the share is behind the coupon, so the tab is not
+    // drawn yet — a tab printing the figure two inches above a scratch card
+    // is not a scratch card. What the fresh receipt must offer is the way in.
+    const reveal = page.getByTestId("receipt-reveal-share");
+    await reveal.waitFor({ timeout: 20000 });
+    assert.ok(await reveal.count(), "the immediate receipt must offer the share");
+    // Left unopened on purpose. Reopened from History the coupon is not
+    // offered at all — that is what "it reveals itself quietly" means — so the
+    // tab below is the only way the share can be read, which makes it exactly
+    // the record this test is about.
 
     await reopenFromHistory(page, { counterpartyName: B.fullName, column: "sending" });
 
@@ -372,7 +404,20 @@ describe("there is one flag component, cut to different shapes", () => {
     assert.match(flags, /objectFit: fit/);
   });
 
-  test("the badge in a real receipt is registration's flag chip, filled edge to edge", async () => {
+  test("the badge in a real receipt is a filled disc in the ticket's corner", async () => {
+    // This asserted a landscape chip, in registration's 46x40 proportions,
+    // sitting on the seam between the two tabs. Both halves of that are now
+    // wrong on purpose: the receipt is a ticket, and the flag is a disc in
+    // the corner of its head, opposite our own mark.
+    //
+    // The disc costs something real and it is worth naming: fit stays
+    // "cover", so a 3:2 flag is filled to the circle and its left and right
+    // thirds are cropped — for Kuwait, Sudan and the UAE that is the hoist
+    // emblem. "contain" would keep the whole flag but letterbox it, putting
+    // the rectangular edges back inside the disc, which is the thing the
+    // circle exists to remove. Filling wins because the counterparty's
+    // country is written out on the receipt too; the flag is a mark here,
+    // not the only label.
     const { page, context } = await openSender(ACCOUNTS.america);
     await login(page, ACCOUNTS.america);
     // America -> India, so the badge carries a flag that is not the viewer's.
@@ -396,51 +441,56 @@ describe("there is one flag component, cut to different shapes", () => {
       };
     });
 
-    assert.ok(m.img, "the badge must render a real flag image, not an emoji character");
-
-    // Landscape, in a flag's own proportions — this is the shape the
-    // country picker on registration uses, and the receipt now uses the
-    // same component rather than a second shape for the same thing.
-    //
-    // The disc that used to be here cropped a 3:2 flag to its central
-    // square, which for a lot of countries removes the part that
-    // identifies them. So the assertion is no longer "square"; it is
-    // "wider than tall, and not by an arbitrary amount".
     const ratio = m.circle.width / m.circle.height;
     assert.ok(
-      ratio > 1.05 && ratio < 1.35,
-      `the badge must be a landscape flag chip like registration's 46x40; got ${m.circle.width}x${m.circle.height} (${ratio.toFixed(2)})`
+      ratio > 0.95 && ratio < 1.05,
+      `the badge must be a disc; got ${m.circle.width}x${m.circle.height} (${ratio.toFixed(2)})`
     );
 
-    // Filled: the image box IS the chip rather than sitting inside it. This
-    // is the assertion that caught the old inscribed rectangle — 33x22
-    // floating in a 40px box — as a failure, and it still holds.
-    assert.ok(
-      m.box.width >= m.circle.width - 1 && m.box.height >= m.circle.height - 1,
-      `the flag must fill the ${m.circle.width}x${m.circle.height} chip; it is ${m.box.width}x${m.box.height}`
-    );
+    // The rest describes the IMAGE, and the image is somebody else's file.
+    //
+    // FlagEmoji loads it from flagcdn.com and falls back to the emoji
+    // character when that fails; behind an egress proxy — which is where this
+    // suite runs — it always fails. Asserting on the <img> there is a test
+    // that reports on a CDN's uptime rather than on this app, which is the
+    // reasoning the harness already applies to blocked subresources. So the
+    // badge's own shape is checked above, always, and the image's fit is
+    // checked when there is an image to check.
+    if (!m.img) {
+      const fallback = (await badge.innerText()).trim();
+      assert.match(
+        fallback,
+        /[\u{1F1E6}-\u{1F1FF}]{2}/u,
+        "no flag image and no flag either — the badge is drawing nothing"
+      );
+    } else {
+      // Filled: the image box IS the badge rather than sitting inside it. This
+      // is the assertion that caught an inscribed rectangle — 33x22 floating
+      // in a 40px box — as a failure, and it still holds.
+      assert.ok(
+        m.box.width >= m.circle.width - 1 && m.box.height >= m.circle.height - 1,
+        `the flag must fill the ${m.circle.width}x${m.circle.height} badge; it is ${m.box.width}x${m.box.height}`
+      );
 
-    // Softly rounded, and rounded at the image's own box rather than merely
-    // clipped by an ancestor — but nowhere near a circle, which is what a
-    // radius at half the height would be.
-    const radius = parseFloat(m.boxRadius);
-    assert.ok(
-      Number.isFinite(radius) && radius >= 4 && radius < m.circle.height / 2 - 1,
-      `the chip's corners must be rounded, not circular; radius is ${m.boxRadius}`
-    );
+      // Round at the image's own box, not merely clipped by an ancestor.
+      const radius = parseFloat(m.boxRadius);
+      assert.ok(
+        Number.isFinite(radius) && radius >= m.circle.height / 2 - 1,
+        `the badge's corners must be fully round; radius is ${m.boxRadius}`
+      );
 
-    // Undistorted: `cover` scales and crops, it never stretches. A `fill`
-    // here would squash every flag into the box's proportions.
-    assert.equal(m.objectFit, "cover", "the flag must be cropped to the chip, never stretched");
+      // Undistorted: `cover` scales and crops, it never stretches. A `fill`
+      // here would squash every flag into the box's proportions.
+      assert.equal(m.objectFit, "cover", "the flag must be cropped to the badge, never stretched");
 
-    // Whether the asset actually arrived is a separate question from the
-    // geometry above, and gets its own message so a blocked CDN cannot be
-    // mistaken for a layout regression.
-    assert.ok(
-      m.natural && m.natural.w > 0 && m.natural.h > 0,
-      `the flag asset did not load (${m.natural && m.natural.w}x${m.natural && m.natural.h}) — ` +
-        "flagcdn.com unreachable? the geometry assertions above still passed"
-    );
+      // What the app decides is the SOURCE — that it asks flagcdn for the
+      // counterparty's own country. Whether the bytes arrive is the CDN's
+      // business and this sandbox's proxy refuses them, so the naturalWidth
+      // check that used to live here failed on every run and said nothing
+      // about the receipt.
+      const src = await badge.locator("img").first().getAttribute("src", { timeout: 2000 }).catch(() => "");
+      assert.match(String(src), /^https:\/\/flagcdn\.com\/w\d+\/in\.png$/, `the badge asked for ${src}`);
+    }
 
     await context.close();
   });
@@ -498,44 +548,32 @@ describe("the flag belongs to the receipt, not to either tab", () => {
     assert.equal(hits.length, 1, `the flag is rendered ${hits.length} times`);
   });
 
-  test("it sits between the two tabs, on their line", () => {
-    // The buttons no longer carry literal labels: on a Creator Share receipt
-    // the share leads and the payment follows, so which label goes where is
-    // derived. What must stay true whatever the order is that the flag sits
-    // BETWEEN them — it belongs to the document, not to a tab.
+  test("it sits in the head of the ticket, opposite our own mark", () => {
+    // It sat on the seam between the two tabs until the receipt became a
+    // ticket. It is now in the corner of the ticket's head — our hallmark in
+    // one corner, the counterparty's flag in the other — which is a place on
+    // the document rather than a place in the chrome.
     const code = stripped();
-    const leading = code.indexOf("label={tabLabel(leadingTab)}");
+    const hero = code.indexOf("background: heroGradient");
+    const mark = code.indexOf("<GH2HFlipCircle size={28} />");
     const flag = code.indexOf('data-testid="receipt-flag"');
-    const trailing = code.indexOf("label={tabLabel(trailingTab)}");
-    assert.ok(leading >= 0 && flag >= 0 && trailing >= 0, "the tab row is not where it was");
-    assert.ok(
-      leading < flag && flag < trailing,
-      "the flag must be rendered between the two tab buttons"
-    );
+    const tear = code.indexOf("<ReceiptTicketTear />");
+    assert.ok(hero >= 0 && mark >= 0 && flag >= 0 && tear >= 0, "the head of the ticket is not where it was");
+    assert.ok(hero < mark && mark < flag && flag < tear, "the flag is not in the head of the ticket");
   });
 
-  test("it no longer hangs off a box's edge", () => {
-    // The old badge was position:absolute with a -50% translate, half in
-    // the row's margin and half over the box below — an ornament in a gap
-    // rather than a fact about the transaction.
+  test("it is pinned to the corner, not floated in a gap", () => {
+    // The badge before this one was position:absolute with a -50% translate,
+    // half in a row's margin and half over the box below — an ornament in a
+    // gap rather than a fact about the transaction. It is absolute again, and
+    // that is fine now, because what it is positioned against is the head of
+    // the ticket itself: top-right of a box it is inside, no translate, no
+    // overhang.
     const code = stripped();
     const at = code.indexOf('data-testid="receipt-flag"');
-    const around = code.slice(at, at + 260);
-    assert.ok(
-      !/position: "absolute"/.test(around),
-      "the flag is still absolutely positioned over the box below it"
-    );
-  });
-
-  test("the hairlines beside it are drawn in a colour that shows", () => {
-    // T.line (#EAE6F7) on the track's own surfaceAlt (#F3F1FA) is a line
-    // you cannot see: drawn, painted, and doing nothing. Caught on a
-    // screenshot, not in review.
-    assert.match(
-      stripped(),
-      /width: 1, height: 14, background: T\.inkFaint, opacity: 0\.35/,
-      "the separators must not be T.line on surfaceAlt"
-    );
+    const around = code.slice(at, at + 320);
+    assert.match(around, /position: "absolute", right: 0, top: 0/);
+    assert.ok(!/transform: "translate/.test(around), "the flag hangs off an edge again");
   });
 });
 
@@ -554,14 +592,17 @@ describe("one flag component, taught once", () => {
     );
   });
 
-  test("and keeps a flag's own proportions", () => {
-    // 30x26 is registration's 46x40 chip scaled to fit the pill track.
-    // A square box here would crop a 3:2 flag to its middle third, which
-    // for a lot of countries removes what identifies them.
+  test("and is asked for as a disc, at the size of our own mark", () => {
+    // The ticket's head carries two round marks, one in each corner: ours
+    // flipping through the dial symbols, theirs their country's flag. They
+    // are the same diameter because a corner pair at two sizes reads as one
+    // of them being an afterthought.
     const modal = readSource("frontend/components/dialogs/ReceiptModal.jsx");
-    const w = Number(modal.match(/width=\{(\d+)\}\s*\n\s*height=\{(\d+)\}/)?.[1]);
-    const h = Number(modal.match(/width=\{(\d+)\}\s*\n\s*height=\{(\d+)\}/)?.[2]);
-    assert.ok(w > 0 && h > 0, "the flag chip's box is not declared as width/height");
-    assert.ok(w > h, `the chip must be landscape; it is ${w}x${h}`);
+    const at = modal.indexOf("<FlagEmoji");
+    const call = modal.slice(at, at + 220);
+    assert.match(call, /shape="circle"/, "the flag is not asked for as a disc");
+    assert.match(call, /size=\{28\}/, "the flag is not the size of our own mark");
+    assert.match(call, /fit="cover"/, "a letterboxed flag puts its own corners back inside the disc");
+    assert.match(modal, /<GH2HFlipCircle size=\{28\} \/>/);
   });
 });

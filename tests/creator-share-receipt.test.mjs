@@ -115,15 +115,20 @@ describe("Creator Share leads on a share receipt", () => {
     assert.ok(!/label="Creator Share"/.test(modal), "a tab label is hardcoded again");
   });
 
-  test("the flag still sits between them", () => {
+  test("the flag is drawn once, in the ticket's own corner", () => {
     // It belongs to the document, not to a tab — there is only ever one
-    // counterparty on a receipt. Reordering the tabs must not have moved it.
+    // counterparty on a receipt: the person named on the Payment tab is the
+    // person shared with on the Creator Share tab. It sat on the seam between
+    // the two tabs until the receipt became a ticket; it is now in the head of
+    // the ticket, opposite our own mark, and it is still drawn once.
     const modal = code(MODAL);
     const at = modal.indexOf('data-testid="receipt-flag"');
     assert.ok(at !== -1, "the flag is gone from the receipt");
-    const lead = modal.indexOf("label={tabLabel(leadingTab)}");
-    const trail = modal.indexOf("label={tabLabel(trailingTab)}");
-    assert.ok(lead < at && at < trail, "the flag is no longer between the two tabs");
+    assert.equal(modal.split('data-testid="receipt-flag"').length - 1, 1, "the flag is drawn twice");
+    const hero = modal.indexOf("background: heroGradient");
+    const tear = modal.indexOf("<ReceiptTicketTear />");
+    assert.ok(hero < at && at < tear, "the flag is not in the head of the ticket");
+    assert.match(modal.slice(at, at + 400), /shape="circle"/);
   });
 });
 
@@ -145,7 +150,14 @@ describe("the Creator Share tab is present without being fabricated", () => {
     // never happened is a claim, not a control.
     const modal = code(MODAL);
     assert.match(modal, /shareRatePercent > 0/);
-    assert.match(modal, /\(trailingTab !== "share" \|\| hasShareEvent\) && <ReceiptTabButton/);
+    // The guard moved up a level with the ticket redesign: rather than
+    // drawing the pill and hiding one of its two segments, a receipt with
+    // nothing to toggle between draws no pill at all.
+    assert.match(modal, /const showReceiptTabs = !isCoinReceipt && hasShareEvent && !canReveal;/);
+    // The third clause is the coupon's: while the share is still behind one,
+    // the tab that would print it is not drawn either.
+    assert.match(modal, /const canReveal = typeof onRevealShare === "function" && hasShareEvent;/);
+    assert.match(modal, /\{showReceiptTabs \? <div style/);
   });
 
   test("the rate shown on a share receipt comes from the payment", () => {

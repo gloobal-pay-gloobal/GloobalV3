@@ -1217,6 +1217,28 @@ function GloobalId() {
   useEffect15(() => {
     if (activeScreen !== "send") setSendPrefillReceiver(null);
   }, [activeScreen]);
+  // "Pay again", from the foot of a receipt.
+  //
+  // The receipt is mounted from three different places — Send Money, History
+  // and the Coin screen — and none of them knows how to open Send Money on a
+  // payee; only this component does. So the button announces the payee and
+  // this listens, rather than a callback being threaded through three screens
+  // that have no other reason to carry one.
+  //
+  // The payee is the counterparty already named on the receipt, so nothing is
+  // resolved over the network: their Gloobal ID, name, number and country all
+  // came off the transaction. The AMOUNT is deliberately not carried — a
+  // second payment to somebody is rarely the same size as the first, and a
+  // form that opens holding a figure is a form that gets sent holding it.
+  useEffect15(() => {
+    const onPayAgain = (event) => {
+      const payee = event && event.detail;
+      if (!payee || !payee.gloobalId) return;
+      openSendToPayee(payee);
+    };
+    window.addEventListener("gloobal:payAgain", onPayAgain);
+    return () => window.removeEventListener("gloobal:payAgain", onPayAgain);
+  }, [dialCountry]);
   const [showDiagnostics, setShowDiagnostics] = useState19(() => typeof window !== "undefined" && window.location.hash === "#diagnostics");
   useEffect15(() => {
     const onHashChange = () => setShowDiagnostics(window.location.hash === "#diagnostics");

@@ -3,11 +3,98 @@ import { useState as useState11, useEffect as useEffect10 } from "react";
 import {
   Copy,
   Check,
-  Share2
+  Share2,
+  FileText,
+  Eye,
+  RefreshCw as RefreshCw7
 } from "lucide-react";
 
 
 // src/components/dialogs/ReceiptModal.jsx
+
+// The ticket's head, in the direction the money went.
+//
+// Money OUT is the app's own violet; money IN — a payment received, a
+// Creator Share credited — is green. The figure sits on the gradient in
+// white rather than in T.negative/T.positive, so the direction is carried by
+// the whole head of the document instead of by the colour of six characters.
+var RECEIPT_HERO_OUT = "linear-gradient(135deg,#312E81 0%,#4F46E5 55%,#7C3AED 100%)";
+var RECEIPT_HERO_IN = "linear-gradient(135deg,#064E3B 0%,#047857 55%,#0FA372 100%)";
+
+// The perforation between the head and the rows.
+//
+// Two half-discs bitten out of the ticket's sides and a dashed rule between
+// them. The discs are painted in the colour BEHIND the ticket, which is the
+// only thing making them read as holes rather than as dots.
+function ReceiptTicketTear() {
+  const notch = {
+    position: "absolute",
+    top: -8,
+    width: 16,
+    height: 16,
+    borderRadius: "50%",
+    background: T.bg
+  };
+  return <div style={{ position: "relative", height: 16, background: T.surface }} aria-hidden="true"><span style={{ position: "absolute", left: 10, right: 10, top: 7, borderTop: `2px dashed ${T.line}` }} /><span style={{ ...notch, left: -8 }} /><span style={{ ...notch, right: -8 }} /></div>;
+}
+
+// A section heading inside the ticket — WHO, MONEY, PROOF — with room at the
+// right for the one stamp the section carries.
+//
+// The stamp used to be absolutely positioned over the rows, where it landed
+// on top of the first value it met (the counterparty's name, the payment
+// figure). It sits on this line instead, which is the one line in the block
+// with nothing on its right.
+function ReceiptSectionLabel({ children, stamp, stampColor }) {
+  return <div
+    className="rcpt-sec"
+    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "9px 0 2px", fontSize: 9, fontWeight: 800, letterSpacing: 1.4, color: T.inkFaint, textTransform: "uppercase" }}
+  ><span>{children}</span>{stamp && <span
+    style={{
+      transform: "rotate(-7deg)",
+      border: `2px solid ${stampColor}`,
+      color: stampColor,
+      borderRadius: 9,
+      padding: "3px 8px",
+      fontSize: 9.5,
+      fontWeight: 800,
+      letterSpacing: 1.3,
+      opacity: 0.9
+    }}
+  >{stamp}</span>}</div>;
+}
+
+// One of the three things you can do with a finished receipt. Icon over a
+// one-word label, because the row has to hold three of them across a phone
+// and "Audit report (PDF)" spelled out took a full-width button of its own.
+function ReceiptIconAction({ icon, label, onClick, solid, disabled, testId, busy, ariaLabel }) {
+  return <button
+    onClick={onClick}
+    disabled={disabled}
+    data-testid={testId}
+    aria-label={ariaLabel}
+    aria-busy={busy ? true : void 0}
+    className="v2-tap"
+    style={{
+      flex: 1,
+      minWidth: 0,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 4,
+      padding: "10px 4px",
+      borderRadius: 18,
+      border: solid ? "none" : `1px solid ${T.line}`,
+      background: solid ? T.gradButton : T.surface,
+      color: solid ? "#fff" : T.inkSoft,
+      fontSize: 10.5,
+      fontWeight: 800,
+      cursor: disabled ? "default" : "pointer",
+      opacity: disabled ? 0.55 : 1,
+      boxShadow: solid ? "0 8px 20px -14px rgba(76,29,149,0.9)" : T.shadowCard
+    }}
+  >{icon}<span>{label}</span></button>;
+}
 
 // One segment of the Payment / Creator Share toggle.
 //
@@ -35,7 +122,7 @@ function ReceiptTabButton({ label, active, onSelect }) {
   >{label}</button>;
 }
 
-function ReceiptModal({ receipt, onClose, onDone }) {
+function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest }) {
   const [copied, setCopied] = useState11(false);
   // A Creator Share receipt opens on its share.
   //
@@ -85,6 +172,15 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       setShareFeedback("");
     }
   }, [receipt]);
+  // "View Creator Share receipt", from the card that has just been scratched.
+  //
+  // A counter rather than a boolean, because the request can be made more than
+  // once in a receipt's life and a boolean that is already true fires nothing.
+  // Zero — the initial value — is not a request, so a receipt that opens with
+  // no reveal behind it is unaffected.
+  useEffect10(() => {
+    if (shareTabRequest) setReceiptTab("share");
+  }, [shareTabRequest]);
   const [txnColorOffset, setTxnColorOffset] = useState11(0);
   useEffect10(() => {
     const interval = setInterval(() => {
@@ -196,6 +292,25 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   // device's own ledger. A payment at 0% shares nothing, and a tab offering
   // the receipt for a movement that never happened is a claim, not a control.
   const hasShareEvent = isShareReceipt || !!shareTxnRaw || shareRatePercent > 0;
+  // Two documents, or one.
+  //
+  // One tab is not a toggle — it is a button that does nothing, restating the
+  // line already beside it. A coin movement carries no Creator Share by
+  // construction, and neither does a payment at 0%, so both get their
+  // document's name in the header instead of a pill with a single segment.
+  // Is there a share to reveal, and is anyone offering to reveal it?
+  //
+  // Both halves matter. `hasShareEvent` is the payment's own answer — a payee
+  // who shares nothing back has nothing behind a coupon, and a button
+  // promising otherwise is a lie the scratch card would have to tell. And
+  // `onRevealShare` is only passed by the screen that has just paid: from
+  // History the share is simply on its tab, which is what "it reveals itself
+  // quietly" means for somebody who walked away.
+  const canReveal = typeof onRevealShare === "function" && hasShareEvent;
+  // While the coupon is still unopened the receipt keeps the share to itself:
+  // no Creator Share tab, and no "Creator share 2.78₹ back" on the head. A
+  // coupon over a figure printed two inches above it is not a coupon.
+  const showReceiptTabs = !isCoinReceipt && hasShareEvent && !canReveal;
 
   // `direction` means two different things, and conflating them puts the
   // wrong sign on the hero figure.
@@ -522,6 +637,57 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       handleShareTxnId();
     }
   };
+  // ── Pay again ──────────────────────────────────────────────────────────
+  //
+  // The same counterparty, a blank amount. Blank rather than prefilled with
+  // the figure just paid: the second payment to somebody is not usually the
+  // same size as the first, and a form that opens holding a number is a form
+  // that gets sent holding it. Everything else about them — name, Gloobal ID,
+  // country, their Creator Share rate — is carried over, which is the part
+  // that is tedious to type and the part this button exists to save.
+  //
+  // Announced rather than called: this component is mounted from Send Money,
+  // from History and from the Coin screen, and only App.jsx knows how to open
+  // Send Money on a payee. It listens for this event (openSendToPayee).
+  //
+  // The receipt is closed FIRST and the event fires after that turn, because
+  // App.jsx clears a pending payee whenever the send screen is not the open
+  // one — dispatching before the close would hand it a payee and then wipe it.
+  const canPayAgain = !isCoinReceipt && !!receipt.id && receipt.status !== "simulated";
+  const handlePayAgain = () => {
+    if (!canPayAgain) return;
+    const detail = {
+      gloobalId: receipt.id,
+      name: receipt.name || "",
+      mobileNumber: receipt.phone || "",
+      countryIso: receipt.counterpartyIso || null,
+      shareRate: Number(receipt.shareRate) || 0
+    };
+    (onDone || onClose)();
+    if (typeof window !== "undefined") {
+      setTimeout(() => window.dispatchEvent(new CustomEvent("gloobal:payAgain", { detail })), 0);
+    }
+  };
+  // Which way the money went on the tab being read, and therefore which head
+  // the ticket wears. `tint` still exists above and still colours the rate
+  // and the share figures in the rows; it is the hero that stopped using it.
+  const heroIsCredit = onShareTab ? shareIsCredit : !paymentIsSent;
+  const heroGradient = heroIsCredit ? RECEIPT_HERO_IN : RECEIPT_HERO_OUT;
+  const stampColor = receipt.status === "pending" || receipt.status === "simulated" ? "#B45309" : T.positive;
+  const paymentStamp = receipt.status === "pending"
+    ? "PENDING"
+    : receipt.status === "simulated" ? "NOT SENT" : "COMPLETED";
+  const shareStamp = shareIsCredit ? "CREDITED" : "SHARED";
+  const ticketStamp = onShareTab ? shareStamp : paymentStamp;
+  // The line under the figure. On the payment tab it names the share the
+  // payment carried; on the share tab, the rate it came from. Drawn only when
+  // there is really one — see hasShareEvent.
+  const heroChip = onShareTab
+    ? (displayShareRate == null ? "" : `${receipt.name || "They"} share${/s$/i.test(String(receipt.name || "")) ? "" : "s"} ${displayShareRate.toFixed(2)}% of every payment`)
+    : (hasShareEvent && !canReveal && shownShareAmount > 0
+      ? `Creator share ${fmtMoney(shownShareAmount, shareCurrency)} ${shareIsCredit ? "back" : "shared"}`
+      : "");
+  const dateTimeValue = [receipt.date, receipt.time].filter(Boolean).join(" \xB7 ");
   return <div
     role="dialog"
     aria-modal="true"
@@ -530,7 +696,7 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       position: "fixed",
       inset: 0,
       zIndex: 500,
-      background: T.surface,
+      background: T.bg,
       display: "flex",
       alignItems: "stretch",
       justifyContent: "center",
@@ -540,130 +706,121 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     /* A SCREEN, not a bottom sheet.
        It was a sheet at 88vh with a grab handle and a dimmed backdrop you
        could tap to dismiss. A receipt is a document people read top to
-       bottom, scroll back up in, switch tabs on and send to somebody — and
-       at 88vh the last thing on it was always half under the fold, with the
-       Done button somewhere below that. The two tabs are also a horizontal
-       control inside a vertically-swipeable sheet, which is a fight.
+       bottom, switch tabs on and send to somebody — and at 88vh the last
+       thing on it was always half under the fold.
        The backdrop tap went with it. There is no "outside" on a full screen,
        and a dismiss gesture with nothing visible to aim at is a way to lose
-       a receipt by accident. Back and Done are the two ways out, and both
-       are drawn. */
+       a receipt by accident. Back is the way out, and it is drawn. */
   }<style>{`
         @keyframes receipt-overlay-in { from { opacity: 0; } to { opacity: 1; } }
         @keyframes receipt-sheet-up { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .rcpt-rows > div:not(.rcpt-sec):not(.rcpt-sub) { padding: 7px 0; border-bottom: 1px solid ${T.line}; }
+        .rcpt-sub > div { padding: 7px 0; border-bottom: 1px solid ${T.line}; }
+        .rcpt-rows > div:not(.rcpt-sec):last-child, .rcpt-sub > div:last-child { border-bottom: none; }
+        .rcpt-rows .rcpt-note { border-bottom: none; }
       `}</style><div
     style={{
       width: "100%",
       maxWidth: 430,
       height: "100%",
-      background: T.surface,
+      background: T.bg,
       position: "relative",
       display: "flex",
       flexDirection: "column",
       animation: "receipt-sheet-up 0.24s cubic-bezier(.32,.72,0,1)"
     }}
   >{
-    /* Header: back, title, and nothing else. The share control stays where
-       it is, on the amount card, because it shares the TAB you are looking
-       at and belongs beside that tab's figure rather than above both. */
+    /* Header: back, and the two tabs. No "Receipt" word — the tab that is
+       lit says which document you are on, and it says it in the one place
+       you can also change it from. A title above a toggle repeated the
+       toggle's job and took a line to do it. */
   }<div style={{
       display: "flex",
       alignItems: "center",
       gap: 10,
-      padding: "calc(10px + env(safe-area-inset-top, 0px)) 12px 10px",
-      borderBottom: `1px solid ${T.line}`,
+      padding: "calc(10px + env(safe-area-inset-top, 0px)) 12px 8px",
       flexShrink: 0
     }}
   >{
     /* The app's one back button, not a second one drawn here. Same circle,
        same glyph, same size as the twenty other screens that have one —
        navButtons.jsx exists because there used to be several. */
-  }<NavBackButton onClick={onClose} /><span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>
-      {isShareReceipt ? "Creator Share receipt" : "Receipt"}
-    </span></div>{
-    /* The document itself. Scrolls between the fixed header and the fixed
-       footer, so Done is reachable from anywhere on a long receipt instead
-       of being the thing you have to scroll to find. */
+  }<NavBackButton onClick={onClose} />{
+    /* A COIN receipt has one document, so it gets a name rather than a
+       toggle: a lone tab is not a toggle, it is a button that does nothing.
+       Everything else gets Payment and — when the payment really carried a
+       share — Creator Share. */
+  }{showReceiptTabs ? <div style={{ display: "flex", flex: 1, gap: 4, padding: 3, borderRadius: 999, background: T.surfaceAlt, boxShadow: "inset 0 1px 2px rgba(76,29,149,0.06)" }}><ReceiptTabButton
+    label={tabLabel(leadingTab)}
+    active={leadingTab === "share" ? onShareTab : !onShareTab}
+    onSelect={() => setReceiptTab(leadingTab)}
+  /><ReceiptTabButton
+    label={tabLabel(trailingTab)}
+    active={trailingTab === "share" ? onShareTab : !onShareTab}
+    onSelect={() => setReceiptTab(trailingTab)}
+  /></div> : <span style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{tabLabel(leadingTab)}</span>}</div>{
+    /* The document. It scrolls if it has to, but the whole point of the
+       tighter rows is that on an ordinary payment it does not have to: one
+       screen, one screenshot. */
   }<div style={{
       flex: 1,
       minHeight: 0,
       overflowY: "auto",
       WebkitOverflowScrolling: "touch",
-      padding: "14px 24px 20px"
+      padding: "4px 12px calc(10px + env(safe-area-inset-bottom, 0px))",
+      display: "flex",
+      flexDirection: "column",
+      gap: 10
     }}
   ><div
+    data-testid="receipt-ticket"
     style={{
+      background: T.surface,
+      borderRadius: T.radiusXl,
+      overflow: "hidden",
       position: "relative",
-      textAlign: "center",
-      padding: "16px 16px 18px",
-      borderRadius: T.radiusMd,
-      border: `1px solid ${T.line}`,
-      background: tintSoft
+      boxShadow: T.shadowCard
     }}
-  ><div
-    style={{
-      position: "absolute",
-      top: -11,
-      left: "50%",
-      transform: "translateX(-50%)",
-      display: "flex",
-      justifyContent: "center",
-      background: T.surface,
-      padding: 3,
-      borderRadius: "50%",
-      zIndex: 1
-    }}
-  ><GH2HFlipCircle size={22} /></div><button
-    onClick={handleShareReceiptImage}
-    aria-label="Share receipt image"
-    aria-busy={imageShareBusy}
-    disabled={imageShareBusy}
-    data-testid="receipt-share-image"
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: "50%",
-      right: -14,
-      transform: "translateY(-50%)",
-      width: 28,
-      height: 28,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: imageShareBusy ? "default" : "pointer",
-      opacity: imageShareBusy ? 0.5 : 1,
-      zIndex: 1
-    }}
-  ><Share2 size={13} color={T.inkSoft} /></button><div style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 16, minHeight: onShareTab ? 0 : void 0 }}>{!onShareTab ? (isCoinReceipt
+  >{
+    /* ── The head of the ticket ──────────────────────────────────────────
+       Our mark in one corner, the counterparty's flag in the other, the
+       wordmark between them, and under it the one figure this document is
+       about. */
+  }<div style={{ padding: "12px 14px 14px", color: "#fff", textAlign: "center", background: heroGradient }}><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 30, padding: "0 42px" }}><span style={{ position: "absolute", left: 0, top: 0 }}><GH2HFlipCircle size={28} /></span><span style={{ fontSize: 14, letterSpacing: 2.2, fontFamily: T.fontWordmark }}><GloobalWordmark /></span>{
+    /* The same FlagEmoji every other flag in this app is, cut to a disc.
+       Never the emoji character: on any platform without flag glyphs
+       (Windows above all) that is not a flag, it is the two
+       regional-indicator letters sitting where a flag should be.
+       One flag for the whole document: the person named on the Payment tab
+       is the person shared with on the Creator Share tab. */
+  }{receipt.flag && <span
+    data-testid="receipt-flag"
+    style={{ position: "absolute", right: 0, top: 0, display: "flex", borderRadius: "50%", boxShadow: "0 0 0 2px rgba(255,255,255,0.85), 0 2px 8px rgba(20,10,50,0.25)" }}
+  ><FlagEmoji
+    flag={receipt.flag}
+    shape="circle"
+    size={28}
+    fit="cover"
+  /></span>}</div><div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 2.2, opacity: 0.85, marginTop: 9, textTransform: "uppercase" }}>{!onShareTab ? (isCoinReceipt
     ? /* Never "Money received" on a coin buy. Money did not arrive — it
          LEFT, and coin arrived in its place. The hero figure below is the
          coin, so the line above it has to name the exchange rather than
          describe a direction that is true of the coin and false of the
          money. The receipt's own title is that name. */
       receipt.title || "Gloobal Coin"
-    : paymentKnown ? `${paymentIsSent ? "Money sent" : "Money received"}${receipt.status === "pending" ? " \xB7 Pending" : receipt.status === "simulated" ? " \xB7 Not actually sent" : ""}` : "Payment not available") : shareIsCredit ? <SingleOMark before="Back t" after=" you" /> : "You share back"}</div>{
-    /* Amount — matches whichever receipt is actually showing.
-       Payment tab: what I sent/received, signed accordingly.
-       Creator Share tab: the opposite direction from Payment —
-       I sent the payment, so the receiver shares back to ME
-       (credit, +); I received the payment, so I share back to
-       them (debit, −). Always my own currency, since it's always
-       my account the share settles into or out of. */
-  }<div style={{ margin: "10px 0 0", padding: "0 6px" }}>{!onShareTab ? (paymentKnown ? <div
+    : paymentKnown ? (paymentIsSent ? "Money sent" : "Money received") : "Payment not available") : shareIsCredit ? "Creator share earned" : "You share back"}</div><div style={{ marginTop: 1 }}>{!onShareTab ? (paymentKnown ? <div
     style={{
-      fontSize: receiptAmountFontSize(`${paymentIsSent ? "\u2212" : "+"}${fmtMoney(paymentAmount, paymentCurrency)}`, 27),
+      fontSize: receiptAmountFontSize(`${paymentIsSent ? "\u2212" : "+"}${fmtMoney(paymentAmount, paymentCurrency)}`, 31),
       fontWeight: 800,
-      color: tint,
+      color: "#fff",
       fontFamily: T.fontDisplay,
       lineHeight: 1.15,
+      letterSpacing: -0.5,
       overflowWrap: "anywhere"
     }}
     data-testid="receipt-hero-payment"
   >{paymentIsSent ? "\u2212" : "+"}{fmtMoney(paymentAmount, paymentCurrency)}</div> : <div
-    style={{ fontSize: 13, fontWeight: 700, color: T.inkFaint, lineHeight: 1.4, padding: "6px 0" }}
+    style={{ fontSize: 12.5, fontWeight: 700, color: "rgba(255,255,255,0.88)", lineHeight: 1.4, padding: "6px 0" }}
     data-testid="receipt-payment-unavailable"
   >{
     /* The payment row is not on this device. Saying so is the only honest
@@ -672,117 +829,42 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        would be quietly wrong for every share that rounded. */
   }This payment isn't on this device. The Creator Share above is complete.</div>) : <div
     style={{
-      fontSize: receiptAmountFontSize(`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shownShareAmount, shareCurrency)}`, 27),
+      fontSize: receiptAmountFontSize(`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shownShareAmount, shareCurrency)}`, 31),
       fontWeight: 800,
-      color: tint,
+      color: "#fff",
       fontFamily: T.fontDisplay,
       lineHeight: 1.15,
+      letterSpacing: -0.5,
       overflowWrap: "anywhere"
     }}
     data-testid="receipt-hero-share"
   >{shareIsCredit ? "+" : "\u2212"}{fmtMoney(shownShareAmount, shareCurrency)}</div>}{
     /* The currency CODE under the figure.
-       fmtMoney draws the symbol, and a symbol is not the currency: \u20b9 is
+       fmtMoney draws the symbol, and a symbol is not the currency: ₹ is
        shared by India, Pakistan, Nepal, Sri Lanka and Mauritius, $ by more
-       than twenty, and kr by four. On a cross-border receipt \u2014 the only kind
-       this app makes \u2014 "1,106.61\u20b9" alone does not say which rupee left the
+       than twenty, and kr by four. On a cross-border receipt — the only kind
+       this app makes — "1,106.61₹" alone does not say which rupee left the
        account, and this is the document somebody keeps.
-       The shared PNG has carried this line since it was written; the screen
-       it is a picture of did not, so the two disagreed about how completely
-       the same payment was described.
        Suppressed when the formatted figure already ends in the code, which
-       is what fmtMoney does for currencies with no symbol of their own
-       ("1,450.25 CHF") \u2014 printing it twice reads as a mistake. */
+       is what fmtMoney does for currencies with no symbol of their own. */
   }{heroCurrencyCode && <div
     data-testid="receipt-hero-currency"
-    style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, letterSpacing: 0.6, marginTop: 2 }}
-  >{heroCurrencyCode}</div>}</div></div>{shareFeedback && <div
-    role="status"
-    data-testid="receipt-share-feedback"
-    style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textAlign: "center", lineHeight: 1.4 }}
-  >{shareFeedback}</div>}<div style={{ borderTop: `1.5px dashed ${T.line}`, margin: "18px 0" }} />{
-    /* Two receipts, one toggle. Payment always exists. Creator
-       Share exists whenever the payment actually carried one — a
-       share leg minted server-side, or a non-zero rate applied by
-       this device's own ledger — and its tab is drawn only then.
-       A payment at 0% shares nothing, and a tab offering to show
-       the receipt for a movement that never happened is a claim,
-       not a control. The tab is hidden on value only in that one
-       sense: whether the event exists at all, never on how big it
-       is.
-
-       A COIN receipt gets no toggle at all. It has one tab by
-       construction — a coin movement carries no Creator Share —
-       and a lone tab is not a toggle, it is a button that does
-       nothing, restating the line already above it. */
-  }{!isCoinReceipt && <div style={{ display: "flex", alignItems: "center", gap: 6, padding: 4, borderRadius: 999, background: T.surfaceAlt, marginBottom: 14 }}><ReceiptTabButton
-    label={tabLabel(leadingTab)}
-    active={leadingTab === "share" ? onShareTab : !onShareTab}
-    onSelect={() => setReceiptTab(leadingTab)}
-  />{
-    /* The counterparty's flag, on the seam between the two tabs.
-       It used to hang off the top edge of the box BELOW this row —
-       half in the row's margin, half over the box — which made it
-       an ornament floating in a gap rather than a fact about the
-       transaction, and it was drawn twice, once per tab, because
-       each tab's first box carried its own copy.
-       There is only ever one counterparty on a receipt: the person
-       named on the Payment tab is the person shared with on the
-       Creator Share tab. So the flag belongs to the whole document
-       and is drawn once, above both. The hairlines either side are
-       what stop it reading as a hole punched in the pill track.
-       They are inkFaint at 35%, not T.line: the track behind them
-       is surfaceAlt (#F3F1FA) and T.line is #EAE6F7, so a line in
-       it is invisible against its own background — drawn, painted,
-       and doing nothing. Measured on a screenshot, not guessed. */
-  }{receipt.flag && <span style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}><span style={{ width: 1, height: 14, background: T.inkFaint, opacity: 0.35 }} /><span
-    data-testid="receipt-flag"
-    style={{ display: "flex" }}
-  >{
-    /* The same FlagEmoji every other flag in this app is, cut to a
-       disc: shape="circle" squares the box, rounds it to half the
-       box, and paints the rim as an inset shadow so no straight
-       edge or corner of the source image survives the crop.
-       It was a rounded rectangle here until the receipt was asked
-       for a circular flag specifically. The cost of the disc is
-       real and worth naming: fit stays "cover", so a 3:2 flag is
-       filled to the circle and its left and right thirds are cropped
-       away — for Kuwait, Sudan, the UAE that is the hoist emblem.
-       "contain" would keep the whole flag but letterbox it, and a
-       letterboxed flag puts its own rectangular edges back inside
-       the disc, which is the thing the circle exists to remove.
-       Filling wins here because the counterparty's country is also
-       written out on the receipt; the flag is a mark, not the only
-       label. Diameter is 26 — the old chip's height, so the pill
-       track it sits in does not change height. Drop shadow is
-       registration's, unchanged.
-       Never the emoji character: on any platform without flag
-       glyphs (Windows above all) it is not a flag at all — it is
-       the two regional-indicator letters, "GB", sitting where a
-       flag should be. FlagEmoji loads the real asset and falls back
-       to the character only when that fails. */
-  }<FlagEmoji
-    flag={receipt.flag}
-    shape="circle"
-    size={26}
-    fit="cover"
-    dropShadow="drop-shadow(0 2px 6px rgba(76,29,149,0.20))"
-  /></span><span style={{ width: 1, height: 14, background: T.inkFaint, opacity: 0.35 }} /></span>}{(trailingTab !== "share" || hasShareEvent) && <ReceiptTabButton
-    label={tabLabel(trailingTab)}
-    active={trailingTab === "share" ? onShareTab : !onShareTab}
-    onSelect={() => setReceiptTab(trailingTab)}
-  />}</div>}{!onShareTab ? <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{
-    /* Box 1 — who it's to/from, and their Gloobal ID if there is one.
-       The flag no longer hangs off this box's top edge: it is on the
-       tab row above, once for the whole receipt. The top padding is
-       back to 14 because there is nothing overlapping it any more. */
-  }<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minWidth: 0 }}><ReceiptRow
+    style={{ fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,0.8)", letterSpacing: 0.6, marginTop: 1 }}
+  >{heroCurrencyCode}</div>}</div>{heroChip && <span
+    data-testid="receipt-hero-chip"
+    style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 8, padding: "5px 11px", borderRadius: 999, background: "rgba(255,255,255,0.18)", fontSize: 10.5, fontWeight: 800 }}
+  >{heroChip}</span>}</div><ReceiptTicketTear />{
+    /* ── The rows ────────────────────────────────────────────────────────
+       Hairlines between them rather than a box around each group, which is
+       what lets the whole receipt fit one screen. The section headings do
+       the grouping the boxes used to. */
+  }<div className="rcpt-rows" style={{ padding: "0 16px 6px" }}>{!onShareTab ? <>{
+    /* Who it's to/from, and their Gloobal ID if there is one. */
+  }<ReceiptSectionLabel stamp={ticketStamp} stampColor={stampColor}>Who</ReceiptSectionLabel><ReceiptRow
     testId="receipt-counterparty"
     // paymentIsSent, not isSent. This tab describes the PAYMENT, and on a
     // Creator Share receipt `direction` describes the share — so a share Jio
-    // sent me read "From Jio" on a tab about money I sent TO Jio. The same
-    // conflation the hero figure had; this row was missed when that was
-    // fixed.
+    // sent me read "From Jio" on a tab about money I sent TO Jio.
     label={paymentIsSent ? "To" : "From"}
     value={receipt.name}
   />{receipt.id && <ReceiptRow
@@ -790,8 +872,8 @@ function ReceiptModal({ receipt, onClose, onDone }) {
     label={<GloobalWordmark suffix=" ID" />}
     value={<ColoredGloobalId id={receipt.id} />}
     mono
-  />}</div></div>{
-    /* Box 1b — the holder, and the other leg of a coin exchange.
+  />}{
+    /* The holder, and the other leg of a coin exchange.
 
        Only on a coin receipt, and it carries the three facts a coin buy
        could not previously answer: who bought it, under which Gloobal ID,
@@ -804,11 +886,10 @@ function ReceiptModal({ receipt, onClose, onDone }) {
        same field name; coinRateSentence reads the basis the server now sends
        and writes the matching sentence rather than inverting one into the
        other. Inverting means dividing, and one over a rounded rate is a
-       number that does not reproduce the two amounts printed directly above
-       it. */
-  }{isCoinReceipt && <div
+       number that does not reproduce the two amounts printed above it. */
+  }{isCoinReceipt && <ReceiptSectionLabel>Coin</ReceiptSectionLabel>}{isCoinReceipt && <div
     data-testid="receipt-coin"
-    style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}
+    className="rcpt-sub"
   >{receipt.holderName && <ReceiptRow label="Held by" value={receipt.holderName} />}{receipt.holderSymbolId && <ReceiptRow
     label={<GloobalWordmark suffix=" ID" />}
     value={<ColoredGloobalId id={receipt.holderSymbolId} />}
@@ -827,34 +908,137 @@ function ReceiptModal({ receipt, onClose, onDone }) {
   />}<ReceiptRow
     label={receipt.fiatDirection === "out" ? "Coin bought" : receipt.fiatDirection === "in" ? "Coin sold" : "Coin moved"}
     value={`${fmt(receipt.amount)} ${receipt.currencyCode}`}
-  />{coinRateLine && <ReceiptRow label="Rate applied" value={coinRateLine} accent />}{coinRateLine && <div style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.45 }}>{
+  />{coinRateLine && <ReceiptRow label="Rate applied" value={coinRateLine} accent />}{coinRateLine && <div className="rcpt-note" style={{ fontSize: 10, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4, paddingTop: 6 }}>{
     /* The same sentence the payment receipt's conversion block carries, for
        the same reason: a rate with no date attached is one the reader takes
        to be today's. */
   }As converted at the time of this transaction, not a current rate.</div>}</div>}{
-    /* Box 3 — payment method, date, time, status together */
-  }{paymentConversion && <div
+    /* What this transaction was exchanged at.
+
+       Drawn only when the two sides really are different currencies. A
+       "conversion" block on a domestic payment showing 1.000000 states that
+       an exchange took place, and none did. Every figure is a recorded one,
+       read through receiptCurrency.js so the screen, the shared picture and
+       the audit PDF cannot disagree about it. */
+  }{paymentConversion && <ReceiptSectionLabel>Money</ReceiptSectionLabel>}{paymentConversion && <div
     data-testid="receipt-conversion"
-    style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}
-  ><div style={{ fontSize: 10, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>
-      Currency conversion
-    </div><ReceiptRow
+    className="rcpt-sub"
+  ><ReceiptRow
     label="Sender paid"
     value={fmtMoney(paymentConversion.paidAmount, paymentConversion.paidCurrency)}
   /><ReceiptRow
     label="Receiver got"
     value={fmtMoney(paymentConversion.gotAmount, paymentConversion.gotCurrency)}
-  />{paymentConversion.rateLabel && <ReceiptRow label="Rate applied" value={paymentConversion.rateLabel} accent />}<div style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.45 }}>{
+  />{paymentConversion.rateLabel && <ReceiptRow label="Rate applied" value={paymentConversion.rateLabel} accent />}<div className="rcpt-note" style={{ fontSize: 10, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4, paddingTop: 6 }}>{
     /* A rate with no date attached is a rate the reader assumes is today's.
        This one is the rate the payment settled at, and saying so is the
        difference between a record and an estimate. */
-  }As settled at the time of this transaction, not a current rate.</div></div>}<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}>{receipt.method && <ReceiptRow label="Payment method" value={receipt.method} />}<ReceiptRow label="Date" value={receipt.date} /><ReceiptRow label="Time" value={receipt.time} mono /><ReceiptRow label="Status" value={receipt.status === "pending" ? "Pending" : receipt.status === "simulated" ? "Not sent — simulated" : "Completed"} /></div>{receipt.status === "simulated" && <div
+  }As settled at the time of this transaction, not a current rate.</div></div>}<ReceiptSectionLabel>Proof</ReceiptSectionLabel>{receipt.method && <ReceiptRow label="Method" value={receipt.method} />}<ReceiptRow label={"Date \xB7 Time"} value={dateTimeValue} /></> : <>{
+    /* The Creator Share's own document: the arithmetic, where it went, and
+       who it came from. Rate and amount are shown even at 0 rather than the
+       tab disappearing — a 0% share is still a real, reportable outcome. */
+  }<ReceiptSectionLabel stamp={ticketStamp} stampColor={stampColor}>How it was worked out</ReceiptSectionLabel><ReceiptRow
+    label="From payment"
+    value={paymentKnown ? fmtMoney(paymentAmount, paymentCurrency) : "Not on this device"}
+    testId="receipt-share-from-payment"
+  /><ReceiptRow
+    label="Creator Share rate"
+    value={displayShareRate == null ? "\u2014" : `${displayShareRate.toFixed(2)}%`}
+    accent
+  />{
+    /* Credit when I sent (the receiver shares back to me), debit when I
+       received (I share back to them) — same direction as the figure above,
+       always my own currency, since it is always my account the share
+       settles into or out of. */
+  }<ReceiptRow
+    label={shareIsCredit ? "Your share" : "You shared"}
+    value={`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shownShareAmount, shareCurrency)}`}
+    accent
+  />{
+    /* The share's own currency conversion, when it crossed one.
+
+       The payee gives the share in their currency and the payer gets it in
+       theirs; both figures are recorded, and the rate is the payment's own.
+       Absent on a same-currency share, and absent — rather than worked out —
+       when either side was never recorded (a legacy row, or the receipt shown
+       straight after paying, whose response carries only the payer's side). */
+  }{shareConversion && <ReceiptSectionLabel>Conversion</ReceiptSectionLabel>}{shareConversion && <div
+    data-testid="receipt-share-conversion"
+    className="rcpt-sub"
+  ><ReceiptRow
+    label="Share given"
+    value={fmtMoney(shareConversion.paidAmount, shareConversion.paidCurrency)}
+  /><ReceiptRow
+    label="Share received"
+    value={fmtMoney(shareConversion.gotAmount, shareConversion.gotCurrency)}
+  />{shareConversion.rateLabel && <ReceiptRow label="Rate applied" value={shareConversion.rateLabel} accent />}<div className="rcpt-note" style={{ fontSize: 10, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4, paddingTop: 6 }}>
+      As settled at the time of this transaction, not a current rate.
+    </div></div>}<ReceiptSectionLabel>Where it went</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Credited to" : "Taken from"} value="Gloobal balance" /><ReceiptRow label={"Date \xB7 Time"} value={dateTimeValue} /><ReceiptSectionLabel>Who</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Shared back to" : "You shared back to"} value={shareIsCredit ? "You" : receipt.name} />{
+    /* Who the other side of the share is, by name and by ID.
+
+       When I RECEIVED the payment, the row above already names the person I
+       shared back to. When I SENT it, the row above says "You" — the share
+       came back to me — so the counterparty needs naming before their ID can
+       be attached to anything. Hence the extra row in that direction only:
+       receipt.id belongs to receipt.name in both cases, and it must sit under
+       the row that names them, never under "You". */
+  }{shareIsCredit && <ReceiptRow label="Shared back by" value={receipt.name} />}{receipt.id && <ReceiptRow
+    testId="receipt-share-counterparty-id"
+    label={<GloobalWordmark suffix=" ID" />}
+    value={<ColoredGloobalId id={receipt.id} />}
+    mono
+  />}</>}{
+    /* Transaction ID — twenty symbols in one row, inside a dashed box at the
+       foot of the ticket. Each tab shows ITS OWN reference: the payment and
+       its Creator Share are two movements between two different pairs of
+       parties, and the server mints each with its own. There is no fallback
+       to the other one's — a blank looks broken, but printing the payment's
+       id on the share tab is a false statement about which transaction you
+       are holding. */
+  }{rawTxnId && <div
+    className="rcpt-note"
+    style={{
+      position: "relative",
+      margin: "8px 0 4px",
+      padding: "8px 10px 9px",
+      borderRadius: 14,
+      border: `1px dashed ${T.line}`
+    }}
+  >{
+    /* The label, the copy control and the symbols are three DIRECT children
+       of this box, and that is load-bearing rather than incidental: the
+       browser tests find the reference by looking for the label and then for
+       the monospace row inside the label's own parent. Nesting the label with
+       the button in a flex row of their own hid the symbols from that walk —
+       and from anything else reading the receipt structurally. */
+  }<span style={{ display: "block", textAlign: "center", fontSize: 9, fontWeight: 800, color: T.inkFaint, letterSpacing: 1.5, textTransform: "uppercase" }}>{showingShare ? "Share transaction ID" : "Transaction ID"}</span><button
+    onClick={handleCopyTxnId}
+    aria-label="Copy transaction ID"
+    className="v2-tap"
+    style={{
+      position: "absolute",
+      top: 4,
+      right: 6,
+      width: 20,
+      height: 20,
+      borderRadius: "50%",
+      border: "none",
+      background: "transparent",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer",
+      padding: 0
+    }}
+  >{copied ? <Check size={12} color={T.positive} /> : <Copy size={12} color={T.inkFaint} />}</button><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, marginTop: 5, fontFamily: "monospace", fontSize: 12.5, fontWeight: 800 }}>{rawTxnId.split("").map((ch, i) => <span key={i} style={{ flexShrink: 0, color: POSITION_COLORS[(i + txnColorOffset) % POSITION_COLORS.length], transition: "color 0.4s ease" }}>{ch}</span>)}</div></div>}</div></div>{
+    /* Simulated payments say so outside the ticket, not inside it: the
+       ticket is the record, and this is a warning about the record. */
+  }{receipt.status === "simulated" && <div
     role="alert"
     style={{
       display: "flex",
       alignItems: "center",
       gap: 8,
-      marginTop: 10,
       padding: "10px 12px",
       borderRadius: 12,
       background: "#FEF3C7",
@@ -864,147 +1048,24 @@ function ReceiptModal({ receipt, onClose, onDone }) {
       fontWeight: 700,
       lineHeight: 1.35
     }}
-  ><span aria-hidden="true">⚠️</span><span>This recipient wasn't a registered Gloobal account, so nothing was actually sent — this receipt reflects a local simulation only.</span></div>}</div> : <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{
-    /* Creator Share's own receipt — who earned it, the rate, and
-       the actual value, shown as its own document rather than a
-       section tucked inside the payment receipt. Rate and amount
-       default to 0 rather than the whole receipt disappearing —
-       a 0% share is still a real, reportable outcome of this
-       transaction, not a reason to hide it. */
-  }<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 14px 12px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow label={shareIsCredit ? "Shared back to" : "You shared back to"} value={shareIsCredit ? "You" : receipt.name} />{
-    /* Who the other side of the share is, by name and by ID.
-       The Payment tab has carried the counterparty's Gloobal ID since it
-       was built; this tab named a person and stopped there, so the Creator
-       Share receipt was the one document in the app that identified someone
-       by display name alone. A name is not an identifier — two people share
-       one, and it is not what you would quote to support or paste into Send
-       Money. The ID is.
-
-       When I RECEIVED the payment, the row above already names the person I
-       shared back to, and the ID goes straight under it. When I SENT it, the
-       row above says "You" — the share came back to me — so the counterparty
-       needs naming before their ID can be attached to anything. Hence the
-       extra row in that direction only: receipt.id belongs to receipt.name in
-       both cases, and it must sit under the row that names them, never under
-       "You". */
-  }{shareIsCredit && <ReceiptRow label="Shared back by" value={receipt.name} />}{receipt.id && <ReceiptRow
-    testId="receipt-share-counterparty-id"
-    label={<GloobalWordmark suffix=" ID" />}
-    value={<ColoredGloobalId id={receipt.id} />}
-    mono
-  />}</div><div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow
-    label="Creator Share rate"
-    value={displayShareRate == null ? "\u2014" : `${displayShareRate.toFixed(2)}%`}
-    accent
-  />{
-    /* Credit when I sent (the receiver shares back to me),
-       debit when I received (I share back to them) — same
-       direction as the hero figure above, always my own
-       currency. */
-  }<ReceiptRow
-    label="Amount"
-    value={`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shownShareAmount, shareCurrency)}`}
-    accent
-  /></div>{
-    /* The share's own currency conversion, when it crossed one.
-       The payee gives the share in their currency and the payer gets it
-       in theirs; both figures are recorded, and the rate is the payment's
-       own. Absent on a same-currency share, and absent \u2014 rather than
-       worked out \u2014 when either side was never recorded (a legacy row, or
-       the receipt shown straight after paying, whose response carries
-       only the payer's side). */
-  }{shareConversion && <div
-    data-testid="receipt-share-conversion"
-    style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}
-  ><div style={{ fontSize: 10, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>
-      Currency conversion
-    </div><ReceiptRow
-    label="Share given"
-    value={fmtMoney(shareConversion.paidAmount, shareConversion.paidCurrency)}
-  /><ReceiptRow
-    label="Share received"
-    value={fmtMoney(shareConversion.gotAmount, shareConversion.gotCurrency)}
-  />{shareConversion.rateLabel && <ReceiptRow label="Rate applied" value={shareConversion.rateLabel} accent />}<div style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.45 }}>
-      As settled at the time of this transaction, not a current rate.
-    </div></div>}<div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: T.radiusMd, border: `1px solid ${T.line}` }}><ReceiptRow
-    label="From payment"
-    value={paymentKnown ? fmtMoney(paymentAmount, paymentCurrency) : "Not on this device"}
-    testId="receipt-share-from-payment"
-  /><ReceiptRow label="Date" value={receipt.date} /><ReceiptRow label="Time" value={receipt.time} mono /></div></div>}{
-    /* Transaction ID — its own box, separate from the boxes above.
-       Shown as individually colored symbols (same palette used for
-       Secure ID chips elsewhere), centered in the box. Label sits
-       centered on the box's top edge; copy sits on that same top
-       edge at the right corner. Share moved to the Money Sent box
-       above instead of living here too. */
-  }{rawTxnId && <div
-    style={{
-      position: "relative",
-      marginTop: 26,
-      padding: "24px 18px 22px",
-      borderRadius: T.radiusLg,
-      border: `1px solid ${T.line}`,
-      display: "flex",
-      justifyContent: "center"
-    }}
-  ><span
-    style={{
-      position: "absolute",
-      top: 0,
-      left: "50%",
-      transform: "translate(-50%, -50%)",
-      background: T.surface,
-      padding: "0 8px",
-      fontSize: 9.5,
-      fontWeight: 800,
-      color: T.inkFaint,
-      textTransform: "uppercase",
-      letterSpacing: 0.4,
-      whiteSpace: "nowrap"
-    }}
-  >{showingShare ? "Share transaction ID" : "Transaction ID"}</span>{
-    /* There was a second share button here: the summary plus the /t/ link,
-       through the share sheet or the clipboard. It is gone. One receipt
-       offering two share buttons meant that whichever you pressed, you did
-       not send the other half — and neither half is the receipt on its own.
-       The Share button on the amount card now carries the picture AND the
-       link in a single sheet (receiptShareAttempts, features/receipts/
-       receiptImage.js), and handleShareTxnId survives only as what runs when
-       the picture cannot be drawn. Copying the ID is still its own button on
-       the opposite corner: copying is not sharing. */
-  }<button
-    onClick={handleCopyTxnId}
-    aria-label="Copy transaction ID"
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: 0,
-      right: 14,
-      transform: "translateY(-50%)",
-      width: 28,
-      height: 28,
-      borderRadius: "50%",
-      border: `1px solid ${T.line}`,
-      background: T.surfaceAlt,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer"
-    }}
-  >{copied ? <Check size={13} color={T.positive} /> : <Copy size={13} color={T.inkSoft} />}</button><div style={{ display: "flex", flexWrap: "nowrap", alignItems: "center", justifyContent: "center", gap: 4, fontFamily: "monospace", fontSize: 14, fontWeight: 800, maxWidth: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>{rawTxnId.split("").map((ch, i) => <span key={i} style={{ flexShrink: 0, color: POSITION_COLORS[(i + txnColorOffset) % POSITION_COLORS.length], transition: "color 0.4s ease" }}>{ch}</span>)}</div></div>}{
-    /* Provenance & complaint window — each viewer only ever sees
-       their OWN resolved city/state (never the other party's), plus
-       a short, explicit window to report an issue. Reporting opens a
-       case; it never reverses money or flags fraud automatically. */
+  ><span aria-hidden="true">⚠️</span><span>This recipient wasn't a registered Gloobal account, so nothing was actually sent — this receipt reflects a local simulation only.</span></div>}{shareFeedback && <div
+    role="status"
+    data-testid="receipt-share-feedback"
+    style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textAlign: "center", lineHeight: 1.4 }}
+  >{shareFeedback}</div>}{
+    /* Provenance & complaint window — each viewer only ever sees their OWN
+       resolved city/state (never the other party's), plus a short, explicit
+       window to report an issue. Reporting opens a case; it never reverses
+       money or flags fraud automatically. */
   }{complaintWindow && <div
     style={{
-      marginTop: 18,
-      padding: "14px 14px",
+      padding: "12px 14px",
       borderRadius: T.radiusMd,
+      background: T.surface,
       border: `1px solid ${T.line}`,
       display: "flex",
       flexDirection: "column",
-      gap: 10
+      gap: 8
     }}
   >{myLocation && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>
             Completed near
@@ -1030,23 +1091,16 @@ function ReceiptModal({ receipt, onClose, onDone }) {
             Report an issue with this transaction
           </button> : <p style={{ fontSize: 11.5, color: T.inkFaint }}>
             The verification window for this transaction has closed.
-          </p>}</div>}</div>{
-    /* Done, pinned below the scroll area rather than sitting at the end of
-       it. On a long receipt — a cross-border payment with a conversion block
-       and a Creator Share — the old inline button was several screens down,
-       so the way out of the document depended on how much the document had
-       to say. */
-  }<div style={{
-      flexShrink: 0,
-      borderTop: `1px solid ${T.line}`,
-      padding: "12px 24px calc(14px + env(safe-area-inset-bottom, 0px))"
-    }}
-  >{
-    /* The audit report. A secondary control, ABOVE Done rather than beside
-       it: Done is what most people want most of the time, and two buttons of
-       equal weight at the foot of a receipt is a decision nobody asked to
-       make. */
-  }<button
+          </p>}</div>}{
+    /* Audit, Share, Pay again — three icons rather than three sentences.
+       There is no Done: back is the only way out of a document, and a second
+       control that does the same thing is a decision nobody asked to make. */
+  }<div style={{ display: "flex", gap: 9 }}><ReceiptIconAction
+    testId="receipt-audit-report"
+    icon={<FileText size={20} color={T.accent} />}
+    label={auditBusy ? "Preparing…" : "Audit"}
+    disabled={auditBusy}
+    busy={auditBusy}
     onClick={async () => {
       if (auditBusy) return;
       setAuditBusy(true);
@@ -1056,38 +1110,54 @@ function ReceiptModal({ receipt, onClose, onDone }) {
         setAuditBusy(false);
       }
     }}
+  /><ReceiptIconAction
+    testId="receipt-share-image"
+    ariaLabel="Share receipt image"
+    icon={<Share2 size={20} color={T.accent} />}
+    label="Share"
+    disabled={imageShareBusy}
+    busy={imageShareBusy}
+    onClick={handleShareReceiptImage}
+  />{canPayAgain && <ReceiptIconAction
+    testId="receipt-pay-again"
+    icon={<RefreshCw7 size={20} color="#fff" />}
+    label={paymentIsSent ? "Pay again" : "Pay back"}
+    solid
+    onClick={handlePayAgain}
+  />}</div>{
+    /* Reveal my share.
+       Offered only when this payment really carried a Creator Share, and only
+       while it is still a surprise — `onRevealShare` is passed by the screen
+       that has just paid, and never by History, so a receipt reopened a week
+       later simply has its Creator Share tab and no coupon.
+       It sits UNDER the receipt rather than on it: the receipt is a record and
+       is complete without this. This is the part that is for fun. */
+  }{canReveal && <button
+    onClick={onRevealShare}
+    data-testid="receipt-reveal-share"
     className="v2-tap"
-    data-testid="receipt-audit-report"
-    disabled={auditBusy}
     style={{
+      marginTop: 10,
       width: "100%",
-      padding: "11px 0",
-      marginBottom: 10,
-      borderRadius: 14,
-      border: `1px solid ${T.line}`,
-      background: "transparent",
-      color: T.inkSoft,
-      fontSize: 13,
-      fontWeight: 700,
-      cursor: auditBusy ? "default" : "pointer",
-      opacity: auditBusy ? 0.6 : 1
-    }}
-  >{auditBusy ? "Preparing\u2026" : "Audit report (PDF)"}</button><button
-    onClick={onDone || onClose}
-    className="v2-tap"
-    style={{
-      width: "100%",
-      padding: "13px 0",
+      minHeight: 52,
       borderRadius: 16,
       border: "none",
       background: T.gradButton,
       color: "#fff",
-      fontSize: 14,
+      fontSize: 14.5,
       fontWeight: 800,
-      cursor: "pointer"
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      boxShadow: "0 12px 26px -16px rgba(76,29,149,0.9)"
     }}
-  >
-          Done
-        </button></div></div></div>;
+  ><Eye size={17} aria-hidden="true" />Reveal my share</button>}{canReveal && <div
+    style={{ textAlign: "center", fontSize: 10.5, fontWeight: 700, color: T.inkFaint, marginTop: 7, lineHeight: 1.4 }}
+  >{`${receipt.name || "They"} share${/s$/i.test(String(receipt.name || "")) ? "" : "s"} a little of every payment back`}</div>}{
+    /* What the document is signed with. Same two lines the app opens on. */
+  }<div style={{ marginTop: "auto", textAlign: "center", padding: "10px 0 2px" }}><div style={{ fontSize: 11.5, letterSpacing: 1.2, color: T.ink }}><HoomanMark /></div><div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, color: T.inkFaint, marginTop: 4, textTransform: "none" }}>
+          Cashless · Taxless · Borderless · Limitless
+        </div></div></div></div></div>;
 }
-

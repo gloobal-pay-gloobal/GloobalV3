@@ -1,5 +1,6 @@
 // src/components/dialogs/PaymentProcessing.jsx
 import { useState as useState35, useEffect as useEffect25 } from "react";
+import { Check as CheckProcessing } from "lucide-react";
 //
 // The screen between "verified" and the receipt.
 //
@@ -17,12 +18,21 @@ import { useState as useState35, useEffect as useEffect25 } from "react";
 //
 // ── Everything on this screen is true ────────────────────────────────────
 //
-// Which is the whole reason it is not a staged checklist. A progress list
-// reading "Verified / Sending / Confirming" would look more informative and
-// would be worse: there are exactly TWO transitions this side of the wire —
-// posting, and posted — so the third tick could only be a timer pretending to
-// be progress. That is the defect this codebase already names, in the comment
-// about a biometric prompt that "was a 700ms setTimeout that always
+// There are three stages listed now, and the rule that kept them off the
+// screen before is the reason they are safe to draw: NOTHING here advances on
+// a timer, and no stage claims to have happened until it has.
+//
+//   1. Verified it's you — already true when this screen opens. The PIN, and
+//      the fingerprint after it, were taken before the POST was made.
+//   2. Sending — true for exactly as long as this screen is up, because this
+//      screen IS the request being in flight.
+//   3. Settling — drawn grey, and it never ticks here. It cannot: the moment
+//      the server answers, this screen is gone and the receipt is on top.
+//      The receipt is the tick.
+//
+// So the list says what is known and stops. A third row that filled in after
+// a couple of seconds would be the defect this codebase already names, in the
+// comment about a biometric prompt that "was a 700ms setTimeout that always
 // succeeded".
 //
 // The slow-line below is the same rule applied to reassurance. It appears
@@ -149,6 +159,41 @@ function PaymentHero({ flag, failed }) {
   >&#215;</div> : null}</div>;
 }
 
+// One stage of the payment, as a row.
+//
+// `state` is "done" | "now" | "next", and it comes from the payment's own
+// status — never from a clock. See the note at the top of this file for why
+// the third row is always "next" while this screen is up.
+function ProcessingStage({ state, children }) {
+  const done = state === "done";
+  const now = state === "now";
+  return <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      fontSize: 12.5,
+      fontWeight: 700,
+      color: done || now ? T.ink : T.inkFaint
+    }}
+  ><span
+    aria-hidden="true"
+    data-gp-breathe={now ? "" : void 0}
+    style={{
+      width: 20,
+      height: 20,
+      borderRadius: "50%",
+      flexShrink: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: done ? T.positive : now ? T.accent : T.surfaceSunk,
+      boxShadow: now ? `0 0 0 4px ${T.accentSoft}` : "none",
+      animation: now ? "gp-breathe 1.6s ease-in-out infinite" : "none"
+    }}
+  >{done ? <CheckProcessing size={12} color="#fff" strokeWidth={3} /> : null}</span><span>{children}</span></div>;
+}
+
 // status  — "processing" | "failed". Anything else renders nothing.
 // reason  — the server's OWN message on a failure. Never paraphrased: it is
 //           already more specific than anything this component could write
@@ -242,10 +287,33 @@ function PaymentProcessing({
       minHeight: 0,
       display: "flex",
       flexDirection: "column",
-      alignItems: "center",
       justifyContent: "center",
-      gap: 22,
-      textAlign: "center"
+      gap: 14
+    }}
+  >{
+    /* A card, not a page.
+       Everything the screen says sits in one white box in the middle of the
+       wash, which gives the payment an edge and a shadow to stand on —
+       before this, four things floated down the centre of an open field with
+       nothing to say where the page began or ended. The stage list below the
+       rule is part of the same object rather than a second card, because it
+       is describing the payment the card is about. */
+  }<div
+    data-testid="processing-card"
+    style={{
+      background: T.surface,
+      borderRadius: T.radiusXl,
+      boxShadow: T.shadowRaised,
+      overflow: "hidden"
+    }}
+  ><div
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 18,
+      textAlign: "center",
+      padding: "24px 20px 22px"
     }}
   ><PaymentHero flag={flag} failed={failed} />{
     /* Who and how much, carried through from the screen behind. A person
@@ -310,11 +378,11 @@ function PaymentProcessing({
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
-            padding: "8px 15px",
+            padding: "9px 16px",
             borderRadius: 999,
-            background: T.surface,
-            border: `1px solid ${T.line}`,
-            boxShadow: T.shadowCard,
+            // On the card's own white now, so the pill takes the page's soft
+            // ground rather than white-on-white with a hairline holding it up.
+            background: T.bg,
             fontSize: 12.5,
             fontWeight: 700,
             color: T.inkSoft
@@ -346,6 +414,23 @@ function PaymentProcessing({
        apologising in general terms: the API sleeps on Render's free plan and
        a cold start is measured in tens of seconds. */
   }Taking longer than usual. The server may be waking up &mdash; your payment is still going through.</p> : null}</div>{
+    /* The stages, under a rule inside the same card.
+       Read the note at the top of this file before changing any of these
+       three: the first is true before the screen opens, the second is true
+       for as long as the screen is up, and the third is deliberately never
+       ticked here — the receipt is what says it settled. Nothing on this list
+       is driven by a timer. */
+  }{!failed ? <div
+    data-testid="processing-stages"
+    style={{
+      borderTop: `1px solid ${T.line}`,
+      padding: "13px 20px 15px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 11,
+      textAlign: "left"
+    }}
+  ><ProcessingStage state="done">Verified it&#39;s you</ProcessingStage><ProcessingStage state="now">{recipientName ? `Sending to ${recipientName}` : "Sending your payment"}</ProcessingStage><ProcessingStage state="next">Settling into their account</ProcessingStage></div> : null}</div>{
     failed ? <div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}>{
       /* Try again is offered because the server never posted this payment —
          both failure paths return before anything moved, and one of them
@@ -368,5 +453,5 @@ function PaymentProcessing({
       border: `1px solid ${T.line}`, background: "transparent",
       color: T.inkSoft, fontSize: 13, fontWeight: 700, cursor: "pointer"
     }}
-  >Close</button></div> : null}</div></div>;
+  >Close</button></div> : null}</div></div></div>;
 }

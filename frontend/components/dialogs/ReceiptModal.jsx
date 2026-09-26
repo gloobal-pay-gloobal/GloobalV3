@@ -6,6 +6,8 @@ import {
   Share2,
   FileText,
   Eye,
+  MapPin,
+  Flag as FlagIcon2,
   RefreshCw as RefreshCw7
 } from "lucide-react";
 
@@ -135,6 +137,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   );
   const { getLocationForViewer, getComplaintWindow, openComplaint } = useProvenanceAndDisputes();
   const [reportSubmitted, setReportSubmitted] = useState11(false);
+  // Which of the two quiet things under the ticket is open: "where", "report",
+  // or neither. One at a time, so the foot of the receipt never grows by two
+  // blocks at once.
+  const [detail, setDetail] = useState11(null);
   // "Working", not "done": the share sheet can be dismissed, and a button
   // that flipped to a success state on tap would claim the report had gone
   // somewhere when the person had just cancelled it.
@@ -170,6 +176,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       setReceiptTab(receipt.kind === "share" ? "share" : "payment");
       setReportSubmitted(false);
       setShareFeedback("");
+      setDetail(null);
     }
   }, [receipt]);
   // "View Creator Share receipt", from the card that has just been scratched.
@@ -194,6 +201,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   const myLocation = receipt.txnId ? getLocationForViewer(receipt.txnId, viewerRole) : null;
   const complaintWindow = receipt.txnId ? getComplaintWindow(receipt.txnId) : null;
   const withinComplaintWindow = complaintWindow ? Date.now() <= new Date(complaintWindow.expiresAt).getTime() : false;
+  // The Report icon is drawn whenever this transaction HAS a complaint window,
+  // open or closed: a window that has closed is a fact worth being able to
+  // read, and hiding the control would leave somebody looking for it.
+  const canReport = !!complaintWindow;
   const handleReportIssue = () => {
     if (!receipt.txnId) return;
     const result = openComplaint({ txnId: receipt.txnId, raisedBy: viewerRole, reason: "Reported from receipt" });
@@ -688,6 +699,20 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       ? `Creator share ${fmtMoney(shownShareAmount, shareCurrency)} ${shareIsCredit ? "back" : "shared"}`
       : "");
   const dateTimeValue = [receipt.date, receipt.time].filter(Boolean).join(" \xB7 ");
+  // A figure in a row, with its currency spelled out beside it.
+  //
+  // fmtMoney draws the SYMBOL, and a symbol is not a currency: ₹ is shared by
+  // India, Pakistan, Nepal, Sri Lanka and Mauritius, $ by more than twenty,
+  // kr by four. The hero has carried its code under the figure since it was
+  // written; the rows had nothing, so on a cross-border receipt — the only
+  // kind this app makes — "18.33€ / 2,000.00₹" left the reader to guess which
+  // rupee and which euro. Suppressed where fmtMoney already ends in the code,
+  // which is what it does for currencies with no symbol of their own
+  // ("1,450.25 CHF"); printing it twice reads as a mistake.
+  const moneyCoded = (amount, code) => {
+    const text = fmtMoney(amount, code);
+    return code && !String(text).endsWith(String(code)) ? `${text} ${code}` : text;
+  };
   return <div
     role="dialog"
     aria-modal="true"
@@ -779,7 +804,15 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       borderRadius: T.radiusXl,
       overflow: "hidden",
       position: "relative",
-      boxShadow: T.shadowCard
+      boxShadow: T.shadowCard,
+      // Never squeezed.
+      //
+      // This is a flex child of a scrolling column, so by default it SHRINKS
+      // to make room for whatever is under it — and because it also clips its
+      // own overflow, shrinking cut the ticket off mid-row: a receipt ending
+      // halfway through "Date · Time" with the buttons sitting under the cut.
+      // The column scrolls; the document does not shorten itself.
+      flexShrink: 0
     }}
   >{
     /* ── The head of the ticket ──────────────────────────────────────────
@@ -904,7 +937,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        "this cost nothing" rather than "no money was involved". */
   }{receipt.fiatAmount != null && receipt.fiatCurrencyCode && <ReceiptRow
     label={receipt.fiatDirection === "out" ? "Paid" : "Received"}
-    value={fmtMoney(receipt.fiatAmount, receipt.fiatCurrencyCode)}
+    value={moneyCoded(receipt.fiatAmount, receipt.fiatCurrencyCode)}
   />}<ReceiptRow
     label={receipt.fiatDirection === "out" ? "Coin bought" : receipt.fiatDirection === "in" ? "Coin sold" : "Coin moved"}
     value={`${fmt(receipt.amount)} ${receipt.currencyCode}`}
@@ -925,10 +958,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     className="rcpt-sub"
   ><ReceiptRow
     label="Sender paid"
-    value={fmtMoney(paymentConversion.paidAmount, paymentConversion.paidCurrency)}
+    value={moneyCoded(paymentConversion.paidAmount, paymentConversion.paidCurrency)}
   /><ReceiptRow
     label="Receiver got"
-    value={fmtMoney(paymentConversion.gotAmount, paymentConversion.gotCurrency)}
+    value={moneyCoded(paymentConversion.gotAmount, paymentConversion.gotCurrency)}
   />{paymentConversion.rateLabel && <ReceiptRow label="Rate applied" value={paymentConversion.rateLabel} accent />}<div className="rcpt-note" style={{ fontSize: 10, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4, paddingTop: 6 }}>{
     /* A rate with no date attached is a rate the reader assumes is today's.
        This one is the rate the payment settled at, and saying so is the
@@ -939,7 +972,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        tab disappearing — a 0% share is still a real, reportable outcome. */
   }<ReceiptSectionLabel stamp={ticketStamp} stampColor={stampColor}>How it was worked out</ReceiptSectionLabel><ReceiptRow
     label="From payment"
-    value={paymentKnown ? fmtMoney(paymentAmount, paymentCurrency) : "Not on this device"}
+    value={paymentKnown ? moneyCoded(paymentAmount, paymentCurrency) : "Not on this device"}
     testId="receipt-share-from-payment"
   /><ReceiptRow
     label="Creator Share rate"
@@ -952,7 +985,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        settles into or out of. */
   }<ReceiptRow
     label={shareIsCredit ? "Your share" : "You shared"}
-    value={`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shownShareAmount, shareCurrency)}`}
+    value={`${shareIsCredit ? "+" : "\u2212"}${moneyCoded(shownShareAmount, shareCurrency)}`}
     accent
   />{
     /* The share's own currency conversion, when it crossed one.
@@ -967,10 +1000,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     className="rcpt-sub"
   ><ReceiptRow
     label="Share given"
-    value={fmtMoney(shareConversion.paidAmount, shareConversion.paidCurrency)}
+    value={moneyCoded(shareConversion.paidAmount, shareConversion.paidCurrency)}
   /><ReceiptRow
     label="Share received"
-    value={fmtMoney(shareConversion.gotAmount, shareConversion.gotCurrency)}
+    value={moneyCoded(shareConversion.gotAmount, shareConversion.gotCurrency)}
   />{shareConversion.rateLabel && <ReceiptRow label="Rate applied" value={shareConversion.rateLabel} accent />}<div className="rcpt-note" style={{ fontSize: 10, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4, paddingTop: 6 }}>
       As settled at the time of this transaction, not a current rate.
     </div></div>}<ReceiptSectionLabel>Where it went</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Credited to" : "Taken from"} value="Gloobal balance" /><ReceiptRow label={"Date \xB7 Time"} value={dateTimeValue} /><ReceiptSectionLabel>Who</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Shared back to" : "You shared back to"} value={shareIsCredit ? "You" : receipt.name} />{
@@ -1057,45 +1090,12 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        resolved city/state (never the other party's), plus a short, explicit
        window to report an issue. Reporting opens a case; it never reverses
        money or flags fraud automatically. */
-  }{complaintWindow && <div
-    style={{
-      padding: "12px 14px",
-      borderRadius: T.radiusMd,
-      background: T.surface,
-      border: `1px solid ${T.line}`,
-      display: "flex",
-      flexDirection: "column",
-      gap: 8
-    }}
-  >{myLocation && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>
-            Completed near
-          </span><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>
-            {myLocation.city}{myLocation.state ? `, ${myLocation.state}` : ""}{myLocation.approximate ? " (approx.)" : ""}
-          </span></div>}{reportSubmitted ? <p style={{ fontSize: 12, color: T.positive, fontWeight: 600 }}>
-            Reported — a case has been opened. This doesn't change your balance or eligibility; the other side has up to 24 hours to respond.
-          </p> : withinComplaintWindow ? <button
-    onClick={handleReportIssue}
-    className="v2-tap"
-    style={{
-      width: "100%",
-      padding: "10px 0",
-      borderRadius: 12,
-      border: `1px solid ${T.line}`,
-      background: T.surfaceAlt,
-      color: T.ink,
-      fontSize: 12.5,
-      fontWeight: 700,
-      cursor: "pointer"
-    }}
-  >
-            Report an issue with this transaction
-          </button> : <p style={{ fontSize: 11.5, color: T.inkFaint }}>
-            The verification window for this transaction has closed.
-          </p>}</div>}{
+  }{
+
     /* Audit, Share, Pay again — three icons rather than three sentences.
        There is no Done: back is the only way out of a document, and a second
        control that does the same thing is a decision nobody asked to make. */
-  }<div style={{ display: "flex", gap: 9 }}><ReceiptIconAction
+  }<div style={{ display: "flex", gap: 7, flexShrink: 0 }}><ReceiptIconAction
     testId="receipt-audit-report"
     icon={<FileText size={20} color={T.accent} />}
     label={auditBusy ? "Preparing…" : "Audit"}
@@ -1118,13 +1118,51 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     disabled={imageShareBusy}
     busy={imageShareBusy}
     onClick={handleShareReceiptImage}
-  />{canPayAgain && <ReceiptIconAction
+  />{
+    /* Where it happened, and how to complain about it — two icons rather than
+       a card of their own under the ticket.
+       They were a bordered box carrying one line of text and a full-width
+       button, which on a cross-border receipt pushed the ticket into a scroll
+       nobody was expecting. Both are one tap here, and both open in the line
+       under this row rather than taking permanent space: the place is a fact
+       most people never need, and the complaint is a door most people never
+       open. */
+  }{myLocation && <ReceiptIconAction
+    testId="receipt-where"
+    icon={<MapPin size={20} color={T.accent} />}
+    label="Where"
+    onClick={() => setDetail((d) => (d === "where" ? null : "where"))}
+  />}{canReport && <ReceiptIconAction
+    testId="receipt-report"
+    icon={reportSubmitted ? <Check size={20} color={T.positive} /> : <FlagIcon2 size={20} color={T.accent} />}
+    label={reportSubmitted ? "Reported" : "Report"}
+    onClick={() => setDetail((d) => (d === "report" ? null : "report"))}
+  />}{canPayAgain && <ReceiptIconAction
     testId="receipt-pay-again"
     icon={<RefreshCw7 size={20} color="#fff" />}
     label={paymentIsSent ? "Pay again" : "Pay back"}
     solid
     onClick={handlePayAgain}
   />}</div>{
+    /* What the two of them have to say, in one line under the row. */
+  }{detail === "where" && myLocation && <div
+    data-testid="receipt-where-line"
+    style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textAlign: "center", lineHeight: 1.45, flexShrink: 0 }}
+  >{`Completed near ${myLocation.city}${myLocation.state ? `, ${myLocation.state}` : ""}${myLocation.approximate ? " (approx.)" : ""}`}</div>}{detail === "report" && <div
+    data-testid="receipt-report-line"
+    style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 12px", borderRadius: 12, background: T.surface, border: `1px solid ${T.line}`, flexShrink: 0 }}
+  >{reportSubmitted ? <p style={{ fontSize: 11.5, color: T.positive, fontWeight: 700, lineHeight: 1.45, margin: 0 }}>
+          Reported — a case has been opened. This doesn't change your balance or eligibility; the other side has up to 24 hours to respond.
+        </p> : withinComplaintWindow ? <>
+        <p style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700, lineHeight: 1.45, margin: 0 }}>
+          Something wrong with this payment? Opening a case does not move any money — the other side has 24 hours to respond.
+        </p><button
+    onClick={handleReportIssue}
+    className="v2-tap"
+    style={{ width: "100%", padding: "9px 0", borderRadius: 12, border: `1px solid ${T.line}`, background: T.surfaceAlt, color: T.ink, fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}
+  >Report an issue</button></> : <p style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 700, margin: 0 }}>
+          The verification window for this transaction has closed.
+        </p>}</div>}{
     /* Reveal my share.
        Offered only when this payment really carried a Creator Share, and only
        while it is still a surprise — `onRevealShare` is passed by the screen
@@ -1153,11 +1191,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       gap: 8,
       boxShadow: "0 12px 26px -16px rgba(76,29,149,0.9)"
     }}
-  ><Eye size={17} aria-hidden="true" />Reveal my share</button>}{canReveal && <div
-    style={{ textAlign: "center", fontSize: 10.5, fontWeight: 700, color: T.inkFaint, marginTop: 7, lineHeight: 1.4 }}
-  >{`${receipt.name || "They"} share${/s$/i.test(String(receipt.name || "")) ? "" : "s"} a little of every payment back`}</div>}{
-    /* What the document is signed with. Same two lines the app opens on. */
-  }<div style={{ marginTop: "auto", textAlign: "center", padding: "10px 0 2px" }}><div style={{ fontSize: 11.5, letterSpacing: 1.2, color: T.ink }}><HoomanMark /></div><div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, color: T.inkFaint, marginTop: 4, textTransform: "none" }}>
-          Cashless · Taxless · Borderless · Limitless
-        </div></div></div></div></div>;
+  ><Eye size={17} aria-hidden="true" />Reveal my share</button>}{
+    /* What the document is signed with.
+       One line, not two: the tagline that used to sit under it is on the
+       screens that introduce the app, and a receipt is not the place to be
+       introduced to anything. */
+  }<div style={{ marginTop: "auto", textAlign: "center", padding: "12px 0 4px" }}><div style={{ fontSize: 11.5, letterSpacing: 1.2, color: T.ink }}><HoomanMark /></div></div></div></div></div>;
 }

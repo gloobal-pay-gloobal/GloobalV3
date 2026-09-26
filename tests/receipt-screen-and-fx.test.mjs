@@ -221,9 +221,23 @@ describe("the receipt is a screen", () => {
     }
   });
 
-  test("the ticket is signed Hooman to Hooman", () => {
+  test("the ticket is signed Hooman to Hooman, and only that", () => {
+    // The mark stays; the tagline under it does not. "Cashless · Taxless ·
+    // Borderless · Limitless" belongs on the screens that introduce the app,
+    // and a receipt is not where anyone is introduced to anything — it was a
+    // second line of branding under a document about one payment.
     assert.match(modal, /<HoomanMark \/>/);
-    assert.match(modal, /Cashless · Taxless · Borderless · Limitless/);
+    assert.ok(!/Cashless · Taxless · Borderless · Limitless/.test(modal), "the tagline is back on the receipt");
+  });
+
+  test("every money row names its currency, not just its symbol", () => {
+    // ₹ is five countries, $ is more than twenty. The hero has carried its
+    // code since it was written; the rows had nothing.
+    assert.match(modal, /const moneyCoded = \(amount, code\) =>/);
+    assert.match(modal, /!String\(text\)\.endsWith\(String\(code\)\) \? `\$\{text\} \$\{code\}` : text/);
+    for (const row of ["paymentConversion.paidAmount", "paymentConversion.gotAmount", "shareConversion.paidAmount", "shareConversion.gotAmount"]) {
+      assert.match(modal, new RegExp(`moneyCoded\\(${row.replace(".", "\\.")}`), `${row} is still symbol-only`);
+    }
   });
 
   test("the safe areas are respected top and bottom", () => {

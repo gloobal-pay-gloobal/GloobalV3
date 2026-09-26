@@ -311,7 +311,7 @@ describe("when the payment cannot be found, the receipt says so", () => {
   test("the From payment row says it too, rather than showing the share", () => {
     assert.match(
       code(MODAL),
-      /value=\{paymentKnown \? fmtMoney\(paymentAmount, paymentCurrency\) : "Not on this device"\}/
+      /value=\{paymentKnown \? moneyCoded\(paymentAmount, paymentCurrency\) : "Not on this device"\}/
     );
   });
 

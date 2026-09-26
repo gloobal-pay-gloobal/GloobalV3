@@ -721,7 +721,14 @@ export async function installApi(context, options = {}) {
         cashbackCredit,
         // A payee with a share rate produces a share leg, with its own
         // reference — the thing the receipt's Creator Share tab names.
-        shareReferenceId: cashbackRate > 0 ? `SHARE-${state.ledger.length + 1}` : null,
+        // Twenty Gloobal symbols, exactly as the real one is minted
+        // (server/lib/merchantShareFlow.js, createShareReferenceId). It used
+        // to be `SHARE-1`, which is not a reference anyone could ever see —
+        // and a receipt printing seven Latin characters where twenty symbols
+        // belong hides every layout question the real one asks.
+        shareReferenceId: cashbackRate > 0
+          ? Array.from({ length: 20 }, (_, i) => "−+×=○□●■"[(state.ledger.length * 7 + i * 3) % 8]).join("")
+          : null,
         // The short ASCII handles the two receipt LINKS are addressed by —
         // Transaction.receiptCode, minted server-side. Ten characters of the
         // real alphabet, and distinct per leg, because a link that led from

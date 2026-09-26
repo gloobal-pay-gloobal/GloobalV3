@@ -699,6 +699,20 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       ? `Creator share ${fmtMoney(shownShareAmount, shareCurrency)} ${shareIsCredit ? "back" : "shared"}`
       : "");
   const dateTimeValue = [receipt.date, receipt.time].filter(Boolean).join(" \xB7 ");
+  // A figure in a row, with its currency spelled out beside it.
+  //
+  // fmtMoney draws the SYMBOL, and a symbol is not a currency: ₹ is shared by
+  // India, Pakistan, Nepal, Sri Lanka and Mauritius, $ by more than twenty,
+  // kr by four. The hero has carried its code under the figure since it was
+  // written; the rows had nothing, so on a cross-border receipt — the only
+  // kind this app makes — "18.33€ / 2,000.00₹" left the reader to guess which
+  // rupee and which euro. Suppressed where fmtMoney already ends in the code,
+  // which is what it does for currencies with no symbol of their own
+  // ("1,450.25 CHF"); printing it twice reads as a mistake.
+  const moneyCoded = (amount, code) => {
+    const text = fmtMoney(amount, code);
+    return code && !String(text).endsWith(String(code)) ? `${text} ${code}` : text;
+  };
   return <div
     role="dialog"
     aria-modal="true"
@@ -923,7 +937,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        "this cost nothing" rather than "no money was involved". */
   }{receipt.fiatAmount != null && receipt.fiatCurrencyCode && <ReceiptRow
     label={receipt.fiatDirection === "out" ? "Paid" : "Received"}
-    value={fmtMoney(receipt.fiatAmount, receipt.fiatCurrencyCode)}
+    value={moneyCoded(receipt.fiatAmount, receipt.fiatCurrencyCode)}
   />}<ReceiptRow
     label={receipt.fiatDirection === "out" ? "Coin bought" : receipt.fiatDirection === "in" ? "Coin sold" : "Coin moved"}
     value={`${fmt(receipt.amount)} ${receipt.currencyCode}`}
@@ -944,10 +958,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     className="rcpt-sub"
   ><ReceiptRow
     label="Sender paid"
-    value={fmtMoney(paymentConversion.paidAmount, paymentConversion.paidCurrency)}
+    value={moneyCoded(paymentConversion.paidAmount, paymentConversion.paidCurrency)}
   /><ReceiptRow
     label="Receiver got"
-    value={fmtMoney(paymentConversion.gotAmount, paymentConversion.gotCurrency)}
+    value={moneyCoded(paymentConversion.gotAmount, paymentConversion.gotCurrency)}
   />{paymentConversion.rateLabel && <ReceiptRow label="Rate applied" value={paymentConversion.rateLabel} accent />}<div className="rcpt-note" style={{ fontSize: 10, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4, paddingTop: 6 }}>{
     /* A rate with no date attached is a rate the reader assumes is today's.
        This one is the rate the payment settled at, and saying so is the
@@ -958,7 +972,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        tab disappearing — a 0% share is still a real, reportable outcome. */
   }<ReceiptSectionLabel stamp={ticketStamp} stampColor={stampColor}>How it was worked out</ReceiptSectionLabel><ReceiptRow
     label="From payment"
-    value={paymentKnown ? fmtMoney(paymentAmount, paymentCurrency) : "Not on this device"}
+    value={paymentKnown ? moneyCoded(paymentAmount, paymentCurrency) : "Not on this device"}
     testId="receipt-share-from-payment"
   /><ReceiptRow
     label="Creator Share rate"
@@ -971,7 +985,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        settles into or out of. */
   }<ReceiptRow
     label={shareIsCredit ? "Your share" : "You shared"}
-    value={`${shareIsCredit ? "+" : "\u2212"}${fmtMoney(shownShareAmount, shareCurrency)}`}
+    value={`${shareIsCredit ? "+" : "\u2212"}${moneyCoded(shownShareAmount, shareCurrency)}`}
     accent
   />{
     /* The share's own currency conversion, when it crossed one.
@@ -986,10 +1000,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     className="rcpt-sub"
   ><ReceiptRow
     label="Share given"
-    value={fmtMoney(shareConversion.paidAmount, shareConversion.paidCurrency)}
+    value={moneyCoded(shareConversion.paidAmount, shareConversion.paidCurrency)}
   /><ReceiptRow
     label="Share received"
-    value={fmtMoney(shareConversion.gotAmount, shareConversion.gotCurrency)}
+    value={moneyCoded(shareConversion.gotAmount, shareConversion.gotCurrency)}
   />{shareConversion.rateLabel && <ReceiptRow label="Rate applied" value={shareConversion.rateLabel} accent />}<div className="rcpt-note" style={{ fontSize: 10, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4, paddingTop: 6 }}>
       As settled at the time of this transaction, not a current rate.
     </div></div>}<ReceiptSectionLabel>Where it went</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Credited to" : "Taken from"} value="Gloobal balance" /><ReceiptRow label={"Date \xB7 Time"} value={dateTimeValue} /><ReceiptSectionLabel>Who</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Shared back to" : "You shared back to"} value={shareIsCredit ? "You" : receipt.name} />{
@@ -1177,11 +1191,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       gap: 8,
       boxShadow: "0 12px 26px -16px rgba(76,29,149,0.9)"
     }}
-  ><Eye size={17} aria-hidden="true" />Reveal my share</button>}{canReveal && <div
-    style={{ textAlign: "center", fontSize: 10.5, fontWeight: 700, color: T.inkFaint, marginTop: 7, lineHeight: 1.4 }}
-  >{`${receipt.name || "They"} share${/s$/i.test(String(receipt.name || "")) ? "" : "s"} a little of every payment back`}</div>}{
-    /* What the document is signed with. Same two lines the app opens on. */
-  }<div style={{ marginTop: "auto", textAlign: "center", padding: "10px 0 2px" }}><div style={{ fontSize: 11.5, letterSpacing: 1.2, color: T.ink }}><HoomanMark /></div><div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, color: T.inkFaint, marginTop: 4, textTransform: "none" }}>
-          Cashless · Taxless · Borderless · Limitless
-        </div></div></div></div></div>;
+  ><Eye size={17} aria-hidden="true" />Reveal my share</button>}{
+    /* What the document is signed with.
+       One line, not two: the tagline that used to sit under it is on the
+       screens that introduce the app, and a receipt is not the place to be
+       introduced to anything. */
+  }<div style={{ marginTop: "auto", textAlign: "center", padding: "12px 0 4px" }}><div style={{ fontSize: 11.5, letterSpacing: 1.2, color: T.ink }}><HoomanMark /></div></div></div></div></div>;
 }

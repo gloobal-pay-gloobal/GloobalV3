@@ -367,6 +367,18 @@ export async function installApi(context, options = {}) {
       .reverse()
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   const unreadCountOf = (account) => notificationsOf(account).filter((n) => !n.readAt).length;
+  // An account keeps its last ten (NOTIFICATION_KEEP in server.js, pruned
+  // there after every write). The fake prunes too, or a test could describe an
+  // inbox eleven deep that the real server would never serve.
+  const NOTIF_KEEP = 10;
+  const pruneNotifications = (userSymbolId) => {
+    const mine = state.notifications
+      .filter((n) => n.userSymbolId === userSymbolId)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+    for (const row of mine.slice(NOTIF_KEEP)) {
+      state.notifications.splice(state.notifications.indexOf(row), 1);
+    }
+  };
 
   // One row per (user, transactionId) — the unique partial index on the real
   // collection. A duplicate is a silent no-op, as E11000 is on the server.
@@ -386,6 +398,7 @@ export async function installApi(context, options = {}) {
       createdAt: new Date().toISOString(),
       ...n
     });
+    pruneNotifications(userSymbolId);
   };
 
   // The photo validation PUT /api/profile/:symbolId/photo applies.
@@ -528,8 +541,8 @@ export async function installApi(context, options = {}) {
       if (pathname === "/api/notifications" && method === "GET") {
         const rawLimit = Number(url.searchParams.get("limit"));
         const limit = Number.isFinite(rawLimit) && url.searchParams.get("limit") !== null
-          ? Math.min(50, Math.max(1, Math.floor(rawLimit)))
-          : 30;
+          ? Math.min(NOTIF_KEEP, Math.max(1, Math.floor(rawLimit)))
+          : NOTIF_KEEP;
         const beforeTime = Date.parse(url.searchParams.get("before") || "");
         const rows = notificationsOf(caller)
           .filter((n) => !Number.isFinite(beforeTime) || Date.parse(n.createdAt) < beforeTime)
@@ -748,7 +761,11 @@ export async function installApi(context, options = {}) {
       const notificationMeta = {
         transactionId: ledgerRow.id,
         referenceId: ledgerRow.referenceId,
-        receiptCode: ledgerRow.receiptCode || null
+        receiptCode: ledgerRow.receiptCode || null,
+        // The rate, as the real notification carries it: 1 unit of the
+        // receiver's currency into the sender's, in the direction it is
+        // stored, never inverted.
+        fxRate: ledgerRow.rate
       };
       addNotification(sender.symbolId, {
         title: "Money sent",
@@ -759,8 +776,15 @@ export async function installApi(context, options = {}) {
           direction: "sent",
           amount: sourceAmount,
           currency: sender.currency,
+          // Both sides of the payment, as recordPaymentNotifications now
+          // records them: the viewer's own figure, and the one the other
+          // party saw. A card that shows only one side cannot say what a
+          // cross-border payment cost against what arrived.
+          counterAmount: destinationAmount,
+          counterCurrency: receiver.currency,
           counterpartyName: receiver.fullName,
-          counterpartySymbolId: receiver.symbolId
+          counterpartySymbolId: receiver.symbolId,
+          counterpartyIso: receiver.countryIso
         }
       });
       addNotification(receiver.symbolId, {
@@ -772,8 +796,11 @@ export async function installApi(context, options = {}) {
           direction: "received",
           amount: destinationAmount,
           currency: receiver.currency,
+          counterAmount: sourceAmount,
+          counterCurrency: sender.currency,
           counterpartyName: sender.fullName,
-          counterpartySymbolId: sender.symbolId
+          counterpartySymbolId: sender.symbolId,
+          counterpartyIso: sender.countryIso
         }
       });
       return json(200, {

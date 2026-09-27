@@ -6686,6 +6686,13 @@ async function recordPaymentNotifications({
   // Never throws; null just means the notification links by referenceId.
   const receiptCode = (await ensureReceiptCode(transaction)) || null;
 
+  // The rate this payment settled at, in the direction it is stored: 1 unit
+  // of the RECEIVER's currency into the SENDER's. Carried as recorded, never
+  // inverted — the receipt states the same figure, and two rates for one
+  // payment is how a record stops reconciling.
+  const fxRate = Number(transaction.metadata?.fxRate);
+  const storedRate = Number.isFinite(fxRate) && fxRate > 0 ? fxRate : null;
+
   const entries = [
     {
       userId: sender._id,
@@ -6694,8 +6701,15 @@ async function recordPaymentNotifications({
       direction: 'sent',
       amount: debitAmount,
       currency: senderCurrency,
+      // The OTHER side of the same payment. A notification used to carry one
+      // figure, which is the viewer's own — fine for a line of text, not
+      // enough for a card that shows what was paid and what arrived. Both
+      // sides are the server's own numbers here; nothing is multiplied out.
+      counterAmount: payeeReceives,
+      counterCurrency: destinationCurrency,
       counterpartyName: receiverName,
       counterpartySymbolId: receiver.symbolId,
+      counterpartyIso: parties.receiver?.countryIso || accountCountryIso(receiver) || null,
       pushTitle: 'Payment Sent',
       pushBody: `${formatNotificationAmount(debitAmount, senderCurrency)} ${senderCurrency} sent to ${receiverName}`,
       pushType: 'payment.sent',
@@ -6707,8 +6721,11 @@ async function recordPaymentNotifications({
       direction: 'received',
       amount: payeeReceives,
       currency: destinationCurrency,
+      counterAmount: debitAmount,
+      counterCurrency: senderCurrency,
       counterpartyName: senderName,
       counterpartySymbolId: sender.symbolId,
+      counterpartyIso: parties.sender?.countryIso || accountCountryIso(sender) || null,
       // What the DEVICE is shown, which is not what the inbox row says. The
       // inbox is a list and reads in the first person ("You received ..."); a
       // push is a single banner and reads as a headline. Both figures are the
@@ -6739,12 +6756,26 @@ async function recordPaymentNotifications({
             'metadata.currency': entry.currency,
             'metadata.counterpartyName': entry.counterpartyName,
             'metadata.counterpartySymbolId': entry.counterpartySymbolId,
+            // The counterparty's country, so the card can show their flag
+            // without asking a second route who they are; and the payment's
+            // other side with the rate between them, so it can show what was
+            // paid against what arrived. All four are null on a domestic
+            // payment or an older row, and the card simply draws fewer pages.
+            'metadata.counterpartyIso': entry.counterpartyIso,
+            'metadata.counterAmount': entry.counterAmount,
+            'metadata.counterCurrency': entry.counterCurrency,
+            'metadata.fxRate': storedRate,
           },
         },
         { upsert: true }
       )
     )
   );
+
+  // Both inboxes trimmed to the cap, after the writes and before anything is
+  // pushed. Sequential rather than parallel: the two legs are two different
+  // accounts, and a prune that fails for one must not abandon the other.
+  for (const entry of entries) await pruneNotifications(entry.userId);
 
   // Which legs this call actually created, in the same order as `entries`.
   //
@@ -6853,6 +6884,14 @@ function publicNotification(doc) {
       currency: metadata.currency ?? null,
       counterpartyName: metadata.counterpartyName ?? null,
       counterpartySymbolId: metadata.counterpartySymbolId ?? null,
+      // The counterparty's country and the payment's other side, for the card
+      // the inbox draws. Null on a domestic payment, and null on every row
+      // written before these were recorded — the card reads them as absent
+      // and draws one page fewer rather than guessing at a conversion.
+      counterpartyIso: metadata.counterpartyIso ?? null,
+      counterAmount: typeof metadata.counterAmount === 'number' ? metadata.counterAmount : null,
+      counterCurrency: metadata.counterCurrency ?? null,
+      fxRate: typeof metadata.fxRate === 'number' ? metadata.fxRate : null,
     },
   };
 }
@@ -6863,15 +6902,52 @@ function publicNotification(doc) {
 // not exist, for the same reason a stranger's draft project 404s.
 const unreadNotificationCount = (userId) => Notification.countDocuments({ userId, readAt: null });
 
+// How many notifications an account keeps. The inbox is a nudge, not a
+// ledger: every payment it announces is in History with its receipt, and the
+// receipt is the record. Ten is what fits a glance, and keeping ten means the
+// collection cannot grow without bound for somebody who pays five times a day.
+const NOTIFICATION_KEEP = 10;
+
+// Drop everything past the newest NOTIFICATION_KEEP for one account.
+//
+// Called after a write rather than on a schedule, so the cap holds the moment
+// it is exceeded and there is nothing to run separately. Best-effort: a failure
+// here must never fail the payment that triggered it — the row is written, the
+// device is told, and the worst case is an inbox one item longer than intended
+// until the next write trims it.
+async function pruneNotifications(userId) {
+  try {
+    const keep = await Notification.find({ userId })
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(NOTIFICATION_KEEP)
+      .select('_id')
+      .lean();
+    if (keep.length < NOTIFICATION_KEEP) return 0;
+    const { deletedCount } = await Notification.deleteMany({
+      userId,
+      _id: { $nin: keep.map((row) => row._id) },
+    });
+    return deletedCount || 0;
+  } catch (error) {
+    console.error('Notification prune failed:', error.message);
+    return 0;
+  }
+}
+
 const notificationNotFound = (res) =>
   res.status(404).json({ success: false, code: 'notification_not_found', message: 'Notification not found.' });
 
-// GET /api/notifications?limit=30&before=<ISO date> — newest first.
+// GET /api/notifications?limit=10&before=<ISO date> — newest first.
 app.get('/api/notifications', lookupLimit, requireAuth, async (req, res) => {
   try {
     const userId = req.authUser._id;
     const requested = Number.parseInt(String(req.query.limit ?? ''), 10);
-    const limit = Number.isFinite(requested) ? Math.min(50, Math.max(1, requested)) : 30;
+    // Capped at what an account keeps: asking for fifty when ten exist only
+    // ever returned ten, and a limit that promises more than the inbox holds
+    // invites a caller to page for rows that were pruned.
+    const limit = Number.isFinite(requested)
+      ? Math.min(NOTIFICATION_KEEP, Math.max(1, requested))
+      : NOTIFICATION_KEEP;
 
     const filter = { userId };
     // `before` pages backwards by creation time. An unparseable value is
@@ -7235,6 +7311,7 @@ app.post('/api/push/promotional', writeLimit, async (req, res) => {
           metadata: { url, campaign: 'promotional' },
         });
         notified += 1;
+        await pruneNotifications(userId);
       } catch (error) {
         console.error('Promotional notification write failed:', error.message);
       }

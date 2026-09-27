@@ -34,10 +34,11 @@ import {
   CheckCheck as CheckCheckNotifSheet
 } from "lucide-react";
 
-// How many rows are asked for. Enough that scrolling is the exception, few
-// enough that a cold Render instance is not asked to serialise a year of
-// somebody's payments before the sheet can open.
-var GLOOBAL_NOTIF_SHEET_PAGE = 30;
+// How many rows are asked for, and it is also all there are: an account keeps
+// its last ten notifications and the server prunes the rest (NOTIFICATION_KEEP
+// in server.js). The inbox is a nudge, not a ledger — every payment it
+// announces is in History with its receipt, and the receipt is the record.
+var GLOOBAL_NOTIF_SHEET_PAGE = 10;
 
 // The server's `type` enum, as an icon and a colour. Payments split on
 // direction because "money arrived" and "money left" are the two facts
@@ -271,6 +272,19 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, p
   >Nothing yet. Payments, security notices and referral news will appear here.</span>}{status === "ready" && rows.map((row) => {
     const look = gloobalNotifSheetLook(row);
     const isUnread = !row.readAt;
+    // A payment gets the card: the figure as its headline, and the rest of
+    // the payment turned through a page at a time. Everything else — a
+    // security notice, a referral — stays a row, because a pager with one
+    // dot is a control that does nothing.
+    if (row.type === "payment") {
+      return <GloobalNotificationCard
+        key={row.id}
+        row={row}
+        when={gloobalNotifSheetWhen(row.createdAt)}
+        unread={isUnread}
+        onOpen={() => openRow(row)}
+      />;
+    }
     return <button
       key={row.id}
       onClick={() => openRow(row)}

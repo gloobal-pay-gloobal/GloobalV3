@@ -6772,6 +6772,11 @@ async function recordPaymentNotifications({
     )
   );
 
+  // Both inboxes trimmed to the cap, after the writes and before anything is
+  // pushed. Sequential rather than parallel: the two legs are two different
+  // accounts, and a prune that fails for one must not abandon the other.
+  for (const entry of entries) await pruneNotifications(entry.userId);
+
   // Which legs this call actually created, in the same order as `entries`.
   //
   // THIS IS THE IDEMPOTENCY KEY FOR PUSH. `upsertedCount === 1` is Mongo
@@ -6897,15 +6902,52 @@ function publicNotification(doc) {
 // not exist, for the same reason a stranger's draft project 404s.
 const unreadNotificationCount = (userId) => Notification.countDocuments({ userId, readAt: null });
 
+// How many notifications an account keeps. The inbox is a nudge, not a
+// ledger: every payment it announces is in History with its receipt, and the
+// receipt is the record. Ten is what fits a glance, and keeping ten means the
+// collection cannot grow without bound for somebody who pays five times a day.
+const NOTIFICATION_KEEP = 10;
+
+// Drop everything past the newest NOTIFICATION_KEEP for one account.
+//
+// Called after a write rather than on a schedule, so the cap holds the moment
+// it is exceeded and there is nothing to run separately. Best-effort: a failure
+// here must never fail the payment that triggered it — the row is written, the
+// device is told, and the worst case is an inbox one item longer than intended
+// until the next write trims it.
+async function pruneNotifications(userId) {
+  try {
+    const keep = await Notification.find({ userId })
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(NOTIFICATION_KEEP)
+      .select('_id')
+      .lean();
+    if (keep.length < NOTIFICATION_KEEP) return 0;
+    const { deletedCount } = await Notification.deleteMany({
+      userId,
+      _id: { $nin: keep.map((row) => row._id) },
+    });
+    return deletedCount || 0;
+  } catch (error) {
+    console.error('Notification prune failed:', error.message);
+    return 0;
+  }
+}
+
 const notificationNotFound = (res) =>
   res.status(404).json({ success: false, code: 'notification_not_found', message: 'Notification not found.' });
 
-// GET /api/notifications?limit=30&before=<ISO date> — newest first.
+// GET /api/notifications?limit=10&before=<ISO date> — newest first.
 app.get('/api/notifications', lookupLimit, requireAuth, async (req, res) => {
   try {
     const userId = req.authUser._id;
     const requested = Number.parseInt(String(req.query.limit ?? ''), 10);
-    const limit = Number.isFinite(requested) ? Math.min(50, Math.max(1, requested)) : 30;
+    // Capped at what an account keeps: asking for fifty when ten exist only
+    // ever returned ten, and a limit that promises more than the inbox holds
+    // invites a caller to page for rows that were pruned.
+    const limit = Number.isFinite(requested)
+      ? Math.min(NOTIFICATION_KEEP, Math.max(1, requested))
+      : NOTIFICATION_KEEP;
 
     const filter = { userId };
     // `before` pages backwards by creation time. An unparseable value is
@@ -7269,6 +7311,7 @@ app.post('/api/push/promotional', writeLimit, async (req, res) => {
           metadata: { url, campaign: 'promotional' },
         });
         notified += 1;
+        await pruneNotifications(userId);
       } catch (error) {
         console.error('Promotional notification write failed:', error.message);
       }

@@ -125,6 +125,32 @@ describe("the server records what the card reads", () => {
   });
 });
 
+describe("an account keeps its last ten", () => {
+  const server = readSource(SERVER);
+
+  test("the cap is one number, and the route cannot be asked past it", () => {
+    // The inbox is a nudge, not a ledger: every payment it announces is in
+    // History with its receipt, and the receipt is the record.
+    assert.match(server, /const NOTIFICATION_KEEP = 10;/);
+    assert.match(server, /\? Math\.min\(NOTIFICATION_KEEP, Math\.max\(1, requested\)\)\s*\n\s*: NOTIFICATION_KEEP;/);
+    assert.match(readSource(SHEET), /var GLOOBAL_NOTIF_SHEET_PAGE = 10;/);
+  });
+
+  test("pruning keeps the newest, runs after a write, and never fails the payment", () => {
+    const prune = server.slice(server.indexOf("async function pruneNotifications"), server.indexOf("const notificationNotFound"));
+    assert.match(prune, /\.sort\(\{ createdAt: -1, _id: -1 \}\)/, "the prune is not keeping the newest");
+    assert.match(prune, /\.limit\(NOTIFICATION_KEEP\)/);
+    assert.match(prune, /_id: \{ \$nin: keep\.map/);
+    // Fewer than the cap is not a prune — a deleteMany with an empty keep set
+    // would empty the inbox.
+    assert.match(prune, /if \(keep\.length < NOTIFICATION_KEEP\) return 0;/);
+    assert.match(prune, /catch \(error\)/, "a failed prune can fail a payment");
+    // Called for both legs of a payment, and for a campaign row.
+    assert.match(server, /for \(const entry of entries\) await pruneNotifications\(entry\.userId\);/);
+    assert.match(server, /notified \+= 1;\s*\n\s*await pruneNotifications\(userId\);/);
+  });
+});
+
 describe("in the app", () => {
   before(async () => {
     await buildOnce();

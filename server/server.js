@@ -6686,6 +6686,13 @@ async function recordPaymentNotifications({
   // Never throws; null just means the notification links by referenceId.
   const receiptCode = (await ensureReceiptCode(transaction)) || null;
 
+  // The rate this payment settled at, in the direction it is stored: 1 unit
+  // of the RECEIVER's currency into the SENDER's. Carried as recorded, never
+  // inverted — the receipt states the same figure, and two rates for one
+  // payment is how a record stops reconciling.
+  const fxRate = Number(transaction.metadata?.fxRate);
+  const storedRate = Number.isFinite(fxRate) && fxRate > 0 ? fxRate : null;
+
   const entries = [
     {
       userId: sender._id,
@@ -6694,8 +6701,15 @@ async function recordPaymentNotifications({
       direction: 'sent',
       amount: debitAmount,
       currency: senderCurrency,
+      // The OTHER side of the same payment. A notification used to carry one
+      // figure, which is the viewer's own — fine for a line of text, not
+      // enough for a card that shows what was paid and what arrived. Both
+      // sides are the server's own numbers here; nothing is multiplied out.
+      counterAmount: payeeReceives,
+      counterCurrency: destinationCurrency,
       counterpartyName: receiverName,
       counterpartySymbolId: receiver.symbolId,
+      counterpartyIso: parties.receiver?.countryIso || accountCountryIso(receiver) || null,
       pushTitle: 'Payment Sent',
       pushBody: `${formatNotificationAmount(debitAmount, senderCurrency)} ${senderCurrency} sent to ${receiverName}`,
       pushType: 'payment.sent',
@@ -6707,8 +6721,11 @@ async function recordPaymentNotifications({
       direction: 'received',
       amount: payeeReceives,
       currency: destinationCurrency,
+      counterAmount: debitAmount,
+      counterCurrency: senderCurrency,
       counterpartyName: senderName,
       counterpartySymbolId: sender.symbolId,
+      counterpartyIso: parties.sender?.countryIso || accountCountryIso(sender) || null,
       // What the DEVICE is shown, which is not what the inbox row says. The
       // inbox is a list and reads in the first person ("You received ..."); a
       // push is a single banner and reads as a headline. Both figures are the
@@ -6739,6 +6756,15 @@ async function recordPaymentNotifications({
             'metadata.currency': entry.currency,
             'metadata.counterpartyName': entry.counterpartyName,
             'metadata.counterpartySymbolId': entry.counterpartySymbolId,
+            // The counterparty's country, so the card can show their flag
+            // without asking a second route who they are; and the payment's
+            // other side with the rate between them, so it can show what was
+            // paid against what arrived. All four are null on a domestic
+            // payment or an older row, and the card simply draws fewer pages.
+            'metadata.counterpartyIso': entry.counterpartyIso,
+            'metadata.counterAmount': entry.counterAmount,
+            'metadata.counterCurrency': entry.counterCurrency,
+            'metadata.fxRate': storedRate,
           },
         },
         { upsert: true }
@@ -6853,6 +6879,14 @@ function publicNotification(doc) {
       currency: metadata.currency ?? null,
       counterpartyName: metadata.counterpartyName ?? null,
       counterpartySymbolId: metadata.counterpartySymbolId ?? null,
+      // The counterparty's country and the payment's other side, for the card
+      // the inbox draws. Null on a domestic payment, and null on every row
+      // written before these were recorded — the card reads them as absent
+      // and draws one page fewer rather than guessing at a conversion.
+      counterpartyIso: metadata.counterpartyIso ?? null,
+      counterAmount: typeof metadata.counterAmount === 'number' ? metadata.counterAmount : null,
+      counterCurrency: metadata.counterCurrency ?? null,
+      fxRate: typeof metadata.fxRate === 'number' ? metadata.fxRate : null,
     },
   };
 }

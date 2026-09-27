@@ -748,7 +748,11 @@ export async function installApi(context, options = {}) {
       const notificationMeta = {
         transactionId: ledgerRow.id,
         referenceId: ledgerRow.referenceId,
-        receiptCode: ledgerRow.receiptCode || null
+        receiptCode: ledgerRow.receiptCode || null,
+        // The rate, as the real notification carries it: 1 unit of the
+        // receiver's currency into the sender's, in the direction it is
+        // stored, never inverted.
+        fxRate: ledgerRow.rate
       };
       addNotification(sender.symbolId, {
         title: "Money sent",
@@ -759,8 +763,15 @@ export async function installApi(context, options = {}) {
           direction: "sent",
           amount: sourceAmount,
           currency: sender.currency,
+          // Both sides of the payment, as recordPaymentNotifications now
+          // records them: the viewer's own figure, and the one the other
+          // party saw. A card that shows only one side cannot say what a
+          // cross-border payment cost against what arrived.
+          counterAmount: destinationAmount,
+          counterCurrency: receiver.currency,
           counterpartyName: receiver.fullName,
-          counterpartySymbolId: receiver.symbolId
+          counterpartySymbolId: receiver.symbolId,
+          counterpartyIso: receiver.countryIso
         }
       });
       addNotification(receiver.symbolId, {
@@ -772,8 +783,11 @@ export async function installApi(context, options = {}) {
           direction: "received",
           amount: destinationAmount,
           currency: receiver.currency,
+          counterAmount: sourceAmount,
+          counterCurrency: sender.currency,
           counterpartyName: sender.fullName,
-          counterpartySymbolId: sender.symbolId
+          counterpartySymbolId: sender.symbolId,
+          counterpartyIso: sender.countryIso
         }
       });
       return json(200, {

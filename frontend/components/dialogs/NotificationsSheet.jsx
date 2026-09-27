@@ -271,6 +271,19 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, p
   >Nothing yet. Payments, security notices and referral news will appear here.</span>}{status === "ready" && rows.map((row) => {
     const look = gloobalNotifSheetLook(row);
     const isUnread = !row.readAt;
+    // A payment gets the card: the figure as its headline, and the rest of
+    // the payment turned through a page at a time. Everything else — a
+    // security notice, a referral — stays a row, because a pager with one
+    // dot is a control that does nothing.
+    if (row.type === "payment") {
+      return <GloobalNotificationCard
+        key={row.id}
+        row={row}
+        when={gloobalNotifSheetWhen(row.createdAt)}
+        unread={isUnread}
+        onOpen={() => openRow(row)}
+      />;
+    }
     return <button
       key={row.id}
       onClick={() => openRow(row)}

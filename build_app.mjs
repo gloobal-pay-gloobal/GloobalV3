@@ -161,6 +161,7 @@ const FRONTEND_MODULES = [
   "hooks/useWebPush.js",
   "hooks/useAmbientFlags.js",
   "components/cards/misc.jsx",
+  "components/cards/notificationCard.jsx",
   "components/charts/ghRing.jsx",
   "components/common/flipIcons.jsx",
   // The round profile photo with its Gloobal-logo fallback, and the signed-in

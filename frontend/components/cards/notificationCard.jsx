@@ -26,6 +26,70 @@ import { ChevronRight as ChevronRightNotifCard } from "lucide-react";
 // transition between screens.
 var GLOOBAL_NOTIF_CARD_TURN_MS = 190;
 
+// ── What a payment notification says, wherever it is drawn ───────────────
+//
+// A payment reaches this device in three ways and they used to be three
+// different notifications. In the app it is the card below. With the app
+// open but in the background, the page itself puts a banner in the tray
+// (notifyPaymentSent / notifyPaymentReceived). With the app closed, the
+// server pushes one and the service worker shows it. The card said
+// "−250.00₹ sent"; the page's banner said "250.00₹ sent"; the server's said
+// "Payment Sent". Three names for one event, and which one you got depended
+// on where your thumb had been thirty seconds earlier.
+//
+// So the wording lives here, once, and everything that can reach it uses
+// it. The server cannot — it is a different process on a different machine
+// — and composes the same two strings itself, from the same fields, in
+// paymentBannerText (server/lib/notificationText.js). That one duplication
+// is asserted in tests/notification-card.test.mjs rather than trusted.
+//
+// `meta` is the notification's metadata: direction, amount, currency,
+// counterpartyName.
+function gloobalNotifHeadline(meta) {
+  const sent = (meta && meta.direction) === "sent";
+  // The sign is the fact. A figure without one is a number; with one it is
+  // a direction, and the colour it is drawn in agrees with it.
+  return `${sent ? "−" : "+"}${fmtMoney((meta && meta.amount) || 0, (meta && meta.currency) || "")} ${sent ? "sent" : "received"}`;
+}
+function gloobalNotifSubline(meta) {
+  const sent = (meta && meta.direction) === "sent";
+  const name = meta && meta.counterpartyName;
+  if (!name) return sent ? "Your Gloobal payment went through." : "Money has landed in your Gloobal account.";
+  return `${sent ? "To" : "From"} ${name}`;
+}
+
+// ── The disc ─────────────────────────────────────────────────────────────
+//
+// A colour per notification, from the app's own palette, picked from the
+// row's id rather than at random on every render: a list of these reads as a
+// scatter of colours, which is the point, but a disc that changed hue every
+// time React re-drew the list would be a flicker rather than a decoration.
+// The id is stable, so each notification keeps the colour it was first
+// drawn with — on this device, on the next one, and on the lock screen.
+//
+// That last one is why this is a function rather than an expression inside
+// the card. The operating system draws the closed-app notification and will
+// take an image, nothing else, so the eight possible discs are pre-drawn as
+// PNGs (tools/icons/build-notif-discs.mjs) and the index below is what the
+// page, the service worker and the server each use to pick the same one.
+//
+// THE SEED IS THE PAYMENT'S referenceId, not the notification's own id.
+// Those are the same colour either way inside the app, but only the
+// referenceId is known everywhere the notification is drawn: the page's own
+// banner has it before any row has been fetched, and the server has it when
+// it composes the push. Seeding on the notification id would mean the disc
+// on the lock screen and the disc on the card were picked from two
+// different strings, which is a coin flip seven times in eight. An older
+// row with no referenceId falls back to its id — it is still stable, it
+// just only agrees with itself.
+function gloobalNotifDiscIndex(id) {
+  const hash = typeof flipSeedHash === "function" ? flipSeedHash(id) : 0;
+  return hash % LOGO_FLIP_COLORS.length;
+}
+function gloobalNotifDiscIcon(id) {
+  return `/icons/notif/disc-${gloobalNotifDiscIndex(id)}.png`;
+}
+
 // The pages a payment notification can show, in the order they are turned
 // through. `value` returns null when the page has nothing to say, and a page
 // that says nothing is never drawn.
@@ -96,22 +160,14 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
       setTurning(false);
     }, GLOOBAL_NOTIF_CARD_TURN_MS);
   };
-  const headline = `${sent ? "\u2212" : "+"}${fmtMoney(meta.amount ?? 0, meta.currency || "")}`;
+  // The same headline the lock screen shows, from the same function.
+  const headline = gloobalNotifHeadline(meta);
   const tint = sent ? T.negative : T.positive;
   // Their country's flag, through the same lookup every other screen uses.
   // The notification carries the ISO code, never an emoji, for the reason
   // FlagEmoji itself states: the character is two Latin letters on most of
   // the platforms this app runs on.
-  // A colour per notification, from the app's own palette.
-  //
-  // Picked from the row's id rather than at random on every render: a list of
-  // these reads as a scatter of colours, which is the point, but a disc that
-  // changed hue every time React re-drew the list would be a flicker rather
-  // than a decoration. The id is stable, so each notification keeps the
-  // colour it was first drawn with, on this device and the next.
-  const markColour = LOGO_FLIP_COLORS[
-    (typeof flipSeedHash === "function" ? flipSeedHash(row && row.id) : 0) % LOGO_FLIP_COLORS.length
-  ];
+  const markColour = LOGO_FLIP_COLORS[gloobalNotifDiscIndex(meta.referenceId || (row && row.id))];
   const iso = String(meta.counterpartyIso || "").toUpperCase();
   const counterpartyFlag = iso
     ? (COUNTRY_BY_ISO[iso] && COUNTRY_BY_ISO[iso].flag) || (typeof isoToFlag === "function" ? isoToFlag(iso) : null)
@@ -125,6 +181,12 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
       borderRadius: T.radiusLg,
       border: `1px solid ${T.line}`,
       boxShadow: unread ? T.shadowCard : "none",
+      // A card is its content's height or it is nothing. `overflow: hidden`
+      // is what rounds the corners, and a card that has been allowed to
+      // shrink crops itself with it — the flag and the logo come out as
+      // domes and the pager disappears entirely. The list above no longer
+      // squeezes anything, and this makes the card refuse regardless.
+      flexShrink: 0,
       overflow: "hidden"
     }}
   >{
@@ -162,7 +224,7 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
       /></span>
     : <span style={{ width: 34, height: 34, borderRadius: "50%", background: T.surfaceAlt, flexShrink: 0 }} />}<span
     style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, color: tint, overflowWrap: "anywhere" }}
-  >{headline} {sent ? "sent" : "received"}</span>{
+  >{headline}</span>{
     /* The app's own logo, white on a coloured disc — the mark from the home
        screen, so a notification is recognisably from this app before a word
        of it is read. It replaced a direction arrow, which was saying for a

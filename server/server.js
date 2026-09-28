@@ -37,6 +37,11 @@ const GeuGrowthEvent = require('./models/GeuGrowthEvent');
 const GeuRedemption = require('./models/GeuRedemption');
 const { getRate } = require('./lib/fxRates');
 const { loadCurrencyDecimals, decimalsFor } = require('./lib/currencyDecimals');
+// What a payment banner says and what it is drawn with, so a push and the
+// card in the app are the same notification rather than two about one
+// payment. See that file's header for why the wording is duplicated here
+// instead of imported from the frontend.
+const { paymentBannerText, notifDiscIcon } = require('./lib/notificationText');
 
 // Audit fix: AuditLog was fully defined (schema, indexes) but never written
 // to anywhere in this file — every route that could meaningfully report a
@@ -6710,8 +6715,6 @@ async function recordPaymentNotifications({
       counterpartyName: receiverName,
       counterpartySymbolId: receiver.symbolId,
       counterpartyIso: parties.receiver?.countryIso || accountCountryIso(receiver) || null,
-      pushTitle: 'Payment Sent',
-      pushBody: `${formatNotificationAmount(debitAmount, senderCurrency)} ${senderCurrency} sent to ${receiverName}`,
       pushType: 'payment.sent',
     },
     {
@@ -6726,15 +6729,30 @@ async function recordPaymentNotifications({
       counterpartyName: senderName,
       counterpartySymbolId: sender.symbolId,
       counterpartyIso: parties.sender?.countryIso || accountCountryIso(sender) || null,
-      // What the DEVICE is shown, which is not what the inbox row says. The
-      // inbox is a list and reads in the first person ("You received ..."); a
-      // push is a single banner and reads as a headline. Both figures are the
-      // server's own, formatted once above.
-      pushTitle: 'Payment Received',
-      pushBody: `${formatNotificationAmount(payeeReceives, destinationCurrency)} ${destinationCurrency} received from ${senderName}`,
       pushType: 'payment.received',
     },
   ];
+
+  // What the DEVICE is shown, which is not what the inbox row says. The
+  // inbox is a list and reads in the first person ("You received 2,000.00
+  // INR from Rajeev"); a banner is one line on a lock screen and reads as a
+  // headline — "+2,000.00₹ received", "From Rajeev".
+  //
+  // Composed from the same four fields the card in the app reads, by a
+  // function written to produce the same two strings as the card's own
+  // (paymentBannerText, lib/notificationText.js). It used to say "Payment
+  // Received" over "2000.00 INR received from Rajeev", which was a third
+  // wording for an event that already had two.
+  for (const entry of entries) {
+    const banner = paymentBannerText({
+      direction: entry.direction,
+      amount: entry.amount,
+      currency: entry.currency,
+      counterpartyName: entry.counterpartyName,
+    });
+    entry.pushTitle = banner.title;
+    entry.pushBody = banner.body;
+  }
 
   const results = await Promise.allSettled(
     entries.map((entry) =>
@@ -6831,6 +6849,15 @@ async function sendPaymentPushes(legs, transaction) {
   const timestamp = Date.now();
   const totals = { sent: 0, removed: 0, failed: 0, skipped: 0 };
 
+  // The coloured disc this payment is drawn with in the app, as a path the
+  // worker can hand straight to showNotification. Seeded on the referenceId
+  // and ONLY on the referenceId: the card seeds on metadata.referenceId too,
+  // so the two agree, and a payment minted without one gets no disc rather
+  // than a disc picked from a different string — which would be the wrong
+  // colour seven times in eight. Without it the worker shows the app icon,
+  // which is what every notification showed before these existed.
+  const icon = transaction.referenceId ? notifDiscIcon(String(transaction.referenceId)) : null;
+
   for (const leg of created) {
     const result = await pushService.sendPushToUser(
       leg.userId,
@@ -6842,6 +6869,7 @@ async function sendPaymentPushes(legs, transaction) {
         transactionId,
         title: leg.title,
         body: leg.body,
+        icon,
         // The app already reads ?txn= and opens that receipt, so tapping the
         // banner lands on the payment it is about rather than the home screen.
         url: `/?txn=${transactionId}`,
@@ -6904,9 +6932,15 @@ const unreadNotificationCount = (userId) => Notification.countDocuments({ userId
 
 // How many notifications an account keeps. The inbox is a nudge, not a
 // ledger: every payment it announces is in History with its receipt, and the
-// receipt is the record. Ten is what fits a glance, and keeping ten means the
-// collection cannot grow without bound for somebody who pays five times a day.
-const NOTIFICATION_KEEP = 10;
+// receipt is the record. Five is what fits a glance, and keeping five means
+// the collection cannot grow without bound for somebody who pays five times a
+// day.
+//
+// It was ten, briefly. Ten is not a glance — the sheet opens on five and the
+// rest are a scroll, which is the shape of a list you are meant to work
+// through rather than notice. Anything older than the newest few is already
+// better answered by History, which is sorted, searchable and complete.
+const NOTIFICATION_KEEP = 5;
 
 // Drop everything past the newest NOTIFICATION_KEEP for one account.
 //
@@ -7210,6 +7244,11 @@ app.post('/api/push/test', writeLimit, requireAuth, async (req, res) => {
         transactionId: null,
         title: 'Gloobal',
         body: 'Push notifications are working on this device.',
+        // Every push carries the same keys, so a worker reading one never
+        // has to ask which kind it is before reading a field. Only a
+        // payment has a disc; this and a campaign send null and the worker
+        // falls back to the app icon.
+        icon: null,
         url: '/',
         tag: `gloobal-system-${timestamp}`,
         timestamp,
@@ -7327,6 +7366,7 @@ app.post('/api/push/promotional', writeLimit, async (req, res) => {
           transactionId: null,
           title: title.slice(0, 100),
           body: body.slice(0, 500),
+          icon: null,
           url,
           tag: `gloobal-promo-${notificationId}`,
           timestamp,

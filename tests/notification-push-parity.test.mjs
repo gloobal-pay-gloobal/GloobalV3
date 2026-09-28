@@ -28,8 +28,14 @@ const read = (p) => readFileSync(join(ROOT, p), "utf8");
 test("foreground banners use the push's per-payment tag", () => {
   const src = read("frontend/hooks/usePaymentNotifications.js");
   const tags = src.match(/tag: `gloobal-[a-z]+-\$\{txnId/g) || [];
-  assert.equal(tags.length, 2, "received + sent banners");
+  // One, not two. The arrival banner and the sent banner were separate
+  // functions composing separate strings; they are now one builder called
+  // with a direction, which is also what made them stop disagreeing about
+  // the wording. Both still key on the payment, which is the point here.
+  assert.equal(tags.length, 1, "one builder behind both banners");
   for (const t of tags) assert.equal(t, "tag: `gloobal-txn-${txnId");
+  assert.match(src, /function notifyPaymentReceived[\s\S]{0,400}notifyPaymentEvent\(\{ direction: "received"/);
+  assert.match(src, /function notifyPaymentSent[\s\S]{0,400}notifyPaymentEvent\(\{ direction: "sent"/);
 });
 
 test("the payment push names the transaction by its referenceId", () => {
@@ -67,6 +73,33 @@ function notificationsHarness() {
     Notification,
   };
   const ctx = vm.createContext({ window, Notification, navigator: {}, JSON, Number, Date, G_LOGO_DATA_URI: "" });
+  // The banner's wording and its disc come from the card's own helpers now
+  // (gloobalNotifHeadline / gloobalNotifSubline / gloobalNotifDiscIcon), so
+  // the hook cannot be evaluated alone. Their real source is loaded here
+  // rather than stubbed: this harness records the title of every banner it
+  // shows, and a stub would make those titles fiction.
+  const lift = (source, name) => {
+    const at = source.indexOf(`function ${name}(`);
+    const end = source.indexOf("\n}\n", at);
+    return source.slice(at, end + 3);
+  };
+  const currencies = read("backend/data/currencies.js");
+  const format = read("backend/utils/format.js");
+  const cut = (text, from, to) => text.slice(text.indexOf(from), text.indexOf(to, text.indexOf(from)) + to.length);
+  vm.runInContext([
+    cut(currencies, "var CURRENCY_SYMBOL = {", "\n};\n"),
+    cut(format, "var GLOOBAL_ZERO_DECIMAL_CURRENCIES = [", "\n];\n"),
+    lift(format, "currencyDecimals"),
+    lift(format, "fmt"),
+    lift(format, "currencySuffix"),
+    lift(format, "fmtMoney"),
+    lift(read("frontend/components/common/flipIcons.jsx"), "flipSeedHash"),
+    "var LOGO_FLIP_COLORS = new Array(8);",
+    lift(read("frontend/components/cards/notificationCard.jsx"), "gloobalNotifHeadline"),
+    lift(read("frontend/components/cards/notificationCard.jsx"), "gloobalNotifSubline"),
+    lift(read("frontend/components/cards/notificationCard.jsx"), "gloobalNotifDiscIndex"),
+    lift(read("frontend/components/cards/notificationCard.jsx"), "gloobalNotifDiscIcon"),
+  ].join("\n"), ctx);
   vm.runInContext(read("frontend/hooks/usePaymentNotifications.js"), ctx);
   const baseline = { primed: false, since: null };
   let clock = 1_000_000;

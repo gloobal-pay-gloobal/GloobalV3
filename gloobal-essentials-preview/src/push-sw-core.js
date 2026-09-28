@@ -24,7 +24,7 @@
 // The server sends exactly this JSON (see the push routes under server/):
 //
 //   { v, category, type, notificationId, transactionId,
-//     title, body, url, tag, timestamp }
+//     title, body, icon, url, tag, timestamp }
 //
 // Nothing here trusts any of it. A push payload arrives from the browser's
 // push service, and while it is end-to-end encrypted to this origin, a
@@ -36,6 +36,20 @@
 var GLOOBAL_PUSH_FALLBACK_TITLE = "Gloobal";
 var GLOOBAL_PUSH_FALLBACK_BODY = "You have a new update.";
 var GLOOBAL_PUSH_ICON = "/icons/icon-192.png";
+
+// The coloured discs a payment notification may be drawn with — the same
+// white mark on the same eight colours the card in the app uses, pre-drawn
+// as images because the operating system will show an image and nothing
+// else (tools/icons/build-notif-discs.mjs).
+//
+// Matched against a pattern rather than passed through. `icon` arrives in a
+// push payload, and an icon URL is a request this origin makes on behalf of
+// whatever sent the payload: an arbitrary one would let anything that could
+// inject a payload point the notification at a third-party server and learn
+// that this device woke up, and when. Same reasoning as
+// gloobalResolveClickUrl below, one field along. So the only icons that can
+// be asked for are the ones this app ships, named by index.
+var GLOOBAL_PUSH_DISC = /^\/icons\/notif\/disc-[0-7]\.png$/;
 
 // Parses the raw text of `event.data`. Always returns an object — never
 // null, never throws — so every caller can read fields off it without a
@@ -81,6 +95,10 @@ export function gloobalParsePushPayload(rawText) {
     ? Number(parsed.timestamp)
     : Date.now();
 
+  var icon = typeof parsed.icon === "string" && GLOOBAL_PUSH_DISC.test(parsed.icon.trim())
+    ? parsed.icon.trim()
+    : GLOOBAL_PUSH_ICON;
+
   return {
     v: Number(parsed.v) || 1,
     category: category,
@@ -89,6 +107,7 @@ export function gloobalParsePushPayload(rawText) {
     transactionId: transactionId,
     title: title,
     body: body,
+    icon: icon,
     url: typeof parsed.url === "string" ? parsed.url : "",
     tag: tag,
     timestamp: timestamp
@@ -117,7 +136,10 @@ export function gloobalResolveClickUrl(payload) {
 export function gloobalNotificationOptions(payload) {
   return {
     body: payload.body,
-    icon: GLOOBAL_PUSH_ICON,
+    // The payment's own disc where there is one, the app icon otherwise.
+    // `badge` stays the app icon either way: a badge is drawn as a
+    // monochrome silhouette, so a colour there is thrown away.
+    icon: payload.icon || GLOOBAL_PUSH_ICON,
     badge: GLOOBAL_PUSH_ICON,
     tag: payload.tag,
     data: payload,

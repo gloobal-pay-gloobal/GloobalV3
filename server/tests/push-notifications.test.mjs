@@ -189,8 +189,12 @@ const send = (from, to, extra) =>
     body: Object.assign({ senderSymbolId: byKey[from].id, receiverSymbolId: byKey[to].id, pin: PIN }, extra),
   });
 
+// Every push carries the same keys, whatever kind it is, so a worker
+// reading one never has to ask which kind it is before reading a field.
+// `icon` is the payment's coloured disc; a system or campaign push sends
+// null there and the worker falls back to the app icon.
 const PAYLOAD_KEYS = [
-  "v", "category", "type", "notificationId", "transactionId", "title", "body", "url", "tag", "timestamp",
+  "v", "category", "type", "notificationId", "transactionId", "title", "body", "icon", "url", "tag", "timestamp",
 ].sort().join(",");
 
 async function run() {
@@ -332,10 +336,18 @@ async function run() {
       Object.keys(toPayee).sort().join(",") === PAYLOAD_KEYS, Object.keys(toPayee).join(","));
     check("payee: v=1, transactional, payment.received",
       toPayee.v === 1 && toPayee.category === "transactional" && toPayee.type === "payment.received", j(toPayee));
-    check("payee: title is 'Payment Received'", toPayee.title === "Payment Received", toPayee.title);
-    check("payee: body carries the SERVER's credited figure",
-      toPayee.body === `${(2500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR received from ${byKey.A.name}`,
-      toPayee.body);
+    // The banner says what the card in the app says: the figure with its
+    // sign, then what happened to it, then who the other party was. It used
+    // to say "Payment Received" over "2,500.00 INR received from Asha" —
+    // a third wording for an event that already had two, and the only one
+    // of the three with no sign on the figure. See lib/notificationText.js.
+    check("payee: title is the card's headline, sign and all",
+      toPayee.title === `+${(2500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\u20B9 received`,
+      toPayee.title);
+    check("payee: body names the sender the way the card's first page does",
+      toPayee.body === `From ${byKey.A.name}`, toPayee.body);
+    check("payee: the disc is one this app ships",
+      /^\/icons\/notif\/disc-[0-7]\.png$/.test(String(toPayee.icon)), String(toPayee.icon));
     check("payee: url opens that receipt", toPayee.url === `/?txn=${txnRef}`, toPayee.url);
     check("payee: tag is the per-payment tag", toPayee.tag === `gloobal-txn-${txnRef}`, toPayee.tag);
     check("payee: transactionId is the payment's referenceId", toPayee.transactionId === txnRef && txnRef !== txnId);
@@ -346,11 +358,14 @@ async function run() {
     check("payee: timestamp is a number", typeof toPayee.timestamp === "number");
   }
   if (toPayer) {
-    check("payer: payment.sent, title 'Payment Sent'",
-      toPayer.type === "payment.sent" && toPayer.title === "Payment Sent", j(toPayer));
-    check("payer: body carries the SERVER's debited figure",
-      toPayer.body === `${(2500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} INR sent to ${byKey.B.name}`,
-      toPayer.body);
+    check("payer: payment.sent, and the headline carries a minus",
+      toPayer.type === "payment.sent" &&
+        toPayer.title === `\u2212${(2500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\u20B9 sent`,
+      j(toPayer));
+    check("payer: body names the payee the way the card's first page does",
+      toPayer.body === `To ${byKey.B.name}`, toPayer.body);
+    check("both sides of one payment get the same disc",
+      toPayee && toPayer.icon === toPayee.icon, `${toPayer.icon} vs ${toPayee?.icon}`);
     check("payer: same transaction, same url", toPayer.transactionId === txnRef && toPayer.url === `/?txn=${txnRef}`);
     check("payer: notificationId is their own row",
       String((await Notification.findById(toPayer.notificationId).lean())?.userId) === userIds.A);

@@ -75,11 +75,13 @@ describe("the card is built from what the server recorded", () => {
     // own flipping mark — the same one on the Send and Receive buttons and in
     // the corner of the receipt.
     assert.match(card, /src=\{G_LOGO_DATA_URI\}/);
-    // A disc, in one of the app's own colours, chosen from the row's id so it
-    // is stable rather than flickering on every render.
+    // A disc, in one of the app's own colours, chosen from the payment's own
+    // reference so it is stable rather than flickering on every render — and
+    // so the lock screen, which is drawn by the operating system from a
+    // pre-rendered image, can pick the same one.
     assert.match(card, /borderRadius: "50%"/);
-    assert.match(card, /const markColour = LOGO_FLIP_COLORS\[/);
-    assert.match(card, /flipSeedHash\(row && row\.id\)/);
+    assert.match(card, /const markColour = LOGO_FLIP_COLORS\[gloobalNotifDiscIndex\(/);
+    assert.match(card, /flipSeedHash\(id\)/);
     assert.ok(!/ArrowUpRight|ArrowDownLeft/.test(card), "the direction arrow is back");
   });
 
@@ -125,15 +127,15 @@ describe("the server records what the card reads", () => {
   });
 });
 
-describe("an account keeps its last ten", () => {
+describe("an account keeps its last five", () => {
   const server = readSource(SERVER);
 
   test("the cap is one number, and the route cannot be asked past it", () => {
     // The inbox is a nudge, not a ledger: every payment it announces is in
     // History with its receipt, and the receipt is the record.
-    assert.match(server, /const NOTIFICATION_KEEP = 10;/);
+    assert.match(server, /const NOTIFICATION_KEEP = 5;/);
     assert.match(server, /\? Math\.min\(NOTIFICATION_KEEP, Math\.max\(1, requested\)\)\s*\n\s*: NOTIFICATION_KEEP;/);
-    assert.match(readSource(SHEET), /var GLOOBAL_NOTIF_SHEET_PAGE = 10;/);
+    assert.match(readSource(SHEET), /var GLOOBAL_NOTIF_SHEET_PAGE = 5;/);
   });
 
   test("pruning keeps the newest, runs after a write, and never fails the payment", () => {
@@ -218,5 +220,205 @@ describe("in the app", () => {
     } finally {
       await context.close();
     }
+  });
+});
+
+// ── One payment, one notification, three places it is drawn ──────────────
+//
+// In the app it is the card above. Backgrounded, the page puts a banner in
+// the tray itself. Closed, the server pushes one and the service worker
+// shows it. They used to say three different things about one event —
+// "−250.00₹ sent", "250.00₹ sent" and "Payment Sent" over "250.00 INR sent
+// to Chdg" — so which wording you got depended on where your thumb had been
+// half a minute earlier, and the sign that tells you which way the money
+// went appeared in exactly one of them.
+//
+// The first two now share gloobalNotifHeadline / gloobalNotifSubline. The
+// third cannot: `server/` is a separate npm package deployed from its own
+// root directory, with no module boundary to import across — the same
+// reason GLOOBAL_ZERO_DECIMAL_CURRENCIES exists twice. So the copy is
+// deliberate and this is what keeps it honest: the frontend's two functions
+// are lifted out of their source and RUN, against the app's own money
+// formatter, and their output is compared to the server's for the same
+// fields. A divergence fails here rather than on somebody's lock screen.
+describe("the banner says what the card says", () => {
+  const card = readSource(CARD);
+  const HOOK = "frontend/hooks/usePaymentNotifications.js";
+  const SW = "gloobal-essentials-preview/src/push-sw-core.js";
+
+  // The frontend's headline and subline, evaluated for real. `fmtMoney` and
+  // the currency table are the app's own, lifted the same way, so this is
+  // the string the card actually draws and not a restatement of it.
+  const lift = (source, name) => {
+    const at = source.indexOf(`function ${name}(`);
+    assert.notEqual(at, -1, `${name} is gone`);
+    // To the line that closes the declaration at column 0.
+    const end = source.indexOf("\n}\n", at);
+    assert.notEqual(end, -1, `${name} is not a top-level declaration`);
+    return source.slice(at, end + 3);
+  };
+  const currencies = readSource("backend/data/currencies.js");
+  const format = readSource("backend/utils/format.js");
+  const symbols = currencies.slice(
+    currencies.indexOf("var CURRENCY_SYMBOL = {"),
+    currencies.indexOf("\n};\n", currencies.indexOf("var CURRENCY_SYMBOL = {")) + 3
+  );
+  const zeroDecimal = format.slice(
+    format.indexOf("var GLOOBAL_ZERO_DECIMAL_CURRENCIES = ["),
+    format.indexOf("\n];\n", format.indexOf("var GLOOBAL_ZERO_DECIMAL_CURRENCIES = [")) + 3
+  );
+  const frontend = new Function(`
+    ${symbols}
+    ${zeroDecimal}
+    ${lift(format, "currencyDecimals")}
+    ${lift(format, "fmt")}
+    ${lift(format, "currencySuffix")}
+    ${lift(format, "fmtMoney")}
+    ${lift(card, "gloobalNotifHeadline")}
+    ${lift(card, "gloobalNotifSubline")}
+    ${lift(card, "gloobalNotifDiscIndex")}
+    function flipSeedHash(value) {
+      let hash = 5381;
+      const text = String(value || "");
+      for (let i = 0; i < text.length; i += 1) hash = (hash * 33 + text.charCodeAt(i)) >>> 0;
+      return hash;
+    }
+    var LOGO_FLIP_COLORS = new Array(8);
+    return { gloobalNotifHeadline, gloobalNotifSubline, gloobalNotifDiscIndex };
+  `)();
+
+  const CASES = [
+    { direction: "sent", amount: 250, currency: "INR", counterpartyName: "Chdg" },
+    { direction: "received", amount: 9800, currency: "INR", counterpartyName: "Rajeev" },
+    // Zero-decimal, and a symbol that is letters and so takes a space.
+    { direction: "received", amount: 750000, currency: "JPY", counterpartyName: "Aiko" },
+    { direction: "sent", amount: 1450.25, currency: "CHF", counterpartyName: "Ann" },
+    // No counterparty: both sides must fall back to the same sentence.
+    { direction: "sent", amount: 12, currency: "USD", counterpartyName: null },
+    { direction: "received", amount: 12, currency: "USD", counterpartyName: null }
+  ];
+
+  test("the two copies produce the same two lines, for every shape of payment", async () => {
+    const { paymentBannerText } = await import("../server/lib/notificationText.js");
+    for (const meta of CASES) {
+      const server = paymentBannerText(meta);
+      assert.equal(server.title, frontend.gloobalNotifHeadline(meta), `title for ${meta.currency} ${meta.direction}`);
+      assert.equal(server.body, frontend.gloobalNotifSubline(meta), `body for ${meta.currency} ${meta.direction}`);
+    }
+  });
+
+  test("the headline carries the sign, and it is a minus, not a hyphen", () => {
+    // U+2212. A hyphen next to a figure reads as a dash between two things.
+    assert.equal(frontend.gloobalNotifHeadline(CASES[0]).charAt(0), "−");
+    assert.equal(frontend.gloobalNotifHeadline(CASES[1]).charAt(0), "+");
+    assert.match(frontend.gloobalNotifHeadline(CASES[0]), /sent$/);
+    assert.match(frontend.gloobalNotifHeadline(CASES[1]), /received$/);
+  });
+
+  test("the page's own banner uses those functions rather than composing its own", () => {
+    const hook = readSource(HOOK);
+    assert.match(hook, /\? gloobalNotifHeadline\(meta\)/);
+    assert.match(hook, /body: gloobalNotifSubline\(meta\)/);
+    assert.match(hook, /icon: gloobalNotifDiscIcon\(txnId\)/);
+    // Both entry points go through the one builder.
+    assert.match(hook, /function notifyPaymentReceived[\s\S]{0,400}notifyPaymentEvent\(\{ direction: "received"/);
+    assert.match(hook, /function notifyPaymentSent[\s\S]{0,400}notifyPaymentEvent\(\{ direction: "sent"/);
+  });
+});
+
+describe("the disc the lock screen is drawn with", () => {
+  const card = readSource(CARD);
+  const SW = "gloobal-essentials-preview/src/push-sw-core.js";
+  const THEME = "frontend/constants/theme.js";
+  const DISCS = "tools/icons/build-notif-discs.py";
+
+  test("there is one image per colour, and the order is the palette's", async () => {
+    // disc-3.png is LOGO_FLIP_COLORS[3] and nothing else: the index is what
+    // the card, the worker and the server each compute independently, so a
+    // reordered palette without a re-run makes them disagree.
+    const palette = readSource(THEME).match(/var LOGO_FLIP_COLORS = \[([^\]]+)\]/);
+    assert.ok(palette, "LOGO_FLIP_COLORS is gone");
+    const colours = palette[1].match(/#[0-9A-Fa-f]{6}/g);
+    const drawn = readSource(DISCS).match(/^COLORS = \[([^\]]+)\]/m);
+    assert.ok(drawn, "the disc script no longer declares its colours");
+    assert.deepEqual(drawn[1].match(/#[0-9A-Fa-f]{6}/g), colours, "the discs and the palette disagree");
+
+    const { readdir } = await import("node:fs/promises");
+    const files = await readdir(new URL("../gloobal-essentials-preview/public/icons/notif", import.meta.url));
+    assert.deepEqual(
+      files.filter((f) => f.endsWith(".png")).sort(),
+      colours.map((_, i) => `disc-${i}.png`).sort(),
+      "a colour has no image, or an image has no colour"
+    );
+  });
+
+  test("the two hashes agree, bucket for bucket", async () => {
+    const { notifDiscIndex } = await import("../server/lib/notificationText.js");
+    const frontendIndex = new Function(`
+      function flipSeedHash(value) {
+        let hash = 5381;
+        const text = String(value || "");
+        for (let i = 0; i < text.length; i += 1) hash = (hash * 33 + text.charCodeAt(i)) >>> 0;
+        return hash;
+      }
+      var LOGO_FLIP_COLORS = new Array(8);
+      ${card.slice(card.indexOf("function gloobalNotifDiscIndex("), card.indexOf("\n}\n", card.indexOf("function gloobalNotifDiscIndex(")) + 3)}
+      return gloobalNotifDiscIndex;
+    `)();
+    // Enough ids to land in every bucket if the two ever drift.
+    const seen = new Set();
+    for (let i = 0; i < 400; i += 1) {
+      const id = `${i}`;
+      assert.equal(notifDiscIndex(id), frontendIndex(id), `the two hashes disagree on ${id}`);
+      seen.add(frontendIndex(id));
+    }
+    assert.equal(seen.size, 8, "the hash is not using the whole palette");
+  });
+
+  test("the worker only accepts a disc this app ships", () => {
+    // An icon URL is a request this origin makes on behalf of whoever sent
+    // the payload. An arbitrary one would let anything that could inject a
+    // payload learn that this device woke up, and when.
+    const sw = readSource(SW);
+    assert.match(sw, /var GLOOBAL_PUSH_DISC = \/\^\\\/icons\\\/notif\\\/disc-\[0-7\]\\\.png\$\//);
+    assert.match(sw, /GLOOBAL_PUSH_DISC\.test\(parsed\.icon\.trim\(\)\)/);
+    assert.match(sw, /icon: payload\.icon \|\| GLOOBAL_PUSH_ICON/);
+    // The badge is drawn as a monochrome silhouette, so a colour there is
+    // thrown away.
+    assert.match(sw, /badge: GLOOBAL_PUSH_ICON/);
+  });
+
+  test("the server sends one only when it can be the same one the card picks", () => {
+    // Seeded on the referenceId, which metadata.referenceId gives the card
+    // too. A payment minted without one gets no disc rather than a disc
+    // picked from a different string — which is the wrong colour seven
+    // times in eight.
+    const server = readSource(SERVER);
+    assert.match(server, /const icon = transaction\.referenceId \? notifDiscIcon\(String\(transaction\.referenceId\)\) : null;/);
+    assert.match(card, /gloobalNotifDiscIndex\(meta\.referenceId \|\| \(row && row\.id\)\)/);
+  });
+});
+
+describe("the list does not squash what it holds", () => {
+  const sheet = readSource(SHEET);
+  const card = readSource(CARD);
+
+  test("the scroll area takes the leftover height instead of taking it from the rows", () => {
+    // The bug this pins: the sheet is a column, the list inside it was a
+    // column too with no flex sizing, so the sheet's maxHeight was paid for
+    // by shrinking every card — each squeezed to a fraction of its height,
+    // `overflow: hidden` slicing the flag and the logo into domes, and rows
+    // that looked like they were sitting on top of one another.
+    //
+    // `minHeight: 0` is the half that is usually missing: a flex item's
+    // default `min-height: auto` refuses to go below its content, so the
+    // scroll never starts and the overflow is pushed back into the children.
+    const list = sheet.slice(sheet.indexOf("overflowY: \"auto\"") - 1400, sheet.indexOf("overflowY: \"auto\"") + 200);
+    assert.match(list, /flex: 1,\s*\n\s*minHeight: 0,\s*\n\s*overflowY: "auto"/);
+  });
+
+  test("and nothing in it is allowed to shrink anyway", () => {
+    assert.match(card, /flexShrink: 0,\s*\n\s*overflow: "hidden"/);
+    assert.match(sheet, /width: "100%",\s*\n(\s*\/\/[^\n]*\n)*\s*flexShrink: 0,/);
   });
 });

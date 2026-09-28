@@ -192,11 +192,19 @@ function markPaymentNotified(txnId) {
 // it has committed to showing one rather than when the tray updates. The
 // callers use the return value only for their own dedupe bookkeeping, and
 // they have already marked the transaction seen before calling.
-function showPaymentNotification({ title, body, tag }) {
+function showPaymentNotification({ title, body, tag, icon }) {
   if (!paymentNotificationsGranted()) return false;
   // `tag` collapses repeats of the same payment into one entry in the
   // tray rather than stacking duplicates.
-  const options = { body, tag, icon: G_LOGO_DATA_URI, badge: G_LOGO_DATA_URI };
+  //
+  // `icon` is the coloured disc this payment is drawn with everywhere else —
+  // the same white mark on the same colour as the card in the app, picked
+  // from the payment's own reference so the two are the same notification
+  // rather than two notifications about one payment. It falls back to the
+  // bare mark, which is what this always used to show, if no disc was
+  // resolved. `badge` stays the mark: the badge is drawn as a monochrome
+  // silhouette, so a colour there would be thrown away.
+  const options = { body, tag, icon: icon || G_LOGO_DATA_URI, badge: G_LOGO_DATA_URI };
   // Both paths refused. Failing quietly is correct: a missing notification
   // must never surface as a broken payment.
   const showDirectly = () => {
@@ -276,34 +284,52 @@ function gloobalReceivedBaselineSplit(baseline, attemptStartedAt, rows) {
 // can reach this device twice — the Web Push and this page's own poll — and
 // a shared tag makes the second replace the first instead of stacking.
 
-// Money has arrived. The one people actually want.
-// `currencyCode` is what formats the amount; `currencySymbol` is still
-// accepted because callers and stored payloads carry it, and a notification
-// is not worth breaking over a field on its way out.
-function notifyPaymentReceived({ txnId, amount, currencySymbol, currencyCode, from }) {
+// The tray banner for one payment, whichever direction it went.
+//
+// Both wordings come from gloobalNotifHeadline / gloobalNotifSubline — the
+// same two functions the card in the app uses, and the same two strings the
+// server composes for a push when the app is closed. This used to build its
+// own: "250.00₹ sent" against the card's "−250.00₹ sent", so the sign that
+// tells you which way the money went was present in one place and missing
+// in the other. `currencySymbol` is still accepted because callers and
+// stored payloads carry it, and a notification is not worth breaking over a
+// field on its way out; `currencyCode` is what actually formats the amount.
+function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currencyCode, counterpartyName }) {
   if (!paymentNotificationsGranted()) return false;
   if (paymentAlreadyNotified(txnId)) return false;
   markPaymentNotified(txnId);
+  const meta = {
+    direction,
+    amount: Number(amount || 0),
+    currency: currencyCode || "",
+    counterpartyName: counterpartyName || null
+  };
+  // Without a currency code there is no table to format against, so the
+  // symbol the caller carried is the best that can be said.
+  const title = currencyCode
+    ? gloobalNotifHeadline(meta)
+    : `${direction === "sent" ? "−" : "+"}${Number(amount || 0).toFixed(2)}${currencySymbol || ""} ${direction === "sent" ? "sent" : "received"}`;
   return showPaymentNotification({
-    title: `${currencyCode ? fmtMoney(Number(amount || 0), currencyCode) : `${Number(amount || 0).toFixed(2)}${currencySymbol || ""}`} received`,
-    body: from ? `From ${from}` : "Money has landed in your Gloobal account.",
-    tag: `gloobal-txn-${txnId || "unknown"}`
+    title,
+    body: gloobalNotifSubline(meta),
+    tag: `gloobal-txn-${txnId || "unknown"}`,
+    icon: gloobalNotifDiscIcon(txnId)
   });
 }
 
-// Confirmation of a payment this device just made. Deliberately quieter in
-// wording than an arrival: the person is holding the phone and already saw
-// the success screen, so this exists to be found later in the tray, not to
-// tell them something they do not know.
+// Money has arrived. The one people actually want.
+function notifyPaymentReceived({ txnId, amount, currencySymbol, currencyCode, from }) {
+  return notifyPaymentEvent({ direction: "received", txnId, amount, currencySymbol, currencyCode, counterpartyName: from });
+}
+
+// Confirmation of a payment this device just made. It reads exactly like an
+// arrival now, and deliberately: it used to be worded more quietly on the
+// argument that the person is holding the phone and already saw the success
+// screen — true at the moment it appears, and wrong an hour later when it is
+// one line in a tray next to the other one and has to say the same kind of
+// thing.
 function notifyPaymentSent({ txnId, amount, currencySymbol, currencyCode, to }) {
-  if (!paymentNotificationsGranted()) return false;
-  if (paymentAlreadyNotified(txnId)) return false;
-  markPaymentNotified(txnId);
-  return showPaymentNotification({
-    title: `${currencyCode ? fmtMoney(Number(amount || 0), currencyCode) : `${Number(amount || 0).toFixed(2)}${currencySymbol || ""}`} sent`,
-    body: to ? `To ${to}` : "Your Gloobal payment went through.",
-    tag: `gloobal-txn-${txnId || "unknown"}`
-  });
+  return notifyPaymentEvent({ direction: "sent", txnId, amount, currencySymbol, currencyCode, counterpartyName: to });
 }
 
 // Called after a payment succeeds. Asks at most once in the account's

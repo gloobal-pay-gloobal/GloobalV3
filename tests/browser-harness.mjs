@@ -367,10 +367,10 @@ export async function installApi(context, options = {}) {
       .reverse()
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   const unreadCountOf = (account) => notificationsOf(account).filter((n) => !n.readAt).length;
-  // An account keeps its last ten (NOTIFICATION_KEEP in server.js, pruned
+  // An account keeps its last five (NOTIFICATION_KEEP in server.js, pruned
   // there after every write). The fake prunes too, or a test could describe an
-  // inbox eleven deep that the real server would never serve.
-  const NOTIF_KEEP = 10;
+  // inbox six deep that the real server would never serve.
+  const NOTIF_KEEP = 5;
   const pruneNotifications = (userSymbolId) => {
     const mine = state.notifications
       .filter((n) => n.userSymbolId === userSymbolId)

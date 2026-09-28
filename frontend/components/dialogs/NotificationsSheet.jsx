@@ -35,10 +35,14 @@ import {
 } from "lucide-react";
 
 // How many rows are asked for, and it is also all there are: an account keeps
-// its last ten notifications and the server prunes the rest (NOTIFICATION_KEEP
+// its last five notifications and the server prunes the rest (NOTIFICATION_KEEP
 // in server.js). The inbox is a nudge, not a ledger — every payment it
 // announces is in History with its receipt, and the receipt is the record.
-var GLOOBAL_NOTIF_SHEET_PAGE = 10;
+//
+// Five, not ten, and the number is doing real work rather than saving rows:
+// five cards fill the sheet without scrolling, so the list is something you
+// take in rather than travel through.
+var GLOOBAL_NOTIF_SHEET_PAGE = 5;
 
 // The server's `type` enum, as an icon and a colour. Payments split on
 // direction because "money arrived" and "money left" are the two facts
@@ -260,7 +264,33 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, p
     className="v2-tap"
     style={{ flexShrink: 0, border: "none", borderRadius: 999, background: T.accent, color: "#fff", fontSize: 11.5, fontWeight: 800, padding: "7px 13px", cursor: asking ? "default" : "pointer", opacity: asking ? 0.6 : 1 }}
   >{asking ? "…" : GLOOBAL_NOTIF_ASK_BUTTON[askState]}</button>}</div>}<div
-    style={{ overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 16px", display: "flex", flexDirection: "column", gap: 8 }}
+    style={{
+      // THE TWO PROPERTIES BELOW ARE WHY THE LIST DOES NOT COLLAPSE.
+      //
+      // This element is a flex item of the sheet (a column) and a flex
+      // container itself. Without `flex: 1, minHeight: 0` it is sized by
+      // its content, so the sheet's own maxHeight has to be paid for
+      // somewhere — and flexbox takes it out of every item that will
+      // shrink, which is all of them. The result was a list of cards each
+      // squeezed to a fraction of its height, `overflow: hidden` slicing
+      // the flag and the logo into domes, and rows that looked like they
+      // were sitting on top of one another. It read as a rendering bug and
+      // it was one; it just lived in the parent rather than the card.
+      //
+      // `minHeight: 0` is the half people leave out: a flex item's default
+      // `min-height: auto` refuses to go below its content, so the scroll
+      // never starts and the overflow is pushed back down into the
+      // children. The pair together mean this box takes the leftover
+      // height, scrolls its own content, and the cards below keep theirs.
+      flex: 1,
+      minHeight: 0,
+      overflowY: "auto",
+      WebkitOverflowScrolling: "touch",
+      padding: "0 16px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }}
   >{status === "loading" && <span
     style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", padding: "28px 0" }}
   >Loading…</span>}{status === "unreachable" && <span
@@ -294,6 +324,9 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, p
         alignItems: "flex-start",
         gap: 11,
         width: "100%",
+        // Belt as well as braces: the parent no longer forces anything to
+        // shrink, and a row is not allowed to shrink even if it did.
+        flexShrink: 0,
         textAlign: "left",
         border: "none",
         borderRadius: T.radiusMd,

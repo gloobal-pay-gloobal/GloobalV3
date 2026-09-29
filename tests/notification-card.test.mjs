@@ -69,11 +69,24 @@ describe("the card is built from what the server recorded", () => {
     assert.match(readSource(SHEET), /<GloobalNotificationCard/);
   });
 
-  test("the mark on the right is the app's own logo, not a third way of saying the direction", () => {
+  test("the mark leads the row and the flag closes it", () => {
     // The sign, the colour of the figure and the word after it already say
-    // which way the money went. What the corner carries instead is the app's
-    // own flipping mark — the same one on the Send and Receive buttons and in
-    // the corner of the receipt.
+    // which way the money went. What the row carries instead is the app's
+    // own mark — the same one on the Send and Receive buttons and in the
+    // corner of the receipt.
+    //
+    // ORDER, not decoration. A list of these is read down its left edge.
+    // The flag was there, and it changes from row to row: it answered
+    // "which country?" before "what happened to my money?". The mark is the
+    // same shape on every row, so as a left edge it reads as a margin and
+    // the eye goes straight to the figure.
+    const head = card.slice(card.indexOf("onClick={onOpen}"), card.indexOf("</button>"));
+    assert.ok(
+      head.indexOf("G_LOGO_DATA_URI") < head.indexOf("<FlagEmoji"),
+      "the flag is back in front of the mark"
+    );
+    assert.ok(head.indexOf("{headline}") > head.indexOf("G_LOGO_DATA_URI"), "the mark is not leading the row");
+    assert.ok(head.indexOf("{headline}") < head.indexOf("<FlagEmoji"), "the flag is not closing the row");
     assert.match(card, /src=\{G_LOGO_DATA_URI\}/);
     // A disc, in one of the app's own colours, chosen from the payment's own
     // reference so it is stable rather than flickering on every render — and

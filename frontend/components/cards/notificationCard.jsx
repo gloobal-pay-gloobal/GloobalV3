@@ -208,37 +208,34 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
       cursor: "pointer"
     }}
   >{
-    /* The counterparty's flag, cut and ringed the way the receipt cuts and
-       rings it — same component, same disc, same rim — so the notification
-       and the document it opens are plainly about the same payment. The rim
-       is what keeps a pale flag (Japan, Poland) from dissolving into the
-       card behind it. */
-  }{counterpartyFlag
-    ? <span
-        style={{ display: "flex", flexShrink: 0, borderRadius: "50%", boxShadow: `0 0 0 2px ${T.surface}, 0 0 0 3px ${T.line}, 0 2px 8px rgba(20,10,50,0.16)` }}
-      ><FlagEmoji
-        flag={counterpartyFlag}
-        shape="circle"
-        size={34}
-        fit="cover"
-      /></span>
-    : <span style={{ width: 34, height: 34, borderRadius: "50%", background: T.surfaceAlt, flexShrink: 0 }} />}<span
-    style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, color: tint, overflowWrap: "anywhere" }}
-  >{headline}</span>{
     /* The app's own logo, white on a coloured disc — the mark from the home
        screen, so a notification is recognisably from this app before a word
        of it is read. It replaced a direction arrow, which was saying for a
        third time what the sign, the colour of the figure beside it and the
        word after it already say. It is not an unread dot either: unread is
        the card's shadow.
+
+       IT LEADS THE ROW, and the flag closes it. They were the other way
+       round. A list of these is read down its left edge, and what sat there
+       was the flag — which changes from row to row and answers a question
+       nobody asked first ("which country?") before the one they did ("what
+       happened to my money?"). The mark is the same shape on every row, so
+       as a left edge it is a margin rather than a column of content, and
+       the eye goes straight to the figure. The flag earns its place at the
+       end, where it qualifies the name on the page below it.
+
        The mark is drawn white out of the shipped artwork (brightness(0)
        inverts it) rather than kept as a second white copy of the same file:
        one logo, one source. */
   }<span
     aria-hidden="true"
     style={{
-      width: 42,
-      height: 42,
+      // 32, down from 42, and the flag 26 from 34. Both were sized as
+      // objects on the row; they are furniture around one line of text,
+      // and at the old sizes the disc stood taller than the figure it was
+      // sitting next to.
+      width: 32,
+      height: 32,
       borderRadius: "50%",
       flexShrink: 0,
       background: markColour,
@@ -251,8 +248,25 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
     src={G_LOGO_DATA_URI}
     alt=""
     draggable={false}
-    style={{ width: 28, height: 28, objectFit: "contain", filter: "brightness(0) invert(1)" }}
-  /></span></button>{total > 0 && <div
+    style={{ width: 21, height: 21, objectFit: "contain", filter: "brightness(0) invert(1)" }}
+  /></span><span
+    style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, color: tint, overflowWrap: "anywhere" }}
+  >{headline}</span>{
+    /* The counterparty's flag, cut and ringed the way the receipt cuts and
+       rings it — same component, same disc, same rim — so the notification
+       and the document it opens are plainly about the same payment. The rim
+       is what keeps a pale flag (Japan, Poland) from dissolving into the
+       card behind it. */
+  }{counterpartyFlag
+    ? <span
+        style={{ display: "flex", flexShrink: 0, borderRadius: "50%", boxShadow: `0 0 0 2px ${T.surface}, 0 0 0 3px ${T.line}, 0 2px 8px rgba(20,10,50,0.16)` }}
+      ><FlagEmoji
+        flag={counterpartyFlag}
+        shape="circle"
+        size={26}
+        fit="cover"
+      /></span>
+    : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.surfaceAlt, flexShrink: 0 }} />}</button>{total > 0 && <div
     style={{ borderTop: `1px solid ${T.line}`, display: "flex", alignItems: "center", gap: 10, padding: "11px 14px 13px" }}
   ><span
     data-testid="notification-card-page"

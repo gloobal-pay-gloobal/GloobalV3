@@ -47,9 +47,17 @@ var GLOOBAL_NOTIF_CARD_TURN_MS = 190;
 // counterpartyName.
 function gloobalNotifHeadline(meta) {
   const sent = (meta && meta.direction) === "sent";
-  // The sign is the fact. A figure without one is a number; with one it is
-  // a direction, and the colour it is drawn in agrees with it.
-  return `${sent ? "−" : "+"}${fmtMoney((meta && meta.amount) || 0, (meta && meta.currency) || "")} ${sent ? "sent" : "received"}`;
+  // THE SIGN IS THE WHOLE SENTENCE. It used to be followed by the word —
+  // "−250.00₹ sent" — and the word was the third time one line said which
+  // way the money went: the minus says it, the colour it is drawn in says
+  // it, and the page directly beneath says "To Chdg". A figure with a sign
+  // in front of it is already a direction; the word only made the line
+  // long enough to stop being a figure.
+  //
+  // It goes from the banner too, and deliberately: the lock screen shows
+  // this over gloobalNotifSubline, so the sign is read against "To Chdg"
+  // or "From Rajeev" there exactly as it is here.
+  return `${sent ? "−" : "+"}${fmtMoney((meta && meta.amount) || 0, (meta && meta.currency) || "")}`;
 }
 function gloobalNotifSubline(meta) {
   const sent = (meta && meta.direction) === "sent";
@@ -117,9 +125,14 @@ function gloobalNotifCardPages(meta, when) {
   if (meta.counterpartySymbolId) {
     pages.push({ key: "id", label: <GloobalWordmark suffix=" ID" />, symbols: meta.counterpartySymbolId });
   }
-  if (meta.referenceId) {
-    pages.push({ key: "txn", label: "Transaction ID", symbols: meta.referenceId });
-  }
+  // NO TRANSACTION ID PAGE. It was here and it is gone, and the two
+  // identifiers being different lengths is the whole reason: a Gloobal ID
+  // is somebody, a transaction reference is twenty symbols of bookkeeping.
+  // On a card people glance at, the long one filled the widest page in the
+  // pager with the one thing on it nobody reads off a notification — it is
+  // read off a receipt, by someone who has gone looking for it, which is
+  // where it still is. `metadata.referenceId` is untouched: the card still
+  // seeds its disc colour from it, and the receipt still prints it.
   if (when) {
     pages.push({ key: "when", label: "Date and time", text: when });
   }
@@ -208,37 +221,34 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
       cursor: "pointer"
     }}
   >{
-    /* The counterparty's flag, cut and ringed the way the receipt cuts and
-       rings it — same component, same disc, same rim — so the notification
-       and the document it opens are plainly about the same payment. The rim
-       is what keeps a pale flag (Japan, Poland) from dissolving into the
-       card behind it. */
-  }{counterpartyFlag
-    ? <span
-        style={{ display: "flex", flexShrink: 0, borderRadius: "50%", boxShadow: `0 0 0 2px ${T.surface}, 0 0 0 3px ${T.line}, 0 2px 8px rgba(20,10,50,0.16)` }}
-      ><FlagEmoji
-        flag={counterpartyFlag}
-        shape="circle"
-        size={34}
-        fit="cover"
-      /></span>
-    : <span style={{ width: 34, height: 34, borderRadius: "50%", background: T.surfaceAlt, flexShrink: 0 }} />}<span
-    style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, color: tint, overflowWrap: "anywhere" }}
-  >{headline}</span>{
     /* The app's own logo, white on a coloured disc — the mark from the home
        screen, so a notification is recognisably from this app before a word
        of it is read. It replaced a direction arrow, which was saying for a
        third time what the sign, the colour of the figure beside it and the
        word after it already say. It is not an unread dot either: unread is
        the card's shadow.
+
+       IT LEADS THE ROW, and the flag closes it. They were the other way
+       round. A list of these is read down its left edge, and what sat there
+       was the flag — which changes from row to row and answers a question
+       nobody asked first ("which country?") before the one they did ("what
+       happened to my money?"). The mark is the same shape on every row, so
+       as a left edge it is a margin rather than a column of content, and
+       the eye goes straight to the figure. The flag earns its place at the
+       end, where it qualifies the name on the page below it.
+
        The mark is drawn white out of the shipped artwork (brightness(0)
        inverts it) rather than kept as a second white copy of the same file:
        one logo, one source. */
   }<span
     aria-hidden="true"
     style={{
-      width: 42,
-      height: 42,
+      // 32, down from 42, and the flag 26 from 34. Both were sized as
+      // objects on the row; they are furniture around one line of text,
+      // and at the old sizes the disc stood taller than the figure it was
+      // sitting next to.
+      width: 32,
+      height: 32,
       borderRadius: "50%",
       flexShrink: 0,
       background: markColour,
@@ -251,8 +261,34 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
     src={G_LOGO_DATA_URI}
     alt=""
     draggable={false}
-    style={{ width: 28, height: 28, objectFit: "contain", filter: "brightness(0) invert(1)" }}
-  /></span></button>{total > 0 && <div
+    style={{ width: 21, height: 21, objectFit: "contain", filter: "brightness(0) invert(1)" }}
+  /></span><span
+    // Centred, and centred in the CARD rather than in the space left over.
+    // Those are the same thing only while the two flanks are the same
+    // width, which is why the flag below is boxed to the disc's 32 — its
+    // circle is 26 with a rim painted outside the layout box, so left to
+    // itself it would take six pixels less than the mark and drag the
+    // figure off centre by three. Nobody would name the fault; they would
+    // just see a row that sits slightly wrong.
+    style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 16, fontWeight: 800, color: tint, overflowWrap: "anywhere" }}
+  >{headline}</span>{
+    /* The counterparty's flag, cut and ringed the way the receipt cuts and
+       rings it — same component, same disc, same rim — so the notification
+       and the document it opens are plainly about the same payment. The rim
+       is what keeps a pale flag (Japan, Poland) from dissolving into the
+       card behind it. */
+  }<span
+    style={{ width: 32, flexShrink: 0, display: "flex", justifyContent: "center" }}
+  >{counterpartyFlag
+    ? <span
+        style={{ display: "flex", flexShrink: 0, borderRadius: "50%", boxShadow: `0 0 0 2px ${T.surface}, 0 0 0 3px ${T.line}, 0 2px 8px rgba(20,10,50,0.16)` }}
+      ><FlagEmoji
+        flag={counterpartyFlag}
+        shape="circle"
+        size={26}
+        fit="cover"
+      /></span>
+    : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.surfaceAlt, flexShrink: 0 }} />}</span></button>{total > 0 && <div
     style={{ borderTop: `1px solid ${T.line}`, display: "flex", alignItems: "center", gap: 10, padding: "11px 14px 13px" }}
   ><span
     data-testid="notification-card-page"

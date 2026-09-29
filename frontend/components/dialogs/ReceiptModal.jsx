@@ -150,6 +150,13 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // draw two); `shareFeedback` is the one line saying what happened.
   const [imageShareBusy, setImageShareBusy] = useState11(false);
   const [shareFeedback, setShareFeedback] = useState11("");
+  // What the Gloobal ID check found, when Pay again ran it: null, or one of
+  // checking / changed / gone / unreachable. Declared up here with the other
+  // hooks rather than beside the handler that owns it, because `if (!receipt)
+  // return null` sits between the two and a hook after a conditional return
+  // is a hook React does not always see — the crash is "Rendered more hooks
+  // than during the previous render", and it takes the whole receipt down.
+  const [payAgainState, setPayAgainState] = useState11(null);
   // The link share's own tick, apart from the Transaction ID copy's.
   // Who is looking at this receipt: their Gloobal ID for the image's
   // "Sent by / Received by" line. Read from the stored session, the same
@@ -664,19 +671,79 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // The receipt is closed FIRST and the event fires after that turn, because
   // App.jsx clears a pending payee whenever the send screen is not the open
   // one — dispatching before the close would hand it a payee and then wipe it.
+  // ── The ID on a receipt is not a current fact ───────────────────────────
+  //
+  // This used to open Send Money on receipt.id directly, and said so: "the
+  // payee is the counterparty already named on the receipt, so nothing is
+  // resolved over the network". That is the right instinct for a name or a
+  // country and the wrong one for the ID, because a receipt records what
+  // was true when the money moved and PATCH /api/profile/change-symbol-id
+  // exists. The older the receipt, the likelier its ID names nobody.
+  //
+  // It cannot name the WRONG body — a released ID is retired for good, so it
+  // never returns to the pool and a stranger cannot be holding it — so what
+  // this fixes is a dead end, not a misdelivery. GET /api/payees/current
+  // turns the dead end back into the person: the rename trail first, which
+  // is an exact recorded link between the old ID and the new, and their
+  // mobile number only where there is no trail. Never a name; names are not
+  // unique, and the name here is for the payer to recognise.
+  //
+  // THREE OUTCOMES, and the middle one is why this is not just a lookup:
+  //
+  //   unchanged  — open Send Money, exactly as before.
+  //   changed    — do NOT open it. Money is about to go to an ID the payer
+  //                has never seen, so the old and the new are put side by
+  //                side and they tap to agree. A resolve that quietly
+  //                substituted one ID for another would be the app deciding
+  //                who gets paid.
+  //   gone       — say so, and leave the receipt open. There is nothing
+  //                useful to prefill and a payment screen aimed at nobody
+  //                is worse than a sentence explaining why.
+  //
+  // An unreachable server is none of the three. A cold start is not an
+  // answer about anybody's ID, so it says "couldn't check" and stops rather
+  // than falling back to the stored ID — falling back would make the check
+  // decorative exactly when it is load-bearing.
   const canPayAgain = !isCoinReceipt && !!receipt.id && receipt.status !== "simulated";
-  const handlePayAgain = () => {
-    if (!canPayAgain) return;
-    const detail = {
-      gloobalId: receipt.id,
-      name: receipt.name || "",
-      mobileNumber: receipt.phone || "",
-      countryIso: receipt.counterpartyIso || null,
-      shareRate: Number(receipt.shareRate) || 0
-    };
+  const payAgainDetail = (gloobalId) => ({
+    gloobalId,
+    name: receipt.name || "",
+    mobileNumber: receipt.phone || "",
+    countryIso: receipt.counterpartyIso || null,
+    shareRate: Number(receipt.shareRate) || 0
+  });
+  const openSendMoney = (gloobalId) => {
     (onDone || onClose)();
     if (typeof window !== "undefined") {
-      setTimeout(() => window.dispatchEvent(new CustomEvent("gloobal:payAgain", { detail })), 0);
+      setTimeout(() => window.dispatchEvent(new CustomEvent("gloobal:payAgain", { detail: payAgainDetail(gloobalId) })), 0);
+    }
+  };
+  const handlePayAgain = async () => {
+    if (!canPayAgain || (payAgainState && payAgainState.status === "checking")) return;
+    setPayAgainState({ status: "checking" });
+    try {
+      const answer = await GloobalApi.resolveCurrentPayee({
+        gloobalId: receipt.id,
+        mobileNumber: receipt.phone || ""
+      });
+      const now = answer && answer.user && answer.user.symbolId;
+      if (!now) {
+        setPayAgainState({ status: "gone" });
+        return;
+      }
+      if (!answer.changed && now === receipt.id) {
+        setPayAgainState(null);
+        openSendMoney(receipt.id);
+        return;
+      }
+      setPayAgainState({ status: "changed", was: receipt.id, now, name: (answer.user && answer.user.fullName) || receipt.name || "" });
+    } catch (err) {
+      const message = (err && err.message) || "";
+      // The route answers 404 with its own sentence; anything that is not a
+      // 404 is a failure to ask, not an answer.
+      const notFound = (err && (err.status === 404 || err.code === "payee_not_found"))
+        || /could not find where it went/i.test(message);
+      setPayAgainState(notFound ? { status: "gone" } : { status: "unreachable", message });
     }
   };
   // Which way the money went on the tab being read, and therefore which head
@@ -1140,10 +1207,51 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   />}{canPayAgain && <ReceiptIconAction
     testId="receipt-pay-again"
     icon={<RefreshCw7 size={20} color="#fff" />}
-    label={paymentIsSent ? "Pay again" : "Pay back"}
+    label={payAgainState && payAgainState.status === "checking"
+      ? "Checking…"
+      : paymentIsSent ? "Pay again" : "Pay back"}
     solid
+    busy={!!(payAgainState && payAgainState.status === "checking")}
     onClick={handlePayAgain}
   />}</div>{
+    /* What the check found, when it found something worth stopping for.
+       Nothing is drawn while the ID is still theirs — the payment screen is
+       already opening, and a panel that flashed "still correct" would make
+       the common case feel like an interruption. */
+  }{payAgainState && payAgainState.status === "changed" && <div
+    data-testid="receipt-id-changed"
+    style={{ display: "flex", flexDirection: "column", gap: 9, padding: "12px 13px", borderRadius: 12, background: T.surface, border: `1px solid ${T.line}`, flexShrink: 0 }}
+  ><p style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700, lineHeight: 1.45, margin: 0 }}
+  >{`${payAgainState.name || "Their"}${/s$/i.test(String(payAgainState.name || "")) ? "'" : "'s"} Gloobal ID has changed since this payment.`}</p><div
+    style={{ display: "flex", flexDirection: "column", gap: 6 }}
+  >{[["was", payAgainState.was, T.inkFaint], ["now", payAgainState.now, T.ink]].map(([label, symbols, tint]) => <div
+    key={label}
+    style={{ display: "flex", alignItems: "center", gap: 8 }}
+  ><span style={{ fontSize: 10.5, fontWeight: 800, color: T.inkFaint, width: 26, flexShrink: 0 }}>{label}</span><span
+    data-testid={`receipt-id-${label}`}
+    style={{ display: "flex", flexWrap: "wrap", gap: 3, opacity: label === "was" ? 0.55 : 1 }}
+  >{String(symbols || "").split("").map((ch, i) => <span
+    key={i}
+    style={{ fontFamily: "monospace", fontSize: 13.5, fontWeight: 800, color: label === "was" ? tint : POSITION_COLORS[i % POSITION_COLORS.length] }}
+  >{ch}</span>)}</span></div>)}</div><div
+    style={{ display: "flex", gap: 8 }}
+  ><button
+    data-testid="receipt-id-changed-cancel"
+    onClick={() => setPayAgainState(null)}
+    className="v2-tap"
+    style={{ flex: 1, minHeight: 40, borderRadius: 999, border: `1px solid ${T.line}`, background: T.surface, color: T.inkSoft, fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}
+  >Cancel</button><button
+    data-testid="receipt-id-changed-go"
+    onClick={() => { const next = payAgainState.now; setPayAgainState(null); openSendMoney(next); }}
+    className="v2-tap"
+    style={{ flex: 1, minHeight: 40, borderRadius: 999, border: "none", background: T.gradButton, color: "#fff", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}
+  >{`Pay ${payAgainState.name ? payAgainState.name.split(" ")[0] : "them"}`}</button></div></div>}{payAgainState && (payAgainState.status === "gone" || payAgainState.status === "unreachable") && <p
+    data-testid="receipt-pay-again-problem"
+    role="status"
+    style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textAlign: "center", lineHeight: 1.45, flexShrink: 0 }}
+  >{payAgainState.status === "gone"
+    ? "That Gloobal ID has changed and we couldn't find where it went. Ask them for their current one."
+    : "Couldn't check their Gloobal ID just now. Try again in a moment."}</p>}{
     /* What the two of them have to say, in one line under the row. */
   }{detail === "where" && myLocation && <div
     data-testid="receipt-where-line"

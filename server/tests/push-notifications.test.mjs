@@ -342,7 +342,7 @@ async function run() {
     // a third wording for an event that already had two, and the only one
     // of the three with no sign on the figure. See lib/notificationText.js.
     check("payee: title is the card's headline, sign and all",
-      toPayee.title === `+${(2500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\u20B9 received`,
+      toPayee.title === `+${(2500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\u20B9`,
       toPayee.title);
     check("payee: body names the sender the way the card's first page does",
       toPayee.body === `From ${byKey.A.name}`, toPayee.body);
@@ -360,7 +360,7 @@ async function run() {
   if (toPayer) {
     check("payer: payment.sent, and the headline carries a minus",
       toPayer.type === "payment.sent" &&
-        toPayer.title === `\u2212${(2500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\u20B9 sent`,
+        toPayer.title === `\u2212${(2500).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\u20B9`,
       j(toPayer));
     check("payer: body names the payee the way the card's first page does",
       toPayer.body === `To ${byKey.B.name}`, toPayer.body);

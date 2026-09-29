@@ -283,6 +283,35 @@ var GloobalApi = {
     }
   },
 
+  // GET /api/payees/current — "is this still their Gloobal ID?"
+  //
+  // Asked before Pay again opens the payment screen on somebody, because the
+  // ID it would open on came off a receipt, and a receipt records what was
+  // true when the money moved. See the route for how it finds them: the
+  // rename trail first, which is an exact recorded link between two IDs, and
+  // the mobile number only where there is no trail.
+  //
+  // Answers { changed, user, previousGloobalId, matchedBy }. `changed: true`
+  // means the payment screen must not simply open — the payer is shown the
+  // old ID and the new one and taps to agree before anything is prefilled.
+  //
+  // Throws on 404 with the route's own message: the ID has gone and the
+  // person has to be asked for their current one. Every other failure is
+  // rethrown as-is, and the caller treats an unreachable server as "could
+  // not check" rather than as "gone" — a cold start is not an answer.
+  async resolveCurrentPayee({ gloobalId, mobileNumber } = {}) {
+    const query = [`gloobalId=${encodeURIComponent(String(gloobalId || ""))}`];
+    if (mobileNumber) query.push(`mobileNumber=${encodeURIComponent(String(mobileNumber))}`);
+    try {
+      return await gloobalApiClient.get(`/api/payees/current?${query.join("&")}`, {
+        timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS
+      });
+    } catch (err) {
+      if (gloobalApiIsUnreachable(err)) throw new Error(GLOOBAL_API_WAKING_MESSAGE);
+      throw err;
+    }
+  },
+
   // Is this Gloobal ID still free to claim?
   //
   // GET /api/users/available, which answers with one boolean. This used to be

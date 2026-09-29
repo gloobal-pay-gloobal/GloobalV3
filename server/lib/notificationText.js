@@ -110,7 +110,12 @@ function notifDiscIcon(seed) {
 function paymentBannerText({ direction, amount, currency, counterpartyName }) {
   const sent = direction === 'sent';
   return {
-    title: `${sent ? '−' : '+'}${formatBannerMoney(amount, currency)} ${sent ? 'sent' : 'received'}`,
+    // The sign, and nothing after it. It used to be "−250.00₹ sent", and
+    // the word was the third thing on one banner saying which way the money
+    // went — the minus says it and the body beneath says "To Chdg". Dropped
+    // in the card first (gloobalNotifHeadline); dropped here in the same
+    // breath, because the whole point of this file is that the two agree.
+    title: `${sent ? '−' : '+'}${formatBannerMoney(amount, currency)}`,
     body: counterpartyName
       ? `${sent ? 'To' : 'From'} ${counterpartyName}`
       : (sent ? 'Your Gloobal payment went through.' : 'Money has landed in your Gloobal account.'),

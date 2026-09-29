@@ -11,7 +11,8 @@
 //   - the card is drawn for a payment and never for anything else;
 //   - every page reads a field the SERVER recorded — nothing on it is worked
 //     out here, and a page whose fields are missing is not drawn at all;
-//   - the pages are the five asked for, in order;
+//   - the pages are the four asked for, in order — the payment's own
+//     twenty-symbol reference is not among them; that is a receipt's job;
 //   - the head carries the direction, in the direction's colour, and tapping
 //     it opens the payment; the chevron turns the page instead;
 //   - the server records both sides of the payment and the counterparty's
@@ -42,17 +43,22 @@ describe("the card is built from what the server recorded", () => {
 
   test("a page with nothing to say is not drawn", () => {
     const pages = card.slice(card.indexOf("function gloobalNotifCardPages"), card.indexOf("function GloobalNotifCardDots"));
-    for (const guard of ["meta.counterpartyName", "meta.counterpartySymbolId", "meta.referenceId"]) {
+    for (const guard of ["meta.counterpartyName", "meta.counterpartySymbolId"]) {
       assert.match(pages, new RegExp(`if \\(${guard.replace(".", "\\.")}\\)`), `${guard} is pushed unconditionally`);
     }
     // And the conversion page only when the payment really crossed one.
     assert.match(pages, /const crossed = meta\.counterCurrency && meta\.currency && meta\.counterCurrency !== meta\.currency;/);
   });
 
-  test("the pages are the five asked for, in order", () => {
+  test("the pages are the four asked for, in order", () => {
     const pages = card.slice(card.indexOf("function gloobalNotifCardPages"), card.indexOf("function GloobalNotifCardDots"));
     const keys = [...pages.matchAll(/key: "(\w+)"/g)].map((m) => m[1]);
-    assert.deepEqual(keys, ["who", "money", "id", "txn", "when"]);
+    // No "txn". A Gloobal ID is somebody; a transaction reference is twenty
+    // symbols of bookkeeping, and it filled the widest page in the pager
+    // with the one thing nobody reads off a notification. It is read off a
+    // receipt, by someone who went looking for it, and that is where it is.
+    assert.deepEqual(keys, ["who", "money", "id", "when"]);
+    assert.ok(!/Transaction ID/.test(card), "the transaction id page is back");
   });
 
   test("the head says the direction and opens the payment; the chevron turns the page", () => {
@@ -69,11 +75,24 @@ describe("the card is built from what the server recorded", () => {
     assert.match(readSource(SHEET), /<GloobalNotificationCard/);
   });
 
-  test("the mark on the right is the app's own logo, not a third way of saying the direction", () => {
+  test("the mark leads the row and the flag closes it", () => {
     // The sign, the colour of the figure and the word after it already say
-    // which way the money went. What the corner carries instead is the app's
-    // own flipping mark — the same one on the Send and Receive buttons and in
-    // the corner of the receipt.
+    // which way the money went. What the row carries instead is the app's
+    // own mark — the same one on the Send and Receive buttons and in the
+    // corner of the receipt.
+    //
+    // ORDER, not decoration. A list of these is read down its left edge.
+    // The flag was there, and it changes from row to row: it answered
+    // "which country?" before "what happened to my money?". The mark is the
+    // same shape on every row, so as a left edge it reads as a margin and
+    // the eye goes straight to the figure.
+    const head = card.slice(card.indexOf("onClick={onOpen}"), card.indexOf("</button>"));
+    assert.ok(
+      head.indexOf("G_LOGO_DATA_URI") < head.indexOf("<FlagEmoji"),
+      "the flag is back in front of the mark"
+    );
+    assert.ok(head.indexOf("{headline}") > head.indexOf("G_LOGO_DATA_URI"), "the mark is not leading the row");
+    assert.ok(head.indexOf("{headline}") < head.indexOf("<FlagEmoji"), "the flag is not closing the row");
     assert.match(card, /src=\{G_LOGO_DATA_URI\}/);
     // A disc, in one of the app's own colours, chosen from the payment's own
     // reference so it is stable rather than flickering on every render — and
@@ -198,11 +217,14 @@ describe("in the app", () => {
       const card = page.getByTestId("notification-card").first();
       await card.waitFor({ timeout: 20000 });
       assert.equal(await card.getAttribute("data-direction"), "received");
-      assert.match(await card.innerText(), /\+.*received/s, "the head does not say what happened");
+      // The figure with its sign, and no word after it — the direction is
+      // the sign, the colour, and the "From" on the page beneath.
+      assert.match(await card.innerText(), /\+[\d,.]/s, "the head does not carry the figure");
+      assert.ok(!/ received| sent/.test(await card.innerText()), "the word is back on the headline");
 
-      // Five pages, turned by the chevron, each naming what it shows.
+      // Four pages, turned by the chevron, each naming what it shows.
       const seen = [];
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 4; i++) {
         seen.push((await card.getByTestId("notification-card-page").innerText()).replace(/\s+/g, " ").trim());
         await card.getByRole("button", { name: "Next detail", exact: true }).click();
         await page.waitForTimeout(320);
@@ -210,10 +232,11 @@ describe("in the app", () => {
       assert.match(seen[0], /^From /);
       assert.match(seen[1], /Sender paid/);
       assert.match(seen[1], /0\.009165/, "the rate is not the one recorded");
-      assert.match(seen[3], /Transaction ID/);
-      // Twenty symbols, the payment's own reference, not a shortened form.
-      assert.equal((seen[3].match(/[−+×=○□●■]/g) || []).length, 20);
-      assert.match(seen[4], /Date and time/);
+      // Their Gloobal ID — ten symbols, someone you can pay again — and not
+      // the twenty-symbol transaction reference, which is a receipt's job.
+      assert.ok(!seen.some((s) => /Transaction ID/.test(s)), "the transaction id page is back");
+      assert.equal((seen[2].match(/[−+×=○□●■]/g) || []).length, A.symbolId.length);
+      assert.match(seen[3], /Date and time/);
       // And it came back round to the first page.
       assert.match((await card.getByTestId("notification-card-page").innerText()).trim(), /^From/);
       assert.deepEqual(errors, []);
@@ -311,8 +334,16 @@ describe("the banner says what the card says", () => {
     // U+2212. A hyphen next to a figure reads as a dash between two things.
     assert.equal(frontend.gloobalNotifHeadline(CASES[0]).charAt(0), "−");
     assert.equal(frontend.gloobalNotifHeadline(CASES[1]).charAt(0), "+");
-    assert.match(frontend.gloobalNotifHeadline(CASES[0]), /sent$/);
-    assert.match(frontend.gloobalNotifHeadline(CASES[1]), /received$/);
+    // AND NOTHING AFTER THE FIGURE. The word used to follow it — "−250.00₹
+    // sent" — and it was the third thing on one line saying which way the
+    // money went, after the sign and the colour it is drawn in, with "To
+    // Chdg" directly beneath. The sign is the sentence.
+    assert.match(frontend.gloobalNotifHeadline(CASES[0]), /^\u2212[\d,.]+\S*$/);
+    assert.ok(!/ sent| received/.test(frontend.gloobalNotifHeadline(CASES[0])), "the word is back on the headline");
+    assert.ok(!/ sent| received/.test(frontend.gloobalNotifHeadline(CASES[1])), "the word is back on the headline");
+    // Which way it went is still said once, on the line under it.
+    assert.match(frontend.gloobalNotifSubline(CASES[0]), /^To /);
+    assert.match(frontend.gloobalNotifSubline(CASES[1]), /^From /);
   });
 
   test("the page's own banner uses those functions rather than composing its own", () => {

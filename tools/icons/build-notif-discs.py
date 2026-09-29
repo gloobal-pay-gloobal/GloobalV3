@@ -6,6 +6,8 @@ import numpy as np
 ICONS = sys.argv[1]
 OUT = os.path.join(ICONS, "notif")
 SOURCE = os.path.join(ICONS, "icon-512.png")
+# The mark, lifted once and kept — see extract_mark.
+MASTER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mark-alpha.png")
 
 # LOGO_FLIP_COLORS, frontend/constants/theme.js, in that order. The index a
 # notification lands on is its position in THIS list, so the order is part of
@@ -41,12 +43,16 @@ def ground(size):
 
 
 def extract_mark():
-    """The white mark, as an alpha layer, lifted off its known ground.
+    """The white mark, as an alpha layer.
 
-    The same lift build-icons.py does, and for the same reason: the mark the
-    app ships is the only mark, and tracing a second copy of it by hand is how
-    two logos start to drift apart.
+    From mark-alpha.png — the same master build-icons.py reads, so the disc
+    and the app icon are the same artwork at two sizes rather than two lifts
+    that could drift. Falls back to lifting it off the icon's known ground,
+    which is where the master came from; see build-icons.py's extract_mark
+    for why that is a fallback and not the normal path.
     """
+    if os.path.exists(MASTER):
+        return Image.open(MASTER).convert("L")
     src = np.array(Image.open(SOURCE).convert("RGB")).astype(float)
     g = ground(src.shape[0])
     alpha = np.clip(((src - g) / (255.0 - g)).mean(axis=2), 0, 1)
@@ -74,7 +80,7 @@ def build(mark, index, hex_colour):
 def main():
     os.makedirs(OUT, exist_ok=True)
     mark = extract_mark()
-    print(f"mark lifted from icon-512.png at {mark.width}x{mark.height}")
+    print(f"mark from {os.path.basename(MASTER)} at {mark.width}x{mark.height}")
     for index, colour in enumerate(COLORS):
         build(mark, index, colour)
 

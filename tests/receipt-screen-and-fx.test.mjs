@@ -201,11 +201,11 @@ describe("the receipt is a screen", () => {
   test("Pay again hands the counterparty to Send Money, and no amount", () => {
     // A second payment to somebody is rarely the same size as the first, and
     // a form that opens holding a figure is a form that gets sent holding it.
-    assert.match(modal, /new CustomEvent\("gloobal:payAgain", \{ detail \}\)/);
+    assert.match(modal, /new CustomEvent\("gloobal:payAgain", \{ detail: payAgainDetail\(gloobalId\) \}\)/);
     assert.ok(!/requestedAmount/.test(modal), "Pay again is carrying an amount");
-    const detail = modal.slice(modal.indexOf("const detail = {"), modal.indexOf("(onDone || onClose)();"));
+    const detail = modal.slice(modal.indexOf("const payAgainDetail = (gloobalId) => ({"), modal.indexOf("const openSendMoney"));
     for (const field of ["gloobalId", "name", "mobileNumber", "countryIso", "shareRate"]) {
-      assert.match(detail, new RegExp(`${field}:`), `Pay again drops ${field}`);
+      assert.match(detail, new RegExp(`${field}[,:]`), `Pay again drops ${field}`);
     }
     // Closed first, then announced: App.jsx clears a pending payee whenever
     // the send screen is not the open one.

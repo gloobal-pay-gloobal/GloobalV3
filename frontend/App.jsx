@@ -1225,11 +1225,17 @@ function GloobalId() {
   // this listens, rather than a callback being threaded through three screens
   // that have no other reason to carry one.
   //
-  // The payee is the counterparty already named on the receipt, so nothing is
-  // resolved over the network: their Gloobal ID, name, number and country all
-  // came off the transaction. The AMOUNT is deliberately not carried — a
-  // second payment to somebody is rarely the same size as the first, and a
-  // form that opens holding a figure is a form that gets sent holding it.
+  // The name, number and country come off the transaction. The GLOOBAL ID
+  // does not, any more: a receipt records what was true when the money
+  // moved, and an ID can be changed after it. The receipt asks
+  // /api/payees/current before it fires this, and — where the ID has moved —
+  // shows the payer the old one and the new one and waits to be told to go
+  // ahead. So whatever arrives here has already been resolved and agreed to;
+  // this only has to open the screen on it.
+  //
+  // The AMOUNT is deliberately not carried — a second payment to somebody is
+  // rarely the same size as the first, and a form that opens holding a
+  // figure is a form that gets sent holding it.
   useEffect15(() => {
     const onPayAgain = (event) => {
       const payee = event && event.detail;

@@ -4360,6 +4360,144 @@ app.get('/api/users/resolve', lookupLimit, requireAuth, async (req, res) => {
     });
   }
 });
+
+// One answer for every way of not finding them, so the route cannot be used
+// to tell "no such ID" from "an ID you have never dealt with" — which is the
+// distinction a rename tracker would be built out of.
+const payeeNotFound = (res) => res.status(404).json({
+  success: false,
+  code: 'payee_not_found',
+  message: 'That Gloobal ID has changed and we could not find where it went. Ask them for their current one.',
+});
+
+// GET /api/payees/current — "is this still their Gloobal ID?"
+//
+// ── The problem ─────────────────────────────────────────────────────────
+//
+// Pay again, at the foot of a receipt, used the ID printed ON that receipt.
+// A receipt is a record of what was true when the money moved, and a
+// Gloobal ID is not permanent — PATCH /api/profile/change-symbol-id exists
+// and people use it. So the older the receipt, the likelier its ID names
+// nobody.
+//
+// What it does NOT do is name the wrong person, and that is worth being
+// precise about, because it is the difference between a bug and a disaster.
+// An ID that has been renamed away is retired for good (symbolIdWasRetired,
+// above): it never returns to the pool, so it cannot be claimed by a
+// stranger, so an old receipt cannot quietly route money to one. The
+// failure is a dead end, not a misdelivery. This route turns the dead end
+// back into the person.
+//
+// ── How it finds them ───────────────────────────────────────────────────
+//
+// In order, and the order is the whole design:
+//
+//   1. The ID still resolves. Nothing changed; answer `changed: false`.
+//   2. The rename trail. change-symbol-id records the outgoing ID in
+//      symbolIdHistory with action 'changed', and User indexes
+//      symbolIdHistory.symbolId, so ONE keyed lookup finds the account that
+//      used to hold it — and that account's current symbolId is the answer.
+//      This is an exact, recorded link between two IDs: not a guess, not a
+//      match on anything that could belong to somebody else. It also
+//      survives repeated renames for free, because the trail is on the
+//      account and the account's current ID is read live.
+//   3. The mobile number, and only if there is no trail. This is the weaker
+//      leg and it is deliberately last: mobile numbers get recycled, so
+//      "whoever holds that number today" is not certainly the same person.
+//      It exists for receipts written before the trail did.
+//
+// A name is never matched, at any step. Names are not unique, and a route
+// that took one would turn every signed-in account into a name-to-account
+// directory. The name on the receipt is for the PAYER to recognise, which
+// is a different job from finding the account, and it stays that.
+//
+// ── Why it asks who is calling ──────────────────────────────────────────
+//
+// Step 2 is new exposure and the check below is what pays for it. Without
+// it, any signed-in account could walk any old ID to its owner's new one —
+// a rename tracker, aimed at exactly the people who renamed to stop being
+// reachable. So the caller must have a real transaction with that account.
+// Pay again is only ever offered from the receipt of a payment that
+// happened, so this costs the feature nothing and closes the route to
+// everyone else. The phone leg is not new exposure — /api/users/resolve
+// already answers a mobile number — but it is held to the same rule, since
+// there is no reason for it to be looser.
+app.get('/api/payees/current', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const gloobalId = String(req.query.gloobalId || '').trim();
+    const mobileNumber = String(req.query.mobileNumber || '').trim();
+
+    if (!gloobalId) {
+      return res.status(400).json({ success: false, message: 'A Gloobal ID is required.' });
+    }
+
+    const me = req.authUser._id;
+    // Have I ever moved money with this account, either way? Cheap: both
+    // directions are covered by the indexes on fromUserId and toUserId.
+    const dealtWith = (userId) => Transaction.exists({
+      $or: [
+        { fromUserId: me, toUserId: userId },
+        { fromUserId: userId, toUserId: me },
+      ],
+    });
+
+    const current = await User.findOne({ symbolId: gloobalId }).lean();
+    if (current) {
+      // Still theirs. No trail to follow and nothing to warn anybody about,
+      // so this answers without the transaction check — it is exactly what
+      // /api/users/resolve would already say for the same input.
+      return res.json({
+        success: true,
+        changed: false,
+        matchedBy: 'symbolId',
+        user: cleanResolvedTransactionUserPayload({ user: current, matchedBy: 'symbolId' }),
+      });
+    }
+
+    // The trail. One indexed lookup; the answer is the account's CURRENT id,
+    // read now, so a chain of renames resolves in one hop rather than being
+    // walked entry by entry.
+    const renamed = await User.findOne({
+      symbolIdHistory: { $elemMatch: { symbolId: gloobalId, action: 'changed' } },
+    }).lean();
+
+    if (renamed) {
+      if (!(await dealtWith(renamed._id))) return payeeNotFound(res);
+      return res.json({
+        success: true,
+        changed: true,
+        matchedBy: 'renameTrail',
+        previousGloobalId: gloobalId,
+        user: cleanResolvedTransactionUserPayload({ user: renamed, matchedBy: 'symbolId' }),
+      });
+    }
+
+    // No trail. The number, if the caller has one — for receipts written
+    // before the trail existed.
+    const normalizedPhone = mobileNumber ? normalizeTransactionPhoneLookup(mobileNumber) : null;
+    if (!normalizedPhone) return payeeNotFound(res);
+
+    const byPhone = await User.findOne({ mobileNumber: normalizedPhone }).lean();
+    if (!byPhone) return payeeNotFound(res);
+    if (!(await dealtWith(byPhone._id))) return payeeNotFound(res);
+    // A number that now belongs to somebody else would have failed the check
+    // above — they would not be a person this caller has paid. It is still
+    // reported as `changed`, so the payer is shown the new ID and agrees to
+    // it rather than being moved onto it quietly.
+    return res.json({
+      success: true,
+      changed: byPhone.symbolId !== gloobalId,
+      matchedBy: 'mobileNumber',
+      previousGloobalId: gloobalId,
+      user: cleanResolvedTransactionUserPayload({ user: byPhone, matchedBy: 'symbolId' }),
+    });
+  } catch (error) {
+    console.error('Payee resolve error:', error);
+    return res.status(500).json({ success: false, message: 'Could not check that Gloobal ID right now.' });
+  }
+});
+
+
 // --- My Assets --------------------------------------------------------------
 // Cashback is real money the moment it is earned — it is credited straight
 // into the payer's spendable balance in the same request that plants this

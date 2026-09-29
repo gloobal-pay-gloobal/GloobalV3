@@ -643,6 +643,49 @@ export async function installApi(context, options = {}) {
     // this backwards makes the login screen answer "No account found for this
     // Gloobal ID" for an account that exists — which is exactly what it did
     // the first time this fake was written.
+    // "Is this still their Gloobal ID?", asked by Pay again before it opens
+    // the payment screen on an ID that came off a receipt.
+    //
+    // The fake keeps the real route's three answers and its ORDER, because
+    // the order is the design: the rename trail first (an exact recorded
+    // link between two IDs), the mobile number only where there is no trail,
+    // and a name never. `symbolIdWas` on an account is this fake's
+    // symbolIdHistory — a test renames an account by setting the new ID and
+    // pushing the old one onto that list, which is what the real
+    // change-symbol-id does.
+    if (pathname === "/api/payees/current") {
+      const wanted = String(url.searchParams.get("gloobalId") || "").trim();
+      const phone = String(url.searchParams.get("mobileNumber") || "").trim();
+      if (!wanted) return json(400, { success: false, message: "A Gloobal ID is required." });
+      const gone = () => json(404, {
+        success: false,
+        code: "payee_not_found",
+        message: "That Gloobal ID has changed and we could not find where it went. Ask them for their current one."
+      });
+      const all = Object.values(accounts);
+      const still = all.find((a) => a.symbolId === wanted);
+      if (still) return json(200, { success: true, changed: false, matchedBy: "symbolId", user: publicUser(still) });
+      const renamed = all.find((a) => (a.symbolIdWas || []).indexOf(wanted) !== -1);
+      if (renamed) {
+        return json(200, {
+          success: true,
+          changed: true,
+          matchedBy: "renameTrail",
+          previousGloobalId: wanted,
+          user: publicUser(renamed)
+        });
+      }
+      if (!phone) return gone();
+      const byPhone = all.find((a) => a.mobileNumber && a.mobileNumber === phone);
+      if (!byPhone) return gone();
+      return json(200, {
+        success: true,
+        changed: byPhone.symbolId !== wanted,
+        matchedBy: "mobileNumber",
+        previousGloobalId: wanted,
+        user: publicUser(byPhone)
+      });
+    }
     if (pathname === "/api/users/available") {
       const wanted = url.searchParams.get("symbolId") || url.searchParams.get("identifier");
       return json(200, { available: !byIdentifier(wanted) });
@@ -969,7 +1012,13 @@ export async function installApi(context, options = {}) {
     return json(200, {});
   });
 
-  return { calls, state };
+  // `accounts` comes back so a test can move an account's Gloobal ID under
+  // the app's feet — which is the only way to exercise Pay again's check
+  // that the ID on a receipt is still the one its owner holds. Pass your own
+  // `options.accounts` when you intend to mutate: this object is the shared
+  // ACCOUNTS module export unless you do, and a rename would leak into every
+  // test that ran after yours.
+  return { calls, state, accounts };
 }
 
 // Seed the device as if this account had signed in here before, and mark the

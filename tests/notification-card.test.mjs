@@ -211,7 +211,10 @@ describe("in the app", () => {
       const card = page.getByTestId("notification-card").first();
       await card.waitFor({ timeout: 20000 });
       assert.equal(await card.getAttribute("data-direction"), "received");
-      assert.match(await card.innerText(), /\+.*received/s, "the head does not say what happened");
+      // The figure with its sign, and no word after it — the direction is
+      // the sign, the colour, and the "From" on the page beneath.
+      assert.match(await card.innerText(), /\+[\d,.]/s, "the head does not carry the figure");
+      assert.ok(!/ received| sent/.test(await card.innerText()), "the word is back on the headline");
 
       // Five pages, turned by the chevron, each naming what it shows.
       const seen = [];
@@ -324,8 +327,16 @@ describe("the banner says what the card says", () => {
     // U+2212. A hyphen next to a figure reads as a dash between two things.
     assert.equal(frontend.gloobalNotifHeadline(CASES[0]).charAt(0), "−");
     assert.equal(frontend.gloobalNotifHeadline(CASES[1]).charAt(0), "+");
-    assert.match(frontend.gloobalNotifHeadline(CASES[0]), /sent$/);
-    assert.match(frontend.gloobalNotifHeadline(CASES[1]), /received$/);
+    // AND NOTHING AFTER THE FIGURE. The word used to follow it — "−250.00₹
+    // sent" — and it was the third thing on one line saying which way the
+    // money went, after the sign and the colour it is drawn in, with "To
+    // Chdg" directly beneath. The sign is the sentence.
+    assert.match(frontend.gloobalNotifHeadline(CASES[0]), /^\u2212[\d,.]+\S*$/);
+    assert.ok(!/ sent| received/.test(frontend.gloobalNotifHeadline(CASES[0])), "the word is back on the headline");
+    assert.ok(!/ sent| received/.test(frontend.gloobalNotifHeadline(CASES[1])), "the word is back on the headline");
+    // Which way it went is still said once, on the line under it.
+    assert.match(frontend.gloobalNotifSubline(CASES[0]), /^To /);
+    assert.match(frontend.gloobalNotifSubline(CASES[1]), /^From /);
   });
 
   test("the page's own banner uses those functions rather than composing its own", () => {

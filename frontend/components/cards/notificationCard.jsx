@@ -47,9 +47,17 @@ var GLOOBAL_NOTIF_CARD_TURN_MS = 190;
 // counterpartyName.
 function gloobalNotifHeadline(meta) {
   const sent = (meta && meta.direction) === "sent";
-  // The sign is the fact. A figure without one is a number; with one it is
-  // a direction, and the colour it is drawn in agrees with it.
-  return `${sent ? "−" : "+"}${fmtMoney((meta && meta.amount) || 0, (meta && meta.currency) || "")} ${sent ? "sent" : "received"}`;
+  // THE SIGN IS THE WHOLE SENTENCE. It used to be followed by the word —
+  // "−250.00₹ sent" — and the word was the third time one line said which
+  // way the money went: the minus says it, the colour it is drawn in says
+  // it, and the page directly beneath says "To Chdg". A figure with a sign
+  // in front of it is already a direction; the word only made the line
+  // long enough to stop being a figure.
+  //
+  // It goes from the banner too, and deliberately: the lock screen shows
+  // this over gloobalNotifSubline, so the sign is read against "To Chdg"
+  // or "From Rajeev" there exactly as it is here.
+  return `${sent ? "−" : "+"}${fmtMoney((meta && meta.amount) || 0, (meta && meta.currency) || "")}`;
 }
 function gloobalNotifSubline(meta) {
   const sent = (meta && meta.direction) === "sent";
@@ -250,14 +258,23 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
     draggable={false}
     style={{ width: 21, height: 21, objectFit: "contain", filter: "brightness(0) invert(1)" }}
   /></span><span
-    style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, color: tint, overflowWrap: "anywhere" }}
+    // Centred, and centred in the CARD rather than in the space left over.
+    // Those are the same thing only while the two flanks are the same
+    // width, which is why the flag below is boxed to the disc's 32 — its
+    // circle is 26 with a rim painted outside the layout box, so left to
+    // itself it would take six pixels less than the mark and drag the
+    // figure off centre by three. Nobody would name the fault; they would
+    // just see a row that sits slightly wrong.
+    style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 16, fontWeight: 800, color: tint, overflowWrap: "anywhere" }}
   >{headline}</span>{
     /* The counterparty's flag, cut and ringed the way the receipt cuts and
        rings it — same component, same disc, same rim — so the notification
        and the document it opens are plainly about the same payment. The rim
        is what keeps a pale flag (Japan, Poland) from dissolving into the
        card behind it. */
-  }{counterpartyFlag
+  }<span
+    style={{ width: 32, flexShrink: 0, display: "flex", justifyContent: "center" }}
+  >{counterpartyFlag
     ? <span
         style={{ display: "flex", flexShrink: 0, borderRadius: "50%", boxShadow: `0 0 0 2px ${T.surface}, 0 0 0 3px ${T.line}, 0 2px 8px rgba(20,10,50,0.16)` }}
       ><FlagEmoji
@@ -266,7 +283,7 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
         size={26}
         fit="cover"
       /></span>
-    : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.surfaceAlt, flexShrink: 0 }} />}</button>{total > 0 && <div
+    : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.surfaceAlt, flexShrink: 0 }} />}</span></button>{total > 0 && <div
     style={{ borderTop: `1px solid ${T.line}`, display: "flex", alignItems: "center", gap: 10, padding: "11px 14px 13px" }}
   ><span
     data-testid="notification-card-page"

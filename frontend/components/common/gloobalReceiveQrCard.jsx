@@ -96,9 +96,15 @@ var GLOOBAL_QR_CORNER_EDGE = 1.5;
 // it sits tucked into the corner and covers fewer modules than before.
 var GLOOBAL_QR_CORNER_R = 1.6;
 
-function gloobalQrCornerBadge(size) {
-  const total = size + GLOOBAL_QR_QUIET_ZONE * 2;
-  const edge = GLOOBAL_QR_QUIET_ZONE + size;
+// `size` is the code's own module count, without its quiet zone. `quiet`
+// defaults to this file's, and is a parameter because the animal codes carry
+// their own constant (GLOOBAL_ANIMAL_QR_QUIET) — the two happen to be 4
+// today, and a shared mark that silently depended on that would be a bug
+// waiting for somebody to widen one of them.
+function gloobalQrCornerBadge(size, quiet) {
+  const q = Number.isFinite(quiet) ? quiet : GLOOBAL_QR_QUIET_ZONE;
+  const total = size + q * 2;
+  const edge = q + size;
   const r = GLOOBAL_QR_CORNER_R;
   const c = edge + GLOOBAL_QR_CORNER_EDGE - r;
   return {
@@ -171,6 +177,74 @@ function gloobalQrDiscInk(hex) {
   return "#" + [r, g, b].map((n) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, "0")).join("");
 }
 
+// ── The corner mark, drawn once for everything that carries it ───────────
+//
+// Four things draw a Gloobal code: this file's two SVGs (the standard one
+// and an animal) and the two canvas paths behind Share. The mark used to
+// exist in two of them, written out twice; the animal code had neither, on
+// the reasoning that the picture is the decoration and anything painted
+// over it costs modules it was placed to keep.
+//
+// That reasoning was about the CENTRE badge, which sits on the code, and it
+// still holds — an animal has no centre disc. It does not reach the corner
+// mark, which sits almost entirely in the quiet zone: of its 3.2 modules
+// across, 1.5 are outside the code's last column and about 1.7 overlap it,
+// at the one corner a QR has no finder pattern in. That overlap is what was
+// measured at 176/192 on the standard code, and tests/gloobal-animal-qr
+// decodes every animal with it painted on before this ships.
+//
+// So the mark belongs on all four, and it is written once. Two renderers,
+// same geometry, same face:
+function GloobalQrCornerMark({ corner, face }) {
+  return (
+    <g aria-hidden="true">
+      {/* The white disc is painted first and full size, so the modules
+          under the mark are gone rather than showing through the ring. */}
+      <circle cx={corner.cx} cy={corner.cy} r={corner.r} fill="#FFFFFF" />
+      <circle
+        cx={corner.cx}
+        cy={corner.cy}
+        r={corner.r - corner.stroke / 2}
+        fill="none"
+        stroke={face.color}
+        strokeWidth={corner.stroke}
+        style={{ transition: "stroke 0.55s ease" }}
+      />
+      <text
+        x={corner.cx}
+        y={corner.cy}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily={typeof T !== "undefined" ? T.fontDisplay : "system-ui, sans-serif"}
+        fontSize={corner.font}
+        fontWeight="800"
+        fill={face.color}
+        style={{ transition: "fill 0.55s ease" }}
+      >
+        {face.letter}
+      </text>
+    </g>
+  );
+}
+
+// The same mark onto a 2D context, at `scale` pixels per module.
+function gloobalQrPaintCornerMark(ctx, corner, face, scale) {
+  ctx.beginPath();
+  ctx.arc(corner.cx * scale, corner.cy * scale, corner.r * scale, 0, Math.PI * 2);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(corner.cx * scale, corner.cy * scale, (corner.r - corner.stroke / 2) * scale, 0, Math.PI * 2);
+  ctx.strokeStyle = face.color;
+  ctx.lineWidth = corner.stroke * scale;
+  ctx.stroke();
+  ctx.fillStyle = face.color;
+  ctx.font = `800 ${corner.font * scale}px ${typeof T !== "undefined" ? T.fontDisplay : "system-ui, sans-serif"}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(face.letter, corner.cx * scale, corner.cy * scale);
+}
+
 function gloobalQrModulePath(matrix) {
   const q = GLOOBAL_QR_QUIET_ZONE;
   let d = "";
@@ -223,50 +297,35 @@ function GloobalQrSvg({ value, logo = true, discColor, markStep = 0 }) {
           />
         </g>
       ) : null}
-      {logo ? (
-        <g aria-hidden="true">
-          {/* The fourth corner. The white disc is painted first and full size,
-              so the modules under the mark are gone rather than showing
-              through the ring — see gloobalQrCornerBadge for why this sits two
-              modules out from the corner instead of on it. */}
-          <circle cx={corner.cx} cy={corner.cy} r={corner.r} fill="#FFFFFF" />
-          <circle
-            cx={corner.cx}
-            cy={corner.cy}
-            r={corner.r - corner.stroke / 2}
-            fill="none"
-            stroke={face.color}
-            strokeWidth={corner.stroke}
-            style={{ transition: "stroke 0.55s ease" }}
-          />
-          <text
-            x={corner.cx}
-            y={corner.cy}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontFamily={typeof T !== "undefined" ? T.fontDisplay : "system-ui, sans-serif"}
-            fontSize={corner.font}
-            fontWeight="800"
-            fill={face.color}
-            style={{ transition: "fill 0.55s ease" }}
-          >
-            {face.letter}
-          </text>
-        </g>
-      ) : null}
+      {/* The fourth corner — see gloobalQrCornerBadge for why it sits tucked
+          into the quiet zone rather than on the code. */}
+      {logo ? <GloobalQrCornerMark corner={corner} face={face} /> : null}
     </svg>
   );
 }
 
-// An animal code, drawn from gloobalAnimalQrLayout. No centre badge and no
-// corner mark: the picture is the decoration, and anything painted over it
-// would cost the modules it was placed to keep.
-function GloobalAnimalQrSvg({ layout, label }) {
+// An animal code, drawn from gloobalAnimalQrLayout. No centre badge — the
+// picture is the decoration, and a disc through the middle of it would cost
+// the modules the animal was placed to keep, as well as the animal.
+//
+// It does carry the corner mark now. That is a different argument from the
+// centre one: the mark sits in the quiet zone at the corner with no finder
+// pattern, overlapping about 1.7 modules, and every animal is decoded with
+// it painted on in tests/gloobal-animal-qr.test.mjs. A code is a code — the
+// hallmark is how you know whose it is, and an animal is no less ours.
+function GloobalAnimalQrSvg({ layout, label, markStep = 0 }) {
   const rects = (list) => list.map(([x, y]) => `M${x} ${y}h1v1h-1z`).join("");
   const dots = (list, d) => {
     const r = d / 2;
     return list.map(([x, y]) => `M${x + 0.5 - r} ${y + 0.5}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`).join("");
   };
+  // The animal layout publishes `total` (code plus both quiet zones); the
+  // badge wants the code's own size and the quiet zone it sits in.
+  const corner = gloobalQrCornerBadge(
+    layout.total - GLOOBAL_ANIMAL_QR_QUIET * 2,
+    GLOOBAL_ANIMAL_QR_QUIET
+  );
+  const face = gloobalQrCornerFace(markStep);
   return (
     <svg
       viewBox={`0 0 ${layout.total} ${layout.total}`}
@@ -283,6 +342,7 @@ function GloobalAnimalQrSvg({ layout, label }) {
       <path d={rects(layout.fill)} fill={layout.color} shapeRendering="crispEdges" />
       <path d={dots(layout.dots, GLOOBAL_ANIMAL_QR_OUT_DOT)} fill="#000" />
       <path d={dots(layout.holes, GLOOBAL_ANIMAL_QR_IN_DOT)} fill="#FFFFFF" />
+      <GloobalQrCornerMark corner={corner} face={face} />
     </svg>
   );
 }
@@ -302,6 +362,17 @@ function gloobalQrToPngBlob(value, { moduleScale = 12, discColor, markStep = 0, 
         const ctx = canvas.getContext("2d");
         if (!ctx) return resolve(null);
         gloobalAnimalQrPaint(ctx, animalLayout, scale);
+        // The hallmark goes on the shared picture too. gloobalAnimalQrPaint
+        // itself stays untouched: it lives in gloobalAnimalQr.js, which the
+        // decode suite loads on its own with nothing else in scope, and the
+        // mark's geometry lives here. So it is painted over the top, which
+        // is also the order the SVG draws it in.
+        gloobalQrPaintCornerMark(
+          ctx,
+          gloobalQrCornerBadge(animalLayout.total - GLOOBAL_ANIMAL_QR_QUIET * 2, GLOOBAL_ANIMAL_QR_QUIET),
+          gloobalQrCornerFace(markStep),
+          scale
+        );
         return canvas.toBlob((blob) => resolve(blob || null), "image/png");
       }
       const matrix = buildGloobalQrMatrix(value);
@@ -335,24 +406,14 @@ function gloobalQrToPngBlob(value, { moduleScale = 12, discColor, markStep = 0, 
       ctx.fillStyle = gloobalQrDiscInk(discColor || (typeof T !== "undefined" ? T.accent : "#7C3AED"));
       ctx.fill();
 
-      // The fourth corner, drawn the same way: a full white disc first, then
-      // the ring and the letter showing at the moment Share was pressed.
-      const corner = gloobalQrCornerBadge(matrix.size);
-      const face = gloobalQrCornerFace(markStep);
-      ctx.beginPath();
-      ctx.arc(corner.cx * scale, corner.cy * scale, corner.r * scale, 0, Math.PI * 2);
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(corner.cx * scale, corner.cy * scale, (corner.r - corner.stroke / 2) * scale, 0, Math.PI * 2);
-      ctx.strokeStyle = face.color;
-      ctx.lineWidth = corner.stroke * scale;
-      ctx.stroke();
-      ctx.fillStyle = face.color;
-      ctx.font = `800 ${corner.font * scale}px ${typeof T !== "undefined" ? T.fontDisplay : "system-ui, sans-serif"}`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(face.letter, corner.cx * scale, corner.cy * scale);
+      // The fourth corner, showing the letter it was on at the moment Share
+      // was pressed.
+      gloobalQrPaintCornerMark(
+        ctx,
+        gloobalQrCornerBadge(matrix.size),
+        gloobalQrCornerFace(markStep),
+        scale
+      );
 
       const finish = () => canvas.toBlob((blob) => resolve(blob || null), "image/png");
       const img = new Image();
@@ -533,7 +594,7 @@ function GloobalReceiveQrCard({ gloobalId, name, onToast, headerAction = null })
 
       <div style={{ width: "min(300px, 100%)", aspectRatio: "1 / 1", background: "#FFFFFF" }}>
         {animalLayout ? (
-          <GloobalAnimalQrSvg layout={animalLayout} label={animalChoice && animalChoice.label} />
+          <GloobalAnimalQrSvg layout={animalLayout} label={animalChoice && animalChoice.label} markStep={markStep} />
         ) : (
           <GloobalQrSvg value={payload} discColor={discColor} markStep={markStep} />
         )}

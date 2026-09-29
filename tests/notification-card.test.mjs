@@ -11,7 +11,8 @@
 //   - the card is drawn for a payment and never for anything else;
 //   - every page reads a field the SERVER recorded — nothing on it is worked
 //     out here, and a page whose fields are missing is not drawn at all;
-//   - the pages are the five asked for, in order;
+//   - the pages are the four asked for, in order — the payment's own
+//     twenty-symbol reference is not among them; that is a receipt's job;
 //   - the head carries the direction, in the direction's colour, and tapping
 //     it opens the payment; the chevron turns the page instead;
 //   - the server records both sides of the payment and the counterparty's
@@ -42,17 +43,22 @@ describe("the card is built from what the server recorded", () => {
 
   test("a page with nothing to say is not drawn", () => {
     const pages = card.slice(card.indexOf("function gloobalNotifCardPages"), card.indexOf("function GloobalNotifCardDots"));
-    for (const guard of ["meta.counterpartyName", "meta.counterpartySymbolId", "meta.referenceId"]) {
+    for (const guard of ["meta.counterpartyName", "meta.counterpartySymbolId"]) {
       assert.match(pages, new RegExp(`if \\(${guard.replace(".", "\\.")}\\)`), `${guard} is pushed unconditionally`);
     }
     // And the conversion page only when the payment really crossed one.
     assert.match(pages, /const crossed = meta\.counterCurrency && meta\.currency && meta\.counterCurrency !== meta\.currency;/);
   });
 
-  test("the pages are the five asked for, in order", () => {
+  test("the pages are the four asked for, in order", () => {
     const pages = card.slice(card.indexOf("function gloobalNotifCardPages"), card.indexOf("function GloobalNotifCardDots"));
     const keys = [...pages.matchAll(/key: "(\w+)"/g)].map((m) => m[1]);
-    assert.deepEqual(keys, ["who", "money", "id", "txn", "when"]);
+    // No "txn". A Gloobal ID is somebody; a transaction reference is twenty
+    // symbols of bookkeeping, and it filled the widest page in the pager
+    // with the one thing nobody reads off a notification. It is read off a
+    // receipt, by someone who went looking for it, and that is where it is.
+    assert.deepEqual(keys, ["who", "money", "id", "when"]);
+    assert.ok(!/Transaction ID/.test(card), "the transaction id page is back");
   });
 
   test("the head says the direction and opens the payment; the chevron turns the page", () => {
@@ -216,9 +222,9 @@ describe("in the app", () => {
       assert.match(await card.innerText(), /\+[\d,.]/s, "the head does not carry the figure");
       assert.ok(!/ received| sent/.test(await card.innerText()), "the word is back on the headline");
 
-      // Five pages, turned by the chevron, each naming what it shows.
+      // Four pages, turned by the chevron, each naming what it shows.
       const seen = [];
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 4; i++) {
         seen.push((await card.getByTestId("notification-card-page").innerText()).replace(/\s+/g, " ").trim());
         await card.getByRole("button", { name: "Next detail", exact: true }).click();
         await page.waitForTimeout(320);
@@ -226,10 +232,11 @@ describe("in the app", () => {
       assert.match(seen[0], /^From /);
       assert.match(seen[1], /Sender paid/);
       assert.match(seen[1], /0\.009165/, "the rate is not the one recorded");
-      assert.match(seen[3], /Transaction ID/);
-      // Twenty symbols, the payment's own reference, not a shortened form.
-      assert.equal((seen[3].match(/[−+×=○□●■]/g) || []).length, 20);
-      assert.match(seen[4], /Date and time/);
+      // Their Gloobal ID — ten symbols, someone you can pay again — and not
+      // the twenty-symbol transaction reference, which is a receipt's job.
+      assert.ok(!seen.some((s) => /Transaction ID/.test(s)), "the transaction id page is back");
+      assert.equal((seen[2].match(/[−+×=○□●■]/g) || []).length, A.symbolId.length);
+      assert.match(seen[3], /Date and time/);
       // And it came back round to the first page.
       assert.match((await card.getByTestId("notification-card-page").innerText()).trim(), /^From/);
       assert.deepEqual(errors, []);

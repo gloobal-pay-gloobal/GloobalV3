@@ -30,11 +30,13 @@ const Q = new Function(
 
 // A minimal 2D context over an RGBA buffer: enough of fillRect / arc / fill
 // for gloobalAnimalQrPaint, so the pixels tested are the pixels it paints.
-function rasterize(layout, scale) {
+function rasterize(layout, scale, { withMark = false, markStep = 0 } = {}) {
   const px = layout.total * scale;
   const img = new Uint8ClampedArray(px * px * 4).fill(255);
   let fill = [0, 0, 0];
   let circle = null;
+  let lineW = 1;
+  let fontPx = 0;
   const hex = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
   const put = (x, y) => {
     if (x < 0 || y < 0 || x >= px || y >= px) return;
@@ -54,11 +56,74 @@ function rasterize(layout, scale) {
         const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
         if (dx * dx + dy * dy <= r * r) put(x, y);
       }
+    },
+    // A stroked circle as a filled annulus of the same width, in the stroke
+    // colour. Heavier than a real antialiased stroke, never lighter.
+    set strokeStyle(c) { fill = hex(c); },
+    set lineWidth(w) { lineW = w; },
+    stroke() {
+      const { cx, cy, r } = circle;
+      const outer = r + lineW / 2, inner = Math.max(0, r - lineW / 2);
+      for (let y = Math.floor(cy - outer); y <= Math.ceil(cy + outer); y++) for (let x = Math.floor(cx - outer); x <= Math.ceil(cx + outer); x++) {
+        const dx = x + 0.5 - cx, dy = y + 0.5 - cy;
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= outer * outer && d2 >= inner * inner) put(x, y);
+      }
+    },
+    // The glyph as a solid box over its em square — the most a letter of
+    // that size could possibly cover.
+    set font(f) { fontPx = parseFloat(String(f).match(/(\d+(?:\.\d+)?)px/)?.[1] || "0"); },
+    set textAlign(_v) {},
+    set textBaseline(_v) {},
+    fillText(_text, cx, cy) {
+      const h = fontPx / 2;
+      for (let y = Math.floor(cy - h); y <= Math.ceil(cy + h); y++) for (let x = Math.floor(cx - h); x <= Math.ceil(cx + h); x++) put(x, y);
     }
   };
   Q.gloobalAnimalQrPaint(ctx, layout, scale);
+  if (withMark) {
+    MARK.gloobalQrPaintCornerMark(
+      ctx,
+      MARK.gloobalQrCornerBadge(layout.total - 4 * 2, 4),
+      MARK.gloobalQrCornerFace(markStep),
+      scale
+    );
+  }
   return { img, px };
 }
+
+// ── The corner hallmark, as the app really draws it ──────────────────────
+//
+// The mark is in gloobalReceiveQrCard.jsx, not in the animal module, so it
+// is lifted out of that source and run — the geometry tested is the
+// geometry that ships, and a change to GLOOBAL_QR_CORNER_R that ate another
+// module would fail here rather than on somebody's counter.
+//
+// The stroke and the glyph are painted MORE heavily than the browser paints
+// them: a stroke becomes a filled annulus, a glyph becomes a filled box
+// over its em square. Both err toward covering more of the code than the
+// real mark does, so a decode here is a decode there — the error is in the
+// direction that cannot produce a false pass.
+const CARD_SRC = readSource("frontend/components/common/gloobalReceiveQrCard.jsx");
+const MARK = (() => {
+  const lift = (name) => {
+    const at = CARD_SRC.indexOf(`function ${name}(`);
+    const end = CARD_SRC.indexOf("\n}\n", at);
+    assert.ok(at !== -1 && end !== -1, `${name} is gone from the card`);
+    return CARD_SRC.slice(at, end + 3);
+  };
+  const constants = ["GLOOBAL_QR_QUIET_ZONE", "GLOOBAL_QR_CORNER_EDGE", "GLOOBAL_QR_CORNER_R", "GLOOBAL_QR_DISC_MAX_LUM"]
+    .map((name) => CARD_SRC.slice(CARD_SRC.indexOf(`var ${name} = `), CARD_SRC.indexOf(";", CARD_SRC.indexOf(`var ${name} = `)) + 1))
+    .join("\n");
+  return new Function(`
+    ${constants}
+    ${lift("gloobalQrCornerBadge")}
+    ${lift("gloobalQrDiscInk")}
+    ${lift("gloobalQrCornerFace")}
+    ${lift("gloobalQrPaintCornerMark")}
+    return { gloobalQrCornerBadge, gloobalQrCornerFace, gloobalQrPaintCornerMark };
+  `)();
+})();
 
 // Three different people, so no picture passes by suiting one link's bits.
 const IDS = ["−−−−−−−−−−−−", "○○○○○○○○○○○○"];
@@ -107,6 +172,28 @@ describe("the animal QRs", () => {
       }
       assert.deepEqual(misses, [], `${animal.label} failed to scan`);
     });
+
+    // THE ONE THAT MATTERS. The hallmark used to be on the plain code only,
+    // on the reasoning that an animal's picture is its decoration and
+    // anything painted over it costs modules the animal was placed to keep.
+    // That argument is about the CENTRE badge, which sits on the code; this
+    // mark sits in the quiet zone at the corner with no finder pattern,
+    // overlapping about 1.7 modules. Every letter of the cycle is tried,
+    // because each is a different amount of ink in the same place.
+    test(`${animal.label} still scans with the hallmark on it`, () => {
+      const misses = [];
+      for (const url of URLS) {
+        const layout = Q.gloobalAnimalQrLayout(url, animal.key);
+        for (const scale of [6, 8, 10, 13]) {
+          for (const markStep of [0, 1, 2, 3]) {
+            const { img, px } = rasterize(layout, scale, { withMark: true, markStep });
+            const got = jsQR(img, px, px);
+            if (!got || got.data !== url) misses.push(`${url} @${scale}px step ${markStep}`);
+          }
+        }
+      }
+      assert.deepEqual(misses, [], `${animal.label} stopped scanning once marked`);
+    });
   }
 
   test("an unknown animal, or a link too long for the grid, falls back to the plain code", () => {
@@ -121,11 +208,29 @@ describe("the card", () => {
     assert.match(CARD, /\{ key: "classic", label: "Classic", color: null \}, \.\.\.GLOOBAL_QR_ANIMALS/);
     assert.match(CARD, /gloobalAnimalQrSaveChoice\(next\)/);
   });
-  test("an animal code carries no centre badge and no corner mark", () => {
+  test("an animal code carries the corner mark but never a centre badge", () => {
     const at = CARD.indexOf("function GloobalAnimalQrSvg(");
     const body = CARD.slice(at, CARD.indexOf("\n}\n", at));
     assert.ok(at > 0);
-    assert.ok(!/G_LOGO_DATA_URI|gloobalQrCornerBadge|gloobalQrLogoBox/.test(body));
+    // No centre. A disc through the middle would cost the modules the animal
+    // was placed to keep, and the animal with them.
+    assert.ok(!/G_LOGO_DATA_URI|gloobalQrLogoBox/.test(body), "an animal grew a centre badge");
+    // The corner, though, is the hallmark, and an animal is no less ours.
+    // It sits in the quiet zone at the corner with no finder pattern; the
+    // decode tests above paint it on and read every animal back.
+    assert.match(body, /<GloobalQrCornerMark corner=\{corner\} face=\{face\} \/>/);
+    assert.match(body, /gloobalQrCornerBadge\(\s*layout\.total - GLOOBAL_ANIMAL_QR_QUIET \* 2,\s*GLOOBAL_ANIMAL_QR_QUIET\s*\)/);
+  });
+
+  test("the mark is written once, and all four codes draw that one", () => {
+    // Two SVGs and two canvas paths. It used to be spelled out twice and
+    // absent twice, which is how the animal ended up without one.
+    assert.equal((CARD.match(/<GloobalQrCornerMark /g) || []).length, 2, "an SVG is not using the shared mark");
+    assert.equal((CARD.match(/gloobalQrPaintCornerMark\(/g) || []).length, 3, "a canvas path is not using the shared mark");
+    // And the shared piece knows nothing about which code it is on: the
+    // quiet zone is passed in, because the two constants happen to be 4
+    // today and a mark that silently relied on that is a bug in waiting.
+    assert.match(CARD, /function gloobalQrCornerBadge\(size, quiet\)/);
   });
   test("Share sends the animal that is on screen", () => {
     assert.match(CARD, /animal: animalLayout \? qrStyle : null/);

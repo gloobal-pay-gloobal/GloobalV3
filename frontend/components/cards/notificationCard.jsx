@@ -125,9 +125,14 @@ function gloobalNotifCardPages(meta, when) {
   if (meta.counterpartySymbolId) {
     pages.push({ key: "id", label: <GloobalWordmark suffix=" ID" />, symbols: meta.counterpartySymbolId });
   }
-  if (meta.referenceId) {
-    pages.push({ key: "txn", label: "Transaction ID", symbols: meta.referenceId });
-  }
+  // NO TRANSACTION ID PAGE. It was here and it is gone, and the two
+  // identifiers being different lengths is the whole reason: a Gloobal ID
+  // is somebody, a transaction reference is twenty symbols of bookkeeping.
+  // On a card people glance at, the long one filled the widest page in the
+  // pager with the one thing on it nobody reads off a notification — it is
+  // read off a receipt, by someone who has gone looking for it, which is
+  // where it still is. `metadata.referenceId` is untouched: the card still
+  // seeds its disc colour from it, and the receipt still prints it.
   if (when) {
     pages.push({ key: "when", label: "Date and time", text: when });
   }

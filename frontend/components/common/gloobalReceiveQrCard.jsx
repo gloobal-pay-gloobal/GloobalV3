@@ -115,7 +115,14 @@ function gloobalQrCornerBadge(size, quiet) {
     // The ring, at the same fraction of the diameter as the 2px border on the
     // 22px GH2HFlipCircle the tiles draw.
     stroke: r * 2 * 0.09,
-    font: r * 1.2
+    // The letter inside it. Was r * 1.2 — 60% of the disc's diameter, which
+    // is how a badge is lettered, not how a © is. At that size the glyph
+    // ran up against the ring and the two read as one blob at the size this
+    // mark is actually seen: a few millimetres on a printed code, and
+    // smaller than a fingernail on a phone. Smaller letter, same disc, so
+    // the mark covers exactly the modules it covered before and the scan
+    // numbers below it are unaffected.
+    font: r * 0.95
   };
 }
 

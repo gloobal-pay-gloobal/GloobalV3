@@ -115,11 +115,33 @@ function gloobalNotifCardPages(meta, when) {
   // two figures are the same number said twice.
   const crossed = meta.counterCurrency && meta.currency && meta.counterCurrency !== meta.currency;
   if (crossed && money(meta.counterAmount, meta.counterCurrency)) {
+    // THE RATE'S DIRECTION IS THE RECORDED ONE, NOT THE VIEWER'S.
+    //
+    // The server stores one rate per payment: 1 unit of the RECEIVER's
+    // currency in the SENDER's. receiptPaymentConversion prints exactly
+    // that, and this has to print the same sentence or one payment carries
+    // two rates — which is how a record stops reconciling.
+    //
+    // This used to read `1 {meta.currency} = rate {meta.counterCurrency}`,
+    // keying off the VIEWER's own currency. That is right on the received
+    // leg by luck, because there the viewer IS the receiver. On the sent
+    // leg it inverts the fraction while keeping the number: paying £20 from
+    // India, the payer's card said "1 INR = 105.260000 GBP" — one rupee
+    // buying a hundred pounds, wrong by four orders of magnitude, on the
+    // notification for a payment they had just made. The payee's card, for
+    // the same payment, said "1 GBP = 105.260000 INR".
+    //
+    // Inverting the number instead of the labels would be worse: an
+    // inverted rate is a computed rate, it rounds, and it would no longer
+    // match the figure on the record. Same reason the receipt gives for
+    // stating it this way round even though it reads less naturally.
+    const base = sent ? meta.counterCurrency : meta.currency;
+    const quote = sent ? meta.currency : meta.counterCurrency;
     pages.push({
       key: "money",
       label: sent ? "They received" : "Sender paid",
       text: money(meta.counterAmount, meta.counterCurrency),
-      note: meta.fxRate ? `1 ${meta.currency} = ${Number(meta.fxRate).toFixed(6)} ${meta.counterCurrency}` : null
+      note: meta.fxRate ? `1 ${base} = ${Number(meta.fxRate).toFixed(6)} ${quote}` : null
     });
   }
   if (meta.counterpartySymbolId) {
@@ -137,6 +159,36 @@ function gloobalNotifCardPages(meta, when) {
     pages.push({ key: "when", label: "Date and time", text: when });
   }
   return pages;
+}
+
+// ── "Date and time" means a date and a time ──────────────────────────────
+//
+// This page used to print the same string as the little stamp on a plain
+// row: "Just now", "3h", "Tue". That is the right thing for a stamp in a
+// list, where the question is "how fresh is this?", and the wrong thing
+// under a label that says Date and time, where the question is "when did
+// this happen?" — the one you ask when you are reconciling against a bank
+// statement, and the one "3h" cannot answer an hour later.
+//
+// So the page prints the payment's own instant, the way the receipt prints
+// it: the date, then the app's one clock. formatClockTime is 24-hour
+// HH:MM:SS by deliberate policy (see backend/utils/format.js) — this app is
+// built to be read by someone who reads no English, and "2:07 PM" is an
+// English abbreviation of a Latin phrase.
+//
+// `metadata.occurredAt` is when the MONEY moved; the row's createdAt is when
+// the inbox heard about it. Usually the same millisecond, which is why the
+// difference was easy to miss — but the notification is a pointer at a
+// payment, and it should carry the payment's time. Rows written before the
+// server recorded it fall back to their own createdAt.
+function gloobalNotifCardWhen(meta, row) {
+  const iso = (meta && meta.occurredAt) || (row && row.createdAt) || null;
+  if (!iso) return "";
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  const date = at.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+  const clock = typeof formatClockTime === "function" ? formatClockTime(at) : "";
+  return clock ? `${date} · ${clock}` : date;
 }
 
 // The dots. Not a scrollbar: five of them at most, and the one you are on is
@@ -162,7 +214,11 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
   const sent = meta.direction === "sent";
   const [page, setPage] = useState41(0);
   const [turning, setTurning] = useState41(false);
-  const pages = gloobalNotifCardPages(meta, when);
+  // `when` is still taken as a prop, and still ignored for this page: the
+  // sheet passes the relative stamp it draws on plain rows, and the card
+  // wants the payment's own instant. Kept in the signature because the
+  // sheet has no other reason to know the difference.
+  const pages = gloobalNotifCardPages(meta, gloobalNotifCardWhen(meta, row));
   const total = pages.length;
   const current = total ? pages[Math.min(page, total - 1)] : null;
   const turn = () => {

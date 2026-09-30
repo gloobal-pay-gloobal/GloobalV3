@@ -6921,6 +6921,17 @@ async function recordPaymentNotifications({
             'metadata.counterAmount': entry.counterAmount,
             'metadata.counterCurrency': entry.counterCurrency,
             'metadata.fxRate': storedRate,
+            // WHEN THE MONEY MOVED, which is not when this row was written.
+            //
+            // They are usually milliseconds apart, and that is exactly why
+            // it was easy to leave out: the card printed the notification's
+            // own createdAt and looked right. But a notification is a
+            // pointer at a payment, and the time on it should be the
+            // payment's — the same instant the receipt prints, the same one
+            // History sorts by. A row re-written after a retry, or backfilled,
+            // would otherwise date the payment to whenever the inbox caught
+            // up with it.
+            'metadata.occurredAt': transaction.createdAt || null,
           },
         },
         { upsert: true }
@@ -6984,7 +6995,15 @@ async function sendPaymentPushes(legs, transaction) {
   // notification found no row, and the link was dropped without opening
   // any receipt. _id stays as a fallback for a row minted without one.
   const transactionId = String(transaction.referenceId || transaction._id);
-  const timestamp = Date.now();
+  // The instant the platform PRINTS on the notification, and it is the
+  // payment's own — the same one the card's Date and time page shows and
+  // the receipt prints. It was Date.now(), the moment this function ran,
+  // which is the same thing on a normal send and is not on a retry, a
+  // backfill, or a device that was offline when the money moved: the
+  // notification would then be stamped with when it was finally pushed
+  // rather than when it happened.
+  const occurredAt = transaction.createdAt ? new Date(transaction.createdAt).getTime() : NaN;
+  const timestamp = Number.isFinite(occurredAt) ? occurredAt : Date.now();
   const totals = { sent: 0, removed: 0, failed: 0, skipped: 0 };
 
   // The coloured disc this payment is drawn with in the app, as a path the
@@ -7058,6 +7077,11 @@ function publicNotification(doc) {
       counterAmount: typeof metadata.counterAmount === 'number' ? metadata.counterAmount : null,
       counterCurrency: metadata.counterCurrency ?? null,
       fxRate: typeof metadata.fxRate === 'number' ? metadata.fxRate : null,
+      // When the money moved, as an instant. Null on every row written
+      // before this was recorded, and the card falls back to its own
+      // createdAt there — honest rather than absent, since for those rows
+      // the two really were written together.
+      occurredAt: isoOrNull(metadata.occurredAt),
     },
   };
 }

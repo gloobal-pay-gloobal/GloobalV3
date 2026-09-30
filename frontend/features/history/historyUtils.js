@@ -139,6 +139,47 @@ function findSharePaymentSource(row, sendHistory, receiveHistory) {
   return search(sendHistory, "sent") || search(receiveHistory, "received");
 }
 
+// ── Which figure on a row is the viewer's own money, and in what ─────────
+//
+// A payment has two sides and they are not the same number, so every screen
+// that headlines one has to pick, and they all have to pick the SAME one or
+// the app tells two stories about one payment.
+//
+// buildHistoryReceipt below already picks correctly, in four lines buried in
+// its middle. This lifts that choice out so the tray banner can make it too
+// — and it is here because the banner was the surface that got it wrong.
+//
+//   `senderAmount`/`senderSideCurrency`, when present, are what the SERVER
+//   recorded leaving the account. A row written by this device the instant
+//   a payment succeeded also carries `amount`, which is this device's own
+//   pre-settlement ESTIMATE of that debit. The two are not equal: paying
+//   £20 from India was recorded at ₹2,105.20 and estimated at ₹2,396.05,
+//   because the estimate is quoted before the rate is struck. The receipt,
+//   the notification card and the server's push all show ₹2,105.20; the
+//   tray banner showed ₹2,396.05, because it read `amount` — a figure
+//   about money, wrong by 14%, in a notification.
+//
+//   `currency` is the row's own, from mapServerTransaction. Falling back to
+//   the DEVICE's currency is the older bug this one rhymes with ("the rupee
+//   number wearing a dollar sign"): it makes the figure wrong whenever the
+//   dial country is not the payment's, which is every cross-border payment
+//   the moment somebody opens the country picker.
+//
+// `fallbackCurrency` is used only when the row carries none at all.
+function gloobalOwnMoneyOf(t, fallbackCurrency) {
+  const row = t || {};
+  const figure = (value) =>
+    value != null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+  const recordedSender = figure(row.senderAmount);
+  if (recordedSender != null && row.senderSideCurrency) {
+    return { amount: recordedSender, currency: String(row.senderSideCurrency) };
+  }
+  return {
+    amount: figure(row.amount) || 0,
+    currency: row.currency || fallbackCurrency || "USD"
+  };
+}
+
 function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = null) {
   // The currency THIS ROW's amount is in, which is not always the viewer's.
   //

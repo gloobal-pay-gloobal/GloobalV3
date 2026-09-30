@@ -808,7 +808,13 @@ export async function installApi(context, options = {}) {
         // The rate, as the real notification carries it: 1 unit of the
         // receiver's currency into the sender's, in the direction it is
         // stored, never inverted.
-        fxRate: ledgerRow.rate
+        fxRate: ledgerRow.rate,
+        // When the MONEY moved, which is what the card's "Date and time"
+        // page prints. Distinct from the row's own createdAt, which is when
+        // the inbox heard about it — the same millisecond here, as on the
+        // real server, but the card reads this one and the fake has to
+        // carry what the card reads.
+        occurredAt: ledgerRow.createdAt
       };
       addNotification(sender.symbolId, {
         title: "Money sent",

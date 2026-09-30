@@ -61,7 +61,15 @@ function notificationsHarness() {
   const store = new Map();
   const shown = [];
   class Notification {
-    constructor(title, options) { shown.push({ title, tag: options && options.tag }); }
+    constructor(title, options) {
+      shown.push({
+        title,
+        body: options && options.body,
+        icon: options && options.icon,
+        badge: options && options.badge,
+        tag: options && options.tag
+      });
+    }
   }
   Notification.permission = "granted";
   const window = {
@@ -313,5 +321,180 @@ describe("the tray banner names the figure the server recorded", () => {
     } finally {
       await context.close();
     }
+  });
+});
+
+
+// ── The two things the OPERATING SYSTEM draws ────────────────────────────
+//
+// Everything above compares wording. This compares the two option bags
+// actually handed to showNotification — the only two objects a person ever
+// sees outside the app — and it exists because the earlier checks did not.
+//
+// They reach the tray by completely separate routes:
+//
+//   app open    the page builds the options itself (showPaymentNotification)
+//   app closed  the SERVER builds a payload, the push service delivers it,
+//               and the service worker turns it into options
+//               (gloobalParsePushPayload -> gloobalNotificationOptions)
+//
+// Nothing in between forces those to agree. The wording is shared by
+// construction; the icon, the badge and the tag are each assembled twice,
+// and a badge that differed by path is exactly the kind of thing that
+// survives every source-level check and is obvious on a phone.
+//
+// So this builds both, for one payment, and compares them field by field.
+// The closed-app side runs the REAL worker code — imported, not restated —
+// against a payload in the shape sendPaymentPushes sends, with the server's
+// own text and disc functions producing its contents.
+describe("the notification the OS draws is the same one, open or closed", () => {
+  // The payment: India pays the UK. The figures are the server's.
+  const PAYMENT = {
+    referenceId: "\u25A0\u00D7\u25A1\u00D7+\u25CB\u25CF=\u25CB\u25CB\u25A1+\u2212\u2212=\u2212+\u25A1\u25A1\u00D7",
+    direction: "sent",
+    amount: 2105.2,
+    currency: "INR",
+    counterpartyName: "Tom Whitfield",
+    // The instant the money moved. Both paths stamp the notification with
+    // it, so the platform prints the payment's time rather than the moment
+    // the banner happened to be drawn.
+    occurredAt: "2026-09-30T07:21:32.783Z"
+  };
+
+  // What the PAGE hands showNotification, from the real hook.
+  const foregroundOptions = () => {
+    const shown = [];
+    const store = new Map();
+    class FakeNotification { constructor(title, options) { shown.push({ title, ...options }); } }
+    FakeNotification.permission = "granted";
+    const window = {
+      localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k)
+      },
+      Notification: FakeNotification
+    };
+    const ctx = vm.createContext({ window, Notification: FakeNotification, navigator: {}, JSON, Number, Date, G_LOGO_DATA_URI: "" });
+    const lift = (source, name) => {
+      const at = source.indexOf(`function ${name}(`);
+      return source.slice(at, source.indexOf("\n}\n", at) + 3);
+    };
+    const cut = (text, from, to) => text.slice(text.indexOf(from), text.indexOf(to, text.indexOf(from)) + to.length);
+    const currencies = read("backend/data/currencies.js");
+    const format = read("backend/utils/format.js");
+    const card = read("frontend/components/cards/notificationCard.jsx");
+    vm.runInContext([
+      cut(currencies, "var CURRENCY_SYMBOL = {", "\n};\n"),
+      cut(format, "var GLOOBAL_ZERO_DECIMAL_CURRENCIES = [", "\n];\n"),
+      lift(format, "currencyDecimals"),
+      lift(format, "fmt"),
+      lift(format, "currencySuffix"),
+      lift(format, "fmtMoney"),
+      lift(read("frontend/components/common/flipIcons.jsx"), "flipSeedHash"),
+      "var LOGO_FLIP_COLORS = new Array(8);",
+      lift(card, "gloobalNotifHeadline"),
+      lift(card, "gloobalNotifSubline"),
+      lift(card, "gloobalNotifDiscIndex"),
+      lift(card, "gloobalNotifDiscIcon")
+    ].join("\n"), ctx);
+    vm.runInContext(read("frontend/hooks/usePaymentNotifications.js"), ctx);
+    ctx.notifyPaymentSent({
+      // confirmedTxnId is the server's referenceId after a settled send —
+      // App.jsx returns `transaction.referenceId || txnId` — which is what
+      // makes the two discs agree rather than merely look similar.
+      txnId: PAYMENT.referenceId,
+      amount: PAYMENT.amount,
+      currencyCode: PAYMENT.currency,
+      to: PAYMENT.counterpartyName,
+      occurredAt: PAYMENT.occurredAt
+    });
+    assert.equal(shown.length, 1, "the page showed no banner");
+    return shown[0];
+  };
+
+  // What the SERVICE WORKER hands showNotification, from the real worker.
+  const closedOptions = async () => {
+    const { paymentBannerText, notifDiscIcon } = await import("../server/lib/notificationText.js");
+    const sw = await import("../gloobal-essentials-preview/src/push-sw-core.js");
+    const banner = paymentBannerText(PAYMENT);
+    // The payload sendPaymentPushes sends. Asserted against the route's
+    // source below so this cannot quietly drift from it.
+    const payload = {
+      v: 1,
+      category: "transactional",
+      type: "payment.sent",
+      notificationId: "ntf-1",
+      transactionId: PAYMENT.referenceId,
+      title: banner.title,
+      body: banner.body,
+      icon: notifDiscIcon(PAYMENT.referenceId),
+      url: `/?txn=${PAYMENT.referenceId}`,
+      tag: `gloobal-txn-${PAYMENT.referenceId}`,
+      timestamp: Date.parse(PAYMENT.occurredAt)
+    };
+    const parsed = sw.gloobalParsePushPayload(JSON.stringify(payload));
+    return { title: parsed.title, ...sw.gloobalNotificationOptions(parsed) };
+  };
+
+  test("EVERY field of the two option bags is identical", async () => {
+    const open = foregroundOptions();
+    const closed = await closedOptions();
+    // THE UNION OF BOTH KEY SETS, not a list chosen here. Choosing the
+    // fields to compare is how this was got wrong the first time: an
+    // earlier version of this test checked title, body, icon, badge and
+    // tag, passed, and missed that the worker sent a `timestamp` and a
+    // `renotify` the page did not — and `timestamp` is the instant the
+    // platform PRINTS on the notification. A field that exists on one side
+    // and not the other has to fail here, without anybody remembering to
+    // add it.
+    const fields = [...new Set([...Object.keys(open), ...Object.keys(closed)])].sort();
+    for (const field of fields) {
+      // `data` is the raw payload, which only the closed path has and
+      // which nothing draws — it is what a tap reads to find the receipt.
+      if (field === "data") continue;
+      assert.equal(open[field], closed[field],
+        `${field} differs: app open ${JSON.stringify(open[field])} vs app closed ${JSON.stringify(closed[field])}`);
+    }
+    assert.ok(fields.includes("timestamp"), "neither path is stamping a time any more");
+    // And they are the values we mean, not two matching mistakes.
+    assert.equal(open.title, "\u22122,105.20\u20B9");
+    assert.equal(open.body, "To Tom Whitfield");
+    assert.match(open.icon, /^\/icons\/notif\/disc-[0-7]\.png$/);
+    assert.equal(open.badge, "/icons/icon-192.png");
+    assert.equal(open.timestamp, Date.parse(PAYMENT.occurredAt), "the notification is not stamped with the payment's time");
+  });
+
+  test("the payload built here is the payload the route really sends", () => {
+    // The closed-app half of the test above is only as good as this.
+    const server = read("server/server.js");
+    const route = server.slice(server.indexOf("async function sendPaymentPushes"), server.indexOf("const isoOrNull"));
+    for (const key of ["v: 1", "category: 'transactional'", "type: leg.type", "notificationId: leg.notificationId",
+                       "transactionId", "title: leg.title", "body: leg.body", "icon", "url: `/?txn=", "tag: `gloobal-txn-", "timestamp"]) {
+      assert.ok(route.includes(key), `sendPaymentPushes no longer sends ${key}`);
+    }
+    assert.match(route, /const icon = transaction\.referenceId \? notifDiscIcon\(String\(transaction\.referenceId\)\) : null;/);
+    // And the stamp is the payment's instant, not the moment the push was
+    // sent — which differ on a retry, a backfill, or a device that was
+    // offline when the money moved.
+    assert.match(route, /const occurredAt = transaction\.createdAt \? new Date\(transaction\.createdAt\)\.getTime\(\) : NaN;/);
+    assert.match(route, /const timestamp = Number\.isFinite\(occurredAt\) \? occurredAt : Date\.now\(\);/);
+  });
+
+  test("a push with no disc still matches what the page would show without one", () => {
+    // A payment minted without a referenceId sends icon: null, and the
+    // worker falls back to the app icon — which is what the page falls back
+    // to as well. The two agree in the degraded case too.
+    return import("../gloobal-essentials-preview/src/push-sw-core.js").then((sw) => {
+      const parsed = sw.gloobalParsePushPayload(JSON.stringify({ title: "x", body: "y", icon: null }));
+      const opts = sw.gloobalNotificationOptions(parsed);
+      assert.equal(opts.icon, "/icons/icon-192.png");
+      assert.equal(opts.badge, "/icons/icon-192.png");
+      const hook = read("frontend/hooks/usePaymentNotifications.js");
+      assert.match(hook, /icon: icon \|\| GLOOBAL_NOTIF_APP_ICON,/);
+      assert.match(hook, /badge: GLOOBAL_NOTIF_APP_ICON,/);
+      assert.match(read("frontend/hooks/usePaymentNotifications.js"),
+        /var GLOOBAL_NOTIF_APP_ICON = "\/icons\/icon-192\.png";/);
+    });
   });
 });

@@ -205,7 +205,7 @@ var GLOOBAL_NOTIF_APP_ICON = "/icons/icon-192.png";
 // it has committed to showing one rather than when the tray updates. The
 // callers use the return value only for their own dedupe bookkeeping, and
 // they have already marked the transaction seen before calling.
-function showPaymentNotification({ title, body, tag, icon }) {
+function showPaymentNotification({ title, body, tag, icon, timestamp }) {
   if (!paymentNotificationsGranted()) return false;
   // `tag` collapses repeats of the same payment into one entry in the
   // tray rather than stacking duplicates.
@@ -217,7 +217,24 @@ function showPaymentNotification({ title, body, tag, icon }) {
   // bare mark, which is what this always used to show, if no disc was
   // resolved. `badge` stays the mark: the badge is drawn as a monochrome
   // silhouette, so a colour there would be thrown away.
-  const options = { body, tag, icon: icon || GLOOBAL_NOTIF_APP_ICON, badge: GLOOBAL_NOTIF_APP_ICON };
+  // `timestamp` is the instant the platform PRINTS on the notification, and
+  // it is the payment's, not this moment's. Left unset it defaults to when
+  // the banner was shown — which is close enough while the app is open and
+  // wrong for the same payment arriving by push after a delay. The worker
+  // has always sent one; this path sent none, so one payment was timed two
+  // ways depending on which route it took.
+  //
+  // `renotify: false` for the same reason it is false there: these two share
+  // a tag, so the second of them replaces the first rather than buzzing
+  // again, and a repeat is a retry rather than news.
+  const options = {
+    body,
+    tag,
+    icon: icon || GLOOBAL_NOTIF_APP_ICON,
+    badge: GLOOBAL_NOTIF_APP_ICON,
+    timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
+    renotify: false
+  };
   // Both paths refused. Failing quietly is correct: a missing notification
   // must never surface as a broken payment.
   const showDirectly = () => {
@@ -307,7 +324,7 @@ function gloobalReceivedBaselineSplit(baseline, attemptStartedAt, rows) {
 // in the other. `currencySymbol` is still accepted because callers and
 // stored payloads carry it, and a notification is not worth breaking over a
 // field on its way out; `currencyCode` is what actually formats the amount.
-function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currencyCode, counterpartyName }) {
+function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currencyCode, counterpartyName, occurredAt }) {
   if (!paymentNotificationsGranted()) return false;
   if (paymentAlreadyNotified(txnId)) return false;
   markPaymentNotified(txnId);
@@ -326,13 +343,17 @@ function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currency
     title,
     body: gloobalNotifSubline(meta),
     tag: `gloobal-txn-${txnId || "unknown"}`,
-    icon: gloobalNotifDiscIcon(txnId)
+    icon: gloobalNotifDiscIcon(txnId),
+    // When the money moved, which is what the platform prints on the
+    // notification. The same instant the card's Date and time page shows
+    // and the receipt prints.
+    timestamp: occurredAt ? Date.parse(occurredAt) : NaN
   });
 }
 
 // Money has arrived. The one people actually want.
-function notifyPaymentReceived({ txnId, amount, currencySymbol, currencyCode, from }) {
-  return notifyPaymentEvent({ direction: "received", txnId, amount, currencySymbol, currencyCode, counterpartyName: from });
+function notifyPaymentReceived({ txnId, amount, currencySymbol, currencyCode, from, occurredAt }) {
+  return notifyPaymentEvent({ direction: "received", txnId, amount, currencySymbol, currencyCode, counterpartyName: from, occurredAt });
 }
 
 // Confirmation of a payment this device just made. It reads exactly like an
@@ -341,8 +362,8 @@ function notifyPaymentReceived({ txnId, amount, currencySymbol, currencyCode, fr
 // screen — true at the moment it appears, and wrong an hour later when it is
 // one line in a tray next to the other one and has to say the same kind of
 // thing.
-function notifyPaymentSent({ txnId, amount, currencySymbol, currencyCode, to }) {
-  return notifyPaymentEvent({ direction: "sent", txnId, amount, currencySymbol, currencyCode, counterpartyName: to });
+function notifyPaymentSent({ txnId, amount, currencySymbol, currencyCode, to, occurredAt }) {
+  return notifyPaymentEvent({ direction: "sent", txnId, amount, currencySymbol, currencyCode, counterpartyName: to, occurredAt });
 }
 
 // Called after a payment succeeds. Asks at most once in the account's

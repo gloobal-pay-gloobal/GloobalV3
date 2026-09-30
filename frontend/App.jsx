@@ -743,7 +743,8 @@ function GloobalId() {
       amount: sentMoney.amount,
       currencySymbol: CURRENCY_SYMBOL[sentMoney.currency] || "",
       currencyCode: sentMoney.currency,
-      to: entry.name
+      to: entry.name,
+      occurredAt: entry.occurredAt || null
     });
     offerPaymentNotificationsAfterPayment();
     // Tags which side of the account (Personal/Creator) this
@@ -2291,7 +2292,8 @@ function GloobalId() {
             amount: got.amount,
             currencySymbol: CURRENCY_SYMBOL[got.currency] || "",
             currencyCode: got.currency,
-            from: entry.name
+            from: entry.name,
+            occurredAt: entry.occurredAt || null
           });
         });
       } catch (e) {

@@ -6995,7 +6995,15 @@ async function sendPaymentPushes(legs, transaction) {
   // notification found no row, and the link was dropped without opening
   // any receipt. _id stays as a fallback for a row minted without one.
   const transactionId = String(transaction.referenceId || transaction._id);
-  const timestamp = Date.now();
+  // The instant the platform PRINTS on the notification, and it is the
+  // payment's own — the same one the card's Date and time page shows and
+  // the receipt prints. It was Date.now(), the moment this function ran,
+  // which is the same thing on a normal send and is not on a retry, a
+  // backfill, or a device that was offline when the money moved: the
+  // notification would then be stamped with when it was finally pushed
+  // rather than when it happened.
+  const occurredAt = transaction.createdAt ? new Date(transaction.createdAt).getTime() : NaN;
+  const timestamp = Number.isFinite(occurredAt) ? occurredAt : Date.now();
   const totals = { sent: 0, removed: 0, failed: 0, skipped: 0 };
 
   // The coloured disc this payment is drawn with in the app, as a path the

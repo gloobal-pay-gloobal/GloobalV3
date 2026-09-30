@@ -6921,6 +6921,17 @@ async function recordPaymentNotifications({
             'metadata.counterAmount': entry.counterAmount,
             'metadata.counterCurrency': entry.counterCurrency,
             'metadata.fxRate': storedRate,
+            // WHEN THE MONEY MOVED, which is not when this row was written.
+            //
+            // They are usually milliseconds apart, and that is exactly why
+            // it was easy to leave out: the card printed the notification's
+            // own createdAt and looked right. But a notification is a
+            // pointer at a payment, and the time on it should be the
+            // payment's — the same instant the receipt prints, the same one
+            // History sorts by. A row re-written after a retry, or backfilled,
+            // would otherwise date the payment to whenever the inbox caught
+            // up with it.
+            'metadata.occurredAt': transaction.createdAt || null,
           },
         },
         { upsert: true }
@@ -7058,6 +7069,11 @@ function publicNotification(doc) {
       counterAmount: typeof metadata.counterAmount === 'number' ? metadata.counterAmount : null,
       counterCurrency: metadata.counterCurrency ?? null,
       fxRate: typeof metadata.fxRate === 'number' ? metadata.fxRate : null,
+      // When the money moved, as an instant. Null on every row written
+      // before this was recorded, and the card falls back to its own
+      // createdAt there — honest rather than absent, since for those rows
+      // the two really were written together.
+      occurredAt: isoOrNull(metadata.occurredAt),
     },
   };
 }

@@ -198,6 +198,9 @@ describe("in the app", () => {
           metadata: {
             transactionId: "txn-1",
             referenceId: "■×□×+○●=○○□+−−=−+□□×",
+            // A fixed instant, far from today, so "the card shows the
+            // payment's time" and "the card shows now" cannot look alike.
+            occurredAt: "2031-03-14T09:26:53.000Z",
             direction: "received",
             amount: 2000,
             currency: B.currency,
@@ -232,11 +235,29 @@ describe("in the app", () => {
       assert.match(seen[0], /^From /);
       assert.match(seen[1], /Sender paid/);
       assert.match(seen[1], /0\.009165/, "the rate is not the one recorded");
+      // THE RECORDED DIRECTION: 1 unit of the RECEIVER's currency in the
+      // SENDER's, which is the one sentence receiptPaymentConversion prints
+      // too. B is the receiver here, so the base is B's currency.
+      assert.match(seen[1], new RegExp(`1 ${B.currency} = 0\\.009165 EUR`),
+        `the rate is stated in the wrong direction: ${seen[1]}`);
       // Their Gloobal ID — ten symbols, someone you can pay again — and not
       // the twenty-symbol transaction reference, which is a receipt's job.
       assert.ok(!seen.some((s) => /Transaction ID/.test(s)), "the transaction id page is back");
       assert.equal((seen[2].match(/[−+×=○□●■]/g) || []).length, A.symbolId.length);
+      // A DATE AND A TIME, not "3h". The page used to print the same
+      // relative stamp the plain rows carry, which answers "how fresh is
+      // this?" — a different question from the one its label asks, and one
+      // that stops answering anything an hour later.
       assert.match(seen[3], /Date and time/);
+      // The receipt's own date format, so the notification and the
+      // document it opens print one payment's time one way.
+      assert.match(seen[3], /\w{3} \d{1,2}, \d{4} · \d{2}:\d{2}:\d{2}/,
+        `the Date and time page is not a date and a time: ${seen[3]}`);
+      assert.ok(!/Just now|^\d+[mh]$|ago/.test(seen[3]), "the relative stamp is back on the Date and time page");
+      // And it is the PAYMENT's instant, not this row's. The seed below
+      // dates the payment to a fixed day; a card reading its own createdAt
+      // would print today.
+      assert.match(seen[3], /Mar 14, 2031/, `the card is not showing the payment's own time: ${seen[3]}`);
       // And it came back round to the first page.
       assert.match((await card.getByTestId("notification-card-page").innerText()).trim(), /^From/);
       assert.deepEqual(errors, []);
@@ -451,5 +472,76 @@ describe("the list does not squash what it holds", () => {
   test("and nothing in it is allowed to shrink anyway", () => {
     assert.match(card, /flexShrink: 0,\s*\n\s*overflow: "hidden"/);
     assert.match(sheet, /width: "100%",\s*\n(\s*\/\/[^\n]*\n)*\s*flexShrink: 0,/);
+  });
+});
+
+// ── One payment, one rate ────────────────────────────────────────────────
+//
+// The server records ONE rate per payment: 1 unit of the receiver's
+// currency in the sender's. The receipt prints exactly that
+// (receiptPaymentConversion), and the card has to print the same sentence,
+// or the payer's notification and the payee's notification about one
+// payment state two different rates.
+//
+// They did. The note keyed off the VIEWER's own currency, which is the
+// receiver's on the received leg — correct by luck — and the sender's on
+// the sent leg, where it inverts the fraction while keeping the number.
+// Paying £20 from India, the payer's card read "1 INR = 105.260000 GBP":
+// one rupee buying a hundred pounds, on the notification for a payment
+// they had just made.
+//
+// So this runs the real page builder over BOTH legs of one payment and
+// requires them to agree — a property that cannot be satisfied by an
+// inverted label, and that no single-leg test would have caught.
+describe("both sides of one payment state one rate", () => {
+  const card = readSource(CARD);
+  const pagesOf = new Function(`
+    ${readSource("backend/data/currencies.js").match(/var CURRENCY_SYMBOL = \{[\s\S]*?\n\};\n/)[0]}
+    ${readSource("backend/utils/format.js").match(/var GLOOBAL_ZERO_DECIMAL_CURRENCIES = \[[\s\S]*?\n\];\n/)[0]}
+    ${["currencyDecimals", "fmt", "currencySuffix", "fmtMoney"].map((n) => {
+      const src = readSource("backend/utils/format.js");
+      const at = src.indexOf(`function ${n}(`);
+      return src.slice(at, src.indexOf("\n}\n", at) + 3);
+    }).join("\n")}
+    ${card
+      .slice(card.indexOf("function gloobalNotifCardPages("), card.indexOf("\n}\n", card.indexOf("function gloobalNotifCardPages(")) + 3)
+      // The one JSX expression in the function — the wordmark on the ID
+      // page's label. Swapped for a plain string so `new Function` can
+      // parse the rest; no test here reads that label.
+      .replace(/<GloobalWordmark[^>]*\/>/, '"Gloobal ID"')}
+    return gloobalNotifCardPages;
+  `)();
+
+  // India pays the UK: ₹2,105.20 leaves, £20 arrives, recorded at 105.26 —
+  // which is INR per GBP, the receiver's currency as the base.
+  const RATE = 105.26;
+  const sent = {
+    direction: "sent", amount: 2105.2, currency: "INR",
+    counterAmount: 20, counterCurrency: "GBP", fxRate: RATE,
+    counterpartyName: "Tom Whitfield"
+  };
+  const received = {
+    direction: "received", amount: 20, currency: "GBP",
+    counterAmount: 2105.2, counterCurrency: "INR", fxRate: RATE,
+    counterpartyName: "Asha Raman"
+  };
+  const rateOf = (meta) => (pagesOf(meta, "").find((p) => p.key === "money") || {}).note;
+
+  test("the payer and the payee are told the same rate", () => {
+    assert.equal(rateOf(sent), rateOf(received),
+      `two rates for one payment: payer "${rateOf(sent)}" vs payee "${rateOf(received)}"`);
+  });
+
+  test("and it is the recorded direction, receiver's currency as the base", () => {
+    assert.equal(rateOf(sent), "1 GBP = 105.260000 INR");
+    // The inverted form, which is what the payer used to be shown.
+    assert.ok(!/1 INR = 105\.260000 GBP/.test(String(rateOf(sent))),
+      "the payer is being told one rupee buys a hundred pounds");
+  });
+
+  test("a domestic payment states no rate at all", () => {
+    // "1 INR = 1.000000 INR" asserts that an exchange took place.
+    const domestic = { ...sent, counterCurrency: "INR", counterAmount: 2105.2 };
+    assert.equal(pagesOf(domestic, "").find((p) => p.key === "money"), undefined);
   });
 });

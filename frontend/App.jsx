@@ -730,11 +730,19 @@ function GloobalId() {
     // so the FIRST payment gets no tray entry and only the offer — asking
     // and firing in the same breath would show a notification before the
     // person had answered the prompt about notifications.
+    // The figure and the currency come off the ROW, through the same choice
+    // the receipt makes (gloobalOwnMoneyOf). They used to be `entry.amount`
+    // — this device's pre-settlement estimate — formatted in whatever
+    // currency the dial country happened to be set to. Both were wrong, and
+    // wrong differently: paying £20 from India put "−2,396.05₹" in the tray
+    // over a payment the receipt, the notification card and the server's own
+    // push all called ₹2,105.20.
+    const sentMoney = gloobalOwnMoneyOf(entry, COUNTRY_CURRENCY[dialCountry.iso] || "USD");
     notifyPaymentSent({
       txnId: entry.txnId,
-      amount: entry.amount,
-      currencySymbol: CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "",
-      currencyCode: COUNTRY_CURRENCY[dialCountry.iso] || "USD",
+      amount: sentMoney.amount,
+      currencySymbol: CURRENCY_SYMBOL[sentMoney.currency] || "",
+      currencyCode: sentMoney.currency,
       to: entry.name
     });
     offerPaymentNotificationsAfterPayment();
@@ -2273,13 +2281,19 @@ function GloobalId() {
           .filter((row) => row.entry.direction === "received");
         const { news, history } = gloobalReceivedBaselineSplit(baseline, attemptStartedAt, receivedRows);
         history.forEach((entry) => markPaymentNotified(entry.txnId));
-        news.forEach((entry) => notifyPaymentReceived({
-          txnId: entry.txnId,
-          amount: entry.amount,
-          currencySymbol: CURRENCY_SYMBOL[COUNTRY_CURRENCY[dialCountry.iso] || "USD"] || "",
-          currencyCode: COUNTRY_CURRENCY[dialCountry.iso] || "USD",
-          from: entry.name
-        }));
+        // The row's own currency, not the device's. These rows come from
+        // mapServerTransaction, which carries one precisely so nothing
+        // downstream has to guess — and this was guessing.
+        news.forEach((entry) => {
+          const got = gloobalOwnMoneyOf(entry, COUNTRY_CURRENCY[dialCountry.iso] || "USD");
+          notifyPaymentReceived({
+            txnId: entry.txnId,
+            amount: got.amount,
+            currencySymbol: CURRENCY_SYMBOL[got.currency] || "",
+            currencyCode: got.currency,
+            from: entry.name
+          });
+        });
       } catch (e) {
         /* read-only; the dashboard works without it */
       }

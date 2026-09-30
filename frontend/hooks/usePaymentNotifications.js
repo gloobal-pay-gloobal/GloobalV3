@@ -177,6 +177,19 @@ function markPaymentNotified(txnId) {
   notifyWriteJson(GLOOBAL_NOTIFIED_TXNS_KEY, seen.slice(0, GLOOBAL_NOTIFIED_TXNS_MAX));
 }
 
+// The app icon, as the platform should draw it when there is no per-payment
+// disc — and as the BADGE always, which is the small monochrome silhouette
+// beside the app name.
+//
+// This is the same file the service worker names (GLOOBAL_PUSH_ICON in
+// push-sw-core.js), and that is the point: the two paths were passing
+// different things. The worker sent this path; this file sent
+// G_LOGO_DATA_URI, a 300x238 full-colour PNG inline. A badge is reduced to a
+// silhouette by the platform, so a full-colour logo and a square app icon do
+// not reduce to the same shape — one payment wore two marks depending on
+// whether the app happened to be open.
+var GLOOBAL_NOTIF_APP_ICON = "/icons/icon-192.png";
+
 // Two ways to put a notification in the tray, and the order between them
 // is not a preference.
 //
@@ -204,7 +217,7 @@ function showPaymentNotification({ title, body, tag, icon }) {
   // bare mark, which is what this always used to show, if no disc was
   // resolved. `badge` stays the mark: the badge is drawn as a monochrome
   // silhouette, so a colour there would be thrown away.
-  const options = { body, tag, icon: icon || G_LOGO_DATA_URI, badge: G_LOGO_DATA_URI };
+  const options = { body, tag, icon: icon || GLOOBAL_NOTIF_APP_ICON, badge: GLOOBAL_NOTIF_APP_ICON };
   // Both paths refused. Failing quietly is correct: a missing notification
   // must never surface as a broken payment.
   const showDirectly = () => {

@@ -15,7 +15,7 @@
 // Checked against source because server.js and the concatenated frontend
 // cannot be loaded into one process; server/tests/push-notifications.test.mjs
 // covers the server payload end to end.
-import test from "node:test";
+import test, { describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -197,4 +197,121 @@ test("App.jsx drives the poll through the baseline helpers", () => {
   assert.match(src, /gloobalReceivedBaselineBegin\(baseline, Date\.now\(\)\)/);
   assert.match(src, /gloobalReceivedBaselineSplit\(baseline, attemptStartedAt, receivedRows\)/);
   assert.doesNotMatch(src, /receivedNotifyPrimedRef/);
+});
+
+
+// ── The figure in the tray is the figure that moved ──────────────────────
+//
+// The three surfaces agreeing on WORDING was already pinned above and in
+// tests/notification-card. They still disagreed about the NUMBER, which is
+// the half that matters, and no source-level check could have seen it: the
+// wording is built by one shared function, and the amount is whatever each
+// caller hands it.
+//
+// What was wrong. `historyEntry.amount` is this device's pre-settlement
+// ESTIMATE of the debit; the receipt uses the server's recorded figure
+// instead, and so do the notification card and the push. Paying £20 from
+// India, the estimate is ₹2,396.05 and the recorded debit is ₹2,105.20 —
+// so the tray said "−2,396.05₹" about a payment every other surface called
+// ₹2,105.20. A figure about money, wrong by 14%, in a notification.
+//
+// The currency was wrong too, and independently: it came from the DEVICE's
+// dial country rather than the row, which is the same shape as the older
+// "rupee number wearing a dollar sign" bug in the history rows.
+//
+// So this runs a real payment and compares the banner the page actually
+// shows against the ledger row the server actually wrote. Nothing is read
+// from source; both numbers are observed.
+describe("the tray banner names the figure the server recorded", () => {
+  let harness;
+  before(async () => {
+    harness = await import("./browser-harness.mjs");
+    await harness.buildOnce();
+  });
+  after(async () => {
+    if (harness) await harness.teardown();
+  });
+
+  test("a cross-border payment: banner figure === recorded debit, in the sender's own currency", async () => {
+    const { openPage, login, skipPaymentUnlock, ACCOUNTS } = harness;
+    const A = ACCOUNTS.india;
+    const B = ACCOUNTS.britain;
+    const { page, context, api } = await openPage({
+      account: A,
+      permissions: ["geolocation", "notifications"],
+      geolocation: { latitude: 19.076, longitude: 72.8777 }
+    });
+    const tap = async (l) => { await l.waitFor({ timeout: 20000 }); await l.evaluate((n) => n.click()); };
+    try {
+      // Catch every notification the page tries to show, on BOTH paths —
+      // `new Notification` and the service worker's showNotification.
+      await page.addInitScript(() => {
+        window.__notifs = [];
+        const rec = (title, options) => window.__notifs.push({ title, body: options && options.body, badge: options && options.badge });
+        class FakeNotification { constructor(t, o) { rec(t, o); } }
+        FakeNotification.permission = "granted";
+        FakeNotification.requestPermission = () => Promise.resolve("granted");
+        Object.defineProperty(window, "Notification", { value: FakeNotification, writable: true, configurable: true });
+        if (typeof ServiceWorkerRegistration !== "undefined") {
+          ServiceWorkerRegistration.prototype.showNotification = function (t, o) { rec(t, o); return Promise.resolve(); };
+        }
+      });
+      await page.reload();
+      await page.waitForSelector("#root *", { timeout: 15000 });
+      await login(page, A);
+
+      await page.getByLabel("Send", { exact: true }).click({ force: true });
+      await page.getByLabel("Symbol \u2212", { exact: true }).waitFor({ timeout: 25000 });
+      for (const s of B.symbolId) await page.getByLabel(`Symbol ${s}`, { exact: true }).click({ force: true });
+      await page.getByRole("button", { name: "Search", exact: true }).click({ force: true });
+      const field = page.getByLabel(`Amount the receiver gets, in their own currency (${B.currency})`);
+      await field.waitFor({ timeout: 25000 });
+      await field.fill("20");
+      await page.waitForTimeout(700);
+      await page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last().click({ force: true });
+      const sheet = page.getByRole("dialog", { name: "Choose how to pay" });
+      await sheet.waitFor({ timeout: 20000 });
+      await tap(sheet.getByRole("button", { name: /Bank$/i }).first());
+      await page.getByLabel("Digit 1", { exact: true }).waitFor({ timeout: 25000 });
+      for (const d of A.pin) await tap(page.getByLabel(`Digit ${d}`, { exact: true }));
+      await page.waitForTimeout(2500);
+      const bio = page.getByLabel("Verify with fingerprint and Face ID", { exact: true });
+      if (await bio.count()) {
+        await tap(bio.first());
+        await page.waitForTimeout(2000);
+        if (await page.getByLabel("Digit 1", { exact: true }).count()) {
+          for (const d of A.pin) await tap(page.getByLabel(`Digit ${d}`, { exact: true }));
+          const submit = page.getByLabel("Log in", { exact: true });
+          if (await submit.count()) await tap(submit.last());
+        }
+      }
+      await skipPaymentUnlock(page);
+      await page.getByTestId("receipt-counterparty").waitFor({ timeout: 45000 });
+      await page.waitForTimeout(1500);
+
+      const shown = await page.evaluate(() => window.__notifs);
+      assert.equal(shown.length, 1, `expected one banner, got ${JSON.stringify(shown)}`);
+      const row = api.state.ledger[api.state.ledger.length - 1];
+      assert.ok(row, "the fake recorded no payment");
+
+      // The debit the SERVER recorded, formatted the way the app formats
+      // money: amount first, symbol after, grouped.
+      const expected = "\u2212" + row.sourceAmount.toLocaleString("en-US", {
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+      }) + "\u20B9";
+      assert.equal(shown[0].title, expected,
+        `the tray disagrees with the ledger: banner ${shown[0].title}, recorded ${row.sourceAmount} ${row.sourceCurrency}`);
+      // And it is the SENDER's side, not the receiver's £20 wearing a ₹.
+      assert.equal(row.sourceCurrency, "INR");
+      assert.ok(!shown[0].title.includes("20.00"), "the banner is showing the receiver's figure");
+      assert.equal(shown[0].body, "To Tom Whitfield");
+      // The badge is the app icon, the same file the worker names. It was
+      // an inline full-colour PNG here and a path there, and a badge is
+      // reduced to a silhouette — so one payment wore two marks depending
+      // on whether the app happened to be open.
+      assert.equal(shown[0].badge, "/icons/icon-192.png");
+    } finally {
+      await context.close();
+    }
+  });
 });

@@ -262,9 +262,28 @@ const app = express();
 // AFTER requireAuth/requireSelf, so a stranger cannot make the process
 // allocate 300 KB at all.
 const PROFILE_PHOTO_UPLOAD_PATH = /^\/api\/profile\/[^/]+\/photo\/?$/i;
+// POST /api/projects/:id/attachment, which declares its own 3 MB parser for
+// the same reason the photo route does.
+//
+// It had to be added here, and its absence is audit finding F6. A route can
+// mount its own body parser, but it cannot mount one EARLIER than this — so
+// the 64 KB limit ran first and rejected the request before the 3 MB parser
+// was ever reached. Base64 inflates by 4/3, which put the real ceiling at
+// about 48 KB against a frontend that offers 2 MB: the feature looked
+// implemented, was tested in isolation, and failed for every file anybody
+// would actually attach.
+//
+// The GLOBAL limit is unchanged at 64 KB and must stay there. This is a hole
+// cut for one route that asked for one, not a raised ceiling: every other
+// path on this API still gets 64 KB, which is what stops an unauthenticated
+// caller making the process allocate megabytes.
+const PROJECT_ATTACHMENT_PATH = /^\/api\/projects\/[^/]+\/attachment\/?$/i;
 const globalJsonParser = express.json({ limit: '64kb' });
 app.use((req, res, next) => {
   if (req.method === 'PUT' && PROFILE_PHOTO_UPLOAD_PATH.test(req.path)) return next();
+  // POST only: the GET on the same path returns the bytes and carries no
+  // body, so it has nothing to parse and no reason to skip anything.
+  if (req.method === 'POST' && PROJECT_ATTACHMENT_PATH.test(req.path)) return next();
   return globalJsonParser(req, res, next);
 });
 
@@ -1747,6 +1766,32 @@ app.post('/api/pin/reset', credentialLimit, async (req, res) => {
     );
 
     await consumeOtp(verifiedPinResetOtp);
+
+    // Every OTHER session for this account stops here — the same mechanism
+    // /api/pin/change uses, not a second one. See credentialsInvalidatedAt
+    // in models/User.js and the check in authenticatedUser.
+    //
+    // It was missing, and the gap was the shape of the problem rather than
+    // the size of it: PIN CHANGE revoked, PIN RESET did not. Those are the
+    // same act performed by two people — one who knows their PIN and one who
+    // does not — and only the second is ever performed under duress. Somebody
+    // who resets a PIN is, nine times out of ten, somebody who has just
+    // realised they have lost control of the account; leaving every existing
+    // session signed in is leaving the intruder signed in through the one
+    // action the victim would take to remove them.
+    //
+    // Stamped BEFORE the replacement token is minted, so the new token's iat
+    // cannot be older than the stamp and the caller is not signed out by
+    // their own reset. authenticatedUser compares with a strict `<`, so a
+    // token minted in the same millisecond survives.
+    const invalidatedAt = new Date();
+    await User.updateOne({ _id: user._id }, { $set: { credentialsInvalidatedAt: invalidatedAt } });
+
+    recordAudit({
+      userId: user._id, action: 'pin.reset', status: 'success',
+      message: 'PIN reset; other sessions revoked', req,
+      metadata: { symbolId: user.symbolId },
+    });
 
     return res.status(200).json({
       message: 'PIN reset successfully.',
@@ -5992,24 +6037,24 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     const debitAmount = sourceFaceAmount;
     const cashbackCredit = toMinorUnit(cashback * fxRate, senderCurrency);
 
-    // A courtesy check, not the authority. It fails fast with a useful figure
-    // for the ordinary case of somebody trying to spend more than they have.
-    // The check that actually protects the balance is the conditional debit
-    // further down — this one reads a value that another request can change
-    // before the write lands, which is exactly the race it used to be the only
-    // guard against. Compared against debitAmount, not the typed amount —
-    // that's what's actually about to leave the sender's own currency balance.
-    const senderBalanceBefore = accountBalanceOf(sender);
-
-    if (senderBalanceBefore < debitAmount) {
-      return res.status(400).json({
-        success: false,
-        message: 'Insufficient balance.',
-        balance: senderBalanceBefore,
-        currency: senderCurrency,
-      });
-    }
-
+    // ── ASKED-AND-ANSWERED COMES FIRST ──────────────────────────────────
+    //
+    // This block used to sit BELOW the balance check, and that order was a
+    // bug with a specific, nasty shape (audit finding F5):
+    //
+    //   balance 1,000, send 800 → succeeds, balance is now 200
+    //   the response is lost on the way back
+    //   the client retries with the same idempotency key
+    //   the balance check sees 200 < 800 and answers "Insufficient balance"
+    //
+    // The money moved. The answer said it did not. A person told their
+    // payment failed does the one thing that makes it worse — they send it
+    // again — and the second attempt carries a fresh key, so nothing stops
+    // it. The ordering turned a lost response into a double payment.
+    //
+    // "Have I already done this?" is not a question about the current
+    // balance, so it must not be asked after one. It is asked here, before
+    // anything about the account's present state is consulted.
     if (cleanIdempotencyKey) {
       const existingIdempotentTransaction = await Transaction.findOne({
         fromUserId: sender._id,
@@ -6017,6 +6062,49 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       }).sort({ createdAt: -1 });
 
       if (existingIdempotentTransaction) {
+        // ── Is this the SAME request, or a key being reused? ────────────
+        //
+        // An idempotency key promises "this is the request I already sent".
+        // Returning the original for a request that is NOT that one is the
+        // other half of the hazard: a client that reuses a key for a
+        // different payment is told it succeeded, and the payment it
+        // actually asked for never happens.
+        //
+        // WHAT IS COMPARED, AND WHY ONLY THIS. The comparison is on what the
+        // CALLER ASKED FOR — the payee, which side the amount was
+        // denominated in, and that amount — and deliberately not on the
+        // derived figures. `debitAmount` depends on the rate, and the rate
+        // moves between an original and its retry as a matter of course. A
+        // comparison that included it would reject honest retries during
+        // ordinary rate movement, which is a worse failure than the one
+        // being fixed here and would be blamed on the network.
+        const stored = existingIdempotentTransaction.metadata || {};
+        const storedBasis = stored.amountBasis || null;
+        const storedAmount = storedBasis === 'source' ? stored.sourceAmount : stored.destinationAmount;
+        const storedCurrency = storedBasis === 'source' ? stored.sourceCurrency : stored.destinationCurrency;
+        const askedAmount = basis === 'source' ? sourceFaceAmount : numericAmount;
+        const askedCurrency = basis === 'source' ? senderCurrency : destinationCurrency;
+
+        // A row written before amountBasis was recorded cannot be compared.
+        // Those are returned rather than refused: refusing a legitimate retry
+        // of an older payment is the worse error, and the set of such rows
+        // only shrinks.
+        const comparable = storedBasis !== null && Number.isFinite(Number(storedAmount)) && Boolean(storedCurrency);
+        const sameRequest =
+          String(existingIdempotentTransaction.toUserId) === String(receiver._id) &&
+          storedBasis === basis &&
+          storedCurrency === askedCurrency &&
+          Number(storedAmount) === Number(askedAmount);
+
+        if (comparable && !sameRequest) {
+          return res.status(409).json({
+            success: false,
+            code: 'idempotency_key_reused',
+            message:
+              'That request key was already used for a different payment. Start a new payment rather than retrying this one.',
+          });
+        }
+
         return res.status(200).json({
           success: true,
           duplicate: true,
@@ -6028,6 +6116,28 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
           shareTransaction: await existingShareLegPayload(existingIdempotentTransaction),
         });
       }
+    }
+
+    // A courtesy check, not the authority. It fails fast with a useful figure
+    // for the ordinary case of somebody trying to spend more than they have.
+    // The check that actually protects the balance is the conditional debit
+    // further down — this one reads a value that another request can change
+    // before the write lands, which is exactly the race it used to be the only
+    // guard against. Compared against debitAmount, not the typed amount —
+    // that's what's actually about to leave the sender's own currency balance.
+    //
+    // Runs only for a genuinely new payment: a retry of one already made was
+    // answered above, from the record, without consulting a balance that the
+    // original payment itself has already changed.
+    const senderBalanceBefore = accountBalanceOf(sender);
+
+    if (senderBalanceBefore < debitAmount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient balance.',
+        balance: senderBalanceBefore,
+        currency: senderCurrency,
+      });
     }
 
     const duplicateWindowStartedAt = new Date(Date.now() - 15 * 1000);

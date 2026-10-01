@@ -15,6 +15,24 @@ import { createFinancialCore, Money } from "../app_bundle_testonly.mjs";
 // took fiat without issuing coin cannot be posted at all — it is not a bug this
 // suite hopes to catch, it is a state the ledger has no representation for. The
 // tests below confirm that is really so rather than assumed.
+//
+// ── The ticker is GEU, and these tests used to say GC ────────────────────
+//
+// The coin's unit was renamed from "GC" to "GEU" — Gloobal Energy Unit —
+// and the rename was the fix for a real defect, not cosmetics: the screens
+// said GEU while the server stamped GC onto every coin row, because server.js
+// separately defined a DIFFERENT currency called GEU. Two designs were wearing
+// one name. See backend/data/currencies.js, which carries the full reasoning.
+//
+// The implementation was renamed everywhere that matters — server.js's
+// COIN_CURRENCY, CoinService's, UserAccount, ReserveAccount. These tests were
+// not, and so they failed against correct code. They are corrected here rather
+// than the code being bent back to them, and `the two definitions agree` below
+// is the check that makes a future divergence fail loudly instead of quietly.
+
+// The one ticker, named once here so a future rename changes this file in a
+// single place rather than in three assertions that can drift apart.
+const COIN_TICKER = "GEU";
 
 const coin = (core) => core.coinService.balance().amount;
 const bank = (core) => core.ledgerEngine.getAccountBalance(core.userAccounts.bank.id, core.currency).amount;
@@ -234,15 +252,52 @@ test("coin history reports direction from the entry, not from a stored sign", ()
   assert.equal(history[1].direction, "out");
   assert.equal(history[2].kind, "coin-mint");
   assert.equal(history[2].direction, "in");
-  assert.ok(history.every((row) => row.currency === "GC"));
+  assert.ok(history.every((row) => row.currency === COIN_TICKER));
 });
 
-test("the coin account is denominated in GC, separately from the bank account", () => {
+// THE DIVERGENCE THAT CAUSED THE ORIGINAL BUG, pinned so it cannot recur.
+//
+// CoinService's own comment says it plainly: "Matches the server's
+// COIN_CURRENCY exactly ... the two must never disagree, because this
+// ledger's whole purpose is to tell the same story the database does."
+// Nothing enforced that. The browser's ledger and the database's rows could
+// be denominated differently and every test on either side would still pass,
+// which is how the first version of this shipped.
+//
+// Read as source text because server/ is a separate package with its own
+// deploy root and cannot be imported from here — the same reason
+// GLOOBAL_ZERO_DECIMAL_CURRENCIES exists twice.
+test("the browser's ticker and the server's are the same string", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+  const serverSrc = readFileSync(join(ROOT, "server", "server.js"), "utf8");
+  const serverTicker = serverSrc.match(/const COIN_CURRENCY = '([^']+)'/);
+  assert.ok(serverTicker, "server.js no longer declares COIN_CURRENCY");
+
+  const domainSrc = readFileSync(join(ROOT, "backend", "domain", "coin", "CoinService.js"), "utf8");
+  const domainTicker = domainSrc.match(/var COIN_CURRENCY = "([^"]+)"/);
+  assert.ok(domainTicker, "CoinService no longer declares COIN_CURRENCY");
+
+  assert.equal(domainTicker[1], serverTicker[1],
+    `the ledger in the browser posts ${domainTicker[1]} while the database stores ${serverTicker[1]}`);
+  assert.equal(serverTicker[1], COIN_TICKER, "both moved, and this file did not");
+
+  // And the ticker every screen prints comes from the same decision.
+  const currenciesSrc = readFileSync(join(ROOT, "backend", "data", "currencies.js"), "utf8");
+  const printed = currenciesSrc.match(/var COIN_TICKER = "([^"]+)"/);
+  assert.ok(printed, "currencies.js no longer declares COIN_TICKER");
+  assert.equal(printed[1], serverTicker[1], "the screens print a different ticker than the one stored");
+});
+
+test("the coin account is denominated in GEU, separately from the bank account", () => {
   const core = fresh();
-  assert.equal(core.userAccounts.coin.currency, "GC");
+  assert.equal(core.userAccounts.coin.currency, COIN_TICKER);
   assert.equal(core.userAccounts.bank.currency, core.currency);
   assert.notEqual(core.userAccounts.coin.id, core.userAccounts.bank.id);
-  assert.equal(core.coinCurrency, "GC");
+  assert.equal(core.coinCurrency, COIN_TICKER);
 });
 
 // The capability layer, now that Coin is live.

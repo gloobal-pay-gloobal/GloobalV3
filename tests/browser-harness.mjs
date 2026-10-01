@@ -984,7 +984,10 @@ export async function installApi(context, options = {}) {
     if (pathname.startsWith("/api/interest")) return json(200, { interested: false, count: 0 });
     if (pathname.startsWith("/api/products/")) return json(200, { product: { waitlist: 0 } });
     if (pathname.startsWith("/api/coin/supply")) {
-      return json(200, { success: true, reserve: 0, issued: 0, heldByAccounts: 0, holders: 0, reserveCurrency: "INR", coinCurrency: "GC", backed: true });
+      // GEU, not "GC". The coin's unit was renamed (see backend/data/
+      // currencies.js) and this fake was not told, so every browser test
+      // reading a coin ticker saw one the real server has never returned.
+      return json(200, { success: true, reserve: 0, issued: 0, heldByAccounts: 0, holders: 0, reserveCurrency: "INR", coinCurrency: "GEU", backed: true });
     }
     if (pathname.startsWith("/api/coin/")) return json(200, { success: true, balance: 0, coin: 0 });
     if (pathname.startsWith("/api/creator/")) return json(200, { cashbackRate: 0.01 });

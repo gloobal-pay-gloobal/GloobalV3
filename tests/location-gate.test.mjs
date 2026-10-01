@@ -140,7 +140,13 @@ describe("every payment path asks — a gate with a way around it is not a gate"
     test(`${handler} consults the gate`, () => {
       const start = app.indexOf(`const ${handler} = `);
       assert.ok(start > -1, `${handler} not found — did it get renamed?`);
-      const body = app.slice(start, start + 1200);
+      // THE WHOLE FUNCTION, not its first 1200 characters. handleRemoteSend
+      // is 7,292 characters long and its gate call sits at offset 1,385 —
+      // so this test had been failing on main for weeks while the gate was
+      // there and working. A red suite nobody can act on is worse than no
+      // suite: it trains everyone to scroll past the failures, and the next
+      // one to appear is scrolled past too.
+      const body = app.slice(start, app.indexOf("\n  };\n", start));
       assert.match(body, /passesLocationGate/, `${handler} must await passesLocationGate before posting`);
     });
   }
@@ -151,9 +157,12 @@ describe("every payment path asks — a gate with a way around it is not a gate"
     // LOCAL ledger leg, which still writes a history row. Gating after them
     // would leave exactly one unguarded way to record a payment.
     const start = app.indexOf("const handleRemoteSend = ");
-    const body = app.slice(start, start + 1600);
+    const body = app.slice(start, app.indexOf("\n  };\n", start));
+    const gate = body.indexOf("passesLocationGate");
+    const skipped = body.indexOf("skipped: true");
+    assert.ok(gate > -1 && skipped > -1, "the gate or the skipped exit has moved out of this function");
     assert.ok(
-      body.indexOf("passesLocationGate") < body.indexOf("skipped: true"),
+      gate < skipped,
       "the location check must come before the skipped/local-simulation exits"
     );
   });
@@ -203,7 +212,17 @@ describe("notifications are asked for once, at a moment that has earned it", () 
   test("the ask happens after a payment, not during onboarding", () => {
     // A prompt is one-shot: browsers remember a denial per origin forever.
     // Spending it before the person has seen a payment is how it gets denied.
-    const complete = app.slice(app.indexOf("const handleSendMoneyComplete"), app.indexOf("const handleSendMoneyComplete") + 900);
+    // To the end of the function, not a fixed number of characters. It was
+    // `+ 900`, which is a window that passes until somebody writes a long
+    // enough comment inside the function — and then fails without anything
+    // about the behaviour having changed. That happened: a comment about
+    // which currency the banner formats in pushed the call past character
+    // 900, and the test reported that the app had stopped asking for
+    // notification permission. A test that a comment can break is reporting
+    // on its own slice, not on the code.
+    const at = app.indexOf("const handleSendMoneyComplete");
+    assert.notEqual(at, -1, "handleSendMoneyComplete is gone");
+    const complete = app.slice(at, app.indexOf("\n  };\n", at));
     assert.match(complete, /offerPaymentNotificationsAfterPayment\(\)/);
   });
 
@@ -274,12 +293,25 @@ describe("notifications are asked for once, at a moment that has earned it", () 
   test("the first poll primes the dedupe instead of notifying the backlog", () => {
     // Otherwise switching notifications on would dump the entire received
     // history into the tray at once.
-    // Anchor on the priming BRANCH, not the first mention of the ref — the
-    // sign-out re-prime references it earlier and would slice the wrong block.
-    const branch = app.indexOf("if (!receivedNotifyPrimedRef.current)");
-    assert.ok(branch > -1, "the priming branch is missing");
-    const primed = app.slice(branch, branch + 400);
-    assert.match(primed, /markPaymentNotified/);
+    //
+    // THIS TEST WAS STALE, AND TWO SUITES DISAGREED ABOUT THE CODE. It
+    // anchored on `if (!receivedNotifyPrimedRef.current)`, a boolean ref
+    // that was deliberately replaced by the baseline pair
+    // (gloobalReceivedBaselineBegin / gloobalReceivedBaselineSplit) when a
+    // failed first poll turned out to swallow a real arrival as history.
+    // notification-push-parity.test.mjs asserts that ref is GONE; this one
+    // required it present. One of them had to be failing, and it was this
+    // one — for weeks, against behaviour that had been improved.
+    //
+    // Anchored on the mechanism that actually exists now. What it pins is
+    // unchanged: the first successful poll marks the backlog seen rather
+    // than announcing it.
+    assert.match(app, /gloobalReceivedBaselineBegin\(baseline, Date\.now\(\)\)/);
+    const split = app.indexOf("gloobalReceivedBaselineSplit(baseline, attemptStartedAt, receivedRows)");
+    assert.ok(split > -1, "the baseline split is missing");
+    const after = app.slice(split, split + 400);
+    assert.match(after, /history\.forEach\(\(entry\) => markPaymentNotified\(entry\.txnId\)\)/,
+      "the backlog is no longer being marked seen in silence");
   });
 
   test("polling stops when the tab is not visible", () => {

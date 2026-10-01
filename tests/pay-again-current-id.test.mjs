@@ -295,17 +295,36 @@ describe("in the app", () => {
     try {
       await login(page, A);
       await payOnce(page, A, B, 20);
+
+      // WHAT IS BEING TESTED IS THE HANDOFF, so the handoff is what is
+      // watched. This used to wait for B's Gloobal ID to appear in the
+      // rendered body of Send Money, which made it the only flaky test in
+      // the suite — it passed alone and failed about one run in two with
+      // several browsers competing, because it was waiting on a resolve
+      // round trip, a close, an event and a full screen re-render, and
+      // whichever was slow spent the whole budget. Raising the timeout only
+      // moved the threshold.
+      //
+      // The contract is the event: Pay again resolves, closes the receipt,
+      // and announces the payee App.jsx should open Send Money on. Listening
+      // for it settles in milliseconds and says something the rendered text
+      // could not — that the ID handed over is the one off the receipt, and
+      // not merely that those symbols appear somewhere on screen.
+      await page.evaluate(() => {
+        window.__payAgain = [];
+        window.addEventListener("gloobal:payAgain", (e) => window.__payAgain.push(e.detail));
+      });
       await page.getByTestId("receipt-pay-again").click();
-      // Straight through to Send Money, prefilled on the ID that is still
-      // theirs. Waited for rather than slept on: the check is a round trip.
-      await page.waitForFunction(
-        (id) => document.body.innerText.replace(/\s+/g, "").includes(id)
-          && !document.querySelector('[data-testid="receipt-pay-again"]'),
-        B.symbolId,
-        { timeout: 20000 }
-      );
-      // No panel is ever drawn: a "still correct" notice would make the
-      // common case feel like an interruption.
+      await page.waitForFunction(() => window.__payAgain.length > 0, null, { timeout: 45000 });
+      const handed = await page.evaluate(() => window.__payAgain);
+      assert.equal(handed.length, 1, "Pay again announced more than one payee");
+      assert.equal(handed[0].gloobalId, B.symbolId, "Send Money was opened on the wrong Gloobal ID");
+      assert.equal(handed[0].name, B.fullName);
+
+      // And the receipt closed on its own, with no panel and no problem
+      // line: a "still correct" notice would make the common case feel like
+      // an interruption.
+      await page.getByTestId("receipt-pay-again").waitFor({ state: "detached", timeout: 45000 });
       assert.equal(await page.getByTestId("receipt-id-changed").count(), 0);
       assert.equal(await page.getByTestId("receipt-pay-again-problem").count(), 0);
       assert.deepEqual(errors, []);

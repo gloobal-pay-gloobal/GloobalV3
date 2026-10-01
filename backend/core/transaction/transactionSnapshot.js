@@ -130,6 +130,20 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     date: now.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     occurredAt: now.toISOString(),
     amount: convertedAmount,
+    // THE CURRENCY THAT AMOUNT IS IN, which this row did not carry.
+    //
+    // TransactionRow falls back to the viewer's own currency for a row
+    // without one (`t.currency || ccyCode`), and sumHistoryAmount treats a
+    // missing currency as "already the target". So a cross-border payment
+    // made in this session showed its sender-currency figure wearing the
+    // dial country's unit, and was folded into period totals as though it
+    // needed no conversion — until the next history fetch replaced the row
+    // and the number changed under the person.
+    //
+    // mapServerTransaction has carried `currency` for restored rows since
+    // the same bug was fixed there ("the rupee number wearing a dollar
+    // sign"). This is the locally-written row catching up.
+    currency: headlineCurrency,
     flag: receiver.flag,
     status: "completed",
     method: methodKey,

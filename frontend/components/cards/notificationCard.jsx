@@ -57,7 +57,23 @@ function gloobalNotifHeadline(meta) {
   // It goes from the banner too, and deliberately: the lock screen shows
   // this over gloobalNotifSubline, so the sign is read against "To Chdg"
   // or "From Rajeev" there exactly as it is here.
-  return `${sent ? "−" : "+"}${fmtMoney((meta && meta.amount) || 0, (meta && meta.currency) || "")}`;
+  // A MISSING FIGURE IS NOT ZERO. `|| 0` with a `|| ""` currency turned a
+  // notification whose metadata never arrived into a confident "−0.00" with
+  // no unit on it — a payment of nothing, stated as a fact, on a lock
+  // screen. The pages helper forty lines below already draws this
+  // distinction (`amount == null || !currency ? null : …`); the headline did
+  // not.
+  //
+  // Without both, the honest headline is what HAPPENED, which needs no
+  // figure to be true. paymentBannerText falls back to exactly this string
+  // and the parity test compares the two, so the lock screen and the card
+  // cannot say different things about a payment neither can price.
+  const amount = meta == null ? null : meta.amount;
+  const currency = meta == null ? null : meta.currency;
+  if (amount == null || !Number.isFinite(Number(amount)) || !currency) {
+    return sent ? "Money sent" : "Money received";
+  }
+  return `${sent ? "\u2212" : "+"}${fmtMoney(Number(amount), currency)}`;
 }
 function gloobalNotifSubline(meta) {
   const sent = (meta && meta.direction) === "sent";

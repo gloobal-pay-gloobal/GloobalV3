@@ -1097,6 +1097,12 @@ function GloobalId() {
       counterpartyIso: dialCountry.iso,
       date: now.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       amount,
+      // The currency that amount is in. Pay a Business settles in the
+      // account's own currency, and saying so is what stops TransactionRow
+      // falling back to the dial country's unit and sumHistoryAmount
+      // treating the figure as already converted — the same gap the Send
+      // Money row had.
+      currency: COUNTRY_CURRENCY[dialCountry.iso] || "USD",
       status: "completed",
       method: methodKey,
       time: formatClockTime(now),

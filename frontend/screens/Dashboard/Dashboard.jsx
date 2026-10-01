@@ -485,11 +485,37 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // that stops them being double-counted in Recent Activity. A share is not
   // a collection: it is the seed a payment planted, it lives in My Assets,
   // and it is already doing a job as PayLater headroom.
+  // ── TWO THINGS WERE WRONG WITH THIS TOTAL ───────────────────────────
+  //
+  // It matched on `t.date`, which is a DISPLAY STRING — "Oct 1", with no
+  // year in it. Every payment made on the first of October in any year
+  // counted as today's, and the same comparison is recorded elsewhere in
+  // this tree as a defect that was already removed once. Rows carry
+  // `occurredAt`, the instant the server recorded, and that is what a day
+  // boundary has to be drawn against.
+  //
+  // And it added `t.amount` across currencies as bare numbers, so a
+  // creator paid in dollars and rupees on one day had the two figures
+  // summed and the result printed with one unit. sumHistoryAmount knows how
+  // to total rows into a currency, and now prefers each row's RECORDED
+  // other side over converting it at today's rate.
+  const collectionCurrency = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
   const todaysCollection = useMemo5(
-    () => (Array.isArray(receivedHistory) ? receivedHistory : [])
-      .filter((t) => t.kind !== "share" && t.date === todaysDateLabel)
-      .reduce((s, t) => s + (Number(t.amount) || 0), 0),
-    [receivedHistory, todaysDateLabel]
+    () => {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const rows = (Array.isArray(receivedHistory) ? receivedHistory : []).filter((t) => {
+        if (t.kind === "share") return false;
+        // A row with no recorded instant cannot be placed on a day. Left out
+        // rather than assumed to be today: this figure is a creator's takings
+        // for the day, and counting an undated row into it would be inventing
+        // the one fact the total is about.
+        const at = t.occurredAt ? Date.parse(t.occurredAt) : NaN;
+        return Number.isFinite(at) && at >= startOfToday.getTime();
+      });
+      return sumHistoryAmount(rows, collectionCurrency);
+    },
+    [receivedHistory, collectionCurrency]
   );
   // Creator's "Recent Activity" card, below Today's Collection —
   // Received vs Paid, toggled by one flip control, showing the 5 most

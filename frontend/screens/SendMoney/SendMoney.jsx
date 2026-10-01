@@ -14,7 +14,6 @@ import {
   ArrowUpRight as ArrowUpRight2,
   ArrowDownLeft as ArrowDownLeft2,
   Send as SendMoneyLucideIcon,
-  Zap as Zap4,
   Lock as Lock5,
   X as X4,
   ChevronRight as ChevronRight4,
@@ -1599,7 +1598,21 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     onClick={() => handleCopy(top.id, "top-id")}
     aria-label="Copy ID"
   >{copiedKey === "top-id" ? <Check3 size={17} /> : <Copy3 size={17} />}</button></div></div><div className="divider" /><div className="rate-row"><div className="rate-left"><span className="live-dot" /><span>
-                      1 {top.currency} = {fmt(convert(1, top.currency, bottom.currency), bottom.currency)} {bottom.currency}</span></div><span className="live-text"><Zap4 size={14} fill="currentColor" /> Live</span></div>{
+                      1 {top.currency} = {fmt(convert(1, top.currency, bottom.currency), bottom.currency)} {bottom.currency}</span></div>{
+    /* "Indicative", not "Live".
+
+       This rate comes from convert(), which reads the RATES table in
+       backend/data/currencies.js — and that table's own header says it "has
+       always been a static snapshot, not a live feed" and that the figures
+       "are approximate". Nothing refreshes it; it changes when somebody
+       edits the file.
+
+       So the word Live, in green, under a lightning bolt, was a claim about
+       money that was not true. The rate that will actually be applied is
+       struck by the server when the payment is made, and the receipt prints
+       that one — which is why the two can differ, and why this one has to
+       say what it is. The figure is unchanged; only the claim about it is. */
+  }<span className="live-text" style={{ color: T.inkSoft }}>Indicative</span></div>{
     /* Read-only — the exact amount that will be debited from
        the sender's own account, converted from the figure the
        receiver is being sent above. Shown large since it's the

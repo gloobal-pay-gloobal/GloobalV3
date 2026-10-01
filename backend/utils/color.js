@@ -45,7 +45,16 @@ function randomLogoFlipColor(exclude) {
   }
   return color;
 }
-function randomShareRate() {
-  return Math.round(Math.random() * 700) / 100;
-}
+// GONE, and deliberately not left for "someday".
+//
+// It returned Math.round(Math.random() * 700) / 100 — a random Creator Share
+// percentage between 0.00 and 7.00 — and its only caller was the history
+// receipt builder, which used it when a sent row carried no recorded rate.
+// Every builder sets a real rate today, so it never fired; but a financial
+// percentage generator with no caller is a loaded gun, and the receipt both
+// prints that percentage and multiplies a money amount out of it.
+//
+// A share that was not recorded is now null, which the receipt draws as
+// nothing. If a future screen needs a rate it must read the one the server
+// stored, which is the only place one exists.
 

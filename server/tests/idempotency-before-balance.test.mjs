@@ -118,13 +118,37 @@ async function registerAccount(account) {
   await post("/api/pin/set", { symbolId: account.id, pin: PIN }, tokens[account.id]);
 }
 
+// Registration is done ONCE. Each case then resets only the state a payment
+// writes — transactions, ledger, receipts, balances — rather than deleting
+// the accounts and registering them again.
+//
+// Registering per case is what the first draft of this file did, and it does
+// not work: every registration needs a fresh OTP for the same number, and
+// re-sending one for a number that has just had one is refused. Case (c) died
+// on "Please verify OTP before registration." before it tested anything.
+// Accounts are not the thing under test here; what they have done is.
+let accountsReady = false;
+
 async function setUp() {
-  await Promise.all([
-    User.deleteMany({}), Pin.deleteMany({}), Transaction.deleteMany({}), LedgerEntry.deleteMany({}),
-    Receipt.deleteMany({}), Country.deleteMany({}), Currency.deleteMany({}),
-    CountryCurrencyPool.deleteMany({}), ExchangeRate.deleteMany({}), Settlement.deleteMany({}),
-  ]);
-  for (const account of [PAYER, PAYEE, THIRD]) await registerAccount(account);
+  if (!accountsReady) {
+    await Promise.all([
+      User.deleteMany({}), Pin.deleteMany({}), Transaction.deleteMany({}), LedgerEntry.deleteMany({}),
+      Receipt.deleteMany({}), Country.deleteMany({}), Currency.deleteMany({}),
+      CountryCurrencyPool.deleteMany({}), ExchangeRate.deleteMany({}), Settlement.deleteMany({}),
+    ]);
+    for (const account of [PAYER, PAYEE, THIRD]) await registerAccount(account);
+    // The corridor the send route reads: it resolves the receiver's country
+    // to a local currency, and an empty countries collection leaves it with
+    // nothing to resolve. One country is enough — this file is deliberately
+    // a same-currency corridor so the arithmetic is only about ordering.
+    await Country.create([{ iso: "IN", name: "India", dialCode: "+91", localCurrency: "INR" }]);
+    await Currency.create([{ code: "INR", name: "Indian Rupee", symbol: "₹", decimals: 2 }]);
+    accountsReady = true;
+  } else {
+    await Promise.all([
+      Transaction.deleteMany({}), LedgerEntry.deleteMany({}), Receipt.deleteMany({}), Settlement.deleteMany({}),
+    ]);
+  }
   for (const account of [PAYER, PAYEE, THIRD]) {
     await User.updateOne(
       { symbolId: account.id },
@@ -138,13 +162,30 @@ const balanceOf = async (account) =>
 
 const send = (body) => post("/api/transactions/send", body, tokens[PAYER.id]);
 
-const payment = (overrides = {}) => ({
-  senderSymbolId: PAYER.id,
-  receiverSymbolId: PAYEE.id,
-  amount: 800,
-  amountBasis: "destination",
-  ...overrides,
-});
+// The shape the real client sends. `pin` is not optional: /api/transactions/send
+// authorises on the PIN in the body, and without it every call here came back
+// 400 "PIN is required before sending transaction." before reaching anything
+// this file is about.
+const payment = (overrides = {}) => {
+  const { amount = 800, receiverSymbolId = PAYEE.id, ...rest } = overrides;
+  return {
+    senderSymbolId: PAYER.id,
+    receiverSymbolId,
+    pin: PIN,
+    amount,
+    amountBasis: "destination",
+    currency: PAYEE.ccy,
+    destinationAmount: amount,
+    destinationCurrency: PAYEE.ccy,
+    ...rest,
+  };
+};
+
+// A payment that is CREATED answers 201; a duplicate answered from the record
+// answers 200. Both are successes and the distinction is the point — so the
+// creating calls accept either, and the retry below is pinned to 200 exactly,
+// because a 201 there would mean a second payment was made.
+const created = (r) => (r.status === 200 || r.status === 201) && r.body?.success === true;
 
 async function run() {
   await untilConnected();
@@ -158,7 +199,7 @@ async function run() {
   {
     const key = "lost-response-key-1";
     const first = await send(payment({ idempotencyKey: key }));
-    check("the payment succeeds", first.status === 200 && first.body?.success === true,
+    check("the payment succeeds", created(first),
       `status ${first.status} ${JSON.stringify(first.body?.message || "")}`);
 
     const after = await balanceOf(PAYER);
@@ -184,7 +225,7 @@ async function run() {
     await setUp();
     const key = "same-key-same-payload";
     const first = await send(payment({ idempotencyKey: key, amount: 100 }));
-    check("the first succeeds", first.status === 200 && first.body?.success === true);
+    check("the first succeeds", created(first), `status ${first.status}`);
     const afterFirst = await balanceOf(PAYER);
 
     for (let i = 0; i < 3; i += 1) await send(payment({ idempotencyKey: key, amount: 100 }));
@@ -201,7 +242,7 @@ async function run() {
     await setUp();
     const key = "same-key-different-payload";
     const first = await send(payment({ idempotencyKey: key, amount: 100 }));
-    check("the first succeeds", first.status === 200 && first.body?.success === true);
+    check("the first succeeds", created(first), `status ${first.status}`);
     const afterFirst = await balanceOf(PAYER);
 
     // A different amount, same key.

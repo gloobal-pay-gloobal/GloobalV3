@@ -112,12 +112,24 @@ async function run() {
   if (!token) throw new Error(`could not register: ${JSON.stringify(registered.body)}`);
   await call("POST", "/api/pin/set", { symbolId: OWNER.id, pin: PIN }, token);
 
+  // `category` is required and must be one of the server's allow-list
+  // (lib/projectValidation.js). Leaving it out returns 400 "Choose one of:
+  // ..." and nothing below ever runs — which is exactly how the first draft
+  // of this file failed.
   const created = await call("POST", "/api/projects", {
     title: "Body limit project",
+    category: "Technology",
     summary: "A project that exists so an attachment has somewhere to go.",
   }, token);
   const projectId = created.body?.project?.id || created.body?.id || created.body?.project?._id;
-  check("a project was created to attach to", Boolean(projectId), `status ${created.status}`);
+  check("a project was created to attach to", Boolean(projectId),
+    `status ${created.status} ${JSON.stringify(created.body?.message || "")}`);
+  if (!projectId) {
+    // Every check below needs it. Stopping here says so once instead of
+    // reporting six failures that are all this one.
+    console.log("  (no project — the rest of this file cannot run)");
+    return failures;
+  }
   if (!projectId) return failures;
 
   const attach = (base64, contentType = "image/png") =>
@@ -131,7 +143,8 @@ async function run() {
     const response = await attach(fileOf(600 * 1024));
     check("NOT rejected by the 64 KB global parser", response.status !== 413,
       `status ${response.status} ${JSON.stringify(response.body?.message || "")}`);
-    check("accepted", response.status === 200, `status ${response.status}`);
+    // An attachment that is stored answers 201 Created, not 200.
+    check("accepted", response.status === 201, `status ${response.status}`);
     const stored = await ProjectAttachment.findOne({}).select("byteSize").lean();
     check("stored at its real size", Number(stored?.byteSize) === 600 * 1024, String(stored?.byteSize));
   }

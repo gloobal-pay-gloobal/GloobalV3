@@ -3686,7 +3686,7 @@ function GloobalId() {
        Gloobal ID screen still passes no count and still gets one:
        replacing an ID you already have is a different, more
        considered decision.) */
-  }{stage === "secureId" && !isLoginAttempt && <SuggestedIdRow id={suggestedRegId} onPick={setSecureId} count={2} />}{
+  }{stage === "secureId" && !isLoginAttempt && <SuggestedIdRow id={suggestedRegId} onPick={setSecureId} />}{
     /* Login only: proof the ID resolves to a real account, shown before
        the PIN screen rather than after a sign-in that would have failed
        for a reason the person could not see. */

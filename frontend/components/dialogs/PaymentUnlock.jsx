@@ -39,6 +39,54 @@ var PAYMENT_UNLOCK_FOIL_SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "
 var PAYMENT_UNLOCK_HEAD_OUT = "linear-gradient(135deg,#312E81 0%,#4F46E5 55%,#7C3AED 100%)";
 var PAYMENT_UNLOCK_HEAD_IN = "linear-gradient(135deg,#064E3B 0%,#047857 55%,#0FA372 100%)";
 
+// The line over the share, which used to be the single word "Nice one" on
+// every reveal a person ever saw.
+//
+// Every line here says the same thing the old one did — something came back
+// — and NONE of them states or implies a figure. The amount and the rate are
+// two lines above, from the server's own record; a headline that said "a lot"
+// or "a good one" would be this screen deciding how much twelve rupees is.
+// That is the whole constraint on anything added to this list.
+var PAYMENT_UNLOCK_HEADLINES = [
+  "Nice one",
+  "That came back",
+  "Some of it returned",
+  "Back to you",
+  "There it is",
+  "Yours again",
+  "A little came home",
+  "Look at that",
+  "Worth the tap",
+  "Small, and yours",
+  "That one paid you",
+  "Returned, in full view"
+];
+// A shuffle bag, not a random pick. Random repeats — roughly one reveal in
+// twelve would show the line the person just saw, which reads as a bug in a
+// screen whose whole job is to feel like a small event. The bag hands out
+// every line once before any of them comes round again.
+var paymentUnlockHeadlineBag = [];
+var paymentUnlockLastHeadline = null;
+
+function paymentUnlockNextHeadline(random = Math.random) {
+  if (!paymentUnlockHeadlineBag.length) {
+    paymentUnlockHeadlineBag = PAYMENT_UNLOCK_HEADLINES.slice();
+    for (let i = paymentUnlockHeadlineBag.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      const swap = paymentUnlockHeadlineBag[i];
+      paymentUnlockHeadlineBag[i] = paymentUnlockHeadlineBag[j];
+      paymentUnlockHeadlineBag[j] = swap;
+    }
+    // A refilled bag can still hand out the line the last bag ended on. Move
+    // it to the far end rather than reshuffling, which could do it again.
+    if (paymentUnlockHeadlineBag[paymentUnlockHeadlineBag.length - 1] === paymentUnlockLastHeadline && paymentUnlockHeadlineBag.length > 1) {
+      paymentUnlockHeadlineBag.unshift(paymentUnlockHeadlineBag.pop());
+    }
+  }
+  paymentUnlockLastHeadline = paymentUnlockHeadlineBag.pop();
+  return paymentUnlockLastHeadline;
+}
+
 function paymentUnlockCheckins() {
   const out = [];
   if (typeof GH_CATEGORIES === "undefined") return out;
@@ -151,6 +199,10 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
   const [scratching, setScratching] = useState39(false);
   // "question" | "coupon" | "share"
   const [face, setFace] = useState39("question");
+  // Chosen ONCE, when this screen is built, and held for its whole life. A
+  // headline picked during render would change on every re-render — and this
+  // card re-renders while the rain is running.
+  const [headline] = useState39(() => paymentUnlockNextHeadline());
   const [turning, setTurning] = useState39(false);
   const canvasRef = useRef23(null);
   const wrapRef = useRef23(null);
@@ -252,6 +304,19 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
     });
   };
 
+  // The coin shower, once, when the share face actually arrives — not when
+  // the foil clears, which is a second earlier and a different moment.
+  //
+  // It is a separate effect rather than a call inside turnTo() because the
+  // face is what the person sees; if the turn is ever re-timed, the sound
+  // follows the picture instead of having to be re-timed with it.
+  const soundPlayed = useRef23(false);
+  useEffect32(() => {
+    if (face !== "share" || soundPlayed.current) return;
+    soundPlayed.current = true;
+    if (typeof playCoinShower === "function") playCoinShower();
+  }, [face]);
+
   const body = (extra) => ({ source: "payment", transactionId, day: typeof ghTodayKey === "function" ? ghTodayKey() : undefined, ...extra });
   const answerBody = (choice) => {
     if (!question) return null;
@@ -329,6 +394,12 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
   const reveal = () => {
     if (revealed) return;
     setRevealed(true);
+    // Build the audio context HERE, inside the tap that caused the reveal.
+    // The shower itself plays about 1.1s later, on a timer, and a context
+    // first constructed outside a gesture starts suspended on mobile and
+    // stays that way — which is how UI sound ends up working on a laptop and
+    // silently doing nothing on a phone.
+    if (typeof warmRewardSound === "function") warmRewardSound();
     after(PAYMENT_UNLOCK_REVEAL_MS, () => turnTo("share"));
   };
   const scratchAt = (event) => {
@@ -349,7 +420,12 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
     ctx.stroke();
     lastPoint.current = point;
     moves.current += 1;
-    if (moves.current === 1) setScratching(true);
+    if (moves.current === 1) {
+      setScratching(true);
+      // The first stroke is the earliest gesture there is on this face; take
+      // it, so the context is already running by the time the foil clears.
+      if (typeof warmRewardSound === "function") warmRewardSound();
+    }
     if (moves.current % 6 === 0 && clearedShare() >= PAYMENT_UNLOCK_CLEAR_AT) reveal();
   };
 
@@ -437,7 +513,12 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
         @keyframes unlock-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
         @media (prefers-reduced-motion: reduce) { [data-unlock-card] { transition: none !important; animation: none !important; } }
       `}</style>
-      <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* Behind the card and in front of the scrim. Only on the share face:
+          rain over the question would be celebrating before there is
+          anything to celebrate, and over the coupon it would be weather on
+          top of the thing being scratched. */}
+      <GoldenRainField active={face === "share"} />
+      <div style={{ width: "100%", maxWidth: 400, display: "flex", flexDirection: "column", gap: 10, position: "relative" }}>
         <div
           data-unlock-card
           data-testid={`unlock-face-${face}`}
@@ -584,7 +665,7 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
                 </div>
               </div>
               <div style={{ padding: "14px 18px 4px", textAlign: "center" }}>
-                <div style={{ fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, color: T.ink }}>Nice one</div>
+                <div data-testid="unlock-headline" style={{ fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, color: T.ink }}>{headline}</div>
                 <div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 5, lineHeight: 1.45 }}>
                   {`${payeeName} shares a part of every payment back. It's in your Gloobal balance already.`}
                 </div>

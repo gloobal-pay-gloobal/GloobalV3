@@ -336,9 +336,15 @@ function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currency
   };
   // Without a currency code there is no table to format against, so the
   // symbol the caller carried is the best that can be said.
+  // gloobalNotifHeadline handles a missing figure itself now — it answers
+  // "Money sent" / "Money received" rather than a signed zero — so the only
+  // reason left to build a string here is a caller that carried a SYMBOL but
+  // no currency code, which cannot be formatted by the shared table.
   const title = currencyCode
     ? gloobalNotifHeadline(meta)
-    : `${direction === "sent" ? "−" : "+"}${Number(amount || 0).toFixed(2)}${currencySymbol || ""} ${direction === "sent" ? "sent" : "received"}`;
+    : Number.isFinite(Number(amount)) && currencySymbol
+      ? `${direction === "sent" ? "\u2212" : "+"}${Number(amount).toFixed(2)}${currencySymbol}`
+      : gloobalNotifHeadline({ ...meta, amount: null, currency: null });
   return showPaymentNotification({
     title,
     body: gloobalNotifSubline(meta),

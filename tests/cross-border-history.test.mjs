@@ -193,12 +193,19 @@ describe("the period total is a single currency", () => {
   const { convert } = loadDomain(["convert"]);
   const sumHistoryAmount = (() => {
     const src = readSource("frontend/features/history/historyUtils.js");
-    const at = src.indexOf("function sumHistoryAmount(");
-    assert.ok(at > 0, "sumHistoryAmount not found in historyUtils.js");
-    const end = src.indexOf("\n}\n", at);
-    assert.ok(end > at, "could not find the end of sumHistoryAmount");
+    // historyAmountIn comes too: sumHistoryAmount delegates the "what is this
+    // row worth in the target currency?" question to it, so lifting the sum
+    // alone leaves a ReferenceError rather than a total.
+    const lift = (name) => {
+      const at = src.indexOf(`function ${name}(`);
+      assert.ok(at > 0, `${name} not found in historyUtils.js`);
+      const end = src.indexOf("\n}\n", at);
+      assert.ok(end > at, `could not find the end of ${name}`);
+      return src.slice(at, end + 2);
+    };
     // eslint-disable-next-line no-new-func
-    return new Function("convert", `${src.slice(at, end + 2)}; return sumHistoryAmount;`)(convert);
+    return new Function("convert",
+      `${lift("historyAmountIn")}\n${lift("sumHistoryAmount")}; return sumHistoryAmount;`)(convert);
   })();
 
   test("same-currency rows add up exactly as before", () => {
@@ -224,5 +231,48 @@ describe("the period total is a single currency", () => {
 
   test("called without a target it behaves exactly as before", () => {
     assert.equal(sumHistoryAmount([{ amount: 40, currency: "INR" }, { amount: 2 }]), 42);
+  });
+
+  // ── A PAST PAYMENT IS WORTH WHAT IT WAS WORTH ─────────────────────────
+  //
+  // The total used to convert every foreign row with convert(), which reads
+  // a STATIC approximate table — today's rate, near enough. So a payment
+  // made in March was re-priced every time the screen opened, and the same
+  // month's spending changed figure week to week with nothing having
+  // happened. The row already records both of its sides and the rate
+  // between them; those are what it is worth.
+
+  test("a row's own recorded side is used, not today's rate", () => {
+    // ₹2,105.20 left this account to deliver £20. The recorded sender side
+    // IS the answer in INR — no conversion, nothing to drift.
+    const row = {
+      amount: 20, currency: "GBP",
+      senderAmount: 2105.2, senderSideCurrency: "INR",
+      receiverAmount: 20, receiverSideCurrency: "GBP",
+      fxRate: 105.26,
+    };
+    assert.equal(sumHistoryAmount([row], "INR"), 2105.2);
+    // And it is NOT what today's table would say, or the test proves nothing.
+    assert.notEqual(Math.round(convert(20, "GBP", "INR") * 100) / 100, 2105.2);
+  });
+
+  test("the row's own rate is preferred over the static table", () => {
+    // No side in the target currency, but the payment recorded the rate it
+    // settled at. A rate of 200 is deliberately nothing like today's.
+    const row = {
+      amount: 10, currency: "GBP",
+      senderAmount: 2000, senderSideCurrency: "INR",
+      receiverAmount: 10, receiverSideCurrency: "GBP",
+      fxRate: 200,
+    };
+    assert.equal(sumHistoryAmount([row], "INR"), 2000);
+  });
+
+  test("a row that cannot be priced is left out, not counted as zero", () => {
+    // convert() returns 0 — not null — for a pair it has no rate for, and 0
+    // is finite, so the old guard added it as nothing while believing it had
+    // skipped it. One real row plus one unpriceable row is the real row.
+    const rows = [{ amount: 100, currency: "USD" }, { amount: 999, currency: "ZZZ" }];
+    assert.equal(sumHistoryAmount(rows, "USD"), 100);
   });
 });

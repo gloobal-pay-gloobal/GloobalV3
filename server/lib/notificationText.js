@@ -115,7 +115,15 @@ function paymentBannerText({ direction, amount, currency, counterpartyName }) {
     // went — the minus says it and the body beneath says "To Chdg". Dropped
     // in the card first (gloobalNotifHeadline); dropped here in the same
     // breath, because the whole point of this file is that the two agree.
-    title: `${sent ? '−' : '+'}${formatBannerMoney(amount, currency)}`,
+    // A MISSING FIGURE IS NOT ZERO. Without both an amount and a currency
+    // this said "−0.00" with no unit — a payment of nothing, stated as a
+    // fact, on a lock screen. The honest headline is what happened, which is
+    // true without a figure. gloobalNotifHeadline falls back to exactly this
+    // string, and the parity test compares the two.
+    title:
+      amount == null || !Number.isFinite(Number(amount)) || !currency
+        ? (sent ? 'Money sent' : 'Money received')
+        : `${sent ? '−' : '+'}${formatBannerMoney(amount, currency)}`,
     body: counterpartyName
       ? `${sent ? 'To' : 'From'} ${counterpartyName}`
       : (sent ? 'Your Gloobal payment went through.' : 'Money has landed in your Gloobal account.'),

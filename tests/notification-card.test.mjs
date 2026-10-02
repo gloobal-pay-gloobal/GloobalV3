@@ -351,6 +351,29 @@ describe("the banner says what the card says", () => {
     }
   });
 
+  // A notification whose metadata never arrived used to headline "−0.00"
+  // with no unit — a payment of nothing, stated as a fact. Both copies now
+  // say what happened instead, and they have to say it identically or the
+  // lock screen and the card describe one event two ways.
+  test("a payment with no figure says what happened, not minus zero", async () => {
+    const { paymentBannerText } = await import("../server/lib/notificationText.js");
+    for (const [direction, expected] of [["sent", "Money sent"], ["received", "Money received"]]) {
+      for (const meta of [
+        { direction },
+        { direction, amount: null, currency: "INR" },
+        { direction, amount: 12, currency: null },
+        { direction, amount: Number.NaN, currency: "INR" },
+      ]) {
+        assert.equal(frontend.gloobalNotifHeadline(meta), expected,
+          `the card headlines ${JSON.stringify(meta)} wrongly`);
+        assert.equal(paymentBannerText(meta).title, expected,
+          `the banner headlines ${JSON.stringify(meta)} wrongly`);
+      }
+    }
+    // And nothing anywhere produces a signed zero.
+    assert.ok(!/^[+\u2212]0\.00/.test(frontend.gloobalNotifHeadline({ direction: "sent" })));
+  });
+
   test("the headline carries the sign, and it is a minus, not a hyphen", () => {
     // U+2212. A hyphen next to a figure reads as a dash between two things.
     assert.equal(frontend.gloobalNotifHeadline(CASES[0]).charAt(0), "−");

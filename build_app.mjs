@@ -136,6 +136,10 @@ const FRONTEND_MODULES = [
   // calls it — the functions hoist, but DIAL_SOUND_VOICES and DIAL_DETENT_DEG
   // beside them are `var` initialisers that do not.
   "components/common/dialSound.js",
+  // After dialSound.js on purpose: it reads dialAudio(), dialNoiseBuffer and
+  // dialSoundEnabled() out of it, and in a concatenated bundle that means
+  // "defined earlier in the file".
+  "components/common/rewardFx.jsx",
   "components/inputs/dialPads.jsx",
   "components/payments/PayOptionsSheet.jsx",
   "components/payments/PayPinModal.jsx",

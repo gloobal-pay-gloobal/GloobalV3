@@ -297,9 +297,21 @@ async function run() {
   check("mint wrote two lines (fiat leg + coin leg)", mintLines === 2, `lines=${mintLines}`);
   check("send wrote two lines (debit + credit)", sendLines === 2, `lines=${sendLines}`);
   check("redeem wrote two lines (coin leg + fiat leg)", redeemLines === 2, `lines=${redeemLines}`);
-  const coinLines = await LedgerEntry.countDocuments({ currency: "GC" });
+  // GEU, not "GC". This asserted four lines in a currency the server stopped
+  // writing when the coin's unit was renamed, so it was asking for 4 and
+  // getting 0 — a failing assertion in a suite that needs a database and had
+  // therefore not been run. Read from the server's own constant rather than
+  // restated, so the next rename cannot leave this behind again.
+  // server.js does not export it (it is a module-scope const), so it is read
+  // from the source text — which is also the point: if the declaration moves
+  // or changes shape, this fails rather than silently counting zero.
+  const COIN_CURRENCY = (require("node:fs")
+    .readFileSync(join(BACKEND, "server.js"), "utf8")
+    .match(/const COIN_CURRENCY = '([^']+)'/) || [])[1];
+  check("the server declares a coin currency", Boolean(COIN_CURRENCY), String(COIN_CURRENCY));
+  const coinLines = await LedgerEntry.countDocuments({ currency: COIN_CURRENCY });
   const fiatLines = await LedgerEntry.countDocuments({ currency: "INR" });
-  check("coin legs are denominated in GC", coinLines === 4, `GC lines=${coinLines}`);
+  check(`coin legs are denominated in ${COIN_CURRENCY}`, coinLines === 4, `${COIN_CURRENCY} lines=${coinLines}`);
   check("fiat legs are denominated in INR", fiatLines === 2, `INR lines=${fiatLines}`);
   await checkInvariant("after mixed activity");
 

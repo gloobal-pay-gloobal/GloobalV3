@@ -1097,6 +1097,12 @@ function GloobalId() {
       counterpartyIso: dialCountry.iso,
       date: now.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       amount,
+      // The currency that amount is in. Pay a Business settles in the
+      // account's own currency, and saying so is what stops TransactionRow
+      // falling back to the dial country's unit and sumHistoryAmount
+      // treating the figure as already converted — the same gap the Send
+      // Money row had.
+      currency: COUNTRY_CURRENCY[dialCountry.iso] || "USD",
       status: "completed",
       method: methodKey,
       time: formatClockTime(now),
@@ -3680,7 +3686,7 @@ function GloobalId() {
        Gloobal ID screen still passes no count and still gets one:
        replacing an ID you already have is a different, more
        considered decision.) */
-  }{stage === "secureId" && !isLoginAttempt && <SuggestedIdRow id={suggestedRegId} onPick={setSecureId} count={2} />}{
+  }{stage === "secureId" && !isLoginAttempt && <SuggestedIdRow id={suggestedRegId} onPick={setSecureId} />}{
     /* Login only: proof the ID resolves to a real account, shown before
        the PIN screen rather than after a sign-in that would have failed
        for a reason the person could not see. */

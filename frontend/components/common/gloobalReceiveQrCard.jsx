@@ -31,11 +31,65 @@ var GLOOBAL_QR_QUIET_ZONE = 4;
 
 function buildGloobalQrMatrix(text) {
   try {
-    const { size, data } = uqrEncode(text, { ecc: "H", border: 0 });
-    return { size, data };
+    // `types` is uqr's per-module role map: 0 is a data or error-correction
+    // module, anything else is a function pattern (finder, timing,
+    // alignment, format). The classic style draws the two differently — see
+    // gloobalQrClassicLayout — so it is read here rather than re-derived
+    // from coordinates later.
+    const { size, data, types } = uqrEncode(text, { ecc: "H", border: 0 });
+    return { size, data, types };
   } catch {
     return null;
   }
+}
+
+// The dot, as a fraction of a module.
+//
+// Deliberately the SAME constant the animal codes use, not a second one with
+// the same value: the two styles are now one drawing language, and a dot
+// that drifted in only one of them would be a difference nobody chose.
+var GLOOBAL_QR_DOT = GLOOBAL_ANIMAL_QR_OUT_DOT;
+
+// Split a plain code into the two things that get drawn differently.
+//
+// Function patterns — the three finders, the timing lines, the alignment
+// block, the format strips — stay SOLID SQUARES. They are what a decoder
+// locates the code by: it looks for the 1:1:3:1:1 run of dark and light
+// across a finder, and rounding those modules narrows every dark run at its
+// edges. Breaking them is how a pretty QR becomes an unscannable one.
+//
+// Data and error-correction modules become dots. A decoder samples those at
+// the module's CENTRE, which a centred dot covers completely, so the shape
+// of their corners costs nothing the sampler reads.
+//
+// Exactly the division gloobalAnimalQrLayout already makes (it also carves
+// out the animal); this is that same rule with no picture in the middle.
+function gloobalQrClassicLayout(matrix) {
+  const q = GLOOBAL_QR_QUIET_ZONE;
+  const squares = [];
+  const dots = [];
+  const types = matrix.types;
+  for (let y = 0; y < matrix.size; y++) {
+    for (let x = 0; x < matrix.size; x++) {
+      if (!matrix.data[y][x]) continue;
+      // No types map (an older uqr, or a shape this build does not expect):
+      // every dark module stays a square. The code is then exactly what it
+      // was before, which is the right way to lose a decoration.
+      const functional = !types || !types[y] || types[y][x] !== 0;
+      (functional ? squares : dots).push([x + q, y + q]);
+    }
+  }
+  return { squares, dots };
+}
+
+// One module as a square, and one as a circle. Both styles draw through
+// these, so a change to the drawing language reaches the whole app.
+function gloobalQrRectPath(list) {
+  return list.map(([x, y]) => `M${x} ${y}h1v1h-1z`).join("");
+}
+function gloobalQrDotPath(list, diameter) {
+  const r = diameter / 2;
+  return list.map(([x, y]) => `M${x + 0.5 - r} ${y + 0.5}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`).join("");
 }
 
 // The logo square, in modules, measured in the full (quiet-zone included)
@@ -252,20 +306,10 @@ function gloobalQrPaintCornerMark(ctx, corner, face, scale) {
   ctx.fillText(face.letter, corner.cx * scale, corner.cy * scale);
 }
 
-function gloobalQrModulePath(matrix) {
-  const q = GLOOBAL_QR_QUIET_ZONE;
-  let d = "";
-  for (let y = 0; y < matrix.size; y++) {
-    for (let x = 0; x < matrix.size; x++) {
-      if (matrix.data[y][x]) d += `M${x + q} ${y + q}h1v1h-1z`;
-    }
-  }
-  return d;
-}
-
 function GloobalQrSvg({ value, logo = true, discColor, markStep = 0 }) {
   const matrix = buildGloobalQrMatrix(value);
   if (!matrix) return null;
+  const layout = gloobalQrClassicLayout(matrix);
   const box = gloobalQrLogoBox(matrix.size);
   const corner = gloobalQrCornerBadge(matrix.size);
   const face = gloobalQrCornerFace(markStep);
@@ -279,7 +323,11 @@ function GloobalQrSvg({ value, logo = true, discColor, markStep = 0 }) {
       style={{ display: "block" }}
     >
       <rect x="0" y="0" width={box.total} height={box.total} fill="#FFFFFF" />
-      <path d={gloobalQrModulePath(matrix)} fill="#000" shapeRendering="crispEdges" />
+      {/* Function patterns square and crisp; data modules as dots. The dots
+          get no crispEdges — rounding them to the pixel grid is what would
+          make them look like squares again at small sizes. */}
+      <path d={gloobalQrRectPath(layout.squares)} fill="#000" shapeRendering="crispEdges" />
+      <path d={gloobalQrDotPath(layout.dots, GLOOBAL_QR_DOT)} fill="#000" />
       {logo ? (
         <g>
           <circle cx={box.cx} cy={box.cy} r={box.ring} fill="#FFFFFF" />
@@ -321,11 +369,12 @@ function GloobalQrSvg({ value, logo = true, discColor, markStep = 0 }) {
 // it painted on in tests/gloobal-animal-qr.test.mjs. A code is a code — the
 // hallmark is how you know whose it is, and an animal is no less ours.
 function GloobalAnimalQrSvg({ layout, label, markStep = 0 }) {
-  const rects = (list) => list.map(([x, y]) => `M${x} ${y}h1v1h-1z`).join("");
-  const dots = (list, d) => {
-    const r = d / 2;
-    return list.map(([x, y]) => `M${x + 0.5 - r} ${y + 0.5}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`).join("");
-  };
+  // The same two path builders the classic style draws through — see
+  // gloobalQrRectPath / gloobalQrDotPath. They used to be defined here, and
+  // a second copy of a module's shape is exactly how two styles of the same
+  // code start to differ by accident.
+  const rects = gloobalQrRectPath;
+  const dots = gloobalQrDotPath;
   // The animal layout publishes `total` (code plus both quiet zones); the
   // badge wants the code's own size and the quiet zone it sits in.
   const corner = gloobalQrCornerBadge(
@@ -393,13 +442,18 @@ function gloobalQrToPngBlob(value, { moduleScale = 12, discColor, markStep = 0, 
 
       ctx.fillStyle = "#FFFFFF";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // The same split the SVG draws, from the same helper: squares for the
+      // function patterns, dots for the data. A PNG that still came out in
+      // solid squares would mean the code somebody SHARES does not look like
+      // the one they were shown.
+      const classic = gloobalQrClassicLayout(matrix);
       ctx.fillStyle = "#000000";
-      for (let y = 0; y < matrix.size; y++) {
-        for (let x = 0; x < matrix.size; x++) {
-          if (matrix.data[y][x]) {
-            ctx.fillRect((x + GLOOBAL_QR_QUIET_ZONE) * scale, (y + GLOOBAL_QR_QUIET_ZONE) * scale, scale, scale);
-          }
-        }
+      for (const [x, y] of classic.squares) ctx.fillRect(x * scale, y * scale, scale, scale);
+      const dotR = GLOOBAL_QR_DOT / 2 * scale;
+      for (const [x, y] of classic.dots) {
+        ctx.beginPath();
+        ctx.arc((x + 0.5) * scale, (y + 0.5) * scale, dotR, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       // The same badge the SVG draws: white ring, coloured disc, white mark.

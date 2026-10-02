@@ -383,9 +383,31 @@ function buildAuditReport(receipt, options) {
     : receipt.currencyCode;
   const shareIsCredit = isShare ? receipt.direction !== "sent" : receipt.direction === "sent";
   const shareRate = isShare ? receipt.sourceShareRate : receipt.shareRate;
+  // THE RECORDED FIGURE FIRST, and the arithmetic only when there is none.
+  //
+  // This multiplied the payment by the rate every time, which is a
+  // reconstruction of a number the server already recorded — and it rounds
+  // differently from the server's minor-unit figure, so the two can differ
+  // in the last unit. The screen and the shared picture both read the
+  // recorded value first (ReceiptModal's shownShareAmount, receiptImage's
+  // recordedShare) and only fall back to the multiplication for a payment
+  // this device settled locally, which genuinely has no server figure.
+  //
+  // This renderer had no such branch, and it is the one that matters most:
+  // of the three it is the formal artefact, the document literally headed
+  // as an audit report. It printed a reconstructed share that could disagree
+  // with the ledger — and with the figure on screen for the same payment.
+  //
+  // A recorded 0 counts as "not recorded", the same reading the other two
+  // take: every builder defaults an absent share to 0, and a 0% payment has
+  // no share to print anyway.
+  const recordedShareAmount = Number(receipt.shareAmount);
+  const hasRecordedShare = Number.isFinite(recordedShareAmount) && recordedShareAmount > 0;
   const shareAmount = isShare
     ? Number(receipt.shareAmount) || Number(receipt.amount) || 0
-    : (Number(receipt.amount) || 0) * ((Number(receipt.shareRate) || 0) / 100);
+    : hasRecordedShare
+      ? recordedShareAmount
+      : (Number(receipt.amount) || 0) * ((Number(receipt.shareRate) || 0) / 100);
 
   // Read through receiptCurrency.js, the same way the screen and the picture
   // read it. This used to test sourceCurrency / destinationCurrency /

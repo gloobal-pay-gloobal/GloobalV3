@@ -4,13 +4,20 @@ import { RefreshCw } from "lucide-react";
 // Ready-made Gloobal IDs to pick instead of tapping out twelve symbols by
 // hand.
 //
-// `count` is how many to offer at once. It defaults to 1 so the Update
-// Gloobal ID screen — which is picking a replacement for an ID the person
-// already has, one considered decision — keeps exactly the single-row
-// behaviour it has always had. Registration passes 2: someone who has
-// never seen the symbol alphabet has no basis to judge one arbitrary
-// string, and a pair side by side turns "is this one good?" into a choice
-// they can actually make.
+// `count` is how many to offer at once, and both screens now pass 1 —
+// registration and Update Gloobal ID alike.
+//
+// Registration briefly offered 2, on the argument that someone who has never
+// seen the symbol alphabet cannot judge one arbitrary string and needs a
+// comparison. In place it did the opposite: the registration screen already
+// carries the dial pad, the twelve-chip row and the masked field, and a
+// second suggested ID added a row of twelve more symbols to read without
+// adding a decision anyone wanted to make. The refresh circle is the real
+// answer to "I don't like this one", and it was always there.
+//
+// The parameter stays because the component is written without a single
+// branch on it (see the markup below), so a stacked row costs nothing to
+// keep and is one prop away if it is ever wanted again.
 function SuggestedIdRow({ id, onPick, count = 1 }) {
   const [picking, setPicking] = useState7(false);
   const [dotColor, setDotColor] = useState7(() => randomLogoFlipColor());

@@ -93,15 +93,32 @@ describe("Today's Collection is money collected, not share received", () => {
     // PAYER of someone else — and print them on the creator side as though
     // they were the day's takings.
     const src = code(dash());
-    assert.match(
-      src,
-      /\.filter\(\(t\) => t\.kind !== "share" && t\.date === todaysDateLabel\)/,
-      "Today's Collection is counting share legs, or is back on the asset seeds"
-    );
-    assert.ok(
-      !/assetSeeds\.filter\(\(t\) => t\.chip === "CS" && t\.date === todaysDateLabel\)/.test(src),
-      "Today's Collection is reading Creator Share seeds again"
-    );
+    // The two properties, not the exact expression that happened to carry
+    // them. This asserted the whole filter as a source string — including
+    // `t.date === todaysDateLabel`, a comparison on a DISPLAY STRING with no
+    // year in it, which was itself a defect. So the test pinned the bug: the
+    // day boundary is now drawn against `occurredAt`, the instant the server
+    // recorded, and the old assertion failed against the correction.
+    const total = src.slice(src.indexOf("const todaysCollection"), src.indexOf("const todaysCollection") + 1200);
+
+    // 1. A share leg is not a collection. It is the seed a payment planted,
+    //    it lives in My Assets, and counting it here showed a creator money
+    //    they had GIVEN as money they had TAKEN.
+    assert.match(total, /t\.kind === "share"|t\.kind !== "share"/,
+      "Today's Collection is no longer excluding share legs");
+
+    // 2. Not the asset seeds, which are the shares this account earned as
+    //    somebody else's PAYER.
+    assert.ok(!/assetSeeds/.test(total), "Today's Collection is reading Creator Share seeds again");
+
+    // 3. Dated from the recorded instant, not from a printed label.
+    assert.match(total, /occurredAt/, "Today's Collection is back on a display-string date");
+    assert.ok(!/t\.date === todaysDateLabel/.test(total),
+      "Today's Collection is comparing a display string again — 'Oct 1' has no year in it");
+
+    // 4. Totalled into one currency rather than added as bare numbers.
+    assert.match(total, /sumHistoryAmount\(/,
+      "Today's Collection is adding amounts across currencies again");
   });
 
   test("Today's Collection has no settle action", () => {

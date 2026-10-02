@@ -87,18 +87,85 @@ function historyRowStamp(t) {
 //
 // `targetCurrency` is optional so existing callers that just want a raw sum
 // of same-currency rows behave exactly as before.
+// ── A PAST PAYMENT IS WORTH WHAT IT WAS WORTH ───────────────────────────
+//
+// This converted every foreign row with convert(), which reads the static
+// RATES table in backend/data/currencies.js — TODAY's approximate rate. That
+// is the defect buildHistoryReceipt names three screens away and refuses to
+// commit ("The defect: convert() reads TODAY's rate"), and the total kept
+// doing it: a payment made in March was re-priced at October's rate every
+// time somebody opened the screen, so the same month's spending changed
+// figure week to week with nothing having happened.
+//
+// The row already carries what it is worth. Every payment records both of
+// its sides and the rate between them, and mapServerTransaction carries them
+// through as senderAmount / senderSideCurrency and receiverAmount /
+// receiverSideCurrency. When one of those pairs IS the currency being
+// totalled, it is the recorded answer — no conversion, no rate, nothing to
+// drift.
+//
+// Only when the row has no side in the target currency is a rate needed at
+// all, and then the row's OWN recorded fxRate is used before the table is.
+// The table is the last resort and is now counted separately, so a caller
+// can tell a total that is entirely recorded from one that is partly
+// estimated — see `estimated` on the result.
+function historyAmountIn(t, targetCurrency) {
+  const value = Number(t.amount) || 0;
+  if (!targetCurrency || !t.currency || t.currency === targetCurrency) {
+    return { amount: value, recorded: true };
+  }
+
+  // Either side of this payment, as the server recorded it.
+  const figure = (amount, currency) =>
+    currency === targetCurrency && Number.isFinite(Number(amount)) ? Number(amount) : null;
+  const recordedSide = figure(t.senderAmount, t.senderSideCurrency)
+    ?? figure(t.receiverAmount, t.receiverSideCurrency)
+    ?? figure(t.counterpartyAmount, t.counterpartyCurrency);
+  if (recordedSide !== null) return { amount: recordedSide, recorded: true };
+
+  // The rate this payment settled at, in the direction it was stored: one
+  // unit of the RECEIVER's currency in the SENDER's. Used only to cross
+  // between the two currencies this payment actually had.
+  const rate = Number(t.fxRate);
+  if (Number.isFinite(rate) && rate > 0 && t.senderSideCurrency && t.receiverSideCurrency) {
+    if (t.currency === t.receiverSideCurrency && t.senderSideCurrency === targetCurrency) {
+      return { amount: value * rate, recorded: true };
+    }
+    if (t.currency === t.senderSideCurrency && t.receiverSideCurrency === targetCurrency) {
+      return { amount: value / rate, recorded: true };
+    }
+  }
+
+  // Nothing recorded connects this row to the target currency. convert()
+  // returns 0 — not null, whatever the old comment here claimed — when it
+  // has no rate for the pair, and 0 is finite, so an unconvertible row used
+  // to be counted as nothing rather than skipped. Checked properly now.
+  const converted = convert(value, t.currency, targetCurrency);
+  if (!Number.isFinite(converted) || converted === 0) return { amount: 0, recorded: false, missing: true };
+  return { amount: converted, recorded: false };
+}
+
 function sumHistoryAmount(rows, targetCurrency) {
-  const total = rows.reduce((sum, t) => {
-    const value = Number(t.amount) || 0;
-    if (!targetCurrency || !t.currency || t.currency === targetCurrency) return sum + value;
-    // convert() returns null when it has no rate for the pair. Skipping is
-    // the honest choice: a total that quietly counted an unconvertible
-    // foreign figure at face value would be wrong by the whole exchange
-    // rate, which is far worse than one that leaves it out.
-    const converted = convert(value, t.currency, targetCurrency);
-    return Number.isFinite(converted) ? sum + converted : sum;
-  }, 0);
+  let total = 0;
+  for (const t of rows) total += historyAmountIn(t, targetCurrency).amount;
   return Math.round(total * 100) / 100;
+}
+
+// The same total, with an honest account of how it was arrived at: how many
+// rows were taken from the record, how many had to be estimated at today's
+// rate, and how many could not be priced at all. A screen that wants to say
+// so can; one that does not is unaffected.
+function sumHistoryAmountDetailed(rows, targetCurrency) {
+  let total = 0;
+  let estimated = 0;
+  let missing = 0;
+  for (const t of rows) {
+    const part = historyAmountIn(t, targetCurrency);
+    total += part.amount;
+    if (part.missing) missing += 1;
+    else if (!part.recorded) estimated += 1;
+  }
+  return { amount: Math.round(total * 100) / 100, estimated, missing };
 }
 // The payment a Creator Share came from.
 //
@@ -243,7 +310,19 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = nul
     // fabricated 0%, since it isn't a new transaction of its own to
     // guess a rate for; it's the same original payment's Creator
     // Share tab, read from the receiving side.
-    shareRate: t.shareRate ?? (direction === "sent" ? randomShareRate() : null),
+    // NULL WHEN IT IS NOT RECORDED, never a number made up here.
+    //
+    // This used to fall back to randomShareRate() — Math.random() scaled to
+    // 0.00–7.00% — for a sent row with no recorded rate. Every row builder in
+    // the tree sets a numeric shareRate today, so it had no live caller; it
+    // was a random number sitting on a receipt field, one missing mapping
+    // away from being printed as "3.47% of what you paid" and multiplied into
+    // a money amount beside it.
+    //
+    // Absent is a fact about this payment and null says it. The receipt
+    // already draws nothing when the rate is null, which is the honest
+    // rendering of a share nobody recorded.
+    shareRate: t.shareRate ?? null,
     amount: recordedHeadline ? recordedHeadline.amount : t.amount,
     // The row's own, not the account's — same rule as the list.
     //

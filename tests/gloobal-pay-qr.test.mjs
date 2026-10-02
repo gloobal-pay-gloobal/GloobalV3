@@ -49,7 +49,8 @@ const {
   gloobalQrLogoBox,
   gloobalQrCornerBadge,
   gloobalQrCornerFace,
-  GLOOBAL_QR_QUIET_ZONE
+  GLOOBAL_QR_QUIET_ZONE,
+  classicLayout
 } = (() => {
   const src = CARD_SRC;
   const grab = (name) => {
@@ -87,7 +88,8 @@ const {
 ${consts}
      ${grab("gloobalQrDiscInk")}${grab("gloobalQrLogoBox")}
      ${grab("gloobalQrCornerBadge")}${grab("gloobalQrCornerFace")}
-     return { gloobalQrDiscInk, gloobalQrLogoBox, gloobalQrCornerBadge, gloobalQrCornerFace, GLOOBAL_QR_QUIET_ZONE };`
+     ${grab("gloobalQrClassicLayout")}
+     return { gloobalQrDiscInk, gloobalQrLogoBox, gloobalQrCornerBadge, gloobalQrCornerFace, GLOOBAL_QR_QUIET_ZONE, classicLayout: gloobalQrClassicLayout };`
   )(GLOOBAL_QR_LOGO_FRACTION);
 })();
 
@@ -200,9 +202,16 @@ describe("readGloobalPayIdFromPath", () => {
   });
 });
 
-// Rasterise the way the card does: 4-module quiet zone, square black modules,
-// and the badge knocked out of the middle — a white RING with a coloured disc
-// inside it, both circles, centred on the symbol.
+// Rasterise the way the card does: 4-module quiet zone, the function
+// patterns as solid squares and the DATA modules as dots, and the badge
+// knocked out of the middle — a white RING with a coloured disc inside it,
+// both circles, centred on the symbol.
+//
+// The modules were all squares when this was written. The card now draws the
+// data modules as dots (gloobalQrClassicLayout), and a raster that kept
+// filling whole squares would be decoding a denser code than the app ships —
+// it would pass while the real thing failed. Same argument the badge note
+// below makes: model what is drawn, not what used to be.
 //
 // The badge was a white square when this was written. Modelling the shape the
 // app no longer draws would leave this suite agreeing with itself while the
@@ -214,7 +223,7 @@ describe("readGloobalPayIdFromPath", () => {
 // and a letter shape can only remove less ink than the blob standing in for
 // it, so this raster is the pessimistic case.
 function rasterise(text, scale, discColor = "#7C3AED", markStep = 0) {
-  const { size, data } = uqrEncode(text, { ecc: "H", border: 0 });
+  const { size, data, types } = uqrEncode(text, { ecc: "H", border: 0 });
   const total = size + 8;
   const px = total * scale;
   const rgba = new Uint8ClampedArray(px * px * 4).fill(255);
@@ -245,11 +254,23 @@ function rasterise(text, scale, discColor = "#7C3AED", markStep = 0) {
       }
     }
   };
+  // 0.9 of a module, the card's GLOOBAL_QR_DOT. Hardcoded rather than lifted
+  // because the card reads it off gloobalAnimalQr.js, which this suite does
+  // not load — the test below asserts the two agree, so a drift is caught
+  // rather than silently rasterised away.
+  const DOT = 0.9;
+  const dotR = (DOT / 2) * scale;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       if (!data[y][x]) continue;
+      // A function pattern fills its whole module; a data module is a dot
+      // centred in it.
+      const functional = !types || !types[y] || types[y][x] !== 0;
+      const mcx = (x + 4 + 0.5) * scale;
+      const mcy = (y + 4 + 0.5) * scale;
       for (let py = (y + 4) * scale; py < (y + 5) * scale; py++) {
         for (let pxx = (x + 4) * scale; pxx < (x + 5) * scale; pxx++) {
+          if (!functional && near(py, pxx, mcx, mcy) > dotR * dotR) continue;
           // Any module pixel under either badge is replaced by the badge.
           if (inside(py, pxx, ring)) continue;
           if (near(py, pxx, ccx, ccy) <= cr * cr) continue;
@@ -374,6 +395,63 @@ describe("generate with uqr, decode with jsQR", () => {
       const c = contrastOnWhite(gloobalQrCornerFace(step).color);
       assert.ok(c >= 3, `step ${step} measures ${c.toFixed(2)}:1 on white`);
     }
+  });
+
+  test("the data modules are dots and the function patterns are not", () => {
+    // The whole point of the change, as a property of the classified layout
+    // rather than of the drawn path: every finder, timing and alignment
+    // module stays a square, and nothing else does.
+    //
+    // Squares for the function patterns is not decoration. A decoder finds
+    // the code by the 1:1:3:1:1 run of dark and light across a finder, and
+    // rounding those modules narrows every dark run at its edges.
+    const { size, data, types } = uqrEncode(buildGloobalPayUrl(IDS.a), { ecc: "H", border: 0 });
+    assert.ok(types, "uqr stopped reporting module types — the classifier has nothing to read");
+    const layout = classicLayout({ size, data, types });
+
+    const darkTotal = data.flat().filter(Boolean).length;
+    assert.equal(
+      layout.squares.length + layout.dots.length,
+      darkTotal,
+      "the layout lost or invented dark modules"
+    );
+    assert.ok(layout.dots.length > 0, "no module was drawn as a dot");
+    assert.ok(layout.squares.length > 0, "no module was left as a square");
+
+    const q = 4;
+    for (const [x, y] of layout.squares) {
+      assert.notEqual(types[y - q][x - q], 0, `a data module at ${x - q},${y - q} was drawn as a square`);
+    }
+    for (const [x, y] of layout.dots) {
+      assert.equal(types[y - q][x - q], 0, `a function pattern at ${x - q},${y - q} was drawn as a dot`);
+    }
+
+    // The three finders are 7x7 and wholly function pattern, so each corner
+    // must be squares all the way through.
+    const squareSet = new Set(layout.squares.map(([x, y]) => `${x},${y}`));
+    for (const [ox, oy] of [[0, 0], [size - 7, 0], [0, size - 7]]) {
+      for (let y = oy; y < oy + 7; y++) {
+        for (let x = ox; x < ox + 7; x++) {
+          if (!data[y][x]) continue;
+          assert.ok(squareSet.has(`${x + q},${y + q}`), `a finder module at ${x},${y} is not a square`);
+        }
+      }
+    }
+  });
+
+  test("and the dot is the animal codes' dot, not a second one like it", () => {
+    // One drawing language across both styles. A copied 0.9 would let the
+    // plain code and the animal codes drift apart by a decimal nobody read.
+    assert.match(
+      CARD_SRC,
+      /var GLOOBAL_QR_DOT = GLOOBAL_ANIMAL_QR_OUT_DOT;/,
+      "the classic style has its own dot size again"
+    );
+    const animal = readSource("frontend/components/common/gloobalAnimalQr.js");
+    const declared = animal.match(/var GLOOBAL_ANIMAL_QR_OUT_DOT = ([\d.]+)/);
+    assert.ok(declared, "GLOOBAL_ANIMAL_QR_OUT_DOT is gone");
+    // The raster above hardcodes this, so a change to it must land here too.
+    assert.equal(Number(declared[1]), 0.9, "the dot moved; rasterise()'s DOT needs the same value");
   });
 
   test("the pay URL is 44 bytes and a version 5 (37×37) symbol at level H", () => {

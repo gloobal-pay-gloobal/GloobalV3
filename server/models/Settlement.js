@@ -35,9 +35,21 @@ const SettlementSchema = new mongoose.Schema({
   destinationAmount: { type: Number, required: true, min: 0 },
   destinationPoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'CountryCurrencyPool', required: true },
 
-  // sourceCurrency -> destinationCurrency, as used for this settlement.
-  // destinationAmount = sourceAmount * rate, computed once and stored, not
-  // recomputed on read.
+  // destinationCurrency -> sourceCurrency: how many units of the SOURCE
+  // currency one unit of the DESTINATION currency buys, as used for this
+  // settlement. Stored once, never recomputed on read.
+  //
+  // This comment said the opposite — sourceCurrency -> destinationCurrency —
+  // and was wrong about a stored financial figure. The value comes from
+  // server.js's `getRate(destinationCurrency, senderCurrency)`, and every
+  // piece of arithmetic that touches it agrees with the direction stated
+  // here: server.js derives sourceFaceAmount as destination × rate,
+  // receiptCurrency.js prints "1 <receiver> = <rate> <sender>", and
+  // corridor-matrix.test.mjs asserts it across all 37,442 corridors. Only the
+  // description was reversed — which is the kind of thing somebody reads
+  // once, believes, and inverts a figure on.
+  //
+  // So: sourceAmount = destinationAmount × rate.
   // The payee's Creator Share, on each side of the border.
   //
   // A cross-border payment moves four figures through the pools, not two:

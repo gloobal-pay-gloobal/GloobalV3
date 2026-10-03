@@ -14,7 +14,7 @@
 //
 // Coin is fully backed: reserve == issued == sum(coinBalance), maintained by
 // three separate writes and checked by tests/coin-supply-invariant.test.mjs and
-// by GET /api/coin/supply. Raising the accounts alone would leave 12,000 GC in
+// by GET /api/coin/supply. Raising the accounts alone would leave 12,000 GEU in
 // circulation against an empty reserve, and the app would correctly report
 // itself unbacked — every user's Coin screen turning red is the invariant
 // doing its job, not a display bug to work around.
@@ -37,6 +37,11 @@ import { fileURLToPath } from "node:url";
 
 const BACKEND = join(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(join(BACKEND, "server.js"));
+
+// The coin's ticker, from the one place that declares it. This script used to
+// carry its own "GC" literal, which the GC -> GEU rename missed — so every
+// run wrote money rows in a currency the rest of the system no longer uses.
+const { COIN_CURRENCY } = require(join(BACKEND, "lib/coinTicker.js"));
 
 require("dotenv").config({ path: join(BACKEND, ".env"), quiet: true });
 
@@ -214,7 +219,7 @@ async function run() {
               fromUserId: user._id,
               toUserId: null,
               amount: GRANT_PER_ACCOUNT,
-              currency: "GC",
+              currency: COIN_CURRENCY,
               type: "coin_mint",
               status: "success",
               note: "Gloobal Coin airdrop",
@@ -234,7 +239,7 @@ async function run() {
               amount: GRANT_PER_ACCOUNT,
               balanceBefore: round(held),
               balanceAfter: round(held + GRANT_PER_ACCOUNT),
-              currency: "GC",
+              currency: COIN_CURRENCY,
               note: "Gloobal Coin airdrop — platform funded the reserve",
               metadata: { prototype: true, airdrop: true, coinLeg: "coin", transactionReferenceId: transaction.referenceId }
             }

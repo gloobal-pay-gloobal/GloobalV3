@@ -158,7 +158,20 @@ async function run() {
   check("share transaction type is share", shareTxn?.type === "share", shareTxn?.type);
   check("share transaction direction is merchant -> sender",
     String(shareTxn?.fromUserId) !== String(paymentTxn?.fromUserId) && String(shareTxn?.toUserId) === String(paymentTxn?.fromUserId));
-  check("share transaction flagged as moving no balance", shareTxn?.metadata?.noBalanceMovement === true);
+  // Corrected 3 October 2026. This asserted `noBalanceMovement === true`, a
+  // flag the code has not written for some time and which
+  // tests/creator-share-ledger.test.mjs:157 explicitly asserts is ABSENT —
+  // so the two suites contradicted each other and this one was failing on
+  // main before any of today's work. The share leg does not move balance of
+  // its own; the Creator Share was already credited to the payer inside the
+  // payment transaction, which is what the flag the code actually writes
+  // says.
+  check("share leg records that the balance moved with the payment leg",
+    shareTxn?.metadata?.balanceMovedWithPaymentLeg === true,
+    JSON.stringify(shareTxn?.metadata?.balanceMovedWithPaymentLeg));
+  check("and carries no stale noBalanceMovement flag",
+    shareTxn?.metadata?.noBalanceMovement === undefined,
+    JSON.stringify(shareTxn?.metadata?.noBalanceMovement));
   check("exactly 2 success Transactions total", (await Transaction.countDocuments({ status: "success" })) === 2,
     `count=${await Transaction.countDocuments({ status: "success" })}`);
 

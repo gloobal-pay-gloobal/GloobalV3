@@ -58,7 +58,25 @@ const READ_ROUTES = ["/api/geu/supply", "/api/geu/ledger/:symbolId", "/api/geu/:
 
 describe("Gloobal Coin is stored as GEU, not GC", () => {
   test("the server stamps GEU onto coin rows", () => {
-    assert.match(server, /const COIN_CURRENCY = 'GEU';/);
+    // The ticker moved out of this file and into lib/coinTicker.js, because
+    // server.js was never the only thing on the server that writes a coin
+    // row — scripts/coin-airdrop.mjs does too, and while this was a literal
+    // here the two drifted. So the assertion is now "server.js takes it from
+    // the one module", which is a stronger claim than "server.js spells it
+    // correctly".
+    assert.match(server, /const \{ COIN_CURRENCY \} = require\('\.\/lib\/coinTicker'\);/);
+    assert.match(readSource("server/lib/coinTicker.js"), /const COIN_CURRENCY = 'GEU';/);
+  });
+
+  test("and the two tickers are not one constant apart in the same file", () => {
+    // Gloobal Coin and the superseded growth prototype both hold the string
+    // 'GEU'. They are different economic systems sharing a ledger collection,
+    // which is why the prototype's routes are 503. The names must say so:
+    // COIN_CURRENCY and GEU_CURRENCY, one character apart, is how somebody
+    // reaches for the wrong one.
+    assert.match(server, /const GEU_PROTOTYPE_CURRENCY = 'GEU';/);
+    assert.doesNotMatch(server, /const GEU_CURRENCY = /,
+      "the prototype ticker is named one character from the live one again");
   });
 
   test("the browser ledger agrees with it exactly", () => {
@@ -89,6 +107,13 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
   test("nothing anywhere still writes the old ticker", () => {
     for (const file of [
       "server/server.js",
+      "server/lib/coinTicker.js",
+      // Added after this guard missed it: the airdrop writes a Transaction
+      // row and a LedgerEntry row per account, and carried its own "GC"
+      // literal through the whole rename while this test passed. A file list
+      // enumerated by hand is only as good as the hand — anything that writes
+      // a currency onto a money row belongs in it.
+      "server/scripts/coin-airdrop.mjs",
       "backend/domain/coin/CoinService.js",
       "backend/services/api/gloobalApi.js",
       "backend/data/currencies.js"
@@ -164,7 +189,7 @@ describe("the gate is off unless someone deliberately turns it on", () => {
     // as done.
     const gate = server.slice(
       server.indexOf("const requireGeuGrowthPrototype ="),
-      server.indexOf("const GEU_CURRENCY =")
+      server.indexOf("const GEU_PROTOTYPE_CURRENCY =")
     );
     assert.match(gate, /res\.status\(503\)/);
     assert.match(gate, /success: false/);

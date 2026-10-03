@@ -251,7 +251,19 @@ async function mintShareLegAndReceipts({
       payerUserId: receiver._id,
       payeeUserId: sender._id,
       amount: cashback,
-      currency,
+      // `cashbackCurrency`, not `currency`.
+      //
+      // `cashback` here is what the PAYER received, in the PAYER's currency
+      // (server.js passes cashbackCredit). `currency` is the payment's
+      // destination currency — the PAYEE's. Pairing them stored the sender's
+      // figure under the receiver's symbol on every cross-border share: the
+      // same defect this file's own note sixty lines up describes, left
+      // unfixed one level down. The share Transaction above already uses
+      // `cashbackCurrency || currency`; this is the receipt catching up.
+      //
+      // On a same-currency payment the two are identical, which is why it
+      // went unnoticed.
+      currency: cashbackCurrency || currency,
       note: `Share on ${paymentTransaction.referenceId}`,
     });
 

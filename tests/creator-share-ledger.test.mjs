@@ -205,3 +205,37 @@ describe("the arithmetic the user can now do on screen", () => {
     assert.match(shareFlow, /if \(!hasShare\) \{/);
   });
 });
+
+describe("the share receipt is labelled with its own side's currency", () => {
+  // The share TRANSACTION takes `cashbackCurrency || currency` and always
+  // did. The receipt pair beneath it took a bare `currency` — the payment's
+  // DESTINATION currency — while its amount is `cashback`, which at that call
+  // site is cashbackCredit, in the SENDER's. Across a corridor that stored
+  // the rupee figure under the dollar symbol.
+  //
+  // Asserted as a property of the call, not a slice of the file at a fixed
+  // offset: whatever currency the receipt pair is given, it must be the one
+  // that goes with the amount beside it.
+  const flow = readSource("server/lib/merchantShareFlow.js");
+
+  test("issueReceiptPair gets the cashback's own currency", () => {
+    const at = flow.indexOf("const shareReceipts = await issueReceiptPair({");
+    assert.ok(at > 0, "the share receipt pair is no longer minted here");
+    const call = flow.slice(at, flow.indexOf("});", at) + 3);
+
+    assert.match(call, /amount: cashback,/, "the share receipt stopped carrying the payer's figure");
+    assert.match(call, /currency: cashbackCurrency \|\| currency,/,
+      "the share receipt is labelled with the payment's destination currency again");
+    assert.doesNotMatch(call, /^\s*currency,\s*$/m,
+      "a bare `currency` is back on the share receipt");
+  });
+
+  test("and the transaction it belongs to is labelled the same way", () => {
+    // If these two ever disagree, one of them is wrong about the same event.
+    const at = flow.indexOf("const shareTransaction");
+    assert.ok(at > 0, "the share transaction is no longer minted here");
+    const txn = flow.slice(at, flow.indexOf("const shareReceipts", at));
+    assert.match(txn, /currency: cashbackCurrency \|\| currency,/,
+      "the share transaction stopped using the cashback's own currency");
+  });
+});

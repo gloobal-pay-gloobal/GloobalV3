@@ -1,0 +1,277 @@
+Commit messages for the six sandbox commits on feat/receipt-no-photo.
+Written 2026-09-17 11:18 UTC. All six are now applied to the working
+tree in D:\gloobalv3; only the commit objects are sandbox-only.
+
+   frontend/components/common/flipIcons.jsx           |  18 +-
+   .../components/common/gloobalReceiveQrCard.jsx     | 288 +++++++-
+   frontend/components/dialogs/ReceiptModal.jsx       | 155 +++--
+   frontend/features/receipts/receiptImage.js         | 772 ++++++++++++---------
+   tests/coin-receipt.test.mjs                        |  10 +-
+   tests/gloobal-pay-qr.test.mjs                      | 206 +++++-
+   tests/receipt-image.test.mjs                       | 187 ++++-
+   tests/receipt-link-share.test.mjs                  |  63 +-
+   tests/receipt-photo-fx-image.test.mjs              | 147 ++--
+   tests/receipt-share-link.test.mjs                  |  49 +-
+   10 files changed, 1382 insertions(+), 513 deletions(-)
+
+================================================================
+COMMIT 6d14e26
+================================================================
+Take the profile photo off both receipts, and name the currency
+
+No photograph on the receipt, and none fetched for it. The counterparty's
+server-held photo was drawn on the in-app receipt and on the shared PNG,
+with a brand-gradient disc where they had none.
+
+Both are gone, and the fallback is the reason the photo could not simply
+be made optional: where there was no picture the largest mark on the panel
+carried nothing at all, and was there only because the layout had a hole
+shaped like a face. A receipt is a record that gets forwarded — to a chat,
+to an accountant, to whoever asks — and a face is the one thing on it that
+is not a fact about the payment.
+
+The stronger half is that the REQUEST is gone too. Sharing a receipt used
+to call loadCounterpartyPhoto, a request to the server for the other
+party's picture, purely to feed the avatar. Not making it is the point.
+profileAvatar.jsx stays; the scan card and the dashboard still use it.
+
+With the disc removed the shared image's counterparty block centres under
+the amount instead of sitting beside a circle, and its height is measured
+from its content rather than fixed at the height of an avatar.
+
+Also: the in-app hero now names its currency. fmtMoney draws the symbol,
+and a symbol is not the currency — a rupee sign is shared by five
+countries and a dollar sign by more than twenty. On a cross-border receipt
+"1,106.61₹" alone does not say which rupee left the account. The shared
+PNG has carried that line since it was written; the screen it is a picture
+of did not, so the two disagreed about how completely the same payment was
+described. Suppressed where fmtMoney already ends in the code.
+
+Tests: the photo suites asserted the opposite and are rewritten to their
+inverse rather than deleted — no photo reaches the model whatever is
+passed, the module never asks the server for one, and the seeded photo's
+colour appears in zero pixels of the shared PNG. coin-receipt's lone-tab
+assertion is unchanged in substance.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Vvmt91DzH7KfYT8CvZ382d
+
+================================================================
+COMMIT 8394bd7
+================================================================
+Put the GH2H mark in the QR's fourth corner
+
+Three corners of a QR carry finder patterns; the fourth carried nothing.
+The mark from the Send and Receive tiles goes there, cycling G / H / 2 / H
+on the same two-second tick as the centre badge.
+
+Where it sits was measured. Centred on the symbol's own bottom-right 7x7
+block -- the position that mirrors a finder exactly -- it lands on the
+version 5 alignment pattern, which a decoder reads to correct perspective.
+Covering that costs localisation, not error-correction capacity: across 192
+rasters (8 badge colours x 6 module scales x 4 blur levels) the bare code
+decoded 176 times, the mark on the block 138, and a solid dark mark on the
+block only 73.
+
+Moved two modules out, so no alignment module falls under it and the
+overhang goes into the quiet zone instead, the same 7-module circle decoded
+184/192 -- no worse than the code with no mark on it. That is also why the
+mark is mostly white: a light badge reads as a light region, a dark one
+merges with the modules around it.
+
+The four tile colours go through the same darkener the centre disc uses.
+They were drawn to sit on white, not to be read against it -- #3B82F6
+measures 2.03:1 -- and here the ring and the letter ARE the mark, on white.
+
+Tests: the rasteriser now models both badges; every face decodes at every
+badge colour; the alignment pattern's clearance is asserted in module
+coordinates; and the letters and colours are read back out of
+flipIcons.jsx, so the corner and the tile cannot drift apart.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Vvmt91DzH7KfYT8CvZ382d
+
+================================================================
+COMMIT 3c11700
+================================================================
+Rebuild the shared receipt as N3, and share the GH2H mark
+
+The receipt image was a white card with a purple strip across the top, and
+the headline, the status tick and the amount all competed for the same
+middle. N3 inverts it: the whole card is the brand gradient and carries
+exactly one thing -- what happened and how much -- and every fact somebody
+reads back later sits on a white panel floating inside it. The purple is
+what survives at thumbnail size in a chat; the white panel is the part that
+gets forwarded to an accountant. Nothing appears in both.
+
+Two things the layout now does that it did not:
+
+The Transaction ID has its own block instead of a right-aligned detail row.
+It is twelve coloured symbols rather than a word, and squeezed into a row it
+shrank until it could not be read off a screenshot.
+
+The Creator Share is on every receipt, as a chip on the purple, INCLUDING at
+zero. A chip that vanishes at 0% leaves a reader to assume a share was taken
+and not shown; "0% * 0.00 INR" is the only version of that which is true. At
+zero it is drawn quieter, not hidden.
+
+That chip also fixed a real defect it exposed: a Creator Share receipt was
+labelled "Money received", which with the chip present reads as an ordinary
+payment carrying a share of exactly its own size. heroLabel now says Creator
+Share, and the chip drops to the rate alone, because on that receipt the
+figure above IS the share amount. Both decisions are in the model, not the
+renderer, so the tests can read them.
+
+The perforation notches are filled with the card's own gradient object
+rather than a stand-in purple, so they match at whatever height the card
+ends up.
+
+Separately: GH2H_LETTERS and GH2H_LETTER_COLORS move to module scope in
+flipIcons.jsx. They were local to GH2HFlipCircle, which was fine while the
+Send and Receive tiles were the only thing drawing them; the QR's fourth
+corner draws the same mark, and it now reads those arrays instead of
+carrying a second copy. flipIcons.jsx is emitted first in FRONTEND_MODULES,
+which matters -- var initialisers do not hoist across the bundle.
+
+Verified: 22 receipt-image tests, 17 QR tests, 88 across the four suites
+that touch flipIcons. The eight receipt suites fail 15 with and without
+these changes -- identical names both runs -- so all 15 are pre-existing
+(flag CDN and short-link).
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Vvmt91DzH7KfYT8CvZ382d
+
+================================================================
+COMMIT 7c3be02
+================================================================
+Rebuild N3's panel as flat rows, to the approved design
+
+The panel led with a large centred name and gave the conversion a filled box
+of its own. Both pulled the eye away from the figure on the purple, which is
+the one thing this card exists to show. Every fact is a label/value row now,
+the conversion among them rather than announcing itself as a separate event,
+and Date and Time share one row.
+
+The counterparty's country moves into the To row as a flag chip at the right
+edge. The name is measured to stop short of it rather than the flag being
+pushed past the panel, which is how a long name loses its country.
+
+The Transaction ID block is outlined instead of filled: on a white panel a
+filled block reads as a second card. It stays a block rather than a row --
+twelve coloured symbols right-aligned in a row shrank until they could not be
+read off a screenshot.
+
+The hero figure takes a MINUS when money left, and nothing when it arrived.
+A sign rather than a colour: the figure is white on the brand gradient, where
+red-for-out/green-for-in would either fight that ground or vanish into it,
+and a minus survives greyscale, a screenshot and a colour-blind reader. No
+"+" on the received side -- a leading plus reads as an adjustment or a credit
+note rather than as money arriving. amountText stays unsigned; the sign is a
+new heroAmountText, decided in the model so the renderer still decides
+nothing.
+
+One thing in the design was NOT copied. It showed the rate as
+"1 EUR = 91.80 INR" where the server had recorded the other direction.
+Printing that means inverting a number and calling it a record, so the rate
+keeps its stored direction -- see ReceiptModal's fxRateLabel.
+
+The flag row was verified by serving flagcdn locally from the render rig.
+The sandbox cannot reach that host, so without it the flag silently would not
+draw and the row carrying it would have shipped unrendered.
+
+The eight receipt suites fail 15 with and without this change -- identical
+names both runs -- so all 15 remain pre-existing.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Vvmt91DzH7KfYT8CvZ382d
+
+================================================================
+COMMIT 27ae4ed
+================================================================
+Shrink the QR's corner mark, and draw the reference at its real length
+
+The corner mark was a 7-module circle -- exactly a finder pattern's size --
+and read as a fourth finder rather than as a mark. It is 2.8 modules of
+radius now, 64% of that area.
+
+Anchoring changed with it. The badge is positioned by its OUTER edge instead
+of its centre, because the overhang past the symbol is what sets it in the
+corner and resizing it should not slide it diagonally away. That also means
+shrinking it can only INCREASE its clearance from the version 5 alignment
+pattern, so a future size change cannot quietly reintroduce the overlap that
+cost 138/192 when this started. Measured: 3.1, 2.8, 2.5 and 2.2 all decode
+176/192, which is the bare code's own rate.
+
+Separately, a fixture bug worth naming. The render rig used a 12-symbol
+transaction reference -- a Gloobal ID's length, not a transaction ID's, which
+is 20 (TXN_ID_LENGTH in backend/utils/idGenerators.js). Every picture of the
+receipt I have looked at drew that block at 60% of its real content, so the
+one row whose whole justification is that it must stay readable was the one
+row never seen at full length. It fits; the symbols shrink slightly and stay
+legible.
+
+The guard reads TXN_ID_LENGTH out of the generator rather than restating 20,
+checks the fixture against it, and checks the model neither truncates nor
+ellipsises a full-length reference -- including one that arrives grouped with
+spaces, as rows saved before that rule was settled still do.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Vvmt91DzH7KfYT8CvZ382d
+
+================================================================
+COMMIT b51b68e
+================================================================
+One share, carrying the receipt and the link
+
+The receipt had two share buttons: the amount card sent the picture, and the
+Transaction ID box sent the summary and the /t/ link. Whichever you pressed,
+you did not send the other half -- and neither half is the receipt on its
+own. A picture cannot be clicked through to the transaction; a link is not
+something you can look at in a chat.
+
+They are one action now. The Share button builds a single payload with the
+PNG, the summary and the link, and the second button is gone. Copying the
+Transaction ID is still its own button: copying is not sharing.
+
+The awkward part is receiptShareAttempts, and it exists because
+navigator.share is not uniform. A target that accepts files does not
+necessarily accept `url` beside them, and the whole payload is rejected when
+any part is unsupported -- so asking for everything and giving up on a false
+from canShare would lose the picture on exactly the platforms that can show
+it. Each rung drops the least valuable thing that could be causing the
+refusal, canShare decides rather than a browser sniff, and every rung keeps
+the picture:
+
+  1. picture + summary + link
+  2. the same with the link folded into `text`, the field that survives
+  3. picture and summary alone -- reported as its own outcome, so the caller
+     says the link did not go instead of dropping it silently
+
+A rejection from navigator.share itself stops the ladder: that is the
+sheet's answer, not the payload's, and retrying would put a second sheet in
+front of someone who just closed one. Where files cannot be shared at all,
+the picture downloads and the link goes to the clipboard in the same
+gesture -- one action, both halves, by whichever route the platform allows.
+
+Two bugs fixed on the way.
+
+The summary is now built from the TAB's receipt. The picture always was;
+this text was not, so sharing a payment's Creator Share tab sent a picture
+of the share captioned with the payment's figure.
+
+tests/receipt-link-share.test.mjs had been failing on all six of its browser
+tests, and not because of this: it waited on aria-label "Share transaction",
+renamed to "Share receipt link" some time ago. It now drives the single
+button and asserts what only a browser can -- that one tap produces one
+navigator.share call carrying a real >5KB PNG and the /t/ code together.
+
+The old guard "the share sends only the image, with no text" is replaced
+rather than deleted. Its actual concern was the tagline not being repeated
+in the share sheet, and that assertion is kept.
+
+Receipt suites: 15 failures before, 8 after, and the 8 are a strict subset
+of the 15 -- no new failures, six link-share tests fixed.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Vvmt91DzH7KfYT8CvZ382d
+

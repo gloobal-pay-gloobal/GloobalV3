@@ -4278,6 +4278,70 @@ function shareLegPayeeSide(shareTransaction) {
   };
 }
 
+// The financial facts a DUPLICATE response has to carry, read back off the
+// stored payment rather than recomputed.
+//
+// A retry is answered from the record. But the three duplicate branches below
+// returned only `transaction` and `shareTransaction` — none of the top-level
+// figures the first response carried: debitAmount, sourceAmount,
+// senderCurrency, fxRate and the rest. A client that reads those off the
+// response got them on the original and `undefined` on the retry, which is
+// precisely the gap that lets the sender's side be taken for the receiver's:
+// with no `debitAmount` and no `senderCurrency`, the only amount left in the
+// payload is the receiver-currency face value.
+//
+// Every value here comes from the row's own metadata, written when the
+// payment settled. Nothing is recomputed and nothing is read from a live
+// rate, so a retry a day later answers with the figures that governed the
+// payment, not today's.
+//
+// `newBalance` is the one that cannot come from metadata, because it is not
+// stored there. It is read off the sender's LAST ledger line for this
+// transaction — the recorded balance after the payment completed — rather
+// than from the account's balance now, which is a different fact and would
+// drift the moment anything else moved.
+async function storedPaymentFacts(paymentTransaction, sender) {
+  const meta = paymentTransaction?.metadata || {};
+  const num = (value) => (value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value));
+
+  let newBalance = null;
+  try {
+    if (paymentTransaction?._id && sender?._id) {
+      // The cashback-credit line lands after the debit, so it carries the
+      // final figure; a payment with no share has only the debit line.
+      const lines = await LedgerEntry.find({ transactionId: paymentTransaction._id, userId: sender._id })
+        .select('entryType note balanceAfter createdAt')
+        .sort({ createdAt: 1 })
+        .lean();
+      const last = lines.length ? lines[lines.length - 1] : null;
+      newBalance = num(last?.balanceAfter);
+    }
+  } catch (error) {
+    // A missing ledger line is not a reason to refuse a retry. The figure
+    // stays null, which reads as "not recorded" rather than as a number.
+    console.error('Duplicate response balance lookup failed:', error);
+  }
+
+  return {
+    sourceAmount: num(meta.sourceAmount),
+    sourceCurrency: meta.sourceCurrency || null,
+    destinationAmount: num(meta.destinationAmount),
+    destinationCurrency: meta.destinationCurrency || null,
+    debitAmount: num(meta.debitAmount),
+    senderCurrency: meta.senderCurrency || null,
+    fxRate: num(meta.fxRate),
+    fxRateSource: meta.fxRateSource || null,
+    amountBasis: meta.amountBasis || null,
+    cashback: num(meta.cashbackCredit),
+    cashbackCurrency: meta.senderCurrency || null,
+    cashbackRate: num(meta.cashbackRate),
+    payeeReceives: num(meta.destinationAmount) != null && num(meta.cashback) != null
+      ? toMinorUnit(num(meta.destinationAmount) - num(meta.cashback), meta.destinationCurrency)
+      : null,
+    newBalance,
+  };
+}
+
 async function existingShareLegPayload(paymentTransaction) {
   if (!paymentTransaction?._id) return null;
 
@@ -6109,6 +6173,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
           success: true,
           duplicate: true,
           message: 'Duplicate request ignored. Existing transaction returned.',
+          // The same financial facts the original response carried, read back
+          // off the stored row (see storedPaymentFacts).
+          ...(await storedPaymentFacts(existingIdempotentTransaction, sender)),
           transaction: await cleanTransactionPayload(existingIdempotentTransaction, sender, receiver),
           // The share leg that was minted for that original payment, if it
           // had one. Same reference the first response carried, read back
@@ -6157,6 +6224,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         success: false,
         duplicate: true,
         message: 'Duplicate transaction blocked. Please wait before sending the same amount again.',
+        // Named here too: this response points at an existing payment, and a
+        // client that shows it should show that payment's own figures rather
+        // than fall back to the request it just sent.
+        ...(await storedPaymentFacts(recentDuplicate, sender)),
         transaction: await cleanTransactionPayload(recentDuplicate, sender, receiver),
         // Same reasoning as the idempotency-key branch above: this response
         // names an existing payment, so it names that payment's existing
@@ -6645,6 +6716,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             success: true,
             duplicate: true,
             message: 'Duplicate request ignored. Existing transaction returned.',
+            // Same facts as the pre-check branch: the loser of the race is a
+            // retry and must be answered with the winner's recorded figures.
+            ...(await storedPaymentFacts(winningTransaction, sender)),
             transaction: await cleanTransactionPayload(winningTransaction, sender, receiver),
             // The winner's share leg, for the same reason the pre-check
             // branch carries it: the loser of the race is a retry, and a

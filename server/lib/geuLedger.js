@@ -42,13 +42,15 @@
 // that already applied once. Reading, computing, and swapping on exactly what
 // was read cannot double-apply.
 
-const mongoose = require('mongoose');
+// mongoose is no longer needed here: the only thing that used it was the
+// session handling, which moved to lib/atomicSession.js.
 const crypto = require('crypto');
 
 const GeuAccount = require('../models/GeuAccount');
 const Posting = require('../models/Posting');
 const LedgerTransaction = require('../models/LedgerTransaction');
 const { GEU_UNIT, GEU_SCALE, parseMinor, MAX_MINOR, MoneyError } = require('./money');
+const { withAtomicSession: runAtomic, AtomicityError } = require('./atomicSession');
 
 const { SYSTEM_ACCOUNT_IDS } = GeuAccount;
 
@@ -76,56 +78,26 @@ function mintLedgerTransactionId() {
 }
 
 // ── Atomicity gate ───────────────────────────────────────────────────────
+//
+// Shared with lib/disbursement.js via lib/atomicSession.js rather than kept
+// here. Both need "a real transaction or nothing", and a safety primitive
+// that exists in two files is the drift Phase 0 was opened to fix — the coin
+// ticker lived in two places and the two came apart without anything
+// noticing. The GEU-shaped error is still raised here so a route can answer
+// from `code` without knowing which module refused.
 
-function isNoTransactionSupport(error) {
-  const message = String(error?.message || '');
-  return (
-    error?.code === 20 ||
-    error?.codeName === 'IllegalOperation' ||
-    /Transaction numbers are only allowed on/i.test(message) ||
-    /transactions are not supported/i.test(message) ||
-    /Transactions are not supported/i.test(message)
-  );
+function asGeuRefusal(error) {
+  if (error instanceof AtomicityError) {
+    return new GeuLedgerError('ledger_not_atomic', error.message, 503, { cause: error.cause });
+  }
+  return error;
 }
 
-/**
- * Runs `work(session)` inside a real MongoDB transaction, or throws. Never
- * runs the work without one — see this file's header for why.
- */
 async function withAtomicSession(work) {
-  let session;
   try {
-    session = await mongoose.startSession();
+    return await runAtomic(work);
   } catch (error) {
-    if (isNoTransactionSupport(error)) {
-      throw new GeuLedgerError(
-        'ledger_not_atomic',
-        'The GEU ledger requires a MongoDB deployment that supports multi-document transactions (a replica set or mongos). Refusing to write a ledger entry that could not be rolled back.',
-        503,
-        { cause: error.message }
-      );
-    }
-    throw error;
-  }
-
-  try {
-    let result;
-    await session.withTransaction(async () => {
-      result = await work(session);
-    });
-    return result;
-  } catch (error) {
-    if (isNoTransactionSupport(error)) {
-      throw new GeuLedgerError(
-        'ledger_not_atomic',
-        'The GEU ledger requires a MongoDB deployment that supports multi-document transactions (a replica set or mongos). Refusing to write a ledger entry that could not be rolled back.',
-        503,
-        { cause: error.message }
-      );
-    }
-    throw error;
-  } finally {
-    await session.endSession();
+    throw asGeuRefusal(error);
   }
 }
 

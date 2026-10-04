@@ -601,9 +601,18 @@ var GloobalApi = {
           active: row.active === true ? true : row.active === false ? false : null
         })).filter((row) => /^[A-Z]{2}$/.test(row.countryIso)),
         activeCountryRule: result.activeCountryRule || null,
-        // Carried through untouched. `ourSpending.available` is false today
-        // and the screen renders ∆ for it; see the server module's probe for
-        // why a number would be a fabrication.
+        // Carried through untouched, INCLUDING byCountry — the screen reads
+        // that to show a country's own figure when a flag is tapped, and
+        // reshaping it here would mean two places deciding what a payout
+        // means.
+        //
+        // `available` is false until the first disbursement exists, and the
+        // screen renders ∆ for it. That ∆ now means "nothing has been paid
+        // yet" rather than "this cannot be known": models/Disbursement.js is
+        // the record the server's probe used to name as missing. The fallback
+        // below keeps `available: false` rather than inventing a zero, so a
+        // request that failed and a platform that has paid nothing stay
+        // distinguishable.
         ourSpending: result.ourSpending || { total: null, available: false }
       };
     } catch (e) {

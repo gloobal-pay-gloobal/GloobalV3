@@ -353,6 +353,26 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // are directly comparable and there is nothing left here to convert.
   const displaySpend = flipped ? realSpend : totalRealSpend;
   const displayCurrency = coverage ? coverage.currency : coverageCurrency;
+
+  // ── Our spending ───────────────────────────────────────────────────────
+  //
+  // Null means ∆, and ∆ here means "nothing has been paid yet" rather than
+  // "this cannot be known" — which is the whole difference the Disbursement
+  // record made. The server decides: it sends available:false with a reason
+  // until the first payout exists, and a real total afterwards.
+  //
+  // `available` is checked rather than `total != null`, because a genuine
+  // zero is a real answer the day the record type exists and nothing has
+  // been paid, and it must not be confused with the absent case. Nothing
+  // here falls back to another figure when this one is missing: Total
+  // spending sits directly above with a real number, and borrowing it would
+  // assert that money Hoomans paid each other was money Gloobal spent.
+  const ourSpending = coverage ? coverage.ourSpending : null;
+  const ourSpendingTotal = ourSpending && ourSpending.available ? ourSpending.total : null;
+  const ourSpendingHere = ourSpending && ourSpending.available && ourSpending.byCountry
+    ? ourSpending.byCountry[country.code] ?? 0
+    : null;
+  const ourSpendingShown = flipped ? ourSpendingHere : ourSpendingTotal;
   // Total users, platform-wide, from the backend rather than from what
   // this browser can see. computeRealActiveUsers below can only ever
   // answer about the account holding the phone, so on the global view it
@@ -600,16 +620,17 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        sides is what makes it a statement about one country rather than a
        global figure with a flag next to it. */
   }<span style={{ fontSize: 11.5, color: C.inkSoft, lineHeight: 1.4 }}>{flipped ? `What Gloobal ${country.name} spends on Hoomans in ${country.name}` : "What Gloobal spends on Gloobal Hoomans"}</span></span></div>{
-    /* Still ∆, and this subtitle does not change that.
-       server/lib/coverageAggregation.js's ourSpendingProbe checked every
-       candidate and found no record type for a platform-funded
-       disbursement to a person — the seed interest bonus is the only
-       money Gloobal actually pays out, and it writes no Transaction and no
-       LedgerEntry, so there is no per-payout record to attribute to a
-       country. The definition above is now the agreed meaning; the figure
-       arrives when a disbursement record exists to count. Writing a number
-       here before then would be inventing it. */
-  }<span className="font-bold text-lg" style={{ color: deltaColor, transition: "color 0.4s ease", flexShrink: 0 }} aria-label="No data">∆</span></div>{
+    /* The figure, once there is one.
+       models/Disbursement.js is the record the old probe named as missing,
+       and lib/disbursement.js is the only thing that writes one — debiting
+       PlatformAccount in the same transaction that credits the person, so
+       a payout is a movement rather than an appearance.
+       ∆ until the first payout exists. That ∆ now means "nothing has been
+       paid yet" rather than "this cannot be known", and the server says
+       which in ourSpending.reason. The historical AssetSeed interest totals
+       are deliberately NOT folded in: they carry no date and no recorded
+       country, so counting them would mean guessing both. */
+  }{ourSpendingShown != null ? <span className="mono font-bold text-base" style={{ color: C.accent, flexShrink: 0 }}>{fmtCompact(ourSpendingShown)}{currencySuffix(displayCurrency)}</span> : <span className="font-bold text-lg" style={{ color: deltaColor, transition: "color 0.4s ease", flexShrink: 0 }} aria-label="No data">∆</span>}</div>{
     /* Hooman Projects — genuinely no data source anywhere in
        this app, even reduced to "just this one account," so
        every category honestly stays ∆ rather than showing 0 as

@@ -56,3 +56,8 @@ tools/email/progress-report.txt
 
 # Screenshot written by tools/frontend/verify-coverage-ui.mjs on each run.
 tools/frontend/verify-coverage-ui.png
+
+# local scratch: patch files and test run logs
+*.patch
+geu-run*.txt
+am-error.txt

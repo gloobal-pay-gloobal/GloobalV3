@@ -273,9 +273,23 @@ test("the browser's ticker and the server's are the same string", async () => {
   const { fileURLToPath } = await import("node:url");
   const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-  const serverSrc = readFileSync(join(ROOT, "server", "server.js"), "utf8");
+  // The server's ticker moved out of server.js into server/lib/coinTicker.js.
+  // server.js was never the only thing on the server that writes a coin row —
+  // scripts/coin-airdrop.mjs does too, and while the ticker was a literal in
+  // server.js the two drifted: the GC -> GEU rename updated one and missed
+  // the other, so every airdrop wrote money rows in a currency nothing else
+  // used. One module now declares it and both require it.
+  //
+  // This test's claim is unchanged: the browser's ticker and the server's are
+  // the same string. Only where the server keeps its copy has moved.
+  const serverSrc = readFileSync(join(ROOT, "server", "lib", "coinTicker.js"), "utf8");
   const serverTicker = serverSrc.match(/const COIN_CURRENCY = '([^']+)'/);
-  assert.ok(serverTicker, "server.js no longer declares COIN_CURRENCY");
+  assert.ok(serverTicker, "server/lib/coinTicker.js no longer declares COIN_CURRENCY");
+
+  // And server.js takes it from there rather than declaring a second one.
+  const serverMain = readFileSync(join(ROOT, "server", "server.js"), "utf8");
+  assert.match(serverMain, /const \{ COIN_CURRENCY \} = require\('\.\/lib\/coinTicker'\);/,
+    "server.js declares its own coin ticker again");
 
   const domainSrc = readFileSync(join(ROOT, "backend", "domain", "coin", "CoinService.js"), "utf8");
   const domainTicker = domainSrc.match(/var COIN_CURRENCY = "([^"]+)"/);

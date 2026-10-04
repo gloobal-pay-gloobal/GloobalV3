@@ -950,7 +950,7 @@ var GloobalApi = {
       balance: Number(result.balance) || 0,
       reserve: Number(result.reserve) || 0,
       issued: Number(result.issued) || 0,
-      coinCurrency: result.coinCurrency || "GEU",
+      coinCurrency: result.coinCurrency || COIN_CURRENCY,
       reserveCurrency: result.reserveCurrency || "INR",
       accountCurrency: result.accountCurrency || null,
       // How many coin one unit of this account's own currency buys. NOT
@@ -983,7 +983,7 @@ var GloobalApi = {
         heldByAccounts: Number(result.heldByAccounts) || 0,
         holders: Number(result.holders) || 0,
         backed: result.backed === true,
-        coinCurrency: result.coinCurrency || "GEU",
+        coinCurrency: result.coinCurrency || COIN_CURRENCY,
         reserveCurrency: result.reserveCurrency || "INR"
       };
     } catch (err) {

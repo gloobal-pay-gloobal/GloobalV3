@@ -4278,6 +4278,70 @@ function shareLegPayeeSide(shareTransaction) {
   };
 }
 
+// The financial facts a DUPLICATE response has to carry, read back off the
+// stored payment rather than recomputed.
+//
+// A retry is answered from the record. But the three duplicate branches below
+// returned only `transaction` and `shareTransaction` — none of the top-level
+// figures the first response carried: debitAmount, sourceAmount,
+// senderCurrency, fxRate and the rest. A client that reads those off the
+// response got them on the original and `undefined` on the retry, which is
+// precisely the gap that lets the sender's side be taken for the receiver's:
+// with no `debitAmount` and no `senderCurrency`, the only amount left in the
+// payload is the receiver-currency face value.
+//
+// Every value here comes from the row's own metadata, written when the
+// payment settled. Nothing is recomputed and nothing is read from a live
+// rate, so a retry a day later answers with the figures that governed the
+// payment, not today's.
+//
+// `newBalance` is the one that cannot come from metadata, because it is not
+// stored there. It is read off the sender's LAST ledger line for this
+// transaction — the recorded balance after the payment completed — rather
+// than from the account's balance now, which is a different fact and would
+// drift the moment anything else moved.
+async function storedPaymentFacts(paymentTransaction, sender) {
+  const meta = paymentTransaction?.metadata || {};
+  const num = (value) => (value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value));
+
+  let newBalance = null;
+  try {
+    if (paymentTransaction?._id && sender?._id) {
+      // The cashback-credit line lands after the debit, so it carries the
+      // final figure; a payment with no share has only the debit line.
+      const lines = await LedgerEntry.find({ transactionId: paymentTransaction._id, userId: sender._id })
+        .select('entryType note balanceAfter createdAt')
+        .sort({ createdAt: 1 })
+        .lean();
+      const last = lines.length ? lines[lines.length - 1] : null;
+      newBalance = num(last?.balanceAfter);
+    }
+  } catch (error) {
+    // A missing ledger line is not a reason to refuse a retry. The figure
+    // stays null, which reads as "not recorded" rather than as a number.
+    console.error('Duplicate response balance lookup failed:', error);
+  }
+
+  return {
+    sourceAmount: num(meta.sourceAmount),
+    sourceCurrency: meta.sourceCurrency || null,
+    destinationAmount: num(meta.destinationAmount),
+    destinationCurrency: meta.destinationCurrency || null,
+    debitAmount: num(meta.debitAmount),
+    senderCurrency: meta.senderCurrency || null,
+    fxRate: num(meta.fxRate),
+    fxRateSource: meta.fxRateSource || null,
+    amountBasis: meta.amountBasis || null,
+    cashback: num(meta.cashbackCredit),
+    cashbackCurrency: meta.senderCurrency || null,
+    cashbackRate: num(meta.cashbackRate),
+    payeeReceives: num(meta.destinationAmount) != null && num(meta.cashback) != null
+      ? toMinorUnit(num(meta.destinationAmount) - num(meta.cashback), meta.destinationCurrency)
+      : null,
+    newBalance,
+  };
+}
+
 async function existingShareLegPayload(paymentTransaction) {
   if (!paymentTransaction?._id) return null;
 
@@ -6109,6 +6173,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
           success: true,
           duplicate: true,
           message: 'Duplicate request ignored. Existing transaction returned.',
+          // The same financial facts the original response carried, read back
+          // off the stored row (see storedPaymentFacts).
+          ...(await storedPaymentFacts(existingIdempotentTransaction, sender)),
           transaction: await cleanTransactionPayload(existingIdempotentTransaction, sender, receiver),
           // The share leg that was minted for that original payment, if it
           // had one. Same reference the first response carried, read back
@@ -6157,6 +6224,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         success: false,
         duplicate: true,
         message: 'Duplicate transaction blocked. Please wait before sending the same amount again.',
+        // Named here too: this response points at an existing payment, and a
+        // client that shows it should show that payment's own figures rather
+        // than fall back to the request it just sent.
+        ...(await storedPaymentFacts(recentDuplicate, sender)),
         transaction: await cleanTransactionPayload(recentDuplicate, sender, receiver),
         // Same reasoning as the idempotency-key branch above: this response
         // names an existing payment, so it names that payment's existing
@@ -6645,6 +6716,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             success: true,
             duplicate: true,
             message: 'Duplicate request ignored. Existing transaction returned.',
+            // Same facts as the pre-check branch: the loser of the race is a
+            // retry and must be answered with the winner's recorded figures.
+            ...(await storedPaymentFacts(winningTransaction, sender)),
             transaction: await cleanTransactionPayload(winningTransaction, sender, receiver),
             // The winner's share leg, for the same reason the pre-check
             // branch carries it: the loser of the race is a retry, and a
@@ -8233,7 +8307,11 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
 // deploy: see server/scripts/migrate-gc-to-geu.mjs, a one-shot migration run
 // deliberately, because silently rewriting stored money records during a
 // restart is not something that should happen as a side effect of shipping.
-const COIN_CURRENCY = 'GEU';
+// One declaration, in lib/coinTicker.js, because this file is not the only
+// thing on the server that names the coin — scripts/coin-airdrop.mjs writes
+// money rows too, and when this was a literal here the two drifted (see that
+// module's note).
+const { COIN_CURRENCY } = require('./lib/coinTicker');
 
 const coinBalanceOf = (user) => {
   const raw = Number(user?.coinBalance);
@@ -8403,9 +8481,18 @@ app.get('/api/coin/supply', async (req, res) => {
       { $group: { _id: null, total: { $sum: { $ifNull: ['$coinBalance', 0] } }, holders: { $sum: { $cond: [{ $gt: [{ $ifNull: ['$coinBalance', 0] }, 0] }, 1, 0] } } } },
     ]);
 
-    const reserve = toMinorUnit(reserveDoc?.reserve || 0);
-    const issued = toMinorUnit(reserveDoc?.issued || 0);
-    const heldByAccounts = toMinorUnit(held?.total || 0);
+    // Rounded in the RESERVE's currency, not at a bare two places.
+    //
+    // toMinorUnit() with no currency falls back to 2 decimals. All three of
+    // these are reserve-currency figures (the peg is an identity: one coin is
+    // one unit of the reserve currency), and 16 of the 142 currencies in the
+    // master have no minor unit at all. A JPY reserve rounded to two places
+    // reports hundredths of a yen, and `backed` compares three numbers that
+    // were each rounded to a precision their currency does not have.
+    const reserveCurrency = reserveDoc?.reserveCurrency || 'INR';
+    const reserve = toMinorUnit(reserveDoc?.reserve || 0, reserveCurrency);
+    const issued = toMinorUnit(reserveDoc?.issued || 0, reserveCurrency);
+    const heldByAccounts = toMinorUnit(held?.total || 0, reserveCurrency);
 
     return res.json({
       success: true,
@@ -8413,7 +8500,7 @@ app.get('/api/coin/supply', async (req, res) => {
       issued,
       heldByAccounts,
       holders: held?.holders || 0,
-      reserveCurrency: reserveDoc?.reserveCurrency || 'INR',
+      reserveCurrency,
       coinCurrency: COIN_CURRENCY,
       // Not a boast — a comparison of three independently maintained figures.
       // A client that shows "fully backed" is quoting this, and if the numbers
@@ -9492,7 +9579,19 @@ const requireGeuGrowthPrototype = (req, res, next) => {
   });
 };
 
-const GEU_CURRENCY = 'GEU';
+// The SUPERSEDED growth prototype's ticker. Deliberately a different name
+// from COIN_CURRENCY even though it holds the same string, because they are
+// different economic systems: Gloobal Coin is backed 1:1 by CoinReserve and
+// is live; this one has a growth mechanism that creates value, writes to
+// User.geuBalance and GeuSupply, and is disabled.
+//
+// The shared string is the reason the prototype's routes return 503. Both
+// systems post to `ledgerentries` with a `currency` field, so a route that
+// queries by that string cannot tell them apart — GET /api/geu/ledger/:symbolId
+// would return Gloobal Coin's rows under a route describing a different
+// currency. It was called GEU_PROTOTYPE_CURRENCY, one character from the live constant,
+// which is how a reader ends up using the wrong one.
+const GEU_PROTOTYPE_CURRENCY = 'GEU';
 const GEU_REFERENCE_CURRENCY = 'INR';
 // THE 0.3% RULE — a maximum, never a rate that is automatically applied.
 // See POST /api/geu/growth: this number only ever bounds a caller-supplied
@@ -9560,12 +9659,12 @@ app.get('/api/geu/supply', requireGeuGrowthPrototype, async (req, res) => {
       { $group: { _id: null, total: { $sum: { $ifNull: ['$geuBalance', 0] } }, holders: { $sum: { $cond: [{ $gt: [{ $ifNull: ['$geuBalance', 0] }, 0] }, 1, 0] } } } },
     ]);
 
-    const createdFromEntry = toMinorUnit(supplyDoc?.createdFromEntry || 0, GEU_CURRENCY);
-    const createdFromGrowth = toMinorUnit(supplyDoc?.createdFromGrowth || 0, GEU_CURRENCY);
-    const destroyedFromRedemption = toMinorUnit(supplyDoc?.destroyedFromRedemption || 0, GEU_CURRENCY);
-    const destroyedFromNegativeGrowth = toMinorUnit(supplyDoc?.destroyedFromNegativeGrowth || 0, GEU_CURRENCY);
-    const circulating = toMinorUnit(GeuSupply.circulating(supplyDoc), GEU_CURRENCY);
-    const heldByAccounts = toMinorUnit(held?.total || 0, GEU_CURRENCY);
+    const createdFromEntry = toMinorUnit(supplyDoc?.createdFromEntry || 0, GEU_PROTOTYPE_CURRENCY);
+    const createdFromGrowth = toMinorUnit(supplyDoc?.createdFromGrowth || 0, GEU_PROTOTYPE_CURRENCY);
+    const destroyedFromRedemption = toMinorUnit(supplyDoc?.destroyedFromRedemption || 0, GEU_PROTOTYPE_CURRENCY);
+    const destroyedFromNegativeGrowth = toMinorUnit(supplyDoc?.destroyedFromNegativeGrowth || 0, GEU_PROTOTYPE_CURRENCY);
+    const circulating = toMinorUnit(GeuSupply.circulating(supplyDoc), GEU_PROTOTYPE_CURRENCY);
+    const heldByAccounts = toMinorUnit(held?.total || 0, GEU_PROTOTYPE_CURRENCY);
 
     return res.json({
       success: true,
@@ -9575,8 +9674,8 @@ app.get('/api/geu/supply', requireGeuGrowthPrototype, async (req, res) => {
       createdFromGrowth,
       destroyedFromRedemption,
       destroyedFromNegativeGrowth,
-      reserved: toMinorUnit(supplyDoc?.reserved || 0, GEU_CURRENCY),
-      pending: toMinorUnit(supplyDoc?.pending || 0, GEU_CURRENCY),
+      reserved: toMinorUnit(supplyDoc?.reserved || 0, GEU_PROTOTYPE_CURRENCY),
+      pending: toMinorUnit(supplyDoc?.pending || 0, GEU_PROTOTYPE_CURRENCY),
       totalCirculatingGeu: circulating,
       heldByAccounts,
       holders: held?.holders || 0,
@@ -9600,7 +9699,7 @@ app.get('/api/geu/ledger/:symbolId', requireGeuGrowthPrototype, lookupLimit, req
     const user = await User.findOne({ symbolId: String(req.params.symbolId || '').trim() });
     if (!user) return res.status(404).json({ success: false, message: 'Secure ID not found.' });
 
-    const entries = await LedgerEntry.find({ userId: user._id, currency: GEU_CURRENCY })
+    const entries = await LedgerEntry.find({ userId: user._id, currency: GEU_PROTOTYPE_CURRENCY })
       .sort({ createdAt: -1 })
       .limit(100)
       .lean();
@@ -9638,12 +9737,12 @@ app.get('/api/geu/:symbolId', requireGeuGrowthPrototype, lookupLimit, requireAut
       symbolId: user.symbolId,
       geuBalance: geuBalanceOf(user),
       balance: accountBalanceOf(user),
-      geuCurrency: GEU_CURRENCY,
+      geuCurrency: GEU_PROTOTYPE_CURRENCY,
       referenceCurrency: GEU_REFERENCE_CURRENCY,
       // Ceiling for the NEXT growth event this account could post, informational
       // only — GET has no side effect and creates no GeuGrowthEvent.
       maxPositiveGrowthRate: GEU_MAX_POSITIVE_GROWTH_RATE,
-      maxPositiveGrowthIfAppliedNow: floorToMinorUnit(geuBalanceOf(user) * GEU_MAX_POSITIVE_GROWTH_RATE, GEU_CURRENCY),
+      maxPositiveGrowthIfAppliedNow: floorToMinorUnit(geuBalanceOf(user) * GEU_MAX_POSITIVE_GROWTH_RATE, GEU_PROTOTYPE_CURRENCY),
     });
   } catch (error) {
     console.error('GEU balance error:', error);
@@ -9728,7 +9827,7 @@ app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, r
     }
 
     const referenceAmount = toMinorUnit(sourceAmount * exchangeRate, GEU_REFERENCE_CURRENCY);
-    const geuAmount = toMinorUnit(referenceAmount, GEU_CURRENCY);
+    const geuAmount = toMinorUnit(referenceAmount, GEU_PROTOTYPE_CURRENCY);
     // The source amount was checked above; the CONVERTED figure was not, and
     // a small enough source rounds to zero GEU. Refused rather than recorded
     // as a zero-value transaction that still debits the fiat side.
@@ -9764,7 +9863,7 @@ app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, r
         );
 
         const balanceAfter = toMinorUnit(converted.balance, sourceCurrency);
-        const geuAfter = toMinorUnit(converted.geuBalance, GEU_CURRENCY);
+        const geuAfter = toMinorUnit(converted.geuBalance, GEU_PROTOTYPE_CURRENCY);
 
         const [transaction] = await Transaction.create(
           [
@@ -9772,7 +9871,7 @@ app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, r
               fromUserId: user._id,
               toUserId: null,
               amount: geuAmount,
-              currency: GEU_CURRENCY,
+              currency: GEU_PROTOTYPE_CURRENCY,
               type: 'geu_entry_mint',
               status: 'success',
               note: 'GEU entry mint',
@@ -9823,9 +9922,9 @@ app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, r
               userId: user._id,
               entryType: 'credit',
               amount: geuAmount,
-              balanceBefore: toMinorUnit(geuAfter - geuAmount, GEU_CURRENCY),
+              balanceBefore: toMinorUnit(geuAfter - geuAmount, GEU_PROTOTYPE_CURRENCY),
               balanceAfter: geuAfter,
-              currency: GEU_CURRENCY,
+              currency: GEU_PROTOTYPE_CURRENCY,
               note: 'GEU entry-minted',
               metadata: { prototype: true, geuLeg: 'geu', entryId, transactionReferenceId: transaction.referenceId },
             },
@@ -9899,7 +9998,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth, 
   try {
     const { symbolId, growthPeriod, requestedGrowthAmount } = req.body || {};
     const cleanPeriod = String(growthPeriod || '').trim().slice(0, 40);
-    const requested = toMinorUnit(Number(requestedGrowthAmount), GEU_CURRENCY);
+    const requested = toMinorUnit(Number(requestedGrowthAmount), GEU_PROTOTYPE_CURRENCY);
 
     if (!cleanPeriod) {
       return res.status(400).json({ success: false, message: 'growthPeriod is required (e.g. an ISO date identifying the period this event is for).' });
@@ -9932,7 +10031,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth, 
     // this same growth event (openingBalance is read fresh, before any
     // write below, and the atomic $inc guard further down re-checks it
     // against the actual document at write time).
-    const maxPositiveGrowth = floorToMinorUnit(openingBalance * GEU_MAX_POSITIVE_GROWTH_RATE, GEU_CURRENCY);
+    const maxPositiveGrowth = floorToMinorUnit(openingBalance * GEU_MAX_POSITIVE_GROWTH_RATE, GEU_PROTOTYPE_CURRENCY);
 
     if (requested > maxPositiveGrowth) {
       return res.status(400).json({
@@ -9943,7 +10042,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth, 
       });
     }
 
-    const closingBalance = toMinorUnit(openingBalance + requested, GEU_CURRENCY);
+    const closingBalance = toMinorUnit(openingBalance + requested, GEU_PROTOTYPE_CURRENCY);
     if (closingBalance < 0) {
       return res.status(400).json({
         success: false,
@@ -9993,7 +10092,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth, 
               fromUserId: requested < 0 ? user._id : null,
               toUserId: requested < 0 ? null : user._id,
               amount: Math.abs(requested),
-              currency: GEU_CURRENCY,
+              currency: GEU_PROTOTYPE_CURRENCY,
               type: 'geu_growth',
               status: 'success',
               note: `GEU growth event (${reason})`,
@@ -10035,7 +10134,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth, 
                 amount: Math.abs(requested),
                 balanceBefore: openingBalance,
                 balanceAfter: closingBalance,
-                currency: GEU_CURRENCY,
+                currency: GEU_PROTOTYPE_CURRENCY,
                 note: `GEU growth (${reason})`,
                 metadata: { prototype: true, growthEventId, transactionReferenceId: transaction.referenceId },
               },
@@ -10091,7 +10190,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth, 
 app.post('/api/geu/redeem', requireGeuGrowthPrototype, writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const { symbolId, amount, idempotencyKey } = req.body || {};
-    const geuAmount = toMinorUnit(Number(amount), GEU_CURRENCY);
+    const geuAmount = toMinorUnit(Number(amount), GEU_PROTOTYPE_CURRENCY);
     const cleanIdempotencyKey = String(idempotencyKey || '').trim().slice(0, 120);
 
     if (!Number.isFinite(geuAmount) || geuAmount <= 0) {
@@ -10223,7 +10322,7 @@ app.post('/api/geu/redeem', requireGeuGrowthPrototype, writeLimit, requireAuth, 
           { upsert: true, ...sessionOpt }
         );
 
-        const geuAfter = toMinorUnit(debited.geuBalance, GEU_CURRENCY);
+        const geuAfter = toMinorUnit(debited.geuBalance, GEU_PROTOTYPE_CURRENCY);
         const balanceAfter = toMinorUnit(credited.balance, destinationCurrency);
 
         const [transaction] = await Transaction.create(
@@ -10232,7 +10331,7 @@ app.post('/api/geu/redeem', requireGeuGrowthPrototype, writeLimit, requireAuth, 
               fromUserId: user._id,
               toUserId: null,
               amount: geuAmount,
-              currency: GEU_CURRENCY,
+              currency: GEU_PROTOTYPE_CURRENCY,
               type: 'geu_redeem',
               status: 'success',
               note: 'GEU redeemed',
@@ -10273,9 +10372,9 @@ app.post('/api/geu/redeem', requireGeuGrowthPrototype, writeLimit, requireAuth, 
               userId: user._id,
               entryType: 'debit',
               amount: geuAmount,
-              balanceBefore: toMinorUnit(geuAfter + geuAmount, GEU_CURRENCY),
+              balanceBefore: toMinorUnit(geuAfter + geuAmount, GEU_PROTOTYPE_CURRENCY),
               balanceAfter: geuAfter,
-              currency: GEU_CURRENCY,
+              currency: GEU_PROTOTYPE_CURRENCY,
               note: 'GEU redeemed',
               metadata: { prototype: true, geuLeg: 'geu', redemptionId, transactionReferenceId: transaction.referenceId },
             },

@@ -18,6 +18,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -332,6 +333,41 @@ describe('mongoose cannot be the guard, which is why the boundary exists', () =>
     assert.equal(hydrated.balanceMinor, 19200n);
     assert.equal(typeof hydrated.balanceMinor, 'bigint');
   });
+});
+
+describe('nothing on a money path reads through .lean()', () => {
+  // A source check rather than a behavioural one, because the failure needs a
+  // real database to reproduce and is invisible without one.
+  //
+  // `.lean()` skips mongoose's casting and returns what the driver produced,
+  // and the driver promotes a BSON Int64 to a JavaScript NUMBER whenever it
+  // fits in 53 bits — which every realistic balance does. So one `.lean()` on
+  // a money query silently converts the exact integers this system is built on
+  // back into Float64.
+  //
+  // This is not hypothetical. lib/geuReconcile.js shipped with four of them,
+  // and the first run against a real cluster reported every balance as
+  // `balance_unreadable — balanceMinor is number, not a BigInt`. The job whose
+  // entire purpose is catching money errors was reading money as a float.
+  const readSource = (file) =>
+    readFileSync(join(ROOT, file), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+
+  for (const file of [
+    'server/lib/geuReconcile.js',
+    'server/lib/geuLedger.js',
+    'server/models/GeuAccount.js',
+    'server/models/Posting.js',
+    'server/models/LedgerTransaction.js',
+  ]) {
+    test(`${file} hydrates through the schema`, () => {
+      assert.ok(
+        !/\.lean\(/.test(readSource(file)),
+        `${file} calls .lean() — an Int64 balance would come back as a Float64`
+      );
+    });
+  }
 });
 
 describe('a GEU account states what kind of account it is', () => {

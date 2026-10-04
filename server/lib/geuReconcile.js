@@ -44,7 +44,23 @@ const { SYSTEM_ACCOUNT_IDS } = GeuAccount;
  */
 async function reconcileGeuLedger({ unit = GEU_UNIT } = {}) {
   const findings = [];
-  const accounts = await GeuAccount.find({ unit }).lean();
+
+  // ── No .lean() anywhere in this file, and that is the point ────────────
+  //
+  // `.lean()` skips mongoose's casting and hands back whatever the driver
+  // produced. The driver promotes a BSON Int64 to a JavaScript NUMBER when it
+  // fits in 53 bits — which every realistic balance does. So a lean read
+  // turns the exact integers this whole system is built on back into Float64
+  // at the last moment, in the one job whose purpose is catching exactly that.
+  //
+  // It was written with .lean() and shipped that way, and the ledger suite
+  // caught it on the first real run: every balance came back
+  // `balance_unreadable — balanceMinor is number, not a BigInt`. Hydrating
+  // through the schema costs time on a batch job and returns a bigint every
+  // time. If this ever becomes too slow, the fix is .lean() with
+  // `promoteLongs: false` plus an explicit Long -> BigInt conversion — not
+  // .lean() on its own.
+  const accounts = await GeuAccount.find({ unit });
 
   // ── Per account: the balance is a cache of the postings ────────────────
   //
@@ -52,6 +68,9 @@ async function reconcileGeuLedger({ unit = GEU_UNIT } = {}) {
   // read. The postings are the truth. If these disagree, the balance is what
   // is wrong — but this job does not act on that, it says so.
   let sumOfBalances = 0n;
+  // Counted, because a total that silently skipped a row is a wrong total that
+  // looks right. See the guard below the loop.
+  let unreadableAccounts = 0;
   const perAccount = [];
 
   for (const account of accounts) {
@@ -67,6 +86,7 @@ async function reconcileGeuLedger({ unit = GEU_UNIT } = {}) {
         accountId: account.accountId,
         detail: `balanceMinor is ${typeof stored}, not a BigInt — this account's figure cannot be checked`,
       });
+      unreadableAccounts += 1;
       perAccount.push({ accountId: account.accountId, readable: false });
       continue;
     }
@@ -82,7 +102,6 @@ async function reconcileGeuLedger({ unit = GEU_UNIT } = {}) {
     // on a healthy ledger.
     const cursor = Posting.find({ accountId: account._id })
       .sort({ accountSequence: 1 })
-      .lean()
       .cursor();
 
     for await (const posting of cursor) {
@@ -106,6 +125,7 @@ async function reconcileGeuLedger({ unit = GEU_UNIT } = {}) {
     }
 
     if (derived === null) {
+      unreadableAccounts += 1;
       perAccount.push({ accountId: account.accountId, readable: false });
       continue;
     }
@@ -185,7 +205,24 @@ async function reconcileGeuLedger({ unit = GEU_UNIT } = {}) {
   // Every transaction's legs sum to zero, so the sum of every balance must be
   // zero as well. This single figure is the one that would move if money had
   // been created or destroyed anywhere in the system's history.
-  if (sumOfBalances !== 0n) {
+  // An incomplete sum is NOT a zero. When an account could not be read, its
+  // balance was skipped, and the running total is therefore a total of
+  // something other than the ledger — reporting it as 0 would be the healthy
+  // answer given for the unhealthiest reason.
+  //
+  // This was live for exactly one test run: with every balance unreadable, the
+  // sum stayed at its initial 0n and the check announced that the ledger
+  // balanced perfectly. Never turn missing financial data into zero — including
+  // when the code doing it is the code written to enforce that rule.
+  const sumIsComplete = unreadableAccounts === 0;
+
+  if (!sumIsComplete) {
+    findings.push({
+      code: 'sum_incomplete',
+      unreadableAccounts,
+      detail: `${unreadableAccounts} account balance(s) could not be read, so the ledger total is unknown — not zero`,
+    });
+  } else if (sumOfBalances !== 0n) {
     findings.push({
       code: 'ledger_does_not_sum_to_zero',
       sumMinor: sumOfBalances.toString(),
@@ -194,9 +231,9 @@ async function reconcileGeuLedger({ unit = GEU_UNIT } = {}) {
   }
 
   // ── Per transaction ────────────────────────────────────────────────────
-  const transactions = await LedgerTransaction.find({ unit }).lean();
+  const transactions = await LedgerTransaction.find({ unit });
   for (const transaction of transactions) {
-    const postings = await Posting.find({ ledgerTransactionId: transaction._id }).lean();
+    const postings = await Posting.find({ ledgerTransactionId: transaction._id });
 
     if (postings.length !== transaction.postingCount) {
       findings.push({
@@ -287,7 +324,9 @@ async function reconcileGeuLedger({ unit = GEU_UNIT } = {}) {
     totals: {
       accountCount: accounts.length,
       transactionCount: transactions.length,
-      sumOfBalancesMinor: sumOfBalances.toString(),
+      unreadableAccounts,
+      // null, never 0, when any balance could not be read.
+      sumOfBalancesMinor: sumIsComplete ? sumOfBalances.toString() : null,
       inCirculationMinor: inCirculation === null ? null : inCirculation.toString(),
       inCirculationDisplay: inCirculation === null ? null : formatMinor(inCirculation),
       heldByAccountsMinor: heldElsewhere.toString(),

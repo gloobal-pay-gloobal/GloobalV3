@@ -440,8 +440,17 @@ async function run() {
   console.log('\nreconciliation re-derives every balance from the postings');
   const report = await reconcileGeuLedger();
   check('the ledger reconciles clean', report.ok === true, JSON.stringify(report.findings).slice(0, 300));
+
+  // Asserted before the sum, because the sum is only meaningful once every
+  // balance was actually readable. The first real run of this file failed
+  // here — reconciliation used .lean(), the driver promoted Int64 to a
+  // JavaScript number, and every balance came back unreadable. The sum check
+  // below PASSED anyway, on a running total that had skipped every account.
+  check('every balance was readable as an exact integer',
+    report.totals.unreadableAccounts === 0,
+    `${report.totals.unreadableAccounts} unreadable`);
   check('the sum of every balance is exactly zero', report.totals.sumOfBalancesMinor === '0',
-    report.totals.sumOfBalancesMinor);
+    String(report.totals.sumOfBalancesMinor));
   check('circulation equals what the accounts hold',
     report.totals.inCirculationMinor === report.totals.heldByAccountsMinor,
     `${report.totals.inCirculationDisplay} issued`);

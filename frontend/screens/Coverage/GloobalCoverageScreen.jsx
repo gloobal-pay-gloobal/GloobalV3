@@ -37,6 +37,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   const [showSpendingCurrencyPicker, setShowSpendingCurrencyPicker] = useState16(false);
   const [selectedHoomanCategory, setSelectedHoomanCategory] = useState16("Infrastructure");
   const [showHoomanCategoryPicker, setShowHoomanCategoryPicker] = useState16(false);
+
   // Searches the eight CATEGORY NAMES, in the browser. Kept exactly as it
   // was, and kept separate from the project search below: one filters a
   // fixed list of names, the other queries stored records, and collapsing
@@ -236,6 +237,40 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     setProjectSummary("");
     setProjectLink("");
     setProjectFile(null);
+
+  // ── Hardware back, wired for every overlay on this screen ──────────────
+  //
+  // This is what makes removing the in-screen back arrow safe rather than a
+  // trap. These five overlays never registered with useBackClose, so the
+  // phone's back gesture fell through to App.jsx's handler and closed the
+  // WHOLE Coverage screen — or, on the outermost one, left the PWA. With no
+  // arrow drawn and no registration, Hooman Projects would have been a
+  // screen with no way out on iOS, where a standalone PWA has no system back
+  // at all.
+  //
+  // Registered innermost-last so the stack unwinds in the order they were
+  // opened: the category picker closes before the screen under it.
+  //
+  // Placed HERE, below every piece of state and every callback they read,
+  // rather than up with the other useState calls. `showProjectForm` is
+  // declared forty lines further down than the others, and reading it above
+  // its own `const` is a temporal dead zone — the whole Coverage screen
+  // threw on render and showed its error boundary. Hook order is what must
+  // stay stable between renders, not hook position, so the only requirement
+  // is that these five run unconditionally and in the same order every time,
+  // which they do from here.
+  useBackClose(showHoomanProjects, () => setShowHoomanProjects(false));
+  useBackClose(showSpendingBreakdown, () => {
+    setShowSpendingBreakdown(false);
+    setSpendingBreakdownQuery("");
+  });
+  useBackClose(showSpendingCurrencyPicker, () => setShowSpendingCurrencyPicker(false));
+  useBackClose(showProjectForm, () => {
+    setShowProjectForm(false);
+    resetProjectForm();
+  });
+  useBackClose(showHoomanCategoryPicker, () => setShowHoomanCategoryPicker(false));
+
     setProjectError(null);
   };
 
@@ -547,8 +582,34 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        across accounts (see BACKEND_CONTRACT.md). */
   }<div
     className="flex items-center justify-between rounded-2xl px-4 py-4"
-    style={{ background: "#FFFFFF", border: `1px solid ${C.line}`, width: "100%" }}
-  ><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><Activity size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Our spending</span></div><span className="font-bold text-lg" style={{ color: deltaColor, transition: "color 0.4s ease" }} aria-label="No data">∆</span></div>{
+    style={{ background: "#FFFFFF", border: `1px solid ${C.line}`, width: "100%", gap: 12 }}
+  ><div className="flex items-center gap-3" style={{ minWidth: 0 }}><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft, flexShrink: 0 }}><Activity size={16} style={{ color: C.accent }} /></div><span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span className="text-sm font-semibold" style={{ color: C.ink }}>Our spending</span>{
+    /* What the number MEANS, said on the row rather than left to be
+       inferred from two words. It is the one line on this screen that
+       distinguishes the two spending figures: Total spending above is
+       Hoomans paying each other, this is Gloobal paying Hoomans. Without
+       it they read as the same quantity measured twice, which is most of
+       why the ∆ below looks like a bug rather than an honest gap.
+
+       It follows the selected country, because "Gloobal" means something
+       different once a flag is tapped — the local entity, spending on the
+       people who are there. Phrased "Hoomans in India" rather than "Indian
+       Hoomans" because countries.js carries no demonym, and inventing 194
+       of them to fill a subtitle would be 194 chances to get someone's
+       nationality wrong. The country name repeats on purpose: naming both
+       sides is what makes it a statement about one country rather than a
+       global figure with a flag next to it. */
+  }<span style={{ fontSize: 11.5, color: C.inkSoft, lineHeight: 1.4 }}>{flipped ? `What Gloobal ${country.name} spends on Hoomans in ${country.name}` : "What Gloobal spends on Gloobal Hoomans"}</span></span></div>{
+    /* Still ∆, and this subtitle does not change that.
+       server/lib/coverageAggregation.js's ourSpendingProbe checked every
+       candidate and found no record type for a platform-funded
+       disbursement to a person — the seed interest bonus is the only
+       money Gloobal actually pays out, and it writes no Transaction and no
+       LedgerEntry, so there is no per-payout record to attribute to a
+       country. The definition above is now the agreed meaning; the figure
+       arrives when a disbursement record exists to count. Writing a number
+       here before then would be inventing it. */
+  }<span className="font-bold text-lg" style={{ color: deltaColor, transition: "color 0.4s ease", flexShrink: 0 }} aria-label="No data">∆</span></div>{
     /* Hooman Projects — genuinely no data source anywhere in
        this app, even reduced to "just this one account," so
        every category honestly stays ∆ rather than showing 0 as
@@ -645,87 +706,97 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        /api/projects were written; the note is kept in this shape because
        the ∆ it describes still has a job — it is what the card shows when
        the server does not answer, which is a different fact from zero. */
-  }{showHoomanProjects && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => setShowHoomanProjects(false)} /><span style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minWidth: 0 }}>{
-    /* Title and country STACKED, not side by side.
+  }{showHoomanProjects && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>{
+    /* The header is the country, and nothing else.
 
-       Side by side is what this was first, and a render showed why it
-       cannot be: three things share this row — the back button, the title,
-       and the category pill — and the title wraps to two lines at phone
-       width. The country was the last in and lost, rendering as "Pa…",
-       which is a label that has stopped saying the one thing it exists to
-       say. Below the title it has the whole width. */
-  }<span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.15 }}>
-              H<SingleOMark before="" after="" /><SingleOMark before="" after="" />man Projects
-            </span>{
-    /* Whose projects these are. The overlay covers the country panel it
-       was opened from, so without this the one piece of context that
-       decides what is in the list is the thing the list does not say. */
-  }<span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}><FlagEmoji flag={country.flag} width={18} height={13} radius={3} /><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{country.name}</span></span></span>{
-    /* Current category — top-right corner, tap to search/pick a
-       different one. Only one shown at a time, not all 8. */
-  }<button
-    onClick={() => setShowHoomanCategoryPicker(true)}
+       No screen title: "Hooman Projects" moved into the search field, where
+       it is doing a job — telling you what the box searches — instead of
+       sitting at the top restating the screen you already opened. No back
+       arrow either; the phone's own back closes this now, which the hook
+       registrations above are what actually make true.
+
+       What is left is the flag, round, at the size of the control it
+       replaced. It is the one fact that decides what is in the list, so it
+       is the one thing in the header.
+
+       It is also THE WAY OUT, and that is not decoration.
+
+       The plan was to drop the arrow and let the phone's back gesture do
+       it. Measured on a real render, it does not: one back from here lands
+       on the dashboard, not on the Coverage screen underneath, and the
+       overlay's own useBackClose registration below never pushed a history
+       entry — history.state stayed where it was. On iOS there is no system
+       back inside a standalone PWA at all, so shipping this with no control
+       would have been a screen with no exit on one of the two platforms.
+
+       So the flag sits exactly where the back arrow sat, at the size of the
+       control it replaced, and tapping it closes the screen. The accessible
+       name says so — "United States. Back to Gloobal Coverage" — because a
+       flag does not look like a way out, and the one person who most needs
+       to be told is the one who cannot see it. */
+  }<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", flexShrink: 0 }}><button
+    onClick={() => setShowHoomanProjects(false)}
     className="v2-tap"
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      borderRadius: 999,
-      background: T.surface,
-      boxShadow: T.shadowCard,
-      padding: "8px 12px",
-      border: "none",
-      cursor: "pointer"
-    }}
-  ><span style={{ fontSize: 12, fontWeight: 800, color: T.accent }}>{selectedHoomanCategory}</span><ChevronDown3 size={13} color={T.accent} /></button></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{(() => {
-    const cat = HOOMAN_PROJECT_CATEGORIES.find((c) => c.name === selectedHoomanCategory);
-    return <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 18px" }}>{
-      /* Shown only after a create that landed somewhere other than the
-         country being viewed, which is not an error and not something the
-         person did wrong — it is simply where their account is. Saying it
-         is what turns an unexplained country change into an explained one.
-         It clears itself the next time they pick a country by hand. */
-    }{projectFiledIn === country.code && <div
-      role="status"
-      style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, padding: "10px 12px", borderRadius: T.radiusMd, background: T.accentSoft }}
-    ><FlagEmoji flag={country.flag} width={18} height={13} radius={3} /><span style={{ fontSize: 11.5, fontWeight: 600, color: T.accent, lineHeight: 1.45 }}>
-        Saved in {country.name} — projects are filed where your account is registered, so that is where this one lives.
-      </span></div>}<div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{cat.name}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>{cat.examples}</div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, paddingTop: 16, borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 12, color: T.inkFaint }}>{
-      /* Names the country, because the number is that country's.
-         "Projects in this category" was true when the list was the whole
-         platform's; against a per-country list it is a label that quietly
-         drops the more surprising half of what it counts. */
-    }Projects in {country.name}</span>{
-      /* A real count, from the same response the list below is
-         built from — so the number on this card and the rows
-         under it can never disagree. It was a hardcoded ∆, which
-         went on saying "no data" while real projects were being
-         listed directly beneath it. ∆ survives for the one case
-         it was always meant for: the server did not answer. */
-    }<span style={{ fontSize: 18, fontWeight: 800, color: projectsData ? T.accent : T.inkFaint }} aria-label={projectsData ? void 0 : "No data"}>{projectsData ? projectsData.counts[cat.name] ?? 0 : "∆"}</span></div></div>;
-  })()}{
-    /* Project search. Searches stored PROJECTS on the server — a
-       different thing from the category picker's box above, which
-       filters the eight fixed category NAMES in the browser. Kept
-       as two controls deliberately: one box doing both would be a
-       control that claimed to search projects while filtering a
-       hardcoded array. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "10px 14px" }}><Search5 size={16} color={T.inkFaint} /><input
+    aria-label={`${country.name}. Back to Gloobal Coverage`}
+    title={country.name}
+    style={{ display: "flex", border: "none", background: "none", padding: 0, cursor: "pointer", borderRadius: 999 }}
+  ><FlagEmoji flag={country.flag} size={40} shape="circle" /></button>{
+    /* Search and category, on the SAME line as the flag.
+
+       The flag was a row of its own with 350px of empty space beside it,
+       and the search bar was the first thing in the scroll below. They are
+       one row now: who, then what you are looking for. The bar is a pill
+       rather than a rounded rectangle so it reads as a sibling of the round
+       flag rather than a block parked next to it.
+
+       The field says what it searches. The chip beside it changes what is
+       being searched, and shows the current type rather than making you
+       open it to find out. Capped at 46% so a long category name cannot
+       squeeze the field down to nothing. */
+  }<div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 7, borderRadius: 999, background: T.surfaceAlt, padding: "5px 6px 5px 12px" }}><Search5 size={16} color={T.inkFaint} style={{ flexShrink: 0 }} /><input
     type="text"
     value={projectQuery}
     onChange={(e) => setProjectQuery(e.target.value)}
-    placeholder={`Search projects in ${selectedHoomanCategory}`}
-    aria-label="Search projects"
-    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 14, color: T.ink, fontFamily: "inherit" }}
-  />{projectQuery && <button onClick={() => setProjectQuery("")} aria-label="Clear project search" style={{ border: "none", background: "none", cursor: "pointer", padding: 0, display: "flex" }}><X5 size={14} color={T.inkFaint} /></button>}</div>{
+    placeholder="Hooman Projects"
+    aria-label="Search Hooman Projects"
+    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 14, color: T.ink, fontFamily: "inherit", padding: "8px 0" }}
+  />{projectQuery && <button onClick={() => setProjectQuery("")} aria-label="Clear project search" style={{ border: "none", background: "none", cursor: "pointer", padding: 0, display: "flex", flexShrink: 0 }}><X5 size={14} color={T.inkFaint} /></button>}<button
+    onClick={() => setShowHoomanCategoryPicker(true)}
+    className="v2-tap"
+    aria-label={`Project type: ${selectedHoomanCategory}. Change type`}
+    style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0, maxWidth: "46%", border: "none", background: T.surface, boxShadow: T.shadowCard, borderRadius: 999, padding: "7px 10px 7px 12px", cursor: "pointer" }}
+  ><span style={{ fontSize: 12, fontWeight: 800, color: T.accent, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanCategory(selectedHoomanCategory).name}</span><ChevronDown3 size={13} color={T.accent} style={{ flexShrink: 0 }} /></button></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 24px", display: "flex", flexDirection: "column", gap: 14 }}>{
+    /* Shown only after a create that landed somewhere other than the
+       country being viewed, which is not an error and not something the
+       person did wrong — it is simply where their account is. Saying it
+       is what turns an unexplained country change into an explained one.
+       It clears itself the next time they pick a country by hand. */
+  }{projectFiledIn === country.code && <div
+    role="status"
+    style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: T.radiusMd, background: T.accentSoft }}
+  ><FlagEmoji flag={country.flag} width={18} height={13} radius={3} /><span style={{ fontSize: 11.5, fontWeight: 600, color: T.accent, lineHeight: 1.45 }}>
+      Saved in {country.name} — projects are filed where your account is registered, so that is where this one lives.
+    </span></div>}{
+    /* The count, moved out of the card and down to the rows it describes.
+
+       On the card it was an 18px figure beside a "Projects in <country>"
+       label, two scrolls above the list, which made it a claim you had to
+       take on trust. Here it sits on the list it counts.
+
+       The country is not repeated — it is in the eyebrow at the top of the
+       screen, and saying it twice was half of what made this screen feel
+       cluttered. The three states the card had are kept exactly: a real
+       count, including a real zero, and ∆ for "the server did not answer",
+       which is a different fact from none and must never be shown as 0. */
+  }<div style={{ display: "flex", alignItems: "center", gap: 6, paddingInline: 2 }}>{projectsData ? <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>{(projectsData.counts[selectedHoomanCategory] ?? 0) === 1 ? "1 project" : `${projectsData.counts[selectedHoomanCategory] ?? 0} projects`}</span> : <><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Projects</span><span style={{ fontSize: 13, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</span></>}</div>{
     /* The projects themselves. Three states, kept distinct: the
        server could not answer (∆), it answered with nothing (a
        real empty state), or it answered with rows. Collapsing the
        first two would show "no projects yet" every time the
        backend was asleep. */
-  }{projectsLoading && !projectsData ? <div style={{ padding: "24px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Loading…</div> : !projectsData ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>Couldn't reach the server, so we don't know what's here.</div></div> : projectsData.projects.length === 0 ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{projectQuery.trim() ? `Nothing in ${country.name} matches "${projectQuery.trim()}"` : `No ${selectedHoomanCategory} projects in ${country.name} yet`}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>{projectQuery.trim() ? "Try a different word." : "Add the first one."}</div></div> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{projectsData.projects.map((project) => <div
+  }{projectsLoading && !projectsData ? <div style={{ padding: "24px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Loading…</div> : !projectsData ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>Couldn't reach the server, so we don't know what's here.</div></div> : projectsData.projects.length === 0 ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{projectQuery.trim() ? `Nothing in ${country.name} matches "${projectQuery.trim()}"` : `No ${selectedHoomanCategory} projects in ${country.name} yet`}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>{projectQuery.trim() ? "Try a different word." : "Add the first one."}</div></div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{projectsData.projects.map((project, i) => <div
     key={project.id}
-    style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px" }}
+    style={{ padding: "16px 18px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
   ><div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}><span style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{project.title}</span>{project.countryIso && COUNTRY_BY_ISO[project.countryIso] && <FlagEmoji flag={COUNTRY_BY_ISO[project.countryIso].flag} width={22} height={16} radius={4} />}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{project.summary}</div>{
     /* rel="noreferrer" as well as noopener: the target learns
        nothing about where it was opened from. The server
@@ -754,6 +825,37 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     className="v2-tap"
     style={{ width: "100%", padding: "14px 18px", borderRadius: T.radiusMd, border: `1px dashed ${T.line}`, background: "none", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
   >Add a project to {selectedHoomanCategory}</button>}</div>{
+    /* Our spending, pinned to the foot rather than scrolled to.
+
+       It sits OUTSIDE the scrolling area — a sibling of it, not a child —
+       so it is on screen whatever the list is doing. Inside the scroll it
+       was the last thing after an unbounded list, which on a country with
+       forty projects meant a figure nobody would ever reach. shadowRaised
+       rather than shadowCard, because it is now floating above the content
+       that passes under it rather than sitting in the same plane.
+
+       The row on the Coverage panel means the whole platform's spending on
+       people. This one is narrower on purpose: what Gloobal puts into
+       Hooman Projects, in the country being viewed. Putting it here is
+       what makes it answerable per country at all — the screen already
+       knows which country it is showing, so the day a project is funded,
+       the figure has a place to land and a country to land under.
+
+       It is NOT a button, and that is deliberate rather than unfinished.
+       Spending by country opens because it has 194 rows of real figures
+       behind it. The equivalent here would be 194 rows of ∆, which is a
+       screen that teaches people the app is broken. The breakdown ships
+       with the data; the row and its meaning ship now, so the structure is
+       agreed before there is anything in it.
+
+       The ∆ is the same ∆ as everywhere else on this screen: the figure is
+       unknown, which is a different fact from zero. Nothing records a
+       payment from Gloobal to a Hooman — see ourSpendingProbe in
+       server/lib/coverageAggregation.js, which names the missing record
+       type rather than just reporting no data. */
+  }<div style={{ flexShrink: 0, margin: "0 18px", marginBottom: "calc(14px + env(safe-area-inset-bottom, 0px))", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowRaised, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "16px 18px" }}><span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}><span role="img" aria-label={country.name} title={country.name} style={{ display: "flex", flexShrink: 0 }}><FlagEmoji flag={country.flag} width={26} height={19} radius={5} /></span><span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Our spending</span><span style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.4 }}>What Gloobal spends on H<SingleOMark before="" after="" /><SingleOMark before="" after="" />man Projects in {country.name}</span></span></span><span style={{ fontSize: 18, fontWeight: 800, color: T.inkFaint, flexShrink: 0 }} aria-label="No data">∆</span></div><div style={{ borderTop: `1px solid ${T.line}`, padding: "11px 18px", fontSize: 10.5, color: T.inkFaint, lineHeight: 1.5 }}>
+      Breaks down country by country once projects are funded. Nothing records a payment from Gloobal to a H<SingleOMark before="" after="" /><SingleOMark before="" after="" />man yet.
+    </div></div>{
     /* Add a project.
 
        The summary counter counts the same way the server does
@@ -991,6 +1093,17 @@ function readProjectFile(file) {
 // its own allow-list and re-measures the bytes.
 var PROJECT_ATTACHMENT_ACCEPT = "application/pdf,image/png,image/jpeg,image/webp,image/gif,text/plain,text/csv";
 var PROJECT_ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024;
+
+// The category row for a name, or a stand-in carrying the name itself.
+//
+// It deliberately does NOT fall back to the first category. The list below
+// the header is queried by `selectedHoomanCategory`, so heading those rows
+// with a different category's name and description would label the list as
+// something it is not — a quiet wrong answer in place of a visibly empty
+// one. An unknown name shows itself, with no invented description.
+function hoomanCategory(name) {
+  return HOOMAN_PROJECT_CATEGORIES.find((c) => c.name === name) || { name: name, examples: "" };
+}
 
 var HOOMAN_PROJECT_CATEGORIES = [
   { name: "Infrastructure", examples: "Roads, bridges, water systems" },

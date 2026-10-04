@@ -127,11 +127,36 @@ describe("the number on the card counts what the list shows", () => {
     assert.ok(!/countFilter\._id/.test(body), "the count follows the paging cursor");
   });
 
-  test("the card says which country it is counting", () => {
-    // "Projects in this category" was true of a platform-wide list. Over a
-    // per-country one it is a label that drops the more surprising half of
-    // what it counts.
-    assert.match(code(SCREEN), /Projects in \{country\.name\}/);
+  test("the count is stated in the singular or plural, never as a bare figure", () => {
+    // This used to assert the count line read "Projects in {country.name}",
+    // on a card above the list. The card is gone — it repeated the category
+    // name and the country that the header already carried, and pushed the
+    // list below the fold — and the count now sits directly on the rows it
+    // describes.
+    //
+    // The country is NOT repeated on that line any more, and the rule it was
+    // protecting has not been dropped: it has moved to the test below, which
+    // requires the country in the overlay header. One statement of which
+    // country this is, in the one place that is always on screen.
+    const src = code(SCREEN);
+    assert.match(src, /\? "1 project" :/, "the count has no singular form");
+    assert.match(src, /projects`/, "the count has no plural form");
+  });
+
+  test("a count the server did not give is ∆, never 0", () => {
+    // The one distinction this screen's whole data story rests on: a real
+    // zero and an unanswered request are different facts, and showing the
+    // second as the first is the quiet fabrication the ∆ convention exists
+    // to prevent.
+    // Anchored on the code, not on a comment — code() strips comments, so a
+    // comment anchor would assert nothing and pass forever.
+    const src = code(SCREEN);
+    const at = src.indexOf('"1 project"');
+    assert.ok(at > -1, "the count line is gone — did the count move again?");
+    const block = src.slice(at - 400, at + 600);
+    assert.match(block, /projectsData \?/, "the count does not branch on whether the server answered");
+    assert.match(block, /∆/, "the unanswered case does not render ∆");
+    assert.match(block, /aria-label="No data"/, "∆ is not announced to a screen reader");
   });
 
   test("the empty states name the country too", () => {
@@ -152,7 +177,73 @@ describe("the number on the card counts what the list shows", () => {
     assert.ok(at > 0, "the Hooman Projects overlay moved");
     const header = src.slice(at, at + 1200);
     assert.match(header, /<FlagEmoji flag=\{country\.flag\}/);
-    assert.match(header, /\{country\.name\}/);
+
+    // The name is no longer PRINTED here — the flag carries the country on
+    // its own, and the spelled-out name beside it was the same fact twice
+    // and the half that truncated on a narrow screen. It is still CARRIED,
+    // as the accessible name on the flag, because a flag with no accessible
+    // name is a country that anyone who cannot see it cannot identify.
+    assert.match(header, /\$\{country\.name\}/, "the flag has no accessible name");
+    assert.match(header, /title=\{country\.name\}/, "the flag has no long-press label");
+    assert.ok(
+      !/>\{country\.name\}</.test(header),
+      "the country name is printed beside its own flag again"
+    );
+  });
+
+  test("the flag is the way out, and says so to a screen reader", () => {
+    // The plan was to drop the back arrow and leave it to the phone. A real
+    // render says that does not work: one hardware back from this overlay
+    // lands on the DASHBOARD, not on the Coverage screen underneath, and on
+    // iOS a standalone PWA has no system back at all. So the flag sits where
+    // the arrow sat and does the arrow's job.
+    //
+    // The aria-label is the load-bearing part. A flag does not look like a
+    // way out, and the person who most needs telling is the one who cannot
+    // see it.
+    const src = code(SCREEN);
+    const at = src.indexOf("{showHoomanProjects && <div style={{ position: \"fixed\"");
+    const header = src.slice(at, at + 1400);
+    assert.match(header, /onClick=\{\(\) => setShowHoomanProjects\(false\)\}/, "the flag does not close the screen");
+    assert.match(header, /Back to Gloobal Coverage/, "the exit is not announced");
+  });
+
+  test("the screen has no title, because the search field carries the name", () => {
+    const src = code(SCREEN);
+    const at = src.indexOf("{showHoomanProjects && <div style={{ position: \"fixed\"");
+    const header = src.slice(at, at + 1400);
+    // "Hooman Projects" moved into the placeholder, where it says what the
+    // box searches instead of restating the screen you just opened.
+    assert.ok(!/man Projects\n/.test(header), "the screen title came back");
+    assert.match(src, /placeholder="Hooman Projects"/);
+  });
+
+  test("the foot of the screen carries Our spending, scoped to projects", () => {
+    // Placed here rather than only on the Coverage panel because this screen
+    // already knows which country it is showing — so the day a project is
+    // funded, the figure has a place to land and a country to land under.
+    const src = code(SCREEN);
+    const at = src.indexOf("Add a project to {selectedHoomanCategory}");
+    assert.ok(at > 0, "the add-project button moved");
+    const foot = src.slice(at, at + 2200);
+
+    assert.match(foot, /Our spending/, "Our spending is not at the foot of the screen");
+    // Narrower than the Coverage row on purpose: what Gloobal puts into
+    // projects, not everything it spends on people.
+    assert.match(foot, /man Projects in \{country\.name\}/);
+    assert.match(foot, /aria-label="No data">∆/, "the figure is not ∆");
+  });
+
+  test("and it is not a button, because there is nothing behind it yet", () => {
+    // Spending by country opens because 194 rows of real figures sit behind
+    // it. The equivalent here would be 194 rows of ∆ — a screen that teaches
+    // people the app is broken. The breakdown ships with the data.
+    const src = code(SCREEN);
+    const at = src.indexOf("Our spending", src.indexOf("Add a project to {selectedHoomanCategory}"));
+    assert.ok(at > 0, "the Our spending row at the foot moved");
+    const row = src.slice(at - 900, at + 1500);
+    assert.ok(!/<button/.test(row), "the row became a button with no breakdown behind it");
+    assert.match(row, /Breaks down country by country once projects are funded/);
   });
 });
 
@@ -241,7 +332,11 @@ describe("the stale scaffolding comment is gone", () => {
     // ∆ is "the server did not answer", which is a different fact from zero.
     // Removing it along with the comment would have collapsed the two.
     const src = code(SCREEN);
-    assert.match(src, /projectsData \? projectsData\.counts\[cat\.name\] \?\? 0 : "∆"/);
+    // The expression moved out of the card and down onto the list, and is
+    // now keyed by selectedHoomanCategory rather than by the card's local
+    // `cat` — same count, same three states, no card.
+    assert.match(src, /projectsData \? [^\n]*projectsData\.counts\[selectedHoomanCategory\] \?\? 0/);
+    assert.match(src, /: <><span[^\n]*∆<\/span><\/>/, "the unanswered count is no longer ∆");
     assert.match(src, /Couldn't reach the server, so we don't know what's here\./);
   });
 });

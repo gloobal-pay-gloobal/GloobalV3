@@ -114,6 +114,15 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
       // enumerated by hand is only as good as the hand — anything that writes
       // a currency onto a money row belongs in it.
       "server/scripts/coin-airdrop.mjs",
+      // The GEU double-entry ledger. Three more files that write a currency
+      // onto a money row, added when they were written rather than after they
+      // drifted — which is the only time adding to a hand-maintained list is
+      // cheap.
+      "server/lib/money/index.js",
+      "server/lib/geuLedger.js",
+      "server/models/GeuAccount.js",
+      "server/models/Posting.js",
+      "server/models/LedgerTransaction.js",
       "backend/domain/coin/CoinService.js",
       "backend/services/api/gloobalApi.js",
       "backend/data/currencies.js"

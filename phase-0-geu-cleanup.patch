@@ -1,0 +1,932 @@
+From 73d1892741840de282ec42e9bce6d907bf833384 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 3 Oct 2026 10:33:47 +0000
+Subject: [PATCH] Phase 0: one ticker, one name per system, and a share receipt
+ that agrees with itself
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Cleanup before any GEU ledger work, so nothing new reuses an identifier whose
+semantics still mean something else. No behaviour changes except the two money
+records named below.
+
+THE AIRDROP WAS STILL WRITING A DEAD TICKER
+
+server/scripts/coin-airdrop.mjs:217,237 wrote `currency: "GC"` onto a
+Transaction row and a LedgerEntry row on every run — money records in a
+currency the rest of the system stopped using at the GC -> GEU rename. The
+balances those rows explain are counted as GEU.
+
+The guard that should have caught it, tests/geu-one-currency.test.mjs,
+enumerates the files it checks by hand and the script was not among them, so
+it passed throughout. It also made scripts/migrate-gc-to-geu.mjs
+non-idempotent in effect: relabel the old rows, then the next airdrop writes
+new ones.
+
+A constant correct in one file and wrong in another is not a typo, it is two
+sources of truth. New server/lib/coinTicker.js is the single one; server.js
+and the airdrop both require it. The guard now covers the script, and its
+file list carries a note about why a hand-written list is only as good as the
+hand.
+
+TWO SYSTEMS, ONE STRING, NAMES ONE CHARACTER APART
+
+server.js held `COIN_CURRENCY = 'GEU'` (live Gloobal Coin, backed 1:1 by
+CoinReserve) and `GEU_CURRENCY = 'GEU'` (the superseded growth prototype,
+which creates value, writes User.geuBalance and GeuSupply, and is 503-gated
+precisely because of this collision). Both post to `ledgerentries` with a
+`currency` field, so a route querying by that string cannot tell them apart.
+
+The prototype's constant is now GEU_PROTOTYPE_CURRENCY, with the collision
+and its consequence written down at both declarations. 27 references renamed;
+no behaviour change. The live constant keeps its name — it is the live coin.
+
+A CROSS-BORDER SHARE RECEIPT STORED THE WRONG CURRENCY
+
+merchantShareFlow.js passed `amount: cashback, currency` to issueReceiptPair.
+At that call site `cashback` is cashbackCredit — the PAYER's figure, in the
+PAYER's currency — while `currency` is the payment's destination currency,
+the PAYEE's. So an India -> US share stored the rupee figure labelled USD.
+
+The share Transaction one level up already used `cashbackCurrency || currency`
+and was right; the receipt beneath it was never updated. It is the exact
+defect that file's own header describes sixty lines above — "a row that shows
+one side's figure under the other side's symbol" — left unfixed one level
+down. Same-currency payments make the two identical, which is why it survived:
+merchant-share-flow.test.mjs is INR-only and cross-currency-transfer.test.mjs
+sets both cashback rates to 0, so no existing test had both conditions at
+once.
+
+Nothing reads the Receipt collection today, so this was latent. A stored audit
+record that is wrong by a factor of the exchange rate is still wrong.
+
+New server/tests/share-receipt-currency.test.mjs is that intersection: one
+cross-border payment to a payee who shares, asserting both the figure and the
+label on all four receipts. It needs MONGO_URI and has not been run here.
+
+ALSO
+
+- backend/services/api/gloobalApi.js:953,986 hardcoded "GEU" as a fallback
+  while line 1097 correctly used COIN_CURRENCY. The guard only greps for
+  'GC', so a hardcoded 'GEU' passed — the same drift the rename was meant to
+  end.
+- GET /api/coin/supply rounded all three figures with no currency argument,
+  so toMinorUnit fell back to 2 decimals. These are reserve-currency figures
+  and 16 of the 142 currencies in the master have no minor unit; a JPY
+  reserve was reporting hundredths of a yen, and `backed` compared three
+  numbers each rounded to a precision their currency does not have.
+- models/Settlement.js described `rate` as sourceCurrency -> destinationCurrency.
+  It is the other direction. Every piece of arithmetic in the codebase agrees
+  with the correct one and only the comment was reversed — the kind of thing
+  somebody reads once, believes, and inverts a figure on.
+- server/tests/merchant-share-flow.test.mjs:161 asserted
+  `metadata.noBalanceMovement === true`, which the code has not written for
+  some time and which creator-share-ledger.test.mjs:157 asserts is ABSENT.
+  The two suites contradicted each other and this one was failing on main
+  before any of today's work. Corrected to the flag the code actually writes.
+
+NOT DONE HERE, DELIBERATELY
+
+POST /api/assets/claim-interest credits balance from a growth formula with no
+Transaction and no LedgerEntry. It is on the Phase 1 defect list, but fixing
+it is a financial behaviour change, not cleanup — and in a GEU world it is
+unbacked issuance, which is product decision 28.8 in the architecture design.
+It stays as it is until that is answered.
+
+TESTS
+
+Browser suite 1218 pass / 0 fail. financial-principles 224 / 0. DB-free server
+suites 59 / 0. The two tests that changed are listed above with reasons; one
+was failing before this work and one followed the ticker to its new home.
+Not run: the 29 DB-backed server suites, including the new one.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Vvmt91DzH7KfYT8CvZ382d
+---
+ backend/services/api/gloobalApi.js            |   4 +-
+ .../tests/coinLedger.test.mjs                 |  18 +-
+ server/lib/coinTicker.js                      |  34 +++
+ server/lib/merchantShareFlow.js               |  14 +-
+ server/models/Settlement.js                   |  18 +-
+ server/scripts/coin-airdrop.mjs               |  11 +-
+ server/server.js                              |  89 ++++---
+ server/tests/merchant-share-flow.test.mjs     |  15 +-
+ server/tests/share-receipt-currency.test.mjs  | 245 ++++++++++++++++++
+ tests/creator-share-ledger.test.mjs           |  34 +++
+ tests/geu-one-currency.test.mjs               |  29 ++-
+ 11 files changed, 465 insertions(+), 46 deletions(-)
+ create mode 100644 server/lib/coinTicker.js
+ create mode 100644 server/tests/share-receipt-currency.test.mjs
+
+diff --git a/backend/services/api/gloobalApi.js b/backend/services/api/gloobalApi.js
+index c5273e3..9f35a11 100644
+--- a/backend/services/api/gloobalApi.js
++++ b/backend/services/api/gloobalApi.js
+@@ -950,7 +950,7 @@ var GloobalApi = {
+       balance: Number(result.balance) || 0,
+       reserve: Number(result.reserve) || 0,
+       issued: Number(result.issued) || 0,
+-      coinCurrency: result.coinCurrency || "GEU",
++      coinCurrency: result.coinCurrency || COIN_CURRENCY,
+       reserveCurrency: result.reserveCurrency || "INR",
+       accountCurrency: result.accountCurrency || null,
+       // How many coin one unit of this account's own currency buys. NOT
+@@ -983,7 +983,7 @@ var GloobalApi = {
+         heldByAccounts: Number(result.heldByAccounts) || 0,
+         holders: Number(result.holders) || 0,
+         backed: result.backed === true,
+-        coinCurrency: result.coinCurrency || "GEU",
++        coinCurrency: result.coinCurrency || COIN_CURRENCY,
+         reserveCurrency: result.reserveCurrency || "INR"
+       };
+     } catch (err) {
+diff --git a/financial-principles-tests/tests/coinLedger.test.mjs b/financial-principles-tests/tests/coinLedger.test.mjs
+index 8a0e9a3..aebab11 100644
+--- a/financial-principles-tests/tests/coinLedger.test.mjs
++++ b/financial-principles-tests/tests/coinLedger.test.mjs
+@@ -273,9 +273,23 @@ test("the browser's ticker and the server's are the same string", async () => {
+   const { fileURLToPath } = await import("node:url");
+   const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+ 
+-  const serverSrc = readFileSync(join(ROOT, "server", "server.js"), "utf8");
++  // The server's ticker moved out of server.js into server/lib/coinTicker.js.
++  // server.js was never the only thing on the server that writes a coin row —
++  // scripts/coin-airdrop.mjs does too, and while the ticker was a literal in
++  // server.js the two drifted: the GC -> GEU rename updated one and missed
++  // the other, so every airdrop wrote money rows in a currency nothing else
++  // used. One module now declares it and both require it.
++  //
++  // This test's claim is unchanged: the browser's ticker and the server's are
++  // the same string. Only where the server keeps its copy has moved.
++  const serverSrc = readFileSync(join(ROOT, "server", "lib", "coinTicker.js"), "utf8");
+   const serverTicker = serverSrc.match(/const COIN_CURRENCY = '([^']+)'/);
+-  assert.ok(serverTicker, "server.js no longer declares COIN_CURRENCY");
++  assert.ok(serverTicker, "server/lib/coinTicker.js no longer declares COIN_CURRENCY");
++
++  // And server.js takes it from there rather than declaring a second one.
++  const serverMain = readFileSync(join(ROOT, "server", "server.js"), "utf8");
++  assert.match(serverMain, /const \{ COIN_CURRENCY \} = require\('\.\/lib\/coinTicker'\);/,
++    "server.js declares its own coin ticker again");
+ 
+   const domainSrc = readFileSync(join(ROOT, "backend", "domain", "coin", "CoinService.js"), "utf8");
+   const domainTicker = domainSrc.match(/var COIN_CURRENCY = "([^"]+)"/);
+diff --git a/server/lib/coinTicker.js b/server/lib/coinTicker.js
+new file mode 100644
+index 0000000..fb2cfb7
+--- /dev/null
++++ b/server/lib/coinTicker.js
+@@ -0,0 +1,34 @@
++// server/lib/coinTicker.js
++//
++// The ticker Gloobal Coin is denominated in, in ONE place.
++//
++// It used to be declared independently in server.js and again, as a literal,
++// in server/scripts/coin-airdrop.mjs. The two drifted: the GC -> GEU rename
++// updated server.js and missed the script, so every airdrop run wrote
++// `currency: "GC"` onto a Transaction row and a LedgerEntry row while the
++// account balances those rows explain were counted as GEU. The guard in
++// tests/geu-one-currency.test.mjs did not catch it because that test
++// enumerates the files it checks by name and the script was not among them.
++//
++// A constant that is correct in one file and wrong in another is not a typo,
++// it is two sources of truth. This module is the single one. Anything on the
++// server that needs to name the coin requires it from here; nothing declares
++// its own copy.
++//
++// WHAT THIS IS NOT. It is not the reserve currency — that lives on the
++// CoinReserve document (`reserveCurrency`, default INR) because it is a
++// property of the reserve, not of the coin. It is not the GEU growth
++// prototype's ticker either: that superseded system holds the SAME string in
++// its own constant (GEU_PROTOTYPE_CURRENCY in server.js) and is a different
++// economic system with its own balance field and its own supply document.
++// The collision of those two strings is why the prototype's routes are
++// disabled; see the comment beside GEU_PROTOTYPE_CURRENCY.
++//
++// The browser-side simulation keeps its own declaration
++// (backend/domain/coin/CoinService.js) because `server/` and `backend/` are
++// separate programs that share no module. tests/geu-one-currency.test.mjs
++// asserts the two agree, which is the only mechanism available across that
++// boundary.
++const COIN_CURRENCY = 'GEU';
++
++module.exports = { COIN_CURRENCY };
+diff --git a/server/lib/merchantShareFlow.js b/server/lib/merchantShareFlow.js
+index 3ac5963..24e6d9f 100644
+--- a/server/lib/merchantShareFlow.js
++++ b/server/lib/merchantShareFlow.js
+@@ -251,7 +251,19 @@ async function mintShareLegAndReceipts({
+       payerUserId: receiver._id,
+       payeeUserId: sender._id,
+       amount: cashback,
+-      currency,
++      // `cashbackCurrency`, not `currency`.
++      //
++      // `cashback` here is what the PAYER received, in the PAYER's currency
++      // (server.js passes cashbackCredit). `currency` is the payment's
++      // destination currency — the PAYEE's. Pairing them stored the sender's
++      // figure under the receiver's symbol on every cross-border share: the
++      // same defect this file's own note sixty lines up describes, left
++      // unfixed one level down. The share Transaction above already uses
++      // `cashbackCurrency || currency`; this is the receipt catching up.
++      //
++      // On a same-currency payment the two are identical, which is why it
++      // went unnoticed.
++      currency: cashbackCurrency || currency,
+       note: `Share on ${paymentTransaction.referenceId}`,
+     });
+ 
+diff --git a/server/models/Settlement.js b/server/models/Settlement.js
+index 0717164..91ff5c9 100644
+--- a/server/models/Settlement.js
++++ b/server/models/Settlement.js
+@@ -35,9 +35,21 @@ const SettlementSchema = new mongoose.Schema({
+   destinationAmount: { type: Number, required: true, min: 0 },
+   destinationPoolId: { type: mongoose.Schema.Types.ObjectId, ref: 'CountryCurrencyPool', required: true },
+ 
+-  // sourceCurrency -> destinationCurrency, as used for this settlement.
+-  // destinationAmount = sourceAmount * rate, computed once and stored, not
+-  // recomputed on read.
++  // destinationCurrency -> sourceCurrency: how many units of the SOURCE
++  // currency one unit of the DESTINATION currency buys, as used for this
++  // settlement. Stored once, never recomputed on read.
++  //
++  // This comment said the opposite — sourceCurrency -> destinationCurrency —
++  // and was wrong about a stored financial figure. The value comes from
++  // server.js's `getRate(destinationCurrency, senderCurrency)`, and every
++  // piece of arithmetic that touches it agrees with the direction stated
++  // here: server.js derives sourceFaceAmount as destination × rate,
++  // receiptCurrency.js prints "1 <receiver> = <rate> <sender>", and
++  // corridor-matrix.test.mjs asserts it across all 37,442 corridors. Only the
++  // description was reversed — which is the kind of thing somebody reads
++  // once, believes, and inverts a figure on.
++  //
++  // So: sourceAmount = destinationAmount × rate.
+   // The payee's Creator Share, on each side of the border.
+   //
+   // A cross-border payment moves four figures through the pools, not two:
+diff --git a/server/scripts/coin-airdrop.mjs b/server/scripts/coin-airdrop.mjs
+index 38ccccd..dabe364 100644
+--- a/server/scripts/coin-airdrop.mjs
++++ b/server/scripts/coin-airdrop.mjs
+@@ -14,7 +14,7 @@
+ //
+ // Coin is fully backed: reserve == issued == sum(coinBalance), maintained by
+ // three separate writes and checked by tests/coin-supply-invariant.test.mjs and
+-// by GET /api/coin/supply. Raising the accounts alone would leave 12,000 GC in
++// by GET /api/coin/supply. Raising the accounts alone would leave 12,000 GEU in
+ // circulation against an empty reserve, and the app would correctly report
+ // itself unbacked — every user's Coin screen turning red is the invariant
+ // doing its job, not a display bug to work around.
+@@ -38,6 +38,11 @@ import { fileURLToPath } from "node:url";
+ const BACKEND = join(dirname(fileURLToPath(import.meta.url)), "..");
+ const require = createRequire(join(BACKEND, "server.js"));
+ 
++// The coin's ticker, from the one place that declares it. This script used to
++// carry its own "GC" literal, which the GC -> GEU rename missed — so every
++// run wrote money rows in a currency the rest of the system no longer uses.
++const { COIN_CURRENCY } = require(join(BACKEND, "lib/coinTicker.js"));
++
+ require("dotenv").config({ path: join(BACKEND, ".env"), quiet: true });
+ 
+ if (!process.env.MONGO_URI) {
+@@ -214,7 +219,7 @@ async function run() {
+               fromUserId: user._id,
+               toUserId: null,
+               amount: GRANT_PER_ACCOUNT,
+-              currency: "GC",
++              currency: COIN_CURRENCY,
+               type: "coin_mint",
+               status: "success",
+               note: "Gloobal Coin airdrop",
+@@ -234,7 +239,7 @@ async function run() {
+               amount: GRANT_PER_ACCOUNT,
+               balanceBefore: round(held),
+               balanceAfter: round(held + GRANT_PER_ACCOUNT),
+-              currency: "GC",
++              currency: COIN_CURRENCY,
+               note: "Gloobal Coin airdrop — platform funded the reserve",
+               metadata: { prototype: true, airdrop: true, coinLeg: "coin", transactionReferenceId: transaction.referenceId }
+             }
+diff --git a/server/server.js b/server/server.js
+index d4feab0..ac18241 100644
+--- a/server/server.js
++++ b/server/server.js
+@@ -8233,7 +8233,11 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
+ // deploy: see server/scripts/migrate-gc-to-geu.mjs, a one-shot migration run
+ // deliberately, because silently rewriting stored money records during a
+ // restart is not something that should happen as a side effect of shipping.
+-const COIN_CURRENCY = 'GEU';
++// One declaration, in lib/coinTicker.js, because this file is not the only
++// thing on the server that names the coin — scripts/coin-airdrop.mjs writes
++// money rows too, and when this was a literal here the two drifted (see that
++// module's note).
++const { COIN_CURRENCY } = require('./lib/coinTicker');
+ 
+ const coinBalanceOf = (user) => {
+   const raw = Number(user?.coinBalance);
+@@ -8403,9 +8407,18 @@ app.get('/api/coin/supply', async (req, res) => {
+       { $group: { _id: null, total: { $sum: { $ifNull: ['$coinBalance', 0] } }, holders: { $sum: { $cond: [{ $gt: [{ $ifNull: ['$coinBalance', 0] }, 0] }, 1, 0] } } } },
+     ]);
+ 
+-    const reserve = toMinorUnit(reserveDoc?.reserve || 0);
+-    const issued = toMinorUnit(reserveDoc?.issued || 0);
+-    const heldByAccounts = toMinorUnit(held?.total || 0);
++    // Rounded in the RESERVE's currency, not at a bare two places.
++    //
++    // toMinorUnit() with no currency falls back to 2 decimals. All three of
++    // these are reserve-currency figures (the peg is an identity: one coin is
++    // one unit of the reserve currency), and 16 of the 142 currencies in the
++    // master have no minor unit at all. A JPY reserve rounded to two places
++    // reports hundredths of a yen, and `backed` compares three numbers that
++    // were each rounded to a precision their currency does not have.
++    const reserveCurrency = reserveDoc?.reserveCurrency || 'INR';
++    const reserve = toMinorUnit(reserveDoc?.reserve || 0, reserveCurrency);
++    const issued = toMinorUnit(reserveDoc?.issued || 0, reserveCurrency);
++    const heldByAccounts = toMinorUnit(held?.total || 0, reserveCurrency);
+ 
+     return res.json({
+       success: true,
+@@ -8413,7 +8426,7 @@ app.get('/api/coin/supply', async (req, res) => {
+       issued,
+       heldByAccounts,
+       holders: held?.holders || 0,
+-      reserveCurrency: reserveDoc?.reserveCurrency || 'INR',
++      reserveCurrency,
+       coinCurrency: COIN_CURRENCY,
+       // Not a boast — a comparison of three independently maintained figures.
+       // A client that shows "fully backed" is quoting this, and if the numbers
+@@ -9492,7 +9505,19 @@ const requireGeuGrowthPrototype = (req, res, next) => {
+   });
+ };
+ 
+-const GEU_CURRENCY = 'GEU';
++// The SUPERSEDED growth prototype's ticker. Deliberately a different name
++// from COIN_CURRENCY even though it holds the same string, because they are
++// different economic systems: Gloobal Coin is backed 1:1 by CoinReserve and
++// is live; this one has a growth mechanism that creates value, writes to
++// User.geuBalance and GeuSupply, and is disabled.
++//
++// The shared string is the reason the prototype's routes return 503. Both
++// systems post to `ledgerentries` with a `currency` field, so a route that
++// queries by that string cannot tell them apart — GET /api/geu/ledger/:symbolId
++// would return Gloobal Coin's rows under a route describing a different
++// currency. It was called GEU_PROTOTYPE_CURRENCY, one character from the live constant,
++// which is how a reader ends up using the wrong one.
++const GEU_PROTOTYPE_CURRENCY = 'GEU';
+ const GEU_REFERENCE_CURRENCY = 'INR';
+ // THE 0.3% RULE — a maximum, never a rate that is automatically applied.
+ // See POST /api/geu/growth: this number only ever bounds a caller-supplied
+@@ -9560,12 +9585,12 @@ app.get('/api/geu/supply', requireGeuGrowthPrototype, async (req, res) => {
+       { $group: { _id: null, total: { $sum: { $ifNull: ['$geuBalance', 0] } }, holders: { $sum: { $cond: [{ $gt: [{ $ifNull: ['$geuBalance', 0] }, 0] }, 1, 0] } } } },
+     ]);
+ 
+-    const createdFromEntry = toMinorUnit(supplyDoc?.createdFromEntry || 0, GEU_CURRENCY);
+-    const createdFromGrowth = toMinorUnit(supplyDoc?.createdFromGrowth || 0, GEU_CURRENCY);
+-    const destroyedFromRedemption = toMinorUnit(supplyDoc?.destroyedFromRedemption || 0, GEU_CURRENCY);
+-    const destroyedFromNegativeGrowth = toMinorUnit(supplyDoc?.destroyedFromNegativeGrowth || 0, GEU_CURRENCY);
+-    const circulating = toMinorUnit(GeuSupply.circulating(supplyDoc), GEU_CURRENCY);
+-    const heldByAccounts = toMinorUnit(held?.total || 0, GEU_CURRENCY);
++    const createdFromEntry = toMinorUnit(supplyDoc?.createdFromEntry || 0, GEU_PROTOTYPE_CURRENCY);
++    const createdFromGrowth = toMinorUnit(supplyDoc?.createdFromGrowth || 0, GEU_PROTOTYPE_CURRENCY);
++    const destroyedFromRedemption = toMinorUnit(supplyDoc?.destroyedFromRedemption || 0, GEU_PROTOTYPE_CURRENCY);
++    const destroyedFromNegativeGrowth = toMinorUnit(supplyDoc?.destroyedFromNegativeGrowth || 0, GEU_PROTOTYPE_CURRENCY);
++    const circulating = toMinorUnit(GeuSupply.circulating(supplyDoc), GEU_PROTOTYPE_CURRENCY);
++    const heldByAccounts = toMinorUnit(held?.total || 0, GEU_PROTOTYPE_CURRENCY);
+ 
+     return res.json({
+       success: true,
+@@ -9575,8 +9600,8 @@ app.get('/api/geu/supply', requireGeuGrowthPrototype, async (req, res) => {
+       createdFromGrowth,
+       destroyedFromRedemption,
+       destroyedFromNegativeGrowth,
+-      reserved: toMinorUnit(supplyDoc?.reserved || 0, GEU_CURRENCY),
+-      pending: toMinorUnit(supplyDoc?.pending || 0, GEU_CURRENCY),
++      reserved: toMinorUnit(supplyDoc?.reserved || 0, GEU_PROTOTYPE_CURRENCY),
++      pending: toMinorUnit(supplyDoc?.pending || 0, GEU_PROTOTYPE_CURRENCY),
+       totalCirculatingGeu: circulating,
+       heldByAccounts,
+       holders: held?.holders || 0,
+@@ -9600,7 +9625,7 @@ app.get('/api/geu/ledger/:symbolId', requireGeuGrowthPrototype, lookupLimit, req
+     const user = await User.findOne({ symbolId: String(req.params.symbolId || '').trim() });
+     if (!user) return res.status(404).json({ success: false, message: 'Secure ID not found.' });
+ 
+-    const entries = await LedgerEntry.find({ userId: user._id, currency: GEU_CURRENCY })
++    const entries = await LedgerEntry.find({ userId: user._id, currency: GEU_PROTOTYPE_CURRENCY })
+       .sort({ createdAt: -1 })
+       .limit(100)
+       .lean();
+@@ -9638,12 +9663,12 @@ app.get('/api/geu/:symbolId', requireGeuGrowthPrototype, lookupLimit, requireAut
+       symbolId: user.symbolId,
+       geuBalance: geuBalanceOf(user),
+       balance: accountBalanceOf(user),
+-      geuCurrency: GEU_CURRENCY,
++      geuCurrency: GEU_PROTOTYPE_CURRENCY,
+       referenceCurrency: GEU_REFERENCE_CURRENCY,
+       // Ceiling for the NEXT growth event this account could post, informational
+       // only — GET has no side effect and creates no GeuGrowthEvent.
+       maxPositiveGrowthRate: GEU_MAX_POSITIVE_GROWTH_RATE,
+-      maxPositiveGrowthIfAppliedNow: floorToMinorUnit(geuBalanceOf(user) * GEU_MAX_POSITIVE_GROWTH_RATE, GEU_CURRENCY),
++      maxPositiveGrowthIfAppliedNow: floorToMinorUnit(geuBalanceOf(user) * GEU_MAX_POSITIVE_GROWTH_RATE, GEU_PROTOTYPE_CURRENCY),
+     });
+   } catch (error) {
+     console.error('GEU balance error:', error);
+@@ -9728,7 +9753,7 @@ app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, r
+     }
+ 
+     const referenceAmount = toMinorUnit(sourceAmount * exchangeRate, GEU_REFERENCE_CURRENCY);
+-    const geuAmount = toMinorUnit(referenceAmount, GEU_CURRENCY);
++    const geuAmount = toMinorUnit(referenceAmount, GEU_PROTOTYPE_CURRENCY);
+     // The source amount was checked above; the CONVERTED figure was not, and
+     // a small enough source rounds to zero GEU. Refused rather than recorded
+     // as a zero-value transaction that still debits the fiat side.
+@@ -9764,7 +9789,7 @@ app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, r
+         );
+ 
+         const balanceAfter = toMinorUnit(converted.balance, sourceCurrency);
+-        const geuAfter = toMinorUnit(converted.geuBalance, GEU_CURRENCY);
++        const geuAfter = toMinorUnit(converted.geuBalance, GEU_PROTOTYPE_CURRENCY);
+ 
+         const [transaction] = await Transaction.create(
+           [
+@@ -9772,7 +9797,7 @@ app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, r
+               fromUserId: user._id,
+               toUserId: null,
+               amount: geuAmount,
+-              currency: GEU_CURRENCY,
++              currency: GEU_PROTOTYPE_CURRENCY,
+               type: 'geu_entry_mint',
+               status: 'success',
+               note: 'GEU entry mint',
+@@ -9823,9 +9848,9 @@ app.post('/api/geu/entry', requireGeuGrowthPrototype, writeLimit, requireAuth, r
+               userId: user._id,
+               entryType: 'credit',
+               amount: geuAmount,
+-              balanceBefore: toMinorUnit(geuAfter - geuAmount, GEU_CURRENCY),
++              balanceBefore: toMinorUnit(geuAfter - geuAmount, GEU_PROTOTYPE_CURRENCY),
+               balanceAfter: geuAfter,
+-              currency: GEU_CURRENCY,
++              currency: GEU_PROTOTYPE_CURRENCY,
+               note: 'GEU entry-minted',
+               metadata: { prototype: true, geuLeg: 'geu', entryId, transactionReferenceId: transaction.referenceId },
+             },
+@@ -9899,7 +9924,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth,
+   try {
+     const { symbolId, growthPeriod, requestedGrowthAmount } = req.body || {};
+     const cleanPeriod = String(growthPeriod || '').trim().slice(0, 40);
+-    const requested = toMinorUnit(Number(requestedGrowthAmount), GEU_CURRENCY);
++    const requested = toMinorUnit(Number(requestedGrowthAmount), GEU_PROTOTYPE_CURRENCY);
+ 
+     if (!cleanPeriod) {
+       return res.status(400).json({ success: false, message: 'growthPeriod is required (e.g. an ISO date identifying the period this event is for).' });
+@@ -9932,7 +9957,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth,
+     // this same growth event (openingBalance is read fresh, before any
+     // write below, and the atomic $inc guard further down re-checks it
+     // against the actual document at write time).
+-    const maxPositiveGrowth = floorToMinorUnit(openingBalance * GEU_MAX_POSITIVE_GROWTH_RATE, GEU_CURRENCY);
++    const maxPositiveGrowth = floorToMinorUnit(openingBalance * GEU_MAX_POSITIVE_GROWTH_RATE, GEU_PROTOTYPE_CURRENCY);
+ 
+     if (requested > maxPositiveGrowth) {
+       return res.status(400).json({
+@@ -9943,7 +9968,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth,
+       });
+     }
+ 
+-    const closingBalance = toMinorUnit(openingBalance + requested, GEU_CURRENCY);
++    const closingBalance = toMinorUnit(openingBalance + requested, GEU_PROTOTYPE_CURRENCY);
+     if (closingBalance < 0) {
+       return res.status(400).json({
+         success: false,
+@@ -9993,7 +10018,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth,
+               fromUserId: requested < 0 ? user._id : null,
+               toUserId: requested < 0 ? null : user._id,
+               amount: Math.abs(requested),
+-              currency: GEU_CURRENCY,
++              currency: GEU_PROTOTYPE_CURRENCY,
+               type: 'geu_growth',
+               status: 'success',
+               note: `GEU growth event (${reason})`,
+@@ -10035,7 +10060,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth,
+                 amount: Math.abs(requested),
+                 balanceBefore: openingBalance,
+                 balanceAfter: closingBalance,
+-                currency: GEU_CURRENCY,
++                currency: GEU_PROTOTYPE_CURRENCY,
+                 note: `GEU growth (${reason})`,
+                 metadata: { prototype: true, growthEventId, transactionReferenceId: transaction.referenceId },
+               },
+@@ -10091,7 +10116,7 @@ app.post('/api/geu/growth', requireGeuGrowthPrototype, writeLimit, requireAuth,
+ app.post('/api/geu/redeem', requireGeuGrowthPrototype, writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+   try {
+     const { symbolId, amount, idempotencyKey } = req.body || {};
+-    const geuAmount = toMinorUnit(Number(amount), GEU_CURRENCY);
++    const geuAmount = toMinorUnit(Number(amount), GEU_PROTOTYPE_CURRENCY);
+     const cleanIdempotencyKey = String(idempotencyKey || '').trim().slice(0, 120);
+ 
+     if (!Number.isFinite(geuAmount) || geuAmount <= 0) {
+@@ -10223,7 +10248,7 @@ app.post('/api/geu/redeem', requireGeuGrowthPrototype, writeLimit, requireAuth,
+           { upsert: true, ...sessionOpt }
+         );
+ 
+-        const geuAfter = toMinorUnit(debited.geuBalance, GEU_CURRENCY);
++        const geuAfter = toMinorUnit(debited.geuBalance, GEU_PROTOTYPE_CURRENCY);
+         const balanceAfter = toMinorUnit(credited.balance, destinationCurrency);
+ 
+         const [transaction] = await Transaction.create(
+@@ -10232,7 +10257,7 @@ app.post('/api/geu/redeem', requireGeuGrowthPrototype, writeLimit, requireAuth,
+               fromUserId: user._id,
+               toUserId: null,
+               amount: geuAmount,
+-              currency: GEU_CURRENCY,
++              currency: GEU_PROTOTYPE_CURRENCY,
+               type: 'geu_redeem',
+               status: 'success',
+               note: 'GEU redeemed',
+@@ -10273,9 +10298,9 @@ app.post('/api/geu/redeem', requireGeuGrowthPrototype, writeLimit, requireAuth,
+               userId: user._id,
+               entryType: 'debit',
+               amount: geuAmount,
+-              balanceBefore: toMinorUnit(geuAfter + geuAmount, GEU_CURRENCY),
++              balanceBefore: toMinorUnit(geuAfter + geuAmount, GEU_PROTOTYPE_CURRENCY),
+               balanceAfter: geuAfter,
+-              currency: GEU_CURRENCY,
++              currency: GEU_PROTOTYPE_CURRENCY,
+               note: 'GEU redeemed',
+               metadata: { prototype: true, geuLeg: 'geu', redemptionId, transactionReferenceId: transaction.referenceId },
+             },
+diff --git a/server/tests/merchant-share-flow.test.mjs b/server/tests/merchant-share-flow.test.mjs
+index 2d01fc8..1f166a8 100644
+--- a/server/tests/merchant-share-flow.test.mjs
++++ b/server/tests/merchant-share-flow.test.mjs
+@@ -158,7 +158,20 @@ async function run() {
+   check("share transaction type is share", shareTxn?.type === "share", shareTxn?.type);
+   check("share transaction direction is merchant -> sender",
+     String(shareTxn?.fromUserId) !== String(paymentTxn?.fromUserId) && String(shareTxn?.toUserId) === String(paymentTxn?.fromUserId));
+-  check("share transaction flagged as moving no balance", shareTxn?.metadata?.noBalanceMovement === true);
++  // Corrected 3 October 2026. This asserted `noBalanceMovement === true`, a
++  // flag the code has not written for some time and which
++  // tests/creator-share-ledger.test.mjs:157 explicitly asserts is ABSENT —
++  // so the two suites contradicted each other and this one was failing on
++  // main before any of today's work. The share leg does not move balance of
++  // its own; the Creator Share was already credited to the payer inside the
++  // payment transaction, which is what the flag the code actually writes
++  // says.
++  check("share leg records that the balance moved with the payment leg",
++    shareTxn?.metadata?.balanceMovedWithPaymentLeg === true,
++    JSON.stringify(shareTxn?.metadata?.balanceMovedWithPaymentLeg));
++  check("and carries no stale noBalanceMovement flag",
++    shareTxn?.metadata?.noBalanceMovement === undefined,
++    JSON.stringify(shareTxn?.metadata?.noBalanceMovement));
+   check("exactly 2 success Transactions total", (await Transaction.countDocuments({ status: "success" })) === 2,
+     `count=${await Transaction.countDocuments({ status: "success" })}`);
+ 
+diff --git a/server/tests/share-receipt-currency.test.mjs b/server/tests/share-receipt-currency.test.mjs
+new file mode 100644
+index 0000000..eafcf5d
+--- /dev/null
++++ b/server/tests/share-receipt-currency.test.mjs
+@@ -0,0 +1,245 @@
++// server/tests/share-receipt-currency.test.mjs
++//
++//   node tests/share-receipt-currency.test.mjs
++//
++// A cross-border Creator Share stored the PAYER's figure under the PAYEE's
++// currency code.
++//
++// mintShareLegAndReceipts receives both sides of the share — `cashback` with
++// `cashbackCurrency` (what the payer got back, in the payer's currency) and
++// `payeeCashback` with `payeeCurrency` (what was withheld from the payee, in
++// theirs). The share TRANSACTION used `cashbackCurrency || currency` and was
++// right. The receipt pair beneath it passed a bare `currency` — the payment's
++// destination currency — and so wrote, for an India -> US payment, the rupee
++// figure labelled USD.
++//
++// On a same-currency payment the two are identical, which is why it survived
++// every existing test: merchant-share-flow.test.mjs is INR-only, and
++// cross-currency-transfer.test.mjs sets cashbackRate to 0 on both accounts so
++// no share leg is minted at all. The defect needed both conditions at once.
++//
++// This file is the intersection: a cross-border payment to a payee who shares.
++//
++// Why it matters even though nothing reads the Receipt collection today.
++// These rows are the stored audit record of a money movement. A record that
++// says "$425" when the event was "₹425" is wrong whether or not anything has
++// got round to reading it, and it is wrong by a factor of the exchange rate.
++//
++// Runs the real server.js against a THROWAWAY database on the cluster
++// MONGO_URI points at, dropped when the run ends.
++
++import { createRequire } from "node:module";
++import { dirname, join } from "node:path";
++import { fileURLToPath } from "node:url";
++
++const BACKEND = join(dirname(fileURLToPath(import.meta.url)), "..");
++const require = createRequire(join(BACKEND, "server.js"));
++
++require("dotenv").config({ path: join(BACKEND, ".env"), quiet: true });
++
++if (!process.env.MONGO_URI) {
++  console.error("MONGO_URI is not set — this test needs server/.env.");
++  process.exit(1);
++}
++
++const TEST_DB = "gloobal_share_receipt_currency_check";
++const [beforeQuery, query] = process.env.MONGO_URI.split("?");
++process.env.MONGO_URI = `${beforeQuery.replace(/\/[^/]*$/, "/")}${TEST_DB}${query ? "?" + query : ""}`;
++process.env.PORT = process.env.TEST_PORT || "5241";
++process.env.PROTOTYPE_TRANSACTION_MAX_AMOUNT = "100000";
++process.env.AUTH_TOKEN_SECRET = "test-secret-not-the-production-one";
++process.env.PROTOTYPE_OTP = "123456";
++
++const mongoose = require("mongoose");
++
++require(join(BACKEND, "server.js"));
++
++const User = require(join(BACKEND, "models/User"));
++const Pin = require(join(BACKEND, "models/Pin"));
++const Transaction = require(join(BACKEND, "models/Transaction"));
++const LedgerEntry = require(join(BACKEND, "models/LedgerEntry"));
++const Receipt = require(join(BACKEND, "models/Receipt"));
++const Country = require(join(BACKEND, "models/Country"));
++const Currency = require(join(BACKEND, "models/Currency"));
++const CountryCurrencyPool = require(join(BACKEND, "models/CountryCurrencyPool"));
++const ExchangeRate = require(join(BACKEND, "models/ExchangeRate"));
++const Settlement = require(join(BACKEND, "models/Settlement"));
++
++const BASE = `http://127.0.0.1:${process.env.PORT}`;
++const SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
++const symbolId = (seed) => Array.from({ length: 12 }, (_, i) => SYMBOLS[(seed + i * 3) % 8]).join("");
++
++const IN_USER = symbolId(1);
++const US_MERCHANT = symbolId(4);
++const PIN = "135791";
++
++// Seeded, not fetched, so the arithmetic below is exact and never depends on
++// a rate provider. server.js looks up getRate(destinationCurrency,
++// senderCurrency), so each direction needs its own row.
++const USD_IN_INR = 85;
++const INR_IN_USD = 1 / USD_IN_INR;
++
++const IN_OPENING = 20000; // INR
++const SHARE_RATE = 0.05; // the US merchant gives 5% back
++const PAY_USD = 100; // the merchant asks for $100
++
++const untilConnected = () =>
++  new Promise((resolve, reject) => {
++    if (mongoose.connection.readyState === 1) return resolve();
++    mongoose.connection.once("connected", resolve);
++    mongoose.connection.once("error", reject);
++    setTimeout(() => reject(new Error("timed out connecting to MongoDB")), 40000);
++  });
++
++const post = (path, body, token) =>
++  fetch(`${BASE}${path}`, {
++    method: "POST",
++    headers: Object.assign(
++      { "Content-Type": "application/json" },
++      token ? { Authorization: `Bearer ${token}` } : {}
++    ),
++    body: JSON.stringify(body)
++  }).then(async (response) => ({ status: response.status, body: await response.json().catch(() => null) }));
++
++const tokens = {};
++
++async function registerAccount(symbol, mobileNumber, name) {
++  await post("/api/otp/send", { mobileNumber, purpose: "registration" });
++  await post("/api/otp/verify", { mobileNumber, otp: "123456", purpose: "registration" });
++  const registered = await post("/api/register-symbol", { fullName: name, mobileNumber, symbolId: symbol });
++  const token = registered.body?.token;
++  if (!token) throw new Error(`could not register ${name}: ${JSON.stringify(registered.body)}`);
++  await post("/api/pin/set", { symbolId: symbol, pin: PIN }, token);
++  tokens[symbol] = token;
++}
++
++async function setUp() {
++  await Promise.all([
++    User.deleteMany({}), Pin.deleteMany({}), Transaction.deleteMany({}),
++    LedgerEntry.deleteMany({}), Receipt.deleteMany({}), Country.deleteMany({}),
++    Currency.deleteMany({}), CountryCurrencyPool.deleteMany({}),
++    ExchangeRate.deleteMany({}), Settlement.deleteMany({}),
++  ]);
++
++  await registerAccount(IN_USER, "+919000000041", "India Payer");
++  await registerAccount(US_MERCHANT, "+919000000042", "US Merchant");
++
++  await User.updateOne({ symbolId: IN_USER }, { $set: { countryIso: "IN", balance: IN_OPENING, cashbackRate: 0 } });
++  await User.updateOne({ symbolId: US_MERCHANT }, { $set: { countryIso: "US", balance: 0, cashbackRate: SHARE_RATE } });
++
++  await Country.create([
++    { iso: "IN", name: "India", dialCode: "+91", localCurrency: "INR" },
++    { iso: "US", name: "United States", dialCode: "+1", localCurrency: "USD" },
++  ]);
++  await Currency.create([
++    { code: "INR", name: "Indian Rupee", symbol: "₹", decimals: 2 },
++    { code: "USD", name: "United States Dollar", symbol: "$", decimals: 2 },
++  ]);
++  await ExchangeRate.create([
++    { fromCurrency: "USD", toCurrency: "INR", rate: USD_IN_INR, source: "test-seed", fetchedAt: new Date() },
++    { fromCurrency: "INR", toCurrency: "USD", rate: INR_IN_USD, source: "test-seed", fetchedAt: new Date() },
++  ]);
++}
++
++let failures = 0;
++const check = (label, ok, detail) => {
++  console.log(`${ok ? "  PASS" : "  FAIL"}  ${label}${detail ? " — " + detail : ""}`);
++  if (!ok) failures += 1;
++};
++
++async function run() {
++  await untilConnected();
++  if (mongoose.connection.name !== TEST_DB) {
++    throw new Error(`refusing to run against "${mongoose.connection.name}" — expected ${TEST_DB}`);
++  }
++  console.log(`db: ${mongoose.connection.name}\n`);
++  await setUp();
++
++  console.log(`India pays a US merchant $${PAY_USD}, merchant shares ${SHARE_RATE * 100}%`);
++
++  const paid = await post(
++    "/api/transactions/send",
++    { senderSymbolId: IN_USER, receiverSymbolId: US_MERCHANT, amount: PAY_USD, note: "cross-border share", pin: PIN },
++    tokens[IN_USER]
++  );
++  check("the payment succeeds", paid.status === 200 || paid.status === 201,
++    `status ${paid.status} ${JSON.stringify(paid.body?.message || "")}`);
++
++  // The two sides of the share, read where each is actually authoritative.
++  //
++  // The response's `cashback` is the PAYER's figure in the PAYER's currency
++  // (server.js sends `cashback: cashbackCredit` with
++  // `cashbackCurrency: senderCurrency`); there is no cashbackCredit key on
++  // the response. The payee's own figure lives on the payment transaction's
++  // metadata, in the destination currency.
++  const payerShare = Number(paid.body?.cashback); // INR
++  check("the response's cashback currency is the payer's", paid.body?.cashbackCurrency === "INR",
++    String(paid.body?.cashbackCurrency));
++
++  const paymentTxn = await Transaction.findOne({ type: "send" }).lean();
++  const payeeShare = Number(paymentTxn?.metadata?.cashback); // USD
++
++  check("the payee's share is in dollars", payeeShare === PAY_USD * SHARE_RATE, `${payeeShare}`);
++  check("the payer's share is that converted to rupees",
++    payerShare === PAY_USD * SHARE_RATE * USD_IN_INR, `${payerShare}`);
++  check("and the two are genuinely different numbers",
++    payeeShare !== payerShare, `${payeeShare} vs ${payerShare}`);
++
++  const receipts = await Receipt.find({}).lean();
++  check("four receipts were stored", receipts.length === 4, `count=${receipts.length}`);
++
++  const paymentLegs = receipts.filter((r) => r.leg === "payment");
++  const shareLegs = receipts.filter((r) => r.leg === "share");
++  check("two of each leg", paymentLegs.length === 2 && shareLegs.length === 2,
++    `payment=${paymentLegs.length} share=${shareLegs.length}`);
++
++  console.log("\nthe payment leg — the receiver's side, in the receiver's currency");
++  for (const r of paymentLegs) {
++    check(`payment receipt (${r.role}) is in USD`, r.currency === "USD", r.currency);
++    check(`payment receipt (${r.role}) is the face amount`, r.amount === PAY_USD, String(r.amount));
++  }
++
++  console.log("\nTHE DEFECT — the share leg's figure and its currency must be the same side's");
++  for (const r of shareLegs) {
++    check(`share receipt (${r.role}) is in INR, not USD`, r.currency === "INR",
++      `${r.amount} ${r.currency}`);
++    check(`share receipt (${r.role}) carries the payer's figure`, r.amount === payerShare,
++      `${r.amount} vs ${payerShare}`);
++    // The precise shape of the bug: the right number under the wrong symbol.
++    check(`share receipt (${r.role}) is not the rupee figure labelled USD`,
++      !(r.amount === payerShare && r.currency === "USD"),
++      `${r.amount} ${r.currency}`);
++  }
++
++  console.log("\nand the share transaction still agrees with its own receipts");
++  const shareTxn = await Transaction.findOne({ type: "share" }).lean();
++  check("share transaction exists", !!shareTxn);
++  check("share transaction currency matches its receipts",
++    shareTxn?.currency === shareLegs[0]?.currency,
++    `txn=${shareTxn?.currency} receipt=${shareLegs[0]?.currency}`);
++  check("share transaction amount matches its receipts",
++    Number(shareTxn?.amount) === Number(shareLegs[0]?.amount),
++    `txn=${shareTxn?.amount} receipt=${shareLegs[0]?.amount}`);
++
++  console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);
++  return failures;
++}
++
++let exitCode = 1;
++try {
++  exitCode = (await run()) === 0 ? 0 : 1;
++} catch (error) {
++  console.error("HARNESS ERROR:", error);
++  exitCode = 1;
++} finally {
++  try {
++    if (mongoose.connection.name === TEST_DB) {
++      await mongoose.connection.dropDatabase();
++      console.log(`dropped test database ${TEST_DB}`);
++    }
++  } catch (dropError) {
++    console.error("could not drop the test database:", dropError);
++  }
++  await mongoose.disconnect();
++  process.exit(exitCode);
++}
+diff --git a/tests/creator-share-ledger.test.mjs b/tests/creator-share-ledger.test.mjs
+index 91c518b..ef1dbd4 100644
+--- a/tests/creator-share-ledger.test.mjs
++++ b/tests/creator-share-ledger.test.mjs
+@@ -205,3 +205,37 @@ describe("the arithmetic the user can now do on screen", () => {
+     assert.match(shareFlow, /if \(!hasShare\) \{/);
+   });
+ });
++
++describe("the share receipt is labelled with its own side's currency", () => {
++  // The share TRANSACTION takes `cashbackCurrency || currency` and always
++  // did. The receipt pair beneath it took a bare `currency` — the payment's
++  // DESTINATION currency — while its amount is `cashback`, which at that call
++  // site is cashbackCredit, in the SENDER's. Across a corridor that stored
++  // the rupee figure under the dollar symbol.
++  //
++  // Asserted as a property of the call, not a slice of the file at a fixed
++  // offset: whatever currency the receipt pair is given, it must be the one
++  // that goes with the amount beside it.
++  const flow = readSource("server/lib/merchantShareFlow.js");
++
++  test("issueReceiptPair gets the cashback's own currency", () => {
++    const at = flow.indexOf("const shareReceipts = await issueReceiptPair({");
++    assert.ok(at > 0, "the share receipt pair is no longer minted here");
++    const call = flow.slice(at, flow.indexOf("});", at) + 3);
++
++    assert.match(call, /amount: cashback,/, "the share receipt stopped carrying the payer's figure");
++    assert.match(call, /currency: cashbackCurrency \|\| currency,/,
++      "the share receipt is labelled with the payment's destination currency again");
++    assert.doesNotMatch(call, /^\s*currency,\s*$/m,
++      "a bare `currency` is back on the share receipt");
++  });
++
++  test("and the transaction it belongs to is labelled the same way", () => {
++    // If these two ever disagree, one of them is wrong about the same event.
++    const at = flow.indexOf("const shareTransaction");
++    assert.ok(at > 0, "the share transaction is no longer minted here");
++    const txn = flow.slice(at, flow.indexOf("const shareReceipts", at));
++    assert.match(txn, /currency: cashbackCurrency \|\| currency,/,
++      "the share transaction stopped using the cashback's own currency");
++  });
++});
+diff --git a/tests/geu-one-currency.test.mjs b/tests/geu-one-currency.test.mjs
+index b30540b..d01d72b 100644
+--- a/tests/geu-one-currency.test.mjs
++++ b/tests/geu-one-currency.test.mjs
+@@ -58,7 +58,25 @@ const READ_ROUTES = ["/api/geu/supply", "/api/geu/ledger/:symbolId", "/api/geu/:
+ 
+ describe("Gloobal Coin is stored as GEU, not GC", () => {
+   test("the server stamps GEU onto coin rows", () => {
+-    assert.match(server, /const COIN_CURRENCY = 'GEU';/);
++    // The ticker moved out of this file and into lib/coinTicker.js, because
++    // server.js was never the only thing on the server that writes a coin
++    // row — scripts/coin-airdrop.mjs does too, and while this was a literal
++    // here the two drifted. So the assertion is now "server.js takes it from
++    // the one module", which is a stronger claim than "server.js spells it
++    // correctly".
++    assert.match(server, /const \{ COIN_CURRENCY \} = require\('\.\/lib\/coinTicker'\);/);
++    assert.match(readSource("server/lib/coinTicker.js"), /const COIN_CURRENCY = 'GEU';/);
++  });
++
++  test("and the two tickers are not one constant apart in the same file", () => {
++    // Gloobal Coin and the superseded growth prototype both hold the string
++    // 'GEU'. They are different economic systems sharing a ledger collection,
++    // which is why the prototype's routes are 503. The names must say so:
++    // COIN_CURRENCY and GEU_CURRENCY, one character apart, is how somebody
++    // reaches for the wrong one.
++    assert.match(server, /const GEU_PROTOTYPE_CURRENCY = 'GEU';/);
++    assert.doesNotMatch(server, /const GEU_CURRENCY = /,
++      "the prototype ticker is named one character from the live one again");
+   });
+ 
+   test("the browser ledger agrees with it exactly", () => {
+@@ -89,6 +107,13 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
+   test("nothing anywhere still writes the old ticker", () => {
+     for (const file of [
+       "server/server.js",
++      "server/lib/coinTicker.js",
++      // Added after this guard missed it: the airdrop writes a Transaction
++      // row and a LedgerEntry row per account, and carried its own "GC"
++      // literal through the whole rename while this test passed. A file list
++      // enumerated by hand is only as good as the hand — anything that writes
++      // a currency onto a money row belongs in it.
++      "server/scripts/coin-airdrop.mjs",
+       "backend/domain/coin/CoinService.js",
+       "backend/services/api/gloobalApi.js",
+       "backend/data/currencies.js"
+@@ -164,7 +189,7 @@ describe("the gate is off unless someone deliberately turns it on", () => {
+     // as done.
+     const gate = server.slice(
+       server.indexOf("const requireGeuGrowthPrototype ="),
+-      server.indexOf("const GEU_CURRENCY =")
++      server.indexOf("const GEU_PROTOTYPE_CURRENCY =")
+     );
+     assert.match(gate, /res\.status\(503\)/);
+     assert.match(gate, /success: false/);
+-- 
+2.43.0
+

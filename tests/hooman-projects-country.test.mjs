@@ -165,47 +165,81 @@ describe("the number on the card counts what the list shows", () => {
     assert.match(src, /Nothing in \$\{country\.name\} matches/);
   });
 
-  test("the overlay header carries the country's flag and name", () => {
+  test("the screen states which country, and the hero is where", () => {
     // The overlay covers the country panel it was opened from, so without
-    // this the one fact that decides the list's contents is the one fact the
+    // this the one fact that decides what is in the list is the one fact the
     // list does not state.
-    // Anchored on the OVERLAY, not on the wordmark: the entry tile in the
-    // country panel renders the same "H◦◦man Projects" text, and matching
-    // that one would pass while the overlay said nothing.
+    //
+    // It used to be a flag in the header. The header is now the search bar
+    // and nothing else, and the hero directly beneath carries the flag AND
+    // the country spelled out — which says more, in the place the eye lands
+    // first.
     const src = code(SCREEN);
-    const at = src.indexOf("{showHoomanProjects && <div style={{ position: \"fixed\"");
+    const at = src.indexOf('{showHoomanProjects && <div style={{ position: "fixed"');
     assert.ok(at > 0, "the Hooman Projects overlay moved");
-    const header = src.slice(at, at + 1200);
-    assert.match(header, /<FlagEmoji flag=\{country\.flag\}/);
-
-    // The name is no longer PRINTED here — the flag carries the country on
-    // its own, and the spelled-out name beside it was the same fact twice
-    // and the half that truncated on a narrow screen. It is still CARRIED,
-    // as the accessible name on the flag, because a flag with no accessible
-    // name is a country that anyone who cannot see it cannot identify.
-    assert.match(header, /\$\{country\.name\}/, "the flag has no accessible name");
-    assert.match(header, /title=\{country\.name\}/, "the flag has no long-press label");
-    assert.ok(
-      !/>\{country\.name\}</.test(header),
-      "the country name is printed beside its own flag again"
-    );
+    const top = src.slice(at, at + 4200);
+    assert.match(top, /<FlagEmoji flag=\{country\.flag\}/, "nothing shows the country's flag");
+    assert.match(top, /\{country\.name\}/, "nothing names the country");
   });
 
-  test("the flag is the way out, and says so to a screen reader", () => {
-    // The plan was to drop the back arrow and leave it to the phone. A real
-    // render says that does not work: one hardware back from this overlay
-    // lands on the DASHBOARD, not on the Coverage screen underneath, and on
-    // iOS a standalone PWA has no system back at all. So the flag sits where
-    // the arrow sat and does the arrow's job.
+  test("there is exactly one way off this screen, and it says so", () => {
+    // The header's flag was doing two jobs and both moved: the hero names the
+    // country, and the hero's chip is now the exit.
     //
-    // The aria-label is the load-bearing part. A flag does not look like a
-    // way out, and the person who most needs telling is the one who cannot
-    // see it.
+    // Measured, not assumed: hardware back from this overlay lands on the
+    // DASHBOARD rather than the Coverage screen underneath, and an iOS PWA
+    // has no system back at all. A screen with no control is a screen with no
+    // exit on one of the two platforms, so one has to exist and be named.
     const src = code(SCREEN);
-    const at = src.indexOf("{showHoomanProjects && <div style={{ position: \"fixed\"");
-    const header = src.slice(at, at + 1400);
-    assert.match(header, /onClick=\{\(\) => setShowHoomanProjects\(false\)\}/, "the flag does not close the screen");
-    assert.match(header, /Back to Gloobal Coverage/, "the exit is not announced");
+    const at = src.indexOf('{showHoomanProjects && <div style={{ position: "fixed"');
+    const top = src.slice(at, at + 4200);
+    const exits = (top.match(/setShowHoomanProjects\(false\)/g) || []).length;
+    assert.equal(exits, 1, `the projects screen has ${exits} exits; expected exactly one`);
+    assert.match(top, /Back to Gloobal Coverage/, "the exit is not announced to a screen reader");
+  });
+
+  test("the country chip filters location, it does not navigate", () => {
+    // The hero's chip used to be the exit. Back has its own arrow now, in the
+    // position every other screen in this app puts one, so the chip is free to
+    // do the job its position implies: every figure on the card it sits in is
+    // scoped to one country, and this is what changes the country.
+    //
+    // It opens the existing All countries picker — a real list of 194 with a
+    // search box — rather than a second country UI built for this screen.
+    const src = code(SCREEN);
+    assert.match(src, /aria-label=\{`Showing \$\{country\.name\}\. Change country`\}/);
+    assert.match(src, /onClick=\{\(\) => setShowAllCountries\(true\)\}/);
+  });
+
+  test("the country picker opens ABOVE the projects screen", () => {
+    // It was z-index 270 and this overlay is 340, so opening it from here
+    // would have rendered the picker underneath the screen that asked for it
+    // — a tap that appears to do nothing.
+    const src = code(SCREEN);
+    assert.match(src, /\{showAllCountries && <div style=\{\{ position: "fixed", inset: 0, zIndex: 360/);
+  });
+
+  test("add-project is reachable without scrolling the list", () => {
+    // A dashed button at the END of the list is a control nobody reaches on a
+    // country with forty projects. Absolute within the overlay, not fixed, so
+    // it is bounded by this screen and cannot outlive it on another.
+    const src = code(SCREEN);
+    assert.match(src, /aria-label=\{`Add a project to \$\{selectedHoomanCategory\}`\}/);
+    assert.match(src, /position: "absolute", right: 18, bottom: "calc\(20px \+ env\(safe-area-inset-bottom, 0px\)\)"/);
+    // The list has to leave room, or the last card sits under the button.
+    assert.match(src, /padding: "0 18px 96px"/);
+  });
+
+  test("the top of the screen is the search bar alone", () => {
+    const src = code(SCREEN);
+    const at = src.indexOf('{showHoomanProjects && <div style={{ position: "fixed"');
+    // Everything before the scrolling area: the header, and nothing else.
+    const header = src.slice(at, src.indexOf('overflowY: "auto"', at));
+    assert.match(header, /placeholder="Hooman Projects"/, "the search bar is not in the header");
+    assert.ok(
+      !/setShowHoomanCategoryPicker\(true\)/.test(header),
+      "the category chip is back on the search bar — the tile grid and All 8 already do that"
+    );
   });
 
   test("the screen has no title, because the search field carries the name", () => {
@@ -218,36 +252,26 @@ describe("the number on the card counts what the list shows", () => {
     assert.match(src, /placeholder="Hooman Projects"/);
   });
 
-  test("the foot of the screen carries Our spending, scoped to projects", () => {
-    // Placed here rather than only on the Coverage panel because this screen
-    // already knows which country it is showing — so the day a project is
-    // funded, the figure has a place to land and a country to land under.
+  test("the hero carries the country's raised total, and nothing duplicates it", () => {
+    // Our spending had a pinned block at the foot of this screen. The hero
+    // now states the same thing — money into projects in this country — at
+    // the top, where it is read first, so the footer was the same figure
+    // twice on one screen.
+    //
+    // The Our spending ROW on the Coverage panel is untouched: that one means
+    // everything Gloobal pays Hoomans, which is a wider figure than projects.
     const src = code(SCREEN);
-    const at = src.indexOf("Add a project to {selectedHoomanCategory}");
-    assert.ok(at > 0, "the add-project button moved");
-    const foot = src.slice(at, at + 2200);
+    assert.match(src, />Raised</, "the hero does not state what the figure is");
+    assert.match(src, /fmtMoney\(hoomanRaisedTotal, displayCurrency\)/);
 
-    assert.match(foot, /Our spending/, "Our spending is not at the foot of the screen");
-    // Narrower than the Coverage row on purpose: what Gloobal puts into
-    // projects, not everything it spends on people.
-    assert.match(foot, /man Projects in \{country\.name\}/);
-    assert.match(foot, /aria-label="No data">∆/, "the figure is not ∆");
+    // Only one place inside the projects overlay talks about Our spending now
+    // — none. The Coverage panel's row lives outside it.
+    const overlayStart = src.indexOf('{showHoomanProjects && <div style={{ position: "fixed"');
+    const overlayEnd = src.indexOf('{showProjectForm &&', overlayStart);
+    const overlay = src.slice(overlayStart, overlayEnd);
+    assert.ok(!overlay.includes('Our spending'), 'the projects screen still carries an Our spending block');
   });
 
-  test("and it is not a button, because there is nothing behind it yet", () => {
-    // Spending by country opens because 194 rows of real figures sit behind
-    // it. The equivalent here would be 194 rows of ∆ — a screen that teaches
-    // people the app is broken. The breakdown ships with the data.
-    const src = code(SCREEN);
-    const at = src.indexOf("Our spending", src.indexOf("Add a project to {selectedHoomanCategory}"));
-    assert.ok(at > 0, "the Our spending row at the foot moved");
-    const row = src.slice(at - 900, at + 1500);
-    assert.ok(!/<button/.test(row), "the row became a button with no breakdown behind it");
-    assert.match(row, /Breaks down country by country once projects are funded/);
-  });
-});
-
-describe("a project you create is a project you can find", () => {
   test("the country is still the server's to decide", () => {
     // Not asked for on the form, and this must stay that way: a project and
     // its creator cannot be allowed to disagree about where they are.
@@ -332,11 +356,87 @@ describe("the stale scaffolding comment is gone", () => {
     // ∆ is "the server did not answer", which is a different fact from zero.
     // Removing it along with the comment would have collapsed the two.
     const src = code(SCREEN);
-    // The expression moved out of the card and down onto the list, and is
-    // now keyed by selectedHoomanCategory rather than by the card's local
-    // `cat` — same count, same three states, no card.
-    assert.match(src, /projectsData \? [^\n]*projectsData\.counts\[selectedHoomanCategory\] \?\? 0/);
-    assert.match(src, /: <><span[^\n]*∆<\/span><\/>/, "the unanswered count is no longer ∆");
+    // The count no longer reads projectsData.counts[category] from the
+    // server. It counts the rows the screen is ACTUALLY RENDERING, which is
+    // strictly stronger: the server's per-category count is unaware of the
+    // filter chips, so a filtered list under an unfiltered count would be a
+    // header disagreeing with the rows beneath it — the exact defect the
+    // card version of this was fixed for.
+    assert.match(src, /hoomanVisibleProjects\.length/, "the count is no longer derived from the rows");
+    assert.ok(
+      !/projectsData\.counts\[selectedHoomanCategory\]/.test(src),
+      "the count went back to the server's figure, which cannot see the filter"
+    );
+    assert.match(src, /∆/, "the unanswered count is no longer ∆");
     assert.match(src, /Couldn't reach the server, so we don't know what's here\./);
   });
+
+  test("the filter narrows the rows, not the query", () => {
+    // Filtering the page the server already returned is what keeps the count
+    // honest. A chip that re-queried would need its own count and its own
+    // round trip, and the two could disagree mid-flight.
+    const src = code(SCREEN);
+    assert.match(src, /hoomanProjectFilter === "draft"\) return project\.status === "draft"/);
+    assert.match(src, /hoomanProjectFilter === "live"\) return project\.status !== "draft"/);
+  });
+
+  test("the project page shows only the contact rows that exist", () => {
+    // A Details card listing three labels with nothing beside them describes
+    // a project nobody filled in, which is a different thing from a project
+    // with no website.
+    const src = code(SCREEN);
+    assert.match(src, /\]\.filter\(Boolean\)/, "the detail rows are not filtered to the ones present");
+    assert.match(src, /details\.length > 0 && </, "the Details card is drawn even when empty");
+  });
+
+  test("a goal on the project page says it cannot be given to", () => {
+    // Without this line the figure reads as something you can contribute
+    // towards. It is the one sentence that stops a stated target being
+    // mistaken for an open collection.
+    const src = code(SCREEN);
+    assert.match(src, /cannot take contributions towards it/);
+  });
+
+  test("every funding figure is derived, never a literal zero", () => {
+    // The rule changed: the founder wants the full funding UI, reading zero.
+    // That is honest — nothing can take a contribution, so nobody has given
+    // — but ONLY while the zero comes from the data. A hardcoded 0 would
+    // still read zero the day contributions start arriving, and would then
+    // be a lie that nobody notices because it never changes.
+    const src = code(SCREEN);
+    assert.match(src, /const projectRaised = \(project\) => Number\(project\?\.raised\) \|\| 0;/);
+    assert.match(src, /const projectBackers = \(project\) => Number\(project\?\.backers\) \|\| 0;/);
+    assert.match(src, /hoomanVisibleProjects\.reduce\(\(sum, p\) => sum \+ projectRaised\(p\), 0\)/);
+    // The figures on screen go through those helpers, not through a constant.
+    assert.match(src, /projectRaised\(hoomanProject\)/);
+    assert.match(src, /projectBackers\(hoomanProject\)/);
+  });
+
+  test("a progress bar never divides by a goal of zero", () => {
+    // A bar at 100% because it was divided by nothing is worse than no bar:
+    // it reports a project as fully funded.
+    const src = code(SCREEN);
+    const guards = src.match(/goalMajor > 0 \? Math\.min\(100, Math\.round\(\(raised \/ goalMajor\) \* 100\)\) : 0/g) || [];
+    assert.equal(guards.length, 2, "a progress percentage is computed without the zero-goal guard");
+  });
+
+  test("the zero is explained wherever it is shown", () => {
+    // Three figures all reading zero look like a project nobody wants. The
+    // sentence is what makes them read as a flow that is not open yet, and
+    // it appears on the hero, the project page and the form.
+    const src = code(SCREEN);
+    const says = (src.match(/cannot take contributions/g) || []).length;
+    assert.ok(says >= 3, `the zero is explained in ${says} place(s); expected the hero, the project page and the form`);
+  });
+
+  test("every outbound link on the project page is safe", () => {
+    // rel="noopener noreferrer" on all of them: the target learns nothing
+    // about where it was opened from. The server already refuses anything
+    // that is not http(s), so neither href can be a javascript: URL.
+    const src = code(SCREEN);
+    const hrefs = src.match(/target="_blank"/g) || [];
+    const rels = src.match(/rel="noopener noreferrer"/g) || [];
+    assert.equal(hrefs.length, rels.length, "a _blank link is missing its rel");
+  });
+
 });

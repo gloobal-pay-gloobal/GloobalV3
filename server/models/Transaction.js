@@ -67,6 +67,13 @@ const transactionSchema = new mongoose.Schema(
         'geu_entry_mint',
         'geu_growth',
         'geu_redeem',
+        // Gloobal paying a PERSON, out of PlatformAccount — not one user
+        // paying another. Its own type for the same reason the coin types
+        // are: coverageAggregation's SPENDING_TRANSACTION_TYPES is ['send'],
+        // and "Total spending" means Hoomans paying each other. A payout
+        // recorded as a 'send' would be counted as both, and would also need
+        // a fromUserId that does not exist.
+        'disbursement',
         // The second leg of a merchant-share payment (lib/merchantShareFlow.js):
         // records that a slice of a 'send' was diverted into the payer's
         // AssetSeed rather than paid to the merchant. fromUserId is the

@@ -4,6 +4,8 @@
 // on every rule here; the frontend may check the same things for a better
 // form experience, but nothing is trusted because it did.
 
+const { decimalsFor } = require('./currencyDecimals');
+
 const PROJECT_CATEGORIES = Object.freeze([
   'Infrastructure',
   'Startup',
@@ -120,6 +122,140 @@ function validateProjectInput(input, { partial = false } = {}) {
       out.link = link;
     } else {
       out.link = '';
+    }
+  }
+
+  // ── The richer project fields ─────────────────────────────────────────
+  //
+  // All optional, all validated the same way `link` is: present-and-empty
+  // clears the field, present-and-malformed is REFUSED rather than cleaned
+  // up. Silently storing a corrected value teaches nobody that they typed it
+  // wrong, and the stored record then disagrees with what they submitted.
+
+  for (const key of ['place', 'address']) {
+    if (has(key)) {
+      const value = String(input?.[key] || '').trim();
+      const max = key === 'place' ? 120 : 300;
+      if (value.length > max) {
+        return { ok: false, message: `That ${key} is too long (limit ${max} characters).` };
+      }
+      out[key] = value;
+    }
+  }
+
+  if (has('website')) {
+    // Held to exactly the rule `link` is held to, and for the same reason: a
+    // javascript: or data: URL reaching an anchor href on the project page is
+    // how a link becomes an exploit.
+    const website = String(input?.website || '').trim();
+    if (website) {
+      let parsed = null;
+      try {
+        parsed = new URL(website);
+      } catch (e) {
+        parsed = null;
+      }
+      if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+        return { ok: false, message: 'The website must be a http:// or https:// address.' };
+      }
+      if (website.length > 500) return { ok: false, message: 'That website address is too long.' };
+      out.website = website;
+    } else {
+      out.website = '';
+    }
+  }
+
+  if (has('email')) {
+    const email = String(input?.email || '').trim();
+    if (email) {
+      // Deliberately loose: one @, something either side, no whitespace. The
+      // only way to know an address is real is to send to it, and a stricter
+      // pattern here would reject valid addresses — plus-tags, new TLDs,
+      // non-Latin domains — while still not proving anything.
+      if (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return { ok: false, message: 'That email address does not look right.' };
+      }
+      out.email = email;
+    } else {
+      out.email = '';
+    }
+  }
+
+  // ── The funding goal ──────────────────────────────────────────────────
+  //
+  // Minor units, as an integer, with a currency beside it. Both or neither:
+  // a goal with no currency is a number with no unit, and this codebase has
+  // already had to unpick what that costs.
+  if (has('goalMajor') || has('goalMinor') || has('goalCurrency')) {
+    const currency = String(input?.goalCurrency || '').trim().toUpperCase();
+
+    // ── goalMajor: what a person actually types ─────────────────────────
+    //
+    // A client cannot compute minor units, because it does not know how many
+    // decimal places a currency has. 20000 yen is 20000 minor units and
+    // 20000 rupees is 2,000,000 — a client multiplying by 100 would be wrong
+    // for every zero-decimal currency, and wrong by a hundredfold.
+    //
+    // decimalsFor is the server's own table, the same one toMinorUnit uses
+    // for balances, so a goal and a balance in the same currency scale the
+    // same way. More decimal places than the currency has is REFUSED, not
+    // rounded: 20.005 USD is not a goal anybody meant to type.
+    if (has('goalMajor')) {
+      const rawMajor = String(input?.goalMajor ?? '').trim();
+      if (!rawMajor) {
+        out.goalMinor = null;
+        out.goalCurrency = '';
+      } else {
+        if (!/^[0-9]+(\.[0-9]+)?$/.test(rawMajor)) {
+          return { ok: false, message: 'The funding goal must be a number.' };
+        }
+        if (!/^[A-Z]{3}$/.test(currency)) {
+          return { ok: false, message: 'A funding goal needs its currency, as a three-letter code.' };
+        }
+        const decimals = decimalsFor(currency);
+        const [whole, fraction = ''] = rawMajor.split('.');
+        if (fraction.length > decimals) {
+          return {
+            ok: false,
+            message: decimals === 0
+              ? `${currency} has no decimal places.`
+              : `${currency} has ${decimals} decimal place${decimals === 1 ? '' : 's'}.`,
+          };
+        }
+        // Built as a STRING and parsed once, rather than multiplied by a
+        // power of ten. 20.07 * 100 is 2006.9999999999998 in float, and this
+        // field exists to be exact.
+        const minor = Number(`${whole}${fraction.padEnd(decimals, '0')}`);
+        if (!Number.isSafeInteger(minor) || minor <= 0) {
+          return { ok: false, message: 'The funding goal must be greater than zero.' };
+        }
+        if (minor > 1e15) return { ok: false, message: 'That funding goal is too large.' };
+        out.goalMinor = minor;
+        out.goalCurrency = currency;
+      }
+    } else {
+      // ── goalMinor: for a caller that already has exact minor units ─────
+      const rawGoal = input?.goalMinor;
+      const clearing = (rawGoal === null || rawGoal === '' || rawGoal === undefined) && !currency;
+      if (clearing) {
+        out.goalMinor = null;
+        out.goalCurrency = '';
+      } else {
+        const asString = typeof rawGoal === 'string' ? rawGoal.trim() : rawGoal;
+        const isIntegerString = typeof asString === 'string' && /^[0-9]+$/.test(asString);
+        const isSafeInteger = typeof asString === 'number' && Number.isSafeInteger(asString);
+        if (!isIntegerString && !isSafeInteger) {
+          return { ok: false, message: 'The funding goal must be a whole number of minor units.' };
+        }
+        const goal = Number(asString);
+        if (!(goal > 0)) return { ok: false, message: 'The funding goal must be greater than zero.' };
+        if (goal > 1e15) return { ok: false, message: 'That funding goal is too large.' };
+        if (!/^[A-Z]{3}$/.test(currency)) {
+          return { ok: false, message: 'A funding goal needs its currency, as a three-letter code.' };
+        }
+        out.goalMinor = goal;
+        out.goalCurrency = currency;
+      }
     }
   }
 

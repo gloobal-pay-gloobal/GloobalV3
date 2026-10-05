@@ -53,6 +53,7 @@
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const AssetSeed = require('../models/AssetSeed');
+const Disbursement = require('../models/Disbursement');
 const { accountCountryIso, DEFAULT_COUNTRY_ISO } = require('./accountCountry');
 const { getRate } = require('./fxRates');
 
@@ -284,48 +285,104 @@ async function convertGroup(group, targetCurrency, rateTo) {
 
 // ── Our Spending ─────────────────────────────────────────────────────────
 //
-// "System total spending on people" means money the PLATFORM paid to people
-// — not money people paid each other. This probe exists to answer, with
-// evidence, whether that is computable today. It is not, and the honest
-// output is a null total plus the reason.
+// Money the PLATFORM paid to people — not money people paid each other.
 //
-// What was checked, and why each candidate fails:
+// This used to be a probe that answered "no", at length. Its finding was
+// that no record type represented a platform-funded disbursement to a
+// person: every mechanism that credits a user was funded by another user, or
+// converted the account's own money, or carried no monetary field, or was a
+// browser-side simulation that never reached the database. The one genuinely
+// system-funded payout, the AssetSeed interest bonus, wrote no Transaction
+// and no LedgerEntry and so left nothing to attribute to a country.
 //
-//   AssetSeed.interestClaimed — the closest thing that genuinely IS the
-//     system paying people. The 1%/month seed bonus is credited straight to
-//     a user's balance and is funded by nothing: no account is debited. But
-//     POST /api/assets/claim-interest writes NO Transaction and NO
-//     LedgerEntry — it does a bare $inc on User.balance — so there is no
-//     record of any individual payout, only a per-seed running total. That
-//     total is summable (and is summed below, as a diagnostic), but it is
-//     one narrow bonus scheme, not "system total spending", and presenting
-//     it as the latter would be exactly the fabrication this must not do.
+// models/Disbursement.js is that record type, and lib/disbursement.js is the
+// only thing that writes one. Each row is a payment Gloobal made, debited
+// from PlatformAccount in the same transaction that credited the person, and
+// carrying the country it was paid in AS A SNAPSHOT — so a figure cannot
+// move between countries later when somebody travels.
 //
-//   Creator Share legs — user-to-user. The payee funds them out of their
-//     own receipt. Not the system.
+// ── What is deliberately NOT counted ────────────────────────────────────
 //
-//   Referral — models/Referral.js is an edge list with a pending/completed
-//     status. No monetary field exists on it at all.
+// The AssetSeed.interestClaimed totals that already existed when the record
+// type was introduced. They carry no date and no country of their own, so
+// folding them in would mean guessing both: attributing them to each user's
+// CURRENT country, and to no point in time at all, which would make them
+// unable to appear in any per-period view and quietly wrong in a per-country
+// one. They stay a labelled diagnostic. The headline figure starts at a real
+// zero and counts only payouts with a record behind them.
 //
-//   The Essentials pool subsidy — is client-side only. It lives in the
-//     browser-side simulation under backend/ and reaches no database.
-//
-// So the missing piece is specific and nameable: there is no record type
-// for a platform-funded disbursement to a user. Until one exists (or the
-// founder confirms that the interest bonus IS the intended meaning), this
-// returns available:false and the screen keeps showing ∆.
-//
-// `receivedByPeople` is carried alongside it because it is the other
-// reading someone might intend — "spending on people" as the credit side of
-// every payment — and it IS fully computable. It is reported as a labelled
-// diagnostic, never as Our Spending, so that confirming the definition is a
-// one-line change rather than another round of analysis.
-async function ourSpendingProbe({ accountCountries, receiverTotals }) {
+// Until the first disbursement exists, this still reports available:false
+// and the screen still shows ∆ — which is now "nothing has been paid yet"
+// rather than "this cannot be known".
+async function ourSpendingProbe({ accountCountries, receiverTotals, rateTo, targetCurrency }) {
+  // Grouped by country AND currency, because a payout is made in the
+  // recipient's own currency and summing rupees with yen before converting
+  // them is the defect GLB-05 records elsewhere in this file.
+  const groups = await Disbursement.aggregate([
+    {
+      $group: {
+        _id: { countryIso: '$countryIso', currency: '$currency' },
+        total: { $sum: '$amount' },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const byCountry = {};
+  const byReason = {};
+  const unconvertible = new Set();
+  let total = 0;
+  let counted = 0;
+  let skipped = 0;
+
+  for (const group of groups) {
+    const iso = String(group._id.countryIso || '').toUpperCase();
+    const currency = String(group._id.currency || '').toUpperCase();
+    const amount = Number(group.total) || 0;
+    if (!iso || !currency || amount <= 0) continue;
+
+    let value = amount;
+    if (currency !== targetCurrency) {
+      const rate = await rateTo(currency);
+      if (rate === null) {
+        // Dropped and REPORTED, never silently converted at a guessed rate
+        // and never counted as its own unconverted number — which would put
+        // two currencies in one total.
+        unconvertible.add(currency);
+        skipped += group.count;
+        continue;
+      }
+      value = amount * rate;
+    }
+
+    byCountry[iso] = round2((byCountry[iso] || 0) + value);
+    total += value;
+    counted += group.count;
+  }
+
+  // Per reason, in the target currency, so a breakdown never has to re-derive
+  // the conversion that the totals above already did.
+  const reasonGroups = await Disbursement.aggregate([
+    { $group: { _id: { reason: '$reason', currency: '$currency' }, total: { $sum: '$amount' } } },
+  ]);
+  for (const group of reasonGroups) {
+    const currency = String(group._id.currency || '').toUpperCase();
+    const amount = Number(group.total) || 0;
+    if (amount <= 0) continue;
+    let value = amount;
+    if (currency !== targetCurrency) {
+      const rate = await rateTo(currency);
+      if (rate === null) continue;
+      value = amount * rate;
+    }
+    byReason[group._id.reason] = round2((byReason[group._id.reason] || 0) + value);
+  }
+
+  // The historical seed totals, kept as a diagnostic and never added above.
   const seeds = await AssetSeed.find({}, 'userId currency interestClaimed').lean();
   const interestByCountry = {};
   const interestByCurrency = {};
   let seedsWithClaims = 0;
-
   for (const seed of seeds) {
     const claimed = Number(seed.interestClaimed) || 0;
     if (claimed <= 0) continue;
@@ -336,51 +393,63 @@ async function ourSpendingProbe({ accountCountries, receiverTotals }) {
     interestByCurrency[currency] = (interestByCurrency[currency] || 0) + claimed;
   }
 
-  return {
-    // The metric itself. Null until the definition is confirmed against a
-    // record type that actually represents it.
-    total: null,
-    byCountry: null,
-    available: false,
-    reason:
-      'No record type represents a platform-funded disbursement to a person. ' +
-      'Every mechanism that credits a user was checked against who funded it: ' +
-      'an ordinary payment and a Creator Share leg are both funded by another ' +
-      'user, not by the system; a coin mint or a GEU redemption converts the ' +
-      "account's own money and moves nothing new to it; Referral carries no " +
-      'monetary field at all; the Essentials subsidy is a browser-side ' +
-      'simulation that never reaches the database. The two genuinely ' +
-      'system-funded mechanisms cannot answer either: GEU growth is disabled ' +
-      '(GEU_GROWTH_PROTOTYPE) and has never produced an event, and the ' +
-      'AssetSeed interest bonus writes no Transaction and no LedgerEntry, so ' +
-      'no individual payout leaves a trace to attribute to a country. ' +
-      'Implementing this needs a new persisted system-disbursement event ' +
-      'carrying recipient, amount, currency and time.',
-    // Everything below is EVIDENCE, not the answer. Named so it can never be
-    // mistaken for the metric by a client reading this object.
-    diagnostics: {
-      seedInterestPaid: {
-        description:
-          'Sum of AssetSeed.interestClaimed — the one genuinely platform-funded ' +
-          'credit that leaves a persisted trace. A narrow bonus scheme, not a ' +
-          'system spending total. Not currency-normalised: seeds in different ' +
-          'currencies are stored side by side (known issue GLB-05).',
-        byCurrency: interestByCurrency,
-        byCountry: interestByCountry,
-        seedsWithClaims,
-      },
-      receivedByPeople: {
-        description:
-          'Total credited TO people by every successful payment, attributed to ' +
-          "the RECEIVER's country. Fully computable and normalised. This is the " +
-          'other plausible reading of "spending on people" and is offered so the ' +
-          'definition can be confirmed against a real figure rather than in the ' +
-          'abstract. It is the credit side of user-to-user payments, NOT the ' +
-          'system paying anybody.',
-        total: receiverTotals.total,
-        byCountry: receiverTotals.byCountry,
-      },
+  const diagnostics = {
+    seedInterestPaid: {
+      description:
+        'Sum of AssetSeed.interestClaimed — every interest payout ever made, ' +
+        'including the ones made before Disbursement rows existed. NOT added ' +
+        'to the figure above: these carry no date and no recorded country, so ' +
+        'attributing them would mean guessing both. Not currency-normalised ' +
+        '(known issue GLB-05). Payouts made from now on appear in BOTH this ' +
+        'total and the headline figure, because this one is the running total ' +
+        'on the seed itself.',
+      byCurrency: interestByCurrency,
+      byCountry: interestByCountry,
+      seedsWithClaims,
     },
+    receivedByPeople: {
+      description:
+        'Total credited TO people by every successful payment, attributed to ' +
+        "the RECEIVER's country. This is the credit side of user-to-user " +
+        'payments, NOT the system paying anybody — offered as the other ' +
+        'plausible reading of "spending on people".',
+      total: receiverTotals.total,
+      byCountry: receiverTotals.byCountry,
+    },
+  };
+
+  if (counted === 0) {
+    return {
+      total: null,
+      byCountry: null,
+      available: false,
+      reason:
+        'No disbursement has been recorded yet. The record type now exists ' +
+        '(models/Disbursement.js, written only by lib/disbursement.js, which ' +
+        'debits PlatformAccount in the same transaction that credits the ' +
+        'person), so this becomes a real figure the first time Gloobal pays ' +
+        'anybody. It is not estimated from the historical AssetSeed interest ' +
+        'totals, which carry no date and no recorded country — those are ' +
+        'reported as a diagnostic instead.' +
+        (skipped > 0
+          ? ` ${skipped} payout(s) were skipped because no rate was available for ${[...unconvertible].join(', ')}.`
+          : ''),
+      diagnostics,
+    };
+  }
+
+  return {
+    total: round2(total),
+    byCountry,
+    byReason,
+    available: true,
+    currency: targetCurrency,
+    disbursements: counted,
+    // Reported rather than hidden: a total that silently dropped rows is a
+    // total that looks complete and is not.
+    skipped,
+    unconvertibleCurrencies: [...unconvertible],
+    diagnostics,
   };
 }
 
@@ -514,6 +583,10 @@ async function buildCoverage({ currency, now = new Date() } = {}) {
     ourSpending: await ourSpendingProbe({
       accountCountries,
       receiverTotals: { total: round2(receiver.total), byCountry: mapSpending(receiver.byCountry) },
+      // The same resolver the spending totals use, so a disbursement and a
+      // payment in the same currency are converted by the same rate.
+      rateTo,
+      targetCurrency,
     }),
 
     // How much of the total rests on rows that predate metadata.sourceAmount

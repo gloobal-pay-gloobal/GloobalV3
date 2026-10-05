@@ -79,45 +79,70 @@ describe('Our spending says what it measures', () => {
   });
 });
 
-describe('the figure stays ∆ until a disbursement record exists', () => {
-  test('the row renders ∆, not a number', () => {
-    // THE load-bearing assertion in this file. If this fails, check what
-    // replaced the ∆ and where that figure came from before assuming the
-    // test is stale.
-    const row = ourSpendingRow();
-    assert.match(row, /aria-label="No data">∆/);
+describe('the figure appears only when a disbursement exists', () => {
+  // This file used to hold the ∆ in place, because there was no record type
+  // for a platform-funded payout and any number would have been invented.
+  // models/Disbursement.js is now that record, so the job changed: the ∆
+  // still has to survive the EMPTY case, and the figure that replaces it has
+  // to come from disbursements rather than from the row above it.
+
+  test('a figure is shown only when the server says it is available', () => {
+    const src = code(SCREEN);
+    // `available` rather than `total != null`: once the record type exists, a
+    // genuine zero is a real answer — Gloobal has paid nothing — and it must
+    // not be confused with "the server could not say".
+    assert.match(src, /ourSpending\.available/, 'the screen does not check availability');
+    assert.match(src, /ourSpendingShown != null \?/, 'the figure does not branch on being present');
   });
 
-  test('it does not quietly reuse Total spending', () => {
-    // The temptation this row has always had: Total spending sits directly
-    // above it with a real number, and repeating it here would make the
-    // screen look complete while asserting something false — that money
-    // Hoomans paid each other was money Gloobal spent on them.
+  test('∆ survives the empty case', () => {
+    // The load-bearing assertion. If this fails, check what replaced the ∆
+    // and where that figure came from before assuming the test is stale.
+    assert.match(ourSpendingRow(), /aria-label="No data">∆/);
+  });
+
+  test('it does not borrow Total spending’s figure', () => {
+    // The temptation this row has always had: a real number sits directly
+    // above it, and repeating it would make the screen look complete while
+    // asserting something false — that money Hoomans paid each other was
+    // money Gloobal spent on them.
     const row = ourSpendingRow();
     assert.ok(!/displaySpend/.test(row), 'Our spending is borrowing Total spending’s figure');
-    assert.ok(!/fmtCompact/.test(row), 'Our spending is formatting a figure of its own');
+    assert.match(row, /fmtCompact\(ourSpendingShown\)/, 'it formats something other than its own figure');
   });
 
-  test('the server still reports the metric as unavailable, with a reason', () => {
-    // The screen is honest because the server is. If the probe ever starts
-    // returning a total, this test is the reminder that the screen has to
-    // be changed deliberately rather than discovering it by accident.
+  test('a country’s figure comes from that country, not the global total', () => {
+    const src = code(SCREEN);
+    assert.match(src, /ourSpending\.byCountry\[country\.code\]/);
+    assert.match(src, /flipped \? ourSpendingHere : ourSpendingTotal/);
+  });
+
+  test('the server funds every payout from an account, in one transaction', () => {
+    // What makes the number reportable at all. A credit with no debit is an
+    // inflation of the ledger, which is exactly why the old probe refused to
+    // call the seed interest bonus "spending".
+    const lib = read('server/lib/disbursement.js');
+    assert.match(lib, /PlatformAccount\.forCurrency/, 'nothing is debited');
+    assert.match(lib, /\$inc:[\s\S]{0,120}balance: -paid/, 'the funding account is not debited');
+    assert.match(lib, /session_required/, 'it can be written outside a transaction');
+  });
+
+  test('the historical seed totals are reported separately, never added in', () => {
+    // They carry no date and no recorded country, so folding them into the
+    // figure would mean guessing both — and they could then never appear in
+    // any per-period view.
     const probe = read(PROBE);
-    assert.match(probe, /available:\s*false/);
-    assert.match(probe, /reason/);
+    assert.match(probe, /seedInterestPaid/);
+    assert.match(probe, /NOT added[\s\S]{0,40}to the figure above/);
   });
 
-  test('the reason names the missing record type, not just "no data"', () => {
-    // "We don't have it" is not a finding. "No record type represents a
-    // platform-funded disbursement to a person" is — it says what to build.
-    //
-    // Asserted against the `reason` STRING the probe returns, not against
-    // the comment above it. The comment says the same thing and wraps across
-    // several `//` lines, so a regex over the source would be matching prose
-    // that never ships; this matches the value an operator actually reads.
-    assert.match(
-      read(PROBE),
-      /'No record type represents a platform-funded disbursement to a person\. '/
-    );
+  test('the empty reason says nothing has been paid, not that it cannot be known', () => {
+    assert.match(read(PROBE), /'No disbursement has been recorded yet\. /);
+  });
+
+  test('a payout that could not be converted is reported, not dropped silently', () => {
+    const probe = read(PROBE);
+    assert.match(probe, /unconvertibleCurrencies/);
+    assert.match(probe, /skipped/);
   });
 });

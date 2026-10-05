@@ -5110,57 +5110,106 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
       return res.status(404).json({ message: 'Secure ID not found.' });
     }
 
-    const rawSeeds = await AssetSeed.find({ userId: user._id });
-    let totalClaimed = 0;
-    const claimedSeedIds = [];
-
-    for (const seed of rawSeeds) {
-      const { interestAvailable } = computeSeed(seed);
-      if (interestAvailable <= 0) continue;
-
-      const priorClaimed = Number(seed.interestClaimed) || 0;
-      const updated = await AssetSeed.findOneAndUpdate(
-        { _id: seed._id, interestClaimed: priorClaimed },
-        { $set: { interestClaimed: priorClaimed + interestAvailable, lastClaimedAt: new Date() } },
-        { new: true }
-      );
-
-      // A null result means someone else claimed this exact seed in the
-      // gap between the read above and this write — skip it this round
-      // rather than paying out (or double-paying) a stale figure.
-      if (!updated) continue;
-
-      totalClaimed += interestAvailable;
-      claimedSeedIds.push(String(seed._id));
-    }
-
-    if (totalClaimed <= 0) {
-      return res.status(200).json({ claimed: 0, newBalance: Number(user.balance) || 0, seedIds: [] });
-    }
-
-    // Audit fix (GLB-19): this credits the account's own balance, so it rounds
-    // in the account's own currency — it used to default to two places, which
-    // paid a JPY or KRW account fractions of a unit that currency does not
-    // have. Falls back to the previous behaviour only for an account whose
-    // country cannot be resolved at all, which is the same answer every other
-    // call to toMinorUnit without a currency already gives.
+    // ── One transaction, or none ──────────────────────────────────────
     //
-    // This does NOT address the separate finding that seeds in different
-    // currencies are summed together before reaching here (GLB-05) — that one
-    // is deliberately untouched in this pass.
+    // This used to mark each seed claimed with a compare-and-swap and THEN
+    // credit the balance in a separate write. Two failure modes lived in
+    // that gap, and both lose a person's money: a crash after the seeds were
+    // marked paid the user nothing while recording that they had been paid,
+    // and there was no way to tell afterwards which seeds those were.
+    //
+    // It also credited the balance and debited nothing, which is why
+    // lib/coverageAggregation.js refused to call this spending. Both halves
+    // are fixed together because they are the same fix: the payout is now a
+    // movement between two accounts, and a movement either happens or does
+    // not.
     const claimCurrency = await resolveOwnCurrency(user);
-    const roundedClaim = toMinorUnit(totalClaimed, claimCurrency || undefined);
-    const credited = await User.findOneAndUpdate(
-      { _id: user._id },
-      { $inc: { balance: roundedClaim } },
-      { returnDocument: 'after' }
-    );
+    if (!claimCurrency) {
+      // Never guess a currency for a payout. Defaulting would pay a Japanese
+      // account in rupees, and the figure would be wrong by the rate.
+      return res.status(409).json({
+        message: 'Your account currency could not be resolved, so interest cannot be paid out yet.'
+      });
+    }
+    const claimCountry = accountCountryIso(user);
+    if (!claimCountry) {
+      // Recorded at payout time and never re-resolved, so a figure cannot
+      // move between countries later when somebody travels. Without it the
+      // payout cannot be attributed, so it does not happen.
+      return res.status(409).json({
+        message: 'Your account country could not be resolved, so interest cannot be paid out yet.'
+      });
+    }
+
+    let payout;
+    try {
+      payout = await withAtomicSession(async (session) => {
+        const rawSeeds = await AssetSeed.find({ userId: user._id }).session(session);
+        let totalClaimed = 0;
+        const claimedSeedIds = [];
+
+        for (const seed of rawSeeds) {
+          const { interestAvailable } = computeSeed(seed);
+          if (interestAvailable <= 0) continue;
+          const priorClaimed = Number(seed.interestClaimed) || 0;
+          const updated = await AssetSeed.findOneAndUpdate(
+            { _id: seed._id, interestClaimed: priorClaimed },
+            { $set: { interestClaimed: priorClaimed + interestAvailable, lastClaimedAt: new Date() } },
+            { returnDocument: 'after', session }
+          );
+          // A null result means someone else claimed this exact seed in the
+          // gap between the read above and this write — skip it this round
+          // rather than paying out (or double-paying) a stale figure.
+          if (!updated) continue;
+          totalClaimed += interestAvailable;
+          claimedSeedIds.push(String(seed._id));
+        }
+
+        if (totalClaimed <= 0) return { claimed: 0, claimedSeedIds: [], balanceAfter: null };
+
+        // The idempotency key is the SEEDS this claim consumed, not a clock
+        // or a random value: the same set of seeds can only be claimed once,
+        // and a retry of this exact request names the same set. A timestamp
+        // would make every retry look like a new payout.
+        const idempotencyKey = `seed_interest:${user._id}:${claimedSeedIds.slice().sort().join(',')}`;
+
+        const result = await recordDisbursement({
+          user,
+          amount: totalClaimed,
+          currency: claimCurrency,
+          countryIso: claimCountry,
+          reason: 'seed_interest',
+          idempotencyKey,
+          metadata: { seedIds: claimedSeedIds },
+          session,
+        });
+
+        return { claimed: result.amount, claimedSeedIds, balanceAfter: result.balanceAfter };
+      });
+    } catch (error) {
+      if (error?.code === 'not_atomic') {
+        console.error('Claim interest refused — no transaction support:', error.message);
+        return res.status(503).json({
+          message: 'Interest cannot be paid out right now. Nothing was claimed or charged.'
+        });
+      }
+      throw error;
+    }
+
+    if (payout.claimed <= 0) {
+      return res.status(200).json({
+        claimed: 0,
+        newBalance: toMinorUnit(Number(user.balance) || 0, claimCurrency),
+        currency: claimCurrency,
+        seedIds: [],
+      });
+    }
 
     return res.status(200).json({
-      claimed: roundedClaim,
-      newBalance: toMinorUnit(credited?.balance ?? user.balance, claimCurrency || undefined),
-      currency: claimCurrency || null,
-      seedIds: claimedSeedIds,
+      claimed: payout.claimed,
+      newBalance: payout.balanceAfter,
+      currency: claimCurrency,
+      seedIds: payout.claimedSeedIds,
     });
   } catch (error) {
     console.error('Claim interest error:', error);
@@ -5280,6 +5329,23 @@ const publicProject = (project, viewerId) => ({
   link: project.link || '',
   status: project.status,
   ownerSymbolId: project.ownerSymbolId,
+  // The richer project page. Empty string rather than null for the text
+  // fields, so a client never has to handle two kinds of absent.
+  place: project.place || '',
+  website: project.website || '',
+  email: project.email || '',
+  address: project.address || '',
+  // A TARGET, and nothing else. There is no `raised` and no `backers`
+  // alongside it on purpose: nothing in this system can accept a
+  // contribution yet, and a zero next to a goal would read as "nobody has
+  // given" when the truth is "nobody can". Those arrive with the flow that
+  // fills them.
+  //
+  // Both halves travel together, or neither does. A goal figure with no
+  // currency beside it is a number with no unit.
+  goal: project.goalMinor != null && project.goalCurrency
+    ? { minor: project.goalMinor, currency: project.goalCurrency }
+    : null,
   // So a client can render edit/delete affordances without having to know
   // the ownership rule or compare ids itself.
   isOwner: Boolean(viewerId) && String(project.ownerId) === String(viewerId),
@@ -8312,6 +8378,10 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
 // money rows too, and when this was a literal here the two drifted (see that
 // module's note).
 const { COIN_CURRENCY } = require('./lib/coinTicker');
+// Gloobal paying a person — the one write path for it, and the atomic-or-
+// refuse primitive it shares with the GEU ledger.
+const { recordDisbursement } = require('./lib/disbursement');
+const { withAtomicSession } = require('./lib/atomicSession');
 
 const coinBalanceOf = (user) => {
   const raw = Number(user?.coinBalance);

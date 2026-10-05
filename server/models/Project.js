@@ -123,6 +123,39 @@ const ProjectSchema = new mongoose.Schema({
   // (models/ProjectAttachment.js) so that listing projects never drags file
   // contents across the wire, and so a document with an attachment stays
   // small enough to page through cheaply.
+  // ── The project's own identity, beyond a title and a paragraph ────────
+  //
+  // Added for the richer project page. All optional: every project that
+  // existed before these fields keeps working and simply has none of them,
+  // which is why not one of them is `required`.
+
+  // Where the work happens, as a human-readable place. Distinct from
+  // countryIso, which is where the OWNER's account is registered and is set
+  // from the token rather than the body — a Nepali bridge can be filed by an
+  // account registered in India, and conflating the two would move the
+  // project to the wrong country.
+  place: { type: String, trim: true, default: '', maxlength: 120 },
+
+  website: { type: String, trim: true, default: '', maxlength: 500 },
+  email: { type: String, trim: true, default: '', maxlength: 320 },
+  address: { type: String, trim: true, default: '', maxlength: 300 },
+
+  // ── The funding goal ──────────────────────────────────────────────────
+  //
+  // A TARGET, and only that. Nothing in this system can accept a
+  // contribution yet, so there is deliberately no `raised`, no `backers` and
+  // no progress: a zero next to a goal would say nobody has given, when the
+  // truth is that nobody can. Those fields arrive with the flow that fills
+  // them.
+  //
+  // Stored in minor units as an integer, with its own currency. A goal typed
+  // as 20000 in a country that uses yen is not the same money as 20000 in a
+  // country that uses rupees, and a bare Number with no currency beside it
+  // is the ambiguity this codebase has had to unpick elsewhere. Minor units
+  // because a goal is money, and money is exact.
+  goalMinor: { type: Number, default: null, min: 0 },
+  goalCurrency: { type: String, trim: true, uppercase: true, default: '', maxlength: 8 },
+
   attachment: {
     type: new mongoose.Schema({
       attachmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectAttachment', required: true },

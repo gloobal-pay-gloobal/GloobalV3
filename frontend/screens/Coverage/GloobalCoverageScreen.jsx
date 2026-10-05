@@ -1,6 +1,19 @@
 // src/screens/Coverage/GloobalCoverageScreen.jsx
 import { useState as useState16, useEffect as useEffect14, useRef as useRef12, useMemo as useMemo8 } from "react";
 import {
+  Target,
+  Construction,
+  Rocket,
+  Microscope,
+  GraduationCap,
+  HeartPulse,
+  // Aliased: backend/data/ghScoreCategories.js already imports Leaf for the
+  // Hooman Score "Nature" category, and the concatenation build shares one
+  // global scope — two bindings of the same name is a build error, which is
+  // exactly how this was caught.
+  Leaf as Leaf2,
+  Palette,
+  Cpu,
   ChevronLeft as ChevronLeft3,
   Search as Search5,
   ChevronDown as ChevronDown3,
@@ -15,7 +28,22 @@ import {
   Users2 as Users24,
   Building2 as Building22,
   TrendingUp as TrendingUp3,
-  PieChart as PieChart2
+  PieChart as PieChart2,
+  // Globe and Globe2 are taken elsewhere in the tree, as are MapPin and
+  // MapPin3 — the concatenation build shares one global scope, so each of
+  // these goes one past the highest number already in use. Mail, Paperclip
+  // and Link are unused anywhere, and `Link` is aliased regardless because
+  // a bare `Link` reads as a router component rather than an icon.
+  Plus as Plus3,
+  Check as Check5,
+  Heart as Heart2,
+  Share2 as Share24,
+  Layers3,
+  Globe as Globe4,
+  MapPin as MapPin4,
+  Mail as Mail2,
+  Paperclip as Paperclip2,
+  Link as LinkIcon2
 } from "lucide-react";
 
 
@@ -37,6 +65,39 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   const [showSpendingCurrencyPicker, setShowSpendingCurrencyPicker] = useState16(false);
   const [selectedHoomanCategory, setSelectedHoomanCategory] = useState16("Infrastructure");
   const [showHoomanCategoryPicker, setShowHoomanCategoryPicker] = useState16(false);
+  // Which projects the chips are letting through. Filters the page the
+  // server already returned rather than re-querying, so the count beside
+  // "Projects" is the number of rows actually on screen and cannot disagree
+  // with what is under it.
+  const [hoomanProjectFilter, setHoomanProjectFilter] = useState16("all");
+  // The project whose page is open, or null. Holds the ROW the list already
+  // has rather than an id to re-fetch: the detail page shows nothing the
+  // list response did not already carry, so a second request would be a
+  // second chance for the two to disagree.
+  const [hoomanProject, setHoomanProject] = useState16(null);
+  // Favourites live in THIS browser and nowhere else.
+  //
+  // There is no field on Project for it and no route to set one, and
+  // inventing both to back a heart would be a schema change and a write path
+  // for an ornament. The honest consequence, which the UI does not pretend
+  // otherwise about: they do not follow the account to another device.
+  //
+  // The initialiser is a function so the parse happens once rather than on
+  // every render, and the whole thing is wrapped because localStorage throws
+  // outright in private mode and with site data blocked — a heart is not
+  // worth a screen that will not open.
+  // The project just submitted, for the success screen. Holds the created
+  // ROW, so "View project" opens the real thing rather than a title and a
+  // hope.
+  const [hoomanJustCreated, setHoomanJustCreated] = useState16(null);
+  const [hoomanFavourites, setHoomanFavourites] = useState16(() => {
+    try {
+      const stored = window.localStorage.getItem("gloobal:project-favourites");
+      return new Set(stored ? JSON.parse(stored) : []);
+    } catch (e) {
+      return new Set();
+    }
+  });
 
   // Searches the eight CATEGORY NAMES, in the browser. Kept exactly as it
   // was, and kept separate from the project search below: one filters a
@@ -53,6 +114,21 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   const [projectTitle, setProjectTitle] = useState16("");
   const [projectSummary, setProjectSummary] = useState16("");
   const [projectLink, setProjectLink] = useState16("");
+  // The richer fields. All optional — a project with a title and a summary
+  // is still a project, and every one of these is left out of the request
+  // entirely when blank rather than sent as an empty string, so a create
+  // never writes a field the person did not fill in.
+  const [projectPlace, setProjectPlace] = useState16("");
+  const [projectWebsite, setProjectWebsite] = useState16("");
+  const [projectEmail, setProjectEmail] = useState16("");
+  const [projectAddress, setProjectAddress] = useState16("");
+  // Typed in MAJOR units — what a person actually writes. The server turns
+  // it into minor units, because only the server knows how many decimal
+  // places a currency has: 20000 yen is 20000 minor units and 20000 rupees
+  // is 2,000,000, and a client multiplying by 100 would be wrong by a
+  // hundredfold for every zero-decimal currency.
+  const [projectGoal, setProjectGoal] = useState16("");
+  const [projectGoalCurrency, setProjectGoalCurrency] = useState16("");
   const [projectFile, setProjectFile] = useState16(null);
   const [projectSaving, setProjectSaving] = useState16(false);
   const [projectError, setProjectError] = useState16(null);
@@ -236,7 +312,15 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     setProjectTitle("");
     setProjectSummary("");
     setProjectLink("");
+    setProjectPlace("");
+    setProjectWebsite("");
+    setProjectEmail("");
+    setProjectAddress("");
+    setProjectGoal("");
+    setProjectGoalCurrency("");
     setProjectFile(null);
+    setProjectError(null);
+  };
 
   // ── Hardware back, wired for every overlay on this screen ──────────────
   //
@@ -270,9 +354,9 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     resetProjectForm();
   });
   useBackClose(showHoomanCategoryPicker, () => setShowHoomanCategoryPicker(false));
+  useBackClose(!!hoomanProject, () => setHoomanProject(null));
+  useBackClose(!!hoomanJustCreated, () => setHoomanJustCreated(null));
 
-    setProjectError(null);
-  };
 
   const submitProject = async () => {
     if (projectSaving) return;
@@ -295,7 +379,21 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
         title: projectTitle.trim(),
         category: selectedHoomanCategory,
         summary: projectSummary.trim(),
-        link: projectLink.trim()
+        link: projectLink.trim(),
+        // Spread in only when filled. Sending "" for every untouched field
+        // would have the server write an empty string over nothing, which
+        // is a change where there was none — and on a PATCH it would clear
+        // a value the person never opened.
+        ...(projectPlace.trim() ? { place: projectPlace.trim() } : {}),
+        ...(projectWebsite.trim() ? { website: projectWebsite.trim() } : {}),
+        ...(projectEmail.trim() ? { email: projectEmail.trim() } : {}),
+        ...(projectAddress.trim() ? { address: projectAddress.trim() } : {}),
+        // Both halves or neither. A goal with no currency is refused by the
+        // server, and sending one without the other would turn a blank
+        // currency box into a 400 the person cannot act on.
+        ...(projectGoal.trim() && projectGoalCurrency.trim()
+          ? { goalMajor: projectGoal.trim(), goalCurrency: projectGoalCurrency.trim().toUpperCase() }
+          : {})
       });
       // The file is a SECOND request against the project that now exists,
       // not part of the create. So a failed upload leaves a saved project
@@ -317,6 +415,11 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       setShowProjectForm(false);
       resetProjectForm();
       setProjectsToken((n) => n + 1);
+      // Shown instead of dropping straight back to the list. Submitting a
+      // project is the one thing on this screen somebody put real work into,
+      // and a list that simply has one more row in it does not confirm that
+      // the work landed.
+      if (created) setHoomanJustCreated(created);
       // Follow the project to wherever the SERVER filed it.
       //
       // A project's country is not asked for on the form — the server takes
@@ -367,6 +470,37 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // here falls back to another figure when this one is missing: Total
   // spending sits directly above with a real number, and borrowing it would
   // assert that money Hoomans paid each other was money Gloobal spent.
+  // The rows the chips leave visible. An unanswered request stays an empty
+  // array here and is caught by the !projectsData branch before this is
+  // read — never turned into "no projects", which is a different claim.
+  // ── Every funding figure on this screen ────────────────────────────────
+  //
+  // Zero, and a REAL zero: no project has been contributed to, because
+  // nothing in this system can take a contribution. It is computed from the
+  // rows rather than written as a literal so that the day contributions
+  // exist, the figure follows them instead of staying frozen at a number
+  // somebody typed into the UI.
+  //
+  // `raised` is read off each project. The API does not send one yet, so it
+  // is absent and reads as 0 — which is the truth. When publicProject starts
+  // sending it, every bar and total on this screen becomes live with no
+  // further change here.
+  const projectRaised = (project) => Number(project?.raised) || 0;
+  const projectBackers = (project) => Number(project?.backers) || 0;
+
+  const hoomanVisibleProjects = (projectsData?.projects || []).filter((project) => {
+    if (hoomanProjectFilter === "draft") return project.status === "draft";
+    if (hoomanProjectFilter === "live") return project.status !== "draft";
+    return true;
+  });
+
+  // Summed across the visible rows. Safe to add up despite the goals being
+  // in different currencies ONLY because every term is zero — zero is zero
+  // in any unit. The moment a non-zero appears this has to convert first,
+  // which is the GLB-05 defect recorded elsewhere in this codebase, so it
+  // asserts that rather than assuming it.
+  const hoomanRaisedTotal = hoomanVisibleProjects.reduce((sum, p) => sum + projectRaised(p), 0);
+
   const ourSpending = coverage ? coverage.ourSpending : null;
   const ourSpendingTotal = ourSpending && ourSpending.available ? ourSpending.total : null;
   const ourSpendingHere = ourSpending && ourSpending.available && ourSpending.byCountry
@@ -687,7 +821,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     /* The whole country list — every country, live and coming soon,
        opened from the totals button. Tapping a row selects it and
        flips into its detail. */
-  }{showAllCountries && <div style={{ position: "fixed", inset: 0, zIndex: 270, background: C.surface, display: "flex", flexDirection: "column" }}><div className="flex items-center gap-2.5 px-5 pb-3" style={{ paddingTop: "calc(20px + env(safe-area-inset-top, 0px))", flexShrink: 0 }}><NavBackButton onClick={() => {
+  }{showAllCountries && <div style={{ position: "fixed", inset: 0, zIndex: 360, background: C.surface, display: "flex", flexDirection: "column" }}><div className="flex items-center gap-2.5 px-5 pb-3" style={{ paddingTop: "calc(20px + env(safe-area-inset-top, 0px))", flexShrink: 0 }}><NavBackButton onClick={() => {
       setShowAllCountries(false);
       setAllCountriesQuery("");
     }} /><div className="display font-bold text-base" style={{ color: C.ink }}>All countries</div></div><div className="px-5 pb-3" style={{ flexShrink: 0 }}><div
@@ -755,128 +889,182 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        name says so — "United States. Back to Gloobal Coverage" — because a
        flag does not look like a way out, and the one person who most needs
        to be told is the one who cannot see it. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", flexShrink: 0 }}><button
-    onClick={() => setShowHoomanProjects(false)}
-    className="v2-tap"
-    aria-label={`${country.name}. Back to Gloobal Coverage`}
-    title={country.name}
-    style={{ display: "flex", border: "none", background: "none", padding: 0, cursor: "pointer", borderRadius: 999 }}
-  ><FlagEmoji flag={country.flag} size={40} shape="circle" /></button>{
-    /* Search and category, on the SAME line as the flag.
+  }<div style={{ padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", flexShrink: 0 }}>{
+    /* The search bar, and nothing beside it.
 
-       The flag was a row of its own with 350px of empty space beside it,
-       and the search bar was the first thing in the scroll below. They are
-       one row now: who, then what you are looking for. The bar is a pill
-       rather than a rounded rectangle so it reads as a sibling of the round
-       flag rather than a block parked next to it.
+       The flag that sat here was doing two jobs — saying which country, and
+       being the way out — and the chip beside it named the category. Both
+       are now said better elsewhere: the hero below carries the flag and the
+       country name, and the category is the tile grid plus "All 8".
 
-       The field says what it searches. The chip beside it changes what is
-       being searched, and shows the current type rather than making you
-       open it to find out. Capped at 46% so a long category name cannot
-       squeeze the field down to nothing. */
-  }<div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 7, borderRadius: 999, background: T.surfaceAlt, padding: "5px 6px 5px 12px" }}><Search5 size={16} color={T.inkFaint} style={{ flexShrink: 0 }} /><input
+       The back arrow sits to its left, in the position every other screen in
+       this app puts one. It has to exist somewhere: hardware back on this
+       overlay lands on the dashboard rather than the Coverage screen
+       underneath, and an iOS PWA has no system back at all, so a screen with
+       no control is a screen with no exit on one of the two platforms. */
+  }<div style={{ display: "flex", alignItems: "center", gap: 10 }}><NavBackButton label="Back to Gloobal Coverage" onClick={() => setShowHoomanProjects(false)} /><div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 7, borderRadius: 999, background: T.surfaceAlt, padding: "5px 12px" }}><Search5 size={16} color={T.inkFaint} style={{ flexShrink: 0 }} /><input
     type="text"
     value={projectQuery}
     onChange={(e) => setProjectQuery(e.target.value)}
     placeholder="Hooman Projects"
     aria-label="Search Hooman Projects"
     style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 14, color: T.ink, fontFamily: "inherit", padding: "8px 0" }}
-  />{projectQuery && <button onClick={() => setProjectQuery("")} aria-label="Clear project search" style={{ border: "none", background: "none", cursor: "pointer", padding: 0, display: "flex", flexShrink: 0 }}><X5 size={14} color={T.inkFaint} /></button>}<button
-    onClick={() => setShowHoomanCategoryPicker(true)}
-    className="v2-tap"
-    aria-label={`Project type: ${selectedHoomanCategory}. Change type`}
-    style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0, maxWidth: "46%", border: "none", background: T.surface, boxShadow: T.shadowCard, borderRadius: 999, padding: "7px 10px 7px 12px", cursor: "pointer" }}
-  ><span style={{ fontSize: 12, fontWeight: 800, color: T.accent, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanCategory(selectedHoomanCategory).name}</span><ChevronDown3 size={13} color={T.accent} style={{ flexShrink: 0 }} /></button></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 24px", display: "flex", flexDirection: "column", gap: 14 }}>{
+  />{projectQuery && <button onClick={() => setProjectQuery("")} aria-label="Clear project search" style={{ border: "none", background: "none", cursor: "pointer", padding: 0, display: "flex", flexShrink: 0 }}><X5 size={14} color={T.inkFaint} /></button>}</div></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 96px", display: "flex", flexDirection: "column", gap: 14 }}>{
     /* Shown only after a create that landed somewhere other than the
        country being viewed, which is not an error and not something the
        person did wrong — it is simply where their account is. Saying it
        is what turns an unexplained country change into an explained one.
        It clears itself the next time they pick a country by hand. */
-  }{projectFiledIn === country.code && <div
+  }{
+    /* The hero, as the design has it: who, how much, how many.
+
+       "Raised" rather than "Total spent". Spent is what the Coverage panel
+       already means by two different figures — Hoomans paying each other,
+       and Gloobal paying Hoomans — and a third sense of the word on a third
+       screen is how all three get confused. This is money put INTO projects,
+       and it is its own thing.
+
+       It reads zero, and that zero is real: nothing in this system can take
+       a contribution, so nobody has given to anything. It is summed from the
+       visible rows rather than written as a literal, so the day contributions
+       exist the figure follows them. */
+  }<div style={{ position: "relative", overflow: "hidden", borderRadius: T.radiusXl, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "16px 18px 20px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>{
+    /* The location filter, and the label for the figure beneath it.
+
+       Every number on this screen — the raised total, the project count, the
+       list — is scoped to one country, so the control that changes the
+       country belongs on the card those numbers sit in rather than somewhere
+       else on the screen.
+
+       It opens the existing All countries picker, which is a real list of
+       194 with a search box, not a second country UI built for this screen. */
+  }<button
+    onClick={() => setShowAllCountries(true)}
+    className="v2-tap"
+    aria-label={`Showing ${country.name}. Change country`}
+    style={{ display: "flex", alignItems: "center", gap: 7, height: 34, padding: "0 10px 0 6px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.16)", minWidth: 0, cursor: "pointer" }}
+  ><FlagEmoji flag={country.flag} size={24} shape="circle" border="none" /><span style={{ fontSize: 12, fontWeight: 800, color: "#FFFFFF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{country.name}</span><ChevronDown3 size={13} color="rgba(255,255,255,0.85)" style={{ flexShrink: 0 }} /></button><span style={{ display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.12)", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}><Layers3 size={13} />{projectsData ? `${hoomanVisibleProjects.length} ${hoomanVisibleProjects.length === 1 ? "project" : "projects"}` : "∆"}</span></div><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.66)", marginTop: 18 }}>Raised</div><div style={{ fontSize: 34, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, lineHeight: 1.1, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(hoomanRaisedTotal, displayCurrency)}</div><div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.56)", marginTop: 8, lineHeight: 1.45 }}>
+      Gloobal cannot take contributions yet, so every project is at zero.
+    </div></div>{projectFiledIn === country.code && <div
     role="status"
     style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: T.radiusMd, background: T.accentSoft }}
   ><FlagEmoji flag={country.flag} width={18} height={13} radius={3} /><span style={{ fontSize: 11.5, fontWeight: 600, color: T.accent, lineHeight: 1.45 }}>
       Saved in {country.name} — projects are filed where your account is registered, so that is where this one lives.
     </span></div>}{
-    /* The count, moved out of the card and down to the rows it describes.
+    /* Categories, as eight tiles rather than a name in a dropdown.
 
-       On the card it was an 18px figure beside a "Projects in <country>"
-       label, two scrolls above the list, which made it a claim you had to
-       take on trust. Here it sits on the list it counts.
+       Four across with the rest behind "All 8", because a category is now
+       something you recognise before you read it: each carries its own hue
+       and icon, derived from the one `hue` number on HOOMAN_PROJECT_CATEGORIES.
 
-       The country is not repeated — it is in the eyebrow at the top of the
-       screen, and saying it twice was half of what made this screen feel
-       cluttered. The three states the card had are kept exactly: a real
-       count, including a real zero, and ∆ for "the server did not answer",
-       which is a different fact from none and must never be shown as 0. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 6, paddingInline: 2 }}>{projectsData ? <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>{(projectsData.counts[selectedHoomanCategory] ?? 0) === 1 ? "1 project" : `${projectsData.counts[selectedHoomanCategory] ?? 0} projects`}</span> : <><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Projects</span><span style={{ fontSize: 13, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</span></>}</div>{
+       The chip on the search bar still shows the current category and opens
+       the full picker. That is not a duplicate of this grid — the grid is
+       how you move between the common ones at a glance, the chip is how you
+       know which one you are in once you have scrolled past the grid. */
+  }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingInline: 2 }}><span style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Categories</span><button
+    onClick={() => setShowHoomanCategoryPicker(true)}
+    className="v2-tap"
+    style={{ display: "flex", alignItems: "center", gap: 2, border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 800, color: T.accent }}
+  >All {HOOMAN_PROJECT_CATEGORIES.length}<ChevronRight5 size={13} /></button></div><div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginTop: -4, flexShrink: 0 }}>{HOOMAN_PROJECT_CATEGORIES.slice(0, 4).map((cat) => {
+    const on = cat.name === selectedHoomanCategory;
+    const paint = hoomanCategoryColors(cat.hue);
+    const CatIcon = cat.Icon;
+    return <button
+      key={cat.name}
+      onClick={() => setSelectedHoomanCategory(cat.name)}
+      className="v2-tap"
+      aria-pressed={on}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, border: "none", background: "none", padding: 0, cursor: "pointer", minWidth: 0 }}
+    ><span style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center", background: on ? paint.solid : paint.tint, border: `1px solid ${on ? "transparent" : paint.line}`, color: on ? "#FFFFFF" : paint.ink, transition: "background 0.15s, color 0.15s" }}><CatIcon size={21} /></span><span style={{ fontSize: 10.5, fontWeight: on ? 800 : 600, color: on ? T.ink : T.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{cat.name}</span></button>;
+  })}</div>{
+    /* The list, and what is being filtered out of it.
+
+       The chips filter the PAGE the server returned, not the query — so the
+       figure beside "All" is the number of rows actually on screen, and it
+       cannot disagree with what is beneath it. A chip that filtered
+       server-side would need its own count and its own round trip.
+
+       Three chips, and deliberately not the five the design had. "Trending"
+       needs a view or contribution count, and nothing in this system records
+       either; "Favourites" needs somewhere to keep them. Both would have
+       been chips that sort by nothing. */
+  }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingInline: 2, marginTop: 4 }}><span style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Projects</span>{projectsData ? <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>{(() => {
+    const n = hoomanVisibleProjects.length;
+    return n === 1 ? "1 project" : `${n} projects`;
+  })()}</span> : <span style={{ fontSize: 13, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</span>}</div><div style={{ display: "flex", gap: 7, overflowX: "auto", margin: "-6px -18px 0", padding: "0 18px 2px", scrollbarWidth: "none", flexShrink: 0 }}>{[
+    { id: "all", label: "All" },
+    { id: "live", label: "Live" },
+    { id: "draft", label: "Drafts" },
+  ].map((chip) => {
+    const on = hoomanProjectFilter === chip.id;
+    return <button
+      key={chip.id}
+      onClick={() => setHoomanProjectFilter(chip.id)}
+      className="v2-tap"
+      aria-pressed={on}
+      style={{ flexShrink: 0, height: 32, padding: "0 13px", borderRadius: 999, cursor: "pointer", fontSize: 12, fontWeight: on ? 800 : 600, background: on ? T.accentSoft : T.surface, color: on ? T.accent : T.inkSoft, border: `1px solid ${on ? T.accent : T.line}` }}
+    >{chip.label}</button>;
+  })}</div>{
     /* The projects themselves. Three states, kept distinct: the
        server could not answer (∆), it answered with nothing (a
        real empty state), or it answered with rows. Collapsing the
        first two would show "no projects yet" every time the
        backend was asleep. */
-  }{projectsLoading && !projectsData ? <div style={{ padding: "24px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Loading…</div> : !projectsData ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>Couldn't reach the server, so we don't know what's here.</div></div> : projectsData.projects.length === 0 ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{projectQuery.trim() ? `Nothing in ${country.name} matches "${projectQuery.trim()}"` : `No ${selectedHoomanCategory} projects in ${country.name} yet`}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 6, lineHeight: 1.5 }}>{projectQuery.trim() ? "Try a different word." : "Add the first one."}</div></div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{projectsData.projects.map((project, i) => <div
-    key={project.id}
-    style={{ padding: "16px 18px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-  ><div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}><span style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{project.title}</span>{project.countryIso && COUNTRY_BY_ISO[project.countryIso] && <FlagEmoji flag={COUNTRY_BY_ISO[project.countryIso].flag} width={22} height={16} radius={4} />}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 8, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{project.summary}</div>{
-    /* rel="noreferrer" as well as noopener: the target learns
-       nothing about where it was opened from. The server
-       already refused anything that is not http(s), so this
-       href cannot be a javascript: URL. */
-  }{project.link && <a
-    href={project.link}
-    target="_blank"
-    rel="noopener noreferrer"
-    style={{ display: "inline-block", marginTop: 10, fontSize: 12, fontWeight: 700, color: T.accent, textDecoration: "none", wordBreak: "break-all" }}
-  >{project.link}</a>}{project.attachment && <a
-    href={`${GloobalApi.baseUrl}${project.attachment.url}`}
-    target="_blank"
-    rel="noopener noreferrer"
-    style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 12, fontWeight: 700, color: T.accent, textDecoration: "none" }}
-  ><span style={{ wordBreak: "break-all" }}>{project.attachment.filename}</span><span style={{ color: T.inkFaint, fontWeight: 600, flexShrink: 0 }}>{Math.max(1, Math.round(project.attachment.byteSize / 1024))} KB</span></a>}<div style={{ fontSize: 10.5, color: T.inkFaint, marginTop: 12, display: "flex", alignItems: "center", gap: 6 }}><span>{project.summaryWordCount} words</span><span>·</span><span>{new Date(project.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>{project.status === "draft" && <><span>·</span><span style={{ fontWeight: 800, color: T.accent }}>Draft</span></>}</div></div>)}</div>}{
-    /* Add a project. Only offered to a registered account,
-       because the create route requires a token — showing the
-       button to somebody who cannot use it would be an
-       invitation to a 401. */
+  }{projectsLoading && !projectsData ? <div style={{ padding: "24px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Loading…</div> : !projectsData ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "26px 18px", textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</div><div style={{ fontSize: 12.5, color: T.inkFaint, marginTop: 6 }}>Couldn't reach the server, so we don't know what's here.</div></div> : hoomanVisibleProjects.length === 0 ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "26px 18px", textAlign: "center" }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{projectQuery.trim() ? `Nothing in ${country.name} matches "${projectQuery.trim()}"` : hoomanProjectFilter !== "all" ? `No ${hoomanProjectFilter === "draft" ? "drafts" : "live projects"} in ${selectedHoomanCategory} here` : `No ${selectedHoomanCategory} projects in ${country.name} yet`}</div><div style={{ fontSize: 12, color: T.inkFaint, marginTop: 5 }}>{projectQuery.trim() ? "Try a different word." : hoomanProjectFilter !== "all" ? "Try All." : "Add the first one."}</div></div> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{hoomanVisibleProjects.map((project) => {
+    const paint = hoomanCategoryColors(hoomanCategory(project.category).hue ?? 258);
+    const CatIcon = hoomanCategory(project.category).Icon || Construction;
+    const draft = project.status === "draft";
+    return <button
+      key={project.id}
+      onClick={() => setHoomanProject(project)}
+      className="v2-tap"
+      style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", font: "inherit", color: "inherit", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "14px 16px" }}
+    ><div style={{ display: "flex", alignItems: "center", gap: 11 }}><span style={{ width: 40, height: 40, borderRadius: 13, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: paint.tint, color: paint.ink }}><CatIcon size={19} /></span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.title}</span>{(project.place || project.countryIso) && <span style={{ fontSize: 11, color: T.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.place || (COUNTRY_BY_ISO[project.countryIso] || {}).name || ""}</span>}</span>{
+      /* Status, as the two states that actually exist. The design had
+         Live / Funding / In review / Draft; `Funding` and `In review`
+         would be pills describing a lifecycle nothing moves a project
+         through, so they are not drawn. */
+    }<span style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5, height: 24, padding: "0 9px", borderRadius: 999, fontSize: 10.5, fontWeight: 800, background: draft ? "#FDF1D8" : T.positiveSoft, color: draft ? "#7A4B06" : T.positive }}>{draft ? "Draft" : "Live"}</span></div>{project.summary && <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, marginTop: 10 }}>{project.summary.length > 110 ? project.summary.slice(0, 110).trimEnd() + "…" : project.summary}</div>}{
+      /* The goal, as a TARGET and nothing more.
+
+         The design this came from drew a progress bar and a "$12,400 of
+         $20,000 · 62%" line under every card. Nothing in this system can
+         accept a contribution, so every bar would sit at 0% and every
+         project would read as having raised nothing — which looks like a
+         platform nobody gives to, rather than one that cannot yet be given
+         to. The bar appears when there is something to put in it. */
+    }{(() => {
+      const raised = projectRaised(project);
+      const goalMajor = project.goal ? project.goal.minor / 100 : 0;
+      const currency = project.goal ? project.goal.currency : displayCurrency;
+      // Guarded: a goal of zero would make this Infinity, and a bar that is
+      // 100% because it was divided by nothing is worse than no bar.
+      const pct = goalMajor > 0 ? Math.min(100, Math.round((raised / goalMajor) * 100)) : 0;
+      return <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.line}` }}><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginTop: 9 }}><span style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(raised, currency)}</span>{project.goal ? <span style={{ fontSize: 11.5, color: T.inkFaint }}>of {fmtMoney(goalMajor, currency)}</span> : <span style={{ fontSize: 11.5, color: T.inkFaint }}>raised</span>}</span>{project.goal && <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>}</div></div>;
+    })()}<div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.inkFaint, marginTop: 10 }}><span>{project.summaryWordCount} words</span><span>·</span><span>{new Date(project.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>{project.countryIso && COUNTRY_BY_ISO[project.countryIso] && <><span>·</span><FlagEmoji flag={COUNTRY_BY_ISO[project.countryIso].flag} width={16} height={12} radius={3} /></>}</div></button>;
+  })}</div>}</div>{
+    /* Add a project, floating in the bottom-right corner.
+
+       It was a dashed button at the END of the list, which on a country with
+       forty projects is a control nobody scrolls to. Here it is reachable
+       from anywhere in the list and sits under the thumb.
+
+       Absolute within this overlay rather than fixed, so it is bounded by
+       this screen and cannot outlive it on another. Still only offered to a
+       registered account, because the create route requires a token and
+       showing it to somebody who cannot use it is an invitation to a 401.
+
+       Labelled as well as drawn: an unlabelled circle with a plus in it is a
+       guess, and this one opens a form somebody will spend ten minutes in.
+
+       The list's bottom padding leaves room for it, so the last project is
+       not sitting underneath it. */
   }{isFullyRegistered && <button
-    onClick={() => {
-      resetProjectForm();
-      setShowProjectForm(true);
-    }}
+    onClick={() => { resetProjectForm(); setShowProjectForm(true); }}
     className="v2-tap"
-    style={{ width: "100%", padding: "14px 18px", borderRadius: T.radiusMd, border: `1px dashed ${T.line}`, background: "none", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
-  >Add a project to {selectedHoomanCategory}</button>}</div>{
-    /* Our spending, pinned to the foot rather than scrolled to.
-
-       It sits OUTSIDE the scrolling area — a sibling of it, not a child —
-       so it is on screen whatever the list is doing. Inside the scroll it
-       was the last thing after an unbounded list, which on a country with
-       forty projects meant a figure nobody would ever reach. shadowRaised
-       rather than shadowCard, because it is now floating above the content
-       that passes under it rather than sitting in the same plane.
-
-       The row on the Coverage panel means the whole platform's spending on
-       people. This one is narrower on purpose: what Gloobal puts into
-       Hooman Projects, in the country being viewed. Putting it here is
-       what makes it answerable per country at all — the screen already
-       knows which country it is showing, so the day a project is funded,
-       the figure has a place to land and a country to land under.
-
-       It is NOT a button, and that is deliberate rather than unfinished.
-       Spending by country opens because it has 194 rows of real figures
-       behind it. The equivalent here would be 194 rows of ∆, which is a
-       screen that teaches people the app is broken. The breakdown ships
-       with the data; the row and its meaning ship now, so the structure is
-       agreed before there is anything in it.
-
-       The ∆ is the same ∆ as everywhere else on this screen: the figure is
-       unknown, which is a different fact from zero. Nothing records a
-       payment from Gloobal to a Hooman — see ourSpendingProbe in
-       server/lib/coverageAggregation.js, which names the missing record
-       type rather than just reporting no data. */
-  }<div style={{ flexShrink: 0, margin: "0 18px", marginBottom: "calc(14px + env(safe-area-inset-bottom, 0px))", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowRaised, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "16px 18px" }}><span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}><span role="img" aria-label={country.name} title={country.name} style={{ display: "flex", flexShrink: 0 }}><FlagEmoji flag={country.flag} width={26} height={19} radius={5} /></span><span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Our spending</span><span style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.4 }}>What Gloobal spends on H<SingleOMark before="" after="" /><SingleOMark before="" after="" />man Projects in {country.name}</span></span></span><span style={{ fontSize: 18, fontWeight: 800, color: T.inkFaint, flexShrink: 0 }} aria-label="No data">∆</span></div><div style={{ borderTop: `1px solid ${T.line}`, padding: "11px 18px", fontSize: 10.5, color: T.inkFaint, lineHeight: 1.5 }}>
-      Breaks down country by country once projects are funded. Nothing records a payment from Gloobal to a H<SingleOMark before="" after="" /><SingleOMark before="" after="" />man yet.
-    </div></div>{
+    aria-label={`Add a project to ${selectedHoomanCategory}`}
+    style={{ position: "absolute", right: 18, bottom: "calc(20px + env(safe-area-inset-bottom, 0px))", display: "flex", alignItems: "center", gap: 8, height: 52, padding: "0 20px", borderRadius: 999, border: "none", cursor: "pointer", background: T.gradButton, color: "#FFFFFF", fontSize: 14, fontWeight: 800, fontFamily: "inherit", boxShadow: T.shadowFloat }}
+  ><Plus3 size={19} />Add project</button>}{
     /* Add a project.
 
        The summary counter counts the same way the server does
@@ -884,7 +1072,124 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        server/lib/projectValidation.js). The server still decides
        — this only stops somebody writing 1,400 words before
        being told. */
-  }{showProjectForm && <div style={{ position: "fixed", inset: 0, zIndex: 350, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
+  }{hoomanJustCreated && <div style={{ position: "fixed", inset: 0, zIndex: 355, background: T.bg, display: "flex", flexDirection: "column", padding: "0 22px calc(22px + env(safe-area-inset-bottom, 0px))" }}><div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}><span style={{ width: 84, height: 84, borderRadius: 999, background: T.accentSoft, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 0 0 12px ${T.accentSoft}55` }}><Check5 size={38} /></span><div style={{ fontSize: 21, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 24, lineHeight: 1.25 }}>{hoomanJustCreated.title}</div>{
+    /* Says where it went, not just that it saved. A project is filed under
+       the country the ACCOUNT is registered in, which is not always the
+       country being viewed — and somebody who has just submitted into what
+       they thought was Nepal deserves to be told it landed in India before
+       they go looking for it. */
+  }<div style={{ fontSize: 13, color: T.inkSoft, marginTop: 10, lineHeight: 1.55, maxWidth: 300 }}>
+      Submitted to {hoomanCategory(hoomanJustCreated.category).name}{hoomanJustCreated.countryIso && COUNTRY_BY_ISO[hoomanJustCreated.countryIso] ? ` in ${COUNTRY_BY_ISO[hoomanJustCreated.countryIso].name}` : ""}.
+    </div>{hoomanJustCreated.status === "draft" && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, height: 26, padding: "0 11px", borderRadius: 999, background: "#FDF1D8", color: "#7A4B06", fontSize: 11, fontWeight: 800 }}>Saved as a draft</div>}</div><div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}><button
+    onClick={() => { const created = hoomanJustCreated; setHoomanJustCreated(null); setHoomanProject(created); }}
+    className="v2-tap"
+    style={{ width: "100%", height: 52, borderRadius: T.radiusMd, border: "none", cursor: "pointer", background: T.gradButton, color: "#FFFFFF", fontSize: 14.5, fontWeight: 800, fontFamily: "inherit" }}
+  >View project</button><button
+    onClick={() => setHoomanJustCreated(null)}
+    className="v2-tap"
+    style={{ width: "100%", height: 50, borderRadius: T.radiusMd, border: "none", cursor: "pointer", background: "none", color: T.inkSoft, fontSize: 13.5, fontWeight: 700, fontFamily: "inherit" }}
+  >Back to projects</button></div></div>}{hoomanProject && (() => {
+    const cat = hoomanCategory(hoomanProject.category);
+    const paint = hoomanCategoryColors(cat.hue ?? 258);
+    const CatIcon = cat.Icon || Construction;
+    const draft = hoomanProject.status === "draft";
+    const home = COUNTRY_BY_ISO[hoomanProject.countryIso];
+    // Only the contact rows that exist. A "Details" card listing three
+    // labels with nothing beside them describes a project nobody filled in,
+    // which is a different thing from a project with no website.
+    const details = [
+      hoomanProject.website && { key: "website", label: "Website", value: hoomanProject.website, href: hoomanProject.website, Icon: Globe4 },
+      hoomanProject.address && { key: "address", label: "Address", value: hoomanProject.address, href: null, Icon: MapPin4 },
+      hoomanProject.email && { key: "email", label: "Email", value: hoomanProject.email, href: `mailto:${hoomanProject.email}`, Icon: Mail2 },
+      hoomanProject.link && { key: "link", label: "Link", value: hoomanProject.link, href: hoomanProject.link, Icon: LinkIcon2 },
+    ].filter(Boolean);
+
+    return <div style={{ position: "fixed", inset: 0, zIndex: 345, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 30 }}>{
+      /* The banner takes the CATEGORY's hue, so the page is recognisable as
+         an Infrastructure page before a word of it is read — the same hue
+         the tile and the card icon already used. */
+    }<div style={{ position: "relative", height: 132, background: `linear-gradient(135deg, ${paint.solid}, hsl(${(cat.hue ?? 258) + 30} 62% 36%))`, borderRadius: "0 0 28px 28px", padding: "calc(14px + env(safe-area-inset-top, 0px)) 16px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}><button
+      onClick={() => setHoomanProject(null)}
+      className="v2-tap"
+      aria-label="Back to Hooman Projects"
+      style={{ width: 38, height: 38, borderRadius: 999, border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.18)", color: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+    ><ArrowLeft5 size={18} /></button><span style={{ display: "flex", gap: 8 }}>{
+      /* Favourite is kept in this browser, not on the server — there is no
+         field for it and inventing one to back a heart would be a schema
+         change for an ornament. It is wrapped in try/catch because private
+         mode and blocked site data both make localStorage throw on access,
+         and a heart is not worth a crashed screen. */
+    }<button
+      onClick={() => {
+        const next = new Set(hoomanFavourites);
+        if (next.has(hoomanProject.id)) next.delete(hoomanProject.id); else next.add(hoomanProject.id);
+        setHoomanFavourites(next);
+        try { window.localStorage.setItem("gloobal:project-favourites", JSON.stringify([...next])); } catch (e) { /* not worth a crash */ }
+      }}
+      className="v2-tap"
+      aria-label={hoomanFavourites.has(hoomanProject.id) ? "Remove from favourites" : "Add to favourites"}
+      aria-pressed={hoomanFavourites.has(hoomanProject.id)}
+      style={{ width: 38, height: 38, borderRadius: 999, border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.18)", color: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+    ><Heart2 size={17} fill={hoomanFavourites.has(hoomanProject.id) ? "#FFFFFF" : "none"} /></button>{
+      /* Share uses the OS sheet where there is one, and falls back to the
+         clipboard. It shares the title and the place — not a URL, because
+         this screen has no address of its own to link to yet, and sharing a
+         link that opens nothing is worse than sharing text. */
+    }<button
+      onClick={() => {
+        const text = `${hoomanProject.title}${hoomanProject.place ? ` — ${hoomanProject.place}` : ""}`;
+        if (navigator.share) { navigator.share({ title: hoomanProject.title, text }).catch(() => {}); }
+        else if (navigator.clipboard) { navigator.clipboard.writeText(text).catch(() => {}); }
+      }}
+      className="v2-tap"
+      aria-label="Share this project"
+      style={{ width: 38, height: 38, borderRadius: 999, border: "1px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.18)", color: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+    ><Share24 size={17} /></button></span></div><div style={{ padding: "0 18px", marginTop: -34, position: "relative" }}>{
+      /* The logo is the category mark until a project can carry its own
+         image. Drawn, not left blank — an empty square where a logo goes is
+         a page that looks broken rather than one that is plain. */
+    }<div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}><span style={{ width: 72, height: 72, borderRadius: 22, background: paint.tint, color: paint.ink, border: `4px solid ${T.bg}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><CatIcon size={30} /></span><span style={{ display: "flex", alignItems: "center", gap: 5, height: 26, padding: "0 10px", borderRadius: 999, fontSize: 11, fontWeight: 800, marginBottom: 6, background: draft ? "#FDF1D8" : T.positiveSoft, color: draft ? "#7A4B06" : T.positive }}>{draft ? "Draft" : "Live"}</span></div><h2 style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.2, margin: "14px 0 0" }}>{hoomanProject.title}</h2><div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 11 }}><span style={{ display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 11px", borderRadius: 999, background: T.surface, border: `1px solid ${T.line}`, fontSize: 12, color: T.inkSoft }}><CatIcon size={13} color={paint.ink} />{cat.name}</span>{(hoomanProject.place || home) && <span style={{ display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 11px", borderRadius: 999, background: T.surface, border: `1px solid ${T.line}`, fontSize: 12, color: T.inkSoft, minWidth: 0 }}>{home ? <FlagEmoji flag={home.flag} width={16} height={12} radius={3} /> : <MapPin4 size={13} color={T.inkFaint} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanProject.place || home.name}</span></span>}</div>{
+      /* The goal, alone. The design put Raised / Goal / Backers in a row of
+         three here; two of those three would have been a zero describing a
+         flow that does not exist. One real figure beats three, two of which
+         are placeholders. */
+    }{(() => {
+      const raised = projectRaised(hoomanProject);
+      const backers = projectBackers(hoomanProject);
+      const goalMajor = hoomanProject.goal ? hoomanProject.goal.minor / 100 : 0;
+      const currency = hoomanProject.goal ? hoomanProject.goal.currency : displayCurrency;
+      const pct = goalMajor > 0 ? Math.min(100, Math.round((raised / goalMajor) * 100)) : 0;
+      const cell = (label, body) => <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3, padding: "0 12px" }}><span style={{ fontSize: 10.5, color: T.inkFaint }}>{label}</span>{body}</span>;
+      const figure = (text) => <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>;
+      // Compact, not full. Three figures share one phone's width here, and
+      // fmtMoney's long form truncated the middle cell to "20,000...." —
+      // which is not a number, it is the shape of one. Same compact form the
+      // Coverage panel uses for Total spending, so the two read alike.
+      const money = (amount) => `${fmtCompact(amount)}${currencySuffix(currency)}`;
+      return <div style={{ marginTop: 16, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 6px" }}><div style={{ display: "flex", alignItems: "stretch" }}>{cell("Raised", figure(money(raised)))}<span style={{ width: 1, background: T.line, flexShrink: 0 }} />{cell("Goal", figure(hoomanProject.goal ? money(goalMajor) : "—"))}<span style={{ width: 1, background: T.line, flexShrink: 0 }} />{cell("Backers", figure(String(backers)))}</div><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden", margin: "16px 12px 0" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div></div>;
+    })()}{
+      /* Said once, and about the row above it. Three figures that all read
+         zero look like a project nobody wants; the sentence is what makes
+         them read as a flow that is not open yet. */
+    }<div style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.5, marginTop: 9, paddingInline: 2 }}>
+      Zero because Gloobal cannot take contributions yet — not because nobody has given.
+    </div><div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 22 }}>About</div><div style={{ marginTop: 9, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", fontSize: 13.5, color: T.inkSoft, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{hoomanProject.summary}</div>{details.length > 0 && <><div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 22 }}>Details</div><div style={{ marginTop: 9, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{details.map((row, i) => {
+      const RowIcon = row.Icon;
+      const body = <><span style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: paint.tint, color: paint.ink, display: "flex", alignItems: "center", justifyContent: "center" }}><RowIcon size={16} /></span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}><span style={{ fontSize: 11, color: T.inkFaint }}>{row.label}</span><span style={{ fontSize: 13, fontWeight: 600, color: T.ink, wordBreak: "break-all" }}>{row.value}</span></span></>;
+      const style = { display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` };
+      // rel="noopener noreferrer": the target learns nothing about where it
+      // was opened from. The server already refused anything that is not
+      // http(s), so neither href can be a javascript: URL.
+      return row.href
+        ? <a key={row.key} href={row.href} target="_blank" rel="noopener noreferrer" style={{ ...style, textDecoration: "none" }}>{body}</a>
+        : <div key={row.key} style={style}>{body}</div>;
+    })}</div></>}{hoomanProject.attachment && <a
+      href={`${GloobalApi.baseUrl}${hoomanProject.attachment.url}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, borderRadius: T.radiusMd, background: T.surface, boxShadow: T.shadowCard, padding: "13px 16px", textDecoration: "none" }}
+    ><Paperclip2 size={16} color={paint.ink} /><span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ink, wordBreak: "break-all" }}>{hoomanProject.attachment.filename}</span><span style={{ fontSize: 11, color: T.inkFaint, flexShrink: 0 }}>{Math.max(1, Math.round(hoomanProject.attachment.byteSize / 1024))} KB</span></a>}<div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.inkFaint, marginTop: 18 }}><span>{hoomanProject.summaryWordCount} words</span><span>·</span><span>{new Date(hoomanProject.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>{hoomanProject.ownerSymbolId && <><span>·</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanProject.ownerSymbolId}</span></>}</div></div></div></div>;
+  })()}{showProjectForm && <div style={{ position: "fixed", inset: 0, zIndex: 350, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
       setShowProjectForm(false);
       resetProjectForm();
     }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>New {selectedHoomanCategory} project</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ padding: "14px 16px" }}><label htmlFor="project-title" style={{ display: "block", fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Title</label><input
@@ -919,7 +1224,17 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     }}
     placeholder="https://"
     style={{ width: "100%", border: "none", outline: "none", background: "none", fontSize: 14, color: T.ink, fontFamily: "inherit" }}
-  /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-file" style={{ display: "block", fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>File (optional)</label><input
+  /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-place" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Where (optional)</label><input id="project-place" type="text" value={projectPlace} maxLength={120} onChange={(e) => { setProjectError(null); setProjectPlace(e.target.value); }} placeholder="Pokhara, Nepal" style={{ width: "100%", marginTop: 7, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /></div>{
+    /* The goal, and its currency beside it — never one without the other.
+
+       Typed in major units. The server scales it, because only the server
+       knows a currency's decimal places, and it refuses more decimals than
+       the currency has rather than rounding them away.
+
+       It is a TARGET. Nothing can contribute towards it yet, which the
+       hint under the field says plainly — a goal box with no such line
+       invites somebody to expect a collection to open. */
+  }<div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-goal" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Funding goal (optional)</label><div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 7 }}><input id="project-goal" type="text" inputMode="decimal" value={projectGoal} onChange={(e) => { setProjectError(null); setProjectGoal(e.target.value.replace(/[^0-9.]/g, "")); }} placeholder="20000" style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /><input id="project-goal-currency" type="text" value={projectGoalCurrency} maxLength={3} onChange={(e) => { setProjectError(null); setProjectGoalCurrency(e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase()); }} placeholder="INR" aria-label="Goal currency" style={{ width: 62, flexShrink: 0, textAlign: "center", border: `1px solid ${T.line}`, borderRadius: T.radiusSm, padding: "7px 0", outline: "none", background: T.surfaceAlt, fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: "inherit" }} /></div><div style={{ fontSize: 10.5, color: T.inkFaint, marginTop: 7, lineHeight: 1.45 }}>A stated target. Gloobal cannot take contributions towards it yet.</div></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-website" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Website (optional)</label><input id="project-website" type="url" inputMode="url" value={projectWebsite} onChange={(e) => { setProjectError(null); setProjectWebsite(e.target.value); }} placeholder="https://" style={{ width: "100%", marginTop: 7, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-email" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Email (optional)</label><input id="project-email" type="email" inputMode="email" value={projectEmail} onChange={(e) => { setProjectError(null); setProjectEmail(e.target.value); }} placeholder="hello@example.org" style={{ width: "100%", marginTop: 7, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-address" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Address (optional)</label><input id="project-address" type="text" value={projectAddress} maxLength={300} onChange={(e) => { setProjectError(null); setProjectAddress(e.target.value); }} placeholder="Street, town" style={{ width: "100%", marginTop: 7, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-file" style={{ display: "block", fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>File (optional)</label><input
     id="project-file"
     type="file"
     accept={PROJECT_ATTACHMENT_ACCEPT}
@@ -1126,14 +1441,42 @@ function hoomanCategory(name) {
   return HOOMAN_PROJECT_CATEGORIES.find((c) => c.name === name) || { name: name, examples: "" };
 }
 
+// Each category now carries a HUE and an icon as well as its description.
+//
+// The hue is one number, and every colour the category needs is derived from
+// it — tint, icon, selected fill. Storing three hex values per category
+// instead would be twenty-four colours to keep in step, and the first one
+// somebody adjusted by eye would be the one that drifted.
+//
+// ── Why hsl() strings rather than color-mix() ────────────────────────────
+//
+// The prototype these came from builds every shade with
+// `color-mix(in srgb, hsl(var(--h) 90% 55%) 13%, var(--card))`. color-mix
+// needs Chrome 111 / Safari 16.2, and this is a payments app used on phones
+// people keep for years — a category tile that falls back to transparent on
+// an older handset is a tile that vanishes. hsl() has worked everywhere for
+// a decade and the result here is indistinguishable.
+//
+// The eight hues are the prototype's own, in its own order, which is already
+// this list's order. They are spaced around the wheel rather than picked to
+// mean anything: no category is "the red one" because it is dangerous.
+function hoomanCategoryColors(hue) {
+  return {
+    tint: `hsl(${hue} 80% 95%)`,
+    line: `hsl(${hue} 60% 88%)`,
+    ink: `hsl(${hue} 62% 42%)`,
+    solid: `hsl(${hue} 68% 52%)`,
+  };
+}
+
 var HOOMAN_PROJECT_CATEGORIES = [
-  { name: "Infrastructure", examples: "Roads, bridges, water systems" },
-  { name: "Startup", examples: "Early-stage ventures, incubators" },
-  { name: "Research", examples: "Clinical trials, academic studies" },
-  { name: "Education", examples: "Schools, scholarships, literacy programs" },
-  { name: "Healthcare", examples: "Clinics, medical camps, vaccination drives" },
-  { name: "Environment", examples: "Reforestation, clean energy, conservation" },
-  { name: "Art", examples: "Public murals, cultural festivals, exhibitions" },
-  { name: "Technology", examples: "Open-source tools, digital literacy, connectivity" }
+  { name: "Infrastructure", examples: "Roads, bridges, water systems", hue: 258, Icon: Construction },
+  { name: "Startup", examples: "Early-stage ventures, incubators", hue: 18, Icon: Rocket },
+  { name: "Research", examples: "Clinical trials, academic studies", hue: 190, Icon: Microscope },
+  { name: "Education", examples: "Schools, scholarships, literacy programs", hue: 215, Icon: GraduationCap },
+  { name: "Healthcare", examples: "Clinics, medical camps, vaccination drives", hue: 345, Icon: HeartPulse },
+  { name: "Environment", examples: "Reforestation, clean energy, conservation", hue: 145, Icon: Leaf2 },
+  { name: "Art", examples: "Public murals, cultural festivals, exhibitions", hue: 35, Icon: Palette },
+  { name: "Technology", examples: "Open-source tools, digital literacy, connectivity", hue: 275, Icon: Cpu }
 ];
 

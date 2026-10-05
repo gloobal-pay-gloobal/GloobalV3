@@ -5329,6 +5329,23 @@ const publicProject = (project, viewerId) => ({
   link: project.link || '',
   status: project.status,
   ownerSymbolId: project.ownerSymbolId,
+  // The richer project page. Empty string rather than null for the text
+  // fields, so a client never has to handle two kinds of absent.
+  place: project.place || '',
+  website: project.website || '',
+  email: project.email || '',
+  address: project.address || '',
+  // A TARGET, and nothing else. There is no `raised` and no `backers`
+  // alongside it on purpose: nothing in this system can accept a
+  // contribution yet, and a zero next to a goal would read as "nobody has
+  // given" when the truth is "nobody can". Those arrive with the flow that
+  // fills them.
+  //
+  // Both halves travel together, or neither does. A goal figure with no
+  // currency beside it is a number with no unit.
+  goal: project.goalMinor != null && project.goalCurrency
+    ? { minor: project.goalMinor, currency: project.goalCurrency }
+    : null,
   // So a client can render edit/delete affordances without having to know
   // the ownership rule or compare ids itself.
   isOwner: Boolean(viewerId) && String(project.ownerId) === String(viewerId),

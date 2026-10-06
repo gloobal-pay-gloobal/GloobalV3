@@ -61,3 +61,7 @@ tools/frontend/verify-coverage-ui.png
 *.patch
 geu-run*.txt
 am-error.txt
+
+# Test-run captures (Tee-Object output), never source
+*-run.txt
+*-run?.txt

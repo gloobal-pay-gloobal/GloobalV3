@@ -51,6 +51,10 @@ const code = (p) => src(p)
 const MODAL = "frontend/components/dialogs/ReceiptModal.jsx";
 const UTILS = "frontend/features/history/historyUtils.js";
 const SCREEN = "frontend/features/history/TransactionHistoryScreen.jsx";
+// Which receipt a row opens — one decision for every transaction list in the
+// app, including the share leg's source-payment lookup that used to live in
+// the History screen alone.
+const ROW_RECEIPT = "frontend/features/history/rowReceipt.js";
 
 // findSharePaymentSource is pure and depends on nothing, so it can be lifted
 // out of the module and called directly. Sliced on the literal "\n}\n", which
@@ -292,10 +296,29 @@ describe("the source payment is found, never derived", () => {
     // A share minted just after midnight would lose its payment to a "This
     // Week" boundary, and the receipt would say the payment is unavailable
     // while the row for it sits one tap away under another period.
+    //
+    // The lookup moved out of the History screen and into
+    // features/history/rowReceipt.js, which is now where EVERY list in the
+    // app decides which receipt a row opens — so the rule is enforced for
+    // the five lists that have one, not just for this screen. What each
+    // caller must get right is the lists it hands in, which is the second
+    // half of this test.
+    const chooser = code(ROW_RECEIPT);
+    assert.match(chooser, /findSharePaymentSource\(t, c\.sendHistory \|\| \[\], c\.receiveHistory \|\| \[\]\)/);
+
     const screen = code(SCREEN);
-    assert.match(screen, /findSharePaymentSource\(t, sendHistory, receiveHistory\)/);
+    // The History screen passes its FULL lists, not the period-filtered ones
+    // it renders. Those are the two names that would be wrong here.
+    // Bounded to the call itself. A fixed character window reaches past it
+    // into the `periodSendHistory` memo further down the file and fails on
+    // the very name it is looking for the absence of.
+    const at = screen.indexOf("receiptForRow(");
+    assert.ok(at > 0, "the History screen no longer routes through receiptForRow");
+    const call = screen.slice(at, screen.indexOf("});", at) + 3);
+    assert.match(call, /\bsendHistory,/);
+    assert.match(call, /\breceiveHistory,/);
     assert.ok(
-      !/findSharePaymentSource\(t, periodSendHistory/.test(screen),
+      !/periodSendHistory|periodReceiveHistory/.test(call),
       "the source lookup is reading the period-filtered lists"
     );
   });

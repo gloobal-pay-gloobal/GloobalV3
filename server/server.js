@@ -37,6 +37,18 @@ const GeuGrowthEvent = require('./models/GeuGrowthEvent');
 const GeuRedemption = require('./models/GeuRedemption');
 const { getRate } = require('./lib/fxRates');
 const { loadCurrencyDecimals, decimalsFor } = require('./lib/currencyDecimals');
+// A coin movement, normalised. Required up here rather than down in the
+// Gloobal Coin section because THREE routes need it and the earliest of them
+// — /api/transactions/:symbolId — sits a few hundred lines above that
+// section. See lib/coinHistoryRow.js for what the other two were getting
+// wrong without it.
+const {
+  isCoinTransaction,
+  coinPaymentDirectionFor,
+  coinHistoryRow,
+  resolveCoinCounterparties,
+  coinCounterpartyOf,
+} = require('./lib/coinHistoryRow');
 // What a payment banner says and what it is drawn with, so a push and the
 // card in the app are the same notification rather than two about one
 // payment. See that file's header for why the wording is duplicated here
@@ -8019,10 +8031,13 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
     // two different movements and each shares its own link.
     await ensureReceiptCodes([...transactions, ...shareLegs]);
 
+    const coinOtherById = await resolveCoinCounterparties(transactions, user._id, User);
+
     const history = transactions.map((transaction) => {
       const senderId = String(transaction.fromUserId?._id || transaction.fromUserId || '');
       const isSender = senderId === String(user._id);
       const counterparty = isSender ? transaction.toUserId : transaction.fromUserId;
+      const isCoin = isCoinTransaction(transaction.type);
 
       return {
         id: transaction._id,
@@ -8031,7 +8046,22 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
         // row whose code could not be minted this time round, which the
         // client reads as "fall back to the long link".
         receiptCode: transaction.receiptCode || null,
-        direction: isSender ? 'sent' : 'received',
+        // What kind of movement this is.
+        //
+        // This projection never carried it. The sibling route
+        // /api/transactions/:symbolId does, and the app reads that one — so
+        // this endpoint handed out rows that a caller could not classify at
+        // all: a coin purchase and a payment arrived identical apart from
+        // their currency, and currency is not the discriminator (Gloobal Coin
+        // and the GEU growth prototype are both denominated 'GEU').
+        type: transaction.type || 'payment',
+        // Coin direction comes from `type`, not fromUserId — see the long
+        // note on the same line of /api/transactions/:symbolId. A mint and a
+        // redeem both write fromUserId = the holder, so `isSender` cannot
+        // tell a buy from a sell and reported both as 'sent'.
+        direction: isCoin
+          ? coinPaymentDirectionFor(transaction, user._id)
+          : isSender ? 'sent' : 'received',
         // The RECEIVER's side: the face value this payment was denominated
         // in, and the currency it is in. Right for the receiver, and wrong
         // for the sender on any cross-border payment.
@@ -8098,6 +8128,16 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
         //
         // Null on a payment, which has no payment above it.
         paymentReferenceId: transaction.metadata?.paymentReferenceId || null,
+        // A coin movement's own facts — the fiat leg, the rate, the rate's
+        // direction. Null on a payment. Same shaper as the other two routes
+        // that send coin rows; see the matching block on
+        // /api/transactions/:symbolId.
+        coin: isCoin
+          ? coinHistoryRow(transaction, {
+            viewerUserId: user._id,
+            counterparty: coinCounterpartyOf(transaction, user._id, coinOtherById),
+          })
+          : null,
         createdAt: transaction.createdAt,
       };
     });
@@ -8243,10 +8283,15 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
     // long one.
     await ensureReceiptCodes([...records, ...shareLegs]);
 
+    // The other account on each coin SEND on this page, in one query. Mint
+    // and redeem have no other account — their counterparty is the reserve.
+    const coinOtherById = await resolveCoinCounterparties(records, user._id, User);
+
     const transactions = records.map((transaction) => {
       const senderId = String(transaction.fromUserId?._id || transaction.fromUserId || '');
       const isSender = senderId === String(user._id);
       const counterparty = isSender ? transaction.toUserId : transaction.fromUserId;
+      const isCoin = isCoinTransaction(transaction.type);
 
       return {
         id: String(transaction._id),
@@ -8254,7 +8299,23 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         // The short handle this row's receipt link is addressed by — a URL
         // detail, never the reference the row is identified by.
         receiptCode: transaction.receiptCode || null,
-        direction: isSender ? 'sent' : 'received',
+        // WHICH WAY THE MONEY WENT — and on a coin row, fromUserId does not
+        // answer that.
+        //
+        // A mint and a redeem both write fromUserId = the holder and
+        // toUserId = null, because both are the holder transacting with the
+        // reserve. So `isSender` is true for both, and this line reported a
+        // BUY as "sent": App.jsx filed it on the Paid side and drew
+        // −12.50 GEU against an account that had just gained 12.50 GEU. The
+        // sign was inverted on every purchase ever made, in every list built
+        // from this route.
+        //
+        // coinPaymentDirectionFor reads `type` for mint and redeem and the
+        // viewer's position for a send, which is the only way to tell the
+        // first two apart. See lib/coinHistoryRow.js.
+        direction: isCoin
+          ? coinPaymentDirectionFor(transaction, user._id)
+          : isSender ? 'sent' : 'received',
         // 'payment' or 'share'. Projected now that share legs appear in this
         // list: the two rows of a shared payment are the same money seen
         // from two sides, and a client that cannot tell them apart cannot
@@ -8320,6 +8381,26 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         //
         // Null on a payment, which has no payment above it.
         paymentReferenceId: transaction.metadata?.paymentReferenceId || null,
+        // A COIN MOVEMENT'S OWN FACTS — the fiat it cost or paid out, the
+        // rate it converted at, and which way that rate points.
+        //
+        // Null on a payment, and the only block on this projection that is
+        // null for most rows. It is here because a buy or a sell is the one
+        // movement in this app that is literally a currency exchange, and
+        // without these fields a history row for one has nothing to open: it
+        // reached the client as a bare GEU figure with no cost, no rate and
+        // no second leg, so the receipt behind it described a bank payment
+        // that never happened.
+        //
+        // Same shaper as GET /api/coin/:symbolId/history, so the Coin
+        // screen's ledger and the History screen cannot disagree about one
+        // purchase.
+        coin: isCoin
+          ? coinHistoryRow(transaction, {
+            viewerUserId: user._id,
+            counterparty: coinCounterpartyOf(transaction, user._id, coinOtherById),
+          })
+          : null,
         createdAt: transaction.createdAt,
       };
     });
@@ -8876,79 +8957,20 @@ app.get('/api/coin/:symbolId/history', lookupLimit, requireAuth, requireSelf('sy
     // The counterparty on a send, so a receipt can name who it went to or
     // came from. Looked up in ONE query for the whole page rather than per
     // row — a page of 25 sends would otherwise be 25 round trips.
-    const otherIds = [];
-    for (const row of page) {
-      if (row.type !== 'coin_send') continue;
-      const other = String(row.fromUserId) === String(user._id) ? row.toUserId : row.fromUserId;
-      if (other) otherIds.push(other);
-    }
-    const others = otherIds.length
-      ? await User.find({ _id: { $in: otherIds } }, 'symbolId fullName countryIso').lean()
-      : [];
-    const otherById = Object.fromEntries(others.map((u) => [String(u._id), u]));
+    const otherById = await resolveCoinCounterparties(page, user._id, User);
 
     return res.json({
       success: true,
-      rows: page.map((row) => {
-        const isMint = row.type === 'coin_mint';
-        const isRedeem = row.type === 'coin_redeem';
-        const meta = row.metadata || {};
-        // Mint and redeem record the fiat leg under different names, because
-        // they are different events: one is money paid in, the other money
-        // paid out. Normalised to one pair here so a client does not have to
-        // know which of two shapes it is holding — the DIRECTION already
-        // says which way it went.
-        const fiatAmount = isMint ? meta.paidAmount : isRedeem ? meta.paidOutAmount : null;
-        const fiatCurrency = isMint ? meta.paidCurrency : isRedeem ? meta.paidOutCurrency : null;
-        const sent = String(row.fromUserId) === String(user._id);
-        const other = row.type === 'coin_send'
-          ? otherById[String(sent ? row.toUserId : row.fromUserId)] || null
-          : null;
-        return {
-          id: String(row._id),
-          referenceId: row.referenceId || null,
-          type: row.type,
-          // "in" means coin arrived. A mint and a received send both add
-          // coin; a redeem and a sent send both remove it.
-          direction: isMint || (row.type === 'coin_send' && !sent) ? 'in' : 'out',
-          coinAmount: Number(row.amount) || 0,
-          coinCurrency: row.currency || COIN_CURRENCY,
-          // Null on a send, which moves no fiat at all — and null rather
-          // than 0, because 0 would read as "it cost nothing".
-          fiatAmount: Number.isFinite(Number(fiatAmount)) ? Number(fiatAmount) : null,
-          fiatCurrency: fiatCurrency || null,
-          // The rate this movement actually converted at, not today's. Null
-          // on a send and on any row written before the field existed.
-          geuRate: Number.isFinite(Number(meta.geuRate)) ? Number(meta.geuRate) : null,
-          geuRateSource: meta.geuRateSource || null,
-          // WHICH WAY that rate points, because the two routes store opposite
-          // directions under the same field name:
-          //
-          //   mint    geuRateFor(accountCurrency, reserveCurrency)
-          //           coinAmount = fiatAmount * geuRate     -> GEU per 1 fiat
-          //   redeem  geuRateFor(reserveCurrency, accountCurrency)
-          //           fiatAmount = coinAmount * redeemRate  -> fiat per 1 GEU
-          //
-          // Both are correct for the arithmetic they were computed for. Only
-          // the NAME is shared, and a reader that assumed one meaning would
-          // print an inverted rate on half of all coin receipts — the half it
-          // would never notice, because a rate is the one figure on a receipt
-          // nobody recomputes by eye.
-          //
-          // Sent explicitly rather than left for the client to infer from
-          // `type`: inferring it means every future reader has to rediscover
-          // this, and inverting a rounded rate to normalise the two would
-          // produce a third number that reconciles with neither amount on the
-          // same receipt.
-          geuRateBasis: isMint ? 'coin-per-fiat' : isRedeem ? 'fiat-per-coin' : null,
-          reserveCurrency: meta.reserveCurrency || null,
-          note: row.note || '',
-          counterpartySymbolId: other ? other.symbolId : null,
-          counterpartyName: other ? other.fullName || null : null,
-          counterpartyCountryIso: other ? other.countryIso || null : null,
-          createdAt: row.createdAt,
-        };
-      }),
+      // Every field a coin row and its receipt need, from the one shaper
+      // lib/coinHistoryRow.js holds. This block used to live here inline,
+      // and it was the only place in the server that understood a coin
+      // movement — the two /api/transactions projections dropped the fiat
+      // leg and the rate, and read a BUY as coin going out. See that
+      // module's header.
+      rows: page.map((row) => coinHistoryRow(row, {
+        viewerUserId: user._id,
+        counterparty: coinCounterpartyOf(row, user._id, otherById),
+      })),
       nextCursor,
     });
   } catch (error) {

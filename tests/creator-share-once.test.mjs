@@ -74,9 +74,15 @@ describe("a share appears exactly once in Recent Activity", () => {
     // Deduping by dropping the label would be worse than the duplicate: the
     // row would come back as a second, unexplained payment from the same
     // person on the same day.
+    // Read from the one table that decides this, rather than from the
+    // inline ternary that used to sit in the mapper. The share entry is
+    // unchanged — kind "share", method "share" — and the table is what
+    // replaced the `: "bank"` half, which had been stamping every Gloobal
+    // Coin movement as a bank payment.
     const src = code(app());
-    assert.match(src, /kind: row\.type === "share" \? "share" : "payment"/);
-    assert.match(src, /method: row\.type === "share" \? "share" : "bank"/);
+    assert.match(src, /kind: historyRowShape\(row\.type\)\.kind/);
+    assert.match(src, /method: historyRowShape\(row\.type\)\.method/);
+    assert.match(src, /share: \{ kind: "share", method: "share" \}/);
   });
 
   test("and it still carries the rate the receipt needs", () => {

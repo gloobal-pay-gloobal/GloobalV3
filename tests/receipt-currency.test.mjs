@@ -25,7 +25,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readSource, loadDomain } from "./harness.mjs";
+import { readSource, loadDomain, loadMapServerTransaction } from "./harness.mjs";
 
 const CURRENCY_SRC = readSource("frontend/features/receipts/receiptCurrency.js");
 
@@ -42,10 +42,11 @@ function sliceFunction(file, name) {
 
 const { formatClockTime } = loadDomain(["formatClockTime"]);
 
-const mapServerTransaction = new Function(
-  "formatClockTime",
-  `${sliceFunction("frontend/App.jsx", "mapServerTransaction")}; return mapServerTransaction;`
-)(formatClockTime);
+// Sliced out of App.jsx by the harness, which owns the list of things the
+// mapper depends on — it has two now (formatClockTime and historyRowShape),
+// and when the second was added this line, in its previous hand-rolled form,
+// broke here and in two other test files simultaneously.
+const mapServerTransaction = loadMapServerTransaction();
 
 const buildHistoryReceipt = new Function(
   "COUNTRY_CURRENCY", "CURRENCY_SYMBOL", "COUNTRY_BY_ISO", "ALL_COUNTRIES",

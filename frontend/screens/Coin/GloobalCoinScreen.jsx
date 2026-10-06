@@ -65,12 +65,17 @@ function GloobalCoinScreen({
   // two call sites below, so the receipt opened straight after a purchase and
   // the one reopened from the list a week later cannot describe the holder
   // differently.
-  const coinReceiptViewer = {
+  // The holder, as the four fields a coin receipt names them by. Built
+  // through receiptViewer so this screen and the History screen — which now
+  // opens the same receipt for the same buy — cannot describe one account
+  // two different ways, and so a null name stays null rather than becoming
+  // the "Gloobal User" placeholder that named nobody.
+  const coinReceiptViewer = receiptViewer({
     name: holderName,
     symbolId: holderSymbolId,
     countryName,
     countryFlag: holderCountryFlag
-  };
+  });
 
   // Read once when the screen opens. The balance is already in the ledger from
   // whenever it was last reconciled, so this is a refresh rather than a load —

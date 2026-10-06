@@ -37,6 +37,10 @@ import { readSource } from "./harness.mjs";
 
 const MODULE = "frontend/features/receipts/coinReceipt.js";
 const SERVER = "server/server.js";
+// The coin row's shaper. It used to be inline in the coin history route;
+// three routes share it now, which is the only way the History screen and
+// the Coin screen can describe one purchase identically.
+const SHAPER = "server/lib/coinHistoryRow.js";
 const API = "backend/services/api/gloobalApi.js";
 
 // The module is a frontend file in the concatenated bundle, so it is loaded
@@ -365,8 +369,26 @@ describe("the server sends what all of this reads", () => {
   });
 
   test("it carries the rate basis, not just the rate", () => {
+    // Read from lib/coinHistoryRow.js, which is where this block lives now.
+    //
+    // It was inline in server.js, in the coin history route, and it was the
+    // only place on the server that understood a coin movement — the two
+    // /api/transactions projections dropped the fiat leg and the rate
+    // entirely, and read a BUY as coin going out. Moving it into a module all
+    // three routes share is what closed that; nothing in it changed.
+    assert.match(readSource(SHAPER), /geuRateBasis: isMint \? 'coin-per-fiat' : isRedeem \? 'fiat-per-coin' : null,/);
+  });
+
+  test("and server.js no longer shapes a coin row by hand", () => {
+    // The other half of the same move. A second inline copy appearing here
+    // is the drift this repo keeps paying for (see the Gloobal Bank row,
+    // repaired twice by hand before it was made to share a component).
     const src = readSource(SERVER);
-    assert.match(src, /geuRateBasis: isMint \? 'coin-per-fiat' : isRedeem \? 'fiat-per-coin' : null,/);
+    assert.ok(
+      !/const fiatAmount = isMint \?/.test(src),
+      "a route went back to shaping coin rows inline instead of using lib/coinHistoryRow.js"
+    );
+    assert.match(src, /require\('\.\/lib\/coinHistoryRow'\)/);
   });
 
   test("and the API client passes the basis through without normalising it", () => {
@@ -386,10 +408,25 @@ describe("the server sends what all of this reads", () => {
   });
 
   test("the counterparty is resolved in one query, not one per row", () => {
+    // The lookup moved into the shaper with the rest of the block, as
+    // resolveCoinCounterparties — so the route now calls it once per page and
+    // the $in query itself lives in one place for all three routes.
+    assert.match(readSource(SHAPER), /User\.find\(\{ _id: \{ \$in: otherIds \} \}/);
     const src = readSource(SERVER);
     const at = src.indexOf("app.get('/api/coin/:symbolId/history'");
     const body = src.slice(at, at + 4000);
-    assert.match(body, /User\.find\(\{ _id: \{ \$in: otherIds \} \}/);
+    assert.match(body, /resolveCoinCounterparties\(page, user\._id, User\)/);
+    // One call for the page, never one inside the row map. Asserted on the
+    // map expression itself rather than on a window of characters after it:
+    // a loose window reaches past the route and matches the `await` in the
+    // next handler, which is a test that fails for the wrong reason.
+    const mapAt = body.indexOf("rows: page.map(");
+    assert.ok(mapAt > 0, "the coin history route no longer maps its page");
+    const mapBody = body.slice(mapAt, body.indexOf("nextCursor", mapAt));
+    assert.ok(
+      !/\bawait\b/.test(mapBody),
+      "the coin history route is awaiting something per row again"
+    );
   });
 });
 
@@ -490,7 +527,11 @@ describe("the screen builds the receipt from the server's answer", () => {
     // So the receipt seen at the till and the one reopened a week later
     // cannot describe the holder differently.
     const src = screen();
-    assert.match(src, /const coinReceiptViewer = \{/);
+    // Built through receiptViewer now, the one function that shapes a
+    // holder for a coin receipt — because History opens the same receipt for
+    // the same buy, and two hand-written objects would let the Coin screen
+    // and History describe one account differently.
+    assert.match(src, /const coinReceiptViewer = receiptViewer\(\{/);
     assert.equal((src.match(/coinReceiptViewer/g) || []).length, 3);
   });
 });

@@ -127,7 +127,7 @@ function identityDisplayValue(profile, mode) {
       return profile.name;
   }
 }
-function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = [], onOpenPaidHistory, onSendComplete, onExecuteTransaction, onRemoteSend }) {
+function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = [], onOpenPaidHistory, onSendComplete, onExecuteTransaction, onRemoteSend, onBuildRowReceipt }) {
   // The account's CURRENT Gloobal ID — the same source the Dashboard reads,
   // so a rename made this session shows here too.
   const liveSenderId = useCurrentSymbolId(sender && sender.symbolId);
@@ -206,6 +206,17 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     setTransactionStatus("idle");
     onClose();
   });
+  // A receipt opened from the RECENT list, which is a different thing from
+  // the one above and must not share its state.
+  //
+  // `receipt` is the payment this screen just made, and closing it leaves
+  // Send Money entirely — the payment is finished and the form behind it is
+  // spent. A receipt opened by tapping a past payment is a look at history:
+  // closing it goes back to the form with the dialled number still in it.
+  // Reusing `receipt` for both would mean reading an old payment and being
+  // thrown out of the screen for it.
+  const [pastReceipt, setPastReceipt] = useState15(null);
+  const requestClosePastReceipt = useBackClose(!!pastReceipt, () => setPastReceipt(null));
   const [searchStage, setSearchStage] = useState15(() => prefillReceiver ? "found" : "dialing");
   // Recipient lookup against GET /api/users/resolve. searchError carries
   // the inline "no such user" message; searchBusy blocks a second lookup
@@ -1493,6 +1504,21 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     isFirst={i === 0}
     // The card pads itself; these rows sit flush inside it.
     inset={0}
+    // Tapping a row opens that payment's receipt — NOT a repeat-send.
+    //
+    // This list was read-only, and the reason given for it holds: a
+    // repeat-send would need the receiver's live currency and registration
+    // state that a history snapshot does not carry, so offering one here
+    // would be offering to send money on stale facts. A receipt moves
+    // nothing and is built entirely from the row, so it is the one thing
+    // this list can honestly do on a tap.
+    //
+    // Every row here is a payment this account SENT — the list is
+    // `history` — so the direction is constant.
+    onSelect={onBuildRowReceipt && rowHasReceipt(t) ? () => {
+      const built = onBuildRowReceipt(t, "sent");
+      if (built) setPastReceipt(built);
+    } : undefined}
   />)}</div></div>}{searchStage === "found" && bottomOpen && <>{bottom.registered === false && <div
     role="alert"
     style={{
@@ -1789,7 +1815,12 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     }}
     onRevealShare={unlock ? () => setUnlockOpen(true) : void 0}
     shareTabRequest={shareTabRequest}
-  />{unlock && unlockOpen && <PaymentUnlock
+  />{
+    /* A past payment, opened from the Recent list. Its own modal, because
+       closing it returns to the form rather than leaving Send Money — see
+       pastReceipt. No onDone and no share offer: those belong to a payment
+       just made, and this one was made earlier. */
+  }<ReceiptModal receipt={pastReceipt} onClose={requestClosePastReceipt} />{unlock && unlockOpen && <PaymentUnlock
     receipt={unlock.receipt}
     onToast={showToast2}
     onClose={() => {

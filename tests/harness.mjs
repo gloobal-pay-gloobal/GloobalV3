@@ -94,4 +94,63 @@ export function readSource(relPath) {
   return read(path.join(ROOT, relPath));
 }
 
+// mapServerTransaction, with the things it leans on.
+//
+// ── Why this is here and not copied into each test ─────────────────────
+//
+// Three test files reconstruct this function by slicing it out of
+// frontend/App.jsx and evaluating it with `new Function` — the only way to
+// reach it, since nothing in frontend/ exports anything (see this file's
+// header). Each of them had its own copy of the slice, and each passed in
+// `formatClockTime` and nothing else.
+//
+// Then the mapper grew a second dependency: `historyRowShape`, the table that
+// decides which receipt a row opens and which History chip it files under.
+// All three slices broke at once, with a bare "historyRowShape is not
+// defined" thrown from inside a generated function — a failure that names
+// neither the test nor the real cause.
+//
+// The slice lives here now, so the next dependency is added in one place.
+// What the test gets back is the real function out of the real file, which is
+// the point of slicing rather than reimplementing.
+export function loadMapServerTransaction() {
+  const app = readSource("frontend/App.jsx");
+
+  const slice = (name) => {
+    const at = app.indexOf(`function ${name}(`);
+    if (at < 0) throw new Error(`${name} not found in frontend/App.jsx`);
+    const end = app.indexOf("\n}\n", at);
+    if (end <= at) throw new Error(`could not find the end of ${name}`);
+    return app.slice(at, end + 2);
+  };
+
+  // The shape table is two `var`s and a function, declared together just
+  // above the mapper. Matched rather than sliced by name because an object
+  // literal has no "\n}\n" to find.
+  const table = app.match(
+    /var HISTORY_ROW_SHAPE_BY_TYPE = \{[\s\S]*?\n\};\s*\n[\s\S]*?var HISTORY_ROW_SHAPE_DEFAULT = \{[^}]*\};/
+  );
+  if (!table) throw new Error("the HISTORY_ROW_SHAPE tables were not found in frontend/App.jsx");
+
+  const { formatClockTime } = loadDomain(["formatClockTime"]);
+  // COIN_RESERVE_NAME lives in features/receipts/coinReceipt.js, which is a
+  // different module in the bundle but the same scope. Read from there rather
+  // than restated here: it is the name a buy's receipt already prints for the
+  // other side of the exchange, and the row and the document it opens have to
+  // agree about it.
+  const reserveName = readSource("frontend/features/receipts/coinReceipt.js")
+    .match(/var COIN_RESERVE_NAME = "([^"]+)"/);
+  if (!reserveName) throw new Error("COIN_RESERVE_NAME was not found in coinReceipt.js");
+
+  return new Function(
+    "formatClockTime",
+    "COIN_RESERVE_NAME",
+    `${table[0]}
+     ${slice("historyRowShape")}
+     ${slice("coinPartyName")}
+     ${slice("mapServerTransaction")};
+     return mapServerTransaction;`
+  )(formatClockTime, reserveName[1]);
+}
+
 export { ROOT };

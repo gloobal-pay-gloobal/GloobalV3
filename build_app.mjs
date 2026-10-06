@@ -219,6 +219,11 @@ const FRONTEND_MODULES = [
   // The one newest-first rule every transaction list sorts by. Function
   // declarations only, so its position is not load-order sensitive.
   "features/history/transactionOrder.js",
+  // Which receipt a row opens — the one answer every transaction list uses.
+  // Function declarations only, so its position is not load-order sensitive;
+  // it is listed here, beside the lists that call it, rather than next to the
+  // two builders it chooses between.
+  "features/history/rowReceipt.js",
   "features/history/TransactionHistoryScreen.jsx",
   "features/paylater/PayLaterLedger.jsx",
   "features/paylater/PayLaterScreen.jsx",

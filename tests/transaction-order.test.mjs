@@ -18,25 +18,24 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { readSource, loadDomain } from "./harness.mjs";
+import { readSource, loadDomain, loadMapServerTransaction } from "./harness.mjs";
 import { ACCOUNTS, buildOnce, login, openPage, teardown } from "./browser-harness.mjs";
 
 const ORDER_SRC = readSource("frontend/features/history/transactionOrder.js");
 const { transactionOccurredAtMs, compareTransactionsNewestFirst, sortTransactionsNewestFirst } =
   new Function(`${ORDER_SRC}; return { transactionOccurredAtMs, compareTransactionsNewestFirst, sortTransactionsNewestFirst };`)();
 
-function sliceFunction(file, name) {
-  const src = readSource(file);
-  const at = src.indexOf(`function ${name}(`);
-  assert.ok(at >= 0, `${name} not found`);
-  const end = src.indexOf("\n}\n", at);
-  return src.slice(at, end + 2);
-}
+// Sliced out of App.jsx by the harness. This file used to roll its own
+// slice, as two others did, each injecting formatClockTime and nothing
+// else — so when the mapper gained a second dependency (historyRowShape,
+// the table deciding which receipt a row opens and which History chip it
+// files under) all three failed at once with a bare "historyRowShape is
+// not defined" thrown from inside a generated function.
+const mapServerTransaction = loadMapServerTransaction();
+// Used directly by two tests below, which build their own expected display
+// strings. The harness injects its own copy into the mapper; this is the
+// same function out of the same domain scope.
 const { formatClockTime } = loadDomain(["formatClockTime"]);
-const mapServerTransaction = new Function(
-  "formatClockTime",
-  `${sliceFunction("frontend/App.jsx", "mapServerTransaction")}; return mapServerTransaction;`
-)(formatClockTime);
 
 // Today, at a local clock time, as the server would send it.
 const at = (hh, mm, ss) => {

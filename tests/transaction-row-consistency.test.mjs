@@ -157,23 +157,91 @@ describe("a row that opens nothing is not announced as a button", () => {
     assert.match(src, /tabIndex=\{onSelect \? 0 : undefined\}/);
   });
 
-  test("the two read-only lists pass no onSelect", () => {
-    // Send's Recent is read-only deliberately — a repeat-send would need the
-    // receiver's live currency and registration state this snapshot does not
-    // carry. Gloobal Bank has no receipt to open.
+  test("every list offers its receipt, and offers it conditionally", () => {
+    // ── This test used to assert the opposite ──────────────────────────
     //
-    // Coin Activity USED to be in this list and no longer is: its rows now
-    // open a coin receipt. That is not this rule weakening — the rule is that
-    // a row which opens nothing must not claim to be a button, and the test
-    // below holds Coin to exactly that.
-    for (const file of [
-      LIST_FILES["Send Money Recent"],
-      LIST_FILES["Gloobal Bank Recent Transactions"]
-    ]) {
-      for (const call of code(file).match(/<TransactionRow[\s\S]{0,600}?\/>/g) || []) {
-        assert.ok(!/onSelect=/.test(call), `${file} made a read-only row focusable`);
+    // Two of these lists passed no onSelect at all, and this file pinned
+    // that, for two stated reasons. One was sound and still is; the other
+    // was never quite true:
+    //
+    //   "Send's Recent is read-only deliberately — a repeat-send would need
+    //    the receiver's live currency and registration state this snapshot
+    //    does not carry."
+    //
+    //     Correct, and unchanged. That is why tapping a row there opens the
+    //     RECEIPT and not a prefilled form. A receipt moves nothing and is
+    //     built entirely out of the row, so none of that staleness applies.
+    //
+    //   "Gloobal Bank has no receipt to open."
+    //
+    //     It always had one. Those rows are roleSendHistory and receivedRows
+    //     — the same two arrays History builds receipts from, the same row
+    //     objects, reachable by the same call. And it is now plainly wrong:
+    //     a Gloobal Coin buy and sell appear in that list, and the exchange
+    //     receipt (what it cost, at what rate, against which reserve) is the
+    //     entire reason the row is worth tapping.
+    //
+    // ── What is pinned now ────────────────────────────────────────────
+    //
+    // Every list offers the receipt, and every list offers it CONDITIONALLY.
+    // The second half is the half that matters: a row restored from the
+    // in-browser ledger carries no server reference, so there is no movement
+    // for a receipt to be of. TransactionRow drops role="button" and the tab
+    // stop when onSelect is absent, so passing a handler that opens nothing
+    // would announce a control to a screen reader and then do nothing — the
+    // original rule this file enforced, held from the other side.
+    for (const [name, file] of Object.entries(LIST_FILES)) {
+      const calls = code(file).match(/<TransactionRow[\s\S]{0,1400}?\/>/g) || [];
+      assert.ok(calls.length > 0, `${name} renders no TransactionRow`);
+      for (const call of calls) {
+        assert.match(call, /onSelect=\{/, `${name} draws a row that opens nothing`);
+        // A ternary ending in `undefined`, not a bare handler: that shape is
+        // what keeps the row from claiming to be a button when there is
+        // nothing behind it.
+        assert.match(
+          call,
+          /onSelect=\{[^}]*\?[\s\S]*?:\s*undefined\s*\}/,
+          `${name} passes onSelect unconditionally — a row with no receipt would still announce itself as a button`
+        );
       }
     }
+  });
+
+  test("no list builds its own receipt", () => {
+    // WHICH receipt a row opens is one decision, made once, in
+    // features/history/rowReceipt.js — because it is not a simple one: a
+    // Gloobal Coin buy or sell needs coinReceiptFrom (the holder, the
+    // reserve, the fiat leg and the rate it converted at), a Creator Share
+    // leg needs its source payment looked up in the FULL history rather than
+    // the handful of rows the list is showing, and a GEU transfer between two
+    // people needs the ordinary payment receipt despite being a coin
+    // movement.
+    //
+    // Before that function existed, those three lines lived in exactly one
+    // list — History's — and a buy tapped there opened the PAYMENT receipt:
+    // method "Bank", a counterparty of "Gloobal User", and no mention of
+    // either side of the exchange. Five lists each deciding this for
+    // themselves is the same drift this whole file exists to prevent, on the
+    // document rather than on the row.
+    for (const [name, file] of Object.entries(LIST_FILES)) {
+      const src = code(file);
+      if (name === "Coin Activity") continue; // builds coin receipts directly; see below
+      assert.ok(
+        !/\bbuildHistoryReceipt\(/.test(src),
+        `${name} calls buildHistoryReceipt itself instead of receiptForRow`
+      );
+      assert.ok(
+        !/\bcoinReceiptFrom\(/.test(src),
+        `${name} calls coinReceiptFrom itself instead of receiptForRow`
+      );
+    }
+    // Coin Activity is the exception and allowed to be: every row in it is a
+    // coin movement by construction, so there is nothing to choose between.
+    // It still shares the viewer shape — receiptViewer — so the holder on a
+    // buy receipt opened from the Coin screen and the same buy opened from
+    // History cannot be described two different ways.
+    const coin = code(LIST_FILES["Coin Activity"]);
+    assert.match(coin, /receiptViewer\(/, "the Coin screen names the holder its own way again");
   });
 
   test("a coin row opens a receipt only when there is one to open", () => {

@@ -38,6 +38,15 @@ const serverRequire = createRequire(path.join(ROOT, "server", "package.json"));
 const HOOMAN = serverRequire("./lib/hoomanScore.js");
 const HOOMAN_BANK = serverRequire("./data/hoomanQuestionBank.json");
 
+// The coin row's shaper, loaded rather than copied, for the same reason the
+// Hooman rules above are: a fake that shapes a Gloobal Coin movement BY HAND
+// proves only that the test and the fake agree. These are the two functions
+// the real /api/transactions projections call on every coin row, so a browser
+// test fed through them is looking at the shape the server actually sends —
+// including the detail that matters most here, which is that a buy's
+// direction comes from `type` and not from fromUserId.
+const COIN_ROW = serverRequire("./lib/coinHistoryRow.js");
+
 // Re-exported so the suites can read repo files (netlify.toml) without
 // importing two harnesses.
 export const ROOT_DIR = ROOT;
@@ -960,16 +969,94 @@ export async function installApi(context, options = {}) {
         })
         .reverse();
 
+    // GLOOBAL COIN MOVEMENTS, opt-in.
+    //
+    // Seeded with `options.coinLedger` and absent otherwise, so no existing
+    // suite's totals or row counts move. Each seed is
+    //
+    //   { symbolId, type, coinAmount, fiatAmount, fiatCurrency,
+    //     reserveCurrency, geuRate, counterparty?, createdAt? }
+    //
+    // and is turned into a stored Transaction of the shape the mint, redeem
+    // and transfer routes actually write — amount in coin, currency GEU, the
+    // fiat leg under `paidAmount`/`paidOutAmount` depending on direction, and
+    // `toUserId: null` on a buy or a sell, which is the whole reason a coin
+    // row's direction cannot be read off fromUserId.
+    //
+    // Then projected through the server's OWN shaper, so what the browser
+    // receives is what the server sends.
+    const coinSeeds = options.coinLedger || [];
+    const coinRowsFor = (viewer) =>
+      coinSeeds
+        .filter((seed) => seed.symbolId === viewer.symbolId || seed.counterparty === viewer.symbolId)
+        .map((seed, i) => {
+          const holder = seed.symbolId;
+          const isSend = seed.type === "coin_send";
+          const stored = {
+            _id: seed.id || `coin-${i}`,
+            referenceId: seed.referenceId || `GLB-COIN-${i + 1}`,
+            type: seed.type,
+            amount: seed.coinAmount,
+            currency: "GEU",
+            status: "success",
+            note: seed.note || "",
+            fromUserId: holder,
+            toUserId: isSend ? seed.counterparty : null,
+            createdAt: seed.createdAt || new Date().toISOString(),
+            metadata: {
+              prototype: true,
+              reserveCurrency: seed.reserveCurrency || "INR",
+              ...(seed.type === "coin_mint"
+                ? { paidAmount: seed.fiatAmount, paidCurrency: seed.fiatCurrency }
+                : seed.type === "coin_redeem"
+                  ? { paidOutAmount: seed.fiatAmount, paidOutCurrency: seed.fiatCurrency }
+                  : {}),
+              ...(seed.geuRate == null ? {} : { geuRate: seed.geuRate, geuRateSource: "peg" })
+            }
+          };
+          const other = isSend
+            // ACCOUNTS is keyed by country name, not an array.
+            ? Object.values(accounts).find((a) => a.symbolId === (holder === viewer.symbolId ? seed.counterparty : holder)) || null
+            : null;
+          return {
+            id: stored._id,
+            referenceId: stored.referenceId,
+            receiptCode: null,
+            type: stored.type,
+            direction: COIN_ROW.coinPaymentDirectionFor(stored, viewer.symbolId),
+            amount: stored.amount,
+            currency: stored.currency,
+            senderCurrency: null,
+            debitAmount: null,
+            fxRate: null,
+            status: "success",
+            note: stored.note,
+            counterparty: other
+              ? { fullName: other.fullName, symbolId: other.symbolId, countryIso: other.countryIso, currency: other.currency, fromSnapshot: true }
+              : null,
+            cashbackRate: null,
+            cashback: null,
+            cashbackCredit: null,
+            shareReferenceId: null,
+            shareReceiptCode: null,
+            paymentReferenceId: null,
+            coin: COIN_ROW.coinHistoryRow(stored, { viewerUserId: viewer.symbolId, counterparty: other }),
+            createdAt: stored.createdAt
+          };
+        });
+
+    const projectWithCoin = (viewer) => coinRowsFor(viewer).concat(projectFor(viewer));
+
     if (pathname.startsWith("/api/transactions/history/")) {
       const viewer = byId(decodeURIComponent(pathname.replace("/api/transactions/history/", "")));
       if (!viewer) return json(404, { message: "Not found" });
-      const rows = projectFor(viewer);
+      const rows = projectWithCoin(viewer);
       return json(200, { success: true, symbolId: viewer.symbolId, count: rows.length, transactions: rows });
     }
     if (pathname.startsWith("/api/transactions/")) {
       const viewer = byId(decodeURIComponent(pathname.replace("/api/transactions/", "").split("?")[0]));
       if (!viewer) return json(200, { transactions: [], totalSent: 0, totalReceived: 0 });
-      const rows = projectFor(viewer);
+      const rows = projectWithCoin(viewer);
       return json(200, {
         success: true,
         transactions: rows,

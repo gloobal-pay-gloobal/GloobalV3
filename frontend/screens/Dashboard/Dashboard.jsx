@@ -1710,7 +1710,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     () => sortTransactionsNewestFirst(sendHistory.filter((t) => (t.role || "user") === shareRole)),
     [sendHistory, shareRole]
   );
-  const dailySpending = useMemo5(() => generateDailySpending(roleSendHistory, receivedRows), [roleSendHistory, receivedRows]);
+  // `ccyCode` is passed because the chart is LABELLED in it: every bar and
+  // both week totals are printed with this one symbol, so a row in another
+  // currency has to be left out rather than added in as though it were this
+  // one. Buying 1,200 GEU used to draw "+1,200.00\u20B9" here. See
+  // generateDailySpending.
+  const dailySpending = useMemo5(() => generateDailySpending(roleSendHistory, receivedRows, 2, ccyCode), [roleSendHistory, receivedRows, ccyCode]);
   // The five most recent transactions on the Gloobal Bank account, both
   // directions in one list. Home's activity card splits them by a
   // sent/received tab because that is a question about a direction; the
@@ -1730,6 +1735,43 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     const received = receivedRows.map((t, i) => ({ ...t, direction: "received", key: t.txnId || `recv-${t.name}-${t.date}-${i}` }));
     return sortTransactionsNewestFirst(sent.concat(received)).slice(0, 5);
   }, [roleSendHistory, receivedRows]);
+  // THE RECEIPT BEHIND A ROW, on every list this screen draws.
+  //
+  // Three of them — Home's Recent Activity, the Receive sheet's Recent and
+  // Gloobal Bank's Recent Transactions — showed a payment and then did
+  // nothing when you tapped it. The receipt existed; History opened it from
+  // the same row object. Gloobal Bank's was asserted read-only by
+  // tests/transaction-row-consistency.test.mjs, for the stated reason that
+  // "Gloobal Bank has no receipt to open" — which was never quite true and
+  // is plainly not true now that a buy and a sell have one.
+  //
+  // One piece of state and one modal for all three, because they are one
+  // list rendered in three places and a receipt per list is three things to
+  // keep in step.
+  const [rowReceipt, setRowReceipt] = useState14(null);
+  const requestCloseRowReceipt = useBackClose(!!rowReceipt, () => setRowReceipt(null));
+  // Which receipt, decided in the one place that decides it for the whole app
+  // — features/history/rowReceipt.js. A buy or sell builds the exchange
+  // receipt (the holder, the reserve, the fiat leg and the rate); a payment,
+  // a Creator Share and a GEU transfer build the payment receipt.
+  const openRowReceipt = (t, direction) => {
+    const built = receiptForRow(t, direction, {
+      dialCountry,
+      ccy,
+      // The FULL lists, not the five rows the card is showing: a Creator
+      // Share's receipt describes the payment it came from, and that payment
+      // is very often not in the same five.
+      sendHistory: roleSendHistory,
+      receiveHistory: receivedRows,
+      viewer: receiptViewer({
+        name: myName,
+        symbolId: currentSymbolId,
+        countryName: dialCountry && dialCountry.name,
+        countryFlag: dialCountry && dialCountry.flag
+      })
+    });
+    if (built) setRowReceipt(built);
+  };
   useEffect12(() => {
     if (onShareRoleChange) onShareRoleChange(shareRole);
   }, [shareRole]);
@@ -2089,6 +2131,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       ccyCode={ccyCode}
       isFirst={i === 0}
       inset={0}
+      // Tapping a row opens its receipt, the same one History opens from the
+      // same row object. Only where there is one: a row posted by this
+      // session's own in-browser ledger has no server reference, and
+      // TransactionRow drops role="button" and the tab stop when onSelect is
+      // absent rather than offering a control that does nothing.
+      onSelect={rowHasReceipt(t) ? () => openRowReceipt(t, recentActivityTab === "receiving" ? "received" : "sent") : undefined}
     />)}</div>;
   })()}<button
     onClick={() => {
@@ -2897,6 +2945,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     ccyCode={ccyCode}
     isFirst={i === 0}
     inset={0}
+    // Every row here is an incoming payment — this list is receivedRows —
+    // so the direction is constant where the list above has to choose.
+    onSelect={rowHasReceipt(t) ? () => openRowReceipt(t, "received") : undefined}
   />)}</div></div>}</div></div>}{
     /* My Share — the % of every incoming payment this person shares
        back with whoever paid them. Opened from the Receive sheet's
@@ -3064,6 +3115,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     balanceVisible={balanceVisible}
     onToggleBalance={handleToggleBalance}
     recentTransactions={recentBankTransactions}
+    onOpenReceipt={openRowReceipt}
     gloobalId={personalGloobalId}
     countryFlag={dialCountry.flag}
     countryName={dialCountry.name}
@@ -3299,6 +3351,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     receiveHistory={receivedRows}
     dialCountry={dialCountry}
     ccy={ccy} ccyCode={ccyCode}
+    // Whose account this is. A Gloobal Coin buy or sell is a movement
+    // between a person and the reserve, and the Transaction record holds
+    // ids rather than a name — so without these the receipt for one shows
+    // nobody. Same pair, for the same reason, as GloobalCoinScreen below.
+    holderName={myName}
+    holderSymbolId={currentSymbolId}
     openHistoryDirection={openHistoryDirection}
     onConsumeOpenHistory={onConsumeOpenHistory}
     historyTab={historyTab}
@@ -4473,7 +4531,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     style={{ border: "none", background: T.gradButton, borderRadius: T.radiusMd, padding: "13px 0", color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer", boxShadow: "0 8px 20px rgba(124,58,237,0.32)" }}
   >
               Got it
-            </button></div></div>}</div>;
+            </button></div></div>}{
+    /* The receipt behind a tapped row — Home's Recent Activity, the
+       Receive sheet's Recent, and Gloobal Bank's Recent Transactions all
+       open this one. Last in the tree and zIndex 500 inside the modal
+       itself, so it draws over the Bank screen (zIndex 300) rather than
+       underneath the list that opened it. */
+  }<ReceiptModal receipt={rowReceipt} onClose={requestCloseRowReceipt} /></div>;
 }
 var Dashboard_default = DashboardScreen;
 

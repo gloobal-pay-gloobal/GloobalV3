@@ -95,7 +95,17 @@ describe("a share leg reaches history", () => {
     // Without this the client sees two rows for one payment, to the same
     // person, on the same day, and cannot tell you what the second one is.
     assert.match(server, /type: transaction\.type \|\| 'payment',/);
-    assert.match(app, /kind: row\.type === "share" \? "share" : "payment",/);
+    // The label is read off ONE table now, keyed on the server's type —
+    // historyRowShape in App.jsx. This used to be an inline ternary here:
+    //
+    //     kind: row.type === "share" ? "share" : "payment",
+    //
+    // which was binary, so every row that was not a share became a bank
+    // payment — including all three Gloobal Coin movements. The share half of
+    // it was always right and still is; what changed is that the OTHER half
+    // can now name a coin movement.
+    assert.match(app, /kind: historyRowShape\(row\.type\)\.kind,/);
+    assert.match(app, /share: \{ kind: "share", method: "share" \}/);
   });
 
   test("it lands on the payee's SENT side, which is what was asked for", () => {
@@ -104,7 +114,16 @@ describe("a share leg reaches history", () => {
     // special-casing — but it is the whole point of the fix, so it is
     // asserted rather than assumed.
     assert.match(shareFlow, /fromUserId: receiver\._id,\s*\n\s*toUserId: sender\._id,/);
-    assert.match(server, /direction: isSender \? 'sent' : 'received',/);
+    // Still keyed off fromUserId for a share leg, and for every payment.
+    //
+    // The line grew a branch above it: a coin mint and a coin redeem both
+    // write fromUserId = the holder and toUserId = null, so fromUserId
+    // cannot tell a BUY from a SELL and reported both as 'sent' — a purchase
+    // showed as GEU leaving an account that had just gained it. Those read
+    // their direction from `type` instead. A share leg is unaffected: it has
+    // two real accounts, and fromUserId is the answer.
+    assert.match(server, /isSender \? 'sent' : 'received'/);
+    assert.match(server, /coinPaymentDirectionFor\(transaction, user\._id\)/);
   });
 });
 

@@ -37,26 +37,20 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { loadDomain, readSource } from "./harness.mjs";
+import { loadDomain, readSource, loadMapServerTransaction } from "./harness.mjs";
 
 // mapServerTransaction lives in frontend/App.jsx, which is not part of the
 // harness's module set (that is the backend domain layer only). Rather than
 // copy the function into this file — which would test the copy and not the
-// app — its real source is sliced out of App.jsx and evaluated with the one
-// helper it depends on injected. If the function is renamed or moved, this
+// app — its real source is sliced out of App.jsx and evaluated with the
+// helpers it depends on injected. If the function is renamed or moved, this
 // throws rather than quietly passing against a stale duplicate.
-function loadMapServerTransaction() {
-  const app = readSource("frontend/App.jsx");
-  const at = app.indexOf("function mapServerTransaction(");
-  assert.ok(at > 0, "mapServerTransaction not found in App.jsx");
-  const end = app.indexOf("\n}\n", at);
-  assert.ok(end > at, "could not find the end of mapServerTransaction");
-  const source = app.slice(at, end + 2);
-
-  const { formatClockTime } = loadDomain(["formatClockTime"]);
-  // eslint-disable-next-line no-new-func
-  return new Function("formatClockTime", `${source}; return mapServerTransaction;`)(formatClockTime);
-}
+//
+// The slice itself moved into harness.mjs. It was duplicated in three test
+// files, each injecting formatClockTime and nothing else, and when the mapper
+// grew a second dependency — historyRowShape, the table deciding which
+// receipt a row opens — all three broke at once with a bare
+// "historyRowShape is not defined" thrown from inside a generated function.
 
 const mapServerTransaction = loadMapServerTransaction();
 

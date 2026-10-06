@@ -24,7 +24,15 @@ import { Filter as FilterHist, ChevronDown as ChevronDown4, Check as CheckPeriod
 // ten, not a thousand-row list.
 var HISTORY_PAGE_SIZE = 10;
 
-function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], dialCountry, ccy, ccyCode = "USD", openHistoryDirection, onConsumeOpenHistory, historyTab, setHistoryTab, historyMethodFilter, setHistoryMethodFilter }) {
+// `holderName` / `holderSymbolId`: whose account this is.
+//
+// Needed for ONE row type and unavoidable there. A Gloobal Coin buy or sell
+// is a movement between a person and the reserve, and the Transaction record
+// stores ids, not a name or a Gloobal ID — so a receipt for one either gets
+// the holder from the account or shows nobody. This is the same pair
+// GloobalCoinScreen already takes for the same reason, and the country half
+// is derived from `dialCountry` rather than passed again.
+function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], dialCountry, ccy, ccyCode = "USD", openHistoryDirection, onConsumeOpenHistory, historyTab, setHistoryTab, historyMethodFilter, setHistoryMethodFilter, holderName = "", holderSymbolId = "" }) {
   const historyScrollRef = useRef9(null);
   const [receipt, setReceipt] = useState12(null);
   const requestCloseReceipt = useBackClose(!!receipt, () => setReceipt(null));
@@ -89,16 +97,29 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
     }
   }, [historyTab]);
   function openHistoryReceipt(t, direction) {
-    // The share's source payment is looked up in the FULL lists, not the
-    // period-filtered ones this screen renders. The payment and the share it
-    // produced happen moments apart, but "This Week" ends at a boundary, and
-    // a share minted just after midnight on Monday would lose its payment to
-    // the filter — leaving a receipt that says the payment is unavailable
-    // while the row for it sits one tap away under another period.
-    setReceipt(buildHistoryReceipt(
-      t, direction, dialCountry, ccy,
-      t.kind === "share" ? findSharePaymentSource(t, sendHistory, receiveHistory) : null
-    ));
+    // Which receipt a row opens is decided in ONE place for every list in the
+    // app — see features/history/rowReceipt.js. The three lines that used to
+    // sit here (buildHistoryReceipt, plus a share's source payment looked up
+    // in the FULL lists rather than this screen's period-filtered ones) moved
+    // there unchanged, and a buy or a sell now reaches coinReceiptFrom
+    // instead of being drawn as a bank payment to "Gloobal User".
+    const built = receiptForRow(t, direction, {
+      dialCountry,
+      ccy,
+      sendHistory,
+      receiveHistory,
+      // The account holder, for a buy or sell receipt. The country half comes
+      // off `dialCountry`, which this screen already has and which is the
+      // same object the Coin screen's holder flag is derived from — two more
+      // props carrying the same two facts is how they drift apart.
+      viewer: receiptViewer({
+        name: holderName,
+        symbolId: holderSymbolId,
+        countryName: dialCountry && dialCountry.name,
+        countryFlag: dialCountry && dialCountry.flag
+      })
+    });
+    if (built) setReceipt(built);
   }
   function handleHistoryScroll(e) {
     const el = e.currentTarget;
@@ -115,8 +136,11 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
   // follows the period so a month's worth of days isn't cut off at
   // two weeks.
   const historyDailyTrend = useMemo5(
-    () => generateDailySpending(periodSendHistory, periodReceiveHistory, historyPeriodMeta(historyPeriod).weekPages),
-    [periodSendHistory, periodReceiveHistory, historyPeriod]
+    // ccyCode because the chart is labelled in it — rows in another currency
+    // are left out rather than summed into a figure wearing this symbol. See
+    // generateDailySpending.
+    () => generateDailySpending(periodSendHistory, periodReceiveHistory, historyPeriodMeta(historyPeriod).weekPages, ccyCode),
+    [periodSendHistory, periodReceiveHistory, historyPeriod, ccyCode]
   );
   const periodPaidTotal = useMemo5(() => sumHistoryAmount(periodSendHistory, ccyCode), [periodSendHistory, ccyCode]);
   const periodReceivedTotal = useMemo5(() => sumHistoryAmount(periodReceiveHistory, ccyCode), [periodReceiveHistory, ccyCode]);
@@ -276,7 +300,12 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
       sign={col.sign}
       ccy={ccy} ccyCode={ccyCode}
       isFirst={i === 0}
-      onSelect={() => openHistoryReceipt(t, col.key === "sending" ? "sent" : "received")}
+      // Only where there IS a receipt. A row restored from this session's own
+      // in-browser ledger carries no server reference, so there is no
+      // movement for a receipt to be of — and TransactionRow drops
+      // role="button" and the tab stop when onSelect is absent, which is what
+      // keeps a control that does nothing off the list.
+      onSelect={rowHasReceipt(t) ? () => openHistoryReceipt(t, col.key === "sending" ? "sent" : "received") : undefined}
     />)}{
       /* The expander. A chevron and a number, and nothing else — this is
          the one control on the screen a person meets while already deep in

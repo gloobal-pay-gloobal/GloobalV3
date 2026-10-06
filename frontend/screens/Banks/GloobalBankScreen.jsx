@@ -39,6 +39,17 @@ function GloobalBankScreen({
   balanceVisible,
   onToggleBalance,
   recentTransactions,
+  // Tapping a row opens its receipt. Passed in rather than built here: the
+  // decision of WHICH receipt a row opens belongs to one function for the
+  // whole app (features/history/rowReceipt.js), and the lists it needs to
+  // find a Creator Share's source payment live on the Dashboard, not here.
+  //
+  // This list was read-only, and tests/transaction-row-consistency.test.mjs
+  // asserted it with the reason "Gloobal Bank has no receipt to open". These
+  // are the same rows History opens receipts from, so that was never quite
+  // right; with a Gloobal Coin buy and sell now listed here it is plainly
+  // wrong, since the exchange receipt is the whole point of the row.
+  onOpenReceipt,
   // Whose account this is. The screen showed a balance and a service list
   // and never once said which account they belonged to — it could have been
   // anybody's. Passed in rather than read here for the same reason the
@@ -181,6 +192,10 @@ function GloobalBankScreen({
       // The card already pads itself, so the rows line up with its own
       // heading instead of stepping in from it.
       inset={0}
+      // `received` is this row's own direction, already resolved above —
+      // this list holds both sides, so a constant would be wrong in half
+      // of it.
+      onSelect={onOpenReceipt && rowHasReceipt(t) ? () => onOpenReceipt(t, received ? "received" : "sent") : undefined}
     />;
   })}</div></div>{
     /* Moved to the bottom of the screen at the user's request — the

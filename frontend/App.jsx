@@ -255,6 +255,100 @@ function gloobalRecordedFigure(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+// WHAT A HISTORY ROW IS, AND WHICH CHIP IT BELONGS UNDER.
+//
+// ── The one line this replaced ──────────────────────────────────────────
+//
+//     kind:   row.type === "share" ? "share" : "payment",
+//     method: row.type === "share" ? "share" : "bank",
+//
+// Binary. Every row that was not a Creator Share leg was stamped "bank",
+// including all three coin movements, and `currency` was never consulted. Two
+// consequences, both of which shipped:
+//
+//   1. The History screen's Coin chip has been DEAD since it was added. Its
+//      filter is `col.rows.filter((t) => t.method === "coin")` and no server
+//      row has ever carried that value, so the chip was a button that
+//      produced an empty list for every account.
+//
+//   2. A buy or a sell opened the PAYMENT receipt — method "Bank", a
+//      counterparty of "Gloobal User", and none of the exchange's own facts:
+//      no fiat cost, no rate, no reserve. The one movement in this app that
+//      is literally a currency exchange had a receipt describing a bank
+//      transfer that did not happen.
+//
+// ── Why two fields and not one ─────────────────────────────────────────
+//
+// They answer different questions, and for a coin movement the answers
+// differ:
+//
+//   `kind`   WHICH RECEIPT opens — see rowReceipt.js. "coin" builds
+//            coinReceiptFrom (holder, reserve, rate, both legs); "payment"
+//            builds buildHistoryReceipt; "share" the Creator Share form.
+//   `method` WHICH CHIP it files under on the History screen, and the
+//            "Payment method" line on a payment receipt.
+//
+// So a BUY is kind "coin" (it needs the exchange receipt) and method "bank"
+// (the money left the bank balance, and that is the screen it is listed on).
+// A GEU TRANSFER between two people is the reverse: method "coin", because it
+// is a coin transfer and belongs with the Coin screen's ledger — but kind
+// "payment", because it is a person paying a person and should open exactly
+// the receipt a rupee payment opens. That is the split the founder asked for,
+// stated once, here, rather than inferred at four call sites.
+//
+// NOT keyed on currency, deliberately. Gloobal Coin and the GEU growth
+// prototype are both denominated "GEU" (COIN_CURRENCY and
+// GEU_PROTOTYPE_CURRENCY are the same string), so currency cannot tell a coin
+// movement from a prototype one, and `type` can.
+var HISTORY_ROW_SHAPE_BY_TYPE = {
+  share: { kind: "share", method: "share" },
+  // Buy and sell: the fiat side moved through the bank balance.
+  coin_mint: { kind: "coin", method: "bank" },
+  coin_redeem: { kind: "coin", method: "bank" },
+  // A transfer: coin to coin, no fiat leg at all.
+  coin_send: { kind: "payment", method: "coin" }
+};
+
+// An unrecognised type is a PAYMENT, not a coin row.
+//
+// This is the safe direction for a default. A new transaction type arriving
+// from the server lands here, and reading it as a payment shows a row with a
+// name, a figure and a receipt built from fields every row has. Defaulting to
+// "coin" would send it to coinReceiptFrom, which would find no fiat leg and
+// no rate and draw an exchange that never happened.
+var HISTORY_ROW_SHAPE_DEFAULT = { kind: "payment", method: "bank" };
+
+function historyRowShape(type) {
+  return HISTORY_ROW_SHAPE_BY_TYPE[String(type || "")] || HISTORY_ROW_SHAPE_DEFAULT;
+}
+
+// WHO A ROW WITH NO COUNTERPARTY RECORD IS WITH.
+//
+// A buy and a sell write `toUserId: null` — not because anything was lost,
+// but because the other side of them is the reserve that backs the coin, and
+// the reserve is not an account. So the server resolves no counterparty, and
+// the fallback that filled the gap said "Gloobal User": a row reading
+//
+//     Gloobal User        +1,200.00 GEU
+//
+// which names nobody, and reads as a payment from a stranger rather than as
+// a purchase. It is the same placeholder a genuinely unnamed PAYMENT gets,
+// and for a payment it is at least honest — somebody really is on the other
+// end and the app does not know their name.
+//
+// Here it is just wrong, and the right answer was already written down:
+// coinReceipt.js has named this party "Gloobal Reserve" since the coin
+// receipt was built, and the receipt the row opens says "From Gloobal
+// Reserve" on exactly this movement. The row said one thing and the document
+// behind it another.
+//
+// Only mint and redeem. A coin SEND has two real accounts and resolves a
+// name like any payment; if it ever arrives without one, "Gloobal User" is
+// the truthful answer there, because a person is who it was with.
+function coinPartyName(type) {
+  return type === "coin_mint" || type === "coin_redeem" ? COIN_RESERVE_NAME : "Gloobal User";
+}
+
 function mapServerTransaction(row, viewerSymbolId) {
   // The server's own record of when this happened — the instant every list
   // sorts by (transactionOrder.js) and the instant the row's date and time
@@ -271,7 +365,7 @@ function mapServerTransaction(row, viewerSymbolId) {
   const counterpartyName =
     counterparty.fullName && counterparty.fullName !== counterparty.symbolId
       ? counterparty.fullName
-      : counterparty.symbolId || "Gloobal User";
+      : counterparty.symbolId || coinPartyName(row.type);
   // WHOSE money this row is about.
   //
   // A payment has two sides and they are not the same number. The server
@@ -410,8 +504,33 @@ function mapServerTransaction(row, viewerSymbolId) {
     // counterparty's name — and `kind` is what lets a list label it rather
     // than showing a second, unexplained payment to the same person on the
     // same day.
-    kind: row.type === "share" ? "share" : "payment",
-    method: row.type === "share" ? "share" : "bank",
+    // Which receipt this row opens, and which chip it files under. One table,
+    // keyed on the server's `type` — see historyRowShape above for what the
+    // two words mean and for the binary line this replaced.
+    kind: historyRowShape(row.type).kind,
+    method: historyRowShape(row.type).method,
+    // The server's own word for what this is, carried through unchanged.
+    //
+    // `kind` and `method` are both lossy on purpose — they answer "which
+    // receipt" and "which chip", and two different types can share an answer
+    // (coin_mint and coin_redeem are both kind "coin"). A reader that needs
+    // to tell a buy from a sell needs the type itself, and until now the only
+    // copy of it on this side was consumed by the ternary above and dropped.
+    txnType: row.type || null,
+    // THE EXCHANGE, where there was one.
+    //
+    // The fiat a buy cost or a sell paid out, the rate it converted at, and
+    // which way that rate points — the fields GET /api/coin/:symbolId/history
+    // has always sent and the main history projection has only just started
+    // to (server/lib/coinHistoryRow.js). Null on a payment and on a coin
+    // transfer, which moves no fiat.
+    //
+    // Passed through whole rather than flattened into this row: it is the
+    // exact shape coinReceiptFrom already reads, so the receipt behind a
+    // History row and the receipt behind the same movement on the Coin screen
+    // are built by one function from one object. Flattening it here would be
+    // a second mapping to keep in step with the first.
+    coin: row.coin || null,
     txnId: row.referenceId || row.id || "",
     // The Creator Share this payment carried, as the server recorded it.
     //
@@ -2149,6 +2268,42 @@ function GloobalId() {
   // the answer away.
   const [receivedMoneyHistory, setReceivedMoneyHistory] = useState19([]);
 
+  // THE RECEIPT BEHIND A ROW, from this level of the tree.
+  //
+  // Two callers: the shared-link effect just below (a receipt somebody was
+  // sent) and Send Money's Recent list, which had no way to build one at all
+  // — it is rendered from here, not from the Dashboard, so it cannot reach
+  // the Dashboard's own opener.
+  //
+  // The decision of WHICH receipt is not made here. receiptForRow makes it,
+  // once, for every list in the app: a Gloobal Coin buy or sell builds the
+  // exchange receipt, and a payment, a Creator Share leg or a GEU transfer
+  // builds the payment receipt. This used to be an inline buildHistoryReceipt
+  // call with the share-source ternary spelled out, which is exactly how the
+  // two copies of that logic could have drifted.
+  //
+  // Returns null when the row has no server reference to be a receipt OF, so
+  // every caller can decide not to offer the tap rather than opening an empty
+  // one.
+  const buildRowReceipt = (t, direction) => {
+    const localCurrency = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
+    return receiptForRow(t, direction, {
+      dialCountry,
+      ccy: CURRENCY_SYMBOL[localCurrency] || localCurrency,
+      sendHistory: sendMoneyHistory,
+      receiveHistory: receivedMoneyHistory,
+      // The account holder, for a buy or sell receipt — the one movement
+      // whose counterparty is the reserve rather than a person, and which
+      // therefore has to name the holder or name nobody.
+      viewer: receiptViewer({
+        name: documentedName,
+        symbolId: secureId,
+        countryName: dialCountry && dialCountry.name,
+        countryFlag: dialCountry && dialCountry.flag
+      })
+    });
+  };
+
   // Placed HERE, below sendMoneyHistory and receivedMoneyHistory, not beside
   // the state it reads. A hook's dependency array is evaluated on EVERY
   // render - before the `const`s further down the component body exist.
@@ -2189,14 +2344,8 @@ function GloobalId() {
     // source payment looked up by reference in the same two lists). Nothing
     // here posts, sends, prefills or fetches: the row is already this
     // viewer's own, and a receipt has no action that moves money.
-    const localCurrency = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
-    setLinkedReceipt(buildHistoryReceipt(
-      found,
-      inSent ? "sent" : "received",
-      dialCountry,
-      CURRENCY_SYMBOL[localCurrency] || localCurrency,
-      found.kind === "share" ? findSharePaymentSource(found, sendMoneyHistory, receivedMoneyHistory) : null
-    ));
+    const built = buildRowReceipt(found, inSent ? "sent" : "received");
+    if (built) setLinkedReceipt(built);
   }, [sharedTxnRef, stage, sendMoneyHistory, receivedMoneyHistory]);
   // The receipt a shared link opened (see just above), shown over the
   // dashboard until closed. Back closes it like any other overlay.
@@ -4056,6 +4205,13 @@ function GloobalId() {
     sender={{ ...dialCountry, phoneNumber, fullName: documentedName, symbolId: secureId, mobileNumber: (registeredUser && registeredUser.mobileNumber) || fullMobileNumber }}
     prefillReceiver={sendPrefillReceiver}
     history={sendMoneyHistory}
+    // Tapping a row in Send Money's Recent list opens that payment's
+    // receipt. A BUILDER rather than a handler: Send Money owns the modal
+    // (it already has one for the payment it just made, so a second one
+    // hosted from here would stack two modals in two stacking contexts),
+    // while the decision of which receipt to build needs this level's two
+    // full history lists and the viewer's country.
+    onBuildRowReceipt={buildRowReceipt}
     onSendComplete={handleSendMoneyComplete}
     onExecuteTransaction={handleExecuteTransaction}
     onRemoteSend={handleRemoteSend}

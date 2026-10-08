@@ -1873,6 +1873,39 @@ function GloobalId() {
   // effectiveLoginCountry is declared further down this component.)
   const fullMobileNumber = `${dialCountry.dialCode || ""}${phoneNumber.replace(/\D/g, "")}`;
 
+  // THE NUMBER THE ACCOUNT IS REGISTERED AGAINST, as opposed to the one
+  // being typed.
+  //
+  // `fullMobileNumber` above is assembled out of two pieces of FORM state:
+  // the country in the picker and the digits in the phone dial pad. That is
+  // right for registration, which is the only place it is used to address
+  // anything — the OTP goes to the number being entered.
+  //
+  // It is wrong for displaying the account's own number, which is what
+  // Personal Details does. Signing in with a Gloobal ID and a PIN never
+  // touches the phone pad, so `phoneNumber` is "" on that path and the
+  // assembly produces a bare dial code: Personal Details read
+  //
+  //     Mobile      +91
+  //
+  // The server has had the real one all along — publicUserPayload returns
+  // `mobileNumber` on every response that carries a user, and Send Money's
+  // sender card has been preferring it for exactly this reason. This is
+  // that preference, stated once, so the two places cannot drift.
+  //
+  // The digits check is not paranoia: publicUserPayload falls back to
+  // `user.fullName` when mobileNumber is empty. On an account made before
+  // the name step existed those are the same string and the fallback is
+  // harmless — but on any other, it would print somebody's NAME under a
+  // label that says Mobile. A value with no digits in it is not a phone
+  // number, whatever field it arrived in.
+  const storedMobileNumber = (registeredUser && registeredUser.mobileNumber) || "";
+  const accountMobileNumber = /\d/.test(storedMobileNumber)
+    ? storedMobileNumber
+    // No stored number means this is mid-registration, where the typed one
+    // IS the account's. Still nothing rather than a bare dial code.
+    : (/\d/.test(fullMobileNumber) ? fullMobileNumber : "");
+
   // The PIN fallback behind the biometric gate, hosted once at the root so
   // every guarded action anywhere in the tree can reach it (see
   // gloobalRegisterPinFallbackHost). Held as { reason, resolve }: `resolve`
@@ -3997,7 +4030,11 @@ function GloobalId() {
     onChangeProfilePhoto={handleChangeProfilePhoto}
     // The account's own number, for Personal Details. Held in this session
     // since registration and restored with the session on login.
-    mobileNumber={fullMobileNumber}
+    // The ACCOUNT's number, not the one in the phone pad — see
+    // accountMobileNumber. This was fullMobileNumber, which is assembled
+    // from form state and reads as a bare dial code after any sign-in that
+    // did not go through the phone step.
+    mobileNumber={accountMobileNumber}
     // Every Gloobal ID this account has ever used, from the server. The
     // Update History screen used to show only renames made in THIS session,
     // so it was empty again after every login — see idUpdateHistory there.

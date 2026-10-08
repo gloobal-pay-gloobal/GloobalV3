@@ -129,8 +129,27 @@ describe("2. the Gloobal ID update history outlives the session", () => {
 });
 
 describe("3. personal details shows the mobile number", () => {
-  test("the number is passed in from the session", () => {
-    assert.match(app, /mobileNumber=\{fullMobileNumber\}/);
+  test("the number comes from the ACCOUNT, not from the phone pad", () => {
+    // THIS TEST USED TO ASSERT `mobileNumber={fullMobileNumber}`, and that
+    // is the defect it was pinning in place.
+    //
+    // `fullMobileNumber` is assembled out of FORM STATE — the country in
+    // the picker plus the digits in the phone dial pad. Signing in with a
+    // Gloobal ID and a PIN never touches that pad, so the digits half is
+    // empty on that path and the assembly yields the dial code alone.
+    // Personal Details read "Mobile  +91" on an account registered against
+    // +91 90000 00001. Measured in a browser, before and after; see
+    // tests/account-mobile-number.test.mjs, which drives that exact
+    // sign-in.
+    //
+    // The server has had the real number all along: publicUserPayload
+    // returns `mobileNumber` on every response carrying a user, and Send
+    // Money's sender card had already been preferring it for this reason.
+    assert.match(app, /mobileNumber=\{accountMobileNumber\}/);
+    assert.ok(
+      !/mobileNumber=\{fullMobileNumber\}/.test(app),
+      "Personal Details is reading the dial pad again"
+    );
     assert.match(dash, /mobileNumber = ""/);
   });
 

@@ -88,7 +88,28 @@ function gloobalSessionSave(user, phoneNumber, biometricEnrolled) {
       GLOOBAL_SESSION_KEY,
       JSON.stringify({
         user,
-        phoneNumber: phoneNumber || "",
+        // CARRIED ACROSS A SAVE FOR THE SAME ACCOUNT, like the token below
+        // and the biometric flag above — and for exactly the reason this
+        // function has already had to learn twice.
+        //
+        // This was `phoneNumber || ""`, and the caller passes App.jsx's
+        // `phoneNumber` state, which only ever holds digits somebody typed
+        // into the phone dial pad THIS session. Signing in with a Gloobal ID
+        // and a PIN never touches that pad, so every ID login saved an empty
+        // string over a number the device already knew:
+        //
+        //   register with +91 90000 00001   → session holds "9000000001"
+        //   reopen, sign in by Gloobal ID   → session holds ""
+        //
+        // and it never came back, because the next save had nothing to write
+        // either. The number is not recoverable from the dial code and the
+        // app had stopped having it.
+        //
+        // Only for the SAME account, by the same test the token uses: a
+        // different person signing in on this phone must not inherit the
+        // last one's number. That test matches on mobileNumber as well as
+        // symbolId, so an ID rename is not mistaken for a new account.
+        phoneNumber: phoneNumber || (sameAccount && previous.phoneNumber) || "",
         // Carried across a save for the SAME account — this function is called
         // at several points that know the user but not the token, and dropping
         // it there would sign the person out mid-flow. A DIFFERENT account

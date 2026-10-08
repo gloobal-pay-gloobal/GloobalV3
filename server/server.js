@@ -53,7 +53,7 @@ const {
 // card in the app are the same notification rather than two about one
 // payment. See that file's header for why the wording is duplicated here
 // instead of imported from the frontend.
-const { paymentBannerText, notifDiscIcon } = require('./lib/notificationText');
+const { paymentBannerText, shareBannerText, notifDiscIcon } = require('./lib/notificationText');
 
 // Audit fix: AuditLog was fully defined (schema, indexes) but never written
 // to anywhere in this file — every route that could meaningfully report a
@@ -6944,6 +6944,41 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       console.error('Receipt/share-leg step raised unexpectedly (non-fatal):', receiptError);
     }
 
+    // Tell both people the share happened.
+    //
+    // Only when there IS one: mintShareLegAndReceipts returns a null
+    // shareTransaction for a payment whose payee shares nothing, and
+    // recordShareNotifications returns immediately on that — a notification
+    // saying somebody shared 0.00 is a statement about money that did not
+    // move.
+    //
+    // Runs AFTER the share leg exists, which is why it is here rather than
+    // beside the payment notifications two hundred lines up: it needs the
+    // leg's own reference and its own createdAt, so the row it writes points
+    // at the Creator Share receipt rather than at the payment.
+    //
+    // Best-effort in its own try/catch, like every other step after the
+    // money moved. The transfer is committed and the receipts are written;
+    // nothing about a notification may turn that into an error.
+    if (shareTransaction) {
+      try {
+        const shareLegs = await recordShareNotifications({
+          shareTransaction,
+          paymentTransaction: completedTransaction,
+          sender,
+          receiver,
+        });
+        // The same push path a payment uses. Handed the SHARE transaction,
+        // so the tag, the timestamp and the `?txn=` link are the share's —
+        // tapping the banner opens the Creator Share receipt, and the two
+        // banners for one payment collapse separately rather than one
+        // replacing the other.
+        await sendPaymentPushes(shareLegs, shareTransaction);
+      } catch (shareNotifyError) {
+        console.error('Share notification error (non-fatal):', shareNotifyError);
+      }
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Prototype transaction completed successfully.',
@@ -7239,6 +7274,182 @@ async function recordPaymentNotifications({
   return legs;
 }
 
+// ── A Creator Share, as a notification for both sides ───────────────────
+//
+// ── What was missing ──────────────────────────────────────────────────
+//
+// lib/merchantShareFlow.js mints the share leg and its receipt pair, and
+// the string "notif" does not appear in it. So a share was released, money
+// moved on both sides, four receipts were written — and neither party was
+// told anything. The payee learned they had given a cut only by opening the
+// payment's receipt and finding a second tab; the payer learned they had
+// been given one by noticing their balance was higher than the figure on
+// the notification they HAD received, which said they sent the full amount.
+//
+// ── Why it is two notifications and not one ───────────────────────────
+//
+// A share has two sides and they are different events to the two people.
+// The payee GAVE something, out of money they were being paid. The payer
+// GOT something back, after a payment they had already been told about.
+// One shared row would have to pick a direction, and the one it picked
+// would be wrong for somebody.
+//
+// ── Which figure goes on which ────────────────────────────────────────
+//
+// The share leg stores both sides, in their own currencies, and they are
+// not the same number across a corridor:
+//
+//   shareTransaction.amount / .currency     the PAYER's credit, the
+//                                           payer's currency
+//   metadata.debitAmount / .senderCurrency  the PAYEE's withholding, the
+//                                           payee's currency
+//
+// Each person is shown THEIR side as the figure and the other as the
+// counter-figure, which is exactly the contract recordPaymentNotifications
+// follows. Nothing here multiplies, divides or converts: both figures were
+// recorded by the flow that moved the money.
+//
+// No fxRate. The payment's rate is stored on the payment, not on this leg,
+// and a rate derived by dividing one of these by the other is a third
+// number that reconciles with neither. The card draws the conversion page
+// without a rate note when there is none.
+async function recordShareNotifications({ shareTransaction, paymentTransaction, sender, receiver }) {
+  if (!shareTransaction) return [];
+
+  const shareId = String(shareTransaction._id);
+  const meta = shareTransaction.metadata || {};
+  // The PAYMENT's party snapshot, read the way the payment's own
+  // notification reads it. The share leg carries a SWAPPED copy (see
+  // merchantShareFlow), and reading that one here would name each person as
+  // themselves — the same mistake that snapshot exists to prevent.
+  const parties = paymentTransaction?.metadata?.parties || {};
+  const payerName = notificationDisplayName(parties.sender, sender);
+  const payeeName = notificationDisplayName(parties.receiver, receiver);
+  const receiptCode = (await ensureReceiptCode(shareTransaction)) || null;
+
+  // The payer's side: what came back, in the payer's own currency.
+  const payerAmount = Number(shareTransaction.amount);
+  const payerCurrency = shareTransaction.currency || null;
+  // The payee's side: what was withheld, in theirs.
+  const payeeAmount = Number.isFinite(Number(meta.debitAmount)) ? Number(meta.debitAmount) : payerAmount;
+  const payeeCurrency = meta.senderCurrency || payerCurrency;
+
+  const reference = paymentTransaction?.referenceId || '';
+  const onPayment = reference ? ` on ${reference}` : '';
+
+  const entries = [
+    {
+      // The payee, who gave it. `fromUserId` on the share leg is theirs.
+      userId: receiver._id,
+      title: 'Creator Share sent',
+      message: `You shared ${formatNotificationAmount(payeeAmount, payeeCurrency)} ${payeeCurrency} with ${payerName}${onPayment}`,
+      direction: 'sent',
+      amount: payeeAmount,
+      currency: payeeCurrency,
+      counterAmount: payerAmount,
+      counterCurrency: payerCurrency,
+      counterpartyName: payerName,
+      counterpartySymbolId: sender.symbolId,
+      counterpartyIso: parties.sender?.countryIso || accountCountryIso(sender) || null,
+      pushType: 'share.sent',
+    },
+    {
+      // The payer, who got it back.
+      userId: sender._id,
+      title: 'Creator Share received',
+      message: `You earned ${formatNotificationAmount(payerAmount, payerCurrency)} ${payerCurrency} back from ${payeeName}${onPayment}`,
+      direction: 'received',
+      amount: payerAmount,
+      currency: payerCurrency,
+      counterAmount: payeeAmount,
+      counterCurrency: payeeCurrency,
+      counterpartyName: payeeName,
+      counterpartySymbolId: receiver.symbolId,
+      counterpartyIso: parties.receiver?.countryIso || accountCountryIso(receiver) || null,
+      pushType: 'share.received',
+    },
+  ];
+
+  // The lock screen's two lines, from lib/notificationText.js — the same
+  // file the payment banner is composed in, for the same reason: the card
+  // in the app, the page's own banner and this push must not invent three
+  // wordings for one event. A share says "Creator Share from Rajeev Menon"
+  // under its figure, where a payment says "From Rajeev Menon", so the two
+  // are told apart on a lock screen where they land seconds apart.
+  for (const entry of entries) {
+    const banner = shareBannerText({
+      direction: entry.direction,
+      amount: entry.amount,
+      currency: entry.currency,
+      counterpartyName: entry.counterpartyName,
+    });
+    entry.pushTitle = banner.title;
+    entry.pushBody = banner.body;
+  }
+
+  const results = await Promise.allSettled(
+    entries.map((entry) =>
+      Notification.updateOne(
+        // Keyed on the SHARE leg's id, not the payment's. The unique index
+        // is (userId, metadata.transactionId), so a share and the payment
+        // that produced it are two different rows for the same person and
+        // neither is refused as a duplicate of the other — while a replay of
+        // either is still refused as a duplicate of itself.
+        { userId: entry.userId, 'metadata.transactionId': shareId },
+        {
+          $setOnInsert: {
+            type: 'share',
+            title: entry.title,
+            message: entry.message,
+            readAt: null,
+            // The SHARE's own reference, so tapping opens the Creator Share
+            // receipt rather than the payment's. The payment's reference is
+            // carried separately, because the share's receipt describes the
+            // payment it came from and the card can say which one.
+            'metadata.referenceId': shareTransaction.referenceId || null,
+            'metadata.paymentReferenceId': reference || null,
+            'metadata.receiptCode': receiptCode,
+            'metadata.direction': entry.direction,
+            'metadata.amount': entry.amount,
+            'metadata.currency': entry.currency,
+            'metadata.counterpartyName': entry.counterpartyName,
+            'metadata.counterpartySymbolId': entry.counterpartySymbolId,
+            'metadata.counterpartyIso': entry.counterpartyIso,
+            'metadata.counterAmount': entry.counterAmount,
+            'metadata.counterCurrency': entry.counterCurrency,
+            'metadata.occurredAt': shareTransaction.createdAt || null,
+          },
+        },
+        { upsert: true }
+      )
+    )
+  );
+
+  for (const entry of entries) await pruneNotifications(entry.userId);
+
+  // Same idempotency key as the payment legs: `upsertedCount === 1` is the
+  // one write that created the row, and only that one may buzz a phone.
+  const legs = [];
+  results.forEach((result, index) => {
+    const entry = entries[index];
+    if (result.status === 'rejected' && result.reason?.code !== 11000) {
+      console.error(`Share notification write failed for ${shareTransaction.referenceId}:`, result.reason);
+    }
+    const created = result.status === 'fulfilled' && result.value?.upsertedCount === 1;
+    legs.push({
+      userId: entry.userId,
+      direction: entry.direction,
+      created,
+      notificationId: created && result.value?.upsertedId ? String(result.value.upsertedId._id || result.value.upsertedId) : null,
+      type: entry.pushType,
+      title: entry.pushTitle,
+      body: entry.pushBody,
+    });
+  });
+
+  return legs;
+}
+
 // ── Web Push for a payment ──────────────────────────────────────────────────
 //
 // Fires only for legs recordPaymentNotifications says it just created, so a
@@ -7344,6 +7555,16 @@ function publicNotification(doc) {
       // createdAt there — honest rather than absent, since for those rows
       // the two really were written together.
       occurredAt: isoOrNull(metadata.occurredAt),
+      // THE PAYMENT A CREATOR SHARE CAME FROM.
+      //
+      // `referenceId` above is the SHARE leg's own, because that is what
+      // the notification points at — tapping it opens the Creator Share
+      // receipt. But a share is only meaningful next to the payment that
+      // produced it ("20.00₹ back on GLB-PAY-9001"), and without this the
+      // card could name the share and not the thing it was a share OF.
+      //
+      // Null on every other type, which have no payment above them.
+      paymentReferenceId: metadata.paymentReferenceId ?? null,
     },
   };
 }

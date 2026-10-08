@@ -300,51 +300,31 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, p
   >Notifications couldn't be loaded.</span>}{status === "ready" && rows.length === 0 && <span
     style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", lineHeight: 1.55, padding: "28px 18px" }}
   >Nothing yet. Payments, security notices and referral news will appear here.</span>}{status === "ready" && rows.map((row) => {
-    const look = gloobalNotifSheetLook(row);
     const isUnread = !row.readAt;
-    // A payment gets the card: the figure as its headline, and the rest of
-    // the payment turned through a page at a time. Everything else — a
-    // security notice, a referral — stays a row, because a pager with one
-    // dot is a control that does nothing.
-    if (row.type === "payment") {
-      return <GloobalNotificationCard
-        key={row.id}
-        row={row}
-        when={gloobalNotifSheetWhen(row.createdAt)}
-        unread={isUnread}
-        onOpen={() => openRow(row)}
-      />;
-    }
-    return <button
+    // ONE CARD, FOR EVERY KIND OF NOTIFICATION.
+    //
+    // This branched: `row.type === "payment"` got GloobalNotificationCard
+    // and everything else got a hand-written row below it. One list, two
+    // designs — a tall white card with a figure for its headline, then a
+    // small icon-title-message line, then another card. The reason given
+    // was sound at the time: a security notice has one fact and no pages,
+    // and a pager with a single dot is a control that does nothing.
+    //
+    // The card answers that now rather than being kept away from it. A
+    // notification with one fact gets one page and NO pager — the dots and
+    // the chevron are both withheld below two pages — and the type's own
+    // mark moves into the slot the flag occupies on a payment, so a shield
+    // or a gift is still what says which kind of notice this is.
+    //
+    // What the row design did that is kept: the unread treatment (now the
+    // card's shadow), the type's colour, and the relative stamp. What is
+    // gone is the second layout.
+    return <GloobalNotificationCard
       key={row.id}
-      onClick={() => openRow(row)}
-      className="v2-row"
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 11,
-        width: "100%",
-        // Belt as well as braces: the parent no longer forces anything to
-        // shrink, and a row is not allowed to shrink even if it did.
-        flexShrink: 0,
-        textAlign: "left",
-        border: "none",
-        borderRadius: T.radiusMd,
-        background: isUnread ? T.surface : "transparent",
-        boxShadow: isUnread ? T.shadowCard : "none",
-        padding: "12px 13px",
-        cursor: "pointer"
-      }}
-    ><div
-      style={{ width: 32, height: 32, borderRadius: "50%", background: look.soft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-    ><look.Icon size={15} color={look.tint} /></div><div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span
-      style={{ fontSize: 13, fontWeight: isUnread ? 800 : 600, color: T.ink }}
-    >{row.title}</span><span
-      style={{ fontSize: 12, lineHeight: 1.45, color: T.inkSoft }}
-    >{row.message}</span></div><div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}><span
-      style={{ fontSize: 10.5, color: T.inkFaint, whiteSpace: "nowrap" }}
-    >{gloobalNotifSheetWhen(row.createdAt)}</span>{isUnread && <span
-      style={{ width: 7, height: 7, borderRadius: "50%", background: T.accent }}
-    />}</div></button>;
+      row={row}
+      when={gloobalNotifSheetWhen(row.createdAt)}
+      unread={isUnread}
+      onOpen={() => openRow(row)}
+    />;
   })}</div></div></div>;
 }

@@ -57,22 +57,70 @@ describe("the card is built from what the server recorded", () => {
     // symbols of bookkeeping, and it filled the widest page in the pager
     // with the one thing nobody reads off a notification. It is read off a
     // receipt, by someone who went looking for it, and that is where it is.
-    assert.deepEqual(keys, ["who", "money", "id", "when"]);
+    // The money pages, in order, then the two that belong to the kinds of
+    // notification this card did not used to draw at all:
+    //   "payment"  the payment a Creator Share came from, which is the one
+    //              question a 20.00 arriving after a 1,000.00 raises
+    //   "what"     the sentence on a notification that has only a sentence
+    assert.deepEqual(keys, ["what", "when", "who", "money", "id", "payment", "when"]);
     assert.ok(!/Transaction ID/.test(card), "the transaction id page is back");
   });
 
   test("the head says the direction and opens the payment; the chevron turns the page", () => {
-    assert.match(card, /const tint = sent \? T\.negative : T\.positive;/);
+    // Red out, green in, for money — and neither on a notice about no money
+    // at all, where a green sentence would read as something having arrived.
+    assert.match(card, /const tint = money \? \(sent \? T\.negative : T\.positive\) : T\.ink;/);
     assert.match(card, /onClick=\{onOpen\}/);
     assert.match(card, /onClick=\{turn\}/);
     assert.match(card, /aria-label="Next detail"/);
   });
 
-  test("only a payment gets a card", () => {
-    // A security notice has one fact and no pages, and a pager with a single
-    // dot is a control that does nothing.
-    assert.match(readSource(SHEET), /if \(row\.type === "payment"\) \{/);
-    assert.match(readSource(SHEET), /<GloobalNotificationCard/);
+  test("every notification gets the card, and only one design exists", () => {
+    // THIS TEST USED TO ASSERT THE OPPOSITE, and the reason it gave was
+    // sound at the time: "a security notice has one fact and no pages, and
+    // a pager with a single dot is a control that does nothing."
+    //
+    // What that produced was one list with two designs in it — a tall white
+    // card with a figure for a headline, then a small icon-title-message
+    // line, then another card. The objection is answered now rather than
+    // routed around: a notification with one fact gets one page and NO
+    // pager (the dots and the chevron are both withheld below two pages),
+    // and the type's own mark moves into the slot a payment fills with the
+    // counterparty's flag.
+    // Comments stripped before asserting on CODE. The note left where the
+    // branch used to be names the branch it replaced, and a raw-source
+    // match would read that as the branch still being there — a test that
+    // fails on its own explanation.
+    const sheet = readSource(SHEET)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    assert.match(sheet, /<GloobalNotificationCard/);
+    assert.ok(
+      !/row\.type === "payment"/.test(sheet),
+      "the sheet branches on type again — one list, two designs"
+    );
+    // And the hand-written row is gone, not merely unreachable.
+    assert.ok(
+      !/\{row\.title\}<\/span>/.test(sheet),
+      "the plain notification row is still in the sheet"
+    );
+  });
+
+  test("a single page draws no pager", () => {
+    // The objection above, answered in the card. A lone dot beside a page
+    // that cannot turn reads as a pager whose other pages failed to load.
+    assert.match(card, /\{total > 1 && <GloobalNotifCardDots/);
+    assert.match(card, /\{total > 1 && <button/);
+  });
+
+  test("a Creator Share is told apart from the payment it came from", () => {
+    // They land seconds apart, from the same person, and sit next to each
+    // other in the list. On the first page they were word-for-word
+    // identical apart from the figure, which reads as one payment
+    // duplicated at the wrong amount.
+    assert.match(card, /share \? \(sent \? "Creator Share to" : "Creator Share from"\)/);
+    // Same words the lock screen uses, from the server's own composer.
+    assert.match(readSource("server/lib/notificationText.js"), /Creator Share \$\{sent \? 'to' : 'from'\}/);
   });
 
   test("the mark leads the row and the flag closes it", () => {
@@ -493,8 +541,12 @@ describe("the list does not squash what it holds", () => {
   });
 
   test("and nothing in it is allowed to shrink anyway", () => {
+    // The second half of this used to read the plain row's own
+    // `flexShrink: 0`. That row is gone — every notification is the card —
+    // so the card's is the only one left to assert, and it is the one that
+    // matters: a card allowed to shrink crops itself against its own
+    // `overflow: hidden`, and the flag and the mark come out as domes.
     assert.match(card, /flexShrink: 0,\s*\n\s*overflow: "hidden"/);
-    assert.match(sheet, /width: "100%",\s*\n(\s*\/\/[^\n]*\n)*\s*flexShrink: 0,/);
   });
 });
 
@@ -527,6 +579,9 @@ describe("both sides of one payment state one rate", () => {
       return src.slice(at, src.indexOf("\n}\n", at) + 3);
     }).join("\n")}
     ${card
+      .slice(card.indexOf("function gloobalNotifIsMoney("), card.indexOf("\n}\n", card.indexOf("function gloobalNotifIsMoney(")) + 3)}
+    ${card.match(/var GLOOBAL_NOTIF_MONEY_TYPES = \[[^\]]*\];/)[0]}
+    ${card
       .slice(card.indexOf("function gloobalNotifCardPages("), card.indexOf("\n}\n", card.indexOf("function gloobalNotifCardPages(")) + 3)
       // The one JSX expression in the function — the wordmark on the ID
       // page's label. Swapped for a plain string so `new Function` can
@@ -548,7 +603,10 @@ describe("both sides of one payment state one rate", () => {
     counterAmount: 2105.2, counterCurrency: "INR", fxRate: RATE,
     counterpartyName: "Asha Raman"
   };
-  const rateOf = (meta) => (pagesOf(meta, "").find((p) => p.key === "money") || {}).note;
+  // The third argument is the ROW. Which pages a notification has depends
+  // on its type now — a card is drawn for every kind, and only the money
+  // ones have a conversion page at all.
+  const rateOf = (meta) => (pagesOf(meta, "", { type: "payment" }).find((p) => p.key === "money") || {}).note;
 
   test("the payer and the payee are told the same rate", () => {
     assert.equal(rateOf(sent), rateOf(received),

@@ -75,6 +75,22 @@ function gloobalNotifHeadline(meta) {
   }
   return `${sent ? "\u2212" : "+"}${fmtMoney(Number(amount), currency)}`;
 }
+// WHICH NOTIFICATIONS ARE ABOUT MONEY.
+//
+// Every notification is a card now, and the card has two shapes inside it:
+// one headed by a signed figure, one headed by a sentence. This is what
+// chooses, and it is keyed on the TYPE rather than on whether the row
+// happens to carry an amount — a promotional offer quoting a price in its
+// metadata would otherwise be drawn as money that had moved.
+//
+// 'share' is a Creator Share release. It is money, it has two sides and two
+// currencies, and it reads through exactly the pages a payment does.
+var GLOOBAL_NOTIF_MONEY_TYPES = ["payment", "share"];
+
+function gloobalNotifIsMoney(row) {
+  return GLOOBAL_NOTIF_MONEY_TYPES.indexOf((row && row.type) || "") !== -1;
+}
+
 function gloobalNotifSubline(meta) {
   const sent = (meta && meta.direction) === "sent";
   const name = meta && meta.counterpartyName;
@@ -117,14 +133,50 @@ function gloobalNotifDiscIcon(id) {
 // The pages a payment notification can show, in the order they are turned
 // through. `value` returns null when the page has nothing to say, and a page
 // that says nothing is never drawn.
-function gloobalNotifCardPages(meta, when) {
+function gloobalNotifCardPages(meta, when, row) {
+  // ── A notification with one fact ──────────────────────────────────────
+  //
+  // A security notice, a referral, an offer: a title and a sentence, and
+  // nothing to page through. These used to be drawn as a plain row beside
+  // the payment's card, which is the two-designs-in-one-list problem this
+  // change exists to end.
+  //
+  // So they get the card too, with the sentence as its one page and the
+  // time as its second. Two pages means the pager is a real control rather
+  // than a single dot pretending to be one — and where there is genuinely
+  // only one page, the dots and the chevron are both withheld (see the
+  // `total > 1` guards below).
+  if (!gloobalNotifIsMoney(row)) {
+    const pages = [];
+    if (row && row.message) pages.push({ key: "what", label: "What happened", text: row.message });
+    if (when) pages.push({ key: "when", label: "Date and time", text: when });
+    return pages;
+  }
   const money = (amount, currency) => (
     amount == null || !currency ? null : `${fmtMoney(amount, currency)}${String(fmtMoney(1, currency)).endsWith(String(currency)) ? "" : ` ${currency}`}`
   );
   const sent = meta.direction === "sent";
+  const share = (row && row.type) === "share";
   const pages = [];
   if (meta.counterpartyName) {
-    pages.push({ key: "who", label: sent ? "To" : "From", text: meta.counterpartyName });
+    // "Creator Share from Rajeev Menon", not "From Rajeev Menon".
+    //
+    // A share lands seconds after the payment that produced it, from the
+    // same person, and the two cards sit next to each other in the list. On
+    // the first page they were word-for-word identical apart from the
+    // figure — "+2,000.00₹ / From Rajeev Menon" above "+20.00₹ / From
+    // Rajeev Menon" — which reads as one payment duplicated at the wrong
+    // amount rather than as two different events.
+    //
+    // Same words as the lock screen uses (shareBannerText in
+    // server/lib/notificationText.js), because the whole arrangement
+    // between that file and this one is that a notification says the same
+    // thing wherever it is drawn.
+    pages.push({
+      key: "who",
+      label: share ? (sent ? "Creator Share to" : "Creator Share from") : (sent ? "To" : "From"),
+      text: meta.counterpartyName
+    });
   }
   // What was paid, against what arrived, with the rate between them. Drawn
   // only when the payment really crossed a currency: on a domestic one the
@@ -162,6 +214,18 @@ function gloobalNotifCardPages(meta, when) {
   }
   if (meta.counterpartySymbolId) {
     pages.push({ key: "id", label: <GloobalWordmark suffix=" ID" />, symbols: meta.counterpartySymbolId });
+  }
+  // THE PAYMENT A SHARE CAME FROM.
+  //
+  // Only a share has one, and without it the card names a figure and a
+  // person and not the thing it was a share OF — which is the one question
+  // a 20.00 that appeared seconds after a 1,000.00 actually raises.
+  //
+  // A payment has no payment above it, so `paymentReferenceId` is null
+  // there and this page is not drawn, by the same rule as every other page
+  // on this card.
+  if (meta.paymentReferenceId) {
+    pages.push({ key: "payment", label: "Share on", symbols: meta.paymentReferenceId });
   }
   // NO TRANSACTION ID PAGE. It was here and it is gone, and the two
   // identifiers being different lengths is the whole reason: a Gloobal ID
@@ -234,7 +298,7 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
   // sheet passes the relative stamp it draws on plain rows, and the card
   // wants the payment's own instant. Kept in the signature because the
   // sheet has no other reason to know the difference.
-  const pages = gloobalNotifCardPages(meta, gloobalNotifCardWhen(meta, row));
+  const pages = gloobalNotifCardPages(meta, gloobalNotifCardWhen(meta, row), row);
   const total = pages.length;
   const current = total ? pages[Math.min(page, total - 1)] : null;
   const turn = () => {
@@ -245,9 +309,29 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
       setTurning(false);
     }, GLOOBAL_NOTIF_CARD_TURN_MS);
   };
-  // The same headline the lock screen shows, from the same function.
-  const headline = gloobalNotifHeadline(meta);
-  const tint = sent ? T.negative : T.positive;
+  // WHAT THE HEAD SAYS, which depends on whether money moved.
+  //
+  // For a payment or a Creator Share it is the signed figure, from the same
+  // function the lock screen uses — that shared function is the whole point
+  // of notificationText.js and the parity test that guards it.
+  //
+  // For everything else there is no figure, and gloobalNotifHeadline would
+  // answer "Money received": `sent` is false when there is no direction, so
+  // a security notice would have announced an arrival of money. The row's
+  // own title is the headline there, which is what the plain row this card
+  // replaces already showed.
+  const money = gloobalNotifIsMoney(row);
+  const headline = money ? gloobalNotifHeadline(meta) : ((row && row.title) || "Gloobal");
+  // Red out, green in — and neither for a notice about no money at all,
+  // where a green sentence would read as something having arrived.
+  const tint = money ? (sent ? T.negative : T.positive) : T.ink;
+  // The type's own mark and colour, the pair the plain row used to carry.
+  // Read from the sheet's own table rather than restated here: it is the
+  // one place that decides what a security notice or a referral looks like,
+  // and two tables would be two answers.
+  const look = typeof gloobalNotifSheetLook === "function"
+    ? gloobalNotifSheetLook(row)
+    : { Icon: null, tint: T.inkSoft, soft: T.surfaceAlt };
   // Their country's flag, through the same lookup every other screen uses.
   // The notification carries the ISO code, never an emoji, for the reason
   // FlagEmoji itself states: the character is two Latin letters on most of
@@ -360,7 +444,23 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
         size={26}
         fit="cover"
       /></span>
-    : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.surfaceAlt, flexShrink: 0 }} />}</span></button>{total > 0 && <div
+    : look.Icon
+      ? <span
+          // WHAT KIND OF NOTIFICATION THIS IS, where there is no flag to
+          // put here.
+          //
+          // The left edge is the Gloobal mark on every card, deliberately:
+          // one shape down the list, so the eye goes to the figure rather
+          // than to a column of changing glyphs. That rule is what made
+          // this slot the right home for the type's own mark — a shield, a
+          // gift, an info disc — which is the signal the plain row carried
+          // in ITS left edge and which would otherwise be lost now that
+          // every row is a card. A payment and a share keep the flag,
+          // because the country qualifies the name on the page below.
+          aria-hidden="true"
+          style={{ width: 26, height: 26, borderRadius: "50%", background: look.soft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+        ><look.Icon size={14} color={look.tint} /></span>
+      : <span style={{ width: 26, height: 26, borderRadius: "50%", background: T.surfaceAlt, flexShrink: 0 }} />}</span></button>{total > 0 && <div
     style={{ borderTop: `1px solid ${T.line}`, display: "flex", alignItems: "center", gap: 10, padding: "11px 14px 13px" }}
   ><span
     data-testid="notification-card-page"
@@ -381,7 +481,13 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
       >{ch}</span>)}</span>
     : <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, overflowWrap: "anywhere" }}>{current.text}{current.note && <span
         style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint }}
-      >{` \u00B7 ${current.note}`}</span>}</span>}</span><GloobalNotifCardDots count={total} at={Math.min(page, total - 1)} />{total > 1 && <button
+      >{` \u00B7 ${current.note}`}</span>}</span>}</span>{
+    /* ONE PAGE DRAWS NO PAGER. A single dot beside a page that cannot turn
+       is a control that does nothing, which is the objection that kept
+       these notifications off the card in the first place. The chevron was
+       already withheld below; the dot was not, and a lone dot reads as a
+       pager whose other pages failed to load. */
+  }{total > 1 && <GloobalNotifCardDots count={total} at={Math.min(page, total - 1)} />}{total > 1 && <button
     onClick={turn}
     aria-label="Next detail"
     className="v2-tap"

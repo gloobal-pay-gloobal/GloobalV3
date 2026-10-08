@@ -107,6 +107,18 @@ function notifDiscIcon(seed) {
 // `direction` is 'sent' or 'received' — the viewer's own side, the same
 // field the notification row stores. `counterpartyName` is the other party;
 // without one the subline says something true rather than "To undefined".
+// The signed figure, or what happened when there is no figure.
+//
+// Shared by the two banners below rather than written twice. A MISSING
+// FIGURE IS NOT ZERO: without both an amount and a currency this once said
+// "−0.00" with no unit — a payment of nothing, stated as a fact, on a lock
+// screen. The honest headline is what happened, which is true without a
+// figure, and `fallback` is that sentence for whichever event this is.
+function bannerAmountTitle({ sent, amount, currency, fallback }) {
+  if (amount == null || !Number.isFinite(Number(amount)) || !currency) return fallback;
+  return `${sent ? '−' : '+'}${formatBannerMoney(amount, currency)}`;
+}
+
 function paymentBannerText({ direction, amount, currency, counterpartyName }) {
   const sent = direction === 'sent';
   return {
@@ -120,13 +132,49 @@ function paymentBannerText({ direction, amount, currency, counterpartyName }) {
     // fact, on a lock screen. The honest headline is what happened, which is
     // true without a figure. gloobalNotifHeadline falls back to exactly this
     // string, and the parity test compares the two.
-    title:
-      amount == null || !Number.isFinite(Number(amount)) || !currency
-        ? (sent ? 'Money sent' : 'Money received')
-        : `${sent ? '−' : '+'}${formatBannerMoney(amount, currency)}`,
+    title: bannerAmountTitle({
+      sent,
+      amount,
+      currency,
+      fallback: sent ? 'Money sent' : 'Money received',
+    }),
     body: counterpartyName
       ? `${sent ? 'To' : 'From'} ${counterpartyName}`
       : (sent ? 'Your Gloobal payment went through.' : 'Money has landed in your Gloobal account.'),
+  };
+}
+
+// The two lines of one CREATOR SHARE's banner.
+//
+// A share is a second, smaller movement that happens moments after a
+// payment, and on a lock screen the two land next to each other. With the
+// payment's own wording it would read
+//
+//     +2,000.00₹   From Rajeev Menon
+//     +20.00₹      From Rajeev Menon
+//
+// — two banners from one person, one of them for a tenth of the other, with
+// nothing to say why. So the figure keeps the payment's shape (the sign is
+// the sentence, same as everywhere) and the body names the thing:
+//
+//     +20.00₹      Creator Share from Rajeev Menon
+//
+// `direction` is the viewer's own side of the SHARE, not of the payment that
+// produced it: the payee who gave the share sees 'sent', the payer who got
+// it back sees 'received'. They are opposite sides of the payment, which is
+// the whole reason a share leg runs the other way.
+function shareBannerText({ direction, amount, currency, counterpartyName }) {
+  const sent = direction === 'sent';
+  return {
+    title: bannerAmountTitle({
+      sent,
+      amount,
+      currency,
+      fallback: sent ? 'Creator Share sent' : 'Creator Share received',
+    }),
+    body: counterpartyName
+      ? `Creator Share ${sent ? 'to' : 'from'} ${counterpartyName}`
+      : (sent ? 'A Creator Share went back to whoever paid you.' : 'A Creator Share has landed in your Gloobal account.'),
   };
 }
 
@@ -137,4 +185,5 @@ module.exports = {
   notifDiscIndex,
   notifDiscIcon,
   paymentBannerText,
+  shareBannerText,
 };

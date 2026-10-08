@@ -25,7 +25,19 @@ const notificationSchema = new mongoose.Schema(
 
     type: {
       type: String,
-      enum: ['login', 'payment', 'security', 'referral', 'system', 'offer'],
+      // 'share' is a Creator Share release — the second, smaller movement
+      // that happens moments after a payment whose payee shares a cut back.
+      // It is its own type rather than a 'payment' with a flag in metadata,
+      // because the two are different events to the two people and the
+      // inbox has to be able to tell them apart at a glance: landing
+      // seconds apart from the same person, two rows both saying "payment"
+      // read as one payment duplicated.
+      //
+      // Adding to this enum is not free: a value missing from it does not
+      // fall back to the default, it fails validation outright and the
+      // write is rejected. That is how a share notification would have been
+      // silently dropped had this list not been updated with the writer.
+      enum: ['login', 'payment', 'share', 'security', 'referral', 'system', 'offer'],
       default: 'system',
       index: true,
     },

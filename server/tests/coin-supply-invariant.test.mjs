@@ -302,12 +302,27 @@ async function run() {
   // getting 0 — a failing assertion in a suite that needs a database and had
   // therefore not been run. Read from the server's own constant rather than
   // restated, so the next rename cannot leave this behind again.
-  // server.js does not export it (it is a module-scope const), so it is read
-  // from the source text — which is also the point: if the declaration moves
-  // or changes shape, this fails rather than silently counting zero.
-  const COIN_CURRENCY = (require("node:fs")
-    .readFileSync(join(BACKEND, "server.js"), "utf8")
-    .match(/const COIN_CURRENCY = '([^']+)'/) || [])[1];
+  //
+  // ── And then the declaration moved ───────────────────────────────────
+  //
+  // This used to read the source text of server.js for
+  // `const COIN_CURRENCY = '...'`, with a note saying that if the
+  // declaration moved or changed shape this would fail rather than
+  // silently counting zero. It did move — commit 73d1892 put it in
+  // lib/coinTicker.js, because server.js was not the only file on the
+  // server naming the coin and the two had drifted — and this did fail,
+  // exactly as designed, reporting
+  //
+  //     FAIL  the server declares a coin currency — undefined
+  //
+  // the first time anybody ran the suite afterwards. The guard worked;
+  // what it was pointed at was gone.
+  //
+  // It reads the module now. That is the single source of truth the move
+  // created, so there is no longer a text shape to go stale — and if the
+  // module is deleted or stops exporting the name, the require throws
+  // here rather than quietly yielding undefined.
+  const { COIN_CURRENCY } = require("./lib/coinTicker");
   check("the server declares a coin currency", Boolean(COIN_CURRENCY), String(COIN_CURRENCY));
   const coinLines = await LedgerEntry.countDocuments({ currency: COIN_CURRENCY });
   const fiatLines = await LedgerEntry.countDocuments({ currency: "INR" });

@@ -44,13 +44,26 @@ const server = strip(readSource(SERVER));
 // The two branches that answer "this payment already happened": the
 // idempotency-key replay (200) and the same-payment-within-15-seconds guard
 // (409). They describe the same thing and must describe it the same way.
+// THREE of them, not two. "Duplicate request ignored." appears twice —
+// once in the pre-check replay and once in the race branch, where the
+// loser of an idempotency-key collision is answered with the winner's row.
+// That third one was missed on the first pass and reported itself:
+//
+//     FAIL  concurrent retry: receipts identical — duplicate=undefined
+//
+// after the other two were fixed. So this finds every occurrence rather
+// than the first.
 const duplicateBranches = () => {
   const out = [];
   for (const marker of ["Duplicate request ignored.", "Duplicate transaction blocked."]) {
-    const at = server.indexOf(marker);
+    let at = server.indexOf(marker);
     assert.ok(at > 0, `the ${JSON.stringify(marker)} branch is gone`);
-    out.push({ marker, body: server.slice(at, server.indexOf("});", at) + 3) });
+    while (at > 0) {
+      out.push({ marker, body: server.slice(at, server.indexOf("});", at) + 3) });
+      at = server.indexOf(marker, at + 1);
+    }
   }
+  assert.equal(out.length, 3, `expected three duplicate responses, found ${out.length}`);
   return out;
 };
 
@@ -101,6 +114,39 @@ describe("a duplicate response carries what the first one did", () => {
     // Both the payment's receipts and the share leg's — four on a shared
     // payment, and the share's live under the share transaction's id.
     assert.match(fn, /transactionId: \{ \$in: transactionIds \}/);
+  });
+
+  test("the race branch waits for the winner to finish minting", () => {
+    // The two pre-check branches answer a retry that arrives LATER, when
+    // everything is on disk. The race branch is answered while the winner
+    // is still working — the route's order is transfer, seed, share leg and
+    // receipts, respond — so the loser would truthfully report no receipts
+    // for a payment that acquires four a moment later.
+    //
+    // Only that branch waits, and only until the expected count arrives or
+    // the bound expires.
+    const race = server.slice(server.indexOf("isIdempotencyKeyCollision"));
+    assert.match(race, /storedPaymentArtifacts\(winningTransaction, \{ awaitMint: true \}\)/);
+
+    const at = server.indexOf("async function storedPaymentArtifacts");
+    const fn = server.slice(at, server.indexOf("\n}\n", at));
+    // Four receipts on a shared payment, one on a payment with no share —
+    // "at least one" would release the loser in the gap between the
+    // payment's pair and the share leg being created.
+    assert.match(fn, /const expectedReceipts = expectsShare \? 4 : 1;/);
+    assert.match(fn, /receiptRows\.length < expectedReceipts && Date\.now\(\) < deadline/);
+    // Bounded. Minting is best-effort and catches its own failures, so a
+    // winner that never mints must not hang the loser.
+    assert.match(server, /const DUPLICATE_ARTIFACT_WAIT_MS = \d+;/);
+  });
+
+  test("whether a share is expected is READ, not recomputed", () => {
+    // The send route wrote `cashback` into the payment's metadata when it
+    // decided the split. Recomputing it here from the payee's current rate
+    // would read a rate that may have changed since the payment.
+    const at = server.indexOf("async function storedPaymentArtifacts");
+    const fn = server.slice(at, server.indexOf("\n}\n", at));
+    assert.match(fn, /paymentTransaction\.metadata\?\.cashback/);
   });
 
   test("a failure there cannot fail the response", () => {

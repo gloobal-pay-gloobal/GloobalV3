@@ -4459,35 +4459,101 @@ function settlementPayload(settlement) {
   };
 }
 
-async function storedPaymentArtifacts(paymentTransaction) {
+// ── `awaitMint`, and the one branch that needs it ──────────────────────
+//
+// The two pre-check branches answer a retry that arrives LATER, by which
+// time the original request finished long ago and every artifact is on
+// disk. One read is enough there.
+//
+// The RACE branch is different. Two requests with one idempotency key
+// arrive together, both pass the pre-check (neither row exists yet), and
+// one of them loses the unique index inside performTransfer. That
+// collision surfaces while the winner is still working: the order in the
+// route is transfer, then seed, then share leg and receipts, then respond.
+// So the loser can be composing its answer while the winner has not minted
+// a receipt yet — and it would truthfully report none, for a payment that
+// acquires four a moment later. The test sees exactly that:
+//
+//     FAIL  concurrent retry: receipts identical — duplicate=undefined
+//     FAIL  concurrent retry: shareTransaction identical — duplicate=null
+//
+// So the loser waits, briefly, for a write that is already in flight. Every
+// payment mints at least one receipt — issueSharedReceipt when the payee
+// shares nothing, issueReceiptPair when they do — so their appearance is a
+// sound signal that the winner has got that far.
+//
+// Bounded, and it returns whatever exists when the bound expires. Minting
+// is best-effort and catches its own failures, so a winner that never mints
+// must not hang the loser; two seconds on a path that only fires when two
+// identical requests collide is a cost worth paying to stop a retry
+// reporting a payment with no receipt.
+const DUPLICATE_ARTIFACT_WAIT_MS = 2000;
+const DUPLICATE_ARTIFACT_POLL_MS = 75;
+
+async function storedPaymentArtifacts(paymentTransaction, { awaitMint = false } = {}) {
   const empty = { receipts: [], settlement: null, assetSeed: null };
   if (!paymentTransaction?._id) return empty;
 
+  // HOW MANY RECEIPTS THIS PAYMENT WILL END UP WITH.
+  //
+  // The completion signal for the wait below, and it has to be the right
+  // number rather than "at least one". mintShareLegAndReceipts writes in
+  // this order:
+  //
+  //   payee shares nothing   issueSharedReceipt            -> 1 on the payment
+  //   payee shares           issueReceiptPair(payment)     -> 2 on the payment
+  //                          Transaction.create(share leg)
+  //                          issueReceiptPair(share)       -> 2 on the leg
+  //
+  // So the payment's own receipts appear BEFORE the share leg exists.
+  // Waiting for "any receipt" would release the loser in the gap between
+  // them, and it would report two receipts and a null shareTransaction for
+  // a payment that ends up with four and a leg.
+  //
+  // Read off the winner's stored metadata, not recomputed: the send route
+  // wrote `cashback` there when it decided the split.
+  const expectsShare = Number(paymentTransaction.metadata?.cashback) > 0;
+  const expectedReceipts = expectsShare ? 4 : 1;
+
   try {
-    // The share leg, so its receipt pair can be found. Looked up here rather
-    // than taken from existingShareLegPayload's result: that function returns
-    // a client payload with no _id on it, and widening it to carry one so
-    // this could reuse it would make a public shape serve a private purpose.
-    const shareTransaction = await Transaction.findOne({
-      type: 'share',
-      'metadata.paymentTransactionId': paymentTransaction._id,
-    }).select('_id').lean();
+    const read = async () => {
+      // The share leg, so its receipt pair can be found. Looked up here
+      // rather than taken from existingShareLegPayload's result: that
+      // function returns a client payload with no _id on it, and widening it
+      // to carry one so this could reuse it would make a public shape serve
+      // a private purpose.
+      const shareTransaction = await Transaction.findOne({
+        type: 'share',
+        'metadata.paymentTransactionId': paymentTransaction._id,
+      }).select('_id').lean();
 
-    const transactionIds = [paymentTransaction._id];
-    if (shareTransaction) transactionIds.push(shareTransaction._id);
+      const transactionIds = [paymentTransaction._id];
+      if (shareTransaction) transactionIds.push(shareTransaction._id);
 
-    const [receiptRows, settlement, seed] = await Promise.all([
-      // Sorted by _id, which is monotonic with insertion — so the payment's
-      // pair comes back before the share's, in the order they were minted,
-      // which is the order the first response listed them in. The test
-      // compares the two arrays as JSON, so order is part of being identical.
-      Receipt.find({ transactionId: { $in: transactionIds } })
-        .select('receiptId leg role amount currency')
-        .sort({ _id: 1 })
-        .lean(),
-      Settlement.findOne({ transactionId: paymentTransaction._id }).lean(),
-      AssetSeed.findOne({ transactionId: paymentTransaction._id }).lean(),
-    ]);
+      return Promise.all([
+        // Sorted by _id, which is monotonic with insertion — so the
+        // payment's pair comes back before the share's, in the order they
+        // were minted, which is the order the first response listed them in.
+        // The test compares the two arrays as JSON, so order is part of
+        // being identical.
+        Receipt.find({ transactionId: { $in: transactionIds } })
+          .select('receiptId leg role amount currency')
+          .sort({ _id: 1 })
+          .lean(),
+        Settlement.findOne({ transactionId: paymentTransaction._id }).lean(),
+        AssetSeed.findOne({ transactionId: paymentTransaction._id }).lean(),
+      ]);
+    };
+
+    let [receiptRows, settlement, seed] = await read();
+
+    if (awaitMint) {
+      const deadline = Date.now() + DUPLICATE_ARTIFACT_WAIT_MS;
+      while (receiptRows.length < expectedReceipts && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, DUPLICATE_ARTIFACT_POLL_MS));
+        [receiptRows, settlement, seed] = await read();
+      }
+    }
 
     return {
       receipts: receiptRows.map((r) => ({
@@ -6942,6 +7008,13 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             // branch carries it: the loser of the race is a retry, and a
             // retry that comes back without the share reference leaves its
             // receipt printing the payment's id under the share's label.
+            //
+            // Read AFTER the artifacts below, not before: storedPaymentArtifacts
+            // is what waits for the winner to finish minting, and asking for
+            // the leg first would ask before it exists. Object spread
+            // evaluates in source order, so the await on the line below has
+            // already resolved by the time this one runs.
+            ...(await storedPaymentArtifacts(winningTransaction, { awaitMint: true })),
             shareTransaction: await existingShareLegPayload(winningTransaction),
           });
         }

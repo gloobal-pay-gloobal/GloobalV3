@@ -105,6 +105,22 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // them into one box would give a control that claimed to search projects
   // while actually filtering a hardcoded array.
   const [hoomanCategoryQuery, setHoomanCategoryQuery] = useState16("");
+  // WHICH COUNTRY'S PROJECTS, chosen from inside Hooman Projects.
+  //
+  // The flag chip used to open `showAllCountries` — the Coverage screen's own
+  // picker. It did open, and picking did work, but it is the wrong list to
+  // land on from here: it is titled "All countries", every row carries a
+  // padlock or an open padlock, and the count under it reads "0 unlocked".
+  // All of that is about which countries Gloobal Coverage has gone live in,
+  // which has nothing to do with where a project can exist — a project can be
+  // filed in any country on earth. Tapping a flag to change a project list
+  // and arriving at a screen about Coverage unlocking reads as being thrown
+  // somewhere else, which is exactly how it was described.
+  //
+  // So Hooman Projects has its own, with the one thing the Coverage list has
+  // no reason to carry: the account's own country, pinned at the top.
+  const [showHoomanCountryPicker, setShowHoomanCountryPicker] = useState16(false);
+  const [hoomanCountryQuery, setHoomanCountryQuery] = useState16("");
   // Searches stored PROJECTS, on the server.
   const [projectQuery, setProjectQuery] = useState16("");
   const [projectsData, setProjectsData] = useState16(null);
@@ -280,24 +296,61 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // GloobalApi.listProjects. The screen simply never sent one — which is
   // why nothing looked broken: the wrong answer was a valid answer to a
   // different question.
+  // ── A SEARCH SEARCHES EVERYTHING ───────────────────────────────────────
+  //
+  // This sent `category` on every request, including while searching. So the
+  // box at the top of the screen only ever looked inside whichever of the
+  // eight tiles happened to be selected: typing "bridge" while Education was
+  // selected found nothing, with a river footbridge sitting one tile away.
+  //
+  // Nothing about the box said so. It is full-width, at the top, above the
+  // category grid rather than inside it, and reads "Hooman Projects" — every
+  // signal says it searches the screen. A search that silently looks at an
+  // eighth of the data is worse than no search, because an empty result is
+  // indistinguishable from "there is nothing like that here", and that is
+  // the answer it gave most of the time.
+  //
+  // So while there is text in the box the category is not sent, and the
+  // result cards name the category each hit came from (see the card below) —
+  // otherwise a list drawn from all eight is a list you cannot place.
+  // Country is STILL sent: this screen is one country at a time, every figure
+  // on it says so, and a search that crossed borders would put projects in
+  // the list that the count and the Raised figure above it do not include.
   useEffect14(() => {
     if (!showHoomanProjects) return undefined;
     let cancelled = false;
+    const q = projectQuery.trim();
     setProjectsLoading(true);
-    (async () => {
-      const next = await GloobalApi.listProjects({
-        category: selectedHoomanCategory,
-        country: country.code,
-        q: projectQuery.trim() || undefined
-      });
-      if (cancelled) return;
-      // null means the server could not answer, which is not the same as
-      // "no projects" — the first shows ∆, the second shows a real zero.
-      setProjectsData(next);
-      setProjectsLoading(false);
-    })();
+    // Typing "water" fired five requests, one per keystroke. The stale ones
+    // were discarded correctly, so nothing ever displayed the wrong answer —
+    // but four of the five were work nobody read, on a route that runs a
+    // regex over the collection. A short wait after the last keystroke sends
+    // one. Only while searching: changing country or tapping a tile is a
+    // single deliberate act and should not feel delayed.
+    const run = () => {
+      (async () => {
+        const next = await GloobalApi.listProjects({
+          category: q ? undefined : selectedHoomanCategory,
+          country: country.code,
+          q: q || undefined
+        });
+        if (cancelled) return;
+        // null means the server could not answer, which is not the same as
+        // "no projects" — the first shows ∆, the second shows a real zero.
+        setProjectsData(next);
+        setProjectsLoading(false);
+      })();
+    };
+    if (!q) {
+      run();
+      return () => {
+        cancelled = true;
+      };
+    }
+    const timer = setTimeout(run, 260);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [showHoomanProjects, selectedHoomanCategory, country.code, projectQuery, projectsToken]);
 
@@ -354,6 +407,10 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     resetProjectForm();
   });
   useBackClose(showHoomanCategoryPicker, () => setShowHoomanCategoryPicker(false));
+  useBackClose(showHoomanCountryPicker, () => {
+    setShowHoomanCountryPicker(false);
+    setHoomanCountryQuery("");
+  });
   useBackClose(!!hoomanProject, () => setHoomanProject(null));
   useBackClose(!!hoomanJustCreated, () => setHoomanJustCreated(null));
 
@@ -488,6 +545,33 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   const projectRaised = (project) => Number(project?.raised) || 0;
   const projectBackers = (project) => Number(project?.backers) || 0;
 
+  // Is the person searching right now?
+  //
+  // Read in three places and worth naming once, because all three have to
+  // agree: the fetch drops the category while this is true, so no tile may
+  // look selected (the selection is not being applied), and nothing on the
+  // screen may describe the list as belonging to a category. A tile still
+  // lit while the list behind it ignores it is the screen telling two
+  // different stories about the same rows.
+  const searchingProjects = projectQuery.trim().length > 0;
+
+  // A stored date, or nothing at all.
+  //
+  // Both the project card and the project detail ran
+  // `new Date(project.createdAt).toLocaleDateString(...)` straight out. On a
+  // row whose createdAt is missing or unparseable that is not an error — it
+  // is the string "Invalid Date", printed in the footer of somebody's
+  // project between the word count and their flag, as though it were a date.
+  //
+  // Nothing is the honest answer, and it is the answer the rest of this
+  // codebase already gives: coinReceiptStamp returns empty strings for an
+  // unparseable stamp rather than a fabricated one, for the same reason.
+  const projectDateText = (value) => {
+    if (!value) return "";
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  };
+
   const hoomanVisibleProjects = (projectsData?.projects || []).filter((project) => {
     if (hoomanProjectFilter === "draft") return project.status === "draft";
     if (hoomanProjectFilter === "live") return project.status !== "draft";
@@ -582,6 +666,25 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     setFlipped(true);
     saveStoredCoverageCountry(code);
     heroRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  // The same choice, made from inside Hooman Projects.
+  //
+  // Everything selectCountry does except the scroll. `heroRef` belongs to
+  // the Coverage screen, which is underneath a full-screen overlay when this
+  // runs — scrolling it would move a page nobody is looking at, and leave it
+  // somewhere other than where they left it when they come back.
+  //
+  // `setFlipped(true)` is kept deliberately: backing out of Hooman Projects
+  // should land on the country whose projects you were just reading, not on
+  // the one you had open before you changed it.
+  function pickHoomanCountry(code) {
+    setSelected(code);
+    setProjectFiledIn(null);
+    setFlipped(true);
+    saveStoredCoverageCountry(code);
+    setShowHoomanCountryPicker(false);
+    setHoomanCountryQuery("");
   }
   return <div
     className="w-full font-sans"
@@ -939,7 +1042,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        It opens the existing All countries picker, which is a real list of
        194 with a search box, not a second country UI built for this screen. */
   }<button
-    onClick={() => setShowAllCountries(true)}
+    onClick={() => setShowHoomanCountryPicker(true)}
     className="v2-tap"
     aria-label={`Showing ${country.name}. Change country`}
     style={{ display: "flex", alignItems: "center", gap: 7, height: 34, padding: "0 10px 0 6px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.16)", minWidth: 0, cursor: "pointer" }}
@@ -966,12 +1069,21 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     className="v2-tap"
     style={{ display: "flex", alignItems: "center", gap: 2, border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 800, color: T.accent }}
   >All {HOOMAN_PROJECT_CATEGORIES.length}<ChevronRight5 size={13} /></button></div><div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginTop: -4, flexShrink: 0 }}>{HOOMAN_PROJECT_CATEGORIES.slice(0, 4).map((cat) => {
-    const on = cat.name === selectedHoomanCategory;
+    // Nothing is selected while searching, because the search ignores the
+    // category — a lit tile over a list that is not filtered by it would be
+    // the screen contradicting itself.
+    const on = !searchingProjects && cat.name === selectedHoomanCategory;
     const paint = hoomanCategoryColors(cat.hue);
     const CatIcon = cat.Icon;
     return <button
       key={cat.name}
-      onClick={() => setSelectedHoomanCategory(cat.name)}
+      onClick={() => {
+        // Tapping a tile is a request to browse that category, so it ends
+        // the search. Leaving the text in the box would light the tile and
+        // then show results from all eight anyway.
+        setProjectQuery("");
+        setSelectedHoomanCategory(cat.name);
+      }}
       className="v2-tap"
       aria-pressed={on}
       style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, border: "none", background: "none", padding: 0, cursor: "pointer", minWidth: 0 }}
@@ -1019,7 +1131,24 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       onClick={() => setHoomanProject(project)}
       className="v2-tap"
       style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", font: "inherit", color: "inherit", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "14px 16px" }}
-    ><div style={{ display: "flex", alignItems: "center", gap: 11 }}><span style={{ width: 40, height: 40, borderRadius: 13, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: paint.tint, color: paint.ink }}><CatIcon size={19} /></span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.title}</span>{(project.place || project.countryIso) && <span style={{ fontSize: 11, color: T.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.place || (COUNTRY_BY_ISO[project.countryIso] || {}).name || ""}</span>}</span>{
+    ><div style={{ display: "flex", alignItems: "center", gap: 11 }}><span style={{ width: 40, height: 40, borderRadius: 13, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: paint.tint, color: paint.ink }}><CatIcon size={19} /></span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.title}</span>{(() => {
+      // WHICH CATEGORY THIS IS, named.
+      //
+      // The icon square to the left already carries the category's colour
+      // and glyph, and that was enough while the list was one category at a
+      // time — everything on screen was Infrastructure, so nothing had to
+      // say so. A search now draws from all eight at once, and a coloured
+      // glyph is a thing you learn, not a thing you read: a list mixing
+      // eight of them is unplaceable until each row says what it is.
+      //
+      // Written out rather than shown only while searching, because a card
+      // that gains and loses a line as you type is a card that moves under
+      // your thumb, and the name is worth having either way.
+      const catName = hoomanCategory(project.category).name;
+      const where = project.place || (COUNTRY_BY_ISO[project.countryIso] || {}).name || "";
+      const line = [catName, where].filter(Boolean).join(" · ");
+      return line ? <span style={{ fontSize: 11, color: T.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line}</span> : null;
+    })()}</span>{
       /* Status, as the two states that actually exist. The design had
          Live / Funding / In review / Draft; `Funding` and `In review`
          would be pills describing a lifecycle nothing moves a project
@@ -1041,7 +1170,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       // 100% because it was divided by nothing is worse than no bar.
       const pct = goalMajor > 0 ? Math.min(100, Math.round((raised / goalMajor) * 100)) : 0;
       return <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.line}` }}><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginTop: 9 }}><span style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(raised, currency)}</span>{project.goal ? <span style={{ fontSize: 11.5, color: T.inkFaint }}>of {fmtMoney(goalMajor, currency)}</span> : <span style={{ fontSize: 11.5, color: T.inkFaint }}>raised</span>}</span>{project.goal && <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>}</div></div>;
-    })()}<div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.inkFaint, marginTop: 10 }}><span>{project.summaryWordCount} words</span><span>·</span><span>{new Date(project.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>{project.countryIso && COUNTRY_BY_ISO[project.countryIso] && <><span>·</span><FlagEmoji flag={COUNTRY_BY_ISO[project.countryIso].flag} width={16} height={12} radius={3} /></>}</div></button>;
+    })()}<div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.inkFaint, marginTop: 10 }}><span>{project.summaryWordCount} words</span>{projectDateText(project.createdAt) && <><span>·</span><span>{projectDateText(project.createdAt)}</span></>}{project.countryIso && COUNTRY_BY_ISO[project.countryIso] && <><span>·</span><FlagEmoji flag={COUNTRY_BY_ISO[project.countryIso].flag} width={16} height={12} radius={3} /></>}</div></button>;
   })}</div>}</div>{
     /* Add a project, floating in the bottom-right corner.
 
@@ -1188,7 +1317,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       target="_blank"
       rel="noopener noreferrer"
       style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, borderRadius: T.radiusMd, background: T.surface, boxShadow: T.shadowCard, padding: "13px 16px", textDecoration: "none" }}
-    ><Paperclip2 size={16} color={paint.ink} /><span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ink, wordBreak: "break-all" }}>{hoomanProject.attachment.filename}</span><span style={{ fontSize: 11, color: T.inkFaint, flexShrink: 0 }}>{Math.max(1, Math.round(hoomanProject.attachment.byteSize / 1024))} KB</span></a>}<div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.inkFaint, marginTop: 18 }}><span>{hoomanProject.summaryWordCount} words</span><span>·</span><span>{new Date(hoomanProject.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>{hoomanProject.ownerSymbolId && <><span>·</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanProject.ownerSymbolId}</span></>}</div></div></div></div>;
+    ><Paperclip2 size={16} color={paint.ink} /><span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ink, wordBreak: "break-all" }}>{hoomanProject.attachment.filename}</span><span style={{ fontSize: 11, color: T.inkFaint, flexShrink: 0 }}>{Math.max(1, Math.round(hoomanProject.attachment.byteSize / 1024))} KB</span></a>}<div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.inkFaint, marginTop: 18 }}><span>{hoomanProject.summaryWordCount} words</span>{projectDateText(hoomanProject.createdAt) && <><span>·</span><span>{projectDateText(hoomanProject.createdAt)}</span></>}{hoomanProject.ownerSymbolId && <><span>·</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanProject.ownerSymbolId}</span></>}</div></div></div></div>;
   })()}{showProjectForm && <div style={{ position: "fixed", inset: 0, zIndex: 350, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
       setShowProjectForm(false);
       resetProjectForm();
@@ -1294,6 +1423,9 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 30px" }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{HOOMAN_PROJECT_CATEGORIES.filter((c) => c.name.toLowerCase().includes(hoomanCategoryQuery.trim().toLowerCase())).map((cat, i, arr) => <button
     key={cat.name}
     onClick={() => {
+      // Same as tapping a tile: choosing a category is a request to browse
+      // it, and a search left running would ignore the choice.
+      setProjectQuery("");
       setSelectedHoomanCategory(cat.name);
       setShowHoomanCategoryPicker(false);
       setHoomanCategoryQuery("");
@@ -1302,17 +1434,83 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     style={{
       width: "100%",
       display: "flex",
-      flexDirection: "column",
-      alignItems: "flex-start",
-      gap: 2,
-      padding: "14px 16px",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      padding: "12px 16px",
       border: "none",
       background: cat.name === selectedHoomanCategory ? T.accentSoft : "none",
       borderTop: i === 0 ? "none" : `1px solid ${T.line}`,
       cursor: "pointer",
       textAlign: "left"
     }}
-  ><span style={{ fontSize: 14, fontWeight: 700, color: cat.name === selectedHoomanCategory ? T.accent : T.ink }}>{cat.name}</span><span style={{ fontSize: 11, color: T.inkFaint }}>{cat.examples}</span></button>)}{HOOMAN_PROJECT_CATEGORIES.filter((c) => c.name.toLowerCase().includes(hoomanCategoryQuery.trim().toLowerCase())).length === 0 && <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>No categories match "{hoomanCategoryQuery}"</div>}</div></div></div>}</div>}{
+  >{
+      /* THE SAME MARK THE CATEGORY WEARS EVERYWHERE ELSE.
+         Each category has a hue and a glyph, and they are drawn on the four
+         tiles on the main screen and on every project card. This list — the
+         full eight, and the only place four of them can be reached — showed
+         a name and an examples line and nothing else. So Healthcare was a
+         pink heart on one screen and a line of text on the next, and the
+         four categories that live ONLY behind "All 8" had no mark at all
+         until you had already chosen one and seen the cards.
+         Derived from the same `hue`, through the same hoomanCategoryColors,
+         so there is one definition of what a category looks like. */
+    }{(() => {
+      const paint = hoomanCategoryColors(cat.hue);
+      const CatIcon = cat.Icon;
+      return <span style={{ width: 38, height: 38, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: paint.tint, color: paint.ink }}><CatIcon size={18} /></span>;
+    })()}<span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14, fontWeight: 700, color: cat.name === selectedHoomanCategory ? T.accent : T.ink }}>{cat.name}</span><span style={{ fontSize: 11, color: T.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat.examples}</span></span>{cat.name === selectedHoomanCategory && <Check5 size={16} color={T.accent} style={{ flexShrink: 0 }} />}</button>)}{HOOMAN_PROJECT_CATEGORIES.filter((c) => c.name.toLowerCase().includes(hoomanCategoryQuery.trim().toLowerCase())).length === 0 && <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>No categories match "{hoomanCategoryQuery}"</div>}</div></div></div>}{
+    /* Country picker, for Hooman Projects.
+
+       The flag chip used to open the Coverage screen's own All countries
+       list. It worked — it opened, and picking did change the country — but
+       it is a screen about COVERAGE: "All countries" across the top, a
+       padlock or an open padlock on every row, and a counter reading
+       "0 unlocked". None of that means anything to a project. A project can
+       be filed in any country there is, whether or not Gloobal Coverage has
+       gone live there, so a list that grades countries by Coverage status is
+       answering a question nobody asked — and arriving at it from a flag on
+       a project screen reads as being sent somewhere else entirely.
+
+       Same 194 countries, same search, and one thing that list has no reason
+       to carry: the account's own country, at the top, because "show me mine"
+       is the most common reason to open this at all. */
+  }{showHoomanCountryPicker && (() => {
+    const q = hoomanCountryQuery.trim();
+    const matches = COVERAGE_ALL_COUNTRIES.filter((c) => countryMatches(c, hoomanCountryQuery));
+    // dialCountry is the country this ACCOUNT is registered in — not the one
+    // the screen is showing, which is what the person is here to change.
+    // Absent on an account that has not finished registering, and then the
+    // section is simply not drawn rather than guessed at.
+    const mine = dialCountry ? COVERAGE_ALL_COUNTRIES.find((c) => c.code === dialCountry.iso) : null;
+    // The pinned country is not repeated below it. A row that appears twice,
+    // both times with the same tick beside it, reads as a glitch rather than
+    // as a shortcut — and the second section is honestly titled for what is
+    // actually in it rather than claiming to be "all" while one is missing.
+    const rest = mine ? matches.filter((c) => c.code !== mine.code) : matches;
+    const row = (c, pinned) => <button
+      key={(pinned ? "mine-" : "all-") + c.code}
+      onClick={() => pickHoomanCountry(c.code)}
+      className="v2-tap"
+      aria-label={`${c.name}${c.code === country.code ? ", showing now" : ""}`}
+      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", border: "none", background: c.code === country.code ? T.accentSoft : "none", cursor: "pointer", textAlign: "left" }}
+    ><FlagEmoji flag={c.flag} size={30} shape="circle" /><span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 700, color: c.code === country.code ? T.accent : T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>{c.code === country.code && <Check5 size={16} color={T.accent} style={{ flexShrink: 0 }} />}</button>;
+    return <div style={{ position: "fixed", inset: 0, zIndex: 352, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
+      setShowHoomanCountryPicker(false);
+      setHoomanCountryQuery("");
+    }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Choose a country</span></div><div style={{ padding: "0 18px 14px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "10px 14px" }}><Search5 size={16} color={T.inkFaint} style={{ flexShrink: 0 }} /><input
+      type="text"
+      value={hoomanCountryQuery}
+      onChange={(e) => setHoomanCountryQuery(e.target.value)}
+      placeholder="Search countries"
+      aria-label="Search countries"
+      style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 14, color: T.ink, fontFamily: "inherit" }}
+    />{hoomanCountryQuery && <button onClick={() => setHoomanCountryQuery("")} aria-label="Clear country search" style={{ border: "none", background: "none", cursor: "pointer", padding: 0, display: "flex", flexShrink: 0 }}><X5 size={14} color={T.inkFaint} /></button>}</div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}>{
+      /* Hidden while searching: somebody typing a name is looking for a
+         particular country, and a pinned row above the results is one more
+         thing to read past. */
+    }{!q && mine && <div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 7px 2px" }}>Your country</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{row(mine, true)}</div></div>}<div>{!q && <div style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 7px 2px" }}>{mine ? "Everywhere else" : "All countries"}</div>}<div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{rest.length === 0 ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>No countries match "{q}"</div> : rest.map((c) => row(c, false))}</div></div></div></div>;
+  })()}</div>}{
     /* Spending breakdown — every country, each in its own currency
        (not mine converted awkwardly into theirs as a display
        gimmick — a genuine conversion, same convert() used

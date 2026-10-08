@@ -16,6 +16,10 @@ const Interest = require('./models/Interest');
 const Product = require('./models/Product');
 const ProductService = require('./models/ProductService');
 const AssetSeed = require('./models/AssetSeed');
+// Read back on a duplicate response, so a retry describes the whole payment
+// rather than half of it — see storedPaymentArtifacts.
+const Receipt = require('./models/Receipt');
+const Settlement = require('./models/Settlement');
 const FaceTemplate = require('./models/FaceTemplate');
 const { nationalNumberFrom } = require('./constants/dialCodes');
 const faceCrypto = require('./lib/faceCrypto');
@@ -4385,6 +4389,131 @@ async function existingShareLegPayload(paymentTransaction) {
   }
 }
 
+// ── The rest of what the original response carried ──────────────────────
+//
+// A duplicate response used to say the payment happened and then describe
+// only half of it. It carried the financial facts (storedPaymentFacts) and
+// the share leg (above), and silently omitted three fields the first
+// response had: `receipts`, `settlement` and `assetSeed`.
+//
+// server/tests/idempotent-duplicate-response.test.mjs has asserted all three
+// since 2 September and reported
+//
+//     FAIL  retry 2: receipts identical  — first=[4 receipts] duplicate=undefined
+//     FAIL  retry 2: settlement identical — duplicate=undefined
+//     FAIL  retry 2: assetSeed recorded half identical — duplicate=null
+//
+// the first time the suite was run against a database, which was not until
+// 8 October: it needs MONGO_URI, so it had never run.
+//
+// ── Why the omission matters, beyond a red test ────────────────────────
+//
+// A retry happens when the FIRST RESPONSE WAS LOST — the network dropped,
+// the phone slept mid-request. The client sends the same idempotency key,
+// the server correctly recognises the payment and answers "already done" —
+// and that answer had no receipts in it. So the one case where the client
+// has nothing of its own to fall back on is the exact case it was told
+// least. A payment with four receipts in the database showed none in the
+// app, for the person whose connection was worst.
+//
+// Everything below is READ BACK off the stored records. Nothing is
+// re-minted, recomputed or inferred: the same discipline storedPaymentFacts
+// follows, for the same reason — a retry must describe the payment that
+// happened, not a fresh opinion about it.
+// A settlement, as the API describes one.
+//
+// Extracted from the 201 response, where it was an inline object literal,
+// because the DUPLICATE response has to describe the same settlement the
+// same way. Two literals would be two shapes, and the first time they
+// disagreed would be on a retry — the one response nobody is watching,
+// because by definition the person has already seen the payment go through
+// (or has seen nothing at all, which is why they retried).
+//
+// `sourceAmount` IS the full credit in. This projection used to also carry
+// `sourceCreditAmount` and `destinationReleaseAmount` as separate keys,
+// which were aliases of the two gross figures under the names server.js
+// passes them in by. Neither exists on the Settlement schema, so both
+// serialized as undefined. Removed rather than added to the schema: a
+// second name for a figure already on the row is exactly the
+// duplicate-amount-field trap, and nothing ever read them.
+function settlementPayload(settlement) {
+  return {
+    settlementId: settlement.settlementId,
+    sourceCountryIso: settlement.sourceCountryIso,
+    sourceCurrency: settlement.sourceCurrency,
+    // The two source-side ledger lines — the sender's full credit in, and
+    // the cashback release back out — not just their net.
+    sourceAmount: settlement.sourceAmount,
+    sourceCashbackRelease: settlement.sourceCashbackRelease,
+    destinationCountryIso: settlement.destinationCountryIso,
+    destinationCurrency: settlement.destinationCurrency,
+    // The two destination-side ledger lines — the full release, and the
+    // cashback return.
+    destinationAmount: settlement.destinationAmount,
+    destinationCashbackReturn: settlement.destinationCashbackReturn,
+    rate: settlement.rate,
+    rateSource: settlement.rateSource,
+    // Carried so a caller can tell a settled corridor from one that was
+    // written and later reverted, without a second round trip.
+    status: settlement.status,
+  };
+}
+
+async function storedPaymentArtifacts(paymentTransaction) {
+  const empty = { receipts: [], settlement: null, assetSeed: null };
+  if (!paymentTransaction?._id) return empty;
+
+  try {
+    // The share leg, so its receipt pair can be found. Looked up here rather
+    // than taken from existingShareLegPayload's result: that function returns
+    // a client payload with no _id on it, and widening it to carry one so
+    // this could reuse it would make a public shape serve a private purpose.
+    const shareTransaction = await Transaction.findOne({
+      type: 'share',
+      'metadata.paymentTransactionId': paymentTransaction._id,
+    }).select('_id').lean();
+
+    const transactionIds = [paymentTransaction._id];
+    if (shareTransaction) transactionIds.push(shareTransaction._id);
+
+    const [receiptRows, settlement, seed] = await Promise.all([
+      // Sorted by _id, which is monotonic with insertion — so the payment's
+      // pair comes back before the share's, in the order they were minted,
+      // which is the order the first response listed them in. The test
+      // compares the two arrays as JSON, so order is part of being identical.
+      Receipt.find({ transactionId: { $in: transactionIds } })
+        .select('receiptId leg role amount currency')
+        .sort({ _id: 1 })
+        .lean(),
+      Settlement.findOne({ transactionId: paymentTransaction._id }).lean(),
+      AssetSeed.findOne({ transactionId: paymentTransaction._id }).lean(),
+    ]);
+
+    return {
+      receipts: receiptRows.map((r) => ({
+        receiptId: r.receiptId,
+        leg: r.leg,
+        role: r.role,
+        amount: r.amount,
+        currency: r.currency,
+      })),
+      settlement: settlement ? settlementPayload(settlement) : null,
+      // computeSeed derives interestAccrued/interestAvailable from elapsed
+      // time on every read, by design, so a seed re-read a second later
+      // legitimately reports a fractionally larger unclaimed bonus. Its
+      // RECORDED half is what must match, which is what the test compares.
+      assetSeed: seed ? computeSeed(seed) : null,
+    };
+  } catch (error) {
+    // Best-effort, like the share leg above: a duplicate response must never
+    // fail because an artifact could not be read. Empty is honest here in a
+    // way a guess would not be — the client sees the same shape it sees for
+    // a payment that genuinely had no settlement.
+    console.error('Could not read the stored artifacts for a duplicate response:', error);
+    return empty;
+  }
+}
+
 // Is this Gloobal ID free to claim?
 //
 // Public, because registration has to ask it before anybody has an account to
@@ -6259,6 +6388,11 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
           // had one. Same reference the first response carried, read back
           // rather than re-minted.
           shareTransaction: await existingShareLegPayload(existingIdempotentTransaction),
+          // And the three the first response carried that this one did not:
+          // the receipts, the settlement and the asset seed. See
+          // storedPaymentArtifacts — a retry is the case where the client
+          // has nothing of its own, and it was being told the least.
+          ...(await storedPaymentArtifacts(existingIdempotentTransaction)),
         });
       }
     }
@@ -6311,6 +6445,12 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         // names an existing payment, so it names that payment's existing
         // share leg too rather than leaving the client to guess.
         shareTransaction: await existingShareLegPayload(recentDuplicate),
+        // And its receipts, settlement and seed, for the same reason. This
+        // branch is not what the test drives — it fires on a resend without
+        // an idempotency key — but it answers the same question about the
+        // same payment, and answering it two different ways is how the two
+        // drift.
+        ...(await storedPaymentArtifacts(recentDuplicate)),
       });
     }
 
@@ -7008,38 +7148,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       amountBasis: basis,
       fxRateSource,
       assetSeed: plantedSeed ? computeSeed(plantedSeed) : null,
-      settlement: settlement
-        ? {
-            settlementId: settlement.settlementId,
-            sourceCountryIso: settlement.sourceCountryIso,
-            sourceCurrency: settlement.sourceCurrency,
-            // The two source-side ledger lines — the sender's full credit
-            // in, and the cashback release back out — not just their net.
-            //
-            // `sourceAmount` IS the full credit in. This projection used to
-            // also carry `sourceCreditAmount` and `destinationReleaseAmount`
-            // as separate keys, which were aliases of the two gross figures
-            // under the names server.js passes them in by. Neither exists on
-            // the Settlement schema, so both serialized as undefined. Removed
-            // rather than added to the schema: a second name for a figure
-            // already on the row is exactly the duplicate-amount-field trap,
-            // and nothing ever read them — settlement was always null in
-            // production, so this object has never actually been sent.
-            sourceAmount: settlement.sourceAmount,
-            sourceCashbackRelease: settlement.sourceCashbackRelease,
-            destinationCountryIso: settlement.destinationCountryIso,
-            destinationCurrency: settlement.destinationCurrency,
-            // The two destination-side ledger lines — the full release, and
-            // the cashback return.
-            destinationAmount: settlement.destinationAmount,
-            destinationCashbackReturn: settlement.destinationCashbackReturn,
-            rate: settlement.rate,
-            rateSource: settlement.rateSource,
-            // Carried so a caller can tell a settled corridor from one that
-            // was written and later reverted, without a second round trip.
-            status: settlement.status,
-          }
-        : null,
+      settlement: settlement ? settlementPayload(settlement) : null,
       shareTransaction: shareTransaction
         ? {
             referenceId: shareTransaction.referenceId,

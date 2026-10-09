@@ -175,13 +175,25 @@ describe("the server records what the card reads", () => {
       assert.match(server, new RegExp(`'${field.replace(".", "\\.")}'`), `${field} is not recorded`);
     }
     // Each leg carries the OTHER party's figure, not its own twice.
-    const record = server.slice(server.indexOf("async function recordPaymentNotifications"), server.indexOf("// ── Web Push for a payment"));
-    assert.match(record, /counterAmount: payeeReceives,\s*\n\s*counterCurrency: destinationCurrency,/);
+    //
+    // The payer's "They received" page was `payeeReceives` — the face value
+    // minus the Creator Share. That told the payer their counterparty got
+    // 990 while the payee's own receipt and History both said 1,000, and it
+    // was the same netting that made the payee's own notification disagree
+    // with their balance. Both legs quote the face value now; the share is
+    // its own notification, as it is its own row in History and its own tab
+    // on the receipt.
+    const record = server.slice(server.indexOf("async function recordPaymentNotifications"), server.indexOf("// ── A Creator Share, as a notification"));
+    assert.match(record, /counterAmount: transaction\.amount,\s*\n\s*counterCurrency: destinationCurrency,/);
     assert.match(record, /counterAmount: debitAmount,\s*\n\s*counterCurrency: senderCurrency,/);
+    assert.ok(
+      !/counterAmount: payeeReceives/.test(record),
+      "the payer is being told a figure net of the share again"
+    );
   });
 
   test("the rate is carried as stored, never inverted", () => {
-    const record = server.slice(server.indexOf("async function recordPaymentNotifications"), server.indexOf("// ── Web Push for a payment"));
+    const record = server.slice(server.indexOf("async function recordPaymentNotifications"), server.indexOf("// ── A Creator Share, as a notification"));
     assert.match(record, /const fxRate = Number\(transaction\.metadata\?\.fxRate\);/);
     assert.ok(!/1\s*\/\s*fxRate/.test(record), "the notification is inverting the rate");
   });
@@ -441,7 +453,13 @@ describe("the banner says what the card says", () => {
   test("the page's own banner uses those functions rather than composing its own", () => {
     const hook = readSource(HOOK);
     assert.match(hook, /\? gloobalNotifHeadline\(meta\)/);
-    assert.match(hook, /body: gloobalNotifSubline\(meta\)/);
+    // Named once and passed to BOTH routes. The in-app banner and the tray
+    // banner are two destinations for one wording, which is the whole point
+    // of these shared functions — the hook composing a second string for
+    // one of them would be the drift they exist to prevent.
+    assert.match(hook, /const body = gloobalNotifSubline\(meta\);/);
+    assert.match(hook, /detail: \{ \.\.\.meta, txnId, title, body/);
+    assert.match(hook, /\n\s*body,\n/);
     assert.match(hook, /icon: gloobalNotifDiscIcon\(txnId\)/);
     // Both entry points go through the one builder.
     assert.match(hook, /function notifyPaymentReceived[\s\S]{0,400}notifyPaymentEvent\(\{ direction: "received"/);

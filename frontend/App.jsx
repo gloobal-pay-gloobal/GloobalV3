@@ -4434,6 +4434,18 @@ function GloobalId() {
       boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
       pointerEvents: "none"
     }}
-  >{rootToast}</div>}<AppMapLauncher entries={appMapEntries} currentKey={appMapCurrentKey} onLockedPress={handleAppMapLockedPress} /></div>;
+  >{rootToast}</div>}<AppMapLauncher entries={appMapEntries} currentKey={appMapCurrentKey} onLockedPress={handleAppMapLockedPress} />{
+    /* A payment arriving while the app is OPEN, drawn by the app rather
+       than handed to the operating system's tray — the same notification
+       card the sheet uses, slid over whatever screen is up. See
+       components/cards/paymentBanner.jsx.
+
+       Tapping it opens that payment's receipt through `sharedTxnRef`, the
+       path a shared receipt link already uses: it finds the row in this
+       account's own history and opens the real document, or quietly does
+       nothing if the row is not there yet. Building a receipt from the
+       banner's own partial payload would produce a document that disagreed
+       with the one the same payment opens from every other screen. */
+  }<GloobalPaymentBanner onOpen={(txnId) => { if (txnId) setSharedTxnRef(txnId); }} /></div>;
 }
 

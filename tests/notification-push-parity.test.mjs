@@ -230,7 +230,7 @@ test("App.jsx drives the poll through the baseline helpers", () => {
 // So this runs a real payment and compares the banner the page actually
 // shows against the ledger row the server actually wrote. Nothing is read
 // from source; both numbers are observed.
-describe("the tray banner names the figure the server recorded", () => {
+describe("the banner names the figure the server recorded", () => {
   let harness;
   before(async () => {
     harness = await import("./browser-harness.mjs");
@@ -251,8 +251,33 @@ describe("the tray banner names the figure the server recorded", () => {
     });
     const tap = async (l) => { await l.waitFor({ timeout: 20000 }); await l.evaluate((n) => n.click()); };
     try {
-      // Catch every notification the page tries to show, on BOTH paths —
-      // `new Notification` and the service worker's showNotification.
+      // THIS TEST IS ABOUT THE TRAY, so the page is pinned as backgrounded.
+      //
+      // It started reporting "expected one banner, got []" when the app
+      // learned to draw its own banner: with the page VISIBLE, an arriving
+      // payment is now drawn as the notification card inside the app
+      // (components/cards/paymentBanner.jsx) and the operating system is
+      // not asked at all. The tray is left for the case it was always for —
+      // the app backgrounded or closed.
+      //
+      // Which is exactly the case this test checks, and it has to stay that
+      // way: it asserts the BADGE, and a badge is an operating-system
+      // concept that the in-app card has no equivalent of. Redirecting it
+      // at the in-app route would have quietly dropped that assertion.
+      //
+      // `visibilityState` is pinned rather than a `visibilitychange` event
+      // being fired, deliberately: the two other readers of visibility in
+      // App.jsx are change-event listeners (the push re-sync and the app
+      // lock), so pinning the property moves the notification route and
+      // nothing else. The in-app route has its own browser test in
+      // tests/payment-banner.test.mjs.
+      await page.addInitScript(() => {
+        Object.defineProperty(document, "visibilityState", { get: () => "hidden", configurable: true });
+      });
+
+      // Catch every notification the page tries to show, on both tray
+      // paths — `new Notification` and the service worker's
+      // showNotification.
       await page.addInitScript(() => {
         window.__notifs = [];
         const rec = (title, options) => window.__notifs.push({ title, body: options && options.body, badge: options && options.badge });
@@ -263,6 +288,13 @@ describe("the tray banner names the figure the server recorded", () => {
         if (typeof ServiceWorkerRegistration !== "undefined") {
           ServiceWorkerRegistration.prototype.showNotification = function (t, o) { rec(t, o); return Promise.resolve(); };
         }
+        // If the in-app route ever fires here, the pin above has stopped
+        // working and this test is no longer testing the tray. Recorded
+        // with a marker rather than silently, so it fails loudly on the
+        // title assertion instead of passing against the wrong surface.
+        window.addEventListener("gloobal:paymentBanner", () => {
+          rec("IN-APP BANNER FIRED — the visibility pin is broken", {});
+        });
       });
       await page.reload();
       await page.waitForSelector("#root *", { timeout: 15000 });

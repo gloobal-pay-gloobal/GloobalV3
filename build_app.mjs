@@ -166,6 +166,10 @@ const FRONTEND_MODULES = [
   "hooks/useAmbientFlags.js",
   "components/cards/misc.jsx",
   "components/cards/notificationCard.jsx",
+  // The same card, slid over the app when a payment arrives while it is
+  // open. Listed after the card it renders — both are function
+  // declarations so order is not load-bearing, but reading order is.
+  "components/cards/paymentBanner.jsx",
   "components/charts/ghRing.jsx",
   "components/common/flipIcons.jsx",
   // The round profile photo with its Gloobal-logo fallback, and the signed-in

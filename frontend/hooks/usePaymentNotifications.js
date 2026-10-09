@@ -325,8 +325,32 @@ function gloobalReceivedBaselineSplit(baseline, attemptStartedAt, rows) {
 // stored payloads carry it, and a notification is not worth breaking over a
 // field on its way out; `currencyCode` is what actually formats the amount.
 function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currencyCode, counterpartyName, occurredAt }) {
-  if (!paymentNotificationsGranted()) return false;
   if (paymentAlreadyNotified(txnId)) return false;
+
+  // ── THE PERMISSION GATE BELONGS TO THE TRAY, NOT TO BOTH ─────────────
+  //
+  // This was the first line of the function, so an account that had never
+  // granted notification permission — or had refused it — was told nothing
+  // at all. That was right while the only way to tell anybody was the
+  // operating system's tray, which genuinely needs permission.
+  //
+  // It is wrong for a card the app draws inside itself. Nobody has to grant
+  // permission for an app to show something in its own window, and the
+  // person who declined the browser prompt is precisely the one who will
+  // only ever see what the app draws.
+  //
+  // So: visible means the app can tell them, permission or not. Hidden
+  // means the tray is the only route, and the tray needs the grant.
+  const canDrawInApp = typeof document !== "undefined"
+    && document.visibilityState === "visible"
+    && typeof window !== "undefined";
+
+  // Returns BEFORE marking, deliberately. A payment that could not be
+  // reported must stay unreported, so the next poll — after the app is
+  // reopened, or permission is granted — still raises it. Marking here
+  // would swallow it permanently.
+  if (!canDrawInApp && !paymentNotificationsGranted()) return false;
+
   markPaymentNotified(txnId);
   const meta = {
     direction,
@@ -345,9 +369,41 @@ function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currency
     : Number.isFinite(Number(amount)) && currencySymbol
       ? `${direction === "sent" ? "\u2212" : "+"}${Number(amount).toFixed(2)}${currencySymbol}`
       : gloobalNotifHeadline({ ...meta, amount: null, currency: null });
+  const body = gloobalNotifSubline(meta);
+
+  // ── WHO DRAWS IT ──────────────────────────────────────────────────────
+  //
+  // With the app in front of the person, the app draws it: the same
+  // GloobalNotificationCard the notifications sheet uses, slid down over
+  // whatever screen is open (components/cards/paymentBanner.jsx).
+  //
+  // This used to hand every arrival to the operating system, including the
+  // one case where the app was the thing being looked at. Android then drew
+  // it in Android's shape — its frame, its app-name line, its chevron — over
+  // an app that had a card for exactly this and was not using it. The three
+  // surfaces had been made to SAY the same thing; the one surface we control
+  // the look of was still borrowing somebody else's.
+  //
+  // Only while the page is visible. Backgrounded or closed, the tray is the
+  // only thing that can reach anybody, and it fires exactly as before — this
+  // adds a branch, it removes nothing.
+  //
+  // A DOM event rather than a callback: this module is plain functions with
+  // no route into the React tree, which is the same reason
+  // gloobal:sessionExpired and gloobal:openNotifications are events.
+  if (canDrawInApp) {
+    window.dispatchEvent(new CustomEvent("gloobal:paymentBanner", {
+      detail: { ...meta, txnId, title, body, occurredAt: occurredAt || null }
+    }));
+    // Treated as shown. The dedupe above has already marked this txnId, and
+    // reporting false here would say the person was not told — they were,
+    // by the better of the two.
+    return true;
+  }
+
   return showPaymentNotification({
     title,
-    body: gloobalNotifSubline(meta),
+    body,
     tag: `gloobal-txn-${txnId || "unknown"}`,
     icon: gloobalNotifDiscIcon(txnId),
     // When the money moved, which is what the platform prints on the

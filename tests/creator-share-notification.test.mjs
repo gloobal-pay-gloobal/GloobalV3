@@ -151,6 +151,72 @@ describe("a share release is recorded for both people", () => {
   });
 });
 
+describe("the two sides of one payment are the same size", () => {
+  const server = code(SERVER);
+  const writer = server.slice(
+    server.indexOf("async function recordPaymentNotifications"),
+    server.indexOf("async function recordShareNotifications")
+  );
+
+  // ── The arithmetic, as the founder found it on his own phone ─────────
+  //
+  // He pays 1,000 at a 1% share and sees −1,000 then +10. Correct: net 990
+  // out. Somebody pays HIM 1,000 at his own 1% and he sees +990 then −10,
+  // which reads as 980 in — but his balance rose by 990.
+  //
+  // One payment, reported as two different sizes depending on whose phone
+  // it reached. The payer's figure was the GROSS that left their balance;
+  // the payee's was the NET after the share. That asymmetry was survivable
+  // while nothing else mentioned the share — and stopped being survivable
+  // the moment a Creator Share notification existed to sit beside it,
+  // because the deduction was then counted twice.
+
+  test("the payee is told the face value, not what was left after the share", () => {
+    const payee = writer.slice(writer.indexOf("userId: receiver._id"));
+    assert.match(payee, /amount: transaction\.amount,/);
+    assert.ok(
+      !/amount: payeeReceives/.test(payee),
+      "the payee's notification is netting the Creator Share out of the payment again"
+    );
+    // And the sentence agrees with the figure.
+    assert.match(payee, /formatNotificationAmount\(transaction\.amount, destinationCurrency\)/);
+  });
+
+  test("the payer is told what actually left their balance", () => {
+    // Unchanged, and the half that was already right: the gross debit, with
+    // the share coming back as its own notification.
+    const payer = writer.slice(writer.indexOf("userId: sender._id"), writer.indexOf("userId: receiver._id"));
+    assert.match(payer, /amount: debitAmount,/);
+  });
+
+  test("both cards quote the same number for the other side", () => {
+    // The payer's card has a "They received" page. It read `payeeReceives`,
+    // so it told the payer their counterparty got 990 while the payee's own
+    // receipt and History both said 1,000.
+    const payer = writer.slice(writer.indexOf("userId: sender._id"), writer.indexOf("userId: receiver._id"));
+    assert.match(payer, /counterAmount: transaction\.amount,/);
+  });
+
+  test("the netted figure is not even available to this function", () => {
+    // Removed from the signature, not just unused. A parameter sitting
+    // there is an invitation to put it back, and the two readings differ by
+    // exactly the amount nobody would notice on a 1% share.
+    const signature = server.slice(
+      server.indexOf("async function recordPaymentNotifications"),
+      server.indexOf(") {", server.indexOf("async function recordPaymentNotifications"))
+    );
+    assert.ok(!/payeeReceives/.test(signature), "payeeReceives is a parameter again");
+  });
+
+  test("it agrees with what History shows for the same payment", () => {
+    // The convention this now follows, stated where it is set: the payment
+    // row is the face value and the share is its own row. Both history
+    // projections send `amount: transaction.amount`, and the share leg is a
+    // separate row in the same list.
+    assert.match(server, /amount: transaction\.amount,/);
+  });
+});
+
 describe("the share banner and the share card say the same thing", () => {
   test("the server composes share wording in the one shared file", () => {
     // The arrangement this file's header describes: a payment says the same

@@ -7065,7 +7065,6 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         receiver,
         debitAmount,
         senderCurrency,
-        payeeReceives,
         destinationCurrency,
       }) || [];
     } catch (notificationError) {
@@ -7292,13 +7291,20 @@ function formatNotificationAmount(amount, currency) {
 // insert losing to the unique index (E11000) is the same outcome and is not
 // an error. Only ever called for the payment leg — share legs are not money
 // the payee sent or the payer received, and are not announced.
+// `payeeReceives` used to be a parameter here and is deliberately gone.
+//
+// It is numericAmount minus the Creator Share, and passing it in is what
+// let the payee's notification be the NET while the payer's was the GROSS —
+// so one payment was two different sizes depending on whose phone it
+// reached, and the share notification beside it then counted the deduction
+// a second time. The face value is read off `transaction.amount`, which is
+// the figure History and the receipt both use.
 async function recordPaymentNotifications({
   transaction,
   sender,
   receiver,
   debitAmount,
   senderCurrency,
-  payeeReceives,
   destinationCurrency,
 }) {
   const transactionId = String(transaction._id);
@@ -7327,7 +7333,11 @@ async function recordPaymentNotifications({
       // figure, which is the viewer's own — fine for a line of text, not
       // enough for a card that shows what was paid and what arrived. Both
       // sides are the server's own numbers here; nothing is multiplied out.
-      counterAmount: payeeReceives,
+      // The face value too, for the same reason — and so the payer's card
+      // and the payee's card quote the same number for one payment. This
+      // was `payeeReceives`, which told the payer their counterparty got
+      // 990 while the payee's own receipt and History said 1,000.
+      counterAmount: transaction.amount,
       counterCurrency: destinationCurrency,
       counterpartyName: receiverName,
       counterpartySymbolId: receiver.symbolId,
@@ -7335,11 +7345,37 @@ async function recordPaymentNotifications({
       pushType: 'payment.sent',
     },
     {
+      // ── THE FACE VALUE, NOT WHAT WAS LEFT AFTER THE SHARE ────────────
+      //
+      // This was `payeeReceives` — numericAmount minus the Creator Share —
+      // and that made the two sides of one payment disagree about its size.
+      // The payer's leg above carries `debitAmount`, the GROSS that left
+      // their balance, and the share comes back to them as its own,
+      // separate notification. The payee's leg carried the NET, and the
+      // share then went out as its own notification too. So on a 1,000 at
+      // 1%:
+      //
+      //   payer   −1,000  then  +10     net −990   correct
+      //   payee     +990  then  −10     net  980   wrong by the share
+      //
+      // The payee's balance rose by 990. Reported this way it reads as 980,
+      // because the deduction was counted twice: once inside the figure and
+      // once as the share notification beside it.
+      //
+      // Gross is also what the rest of the app says about this payment. The
+      // History row is `transaction.amount` (see the history projections)
+      // and the receipt prints the same face value; the share is a separate
+      // row in both. The notification was the only surface netting it, and
+      // the only one that had no share row to balance it against — until
+      // this branch grew one.
+      //
+      // Read off the stored transaction rather than recomputed, so it is
+      // the same number History reads.
       userId: receiver._id,
       title: 'Money received',
-      message: `You received ${formatNotificationAmount(payeeReceives, destinationCurrency)} ${destinationCurrency} from ${senderName}`,
+      message: `You received ${formatNotificationAmount(transaction.amount, destinationCurrency)} ${destinationCurrency} from ${senderName}`,
       direction: 'received',
-      amount: payeeReceives,
+      amount: transaction.amount,
       currency: destinationCurrency,
       counterAmount: debitAmount,
       counterCurrency: senderCurrency,

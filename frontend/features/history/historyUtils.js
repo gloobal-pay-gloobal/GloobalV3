@@ -420,6 +420,11 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = nul
     shareTxnId: t.shareTxnId || "",
     shareSourceTxnId: t.shareSourceTxnId || "",
     shareAmount: Number(t.shareAmount) || 0,
+    // Carried through for the same reason the ids are: a receipt reopened
+    // from history has to say the same thing about where the share went as
+    // the one that was shown at payment time. Empty means the payment
+    // predates shares being held, and the receipt names the balance.
+    shareDestination: t.shareDestination || "",
     // The short handles the payment's and the share's receipt links are
     // addressed by, carried through so a receipt reopened from history shares
     // the same short URL the fresh one did. A row without them (a local-only

@@ -667,7 +667,15 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
               <div style={{ padding: "14px 18px 4px", textAlign: "center" }}>
                 <div data-testid="unlock-headline" style={{ fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, color: T.ink }}>{headline}</div>
                 <div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 5, lineHeight: 1.45 }}>
-                  {`${payeeName} shares a part of every payment back. It's in your Gloobal balance already.`}
+                  {/* WHERE IT IS, AND IT IS NOT THE BALANCE.
+                        This read "It's in your Gloobal balance already",
+                        which was true of the old behaviour and is now the
+                        opposite of what happened: the share is planted in
+                        My Assets, earns there, and reaches the balance when
+                        it is claimed. The app's own explainer has always
+                        described it this way — this line was the one
+                        telling people something else. */}
+                  {`${payeeName} shares a part of every payment back. It's planted in My Assets, earning until you claim it.`}
                 </div>
               </div>
               <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", gap: 9 }}>

@@ -64,6 +64,7 @@ const Transaction = require(join(BACKEND, "models/Transaction"));
 const Receipt = require(join(BACKEND, "models/Receipt"));
 const LedgerEntry = require(join(BACKEND, "models/LedgerEntry"));
 const AssetSeed = require(join(BACKEND, "models/AssetSeed"));
+const PlatformAccount = require(join(BACKEND, "models/PlatformAccount"));
 const Country = require(join(BACKEND, "models/Country"));
 const ExchangeRate = require(join(BACKEND, "models/ExchangeRate"));
 
@@ -109,6 +110,11 @@ const send = (from, to, amount, note, idempotencyKey) =>
     tokens[from]);
 
 const balanceOf = async (symbol) => (await User.findOne({ symbolId: symbol }).lean())?.balance;
+// Where a Creator Share rests between being earned and being claimed.
+// Conservation cannot be checked without it: the share leaves the payer
+// and never reaches the payee.
+const custodyOf = async (currency) =>
+  (await PlatformAccount.findOne({ purpose: "custody", currency }).lean())?.balance || 0;
 const idOf = async (symbol) => String((await User.findOne({ symbolId: symbol }).lean())._id);
 
 // Every share leg minted for one payment. The link is the one the server
@@ -141,6 +147,9 @@ async function run() {
     User.deleteMany({}), Pin.deleteMany({}), Otp.deleteMany({}),
     Transaction.deleteMany({}), Receipt.deleteMany({}), LedgerEntry.deleteMany({}),
     AssetSeed.deleteMany({}), Country.deleteMany({}), ExchangeRate.deleteMany({}),
+    // Custody too, or a share held by an earlier run is still sitting
+    // there when this one checks conservation.
+    PlatformAccount.deleteMany({ purpose: "custody" }),
   ]);
 
   await registerAccount(A, "+919000000701", "User A");
@@ -170,6 +179,7 @@ async function run() {
   console.log("1. the reported scenario: A (1%) sends B (7%) 10,000");
   const beforeA = await balanceOf(A);
   const beforeB = await balanceOf(B);
+  const beforeCustody = await custodyOf("INR");
 
   const paid = await send(A, B, 10000, "Reported scenario");
   check("the payment went through", paid.status === 201, `status=${paid.status}`);
@@ -197,25 +207,51 @@ async function run() {
   console.log("\n2. the balances say the share moved once and only once");
   const afterA = await balanceOf(A);
   const afterB = await balanceOf(B);
-  check("the payer is out 9300 — 10,000 paid, 700 shared back",
-    afterA - beforeA === -9300, `delta=${afterA - beforeA}`);
+  const afterCustody = await custodyOf("INR");
+  // THE SHARE IS NO LONGER IN EITHER BALANCE. The payer pays the full
+  // 10,000 and the payee receives 9,300; the 700 between them is held in
+  // the custody account against the payer's AssetSeed until they claim it.
+  //
+  // This used to read "the payer is out 9300 — 10,000 paid, 700 shared
+  // back", and the deltas cancelled between two accounts. They cancel
+  // across three now, which is the same property with the share's actual
+  // resting place included rather than assumed into one of the balances.
+  check("the payer is out the full 10,000",
+    afterA - beforeA === -10000, `delta=${afterA - beforeA}`);
   check("the payee is up 9300 — 10,000 received, 700 shared out",
     afterB - beforeB === 9300, `delta=${afterB - beforeB}`);
-  check("a second release at the payer's 1% would have shown here as -9400",
-    afterA - beforeA !== -9400 && afterA - beforeA !== -8951);
-  check("the two deltas cancel: no money was created or destroyed",
-    (afterA - beforeA) + (afterB - beforeB) === 0);
+  check("the 700 is in custody",
+    afterCustody - beforeCustody === 700, `delta=${afterCustody - beforeCustody}`);
+  check("a second release at the payer's 1% would have shown here as -10100",
+    afterA - beforeA !== -10100 && afterA - beforeA !== -9951);
+  check("the three deltas cancel: no money was created or destroyed",
+    (afterA - beforeA) + (afterB - beforeB) + (afterCustody - beforeCustody) === 0);
 
   // ── 3 ──────────────────────────────────────────────────────────────────
   console.log("\n3. the ledger lines and receipts are the expected ones");
   const lines = await LedgerEntry.find({ transactionId: payment._id }).lean();
   check("three ledger lines: a debit, a credit, and the share credited back",
     lines.length === 3, `found ${lines.length}`);
-  check("exactly one of them is the cashback credit",
-    lines.filter((l) => /cashback/i.test(l.note || "")).length === 1,
-    lines.map((l) => `${l.entryType}:${l.amount}`).join(" "));
-  check("the cashback line is 700 and belongs to the PAYER",
-    lines.some((l) => /cashback/i.test(l.note || "") && l.amount === 700 && String(l.userId) === payerId));
+  // The share's own line. Its note changed with its destination — it read
+  // "Cashback credited to balance" and now reads "Creator Share held in My
+  // Assets" — so it is found by the flag performTransfer stamps on it
+  // rather than by matching words, which is what the readers that must
+  // skip a hold will key on too.
+  const heldLines = lines.filter((l) => l.metadata?.heldInCustody === true);
+  check("exactly one of them is the share being held", heldLines.length === 1,
+    lines.map((l) => `${l.entryType}:${l.amount}:${l.note}`).join(" | "));
+  check("the share line is 700 and belongs to the PAYER",
+    heldLines.some((l) => l.amount === 700 && String(l.userId) === payerId));
+  // AND IT DOES NOT CLAIM THE BALANCE MOVED. Both sides of a hold are the
+  // balance after the debit: the money left this account, it did not come
+  // back into it, and a line saying otherwise would be a record of
+  // something that did not happen.
+  check("the hold line does not report a balance change",
+    heldLines.every((l) => l.balanceBefore === l.balanceAfter),
+    heldLines.map((l) => `${l.balanceBefore}->${l.balanceAfter}`).join(" "));
+  check("it names the account the money is in",
+    heldLines.every((l) => String(l.metadata?.custodyKey || "").startsWith("platform:custody:")),
+    heldLines.map((l) => l.metadata?.custodyKey).join(" "));
 
   const receipts = await Receipt.find({}).lean();
   check("four receipts: payer and payee, for each of the two legs",

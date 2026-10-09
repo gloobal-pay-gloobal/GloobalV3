@@ -16,6 +16,11 @@ const Interest = require('./models/Interest');
 const Product = require('./models/Product');
 const ProductService = require('./models/ProductService');
 const AssetSeed = require('./models/AssetSeed');
+// Where a Creator Share waits between being earned and being claimed, and
+// the account lib/disbursement.js pays Gloobal's own money out of. Two
+// purposes, one model — see its header for why holding a user's money and
+// spending Gloobal's must not share a row.
+const PlatformAccount = require('./models/PlatformAccount');
 // Read back on a duplicate response, so a retry describes the whole payment
 // rather than half of it — see storedPaymentArtifacts.
 const Receipt = require('./models/Receipt');
@@ -4815,16 +4820,33 @@ app.get('/api/payees/current', lookupLimit, requireAuth, async (req, res) => {
 
 
 // --- My Assets --------------------------------------------------------------
-// Cashback is real money the moment it is earned — it is credited straight
-// into the payer's spendable balance in the same request that plants this
-// seed (see performTransfer in POST /api/transactions/send). It does not
-// wait, vest, or need to be claimed to be spent.
+// A Creator Share is real money the moment it is earned, and it is HELD
+// rather than spent: performTransfer places it in the platform custody
+// account for the payer's currency in the same request that plants this
+// seed, and the seed is what entitles them to it.
 //
-// What DOES need claiming is the bonus on top: a seed's cashback keeps
-// earning 1%/month, compounded, for as long as that growth goes unclaimed.
-// interestAvailable below is that unclaimed bonus, always derived on read
-// from plantedAt and interestClaimed — never stored — so it can never drift.
-// POST /api/assets/claim-interest pays it into real balance on request.
+// This paragraph used to say the opposite — "credited straight into the
+// payer's spendable balance… It does not wait, vest, or need to be claimed
+// to be spent" — and that was an accurate description of the behaviour and
+// of the receipt that reported it. It contradicted the product everywhere
+// else: the app's own explainer has always said the share "comes straight
+// back to you and is planted in My Assets", and a figure cannot be both
+// planted and already spent.
+//
+// So two things are claimable now, and claiming them is one action:
+//
+//   the principal   the share itself, waiting in custody. Claimable in
+//                   full, at any time, and never lost by waiting.
+//   the interest    the bonus on top. A seed's principal keeps earning
+//                   1%/month, compounded, for as long as the growth goes
+//                   unclaimed. This is Gloobal's own money and is paid
+//                   through lib/disbursement.js; the principal is not,
+//                   because handing somebody back their own held share is
+//                   not Gloobal spending anything.
+//
+// Both figures are always derived on read — from plantedAt, interestClaimed
+// and principalClaimed, never stored as a total — so neither can drift.
+// POST /api/assets/claim-interest pays them into real balance on request.
 const ASSET_GROWTH_RATE_MONTHLY = 0.01; // 1% per month, internal compounding step
 const MS_PER_YEAR = 1000 * 60 * 60 * 24 * 365.25;
 
@@ -4843,6 +4865,24 @@ function computeSeed(seed) {
   const interestClaimed = Number(seed.interestClaimed) || 0;
   const interestAvailable = Math.max(0, interestAccrued - interestClaimed);
 
+  // ── THE PRINCIPAL, AND THE TWO GENERATIONS OF SEED ──────────────────
+  //
+  // `principalHeld` says the share is sitting in the custody account with
+  // this seed as the claim on it. A seed planted before that behaviour
+  // existed has no such field: its principal was credited to the owner's
+  // spendable balance at payment time and is already theirs, so there is
+  // nothing here to pay out and `principalAvailable` is zero.
+  //
+  // Getting this backwards in either direction loses somebody money. Read
+  // as held when it was not, every old seed pays its principal a second
+  // time out of custody that never received it. Read as credited when it
+  // is held, the share is stuck in custody and its owner can never reach
+  // it. The flag defaults to false precisely so the absent case lands on
+  // the first reading being impossible rather than the second.
+  const principalHeld = seed.principalHeld === true;
+  const principalClaimed = Number(seed.principalClaimed) || 0;
+  const principalAvailable = principalHeld ? Math.max(0, cashback - principalClaimed) : 0;
+
   return {
     id: String(seed._id || seed.id || ''),
     business: seed.business,
@@ -4854,6 +4894,13 @@ function computeSeed(seed) {
     interestAccrued,
     interestClaimed,
     interestAvailable,
+    principalHeld,
+    principalClaimed,
+    principalAvailable,
+    // Everything this seed would pay out if claimed right now. One figure
+    // for the screen, so it never has to add two and get a different
+    // answer from the one the claim route arrives at.
+    claimable: principalAvailable + interestAvailable,
     yearsAccrued,
     plantedAt,
     currency: seed.currency || 'INR',
@@ -5159,19 +5206,32 @@ app.get('/api/assets/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId
     }
 
     const seeds = rawSeeds.map(computeSeed);
-    // totalCashbackEarned is already sitting in the account's real balance —
-    // this is a lifetime total for display, not a second spendable figure.
-    // Only totalInterestAvailable is money still waiting to be claimed.
+    // totalCashbackEarned is a LIFETIME total across both generations of
+    // seed, and it is not spendable in itself: part of it is held in
+    // custody waiting to be claimed, and part of it (every seed planted
+    // before shares were held) is already sitting in the account's real
+    // balance. totalPrincipalAvailable is the half that is actually
+    // waiting, and totalClaimable is what a claim right now would pay.
     const totalCashbackEarned = seeds.reduce((s, x) => s + x.cashback, 0);
     const totalInterestAccrued = seeds.reduce((s, x) => s + x.interestAccrued, 0);
     const totalInterestAvailable = seeds.reduce((s, x) => s + x.interestAvailable, 0);
     const totalInterestClaimed = seeds.reduce((s, x) => s + x.interestClaimed, 0);
+    const totalPrincipalHeld = seeds.reduce((s, x) => s + (x.principalHeld ? x.cashback : 0), 0);
+    const totalPrincipalAvailable = seeds.reduce((s, x) => s + x.principalAvailable, 0);
+    const totalPrincipalClaimed = seeds.reduce((s, x) => s + x.principalClaimed, 0);
 
     return res.status(200).json({
       totalCashbackEarned,
       totalInterestAccrued,
       totalInterestAvailable,
       totalInterestClaimed,
+      totalPrincipalHeld,
+      totalPrincipalAvailable,
+      totalPrincipalClaimed,
+      // The one figure a Claim button should read, so the screen and the
+      // route can never arrive at two different answers to "how much will
+      // this pay me".
+      totalClaimable: totalPrincipalAvailable + totalInterestAvailable,
       seeds,
     });
   } catch (error) {
@@ -5256,11 +5316,18 @@ app.post('/api/assets/plant-seed', writeLimit, requireAuth, requireSelf('symbolI
     // performTransfer at payment time, never recomputed here.
     const [debitLine, cashbackLine] = await Promise.all([
       LedgerEntry.findOne({ transactionId: transaction._id, userId: user._id, entryType: 'debit' }).lean(),
+      // BOTH NOTES, because this route has to backfill payments made under
+      // either behaviour. The line used to read "Cashback credited to
+      // balance" and now reads "Creator Share held in My Assets" — same
+      // position in the same transaction, same figure, different
+      // destination. Matching only the current wording would refuse to
+      // backfill every payment made before this change, and matching only
+      // the old one would refuse every payment made after it.
       LedgerEntry.findOne({
         transactionId: transaction._id,
         userId: user._id,
         entryType: 'credit',
-        note: 'Cashback credited to balance',
+        note: { $in: ['Cashback credited to balance', 'Creator Share held in My Assets'] },
       }).lean(),
     ]);
 
@@ -5277,6 +5344,18 @@ app.post('/api/assets/plant-seed', writeLimit, requireAuth, requireSelf('symbolI
       cashbackRate: Number(cashbackLine.metadata?.cashbackRate) || 0,
       cashback: cashbackLine.amount,
       currency: debitLine.currency || 'INR',
+      // READ OFF THE PAYMENT, NEVER ASSUMED FROM TODAY'S BEHAVIOUR.
+      //
+      // This flag decides whether the seed's principal is claimable, so
+      // getting it from the clock rather than from the record would be the
+      // one mistake that pays money out twice: a seed backfilled today for
+      // a payment made last month, where the share went into a balance,
+      // would hand its owner the same share again out of custody.
+      //
+      // performTransfer stamps `heldInCustody` on the line at the moment it
+      // places the share. An older line does not carry it, reads as false,
+      // and produces a seed that correctly claims nothing.
+      principalHeld: cashbackLine.metadata?.heldInCustody === true,
       transactionId: transaction._id,
     });
 
@@ -5296,10 +5375,32 @@ app.post('/api/assets/plant-seed', writeLimit, requireAuth, requireSelf('symbolI
   }
 });
 
-// POST /api/assets/claim-interest — pay the bonus interest a user's seeds
-// have accrued into real, spendable balance. The cashback itself needs no
-// claiming (it was credited at payment time); this only ever pays out the
-// growth on top, and only however much is currently accrued.
+// POST /api/assets/claim-interest — move what a user's seeds are holding
+// into their real, spendable balance.
+//
+// ── Two figures, two funding sources, one request ──────────────────────
+//
+// The route kept its name because the app calls it and a rename would be a
+// breaking change for nothing, but it now pays out both halves of a seed:
+//
+//   the PRINCIPAL   the Creator Share itself, held in the platform custody
+//                   account since the payment that earned it. Returning it
+//                   is a transfer out of custody, NOT a disbursement:
+//                   Gloobal is handing back money it was holding for
+//                   somebody, and running it through lib/disbursement.js
+//                   would add it to disbursedTotal and inflate "Our
+//                   spending" by every claim ever made.
+//
+//   the INTEREST    the 1%/month bonus on top. This genuinely is Gloobal's
+//                   money, it is created rather than held, and it goes
+//                   through recordDisbursement exactly as before — debiting
+//                   the account that funds it in the same write.
+//
+// A seed planted before the share was held has no principal to pay: its
+// `principalHeld` is absent, computeSeed reports principalAvailable as
+// zero, and the claim behaves exactly as it always did for that row. Both
+// generations are claimed by the same request without either knowing about
+// the other.
 //
 // Each seed is updated with an optimistic-concurrency filter
 // (interestClaimed must still match what was just read) so two concurrent
@@ -5352,46 +5453,105 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
     try {
       payout = await withAtomicSession(async (session) => {
         const rawSeeds = await AssetSeed.find({ userId: user._id }).session(session);
-        let totalClaimed = 0;
+        // Kept apart all the way through, because they are funded by two
+        // different accounts and summing them early is how the principal
+        // would end up being paid out of the expense account.
+        let totalInterest = 0;
+        let totalPrincipal = 0;
         const claimedSeedIds = [];
 
         for (const seed of rawSeeds) {
-          const { interestAvailable } = computeSeed(seed);
-          if (interestAvailable <= 0) continue;
-          const priorClaimed = Number(seed.interestClaimed) || 0;
+          const { interestAvailable, principalAvailable } = computeSeed(seed);
+          if (interestAvailable <= 0 && principalAvailable <= 0) continue;
+          const priorInterest = Number(seed.interestClaimed) || 0;
+          const priorPrincipal = Number(seed.principalClaimed) || 0;
+          // Both counters are in the filter, so this seed is claimed once
+          // whichever half another request got to first. Marking only the
+          // interest would let two concurrent claims each release the
+          // principal.
           const updated = await AssetSeed.findOneAndUpdate(
-            { _id: seed._id, interestClaimed: priorClaimed },
-            { $set: { interestClaimed: priorClaimed + interestAvailable, lastClaimedAt: new Date() } },
+            { _id: seed._id, interestClaimed: priorInterest, principalClaimed: priorPrincipal },
+            {
+              $set: {
+                interestClaimed: priorInterest + interestAvailable,
+                principalClaimed: priorPrincipal + principalAvailable,
+                lastClaimedAt: new Date(),
+              },
+            },
             { returnDocument: 'after', session }
           );
           // A null result means someone else claimed this exact seed in the
           // gap between the read above and this write — skip it this round
           // rather than paying out (or double-paying) a stale figure.
           if (!updated) continue;
-          totalClaimed += interestAvailable;
+          totalInterest += interestAvailable;
+          totalPrincipal += principalAvailable;
           claimedSeedIds.push(String(seed._id));
         }
 
-        if (totalClaimed <= 0) return { claimed: 0, claimedSeedIds: [], balanceAfter: null };
+        const totalClaimed = toMinorUnit(totalPrincipal + totalInterest, claimCurrency);
 
+        if (totalClaimed <= 0) {
+          return { claimed: 0, principal: 0, interest: 0, claimedSeedIds: [], balanceAfter: null };
+        }
+
+        // ── Two movements, in this order, out of two accounts ───────────
+        //
+        // The principal first. It is the holder's own money coming back out
+        // of custody, and it is NOT a disbursement — see lib/custody.js on
+        // why routing it through recordDisbursement would inflate "Our
+        // spending" by every share ever claimed.
+        let balanceAfter = null;
+        let principalPaid = 0;
+
+        if (totalPrincipal > 0) {
+          const release = await releaseFromCustody({
+            user,
+            amount: totalPrincipal,
+            currency: claimCurrency,
+            reason: 'creator_share_principal',
+            metadata: { seedIds: claimedSeedIds },
+            session,
+          });
+          principalPaid = release.amount;
+          balanceAfter = release.balanceAfter;
+        }
+
+        // Then the interest, which genuinely is Gloobal's money and goes
+        // out of the account that funds it, exactly as it always has.
+        //
         // The idempotency key is the SEEDS this claim consumed, not a clock
         // or a random value: the same set of seeds can only be claimed once,
         // and a retry of this exact request names the same set. A timestamp
         // would make every retry look like a new payout.
-        const idempotencyKey = `seed_interest:${user._id}:${claimedSeedIds.slice().sort().join(',')}`;
+        let interestPaid = 0;
 
-        const result = await recordDisbursement({
-          user,
-          amount: totalClaimed,
-          currency: claimCurrency,
-          countryIso: claimCountry,
-          reason: 'seed_interest',
-          idempotencyKey,
-          metadata: { seedIds: claimedSeedIds },
-          session,
-        });
+        if (totalInterest > 0) {
+          const idempotencyKey = `seed_interest:${user._id}:${claimedSeedIds.slice().sort().join(',')}`;
+          const result = await recordDisbursement({
+            user,
+            amount: totalInterest,
+            currency: claimCurrency,
+            countryIso: claimCountry,
+            reason: 'seed_interest',
+            idempotencyKey,
+            metadata: { seedIds: claimedSeedIds },
+            session,
+          });
+          interestPaid = result.amount;
+          // Read after BOTH movements, so it is the balance the person
+          // actually ends with rather than the one they had halfway
+          // through the claim.
+          balanceAfter = result.balanceAfter;
+        }
 
-        return { claimed: result.amount, claimedSeedIds, balanceAfter: result.balanceAfter };
+        return {
+          claimed: toMinorUnit(principalPaid + interestPaid, claimCurrency),
+          principal: principalPaid,
+          interest: interestPaid,
+          claimedSeedIds,
+          balanceAfter,
+        };
       });
     } catch (error) {
       if (error?.code === 'not_atomic') {
@@ -5406,19 +5566,38 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
     if (payout.claimed <= 0) {
       return res.status(200).json({
         claimed: 0,
+        principal: 0,
+        interest: 0,
         newBalance: toMinorUnit(Number(user.balance) || 0, claimCurrency),
         currency: claimCurrency,
         seedIds: [],
       });
     }
 
+    // `claimed` is the total, and it is what the screen shows. The two
+    // halves are broken out beside it because they came out of two
+    // different accounts and mean two different things: `principal` is the
+    // Creator Share itself coming back from My Assets, `interest` is the
+    // bonus Gloobal paid on top. A caller that wants to say "₹20 released,
+    // ₹1.42 earned" can; one that only wants the total need not know.
     return res.status(200).json({
       claimed: payout.claimed,
+      principal: payout.principal,
+      interest: payout.interest,
       newBalance: payout.balanceAfter,
       currency: claimCurrency,
       seedIds: payout.claimedSeedIds,
     });
   } catch (error) {
+    // A custody account short of what a seed says it is holding is not a
+    // generic failure: it means a share was promised and never placed, or
+    // was placed somewhere else, and it needs finding rather than retrying.
+    if (error?.name === 'CustodyError' && error.code === 'custody_short') {
+      console.error('Claim refused — custody short of a held Creator Share:', error.message);
+      return res.status(409).json({
+        message: 'Your Creator Share cannot be released right now. Nothing was claimed or charged.'
+      });
+    }
     console.error('Claim interest error:', error);
     return res.status(500).json({ message: 'Server error while claiming interest.' });
   }
@@ -6653,11 +6832,17 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       const senderBalanceAtDebit = toMinorUnit(senderBalanceAfter + debitAmount, senderCurrency);
 
       let creditedReceiver = null;
-      // Tracks how much of `cashback` actually made it back to the sender's
-      // balance, so the no-transaction revert path below undoes exactly what
+      // Tracks how much of the Creator Share actually reached the custody
+      // account, so the no-transaction revert path below undoes exactly what
       // happened — not a fixed guess that would over- or under-revert
       // depending on which step failed.
-      let cashbackAppliedToSender = 0;
+      //
+      // This was `cashbackAppliedToSender`, and it tracked the share landing
+      // back in the SENDER'S BALANCE, which is the behaviour this no longer
+      // is. The rename is not cosmetic: the revert maths below is different
+      // in each case, and a variable still named for the old destination
+      // would make the wrong version of it look right.
+      let cashbackHeldInCustody = 0;
       // Tracks whether the destination pool's release actually landed, for
       // the same reason — the no-transaction revert path below only puts
       // the pool back if this step is the one that moved it.
@@ -6728,32 +6913,68 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         const receiverBalanceAfter = toMinorUnit(creditedReceiver.balance, destinationCurrency);
         const receiverBalanceAtCredit = toMinorUnit(receiverBalanceAfter - payeeReceives, destinationCurrency);
 
-        // The payee's cashback share comes straight back to the sender as
-        // real, immediately spendable balance — not an off-ledger figure
-        // shown on some other screen. Within a single currency (fxRate 1)
-        // this is the same money just routed back rather than paid to the
-        // payee: the payee already received amount - cashback above, so
-        // crediting the sender `cashbackCredit` here is what makes debit
-        // (debitAmount) and the two credits (payeeReceives + cashbackCredit)
-        // balance to debitAmount exactly. Across a currency pair the two
-        // sides are no longer the same number in the same unit — that's the
-        // whole point — but each leg is still internally exact: the sender
-        // only ever gains or loses their own currency, the receiver only
-        // ever gains or loses theirs.
-        let senderBalanceAtCashbackCredit = senderBalanceAfter;
+        // ── THE CREATOR SHARE IS HELD, NOT SPENT ─────────────────────────
+        //
+        // This used to be `$inc: { balance: cashbackCredit }` on the
+        // sender: the share landed back in their spendable balance in the
+        // same breath as the payment. The receipt said so — "Credited to:
+        // Gloobal balance" — and it was telling the truth about a
+        // behaviour that contradicted the product. The app's own explainer
+        // has always said the share "comes straight back to you and is
+        // planted in My Assets", and a figure cannot be both planted and
+        // already spent.
+        //
+        // So the share now goes into the platform CUSTODY account for the
+        // sender's currency, and the AssetSeed planted moments later
+        // (principalHeld: true) is what entitles them to it. They claim it
+        // into balance whenever they choose, along with the interest it
+        // has grown — see POST /api/assets/claim-interest.
+        //
+        // ── Why custody and not simply "do not credit anybody" ──────────
+        //
+        // Because the money has to BE somewhere. The sender is debited
+        // `debitAmount` and the payee is credited `payeeReceives`, which is
+        // less by exactly the share. Leaving that difference uncredited
+        // would destroy it: the ledger would show more leaving than
+        // arriving, the account that funds the eventual claim would never
+        // have received it, and the claim would then be Gloobal paying out
+        // money nothing funded — the precise defect lib/disbursement.js and
+        // PlatformAccount were created to end.
+        //
+        // ── Why not the disbursement account ────────────────────────────
+        //
+        // Custody holds money that belongs to a USER. The disbursement
+        // account is an expense account whose monotonic `disbursedTotal` is
+        // what "Our spending" is built from, and handing somebody back
+        // their own held share is not Gloobal spending anything. Running
+        // the principal through it would inflate that figure by every claim
+        // ever made.
+        //
+        // The sender's balance after the debit, and it stays that way:
+        // nothing below moves it again. It was called
+        // `senderBalanceAfterDebit` when a credit followed, and the
+        // name is now simply what it is — the figure both the debit line
+        // and the hold line below are measured against.
+        const senderBalanceAfterDebit = senderBalanceAfter;
 
         if (cashbackCredit > 0) {
-          const creditedSender = await User.findOneAndUpdate(
-            { _id: sender._id },
+          const custody = await PlatformAccount.custodyFor(senderCurrency, session || null);
+          const heldAfter = await PlatformAccount.updateOne(
+            { _id: custody._id },
             { $inc: { balance: cashbackCredit } },
-            { returnDocument: 'after', ...sessionOpt }
+            sessionOpt
           );
 
-          if (!creditedSender) throw new Error('Sender account disappeared mid-transfer.');
+          // The custody write is the half of this pair that makes the
+          // books balance. If it did not apply, the share has been taken
+          // out of the sender and put nowhere — so this throws rather than
+          // continuing, and the surrounding transaction takes the whole
+          // payment back out.
+          if (!heldAfter?.matchedCount && !heldAfter?.modifiedCount) {
+            throw new Error('Creator Share could not be placed in custody — refusing to debit a share that lands nowhere.');
+          }
 
-          senderBalanceAtCashbackCredit = toMinorUnit(senderBalanceAfter, senderCurrency);
-          senderBalanceAfter = toMinorUnit(creditedSender.balance, senderCurrency);
-          cashbackAppliedToSender = cashbackCredit;
+          cashbackHeldInCustody = cashbackCredit;
         }
 
         const ledgerRows = [
@@ -6766,7 +6987,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             entryType: 'debit',
             amount: debitAmount,
             balanceBefore: senderBalanceAtDebit,
-            balanceAfter: senderBalanceAtCashbackCredit,
+            balanceAfter: senderBalanceAfterDebit,
             currency: senderCurrency,
             note: 'Prototype debit entry',
             metadata: {
@@ -6802,20 +7023,34 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         ];
 
         if (cashbackCredit > 0) {
-          // The sender's own cashback-credit leg: real money landing back in
-          // their balance in the same breath as the payment, not a separate
-          // asset that only exists on the My Assets screen. In the sender's
-          // own currency — cashbackCredit, not the receiver-currency
-          // cashback figure the payee's share was actually computed in.
+          // ── THE SHARE'S OWN LINE, AND IT IS NO LONGER A BALANCE LINE ──
+          //
+          // This used to be a credit to the sender for cashbackCredit, with
+          // balanceBefore/balanceAfter straddling the moment their balance
+          // rose. Their balance does not rise any more, so a line claiming
+          // it did would be the one thing a ledger may never be: a record
+          // of something that did not happen.
+          //
+          // The movement is still real and still recorded. It is a HOLD:
+          // the share left the sender's balance as part of the debit above
+          // and came to rest in the custody account, where the AssetSeed
+          // planted moments later entitles them to it.
+          //
+          // balanceBefore and balanceAfter are both the balance after the
+          // debit — the same figure twice, deliberately, because that is
+          // the true answer to "what was this account worth either side of
+          // this line". `heldInCustody` in the metadata is what makes this
+          // line findable as a hold rather than read as a zero-value
+          // credit, and `custodyKey` names the account the money is in.
           ledgerRows.push({
             transactionId: transaction._id,
             userId: sender._id,
             entryType: 'credit',
             amount: cashbackCredit,
-            balanceBefore: senderBalanceAtCashbackCredit,
-            balanceAfter: senderBalanceAfter,
+            balanceBefore: senderBalanceAfterDebit,
+            balanceAfter: senderBalanceAfterDebit,
             currency: senderCurrency,
-            note: 'Cashback credited to balance',
+            note: 'Creator Share held in My Assets',
             metadata: {
               prototype: true,
               transactionReferenceId: transaction.referenceId,
@@ -6824,6 +7059,12 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
               fxRate,
               faceCashback: cashback,
               faceCurrency: destinationCurrency,
+              // The two fields that say this is a hold. Anything reading
+              // these rows to answer "what did this account receive" must
+              // skip a line carrying heldInCustody — it is owed, not held
+              // by them, until they claim it.
+              heldInCustody: true,
+              custodyKey: `platform:custody:${String(senderCurrency || '').toUpperCase()}`,
             },
           });
         }
@@ -6838,12 +7079,38 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         // and really does need putting back.
         if (!session) {
           try {
+            // THE WHOLE DEBIT GOES BACK. It used to be
+            // `debitAmount - cashbackAppliedToSender`, because the share had
+            // been credited into this same balance moments earlier and
+            // refunding the gross would have refunded that twice. The share
+            // no longer touches this balance at all, so the sender is owed
+            // every unit that left it.
             await User.updateOne(
               { _id: sender._id },
-              { $inc: { balance: debitAmount - cashbackAppliedToSender } }
+              { $inc: { balance: debitAmount } }
             );
             if (creditedReceiver) {
               await User.updateOne({ _id: receiver._id }, { $inc: { balance: -payeeReceives } });
+            }
+            // And the held share comes back out of custody, for the same
+            // reason the payee's credit does: this payment did not happen,
+            // so nothing it placed anywhere may be left behind. Only if
+            // this step is the one that moved it — hence the counter rather
+            // than a fixed figure.
+            if (cashbackHeldInCustody > 0) {
+              try {
+                const custody = await PlatformAccount.custodyFor(senderCurrency);
+                await PlatformAccount.updateOne(
+                  { _id: custody._id },
+                  { $inc: { balance: -cashbackHeldInCustody } }
+                );
+              } catch (custodyRevertError) {
+                // Logged rather than swallowed into the outer catch: a
+                // share left in custody for a reversed payment is money
+                // held against a seed that will never exist, and it has to
+                // be findable afterwards.
+                console.error('Custody revert failed — a reversed payment left a share held:', custodyRevertError);
+              }
             }
             if (poolSettlementApplied && settlement) {
               // Reads its own four ledger-line amounts back off the
@@ -7109,6 +7376,16 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
           cashbackRate: payeeCashbackRate,
           cashback: cashbackCredit,
           currency: senderCurrency,
+          // THE PRINCIPAL IS HELD, AND THIS SEED IS WHAT ENTITLES THEM TO
+          // IT. performTransfer put cashbackCredit into the custody account
+          // for this currency rather than into the sender's balance; this
+          // flag is the claim on it.
+          //
+          // Every seed planted before this existed has no such field, reads
+          // as false, and is correctly understood as "already credited to
+          // balance, nothing here to claim" — see the model's header on why
+          // there is no backfill and must not be one.
+          principalHeld: true,
           // Audit fix: links this seed back to the payment that earned it
           // (see AssetSeed.js's transactionId comment and the schema's
           // unique partial index — this also guarantees performTransfer
@@ -7196,11 +7473,20 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       message: 'Prototype transaction completed successfully.',
       transaction: await cleanTransactionPayload(completedTransaction, sender, receiver),
       newBalance: senderBalanceAfter,
-      // In the sender's own currency — this is what actually landed back in
-      // their balance (see cashbackCredit above), matching the currency
-      // their own dashboard/toast already displays amounts in. `payeeReceives`
-      // below stays in the receiver's own currency, same as always.
+      // The Creator Share this payment earned, in the sender's own
+      // currency, matching the currency their dashboard and toast already
+      // display amounts in. `payeeReceives` below stays in the receiver's
+      // own currency, same as always.
+      //
+      // IT IS NOT IN `newBalance`. This comment used to say the figure was
+      // "what actually landed back in their balance"; it no longer lands
+      // there at all. The share is held in custody against the AssetSeed in
+      // `assetSeed` below, and `cashbackDestination` says so out loud
+      // rather than leaving every caller to infer it — the success screen,
+      // the toast and the receipt all have to say where it went, and a
+      // field they can read is better than three places guessing.
       cashback: cashbackCredit,
+      cashbackDestination: cashbackCredit > 0 ? 'assets' : null,
       cashbackCurrency: senderCurrency,
       cashbackRate: payeeCashbackRate,
       payeeReceives,
@@ -8821,6 +9107,21 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
         // payment's — sharing the Creator Share tab must not hand somebody a
         // link to the payment it came from.
         shareReceiptCode: shareByPayment.get(String(transaction._id))?.receiptCode || null,
+        // WHERE THE PAYER'S SHARE WENT, as recorded at the time.
+        //
+        // 'assets' means it was placed in custody against an AssetSeed and
+        // has to be claimed. Null means this payment predates that — the
+        // share was credited straight into the payer's spendable balance,
+        // which is what every share leg written before the change
+        // documents. The receipt reads this rather than deciding from
+        // today's behaviour, because a receipt is a record of what
+        // happened to THAT payment.
+        //
+        // On a SHARE LEG the same fact is on its own metadata, read
+        // directly below.
+        cashbackDestination: transaction.type === 'share'
+          ? (transaction.metadata?.cashbackDestination || null)
+          : (shareByPayment.get(String(transaction._id))?.metadata?.cashbackDestination || null),
         // And the other direction: on a SHARE LEG, the reference of the
         // payment that produced it.
         //
@@ -9074,6 +9375,21 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         shareReferenceId: shareByPayment.get(String(transaction._id))?.referenceId || null,
         // The share leg's own short link handle, distinct from the payment's.
         shareReceiptCode: shareByPayment.get(String(transaction._id))?.receiptCode || null,
+        // WHERE THE PAYER'S SHARE WENT, as recorded at the time.
+        //
+        // 'assets' means it was placed in custody against an AssetSeed and
+        // has to be claimed. Null means this payment predates that — the
+        // share was credited straight into the payer's spendable balance,
+        // which is what every share leg written before the change
+        // documents. The receipt reads this rather than deciding from
+        // today's behaviour, because a receipt is a record of what
+        // happened to THAT payment.
+        //
+        // On a SHARE LEG the same fact is on its own metadata, read
+        // directly below.
+        cashbackDestination: transaction.type === 'share'
+          ? (transaction.metadata?.cashbackDestination || null)
+          : (shareByPayment.get(String(transaction._id))?.metadata?.cashbackDestination || null),
         // And the other direction: on a SHARE LEG, the reference of the
         // payment that produced it.
         //
@@ -9169,6 +9485,10 @@ const { COIN_CURRENCY, COIN_RESERVE_NAME } = require('./lib/coinTicker');
 // Gloobal paying a person — the one write path for it, and the atomic-or-
 // refuse primitive it shares with the GEU ledger.
 const { recordDisbursement } = require('./lib/disbursement');
+// The other half of a seed claim: the Creator Share itself, coming back out
+// of the custody account that has been holding it. Its own module because a
+// release is not a payout — see that file's header.
+const { releaseFromCustody } = require('./lib/custody');
 const { withAtomicSession } = require('./lib/atomicSession');
 
 const coinBalanceOf = (user) => {

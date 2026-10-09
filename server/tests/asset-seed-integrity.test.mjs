@@ -193,6 +193,13 @@ async function run() {
   check("cashback is 10 (matches the real cashback credit ledger line)", seedAfterRace?.cashback === 10, `cashback=${seedAfterRace?.cashback}`);
   check("cashbackRate is 0.05 (the Creator's real rate, not attacker-supplied)", seedAfterRace?.cashbackRate === 0.05, `rate=${seedAfterRace?.cashbackRate}`);
   check("amountPaid is 200 (the real debit)", seedAfterRace?.amountPaid === 200, `amountPaid=${seedAfterRace?.amountPaid}`);
+  // AND THE SEED HOLDS THE PRINCIPAL. performTransfer placed the 10 in the
+  // custody account instead of the payer's balance, and this flag is what
+  // entitles them to it. A seed planted without it claims nothing, which is
+  // the correct reading for every row written before shares were held — and
+  // the wrong one for this payment.
+  check("principalHeld is true (the share is in custody, not in the balance)", seedAfterRace?.principalHeld === true,
+    `principalHeld=${seedAfterRace?.principalHeld}`);
 
   console.log("\n7. a transaction with no cashback (plain send) has nothing to plant a seed from");
   const plainPaid = await send(PLAIN_RECEIVER, 100, "plain send");
@@ -207,14 +214,42 @@ async function run() {
   const ghost = await post("/api/assets/plant-seed", { symbolId: SENDER, transactionId: fakeId }, senderToken);
   check("status is 404", ghost.status === 404, `status=${ghost.status}`);
 
-  console.log("\n9. claiming interest on the legitimately-planted seed still works exactly as before this fix");
+  console.log("\n9. claiming pays out BOTH halves of the seed — the held share and the interest on it");
   const seedRow = await AssetSeed.findOne({ transactionId: paymentTxn._id });
   await AssetSeed.updateOne({ _id: seedRow._id }, { $set: { plantedAt: new Date(Date.now() - 365.25 * 24 * 60 * 60 * 1000) } });
+  const balanceBeforeClaim = (await User.findOne({ symbolId: SENDER }).lean())?.balance;
   const claimed = await post("/api/assets/claim-interest", { symbolId: SENDER }, senderToken);
   const expectedInterest = 10 * Math.pow(1.01, 12) - 10;
-  check("claim succeeds and roughly matches the expected one-year accrual on the real 10 cashback",
-    claimed.status === 200 && Math.abs((claimed.body?.claimed || 0) - expectedInterest) < 0.05,
-    `status=${claimed.status} claimed=${claimed.body?.claimed} expected=${expectedInterest.toFixed(4)}`);
+
+  // This used to assert that `claimed` was the interest alone, because the
+  // principal had been spendable since the moment the payment settled and
+  // there was nothing of it left to claim. The principal is held now, so a
+  // claim releases it too, and the two halves are reported separately
+  // because they come out of two different accounts.
+  check("claim succeeds", claimed.status === 200, `status=${claimed.status}`);
+  check("the interest matches the expected one-year accrual on the real 10",
+    Math.abs((claimed.body?.interest || 0) - expectedInterest) < 0.05,
+    `interest=${claimed.body?.interest} expected=${expectedInterest.toFixed(4)}`);
+  check("the principal released is the real 10 that was held", claimed.body?.principal === 10,
+    `principal=${claimed.body?.principal}`);
+  check("the total is both halves", Math.abs((claimed.body?.claimed || 0) - (10 + expectedInterest)) < 0.05,
+    `claimed=${claimed.body?.claimed} expected=${(10 + expectedInterest).toFixed(4)}`);
+
+  // AND THE MONEY REALLY ARRIVED. A claim that reports a figure without
+  // moving a balance is the defect lib/disbursement.js was written to end,
+  // pointed the other way.
+  const balanceAfterClaim = (await User.findOne({ symbolId: SENDER }).lean())?.balance;
+  check("the balance rose by exactly what was claimed",
+    Math.abs((balanceAfterClaim - balanceBeforeClaim) - (claimed.body?.claimed || 0)) < 0.01,
+    `before=${balanceBeforeClaim} after=${balanceAfterClaim} claimed=${claimed.body?.claimed}`);
+
+  console.log("\n10. the same seed cannot be claimed twice");
+  const claimedAgain = await post("/api/assets/claim-interest", { symbolId: SENDER }, senderToken);
+  check("a second claim pays nothing", claimedAgain.status === 200 && (claimedAgain.body?.claimed || 0) === 0,
+    `status=${claimedAgain.status} claimed=${claimedAgain.body?.claimed}`);
+  const balanceAfterSecond = (await User.findOne({ symbolId: SENDER }).lean())?.balance;
+  check("and the balance did not move again", Math.abs(balanceAfterSecond - balanceAfterClaim) < 0.001,
+    `after=${balanceAfterSecond} wasAfterFirst=${balanceAfterClaim}`);
 
   console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}`);
   return failures;

@@ -580,6 +580,16 @@ function mapServerTransaction(row, viewerSymbolId) {
     // The share leg's own reference, so the receipt's share tab can name the
     // movement it is describing instead of reusing the payment's id.
     shareTxnId: isShareLeg ? "" : row.shareReferenceId || "",
+    // WHERE THE SHARE WENT, as the server recorded it at the time.
+    //
+    // "assets" means it was placed in My Assets and has to be claimed
+    // before it can be spent. "" means the payment predates that and the
+    // share was credited straight into the Gloobal balance — which is what
+    // the receipt said then, and what it must keep saying for that payment.
+    // The receipt reads this instead of naming a destination from today's
+    // behaviour, because a receipt is a record rather than a description of
+    // how the app currently works.
+    shareDestination: row.cashbackDestination || "",
     // The reference of the payment this row is attached to.
     //
     // On a PAYMENT that carried a share: its own reference, which is what the

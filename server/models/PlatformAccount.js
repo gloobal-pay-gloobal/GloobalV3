@@ -50,9 +50,28 @@ const platformAccountSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // ── Two purposes, and the difference is whose money it is ───────────
+    //
+    // 'disbursement' is an EXPENSE account. Paying out of it drives its
+    // balance negative, and that is correct: the money came from Gloobal,
+    // and Gloobal carrying the cost is what the negative records.
+    //
+    // 'custody' is the opposite in every respect. It holds money that
+    // belongs to a USER and has not reached their spendable balance yet —
+    // today, the Creator Share a payment earned, which is planted in My
+    // Assets rather than handed back as cash. Its balance goes UP when a
+    // share is held and DOWN when the holder claims it, it should never go
+    // negative, and nothing in it is Gloobal's to spend.
+    //
+    // They are separate rows rather than one account with a sign because
+    // "Our spending" is built from disbursedTotal, and returning somebody
+    // their own held money is not spending. Mixing the two would inflate
+    // that figure by every claimed share — a fabricated number behind an
+    // audited-looking label, which is the exact defect this model was
+    // created to end.
     purpose: {
       type: String,
-      enum: ['disbursement'],
+      enum: ['disbursement', 'custody'],
       required: true,
       index: true,
     },
@@ -99,23 +118,41 @@ const PlatformAccount = mongoose.model('PlatformAccount', platformAccountSchema)
 // Fetch-or-create, safe to call concurrently: a race surfaces as a
 // duplicate-key error on a row that is already correct, so the loser just
 // reads what the winner wrote.
-PlatformAccount.forCurrency = async function forCurrency(currency, session = null) {
+PlatformAccount.forPurpose = async function forPurpose(purpose, currency, session = null) {
   const code = String(currency || '').toUpperCase().trim();
   if (!code) throw new Error('a platform account needs a currency');
-  const key = `platform:disbursement:${code}`;
+  const kind = String(purpose || '').trim();
+  if (kind !== 'disbursement' && kind !== 'custody') {
+    throw new Error(`unknown platform account purpose: ${purpose}`);
+  }
+  const key = `platform:${kind}:${code}`;
   const options = { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true };
   if (session) options.session = session;
 
   try {
     return await PlatformAccount.findOneAndUpdate(
-      { purpose: 'disbursement', currency: code },
-      { $setOnInsert: { key, purpose: 'disbursement', currency: code, balance: 0, disbursedTotal: 0, disbursementCount: 0 } },
+      { purpose: kind, currency: code },
+      { $setOnInsert: { key, purpose: kind, currency: code, balance: 0, disbursedTotal: 0, disbursementCount: 0 } },
       options
     );
   } catch (error) {
     if (error?.code !== 11000) throw error;
     return PlatformAccount.findOne({ key }, null, session ? { session } : {});
   }
+};
+
+// The disbursement account, which is what every existing caller means.
+// Kept as its own name rather than making callers pass a purpose string:
+// lib/disbursement.js is "the only way Gloobal pays a person", and a payout
+// reaching for a custody account by passing the wrong argument is a mistake
+// worth making impossible at the call site rather than catching later.
+PlatformAccount.forCurrency = function forCurrency(currency, session = null) {
+  return PlatformAccount.forPurpose('disbursement', currency, session);
+};
+
+// The custody account, which holds money that belongs to a user.
+PlatformAccount.custodyFor = function custodyFor(currency, session = null) {
+  return PlatformAccount.forPurpose('custody', currency, session);
 };
 
 module.exports = PlatformAccount;

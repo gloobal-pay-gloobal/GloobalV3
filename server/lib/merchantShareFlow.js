@@ -226,7 +226,7 @@ async function mintShareLegAndReceipts({
         // This RECORD moves no balance of its own — but the movement it
         // documents is real and already happened, inside the payment leg's
         // own writes: the payee was credited amount - cashback rather than
-        // amount, and the payer was credited cashbackCredit back.
+        // amount, and the share was placed in custody for the payer.
         //
         // The old flag here said `noBalanceMovement: true`, and readers took
         // it to mean no money moved at all. Three history queries excluded
@@ -235,6 +235,20 @@ async function mintShareLegAndReceipts({
         // the missing 20 on the receipt and nowhere else. The name now says
         // what is actually true.
         balanceMovedWithPaymentLeg: true,
+        // ── WHERE THE PAYER'S SHARE WENT, AT THE TIME ──────────────────
+        //
+        // 'assets' means it was placed in the custody account against an
+        // AssetSeed and has to be claimed before it can be spent. Until
+        // this field existed the share was credited straight into the
+        // payer's spendable balance, and every share leg written before
+        // this change documents that — so the ABSENCE of this field means
+        // 'balance', and the receipt reads it that way.
+        //
+        // A receipt is a record. It has to say what happened to THAT
+        // payment, not what would happen to the same payment made today,
+        // which is why this is stamped on the row rather than decided by
+        // the screen that renders it.
+        cashbackDestination: 'assets',
         // The paying side of THIS leg — the payee, whose credit was reduced
         // — in their own currency. Read by the client exactly as a payment
         // row's debitAmount/senderCurrency are.

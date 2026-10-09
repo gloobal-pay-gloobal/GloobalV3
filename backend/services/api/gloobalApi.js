@@ -836,7 +836,23 @@ var GloobalApi = {
         totalCashbackEarned: Number(result.totalCashbackEarned) || 0,
         totalInterestAccrued: Number(result.totalInterestAccrued) || 0,
         totalInterestAvailable: Number(result.totalInterestAvailable) || 0,
-        totalInterestClaimed: Number(result.totalInterestClaimed) || 0
+        totalInterestClaimed: Number(result.totalInterestClaimed) || 0,
+        // ── WHAT IS ACTUALLY WAITING HERE ────────────────────────────
+        //
+        // totalCashbackEarned above is a LIFETIME figure across both
+        // generations of seed and is not spendable in itself: part of it
+        // sits in custody waiting to be claimed, and part of it — every
+        // seed planted before Creator Shares were held — is already in the
+        // account's real balance.
+        //
+        // These three say which is which, so a screen never has to guess.
+        // `totalClaimable` is the one a Claim control should read: the
+        // server computes it from the same seeds the claim route pays out,
+        // so the button and the payout cannot disagree.
+        totalPrincipalHeld: Number(result.totalPrincipalHeld) || 0,
+        totalPrincipalAvailable: Number(result.totalPrincipalAvailable) || 0,
+        totalPrincipalClaimed: Number(result.totalPrincipalClaimed) || 0,
+        totalClaimable: Number(result.totalClaimable) || 0
       };
     } catch (e) {
       return null;

@@ -47,6 +47,11 @@ const User = require(join(BACKEND, "models/User"));
 const Pin = require(join(BACKEND, "models/Pin"));
 const Transaction = require(join(BACKEND, "models/Transaction"));
 const LedgerEntry = require(join(BACKEND, "models/LedgerEntry"));
+// The account a Creator Share waits in between being earned and being
+// claimed. Money conservation cannot be checked without it any more: the
+// share leaves the payer and does not reach the payee, and this is where
+// it is.
+const PlatformAccount = require(join(BACKEND, "models/PlatformAccount"));
 
 const BASE = `http://127.0.0.1:${process.env.PORT}`;
 const SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
@@ -101,6 +106,11 @@ async function seed(openingBalance) {
   await Promise.all([Transaction.deleteMany({}), LedgerEntry.deleteMany({})]);
   await User.updateOne({ symbolId: SENDER }, { $set: { balance: openingBalance } });
   await User.updateOne({ symbolId: RECEIVER }, { $set: { balance: 0, cashbackRate: 0 } });
+  // Custody back to zero with everything else. A share held by one
+  // section's payment would otherwise still be sitting there when the next
+  // section checks conservation, and the failure would name the wrong
+  // section.
+  await PlatformAccount.updateMany({ purpose: "custody" }, { $set: { balance: 0 } });
 }
 
 const send = (amount, note, extra = {}) =>
@@ -111,11 +121,18 @@ const send = (amount, note, extra = {}) =>
   );
 
 const balances = async () => {
-  const [sender, receiver] = await Promise.all([
+  const [sender, receiver, custody] = await Promise.all([
     User.findOne({ symbolId: SENDER }).lean(),
-    User.findOne({ symbolId: RECEIVER }).lean()
+    User.findOne({ symbolId: RECEIVER }).lean(),
+    PlatformAccount.findOne({ purpose: "custody", currency: "INR" }).lean()
   ]);
-  return { sender: sender.balance, receiver: receiver.balance };
+  return {
+    sender: sender.balance,
+    receiver: receiver.balance,
+    // Zero when no share has ever been held, which is every section of this
+    // file except the cashback one.
+    custody: custody?.balance || 0
+  };
 };
 
 let failures = 0;
@@ -177,20 +194,42 @@ async function run() {
   const split = await send(200, "cashback");
   const afterSplit = await balances();
   check("send accepted", split.status === 201, `status=${split.status}`);
-  // The payer is NET-debited: 200 leaves, and the payee's 5% share is
-  // credited straight back as real spendable balance (performTransfer's
-  // cashbackCredit leg), so 1000 - 200 + 10 = 810.
+  // ── THE FULL 200 LEAVES, AND THE SHARE IS HELD ────────────────────
   //
-  // This assertion used to expect 800 — the older design, where the share
-  // went into an AssetSeed instead of back into the balance. It contradicted
-  // this check's own stated invariant: 800 + 190 leaves 10 of the original
-  // 1000 unaccounted for, which is the opposite of conserving. 810 + 190
-  // balances exactly, which is why the conservation check below can now be
-  // asserted directly rather than implied.
-  check("sender net-debited 190 (200 out, 10 share back)", afterSplit.sender === 810, `balance=${afterSplit.sender}`);
+  // 1000 - 200 = 800. The payee's 5% is not credited back to the payer's
+  // spendable balance any more: it is placed in the platform custody
+  // account, and the AssetSeed planted in the same request is what
+  // entitles the payer to claim it.
+  //
+  // This assertion has now been 800, then 810, and is 800 again — and the
+  // reason it moved is worth keeping, because it is the whole argument.
+  //
+  // It expected 800 under an older design where the share went into a seed,
+  // and was changed to 810 with the objection that "800 + 190 leaves 10 of
+  // the original 1000 unaccounted for, which is the opposite of
+  // conserving". That objection was correct against that design: the seed
+  // was a note about money, not a place money could be, so there was
+  // nowhere for the 10 to BE and crediting the balance was the only way to
+  // keep the books straight.
+  //
+  // There is somewhere now. The custody account holds it, the claim pays it
+  // out of there, and conservation is checked across all three accounts
+  // rather than two. That is what makes "the share is planted in My Assets"
+  // — which the app has always told people — a statement the ledger can
+  // actually support.
+  check("sender debited the full 200", afterSplit.sender === 800, `balance=${afterSplit.sender}`);
   check("receiver credited 190", afterSplit.receiver === 190, `balance=${afterSplit.receiver}`);
+  check("the 10 is held in custody, not in either balance", afterSplit.custody === 10, `custody=${afterSplit.custody}`);
   check("the 10 held back is reported as cashback", split.body.cashback === 10, `cashback=${split.body.cashback}`);
-  check("money is conserved", afterSplit.sender + afterSplit.receiver === 1000, `total=${afterSplit.sender + afterSplit.receiver}`);
+  // AND IT IS NOT IN THE BALANCE THE RESPONSE REPORTS. The payer's success
+  // screen reads newBalance; quoting a figure that included the share would
+  // promise them money they cannot spend until they claim it.
+  check("the response's newBalance excludes the share", split.body.newBalance === 800, `newBalance=${split.body.newBalance}`);
+  check("the response says where the share went", split.body.cashbackDestination === "assets",
+    `cashbackDestination=${split.body.cashbackDestination}`);
+  check("money is conserved across all three accounts",
+    afterSplit.sender + afterSplit.receiver + afterSplit.custody === 1000,
+    `total=${afterSplit.sender + afterSplit.receiver + afterSplit.custody}`);
 
   console.log("\n5. transaction references are 20 Gloobal symbols");
   await seed(1000);

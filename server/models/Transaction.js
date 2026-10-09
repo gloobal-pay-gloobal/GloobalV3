@@ -84,6 +84,23 @@ const transactionSchema = new mongoose.Schema(
         // AssetSeed, so crediting it again would be inventing money, not
         // recording it. See metadata.noBalanceMovement on rows of this type.
         'share',
+        // Money coming OUT of the platform custody account and into the
+        // balance of the person it was being held for — today, a Creator
+        // Share claimed out of My Assets (lib/custody.js).
+        //
+        // Its own type rather than 'disbursement', and the distinction is
+        // the whole reason this value exists: a disbursement is Gloobal
+        // spending its own money and lands in disbursedTotal, which is what
+        // "Our spending" reports. A custody release is Gloobal handing back
+        // money it was already holding for somebody. Recording one as the
+        // other would inflate the spending figure by every share ever
+        // claimed — a fabricated number behind an audited label, which is
+        // the defect PlatformAccount was created to end.
+        //
+        // Not 'send' either, for the reason 'disbursement' gives: there is
+        // no paying USER, and coverageAggregation's
+        // SPENDING_TRANSACTION_TYPES is ['send'].
+        'custody_release',
       ],
       required: true,
       index: true,

@@ -962,6 +962,11 @@ export async function installApi(context, options = {}) {
             cashback: row.cashback,
             cashbackCredit: row.cashbackCredit,
             shareReferenceId: row.shareReferenceId,
+            // Where the Creator Share went. The real server reads this off
+            // the share leg's own metadata; this fake records it the moment
+            // it decides there was a share, which is the same fact at the
+            // same point in the flow. Null when there was none.
+            cashbackDestination: row.shareReferenceId ? "assets" : null,
             receiptCode: row.receiptCode,
             shareReceiptCode: row.shareReceiptCode,
             createdAt: row.createdAt
@@ -1038,6 +1043,7 @@ export async function installApi(context, options = {}) {
             cashback: null,
             cashbackCredit: null,
             shareReferenceId: null,
+            cashbackDestination: null,
             shareReceiptCode: null,
             paymentReferenceId: null,
             coin: COIN_ROW.coinHistoryRow(stored, { viewerUserId: viewer.symbolId, counterparty: other }),

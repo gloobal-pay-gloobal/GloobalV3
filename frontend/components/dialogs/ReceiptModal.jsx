@@ -338,6 +338,26 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // receipt it describes the share itself and needs no inverting — direction
   // "received" IS the share arriving.
   const shareIsCredit = isShareReceipt ? !isSent : isSent;
+  // ── WHERE THE SHARE WENT, AND WHY IT IS READ OFF THE RECORD ──────────
+  //
+  // This row said "Gloobal balance" unconditionally, and it was telling
+  // the truth: the share was credited into the payer's spendable balance
+  // the moment the payment settled. That behaviour has changed — the share
+  // is now placed in My Assets and claimed from there — but the receipts
+  // for every payment made before the change still describe payments where
+  // it really did go to the balance.
+  //
+  // So the destination comes off the row the server recorded, never from
+  // what the app does today. `shareDestination` is "assets" on a payment
+  // whose share was held and empty on one that predates it. A receipt is a
+  // record; it has to keep saying what happened.
+  //
+  // Only the CREDIT side moves. On the payee's side the share was taken
+  // out of what they would otherwise have been paid, which came from their
+  // balance either way.
+  const shareDestinationName = shareIsCredit && receipt.shareDestination === "assets"
+    ? "My Assets"
+    : "Gloobal balance";
   // Guarded rather than read straight off `receiptTab`, so a receipt opened
   // while the previous one was left on its share tab cannot land on a tab
   // this receipt does not have.
@@ -1073,7 +1093,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     value={moneyCoded(shareConversion.gotAmount, shareConversion.gotCurrency)}
   />{shareConversion.rateLabel && <ReceiptRow label="Rate applied" value={shareConversion.rateLabel} accent />}<div className="rcpt-note" style={{ fontSize: 10, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4, paddingTop: 6 }}>
       As settled at the time of this transaction, not a current rate.
-    </div></div>}<ReceiptSectionLabel>Where it went</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Credited to" : "Taken from"} value="Gloobal balance" /><ReceiptRow label={"Date \xB7 Time"} value={dateTimeValue} /><ReceiptSectionLabel>Who</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Shared back to" : "You shared back to"} value={shareIsCredit ? "You" : receipt.name} />{
+    </div></div>}<ReceiptSectionLabel>Where it went</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Credited to" : "Taken from"} value={shareDestinationName} /><ReceiptRow label={"Date \xB7 Time"} value={dateTimeValue} /><ReceiptSectionLabel>Who</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Shared back to" : "You shared back to"} value={shareIsCredit ? "You" : receipt.name} />{
     /* Who the other side of the share is, by name and by ID.
 
        When I RECEIVED the payment, the row above already names the person I

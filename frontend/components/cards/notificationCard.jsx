@@ -85,10 +85,103 @@ function gloobalNotifHeadline(meta) {
 //
 // 'share' is a Creator Share release. It is money, it has two sides and two
 // currencies, and it reads through exactly the pages a payment does.
-var GLOOBAL_NOTIF_MONEY_TYPES = ["payment", "share"];
+//
+// 'coin' is a Gloobal Coin movement — a buy, a sell, or a transfer between
+// two accounts. Money again, and it reads through the same pages for the
+// same reason: a buy has two figures in two units (GEU bought, fiat paid)
+// and a rate between them, which is the shape this card was built around.
+// What differs is only the WORDS, and those come from the one table below.
+var GLOOBAL_NOTIF_MONEY_TYPES = ["payment", "share", "coin"];
 
 function gloobalNotifIsMoney(row) {
   return GLOOBAL_NOTIF_MONEY_TYPES.indexOf((row && row.type) || "") !== -1;
+}
+
+// ── WHO THE OTHER SIDE IS, IN THE WORDS OF THIS KIND OF MOVEMENT ─────────
+//
+// One label, read in two places that must not disagree: the card's first
+// page draws it over the counterparty's name, and the lock screen draws the
+// same two words in front of the same name (shareBannerText and
+// coinBannerText in server/lib/notificationText.js compose exactly
+// `${label} ${name}`). Three events land in one inbox seconds apart and the
+// only thing telling them apart is this line, so it lives in one function
+// rather than being spelled out at each site.
+//
+//   payment          To / From Rajeev Menon
+//   share            Creator Share to / from Rajeev Menon
+//   coin  mint       Bought from Gloobal Reserve
+//   coin  redeem     Sold to Gloobal Reserve
+//   coin  send       To / From Rajeev Menon
+//
+// A buy and a sell are not "to" and "from" a person — the other side is the
+// reserve that backs the coin, and "From Gloobal Reserve" over a figure in
+// GEU would read as somebody having sent it. Bought and Sold say what the
+// movement WAS, which is the question a coin row raises.
+//
+// `coinMovement` is 'mint' | 'redeem' | 'send', recorded on the
+// notification by the route that moved the coin. An unrecognised value —
+// or a coin row written before the field existed — falls through to the
+// plain direction, which is true of a transfer and the commonest case.
+function gloobalNotifWhoLabel(meta, row) {
+  const sent = ((meta && meta.direction) || "") === "sent";
+  const type = (row && row.type) || "";
+  if (type === "share") return sent ? "Creator Share to" : "Creator Share from";
+  if (type === "coin") {
+    const movement = (meta && meta.coinMovement) || "";
+    if (movement === "mint") return "Bought from";
+    if (movement === "redeem") return "Sold to";
+  }
+  return sent ? "To" : "From";
+}
+
+// ── THE UNIT, WRITTEN OUT ────────────────────────────────────────────────
+//
+// "Indian Rupee", "US Dollar", "Gloobal Energy Unit". The code is on the
+// page beside it; this is the gloss.
+//
+// Why it is needed at all, when the headline already carries a symbol: the
+// symbol is not an answer. ₹ is the rupee of four countries, ¥ is both JPY
+// and CNY, $ is dozens of currencies, and the several whose symbol is just
+// letters ("CHF ", "kr ") print as a code the reader is expected to already
+// know. On a cross-border movement the card then shows two figures in two
+// units and the symbols alone do not say which is which.
+//
+// Intl.DisplayNames rather than a table in this file. A fortieth copy of
+// the currency list is a fortieth thing to keep correct, and the platform
+// already ships the full ISO set — IN THE READER'S OWN LANGUAGE, which
+// matters in an app deliberately built to be usable by someone who reads no
+// English. The code stays fixed because the code is the record; only the
+// gloss follows the device.
+//
+// It can be absent: a Node build without full ICU, an old engine, a
+// currency the platform does not know. `.of()` then answers with the code
+// it was handed, and a page reading "INR · INR" is worse than one reading
+// "INR" — so an unglossed code returns "" and the caller prints the code
+// alone. GEU is not an ISO currency and never will be, so it is answered
+// from the app's own constant before the platform is asked at all.
+var GLOOBAL_CURRENCY_NAME_CACHE = {};
+
+function gloobalCurrencyName(code) {
+  const upper = String(code || "").trim().toUpperCase();
+  if (!upper) return "";
+  if (typeof COIN_TICKER === "string" && upper === COIN_TICKER) {
+    return typeof COIN_TICKER_LONG === "string" ? COIN_TICKER_LONG : "";
+  }
+  if (Object.prototype.hasOwnProperty.call(GLOOBAL_CURRENCY_NAME_CACHE, upper)) {
+    return GLOOBAL_CURRENCY_NAME_CACHE[upper];
+  }
+  let named = "";
+  try {
+    if (typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function") {
+      const spoken = new Intl.DisplayNames(undefined, { type: "currency" }).of(upper);
+      // The platform echoes the code back for anything it has no name for.
+      if (spoken && String(spoken).toUpperCase() !== upper) named = String(spoken);
+    }
+  } catch (e) {
+    // No currency display names on this engine. The code alone is honest.
+  }
+  GLOOBAL_CURRENCY_NAME_CACHE[upper] = named;
+  return named;
 }
 
 function gloobalNotifSubline(meta) {
@@ -156,7 +249,8 @@ function gloobalNotifCardPages(meta, when, row) {
     amount == null || !currency ? null : `${fmtMoney(amount, currency)}${String(fmtMoney(1, currency)).endsWith(String(currency)) ? "" : ` ${currency}`}`
   );
   const sent = meta.direction === "sent";
-  const share = (row && row.type) === "share";
+  const coin = (row && row.type) === "coin";
+  const movement = coin ? String(meta.coinMovement || "") : "";
   const pages = [];
   if (meta.counterpartyName) {
     // "Creator Share from Rajeev Menon", not "From Rajeev Menon".
@@ -174,9 +268,34 @@ function gloobalNotifCardPages(meta, when, row) {
     // thing wherever it is drawn.
     pages.push({
       key: "who",
-      label: share ? (sent ? "Creator Share to" : "Creator Share from") : (sent ? "To" : "From"),
+      label: gloobalNotifWhoLabel(meta, row),
       text: meta.counterpartyName
     });
+  }
+  // ── WHAT UNIT THE FIGURE IN THE HEAD IS IN ───────────────────────────
+  //
+  // It sits here, directly after the person and before the other side of
+  // the movement, because it qualifies the HEADLINE — the viewer's own
+  // figure, in the viewer's own currency. The conversion page below names
+  // the other side's unit in its own text, so the two never compete to
+  // explain the same number.
+  //
+  // This page took the place of a "Share on GLB-PAY-…" one that printed
+  // the reference of the payment a Creator Share came from. That page
+  // contradicted the rule stated sixty lines below it and still does, so
+  // it is gone: a transaction reference is twenty symbols of bookkeeping,
+  // read off a receipt by someone who went looking for it, not off a card
+  // somebody glances at. `metadata.paymentReferenceId` is untouched — the
+  // Creator Share receipt still names the payment it came from, which is
+  // where that question is actually answered.
+  //
+  // Drawn from `meta.currency` and nothing else, by the same rule as every
+  // other page on this card: a row whose metadata never carried a currency
+  // draws no currency page rather than a guessed one.
+  if (meta.currency) {
+    const code = String(meta.currency).toUpperCase();
+    const named = gloobalCurrencyName(code);
+    pages.push({ key: "currency", label: "Currency", text: named ? `${named} · ${code}` : code });
   }
   // What was paid, against what arrived, with the rate between them. Drawn
   // only when the payment really crossed a currency: on a domestic one the
@@ -205,29 +324,66 @@ function gloobalNotifCardPages(meta, when, row) {
     // stating it this way round even though it reads less naturally.
     const base = sent ? meta.counterCurrency : meta.currency;
     const quote = sent ? meta.currency : meta.counterCurrency;
+    // ── A COIN MOVEMENT CROSSES A CURRENCY WITHOUT CROSSING A BORDER ───
+    //
+    // A buy and a sell have two figures in two units — GEU and the money
+    // that bought or was paid out for it — so `crossed` is true and this
+    // page is drawn. But the payment's words are wrong on it in both
+    // halves, and in different ways.
+    //
+    // The LABELS first. "Sender paid" over the fiat leg of a buy names a
+    // sender who does not exist: the other side is the reserve, and the
+    // person who paid is the one reading the card. So a buy says what it
+    // was paid WITH and a sell what it paid OUT.
+    //
+    // The RATE second, and this one would be wrong by whatever the
+    // currency is worth. A payment's stored rate is one unit of the
+    // RECEIVER's currency in the SENDER's, and base/quote above derive the
+    // sentence from the viewer's direction on that convention.
+    //
+    // A coin rate is a different quantity, and the two coin routes record
+    // it in OPPOSITE directions: a buy stores GEU per unit of fiat
+    // (coinAmount = fiatAmount * rate) and a sell stores fiat per unit of
+    // GEU (fiatAmount = coinAmount * rate). They are reciprocals, both
+    // called a rate, and deriving the sentence from the viewer's direction
+    // would print one of them backwards — invisibly at an Indian account's
+    // peg of 1, and eighty-five times out for a US one.
+    //
+    // So the server carries the two currencies the rate is BETWEEN, as the
+    // route recorded them, and this prints them. Nothing is inverted here:
+    // an inverted rate is a computed rate, it rounds, and it stops matching
+    // the figure on the receipt. No pair, no note — the figures above it
+    // are still true.
+    const coinRate = coin
+      && meta.geuRate != null && Number.isFinite(Number(meta.geuRate))
+      && meta.geuRateBase && meta.geuRateQuote
+      ? `1 ${String(meta.geuRateBase).toUpperCase()} = ${Number(meta.geuRate).toFixed(6)} ${String(meta.geuRateQuote).toUpperCase()}`
+      : null;
     pages.push({
       key: "money",
-      label: sent ? "They received" : "Sender paid",
+      label: coin
+        ? (movement === "redeem" ? "Paid out" : "Paid with")
+        : (sent ? "They received" : "Sender paid"),
       text: money(meta.counterAmount, meta.counterCurrency),
-      note: meta.fxRate ? `1 ${base} = ${Number(meta.fxRate).toFixed(6)} ${quote}` : null
+      note: coin ? coinRate : (meta.fxRate ? `1 ${base} = ${Number(meta.fxRate).toFixed(6)} ${quote}` : null)
     });
   }
   if (meta.counterpartySymbolId) {
     pages.push({ key: "id", label: <GloobalWordmark suffix=" ID" />, symbols: meta.counterpartySymbolId });
   }
-  // THE PAYMENT A SHARE CAME FROM.
+  // NO TRANSACTION ID PAGE, OF EITHER KIND.
   //
-  // Only a share has one, and without it the card names a figure and a
-  // person and not the thing it was a share OF — which is the one question
-  // a 20.00 that appeared seconds after a 1,000.00 actually raises.
+  // A "Share on GLB-PAY-…" page used to sit here, naming the payment a
+  // Creator Share came from, on the argument that a 20.00 arriving seconds
+  // after a 1,000.00 raises the question "a share of WHAT". It did raise
+  // it; a twenty-symbol reference was not the answer to it. The card's
+  // first page already says "Creator Share from Rajeev Menon", which is
+  // the answer at the size a notification is read at, and the reference is
+  // on the receipt the card opens — one tap away, beside the payment it
+  // describes. The reasoning below is the same reasoning and it applied to
+  // this page the whole time it was here.
   //
-  // A payment has no payment above it, so `paymentReferenceId` is null
-  // there and this page is not drawn, by the same rule as every other page
-  // on this card.
-  if (meta.paymentReferenceId) {
-    pages.push({ key: "payment", label: "Share on", symbols: meta.paymentReferenceId });
-  }
-  // NO TRANSACTION ID PAGE. It was here and it is gone, and the two
+  // It was here and it is gone, and the two
   // identifiers being different lengths is the whole reason: a Gloobal ID
   // is somebody, a transaction reference is twenty symbols of bookkeeping.
   // On a card people glance at, the long one filled the widest page in the

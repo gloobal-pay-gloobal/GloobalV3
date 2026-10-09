@@ -28,7 +28,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readSource } from "./harness.mjs";
+import { readSource, loadNotifCardPages } from "./harness.mjs";
 
 const SERVER = "server/server.js";
 const MODEL = "server/models/Notification.js";
@@ -64,7 +64,10 @@ describe("a share release is recorded for both people", () => {
     // default — the write is rejected outright. Every share notification
     // would have been silently dropped, and the only sign would have been a
     // line in the server log.
-    assert.match(code(MODEL), /enum: \['login', 'payment', 'share', 'security', 'referral', 'system', 'offer'\]/);
+    // 'coin' sits beside it now, for a Gloobal Coin movement, and this
+    // assertion is written as a containment rather than the whole list so
+    // the next type added does not fail a test about SHARE.
+    assert.match(code(MODEL), /enum: \[[^\]]*'share'[^\]]*\]/);
     assert.match(writer, /type: 'share',/);
   });
 
@@ -238,11 +241,13 @@ describe("the share banner and the share card say the same thing", () => {
     // which is one payment duplicated at the wrong amount.
     const text = code(TEXT);
     assert.match(text, /Creator Share \$\{sent \? 'to' : 'from'\}/);
-    // And the card's first page uses the same words.
-    assert.match(
-      code("frontend/components/cards/notificationCard.jsx"),
-      /share \? \(sent \? "Creator Share to" : "Creator Share from"\)/
-    );
+    // And the card's first page uses the same words — read through the
+    // real function rather than matched as source text, because the words
+    // now live in one table (gloobalNotifWhoLabel) shared with the coin
+    // movements, and what matters is what it ANSWERS.
+    const labelOf = (meta, row) => (loadNotifCardPages()(meta, "", row).find((p) => p.key === "who") || {}).label;
+    assert.equal(labelOf({ direction: "sent", counterpartyName: "R" }, { type: "share" }), "Creator Share to");
+    assert.equal(labelOf({ direction: "received", counterpartyName: "R" }, { type: "share" }), "Creator Share from");
   });
 
   test("the figure keeps the payment's shape, through one function", () => {
@@ -254,7 +259,12 @@ describe("the share banner and the share card say the same thing", () => {
     // `title: bannerAmountTitle({`, so the declaration is not counted as a
     // third caller.
     const calls = text.match(/title: bannerAmountTitle\(\{/g) || [];
-    assert.equal(calls.length, 2, "one of the two banners formats its own figure");
+    // Three now: payment, share, and a Gloobal Coin movement. Every banner
+    // in the file routes through it, which is the property — not the count.
+    const composers = text.match(/^function \w+BannerText\(/gm) || [];
+    assert.equal(calls.length, composers.length,
+      `${composers.length} banner composers, ${calls.length} of them using the shared formatter`);
+    assert.ok(composers.length >= 3, `only ${composers.length} banner composers found`);
   });
 
   test("a share with no figure says what happened, not plus zero", async () => {

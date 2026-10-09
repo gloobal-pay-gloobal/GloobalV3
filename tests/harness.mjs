@@ -153,4 +153,76 @@ export function loadMapServerTransaction() {
   )(formatClockTime, reserveName[1]);
 }
 
+// gloobalNotifCardPages, with the things IT leans on.
+//
+// ── Why this is here, for the same reason as the one above ────────────
+//
+// The page builder is the one function on the notification card that can be
+// tested without a browser: hand it a notification's metadata and it
+// answers which pages that notification has, which is the whole behaviour.
+// Nothing in frontend/ exports anything, so reaching it means slicing it
+// out of the source and evaluating it — and two test files were each doing
+// that with their own copy of the slice and their own list of what to
+// inject alongside it.
+//
+// Then the function grew two helpers (gloobalNotifWhoLabel, the one place
+// the "Creator Share from" / "Bought from" labels are written; and
+// gloobalCurrencyName, which glosses the unit) and both slices broke at
+// once with "gloobalNotifWhoLabel is not defined", thrown from inside a
+// generated function that names neither the test nor the cause. Exactly the
+// failure loadMapServerTransaction's header describes.
+//
+// So: one slice, here. The next helper is added in one place.
+export function loadNotifCardPages() {
+  const card = readSource("frontend/components/cards/notificationCard.jsx");
+
+  const slice = (name) => {
+    const at = card.indexOf(`function ${name}(`);
+    if (at < 0) throw new Error(`${name} not found in notificationCard.jsx`);
+    const end = card.indexOf("\n}\n", at);
+    if (end <= at) throw new Error(`could not find the end of ${name}`);
+    return card.slice(at, end + 2);
+  };
+
+  const varDecl = (name) => {
+    const found = card.match(new RegExp(`var ${name} = (?:\\[[^\\]]*\\]|\\{[^}]*\\});`));
+    if (!found) throw new Error(`var ${name} not found in notificationCard.jsx`);
+    return found[0];
+  };
+
+  // fmtMoney and its tables, from the real formatter — the money pages print
+  // through it, so a test that stubbed it would be checking its own stub.
+  const format = readSource("backend/utils/format.js");
+  const fmtSlice = ["currencyDecimals", "fmt", "currencySuffix", "fmtMoney"].map((n) => {
+    const at = format.indexOf(`function ${n}(`);
+    return format.slice(at, format.indexOf("\n}\n", at) + 3);
+  }).join("\n");
+
+  // The coin's own two names, read from where the app declares them rather
+  // than restated: gloobalCurrencyName answers GEU from these, and a second
+  // copy here could gloss the unit differently from every other screen.
+  const currencies = readSource("backend/data/currencies.js");
+  const ticker = currencies.match(/var COIN_TICKER = "([^"]+)"/);
+  const tickerLong = currencies.match(/var COIN_TICKER_LONG = "([^"]+)"/);
+  if (!ticker || !tickerLong) throw new Error("COIN_TICKER / COIN_TICKER_LONG not found in currencies.js");
+
+  // The one JSX expression in the sliced function is the wordmark on the ID
+  // page's label; it is swapped below for a plain string so new Function can
+  // parse the rest. No test reads that label's markup.
+  return new Function(
+    "COIN_TICKER",
+    "COIN_TICKER_LONG",
+    `${currencies.match(/var CURRENCY_SYMBOL = \{[\s\S]*?\n\};\n/)[0]}
+     ${format.match(/var GLOOBAL_ZERO_DECIMAL_CURRENCIES = \[[\s\S]*?\n\];\n/)[0]}
+     ${fmtSlice}
+     ${varDecl("GLOOBAL_NOTIF_MONEY_TYPES")}
+     ${varDecl("GLOOBAL_CURRENCY_NAME_CACHE")}
+     ${slice("gloobalNotifIsMoney")}
+     ${slice("gloobalNotifWhoLabel")}
+     ${slice("gloobalCurrencyName")}
+     ${slice("gloobalNotifCardPages").replace(/<GloobalWordmark[^>]*\/>/, '"Gloobal ID"')}
+     return gloobalNotifCardPages;`
+  )(ticker[1], tickerLong[1]);
+}
+
 export { ROOT };

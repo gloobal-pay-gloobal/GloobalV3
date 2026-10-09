@@ -31,4 +31,23 @@
 // boundary.
 const COIN_CURRENCY = 'GEU';
 
-module.exports = { COIN_CURRENCY };
+// ── WHAT THE OTHER SIDE OF A BUY OR A SELL IS CALLED ─────────────────────
+//
+// A coin transfer has a person on the other side. A buy and a sell do not:
+// the coin is issued and retired by the reserve that backs it, and the only
+// account involved is the holder's own. Something still has to be named
+// there — a receipt with one party is not a receipt, and a notification
+// reading "+1,200.00 GEU" with nothing after it does not say what happened
+// — and this is the name.
+//
+// It lives beside the ticker for the same reason the ticker lives here: it
+// is the coin's own vocabulary, and a name that is correct in one file and
+// different in another is two sources of truth. The browser bundle keeps
+// its own copy (COIN_RESERVE_NAME in frontend/features/receipts/coinReceipt.js,
+// where the coin receipt has named this party since the coin shipped)
+// because `server/` and `backend/` are separate programs that share no
+// module — the same deliberate duplication the header above describes, and
+// the reason this string matches that one exactly.
+const COIN_RESERVE_NAME = 'Gloobal Reserve';
+
+module.exports = { COIN_CURRENCY, COIN_RESERVE_NAME };

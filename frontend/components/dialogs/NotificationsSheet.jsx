@@ -30,6 +30,7 @@ import {
   ArrowUpRight as ArrowUpRightNotifSheet,
   ShieldCheck as ShieldCheckNotifSheet,
   Gift as GiftNotifSheet,
+  Coins as CoinsNotifSheet,
   Info as InfoNotifSheet,
   CheckCheck as CheckCheckNotifSheet
 } from "lucide-react";
@@ -56,6 +57,16 @@ function gloobalNotifSheetLook(row) {
       ? { Icon: ArrowUpRightNotifSheet, tint: T.negative, soft: T.negativeSoft }
       : { Icon: ArrowDownLeftNotifSheet, tint: T.positive, soft: T.positiveSoft };
   }
+  // A COIN MOVEMENT IS THE ONE MONEY ROW WITH NO FLAG TO DRAW.
+  //
+  // The card closes its head with the counterparty's flag, and for a
+  // payment or a Creator Share there is always one — the other side is a
+  // person in a country. The other side of a BUY or a SELL is the reserve
+  // that backs the coin, which is in no country, so that slot falls back
+  // to the type's own mark and this is the mark it falls back to. A coin
+  // TRANSFER does have a person on the other side and keeps the flag; it
+  // reaches this line only on a row whose country never arrived.
+  if (type === "coin") return { Icon: CoinsNotifSheet, tint: T.accent, soft: T.accentSoft };
   if (type === "security" || type === "login") return { Icon: ShieldCheckNotifSheet, tint: T.accent, soft: T.accentSoft };
   if (type === "referral" || type === "offer") return { Icon: GiftNotifSheet, tint: T.accent, soft: T.accentSoft };
   return { Icon: InfoNotifSheet, tint: T.inkSoft, soft: T.surfaceAlt };

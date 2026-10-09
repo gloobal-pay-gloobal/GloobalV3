@@ -64,8 +64,14 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
     // here the two drifted. So the assertion is now "server.js takes it from
     // the one module", which is a stronger claim than "server.js spells it
     // correctly".
-    assert.match(server, /const \{ COIN_CURRENCY \} = require\('\.\/lib\/coinTicker'\);/);
+    // Written as "COIN_CURRENCY is among what server.js takes from that
+    // module" rather than as the exact destructure, so adding another of
+    // the coin's own names to it — COIN_RESERVE_NAME did, for the party on
+    // the other side of a buy — does not fail a test about the TICKER.
+    assert.match(server, /const \{[^}]*\bCOIN_CURRENCY\b[^}]*\} = require\('\.\/lib\/coinTicker'\);/);
     assert.match(readSource("server/lib/coinTicker.js"), /const COIN_CURRENCY = 'GEU';/);
+    // And nothing on the server declares a second copy of it.
+    assert.ok(!/const COIN_CURRENCY = '/.test(server), "server.js has its own copy of the ticker again");
   });
 
   test("and the two tickers are not one constant apart in the same file", () => {

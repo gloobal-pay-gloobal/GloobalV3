@@ -288,7 +288,13 @@ test("the browser's ticker and the server's are the same string", async () => {
 
   // And server.js takes it from there rather than declaring a second one.
   const serverMain = readFileSync(join(ROOT, "server", "server.js"), "utf8");
-  assert.match(serverMain, /const \{ COIN_CURRENCY \} = require\('\.\/lib\/coinTicker'\);/,
+  // Written as "COIN_CURRENCY is among what it takes from that module"
+  // rather than as the exact destructure, so adding another of the coin's
+  // own names to it — COIN_RESERVE_NAME did, for the party on the other
+  // side of a buy or a sell — does not fail a test about the TICKER.
+  assert.match(serverMain, /const \{[^}]*\bCOIN_CURRENCY\b[^}]*\} = require\('\.\/lib\/coinTicker'\);/,
+    "server.js no longer takes the coin ticker from lib/coinTicker.js");
+  assert.ok(!/const COIN_CURRENCY = '/.test(serverMain),
     "server.js declares its own coin ticker again");
 
   const domainSrc = readFileSync(join(ROOT, "backend", "domain", "coin", "CoinService.js"), "utf8");

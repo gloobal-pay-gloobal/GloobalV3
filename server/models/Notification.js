@@ -33,11 +33,19 @@ const notificationSchema = new mongoose.Schema(
       // seconds apart from the same person, two rows both saying "payment"
       // read as one payment duplicated.
       //
+      // 'coin' is a Gloobal Coin movement: a buy (coin_mint), a sell
+      // (coin_redeem) or a transfer between two accounts (coin_send).
+      // Which of the three is in metadata.coinMovement rather than in three
+      // types of its own, because the inbox's question is "did my coin
+      // move?" and the card reads all three through the same pages — one
+      // type keeps the look table, the icon and the money branch from
+      // having to enumerate them again.
+      //
       // Adding to this enum is not free: a value missing from it does not
       // fall back to the default, it fails validation outright and the
       // write is rejected. That is how a share notification would have been
       // silently dropped had this list not been updated with the writer.
-      enum: ['login', 'payment', 'share', 'security', 'referral', 'system', 'offer'],
+      enum: ['login', 'payment', 'share', 'coin', 'security', 'referral', 'system', 'offer'],
       default: 'system',
       index: true,
     },

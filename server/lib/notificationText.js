@@ -178,6 +178,56 @@ function shareBannerText({ direction, amount, currency, counterpartyName }) {
   };
 }
 
+// The two lines of one GLOOBAL COIN movement's banner.
+//
+// ── Why a coin movement needs its own wording ──────────────────────────
+//
+// Three things can happen to coin and only one of them has a person on the
+// other side:
+//
+//   mint     fiat out of the balance, GEU in      the reserve issues it
+//   redeem   GEU out, fiat back into the balance  the reserve retires it
+//   send     GEU from one account to another      a person
+//
+// Through paymentBannerText a buy would read "+1,200.00 GEU / From Gloobal
+// Reserve", which says somebody sent it — and the person reading that had
+// just spent their own money on it. So a buy says Bought and a sell says
+// Sold: what the movement WAS, which is the question a figure in a currency
+// most people have held for a week actually raises. A transfer keeps the
+// payment's own To/From, because a transfer is what a payment is.
+//
+// These two words are also the card's first page (gloobalNotifWhoLabel in
+// frontend/components/cards/notificationCard.jsx) and the duplication is
+// deliberate for the reason this whole file states: `server/` and the
+// browser bundle are separate programs with no module between them.
+// tests/notification-card.test.mjs reads both files and fails if they
+// disagree.
+//
+// `movement` is 'mint' | 'redeem' | 'send'. `direction` is the viewer's own
+// side — 'received' on a buy and on the receiving half of a transfer,
+// 'sent' on a sell and on the sending half. The sign in the title follows
+// direction and nothing else, so it agrees with the balance either way.
+function coinWhoLabel({ movement, sent }) {
+  if (movement === 'mint') return 'Bought from';
+  if (movement === 'redeem') return 'Sold to';
+  return sent ? 'To' : 'From';
+}
+
+function coinBannerText({ movement, direction, amount, currency, counterpartyName }) {
+  const sent = direction === 'sent';
+  const fallback = movement === 'mint'
+    ? 'Gloobal Coin bought'
+    : movement === 'redeem'
+      ? 'Gloobal Coin sold'
+      : (sent ? 'Gloobal Coin sent' : 'Gloobal Coin received');
+  return {
+    title: bannerAmountTitle({ sent, amount, currency, fallback }),
+    body: counterpartyName
+      ? `${coinWhoLabel({ movement, sent })} ${counterpartyName}`
+      : fallback,
+  };
+}
+
 module.exports = {
   NOTIF_DISC_COUNT,
   currencySuffix,
@@ -186,4 +236,6 @@ module.exports = {
   notifDiscIcon,
   paymentBannerText,
   shareBannerText,
+  coinWhoLabel,
+  coinBannerText,
 };

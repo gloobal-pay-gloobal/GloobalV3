@@ -20,7 +20,7 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { readSource } from "./harness.mjs";
+import { readSource, loadNotifCardPages } from "./harness.mjs";
 import { buildOnce, openPage, login, teardown, ACCOUNTS } from "./browser-harness.mjs";
 
 const CARD = "frontend/components/cards/notificationCard.jsx";
@@ -29,6 +29,7 @@ const SERVER = "server/server.js";
 
 describe("the card is built from what the server recorded", () => {
   const card = readSource(CARD);
+  const pagesOfCard = loadNotifCardPages();
 
   test("nothing on it is computed", () => {
     // No arithmetic on money at all: the pages read amount, counterAmount and
@@ -50,20 +51,39 @@ describe("the card is built from what the server recorded", () => {
     assert.match(pages, /const crossed = meta\.counterCurrency && meta\.currency && meta\.counterCurrency !== meta\.currency;/);
   });
 
-  test("the pages are the four asked for, in order", () => {
+  test("the pages are the ones asked for, in order", () => {
     const pages = card.slice(card.indexOf("function gloobalNotifCardPages"), card.indexOf("function GloobalNotifCardDots"));
     const keys = [...pages.matchAll(/key: "(\w+)"/g)].map((m) => m[1]);
-    // No "txn". A Gloobal ID is somebody; a transaction reference is twenty
-    // symbols of bookkeeping, and it filled the widest page in the pager
-    // with the one thing nobody reads off a notification. It is read off a
-    // receipt, by someone who went looking for it, and that is where it is.
-    // The money pages, in order, then the two that belong to the kinds of
-    // notification this card did not used to draw at all:
-    //   "payment"  the payment a Creator Share came from, which is the one
-    //              question a 20.00 arriving after a 1,000.00 raises
-    //   "what"     the sentence on a notification that has only a sentence
-    assert.deepEqual(keys, ["what", "when", "who", "money", "id", "payment", "when"]);
+    // NO REFERENCE PAGE OF ANY KIND, and that is now two that have been
+    // taken off this card for one reason.
+    //
+    // "txn" went first: a Gloobal ID is somebody, a transaction reference
+    // is twenty symbols of bookkeeping, and it filled the widest page in
+    // the pager with the one thing nobody reads off a notification. It is
+    // read off a receipt, by someone who went looking for it.
+    //
+    // "payment" went second, and it was the same page wearing a better
+    // argument — the reference of the payment a Creator Share came from,
+    // on the grounds that a 20.00 arriving seconds after a 1,000.00 raises
+    // "a share of WHAT". It does raise it. GLB-PAY-9001 is not the answer
+    // to it at the size a notification is read at; "Creator Share from
+    // Rajeev Menon" on the first page is, and the reference is on the
+    // receipt one tap away. Both pages are gone and neither comes back.
+    //
+    // "currency" took its place: the unit the headline figure is in,
+    // written out. The symbol is not an answer on its own — ₹ is four
+    // countries' rupee, ¥ is two currencies that disagree about minor
+    // units — and on a cross-border row the card shows two figures whose
+    // symbols do not say which is which.
+    //
+    //   "what"   the sentence on a notification that has only a sentence
+    assert.deepEqual(keys, ["what", "when", "who", "currency", "money", "id", "when"]);
     assert.ok(!/Transaction ID/.test(card), "the transaction id page is back");
+    assert.ok(!/label: "Share on"/.test(card), "the share's payment reference page is back");
+    // The FIELD is untouched. Only the page is gone: the Creator Share
+    // receipt still names the payment it came from, which is where that
+    // question is actually answered, and the server still records it.
+    assert.match(readSource("server/server.js"), /'metadata\.paymentReferenceId': reference \|\| null,/);
   });
 
   test("the head says the direction and opens the payment; the chevron turns the page", () => {
@@ -118,7 +138,18 @@ describe("the card is built from what the server recorded", () => {
     // other in the list. On the first page they were word-for-word
     // identical apart from the figure, which reads as one payment
     // duplicated at the wrong amount.
-    assert.match(card, /share \? \(sent \? "Creator Share to" : "Creator Share from"\)/);
+    // The label is read off ONE function now, which is also where a coin
+    // movement's "Bought from" / "Sold to" live — three kinds of money in
+    // one inbox, and the only thing telling them apart is this line, so it
+    // is written in one place rather than at each site. Asserted through
+    // the real function rather than as source text: a table is only worth
+    // having if what it answers is what the card shows.
+    assert.match(card, /function gloobalNotifWhoLabel\(meta, row\)/);
+    const labelOf = (meta, row) => (pagesOfCard(meta, "", row).find((p) => p.key === "who") || {}).label;
+    assert.equal(labelOf({ direction: "sent", counterpartyName: "R" }, { type: "share" }), "Creator Share to");
+    assert.equal(labelOf({ direction: "received", counterpartyName: "R" }, { type: "share" }), "Creator Share from");
+    assert.equal(labelOf({ direction: "sent", counterpartyName: "R" }, { type: "payment" }), "To");
+    assert.equal(labelOf({ direction: "received", counterpartyName: "R" }, { type: "payment" }), "From");
     // Same words the lock screen uses, from the server's own composer.
     assert.match(readSource("server/lib/notificationText.js"), /Creator Share \$\{sent \? 'to' : 'from'\}/);
   });
@@ -285,39 +316,52 @@ describe("in the app", () => {
       assert.match(await card.innerText(), /\+[\d,.]/s, "the head does not carry the figure");
       assert.ok(!/ received| sent/.test(await card.innerText()), "the word is back on the headline");
 
-      // Four pages, turned by the chevron, each naming what it shows.
+      // Five pages, turned by the chevron, each naming what it shows.
+      // Five, not four: the unit of the headline figure now sits between
+      // the person and the other side of the payment.
       const seen = [];
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 5; i++) {
         seen.push((await card.getByTestId("notification-card-page").innerText()).replace(/\s+/g, " ").trim());
         await card.getByRole("button", { name: "Next detail", exact: true }).click();
         await page.waitForTimeout(320);
       }
       assert.match(seen[0], /^From /);
-      assert.match(seen[1], /Sender paid/);
-      assert.match(seen[1], /0\.009165/, "the rate is not the one recorded");
+      // THE UNIT, WRITTEN OUT. The headline carries a symbol and a symbol
+      // is not an answer: this leg arrives in EUR, and the page below it
+      // quotes a figure in another currency entirely.
+      assert.match(seen[1], /^Currency/);
+      assert.match(seen[1], new RegExp(`\\b${B.currency}\\b`),
+        `the currency page does not name the unit: ${seen[1]}`);
+      // The page is "<name> · <code>", and when the platform has no name
+      // for a code it must print the code ALONE rather than gloss it with
+      // itself. Pinned because the fallback is the branch nobody looks at.
+      assert.ok(!new RegExp(`${B.currency} · ${B.currency}`).test(seen[1]),
+        "the code is being printed as its own gloss");
+      assert.match(seen[2], /Sender paid/);
+      assert.match(seen[2], /0\.009165/, "the rate is not the one recorded");
       // THE RECORDED DIRECTION: 1 unit of the RECEIVER's currency in the
       // SENDER's, which is the one sentence receiptPaymentConversion prints
       // too. B is the receiver here, so the base is B's currency.
-      assert.match(seen[1], new RegExp(`1 ${B.currency} = 0\\.009165 EUR`),
-        `the rate is stated in the wrong direction: ${seen[1]}`);
+      assert.match(seen[2], new RegExp(`1 ${B.currency} = 0\\.009165 EUR`),
+        `the rate is stated in the wrong direction: ${seen[2]}`);
       // Their Gloobal ID — ten symbols, someone you can pay again — and not
       // the twenty-symbol transaction reference, which is a receipt's job.
       assert.ok(!seen.some((s) => /Transaction ID/.test(s)), "the transaction id page is back");
-      assert.equal((seen[2].match(/[−+×=○□●■]/g) || []).length, A.symbolId.length);
+      assert.equal((seen[3].match(/[−+×=○□●■]/g) || []).length, A.symbolId.length);
       // A DATE AND A TIME, not "3h". The page used to print the same
       // relative stamp the plain rows carry, which answers "how fresh is
       // this?" — a different question from the one its label asks, and one
       // that stops answering anything an hour later.
-      assert.match(seen[3], /Date and time/);
+      assert.match(seen[4], /Date and time/);
       // The receipt's own date format, so the notification and the
       // document it opens print one payment's time one way.
-      assert.match(seen[3], /\w{3} \d{1,2}, \d{4} · \d{2}:\d{2}:\d{2}/,
-        `the Date and time page is not a date and a time: ${seen[3]}`);
-      assert.ok(!/Just now|^\d+[mh]$|ago/.test(seen[3]), "the relative stamp is back on the Date and time page");
+      assert.match(seen[4], /\w{3} \d{1,2}, \d{4} · \d{2}:\d{2}:\d{2}/,
+        `the Date and time page is not a date and a time: ${seen[4]}`);
+      assert.ok(!/Just now|^\d+[mh]$|ago/.test(seen[4]), "the relative stamp is back on the Date and time page");
       // And it is the PAYMENT's instant, not this row's. The seed below
       // dates the payment to a fixed day; a card reading its own createdAt
       // would print today.
-      assert.match(seen[3], /Mar 14, 2031/, `the card is not showing the payment's own time: ${seen[3]}`);
+      assert.match(seen[4], /Mar 14, 2031/, `the card is not showing the payment's own time: ${seen[4]}`);
       // And it came back round to the first page.
       assert.match((await card.getByTestId("notification-card-page").innerText()).trim(), /^From/);
       assert.deepEqual(errors, []);
@@ -588,25 +632,16 @@ describe("the list does not squash what it holds", () => {
 // inverted label, and that no single-leg test would have caught.
 describe("both sides of one payment state one rate", () => {
   const card = readSource(CARD);
-  const pagesOf = new Function(`
-    ${readSource("backend/data/currencies.js").match(/var CURRENCY_SYMBOL = \{[\s\S]*?\n\};\n/)[0]}
-    ${readSource("backend/utils/format.js").match(/var GLOOBAL_ZERO_DECIMAL_CURRENCIES = \[[\s\S]*?\n\];\n/)[0]}
-    ${["currencyDecimals", "fmt", "currencySuffix", "fmtMoney"].map((n) => {
-      const src = readSource("backend/utils/format.js");
-      const at = src.indexOf(`function ${n}(`);
-      return src.slice(at, src.indexOf("\n}\n", at) + 3);
-    }).join("\n")}
-    ${card
-      .slice(card.indexOf("function gloobalNotifIsMoney("), card.indexOf("\n}\n", card.indexOf("function gloobalNotifIsMoney(")) + 3)}
-    ${card.match(/var GLOOBAL_NOTIF_MONEY_TYPES = \[[^\]]*\];/)[0]}
-    ${card
-      .slice(card.indexOf("function gloobalNotifCardPages("), card.indexOf("\n}\n", card.indexOf("function gloobalNotifCardPages(")) + 3)
-      // The one JSX expression in the function — the wordmark on the ID
-      // page's label. Swapped for a plain string so `new Function` can
-      // parse the rest; no test here reads that label.
-      .replace(/<GloobalWordmark[^>]*\/>/, '"Gloobal ID"')}
-    return gloobalNotifCardPages;
-  `)();
+  // The real function out of the real file, sliced by the harness.
+  //
+  // It used to be sliced here, with this test's own list of what to inject
+  // alongside it — and so did creator-share-notification.test.mjs. Then the
+  // builder grew two helpers and both copies broke at once with
+  // "gloobalNotifWhoLabel is not defined", thrown from inside a generated
+  // function that named neither the test nor the cause. One slice now, in
+  // tests/harness.mjs, beside the one loadMapServerTransaction keeps for
+  // the same reason.
+  const pagesOf = loadNotifCardPages();
 
   // India pays the UK: ₹2,105.20 leaves, £20 arrives, recorded at 105.26 —
   // which is INR per GBP, the receiver's currency as the base.

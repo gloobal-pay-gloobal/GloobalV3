@@ -57,7 +57,7 @@ const {
 // card in the app are the same notification rather than two about one
 // payment. See that file's header for why the wording is duplicated here
 // instead of imported from the frontend.
-const { paymentBannerText, shareBannerText, notifDiscIcon } = require('./lib/notificationText');
+const { paymentBannerText, shareBannerText, coinBannerText, notifDiscIcon } = require('./lib/notificationText');
 
 // Audit fix: AuditLog was fully defined (schema, indexes) but never written
 // to anywhere in this file — every route that could meaningfully report a
@@ -7668,6 +7668,274 @@ async function recordShareNotifications({ shareTransaction, paymentTransaction, 
   return legs;
 }
 
+// ── A Gloobal Coin movement, as a notification ──────────────────────────
+//
+// ── What was missing ──────────────────────────────────────────────────
+//
+// Nothing. Not one of the three coin routes wrote a notification: grep
+// POST /api/coin/{mint,redeem,send} for "Notification" and it does not
+// appear. So coin was the one kind of money in this app that could move
+// without anybody being told — a transfer arrived and the receiving
+// account learned about it by opening the Coin screen and noticing a
+// larger number.
+//
+// That is the same hole the Creator Share had, and it is closed the same
+// way: the row the inbox reads and the push that reaches a closed phone,
+// written after the movement has committed, keyed so a retry is a no-op.
+//
+// ── Why a buy and a sell are ONE notification and a transfer is TWO ────
+//
+// A payment and a share each have two people, and each person's side is a
+// different event to them, so each gets a row. A buy and a sell have one
+// person: the holder, converting their own money from one form into the
+// other. The reserve is the other side of the trade and it is not an
+// account with an inbox — it is the backing. So there is one row, and it
+// names COIN_RESERVE_NAME as the counterparty for the same reason the coin
+// RECEIPT has always named it: a record with one party is not a record.
+//
+// A transfer has two real accounts and reads exactly like a payment,
+// because that is what it is — coin out of one balance and into another,
+// with the supply untouched. Two rows, opposite directions.
+//
+// ── Which figure is the figure ────────────────────────────────────────
+//
+// The COIN one, on every movement, in every row. `amount`/`currency` are
+// the GEU that moved and `counterAmount`/`counterCurrency` the fiat that
+// bought it or was paid out for it — so the headline is the thing the
+// notification is about, and the fiat leg is a page beneath it. A buy
+// headed by the fiat figure would be indistinguishable from a payment.
+//
+// Both numbers are read off what the route committed. Nothing here
+// multiplies, divides or inverts the rate — it is carried so the card can
+// STATE it, and it is carried WITH THE TWO CURRENCIES IT IS A RATE BETWEEN,
+// because the two routes record it in opposite directions:
+//
+//   mint     coinAmount = fiatAmount * geuRate     GEU per unit of fiat
+//   redeem   fiatAmount = coinAmount * redeemRate  fiat per unit of GEU
+//
+// Those are reciprocals and both are called a rate. A card told only the
+// number would have to assume a direction, and whichever it assumed would
+// be wrong for one of the two routes — by a factor of whatever the currency
+// is worth, so for an Indian account at a peg of 1 the error would be
+// invisible and for a US account it would print the peg eighty-five times
+// out. Inverting one to match the other is worse again: an inverted rate is
+// a computed rate, it rounds, and it then reconciles with neither the
+// receipt nor the ledger. So `geuRateBase` and `geuRateQuote` name the
+// direction the route actually recorded, and the card prints
+// "1 <base> = <rate> <quote>" without deciding anything.
+//
+// It is also its OWN field rather than `fxRate`, which holds a payment's
+// rate under a different convention entirely (one unit of the receiver's
+// currency in the sender's). Two different quantities in one field is the
+// same class of defect one step further back.
+//
+// A transfer has no rate and no fiat leg at all — coin to coin, one unit —
+// so all of them are null and the card draws no conversion page, by the
+// same rule every other page on it follows.
+async function recordCoinNotifications({
+  transaction,
+  movement,
+  holder,
+  receiver = null,
+  fiatAmount = null,
+  fiatCurrency = null,
+  geuRate = null,
+  geuRateBase = null,
+  geuRateQuote = null,
+}) {
+  if (!transaction || !holder) return [];
+
+  const transactionId = String(transaction._id);
+  const coinAmount = Number(transaction.amount);
+  // READ, NEVER MINTED. The payment and share writers call
+  // ensureReceiptCode here, because a payment's notification is often the
+  // first thing that will ever want a short link to its receipt. A coin
+  // movement's notification does not need one: the push links by
+  // `?txn=<referenceId>`, which is what the history row is keyed on and
+  // what the sheet hands the app on a tap.
+  //
+  // So this adds no write to a money path that has just committed. The code
+  // is still minted the moment anything actually needs it — opening or
+  // sharing the receipt — by the same ensureReceiptCode, which exists
+  // precisely so a row can acquire one at the point of use.
+  const receiptCode = transaction.receiptCode || null;
+  // A MISSING FIGURE IS NOT ZERO, and `Number(null)` is 0 and 0 is finite —
+  // the trap this codebase keeps walking into. A transfer genuinely has no
+  // fiat leg, and a buy whose paid amount somehow did not reach here has an
+  // unknown one; both must arrive at the card as null so it draws nothing,
+  // not as a free conversion at a rate of zero.
+  const fiat = fiatAmount === null || fiatAmount === undefined || !Number.isFinite(Number(fiatAmount))
+    ? null
+    : Number(fiatAmount);
+  const rate = geuRate === null || geuRate === undefined || !Number.isFinite(Number(geuRate))
+    ? null
+    : Number(geuRate);
+  const fiatUnit = fiat === null ? null : (fiatCurrency || null);
+
+  const holderName = notificationDisplayName(null, holder);
+  const receiverName = receiver ? notificationDisplayName(null, receiver) : null;
+
+  const entries = movement === 'send'
+    ? [
+      {
+        userId: holder._id,
+        title: 'Gloobal Coin sent',
+        message: `You sent ${formatNotificationAmount(coinAmount, COIN_CURRENCY)} ${COIN_CURRENCY} to ${receiverName}`,
+        direction: 'sent',
+        counterpartyName: receiverName,
+        counterpartySymbolId: receiver?.symbolId || null,
+        counterpartyIso: accountCountryIso(receiver) || null,
+        pushType: 'coin.sent',
+      },
+      {
+        userId: receiver._id,
+        title: 'Gloobal Coin received',
+        message: `You received ${formatNotificationAmount(coinAmount, COIN_CURRENCY)} ${COIN_CURRENCY} from ${holderName}`,
+        direction: 'received',
+        counterpartyName: holderName,
+        counterpartySymbolId: holder.symbolId || null,
+        counterpartyIso: accountCountryIso(holder) || null,
+        pushType: 'coin.received',
+      },
+    ]
+    : [
+      {
+        userId: holder._id,
+        // A BUY IS AN ARRIVAL OF COIN, a sell is a departure of it. The
+        // direction follows the GEU because the figure IS the GEU, and
+        // that is what makes the sign agree with the coin balance the
+        // person is about to look at. Their fiat balance moved the other
+        // way, which is what the conversion page says.
+        title: movement === 'mint' ? 'Gloobal Coin bought' : 'Gloobal Coin sold',
+        message: movement === 'mint'
+          ? `You bought ${formatNotificationAmount(coinAmount, COIN_CURRENCY)} ${COIN_CURRENCY}${fiat === null || !fiatUnit ? '' : ` for ${formatNotificationAmount(fiat, fiatUnit)} ${fiatUnit}`}`
+          : `You sold ${formatNotificationAmount(coinAmount, COIN_CURRENCY)} ${COIN_CURRENCY}${fiat === null || !fiatUnit ? '' : ` for ${formatNotificationAmount(fiat, fiatUnit)} ${fiatUnit}`}`,
+        direction: movement === 'mint' ? 'received' : 'sent',
+        counterpartyName: COIN_RESERVE_NAME,
+        // THE RESERVE HAS NO GLOOBAL ID AND NO COUNTRY. Both null, so the
+        // card draws no ID page and falls back to the coin mark where a
+        // payment would show a flag. Inventing either would put the
+        // backing of the currency in a country and give it an account.
+        counterpartySymbolId: null,
+        counterpartyIso: null,
+        pushType: movement === 'mint' ? 'coin.bought' : 'coin.sold',
+      },
+    ];
+
+  for (const entry of entries) {
+    const banner = coinBannerText({
+      movement,
+      direction: entry.direction,
+      amount: coinAmount,
+      currency: COIN_CURRENCY,
+      counterpartyName: entry.counterpartyName,
+    });
+    entry.pushTitle = banner.title;
+    entry.pushBody = banner.body;
+  }
+
+  const results = await Promise.allSettled(
+    entries.map((entry) =>
+      Notification.updateOne(
+        { userId: entry.userId, 'metadata.transactionId': transactionId },
+        {
+          $setOnInsert: {
+            type: 'coin',
+            title: entry.title,
+            message: entry.message,
+            readAt: null,
+            'metadata.referenceId': transaction.referenceId || null,
+            'metadata.receiptCode': receiptCode,
+            'metadata.direction': entry.direction,
+            // WHICH OF THE THREE THIS WAS. The card's first page reads
+            // "Bought from" / "Sold to" / "To" / "From" off this, and so
+            // does the lock screen (coinBannerText). Without it a buy and
+            // a transfer are one shape with one wording, and the wording
+            // that fits a transfer says somebody sent you the coin you
+            // paid for yourself.
+            'metadata.coinMovement': movement,
+            'metadata.amount': coinAmount,
+            'metadata.currency': COIN_CURRENCY,
+            'metadata.counterpartyName': entry.counterpartyName,
+            'metadata.counterpartySymbolId': entry.counterpartySymbolId,
+            'metadata.counterpartyIso': entry.counterpartyIso,
+            // The fiat leg, on a buy or a sell only. Null on a transfer,
+            // null on a movement whose paid figure did not reach here.
+            'metadata.counterAmount': movement === 'send' ? null : fiat,
+            'metadata.counterCurrency': movement === 'send' ? null : fiatUnit,
+            // Its own field, never fxRate, and never without the pair of
+            // currencies that say which way round it was recorded. See the
+            // function header. A rate whose direction is missing is worse
+            // than no rate: the card would have to guess, and on a buy and
+            // a sell the right guess is the opposite one.
+            'metadata.geuRate': movement === 'send' ? null : rate,
+            'metadata.geuRateBase': movement === 'send' || rate === null ? null : (geuRateBase || null),
+            'metadata.geuRateQuote': movement === 'send' || rate === null ? null : (geuRateQuote || null),
+            'metadata.occurredAt': transaction.createdAt || null,
+          },
+        },
+        { upsert: true }
+      )
+    )
+  );
+
+  for (const entry of entries) await pruneNotifications(entry.userId);
+
+  // Same idempotency key as the payment and share legs: `upsertedCount === 1`
+  // is Mongo saying the row did not exist until this write, and only that
+  // write may buzz a phone.
+  const legs = [];
+  results.forEach((result, index) => {
+    const entry = entries[index];
+    if (result.status === 'rejected' && result.reason?.code !== 11000) {
+      console.error(`Coin notification write failed for ${transaction.referenceId}:`, result.reason);
+    }
+    const created = result.status === 'fulfilled' && result.value?.upsertedCount === 1;
+    legs.push({
+      userId: entry.userId,
+      direction: entry.direction,
+      created,
+      notificationId: created && result.value?.upsertedId ? String(result.value.upsertedId._id || result.value.upsertedId) : null,
+      type: entry.pushType,
+      title: entry.pushTitle,
+      body: entry.pushBody,
+    });
+  });
+
+  return legs;
+}
+
+// Telling people about a coin movement that has ALREADY COMMITTED.
+//
+// Two effects in two try/catch blocks, for the reason the payment route
+// gives at its own call site: folding them together logs a push failure as
+// an inbox failure, and neither may turn a movement that succeeded into a
+// 500. The coin routes' own catch blocks answer "Could not mint Gloobal
+// Coin" — which, reached from here, would be a lie about money that had
+// already moved.
+//
+// Routes call this once, after the transaction has committed and before
+// they answer, so the inbox row exists by the time the client's next read
+// of it happens.
+async function announceCoinMovement(input) {
+  let legs = [];
+  try {
+    legs = (await recordCoinNotifications(input)) || [];
+  } catch (notificationError) {
+    console.error('Coin notification error (non-fatal):', notificationError);
+  }
+  try {
+    // The same pusher the payment and share legs use. It reads nothing off
+    // the transaction but `referenceId` and `createdAt`, and it is the one
+    // place the tag, the disc and the ?txn= link are decided — a second
+    // pusher for coin would be a second answer to all three.
+    await sendPaymentPushes(legs, input.transaction);
+  } catch (pushError) {
+    console.error('Coin push error (non-fatal):', pushError);
+  }
+  return legs;
+}
+
 // ── Web Push for a payment ──────────────────────────────────────────────────
 //
 // Fires only for legs recordPaymentNotifications says it just created, so a
@@ -8897,7 +9165,7 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
 // thing on the server that names the coin — scripts/coin-airdrop.mjs writes
 // money rows too, and when this was a literal here the two drifted (see that
 // module's note).
-const { COIN_CURRENCY } = require('./lib/coinTicker');
+const { COIN_CURRENCY, COIN_RESERVE_NAME } = require('./lib/coinTicker');
 // Gloobal paying a person — the one write path for it, and the atomic-or-
 // refuse primitive it shares with the GEU ledger.
 const { recordDisbursement } = require('./lib/disbursement');
@@ -9658,6 +9926,24 @@ app.post('/api/coin/mint', writeLimit, requireAuth, requireSelf('symbolId'), asy
       return { transaction, balanceAfter, coinAfter, reserveDoc };
     });
 
+    // The holder is told, now that the coin exists. Best-effort inside —
+    // a notification can never turn a committed mint into an error.
+    //
+    // `geuRate` is recorded here as GEU PER UNIT OF FIAT (coinAmount =
+    // fiatAmount * geuRate), so the pair is named in that order and the
+    // card prints "1 INR = 1.000000 GEU". The redeem route below records
+    // the reciprocal and names the pair the other way round.
+    await announceCoinMovement({
+      transaction: value.transaction,
+      movement: 'mint',
+      holder: user,
+      fiatAmount,
+      fiatCurrency: accountCurrency,
+      geuRate,
+      geuRateBase: accountCurrency,
+      geuRateQuote: COIN_CURRENCY,
+    });
+
     return res.json({
       success: true,
       atomic,
@@ -9840,6 +10126,23 @@ app.post('/api/coin/redeem', writeLimit, requireAuth, requireSelf('symbolId'), a
       return { transaction, balanceAfter, coinAfter, reserveDoc };
     });
 
+    // `redeemRate` is FIAT PER UNIT OF GEU (fiatAmount = coinAmount *
+    // redeemRate) — the reciprocal of what the mint route stores — so the
+    // pair is named GEU first and the card prints "1 GEU = 1.000000 INR".
+    // Passing it in the mint's order would state the peg upside down, and
+    // for any account not pegged at 1 that is a wrong number on a
+    // notification for a sale that went through correctly.
+    await announceCoinMovement({
+      transaction: value.transaction,
+      movement: 'redeem',
+      holder: user,
+      fiatAmount,
+      fiatCurrency: accountCurrency,
+      geuRate: redeemRate,
+      geuRateBase: COIN_CURRENCY,
+      geuRateQuote: accountCurrency,
+    });
+
     return res.json({
       success: true,
       atomic,
@@ -10005,6 +10308,22 @@ app.post('/api/coin/send', writeLimit, requireAuth, requireSelf('senderSymbolId'
         }
         throw moveError;
       }
+    });
+
+    // BOTH SIDES, and this is the movement that most needed telling: a buy
+    // and a sell are things you did yourself seconds ago with the result on
+    // screen, while coin arriving from another account was announced to
+    // nobody at all. The receiver found out by opening the Coin screen and
+    // noticing a larger number.
+    //
+    // No fiat leg and no rate — coin to coin, one unit on both sides — so
+    // the card draws the person, the unit, their Gloobal ID and the time,
+    // and no conversion page.
+    await announceCoinMovement({
+      transaction: value.transaction,
+      movement: 'send',
+      holder: sender,
+      receiver,
     });
 
     return res.json({

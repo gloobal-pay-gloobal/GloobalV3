@@ -51,6 +51,12 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "./harness.mjs";
 
+// Comments stripped before asserting on code: twice in this repo a test
+// has matched the note explaining a thing's removal instead of the thing.
+const code = (relPath) => readSource(relPath)
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^\s*\/\/.*$/gm, "");
+
 const server = readSource("server/server.js");
 
 const WRITE_ROUTES = ["/api/geu/entry", "/api/geu/growth", "/api/geu/redeem"];
@@ -74,15 +80,23 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
     assert.ok(!/const COIN_CURRENCY = '/.test(server), "server.js has its own copy of the ticker again");
   });
 
-  test("and the two tickers are not one constant apart in the same file", () => {
-    // Gloobal Coin and the superseded growth prototype both hold the string
-    // 'GEU'. They are different economic systems sharing a ledger collection,
-    // which is why the prototype's routes are 503. The names must say so:
-    // COIN_CURRENCY and GEU_CURRENCY, one character apart, is how somebody
-    // reaches for the wrong one.
-    assert.match(server, /const GEU_PROTOTYPE_CURRENCY = 'GEU';/);
+  test("there is only one ticker in the file now", () => {
+    // Gloobal Coin and the superseded growth prototype BOTH held the string
+    // 'GEU' — two different economic systems sharing a ledger collection,
+    // which is why the prototype's routes were disabled. The names had to
+    // say so, because COIN_CURRENCY and GEU_CURRENCY one character apart is
+    // how somebody reaches for the wrong one.
+    //
+    // The prototype is deleted, so the collision is gone rather than
+    // managed. What this now guards is that it does not come back: nothing
+    // in server.js may declare a second constant holding this string.
+    assert.doesNotMatch(server, /const GEU_PROTOTYPE_CURRENCY = /,
+      "the growth prototype's ticker is back");
     assert.doesNotMatch(server, /const GEU_CURRENCY = /,
-      "the prototype ticker is named one character from the live one again");
+      "a second GEU ticker is declared one character from the live one");
+    const declarations = (server.match(/const \w*COIN_CURRENCY\w*\s*=\s*['"]/g) || []);
+    assert.deepEqual(declarations, [],
+      `server.js declares its own coin ticker instead of requiring it: ${declarations.join(", ")}`);
   });
 
   test("the browser ledger agrees with it exactly", () => {
@@ -120,13 +134,16 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
       // enumerated by hand is only as good as the hand — anything that writes
       // a currency onto a money row belongs in it.
       "server/scripts/coin-airdrop.mjs",
-      // The GEU double-entry ledger. Three more files that write a currency
-      // onto a money row, added when they were written rather than after they
-      // drifted — which is the only time adding to a hand-maintained list is
-      // cheap.
+      // The exact-integer ledger primitives. These wrote a currency onto a
+      // money row, and were added when they were written rather than after
+      // they drifted — which is the only time adding to a hand-maintained
+      // list is cheap.
+      //
+      // lib/geuLedger.js and models/GeuAccount.js were here too and are
+      // gone with the growth prototype they belonged to. The remaining
+      // three are not prototype files: Posting and LedgerTransaction are
+      // the double-entry primitives, and they outlive it.
       "server/lib/money/index.js",
-      "server/lib/geuLedger.js",
-      "server/models/GeuAccount.js",
       "server/models/Posting.js",
       "server/models/LedgerTransaction.js",
       "backend/domain/coin/CoinService.js",
@@ -155,104 +172,69 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
   });
 });
 
-describe("every GEU prototype route that creates or moves value is gated", () => {
-  for (const route of WRITE_ROUTES) {
-    test(`POST ${route} is behind requireGeuGrowthPrototype`, () => {
-      const line = server.match(
-        new RegExp(`app\\.post\\('${route.replace(/\//g, "\\/")}'[^\\n]*`)
-      );
-      assert.ok(line, `${route} is not registered at all`);
-      assert.match(
-        line[0],
-        /requireGeuGrowthPrototype/,
-        `${route} is mounted without the issuance gate`
-      );
-    });
+// ── THE PROTOTYPE IS GONE, NOT GATED ────────────────────────────────────
+//
+// Three describe blocks lived here, and all of them checked the same thing
+// from different angles: that every /api/geu/* route creating or moving
+// value sat behind requireGeuGrowthPrototype, that the gate defaulted to
+// off, and that the reads were off too.
+//
+// They were the right tests for a dormant system. There is no dormant
+// system now — the routes, the gate, the five models and the two ledger
+// libraries are deleted, because GEU stopped being an instrument that could
+// have a growth model and became a display lens over money somebody already
+// holds.
+//
+// What replaces them is one check, and it is stronger than all three: none
+// of it exists. A gate can be flipped; a deleted route cannot.
+describe("the growth prototype is gone, not merely switched off", () => {
+  const server = code("server/server.js");
 
-    test(`and the gate is the FIRST thing ${route} runs`, () => {
-      // Order matters here in a way it usually does not. Behind writeLimit a
-      // disabled route still consumes the caller's rate-limit budget; behind
-      // requireAuth it still answers "who are you" for a feature that is
-      // off. A disabled route should do nothing at all.
-      const line = server.match(
-        new RegExp(`app\\.post\\('${route.replace(/\//g, "\\/")}'[^\\n]*`)
-      )[0];
-      const middleware = line.slice(line.indexOf("',") + 2);
-      assert.match(
-        middleware.trimStart(),
-        /^requireGeuGrowthPrototype/,
-        `${route} runs other middleware before deciding whether it is enabled`
-      );
-    });
-  }
-});
-
-describe("the gate is off unless someone deliberately turns it on", () => {
-  test("it defaults to disabled, not enabled", () => {
-    // `!== 'false'` would be the dangerous spelling: it opens the routes on
-    // every deployment that has never heard of the variable, which is all of
-    // them.
-    assert.match(
-      server,
-      /const GEU_GROWTH_PROTOTYPE = String\(process\.env\.GEU_GROWTH_PROTOTYPE \|\| ''\)\.toLowerCase\(\) === 'true';/
-    );
+  test("no /api/geu route is declared at all", () => {
+    const routes = server.match(/app\.(get|post|patch|delete)\(\s*['"]\/api\/geu[^'"]*/g) || [];
+    assert.deepEqual(routes, [], `the prototype surface is back: ${routes.join(", ")}`);
   });
 
-  test("a disabled route refuses rather than quietly succeeding", () => {
-    // 503, not 200-with-nothing-happening. A write that reports success
-    // without writing is worse than a refusal, because the caller records it
-    // as done.
-    const gate = server.slice(
-      server.indexOf("const requireGeuGrowthPrototype ="),
-      server.indexOf("const GEU_PROTOTYPE_CURRENCY =")
-    );
-    assert.match(gate, /res\.status\(503\)/);
-    assert.match(gate, /success: false/);
-  });
-});
-
-describe("the prototype's reads are off too", () => {
-  // ── This reverses an earlier call in this same file ────────────────────
-  //
-  // The reads were deliberately left open, on the reasoning that they
-  // disclose nothing an account cannot already see and move no money. That
-  // reasoning was sound while Gloobal Coin was stored as 'GC'.
-  //
-  // It stopped being sound the moment Coin's ticker became 'GEU'.
-  // GET /api/geu/ledger/:symbolId queries LedgerEntry BY CURRENCY STRING, so
-  // it would now return Gloobal Coin's ledger entries under a route
-  // describing a different currency — a person's real money presented as the
-  // output of a system they never touched. The other two report on
-  // `geuBalance`, a separate field, so they cross no wires, but they would
-  // answer with a second and contradictory "GEU supply".
-  //
-  // Nothing calls any of them. Off is the honest state.
-  for (const route of READ_ROUTES) {
-    test(`GET ${route} is gated`, () => {
-      const line = server.match(
-        new RegExp(`app\\.get\\('${route.replace(/\//g, "\\/")}'[^\\n]*`)
-      );
-      assert.ok(line, `${route} is missing`);
-      assert.match(
-        line[0],
-        /requireGeuGrowthPrototype/,
-        `${route} answers for a superseded currency that now shares Coin's ticker`
-      );
-    });
-  }
-
-  test("stored data is left alone", () => {
-    // Disabling a route is reversible. Dropping a collection is not, and
-    // nobody here can see whether those collections hold anything.
-    const src = readSource("server/server.js");
-    assert.ok(!/geuBalance:\s*0\s*\}\s*\)/.test(src), "no bulk reset of geuBalance");
-    assert.ok(!/GeuSupply\.deleteMany|GeuGrowthEvent\.deleteMany|GeuRedemption\.deleteMany/.test(src));
+  test("the gate itself is gone, so there is nothing to flip", () => {
+    assert.doesNotMatch(server, /GEU_GROWTH_PROTOTYPE/);
+    assert.doesNotMatch(server, /requireGeuGrowthPrototype/);
   });
 
-  test("the design behind it is kept, because growth is deferred not rejected", () => {
-    const doc = readSource("docs/GEU_GROWTH_DESIGN.md");
-    assert.match(doc, /STATUS: superseded prototype/);
-    assert.match(doc, /Gloobal Coin is the live GEU/);
+  test("its models and ledger libraries are not imported from anywhere", () => {
+    for (const gone of [
+      "lib/geuLedger",
+      "lib/geuReconcile",
+      "models/GeuAccount",
+      "models/GeuEntryMint",
+      "models/GeuGrowthEvent",
+      "models/GeuRedemption",
+      "models/GeuSupply",
+    ]) {
+      assert.ok(!server.includes(gone), `server.js still requires ${gone}`);
+    }
+  });
+
+  test("the three geu_* transaction types came off the enum with it", () => {
+    // A row of one of those types would still READ — a mongoose enum
+    // validates on write, not on read — but could never be saved again.
+    // scripts/redeem-all-coin.mjs counts them before the removal deploys,
+    // which is the check that makes narrowing this enum safe.
+    const model = code("server/models/Transaction.js");
+    for (const t of ["geu_entry_mint", "geu_growth", "geu_redeem"]) {
+      assert.ok(!new RegExp(`'${t}'`).test(model), `${t} is back in the enum`);
+    }
+    assert.match(code("server/scripts/redeem-all-coin.mjs"),
+      /type: \{ \$in: \["geu_entry_mint", "geu_growth", "geu_redeem"\] \}/);
+  });
+
+  test("the prototype's own balance field is off the User schema", () => {
+    assert.doesNotMatch(code("server/models/User.js"), /geuBalance/);
+  });
+
+  test("the reasoning is archived rather than lost", () => {
+    // Somebody will ask in a year why GEU is not a balance.
+    assert.match(readSource("archive/legacy/geu-growth-prototype/README.md"),
+      /Superseded — GEU is a display lens, not a balance/);
   });
 });
 

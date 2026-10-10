@@ -108,19 +108,6 @@ const userSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
-  // Gloobal Energy Unit (GEU) balance, in GEU units — 1 GEU = INR1 at the
-  // reference layer (see models/GeuSupply.js and server.js's POST
-  // /api/geu/* routes). Same reasoning as coinBalance just above: never
-  // defaulted to a starting float, since every GEU either enters via a
-  // capital-backed entry mint or a bounded growth event, never by simply
-  // existing. `min: 0` is the same second line of defence coinBalance's own
-  // comment describes — the real guard is each route's conditional $inc,
-  // this is the backstop if one is ever missing.
-  geuBalance: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
   // The direct person who invited them
   referredBy: {
     type: String,

@@ -58,15 +58,19 @@ const transactionSchema = new mongoose.Schema(
         'coin_mint',
         'coin_redeem',
         'coin_send',
-        // GEU (Gloobal Energy Unit) events — see models/GeuSupply.js and
-        // server.js's POST /api/geu/* routes. Three distinct types, not one
-        // generic 'geu' type, for the same reason GeuEntryMint and
-        // GeuGrowthEvent are separate collections: entry, growth, and
-        // redemption are economically distinct events that must never be
-        // merged (GEU brief section 7).
-        'geu_entry_mint',
-        'geu_growth',
-        'geu_redeem',
+        // THE THREE geu_* TYPES ARE GONE. They belonged to a growth-bearing
+        // GEU prototype whose routes were disabled behind
+        // GEU_GROWTH_PROTOTYPE and never wrote a row in production. The
+        // prototype is deleted: GEU is a display lens over money somebody
+        // already holds, not an instrument, so there is nothing for entry,
+        // growth or redemption to apply to.
+        //
+        // Removed rather than left dormant because an unused enum value is
+        // the kind of thing somebody reaches for later believing it means
+        // something. scripts/redeem-all-coin.mjs counts rows of these types
+        // before the removal deploys — a row left behind still reads (a
+        // mongoose enum validates on write, not on read) but could never be
+        // saved again, which is a worse state than not existing.
         // Gloobal paying a PERSON, out of PlatformAccount — not one user
         // paying another. Its own type for the same reason the coin types
         // are: coverageAggregation's SPENDING_TRANSACTION_TYPES is ['send'],

@@ -403,12 +403,69 @@ async function run() {
   console.log(`  redeemed         ${done} of ${plan.length}`);
   console.log(`  failed           ${failures.length}`);
 
+  // ── The other thing the removal would strand ──────────────────────────
+  //
+  // The disabled GEU growth prototype keeps three collections wired into
+  // SYMBOL_ID_REFERENCE_FIELDS — the table that rewrites stored Gloobal IDs
+  // when somebody renames theirs. lib/coinTicker.js's own header names this
+  // as the reason the prototype was left in the file rather than deleted:
+  // "removing them means editing that table and stranding any rows that
+  // exist".
+  //
+  // The routes have been 403 behind GEU_GROWTH_PROTOTYPE, so these should
+  // be empty and this should print nothing. Should is not a verification,
+  // and the cost of being wrong is a row whose Gloobal ID silently stops
+  // being maintained — so it is checked here, where somebody is already
+  // looking, rather than discovered after the deploy.
+  const strandable = [
+    ["GeuEntryMint", "models/GeuEntryMint"],
+    ["GeuGrowthEvent", "models/GeuGrowthEvent"],
+    ["GeuRedemption", "models/GeuRedemption"],
+    ["GeuAccount", "models/GeuAccount"],
+  ];
+  const occupied = [];
+
+  for (const [name, path] of strandable) {
+    try {
+      const Model = require(join(BACKEND, `${path}.js`));
+      const count = await Model.estimatedDocumentCount();
+      if (count > 0) occupied.push({ name, count });
+    } catch (e) {
+      // A model that cannot be loaded is already gone, which is the state
+      // the removal is heading for anyway.
+    }
+  }
+
+  // And the Transaction rows those routes would have written. This is the
+  // DIRECT check — the collections above are a proxy for it, and the removal
+  // takes geu_entry_mint, geu_growth and geu_redeem out of the Transaction
+  // type enum. A row of one of those types left behind still READS fine
+  // (mongoose validates on write, not on read) but can never be saved
+  // again, so it is worth knowing about before the enum narrows.
+  const geuTypes = await Transaction.countDocuments({
+    type: { $in: ["geu_entry_mint", "geu_growth", "geu_redeem"] },
+  });
+
+  if (geuTypes > 0) {
+    occupied.push({ name: "Transaction (geu_* types)", count: geuTypes });
+  }
+
+  if (occupied.length) {
+    console.log("\n  ⚠ The disabled growth prototype still holds rows:");
+    for (const o of occupied) console.log(`      ${o.name}  ${o.count}`);
+    console.log("    The removal deletes these collections and their entry in");
+    console.log("    SYMBOL_ID_REFERENCE_FIELDS, so any Gloobal ID stored in them stops being");
+    console.log("    maintained through a rename. Decide what these rows are before deploying.");
+  }
+
   // ── The only question that matters afterwards ─────────────────────────
   const clear = after.heldByAccounts === 0 && after.reserve === 0 && after.issued === 0;
 
   if (clear) {
     console.log("\n  Every coin balance is zero and the reserve is drained.");
-    console.log("  The removal is safe to deploy.");
+    console.log(occupied.length
+      ? "  Coin is clear. Settle the prototype rows above, then the removal is safe to deploy."
+      : "  The removal is safe to deploy.");
     return failures.length ? 1 : 0;
   }
 

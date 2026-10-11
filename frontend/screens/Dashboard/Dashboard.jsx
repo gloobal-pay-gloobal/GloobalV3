@@ -1783,7 +1783,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        Not two labels with a slider under the active one: that is the
        shape of a control offering a choice between two things, and these
        are not two things. They are one amount with two names. */
-  }<div style={{ position: "absolute", top: -17, right: 18, zIndex: 2 }}><GeuLensToggle
+  }<div style={{ position: "absolute", top: -14, right: 18, zIndex: 2 }}><GeuLensToggle
     lens={displayLens}
     onToggle={() => pickDisplayLens(displayLens === GEU_LENS_GEU ? GEU_LENS_LOCAL : GEU_LENS_GEU)}
     currencyCode={ccyCode}
@@ -1812,7 +1812,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       left: 18,
       // Clear of the switch on the other corner, so a long country name
       // runs out of room before it runs into it.
-      maxWidth: "calc(100% - 130px)",
+      maxWidth: "calc(100% - 114px)",
       background: T.surface,
       border: `1px solid ${T.line}`,
       borderRadius: 7,

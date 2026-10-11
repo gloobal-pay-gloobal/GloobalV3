@@ -42,9 +42,15 @@ var GEU_LENS_TOGGLE_MS = 220;
 
 // The pill's geometry, stated once because four positions are derived from
 // it and a mismatch between any two of them shows as a jump mid-swap.
-var GEU_LENS_PILL_PAD = 3;
-var GEU_LENS_DISC = 30;
-var GEU_LENS_CODE_W = 56;
+//
+// Sized down from 36x95 to 30x78. It is a secondary control sitting on the
+// edge of the balance card, and at the larger size it competed with the
+// figure it describes — the switch was reading as the point of the card
+// rather than as a label on it. Both numbers stay above the 24px floor
+// where a tap starts getting missed on a phone.
+var GEU_LENS_PILL_PAD = 2;
+var GEU_LENS_DISC = 26;
+var GEU_LENS_CODE_W = 46;
 var GEU_LENS_PILL_H = GEU_LENS_DISC + GEU_LENS_PILL_PAD * 2;
 var GEU_LENS_PILL_W = GEU_LENS_DISC + GEU_LENS_CODE_W + GEU_LENS_PILL_PAD * 3;
 
@@ -109,7 +115,7 @@ function GeuLensToggle({ lens, onToggle, currencyCode, countryFlag }) {
        everywhere in the app. */
   }<span
     style={{ display: "flex", borderRadius: "50%", boxShadow: `0 0 0 2px ${T.surface}, 0 0 0 3px ${T.line}` }}
-  ><FlagEmoji flag={countryFlag} shape="circle" size={GEU_LENS_DISC - 4} fit="cover" /></span></span><span
+  ><FlagEmoji flag={countryFlag} shape="circle" size={GEU_LENS_DISC - 3} fit="cover" /></span></span><span
     aria-hidden="true"
     style={{
       position: "absolute",
@@ -123,9 +129,9 @@ function GeuLensToggle({ lens, onToggle, currencyCode, countryFlag }) {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      fontSize: 12.5,
+      fontSize: 11,
       fontWeight: 800,
-      letterSpacing: 0.4,
+      letterSpacing: 0.3,
       fontFamily: "inherit",
       transition: slide
     }}

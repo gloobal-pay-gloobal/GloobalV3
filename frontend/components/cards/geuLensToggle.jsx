@@ -1,159 +1,133 @@
 // src/components/cards/geuLensToggle.jsx
 //
-// The [ INR · flag · GEU ] pill on the balance card.
+// The unit switch on the balance card: a flag and a code, which swap sides.
 //
-// ── What it is, and what it very carefully is not ───────────────────────
+// ── What it does, and what it very carefully does not ───────────────────
 //
-// It switches which UNIT the balance is written in. Nothing else happens:
-// no trade, no fee, no conversion, no taxable event. ₹9,700 becomes
-// 9,700.00 GEU — the same digits, relabelled — because 1 GEU is 1 unit of
+// It changes which UNIT the balance is written in. Nothing else happens: no
+// trade, no fee, no conversion, no taxable event. ₹10,000.00 becomes
+// 10,000.00 GEU — the same digits, relabelled — because 1 GEU is 1 unit of
 // the viewer's own tender by definition.
 //
 // It is not a currency picker. A currency picker changes what money you
-// hold; this changes what you call the money you already hold, and the
-// subtext under the balance says so in those words.
+// hold; this changes what you call the money you already hold.
 //
-// ── Why the flag sits BETWEEN the two labels ────────────────────────────
+// ── Why one label and not two ───────────────────────────────────────────
 //
-// It used to be a separate badge on the other corner of the card, which
-// made it a third thing competing for the top edge. In the middle of this
-// pill it is doing real work: it is the fixed point the two labels turn
-// around. INR is that flag's currency; GEU is that same flag's money seen
-// as everyone's. The thing that does not change sits between the two
-// things that do.
+// It was [ INR · flag · GEU ]: both units on screen with a lozenge sliding
+// under the active one. That is the ordinary shape for a segmented control
+// and it was wrong here, because a segmented control offers a CHOICE
+// BETWEEN TWO THINGS — and these are not two things. They are one amount
+// with two names, and showing both at once invites the reading this whole
+// feature exists to prevent: that ₹ and GEU are different quantities you
+// might convert between.
 //
-// It also keeps the tap it always had. The flag opens the person's Gloobal
-// ID — an existing action with no other entry point on this card, and one
-// that reads naturally from a picture of "you". So the pill has three
-// targets: two that switch the label, one that is still the flag.
+// So one is shown: the unit you are reading in. The flag and the code swap
+// sides when you tap, which is a single object changing state rather than a
+// selection moving between options — and the balance beside it carries the
+// other name in brackets, where it reads as "also called" rather than as an
+// alternative to pick.
 //
-// ── Why there is no sliding knob behind the active label ────────────────
+// ── Why the flag is in here at all ──────────────────────────────────────
 //
-// There is: the active side is a filled lozenge that moves between them.
-// What there is NOT is a knob that slides THROUGH the flag, which looked
-// like the flag was being shoved aside by the thing it anchors.
+// It was a separate badge on the other corner, which made it a third thing
+// competing for the top edge. In the pill it is doing work: it is the fixed
+// element the swap happens around, and it says whose tender the code
+// refers to. INR is that flag's currency; GEU is that same flag's money
+// seen as everyone's.
 
-// How long the lozenge takes to move. Short — this is a label changing, not
-// a screen transition, and a slow one would imply something was being
-// computed.
-var GEU_LENS_TOGGLE_MS = 200;
+// How long the swap takes. Short — this is a label changing, not a screen
+// transition, and a slow one would imply something was being computed.
+var GEU_LENS_TOGGLE_MS = 220;
+
+// The pill's geometry, stated once because four positions are derived from
+// it and a mismatch between any two of them shows as a jump mid-swap.
+var GEU_LENS_PILL_PAD = 3;
+var GEU_LENS_DISC = 30;
+var GEU_LENS_CODE_W = 56;
+var GEU_LENS_PILL_H = GEU_LENS_DISC + GEU_LENS_PILL_PAD * 2;
+var GEU_LENS_PILL_W = GEU_LENS_DISC + GEU_LENS_CODE_W + GEU_LENS_PILL_PAD * 3;
 
 // `lens` is "local" | "geu" (see features/geuLens/geuLens.js).
-// `onPick` is handed the lens that was tapped, never a toggle — so a second
-// tap on the side already showing is a no-op rather than a flip.
-function GeuLensToggle({ lens, onPick, currencyCode, countryFlag, countryName, onFlagPress }) {
+// `onToggle` takes no argument: there are two states and tapping means the
+// other one, which is what makes this a switch rather than a chooser.
+function GeuLensToggle({ lens, onToggle, currencyCode, countryFlag }) {
   const geu = lens === GEU_LENS_GEU;
-  const localLabel = String(currencyCode || "").toUpperCase();
+  const unit = geu ? COIN_TICKER : String(currencyCode || "").toUpperCase();
+  const other = geu ? String(currencyCode || "").toUpperCase() : COIN_TICKER;
 
-  // Both sides are measured from the same font and weight so the lozenge
-  // does not jump width between a three-letter code and GEU — every ISO
-  // code is three characters and so is the ticker, which is luck worth
-  // leaning on rather than designing around.
-  const side = (active) => ({
-    position: "relative",
-    zIndex: 1,
-    border: "none",
-    background: "transparent",
-    padding: "0 13px",
-    height: 30,
-    minWidth: 52,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 12.5,
-    fontWeight: 800,
-    letterSpacing: 0.3,
-    fontFamily: "inherit",
-    // The inactive side is readable rather than ghosted: it is a control,
-    // and a label you can barely see reads as disabled.
-    color: active ? "#FFFFFF" : T.inkSoft,
-    cursor: active ? "default" : "pointer",
-    transition: `color ${GEU_LENS_TOGGLE_MS}ms ease`,
-    WebkitTapHighlightColor: "transparent"
-  });
+  // In local units the flag leads and the code follows; in GEU they trade
+  // places. Both slots animate their `left`, so the two appear to pass
+  // each other rather than to disappear and reappear.
+  const flagLeft = geu ? GEU_LENS_PILL_PAD * 2 + GEU_LENS_CODE_W : GEU_LENS_PILL_PAD;
+  const codeLeft = geu ? GEU_LENS_PILL_PAD : GEU_LENS_PILL_PAD * 2 + GEU_LENS_DISC;
+  const slide = `left ${GEU_LENS_TOGGLE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
 
-  return <div
+  return <button
+    type="button"
     data-testid="geu-lens-toggle"
     data-lens={geu ? "geu" : "local"}
-    role="group"
-    aria-label="Display currency"
+    onClick={onToggle}
+    className="v2-tap"
+    // The label names both units and which one is showing, because a
+    // screen reader gets no help at all from a flag swapping sides.
+    aria-label={`Amounts are shown in ${unit}. Switch to ${other}.`}
     style={{
       position: "relative",
-      display: "inline-flex",
-      alignItems: "center",
-      background: T.surface,
+      width: GEU_LENS_PILL_W,
+      height: GEU_LENS_PILL_H,
+      flexShrink: 0,
+      padding: 0,
       border: `1px solid ${T.line}`,
+      background: T.surface,
       borderRadius: 999,
-      padding: 3,
       boxShadow: T.shadowCard,
-      // Above the card's own decorative glow, which is drawn in a wrapper
-      // that would otherwise sit over the right-hand edge of this.
+      cursor: "pointer",
+      WebkitTapHighlightColor: "transparent",
+      // Above the card's decorative glow, which is drawn in a wrapper that
+      // would otherwise sit over this corner.
       zIndex: 2
     }}
-  >{
-    /* The lozenge. One element that moves, rather than a background on
-       each side that would cross-fade — a thing that travels reads as the
-       same object changing position, which is what a toggle is. */
-  }<span
+  ><span
     aria-hidden="true"
     style={{
       position: "absolute",
-      top: 3,
-      bottom: 3,
-      left: geu ? "calc(50% + 14px)" : 3,
-      right: geu ? 3 : "calc(50% + 14px)",
-      borderRadius: 999,
-      background: T.accent,
-      transition: `left ${GEU_LENS_TOGGLE_MS}ms cubic-bezier(0.22, 1, 0.36, 1), right ${GEU_LENS_TOGGLE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
-    }}
-  /><button
-    type="button"
-    className="v2-tap"
-    onClick={() => { if (geu) onPick(GEU_LENS_LOCAL); }}
-    aria-pressed={!geu}
-    aria-label={`Show amounts in ${localLabel}`}
-    style={side(!geu)}
-  >{localLabel}</button>{
-    /* The flag, and the Gloobal ID behind it. Circular, because the two
-       sides are a pill and a circle between them reads as a hinge rather
-       than a third option. */
-  }<button
-    type="button"
-    className="v2-tap"
-    onClick={onFlagPress}
-    aria-label="Show my Gloobal ID"
-    style={{
-      position: "relative",
-      zIndex: 1,
-      width: 28,
-      height: 28,
-      flexShrink: 0,
-      padding: 0,
-      border: "none",
+      top: GEU_LENS_PILL_PAD,
+      left: flagLeft,
+      width: GEU_LENS_DISC,
+      height: GEU_LENS_DISC,
       borderRadius: "50%",
-      background: "transparent",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      cursor: "pointer",
-      WebkitTapHighlightColor: "transparent"
+      transition: slide
     }}
-  ><span
-    // The rim is what keeps a pale flag (Japan, Poland) from dissolving
-    // into the pill behind it — same treatment the receipt and the
-    // notification card give a flag, so one country looks like itself
-    // everywhere in the app.
+  >{
+    /* The rim is what keeps a pale flag (Japan, Poland) from dissolving
+       into the pill behind it — the same treatment the receipt and the
+       notification card give a flag, so one country looks like itself
+       everywhere in the app. */
+  }<span
+    style={{ display: "flex", borderRadius: "50%", boxShadow: `0 0 0 2px ${T.surface}, 0 0 0 3px ${T.line}` }}
+  ><FlagEmoji flag={countryFlag} shape="circle" size={GEU_LENS_DISC - 4} fit="cover" /></span></span><span
+    aria-hidden="true"
     style={{
+      position: "absolute",
+      top: GEU_LENS_PILL_PAD,
+      left: codeLeft,
+      width: GEU_LENS_CODE_W,
+      height: GEU_LENS_DISC,
+      borderRadius: 999,
+      background: T.accent,
+      color: "#FFFFFF",
       display: "flex",
-      borderRadius: "50%",
-      boxShadow: `0 0 0 2px ${T.surface}, 0 0 0 3px ${T.line}`
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 12.5,
+      fontWeight: 800,
+      letterSpacing: 0.4,
+      fontFamily: "inherit",
+      transition: slide
     }}
-  ><FlagEmoji flag={countryFlag} shape="circle" size={22} fit="cover" /></span></button><button
-    type="button"
-    className="v2-tap"
-    onClick={() => { if (!geu) onPick(GEU_LENS_GEU); }}
-    aria-pressed={geu}
-    aria-label={`Show amounts in ${COIN_TICKER_LONG}`}
-    style={side(geu)}
-  >{COIN_TICKER}</button></div>;
+  >{unit}</span></button>;
 }

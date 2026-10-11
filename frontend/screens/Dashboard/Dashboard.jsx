@@ -1776,21 +1776,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       background: "radial-gradient(circle, rgba(255,255,255,0.16), transparent 70%)"
     }}
   /></div>{
-    /* The display-unit pill, where the flag used to be a badge of its own.
-       INR on one side, GEU on the other, and the flag between them —
-       circular, because the two labels are a pill and a circle in the
-       middle reads as the hinge they turn around rather than a third
-       option.
+    /* The display-unit pill, top right, where the flag used to be a badge
+       of its own on the left. One unit showing — the one you are reading
+       in — with the flag and the code swapping sides on a tap.
 
-       The flag keeps the tap it had as a badge: it opens this person's
-       Gloobal ID, which has no other entry point on this card. */
-  }<div style={{ position: "absolute", top: -17, left: 18, zIndex: 2 }}><GeuLensToggle
+       Not two labels with a slider under the active one: that is the
+       shape of a control offering a choice between two things, and these
+       are not two things. They are one amount with two names. */
+  }<div style={{ position: "absolute", top: -17, right: 18, zIndex: 2 }}><GeuLensToggle
     lens={displayLens}
-    onPick={pickDisplayLens}
+    onToggle={() => pickDisplayLens(displayLens === GEU_LENS_GEU ? GEU_LENS_LOCAL : GEU_LENS_GEU)}
     currencyCode={ccyCode}
     countryFlag={dialCountry.flag}
-    countryName={dialCountry.name}
-    onFlagPress={revealGloobalId}
   /></div>{
     /* "Gloobal India" / "Gloobal Hooman" / "Gloobal Creator" — anchored
        from the right edge (not left) so long country names can't overflow
@@ -1805,12 +1802,17 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
 
        A Creator keeps their own badge in both: what they are outranks
        which unit they happen to be reading in. */
-  }<span
+  }<button
+    onClick={revealGloobalId}
+    className="v2-tap"
+    aria-label="Show my Gloobal ID"
     style={{
       position: "absolute",
       top: -11,
-      right: 20,
-      maxWidth: "calc(100% - 90px)",
+      left: 18,
+      // Clear of the switch on the other corner, so a long country name
+      // runs out of room before it runs into it.
+      maxWidth: "calc(100% - 130px)",
       background: T.surface,
       border: `1px solid ${T.line}`,
       borderRadius: 7,
@@ -1824,9 +1826,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       whiteSpace: "nowrap",
       overflow: "hidden",
       textOverflow: "ellipsis",
+      cursor: "pointer",
       zIndex: 1
     }}
-  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : geuLensBadgeSuffix(displayLens, dialCountry.name)} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? balance : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
+  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : geuLensBadgeSuffix(displayLens, dialCountry.name)} withSymbols /></button><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? <>{balance}<span
+    // THE OTHER NAME FOR THE SAME NUMBER, in brackets beside it.
+    //
+    // ₹10,000.00 (GEU) and 10,000.00 GEU (INR) — the figure never moves,
+    // and the bracket says what else it is called. Deliberately NOT a
+    // second figure and deliberately not a rate: there is nothing to
+    // convert, so a person reading "(GEU)" after a rupee amount is being
+    // told a name, not offered an exchange.
+    //
+    // It is also the only hint on the card that the switch beside it does
+    // anything, which is why it sits here rather than under the balance
+    // as a caption nobody reads.
+    style={{ fontSize: 13, fontWeight: 700, marginLeft: 7, opacity: 0.62, letterSpacing: 0.2 }}
+  >({geuLensUnitLabel(displayLens === GEU_LENS_GEU ? GEU_LENS_LOCAL : GEU_LENS_GEU, ccyCode)})</span></> : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"
@@ -1846,7 +1862,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Spending mini chart — sits below its own divider so it
        reads as a distinct footer section of the wallet card
        rather than competing with the balance above it. */
-  }<div style={{ position: "relative", marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.18)" }}><DailySpendingChart weeks={dailySpending.weeks} totals={dailySpending.totals} currencyCode={ccyCode} /></div>{showIdTag && <div
+  }<div style={{ position: "relative", marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.18)" }}><DailySpendingChart weeks={dailySpending.weeks} totals={dailySpending.totals} currencyCode={ccyCode} lens={displayLens} /></div>{showIdTag && <div
     style={{
       position: "absolute",
       top: 66,

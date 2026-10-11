@@ -162,11 +162,13 @@ const FRONTEND_MODULES = [
   // same payment handlers in App.jsx.
   "hooks/useWebPush.js",
   "hooks/useAmbientFlags.js",
-  "components/cards/misc.jsx",
-  // GEU as a display lens — the formatter and the stored preference, then
-  // the pill that drives it. In this order: the constants are `var`s, and a
-  // var initialiser does not hoist its value the way a declaration does.
+  // GEU as a display lens — the formatter and the stored preference.
+  // Ahead of every card that reads a figure through it (misc.jsx's
+  // spending chart, the toggle below) because its constants are `var`s,
+  // and a var initialiser does not hoist its value the way a function
+  // declaration does.
   "features/geuLens/geuLens.js",
+  "components/cards/misc.jsx",
   "components/cards/geuLensToggle.jsx",
   "components/cards/notificationCard.jsx",
   // The same card, slid over the app when a payment arrives while it is

@@ -133,7 +133,17 @@ var DAILY_SPENDING_PALETTES = {
 // left for the two to disagree about. No default: an amount with no
 // currency reads as a bare number, which is visibly incomplete rather
 // than confidently mislabelled as dollars.
-function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "dark", trailing = null, currencyCode }) {
+// `lens` is the display unit the figures are READ in — "local" | "geu",
+// from features/geuLens/geuLens.js. It changes the label after the digits
+// and nothing else, so the bars, the scale and the totals are identical
+// either way; this chart sits directly under the balance and would be the
+// one thing on the card still in rupees if it did not take it.
+function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "dark", trailing = null, currencyCode, lens = null }) {
+  // One formatter for every figure below, so a total and a day's callout
+  // cannot end up in different units.
+  const money = (value) => (
+    typeof geuLensMoney === "function" ? geuLensMoney(value, currencyCode, lens) : fmtMoney(value, currencyCode)
+  );
   const C = DAILY_SPENDING_PALETTES[palette] || DAILY_SPENDING_PALETTES.dark;
   const [weekOffset, setWeekOffset] = useState8(0);
   const [selectedDay, setSelectedDay] = useState8(null);
@@ -210,8 +220,8 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
   // name repeats the letter the axis is already highlighting. A figure
   // sitting on its own bar needs neither.
   const single = !!trailing;
-  const paidFigure = !single && (!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{fmtMoney(Number(displayed.paid) || 0, currencyCode)}</span>;
-  const receivedFigure = !single && (!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{fmtMoney(Number(displayed.received) || 0, currencyCode)}</span>;
+  const paidFigure = !single && (!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{money(Number(displayed.paid) || 0)}</span>;
+  const receivedFigure = !single && (!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{money(Number(displayed.received) || 0)}</span>;
   // The day the callout speaks for, and the colour it speaks in. Only on
   // the single-series chart: with two series a callout would have to
   // carry two numbers over one column.
@@ -220,7 +230,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
     ? (focusDirection === "paid" ? Number(calloutDay.paid) || 0 : Number(calloutDay.received) || 0)
     : 0;
   const calloutText = calloutDay
-    ? `${focusDirection === "paid" ? "\u2212" : "+"}${fmtMoney(calloutValue, currencyCode)}`
+    ? `${focusDirection === "paid" ? "\u2212" : "+"}${money(calloutValue)}`
     : "";
   return <div style={{ position: "relative" }}><div style={{ display: "flex", justifyContent: trailing || !focusDirection ? "space-between" : "flex-start", alignItems: "baseline", gap: 10 }}>{
     /* With a trailing figure the left-hand ones are grouped, so
@@ -267,7 +277,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
          baseline because the column itself is bottom-aligned. */
     }{isSelected && calloutDay && <span style={{ fontSize: 10, fontWeight: 800, color: palette === "light" ? T.accent : "#fff", whiteSpace: "nowrap", marginBottom: 1 }}>{calloutText}</span>}<div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: single ? void 0 : 34 }}>{showPaid && <div
       role="img"
-      aria-label={`${SPENDING_DAY_LABELS[i]} paid: ${fmtMoney(Number(d.paid) || 0, currencyCode)}`}
+      aria-label={`${SPENDING_DAY_LABELS[i]} paid: ${money(Number(d.paid) || 0)}`}
       style={{
         width: barWidth,
         // Zero draws NOTHING. This was Math.max(3, …), so a day on
@@ -284,7 +294,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
       }}
     />}{showReceived && <div
       role="img"
-      aria-label={`${SPENDING_DAY_LABELS[i]} received: ${fmtMoney(Number(d.received) || 0, currencyCode)}`}
+      aria-label={`${SPENDING_DAY_LABELS[i]} received: ${money(Number(d.received) || 0)}`}
       style={{
         width: barWidth,
         // Zero draws NOTHING. This was Math.max(3, …), so a day on

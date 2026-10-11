@@ -165,10 +165,55 @@ describe("GEU appears nowhere money moves", () => {
     for (const forbidden of ["GloobalApi", "fetch(", "await "]) {
       assert.ok(!toggle.includes(forbidden), `the toggle is calling ${forbidden}`);
     }
-    // It reports which side was tapped rather than flipping, so a second
-    // tap on the side already showing does nothing.
-    assert.match(toggle, /onClick=\{\(\) => \{ if \(geu\) onPick\(GEU_LENS_LOCAL\); \}\}/);
-    assert.match(toggle, /onClick=\{\(\) => \{ if \(!geu\) onPick\(GEU_LENS_GEU\); \}\}/);
+  });
+
+  test("it shows ONE unit — the one being read in — not a choice between two", () => {
+    // It was a segmented control with both units on screen and a lozenge
+    // sliding under the active one. That is the shape of a control
+    // offering a choice between two THINGS, and these are not two things:
+    // they are one amount with two names. Showing both invites exactly the
+    // reading this feature exists to prevent.
+    const toggle = code(TOGGLE);
+    assert.match(toggle, /const unit = geu \? COIN_TICKER : String\(currencyCode \|\| ""\)\.toUpperCase\(\);/);
+    assert.match(toggle, /const other = geu \? String\(currencyCode \|\| ""\)\.toUpperCase\(\) : COIN_TICKER;/);
+    // One button, not two: tapping means "the other one".
+    assert.equal((toggle.match(/<button/g) || []).length, 1, "the switch is a chooser again");
+    assert.match(toggle, /onClick=\{onToggle\}/);
+  });
+
+  test("the flag and the code swap sides rather than appearing and vanishing", () => {
+    const toggle = code(TOGGLE);
+    assert.match(toggle, /const flagLeft = geu \?/);
+    assert.match(toggle, /const codeLeft = geu \?/);
+    assert.match(toggle, /transition: slide/);
+  });
+
+  test("the balance carries the other name in brackets", () => {
+    // ₹10,000.00 (GEU). Not a second figure and not a rate — there is
+    // nothing to convert, so the bracket tells a person what else this
+    // number is called. It is also the only hint on the card that the
+    // switch does anything.
+    const dash = code(DASH);
+    assert.match(dash, /geuLensUnitLabel\(displayLens === GEU_LENS_GEU \? GEU_LENS_LOCAL : GEU_LENS_GEU, ccyCode\)/);
+    // Inside the visible branch: a masked balance shows dots and must not
+    // grow a bracket beside them.
+    const at = dash.indexOf("balanceVisible ?");
+    const masked = dash.indexOf("\\u2022\\u2022", at);
+    assert.ok(at > 0 && masked > at, "the balance's visible branch was not found");
+    assert.ok(dash.slice(at, masked).includes("geuLensUnitLabel("),
+      "the bracket is outside the branch that only draws when the balance is shown");
+  });
+
+  test("the week's figures read in the same unit as the balance above them", () => {
+    // The chart sits directly under the balance and would otherwise be the
+    // one thing left on the card still in rupees.
+    assert.match(code(DASH), /<DailySpendingChart[^>]*lens=\{displayLens\}/);
+    const chart = code("frontend/components/cards/misc.jsx");
+    assert.match(chart, /geuLensMoney\(value, currencyCode, lens\)/);
+    // Every figure in it goes through the one formatter, so a total and a
+    // day's callout cannot end up in different units.
+    assert.ok(!/fmtMoney\(Number\(displayed/.test(chart), "a total bypasses the lens");
+    assert.ok(!/fmtMoney\(calloutValue/.test(chart), "the callout bypasses the lens");
   });
 });
 
@@ -242,34 +287,45 @@ describe("on screen", () => {
     };
   });
 
-  test("the pill is INR, the flag, then GEU — in that order", async () => {
+  test("one unit shows, and the label says which and what the tap does", async () => {
     const s = await state();
     assert.ok(s.lens, "the toggle did not render");
     assert.equal(s.lens, "local", "it did not start on the account's own currency");
-    assert.match(s.pill, /^INR\b/, `the pill does not lead with the local code: ${s.pill}`);
-    assert.match(s.pill, /GEU$/, `the pill does not close with GEU: ${s.pill}`);
-    // The flag sits between them, which is what makes it the hinge rather
-    // than a third option.
-    const order = await page.evaluate(() => {
-      const el = document.querySelector('[data-testid="geu-lens-toggle"]');
-      return [...el.children]
-        .filter((c) => c.tagName === "BUTTON")
-        .map((c) => c.getAttribute("aria-label") || "");
-    });
-    assert.equal(order.length, 3, `expected three targets, got ${order.length}`);
-    assert.match(order[0], /Show amounts in INR/);
-    assert.match(order[1], /Gloobal ID/, "the middle target is not the flag");
-    assert.match(order[2], /Show amounts in/);
+    // INR is showing; GEU is not on screen anywhere in the pill. The flag
+    // is in there too, which is the point — it says whose tender the code
+    // refers to — so the text is matched rather than equalled.
+    assert.match(s.pill, /INR/, `the active unit is not shown: ${s.pill}`);
+    assert.ok(!/GEU/.test(s.pill), `both units are on screen: ${s.pill}`);
+    // A flag swapping sides tells a screen reader nothing, so the label
+    // carries both the state and the action.
+    const aria = await page.evaluate(() =>
+      document.querySelector('[data-testid="geu-lens-toggle"]').getAttribute("aria-label"));
+    assert.equal(aria, "Amounts are shown in INR. Switch to GEU.");
+  });
+
+  test("the Gloobal ID kept a tap, on the badge the flag vacated", async () => {
+    // The flag used to be a badge of its own and opening the Gloobal ID
+    // was its tap — the only entry point on this card. The flag is inside
+    // the switch now, so the name badge took it rather than the feature
+    // being quietly dropped.
+    const found = await page.evaluate(() =>
+      Boolean([...document.querySelectorAll("button")]
+        .find((b) => (b.getAttribute("aria-label") || "") === "Show my Gloobal ID")));
+    assert.ok(found, "nothing on the card opens the Gloobal ID any more");
   });
 
   test("switching changes the badge from the country to Hooman", async () => {
     assert.match((await state()).card, /BAL INDIA/, "the badge does not name the country");
-    await page.evaluate(() => document.querySelector('[data-testid="geu-lens-toggle"] button[aria-pressed="false"]').click());
+    await page.evaluate(() => document.querySelector('[data-testid="geu-lens-toggle"]').click());
     await page.waitForTimeout(500);
     const after = await state();
     assert.equal(after.lens, "geu");
     assert.match(after.card, /BAL HOOMAN/, `the badge did not change: ${after.card}`);
     assert.ok(!/BAL INDIA/.test(after.card), "both badges are showing");
+    // And the week's figures under the balance came with it, rather than
+    // being left as the one thing on the card still in rupees.
+    assert.match(after.card, /GEU/, `the chart totals did not follow: ${after.card}`);
+    assert.ok(!/₹/.test(after.card), `a rupee figure is left on a GEU card: ${after.card}`);
   });
 
   test("and back again, with the choice remembered across a reload", async () => {
@@ -284,7 +340,7 @@ describe("on screen", () => {
     const kept = await state();
     assert.equal(kept.lens, "geu", "the choice did not survive a reload");
 
-    await page.evaluate(() => document.querySelector('[data-testid="geu-lens-toggle"] button[aria-pressed="false"]').click());
+    await page.evaluate(() => document.querySelector('[data-testid="geu-lens-toggle"]').click());
     await page.waitForTimeout(500);
     const back = await state();
     assert.equal(back.lens, "local");

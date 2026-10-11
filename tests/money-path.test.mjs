@@ -496,7 +496,6 @@ describe("money direction is coloured the same way everywhere", () => {
     ["frontend/features/history/TransactionHistoryScreen.jsx", 2],
     ["frontend/features/paylater/PayLaterLedger.jsx", 2],
     ["frontend/screens/Banks/GloobalBankScreen.jsx", 2],
-    ["frontend/screens/Coin/GloobalCoinScreen.jsx", 2],
     ["frontend/screens/Dashboard/Dashboard.jsx", 2],
     ["frontend/screens/SendMoney/SendMoney.jsx", 1]
   ];

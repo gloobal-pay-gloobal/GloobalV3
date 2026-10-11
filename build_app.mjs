@@ -34,7 +34,6 @@ const BACKEND_MODULES = [
   "domain/accounts/AccountRegistry.js",
   // Gloobal Coin's ledger side. After the accounts it posts against, before
   // FinancialCore, which constructs it.
-  "domain/coin/CoinService.js",
   "domain/liquidity/entities/LiquidityPool.js",
   "domain/liquidity/LiquidityService.js",
   "domain/essentials/EssentialsPoolService.js",
@@ -146,7 +145,6 @@ const FRONTEND_MODULES = [
   "components/inputs/codeInputs.jsx",
   "adapters/ledger/useLedgerProjections.js",
   "adapters/ledger/useTransactionActions.js",
-  "adapters/ledger/useCoinActions.js",
   "adapters/ledger/useProvenanceAndDisputes.js",
   "hooks/useBackClose.js",
   // Location as a precondition of paying. Needs the provenance layer's
@@ -165,6 +163,11 @@ const FRONTEND_MODULES = [
   "hooks/useWebPush.js",
   "hooks/useAmbientFlags.js",
   "components/cards/misc.jsx",
+  // GEU as a display lens — the formatter and the stored preference, then
+  // the pill that drives it. In this order: the constants are `var`s, and a
+  // var initialiser does not hoist its value the way a declaration does.
+  "features/geuLens/geuLens.js",
+  "components/cards/geuLensToggle.jsx",
   "components/cards/notificationCard.jsx",
   // The same card, slid over the app when a payment arrives while it is
   // open. Listed after the card it renders — both are function
@@ -238,10 +241,6 @@ const FRONTEND_MODULES = [
   // are emitted ahead of it.
   "components/cards/GloobalTaglineCard.jsx",
   "screens/Banks/GloobalBankScreen.jsx",
-  "screens/Coin/GloobalCoinScreen.jsx",
-  "screens/Coin/SendCoinScreen.jsx",
-  "screens/Coin/CoinHoldersScreen.jsx",
-  "screens/Coin/CountryHoldersScreen.jsx",
   "screens/About/AboutUsScreen.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",

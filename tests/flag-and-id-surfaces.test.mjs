@@ -30,8 +30,6 @@ const FILES = [
   "frontend/screens/SendMoney/SendMoney.jsx",
   "frontend/screens/Banks/GloobalBankScreen.jsx",
   "frontend/screens/Banks/AddBankScreen.jsx",
-  "frontend/screens/Coin/CoinHoldersScreen.jsx",
-  "frontend/screens/Coin/CountryHoldersScreen.jsx",
   "frontend/features/essentials/EssentialsScreen.jsx",
   "frontend/App.jsx"
 ];

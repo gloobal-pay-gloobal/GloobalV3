@@ -37,20 +37,6 @@ function useEssentialsGrants() {
   return useMemo2(() => core.essentialsService.listGrants(), [core, version]);
 }
 // Gloobal Coin held by this account, derived from the ledger the same way
-// useBankBalance derives fiat — never from a number stashed in component
-// state. The server is the authority and reconcileCoinBalance brings its
-// figure in; this is what reads the result back out, reactively.
-function useCoinBalance() {
-  const core = useFinancialCore();
-  useLedgerVersion();
-  return core.coinService.balance().amount;
-}
-// Every coin movement on this account, newest first.
-function useCoinHistory(limit) {
-  const core = useFinancialCore();
-  const version = useLedgerVersion();
-  return useMemo2(() => core.coinService.history(limit), [core, version, limit]);
-}
 function usePaylaterHistory() {
   const core = useFinancialCore();
   const version = useLedgerVersion();

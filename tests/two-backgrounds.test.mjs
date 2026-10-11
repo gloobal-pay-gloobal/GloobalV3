@@ -140,11 +140,7 @@ describe("the symbol field reaches every post-login screen", () => {
     "frontend/screens/About/AboutUsScreen.jsx",
     "frontend/features/paylater/PayLaterScreen.jsx",
     "frontend/features/essentials/EssentialsScreen.jsx",
-    "frontend/screens/Banks/GloobalBankScreen.jsx",
-    "frontend/screens/Coin/GloobalCoinScreen.jsx",
-    "frontend/screens/Coin/SendCoinScreen.jsx",
-    "frontend/screens/Coin/CoinHoldersScreen.jsx",
-    "frontend/screens/Coin/CountryHoldersScreen.jsx"
+    "frontend/screens/Banks/GloobalBankScreen.jsx"
   ];
 
   test("each full-screen surface renders it", () => {

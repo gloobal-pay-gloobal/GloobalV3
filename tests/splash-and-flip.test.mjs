@@ -299,16 +299,16 @@ describe("the splash says what Gloobal is and what it charges", () => {
     assert.ok(!/<HoomanMark/.test(splash));
   });
 
-  test("and that card is the one Bank and Coin render", () => {
+  test("and that card is the one the Bank screen renders", () => {
+    // It was "Bank and Coin": GloobalTaglineCard was built so the two
+    // screens could not drift apart. The Coin screen is deleted, so there
+    // is one caller left — the card stays shared in shape, and this keeps
+    // asserting that the one caller uses it rather than growing its own.
     const card = readSource("frontend/components/cards/GloobalTaglineCard.jsx");
     assert.match(card, /<ZeroPercentMark size=\{38\}/);
     assert.match(card, /<HoomanMark \/>/);
-    for (const screen of [
-      "frontend/screens/Banks/GloobalBankScreen.jsx",
-      "frontend/screens/Coin/GloobalCoinScreen.jsx"
-    ]) {
-      assert.match(readSource(screen), /<GloobalTaglineCard accentColor=/, `${screen} must use the same card`);
-    }
+    const screen = "frontend/screens/Banks/GloobalBankScreen.jsx";
+    assert.match(readSource(screen), /<GloobalTaglineCard accentColor=/, `${screen} must use the same card`);
   });
 
   test("the copy holds its space while hidden, so nothing jumps", () => {

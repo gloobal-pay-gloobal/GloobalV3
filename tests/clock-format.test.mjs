@@ -175,8 +175,11 @@ describe("every transaction list shows the time, not just the date", () => {
   const LISTS = [
     ["frontend/features/history/TransactionRow.jsx", "the History row"],
     ["frontend/screens/Banks/GloobalBankScreen.jsx", "Gloobal Bank recent"],
-    ["frontend/screens/SendMoney/SendMoney.jsx", "Send Money recent"],
-    ["frontend/screens/Coin/GloobalCoinScreen.jsx", "Coin Activity"]
+    ["frontend/screens/SendMoney/SendMoney.jsx", "Send Money recent"]
+    // Coin Activity was the fifth list, on the Coin screen. That screen is
+    // deleted — GEU is a display lens, not a balance with a ledger of its
+    // own — and the coin movements it listed are in History with every
+    // other movement, which is the first entry above.
   ];
 
   for (const [file, what] of LISTS) {

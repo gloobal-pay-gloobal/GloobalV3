@@ -1697,7 +1697,6 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
               to {bottom.phone}</p><div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6, textAlign: "left" }}>{[
     { key: "gbank", label: "Gloobal Bank", displayLabel: <GloobalWordmark suffix=" Bank" /> },
     { key: "gpaylater", label: "Gloobal PayLater", displayLabel: <GloobalWordmark suffix=" PayLater" /> },
-    { key: "gcoin", label: "Gloobal Coin", displayLabel: <GloobalWordmark suffix=" Coin" /> },
     { key: "local", label: "Local Banks" }
   ].map(({ key, label, displayLabel }) => <button
     key={key}

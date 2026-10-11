@@ -333,60 +333,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     setHasOpenedGloobalBank(true);
     setShowGloobalBankInfo(true);
   };
-  const openGloobalCoinInfo = () => {
-    loadProduct("coin");
-    setShowGloobalCoinInfo(true);
-  };
   const [gloobalBankInterested, setGloobalBankInterested] = useState14(false);
-  const [showGloobalCoinInfo, setShowGloobalCoinInfo] = useState14(false);
-  const requestCloseGloobalCoinInfo = useBackClose(showGloobalCoinInfo, () => setShowGloobalCoinInfo(false));
   const [showAboutUs, setShowAboutUs] = useState14(false);
   const requestCloseAboutUs = useBackClose(showAboutUs, () => setShowAboutUs(false));
-  const [gloobalCoinInterested, setGloobalCoinInterested] = useState14(false);
-  // Gloobal Coin. The balance and the history are read from the ledger rather
-  // than held here, so they cannot drift from what was posted; only the things
-  // that genuinely are screen state live in useState — whether a call is in
-  // flight, whether the send sheet is open, and the last supply figures read
-  // from the server.
-  //
-  // `coinSupply` is null until the server answers, and null renders as ∆.
-  // A zero would read as "no coin exists", which is a real and different state
-  // from "we could not ask".
-  const [showSendCoin, setShowSendCoin] = useState14(false);
-  const requestCloseSendCoin = useBackClose(showSendCoin, () => setShowSendCoin(false));
-  const [coinBusy, setCoinBusy] = useState14(false);
-  const [coinSupply, setCoinSupply] = useState14(null);
-  // The country-by-country holder breakdown behind the Coin screen's holders
-  // row. Same null-means-∆ rule as coinSupply above, and for the same reason:
-  // an empty country list is a REAL state (nobody holds coin yet), so a
-  // failed read that rendered as one would be indistinguishable from it.
-  const [showCoinHolders, setShowCoinHolders] = useState14(false);
-  const requestCloseCoinHolders = useBackClose(showCoinHolders, () => setShowCoinHolders(false));
-  const [coinHolders, setCoinHolders] = useState14(null);
-  const [coinHoldersLoading, setCoinHoldersLoading] = useState14(false);
-  // One unit of this account's own currency, in GEU. null until the server
-  // answers and null when it could not get a rate — never 1, which is the
-  // specific wrong answer that looks like a right one for every account
-  // outside the reserve's own country.
-  const [geuRate, setGeuRate] = useState14(null);
-  // The reserve currency, as the server reports it. The frontend has a
-  // default (COIN_PEG_CURRENCY) so a screen can render before the first
-  // response, but the server is authoritative and overrides it here.
-  const [coinPegCurrency, setCoinPegCurrency] = useState14(null);
-  // Which country's holder list is open, if any. A string ISO or null — not
-  // a boolean plus a separate id, which is two pieces of state that can
-  // disagree about whether a screen is showing.
-  const [holderCountry, setHolderCountry] = useState14(null);
-  const requestCloseHolderCountry = useBackClose(!!holderCountry, () => setHolderCountry(null));
-  const [countryHolders, setCountryHolders] = useState14(null);
-  const [countryHoldersLoading, setCountryHoldersLoading] = useState14(false);
-  const coinBalance = useCoinBalance();
-  const coinHistory = useCoinHistory(8);
-  const { mintCoin, redeemCoin, sendCoin, refreshCoin } = useCoinActions();
   const [showGloobalBankStats, setShowGloobalBankStats] = useState14(false);
   const requestCloseGloobalBankStats = useBackClose(showGloobalBankStats, () => setShowGloobalBankStats(false));
-  const [showGloobalCoinStats, setShowGloobalCoinStats] = useState14(false);
-  const requestCloseGloobalCoinStats = useBackClose(showGloobalCoinStats, () => setShowGloobalCoinStats(false));
   // Interest in Gloobal Bank / Gloobal Coin — the one thing those two
   // screens exist to collect, and until now the one thing they did not.
   // The state lives here beside the screens' other flags; the effect and
@@ -398,6 +349,21 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   const [interestCounts, setInterestCounts] = useState14({ bank: null, coin: null });
   const [interestBusy, setInterestBusy] = useState14(null);
   const [bankHeroColor, setBankHeroColor] = useState14(() => randomLogoFlipColor());
+  // ── WHICH UNIT THE MONEY IS READ IN ─────────────────────────────────
+  //
+  // "local" | "geu". Not a currency choice — the money is unchanged either
+  // way; this is the label written after the digits. See
+  // features/geuLens/geuLens.js for why 1 GEU is 1 unit of this account's
+  // own tender rather than a rate.
+  //
+  // Seeded from storage so the choice survives a reload, and read through
+  // readGeuLens rather than inline so a blocked localStorage falls back to
+  // "local" instead of throwing on the first render.
+  const [displayLens, setDisplayLens] = useState14(() => readGeuLens());
+  const pickDisplayLens = (next) => {
+    setDisplayLens(next);
+    writeGeuLens(next);
+  };
   const [coinHeroColor, setCoinHeroColor] = useState14(() => randomLogoFlipColor());
   const [paylaterHeroColor, setPaylaterHeroColor] = useState14(() => randomLogoFlipColor());
   const [assetsHeroColor, setAssetsHeroColor] = useState14(() => randomLogoFlipColor());
@@ -422,7 +388,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     }, 3e3);
     return () => clearInterval(interval);
   }, []);
-  const FLIP_BUTTON_KEYS = ["send", "bank", "scan", "receive", "gbank", "gcoin", "gpaylater", "myassets", "myessentials", "aboutus"];
+  const FLIP_BUTTON_KEYS = ["send", "bank", "scan", "receive", "gbank", "gpaylater", "myassets", "myessentials", "aboutus"];
   const [buttonFlips, setButtonFlips] = useState14(
     () => Object.fromEntries(FLIP_BUTTON_KEYS.map((k) => [k, { flipped: false, content: "symbol", symbol: DIAL_SYMBOLS[0], color: LOGO_FLIP_COLORS[0] }]))
   );
@@ -1093,7 +1059,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   useEffect12(() => {
     if (!deepLinkTarget) return;
     if (deepLinkTarget === "bank") setShowGloobalBankInfo(true);
-    else if (deepLinkTarget === "coin") setShowGloobalCoinInfo(true);
     else if (deepLinkTarget === "assets") setShowAssets(true);
     else if (deepLinkTarget === "paylater") setShowPayLater(true);
     else if (deepLinkTarget === "aboutus") setShowAboutUs(true);
@@ -1213,7 +1178,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // symbol interpolated in front of it at the two places that render it,
   // which is how the largest number on the screen stayed "₹12,500.00"
   // long after the rows beneath it had become "12,500.00₹".
-  const balance = fmtMoney(bankBalance, ccyCode);
+  // THE SAME FIGURE, LABELLED TWICE. geuLensMoney does no arithmetic — it
+  // formats `bankBalance` with the account's own decimals either way and
+  // changes the unit written after it. ₹9,700.00 and 9,700.00 GEU are the
+  // same money, which is the claim the subtext under this makes out loud.
+  const balance = geuLensMoney(bankBalance, ccyCode, displayLens);
   // THE account's Gloobal ID — the one and only value any screen on this
   // dashboard shows as "your Gloobal ID". It comes from the stored
   // session via useCurrentSymbolId, which re-renders on
@@ -1487,7 +1456,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       const products = await GloobalApi.getInterestStatus(currentSymbolId);
       if (cancelled) return;
       if (products.includes("bank")) setGloobalBankInterested(true);
-      if (products.includes("coin")) setGloobalCoinInterested(true);
     })();
     return () => {
       cancelled = true;
@@ -1519,7 +1487,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // tap — or a tap from another device — is safe rather than double-counted.
   const registerInterest = async (product) => {
     if (interestBusy) return;
-    if (product === "bank" ? gloobalBankInterested : gloobalCoinInterested) return;
+    if (gloobalBankInterested) return;
     if (!currentSymbolId) {
       showToast2("Finish setting up your Gloobal ID first.");
       return;
@@ -1527,8 +1495,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     setInterestBusy(product);
     try {
       const result = await GloobalApi.registerInterest(currentSymbolId, product);
-      if (product === "bank") setGloobalBankInterested(true);
-      else setGloobalCoinInterested(true);
+      setGloobalBankInterested(true);
       setInterestCounts((prev) => ({ ...prev, [product]: { total: result.total, totalUsers: result.totalUsers } }));
       showToast2(
         result.alreadyRegistered
@@ -1569,92 +1536,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     if (!currentSymbolId) return;
     const history = await GloobalApi.getCoinHistory(currentSymbolId, { limit: 25 });
     if (history) setServerCoinHistory(history.rows);
-  };
-  const refreshCoinPosition = async () => {
-    await refreshCoinLedger();
-    if (currentSymbolId) {
-      try {
-        const position = await refreshCoin(currentSymbolId);
-        setGeuRate(position ? position.geuPerAccountUnit : null);
-        setCoinPegCurrency(position ? position.reserveCurrency : null);
-      } catch (err) {
-        // A read. The screen already shows the last reconciled figure, which
-        // beats blanking it because one request failed.
-      }
-    }
-    // Supply is a separate public route and reports its own failure as null,
-    // which the screen renders as ∆ — never as a zero, which would say "no
-    // coin exists" instead of "we could not ask".
-    setCoinSupply(await GloobalApi.getCoinSupply());
-  };
-  const refreshCoinHolders = async () => {
-    setCoinHoldersLoading(true);
-    try {
-      setCoinHolders(await GloobalApi.getCoinHolders());
-    } finally {
-      setCoinHoldersLoading(false);
-    }
-  };
-  const openCountryHolders = async (countryIso) => {
-    setHolderCountry(countryIso);
-    // Cleared before the fetch, not after: leaving the previous country's
-    // rows on screen under a new country's name would be a wrong answer
-    // rendered confidently, which is worse than an empty moment.
-    setCountryHolders(null);
-    setCountryHoldersLoading(true);
-    try {
-      setCountryHolders(await GloobalApi.getCountryHolders(countryIso));
-    } finally {
-      setCountryHoldersLoading(false);
-    }
-  };
-  const handleMintCoin = async (amount) => {
-    if (!currentSymbolId) {
-      showToast2("Finish setting up your Gloobal ID first.");
-      return false;
-    }
-    setCoinBusy(true);
-    try {
-      const result = await mintCoin(currentSymbolId, amount);
-      setCoinSupply(await GloobalApi.getCoinSupply());
-      await refreshCoinLedger();
-      // The whole result, not `true`.
-      //
-      // Everything a receipt needs was already in this response and was being
-      // dropped one line below: the reference id, the fiat that actually left
-      // the bank, the currency it left in, and the rate it converted at. The
-      // caller decides what to do with it; returning a bare boolean meant the
-      // only record of a coin purchase was a toast that cleared itself.
-      return result;
-    } catch (err) {
-      showToast2(gloobalApiIsUnreachable(err) ? "Couldn't reach the server. Try again." : err.message);
-      return false;
-    } finally {
-      setCoinBusy(false);
-    }
-  };
-  const handleRedeemCoin = async (amount) => {
-    if (!currentSymbolId) {
-      showToast2("Finish setting up your Gloobal ID first.");
-      return false;
-    }
-    setCoinBusy(true);
-    try {
-      const result = await redeemCoin(currentSymbolId, amount);
-      setCoinSupply(await GloobalApi.getCoinSupply());
-      await refreshCoinLedger();
-      return result;
-    } catch (err) {
-      showToast2(gloobalApiIsUnreachable(err) ? "Couldn't reach the server. Try again." : err.message);
-      return false;
-    } finally {
-      setCoinBusy(false);
-    }
-  };
-  const handleSendCoin = async (receiverSymbolId, amount, pin) => {
-    const result = await sendCoin(currentSymbolId, receiverSymbolId, amount, pin);
-    setCoinSupply(await GloobalApi.getCoinSupply());
-    return result;
   };
   // Rows as the server holds them, keyed by product ("bank" | "coin").
   // null means "not loaded / server didn't answer", which is what makes
@@ -1895,36 +1776,35 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       background: "radial-gradient(circle, rgba(255,255,255,0.16), transparent 70%)"
     }}
   /></div>{
-    /* Flag — small edge badge, top-left, same straddling
-       pattern as the other badges, instead of a large inline
-       button. */
-  }<button
-    onClick={revealGloobalId}
-    aria-label="Show my Gloobal ID"
-    className="v2-tap"
-    style={{
-      position: "absolute",
-      top: -10,
-      left: 20,
-      width: 30,
-      height: 22,
-      border: `1px solid ${T.line}`,
-      background: T.surface,
-      padding: 2,
-      borderRadius: 6,
-      cursor: "pointer",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      boxShadow: T.shadowCard,
-      zIndex: 1
-    }}
-  ><FlagEmoji flag={dialCountry.flag} width={26} height={18} radius={3} /></button>{
-    /* "Gloobal India" / "Gloobal Creator" — shifted to the
-       right side, up near the balance toggle, anchored from
-       the right edge (not left) so long country names can't
-       overflow past the card and break the layout the way
-       it was doing before. */
+    /* The display-unit pill, where the flag used to be a badge of its own.
+       INR on one side, GEU on the other, and the flag between them —
+       circular, because the two labels are a pill and a circle in the
+       middle reads as the hinge they turn around rather than a third
+       option.
+
+       The flag keeps the tap it had as a badge: it opens this person's
+       Gloobal ID, which has no other entry point on this card. */
+  }<div style={{ position: "absolute", top: -17, left: 18, zIndex: 2 }}><GeuLensToggle
+    lens={displayLens}
+    onPick={pickDisplayLens}
+    currencyCode={ccyCode}
+    countryFlag={dialCountry.flag}
+    countryName={dialCountry.name}
+    onFlagPress={revealGloobalId}
+  /></div>{
+    /* "Gloobal India" / "Gloobal Hooman" / "Gloobal Creator" — anchored
+       from the right edge (not left) so long country names can't overflow
+       past the card and break the layout the way it was doing before.
+
+       India and Hooman are the two sides of the pill on the other corner,
+       and the pairing is the point rather than decoration: in rupees this
+       is money under Indian rules, and in GEU it is the same money read as
+       everyone's. It has not moved and is exactly as sovereign either way
+       — only the frame around it changed, which is what the subtext under
+       the balance says in words.
+
+       A Creator keeps their own badge in both: what they are outranks
+       which unit they happen to be reading in. */
   }<span
     style={{
       position: "absolute",
@@ -1946,7 +1826,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       textOverflow: "ellipsis",
       zIndex: 1
     }}
-  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : ` ${dialCountry.name}`} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? balance : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
+  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : geuLensBadgeSuffix(displayLens, dialCountry.name)} withSymbols /></span><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? balance : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"
@@ -2173,7 +2053,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       Your balance, your transfers, and the account everything else here unlocks from.
     </span></button>;
   })()}<div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12 }}>{[
-    { key: "gcoin", label: "Gloobal Coin", displayLabel: <GloobalWordmark suffix=" Coin" />, onClick: openGloobalCoinInfo },
     { key: "gpaylater", label: "PayLater", onClick: () => setShowPayLater(true) },
     { key: "myassets", label: "My Assets", onClick: () => setShowAssets(true) },
     {
@@ -2187,8 +2066,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     { key: "aboutus", label: "About Us", onClick: () => setShowAboutUs(true) }
   ].map(({ key, label, displayLabel, onClick }) => {
     const locked = capabilities[key]?.locked ?? false;
-    const heroColor = { gcoin: coinHeroColor, gpaylater: paylaterHeroColor, myassets: assetsHeroColor, myessentials: essentialsHeroColor, aboutus: aboutHeroColor }[key];
-    const TileIcon = ({ size }) => key === "gcoin" ? <Coins2 size={size} color={heroColor} /> : key === "gpaylater" ? <CreditCard3 size={size} color={heroColor} /> : key === "myessentials" ? <EssHome size={size} color={heroColor} /> : key === "aboutus" ? <Info size={size} color={heroColor} /> : <TrendingUp2 size={size} color={heroColor} />;
+    const heroColor = { gpaylater: paylaterHeroColor, myassets: assetsHeroColor, myessentials: essentialsHeroColor, aboutus: aboutHeroColor }[key];
+    const TileIcon = ({ size }) => key === "gpaylater" ? <CreditCard3 size={size} color={heroColor} /> : key === "myessentials" ? <EssHome size={size} color={heroColor} /> : key === "aboutus" ? <Info size={size} color={heroColor} /> : <TrendingUp2 size={size} color={heroColor} />;
     return <button
       key={key}
       onClick={onClick}
@@ -2839,13 +2718,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     open={payTargetOptionsOpen}
     onClose={() => setPayTargetOptionsOpen(false)}
     onChoose={(label) => {
-      // Whether Coin works is one fact, held in deriveCapabilityStates.
-      // This used to assert it independently, which is how Coin ended up
-      // "not live" here and fully ticked on its own screen at the same time.
-      if (label === "Gloobal Coin" && !capabilities.gcoin.payments) {
-        showToast2("Paying with Gloobal Coin isn't wired to this flow yet \u2014 paying via Gloobal Bank instead");
-      }
-      setPayTargetMethod(label === "Gloobal Coin" && !capabilities.gcoin.payments ? null : label);
+      // Gloobal Coin is not a payment method any more — it is not a
+      // balance at all. GEU is a label on the money already in Gloobal
+      // Bank, so paying "with GEU" and paying with the bank account are
+      // the same movement described two ways, and the option is gone from
+      // the chooser rather than accepted and quietly redirected.
+      setPayTargetMethod(label);
       setPayTargetOptionsOpen(false);
       setPayTargetPinOpen(true);
     }}
@@ -3123,60 +3001,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       copyToClipboard(personalGloobalId);
       showToast2("Copied");
     }}
-  /></ScreenErrorBoundary>}{showGloobalCoinInfo && <ScreenErrorBoundary name="Gloobal Coin" onClose={requestCloseGloobalCoinInfo}><GloobalCoinScreen
-    onBack={requestCloseGloobalCoinInfo}
-    onOpenStats={() => {
-      loadInterestCount("coin");
-      setShowGloobalCoinStats(true);
-    }}
-    heroColor={coinHeroColor}
-    services={serviceRowsFor(CAPABILITY_KEY.GLOOBAL_COIN)}
-    interested={gloobalCoinInterested}
-    interestBusy={interestBusy === "coin"}
-    onRegisterInterest={() => registerInterest("coin")}
-    symbolId={currentSymbolId}
-    ccy={ccy} ccyCode={ccyCode}
-    bankBalance={bankBalance}
-    coinBalance={coinBalance}
-    coinHistory={coinHistory}
-    // The durable history, from the server. Preferred over the in-memory
-    // ledger above, which empties on every page reload — see refreshCoinLedger.
-    serverCoinHistory={serverCoinHistory}
-    // Who the receipt is for. None of these are on the coin movement itself:
-    // a Transaction row records ids, not a person's name, ID string or
-    // country, so they come from the account or the receipt cannot show them.
-    holderName={myName}
-    holderSymbolId={currentSymbolId}
-    holderCountryFlag={dialCountry.flag}
-    supply={coinSupply}
-    busy={coinBusy}
-    onMint={handleMintCoin}
-    onRedeem={handleRedeemCoin}
-    onOpenSend={() => setShowSendCoin(true)}
-    onOpenHolders={() => setShowCoinHolders(true)}
-    countryName={dialCountry.name}
-    geuRate={geuRate}
-    reserveCurrency={coinPegCurrency}
-    onRefresh={refreshCoinPosition}
-  /></ScreenErrorBoundary>}{showCoinHolders && <ScreenErrorBoundary name="Holders" onClose={requestCloseCoinHolders}><CoinHoldersScreen
-    onBack={requestCloseCoinHolders}
-    holders={coinHolders}
-    loading={coinHoldersLoading}
-    onRefresh={refreshCoinHolders}
-    onOpenCountry={openCountryHolders}
-  /></ScreenErrorBoundary>}{holderCountry && <ScreenErrorBoundary name="Country holders" onClose={requestCloseHolderCountry}><CountryHoldersScreen
-    onBack={requestCloseHolderCountry}
-    countryIso={holderCountry}
-    data={countryHolders}
-    loading={countryHoldersLoading}
-    onRetry={() => openCountryHolders(holderCountry)}
-    myGloobalId={personalGloobalId}
-  /></ScreenErrorBoundary>}{showSendCoin && <ScreenErrorBoundary name="Send Gloobal Coin" onClose={requestCloseSendCoin}><SendCoinScreen
-    onBack={requestCloseSendCoin}
-    coinBalance={coinBalance}
-    onResolveRecipient={(identifier) => GloobalApi.resolveUser(identifier)}
-    onSend={handleSendCoin}
-    onShowToast={showToast2}
   /></ScreenErrorBoundary>}{
     /* Real interest data, counted server-side. Both numbers used to be
        written into the JSX — `interested ? 100 : 0`% and
@@ -3187,9 +3011,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        hasn't answered: a 0 here would read as "nobody wants this",
        which is a different claim from "we don't know yet". */
   }{showGloobalBankStats && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseGloobalBankStats} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Interest so far</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "26px 20px", textAlign: "center" }}><div style={{ fontSize: 44, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay }}>{interestSummary("bank") ? `${interestSummary("bank").percent}%` : "∆"}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6 }}>{interestSummary("bank")?.caption || "Couldn't load the count — reopen this screen to try again."}</div></div><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>
-              Counted on the server: every account that has tapped “I am IN”, against every account registered. ∆ means the figure couldn’t be loaded, not that it is zero.
-            </div></div></div>}{showGloobalCoinStats && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseGloobalCoinStats} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Interest so far</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "26px 20px", textAlign: "center" }}><div style={{ fontSize: 44, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay }}>{interestSummary("coin") ? `${interestSummary("coin").percent}%` : "∆"}</div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6 }}>{interestSummary("coin")?.caption || "Couldn't load the count — reopen this screen to try again."}
-              </div></div><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>
               Counted on the server: every account that has tapped “I am IN”, against every account registered. ∆ means the figure couldn’t be loaded, not that it is zero.
             </div></div></div>}{
     /* About Us — same header/hero pattern as the Bank and Coin

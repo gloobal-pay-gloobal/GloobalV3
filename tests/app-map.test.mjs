@@ -44,7 +44,11 @@ describe("the sections have one home", () => {
     const block = app.slice(app.indexOf("const appMapEntries = ["), app.indexOf("\n  ];", app.indexOf("const appMapEntries = [")));
     const keys = block.match(/\{ key: "\w+"/g) || [];
     const sections = block.match(/section: "[^"]+"/g) || [];
-    assert.ok(keys.length >= 17, `expected the full entry list, found ${keys.length}`);
+    // 16, down from 17: the Gloobal Coin entry went with its screen. The
+    // floor is what matters rather than the exact count — it catches a
+    // slice that silently matched half the list, which is the failure this
+    // assertion exists for.
+    assert.ok(keys.length >= 16, `expected the full entry list, found ${keys.length}`);
     assert.equal(
       sections.length,
       keys.length,

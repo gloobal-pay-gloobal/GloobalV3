@@ -8,20 +8,11 @@ function createFinancialCore({ userId = "demo-user", currency = "INR", openingBa
   const bus = eventBus || new EventBus();
   const ledgerEngine = new LedgerEngine(store, registry, bus);
   const userAccounts = registry.registerUser(userId, currency);
-  // Gloobal Coin. The server owns the balances (Backend/server.js, and
-  // tests/coin-supply-invariant.test.mjs asserts the supply invariant there);
-  // this records the same movements as double entry so the local ledger and the
-  // database tell one story rather than two.
-  const coinService = new CoinService(
-    ledgerEngine,
-    {
-      userBank: userAccounts.bank,
-      userCoin: userAccounts.coin,
-      coinReserve: registry.coinReserve,
-      coinIssuance: registry.coinIssuance
-    },
-    { reserveCurrency: currency, eventBus: bus }
-  );
+  // NO COIN SERVICE. It mirrored the server's mint, redeem and transfer as
+  // double entry so the local ledger and the database told one story. The
+  // server cannot write another coin movement, so there is nothing left for
+  // it to mirror — and the accounts it posted against stay in the registry,
+  // holding what it already posted.
   const liquidityPool = new LiquidityPool({ id: `pool:${currency}`, currency, reserveAccountId: registry.reserve.id });
   const liquidityService = new LiquidityService(ledgerEngine, liquidityPool);
   const essentialsService = new EssentialsService(ledgerEngine, ASSET_GROWTH_RATE_MONTHLY, bus);
@@ -274,13 +265,6 @@ function createFinancialCore({ userId = "demo-user", currency = "INR", openingBa
     reconcilePaylaterDue,
     hydrateGrantsFromServer,
     resetForAccountSwitch,
-    coinService,
-    // Mirrors reconcileBankBalance for the coin side. Both are handed the
-    // figure the server just reported, and both are no-ops when it already
-    // agrees, so a screen can call them after every coin call without
-    // littering the ledger.
-    reconcileCoinBalance: (serverCoinBalance) => coinService.reconcile(serverCoinBalance),
-    coinCurrency: COIN_CURRENCY,
     currency,
     eventBus: bus,
     logger

@@ -91,23 +91,21 @@ const userSchema = new mongoose.Schema({
     default: 10000,
     min: 0
   },
-  // Gloobal Coin held by this account, in coin units.
+  // ── coinBalance IS GONE ──────────────────────────────────────────────
   //
-  // Deliberately NOT defaulted to a float the way `balance` is: nobody is
-  // given coin, they mint it, and every coin in this field was created by
-  // moving the same amount of `balance` into the CoinReserve. The sum of this
-  // field across all accounts equals CoinReserve.issued and CoinReserve.reserve
-  // — see CoinReserve.js for why all three are kept rather than derived.
+  // Gloobal Coin was a second balance on this document, backed 1:1 by a
+  // CoinReserve. It is closed: scripts/redeem-all-coin.mjs converted every
+  // holding back into `balance` and drained the reserve before the routes
+  // that could write another one were deleted.
   //
-  // `min: 0` is load-bearing, not decorative. The mint/redeem/transfer updates
-  // guard with `coinBalance: { $gte: amount }`, so a debit that would go
-  // negative matches no document and writes nothing; this bound is the second
-  // line of defence if a future write forgets that guard.
-  coinBalance: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
+  // GEU is a display lens now — 1 GEU = 1 unit of this account's own
+  // tender, a label on `balance` rather than a pot beside it — so there is
+  // no second balance for this field to hold.
+  //
+  // Dropped from the schema, NOT unset on the documents. A zero left in
+  // Mongo costs nothing and is a truthful record that the field was there;
+  // a mass $unset across every account is a write over real documents to
+  // tidy a field nothing reads.
   // The direct person who invited them
   referredBy: {
     type: String,

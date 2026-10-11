@@ -352,14 +352,16 @@ describe("provenance", () => {
 });
 
 describe("the server sends what all of this reads", () => {
-  test("the history route exists and is declared before /api/coin/:symbolId", () => {
-    // Express matches in declaration order — the rule this file states three
-    // times already, for supply, holders and holders/:countryIso.
+  test("the history route exists, and nothing is left to shadow it", () => {
+    // It had to be declared before /api/coin/:symbolId, because Express
+    // matches in declaration order and behind the parameterised route this
+    // 404s with symbolId === 'history'. That route is deleted along with
+    // the rest of the coin write path, so the hazard is gone rather than
+    // avoided — and this now asserts both halves: the history survives, and
+    // the route that could shadow it does not exist to be ordered against.
     const src = readSource(SERVER);
-    const history = src.indexOf("app.get('/api/coin/:symbolId/history'");
-    const position = src.indexOf("app.get('/api/coin/:symbolId'");
-    assert.ok(history > 0, "the coin history route is gone");
-    assert.ok(history < position, "the history route is shadowed by /api/coin/:symbolId");
+    assert.ok(src.includes("app.get('/api/coin/:symbolId/history'"), "the coin history route is gone");
+    assert.ok(!src.includes("app.get('/api/coin/:symbolId',"), "/api/coin/:symbolId is back and will shadow the history");
   });
 
   test("it is the account's own history, and only theirs", () => {
@@ -476,104 +478,78 @@ describe("the receipt is not labelled as a payment", () => {
   });
 });
 
-describe("the screen builds the receipt from the server's answer", () => {
-  const SCREEN = "frontend/screens/Coin/GloobalCoinScreen.jsx";
-  const screen = () => readSource(SCREEN)
+// ── THE SCREEN THAT BUILT THESE RECEIPTS IS GONE ───────────────────────
+//
+// Two describe blocks lived here. One pinned how
+// frontend/screens/Coin/GloobalCoinScreen.jsx built a receipt after a
+// purchase — from the server's answer rather than the typed amount and the
+// rate the screen happened to be displaying. The other pinned that the
+// Dashboard handed that screen the holder's name, Gloobal ID and flag,
+// because a Transaction row records ids and not people.
+//
+// Both were about a buy and a sell, and neither can happen any more. The
+// coin write paths are deleted: GEU is a display lens over money somebody
+// already holds, so nothing mints, redeems or transfers a coin, and there
+// is no Coin screen to build a receipt on.
+//
+// What those tests were protecting is NOT gone, and this is what replaces
+// them. Every coin movement that ever happened still has its receipt, and
+// that receipt is still built from the server's own record — through
+// features/receipts/coinReceipt.js, reached from History, which is the
+// surviving path. The checks above this line already cover its contents;
+// these cover that it is still reachable and still fed by the server.
+describe("the receipts outlive the screen that made them", () => {
+  const strip = (f) => readSource(f)
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 
-  test("not from the typed amount and the screen's displayed rate", () => {
-    // Those are what was ASKED for and what was last displayed. A receipt is
-    // a record of what happened, and on a cross-rate the two differ.
-    const src = screen();
-    const at = src.indexOf("setCoinReceipt(coinReceiptFrom({");
-    assert.ok(at > 0, "the screen no longer builds a receipt after a purchase");
-    const body = src.slice(at, src.indexOf("}, coinReceiptViewer));", at));
-    assert.match(body, /coinAmount: minted \? result\.minted : result\.redeemed/);
-    assert.match(body, /fiatAmount: minted \? result\.paid : result\.received/);
-    assert.match(body, /geuRate: result\.geuRate/);
-    assert.ok(!/numericAmount/.test(body), "the receipt is built from the typed amount");
-    // Every mention of a rate in here must be the SERVER's. Strip the two
-    // legitimate forms — `result.geuRate` and the `geuRate:`/`geuRateBasis:`
-    // keys — and nothing may be left, which is what catches a bare `geuRate`
-    // reaching for the screen's own prop.
-    const rateMentions = body
-      .replace(/result\.geuRate/g, "")
-      .replace(/geuRateBasis:/g, "")
-      .replace(/geuRate:/g, "");
-    assert.ok(
-      !/geuRate/.test(rateMentions),
-      "the receipt is built from the screen's displayed rate rather than the server's"
-    );
+  test("nothing can write another coin movement", () => {
+    const src = strip(SERVER);
+    for (const route of ["/api/coin/mint", "/api/coin/redeem", "/api/coin/send"]) {
+      assert.ok(!src.includes(`'${route}'`), `${route} is back`);
+    }
   });
 
-  test("nothing opens without a server reference", () => {
-    assert.match(screen(), /if \(!result \|\| !result\.referenceId\) return;/);
+  test("the Coin screen and its ledger adapter are gone from the bundle", () => {
+    const manifest = readSource("build_app.mjs");
+    for (const gone of ["screens/Coin/", "useCoinActions", "domain/coin/CoinService"]) {
+      assert.ok(!manifest.includes(gone), `${gone} is still built`);
+    }
   });
 
-  test("the rate basis matches what the history route sends for the same movement", () => {
-    assert.match(screen(), /geuRateBasis: minted \? "coin-per-fiat" : "fiat-per-coin"/);
+  test("the receipt builder survives, and is still fed by the server", () => {
+    // coinReceiptFrom takes a history ROW — the server's own record of the
+    // movement — which is why deleting the screen that used to call it
+    // takes nothing away from a receipt opened today.
+    const receipt = strip("frontend/features/receipts/coinReceipt.js");
+    assert.match(receipt, /function coinReceiptFrom\(/);
+    assert.match(receipt, /row\.geuRate/);
+    assert.match(receipt, /row\.fiatAmount/);
+    assert.ok(readSource("build_app.mjs").includes("features/receipts/coinReceipt.js"),
+      "the coin receipt is no longer built into the bundle");
   });
 
-  test("the list prefers the durable history over the in-memory ledger", () => {
-    const src = screen();
-    assert.match(src, /const coinActivityRows = serverCoinHistory/);
-    // And the empty state reads the same list, so "no coin activity yet"
-    // cannot appear above rows or vice versa.
-    assert.match(src, /\{!coinActivityRows\.length \?/);
+  test("History is the path to them, and it opens the coin receipt", () => {
+    // rowReceipt.js routes a coin row to coinReceiptFrom. If that branch
+    // went, every historical buy and sell would open a payment receipt
+    // describing a movement it does not understand.
+    const row = strip("frontend/features/history/rowReceipt.js");
+    assert.match(row, /coinReceiptFrom/);
+    const app = strip("frontend/App.jsx");
+    assert.match(app, /coin_mint: \{ kind: "coin"/);
+    assert.match(app, /coin_redeem: \{ kind: "coin"/);
   });
 
-  test("one viewer object feeds both ways of opening a receipt", () => {
-    // So the receipt seen at the till and the one reopened a week later
-    // cannot describe the holder differently.
-    const src = screen();
-    // Built through receiptViewer now, the one function that shapes a
-    // holder for a coin receipt — because History opens the same receipt for
-    // the same buy, and two hand-written objects would let the Coin screen
-    // and History describe one account differently.
-    assert.match(src, /const coinReceiptViewer = receiptViewer\(\{/);
-    assert.equal((src.match(/coinReceiptViewer/g) || []).length, 3);
-  });
-});
-
-describe("the holder's details come from the account", () => {
-  const DASH = "frontend/screens/Dashboard/Dashboard.jsx";
-  const dash = () => readSource(DASH)
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
-
-  test("name, Gloobal ID and flag are passed to the Coin screen", () => {
-    // A Transaction row records ids, not a person's name, ID string or
-    // country — so these come from the account or the receipt cannot show
-    // them, which is the whole of what was asked for.
-    const src = dash();
-    assert.match(src, /holderName=\{myName\}/);
-    assert.match(src, /holderSymbolId=\{currentSymbolId\}/);
-    assert.match(src, /holderCountryFlag=\{dialCountry\.flag\}/);
-  });
-
-  test("the mint and redeem handlers return the whole result", () => {
-    // They returned `true`, which is why the reference id, the fiat paid,
-    // its currency and the rate were all discarded one line after arriving.
-    const src = dash();
-    assert.ok(!/showToast2\(`Bought \$\{result\.minted/.test(src), "the toast still stands in for a receipt");
-    const at = src.indexOf("const handleMintCoin");
-    const body = src.slice(at, src.indexOf("const handleRedeemCoin", at));
-    assert.match(body, /return result;/);
-    assert.ok(!/return true;/.test(body));
-  });
-
-  test("history is refreshed after a purchase, so the new row is there to reopen", () => {
-    const src = dash();
-    assert.match(src, /const refreshCoinLedger = async \(\) => \{/);
-    assert.equal((src.match(/await refreshCoinLedger\(\);/g) || []).length, 3);
-  });
-
-  test("a failed history read leaves the last answer standing", () => {
-    // null means the server could not answer, which is not "you have never
-    // bought any" — and blanking a list because one request failed is the
-    // defect this codebase already names elsewhere.
-    assert.match(dash(), /if \(history\) setServerCoinHistory\(history\.rows\);/);
+  test("the holder's details still come from the account, not the row", () => {
+    // The reason the old test gave is unchanged and still load-bearing: a
+    // Transaction records ids, not a person's name, ID string or country.
+    // Only the caller moved.
+    const receipt = strip("frontend/features/receipts/coinReceipt.js");
+    // coinReceiptFrom takes (row, viewer): the row is the server's record
+    // of the movement, the viewer is who is reading it. The holder's name
+    // comes from the second argument, never from the first.
+    assert.match(receipt, /function coinReceiptFrom\(row, viewer\)/);
+    assert.match(receipt, /viewer/);
   });
 });
 
@@ -582,23 +558,22 @@ describe("a coin reference is a transaction reference, in the same format as any
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 
-  test("mint and redeem mint theirs through the shared resolver", () => {
-    // Not a scheme of their own. `resolveTransactionReference` is what every
-    // payment, share and settlement reference comes from, so a coin movement
-    // and a payment are indistinguishable by their id — which is the point:
-    // a person quoting a reference to support should not have to say which
-    // kind of movement it was for it to be looked up.
+  test("a recorded coin reference is indistinguishable from a payment's", () => {
+    // mint and redeem used `resolveTransactionReference`, the same generator
+    // every payment, share and settlement reference comes from, so a coin
+    // movement and a payment could not be told apart by their id — the
+    // point being that a person quoting a reference to support should not
+    // have to say which kind of movement it was for it to be looked up.
+    //
+    // Those routes are deleted. The property is now a property of the rows
+    // they wrote and of the migration that closed them out, and both are
+    // still checked here because the references are still in people's
+    // history and still have to resolve.
     const src = server();
-    for (const route of ["'/api/coin/mint'", "'/api/coin/redeem'"]) {
-      const at = src.indexOf(`app.post(${route}`);
-      assert.ok(at > 0, `${route} is gone`);
-      const body = src.slice(at, at + 9000);
-      assert.match(
-        body,
-        /const referenceId = await resolveTransactionReference\(\);/,
-        `${route} no longer uses the shared reference generator`
-      );
-    }
+    assert.match(src, /const TRANSACTION_REFERENCE_LENGTH = 20;/);
+    const migration = readSource("server/scripts/redeem-all-coin.mjs");
+    assert.match(migration, /const REFERENCE_LENGTH = 20;/);
+    assert.match(migration, /const GLOOBAL_SYMBOLS = \["−", "\+", "×", "=", "○", "□", "●", "■"\];/);
   });
 
   test("and that resolver mints twenty Gloobal symbols", () => {

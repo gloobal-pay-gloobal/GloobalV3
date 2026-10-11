@@ -46,8 +46,10 @@ const LIST_FILES = {
   "History (Received and Paid)": "frontend/features/history/TransactionHistoryScreen.jsx",
   "Home Recent Activity + Receive sheet Recent": "frontend/screens/Dashboard/Dashboard.jsx",
   "Send Money Recent": "frontend/screens/SendMoney/SendMoney.jsx",
-  "Gloobal Bank Recent Transactions": "frontend/screens/Banks/GloobalBankScreen.jsx",
-  "Coin Activity": "frontend/screens/Coin/GloobalCoinScreen.jsx"
+  "Gloobal Bank Recent Transactions": "frontend/screens/Banks/GloobalBankScreen.jsx"
+  // "Coin Activity" was the sixth. The Coin screen is deleted and its rows
+  // are in History with everything else, so there are five lists now and
+  // one fewer place for them to disagree.
 };
 
 const strip = (s) => s
@@ -62,13 +64,18 @@ describe("there is one transaction row, and every list uses it", () => {
     }
   });
 
-  test("and there are exactly six of them", () => {
+  test("and there are exactly five of them", () => {
     // If this count changes, a list was added or removed — which is fine, but
     // the new one has to be accounted for here rather than quietly becoming a
-    // seventh idiom.
+    // sixth idiom.
+    //
+    // It was six. Coin Activity, on the deleted Coin screen, was the one
+    // that went: GEU is a display lens rather than a balance with a ledger
+    // of its own, and the coin movements that list showed are in History
+    // with every other movement.
     const total = Object.values(LIST_FILES)
       .reduce((n, f) => n + (code(f).match(/<TransactionRow/g) || []).length, 0);
-    assert.equal(total, 6, `${total} transaction lists; six are accounted for above`);
+    assert.equal(total, 5, `${total} transaction lists; five are accounted for above`);
   });
 
   test("the mark's size is stated once, in the row", () => {
@@ -113,11 +120,14 @@ describe("there is one transaction row, and every list uses it", () => {
     );
   });
 
-  test("the direction arrows are gone from Bank and Coin, imports included", () => {
+  test("the direction arrows are gone from the Bank list, imports included", () => {
     // An unused alias is not harmless here: build_app.mjs concatenates every
     // module into ONE scope and consolidates the imports, so a dead alias is
     // carried into the bundle.
-    for (const file of [LIST_FILES["Gloobal Bank Recent Transactions"], LIST_FILES["Coin Activity"]]) {
+    //
+    // This covered Bank and Coin. The Coin screen is deleted; the rule is
+    // unchanged for the list that remains.
+    for (const file of [LIST_FILES["Gloobal Bank Recent Transactions"]]) {
       const src = readSource(file);
       assert.ok(!/ArrowDownLeft/.test(src), `${file} still imports a direction arrow`);
       assert.ok(!/ArrowUpRight/.test(src), `${file} still imports a direction arrow`);
@@ -139,10 +149,12 @@ describe("direction survives the arrow being dropped", () => {
     }
   });
 
-  test("the two mixed-direction lists choose both per row", () => {
-    // Bank and Coin each hold sent AND received rows in one list, so a
-    // constant would be wrong in half of it.
-    for (const file of [LIST_FILES["Gloobal Bank Recent Transactions"], LIST_FILES["Coin Activity"]]) {
+  test("the mixed-direction list chooses both per row", () => {
+    // Bank holds sent AND received rows in one list, so a constant would be
+    // wrong in half of it. Coin Activity was the other such list and is
+    // deleted with its screen — its rows are in History, which is itself
+    // mixed and covered by the loop above.
+    for (const file of [LIST_FILES["Gloobal Bank Recent Transactions"]]) {
       const src = code(file);
       assert.match(src, /color=\{\w+ \? TXN_IN_COLOR : TXN_OUT_COLOR\}/);
       assert.match(src, /sign=\{\w+ \? "\+" : "[−−]"\}/);
@@ -209,49 +221,30 @@ describe("a row that opens nothing is not announced as a button", () => {
 
   test("no list builds its own receipt", () => {
     // WHICH receipt a row opens is one decision, made once, in
-    // features/history/rowReceipt.js — because it is not a simple one: a
-    // Gloobal Coin buy or sell needs coinReceiptFrom (the holder, the
-    // reserve, the fiat leg and the rate it converted at), a Creator Share
-    // leg needs its source payment looked up in the FULL history rather than
-    // the handful of rows the list is showing, and a GEU transfer between two
-    // people needs the ordinary payment receipt despite being a coin
-    // movement.
+    // features/history/rowReceipt.js. It used to be two: the Coin screen
+    // built a coin receipt itself while every other list went through the
+    // shared resolver, and they shared only the viewer shape.
     //
-    // Before that function existed, those three lines lived in exactly one
-    // list — History's — and a buy tapped there opened the PAYMENT receipt:
-    // method "Bank", a counterparty of "Gloobal User", and no mention of
-    // either side of the exchange. Five lists each deciding this for
-    // themselves is the same drift this whole file exists to prevent, on the
-    // document rather than on the row.
-    for (const [name, file] of Object.entries(LIST_FILES)) {
-      const src = code(file);
-      if (name === "Coin Activity") continue; // builds coin receipts directly; see below
-      assert.ok(
-        !/\bbuildHistoryReceipt\(/.test(src),
-        `${name} calls buildHistoryReceipt itself instead of receiptForRow`
-      );
-      assert.ok(
-        !/\bcoinReceiptFrom\(/.test(src),
-        `${name} calls coinReceiptFrom itself instead of receiptForRow`
-      );
-    }
-    // Coin Activity is the exception and allowed to be: every row in it is a
-    // coin movement by construction, so there is nothing to choose between.
-    // It still shares the viewer shape — receiptViewer — so the holder on a
-    // buy receipt opened from the Coin screen and the same buy opened from
-    // History cannot be described two different ways.
-    const coin = code(LIST_FILES["Coin Activity"]);
-    assert.match(coin, /receiptViewer\(/, "the Coin screen names the holder its own way again");
+    // That screen is deleted, so the decision is made in exactly one place
+    // now — and a coin row opened from History routes through the same
+    // resolver as a payment, which is what this asserts.
+    const resolver = code("frontend/features/history/rowReceipt.js");
+    assert.match(resolver, /coinReceiptFrom/, "the resolver no longer knows how to open a coin movement");
+    assert.match(resolver, /receiptViewer/, "the viewer shape is no longer shared");
   });
 
-  test("a coin row opens a receipt only when there is one to open", () => {
-    // A row restored from the in-browser ledger carries no server reference,
-    // so there is no movement for a receipt to be OF. Passing undefined
-    // rather than a no-op handler is what keeps role="button" and the tab
-    // stop off it — a control that does nothing is worse than no control.
-    const src = code(LIST_FILES["Coin Activity"]);
-    assert.match(src, /onSelect=\{row\.receipt \? \(\) => setCoinReceipt\(row\.receipt\) : undefined\}/);
-    assert.match(src, /receipt: null/, "a locally-posted coin row now claims a receipt");
+  test("a row opens a receipt only when there is one to open", () => {
+    // A row with no server reference has no movement for a receipt to be
+    // OF. Passing undefined rather than a no-op handler is what keeps
+    // role="button" and the tab stop off it — a control that does nothing
+    // is worse than no control.
+    //
+    // This was asserted on the Coin screen, whose in-browser ledger rows
+    // were the ones that could lack a reference. The screen is gone; the
+    // rule is the shared one the loop above already applies to every list.
+    const resolver = code("frontend/features/history/rowReceipt.js");
+    assert.match(resolver, /function rowHasReceipt\(/,
+      "nothing decides whether a row has a receipt to open");
   });
 });
 
@@ -276,15 +269,19 @@ describe("the figure on each row is in the currency that row is actually in", ()
     assert.match(code(ROW), /const rowCode = t\.currency \|\| ccyCode;/);
   });
 
-  test("the Coin ledger is not formatted as money", () => {
-    // GC has no ISO code and no symbol. Handing "GC" to fmtMoney would print
-    // the ticker through the currency table's fallback and imply GC is a
-    // currency, which it is not.
-    const src = code(LIST_FILES["Coin Activity"]);
-    const call = src.match(/<TransactionRow[\s\S]{0,900}?\/>/)[0];
-    assert.match(call, /amountText=\{`\$\{fmt\(Number\(row\.amount\) \|\| 0\)\} \$\{COIN_TICKER\}`\}/);
-    assert.ok(!/ccyCode=/.test(call), "the coin ledger claims a currency code");
-    assert.ok(!/fmtMoney/.test(call), "the coin ledger is being formatted as money");
+  test("a coin figure is never formatted as a currency", () => {
+    // GEU has no ISO code and no symbol of its own. Handing it to fmtMoney
+    // would print the ticker through the currency table's fallback and
+    // imply it is a currency people hold, which — now that GEU is a label
+    // on money they already hold — is precisely the wrong idea.
+    //
+    // The Coin screen's list carried this rule and is deleted. The two
+    // places that still print a coin figure carry it instead.
+    const receipt = code("frontend/features/receipts/coinReceipt.js");
+    assert.match(receipt, /COIN_TICKER|"GEU"/, "the coin receipt no longer names the unit");
+    const lens = code("frontend/features/geuLens/geuLens.js");
+    assert.match(lens, /\$\{digits\} \$\{COIN_TICKER\}/,
+      "the lens is formatting GEU through the currency table");
   });
 
   test("amountText is used verbatim and keeps the sign outside it", () => {
@@ -293,32 +290,38 @@ describe("the figure on each row is in the currency that row is actually in", ()
   });
 });
 
-describe("the coin ledger's two renamed fields are translated at its own call site", () => {
-  test("memo becomes the row's name", () => {
-    // Rather than teaching the shared row that a coin exists.
-    assert.match(code(LIST_FILES["Coin Activity"]), /t=\{\{ name: row\.memo, date: stamp \}\}/);
-  });
-
-  test("the postedAt fallback still runs, through coinRowStamp", () => {
-    const src = code(LIST_FILES["Coin Activity"]);
-    assert.match(src, /const stamp = coinRowStamp\(row\);/);
-    // And coinRowStamp still routes through the one shared formatter, so a
-    // coin row and a payment row cannot print two different date shapes.
-    assert.match(src, /return historyRowStamp\(\{/);
+// ── THE COIN LEDGER'S RENAMED FIELDS ───────────────────────────────────
+//
+// The in-browser coin ledger called things `memo` and `postedAt` where the
+// shared row wanted `name` and `date`, and the Coin screen translated the
+// two at its own call site rather than teaching TransactionRow that a coin
+// exists. Both tests here checked that translation.
+//
+// The screen and the in-browser ledger are both deleted. Coin rows reach
+// History as the SERVER shapes them (lib/coinHistoryRow.js), in the same
+// field names as every other movement — so there is no translation left to
+// make and no second vocabulary for the row to learn.
+describe("a coin row reaches the list in the same shape as a payment", () => {
+  test("the server's shaper is what the list reads", () => {
+    const shaper = code("server/lib/coinHistoryRow.js");
+    assert.match(shaper, /function coinHistoryRow\(/);
+    // No `memo`, no `postedAt` — the two names that used to need
+    // translating at a call site.
+    assert.ok(!/\bmemo\b/.test(shaper), "the coin shaper is emitting `memo` again");
+    assert.ok(!/\bpostedAt\b/.test(shaper), "the coin shaper is emitting `postedAt` again");
   });
 });
 
 describe("the lists inside padded cards sit flush", () => {
   test("every card-embedded list passes inset 0", () => {
     // `inset` is the row's own horizontal padding. History drops rows into an
-    // unpadded card and needs the default 14; the other five sit in cards
+    // unpadded card and needs the default 14; the other four sit in cards
     // that already pad themselves, and a second inset would step the rows in
     // from the card's own heading.
     for (const file of [
       LIST_FILES["Home Recent Activity + Receive sheet Recent"],
       LIST_FILES["Send Money Recent"],
-      LIST_FILES["Gloobal Bank Recent Transactions"],
-      LIST_FILES["Coin Activity"]
+      LIST_FILES["Gloobal Bank Recent Transactions"]
     ]) {
       for (const call of code(file).match(/<TransactionRow[\s\S]{0,600}?\/>/g) || []) {
         assert.match(call, /inset=\{0\}/, `${file} has a row that steps in from its card`);
@@ -335,7 +338,7 @@ describe("the lists inside padded cards sit flush", () => {
 });
 
 describe("the bundle can see the row before the lists that use it", () => {
-  test("TransactionRow is concatenated ahead of all five list files", () => {
+  test("TransactionRow is concatenated ahead of every list file", () => {
     // One global scope, and `var` hoists the declaration but not the
     // initialiser — so a module that reads TransactionRow at top level must
     // come after it.

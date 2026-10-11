@@ -297,12 +297,24 @@ test("the browser's ticker and the server's are the same string", async () => {
   assert.ok(!/const COIN_CURRENCY = '/.test(serverMain),
     "server.js declares its own coin ticker again");
 
-  const domainSrc = readFileSync(join(ROOT, "backend", "domain", "coin", "CoinService.js"), "utf8");
-  const domainTicker = domainSrc.match(/var COIN_CURRENCY = "([^"]+)"/);
-  assert.ok(domainTicker, "CoinService no longer declares COIN_CURRENCY");
+  // The browser's copy moved. It lived in backend/domain/coin/CoinService.js,
+  // which is deleted with the rest of the coin write path — nothing in the
+  // browser mirrors a mint, a redeem or a transfer any more, because the
+  // server cannot write one.
+  //
+  // The ledger ACCOUNTS that hold what it already posted are still
+  // denominated in the ticker, so the name lives in backend/data/currencies.js
+  // and is DERIVED from COIN_TICKER rather than written out again. That is a
+  // stronger arrangement than the one this test was built to guard: there is
+  // no second literal left to drift from the first.
+  const domainSrc = readFileSync(join(ROOT, "backend", "data", "currencies.js"), "utf8");
+  const browserTicker = domainSrc.match(/var COIN_TICKER = "([^"]+)"/);
+  assert.ok(browserTicker, "the browser no longer declares the coin ticker");
+  assert.match(domainSrc, /var COIN_CURRENCY = COIN_TICKER;/,
+    "the browser's COIN_CURRENCY is a second literal again instead of the ticker");
 
-  assert.equal(domainTicker[1], serverTicker[1],
-    `the ledger in the browser posts ${domainTicker[1]} while the database stores ${serverTicker[1]}`);
+  assert.equal(browserTicker[1], serverTicker[1],
+    `the ledger in the browser posts ${browserTicker[1]} while the database stores ${serverTicker[1]}`);
   assert.equal(serverTicker[1], COIN_TICKER, "both moved, and this file did not");
 
   // And the ticker every screen prints comes from the same decision.

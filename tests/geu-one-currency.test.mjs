@@ -104,7 +104,16 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
     // tell the same story the database does, and Money refuses arithmetic
     // across currencies — so a mismatch is not a cosmetic drift, it is a
     // TypeError the moment a balance is computed.
-    assert.match(readSource("backend/domain/coin/CoinService.js"), /var COIN_CURRENCY = "GEU";/);
+    //
+    // It used to live in backend/domain/coin/CoinService.js, which is
+    // deleted with the rest of the coin write path. The ledger ACCOUNTS
+    // that hold what it already posted are still denominated in it, so the
+    // name moved to backend/data/currencies.js — derived from COIN_TICKER
+    // rather than written out again, which is a stronger arrangement than
+    // the one it replaced: there is no second literal left to drift.
+    const currencies = readSource("backend/data/currencies.js");
+    assert.match(currencies, /var COIN_TICKER = "GEU";/);
+    assert.match(currencies, /var COIN_CURRENCY = COIN_TICKER;/);
   });
 
   test("and so do the ledger accounts the coin is held in", () => {
@@ -133,7 +142,12 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
       // literal through the whole rename while this test passed. A file list
       // enumerated by hand is only as good as the hand — anything that writes
       // a currency onto a money row belongs in it.
-      "server/scripts/coin-airdrop.mjs",
+      // scripts/coin-airdrop.mjs was here and is deleted with the coin
+      // write path. scripts/redeem-all-coin.mjs is its replacement in this
+      // list: it is the last thing that ever writes a coin money row, and
+      // it reads the ticker from lib/coinTicker.js for exactly the reason
+      // the airdrop's drift taught.
+      "server/scripts/redeem-all-coin.mjs",
       // The exact-integer ledger primitives. These wrote a currency onto a
       // money row, and were added when they were written rather than after
       // they drifted — which is the only time adding to a hand-maintained
@@ -146,7 +160,6 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
       "server/lib/money/index.js",
       "server/models/Posting.js",
       "server/models/LedgerTransaction.js",
-      "backend/domain/coin/CoinService.js",
       "backend/services/api/gloobalApi.js",
       "backend/data/currencies.js"
     ]) {
@@ -161,14 +174,18 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
   });
 
   test("old rows are relabelled by a script, not by a deploy", () => {
-    // A deploy that silently rewrites stored money records is one that can
-    // corrupt them with nobody watching.
-    const script = readSource("server/scripts/migrate-gc-to-geu.mjs");
-    assert.match(script, /const APPLY = process\.argv\.includes\("--apply"\);/);
-    assert.match(script, /DRY RUN/);
-    // Relabel only. No amount is touched: GC and GEU are the same unit under
-    // two names.
-    assert.match(script, /\$set: \{ \[field\]: "GEU" \}/);
+    // scripts/migrate-gc-to-geu.mjs rewrote rows that predated the GC -> GEU
+    // rename, deliberately as a one-shot run rather than on boot: silently
+    // rewriting stored money records during a restart is not something that
+    // should happen as a side effect of shipping.
+    //
+    // It is deleted along with the coin write path, and the principle it
+    // encoded is now carried by scripts/redeem-all-coin.mjs — which is also
+    // a deliberate one-shot against money rows, also refuses to run without
+    // being asked, and also writes nothing until --execute.
+    const migration = readSource("server/scripts/redeem-all-coin.mjs");
+    assert.match(migration, /const EXECUTE = process\.argv\.includes\("--execute"\);/);
+    assert.match(migration, /DRY RUN — nothing will be written/);
   });
 });
 
@@ -238,20 +255,25 @@ describe("the growth prototype is gone, not merely switched off", () => {
   });
 });
 
-describe("Gloobal Coin's own routes are untouched by this", () => {
-  // The gate is about GEU issuance specifically. Coin's mint and redeem are
-  // fiat-backed 1:1 in both directions with no growth mechanism, which is the
-  // whole reason they have no equivalent question hanging over them.
+describe("Gloobal Coin's own routes are gone too", () => {
+  // This block asserted that Coin's mint, redeem and send were NOT caught by
+  // the gate meant for GEU issuance — the two systems shared a ticker, and
+  // the gate had to tell them apart.
+  //
+  // Both are gone now, so there is nothing to tell apart. Coin's routes are
+  // deleted because GEU became a display lens over money somebody already
+  // holds; the growth prototype's are deleted because there is no longer an
+  // instrument for growth to apply to. What is asserted is the end state.
   for (const route of ["/api/coin/mint", "/api/coin/redeem", "/api/coin/send"]) {
-    test(`POST ${route} still works`, () => {
-      const line = server.match(
-        new RegExp(`app\\.post\\('${route.replace(/\//g, "\\/")}'[^\\n]*`)
-      );
-      assert.ok(line, `${route} is missing`);
-      assert.ok(
-        !/requireGeuGrowthPrototype/.test(line[0]),
-        `${route} was caught by a gate meant for GEU issuance`
-      );
+    test(`POST ${route} is gone`, () => {
+      assert.ok(!server.includes(`app.post('${route}'`), `${route} is back`);
     });
   }
+
+  test("but the history they wrote is still readable", () => {
+    // Those rows are the record of money that really moved. The route that
+    // renders them survives on purpose — see tests/coin-receipt.test.mjs.
+    assert.ok(server.includes("app.get('/api/coin/:symbolId/history'"),
+      "the coin history route went with the write paths");
+  });
 });

@@ -2681,7 +2681,6 @@ function GloobalId() {
   const appMapEntries = [
     { key: "dashboard", section: "Your money", group: "post", label: "Dashboard", locked: !everRegistered, onPress: () => goToDashboardDestination(null) },
     { key: "gbank", section: "Your money", group: "post", label: "Gloobal Bank", locked: !everRegistered, onPress: () => goToDashboardDestination("bank") },
-    { key: "gcoin", section: "Your money", group: "post", label: "Gloobal Coin", locked: !everRegistered, onPress: () => goToDashboardDestination("coin") },
     { key: "assets", section: "Your money", group: "post", label: "My Assets", locked: !everRegistered, onPress: () => goToDashboardDestination("assets") },
     { key: "send", section: "Move money", group: "post", label: "Send Money", locked: !everRegistered, onPress: () => goToDashboardDestination("send") },
     { key: "paylater", section: "Move money", group: "post", label: "PayLater", locked: !everRegistered, onPress: () => goToDashboardDestination("paylater") },

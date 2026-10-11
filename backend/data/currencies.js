@@ -230,6 +230,18 @@ var RATES = {
 var COIN_TICKER = "GEU";
 var COIN_TICKER_LONG = "Gloobal Energy Unit";
 
+// The same string, under the name the browser-side ledger accounts are
+// denominated in. It was declared in backend/domain/coin/CoinService.js,
+// which is deleted with the rest of the coin write path — but the ledger
+// accounts that hold the HISTORY of what the coin did are still denominated
+// in it, and an account whose currency label disagrees with the lines posted
+// to it is the exact defect ReserveAccount.js's own comment describes ("It
+// said GC while CoinService posted GEU").
+//
+// Derived from COIN_TICKER rather than written out again, so there is no
+// second literal to drift.
+var COIN_CURRENCY = COIN_TICKER;
+
 // What one GEU is worth, and in what.
 //
 // One GEU is one unit of the reserve currency — that is the peg, and it is

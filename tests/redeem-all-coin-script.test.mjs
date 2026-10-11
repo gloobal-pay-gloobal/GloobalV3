@@ -21,7 +21,6 @@ import assert from "node:assert/strict";
 import { readSource } from "./harness.mjs";
 
 const SCRIPT = "server/scripts/redeem-all-coin.mjs";
-const ROUTE_FILE = "server/server.js";
 
 const code = (relPath) => readSource(relPath)
   .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -93,34 +92,48 @@ describe("nobody is paid nothing", () => {
   });
 });
 
-describe("it does the same arithmetic the live route does", () => {
+// ── THE DRIFT GUARD, AND WHY IT IS NOW A DIFFERENT TEST ────────────────
+//
+// This block compared the script's arithmetic to POST /api/coin/redeem's,
+// line for line: the rate asked in the same direction, the payout rounded
+// in the account's currency, both debits conditional. That comparison was
+// the whole safety argument for a migration that had to behave exactly like
+// the route it was standing in for.
+//
+// It can only be made while BOTH exist, and the removal deletes the route.
+// The ordering is the reason that is acceptable rather than a loss: the
+// script runs against the live database BEFORE the removal deploys, so at
+// the moment the comparison matters it was being made, and it passed. After
+// the removal there is nothing left to drift from — the script is the only
+// implementation, and it has already done its job.
+//
+// What replaces it pins the arithmetic directly, so a later edit to the
+// script cannot quietly change what a holder would have been paid.
+describe("the arithmetic it was derived from is pinned in place", () => {
   const script = code(SCRIPT);
-  const server = code(ROUTE_FILE);
-  const route = slice(server, "app.post('/api/coin/redeem'", "app.post('/api/coin/send'");
 
-  test("the rate is asked for in the same direction", () => {
-    // reserve -> account. The inverse of a mint's lookup, and getting it
-    // backwards would pay a US holder 88x what they are owed.
-    assert.match(route, /geuRateFor\(reserveCurrency, accountCurrency\)/);
-    assert.match(script, /redeemRateFor\(before\.reserveCurrency, accountCurrency\)/);
+  test("the rate is asked reserve -> account, never the other way", () => {
+    // A mint asks account -> reserve. Inverting this would pay a US holder
+    // eighty-eight times what they are owed, and at India's peg of 1 the
+    // mistake is invisible.
+    assert.match(script, /async function redeemRateFor\(reserveCurrency, accountCurrency\)/);
     assert.match(script, /if \(reserveCurrency === accountCurrency\) return \{ rate: 1, source: "identity" \};/);
+    assert.match(script, /redeemRateFor\(before\.reserveCurrency, accountCurrency\)/);
   });
 
-  test("the payout is rounded in the account's currency, not at a bare two places", () => {
-    assert.match(route, /const fiatAmount = toMinorUnit\(coinAmount \* redeemRate, accountCurrency\);/);
+  test("the payout is rounded in the account's currency", () => {
     assert.match(script, /const fiatAmount = toMinorUnit\(coinAmount \* rate, accountCurrency\);/);
+    assert.match(script, /function toMinorUnit\(value, currencyCode\)/);
+    assert.match(script, /const decimals = currencyCode \? decimalsFor\(currencyCode\) : 2;/);
   });
 
-  test("the balance and the reserve move by the same figures, under the same guards", () => {
-    for (const src of [route, script]) {
-      assert.match(src, /coinBalance: \{ \$gte: /, "the coin debit is not conditional");
-      assert.match(src, /reserve: \{ \$gte: /, "the reserve debit is not conditional");
-      assert.match(src, /issued: \{ \$gte: /, "issued is not checked");
-      assert.match(src, /\$inc: \{ reserve: -coinAmount, issued: -coinAmount \}|\$inc: \{ reserve: -row\.coinAmount, issued: -row\.coinAmount \}/);
-    }
+  test("both debits are conditional, so neither can go negative", () => {
+    assert.match(script, /coinBalance: \{ \$gte: row\.coinAmount \}/);
+    assert.match(script, /reserve: \{ \$gte: row\.coinAmount \}, issued: \{ \$gte: row\.coinAmount \}/);
+    assert.match(script, /\$inc: \{ reserve: -row\.coinAmount, issued: -row\.coinAmount \}/);
   });
 
-  test("it reads the ticker and the decimals from the same modules the server does", () => {
+  test("it reads the ticker and the decimals from the server's own modules", () => {
     // The GC -> GEU rename updated server.js and missed the airdrop script,
     // which then wrote money rows in a currency nothing else used. A second
     // copy of a constant is how that happens.

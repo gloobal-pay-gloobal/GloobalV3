@@ -362,8 +362,6 @@ describe("there is one flag component, cut to different shapes", () => {
     // undefined at render.
     const offenders = [];
     for (const file of [
-      "frontend/screens/Coin/CountryHoldersScreen.jsx",
-      "frontend/screens/Coin/CoinHoldersScreen.jsx",
       "frontend/screens/Dashboard/Dashboard.jsx",
       "frontend/components/dialogs/ReceiptModal.jsx",
       "frontend/components/cards/flags.jsx"

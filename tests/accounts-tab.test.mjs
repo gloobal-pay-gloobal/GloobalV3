@@ -48,20 +48,24 @@ describe("the padlock agrees with itself", () => {
   });
 });
 
-describe("Gloobal Bank is not a peer of the other five", () => {
+describe("Gloobal Bank is not a peer of the other tiles", () => {
   const dash = () => code("frontend/screens/Dashboard/Dashboard.jsx");
 
   test("it gets the full width and a sentence", () => {
-    // Six identical squares said the six things were the same kind of
-    // thing. Bank is the account the rest unlock from.
+    // Identical squares said the tiles were all the same kind of thing.
+    // Bank is the account the rest unlock from.
     const src = dash();
     assert.match(src, /background: T\.gradButton, boxShadow: "0 14px 30px rgba\(76,29,149,0\.28\)"/);
     assert.match(src, /the account everything else here unlocks from/);
   });
 
   test("and it is no longer in the tile list", () => {
+    // Anchored on the FIRST tile rather than on a particular one. It used
+    // to find `{ key: "gcoin" ... }`, which made a test about Gloobal Bank
+    // fail the day the Coin tile was deleted — the claim here has never
+    // been about which tiles exist, only that Bank is not among them.
     const src = dash();
-    const at = src.indexOf('{ key: "gcoin", label: "Gloobal Coin"');
+    const at = src.indexOf('{ key: "gpaylater", label: "PayLater"');
     assert.ok(at > 0, "the tile list is gone");
     const list = src.slice(at, src.indexOf("].map", at));
     assert.ok(!/key: "gbank"/.test(list), "Bank is still a tile as well as a card");

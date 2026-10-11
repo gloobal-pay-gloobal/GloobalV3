@@ -119,13 +119,24 @@ describe("both figures on the card are formatted the same way", () => {
     // The visible symptom: one line read +₹4747232.79 and the other
     // +₹5,727,195.10 — same currency, two formats, inches apart.
     //
-    // fmtMoney, not fmt: the figures are now built by the one function
-    // that also decides which side the currency goes on. They used to be
+    // fmtMoney, not fmt: the figures are built by the one function that
+    // also decides which side the currency goes on. They used to be
     // `−{symbol}{fmt(...)}`, which took the glyph from one prop and the
     // decimals from another — right symbol, USD's minor units, wrong for
     // any zero-decimal currency. fmtMoney takes the code alone.
-    assert.match(chart, /fmtMoney\(Number\(displayed\.paid\) \|\| 0, currencyCode\)/);
-    assert.match(chart, /fmtMoney\(Number\(displayed\.received\) \|\| 0, currencyCode\)/);
+    //
+    // There is a `money()` helper in front of it now, because the chart
+    // also takes the GEU display lens — but that helper is the ONLY thing
+    // calling a formatter, which is a stronger version of what this test
+    // was asserting: one function for every figure in the chart, so a
+    // total and a day's callout cannot end up formatted two ways.
+    assert.match(chart, /const money = \(value\) => \(/);
+    assert.match(chart, /geuLensMoney\(value, currencyCode, lens\) : fmtMoney\(value, currencyCode\)/);
+    assert.match(chart, /money\(Number\(displayed\.paid\) \|\| 0\)/);
+    assert.match(chart, /money\(Number\(displayed\.received\) \|\| 0\)/);
+    // And nothing bypasses it.
+    const direct = (chart.match(/fmtMoney\(/g) || []).length;
+    assert.equal(direct, 1, `${direct} direct fmtMoney calls in the chart; only the one inside money() is allowed`);
     assert.ok(
       !/\{symbol\}\{fmt\(/.test(chart),
       "the chart still puts a currency symbol in front of the number"

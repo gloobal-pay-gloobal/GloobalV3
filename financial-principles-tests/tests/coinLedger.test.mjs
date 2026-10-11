@@ -1,272 +1,47 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createFinancialCore, Money } from "../app_bundle_testonly.mjs";
+import { createFinancialCore } from "../app_bundle_testonly.mjs";
 
-// Gloobal Coin in the local ledger.
+// What is left of Gloobal Coin in the local ledger.
 //
-// The server is the authority on balances — Backend/tests/coin-supply-invariant
-// asserts the supply invariant there. These tests are about the other half of
-// "in sync": that the browser's double-entry record of the same movements is
-// itself sound, so the two are not merely displaying similar numbers.
+// ── Seventeen tests used to live above this line ────────────────────────
 //
-// The property that carries the most weight here is the multi-currency one. A
-// mint is one journal entry holding an INR pair and a GC pair, and
-// JournalEntry balances each currency separately. That means a conversion which
-// took fiat without issuing coin cannot be posted at all — it is not a bug this
-// suite hopes to catch, it is a state the ledger has no representation for. The
-// tests below confirm that is really so rather than assumed.
+// They covered the browser's double-entry record of a mint, a redeem, a
+// transfer and a reconcile: that fiat plus coin was unchanged by a
+// conversion, that the reserve always equalled what had been issued, that a
+// coin figure could not be added to a fiat one, that a malformed server
+// figure was ignored rather than read as zero.
 //
-// ── The ticker is GEU, and these tests used to say GC ────────────────────
+// Every one of them exercised backend/domain/coin/CoinService.js, which is
+// deleted. Nothing in the browser mirrors a coin movement any more because
+// the server cannot write one: GEU is a display lens over money somebody
+// already holds, 1 GEU = 1 unit of their own tender, and there is no second
+// balance for a ledger to keep in step.
 //
-// The coin's unit was renamed from "GC" to "GEU" — Gloobal Energy Unit —
-// and the rename was the fix for a real defect, not cosmetics: the screens
-// said GEU while the server stamped GC onto every coin row, because server.js
-// separately defined a DIFFERENT currency called GEU. Two designs were wearing
-// one name. See backend/data/currencies.js, which carries the full reasoning.
+// Deleting a test because its subject is gone is only honest when the
+// PROPERTY it protected is gone with it. Those seventeen protected the
+// soundness of a conversion, and there are no conversions. What survives
+// below is what still describes something real:
 //
-// The implementation was renamed everywhere that matters — server.js's
-// COIN_CURRENCY, CoinService's, UserAccount, ReserveAccount. These tests were
-// not, and so they failed against correct code. They are corrected here rather
-// than the code being bent back to them, and `the two definitions agree` below
-// is the check that makes a future divergence fail loudly instead of quietly.
+//   - the two tickers agreeing, which still matters because historical coin
+//     rows are denominated in one of them;
+//   - the ledger accounts' own denomination, for the same reason;
+//   - the capability table honestly reporting a product that is no longer
+//     live, which is the thing that stops the service rows becoming
+//     decoration.
+//
+// The server-side invariant they mirrored — reserve == issued == sum of
+// balances — is not lost either. scripts/redeem-all-coin.mjs checks it
+// before and after the migration that drains all three to zero, which is
+// the last time it will ever be a live question.
 
 // The one ticker, named once here so a future rename changes this file in a
 // single place rather than in three assertions that can drift apart.
 const COIN_TICKER = "GEU";
 
-const coin = (core) => core.coinService.balance().amount;
-const bank = (core) => core.ledgerEngine.getAccountBalance(core.userAccounts.bank.id, core.currency).amount;
-const issued = (core) => core.coinService.issued().amount;
-const reserve = (core) => core.coinService.reserve().amount;
+const fresh = () => createFinancialCore({ userId: "coin-tests", currency: "INR" });
 
-const fresh = (opts = {}) => createFinancialCore({ openingBankBalance: 1000, logLevel: "silent", ...opts });
 
-// Every entry in the store must balance within each currency it touches. A
-// four-line mint that balanced "overall" by counting rupees against coin would
-// pass a naive check and be nonsense; this sums per currency for that reason.
-function assertBooksBalance(core) {
-  for (const record of core.store.getAll()) {
-    const lines = record.journalEntry?.lines ?? record.entry?.lines ?? record.lines ?? [];
-    const byCurrency = new Map();
-    for (const line of lines) {
-      const currency = line.money?.currency ?? line.currency ?? "INR";
-      const amount = Number(line.money?.amount ?? line.amount?.amount ?? line.amount ?? 0);
-      const bucket = byCurrency.get(currency) || { debit: 0, credit: 0 };
-      if (line.direction === "debit") bucket.debit += amount;
-      else bucket.credit += amount;
-      byCurrency.set(currency, bucket);
-    }
-    for (const [currency, { debit, credit }] of byCurrency) {
-      assert.equal(
-        Number(debit.toFixed(2)),
-        Number(credit.toFixed(2)),
-        `entry "${record.journalEntry?.memo ?? record.memo}" does not balance in ${currency}`
-      );
-    }
-  }
-}
-
-test("a fresh core holds no coin and has issued none", () => {
-  const core = fresh();
-  assert.equal(coin(core), 0);
-  assert.equal(issued(core), 0);
-  assert.equal(reserve(core), 0);
-});
-
-test("minting moves fiat into the reserve and issues coin 1:1", () => {
-  const core = fresh();
-  core.coinService.mint(400);
-
-  assert.equal(bank(core), 600, "fiat left the bank account");
-  assert.equal(coin(core), 400, "coin arrived");
-  assert.equal(reserve(core), 400, "the fiat is held as backing");
-  assert.equal(issued(core), 400, "the platform owes that coin");
-  assertBooksBalance(core);
-});
-
-test("minting leaves the holder no richer — fiat plus coin is unchanged", () => {
-  const core = fresh();
-  const before = bank(core);
-  core.coinService.mint(250);
-  // Summed as plain numbers deliberately: Money itself refuses to add across
-  // currencies, which is the point of the next test. Here the arithmetic is
-  // the test's, comparing magnitudes at a 1:1 rate.
-  assert.equal(bank(core) + coin(core), before);
-});
-
-test("a coin figure cannot be added to a fiat one", () => {
-  const core = fresh();
-  core.coinService.mint(100);
-  assert.throws(
-    () => core.coinService.balance().add(Money.of(1, core.currency)),
-    /currency mismatch/i,
-    "Money must refuse GC + INR"
-  );
-});
-
-test("redeeming is the exact inverse of minting", () => {
-  const core = fresh();
-  core.coinService.mint(300);
-  core.coinService.redeem(300);
-
-  assert.equal(bank(core), 1000);
-  assert.equal(coin(core), 0);
-  assert.equal(reserve(core), 0);
-  assert.equal(issued(core), 0);
-  assertBooksBalance(core);
-});
-
-test("a partial redeem leaves the rest backed", () => {
-  const core = fresh();
-  core.coinService.mint(500);
-  core.coinService.redeem(200);
-
-  assert.equal(coin(core), 300);
-  assert.equal(reserve(core), 300, "reserve tracks what is still issued");
-  assert.equal(issued(core), 300);
-  assert.equal(bank(core), 700);
-  assertBooksBalance(core);
-});
-
-test("the reserve always equals the coin issued, across mixed activity", () => {
-  const core = fresh({ openingBankBalance: 5000 });
-  core.coinService.mint(1000);
-  core.coinService.redeem(250);
-  core.coinService.mint(400);
-  core.coinService.redeem(150);
-
-  assert.equal(reserve(core), issued(core), "reserve and issuance agree");
-  assert.equal(issued(core), coin(core), "and both agree with what is held");
-  assert.equal(coin(core), 1000);
-  assertBooksBalance(core);
-});
-
-test("sending coin changes who holds it, not how much exists", () => {
-  const core = fresh();
-  core.coinService.mint(600);
-  const reserveBefore = reserve(core);
-
-  core.coinService.transferOut(200);
-
-  assert.equal(coin(core), 400, "the sender holds less");
-  assert.equal(reserve(core), reserveBefore, "the reserve did not move");
-  assert.equal(bank(core), 400, "and no fiat moved either");
-  assertBooksBalance(core);
-});
-
-test("receiving coin is the mirror of sending it", () => {
-  const core = fresh();
-  core.coinService.mint(100);
-  core.coinService.transferOut(100);
-  assert.equal(coin(core), 0);
-
-  core.coinService.transferIn(75);
-  assert.equal(coin(core), 75);
-  assert.equal(bank(core), 900, "receiving coin does not touch fiat");
-  assertBooksBalance(core);
-});
-
-test("a non-positive amount is refused rather than posted", () => {
-  const core = fresh();
-  assert.throws(() => core.coinService.mint(0), /positive/i);
-  assert.throws(() => core.coinService.mint(-50), /positive/i);
-  assert.throws(() => core.coinService.redeem(0), /positive/i);
-  assert.throws(() => core.coinService.transferOut(-1), /positive/i);
-  assert.equal(core.store.getAll().filter((r) => (r.journalEntry?.meta?.kind || "").startsWith("coin")).length, 0);
-});
-
-test("reconciling upward moves the coin balance to the server's figure", () => {
-  const core = fresh();
-  core.coinService.mint(100);
-  const delta = core.reconcileCoinBalance(450);
-
-  assert.equal(delta, 350);
-  assert.equal(coin(core), 450);
-  assertBooksBalance(core);
-});
-
-test("reconciling downward works the same way", () => {
-  const core = fresh();
-  core.coinService.mint(500);
-  const delta = core.reconcileCoinBalance(120);
-
-  assert.equal(delta, -380);
-  assert.equal(coin(core), 120);
-  assertBooksBalance(core);
-});
-
-test("reconciling to the figure already held posts nothing", () => {
-  const core = fresh();
-  core.coinService.mint(200);
-  const before = core.store.getAll().length;
-
-  assert.equal(core.reconcileCoinBalance(200), 0);
-  assert.equal(core.store.getAll().length, before, "no entry was written");
-});
-
-// The trap reconcileBankBalance documents, repeated here because the coin path
-// is a second copy of that logic and would otherwise be a second place to get
-// it wrong. Number(null), Number("") and Number([]) are all 0 — finite,
-// non-negative, indistinguishable from a real zero balance — so a response
-// missing `coinBalance` must not be read as "you hold nothing".
-test("a missing or malformed server figure is ignored, not treated as zero", () => {
-  for (const bogus of [null, undefined, "", "  ", [], {}, NaN, Infinity, -5, "abc"]) {
-    const core = fresh();
-    core.coinService.mint(300);
-    assert.equal(core.reconcileCoinBalance(bogus), 0, `${JSON.stringify(bogus)} should be ignored`);
-    assert.equal(coin(core), 300, `${JSON.stringify(bogus)} must not wipe the holding`);
-  }
-});
-
-test("a numeric string from the server is accepted", () => {
-  const core = fresh();
-  core.coinService.mint(100);
-  assert.equal(core.reconcileCoinBalance("175.50"), 75.5);
-  assert.equal(coin(core), 175.5);
-});
-
-test("minting more than the bank holds still balances the books", () => {
-  // The local ledger does not enforce a spend limit — the server does, and its
-  // conditional update is the authority. What must not happen is the ledger
-  // going unbalanced or the reserve disagreeing with issuance when it does
-  // record such a movement.
-  const core = fresh({ openingBankBalance: 100 });
-  core.coinService.mint(500);
-
-  assert.equal(bank(core), -400, "the local ledger records the overdraw honestly");
-  assert.equal(reserve(core), issued(core));
-  assertBooksBalance(core);
-});
-
-test("coin history reports direction from the entry, not from a stored sign", () => {
-  const core = fresh();
-  core.coinService.mint(300);
-  core.coinService.transferOut(100);
-  core.coinService.redeem(50);
-
-  const history = core.coinService.history();
-  assert.equal(history.length, 3);
-  assert.equal(history[0].kind, "coin-redeem");
-  assert.equal(history[0].direction, "out");
-  assert.equal(history[1].kind, "coin-transfer-out");
-  assert.equal(history[1].direction, "out");
-  assert.equal(history[2].kind, "coin-mint");
-  assert.equal(history[2].direction, "in");
-  assert.ok(history.every((row) => row.currency === COIN_TICKER));
-});
-
-// THE DIVERGENCE THAT CAUSED THE ORIGINAL BUG, pinned so it cannot recur.
-//
-// CoinService's own comment says it plainly: "Matches the server's
-// COIN_CURRENCY exactly ... the two must never disagree, because this
-// ledger's whole purpose is to tell the same story the database does."
-// Nothing enforced that. The browser's ledger and the database's rows could
-// be denominated differently and every test on either side would still pass,
-// which is how the first version of this shipped.
-//
-// Read as source text because server/ is a separate package with its own
-// deploy root and cannot be imported from here — the same reason
-// GLOOBAL_ZERO_DECIMAL_CURRENCIES exists twice.
 test("the browser's ticker and the server's are the same string", async () => {
   const { readFileSync } = await import("node:fs");
   const { dirname, join } = await import("node:path");
@@ -329,37 +104,47 @@ test("the coin account is denominated in GEU, separately from the bank account",
   assert.equal(core.userAccounts.coin.currency, COIN_TICKER);
   assert.equal(core.userAccounts.bank.currency, core.currency);
   assert.notEqual(core.userAccounts.coin.id, core.userAccounts.bank.id);
-  assert.equal(core.coinCurrency, COIN_TICKER);
+  // `core.coinCurrency` is gone with the coin service that used to be
+  // constructed beside it. The ACCOUNT still carries its own denomination,
+  // asserted two lines up, which is the thing that matters: an account
+  // whose currency label disagrees with the lines posted to it is the
+  // defect ReserveAccount.js's own comment describes.
 });
 
-// The capability layer, now that Coin is live.
+// The capability layer, now that Coin is not a product.
 //
-// `live` and `payments` are separate for a concrete reason: Scan & Pay and Pay
-// a Business settle in fiat through /api/transactions/send, and neither has a
-// coin rail. While Coin did nothing the two questions had one answer and the
-// pay sheets read `live`; if they still did, choosing "Gloobal Coin" would
-// debit rupees and call the result coin. This pins them apart so a future edit
-// that collapses them fails here.
-test("Gloobal Coin is live, and still not a payment method", async () => {
-  const { deriveCapabilityStates, deriveProductServices, CAPABILITY_KEY } = await import("../app_bundle_testonly.mjs");
+// It was `live: true, payments: false`, and the two were separate for a
+// concrete reason: Scan & Pay and Pay a Business settled in fiat through
+// /api/transactions/send and neither had a coin rail, so a sheet reading
+// `live` alone would have debited rupees and called the result coin.
+//
+// There is no coin now. `live: false` is what says so, and `payments`
+// stays beside it — trivially true rather than a distinction — because
+// keeping the field is what stops a future reader collapsing the two back
+// together the day something coin-shaped returns.
+test("Gloobal Coin is not live, and not a payment method", async () => {
+  const { deriveCapabilityStates } = await import("../app_bundle_testonly.mjs");
   const capabilities = deriveCapabilityStates({ hasOpenedGloobalBank: true });
 
-  assert.equal(capabilities.gcoin.live, true, "the coin works");
-  assert.equal(capabilities.gcoin.payments, false, "and cannot be spent at a merchant yet");
+  assert.equal(capabilities.gcoin.live, false, "the coin is back");
+  assert.equal(capabilities.gcoin.payments, false);
   assert.equal(capabilities.gcoin.locked, false);
 });
 
-test("a live Coin no longer downgrades its own service rows", async () => {
+test("and its service rows read planned rather than describing a dead product", async () => {
+  // This used to assert Stable, Instant and Backed were 'live' and only
+  // Borderless 'planned'. Every one of those claims was about a held,
+  // reserve-backed currency. deriveProductServices forces the whole table
+  // back to 'planned' for a product that is not live, which is the guard
+  // that stops the rows becoming decoration — and it is doing exactly that
+  // here rather than needing a special case.
   const { deriveCapabilityStates, deriveProductServices, CAPABILITY_KEY } = await import("../app_bundle_testonly.mjs");
   const capabilities = deriveCapabilityStates({ hasOpenedGloobalBank: true });
   const rows = deriveProductServices(CAPABILITY_KEY.GLOOBAL_COIN, capabilities);
-  const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.status]));
 
-  assert.equal(byLabel.Stable, "live");
-  assert.equal(byLabel.Instant, "live");
-  assert.equal(byLabel.Backed, "live");
-  // The one that is still not true, and the reason it is not.
-  assert.equal(byLabel.Borderless, "planned");
+  assert.ok(rows.length > 0, "the table is empty rather than honest");
+  assert.ok(rows.every((r) => r.status === "planned"),
+    `a dead product has live services: ${rows.map((r) => `${r.label}=${r.status}`).join(", ")}`);
 });
 
 test("marking Coin not-live still forces every row back to planned", async () => {

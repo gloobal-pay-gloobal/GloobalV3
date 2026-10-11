@@ -27,23 +27,27 @@ var CAPABILITY_KEY = {
 function deriveCapabilityStates({ hasOpenedGloobalBank = false } = {}) {
   return {
     [CAPABILITY_KEY.GLOOBAL_BANK]: { locked: false, live: true, reason: null },
-    // Coin is live: it can be minted, held, sent to another Gloobal ID and
-    // redeemed, against a reserve the server keeps equal to what it has
-    // issued. It was `live: false` for as long as that was untrue.
+    // ── COIN IS NOT A PRODUCT ANY MORE ────────────────────────────────
     //
-    // Note what this does NOT claim. Paying a merchant with coin is still not
-    // built — Scan & Pay and Pay a Business remain fiat, and both still say so
-    // when a coin payment is chosen. "Live" here means the currency works, not
-    // that every payment surface accepts it.
+    // It was live: mintable, holdable, sendable to another Gloobal ID and
+    // redeemable, against a reserve the server kept equal to what it had
+    // issued. Every balance has been redeemed back to fiat and the routes
+    // are deleted, so none of that is true.
     //
-    // `payments` is a third question, and it exists because `live` stopped
-    // answering it. While Coin did nothing, "is it live" and "can you pay with
-    // it" had the same answer, and the pay sheets could read either. They have
-    // different answers now: the coin works, and Scan & Pay / Pay a Business
-    // still settle in fiat through /api/transactions/send. A sheet that let
-    // "Gloobal Coin" through on `live` alone would debit rupees and label the
-    // result coin — the exact class of lie this file exists to prevent.
-    [CAPABILITY_KEY.GLOOBAL_COIN]: { locked: false, live: true, payments: false, reason: null },
+    // GEU is a display lens now — a label on the money in Gloobal Bank,
+    // 1 GEU = 1 unit of the holder's own tender — so there is no separate
+    // product to be live or dead. `live: false` is what says so, and it
+    // forces every service row under it back to 'planned'
+    // (deriveProductServices), which is the honest state for a table
+    // describing something that no longer exists.
+    //
+    // `payments: false` stays and is now trivially true rather than a
+    // distinction: there is no coin to pay with. It existed because "is it
+    // live" and "can you pay with it" had different answers while the coin
+    // worked — a sheet reading `live` alone would have debited rupees and
+    // called the result coin. Keeping the field means a future reader
+    // cannot resurrect the collapse that caused.
+    [CAPABILITY_KEY.GLOOBAL_COIN]: { locked: false, live: false, payments: false, reason: null },
     [CAPABILITY_KEY.PAYLATER]: { locked: false, live: true, reason: null },
     [CAPABILITY_KEY.MY_ASSETS]: { locked: false, live: true, reason: null },
     // First-time-user gate: Essentials stays locked until the person

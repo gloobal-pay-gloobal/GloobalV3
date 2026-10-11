@@ -39,7 +39,6 @@ const DOMAIN_MODULES = [
   "backend/domain/accounts/entities/UserAccount.js",
   "backend/domain/accounts/entities/ReserveAccount.js",
   "backend/domain/accounts/AccountRegistry.js",
-  "backend/domain/coin/CoinService.js",
   "backend/domain/liquidity/entities/LiquidityPool.js",
   "backend/domain/liquidity/LiquidityService.js",
   "backend/domain/essentials/EssentialsPoolService.js",
@@ -127,7 +126,12 @@ const EXPORTS = [
   "COMPLAINT_WINDOW_MINUTES_DEFAULT", "DISPUTE_RECEIVER_RESPONSE_HOURS_DEFAULT",
   "CAPABILITY_KEY", "deriveCapabilityStates", "deriveProductServices", "SERVICE_STATUS",
   "EssentialsService", "EssentialsGrant", "EssentialsPoolService", "TransactionOrchestrator", "ProvenanceService", "DisputeService",
-  "CoinService", "COIN_CURRENCY", "LiquidityService", "RiskEngine", "SettlementEngine", "PayLaterService", "CreatorShareService",
+  // CoinService is gone with the coin write path — nothing in the browser
+  // mirrors a mint, a redeem or a transfer any more, because the server
+  // cannot write one. COIN_CURRENCY survives: the ledger accounts holding
+  // what it already posted are still denominated in it, and it is declared
+  // in backend/data/currencies.js now, derived from COIN_TICKER.
+  "COIN_CURRENCY", "LiquidityService", "RiskEngine", "SettlementEngine", "PayLaterService", "CreatorShareService",
   "DIAL_SYMBOLS", "TXN_ID_LENGTH", "genTxnId", "genSuggestedId",
   "GLOOBAL_PAY_ID_LENGTH", "isGloobalPayId", "buildGloobalPayUrl", "parseGloobalPayPayload", "readGloobalPayIdFromPath"
 ];

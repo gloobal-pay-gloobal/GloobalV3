@@ -287,14 +287,24 @@ describe("GEU appears nowhere money moves", () => {
     assert.match(toggle, /GEU_LENS_PILL_H = GEU_LENS_DISC \+ GEU_LENS_PILL_PAD \* 2 \+ GEU_LENS_BORDER \* 2;/);
     assert.match(toggle, /GEU_LENS_PILL_W = GEU_LENS_DISC \+ GEU_LENS_CODE_W \+ GEU_LENS_PILL_PAD \* 3 \+ GEU_LENS_BORDER \* 2;/);
 
-    // The rim earns its place — it is what stops a white or pale flag
-    // dissolving into a white pill — but it has to fit the slot it was
-    // given. One pixel of ring around a disc cut to DISC - 2 is exactly
-    // DISC wide.
-    assert.match(toggle, /boxShadow: `0 0 0 1px \$\{T\.line\}`/);
-    assert.match(toggle, /size=\{GEU_LENS_DISC - 2\}/);
-    assert.ok(!/0 0 0 2px \$\{T\.surface\}, 0 0 0 3px/.test(toggle),
-      "the oversized double rim is back");
+    // THE RIM IS THE COMPONENT'S, AND ONLY THE COMPONENT'S.
+    //
+    // FlagEmoji draws `inset 0 0 0 1px T.line` for shape="circle". This
+    // file was drawing another one outside it, so every flag carried two
+    // grey rings a pixel apart — invisible at 1x in a desktop render, a
+    // thick uneven border at 3x on a phone. Reported from a device after
+    // the geometry had already been fixed, which is the useful part: the
+    // numbers were right and the thing still looked broken.
+    assert.match(toggle, /<FlagEmoji flag=\{countryFlag\} shape="circle" size=\{GEU_LENS_DISC\} fit="cover" \/>/,
+      "the flag no longer fills its slot, or is wrapped in something again");
+    assert.ok(!/boxShadow: `0 0 0 \d+px \$\{T\.(line|surface)\}/.test(toggle),
+      "a second rim is being drawn around a flag that already has one");
+
+    // The component's own rim is what this relies on, so a change there is
+    // a change here. Asserted against flags.jsx rather than remembered.
+    const flags = code("frontend/components/cards/flags.jsx");
+    assert.match(flags, /const rim = shape === "circle" \? \(border \|\| `inset 0 0 0 1px \$\{T\.line\}`\) : null;/,
+      "FlagEmoji stopped rimming circles, so the toggle's flag now has none");
 
     // The arithmetic, checked rather than trusted: nothing may land outside
     // the pill's INNER box in either state.

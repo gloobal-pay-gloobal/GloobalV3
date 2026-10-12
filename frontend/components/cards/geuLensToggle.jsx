@@ -132,18 +132,29 @@ function GeuLensToggle({ lens, onToggle, currencyCode, countryFlag }) {
        into the pill behind it — the same treatment the receipt and the
        notification card give a flag, so one country looks like itself
        everywhere in the app. */
-  }<span
-    // ONE pixel, and counted. The old rim was a 2px surface ring plus a 3px
-    // line ring around a disc already sized to fill its slot — 6px of
-    // shadow growing outside a box that had 2px of room, landing on the
-    // pill's own border at the rounded end.
+    // NO RIM IS DRAWN HERE, and that is the fix rather than an omission.
     //
-    // A ring still earns its place: it is what keeps a white or pale flag
-    // (Japan, Poland) from dissolving into a white pill. It just has to fit.
-    // The flag is cut to DISC - 2 so the flag plus its 1px ring is exactly
-    // DISC, which is the slot it was given.
-    style={{ display: "flex", borderRadius: "50%", boxShadow: `0 0 0 1px ${T.line}` }}
-  ><FlagEmoji flag={countryFlag} shape="circle" size={GEU_LENS_DISC - 2} fit="cover" /></span></span><span
+    // FlagEmoji already rims a circle itself:
+    //
+    //   const rim = shape === "circle" ? (border || `inset 0 0 0 1px ${T.line}`) : null;
+    //
+    // An INSET ring, which does not grow the box. This file was adding a
+    // second one outside it, so every flag carried two grey rings a pixel
+    // apart — the component's at the flag's edge and this file's just
+    // beyond it. Before that it was adding two more on top of the
+    // component's, for three.
+    //
+    // At 1x on a desktop render the doubling is a hairline and easy to miss.
+    // At 2x and 3x on a phone the two rings resolve into a thick, uneven
+    // border that reads as broken, which is what was reported from a device
+    // after the geometry had already been corrected.
+    //
+    // The lesson is the one worth keeping: the component owns how a flag is
+    // presented. A caller that re-decorates it is not adding a rim, it is
+    // adding a SECOND rim, and the two are drawn by different rules. The
+    // disc now fills its slot exactly, because nothing is growing outside
+    // it any more.
+  }<FlagEmoji flag={countryFlag} shape="circle" size={GEU_LENS_DISC} fit="cover" /></span><span
     aria-hidden="true"
     style={{
       position: "absolute",

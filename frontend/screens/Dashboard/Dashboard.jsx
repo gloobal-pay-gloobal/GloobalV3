@@ -1757,7 +1757,26 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // an account view the person is not looking at, and those tabs have
     // their own scroll positions to respect.
     disabled={activeTab !== "home"}
-  >{activeTab === "home" && <div style={{ padding: "8px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div
+  >{
+    /* ROOM FOR THE THINGS THAT STRADDLE THE CARD'S TOP EDGE.
+
+       This was 8px, and two elements hang above the balance card by more
+       than that: the name badge at -11 and the display-unit pill at -14.
+       The parent scrolls, and a scroll container clips — so the top 3px of
+       the badge and the top 6px of the pill were cut off, which on a phone
+       reads as the pill's upper border and the flag's circle being sliced
+       flat.
+
+       The card itself already learned this lesson once: it used to be
+       overflow:hidden and was cutting the same badges in half, which is
+       why its decorative glow lives in a wrapper of its own a few lines
+       below. This is the same fault one level up, and the same answer —
+       the clipping box has to be big enough for what is drawn in it.
+
+       16 is the deepest overhang plus two. Raising the padding rather than
+       trimming the overhangs is deliberate: the offsets are the design,
+       and this number was only ever incidental. */
+  }{activeTab === "home" && <div style={{ padding: "16px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div
     style={{
       position: "relative",
       borderRadius: T.radiusXl,

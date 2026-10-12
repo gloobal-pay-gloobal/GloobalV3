@@ -402,6 +402,73 @@ describe("on screen", () => {
     await teardown();
   });
 
+  test("nothing that straddles the card's top edge is cut off by the scroller", async () => {
+    // Reported from a phone as the pill's upper border and the flag's
+    // circle being sliced flat — after the pill's own geometry had already
+    // been corrected twice. Neither fix could have helped, because the
+    // pill was never the problem.
+    //
+    // Two elements hang above the balance card: the name badge at -11 and
+    // the display-unit pill at -14. The home tab's content had 8px of top
+    // padding, and its parent SCROLLS. A scroll container clips, so the
+    // top 3px of one and 6px of the other were cut.
+    //
+    // The card itself already learned this: it used to be overflow:hidden
+    // and cut the same badges in half, which is why its decorative glow
+    // sits in a wrapper of its own. This is the identical fault one level
+    // up, which is the argument for testing the PROPERTY rather than
+    // pinning either number — the next clipping ancestor will not be this
+    // one.
+    const clipped = await page.evaluate(() => {
+      const scrollerOf = (node) => {
+        let el = node.parentElement;
+        while (el) {
+          const cs = getComputedStyle(el);
+          if (cs.overflowY !== "visible" || cs.overflowX !== "visible") return el;
+          el = el.parentElement;
+        }
+        return null;
+      };
+      const pill = document.querySelector('[data-testid="geu-lens-toggle"]');
+      // The badge is found by WHERE IT IS, not by what it says. Its label
+      // comes from GloobalWordmark, which swaps letters for decorative
+      // glyphs, so matching the text finds the Coverage search button
+      // instead and the real badge goes unchecked.
+      let card = pill && pill.parentElement;
+      while (card && getComputedStyle(card).borderRadius === "0px") card = card.parentElement;
+      const badge = card && [...card.querySelectorAll("button")].find(
+        (b) => b !== pill && !/balance/i.test(b.getAttribute("aria-label") || "")
+      );
+      const targets = [
+        ["the display-unit pill", pill],
+        ["the name badge", badge],
+      ];
+      const out = [];
+      for (const [name, el] of targets) {
+        if (!el) { out.push({ name, missing: true }); continue; }
+        const scroller = scrollerOf(el);
+        if (!scroller) continue;
+        const e = el.getBoundingClientRect();
+        const s = scroller.getBoundingClientRect();
+        out.push({
+          name, missing: false,
+          cutTop: Math.round(s.top - e.top),
+          cutLeft: Math.round(s.left - e.left),
+          cutRight: Math.round(e.right - s.right),
+        });
+      }
+      return out;
+    });
+
+    for (const row of clipped) {
+      assert.ok(!row.missing, `${row.name} was not found on the dashboard`);
+      assert.ok(row.cutTop <= 0,
+        `${row.name} is clipped by ${row.cutTop}px at the top — its scrolling ancestor is not tall enough for it`);
+      assert.ok(row.cutLeft <= 0, `${row.name} is clipped by ${row.cutLeft}px on the left`);
+      assert.ok(row.cutRight <= 0, `${row.name} is clipped by ${row.cutRight}px on the right`);
+    }
+  });
+
   const state = () => page.evaluate(() => {
     const el = document.querySelector('[data-testid="geu-lens-toggle"]');
     const card = el && el.parentElement && el.parentElement.parentElement;

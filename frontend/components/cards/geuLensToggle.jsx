@@ -48,11 +48,26 @@ var GEU_LENS_TOGGLE_MS = 220;
 // figure it describes — the switch was reading as the point of the card
 // rather than as a label on it. Both numbers stay above the 24px floor
 // where a tap starts getting missed on a phone.
-var GEU_LENS_PILL_PAD = 2;
-var GEU_LENS_DISC = 26;
-var GEU_LENS_CODE_W = 46;
-var GEU_LENS_PILL_H = GEU_LENS_DISC + GEU_LENS_PILL_PAD * 2;
-var GEU_LENS_PILL_W = GEU_LENS_DISC + GEU_LENS_CODE_W + GEU_LENS_PILL_PAD * 3;
+// ── Why the border is in the arithmetic ────────────────────────────────
+//
+// The first version set width and height without box-sizing, so the 1px
+// border grew the pill by 2px in each direction while the absolutely
+// positioned flag and code were placed against the PADDING box, which the
+// border does not grow. Two boxes, two different sizes, one set of
+// coordinates. The disc ended up flush against the bottom border with
+// nothing between them, and the flag's rim met the pill's own border at
+// the rounded end — which is the "breaking" in the screenshot: not an
+// overflow, two grey curves a pixel apart reading as one broken edge.
+//
+// So the border is declared here and counted, the box is border-box, and
+// every inner position is derived from the inner width rather than the
+// outer. The disc now has the full pad clear on all four sides.
+var GEU_LENS_BORDER = 1;
+var GEU_LENS_PILL_PAD = 3;
+var GEU_LENS_DISC = 24;
+var GEU_LENS_CODE_W = 44;
+var GEU_LENS_PILL_H = GEU_LENS_DISC + GEU_LENS_PILL_PAD * 2 + GEU_LENS_BORDER * 2;
+var GEU_LENS_PILL_W = GEU_LENS_DISC + GEU_LENS_CODE_W + GEU_LENS_PILL_PAD * 3 + GEU_LENS_BORDER * 2;
 
 // `lens` is "local" | "geu" (see features/geuLens/geuLens.js).
 // `onToggle` takes no argument: there are two states and tapping means the
@@ -82,9 +97,13 @@ function GeuLensToggle({ lens, onToggle, currencyCode, countryFlag }) {
       position: "relative",
       width: GEU_LENS_PILL_W,
       height: GEU_LENS_PILL_H,
+      // Without this the width above is the CONTENT box and the border is
+      // added on top, so the pill renders 2px wider and taller than the
+      // geometry the children were placed against.
+      boxSizing: "border-box",
       flexShrink: 0,
       padding: 0,
-      border: `1px solid ${T.line}`,
+      border: `${GEU_LENS_BORDER}px solid ${T.line}`,
       background: T.surface,
       borderRadius: 999,
       boxShadow: T.shadowCard,
@@ -114,8 +133,17 @@ function GeuLensToggle({ lens, onToggle, currencyCode, countryFlag }) {
        notification card give a flag, so one country looks like itself
        everywhere in the app. */
   }<span
-    style={{ display: "flex", borderRadius: "50%", boxShadow: `0 0 0 2px ${T.surface}, 0 0 0 3px ${T.line}` }}
-  ><FlagEmoji flag={countryFlag} shape="circle" size={GEU_LENS_DISC - 3} fit="cover" /></span></span><span
+    // ONE pixel, and counted. The old rim was a 2px surface ring plus a 3px
+    // line ring around a disc already sized to fill its slot — 6px of
+    // shadow growing outside a box that had 2px of room, landing on the
+    // pill's own border at the rounded end.
+    //
+    // A ring still earns its place: it is what keeps a white or pale flag
+    // (Japan, Poland) from dissolving into a white pill. It just has to fit.
+    // The flag is cut to DISC - 2 so the flag plus its 1px ring is exactly
+    // DISC, which is the slot it was given.
+    style={{ display: "flex", borderRadius: "50%", boxShadow: `0 0 0 1px ${T.line}` }}
+  ><FlagEmoji flag={countryFlag} shape="circle" size={GEU_LENS_DISC - 2} fit="cover" /></span></span><span
     aria-hidden="true"
     style={{
       position: "absolute",

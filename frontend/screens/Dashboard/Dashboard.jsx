@@ -1183,6 +1183,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // changes the unit written after it. ₹9,700.00 and 9,700.00 GEU are the
   // same money, which is the claim the subtext under this makes out loud.
   const balance = geuLensMoney(bankBalance, ccyCode, displayLens);
+  // The other name for the same figure, in brackets beside it, and the size
+  // the pair can be printed at without wrapping. Both are needed up here
+  // rather than inline below, because the size depends on the LENGTH of the
+  // two together — a seven-figure balance in GEU is twenty-two characters
+  // and does not fit a 360px card at 32px.
+  const balanceBracket = `(${geuLensUnitLabel(displayLens === GEU_LENS_GEU ? GEU_LENS_LOCAL : GEU_LENS_GEU, ccyCode)})`;
+  const balanceFontSize = geuLensFigureFontSize(balance, balanceBracket);
   // THE account's Gloobal ID — the one and only value any screen on this
   // dashboard shows as "your Gloobal ID". It comes from the stored
   // session via useCurrentSymbolId, which re-renders on
@@ -1829,7 +1836,26 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       cursor: "pointer",
       zIndex: 1
     }}
-  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : geuLensBadgeSuffix(displayLens, dialCountry.name)} withSymbols /></button><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20 }}><span style={{ fontSize: 32, fontWeight: 800, letterSpacing: 0.2, fontFamily: T.fontDisplay }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? <>{balance}<span
+  ><GloobalWordmark suffix={shareRole === "merchant" ? " Creator" : geuLensBadgeSuffix(displayLens, dialCountry.name)} withSymbols /></button><div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 20, gap: 10 }}><span style={{
+      // One line, always. The figure and its unit are a single fact, and
+      // the size above is chosen so they fit as one — so there is nothing
+      // left for a wrap to do except break the fact in half.
+      fontSize: balanceFontSize,
+      whiteSpace: "nowrap",
+      // In a flex row an item will not shrink below its content by default,
+      // which is what pushed the figure off the left edge of the card
+      // rather than fitting it. With a zero floor the row can lay out
+      // honestly, and the size above is what keeps it from needing to.
+      minWidth: 0,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      fontWeight: 800,
+      letterSpacing: 0.2,
+      fontFamily: T.fontDisplay,
+      // The figure sits on the baseline it would have had at 32px, so the
+      // card does not change height when a balance crosses a size step.
+      lineHeight: "38px"
+    }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? <>{balance}<span
     // THE OTHER NAME FOR THE SAME NUMBER, in brackets beside it.
     //
     // ₹10,000.00 (GEU) and 10,000.00 GEU (INR) — the figure never moves,
@@ -1841,8 +1867,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // It is also the only hint on the card that the switch beside it does
     // anything, which is why it sits here rather than under the balance
     // as a caption nobody reads.
-    style={{ fontSize: 13, fontWeight: 700, marginLeft: 7, opacity: 0.62, letterSpacing: 0.2 }}
-  >({geuLensUnitLabel(displayLens === GEU_LENS_GEU ? GEU_LENS_LOCAL : GEU_LENS_GEU, ccyCode)})</span></> : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
+    // Scaled with the figure rather than pinned at 13px. At a 17px balance
+    // a 13px bracket is nearly the same size as the number it annotates,
+    // which inverts the hierarchy \u2014 the name would read as loudly as the
+    // amount.
+    style={{ fontSize: Math.max(11, Math.round(balanceFontSize * 0.42)), fontWeight: 700, marginLeft: 7, opacity: 0.62, letterSpacing: 0.2 }}
+  >{balanceBracket}</span></> : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"

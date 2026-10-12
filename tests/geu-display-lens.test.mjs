@@ -194,14 +194,129 @@ describe("GEU appears nowhere money moves", () => {
     // number is called. It is also the only hint on the card that the
     // switch does anything.
     const dash = code(DASH);
-    assert.match(dash, /geuLensUnitLabel\(displayLens === GEU_LENS_GEU \? GEU_LENS_LOCAL : GEU_LENS_GEU, ccyCode\)/);
+    // The bracket names the OTHER lens, which is what makes it a second
+    // name rather than a repetition. Computed once beside the balance now,
+    // because its length decides the figure's font size.
+    assert.match(dash, /const balanceBracket = `\(\$\{geuLensUnitLabel\(displayLens === GEU_LENS_GEU \? GEU_LENS_LOCAL : GEU_LENS_GEU, ccyCode\)\}\)`;/);
     // Inside the visible branch: a masked balance shows dots and must not
     // grow a bracket beside them.
     const at = dash.indexOf("balanceVisible ?");
     const masked = dash.indexOf("\\u2022\\u2022", at);
     assert.ok(at > 0 && masked > at, "the balance's visible branch was not found");
-    assert.ok(dash.slice(at, masked).includes("geuLensUnitLabel("),
+    assert.ok(dash.slice(at, masked).includes("{balanceBracket}"),
       "the bracket is outside the branch that only draws when the balance is shown");
+    assert.ok(!dash.slice(masked, masked + 400).includes("{balanceBracket}"),
+      "the masked balance grew a bracket beside its dots");
+  });
+
+  test("the figure and its unit are one line, at a size that fits", async () => {
+    // It was a flat 32px, which is right for "₹9,700.00" and wrong for
+    // "1,929,878.26 GEU (INR)". On a 360px phone the second ran past the
+    // card and wrapped between the digits and the unit:
+    //
+    //   1,929,878.26
+    //   GEU (INR)
+    //
+    // which reads as two facts. An amount and its unit are one.
+    const dash = code(DASH);
+    assert.match(dash, /const balanceFontSize = geuLensFigureFontSize\(balance, balanceBracket\);/,
+      "the balance's size is not derived from what it actually has to print");
+    assert.match(dash, /fontSize: balanceFontSize,/);
+    assert.match(dash, /whiteSpace: "nowrap",/);
+    // A flex item will not shrink below its content without this, which is
+    // what pushed the figure off the left edge of the card instead of
+    // fitting it.
+    assert.match(dash, /minWidth: 0,/);
+    assert.ok(!/fontSize: 32, fontWeight: 800, letterSpacing: 0\.2, fontFamily: T\.fontDisplay/.test(dash),
+      "the fixed 32px balance is back");
+
+    // And the sizer computes a size rather than picking from a list.
+    //
+    // It WAS a ladder — 32, 29, 25, 22, 19, floor 17 — and the floor was a
+    // cliff. Past roughly a trillion the size stopped shrinking while the
+    // string kept growing, so the overflow rule took over and the balance
+    // rendered as "100,000,000,000,0…". On a money figure that is the worst
+    // available outcome: not a small number, a DIFFERENT number, shown
+    // without a warning in the one place a person trusts absolutely.
+    const lens = code(LENS);
+    assert.match(lens, /function geuLensFigureFontSize\(figure, bracket, availablePx\)/);
+    assert.match(lens, /const ideal = Math\.floor\(room \/ \(weighted \* GEU_LENS_CHAR_RATIO\)\);/,
+      "the size is chosen from a list again instead of computed from the width");
+    // Number(null) is 0 and 0 is finite, so a missing width must be caught
+    // by asking whether it is POSITIVE, not whether it is present.
+    assert.match(lens, /Number\(availablePx\) > 0 \? Number\(availablePx\) : GEU_LENS_FIGURE_ROOM/);
+
+    // The rule itself, exercised rather than read.
+    //
+    // Evaluated from its own source rather than through loadDomain, which
+    // builds the BACKEND scope — geuLens.js is a frontend module and is not
+    // in it. The slice starts at the constants because the function reads
+    // three of them, and taking the function alone would evaluate to a
+    // ReferenceError that looked like a defect in the test.
+    const geuLensFigureFontSize = new Function(
+      lens.slice(lens.indexOf("var GEU_LENS_CHAR_RATIO")) + "\nreturn geuLensFigureFontSize;"
+    )();
+    const money = (n) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+    const ROOM = 258, RATIO = 0.68;
+
+    let previous = Infinity;
+    for (const amount of [9700, 1929878.26, 1e9, 1e11, 1e12]) {
+      const figure = `${money(amount)} GEU`;
+      const size = geuLensFigureFontSize(figure, "(INR)");
+      const width = (figure.length + "(INR)".length * 0.45) * size * RATIO;
+      assert.ok(width <= ROOM, `${figure} (INR) needs ${Math.round(width)}px of ${ROOM} at ${size}px`);
+      assert.ok(size <= previous, `the size grew as the number did: ${size} after ${previous}`);
+      previous = size;
+    }
+    // Never larger than the design size, whatever it is handed.
+    assert.equal(geuLensFigureFontSize("1", ""), 32);
+    assert.equal(geuLensFigureFontSize("", ""), 32, "an empty figure should not compute a size from zero");
+  });
+
+  test("the unit switch counts its own border, so the flag sits inside it", () => {
+    // The first version set width and height without box-sizing, so the
+    // 1px border grew the pill while the absolutely positioned flag and
+    // code were placed against the padding box, which it does not grow.
+    // The disc ended up flush against the bottom border, and the flag's
+    // 3px rim met the pill's own border at the rounded end — two grey
+    // curves a pixel apart, reading as one broken edge.
+    const toggle = code(TOGGLE);
+    assert.match(toggle, /boxSizing: "border-box",/,
+      "the pill renders wider than the geometry its children are placed against");
+    assert.match(toggle, /var GEU_LENS_BORDER = 1;/);
+    assert.match(toggle, /GEU_LENS_PILL_H = GEU_LENS_DISC \+ GEU_LENS_PILL_PAD \* 2 \+ GEU_LENS_BORDER \* 2;/);
+    assert.match(toggle, /GEU_LENS_PILL_W = GEU_LENS_DISC \+ GEU_LENS_CODE_W \+ GEU_LENS_PILL_PAD \* 3 \+ GEU_LENS_BORDER \* 2;/);
+
+    // The rim earns its place — it is what stops a white or pale flag
+    // dissolving into a white pill — but it has to fit the slot it was
+    // given. One pixel of ring around a disc cut to DISC - 2 is exactly
+    // DISC wide.
+    assert.match(toggle, /boxShadow: `0 0 0 1px \$\{T\.line\}`/);
+    assert.match(toggle, /size=\{GEU_LENS_DISC - 2\}/);
+    assert.ok(!/0 0 0 2px \$\{T\.surface\}, 0 0 0 3px/.test(toggle),
+      "the oversized double rim is back");
+
+    // The arithmetic, checked rather than trusted: nothing may land outside
+    // the pill's INNER box in either state.
+    const num = (name) => {
+      const m = toggle.match(new RegExp(`var ${name} = (\\d+);`));
+      assert.ok(m, `${name} is no longer a plain number`);
+      return Number(m[1]);
+    };
+    const PAD = num("GEU_LENS_PILL_PAD"), DISC = num("GEU_LENS_DISC");
+    const CODE_W = num("GEU_LENS_CODE_W"), BORDER = num("GEU_LENS_BORDER");
+    const innerW = DISC + CODE_W + PAD * 3;
+    const innerH = DISC + PAD * 2;
+    for (const geu of [false, true]) {
+      const flagLeft = geu ? PAD * 2 + CODE_W : PAD;
+      const codeLeft = geu ? PAD : PAD * 2 + DISC;
+      assert.ok(flagLeft >= PAD && flagLeft + DISC <= innerW - PAD + 1,
+        `flag escapes the pill when geu=${geu}: ${flagLeft}..${flagLeft + DISC} in ${innerW}`);
+      assert.ok(codeLeft >= PAD && codeLeft + CODE_W <= innerW - PAD + 1,
+        `code escapes the pill when geu=${geu}: ${codeLeft}..${codeLeft + CODE_W} in ${innerW}`);
+    }
+    assert.equal(innerH, DISC + PAD * 2, "the disc has no clearance above or below");
+    assert.ok(BORDER >= 1);
   });
 
   test("the week's figures read in the same unit as the balance above them", () => {

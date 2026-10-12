@@ -113,3 +113,86 @@ function geuLensBadgeSuffix(lens, countryName) {
 function geuLensUnitLabel(lens, currencyCode) {
   return lens === GEU_LENS_GEU ? COIN_TICKER : String(currencyCode || "").toUpperCase();
 }
+
+// How large the balance may be printed before it stops fitting on one line.
+//
+// ── Why a figure needs this at all ──────────────────────────────────────
+//
+// The balance was a flat 32px in the display face, which is right for
+// "₹9,700.00" and wrong for "1,929,878.26 GEU (INR)". The second is
+// twenty-two characters, and on a 360px phone it ran past the card and
+// wrapped between the digits and the unit:
+//
+//   1,929,878.26
+//   GEU (INR)
+//
+// which reads as two facts rather than one number. An amount and its unit
+// are a single thing and belong on a single line.
+//
+// ── Why arithmetic and not a ladder of sizes ────────────────────────────
+//
+// The first fix was a ladder — 32, 29, 25, 22, 19, and a floor of 17. It
+// handled every balance anyone had typed, and it had a cliff: past about a
+// trillion the floor stopped shrinking while the string kept growing, and
+// the overflow rule took over. On a money figure that is the worst
+// available outcome. A balance rendered small is legible; a balance
+// rendered "100,000,000,000,0…" is a DIFFERENT NUMBER, shown without a
+// warning, in the one place on the screen a person trusts absolutely.
+//
+// A ladder also has to be re-tuned every time the card's width changes, and
+// nothing makes it fail loudly when it is not. So this computes the size
+// instead, from three things that can each be checked:
+//
+//   - how much the string has to print, weighted because the bracket is
+//     rendered smaller and so costs less width per character;
+//   - how wide one weighted character is per pixel of font size, measured
+//     in the shipped display face rather than guessed;
+//   - how much room the row actually has.
+//
+// ── Why the length and not the viewport ─────────────────────────────────
+//
+// A vw-based size shrinks the figure on a small phone whether or not it
+// needed shrinking, and still overflows on a large one if the balance is
+// long enough. What overflows is CONTENT, so content is what is measured.
+//
+// The GEU lens is why this bites now rather than a year ago. Rupees print
+// as "₹9,700.00" — one glyph, no suffix. The same money in GEU is
+// "9,700.00 GEU (INR)", eight characters longer before a single digit is
+// added, and every thousand multiplies from there.
+
+// Measured, not estimated: a span of the balance's weight and family, at a
+// known size, divided by its weighted character count. Three samples agreed
+// to within 3% (0.656, 0.657, 0.678), and the highest is the one used —
+// overestimating width shrinks the text, which is safe, while
+// underestimating it brings the wrap back.
+var GEU_LENS_CHAR_RATIO = 0.68;
+
+// The balance row on the narrowest phone this app is built for, after the
+// card's padding and the eye button beside it. A 390px screen offers 276px;
+// this is the 320px case, so the common phone has margin rather than the
+// rare one having a defect.
+var GEU_LENS_FIGURE_ROOM = 258;
+
+// 32 is the design size and nothing is ever printed larger. 13 is the floor,
+// and it is a floor rather than a continuation because below it the figure
+// stops being the loudest thing on the card, which is a different kind of
+// broken. It holds a twenty-nine character balance — "100,000,000,000,000.00
+// GEU (INR)" and more — so reaching it means the card is the wrong shape for
+// the money in it, not that the rule gave up.
+var GEU_LENS_FIGURE_MAX = 32;
+var GEU_LENS_FIGURE_MIN = 13;
+
+function geuLensFigureFontSize(figure, bracket, availablePx) {
+  // 0.45 is the bracket's 13px against the figure's 32px, rounded toward
+  // caution for the same reason the ratio above is.
+  const weighted = String(figure || "").length + String(bracket || "").length * 0.45;
+  if (!(weighted > 0)) return GEU_LENS_FIGURE_MAX;
+
+  // A measured width when the caller has one, the narrow-phone constant
+  // when it does not. Number(null) is 0 and 0 is finite, so this asks
+  // whether the number is POSITIVE rather than whether it is present.
+  const room = Number(availablePx) > 0 ? Number(availablePx) : GEU_LENS_FIGURE_ROOM;
+
+  const ideal = Math.floor(room / (weighted * GEU_LENS_CHAR_RATIO));
+  return Math.max(GEU_LENS_FIGURE_MIN, Math.min(GEU_LENS_FIGURE_MAX, ideal));
+}

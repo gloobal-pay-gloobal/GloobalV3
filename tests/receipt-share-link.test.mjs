@@ -66,7 +66,15 @@ describe("the share sheet gets the picture and a link", () => {
     // Same rule as every other figure in the app: the unit and the decimal
     // places come from the same code, so a shared receipt cannot repeat the
     // cross-border mislabelling.
-    assert.match(summaryFn, /fmtMoney\(Number\(r\.amount \|\| 0\), r\.currencyCode\)/);
+    //
+    // geuLensOwnMoney wraps fmtMoney and takes the same code. The claim is
+    // unchanged — the unit and the decimal places both come from
+    // r.currencyCode — and what it adds is the only question the lens is
+    // allowed to ask here: whether that code is the READER'S own currency,
+    // and so whether the figure may be renamed. A row in somebody else's
+    // tender keeps its own symbol, which is what stops a shared receipt
+    // repeating the cross-border mislabelling in a new form.
+    assert.match(summaryFn, /geuLensOwnMoney\(Number\(r\.amount \|\| 0\), r\.currencyCode, lens, viewerCurrency\)/);
   });
 
   test("and the code is not appended a second time", () => {

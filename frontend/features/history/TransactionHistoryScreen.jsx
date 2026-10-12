@@ -33,6 +33,11 @@ var HISTORY_PAGE_SIZE = 10;
 // GloobalCoinScreen already takes for the same reason, and the country half
 // is derived from `dialCountry` rather than passed again.
 function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], dialCountry, ccy, ccyCode = "USD", openHistoryDirection, onConsumeOpenHistory, historyTab, setHistoryTab, historyMethodFilter, setHistoryMethodFilter, holderName = "", holderSymbolId = "" }) {
+  // The display unit, from the shared store. The rows read it themselves —
+  // see TransactionRow — but the period total and the chart above them are
+  // drawn here, and a screen whose rows said GEU over a total that said
+  // rupees would be worse than not applying the lens at all.
+  const lens = useGeuLens();
   const historyScrollRef = useRef9(null);
   const [receipt, setReceipt] = useState12(null);
   const requestCloseReceipt = useBackClose(!!receipt, () => setReceipt(null));
@@ -228,13 +233,19 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
       weeks={historyDailyTrend.weeks}
       totals={historyDailyTrend.totals}
       currencyCode={ccyCode}
+      // The chart takes a lens and was not being given one, so the same
+      // week's figures read in GEU on the dashboard and in rupees here.
+      lens={lens}
       focusDirection={historyTab === "sending" ? "paid" : "received"}
       palette="light"
       trailing={<span
         // The label the eye no longer needs, kept for the ear: a screen
         // reader gets neither the colour nor the sign, and without it this
         // is a bare number beside another bare number.
-        aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${fmtMoney(active.value, ccyCode)}`}
+        // geuLensMoney rather than geuLensOwnMoney: this figure is a sum of
+        // the viewer's own rows in the viewer's own currency, so the
+        // own-currency question the rows have to ask is already answered.
+        aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${geuLensMoney(active.value, ccyCode, lens)}`}
         style={{
           fontSize: 19,
           fontWeight: 800,
@@ -243,7 +254,7 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
           whiteSpace: "nowrap",
           flexShrink: 0
         }}
-      >{active.sign}{fmtMoney(active.value, ccyCode)}</span>}
+      >{active.sign}{geuLensMoney(active.value, ccyCode, lens)}</span>}
     /></div>;
   })()}</div>{
   }<div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>{["all", "bank", "paylater", "coin"].map((m) => <button

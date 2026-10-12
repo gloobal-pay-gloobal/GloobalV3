@@ -80,9 +80,31 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
   // It falls back to the CODE itself for a currency with no symbol in the
   // table, rather than to the viewer's symbol: an unfamiliar "5,000.00 CNY"
   // is readable and true, where "5,000.00$" is neither.
+  // ── THE LENS, AND WHY IT USES rowCode RATHER THAN ccyCode ─────────────
+  //
+  // The lens is read here rather than passed in: these rows are rendered
+  // from six different lists, and a prop would have to be threaded through
+  // every one of them. The list that somebody forgot would print rupees
+  // beside GEU on the same screen.
+  //
+  // geuLensOwnMoney relabels ONLY when the row's currency is the viewer's
+  // own. That distinction is exactly the one the comment above already
+  // draws for the symbol, and it matters more here: a cross-border payment
+  // has the payer's 8,000 INR on one row and the payee's 98 USD on another,
+  // and writing GEU after both would put two different quantities under one
+  // name. Somebody would read "8000 GEU" and "98 GEU" and conclude the
+  // money shrank in transit.
+  //
+  // So the viewer's own rows are relabelled and the counterparty's keep
+  // their symbol, lens or no lens. The row then reads honestly as what it
+  // is: your side in your unit, their side in theirs.
+  //
+  // `amountText` is untouched. It exists for a row that is not denominated
+  // in a currency at all, which by definition has no own-currency to match.
+  const lens = useGeuLens();
   const amount = amountText != null
     ? `${sign}${amountText}`
-    : `${sign}${fmtMoney(Number(t.amount || 0), rowCode)}`;
+    : `${sign}${geuLensOwnMoney(Number(t.amount || 0), rowCode, lens, ccyCode)}`;
   return <div
     onClick={onSelect}
     className="v2-tap"

@@ -150,13 +150,35 @@ describe("GEU appears nowhere money moves", () => {
     assert.ok(!/key: "gcoin"/.test(send), "Gloobal Coin is a pay source again");
   });
 
-  test("the payment confirmation and the receipt are in real currency", () => {
+  test("the receipt and the confirmation rename only the reader's own money", () => {
+    // This used to forbid the lens on these two screens outright, while it
+    // was a dashboard-only idea. It now reaches them — a receipt is where a
+    // person reads a payment back, and reading it in a unit they did not
+    // choose is the inconsistency the toggle was meant to remove.
+    //
+    // What replaces the ban is the rule that makes the lens safe HERE, and
+    // it is stricter than anywhere else because a receipt is the document
+    // somebody screenshots as proof. A cross-border receipt holds the
+    // payer's figure in their tender and the payee's in theirs; only the
+    // reader's own may be renamed, so one receipt can legitimately show
+    // "8,000.00 GEU" beside "98.00 EUR".
     for (const file of [
       "frontend/components/dialogs/ReceiptModal.jsx",
       "frontend/components/dialogs/PaymentUnlock.jsx",
     ]) {
-      assert.ok(!/geuLensMoney|GEU_LENS_GEU/.test(code(file)),
-        `${file} is printing a figure through the lens`);
+      const src = code(file);
+      assert.match(src, /geuLensOwnMoney\(/,
+        `${file} formats money without asking whose currency it is`);
+      // The viewer's own currency is READ, never assumed from a prop that
+      // some caller might not pass.
+      assert.match(src, /geuLensOwnCurrency\(\)/,
+        `${file} does not establish whose money it is looking at`);
+      // And the blunt formatter must not be reachable for a figure that
+      // the lens is supposed to decide on. geuLensMoney renames
+      // unconditionally; on these two screens that is only correct once
+      // geuLensOwnMoney has already answered the question.
+      assert.ok(!/[^n]geuLensMoney\(\w+, \w+Currency/.test(src),
+        `${file} renames a figure without checking whose currency it is`);
     }
   });
 
@@ -541,5 +563,175 @@ describe("on screen", () => {
 
   test("nothing threw", async () => {
     assert.deepEqual(errors, []);
+  });
+});
+
+// ── THE LENS ACROSS THE REST OF THE APP ────────────────────────────────
+//
+// The toggle is on the balance card; the choice is about how this person
+// reads money. History, Coverage, receipts, My Assets, PayLater, the
+// notification cards and the earnings screens all answer to it.
+//
+// What makes that safe rather than sweeping is one rule, and these tests
+// are about the rule rather than about the screens.
+describe("only the reader's own money is renamed", () => {
+  // The shipped functions, evaluated from their own source. geuLens.js is a
+  // frontend module, so loadDomain — which builds the backend scope — does
+  // not have it.
+  const lensSrc = code(LENS);
+  const fmt = readSource("backend/utils/format.js");
+  const lift = (src, name) => {
+    const at = src.indexOf(`function ${name}(`);
+    assert.ok(at >= 0, `${name} not found`);
+    return src.slice(at, src.indexOf("\n}\n", at) + 3);
+  };
+  const currencies = readSource("backend/data/currencies.js");
+  const sandbox = new Function(`
+    ${currencies.match(/var CURRENCY_SYMBOL = \{[\s\S]*?\n\};\n/)[0]}
+    ${fmt.match(/var GLOOBAL_ZERO_DECIMAL_CURRENCIES = \[[\s\S]*?\n\];\n/)[0]}
+    ${["currencyDecimals", "fmt", "currencySuffix", "fmtMoney"].map((n) => lift(fmt, n)).join("\n")}
+    ${lensSrc.match(/var GEU_LENS_LOCAL = "[^"]*";/)[0]}
+    ${lensSrc.match(/var GEU_LENS_GEU = "[^"]*";/)[0]}
+    var COIN_TICKER = ${JSON.stringify(currencies.match(/var COIN_TICKER = "([^"]+)"/)[1])};
+    var currencyDecimalsFn = currencyDecimals;
+    ${["geuLensMoney", "geuLensSameCurrency", "geuLensOwnMoney", "geuLensAppliesTo"].map((n) => lift(lensSrc, n)).join("\n")}
+    return { geuLensOwnMoney, geuLensAppliesTo, geuLensSameCurrency, GEU_LENS_GEU, GEU_LENS_LOCAL };
+  `)();
+  const { geuLensOwnMoney, geuLensAppliesTo, geuLensSameCurrency, GEU_LENS_GEU: GEU, GEU_LENS_LOCAL: LOCAL } = sandbox;
+
+  test("a cross-border payment keeps two units on one screen, and is right to", () => {
+    // The founder pays 8,000 of his own rupees; 98 euro reaches the payee.
+    // Both figures are real and they are NOT the same unit. Writing GEU
+    // after both would let somebody read "8000 GEU" beside "98 GEU" and
+    // conclude the money shrank in transit.
+    const mine = geuLensOwnMoney(8000, "INR", GEU, "INR");
+    const theirs = geuLensOwnMoney(98, "EUR", GEU, "INR");
+    assert.match(mine, /GEU$/, "the reader's own figure was not renamed");
+    assert.ok(!/GEU/.test(theirs), `the counterparty's euro was renamed: ${theirs}`);
+    assert.equal(theirs, "98.00€");
+  });
+
+  test("the digits never move — it is a relabelling, not a conversion", () => {
+    // The entire claim of the lens in one assertion.
+    for (const amount of [0, 1, 9700, 1929878.26, 100000000000]) {
+      const local = geuLensOwnMoney(amount, "INR", LOCAL, "INR");
+      const geu = geuLensOwnMoney(amount, "INR", GEU, "INR");
+      const digitsOf = (s) => String(s).replace(/[^0-9.]/g, "");
+      assert.equal(digitsOf(local), digitsOf(geu),
+        `${amount} printed as ${local} and ${geu} — the number moved`);
+    }
+  });
+
+  test("an unknown viewer currency renames nothing", () => {
+    // Several screens read the viewer's currency from the stored session,
+    // which is genuinely absent before an account loads. Not knowing must
+    // mean DO NOT RELABEL — the alternative is calling somebody else's
+    // dollars GEU on the strength of a guess.
+    // "inr" is NOT in this list on purpose: a lowercase code is a known
+    // currency written carelessly, and the test below asserts it matches.
+    // What belongs here is a value that does not name a currency at all.
+    for (const unknown of [null, undefined, "", "RUPEE", "₹", {}, 0, NaN]) {
+      const out = geuLensOwnMoney(500, "INR", GEU, unknown);
+      assert.ok(!/GEU/.test(out),
+        `a viewer currency of ${JSON.stringify(unknown)} still renamed the figure: ${out}`);
+    }
+  });
+
+  test("a missing row currency renames nothing either", () => {
+    // Empty equals empty is true, and a truthiness-based comparison would
+    // relabel every figure the moment a currency went missing.
+    for (const missing of [null, undefined, "", "XX", "XXXX"]) {
+      assert.equal(geuLensSameCurrency(missing, missing), false,
+        `${JSON.stringify(missing)} matched itself as a currency`);
+      assert.ok(!/GEU/.test(geuLensOwnMoney(500, missing, GEU, "INR")));
+    }
+  });
+
+  test("case does not decide whether a figure is yours", () => {
+    // A code arrives from a row, a prop and a server field. "inr" and "INR"
+    // being treated as different currencies would silently stop a figure
+    // being relabelled, with no error anywhere.
+    assert.equal(geuLensSameCurrency("inr", "INR"), true);
+    assert.equal(geuLensAppliesTo(" inr ", GEU, "INR"), true);
+  });
+
+  test("the lens off changes nothing anywhere", () => {
+    assert.equal(geuLensOwnMoney(8000, "INR", LOCAL, "INR"), "8,000.00₹");
+    assert.equal(geuLensAppliesTo("INR", LOCAL, "INR"), false);
+  });
+});
+
+describe("every screen that shows money answers to the one toggle", () => {
+  // Source-level, because the alternative is driving eight screens through a
+  // browser to prove a wiring fact. What matters is that each surface reads
+  // the SHARED store rather than holding a copy, and uses the helper that
+  // asks whose money it is.
+  const SURFACES = [
+    ["history rows", "frontend/features/history/TransactionRow.jsx", "geuLensOwnMoney"],
+    ["the history screen", "frontend/features/history/TransactionHistoryScreen.jsx", "geuLensMoney"],
+    ["Coverage", "frontend/screens/Coverage/GloobalCoverageScreen.jsx", "geuLensOwnMoney"],
+    ["the receipt", "frontend/components/dialogs/ReceiptModal.jsx", "geuLensOwnMoney"],
+    ["the payment unlock", "frontend/components/dialogs/PaymentUnlock.jsx", "geuLensOwnMoney"],
+    ["My Assets", "frontend/features/assets/AssetsScreen.jsx", "geuLensMoney"],
+    ["PayLater", "frontend/features/paylater/PayLaterScreen.jsx", "geuLensMoney"],
+    ["the PayLater ledger", "frontend/features/paylater/PayLaterLedger.jsx", "geuLensMoney"],
+    ["the dashboard", "frontend/screens/Dashboard/Dashboard.jsx", "geuLensMoney"],
+  ];
+
+  for (const [label, file, helper] of SURFACES) {
+    test(`${label} reads the shared lens and formats through ${helper}`, () => {
+      const src = code(file);
+      assert.match(src, /useGeuLens\(\)/, `${label} does not read the shared lens`);
+      assert.match(src, new RegExp(`${helper}\\(`), `${label} is not formatting through ${helper}`);
+      // And no raw fmtMoney left printing a figure the lens should have
+      // decided on. The exceptions are the probes — fmtMoney(1, code) is
+      // asking a question about the CURRENCY, not printing an amount — and
+      // the fallback inside a formatter that has already asked.
+      const raw = (src.match(/fmtMoney\(/g) || []).length;
+      const probes = (src.match(/fmtMoney\(1, /g) || []).length;
+      const insideHelper = (src.match(/return `\$\{fmtMoney\(|const text = fmtMoney\(/g) || []).length;
+      assert.ok(raw - probes - insideHelper <= 0,
+        `${label} still prints ${raw - probes - insideHelper} figure(s) through fmtMoney directly`);
+    });
+  }
+
+  test("the notification card reads it too, and hands it to the page builder", () => {
+    // gloobalNotifCardPages is a PLAIN function — also called straight from
+    // the tests — so it takes the lens as an argument. A hook in there would
+    // be a rules-of-hooks violation that works until something renders it
+    // conditionally.
+    const card = code("frontend/components/cards/notificationCard.jsx");
+    assert.match(card, /function gloobalNotifCardPages\(meta, when, row, lens, ownCurrency\)/);
+    assert.match(card, /const cardLens = useGeuLens\(\);/);
+    assert.match(card, /gloobalNotifCardPages\(meta, gloobalNotifCardWhen\(meta, row\), row, cardLens, cardOwnCurrency\)/);
+  });
+
+  test("the lock-screen banner is NOT renamed, and that is deliberate", () => {
+    // gloobalNotifHeadline writes both the in-app card and the OS banner.
+    // A system notification is drawn long after the app that knows about
+    // the lens has gone, so the banner takes the default — the real
+    // currency — and only the card passes the live lens. A push saying
+    // "500 GEU" over a card saying "₹500" would be two claims about one
+    // payment, which notification-push-parity.test.mjs exists to catch.
+    const card = code("frontend/components/cards/notificationCard.jsx");
+    assert.match(card, /function gloobalNotifHeadline\(meta, lens, ownCurrency\)/,
+      "the headline no longer takes a lens, so the card and the banner cannot differ");
+    const push = code("frontend/hooks/usePaymentNotifications.js");
+    assert.ok(!/gloobalNotifHeadline\(meta, [^)]*lens/.test(push),
+      "the push path is passing a lens to the headline — the OS cannot follow it");
+  });
+
+  test("there is one lens, not a copy per screen", () => {
+    // The whole point of the store. A component holding its own useState
+    // seeded from storage would be the only one that moved on a tap.
+    const lens = code(LENS);
+    assert.match(lens, /function useGeuLens\(\)/);
+    assert.match(lens, /useSyncExternalStore3\(geuLensSubscribe, geuLensSnapshot, geuLensServerSnapshot\)/);
+    // getSnapshot must be stable, or useSyncExternalStore loops forever.
+    assert.match(lens, /if \(geuLensCurrent === null\) geuLensCurrent = readGeuLens\(\);\s*\n\s*return geuLensCurrent;/);
+    // And the dashboard must not keep its own copy beside it.
+    const dash = code(DASH);
+    assert.ok(!/useState\d*\(\(\) => readGeuLens\(\)\)/.test(dash),
+      "the dashboard holds a private copy of the lens again");
   });
 });

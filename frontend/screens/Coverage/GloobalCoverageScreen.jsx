@@ -58,6 +58,8 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // "sendHistory is not iterable" and blanked the screen instead of
   // showing an empty history. Normalise once, here.
   const sendHistory = sendHistoryProp || [];
+  // The display unit, from the shared store the balance card's toggle writes.
+  const lens = useGeuLens();
   const [showHoomanProjects, setShowHoomanProjects] = useState16(false);
   const [showSpendingBreakdown, setShowSpendingBreakdown] = useState16(false);
   const [spendingBreakdownQuery, setSpendingBreakdownQuery] = useState16("");
@@ -221,7 +223,26 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // rates. Nothing on this screen converts money any more.
   const [coverage, setCoverage] = useState16(null);
   const [coverageLoading, setCoverageLoading] = useState16(true);
-  const coverageCurrency = spendingBreakdownCurrency || myCurrency;
+  // ── THE LENS LOCKS THE CURRENCY, AND HAS TO ──────────────────────────
+  //
+  // This screen's figures are converted SERVER-SIDE into whichever currency
+  // is asked for, and the person can ask for any of them. That is fine
+  // while the figures are labelled with a real currency.
+  //
+  // Under the lens it stops being fine. 1 GEU is one unit of the VIEWER'S
+  // own tender — so a total converted into dollars and then labelled GEU
+  // would be dollars wearing somebody else's name, and the one number on
+  // this screen a person might compare against their own balance would be
+  // out by the exchange rate.
+  //
+  // So turning the lens on pins the request to the viewer's own currency
+  // and the selector below is disabled while it is on. The cost is real and
+  // worth naming: you cannot browse Coverage in another currency without
+  // switching the lens off first. The alternative was a number that looks
+  // like yours and is not.
+  const coverageCurrency = lens === GEU_LENS_GEU
+    ? myCurrency
+    : (spendingBreakdownCurrency || myCurrency);
   useEffect14(() => {
     let cancelled = false;
     setCoverageLoading(true);
@@ -513,6 +534,15 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // are directly comparable and there is nothing left here to convert.
   const displaySpend = flipped ? realSpend : totalRealSpend;
   const displayCurrency = coverage ? coverage.currency : coverageCurrency;
+  // Whether the figures on this screen are the viewer's own money, and so
+  // whether the lens may rename them. Asked once here rather than at each of
+  // the six places a figure is drawn, because six copies of a rule is five
+  // chances for one of them to drift.
+  const lensNames = geuLensAppliesTo(displayCurrency, lens, myCurrency);
+  // The compact tiles print their own unit rather than going through
+  // fmtMoney — see the note at the first one for why. This is the same
+  // decision the lens makes, in the form those tiles need it.
+  const spendSuffix = lensNames ? ` ${COIN_TICKER}` : currencySuffix(displayCurrency);
 
   // ── Our spending ───────────────────────────────────────────────────────
   //
@@ -825,7 +855,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        fmtMoney is not used because the compact form is what
        fits here; the suffix is the same one it appends, so the
        amount-first-currency-after rule still holds. */
-  }<span className="mono font-bold text-base" style={{ color: C.accent }}>{fmtCompact(displaySpend)}{currencySuffix(displayCurrency)}</span></span> : <span className="font-bold text-lg" style={{ color: deltaColor, transition: "color 0.4s ease" }} aria-label={coverageLoading ? "Loading" : "No data"}>∆</span>}</button>{
+  }<span className="mono font-bold text-base" style={{ color: C.accent }}>{fmtCompact(displaySpend)}{spendSuffix}</span></span> : <span className="font-bold text-lg" style={{ color: deltaColor, transition: "color 0.4s ease" }} aria-label={coverageLoading ? "Loading" : "No data"}>∆</span>}</button>{
     /* "Our spending" is meant to mean collective spend across
        every Gloobal user, not just this account — a genuinely
        different number from "Total spending" above. There is
@@ -867,7 +897,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        which in ourSpending.reason. The historical AssetSeed interest totals
        are deliberately NOT folded in: they carry no date and no recorded
        country, so counting them would mean guessing both. */
-  }{ourSpendingShown != null ? <span className="mono font-bold text-base" style={{ color: C.accent, flexShrink: 0 }}>{fmtCompact(ourSpendingShown)}{currencySuffix(displayCurrency)}</span> : <span className="font-bold text-lg" style={{ color: deltaColor, transition: "color 0.4s ease", flexShrink: 0 }} aria-label="No data">∆</span>}</div>{
+  }{ourSpendingShown != null ? <span className="mono font-bold text-base" style={{ color: C.accent, flexShrink: 0 }}>{fmtCompact(ourSpendingShown)}{spendSuffix}</span> : <span className="font-bold text-lg" style={{ color: deltaColor, transition: "color 0.4s ease", flexShrink: 0 }} aria-label="No data">∆</span>}</div>{
     /* Hooman Projects — genuinely no data source anywhere in
        this app, even reduced to "just this one account," so
        every category honestly stays ∆ rather than showing 0 as
@@ -1046,7 +1076,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     className="v2-tap"
     aria-label={`Showing ${country.name}. Change country`}
     style={{ display: "flex", alignItems: "center", gap: 7, height: 34, padding: "0 10px 0 6px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.16)", minWidth: 0, cursor: "pointer" }}
-  ><FlagEmoji flag={country.flag} size={24} shape="circle" border="none" /><span style={{ fontSize: 12, fontWeight: 800, color: "#FFFFFF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{country.name}</span><ChevronDown3 size={13} color="rgba(255,255,255,0.85)" style={{ flexShrink: 0 }} /></button><span style={{ display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.12)", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}><Layers3 size={13} />{projectsData ? `${hoomanVisibleProjects.length} ${hoomanVisibleProjects.length === 1 ? "project" : "projects"}` : "∆"}</span></div><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.66)", marginTop: 18 }}>Raised</div><div style={{ fontSize: 34, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, lineHeight: 1.1, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(hoomanRaisedTotal, displayCurrency)}</div><div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.56)", marginTop: 8, lineHeight: 1.45 }}>
+  ><FlagEmoji flag={country.flag} size={24} shape="circle" border="none" /><span style={{ fontSize: 12, fontWeight: 800, color: "#FFFFFF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{country.name}</span><ChevronDown3 size={13} color="rgba(255,255,255,0.85)" style={{ flexShrink: 0 }} /></button><span style={{ display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.12)", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}><Layers3 size={13} />{projectsData ? `${hoomanVisibleProjects.length} ${hoomanVisibleProjects.length === 1 ? "project" : "projects"}` : "∆"}</span></div><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.66)", marginTop: 18 }}>Raised</div><div style={{ fontSize: 34, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, lineHeight: 1.1, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{geuLensOwnMoney(hoomanRaisedTotal, displayCurrency, lens, myCurrency)}</div><div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.56)", marginTop: 8, lineHeight: 1.45 }}>
       Gloobal cannot take contributions yet, so every project is at zero.
     </div></div>{projectFiledIn === country.code && <div
     role="status"
@@ -1169,7 +1199,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       // Guarded: a goal of zero would make this Infinity, and a bar that is
       // 100% because it was divided by nothing is worse than no bar.
       const pct = goalMajor > 0 ? Math.min(100, Math.round((raised / goalMajor) * 100)) : 0;
-      return <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.line}` }}><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginTop: 9 }}><span style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(raised, currency)}</span>{project.goal ? <span style={{ fontSize: 11.5, color: T.inkFaint }}>of {fmtMoney(goalMajor, currency)}</span> : <span style={{ fontSize: 11.5, color: T.inkFaint }}>raised</span>}</span>{project.goal && <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>}</div></div>;
+      return <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.line}` }}><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginTop: 9 }}><span style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}>{geuLensOwnMoney(raised, currency, lens, myCurrency)}</span>{project.goal ? <span style={{ fontSize: 11.5, color: T.inkFaint }}>of {geuLensOwnMoney(goalMajor, currency, lens, myCurrency)}</span> : <span style={{ fontSize: 11.5, color: T.inkFaint }}>raised</span>}</span>{project.goal && <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>}</div></div>;
     })()}<div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.inkFaint, marginTop: 10 }}><span>{project.summaryWordCount} words</span>{projectDateText(project.createdAt) && <><span>·</span><span>{projectDateText(project.createdAt)}</span></>}{project.countryIso && COUNTRY_BY_ISO[project.countryIso] && <><span>·</span><FlagEmoji flag={COUNTRY_BY_ISO[project.countryIso].flag} width={16} height={12} radius={3} /></>}</div></button>;
   })}</div>}</div>{
     /* Add a project, floating in the bottom-right corner.
@@ -1543,21 +1573,28 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     return <div
       key={c.code}
       style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-    ><FlagEmoji flag={c.flag} width={28} height={21} radius={6} /><span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>{rowSpend != null ? <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>{fmtCompact(rowSpend)}{currencySuffix(displayCurrency)}</span> : <span style={{ fontSize: 15, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</span>}</div>;
+    ><FlagEmoji flag={c.flag} width={28} height={21} radius={6} /><span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>{rowSpend != null ? <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>{fmtCompact(rowSpend)}{spendSuffix}</span> : <span style={{ fontSize: 15, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</span>}</div>;
   })}{COVERAGE_ALL_COUNTRIES.filter((c) => c.name.toLowerCase().includes(spendingBreakdownQuery.trim().toLowerCase())).length === 0 && <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>No countries match "{spendingBreakdownQuery}"</div>}</div>{
     /* Aggregate total — real number, viewable in any currency,
        not just the one this account happens to use. */
   }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "20px 20px", marginTop: 16 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.72)", textTransform: "uppercase", letterSpacing: 0.3 }}>System total</span><button
-    onClick={() => setShowSpendingCurrencyPicker(true)}
+    onClick={() => { if (!lensNames) setShowSpendingCurrencyPicker(true); }}
     className="v2-tap"
-    style={{ display: "flex", alignItems: "center", gap: 5, border: "none", background: "rgba(255,255,255,0.16)", borderRadius: 999, padding: "6px 11px", cursor: "pointer" }}
-  ><span style={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>{displayCurrency}</span><ChevronDown3 size={12} color="#fff" /></button></div><div style={{ fontSize: 28, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 6 }}>{
+    disabled={lensNames}
+    // Disabled rather than hidden. A control that vanishes leaves a person
+    // hunting for a thing they used yesterday; one that is visibly inert,
+    // with the reason beside it, says the lens is holding it.
+    aria-label={lensNames
+      ? `Showing ${COIN_TICKER}, which is your own ${myCurrency}. Switch the balance card to ${myCurrency} to choose another currency.`
+      : `Showing ${displayCurrency}. Choose another currency.`}
+    style={{ display: "flex", alignItems: "center", gap: 5, border: "none", background: "rgba(255,255,255,0.16)", borderRadius: 999, padding: "6px 11px", cursor: lensNames ? "default" : "pointer", opacity: lensNames ? 0.75 : 1 }}
+  ><span style={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>{lensNames ? COIN_TICKER : displayCurrency}</span>{!lensNames && <ChevronDown3 size={12} color="#fff" />}</button></div><div style={{ fontSize: 28, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 6 }}>{
     /* Picking a currency here refetches; the server converts.
        This used to call the bundle's convert() on a figure
        already summed across currencies as bare numbers, so it
        was converting a number that had no single unit to
        convert from. */
-  }{totalRealSpend != null ? fmtMoney(totalRealSpend, displayCurrency) : <span aria-label="No data">∆</span>}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 8, lineHeight: 1.4 }}>
+  }{totalRealSpend != null ? geuLensOwnMoney(totalRealSpend, displayCurrency, lens, myCurrency) : <span aria-label="No data">∆</span>}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 8, lineHeight: 1.4 }}>
                 Same real total, shown in whichever currency you pick — not just your own.
               </div></div></div>{
     /* Currency picker for the aggregate total */

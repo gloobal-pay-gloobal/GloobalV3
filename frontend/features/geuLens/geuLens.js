@@ -1,4 +1,5 @@
 // src/features/geuLens/geuLens.js
+import { useSyncExternalStore as useSyncExternalStore3 } from "react";
 //
 // GEU, as a lens over money somebody already has.
 //
@@ -60,12 +61,69 @@ function readGeuLens() {
   }
 }
 
+// ── ONE LENS, READ BY EVERY SCREEN ──────────────────────────────────────
+//
+// The toggle lives on the balance card, but the choice is about how this
+// person reads money — so history, Coverage, receipts, My Assets, the
+// notification cards and the earnings screens all have to answer to it too.
+//
+// Passing it down as a prop was the alternative, and it would have meant
+// threading one value through a dozen components that have no interest in
+// it, several of which are rendered from three different places. A screen
+// that happened to be reached by a path nobody updated would then print
+// rupees next to GEU on the same tap, which is the exact confusion this
+// feature exists to prevent.
+//
+// So the preference is a tiny store instead: localStorage is the durable
+// copy, this module keeps the live one, and anything that cares subscribes.
+// useSyncExternalStore is React's own answer for state that lives outside
+// React, and it is what keeps every screen on the same value in the same
+// render rather than a frame apart.
+var geuLensCurrent = null;
+var geuLensListeners = new Set();
+
+function geuLensSnapshot() {
+  // Read through on first use so the store and storage cannot start out
+  // disagreeing, then serve from memory. Returning a fresh value out of a
+  // getSnapshot on every call is how useSyncExternalStore ends up in an
+  // infinite loop, so this must stay a stable string.
+  if (geuLensCurrent === null) geuLensCurrent = readGeuLens();
+  return geuLensCurrent;
+}
+
+function geuLensSubscribe(listener) {
+  geuLensListeners.add(listener);
+  return function () {
+    geuLensListeners.delete(listener);
+  };
+}
+
+// The server has no idea what unit anybody is reading in, so the snapshot
+// handed to a server render is simply the local one. Without this, any
+// future SSR of a screen that reads the lens throws rather than rendering.
+function geuLensServerSnapshot() {
+  return GEU_LENS_LOCAL;
+}
+
+// The hook every screen uses. Takes nothing, because there is one lens.
+function useGeuLens() {
+  return useSyncExternalStore3(geuLensSubscribe, geuLensSnapshot, geuLensServerSnapshot);
+}
+
 function writeGeuLens(lens) {
+  const next = lens === GEU_LENS_GEU ? GEU_LENS_GEU : GEU_LENS_LOCAL;
+  // The in-memory copy moves first and the listeners fire regardless of
+  // whether storage accepted it. A device with site data blocked still gets
+  // a working toggle for the session; it just forgets by the next launch,
+  // which is the right way round for a display preference.
+  const changed = geuLensCurrent !== next;
+  geuLensCurrent = next;
   try {
-    window.localStorage.setItem(GEU_LENS_KEY, lens === GEU_LENS_GEU ? GEU_LENS_GEU : GEU_LENS_LOCAL);
+    window.localStorage.setItem(GEU_LENS_KEY, next);
   } catch (e) {
     // Losing the preference costs one tap next time.
   }
+  if (changed) geuLensListeners.forEach((listener) => listener());
 }
 
 // ── The formatter ───────────────────────────────────────────────────────
@@ -195,4 +253,91 @@ function geuLensFigureFontSize(figure, bracket, availablePx) {
 
   const ideal = Math.floor(room / (weighted * GEU_LENS_CHAR_RATIO));
   return Math.max(GEU_LENS_FIGURE_MIN, Math.min(GEU_LENS_FIGURE_MAX, ideal));
+}
+
+// ── THE RULE: ONLY YOUR OWN MONEY IS RELABELLED ─────────────────────────
+//
+// 1 GEU is one unit of the VIEWER'S tender. That is what makes the lens a
+// relabelling rather than a conversion — and it is also what stops it being
+// applied to every figure on the screen.
+//
+// A history row for a cross-border payment holds two amounts: what left the
+// payer in rupees and what reached the payee in dollars. Both are real, and
+// they are not the same unit. Writing GEU after both would put two
+// different quantities under one name on one row, which is precisely the
+// misreading the whole feature exists to prevent — somebody would compare
+// "8000 GEU" with "98 GEU" and conclude the money shrank.
+//
+// So the question asked here is not "is the lens on" but "is this figure in
+// the reader's own money". Theirs gets the new name. Everyone else's keeps
+// its own symbol, lens or no lens, and the row reads honestly as what it
+// is: your side in your unit, their side in theirs.
+//
+// The founder's coffee shop is the same rule from the other end. He stands
+// in New York, is asked for 2, and his phone charges him ₹176 — because the
+// 2 he was quoted is the shop's own unit, and what he pays is his. Two
+// numbers, two tenders, one payment, and neither of them is wrong.
+
+// Two ISO codes naming the same currency. Case-insensitive because a code
+// arrives from a dozen places — a row, a prop, a server field — and "inr"
+// and "INR" being treated as different currencies would silently stop a
+// figure being relabelled with no visible error anywhere.
+function geuLensSameCurrency(a, b) {
+  const left = String(a || "").trim().toUpperCase();
+  const right = String(b || "").trim().toUpperCase();
+  // Both must be real codes. Empty equals empty is true and would relabel
+  // everything the moment a currency went missing, which is the failure
+  // this guard exists for rather than a style preference.
+  if (!/^[A-Z]{3}$/.test(left) || !/^[A-Z]{3}$/.test(right)) return false;
+  return left === right;
+}
+
+// The formatter every screen outside the balance card should call.
+//
+// `ownCurrency` is the viewer's own tender. When it is not known — and it is
+// genuinely unknown on some screens before an account loads — nothing is
+// relabelled, because the alternative is calling somebody else's dollars GEU
+// on the strength of a guess.
+function geuLensOwnMoney(amount, currencyCode, lens, ownCurrency) {
+  if (lens !== GEU_LENS_GEU) return fmtMoney(amount, currencyCode);
+  if (!geuLensSameCurrency(currencyCode, ownCurrency)) return fmtMoney(amount, currencyCode);
+  return geuLensMoney(amount, currencyCode, lens);
+}
+
+// Whether a given figure WOULD be relabelled. Screens that draw their own
+// unit label beside a number — the Coverage tiles, the earnings headline —
+// ask this rather than repeating the rule and drifting from it.
+function geuLensAppliesTo(currencyCode, lens, ownCurrency) {
+  return lens === GEU_LENS_GEU && geuLensSameCurrency(currencyCode, ownCurrency);
+}
+
+// ── THE VIEWER'S OWN CURRENCY, FOR SCREENS THAT HAVE NO PROP FOR IT ─────
+//
+// The dashboard and the history screen are handed the account's currency.
+// The receipt modal, the notification cards and the earnings sheets are
+// not — they are rendered from several places and threading a currency
+// through all of them would be the same prop-drilling the lens store exists
+// to avoid, with the same failure mode: one path nobody updated, printing
+// GEU over somebody else's money.
+//
+// The stored session already knows. It is written at login, carries the
+// account's country, and is what the splash reads to decide whose currency
+// to name. Same source, same guard.
+//
+// Returns null when there is nothing to read, and null means DO NOT
+// RELABEL — geuLensSameCurrency refuses a non-code, so an unknown viewer
+// currency leaves every figure in its own real currency. That is the safe
+// direction: the cost of not knowing is a screen that looks unchanged, and
+// the cost of guessing is a figure labelled as money it is not.
+function geuLensOwnCurrency() {
+  try {
+    if (typeof gloobalSessionLoad !== "function") return null;
+    const session = gloobalSessionLoad();
+    const iso = session && session.user && String(session.user.countryIso || "").trim().toUpperCase();
+    if (!iso) return null;
+    const code = typeof COUNTRY_CURRENCY === "object" && COUNTRY_CURRENCY ? COUNTRY_CURRENCY[iso] : null;
+    return typeof code === "string" && /^[A-Z]{3}$/.test(code) ? code : null;
+  } catch (e) {
+    return null;
+  }
 }

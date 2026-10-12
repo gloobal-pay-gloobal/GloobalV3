@@ -196,39 +196,23 @@ function SplashSymbolField() {
 // before as a share of the screen's life. Still well short of a disco,
 // which the note above is right to care about.
 var BHARAT_COLOR_MS = 620;
-// The viewer's own currency code, or null when this device has never
-// signed anyone in.
+// The splash names the viewer's own currency, and takes it from the same
+// reader every other screen uses — features/geuLens/geuLens.js.
 //
-// ── Why null is a real answer and not a failure ─────────────────────────
+// It was a copy of that function living here, written first and then needed
+// again by the receipt modal, the notification cards and the earnings
+// sheets. Two copies of "whose money is this" is how one of them ends up
+// answering differently.
 //
-// The splash renders before login, so there is no account in memory to ask.
-// A RETURNING account left its country in the stored session, which is
-// enough. A brand-new user has left nothing, and that is the case the old
-// card got wrong: it fell back to a hardcoded "INR" and told a first-time
-// American that one GEU is one rupee.
-//
-// So there is no fallback. Not knowing produces a line with no currency in
-// it, which is true for everyone, rather than a guess that is true for one
-// country. Naming the wrong money is worse than naming none.
-//
-// Every access is guarded: localStorage throws in private mode and with
-// storage disabled, and a splash screen is the last place in the app that
-// should be capable of crashing.
+// null is a real answer and not a failure. The splash renders before login,
+// so a RETURNING account is known from the stored session and a brand-new
+// one is not. There is deliberately no fallback: not knowing produces a line
+// with no currency in it, which is true for everyone, rather than a guess
+// that is true for one country. Naming the wrong money is worse than naming
+// none — this card used to fall back to a hardcoded "INR" and tell a
+// first-time American that one GEU is one rupee.
 function splashViewerCurrency() {
-  try {
-    if (typeof gloobalSessionLoad !== "function") return null;
-    const session = gloobalSessionLoad();
-    const iso = session && session.user && String(session.user.countryIso || "").trim().toUpperCase();
-    if (!iso) return null;
-    const code = typeof COUNTRY_CURRENCY === "object" && COUNTRY_CURRENCY ? COUNTRY_CURRENCY[iso] : null;
-    // Checked as a CODE rather than for truthiness — three capital letters
-    // and nothing else. The same correction the migration script and the
-    // claim-interest helper both needed, for the same reason: a truthiness
-    // test admits anything non-empty, and this string goes on screen.
-    return typeof code === "string" && /^[A-Z]{3}$/.test(code) ? code : null;
-  } catch (e) {
-    return null;
-  }
+  return geuLensOwnCurrency();
 }
 
 function HeartFromBharat() {

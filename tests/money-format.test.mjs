@@ -186,7 +186,10 @@ describe("the receipt's symbol field is no longer what renders it", () => {
     // tab describes the payment the share CAME FROM — a different row, in a
     // possibly different currency. Both still come from a CODE, which is
     // what this test is about.
-    assert.match(modal, /fmtMoney\(paymentAmount, paymentCurrency\)/);
+    // The formatter's NAME is not the claim; the CODE being its second
+    // argument is. geuLensOwnMoney wraps fmtMoney and takes the same code,
+    // deciding only whether the unit is renamed for this reader.
+    assert.match(modal, /geuLensOwnMoney\(paymentAmount, paymentCurrency, lens, viewerCurrency\)/);
     assert.match(modal, /const paymentCurrency = isShareReceipt/);
   });
 

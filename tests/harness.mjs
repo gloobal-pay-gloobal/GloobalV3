@@ -198,6 +198,26 @@ export function loadNotifCardPages() {
     return format.slice(at, format.indexOf("\n}\n", at) + 3);
   }).join("\n");
 
+  // The lens's own rule, from the module that owns it. gloobalNotifCardPages
+  // now asks whether a figure is the reader's own money before renaming it,
+  // so a slice without these throws "geuLensOwnMoney is not defined" — and
+  // stubbing them here would be a test of the stub rather than of the rule.
+  //
+  // geuLensMoney needs currencyDecimals, which the fmtMoney slice above
+  // already brings in.
+  const lensSrc = readSource("frontend/features/geuLens/geuLens.js");
+  const lensSlice = ["geuLensMoney", "geuLensSameCurrency", "geuLensOwnMoney", "geuLensAppliesTo"]
+    .map((n) => {
+      const at = lensSrc.indexOf(`function ${n}(`);
+      if (at < 0) throw new Error(`${n} not found in geuLens.js`);
+      return lensSrc.slice(at, lensSrc.indexOf("\n}\n", at) + 3);
+    }).join("\n");
+  const lensConsts = ["GEU_LENS_LOCAL", "GEU_LENS_GEU"].map((n) => {
+    const found = lensSrc.match(new RegExp(`var ${n} = "[^"]*";`));
+    if (!found) throw new Error(`var ${n} not found in geuLens.js`);
+    return found[0];
+  }).join("\n");
+
   // The coin's own two names, read from where the app declares them rather
   // than restated: gloobalCurrencyName answers GEU from these, and a second
   // copy here could gloss the unit differently from every other screen.
@@ -215,6 +235,8 @@ export function loadNotifCardPages() {
     `${currencies.match(/var CURRENCY_SYMBOL = \{[\s\S]*?\n\};\n/)[0]}
      ${format.match(/var GLOOBAL_ZERO_DECIMAL_CURRENCIES = \[[\s\S]*?\n\];\n/)[0]}
      ${fmtSlice}
+     ${lensConsts}
+     ${lensSlice}
      ${varDecl("GLOOBAL_NOTIF_MONEY_TYPES")}
      ${varDecl("GLOOBAL_CURRENCY_NAME_CACHE")}
      ${slice("gloobalNotifIsMoney")}

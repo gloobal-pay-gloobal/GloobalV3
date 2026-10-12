@@ -182,6 +182,11 @@ var PAYMENT_UNLOCK_VERDICT_MS = 950;
 var PAYMENT_UNLOCK_REVEAL_MS = 900;
 
 function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
+  // The share figure here can be denominated in the counterparty's currency
+  // on a cross-border payment, so this goes through geuLensOwnMoney rather
+  // than geuLensMoney: only the reader's own money is renamed.
+  const lens = useGeuLens();
+  const viewerCurrency = geuLensOwnCurrency();
   const signedIn = typeof gloobalAuthToken === "function" && !!gloobalAuthToken();
   const transactionId = receipt && receipt.txnId;
   // null while deciding (a knowledge question needs one round trip), then the
@@ -429,7 +434,7 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
     if (moves.current % 6 === 0 && clearedShare() >= PAYMENT_UNLOCK_CLEAR_AT) reveal();
   };
 
-  const shareText = share > 0 ? `+${fmtMoney(share, shareCurrency)}` : null;
+  const shareText = share > 0 ? `+${geuLensOwnMoney(share, shareCurrency, lens, viewerCurrency)}` : null;
   const optionButton = (key, label, value, extra = {}) => {
     const chosen = picked === value;
     const right = verdict && verdict.rightChoice === value && picked !== null && question.kind !== "checkin";

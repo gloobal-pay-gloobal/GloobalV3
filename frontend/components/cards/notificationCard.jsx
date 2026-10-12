@@ -45,7 +45,21 @@ var GLOOBAL_NOTIF_CARD_TURN_MS = 190;
 //
 // `meta` is the notification's metadata: direction, amount, currency,
 // counterpartyName.
-function gloobalNotifHeadline(meta) {
+// `lens` and `ownCurrency` default to the local reading, and that default is
+// load-bearing rather than tidiness.
+//
+// This same function writes the LOCK SCREEN banner, through
+// usePaymentNotifications — and a system notification is drawn by the
+// operating system, long after the app that knows about the lens has gone.
+// A push that said "500 GEU" where the app said "₹500", or the reverse,
+// would be two different claims about one payment, and notification-push-
+// parity.test.mjs exists precisely to catch that.
+//
+// So the banner calls this with no lens and gets the real currency, which
+// is the only thing it can honestly show. The CARD inside the app passes
+// the live lens, because there the toggle is a tap away and the Currency
+// page beside the figure names the tender outright.
+function gloobalNotifHeadline(meta, lens, ownCurrency) {
   const sent = (meta && meta.direction) === "sent";
   // THE SIGN IS THE WHOLE SENTENCE. It used to be followed by the word —
   // "−250.00₹ sent" — and the word was the third time one line said which
@@ -73,7 +87,7 @@ function gloobalNotifHeadline(meta) {
   if (amount == null || !Number.isFinite(Number(amount)) || !currency) {
     return sent ? "Money sent" : "Money received";
   }
-  return `${sent ? "\u2212" : "+"}${fmtMoney(Number(amount), currency)}`;
+  return `${sent ? "\u2212" : "+"}${geuLensOwnMoney(Number(amount), currency, lens, ownCurrency)}`;
 }
 // WHICH NOTIFICATIONS ARE ABOUT MONEY.
 //
@@ -226,7 +240,7 @@ function gloobalNotifDiscIcon(id) {
 // The pages a payment notification can show, in the order they are turned
 // through. `value` returns null when the page has nothing to say, and a page
 // that says nothing is never drawn.
-function gloobalNotifCardPages(meta, when, row) {
+function gloobalNotifCardPages(meta, when, row, lens, ownCurrency) {
   // ── A notification with one fact ──────────────────────────────────────
   //
   // A security notice, a referral, an offer: a title and a sentence, and
@@ -245,9 +259,21 @@ function gloobalNotifCardPages(meta, when, row) {
     if (when) pages.push({ key: "when", label: "Date and time", text: when });
     return pages;
   }
-  const money = (amount, currency) => (
-    amount == null || !currency ? null : `${fmtMoney(amount, currency)}${String(fmtMoney(1, currency)).endsWith(String(currency)) ? "" : ` ${currency}`}`
-  );
+  // The lens arrives as an argument because this is a PLAIN FUNCTION, not a
+  // component — it is also called from the tests directly — and a hook here
+  // would be a rules-of-hooks violation that happens to work until the day
+  // something renders it conditionally.
+  //
+  // A renamed figure drops the trailing code: the card already carries a
+  // Currency page naming the tender in full, so "500.00 GEU" followed by
+  // "Indian Rupee · INR" says it once each rather than twice.
+  const money = (amount, currency) => {
+    if (amount == null || !currency) return null;
+    if (geuLensAppliesTo(currency, lens, ownCurrency)) {
+      return geuLensMoney(amount, currency, lens);
+    }
+    return `${fmtMoney(amount, currency)}${String(fmtMoney(1, currency)).endsWith(String(currency)) ? "" : ` ${currency}`}`;
+  };
   const sent = meta.direction === "sent";
   const coin = (row && row.type) === "coin";
   const movement = coin ? String(meta.coinMovement || "") : "";
@@ -446,6 +472,10 @@ function GloobalNotifCardDots({ count, at }) {
 // `onOpen` opens the payment it is about — the whole card is that tap, except
 // for the chevron, which turns the page instead.
 function GloobalNotificationCard({ row, when, unread, onOpen }) {
+  // Read once, here, where hooks are legal — and passed into the page
+  // builder and the headline below rather than read again in either.
+  const cardLens = useGeuLens();
+  const cardOwnCurrency = geuLensOwnCurrency();
   const meta = (row && row.metadata) || {};
   const sent = meta.direction === "sent";
   const [page, setPage] = useState41(0);
@@ -454,7 +484,7 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
   // sheet passes the relative stamp it draws on plain rows, and the card
   // wants the payment's own instant. Kept in the signature because the
   // sheet has no other reason to know the difference.
-  const pages = gloobalNotifCardPages(meta, gloobalNotifCardWhen(meta, row), row);
+  const pages = gloobalNotifCardPages(meta, gloobalNotifCardWhen(meta, row), row, cardLens, cardOwnCurrency);
   const total = pages.length;
   const current = total ? pages[Math.min(page, total - 1)] : null;
   const turn = () => {
@@ -477,7 +507,7 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
   // own title is the headline there, which is what the plain row this card
   // replaces already showed.
   const money = gloobalNotifIsMoney(row);
-  const headline = money ? gloobalNotifHeadline(meta) : ((row && row.title) || "Gloobal");
+  const headline = money ? gloobalNotifHeadline(meta, cardLens, cardOwnCurrency) : ((row && row.title) || "Gloobal");
   // Red out, green in — and neither for a notice about no money at all,
   // where a green sentence would read as something having arrived.
   const tint = money ? (sent ? T.negative : T.positive) : T.ink;

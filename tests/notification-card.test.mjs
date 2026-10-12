@@ -422,6 +422,21 @@ describe("the banner says what the card says", () => {
     ${lift(format, "fmt")}
     ${lift(format, "currencySuffix")}
     ${lift(format, "fmtMoney")}
+    ${(() => {
+      // gloobalNotifHeadline now formats through the lens, so the rule has to
+      // come with it. The parity this suite checks is the DEFAULT reading —
+      // the headline called with no lens, which is what the lock-screen
+      // banner gets, because a system notification is drawn by the OS long
+      // after the app that knows about the lens is gone.
+      const lensSrc = readSource("frontend/features/geuLens/geuLens.js");
+      const fns = ["geuLensMoney", "geuLensSameCurrency", "geuLensOwnMoney"].map((n) => {
+        const at = lensSrc.indexOf(`function ${n}(`);
+        return lensSrc.slice(at, lensSrc.indexOf("\n}\n", at) + 3);
+      }).join("\n");
+      const consts = ["GEU_LENS_LOCAL", "GEU_LENS_GEU"]
+        .map((n) => lensSrc.match(new RegExp(`var ${n} = "[^"]*";`))[0]).join("\n");
+      return `${consts}\n${fns}`;
+    })()}
     ${lift(card, "gloobalNotifHeadline")}
     ${lift(card, "gloobalNotifSubline")}
     ${lift(card, "gloobalNotifDiscIndex")}

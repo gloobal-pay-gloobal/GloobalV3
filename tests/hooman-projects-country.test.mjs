@@ -262,7 +262,7 @@ describe("the number on the card counts what the list shows", () => {
     // everything Gloobal pays Hoomans, which is a wider figure than projects.
     const src = code(SCREEN);
     assert.match(src, />Raised</, "the hero does not state what the figure is");
-    assert.match(src, /fmtMoney\(hoomanRaisedTotal, displayCurrency\)/);
+    assert.match(src, /geuLensOwnMoney\(hoomanRaisedTotal, displayCurrency, lens, myCurrency\)/);
 
     // Only one place inside the projects overlay talks about Our spending now
     // — none. The Coverage panel's row lives outside it.

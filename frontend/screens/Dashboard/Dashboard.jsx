@@ -356,12 +356,20 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // features/geuLens/geuLens.js for why 1 GEU is 1 unit of this account's
   // own tender rather than a rate.
   //
-  // Seeded from storage so the choice survives a reload, and read through
-  // readGeuLens rather than inline so a blocked localStorage falls back to
-  // "local" instead of throwing on the first render.
-  const [displayLens, setDisplayLens] = useState14(() => readGeuLens());
+  // Read from the shared store rather than held here, because the toggle is
+  // on this card but the choice is not about this card. History, Coverage,
+  // receipts, My Assets, the notification cards and the earnings screens all
+  // answer to the same value, and a copy of it in this component's state
+  // would be the only one that moved.
+  //
+  // The store is seeded from localStorage, so the choice still survives a
+  // reload, and a blocked localStorage still falls back to "local" instead
+  // of throwing on first render — see features/geuLens/geuLens.js.
+  const displayLens = useGeuLens();
   const pickDisplayLens = (next) => {
-    setDisplayLens(next);
+    // No local setState: writeGeuLens notifies every subscriber, this
+    // component among them. Setting state here as well would re-render this
+    // card a frame ahead of every other screen reading the same value.
     writeGeuLens(next);
   };
   const [coinHeroColor, setCoinHeroColor] = useState14(() => randomLogoFlipColor());
@@ -551,7 +559,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     pinReason: "Confirm it's you to settle to Gloobal Bank.",
     run: () => {
       onSettleAssetsToBank(settlePendingAmount);
-      showToast2(`${fmtMoney(settlePendingAmount, ccyCode)} settled to Gloobal Bank`);
+      showToast2(`${geuLensMoney(settlePendingAmount, ccyCode, displayLens)} settled to Gloobal Bank`);
     }
   });
   const CHART_W = 320, CHART_H = 160, CHART_PAD_L = 8, CHART_PAD_R = 8, CHART_PAD_T = 16, CHART_PAD_B = 22;
@@ -1580,7 +1588,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     pinReason: "Confirm it's you to settle referral earnings.",
     run: () => {
       onSettleReferralToBank(totalReferralEarned);
-      showToast2(`${fmtMoney(totalReferralEarned, ccyCode)} settled to Gloobal Bank`);
+      showToast2(`${geuLensMoney(totalReferralEarned, ccyCode, displayLens)} settled to Gloobal Bank`);
     }
   });
   // Personal and Creator are separate books: each role only sees the
@@ -2014,7 +2022,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><Icon size={16} color={BILL_ACTION_COLORS[key] || T.accent} /></span><span style={{ fontSize: 11.5, fontWeight: 700, color: key === "more" ? T.inkSoft : T.ink, whiteSpace: "nowrap" }}>{label}</span></button>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{fmtMoney(todaysCollection, ccyCode)}</span><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>{
+  ><Icon size={16} color={BILL_ACTION_COLORS[key] || T.accent} /></span><span style={{ fontSize: 11.5, fontWeight: 700, color: key === "more" ? T.inkSoft : T.ink, whiteSpace: "nowrap" }}>{label}</span></button>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{geuLensMoney(todaysCollection, ccyCode, displayLens)}</span><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>{
     /* NO SETTLE BUTTONS HERE.
        ─────────────────────────────────────────────────────────────
        This figure is Creator Share — what customers shared back
@@ -2765,7 +2773,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     inputMode="decimal"
     style={{ flex: 1, border: "none", outline: "none", background: "none", fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "inherit" }}
   /></div>{payTarget.cashbackRate > 0 && <div style={{ fontSize: 11.5, color: T.positive, fontWeight: 700, marginBottom: 18 }}>
-                Earn {(payTarget.cashbackRate * 100).toFixed(2)}% back — {fmtMoney(((parseFloat(payAmount) || 0) * payTarget.cashbackRate), ccyCode)} instantly added to My Assets and your PayLater limit
+                Earn {(payTarget.cashbackRate * 100).toFixed(2)}% back — {geuLensMoney(((parseFloat(payAmount) || 0) * payTarget.cashbackRate), ccyCode, displayLens)} instantly added to My Assets and your PayLater limit
               </div>}<button
     onClick={() => {
       const amt = parseFloat(payAmount) || 0;
@@ -2795,7 +2803,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   /><PayPinModal
     open={payTargetPinOpen}
     onClose={() => setPayTargetPinOpen(false)}
-    amountLabel={payTarget ? `\u2212${fmtMoney((parseFloat(payAmount) || 0), ccyCode)}` : null}
+    amountLabel={payTarget ? `\u2212${geuLensMoney((parseFloat(payAmount) || 0), ccyCode, displayLens)}` : null}
     onVerified={() => {
       setPayTargetPinOpen(false);
       setShowPayTargetBiometric(true);
@@ -2816,7 +2824,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
         onPayBusiness({ key: payTarget.key, label: payTarget.label, chip: payTarget.chip || payTarget.label.slice(0, 2).toUpperCase(), amount: amt, cashbackRate: payTarget.cashbackRate, payMethodLabel: payTargetMethod });
         const cashback = amt * (payTarget.cashbackRate || 0);
         showToast2(
-          cashback > 0 ? `Paid ${fmtMoney(amt, ccyCode)} to ${payTarget.label} \u2014 +${fmtMoney(cashback, ccyCode)} instant to PayLater & Assets` : `Paid ${fmtMoney(amt, ccyCode)} to ${payTarget.label}`
+          cashback > 0 ? `Paid ${geuLensMoney(amt, ccyCode, displayLens)} to ${payTarget.label} \u2014 +${geuLensMoney(cashback, ccyCode, displayLens)} instant to PayLater & Assets` : `Paid ${geuLensMoney(amt, ccyCode, displayLens)} to ${payTarget.label}`
         );
         requestClosePayTarget();
       }, 700);
@@ -2934,7 +2942,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     >{preset}%</button>;
   })}</div></div><div>{
     /* What the rate does to one real payment. */
-  }<div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint, marginBottom: 8 }}>On a {fmtMoney(MY_SHARE_PREVIEW_BASE, ccyCode)} payment</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "14px 16px 4px" }}>{
+  }<div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint, marginBottom: 8 }}>On a {geuLensMoney(MY_SHARE_PREVIEW_BASE, ccyCode, displayLens)} payment</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "14px 16px 4px" }}>{
     /* The bar is a picture of the money, so its widths come from the rate
        and not from the slider's position on its track — see
        myShareBarWidths. At 2% the shared sliver is genuinely a sliver,
@@ -2945,10 +2953,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     const [payment, share, keep] = myShareSplitRows(myShareRate, MY_SHARE_PREVIEW_BASE, ccyCode);
     return <div
       role="img"
-      aria-label={`Of ${fmtMoney(payment.amount, ccyCode)}, you keep ${fmtMoney(keep.amount, ccyCode)} and they get ${fmtMoney(share.amount, ccyCode)}`}
+      aria-label={`Of ${geuLensMoney(payment.amount, ccyCode, displayLens)}, you keep ${geuLensMoney(keep.amount, ccyCode, displayLens)} and they get ${geuLensMoney(share.amount, ccyCode, displayLens)}`}
       style={{ display: "flex", height: 34, borderRadius: 11, overflow: "hidden", border: `1px solid ${T.line}` }}
     ><span style={{ width: `${w.keep}%`, background: T.accentSoft }} /><span style={{ flex: 1, background: T.positive }} /></div>;
-  })()}<div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}><span style={{ fontSize: 11.5, fontWeight: 800, color: T.accent }}>You keep</span><span style={{ fontSize: 11.5, fontWeight: 800, color: T.positive }}>They get</span></div>{myShareSplitRows(myShareRate, MY_SHARE_PREVIEW_BASE, ccyCode).map((row) => <div key={row.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "11px 0", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>{row.label}</span><span style={{ fontSize: 14.5, fontWeight: 800, color: MY_SHARE_ROW_COLORS[row.key](T), overflowWrap: "anywhere" }}>{fmtMoney(row.amount, ccyCode)}</span></div>)}</div></div></div><div style={{ flexShrink: 0, padding: "0 18px calc(18px + env(safe-area-inset-bottom, 0px))" }}><button
+  })()}<div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}><span style={{ fontSize: 11.5, fontWeight: 800, color: T.accent }}>You keep</span><span style={{ fontSize: 11.5, fontWeight: 800, color: T.positive }}>They get</span></div>{myShareSplitRows(myShareRate, MY_SHARE_PREVIEW_BASE, ccyCode).map((row) => <div key={row.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "11px 0", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>{row.label}</span><span style={{ fontSize: 14.5, fontWeight: 800, color: MY_SHARE_ROW_COLORS[row.key](T), overflowWrap: "anywhere" }}>{geuLensMoney(row.amount, ccyCode, displayLens)}</span></div>)}</div></div></div><div style={{ flexShrink: 0, padding: "0 18px calc(18px + env(safe-area-inset-bottom, 0px))" }}><button
     onClick={() => setShowMyShareBiometric(true)}
     disabled={myShareSaving}
     className="v2-tap"
@@ -3131,7 +3139,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
-  }{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3 }}>{fmtMoney(assetDetail.row.value, ccyCode)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${fmtMoney(assetDetail.target, ccyCode)}`}</div>{
+  }{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3 }}>{geuLensMoney(assetDetail.row.value, ccyCode, displayLens)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${geuLensMoney(assetDetail.target, ccyCode, displayLens)}`}</div>{
     /* Growth curve: cashback (t=0) compounding at 1%/month up
        to the point it equals 100% of the original spend. */
   }<svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} width="100%" height="150" style={{ marginTop: 14, display: "block" }} preserveAspectRatio="none">{
@@ -3142,9 +3150,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Growth curve */
   }<polyline points={assetDetail.pathPoints} fill="none" stroke={T.positive} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />{
     /* Today marker */
-  }<line x1={assetDetail.todayX} y1={assetDetail.todayY} x2={assetDetail.todayX} y2={assetDetail.baseY} stroke={T.accent} strokeWidth="1.5" strokeDasharray="3 3" /><circle cx={assetDetail.todayX} cy={assetDetail.todayY} r="4.5" fill={T.accent} stroke="#fff" strokeWidth="1.5" /></svg><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: T.inkFaint, marginTop: -4 }}><span>Year 0</span><span>~{(assetDetail.monthsToTarget / 12).toFixed(1)} yrs</span></div><div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>Today</span><span style={{ width: 14, height: 2, background: T.line, marginLeft: 10, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>100% of original spend ({fmtMoney(assetDetail.target, ccyCode)})</span></div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>{[
+  }<line x1={assetDetail.todayX} y1={assetDetail.todayY} x2={assetDetail.todayX} y2={assetDetail.baseY} stroke={T.accent} strokeWidth="1.5" strokeDasharray="3 3" /><circle cx={assetDetail.todayX} cy={assetDetail.todayY} r="4.5" fill={T.accent} stroke="#fff" strokeWidth="1.5" /></svg><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: T.inkFaint, marginTop: -4 }}><span>Year 0</span><span>~{(assetDetail.monthsToTarget / 12).toFixed(1)} yrs</span></div><div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>Today</span><span style={{ width: 14, height: 2, background: T.line, marginLeft: 10, flexShrink: 0 }} /><span style={{ fontSize: 11, color: T.inkSoft }}>100% of original spend ({geuLensMoney(assetDetail.target, ccyCode, displayLens)})</span></div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>{[
     ...assetDetail.row.chip === "CS" ? [["Creator", assetDetail.row.creatorName]] : [],
-    ["Paid", `${fmtMoney(assetDetail.row.amountPaid, ccyCode)}`],
+    ["Paid", `${geuLensMoney(assetDetail.row.amountPaid, ccyCode, displayLens)}`],
     // Two decimals, not one, and this is load-bearing rather than cosmetic.
     //
     // The My Share slider is step={0.01}, so 2.36% is a rate somebody can
@@ -3158,7 +3166,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // toFixed(2) is exactly lossless against step={0.01}, and matches what My
     // Share and the receipt have always shown. Do not reduce this precision
     // without also constraining the slider, or the two will disagree again.
-    ["Cashback", `${(assetDetail.row.cashbackRate * 100).toFixed(2)}% \xB7 ${fmtMoney(assetDetail.row.cashback, ccyCode)}`],
+    ["Cashback", `${(assetDetail.row.cashbackRate * 100).toFixed(2)}% \xB7 ${geuLensMoney(assetDetail.row.cashback, ccyCode, displayLens)}`],
     ["Earned on", assetDetail.row.time ? `${assetDetail.row.date}, ${assetDetail.row.time}` : assetDetail.row.date],
     ["Time to 100%", `${(assetDetail.monthsToTarget / 12).toFixed(1)} yrs`]
   ].map(([label, value]) => <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontSize: 12, color: T.inkFaint }}>{label}</span><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{value}</span></div>)}</div></div></div>}{profileDetail && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileDetail} />{profileDetail !== "History" && <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{profileDetail}</span>}{profileDetail === "History" && <div style={{ display: "flex", gap: 8, flex: 1 }}><button
@@ -3254,7 +3262,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
                   </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{subscriptions.map((s, i) => <div
     key={s.key}
     style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 15px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-  ><span style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: s.active ? T.accentSoft : T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: s.active ? T.accent : T.inkFaint }}>{s.chip}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</span><span style={{ display: "block", fontSize: 11, color: T.inkFaint, marginTop: 1 }}>{fmtMoney(s.price, ccyCode)}/mo{s.active ? profileToggles.autopay ? " \xB7 Auto-renews" : " \xB7 Manual renewal" : ""}</span></span><ProfileToggle on={s.active} onToggle={() => toggleSubscription(s.key)} label={s.label} /></div>)}</div></div></div>}{profileDetail === "Language" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{PROFILE_LANGUAGES.map((lang, i) => <button
+  ><span style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: s.active ? T.accentSoft : T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: s.active ? T.accent : T.inkFaint }}>{s.chip}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.label}</span><span style={{ display: "block", fontSize: 11, color: T.inkFaint, marginTop: 1 }}>{geuLensMoney(s.price, ccyCode, displayLens)}/mo{s.active ? profileToggles.autopay ? " \xB7 Auto-renews" : " \xB7 Manual renewal" : ""}</span></span><ProfileToggle on={s.active} onToggle={() => toggleSubscription(s.key)} label={s.label} /></div>)}</div></div></div>}{profileDetail === "Language" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{PROFILE_LANGUAGES.map((lang, i) => <button
     key={lang}
     onClick={() => setProfileLanguage(lang)}
     className="v2-row"
@@ -3413,7 +3421,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   >{toast}</div>}</div>}{profileOverlay === "referral" && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}><SendMoneyAmbientBg /></div><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileOverlay} /></div><div style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* Earnings summary */
   }<div style={{ position: "relative", background: T.gradWallet, borderRadius: T.radiusLg, padding: "22px 22px 52px", display: "flex", flexDirection: "column", gap: 4, boxShadow: T.shadowRaised }}><span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: 0.3, textTransform: "uppercase" }}>
-                By <SingleOMark before="N" after="W" /></span><span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay }}>{fmtMoney(referralNetwork.reduce((sum, m) => sum + m.earned, 0), ccyCode)}</span><div style={{ display: "flex", gap: 18, marginTop: 10 }}><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Invited</div></div><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.filter((m) => m.status === "Active").length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Active</div></div></div><button
+                By <SingleOMark before="N" after="W" /></span><span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay }}>{geuLensMoney(referralNetwork.reduce((sum, m) => sum + m.earned, 0), ccyCode, displayLens)}</span><div style={{ display: "flex", gap: 18, marginTop: 10 }}><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Invited</div></div><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.filter((m) => m.status === "Active").length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Active</div></div></div><button
     onClick={() => setProfileOverlay("share")}
     aria-label="Share your referral link"
     className="v2-tap"
@@ -3445,7 +3453,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     const referralPct = combined > 0 ? Math.round(totalReferralSharing / combined * 100) : 0;
     return <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 16px" }}><div style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>
                     Referral sharing vs. Creator Share
-                  </div><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Referral sharing</span><span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>{fmtMoney(totalReferralSharing, ccyCode)}</span></div><span style={{ display: "block", height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden", marginBottom: 14 }}><span style={{ display: "block", width: `${referralPct}%`, height: "100%", borderRadius: 999, background: T.accent, transition: "width 0.3s ease" }} /></span><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Our own Creator Share</span><span style={{ fontSize: 13, fontWeight: 800, color: T.positive }}>{fmtMoney(totalCreatorShareEarned, ccyCode)}</span></div><span style={{ display: "block", height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden" }}><span style={{ display: "block", width: `${100 - referralPct}%`, height: "100%", borderRadius: 999, background: T.positive, transition: "width 0.3s ease" }} /></span><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", marginTop: 14, lineHeight: 1.4 }}>
+                  </div><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Referral sharing</span><span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>{geuLensMoney(totalReferralSharing, ccyCode, displayLens)}</span></div><span style={{ display: "block", height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden", marginBottom: 14 }}><span style={{ display: "block", width: `${referralPct}%`, height: "100%", borderRadius: 999, background: T.accent, transition: "width 0.3s ease" }} /></span><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Our own Creator Share</span><span style={{ fontSize: 13, fontWeight: 800, color: T.positive }}>{geuLensMoney(totalCreatorShareEarned, ccyCode, displayLens)}</span></div><span style={{ display: "block", height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden" }}><span style={{ display: "block", width: `${100 - referralPct}%`, height: "100%", borderRadius: 999, background: T.positive, transition: "width 0.3s ease" }} /></span><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", marginTop: 14, lineHeight: 1.4 }}>
                     Creator Share is real, from this account's own payments. Referral sharing is still a seeded example — there are no real referred accounts yet to read this from.
                   </div></div>;
   })()}{
@@ -3472,7 +3480,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       boxShadow: totalReferralEarned > 0 ? "0 8px 20px rgba(124,58,237,0.3)" : "none"
     }}
   ><Landmark5 size={16} />
-              Settle {fmtMoney(totalReferralEarned, ccyCode)} to Gloobal Bank
+              Settle {geuLensMoney(totalReferralEarned, ccyCode, displayLens)} to Gloobal Bank
             </button>{
     /* How the network works */
   }<button
@@ -3578,7 +3586,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        "\u2014 / today", a column of dashes that said nothing and took the
        eye straight to it; referral earnings are not credited server-side
        yet, so that was every row, always. */
-  }{m.earnedToday > 0 && <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, flexShrink: 0 }}><span style={{ fontSize: 13.5, fontWeight: 800, color: T.positive }}>+{fmtMoney(m.earnedToday, ccyCode)}</span><span style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>today</span></span>}{
+  }{m.earnedToday > 0 && <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, flexShrink: 0 }}><span style={{ fontSize: 13.5, fontWeight: 800, color: T.positive }}>+{geuLensMoney(m.earnedToday, ccyCode, displayLens)}</span><span style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>today</span></span>}{
     /* The live dot, immediately left of the arrow — this is what the word
        ACTIVE used to be. Green and pulsing for an active referral, amber
        and still for a pending one. aria-label carries the word for a
@@ -4355,8 +4363,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       }}
     ><span style={{ fontSize: 9.5, fontWeight: 700, color: T.inkFaint, letterSpacing: 0.4, textTransform: "uppercase" }}>
                       Total earned
-                    </span><span style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{fmtMoney(total, ccyCode)}</span></div></div>;
-  })()}<div style={{ display: "flex", gap: 22, marginTop: 2 }}><div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{fmtMoney(selectedMember.earnedToday, ccyCode)}</div><div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>Today</div></div></div><div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: T.accentSoft, flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{fmtMoney(selectedMember.earned, ccyCode)}</div><div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>All-time total</div></div></div></div></div></div>}{
+                    </span><span style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{geuLensMoney(total, ccyCode, displayLens)}</span></div></div>;
+  })()}<div style={{ display: "flex", gap: 22, marginTop: 2 }}><div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: T.accent, flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{geuLensMoney(selectedMember.earnedToday, ccyCode, displayLens)}</div><div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>Today</div></div></div><div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: "50%", background: T.accentSoft, flexShrink: 0 }} /><div><div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{geuLensMoney(selectedMember.earned, ccyCode, displayLens)}</div><div style={{ fontSize: 10, color: T.inkFaint, fontWeight: 600 }}>All-time total</div></div></div></div></div></div>}{
     /* Explains how earning through the referral network works — opened
        from the option that replaced the old "Invite a friend" CTA. */
   }{showHowItWorks && <div

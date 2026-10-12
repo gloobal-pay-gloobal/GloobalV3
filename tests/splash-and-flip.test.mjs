@@ -399,12 +399,23 @@ describe("the splash is made of the product, not of graphics about it", () => {
     // stored session; a brand-new user left nothing, and gets a sentence
     // with no currency in it rather than a guess.
     assert.match(splash, /function splashViewerCurrency\(\)/);
-    assert.match(splash, /gloobalSessionLoad\(\)/,
-      "the splash is not reading the stored session for the viewer's country");
-    assert.match(splash, /COUNTRY_CURRENCY\[iso\]/);
-    // Checked as a CODE, not for truthiness — the same correction the
-    // migration script and claim-interest both needed.
-    assert.match(splash, /typeof code === "string" && \/\^\[A-Z\]\{3\}\$\/\.test\(code\)/);
+    // It DELEGATES rather than reading the session itself. This started as a
+    // copy of the same logic living in the splash, and three more screens
+    // then needed the same answer — two copies of "whose money is this" is
+    // how one of them ends up answering differently.
+    assert.match(splash, /return geuLensOwnCurrency\(\);/,
+      "the splash has its own copy of the viewer-currency rule again");
+
+    // And the shared reader does what the splash used to: the stored
+    // session's country, mapped to a currency, checked as a CODE rather
+    // than for truthiness — the same correction the migration script and
+    // claim-interest both needed.
+    const lensSrc = readSource("frontend/features/geuLens/geuLens.js");
+    assert.match(lensSrc, /function geuLensOwnCurrency\(\)/);
+    assert.match(lensSrc, /gloobalSessionLoad\(\)/,
+      "the shared reader is not reading the stored session for the viewer's country");
+    assert.match(lensSrc, /COUNTRY_CURRENCY\[iso\]/);
+    assert.match(lensSrc, /typeof code === "string" && \/\^\[A-Z\]\{3\}\$\/\.test\(code\)/);
     // And no fallback. Naming the wrong money is worse than naming none.
     assert.match(splash, /1 unit of your own money/);
     const live = splash.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");

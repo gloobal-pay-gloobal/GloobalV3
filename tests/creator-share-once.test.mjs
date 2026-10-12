@@ -149,7 +149,11 @@ describe("Today's Collection is money collected, not share received", () => {
   test("My Assets keeps its own settle, which is the one that is allowed", () => {
     const assets = code(readSource("frontend/features/assets/AssetsScreen.jsx"));
     assert.match(assets, /onClick=\{onRequestSettle\}/);
-    assert.match(assets, /Settle \{fmtMoney\(totalAssets, ccyCode\)\} to Gloobal Bank/);
+    // The figure, not the formatter's name. This pinned fmtMoney and broke
+    // when the display lens arrived — the claim being made here is that My
+    // Assets still offers its own settle for the asset total, which is true
+    // whichever unit that total is written in.
+    assert.match(assets, /Settle \{geuLens(Own)?Money\(totalAssets, ccyCode[^}]*\)\} to Gloobal Bank/);
   });
 });
 

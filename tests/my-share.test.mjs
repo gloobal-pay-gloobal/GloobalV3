@@ -163,13 +163,18 @@ describe("the presets", () => {
 });
 
 describe("the money on this screen is formatted like money everywhere else", () => {
-  test("every amount goes through fmtMoney", () => {
+  test("every amount goes through the one formatter", () => {
     // The preview used to build its payment as `${ccy}1000.00` — symbol
     // first, no thousands separator, and two decimals in currencies that
     // do not have two. It read "₹1000.00" on a screen where every other
     // amount read "1,000.00₹".
-    assert.match(code, /fmtMoney\(MY_SHARE_PREVIEW_BASE, ccyCode\)/);
-    assert.match(code, /fmtMoney\(row\.amount, ccyCode\)/);
+    //
+    // geuLensMoney now, not fmtMoney: it wraps fmtMoney and renames the unit
+    // when the display lens is on. The claim is unchanged — one formatter,
+    // taking the currency CODE, so the separators and decimals come from the
+    // currency rather than from whoever typed the line.
+    assert.match(code, /geuLensMoney\(MY_SHARE_PREVIEW_BASE, ccyCode, displayLens\)/);
+    assert.match(code, /geuLensMoney\(row\.amount, ccyCode, displayLens\)/);
   });
 
   test("and the example payment is one constant, not a repeated 1000", () => {
@@ -194,6 +199,6 @@ describe("the screen still says what it is", () => {
   test("the bar is announced to a screen reader as amounts", () => {
     // A bar with no text in it is nothing at all without this.
     assert.match(code, /role="img"/);
-    assert.match(code, /you keep \$\{fmtMoney\(/);
+    assert.match(code, /you keep \$\{geuLensMoney\(/);
   });
 });

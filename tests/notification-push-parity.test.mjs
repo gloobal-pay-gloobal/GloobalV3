@@ -101,6 +101,18 @@ function notificationsHarness() {
     lift(format, "fmt"),
     lift(format, "currencySuffix"),
     lift(format, "fmtMoney"),
+    // gloobalNotifHeadline formats through the lens now, so the rule comes
+    // with it. This suite is the reason the lens is an ARGUMENT there with
+    // a local default rather than something the function reads for itself:
+    // the push path below calls it with no lens, because a system
+    // notification is drawn by the OS long after the app that knows about
+    // the lens has gone, and a banner saying "500 GEU" over a card saying
+    // "₹500" would be two claims about one payment.
+    cut(read("frontend/features/geuLens/geuLens.js"), 'var GEU_LENS_LOCAL = "local";', '\n'),
+    cut(read("frontend/features/geuLens/geuLens.js"), 'var GEU_LENS_GEU = "geu";', '\n'),
+    lift(read("frontend/features/geuLens/geuLens.js"), "geuLensMoney"),
+    lift(read("frontend/features/geuLens/geuLens.js"), "geuLensSameCurrency"),
+    lift(read("frontend/features/geuLens/geuLens.js"), "geuLensOwnMoney"),
     lift(read("frontend/components/common/flipIcons.jsx"), "flipSeedHash"),
     "var LOGO_FLIP_COLORS = new Array(8);",
     lift(read("frontend/components/cards/notificationCard.jsx"), "gloobalNotifHeadline"),
@@ -423,6 +435,14 @@ describe("the notification the OS draws is the same one, open or closed", () => 
       lift(format, "fmt"),
       lift(format, "currencySuffix"),
       lift(format, "fmtMoney"),
+      // The lens rule, same reason as the context above: gloobalNotifHeadline
+      // formats through it, and this path calls it with no lens so the OS
+      // banner shows the real currency.
+      cut(read("frontend/features/geuLens/geuLens.js"), 'var GEU_LENS_LOCAL = "local";', '\n'),
+      cut(read("frontend/features/geuLens/geuLens.js"), 'var GEU_LENS_GEU = "geu";', '\n'),
+      lift(read("frontend/features/geuLens/geuLens.js"), "geuLensMoney"),
+      lift(read("frontend/features/geuLens/geuLens.js"), "geuLensSameCurrency"),
+      lift(read("frontend/features/geuLens/geuLens.js"), "geuLensOwnMoney"),
       lift(read("frontend/components/common/flipIcons.jsx"), "flipSeedHash"),
       "var LOGO_FLIP_COLORS = new Array(8);",
       lift(card, "gloobalNotifHeadline"),

@@ -230,10 +230,25 @@ async function run() {
 
   for (const holder of withCoin) {
     const coinAmount = Number(holder.coinBalance);
-    const accountCurrency = localCurrencyFor(accountCountryIso(holder));
+    // `await`, because localCurrencyFor reads the Country collection before
+    // falling back to the bundled map. Without it this was a Promise, which
+    // is truthy — so the guard below passed it, and it reached the rate
+    // lookup as the string "[object Promise]". The run refused every holder
+    // and wrote nothing, which is the gate doing its job, but the reason it
+    // printed was a defect here rather than anything wrong with the data.
+    const accountCurrency = await localCurrencyFor(accountCountryIso(holder));
 
-    if (!accountCurrency) {
-      refusals.push({ holder, why: "no resolvable account currency — the country is missing or unsupported" });
+    // Checked as a currency CODE, not for truthiness. The bug above is the
+    // argument for this shape: `!value` admits anything non-empty, including
+    // an object that will stringify into a lookup as a plausible-looking
+    // name. An ISO 4217 code is three letters and nothing else.
+    if (typeof accountCurrency !== "string" || !/^[A-Z]{3}$/.test(accountCurrency)) {
+      refusals.push({
+        holder,
+        why: accountCurrency
+          ? `account currency resolved to ${JSON.stringify(accountCurrency)}, which is not an ISO 4217 code`
+          : "no resolvable account currency — the country is missing or unsupported",
+      });
       continue;
     }
 

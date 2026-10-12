@@ -78,8 +78,54 @@ describe("nobody is paid nothing", () => {
 
   test("an account with no resolvable currency is refused, not defaulted", () => {
     // Defaulting would pay a Japanese account in rupees.
-    assert.match(script, /if \(!accountCurrency\) \{/);
     assert.match(script, /no resolvable account currency/);
+  });
+
+  test("the account's currency is awaited, and checked as a code rather than for truth", () => {
+    // This test exists because the first run of the migration against the
+    // live database refused every holder with
+    //
+    //   rate lookup INR->[object Promise] failed
+    //
+    // localCurrencyFor reads the Country collection before falling back to
+    // the bundled map, so it is async. It was called without `await`. The
+    // resulting Promise is TRUTHY, so `if (!accountCurrency)` — the guard
+    // written to catch exactly this family of problem — passed it straight
+    // through to a rate lookup, where it stringified into a currency-shaped
+    // nonsense word.
+    //
+    // Two things are pinned here, because the missing await was the cause
+    // but the truthiness check is what let it travel:
+    assert.match(script, /const accountCurrency = await localCurrencyFor\(accountCountryIso\(holder\)\);/,
+      "localCurrencyFor is async; a call without await yields a Promise that passes every truthiness guard");
+
+    // A currency is three letters. Nothing else gets to be one — not an
+    // object, not a Promise, not an empty string, not "inr".
+    assert.match(script, /typeof accountCurrency !== "string" \|\| !\/\^\[A-Z\]\{3\}\$\/\.test\(accountCurrency\)/,
+      "the account currency is admitted on truthiness again rather than on being an ISO 4217 code");
+
+    // And the refusal names what it actually got, so the next failure of
+    // this kind is readable from the console rather than from the source.
+    assert.match(script, /JSON\.stringify\(accountCurrency\)/);
+  });
+
+  test("no other async helper is called without await", () => {
+    // The same mistake, anywhere else in the file, has the same shape: a
+    // Promise standing in for a value, passing every guard, surfacing as
+    // nonsense much further downstream.
+    const ASYNC_HELPERS = ["localCurrencyFor", "loadCurrencyDecimals", "withAtomicSession", "snapshot"];
+    const offenders = [];
+    script.split("\n").forEach((line, index) => {
+      for (const helper of ASYNC_HELPERS) {
+        // The call, but not the require that imports it and not a definition.
+        if (!new RegExp(`(^|[^.\\w])${helper}\\s*\\(`).test(line)) continue;
+        if (/require\(/.test(line) || /function\s/.test(line)) continue;
+        if (line.includes(`await ${helper}`)) continue;
+        offenders.push(`line ${index + 1}: ${line.trim()}`);
+      }
+    });
+    assert.deepEqual(offenders, [],
+      `an async helper is called without await:\n${offenders.join("\n")}`);
   });
 
   test("the precision table is loaded, so zero-decimal currencies are not paid fractions", () => {

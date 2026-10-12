@@ -333,6 +333,7 @@ async function run() {
   console.log("\n7. a payee at 2% — the rate this pair used earlier");
   const beforeSeven = await balanceOf(SEVEN);
   const beforePayerSeven = await balanceOf(A);
+  const beforeCustodySeven = await custodyOf("INR");
   const sevenPaid = await send(A, SEVEN, 1000, "Two percent payee");
   check("the payment went through", sevenPaid.status === 201, `status=${sevenPaid.status}`);
   const sevenPayment = await Transaction.findOne({ referenceId: sevenPaid.body?.transaction?.referenceId }).lean();
@@ -341,8 +342,29 @@ async function run() {
   check("worth 20 — 2% of 1000", sevenLegs[0]?.amount === 20, `amount=${sevenLegs[0]?.amount}`);
   check("the payee nets 980", (await balanceOf(SEVEN)) - beforeSeven === 980,
     `delta=${(await balanceOf(SEVEN)) - beforeSeven}`);
-  check("the payer is out 980", (await balanceOf(A)) - beforePayerSeven === -980,
+  // The share does not come back to the payer's spendable balance — it is
+  // held in custody against their AssetSeed until they claim it. So the payer
+  // is out the FULL 1000, not 1000 less the 20.
+  //
+  // This read "the payer is out 980" and was left behind when scenario 1 was
+  // moved to the custody model. It failed with delta=-1000: the right number
+  // for the new arrangement, asserted against the old one.
+  const afterCustodySeven = await custodyOf("INR");
+  check("the payer is out the full 1000", (await balanceOf(A)) - beforePayerSeven === -1000,
     `delta=${(await balanceOf(A)) - beforePayerSeven}`);
+  check("the 20 is in custody, not in the payer's balance",
+    afterCustodySeven - beforeCustodySeven === 20,
+    `custody delta=${afterCustodySeven - beforeCustodySeven}`);
+  // Three accounts now, not two. 1000 left the payer; 980 reached the payee
+  // and 20 reached custody. A version of this that only compared the payer
+  // and the payee would show 20 missing and call it conserved.
+  check("the three deltas cancel: no money was created or destroyed",
+    ((await balanceOf(A)) - beforePayerSeven)
+      + ((await balanceOf(SEVEN)) - beforeSeven)
+      + (afterCustodySeven - beforeCustodySeven) === 0,
+    `payer+payee+custody=${((await balanceOf(A)) - beforePayerSeven)
+      + ((await balanceOf(SEVEN)) - beforeSeven)
+      + (afterCustodySeven - beforeCustodySeven)}`);
 
   // ── 8 ──────────────────────────────────────────────────────────────────
   console.log("\n8. a payee who shares nothing releases nothing");
@@ -364,6 +386,7 @@ async function run() {
   console.log("\n9. a cross-currency payment still releases once");
   const beforeUs = await balanceOf(US);
   const beforePayerUs = await balanceOf(A);
+  const beforeCustodyUs = await custodyOf("INR");
   const xb = await send(A, US, 100, "Cross border");
   check("the payment went through", xb.status === 201, `status=${xb.status}`);
   const xbPayment = await Transaction.findOne({ referenceId: xb.body?.transaction?.referenceId }).lean();
@@ -375,9 +398,29 @@ async function run() {
     `delta=${(await balanceOf(US)) - beforeUs}`);
   check("the leg is denominated in the PAYER's currency, which is what they got back",
     xbLegs[0]?.currency === "INR", `currency=${xbLegs[0]?.currency}`);
-  check("the payer is out the debit minus their credit back",
-    Math.round(((await balanceOf(A)) - beforePayerUs) * 100) / 100 === -7840,
+  // Same correction as scenario 7, and the cross-currency case is where it
+  // matters most. The share leg is denominated in the PAYER's currency — 2
+  // USD expressed as 160 INR — so custody is an INR account and the payer's
+  // own tender is what is held. A share held in the payee's currency would
+  // be a currency position the payer never asked for.
+  //
+  // This read -7840 (8000 less the 160 credited back) and failed with
+  // delta=-8000. The full 8000 leaves the payer; 160 stops in custody and
+  // 7840 crosses the border.
+  const afterCustodyUs = await custodyOf("INR");
+  check("the payer is out the full 8000",
+    Math.round(((await balanceOf(A)) - beforePayerUs) * 100) / 100 === -8000,
     `delta=${(await balanceOf(A)) - beforePayerUs}`);
+  check("the 160 INR is in custody, in the payer's own currency",
+    Math.round((afterCustodyUs - beforeCustodyUs) * 100) / 100 === 160,
+    `custody delta=${afterCustodyUs - beforeCustodyUs}`);
+  // Not summed with the payee's delta here, because the payee's is in USD
+  // and adding it to rupees would be the arithmetic this suite exists to
+  // forbid. What is checked is the INR side: of the 8000 debited, 160 is
+  // accounted for in custody and the rest left for the FX desk.
+  check("and the rest of the debit is what crossed the border",
+    Math.round((((await balanceOf(A)) - beforePayerUs) + (afterCustodyUs - beforeCustodyUs)) * 100) / 100 === -7840,
+    `payer+custody=${((await balanceOf(A)) - beforePayerUs) + (afterCustodyUs - beforeCustodyUs)}`);
 
   // ── 10 ─────────────────────────────────────────────────────────────────
   console.log("\n10. across every payment in this run, one share per payment");

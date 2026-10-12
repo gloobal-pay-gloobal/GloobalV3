@@ -181,6 +181,42 @@ const {
 // in production.
 const { resolveCountry, localCurrencyFor } = require('./lib/countryCurrency');
 
+// An account's own currency: the tender of the country it belongs to.
+//
+// ── Why this is back, and why it is up here now ─────────────────────────
+//
+// It used to be declared at the bottom of the GEU growth prototype, and was
+// deleted along with it. That removed the definition out from under
+// POST /api/assets/claim-interest — a route that survives the removal and
+// calls this on every claim.
+//
+// Nothing caught it at build time, and nothing could have: function
+// declarations hoist, so the call site compiled exactly as before. The gap
+// only existed at request time, where it surfaced as
+//
+//   ReferenceError: resolveOwnCurrency is not defined
+//
+// a 500 to the caller, and a claim that paid nothing while reporting
+// undefined. It is declared beside the module it delegates to now, so the
+// next deletion somewhere else in this file cannot take it along.
+//
+// ── Why it returns null rather than a fallback ──────────────────────────
+//
+// Never guess a currency for a payout. The empty Country collection on the
+// live database already taught this once: every account's "own currency"
+// came back as rupees, and a conversion that should have used a real rate
+// matched the reference exactly instead. A genuinely unsupported country
+// returns null and the caller refuses the payout — which is what
+// claim-interest's own comment says it does.
+//
+// The shape is checked rather than the truthiness. An ISO 4217 code is three
+// capital letters; an object, a promise, an empty string and "inr" are all
+// things that pass `if (value)` and none of them is a currency.
+async function resolveOwnCurrency(user) {
+  const code = await localCurrencyFor(accountCountryIso(user));
+  return typeof code === 'string' && /^[A-Z]{3}$/.test(code) ? code : null;
+}
+
 // Resolves whatever country ISO a client claims (the country picked on the
 // registration phone-code screen) against the seeded Country collection —
 // the same source of truth lib/settlementEngine.js reads localCurrency

@@ -1,5 +1,5 @@
 // src/components/common/launchSplash.jsx
-import { useState as useState20, useEffect as useEffect16, useRef as useRef14 } from "react";
+import { useState as useState20, useEffect as useEffect16, useRef as useRef14, useMemo as useMemo10 } from "react";
 // Bug fix / feature: this used to hold on the logo, flip once to a
 // single random dial symbol, then fade — a fixed two-face reveal on
 // every launch. What was actually wanted is the same "living rotating
@@ -17,31 +17,52 @@ import { useState as useState20, useEffect as useEffect16, useRef as useRef14 } 
 // completion.
 // The launch window, and it is deliberately budgeted rather than picked.
 //
-//   hold the logo   2200
-//   flip            900   (the same slower turn the Bank/Coin hero uses)
-//   hold the symbol 1200
-//   fade             450
+//   hold the logo    350
+//   flip             900
+//   hold the symbol  250
+//   fade             300
 //   ------------------------
-//   total           4750ms
+//   total           1800ms
 //
-// Asked for as "between 3 and 5 seconds". It sat at 4000 before, which was
-// already inside that range — but the screen now carries a line of copy and
-// the 0.00% mark, and 4s was not long enough to read them AND watch the
-// flip. The extra 750ms is spent on the two holds rather than the fade,
-// because a longer fade delays the app without showing anything new.
+// ── Why this came down from 4750 ────────────────────────────────────────
 //
-// The ceiling matters more than the floor here: this screen blocks getting
-// into the app, and every launch pays it. 5s is the most a person will
-// forgive on a payment app they open several times a day.
-var HOLD_LOGO_MS = 2200;
+// It was budgeted for a screen that had something to read: a peg, stated
+// as a fact, that a person was meant to take in before the app opened.
+// That claim is gone — GEU is a lens over money somebody already holds,
+// not a rate to be learned — and what is left is a mark, a turn and three
+// short cards. None of it needs four and three quarter seconds.
+//
+// The ceiling was always the real constraint. This screen blocks getting
+// into the app and every launch pays it, on a payment app people open
+// several times a day. Asked for as "under 2 seconds", and 1800 is that
+// with the fade counted, not after it.
+//
+// Every millisecond of the cut comes out of the two holds and the fade.
+// THE FLIP IS UNTOUCHED AT 900, and that is not sentiment: it is the same
+// turn components/common/flipIcons.jsx gives the Bank hero, and the two
+// being one number is what stops the same mark spinning at two speeds on
+// two screens. Shortening it here would have bought 280ms and reintroduced
+// exactly the drift that unifying the component removed.
+//
+// A longer fade would also have been the wrong place to spend: it delays
+// the app without showing anything new.
+//
+// Nothing has to be cut short to fit. The three cards animate in over
+// 640ms at 0, 130 and 260ms of delay, so the last settles at 900 — just as
+// the symbol hold begins, and 600ms before the fade starts.
+var HOLD_LOGO_MS = 350;
 var FLIP_MS = 900;
-var HOLD_SYMBOL_MS = 1200;
-var FADE_MS = 450;
-// Reduced motion gets no flip at all, so it gets a shorter hold — but a
-// longer one than before (900ms), because there is now something to read.
-// Nobody who has asked their device for less motion wants to be held on a
-// static screen for the full 4.75s to look at a mark that never moves.
-var REDUCED_MOTION_HOLD_MS = 1800;
+var HOLD_SYMBOL_MS = 250;
+var FADE_MS = 300;
+// Reduced motion gets no flip, so it gets a single hold. 1200 + a 300ms
+// fade is 1500 — under the same ceiling, and long enough that the screen
+// does not flash past. Someone who asked their device for less motion is
+// not asking to be held on a static mark any longer than that.
+var REDUCED_MOTION_HOLD_MS = 1200;
+// The least the logo may be held for, however long boot took. Below this it
+// reads as a flash rather than a hold, and the flip that follows has nothing
+// to turn from.
+var SPLASH_MIN_LOGO_MS = 120;
 // How much of the mark's box the glyph inside it fills. The only survivor of
 // the old hero block: the splash no longer renders a large standalone mark,
 // so BOX_SIZE, BOX_MAX, BOX_RADIUS, SYMBOL_SIZE and SYMBOL_MAX went with it
@@ -166,7 +187,50 @@ function SplashSymbolField() {
 //
 // The screen only runs ~4.75s, so at 2s this changes about twice. That is
 // the point — it should look alive, not like a disco.
-var BHARAT_COLOR_MS = 2000;
+// Was 2000, against a 4750ms splash — two or three changes before the
+// screen left. The splash is now 1800ms total, so a 2000ms interval could
+// never fire once: the colour would be picked at random on mount and held,
+// and the whole animation would be dead code that reads as deliberate.
+//
+// 620 gives it two changes inside the new window, which is what it had
+// before as a share of the screen's life. Still well short of a disco,
+// which the note above is right to care about.
+var BHARAT_COLOR_MS = 620;
+// The viewer's own currency code, or null when this device has never
+// signed anyone in.
+//
+// ── Why null is a real answer and not a failure ─────────────────────────
+//
+// The splash renders before login, so there is no account in memory to ask.
+// A RETURNING account left its country in the stored session, which is
+// enough. A brand-new user has left nothing, and that is the case the old
+// card got wrong: it fell back to a hardcoded "INR" and told a first-time
+// American that one GEU is one rupee.
+//
+// So there is no fallback. Not knowing produces a line with no currency in
+// it, which is true for everyone, rather than a guess that is true for one
+// country. Naming the wrong money is worse than naming none.
+//
+// Every access is guarded: localStorage throws in private mode and with
+// storage disabled, and a splash screen is the last place in the app that
+// should be capable of crashing.
+function splashViewerCurrency() {
+  try {
+    if (typeof gloobalSessionLoad !== "function") return null;
+    const session = gloobalSessionLoad();
+    const iso = session && session.user && String(session.user.countryIso || "").trim().toUpperCase();
+    if (!iso) return null;
+    const code = typeof COUNTRY_CURRENCY === "object" && COUNTRY_CURRENCY ? COUNTRY_CURRENCY[iso] : null;
+    // Checked as a CODE rather than for truthiness — three capital letters
+    // and nothing else. The same correction the migration script and the
+    // claim-interest helper both needed, for the same reason: a truthiness
+    // test admits anything non-empty, and this string goes on screen.
+    return typeof code === "string" && /^[A-Z]{3}$/.test(code) ? code : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 function HeartFromBharat() {
   const [colorIndex, setColorIndex] = useState20(
     () => Math.floor(Math.random() * POSITION_COLORS.length)
@@ -233,15 +297,44 @@ function LaunchSplash({ onFinish }) {
     const raf = requestAnimationFrame(() => setRunning(true));
     return () => cancelAnimationFrame(raf);
   }, []);
+  // THE BUDGET IS COUNTED FROM THE TAP, NOT FROM THIS COMPONENT.
+  //
+  // The holds below used to start when the splash mounted, which meant the
+  // real wait was however long the bundle took to arrive and parse PLUS the
+  // splash. Measured from navigation on a fast local server that was 2195ms
+  // for a 1800ms splash — already past the ceiling, on the quickest boot
+  // this app will ever have.
+  //
+  // performance.now() at mount is milliseconds since navigation started, so
+  // it is exactly what boot cost. Spending it against the first hold makes
+  // the total wait max(boot, budget) rather than boot + budget: a quick
+  // start still gets the whole screen, and a slow one gets a shorter logo
+  // hold instead of punishing the person twice for the same delay.
+  //
+  // Only the first hold is shortened, and only down to a floor. The flip
+  // needs its full duration to be a flip rather than a stutter, and the
+  // symbol has to be legible once it arrives — so the worst case is 1400ms
+  // after mount rather than 1800, and never less.
+  const spent = useMemo10(() => {
+    try {
+      const since = typeof performance !== "undefined" && performance.now ? performance.now() : 0;
+      return Number.isFinite(since) && since > 0 ? since : 0;
+    } catch (e) {
+      return 0;
+    }
+  }, []);
+  const holdLogoMs = Math.max(SPLASH_MIN_LOGO_MS, HOLD_LOGO_MS - spent);
+  const reducedHoldMs = Math.max(SPLASH_MIN_LOGO_MS, REDUCED_MOTION_HOLD_MS - spent);
+
   useEffect16(() => {
     const timers = [];
     if (prefersReducedMotion.current) {
-      timers.push(setTimeout(() => setPhase("fading"), REDUCED_MOTION_HOLD_MS));
-      timers.push(setTimeout(() => onFinish?.(), REDUCED_MOTION_HOLD_MS + FADE_MS));
+      timers.push(setTimeout(() => setPhase("fading"), reducedHoldMs));
+      timers.push(setTimeout(() => onFinish?.(), reducedHoldMs + FADE_MS));
     } else {
-      timers.push(setTimeout(() => setPhase("symbol"), HOLD_LOGO_MS));
-      timers.push(setTimeout(() => setPhase("fading"), HOLD_LOGO_MS + FLIP_MS + HOLD_SYMBOL_MS));
-      timers.push(setTimeout(() => onFinish?.(), HOLD_LOGO_MS + FLIP_MS + HOLD_SYMBOL_MS + FADE_MS));
+      timers.push(setTimeout(() => setPhase("symbol"), holdLogoMs));
+      timers.push(setTimeout(() => setPhase("fading"), holdLogoMs + FLIP_MS + HOLD_SYMBOL_MS));
+      timers.push(setTimeout(() => onFinish?.(), holdLogoMs + FLIP_MS + HOLD_SYMBOL_MS + FADE_MS));
     }
     return () => timers.forEach(clearTimeout);
   }, []);
@@ -252,11 +345,12 @@ function LaunchSplash({ onFinish }) {
   // bar that pretended otherwise would be a lie told to fill a gap. It is a
   // countdown to the app appearing, driven by the same constants the phases
   // are, so it reaches the end exactly when the screen leaves. That is a true
-  // statement about the only thing this screen is doing: taking 4.75 seconds
-  // of a person's time.
+  // statement about the only thing this screen is doing: taking the rest of
+  // the launch budget. It reads the SHORTENED hold, so on a slow boot the bar
+  // still finishes exactly when the screen leaves rather than part-way.
   const runMs = prefersReducedMotion.current
-    ? REDUCED_MOTION_HOLD_MS
-    : HOLD_LOGO_MS + FLIP_MS + HOLD_SYMBOL_MS;
+    ? reducedHoldMs
+    : holdLogoMs + FLIP_MS + HOLD_SYMBOL_MS;
 
   return <div
     role="presentation"
@@ -395,12 +489,30 @@ function LaunchSplash({ onFinish }) {
   }<span
     style={{ marginTop: 4, fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}
   >Taxless<span style={{ opacity: 0.5, margin: "0 5px" }}>·</span>Borderless</span></span></div>{
-    /* Gloobal Coin. The peg, which is the whole of what this product
-       is, and a fact rather than a figure — 1 GEU is 1 rupee for
-       everybody, in both directions, on the day this ships and after.
-       The currency comes from COIN_PEG_CURRENCY rather than being
-       typed here, so the splash cannot go on claiming a peg the
-       server has stopped honouring. */
+    /* THE UNIT, not a rate.
+    
+       This card used to read "Gloobal Coin · always, both ways" over
+       "1 GEU = 1.00₹", and every part of that is now wrong.
+    
+       Gloobal Coin is removed. The peg was the claim of a held,
+       reserve-backed asset, and there is no reserve and nothing held.
+       And the figure was drawn from COIN_PEG_CURRENCY, a hardcoded
+       "INR" — so the first thing the app ever told an American was
+       that one GEU is one rupee. Defensible while GEU was a
+       rupee-pegged coin. Simply false now that 1 GEU is one unit of
+       the VIEWER'S own tender.
+    
+       What replaces it says what the unit is rather than what it
+       trades at. "Local energy · Global use" is the whole idea: the
+       money stays exactly as local as it was, and the unit it is read
+       in is everyone's.
+    
+       The line underneath names the viewer's own currency when the
+       device knows it — a returning account's country, read from the
+       stored session before login. A brand-new user has no session
+       and gets the version with no currency in it, because the one
+       thing this card must never do again is name a currency that
+       is not theirs. */
   }<div
     className="splash-card"
     style={{
@@ -420,15 +532,17 @@ function LaunchSplash({ onFinish }) {
     }}
   ><span
     style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkFaint }}
-  >Gloobal Coin · always, both ways</span><span
+  >Gloobal Energy Unit</span><span
     style={{ fontSize: 21, fontWeight: 800, fontFamily: T.fontDisplay, color: T.ink, letterSpacing: -0.5, lineHeight: 1.15 }}
-  >1 {COIN_TICKER} = {fmtMoney(1, COIN_PEG_CURRENCY)}</span>{
-    /* The ticker, expanded. GEU appears on this screen, on the Coin
-       screen and on every receipt, and until now nothing anywhere
-       said what the three letters are. */
+  >Local energy<span style={{ opacity: 0.35, margin: "0 7px" }}>·</span>Global use</span>{
+    /* "for you" is doing real work in that sentence. It is what marks
+       the unit as the reader's own rather than a universal rate, which
+       is the exact misreading the old line invited. */
   }<span
     style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 1 }}
-  >Gloobal Energy Unit</span></div>{
+  >{splashViewerCurrency()
+    ? `1 ${COIN_TICKER} is 1 ${splashViewerCurrency()} for you`
+    : `1 ${COIN_TICKER} is 1 unit of your own money`}</span></div>{
     /* The hallmark — the component, not a rebuild of it. Bank and Coin
        both render this exact card; taking it is what keeps the three
        from drifting apart, which is the reason it was extracted in the

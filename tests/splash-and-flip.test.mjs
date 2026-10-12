@@ -184,12 +184,17 @@ describe("the splash is built from the theme, not from picked colours", () => {
   });
 });
 
-describe("the splash lasts between 3 and 5 seconds", () => {
+describe("the splash is under two seconds", () => {
   test("the budget adds up, and lands inside the window", () => {
     const n = (name) => Number(splash.match(new RegExp(`var ${name} = (\\d+);`))[1]);
     const total = n("HOLD_LOGO_MS") + n("FLIP_MS") + n("HOLD_SYMBOL_MS") + n("FADE_MS");
-    assert.ok(total >= 3000, `splash is only ${total}ms`);
-    assert.ok(total <= 5000, `splash is ${total}ms — this screen blocks every launch`);
+    // It was 3000-5000, budgeted for a screen with a peg to read. The peg
+    // is gone, and this screen blocks every launch of a payment app people
+    // open several times a day.
+    assert.ok(total <= 2000, `splash is ${total}ms — it blocks every launch`);
+    // A floor as well as a ceiling: below about a second the flip has no
+    // time to land and the screen reads as a flicker rather than an intro.
+    assert.ok(total >= 1200, `splash is only ${total}ms — that is a flash, not a screen`);
   });
 
   test("its flip matches the one the product screens use", () => {
@@ -209,8 +214,12 @@ describe("the splash lasts between 3 and 5 seconds", () => {
     const full = Number(splash.match(/var HOLD_LOGO_MS = (\d+);/)[1]) +
       Number(splash.match(/var FLIP_MS = (\d+);/)[1]) +
       Number(splash.match(/var HOLD_SYMBOL_MS = (\d+);/)[1]);
-    assert.ok(reduced < full, "the reduced-motion path must not be the longer one");
-    assert.ok(reduced >= 1500, "but must still allow the copy to be read");
+    assert.ok(reduced < full + Number(splash.match(/var FADE_MS = (\d+);/)[1]),
+      "the reduced-motion path must not be the longer one");
+    // Long enough to read three short cards, and inside the same ceiling.
+    assert.ok(reduced >= 900, "but must still allow the copy to be read");
+    assert.ok(reduced + Number(splash.match(/var FADE_MS = (\d+);/)[1]) <= 2000,
+      "reduced motion is over the two-second ceiling");
   });
 
   test("measured in a real browser, from the page's own clock", async () => {
@@ -251,11 +260,11 @@ describe("the splash lasts between 3 and 5 seconds", () => {
     const t = await page.evaluate(() => window.__splash);
     const total = t.cleared - t.appeared;
 
-    // Generous either side of the 4750ms budget: this is a wall-clock
+    // Generous either side of the 1800ms budget: this is a wall-clock
     // measurement on a shared machine, and the point is the window, not the
-    // millisecond.
-    assert.ok(total >= 3000, `splash was only on screen for ${Math.round(total)}ms`);
-    assert.ok(total <= 5600, `splash blocked the app for ${Math.round(total)}ms`);
+    // millisecond. The upper bound is what the request actually was.
+    assert.ok(total >= 900, `splash was only on screen for ${Math.round(total)}ms`);
+    assert.ok(total <= 2400, `splash blocked the app for ${Math.round(total)}ms`);
 
     await context.close();
   });
@@ -352,8 +361,10 @@ describe("the splash is made of the product, not of graphics about it", () => {
     // an invented figure in that position is not decoration — it is a number
     // a person can read as their own money, and some will.
     //
-    // The one numeral allowed on these cards is the peg, which is a fact
-    // about the currency rather than a claim about anyone's account.
+    // There is no longer ANY numeral allowed here. The one exception used
+    // to be the peg — "1 GEU = 1.00₹" — which was a fact about the
+    // currency rather than a claim about an account. The peg is gone with
+    // the coin, so the exception goes with it.
     const cards = code.slice(code.indexOf("Gloobal Bank</span>"), code.indexOf("GloobalTaglineCard"));
     // TEXT NODES ONLY. A first version of this scanned the whole slice and
     // flagged `lineHeight: 1.15` and an rgba alpha — style values, not
@@ -363,11 +374,58 @@ describe("the splash is made of the product, not of graphics about it", () => {
     assert.deepEqual(figures, [], `the stack prints ${figures.join(", ")} — no card may show an amount`);
   });
 
-  test("the peg is read from the constant, not typed", () => {
-    // So the splash cannot go on claiming a peg the server has stopped
-    // honouring, and cannot spell the ticker differently from every other
-    // screen.
-    assert.match(splash, /1 \{COIN_TICKER\} = \{fmtMoney\(1, COIN_PEG_CURRENCY\)\}/);
+  test("the unit card states a unit, not a rate", () => {
+    // It read "Gloobal Coin · always, both ways" over "1 GEU = 1.00₹", and
+    // all three parts of that are now wrong. Gloobal Coin is removed. The
+    // peg was the claim of a held, reserve-backed asset, and there is no
+    // reserve. And the figure came from COIN_PEG_CURRENCY — a hardcoded
+    // "INR" — so the first thing the app ever told an American was that
+    // one GEU is one rupee.
+    // Comment-stripped: this file's own prose explains what COIN_PEG_CURRENCY
+    // and Gloobal Coin WERE, and a test that cannot tell an explanation from
+    // a reference fails on its own documentation.
+    const live = splash.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    assert.ok(!/COIN_PEG_CURRENCY/.test(live),
+      "the splash is reading the old hardcoded peg currency again");
+    assert.ok(!/Gloobal Coin/i.test(live),
+      "the splash names a product that no longer exists");
+    assert.match(splash, />Local energy<span style=\{\{ opacity: 0\.35, margin: "0 7px" \}\}>·<\/span>Global use</,
+      "the unit card no longer says what the unit is");
+  });
+
+  test("and names the viewer's own currency, or none at all", () => {
+    // The whole defect in one line: a currency may only be named when this
+    // device knows whose it is. A returning account left its country in the
+    // stored session; a brand-new user left nothing, and gets a sentence
+    // with no currency in it rather than a guess.
+    assert.match(splash, /function splashViewerCurrency\(\)/);
+    assert.match(splash, /gloobalSessionLoad\(\)/,
+      "the splash is not reading the stored session for the viewer's country");
+    assert.match(splash, /COUNTRY_CURRENCY\[iso\]/);
+    // Checked as a CODE, not for truthiness — the same correction the
+    // migration script and claim-interest both needed.
+    assert.match(splash, /typeof code === "string" && \/\^\[A-Z\]\{3\}\$\/\.test\(code\)/);
+    // And no fallback. Naming the wrong money is worse than naming none.
+    assert.match(splash, /1 unit of your own money/);
+    const live = splash.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    assert.ok(!/COIN_PEG_CURRENCY|\|\| "INR"|\? "INR"/.test(live),
+      "the splash fell back to a hardcoded currency again");
+  });
+
+  test("the launch budget is counted from the tap, not from mount", () => {
+    // The holds used to start when this component mounted, so the real wait
+    // was bundle-load PLUS the splash. Measured from navigation on a fast
+    // local server that was 2195ms for an 1800ms splash — past the ceiling
+    // on the quickest boot this app will ever have.
+    assert.match(splash, /const holdLogoMs = Math\.max\(SPLASH_MIN_LOGO_MS, HOLD_LOGO_MS - spent\);/);
+    assert.match(splash, /const reducedHoldMs = Math\.max\(SPLASH_MIN_LOGO_MS, REDUCED_MOTION_HOLD_MS - spent\);/);
+    // The timers must use the shortened holds, not the raw constants —
+    // computing them and then not reading them is the obvious way for this
+    // to look done and do nothing.
+    assert.match(splash, /setTimeout\(\(\) => setPhase\("symbol"\), holdLogoMs\)/);
+    assert.match(splash, /holdLogoMs \+ FLIP_MS \+ HOLD_SYMBOL_MS \+ FADE_MS/);
+    // And so must the progress bar, or it finishes part-way on a slow boot.
+    assert.match(splash, /\?\s*reducedHoldMs\s*:\s*holdLogoMs \+ FLIP_MS \+ HOLD_SYMBOL_MS;/);
   });
 
   test("the mark survived, as the card's chip", () => {
@@ -400,7 +458,11 @@ describe("the splash is made of the product, not of graphics about it", () => {
     // same constants the phases are rather than by a duration picked to look
     // busy.
     assert.match(splash, /const runMs = prefersReducedMotion\.current/);
-    assert.match(splash, /: HOLD_LOGO_MS \+ FLIP_MS \+ HOLD_SYMBOL_MS;/);
+    // The SHORTENED hold, not the raw constant. On a slow boot the first
+    // hold is cut so the launch budget is counted from the tap rather than
+    // from mount — a bar still driven by HOLD_LOGO_MS would then run past
+    // the end of the screen it is counting down.
+    assert.match(splash, /: holdLogoMs \+ FLIP_MS \+ HOLD_SYMBOL_MS;/);
     assert.match(splash, /transition: `width \$\{runMs\}ms linear`/);
   });
 

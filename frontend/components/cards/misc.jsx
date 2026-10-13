@@ -153,6 +153,21 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
   const money = (value) => (
     typeof geuLensMoney === "function" ? geuLensMoney(value, currencyCode, lens) : fmtMoney(value, currencyCode)
   );
+  // The same figure with its other unit after a bar — the app-wide pattern,
+  // see geuLensBarMoney. `currencyCode` is passed as its own `ownCurrency`
+  // because this chart only ever plots the viewer's own rows in the viewer's
+  // own currency; there is no counterparty figure on it to get wrong.
+  //
+  // Used for the WEEK'S TWO TOTALS and not for a day's callout. The callout
+  // is a tooltip on a bar in a strip of seven, a few characters wide, and a
+  // bar in it would be most of the tooltip. The two figures above the chart
+  // are the ones read as figures, and they are the ones that have to agree
+  // with the balance sitting directly above them.
+  const barMoney = (value) => (
+    typeof geuLensBarMoney === "function"
+      ? geuLensBarMoney(value, currencyCode, lens, currencyCode)
+      : money(value)
+  );
   const C = DAILY_SPENDING_PALETTES[palette] || DAILY_SPENDING_PALETTES.dark;
   const [weekOffset, setWeekOffset] = useState8(0);
   const [selectedDay, setSelectedDay] = useState8(null);
@@ -262,8 +277,8 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
   // If even the floor will not fit both side by side, the row wraps and
   // they stack as two COMPLETE figures. That is the honest failure: a
   // second line is readable, half a number is not.
-  const paidText = `\u2212${money(Number(displayed.paid) || 0)}`;
-  const receivedText = `+${money(Number(displayed.received) || 0)}`;
+  const paidText = `\u2212${barMoney(Number(displayed.paid) || 0)}`;
+  const receivedText = `+${barMoney(Number(displayed.received) || 0)}`;
   const bothShown = !single && !focusDirection;
   // 15 is the design size and nothing prints larger. geuLensFigureFontSize
   // does the arithmetic — the same rule the balance uses, handed a smaller

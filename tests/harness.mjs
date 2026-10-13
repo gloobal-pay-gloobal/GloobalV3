@@ -206,13 +206,21 @@ export function loadNotifCardPages() {
   // geuLensMoney needs currencyDecimals, which the fmtMoney slice above
   // already brings in.
   const lensSrc = readSource("frontend/features/geuLens/geuLens.js");
-  const lensSlice = ["geuLensMoney", "geuLensSameCurrency", "geuLensOwnMoney", "geuLensAppliesTo"]
+  // geuLensBarUnit and geuLensBarMoney are here because the card's `money`
+  // helper is now one call to the latter — the whole rule, including the bar
+  // naming the figure's other unit, in the one place the app keeps it. They
+  // lean on geuLensSameCurrency and currencySuffix, both of which the slices
+  // around them already bring in. ORDER MATTERS: these are function
+  // declarations and hoist, but geuLensBarMoney calls geuLensOwnMoney, so
+  // dropping either from this list throws rather than quietly misformatting.
+  const lensSlice = ["geuLensMoney", "geuLensSameCurrency", "geuLensOwnMoney", "geuLensAppliesTo",
+    "geuLensBarUnit", "geuLensBarMoney"]
     .map((n) => {
       const at = lensSrc.indexOf(`function ${n}(`);
       if (at < 0) throw new Error(`${n} not found in geuLens.js`);
       return lensSrc.slice(at, lensSrc.indexOf("\n}\n", at) + 3);
     }).join("\n");
-  const lensConsts = ["GEU_LENS_LOCAL", "GEU_LENS_GEU"].map((n) => {
+  const lensConsts = ["GEU_LENS_LOCAL", "GEU_LENS_GEU", "GEU_LENS_BAR"].map((n) => {
     const found = lensSrc.match(new RegExp(`var ${n} = "[^"]*";`));
     if (!found) throw new Error(`var ${n} not found in geuLens.js`);
     return found[0];

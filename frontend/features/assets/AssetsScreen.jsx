@@ -41,6 +41,31 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
   // taken; calling it "5.2% of what you spent" is just true.
   const pctOfSpend = totalSpending > 0 ? Math.min(100, totalAssets / totalSpending * 100) : 0;
   const rowColor = (i) => POSITION_COLORS[i % POSITION_COLORS.length];
+  // ── THE HEADLINE, AND WHY ONLY THE HEADLINE ───────────────────────────
+  //
+  // The bar goes on the figure that is READ AS A FIGURE — the one at the
+  // top of this card, which is the whole reason anybody opens this screen.
+  // It is deliberately NOT on the four other amounts below it, and the line
+  // between them is worth stating because it decides this everywhere:
+  //
+  //   a figure standing alone gets the bar       4,000.00₹ │ GEU
+  //   a figure inside a sentence does not        "Settle 4,000.00₹ to
+  //                                               Gloobal Bank"
+  //
+  // In a sentence the words already say what the number is, and a bar
+  // breaks the sentence in half. The seed rows are the same call for a
+  // second reason: they are a chain — paid → now → target, three figures at
+  // 10px joined by arrows — and a bar after each would be more punctuation
+  // than number.
+  //
+  // ccyCode on both sides: every figure on this screen is the viewer's own
+  // money in the viewer's own currency, so there is no counterparty amount
+  // here for the own-money rule to protect.
+  const assetsTotalText = geuLensBarMoney(totalAssets, ccyCode, lens, ccyCode);
+  // 284px is this card's inner width on a 360px phone, after the page's
+  // padding and the card's own. Floor of 14 rather than the balance's 13:
+  // this card has one figure on it and no competition for the width.
+  const assetsTotalSize = geuLensRowFontSize(assetsTotalText, 30, 284, 14);
   return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onClose} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>My Assets</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}>{
     /* The whole chain, in one card: what is here now, how much of the
        spending that is, and where it lands.
@@ -50,7 +75,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
        no quantity, so they explain nothing. The same chain with its
        numbers attached is the only version that says something — that the
        destination is the spending itself, returned in full. */
-  }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "20px" }}><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Current assets</div><div style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, letterSpacing: -0.7, marginTop: 3 }}>{geuLensMoney(totalAssets, ccyCode, lens)}</div><div style={{ height: 8, borderRadius: 99, background: "rgba(255,255,255,0.18)", overflow: "hidden", marginTop: 16 }}><div
+  }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "20px" }}><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Current assets</div><div style={{ fontSize: assetsTotalSize, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, letterSpacing: -0.7, marginTop: 3, whiteSpace: "nowrap" }}>{assetsTotalText}</div><div style={{ height: 8, borderRadius: 99, background: "rgba(255,255,255,0.18)", overflow: "hidden", marginTop: 16 }}><div
     style={{
       // Same rule as every other bar in the app: a floor so a tiny real
       // value is a visible sliver, but zero draws nothing at all.

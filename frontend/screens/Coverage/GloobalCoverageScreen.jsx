@@ -614,6 +614,19 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // which is the GLB-05 defect recorded elsewhere in this codebase, so it
   // asserts that rather than assuming it.
   const hoomanRaisedTotal = hoomanVisibleProjects.reduce((sum, p) => sum + projectRaised(p), 0);
+  // The Hooman projects total, with its other unit after a bar. This screen
+  // is the one place the bar does TWO jobs, and both are wanted here:
+  // `displayCurrency` is whatever country is being looked at, so when it is
+  // the viewer's own the bar names GEU, and when it is somebody else's it
+  // names their code — 4,20,000.00₹ │ GEU against 98,000.00€ │ EUR. A symbol
+  // alone cannot do the second job: ₹ belongs to five countries and $ to
+  // more than twenty, so on a screen whose whole point is looking at other
+  // countries' money the code is the part that identifies it.
+  const hoomanRaisedText = geuLensBarMoney(hoomanRaisedTotal, displayCurrency, lens, myCurrency);
+  // 34 is the design size, 288 this card's inner width on a 360px phone,
+  // and 15 a floor low enough that reaching it means a country has raised
+  // an extraordinary sum rather than that the rule gave up.
+  const hoomanRaisedSize = geuLensRowFontSize(hoomanRaisedText, 34, 288, 15);
 
   const ourSpending = coverage ? coverage.ourSpending : null;
   const ourSpendingTotal = ourSpending && ourSpending.available ? ourSpending.total : null;
@@ -1076,7 +1089,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     className="v2-tap"
     aria-label={`Showing ${country.name}. Change country`}
     style={{ display: "flex", alignItems: "center", gap: 7, height: 34, padding: "0 10px 0 6px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.16)", minWidth: 0, cursor: "pointer" }}
-  ><FlagEmoji flag={country.flag} size={24} shape="circle" border="none" /><span style={{ fontSize: 12, fontWeight: 800, color: "#FFFFFF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{country.name}</span><ChevronDown3 size={13} color="rgba(255,255,255,0.85)" style={{ flexShrink: 0 }} /></button><span style={{ display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.12)", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}><Layers3 size={13} />{projectsData ? `${hoomanVisibleProjects.length} ${hoomanVisibleProjects.length === 1 ? "project" : "projects"}` : "∆"}</span></div><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.66)", marginTop: 18 }}>Raised</div><div style={{ fontSize: 34, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, lineHeight: 1.1, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{geuLensOwnMoney(hoomanRaisedTotal, displayCurrency, lens, myCurrency)}</div><div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.56)", marginTop: 8, lineHeight: 1.45 }}>
+  ><FlagEmoji flag={country.flag} size={24} shape="circle" border="none" /><span style={{ fontSize: 12, fontWeight: 800, color: "#FFFFFF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{country.name}</span><ChevronDown3 size={13} color="rgba(255,255,255,0.85)" style={{ flexShrink: 0 }} /></button><span style={{ display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.12)", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}><Layers3 size={13} />{projectsData ? `${hoomanVisibleProjects.length} ${hoomanVisibleProjects.length === 1 ? "project" : "projects"}` : "∆"}</span></div><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.66)", marginTop: 18 }}>Raised</div><div style={{ fontSize: hoomanRaisedSize, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, lineHeight: 1.1, marginTop: 4, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{hoomanRaisedText}</div><div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.56)", marginTop: 8, lineHeight: 1.45 }}>
       Gloobal cannot take contributions yet, so every project is at zero.
     </div></div>{projectFiledIn === country.code && <div
     role="status"
@@ -1594,6 +1607,13 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        already summed across currencies as bare numbers, so it
        was converting a number that had no single unit to
        convert from. */
+    /* NO BAR ON THIS ONE, and it is the single exception on this screen.
+       The currency chip immediately above is a CONTROL that already names
+       the unit and already flips to GEU with the lens — see `lensNames`.
+       A bar here would print that name a second time, two lines below
+       itself, and the second copy would not be tappable. The bar exists to
+       say what a figure's other name is where nothing else does; here
+       something else does. */
   }{totalRealSpend != null ? geuLensOwnMoney(totalRealSpend, displayCurrency, lens, myCurrency) : <span aria-label="No data">∆</span>}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 8, lineHeight: 1.4 }}>
                 Same real total, shown in whichever currency you pick — not just your own.
               </div></div></div>{

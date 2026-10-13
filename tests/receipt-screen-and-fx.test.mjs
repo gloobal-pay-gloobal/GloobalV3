@@ -234,7 +234,21 @@ describe("the receipt is a screen", () => {
     // ₹ is five countries, $ is more than twenty. The hero has carried its
     // code since it was written; the rows had nothing.
     assert.match(modal, /const moneyCoded = \(amount, code\) =>/);
-    assert.match(modal, /!String\(text\)\.endsWith\(String\(code\)\) \? `\$\{text\} \$\{code\}` : text/);
+    // It was eight lines working the rule out by hand — rename only the
+    // reader's own money, otherwise append the code, suppress the code where
+    // the figure already ends in it. It is now one call to geuLensBarMoney,
+    // which is that same rule in the one place the app keeps it, plus the
+    // bar between the two names.
+    //
+    // So this no longer pins the hand-written suppression. It pins the
+    // delegation, and the suppression itself is tested where it now lives,
+    // in geu-display-lens.test.mjs. Two copies of one rule was one chance
+    // for them to drift, on the document somebody keeps as proof.
+    assert.match(modal, /const moneyCoded = \(amount, code\) => geuLensBarMoney\(amount, code, lens, viewerCurrency\);/);
+    // And the codes are still named — "18.33€ │ EUR" rather than "18.33€".
+    // The separator changed; the fact did not.
+    assert.ok(!/`\$\{text\} \$\{code\}`/.test(modal),
+      "the receipt is building its own currency suffix again instead of going through the shared rule");
     for (const row of ["paymentConversion.paidAmount", "paymentConversion.gotAmount", "shareConversion.paidAmount", "shareConversion.gotAmount"]) {
       assert.match(modal, new RegExp(`moneyCoded\\(${row.replace(".", "\\.")}`), `${row} is still symbol-only`);
     }

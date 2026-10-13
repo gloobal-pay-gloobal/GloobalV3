@@ -218,6 +218,13 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
     const active = historyTab === "sending"
       ? { label: "Paid", sign: "\u2212", value: periodPaidTotal, color: TXN_OUT_COLOR }
       : { label: "Received", sign: "+", value: periodReceivedTotal, color: TXN_IN_COLOR };
+    // geuLensBarMoney with ccyCode on BOTH sides, deliberately: this figure
+    // is a sum of the viewer's own rows in the viewer's own currency, so the
+    // own-currency question an individual row has to ask is already answered
+    // here. Passing it as its own `ownCurrency` says that in the one place
+    // the rule is read from, rather than reaching past the rule with
+    // geuLensMoney and hoping the two stay in step.
+    const historyTotalText = geuLensBarMoney(active.value, ccyCode, lens, ccyCode);
     return <div style={{ padding: "14px 16px 16px" }}><DailySpendingChart
       leading={<button
     onClick={() => setPeriodPickerOpen(true)}
@@ -269,16 +276,25 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
         // geuLensMoney rather than geuLensOwnMoney: this figure is a sum of
         // the viewer's own rows in the viewer's own currency, so the
         // own-currency question the rows have to ask is already answered.
+        // The BAR IS LEFT OUT OF THE SPOKEN LABEL on purpose. A screen
+        // reader announces U+2502 as "box drawings light vertical" or skips
+        // it silently depending on the engine, and neither is the second
+        // unit's name. The ear gets the figure in the unit being read; the
+        // eye gets both names. Same rule everywhere an aria-label carries a
+        // figure.
         aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${geuLensMoney(active.value, ccyCode, lens)}`}
         style={{
-          fontSize: 19,
+          // Sized from its own content now that it carries four more
+          // characters, down from 19 only when it has to — this figure
+          // shares one row with the period chip beside it.
+          fontSize: geuLensRowFontSize(`${active.sign}${historyTotalText}`, 19, 150, 11),
           fontWeight: 800,
           color: active.color,
           fontFamily: T.fontDisplay,
           whiteSpace: "nowrap",
           flexShrink: 0
         }}
-      >{active.sign}{geuLensMoney(active.value, ccyCode, lens)}</span>}
+      >{active.sign}{historyTotalText}</span>}
     /></div>;
   })()}</div>{
   }<div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>{HISTORY_METHOD_CHIPS.map((m) => <button

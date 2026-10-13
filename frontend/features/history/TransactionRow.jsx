@@ -124,19 +124,74 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
   // payee's own copy of the row the share is money they gave away, which
   // their amount already reflects — saying it twice would read as a second
   // deduction.
-  const shareBack = sign === "\u2212" && Number.isFinite(Number(t.shareReceiverAmount))
+  // \u2500\u2500 THE NOTE NO LONGER CARRIES A FIGURE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  //
+  // It used to read "4,000.00\u20b9 to My Assets", and the founder's call was to
+  // drop the number: "we have assets received when they tap creator share,
+  // receipt already has conversion data". He is right that it is stated
+  // twice \u2014 the receipt this row opens shows the share with both sides and
+  // the rate between them, which is more than a 9.5px line under an amount
+  // can honestly say about a cross-border share.
+  //
+  // What the note is for now is the GAP it was added to explain: My Assets
+  // holds more entries than History holds rows, because the server excludes
+  // share legs from this endpoint on purpose (Coverage reads the same rows
+  // for its spend figure and would count the money twice). The note's job is
+  // to mark WHICH rows planted one, so the two lists stop looking like they
+  // disagree. A marker needs no figure.
+  //
+  // Both sides are carried on a payment row already; nothing new is
+  // fetched. `shareReceiverAmount` is the payer's side (from
+  // `cashbackCredit`) and `shareSenderAmount` the payee's (from `cashback`)
+  // \u2014 see mapServerTransaction. Each side reads its own, so the note now
+  // appears on both copies of a shared payment rather than only the payer's.
+  const shareFigure = sign === "\u2212"
     ? Number(t.shareReceiverAmount)
-    : 0;
+    : Number(t.shareSenderAmount);
+  const shareBack = Number.isFinite(shareFigure) && shareFigure > 0 ? shareFigure : 0;
   // In the payer's own currency, which is the one the seed is denominated
   // in — so this goes through the same own-money rule as the amount above.
-  const shareCode = t.shareReceiverCurrency || rowCode;
+  // The founder's wording, by side.
+  //
+  // NOTE FOR WHOEVER READS THIS NEXT: both labels are the opposite of the
+  // movement, and that is a decision rather than a bug. On a paid row the
+  // share comes BACK to this viewer — the payer is the share's receiver — and
+  // on a received row it goes out of what they received. So "shared" sits on
+  // the gain and "received" on the loss.
+  //
+  // They are true of the PAYMENT (this payment shared assets; assets were
+  // received from it), which is the reading they were chosen under. They are
+  // not true of the viewer's own pocket, which is how a line in your own
+  // history, under your own amount, naming no subject, tends to be read.
+  // Raised with the founder and left as chosen; if it ever reads wrong to a
+  // real person the fix is to swap these two strings and nothing else.
   const shareNote = shareBack > 0
-    ? `${geuLensOwnMoney(shareBack, shareCode, lens, ccyCode)} to My Assets`
+    ? (sign === "\u2212" ? "Assets shared" : "Assets received")
     : null;
 
+  // ── THE AMOUNT, AND THE BAR AFTER IT ──────────────────────────────────
+  //
+  //     −959.07₹ │ GEU       flipping to      −959.07 GEU │ ₹
+  //
+  // geuLensBarMoney owns both halves and the choice of what follows the bar
+  // — the rule is in geuLens.js. The relabelling itself is unchanged (the
+  // viewer's own rows only); what changed is that the row now SAYS so,
+  // instead of the balance card being the only place that did. That is where
+  // the founder found it: a row reading "−959.07₹" with the toggle flipped
+  // looked like the toggle had missed it.
+  //
+  // `amountText` stays untouched. The Coin ledger is counted in GC, which is
+  // not a currency, has no second name, and must not be given one.
   const amount = amountText != null
     ? `${sign}${amountText}`
-    : `${sign}${geuLensOwnMoney(Number(t.amount || 0), rowCode, lens, ccyCode)}`;
+    : `${sign}${geuLensBarMoney(Number(t.amount || 0), rowCode, lens, ccyCode)}`;
+
+  // Four more characters on the longest string in the narrowest column, so
+  // the figure and its bar shrink together and stay on one line. Wrapping
+  // reads as two facts; truncating shows a different number. See
+  // geuLensRowFontSize — and note the figure is only ever made SMALLER than
+  // the 14 the design asked for, never larger.
+  const amountSize = geuLensRowFontSize(amount, 14);
   return <div
     onClick={onSelect}
     className="v2-tap"
@@ -184,10 +239,15 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
        amount is a wrong amount. minWidth keeps the figures aligned as a
        column even when the names beside them differ in length. */
   }<span
-    style={{ flexShrink: 0, minWidth: 92, maxWidth: "58%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}
+    // 66% where it was 58%. The bar made the amount four characters longer
+    // and the note under it four to nine characters SHORTER, so the column
+    // needs more width and has more to spare. The name beside it ellipsises
+    // and degrades gracefully; an amount does neither, which is why the
+    // width goes this way round.
+    style={{ flexShrink: 0, minWidth: 92, maxWidth: "66%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}
   ><span
     style={{
-      fontSize: 14,
+      fontSize: amountSize,
       fontWeight: 800,
       whiteSpace: "nowrap",
       // Green in, red out — TXN_IN_COLOR / TXN_OUT_COLOR in

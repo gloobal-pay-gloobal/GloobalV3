@@ -132,8 +132,23 @@ describe("both figures on the card are formatted the same way", () => {
     // total and a day's callout cannot end up formatted two ways.
     assert.match(chart, /const money = \(value\) => \(/);
     assert.match(chart, /geuLensMoney\(value, currencyCode, lens\) : fmtMoney\(value, currencyCode\)/);
-    assert.match(chart, /money\(Number\(displayed\.paid\) \|\| 0\)/);
-    assert.match(chart, /money\(Number\(displayed\.received\) \|\| 0\)/);
+    // The week's two totals go through barMoney, which is money() plus the
+    // bar naming the figure's other unit — see geuLensBarMoney. It is
+    // declared beside money() and falls back to it, so the "one function for
+    // every figure" claim this test is really about still holds: barMoney is
+    // the only caller of money() for the figures ABOVE the chart, and
+    // money() alone still formats the day callouts inside it.
+    assert.match(chart, /const barMoney = \(value\) => \(/);
+    assert.match(chart, /geuLensBarMoney\(value, currencyCode, lens, currencyCode\)/);
+    assert.match(chart, /barMoney\(Number\(displayed\.paid\) \|\| 0\)/);
+    assert.match(chart, /barMoney\(Number\(displayed\.received\) \|\| 0\)/);
+    // The callouts inside the chart deliberately DO NOT take the bar: a
+    // tooltip on one of seven bars is a few characters wide, and a bar in it
+    // would be most of the tooltip. The figures above the chart are the ones
+    // read as figures, and the ones that have to agree with the balance
+    // sitting directly over them.
+    assert.ok(/money\(d\.|money\(Number\(d\.|money\(weekTotal|money\(sel/.test(chart),
+      "nothing inside the chart formats through money() any more, so barMoney has no sibling to be the plain one");
     // And nothing bypasses it.
     const direct = (chart.match(/fmtMoney\(/g) || []).length;
     assert.equal(direct, 1, `${direct} direct fmtMoney calls in the chart; only the one inside money() is allowed`);

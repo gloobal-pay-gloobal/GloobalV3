@@ -65,10 +65,29 @@ function loadLens() {
     ${["currencyDecimals", "fmt", "currencySuffix", "fmtMoney"].map((n) => slice(format, n)).join("\n")}
     ${lens.match(/var GEU_LENS_LOCAL = "[^"]+";/)[0]}
     ${lens.match(/var GEU_LENS_GEU = "[^"]+";/)[0]}
+    ${lens.match(/var GEU_LENS_BAR = "[^"]+";/)[0]}
+    ${lens.match(/var GEU_LENS_BAR_GAP = \d+;/)[0]}
+    ${lens.match(/var GEU_LENS_CHAR_RATIO = [\d.]+;/)[0]}
+    ${lens.match(/var GEU_LENS_FIGURE_ROOM = \d+;/)[0]}
+    ${lens.match(/var GEU_LENS_FIGURE_MAX = \d+;/)[0]}
+    ${lens.match(/var GEU_LENS_FIGURE_MIN = \d+;/)[0]}
+    ${lens.match(/var GEU_LENS_ROW_ROOM = \d+;/)[0]}
+    ${lens.match(/var GEU_LENS_ROW_MIN = \d+;/)[0]}
+    ${lens.match(/var GEU_LENS_ROW_BASE = \d+;/)[0]}
     ${pick("geuLensMoney")}
     ${pick("geuLensBadgeSuffix")}
     ${pick("geuLensUnitLabel")}
-    return { geuLensMoney, geuLensBadgeSuffix, geuLensUnitLabel, GEU_LENS_LOCAL, GEU_LENS_GEU };
+    ${pick("geuLensSameCurrency")}
+    ${pick("geuLensOwnMoney")}
+    ${pick("geuLensBarUnit")}
+    ${pick("geuLensBarMoney")}
+    ${pick("geuLensRowFontSize")}
+    ${pick("geuLensFigureFontSize")}
+    return { geuLensMoney, geuLensBadgeSuffix, geuLensUnitLabel, geuLensOwnMoney,
+             geuLensBarUnit, geuLensBarMoney, geuLensRowFontSize,
+             geuLensFigureFontSize,
+             GEU_LENS_LOCAL, GEU_LENS_GEU, GEU_LENS_BAR, GEU_LENS_BAR_GAP,
+             GEU_LENS_CHAR_RATIO, GEU_LENS_FIGURE_ROOM, GEU_LENS_ROW_ROOM, GEU_LENS_ROW_MIN };
   `)();
 }
 
@@ -167,7 +186,12 @@ describe("GEU appears nowhere money moves", () => {
       "frontend/components/dialogs/PaymentUnlock.jsx",
     ]) {
       const src = code(file);
-      assert.match(src, /geuLensOwnMoney\(/,
+      // geuLensBarMoney OR geuLensOwnMoney. The bar formatter calls the
+      // own-money one and adds the second unit name after it, so either
+      // satisfies the thing this test protects: the figure went through the
+      // rule that asks whose currency it is. What is forbidden below —
+      // reaching past the rule with the blunt formatter — is unchanged.
+      assert.match(src, /geuLens(Bar|Own)Money\(/,
         `${file} formats money without asking whose currency it is`);
       // The viewer's own currency is READ, never assumed from a prop that
       // some caller might not pass.
@@ -177,7 +201,7 @@ describe("GEU appears nowhere money moves", () => {
       // the lens is supposed to decide on. geuLensMoney renames
       // unconditionally; on these two screens that is only correct once
       // geuLensOwnMoney has already answered the question.
-      assert.ok(!/[^n]geuLensMoney\(\w+, \w+Currency/.test(src),
+      assert.ok(!/(?<!geuLensBar|geuLensOw)[^n]geuLensMoney\(\w+, \w+Currency/.test(src),
         `${file} renames a figure without checking whose currency it is`);
     }
   });
@@ -210,16 +234,30 @@ describe("GEU appears nowhere money moves", () => {
     assert.match(toggle, /transition: slide/);
   });
 
-  test("the balance carries the other name in brackets", () => {
-    // ₹10,000.00 (GEU). Not a second figure and not a rate — there is
-    // nothing to convert, so the bracket tells a person what else this
-    // number is called. It is also the only hint on the card that the
-    // switch does anything.
+  test("the balance carries the other name after a bar", () => {
+    // 10,000.00₹ │ GEU. Not a second figure and not a rate — there is
+    // nothing to convert, so the bar tells a person what else this number is
+    // called.
+    //
+    // It was "(GEU)" in brackets, and this card was the ONLY place in the
+    // app that named the other unit, which left the lens explained here and
+    // merely implied on the nine other screens that obey it. The bar is the
+    // same fact in the pattern every amount now uses — see geuLensBarMoney —
+    // so there is one thing for a person to learn instead of two.
+    //
+    // Brackets were also the wrong punctuation: a bracket holds an aside,
+    // something a reader may skip, and the second unit is the other half of
+    // the same fact rather than an aside.
     const dash = code(DASH);
-    // The bracket names the OTHER lens, which is what makes it a second
-    // name rather than a repetition. Computed once beside the balance now,
-    // because its length decides the figure's font size.
-    assert.match(dash, /const balanceBracket = `\(\$\{geuLensUnitLabel\(displayLens === GEU_LENS_GEU \? GEU_LENS_LOCAL : GEU_LENS_GEU, ccyCode\)\}\)`;/);
+    // Built from geuLensBarUnit, which is where the choice of what follows
+    // the bar is made for the whole app. The balance passes ccyCode as both
+    // the figure's currency and the viewer's, because this figure is the
+    // account's own balance and its currency is the viewer's by
+    // construction — that is what makes the unit here GEU under the local
+    // lens and the account's own symbol under the GEU one, matching every
+    // row on the screen below.
+    assert.match(dash, /const balanceBarUnit = geuLensBarUnit\(ccyCode, displayLens, ccyCode\);/);
+    assert.match(dash, /const balanceBracket = balanceBarUnit \? `\$\{GEU_LENS_BAR\} \$\{balanceBarUnit\}` : "";/);
     // Inside the visible branch: a masked balance shows dots and must not
     // grow a bracket beside them.
     const at = dash.indexOf("balanceVisible ?");
@@ -241,8 +279,12 @@ describe("GEU appears nowhere money moves", () => {
     //
     // which reads as two facts. An amount and its unit are one.
     const dash = code(DASH);
-    assert.match(dash, /const balanceFontSize = geuLensFigureFontSize\(balance, balanceBracket\);/,
-      "the balance's size is not derived from what it actually has to print");
+    // The third argument is the row's width LESS the gap before the bar,
+    // which is width the figure does not get — see GEU_LENS_BAR_GAP. Without
+    // it a hundred-trillion balance came out one pixel over its room, and one
+    // pixel is the wrap this test exists to prevent.
+    assert.match(dash, /const balanceFontSize = geuLensFigureFontSize\(balance, balanceBracket, GEU_LENS_FIGURE_ROOM - GEU_LENS_BAR_GAP\);/,
+      "the balance's size is not derived from what it actually has to print, in the room it actually has");
     assert.match(dash, /fontSize: balanceFontSize,/);
     assert.match(dash, /whiteSpace: "nowrap",/);
     // A flex item will not shrink below its content without this, which is
@@ -539,7 +581,21 @@ describe("on screen", () => {
     // And the week's figures under the balance came with it, rather than
     // being left as the one thing on the card still in rupees.
     assert.match(after.card, /GEU/, `the chart totals did not follow: ${after.card}`);
-    assert.ok(!/₹/.test(after.card), `a rupee figure is left on a GEU card: ${after.card}`);
+    // ── WHY THIS IS NOW "AFTER A BAR" RATHER THAN "NOWHERE" ─────────────
+    //
+    // This used to forbid ₹ anywhere on a GEU card, and that was the right
+    // rule while GEU meant the local symbol disappeared. It does not any
+    // more: every figure now carries its other unit after a bar, so a card
+    // read in GEU shows "−959.07 GEU │ ₹" by design, and the old assertion
+    // would fail on the feature working.
+    //
+    // Narrowed rather than deleted, because the thing it catches is still
+    // worth catching. A figure the lens MISSED prints its symbol straight
+    // after the digits — "959.07₹" — and no bar precedes it. So the bar's
+    // own rupees are removed and anything left over is a real miss.
+    const stray = after.card.replace(/\u2502\s*₹/g, "");
+    assert.ok(!/₹/.test(stray),
+      `a rupee figure that is not a bar's second name is left on a GEU card: ${after.card}`);
   });
 
   test("and back again, with the choice remembered across a reload", async () => {
@@ -666,23 +722,40 @@ describe("every screen that shows money answers to the one toggle", () => {
   // browser to prove a wiring fact. What matters is that each surface reads
   // the SHARED store rather than holding a copy, and uses the helper that
   // asks whose money it is.
+  // ── ALL NINE NAME THE SAME FORMATTER NOW ──────────────────────────────
+  //
+  // This column used to differ per surface — geuLensOwnMoney on the five
+  // that can show a counterparty's figure, geuLensMoney on the four that
+  // only ever show the account's own. Two formatters meant two answers to
+  // "what unit is this", and the founder found the seam: a history row read
+  // "−959.07₹" with the toggle flipped to GEU, because the row was honest
+  // about its own currency and nothing on it said what else that currency
+  // was called.
+  //
+  // geuLensBarMoney is the single answer. It calls geuLensOwnMoney for the
+  // figure — so the own-money rule is unchanged, and a cross-border receipt
+  // still shows the payer's side in their tender and the payee's in theirs
+  // — and names the figure's OTHER unit after a bar. The four own-money-only
+  // surfaces pass their own ccyCode as the viewer's currency, which states
+  // in the call what used to be assumed by choosing the blunter formatter.
   const SURFACES = [
-    ["history rows", "frontend/features/history/TransactionRow.jsx", "geuLensOwnMoney"],
-    ["the history screen", "frontend/features/history/TransactionHistoryScreen.jsx", "geuLensMoney"],
-    ["Coverage", "frontend/screens/Coverage/GloobalCoverageScreen.jsx", "geuLensOwnMoney"],
-    ["the receipt", "frontend/components/dialogs/ReceiptModal.jsx", "geuLensOwnMoney"],
-    ["the payment unlock", "frontend/components/dialogs/PaymentUnlock.jsx", "geuLensOwnMoney"],
-    ["My Assets", "frontend/features/assets/AssetsScreen.jsx", "geuLensMoney"],
-    ["PayLater", "frontend/features/paylater/PayLaterScreen.jsx", "geuLensMoney"],
-    ["the PayLater ledger", "frontend/features/paylater/PayLaterLedger.jsx", "geuLensMoney"],
-    ["the dashboard", "frontend/screens/Dashboard/Dashboard.jsx", "geuLensMoney"],
+    ["history rows", "frontend/features/history/TransactionRow.jsx"],
+    ["the history screen", "frontend/features/history/TransactionHistoryScreen.jsx"],
+    ["Coverage", "frontend/screens/Coverage/GloobalCoverageScreen.jsx"],
+    ["the receipt", "frontend/components/dialogs/ReceiptModal.jsx"],
+    ["the payment unlock", "frontend/components/dialogs/PaymentUnlock.jsx"],
+    ["My Assets", "frontend/features/assets/AssetsScreen.jsx"],
+    ["PayLater", "frontend/features/paylater/PayLaterScreen.jsx"],
+    ["the PayLater ledger", "frontend/features/paylater/PayLaterLedger.jsx"],
+    ["the dashboard", "frontend/screens/Dashboard/Dashboard.jsx"],
   ];
 
-  for (const [label, file, helper] of SURFACES) {
-    test(`${label} reads the shared lens and formats through ${helper}`, () => {
+  for (const [label, file] of SURFACES) {
+    test(`${label} reads the shared lens and formats through geuLensBarMoney`, () => {
       const src = code(file);
       assert.match(src, /useGeuLens\(\)/, `${label} does not read the shared lens`);
-      assert.match(src, new RegExp(`${helper}\\(`), `${label} is not formatting through ${helper}`);
+      assert.match(src, /geuLensBarMoney\(/,
+        `${label} is not formatting through geuLensBarMoney, so its figures do not say what else they are called`);
       // And no raw fmtMoney left printing a figure the lens should have
       // decided on. The exceptions are the probes — fmtMoney(1, code) is
       // asking a question about the CURRENCY, not printing an amount — and
@@ -823,6 +896,310 @@ describe("the week's two figures hold together as well as the balance does", () 
     for (const nothing of [null, undefined, 0, -5, NaN, "small"]) {
       assert.equal(sizer("x".repeat(400), "", 133, nothing), 13,
         `a floor of ${JSON.stringify(nothing)} did not fall back to the default`);
+    }
+  });
+});
+
+// ── THE BAR ─────────────────────────────────────────────────────────────
+//
+//     −959.07₹ │ GEU        and, with the toggle flipped,
+//     −959.07 GEU │ ₹
+//
+// Every amount in the app that carries a currency carries this now, and the
+// founder's words for why are worth keeping: a history row reading
+// "−959.07₹" with the toggle on GEU "looked like the toggle had missed it".
+// The lens was explained on the balance card and merely implied on the nine
+// other screens that obey it.
+//
+// The rule is one sentence: THE BAR NAMES THE FIGURE'S OTHER NAME. For the
+// viewer's own money that is the unit they are not currently reading in, and
+// the two halves swap when the toggle does. For somebody else's it is their
+// currency's code.
+describe("the bar names the figure's other name", () => {
+  const { geuLensBarMoney, geuLensBarUnit, GEU_LENS_LOCAL, GEU_LENS_GEU, GEU_LENS_BAR } = loadLens();
+
+  test("the bar is a rule, not a pipe", () => {
+    // U+2502 BOX DRAWINGS LIGHT VERTICAL, not U+007C VERTICAL LINE. The
+    // founder wrote it as "|" because that is what a keyboard has; the
+    // drawing character is a full-height hairline that reads as a divider
+    // between two names rather than as punctuation inside one.
+    assert.equal(GEU_LENS_BAR, "\u2502");
+  });
+
+  test("your own money gains the unit you are NOT reading in", () => {
+    const local = geuLensBarMoney(959.07, "INR", GEU_LENS_LOCAL, "INR");
+    const geu = geuLensBarMoney(959.07, "INR", GEU_LENS_GEU, "INR");
+    assert.equal(local, `959.07\u20B9 ${GEU_LENS_BAR} GEU`);
+    assert.equal(geu, `959.07 GEU ${GEU_LENS_BAR} \u20B9`);
+  });
+
+  test("the two halves SWAP — the active unit is always on the left", () => {
+    // Not "the symbol is always first". The founder's example was
+    // "−959.07 rupee | GEU" and his chosen flip was
+    // "−959.07 GEU | ₹", so the left is whichever unit the figure is
+    // currently being read in. A fixed order would mean the toggle changed
+    // only which of the two names was duplicated.
+    const local = geuLensBarMoney(1000, "INR", GEU_LENS_LOCAL, "INR").split(GEU_LENS_BAR).map((p) => p.trim());
+    const geu = geuLensBarMoney(1000, "INR", GEU_LENS_GEU, "INR").split(GEU_LENS_BAR).map((p) => p.trim());
+    assert.ok(local[0].endsWith("\u20B9") && local[1] === "GEU");
+    assert.ok(geu[0].endsWith("GEU") && geu[1] === "\u20B9");
+  });
+
+  test("THE DIGITS ARE STILL NEVER TOUCHED", () => {
+    // The whole claim of the feature, now with four more characters hanging
+    // off it. The bar is a label; if it ever came with arithmetic the toggle
+    // would be a trade.
+    for (const amount of [0, 0.01, 959.07, 1_000_000, 123_456_789.99]) {
+      const digits = (text) => text.split(GEU_LENS_BAR)[0].replace(/[^\d.,]/g, "").trim();
+      assert.equal(
+        digits(geuLensBarMoney(amount, "INR", GEU_LENS_LOCAL, "INR")),
+        digits(geuLensBarMoney(amount, "INR", GEU_LENS_GEU, "INR")),
+        `${amount} came out with different digits under the two units`
+      );
+    }
+  });
+
+  test("somebody else's money is NOT renamed, and the bar names their currency", () => {
+    // The rule that keeps the lens honest. A cross-border payment holds the
+    // payer's ₹8,000 on one row and the payee's $98 on another; writing GEU
+    // after both would put two quantities eighty-eight times apart under one
+    // name, and somebody would read it as the money shrinking in transit.
+    for (const lens of [GEU_LENS_LOCAL, GEU_LENS_GEU]) {
+      const foreign = geuLensBarMoney(98, "EUR", lens, "INR");
+      assert.equal(foreign, `98.00\u20AC ${GEU_LENS_BAR} EUR`,
+        "a foreign figure was renamed, or lost its code");
+      assert.ok(!/GEU/.test(foreign), "GEU reached somebody else's money");
+    }
+  });
+
+  test("a currency whose symbol IS its code gets no bar", () => {
+    // "1,450.25 CHF │ CHF" names the franc twice and tells nobody anything.
+    // fmtMoney already appends the code for a currency with no symbol of its
+    // own, so the bar has nothing left to add.
+    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_LOCAL, "INR"), "1,450.25 CHF");
+    assert.ok(!geuLensBarMoney(1450.25, "CHF", GEU_LENS_LOCAL, "INR").includes(GEU_LENS_BAR));
+  });
+
+  test("but YOUR OWN franc still gains GEU, because that is a different name", () => {
+    // The suppression above is about saying one name twice. A Swiss account
+    // reading in GEU has two names for its figure and both belong on the
+    // line.
+    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_GEU, "CHF"), `1,450.25 GEU ${GEU_LENS_BAR} CHF`);
+    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_LOCAL, "CHF"), `1,450.25 CHF ${GEU_LENS_BAR} GEU`);
+  });
+
+  test("a currency with no minor unit keeps having none, on both sides of the bar", () => {
+    // ¥9,700 is 9,700 GEU, not 9,700.00 — the decimals belong to the amount,
+    // and the bar does not change what the amount is.
+    assert.equal(geuLensBarMoney(9700, "JPY", GEU_LENS_GEU, "JPY"), `9,700 GEU ${GEU_LENS_BAR} \u00A5`);
+    assert.equal(geuLensBarMoney(9700, "JPY", GEU_LENS_LOCAL, "JPY"), `9,700\u00A5 ${GEU_LENS_BAR} GEU`);
+  });
+
+  test("an unknown viewer currency gets no rename and no GEU", () => {
+    // geuLensOwnCurrency returns null before an account loads, and null must
+    // mean DO NOT RELABEL. The cost of not knowing is a figure that looks
+    // untouched; the cost of guessing is a figure labelled as money it is
+    // not.
+    for (const unknown of [null, undefined, "", "rupee", "IN"]) {
+      const out = geuLensBarMoney(500, "INR", GEU_LENS_GEU, unknown);
+      assert.ok(!/GEU/.test(out),
+        `a figure was renamed against an unusable viewer currency ${JSON.stringify(unknown)}: ${out}`);
+    }
+  });
+
+  test("case does not decide whether a figure is yours, OR what the bar says", () => {
+    // A code arrives from a row, a prop and a server field, and "inr" versus
+    // "INR" being treated as different currencies would silently stop a
+    // figure being relabelled with no visible error anywhere. So
+    // geuLensSameCurrency is case-insensitive — which means a lowercase code
+    // reaches geuLensBarUnit already accepted as the viewer's own.
+    //
+    // THAT WAS A REAL BUG, caught by this test. CURRENCY_SYMBOL has no "inr"
+    // key, so currencySuffix fell back to printing the code as given and the
+    // bar read "500.00 GEU │ inr" instead of naming the rupee: the figure
+    // relabelled correctly and its other name came out as the wrong string.
+    // The code is upper-cased before the symbol is looked up.
+    assert.equal(
+      geuLensBarMoney(500, "inr", GEU_LENS_GEU, "INR"),
+      geuLensBarMoney(500, "INR", GEU_LENS_GEU, "INR")
+    );
+    assert.match(geuLensBarMoney(500, "inr", GEU_LENS_GEU, "inr"), /\u20B9$/,
+      "a lowercase code did not resolve to its symbol after the bar");
+    // And the same question asked of the unit directly, since that is what
+    // the Coverage tiles read.
+    assert.equal(geuLensBarUnit("inr", GEU_LENS_GEU, "INR"), "\u20B9");
+    assert.equal(geuLensBarUnit("eur", GEU_LENS_GEU, "INR"), "EUR");
+  });
+
+  test("geuLensBarUnit is the one place the choice is made", () => {
+    // The Coverage tiles and the earnings headline print their unit as their
+    // own element rather than inside a string, so they have to get the name
+    // from here rather than reimplement the choice and drift from it.
+    assert.equal(geuLensBarUnit("INR", GEU_LENS_LOCAL, "INR"), "GEU");
+    assert.equal(geuLensBarUnit("INR", GEU_LENS_GEU, "INR"), "\u20B9");
+    assert.equal(geuLensBarUnit("EUR", GEU_LENS_GEU, "INR"), "EUR");
+    assert.equal(geuLensBarUnit("", GEU_LENS_GEU, "INR"), "");
+  });
+});
+
+describe("the figure and its bar shrink together, and stay on one line", () => {
+  const { geuLensBarMoney, geuLensRowFontSize, GEU_LENS_GEU, GEU_LENS_LOCAL } = loadLens();
+
+  // Wrapping splits a number from its unit onto two lines, which reads as
+  // two facts. Truncating prints a DIFFERENT NUMBER with no warning, which
+  // is worse on a row than on the balance, because nobody is looking closely
+  // enough at a row to notice. So neither is allowed and the type shrinks.
+  test("a short figure is left at the size the design asked for", () => {
+    assert.equal(geuLensRowFontSize("959.07\u20B9 \u2502 GEU", 14), 14);
+  });
+
+  test("it is never made LARGER than the base", () => {
+    // This rule exists to rescue a long figure, not to inflate a short one.
+    assert.equal(geuLensRowFontSize("5\u20B9", 14), 14);
+    assert.equal(geuLensRowFontSize("", 14), 14);
+  });
+
+  test("a long figure shrinks rather than wrapping or truncating", () => {
+    const long = geuLensBarMoney(123_456_789_012.34, "INR", GEU_LENS_GEU, "INR");
+    const size = geuLensRowFontSize(long, 14);
+    assert.ok(size < 14, `${long} was left at ${size}px and will not fit`);
+    assert.ok(size >= 10, `${long} shrank below the floor to ${size}px`);
+  });
+
+  test("the floor holds, and a balance past it is small rather than wrong", () => {
+    // The founder's own test case: "show me a image of someone having
+    // 100b$". Past a point the card is the wrong shape for the money in it,
+    // and a figure rendered small is legible where "100,000,000,000,0…" is a
+    // different number shown without a warning.
+    const absurd = geuLensBarMoney(1e14, "INR", GEU_LENS_LOCAL, "INR");
+    assert.equal(geuLensRowFontSize(absurd, 14), 10);
+    assert.ok(!/\u2026/.test(absurd), "the figure itself was truncated");
+  });
+
+  test("Number(null) is 0 and 0 is finite, so a missing argument falls back", () => {
+    // The recurring trap in this codebase. A floor of 0 would let a figure
+    // shrink to nothing, and a room of 0 would shrink every figure to the
+    // floor, both silently.
+    const figure = "959.07\u20B9 \u2502 GEU";
+    assert.equal(geuLensRowFontSize(figure, null), geuLensRowFontSize(figure, 14));
+    assert.equal(geuLensRowFontSize(figure, 14, null, null), geuLensRowFontSize(figure, 14, 165, 10));
+  });
+
+  test("more room means a larger figure, up to the base", () => {
+    const long = geuLensBarMoney(1_234_567.89, "INR", GEU_LENS_GEU, "INR");
+    assert.ok(geuLensRowFontSize(long, 30, 400, 13) > geuLensRowFontSize(long, 30, 200, 13));
+  });
+});
+
+// ── THE FOUNDER'S QUESTION, ANSWERED AS ARITHMETIC ──────────────────────
+//
+// "Show me a image of someone having 100b$ and ui does break just image
+// that it won't break as number increase."
+//
+// A screenshot of one plausible balance cannot answer that, and reaching for
+// one is how the toggle took three attempts to fix: each crop proved the
+// thing in it was fine while something outside the crop was cutting it off.
+// So this is a LADDER, from zero to a hundred trillion, in both units, and
+// it asserts the one property that actually matters — the string the sizer
+// chose a size for is narrower than the room it has to sit in.
+//
+// The widths were confirmed against the real shipped fonts by measuring each
+// of these in the browser with canvas; GEU_LENS_CHAR_RATIO is that
+// measurement, rounded up so the arithmetic errs toward shrinking. This test
+// is the cheap, no-browser guard that the ladder stays inside the room when
+// somebody changes a constant, a padding or the format of the bar.
+describe("it does not break as the number increases", () => {
+  const {
+    geuLensBarMoney, geuLensMoney, geuLensBarUnit, geuLensRowFontSize, geuLensFigureFontSize,
+    GEU_LENS_LOCAL, GEU_LENS_GEU, GEU_LENS_BAR, GEU_LENS_BAR_GAP,
+    GEU_LENS_CHAR_RATIO, GEU_LENS_FIGURE_ROOM, GEU_LENS_ROW_ROOM, GEU_LENS_ROW_MIN
+  } = loadLens();
+
+  // Zero, a real payment, a week's spend, a lottery win, and two figures
+  // nobody will ever hold — included precisely because they are where a rule
+  // with a cliff in it stops working.
+  const LADDER = [0, 0.01, 959.07, 12_500, 202_505, 1_234_567.89, 123_456_789_012.34, 1e14];
+
+  for (const lens of [GEU_LENS_LOCAL, GEU_LENS_GEU]) {
+    const name = lens === GEU_LENS_GEU ? "GEU" : "the local unit";
+
+    test(`the balance and its bar fit one line in ${name}, at every size`, () => {
+      for (const amount of LADDER) {
+        const figure = geuLensMoney(amount, "INR", lens);
+        const bracket = `${GEU_LENS_BAR} ${geuLensBarUnit("INR", lens, "INR")}`;
+        const room = GEU_LENS_FIGURE_ROOM - GEU_LENS_BAR_GAP;
+        const size = geuLensFigureFontSize(figure, bracket, room);
+        // The same weighting the sizer uses: the bar span is drawn at 0.42x
+        // and costs 0.45 of a character per character.
+        const weighted = figure.length + bracket.length * 0.45;
+        const width = weighted * GEU_LENS_CHAR_RATIO * size;
+        assert.ok(width <= room,
+          `${figure} ${bracket} needs ${Math.round(width)}px at ${size}px and has ${room}px`);
+      }
+    });
+
+    test(`a history row and its bar fit one line in ${name}, at every size`, () => {
+      // ── WHY THE FLOOR IS AN ALLOWED ANSWER HERE ───────────────────────
+      //
+      // GEU_LENS_CHAR_RATIO is deliberately an OVERESTIMATE — 0.68 against
+      // three measurements of 0.656, 0.657 and 0.678, and taken in the
+      // DISPLAY face at a large size. Overestimating width shrinks the text,
+      // which is the safe direction, while underestimating it brings the
+      // wrap back.
+      //
+      // A row amount is set in the BODY face, and it is nearly all digits
+      // and commas, which are narrower than that face's average character.
+      // So at the floor the arithmetic says a figure needs more room than it
+      // really does: the two most extreme rungs of this ladder compute to
+      // 177px and 184px against 165px of room, and measured in the shipped
+      // font at the same 10px they are 126px and 128px — comfortably inside.
+      //
+      // (Measured with canvas against the real computed font of a rendered
+      // row, which is also where GEU_LENS_CHAR_RATIO itself came from.)
+      //
+      // Asserting the pessimistic arithmetic at the floor would therefore
+      // fail on figures that fit. What this test guards is the thing that
+      // would actually be a defect: a size ABOVE the floor that still does
+      // not fit, which means the sizer stopped shrinking too early.
+      for (const amount of LADDER) {
+        const text = `\u2212${geuLensBarMoney(amount, "INR", lens, "INR")}`;
+        const size = geuLensRowFontSize(text, 14);
+        const width = text.length * GEU_LENS_CHAR_RATIO * size;
+        assert.ok(width <= GEU_LENS_ROW_ROOM || size === GEU_LENS_ROW_MIN,
+          `${text} needs ${Math.round(width)}px at ${size}px, has ${GEU_LENS_ROW_ROOM}px, ` +
+          `and did not shrink to the ${GEU_LENS_ROW_MIN}px floor`);
+      }
+    });
+  }
+
+  test("the gap before the balance's bar is counted, not forgotten", () => {
+    // It was not, and a hundred-trillion balance came out one pixel over —
+    // 259px in a 258px row. One pixel is a wrap, and a wrap puts the unit on
+    // its own line, which reads as two facts rather than one number.
+    //
+    // Pinned as the RELATIONSHIP rather than as 7: the gap is the span's
+    // marginLeft on the card, and what matters is that the sizer is given a
+    // room smaller by exactly that much.
+    assert.ok(GEU_LENS_BAR_GAP > 0);
+    const dash = code(DASH);
+    assert.match(dash,
+      /geuLensFigureFontSize\(balance, balanceBracket, GEU_LENS_FIGURE_ROOM - GEU_LENS_BAR_GAP\)/,
+      "the balance's sizer is not told about the gap before its bar");
+    assert.match(dash, /marginLeft: GEU_LENS_BAR_GAP/,
+      "the gap is a literal again, so the layout and the measurement can drift");
+  });
+
+  test("the figure is never truncated — it shrinks instead", () => {
+    // The worst available outcome on a money figure, and the reason this
+    // whole rule is arithmetic rather than a ladder of sizes: a balance
+    // rendered small is legible, and "100,000,000,000,0…" is a DIFFERENT
+    // NUMBER shown without a warning, in the one place on the screen a
+    // person trusts absolutely.
+    for (const lens of [GEU_LENS_LOCAL, GEU_LENS_GEU]) {
+      for (const amount of LADDER) {
+        const text = geuLensBarMoney(amount, "INR", lens, "INR");
+        assert.ok(!/\u2026|\.\.\./.test(text), `${text} came out truncated`);
+      }
     }
   });
 });

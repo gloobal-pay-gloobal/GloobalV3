@@ -1212,8 +1212,32 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // rather than inline below, because the size depends on the LENGTH of the
   // two together — a seven-figure balance in GEU is twenty-two characters
   // and does not fit a 360px card at 32px.
-  const balanceBracket = `(${geuLensUnitLabel(displayLens === GEU_LENS_GEU ? GEU_LENS_LOCAL : GEU_LENS_GEU, ccyCode)})`;
-  const balanceFontSize = geuLensFigureFontSize(balance, balanceBracket);
+  //
+  // ── IT WAS "(INR)" AND IT IS NOW "│ ₹" ────────────────────────────────
+  //
+  // The bracket was this card's own invention and the only place in the app
+  // that named the other unit, which left the lens explained here and merely
+  // implied on the nine screens that also obey it. The bar is the same fact
+  // in the pattern every amount now uses — see geuLensBarMoney — so there is
+  // one thing to learn rather than two.
+  //
+  // Brackets were also the wrong punctuation. A bracket holds an aside,
+  // something a reader may skip, and the second unit is not an aside: it is
+  // the other half of the same fact. A rule between two names reads as two
+  // names for one thing, which is exactly what this is.
+  //
+  // This figure is the account's own balance, so its currency is the
+  // viewer's own by construction — ccyCode is passed as both the figure's
+  // code and the viewer's, and geuLensBarUnit then gives GEU under the local
+  // lens and the account's own symbol under the GEU one, matching every row
+  // on the screen below.
+  const balanceBarUnit = geuLensBarUnit(ccyCode, displayLens, ccyCode);
+  const balanceBracket = balanceBarUnit ? `${GEU_LENS_BAR} ${balanceBarUnit}` : "";
+  // The room is the row's width LESS the gap before the bar, because that gap
+  // is width the figure does not get. See GEU_LENS_BAR_GAP — the same
+  // constant is the marginLeft below, so the measurement and the layout
+  // cannot disagree.
+  const balanceFontSize = geuLensFigureFontSize(balance, balanceBracket, GEU_LENS_FIGURE_ROOM - GEU_LENS_BAR_GAP);
   // THE account's Gloobal ID — the one and only value any screen on this
   // dashboard shows as "your Gloobal ID". It comes from the stored
   // session via useCurrentSymbolId, which re-renders on
@@ -1914,7 +1938,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // a 13px bracket is nearly the same size as the number it annotates,
     // which inverts the hierarchy \u2014 the name would read as loudly as the
     // amount.
-    style={{ fontSize: Math.max(11, Math.round(balanceFontSize * 0.42)), fontWeight: 700, marginLeft: 7, opacity: 0.62, letterSpacing: 0.2 }}
+    style={{ fontSize: Math.max(11, Math.round(balanceFontSize * 0.42)), fontWeight: 700, marginLeft: GEU_LENS_BAR_GAP, opacity: 0.62, letterSpacing: 0.2 }}
   >{balanceBracket}</span></> : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
@@ -2038,7 +2062,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><Icon size={16} color={BILL_ACTION_COLORS[key] || T.accent} /></span><span style={{ fontSize: 11.5, fontWeight: 700, color: key === "more" ? T.inkSoft : T.ink, whiteSpace: "nowrap" }}>{label}</span></button>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{geuLensMoney(todaysCollection, ccyCode, displayLens)}</span><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>{
+  ><Icon size={16} color={BILL_ACTION_COLORS[key] || T.accent} /></span><span style={{ fontSize: 11.5, fontWeight: 700, color: key === "more" ? T.inkSoft : T.ink, whiteSpace: "nowrap" }}>{label}</span></button>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, whiteSpace: "nowrap" }}>{geuLensBarMoney(todaysCollection, ccyCode, displayLens, ccyCode)}</span><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>{
     /* NO SETTLE BUTTONS HERE.
        ─────────────────────────────────────────────────────────────
        This figure is Creator Share — what customers shared back
@@ -3155,7 +3179,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
-  }{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3 }}>{geuLensMoney(assetDetail.row.value, ccyCode, displayLens)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${geuLensMoney(assetDetail.target, ccyCode, displayLens)}`}</div>{
+  }{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3, whiteSpace: "nowrap" }}>{geuLensBarMoney(assetDetail.row.value, ccyCode, displayLens, ccyCode)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${geuLensMoney(assetDetail.target, ccyCode, displayLens)}`}</div>{
     /* Growth curve: cashback (t=0) compounding at 1%/month up
        to the point it equals 100% of the original spend. */
   }<svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} width="100%" height="150" style={{ marginTop: 14, display: "block" }} preserveAspectRatio="none">{
@@ -3444,7 +3468,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   >{toast}</div>}</div>}{profileOverlay === "referral" && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}><SendMoneyAmbientBg /></div><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileOverlay} /></div><div style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* Earnings summary */
   }<div style={{ position: "relative", background: T.gradWallet, borderRadius: T.radiusLg, padding: "22px 22px 52px", display: "flex", flexDirection: "column", gap: 4, boxShadow: T.shadowRaised }}><span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: 0.3, textTransform: "uppercase" }}>
-                By <SingleOMark before="N" after="W" /></span><span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay }}>{geuLensMoney(referralNetwork.reduce((sum, m) => sum + m.earned, 0), ccyCode, displayLens)}</span><div style={{ display: "flex", gap: 18, marginTop: 10 }}><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Invited</div></div><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.filter((m) => m.status === "Active").length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Active</div></div></div><button
+                By <SingleOMark before="N" after="W" /></span><span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, whiteSpace: "nowrap" }}>{geuLensBarMoney(referralNetwork.reduce((sum, m) => sum + m.earned, 0), ccyCode, displayLens, ccyCode)}</span><div style={{ display: "flex", gap: 18, marginTop: 10 }}><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Invited</div></div><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.filter((m) => m.status === "Active").length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Active</div></div></div><button
     onClick={() => setProfileOverlay("share")}
     aria-label="Share your referral link"
     className="v2-tap"

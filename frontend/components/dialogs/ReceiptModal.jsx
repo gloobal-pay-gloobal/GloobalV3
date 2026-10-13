@@ -390,11 +390,27 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // figure. That keeps this independent of where the hero amounts are worked
   // out further down the component.
   const heroCurrencyRaw = onShareTab ? receipt.currencyCode : (paymentKnown ? paymentCurrency : null);
-  // Suppressed outright when the lens has renamed the hero: the figure then
-  // already ends in GEU, and printing the real code under it would be the
-  // one place on this screen claiming two units for a single number.
-  const heroCurrencyCode = heroCurrencyRaw &&
-    !geuLensAppliesTo(heroCurrencyRaw, lens, viewerCurrency) &&
+  // ── THE CODE MOVED ONTO THE FIGURE'S OWN LINE ─────────────────────────
+  //
+  // This used to be a separate 10.5px line under the hero carrying the bare
+  // code, because a symbol is not an identifier — ₹ is the rupee of five
+  // countries and $ belongs to more than twenty, and on a cross-border
+  // receipt "1,106.61₹" does not say which rupee left the account.
+  //
+  // That job is now done by the bar on the figure itself (see moneyCoded and
+  // geuLensBarMoney), which does it on the same line and in the pattern every
+  // other amount in the app uses. Keeping both would make the hero the one
+  // place on this screen naming its unit twice — and the bar is the copy that
+  // also answers the question the old line could not, which is what the
+  // reader's own figure is called in the OTHER unit.
+  //
+  // So this is now empty whenever the bar names the unit, which is whenever
+  // there is a unit to name. It is kept rather than deleted because the one
+  // case left is real: a hero with no currency at all. The Coin receipt is
+  // counted in GC, which is not a currency, gets no bar, and still has a
+  // ticker worth printing.
+  const heroBarUnit = heroCurrencyRaw ? geuLensBarUnit(heroCurrencyRaw, lens, viewerCurrency) : "";
+  const heroCurrencyCode = heroCurrencyRaw && !heroBarUnit &&
     !String(fmtMoney(1, heroCurrencyRaw)).endsWith(String(heroCurrencyRaw))
     ? String(heroCurrencyRaw)
     : "";
@@ -806,6 +822,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   const heroChip = onShareTab
     ? (displayShareRate == null ? "" : `${receipt.name || "They"} share${/s$/i.test(String(receipt.name || "")) ? "" : "s"} ${displayShareRate.toFixed(2)}% of every payment`)
     : (hasShareEvent && !canReveal && shownShareAmount > 0
+      // No bar in here: this chip is a SENTENCE ("Creator share 18.33€
+      // back"), the words around the figure already say what it is, and a
+      // bar would break the sentence in half. Same call as the toasts and
+      // the button labels — the bar goes on a figure standing alone.
       ? `Creator share ${geuLensOwnMoney(shownShareAmount, shareCurrency, lens, viewerCurrency)} ${shareIsCredit ? "back" : "shared"}`
       : "");
   const dateTimeValue = [receipt.date, receipt.time].filter(Boolean).join(" \xB7 ");
@@ -819,15 +839,20 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // rupee and which euro. Suppressed where fmtMoney already ends in the code,
   // which is what it does for currencies with no symbol of their own
   // ("1,450.25 CHF"); printing it twice reads as a mistake.
-  const moneyCoded = (amount, code) => {
-    // A renamed figure carries no code after it, and does not need one. The
-    // code exists to say WHICH rupee or WHICH dollar, and that ambiguity
-    // cannot arise here: only the reader's own currency is ever renamed, so
-    // "1,000.00 GEU" on this receipt means one thing by construction.
-    if (geuLensAppliesTo(code, lens, viewerCurrency)) return geuLensMoney(amount, code, lens);
-    const text = fmtMoney(amount, code);
-    return code && !String(text).endsWith(String(code)) ? `${text} ${code}` : text;
-  };
+  // This is now geuLensBarMoney and nothing else, and that is a tidy-up
+  // rather than a change of mind. The rule this function worked out by hand
+  // — rename only the reader's own money, otherwise name the currency, and
+  // suppress the name where the figure already ends in it — is the rule
+  // geuLensBarMoney applies app-wide. Two copies of one rule is one chance
+  // for them to drift, and a receipt is the document somebody keeps.
+  //
+  // What a reader sees change: "18.33€ EUR" becomes "18.33€ │ EUR" (same
+  // facts, the punctuation every other figure in the app now uses), and the
+  // reader's OWN figure gains the unit it is not being read in —
+  // "2,000.00₹ │ GEU", flipping to "2,000.00 GEU │ ₹". A renamed figure used
+  // to carry nothing after it, which was defensible on its own and is not
+  // once every other screen names both units.
+  const moneyCoded = (amount, code) => geuLensBarMoney(amount, code, lens, viewerCurrency);
   return <div
     role="dialog"
     aria-modal="true"
@@ -958,7 +983,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       receipt.title || "Gloobal Coin"
     : paymentKnown ? (paymentIsSent ? "Money sent" : "Money received") : "Payment not available") : shareIsCredit ? "Creator share earned" : "You share back"}</div><div style={{ marginTop: 1 }}>{!onShareTab ? (paymentKnown ? <div
     style={{
-      fontSize: receiptAmountFontSize(`${paymentIsSent ? "\u2212" : "+"}${geuLensOwnMoney(paymentAmount, paymentCurrency, lens, viewerCurrency)}`, 31),
+      fontSize: receiptAmountFontSize(`${paymentIsSent ? "\u2212" : "+"}${geuLensBarMoney(paymentAmount, paymentCurrency, lens, viewerCurrency)}`, 31),
       fontWeight: 800,
       color: "#fff",
       fontFamily: T.fontDisplay,
@@ -967,7 +992,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       overflowWrap: "anywhere"
     }}
     data-testid="receipt-hero-payment"
-  >{paymentIsSent ? "\u2212" : "+"}{geuLensOwnMoney(paymentAmount, paymentCurrency, lens, viewerCurrency)}</div> : <div
+  >{paymentIsSent ? "\u2212" : "+"}{geuLensBarMoney(paymentAmount, paymentCurrency, lens, viewerCurrency)}</div> : <div
     style={{ fontSize: 12.5, fontWeight: 700, color: "rgba(255,255,255,0.88)", lineHeight: 1.4, padding: "6px 0" }}
     data-testid="receipt-payment-unavailable"
   >{
@@ -977,7 +1002,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        would be quietly wrong for every share that rounded. */
   }This payment isn't on this device. The Creator Share above is complete.</div>) : <div
     style={{
-      fontSize: receiptAmountFontSize(`${shareIsCredit ? "+" : "\u2212"}${geuLensOwnMoney(shownShareAmount, shareCurrency, lens, viewerCurrency)}`, 31),
+      fontSize: receiptAmountFontSize(`${shareIsCredit ? "+" : "\u2212"}${geuLensBarMoney(shownShareAmount, shareCurrency, lens, viewerCurrency)}`, 31),
       fontWeight: 800,
       color: "#fff",
       fontFamily: T.fontDisplay,
@@ -986,7 +1011,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       overflowWrap: "anywhere"
     }}
     data-testid="receipt-hero-share"
-  >{shareIsCredit ? "+" : "\u2212"}{geuLensOwnMoney(shownShareAmount, shareCurrency, lens, viewerCurrency)}</div>}{
+  >{shareIsCredit ? "+" : "\u2212"}{geuLensBarMoney(shownShareAmount, shareCurrency, lens, viewerCurrency)}</div>}{
     /* The currency CODE under the figure.
        fmtMoney draws the symbol, and a symbol is not the currency: ₹ is
        shared by India, Pakistan, Nepal, Sri Lanka and Mauritius, $ by more

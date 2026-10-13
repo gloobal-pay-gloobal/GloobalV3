@@ -87,6 +87,11 @@ function gloobalNotifHeadline(meta, lens, ownCurrency) {
   if (amount == null || !Number.isFinite(Number(amount)) || !currency) {
     return sent ? "Money sent" : "Money received";
   }
+  // NO BAR. This is the operating system's banner, not a surface this app
+  // draws — it is one line of plain text on a lock screen, next to the app
+  // name, read in a glance and often read aloud. U+2502 has no reliable
+  // spoken form, and a second unit name is not what a banner is for. The
+  // card this banner opens carries both names.
   return `${sent ? "\u2212" : "+"}${geuLensOwnMoney(Number(amount), currency, lens, ownCurrency)}`;
 }
 // WHICH NOTIFICATIONS ARE ABOUT MONEY.
@@ -264,15 +269,19 @@ function gloobalNotifCardPages(meta, when, row, lens, ownCurrency) {
   // would be a rules-of-hooks violation that happens to work until the day
   // something renders it conditionally.
   //
-  // A renamed figure drops the trailing code: the card already carries a
-  // Currency page naming the tender in full, so "500.00 GEU" followed by
-  // "Indian Rupee · INR" says it once each rather than twice.
+  // geuLensBarMoney, which is the rule this built by hand — rename only the
+  // reader's own money, otherwise name the currency, suppress the name where
+  // the figure already ends in it — plus the bar between the two names and
+  // the second name on the reader's OWN figure. See geuLensBarMoney.
+  //
+  // The card still carries a Currency page naming the tender in full
+  // ("Indian Rupee · INR"), and that is not a duplicate of this: the page is
+  // the currency's NAME, this is the figure's unit. The old note here
+  // treated them as the same fact, which is why a renamed figure used to
+  // carry nothing after it at all.
   const money = (amount, currency) => {
     if (amount == null || !currency) return null;
-    if (geuLensAppliesTo(currency, lens, ownCurrency)) {
-      return geuLensMoney(amount, currency, lens);
-    }
-    return `${fmtMoney(amount, currency)}${String(fmtMoney(1, currency)).endsWith(String(currency)) ? "" : ` ${currency}`}`;
+    return geuLensBarMoney(amount, currency, lens, ownCurrency);
   };
   const sent = meta.direction === "sent";
   const coin = (row && row.type) === "coin";

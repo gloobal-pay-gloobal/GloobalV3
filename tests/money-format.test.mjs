@@ -187,9 +187,11 @@ describe("the receipt's symbol field is no longer what renders it", () => {
     // possibly different currency. Both still come from a CODE, which is
     // what this test is about.
     // The formatter's NAME is not the claim; the CODE being its second
-    // argument is. geuLensOwnMoney wraps fmtMoney and takes the same code,
-    // deciding only whether the unit is renamed for this reader.
-    assert.match(modal, /geuLensOwnMoney\(paymentAmount, paymentCurrency, lens, viewerCurrency\)/);
+    // argument is. geuLensBarMoney wraps geuLensOwnMoney, which wraps
+    // fmtMoney, and all three take the same code — the chain decides whether
+    // the unit is renamed for this reader and what the figure's other unit
+    // is called, never how the number itself is formatted.
+    assert.match(modal, /geuLensBarMoney\(paymentAmount, paymentCurrency, lens, viewerCurrency\)/);
     assert.match(modal, /const paymentCurrency = isShareReceipt/);
   });
 

@@ -262,7 +262,14 @@ describe("the number on the card counts what the list shows", () => {
     // everything Gloobal pays Hoomans, which is a wider figure than projects.
     const src = code(SCREEN);
     assert.match(src, />Raised</, "the hero does not state what the figure is");
-    assert.match(src, /geuLensOwnMoney\(hoomanRaisedTotal, displayCurrency, lens, myCurrency\)/);
+    // Via hoomanRaisedText, which is geuLensBarMoney over the same four
+    // arguments — the figure plus the name of its other unit. On THIS screen
+    // the bar does real work beyond the lens: displayCurrency is whatever
+    // country is being looked at, so a foreign total reads "98,000.00€ │ EUR"
+    // and a symbol alone would not say whose money it was (₹ belongs to five
+    // countries, $ to more than twenty).
+    assert.match(src, /const hoomanRaisedText = geuLensBarMoney\(hoomanRaisedTotal, displayCurrency, lens, myCurrency\);/);
+    assert.match(src, /\{hoomanRaisedText\}/, "the hero is not rendering the figure it built");
 
     // Only one place inside the projects overlay talks about Our spending now
     // — none. The Coverage panel's row lives outside it.

@@ -434,7 +434,12 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
     if (moves.current % 6 === 0 && clearedShare() >= PAYMENT_UNLOCK_CLEAR_AT) reveal();
   };
 
-  const shareText = share > 0 ? `+${geuLensOwnMoney(share, shareCurrency, lens, viewerCurrency)}` : null;
+  // The figure behind the foil, which is the whole point of the card it sits
+  // on — so it stands alone and takes the bar. geuLensBarMoney keeps the
+  // own-money rule this already went through: a share on a cross-border
+  // payment is in the payer's currency and the payee's copy is in theirs, and
+  // only the reader's own is renamed.
+  const shareText = share > 0 ? `+${geuLensBarMoney(share, shareCurrency, lens, viewerCurrency)}` : null;
   const optionButton = (key, label, value, extra = {}) => {
     const chosen = picked === value;
     const right = verdict && verdict.rightChoice === value && picked !== null && question.kind !== "checkin";

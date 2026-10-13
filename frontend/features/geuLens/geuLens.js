@@ -321,6 +321,139 @@ function geuLensAppliesTo(currencyCode, lens, ownCurrency) {
   return lens === GEU_LENS_GEU && geuLensSameCurrency(currencyCode, ownCurrency);
 }
 
+// ── THE BAR ─────────────────────────────────────────────────────────────
+//
+//     −959.07₹ │ GEU          and, with the toggle flipped,
+//     −959.07 GEU │ ₹
+//
+// Every amount in the app that carries a currency carries this, and the
+// rule is one sentence: THE BAR NAMES THE FIGURE'S OTHER NAME.
+//
+// For the viewer's own money that other name is the unit they are not
+// currently reading in, so the two halves swap when the toggle does. The
+// figure never moves — ₹959.07 and 959.07 GEU are the same money under the
+// same digits — and showing both names at once is what makes that visible
+// instead of something a person has to be told.
+//
+// ── Why it replaced the bracket ─────────────────────────────────────────
+//
+// The balance card said "(INR)" under its figure and nothing else in the
+// app said anything, so the lens was explained in exactly one place and
+// implied in nine. A row reading "−959.07₹" after the toggle had been
+// flipped looked like the toggle had missed it.
+//
+// A bracket is also the wrong punctuation for this. Brackets hold an aside
+// — something you could skip — and the second unit is not an aside, it is
+// the other half of the same fact. A rule between two names reads as two
+// names for one thing, which is what it is.
+//
+// ── Why somebody else's money gets a bar too ────────────────────────────
+//
+// On a foreign figure there is no second unit to name: the lens does not
+// touch it (see the rule above), so the bar names the currency itself —
+// 98.00€ │ EUR. That is not the same job, and it is worth being plain that
+// it is a deliberate second meaning rather than an oversight.
+//
+// It earns its place because a symbol is not an identifier. ₹ is the rupee
+// of five countries, $ belongs to more than twenty, and kr to four — on a
+// cross-border receipt the symbol alone does not say whose money the other
+// side was in. The code does.
+//
+// Which is also why a currency whose symbol IS its code gets no bar:
+// "98.00 CHF │ CHF" names the franc twice and tells nobody anything.
+var GEU_LENS_BAR = "\u2502";
+
+// The gap between the balance's figure and its bar, where the two are drawn
+// as SEPARATE SPANS so the bar can be smaller and quieter than the number.
+// Everywhere else the bar sits inside one string and the space around it is a
+// plain space, which costs nothing to account for.
+//
+// Shared with the sizer because it is width the figure does not get, and the
+// two guessing separately is how a hundred-trillion balance came out 259px
+// wide in a 258px row. One pixel over, and found by measuring every figure
+// against its room rather than by looking at a screenshot of a plausible
+// balance — which is the mistake that made the toggle take three attempts.
+var GEU_LENS_BAR_GAP = 7;
+
+// The name that goes after the bar, or "" when the figure already carries
+// it. Separate from the formatter below because the Coverage tiles and the
+// earnings headline print their unit as their own element rather than
+// inside a string, and they must get the name from here rather than
+// reimplement the choice.
+function geuLensBarUnit(currencyCode, lens, ownCurrency) {
+  // UPPER-CASED BEFORE THE SYMBOL IS LOOKED UP, and this is not tidiness.
+  //
+  // geuLensSameCurrency is deliberately case-insensitive, because a code
+  // arrives here from a row, a prop and a server field and "inr" must not be
+  // a different currency from "INR". So a lowercase code reaches this line
+  // having been accepted as the viewer's own — and CURRENCY_SYMBOL has no
+  // "inr" key, so currencySuffix falls back to printing the code back as it
+  // was given. The bar then read "500.00 GEU │ inr" instead of naming the
+  // rupee: the figure relabelled correctly and its other name came out as
+  // the wrong string, with no error anywhere.
+  const code = String(currencyCode || "").trim().toUpperCase();
+  if (geuLensSameCurrency(code, ownCurrency)) {
+    // The viewer's own money: name the unit it is NOT being read in.
+    // currencySuffix gives the glyph where there is one ("₹") and the code
+    // where there is not ("CHF"), trimmed — it stores several symbols with a
+    // trailing space for prefix use.
+    return lens === GEU_LENS_GEU
+      ? String(typeof currencySuffix === "function" ? currencySuffix(code) : code).trim()
+      : COIN_TICKER;
+  }
+  // Somebody else's: name their currency exactly.
+  return code;
+}
+
+// The formatter every screen calls in place of geuLensOwnMoney. Same rule
+// about whose money gets relabelled — it goes straight through that
+// function — with the bar on the end.
+function geuLensBarMoney(amount, currencyCode, lens, ownCurrency) {
+  const figure = geuLensOwnMoney(amount, currencyCode, lens, ownCurrency);
+  const unit = geuLensBarUnit(currencyCode, lens, ownCurrency);
+  if (!unit) return figure;
+  // The franc case. Also catches an unfamiliar code with no symbol in the
+  // table, where fmtMoney already falls back to printing the code.
+  if (String(figure).trim().toUpperCase().endsWith(unit.toUpperCase())) return figure;
+  return `${figure} ${GEU_LENS_BAR} ${unit}`;
+}
+
+// ── KEEPING THE BAR ON THE LINE ─────────────────────────────────────────
+//
+// The bar costs four characters, and it lands on figures that were already
+// the longest thing in their column. A history row amount is 14px flat, and
+// "−200,000.00₹ │ GEU" at 14px is wider than the column it sits in.
+//
+// There are three ways that can go and only one of them is acceptable.
+// Wrapping splits a number from its unit onto two lines, which reads as two
+// facts. Truncating prints a DIFFERENT NUMBER with no warning — the failure
+// the balance's sizer was written to prevent, and it is worse on a row,
+// where nobody is looking closely enough to notice. So the figure and its
+// bar shrink together, as one string, and stay on one line.
+//
+// This is the balance's rule at a row's scale: same measured character
+// ratio, a base size instead of a design maximum, and a floor low enough
+// that reaching it means the amount is extraordinary rather than that the
+// rule gave up.
+var GEU_LENS_ROW_ROOM = 165;
+var GEU_LENS_ROW_MIN = 10;
+var GEU_LENS_ROW_BASE = 14;
+
+function geuLensRowFontSize(figure, basePx, availablePx, floorPx) {
+  const chars = String(figure || "").length;
+  // Same positive tests as the balance sizer, and for the same reason:
+  // Number(null) is 0 and 0 is finite, so a missing argument must fall
+  // through to the default rather than be taken as a real zero.
+  const base = Number(basePx) > 0 ? Number(basePx) : GEU_LENS_ROW_BASE;
+  if (!(chars > 0)) return base;
+  const room = Number(availablePx) > 0 ? Number(availablePx) : GEU_LENS_ROW_ROOM;
+  const floor = Number(floorPx) > 0 ? Number(floorPx) : GEU_LENS_ROW_MIN;
+  const ideal = Math.floor(room / (chars * GEU_LENS_CHAR_RATIO));
+  // Never LARGER than the size the design asked for — this rule exists to
+  // rescue a long figure, not to inflate a short one.
+  return Math.max(floor, Math.min(base, ideal));
+}
+
 // ── THE VIEWER'S OWN CURRENCY, FOR SCREENS THAT HAVE NO PROP FOR IT ─────
 //
 // The dashboard and the history screen are handed the account's currency.

@@ -542,6 +542,22 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // alone — so every row on the same day tied and kept arrival order.
     return sortTransactionsNewestFirst(receivedHistory);
   }, [receivedHistory]);
+  // THE PAYMENT A SEED CAME OUT OF.
+  //
+  // AssetSeed has always recorded `transactionId`; the assets route now sends
+  // it on as `paymentReference`, so "where did this figure come from" is a
+  // question the app can answer about its own number instead of leaving a
+  // person to match dates by eye.
+  //
+  // Looked up rather than fetched: the payment is already in this viewer's
+  // own history, and a seed whose payment is not in the loaded rows gets a
+  // reference it can read but no tap — which is honest, and goes away once
+  // the history list pages instead of stopping at fifty.
+  const findSeedPayment = (reference) => {
+    const ref = String(reference || "").trim();
+    if (!ref) return null;
+    return roleSendHistory.find((t) => t.txnId === ref || t.referenceId === ref) || null;
+  };
   const [assetDetailKey, setAssetDetailKey] = useState14(null);
   const requestCloseAssetDetail = useBackClose(!!assetDetailKey, () => setAssetDetailKey(null));
   const [showSettleAssetsBiometric, setShowSettleAssetsBiometric] = useState14(false);
@@ -3168,8 +3184,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // without also constraining the slider, or the two will disagree again.
     ["Cashback", `${(assetDetail.row.cashbackRate * 100).toFixed(2)}% \xB7 ${geuLensMoney(assetDetail.row.cashback, ccyCode, displayLens)}`],
     ["Earned on", assetDetail.row.time ? `${assetDetail.row.date}, ${assetDetail.row.time}` : assetDetail.row.date],
-    ["Time to 100%", `${(assetDetail.monthsToTarget / 12).toFixed(1)} yrs`]
-  ].map(([label, value]) => <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontSize: 12, color: T.inkFaint }}>{label}</span><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{value}</span></div>)}</div></div></div>}{profileDetail && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileDetail} />{profileDetail !== "History" && <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{profileDetail}</span>}{profileDetail === "History" && <div style={{ display: "flex", gap: 8, flex: 1 }}><button
+    ["Time to 100%", `${(assetDetail.monthsToTarget / 12).toFixed(1)} yrs`],
+    // The payment itself, last, because it is the way OUT of this screen
+    // rather than another fact about the seed. Absent entirely on a seed
+    // planted before the link was recorded — a row saying "unknown" is
+    // worse than no row.
+    ...(assetDetail.row.paymentReference
+      ? [["From payment", assetDetail.row.paymentReference, findSeedPayment(assetDetail.row.paymentReference)]]
+      : [])
+  ].map(([label, value, openable]) => <div key={label} onClick={openable ? () => { setAssetDetailKey(null); openRowReceipt(openable, "sent"); } : void 0} role={openable ? "button" : void 0} tabIndex={openable ? 0 : void 0} aria-label={openable ? `Open the receipt for ${value}` : void 0} className={openable ? "v2-tap" : void 0} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: openable ? "pointer" : void 0 }}><span style={{ fontSize: 12, color: T.inkFaint }}>{label}</span><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{value}</span></div>)}</div></div></div>}{profileDetail && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileDetail} />{profileDetail !== "History" && <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{profileDetail}</span>}{profileDetail === "History" && <div style={{ display: "flex", gap: 8, flex: 1 }}><button
     onClick={() => setHistoryTab("receiving")}
     aria-label="Received"
     className="v2-tap"

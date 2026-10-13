@@ -4955,6 +4955,23 @@ function computeSeed(seed) {
     yearsAccrued,
     plantedAt,
     currency: seed.currency || 'INR',
+    // THE PAYMENT THIS SEED CAME OUT OF.
+    //
+    // AssetSeed has carried `transactionId` since it was written and this
+    // projection never sent it, so the link existed in the database and
+    // nowhere a person could follow it. "Where did this figure come from"
+    // was a question the app could not answer about its own number.
+    //
+    // Both forms are sent on purpose. `paymentReference` is what a receipt
+    // is opened by, and `paymentTransactionId` is what identifies the row
+    // when a reference was never minted — an old seed, or one whose
+    // transaction predates referenceId. Null on a seed planted before the
+    // link was recorded, and the screen then shows no way through rather
+    // than a dead tap.
+    paymentTransactionId: seed.transactionId ? String(seed.transactionId._id || seed.transactionId) : null,
+    paymentReference: seed.transactionId && seed.transactionId.referenceId
+      ? String(seed.transactionId.referenceId)
+      : null,
   };
 }
 
@@ -5248,7 +5265,14 @@ app.get('/api/assets/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId
       return res.status(404).json({ message: 'Secure ID not found.' });
     }
 
-    const rawSeeds = await AssetSeed.find({ userId: user._id }).sort({ plantedAt: -1 });
+    // `transactionId` is populated rather than left as an ObjectId so each
+    // seed can carry the payment's REFERENCE, which is what the receipt is
+    // opened by. Two fields selected and nothing else: this route answers
+    // about seeds, and pulling whole transactions through it would make a
+    // list of twelve seeds a list of twelve payments as well.
+    const rawSeeds = await AssetSeed.find({ userId: user._id })
+      .sort({ plantedAt: -1 })
+      .populate('transactionId', 'referenceId');
     if (rawSeeds.length === 0) {
       return res.status(200).json({
         totalCashbackEarned: 0, totalInterestAccrued: 0, totalInterestAvailable: 0,
@@ -5671,7 +5695,14 @@ app.get('/api/assets/paylater/:symbolId', lookupLimit, requireAuth, requireSelf(
       return res.status(404).json({ message: 'Secure ID not found.' });
     }
 
-    const rawSeeds = await AssetSeed.find({ userId: user._id }).sort({ plantedAt: -1 });
+    // `transactionId` is populated rather than left as an ObjectId so each
+    // seed can carry the payment's REFERENCE, which is what the receipt is
+    // opened by. Two fields selected and nothing else: this route answers
+    // about seeds, and pulling whole transactions through it would make a
+    // list of twelve seeds a list of twelve payments as well.
+    const rawSeeds = await AssetSeed.find({ userId: user._id })
+      .sort({ plantedAt: -1 })
+      .populate('transactionId', 'referenceId');
     const seeds = rawSeeds.map(computeSeed);
     const totalAssets = seeds.reduce((s, x) => s + x.currentValue, 0);
 

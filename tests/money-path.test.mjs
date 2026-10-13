@@ -565,9 +565,16 @@ describe("a history row reads icon, name, date, amount", () => {
     // stacked lines (amount, and the share line under it) that must share
     // one right edge. The minimum width went 86 -> 92 when the date moved
     // out of the middle and the amount column took the space.
+    //
+    // A maxWidth joined it when the Creator Share note arrived: "₹20.00 to
+    // My Assets" is longer than any amount, and without a ceiling the
+    // column would take the whole row and squeeze the counterparty's name
+    // to nothing. The properties this test is about — never shrinking,
+    // right-aligned, stacked — are unchanged, so the match now allows the
+    // ceiling between them rather than pinning the declaration verbatim.
     assert.match(
       row,
-      /flexShrink: 0, minWidth: 92, display: "flex", flexDirection: "column", alignItems: "flex-end"/
+      /flexShrink: 0, minWidth: 92,[^}]*display: "flex", flexDirection: "column", alignItems: "flex-end"/
     );
   });
 });

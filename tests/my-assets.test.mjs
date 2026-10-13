@@ -191,3 +191,61 @@ describe("PayLater", () => {
     assert.match(src, /onClick=\{onViewPayLater\}/);
   });
 });
+
+describe("a seed can show the payment it came out of", () => {
+  // "My assets has more seeds than history shows transactions" was the
+  // question, and the honest answer has two halves. The payment row now
+  // says what it gave back (geu-history.test.mjs), and a seed now says
+  // which payment it came from — so the two lists can be reconciled from
+  // either end instead of by matching dates by eye.
+  //
+  // AssetSeed has recorded `transactionId` since it was written. The link
+  // existed in the database and nowhere a person could follow it.
+
+  test("the server sends the payment with the seed", () => {
+    const server = readSource("server/server.js");
+    // Populated, so computeSeed has a REFERENCE to send and not just an id —
+    // a reference is what a receipt is opened by.
+    assert.match(server, /\.populate\('transactionId', 'referenceId'\)/,
+      "the assets route no longer resolves the seed's payment");
+    assert.match(server, /paymentReference: seed\.transactionId && seed\.transactionId\.referenceId/);
+    // Two fields only. This route answers about seeds; pulling whole
+    // transactions through it would make a list of twelve seeds a list of
+    // twelve payments as well.
+    assert.ok(!/\.populate\('transactionId'\)(?!,)/.test(server),
+      "the assets route is pulling whole transactions into a list of seeds");
+  });
+
+  test("a seed with no recorded payment shows no row at all", () => {
+    // Seeds planted before the link was recorded have nothing to point at.
+    // A row reading "unknown" is worse than no row, and a tap that does
+    // nothing is worse than both.
+    const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+    assert.match(dash, /\.\.\.\(assetDetail\.row\.paymentReference\s*\n?\s*\? \[\["From payment"/,
+      "the From payment row is rendered unconditionally");
+  });
+
+  test("the payment is looked up, not fetched", () => {
+    // It is already in this viewer's own history. A seed whose payment is
+    // not among the loaded rows gets a reference it can read and no tap,
+    // which is honest — and stops being a limitation once the history list
+    // pages instead of stopping at fifty.
+    const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+    assert.match(dash, /const findSeedPayment = \(reference\) => \{/);
+    assert.match(dash, /roleSendHistory\.find\(\(t\) => t\.txnId === ref \|\| t\.referenceId === ref\)/);
+    const fn = dash.slice(dash.indexOf("const findSeedPayment"), dash.indexOf("const [assetDetailKey"));
+    assert.ok(!/GloobalApi|fetch\(|await /.test(fn),
+      "opening a seed's payment is making a network call");
+  });
+
+  test("tapping it opens that payment's receipt and closes the seed", () => {
+    // Not a second overlay stacked on the first: the seed detail is the way
+    // in, the receipt is the destination.
+    const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+    assert.match(dash, /setAssetDetailKey\(null\); openRowReceipt\(openable, "sent"\);/);
+    // And it is reachable without a pointer.
+    assert.match(dash, /role=\{openable \? "button" : void 0\}/);
+    assert.match(dash, /tabIndex=\{openable \? 0 : void 0\}/);
+    assert.match(dash, /aria-label=\{openable \? `Open the receipt for \$\{value\}` : void 0\}/);
+  });
+});

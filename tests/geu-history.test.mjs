@@ -513,3 +513,66 @@ describe("the three routes that send a coin row share one shaper", () => {
     }
   });
 });
+
+describe("a payment says what it gave back", () => {
+  // THE QUESTION THIS ANSWERS, in the founder's words: "my assets history
+  // has more seeds than this filter shows total transaction".
+  //
+  // It was not a filter fault. A share-bearing payment plants an AssetSeed,
+  // so My Assets gains an entry — and the server excludes 'share' legs from
+  // the history endpoint on purpose, because Coverage reads the same rows
+  // for its spend figure and a share leg there would count the same money
+  // twice. Two lists describing the same events, one of them silent about
+  // the share.
+  //
+  // The answer is not a second row, which would reintroduce exactly the
+  // double-count the exclusion prevents. It is the payment row saying what
+  // it already knows: `shareReceiverAmount` has been on every payment row
+  // since the two-sided share work, and nothing new is fetched to show it.
+  const row = readSource("frontend/features/history/TransactionRow.jsx");
+
+  test("the row reads the payer's own side of the share", () => {
+    assert.match(row, /t\.shareReceiverAmount/,
+      "the row is not reading the share figure it is already given");
+    // Not shareSenderAmount: that is the PAYEE's side, in the payment's
+    // receiving currency. On a cross-border payment the two are different
+    // numbers in different tenders, and showing the payee's under the
+    // payer's own amount would be somebody else's money on your row.
+    assert.ok(!/t\.shareSenderAmount/.test(row),
+      "the row shows the payee's side of the share instead of the payer's");
+  });
+
+  test("it shows only on the payer's copy", () => {
+    // On the payee's row the share is money they gave away, and their
+    // amount already reflects it — saying it again would read as a second
+    // deduction from the same payment.
+    assert.match(row, /sign === "\\u2212" && Number\.isFinite\(Number\(t\.shareReceiverAmount\)\)/,
+      "the share note is not restricted to the paying side");
+  });
+
+  test("it goes through the own-money rule like every other figure", () => {
+    // The seed is denominated in the payer's own currency, so this is
+    // their money and the lens may rename it — but it is asked rather
+    // than assumed, through the same helper the amount above uses.
+    assert.match(row, /geuLensOwnMoney\(shareBack, shareCode, lens, ccyCode\)/);
+  });
+
+  test("it does not become a second row", () => {
+    // The whole reason this lives on the payment row. A separate history
+    // row for the share would be counted as spending by Coverage, which
+    // reads this endpoint — the exact double-count the server's own
+    // `type: { $ne: 'share' }` exclusion exists to prevent.
+    const screen = readSource("frontend/features/history/TransactionHistoryScreen.jsx");
+    assert.ok(!/shareReceiverAmount/.test(screen),
+      "the history screen is building share rows of its own");
+    const server = readSource("server/server.js");
+    assert.match(server, /type: \{ \$ne: 'share' \},/,
+      "share legs are back in the history endpoint, so Coverage will double-count spend");
+  });
+
+  test("a screen reader is told about it too", () => {
+    // The note is drawn small and in a different colour, both of which a
+    // reader conveys nothing of.
+    assert.match(row, /aria-label=\{`\$\{t\.name\}, \$\{amount\}, \$\{stamp\}\$\{shareNote \? ` — \$\{shareNote\}` : ""\}/);
+  });
+});

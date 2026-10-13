@@ -102,6 +102,38 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
   // `amountText` is untouched. It exists for a row that is not denominated
   // in a currency at all, which by definition has no own-currency to match.
   const lens = useGeuLens();
+
+  // ── THE CREATOR SHARE, ON THE ROW THAT EARNED IT ──────────────────────
+  //
+  // A share-bearing payment plants an AssetSeed, so My Assets gains an
+  // entry that History had nothing to say about. The founder's question
+  // was the obvious consequence: "my assets has more seeds than history
+  // shows transactions". Two lists describing the same events, and only
+  // one of them mentioning the share.
+  //
+  // The server excludes 'share' legs from this endpoint on purpose —
+  // Coverage reads the same rows for its spend figure, and a share leg
+  // there would count the same money twice. So the fix is not a second
+  // row. It is this row saying what it already knows.
+  //
+  // `shareReceiverAmount` is the PAYER'S side: what came back out of the
+  // payment and into their assets. It is carried on every payment row
+  // already; nothing new is fetched.
+  //
+  // Shown only when the viewer is the payer and the figure is real. On the
+  // payee's own copy of the row the share is money they gave away, which
+  // their amount already reflects — saying it twice would read as a second
+  // deduction.
+  const shareBack = sign === "\u2212" && Number.isFinite(Number(t.shareReceiverAmount))
+    ? Number(t.shareReceiverAmount)
+    : 0;
+  // In the payer's own currency, which is the one the seed is denominated
+  // in — so this goes through the same own-money rule as the amount above.
+  const shareCode = t.shareReceiverCurrency || rowCode;
+  const shareNote = shareBack > 0
+    ? `${geuLensOwnMoney(shareBack, shareCode, lens, ccyCode)} to My Assets`
+    : null;
+
   const amount = amountText != null
     ? `${sign}${amountText}`
     : `${sign}${geuLensOwnMoney(Number(t.amount || 0), rowCode, lens, ccyCode)}`;
@@ -115,7 +147,7 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
     // is read-only deliberately: see the comment at its call site.
     role={onSelect ? "button" : undefined}
     tabIndex={onSelect ? 0 : undefined}
-    aria-label={`${t.name}, ${amount}, ${stamp}${t.status === "simulated" ? " — not actually sent, simulated only" : ""}`}
+    aria-label={`${t.name}, ${amount}, ${stamp}${shareNote ? ` — ${shareNote}` : ""}${t.status === "simulated" ? " — not actually sent, simulated only" : ""}`}
     style={{ display: "flex", alignItems: "center", gap: 12, padding: `9px ${inset}px`, cursor: onSelect ? "pointer" : "default" }}
   >{
     /* The living mark, free-running: it flips on its own timer through the
@@ -152,7 +184,7 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
        amount is a wrong amount. minWidth keeps the figures aligned as a
        column even when the names beside them differ in length. */
   }<span
-    style={{ flexShrink: 0, minWidth: 92, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}
+    style={{ flexShrink: 0, minWidth: 92, maxWidth: "58%", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}
   ><span
     style={{
       fontSize: 14,
@@ -167,7 +199,14 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
     /* Sits under the amount, where a message list puts its unread pill, and
        means the one thing worth interrupting a scan for: this payment never
        actually left the device. */
-  }{t.status === "simulated" && <span
+  }{shareNote && <span
+    // Under the amount, in the assets colour rather than the row's own.
+    // The row's colour says which way the payment went; this is a
+    // different movement inside it and must not read as part of that
+    // figure. Small and quiet: it is context for a number, not a number.
+    data-testid="history-row-share"
+    style={{ fontSize: 9.5, fontWeight: 700, color: T.positive, whiteSpace: "nowrap" }}
+  >{shareNote}</span>}{t.status === "simulated" && <span
     style={{ fontSize: 9, fontWeight: 800, color: "#8A5A00", background: "#FEF3C7", border: "1px solid #F5D68A", borderRadius: 999, padding: "1px 6px", whiteSpace: "nowrap" }}
   >
       Not sent

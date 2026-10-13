@@ -138,7 +138,16 @@ var DAILY_SPENDING_PALETTES = {
 // and nothing else, so the bars, the scale and the totals are identical
 // either way; this chart sits directly under the balance and would be the
 // one thing on the card still in rupees if it did not take it.
-function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "dark", trailing = null, currencyCode, lens = null }) {
+// How much width each of the week's two figures has, on the narrowest
+// phone this app targets. The card's inner width there is about 276px; two
+// figures with a 10px gap leave 133 each, and one figure alone has the lot.
+// Stated here rather than inline because both are read by one calculation
+// and a mismatch between them shows as a wrap nobody expected.
+var SPENDING_FIGURE_ROOM_PAIR = 133;
+var SPENDING_FIGURE_ROOM_SOLO = 276;
+var SPENDING_FIGURE_MIN = 11;
+
+function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "dark", trailing = null, leading = null, currencyCode, lens = null }) {
   // One formatter for every figure below, so a total and a day's callout
   // cannot end up in different units.
   const money = (value) => (
@@ -220,8 +229,63 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
   // name repeats the letter the axis is already highlighting. A figure
   // sitting on its own bar needs neither.
   const single = !!trailing;
-  const paidFigure = !single && (!focusDirection || focusDirection === "paid") && <span style={{ fontSize: 15, fontWeight: 800, color: C.paidText }}>−{money(Number(displayed.paid) || 0)}</span>;
-  const receivedFigure = !single && (!focusDirection || focusDirection === "received") && <span style={{ fontSize: 15, fontWeight: 800, color: C.receivedText }}>+{money(Number(displayed.received) || 0)}</span>;
+
+  // ── THE WEEK'S TWO FIGURES, AND WHY THEY NEEDED SIZING ───────────────
+  //
+  // They were a flat 15px with nothing stopping a wrap, which is right for
+  // "−2,400.00₹" and wrong for "−1,476,151.51 GEU". Reported from a phone,
+  // where the line broke BETWEEN THE NUMBER AND ITS UNIT:
+  //
+  //     −1,476,151.51
+  //     GEU                    +1,402,205.00
+  //                            GEU
+  //
+  // The same fault the balance above had, one component down. The balance
+  // was fixed and this was not, because the screenshot that reported it
+  // showed the balance — and here the balance was masked behind its dots
+  // while these two carried the long figures.
+  //
+  // Two things are done about it, and the order matters.
+  //
+  // FIRST, each figure is atomic: whiteSpace nowrap, so a value can never
+  // split from its unit again whatever the width. A figure that wraps
+  // mid-number is not a layout problem, it is two facts where there was
+  // one.
+  //
+  // SECOND, both are sized from the LONGER of the two so they print at one
+  // size rather than two, which is what keeps them reading as a pair. The
+  // room is the card's inner width split between them, measured for the
+  // narrowest phone this app targets rather than the one it was reported
+  // on — the common phone gets margin, instead of the rare one getting a
+  // defect.
+  //
+  // If even the floor will not fit both side by side, the row wraps and
+  // they stack as two COMPLETE figures. That is the honest failure: a
+  // second line is readable, half a number is not.
+  const paidText = `\u2212${money(Number(displayed.paid) || 0)}`;
+  const receivedText = `+${money(Number(displayed.received) || 0)}`;
+  const bothShown = !single && !focusDirection;
+  // 15 is the design size and nothing prints larger. geuLensFigureFontSize
+  // does the arithmetic — the same rule the balance uses, handed a smaller
+  // room — so the two cannot drift apart as the card changes.
+  const figureSize = Math.min(
+    15,
+    typeof geuLensFigureFontSize === "function"
+      ? geuLensFigureFontSize(
+          paidText.length >= receivedText.length ? paidText : receivedText,
+          "",
+          bothShown ? SPENDING_FIGURE_ROOM_PAIR : SPENDING_FIGURE_ROOM_SOLO,
+          // A smaller floor than the balance's 13. These two share one row
+          // and are secondary to the figure above them, so 11px keeps them
+          // side by side where 13 would stack them — and a stacked pair
+          // changes the card's height as somebody's week grows.
+          SPENDING_FIGURE_MIN
+        )
+      : 15
+  );
+  const figureStyle = (color) => ({ fontSize: figureSize, fontWeight: 800, color, whiteSpace: "nowrap" });
+  const paidFigure = !single && (!focusDirection || focusDirection === "paid") && <span style={figureStyle(C.paidText)}>{paidText}</span>;
+  const receivedFigure = !single && (!focusDirection || focusDirection === "received") && <span style={figureStyle(C.receivedText)}>{receivedText}</span>;
   // The day the callout speaks for, and the colour it speaks in. Only on
   // the single-series chart: with two series a callout would have to
   // carry two numbers over one column.
@@ -232,13 +296,21 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
   const calloutText = calloutDay
     ? `${focusDirection === "paid" ? "\u2212" : "+"}${money(calloutValue)}`
     : "";
-  return <div style={{ position: "relative" }}><div style={{ display: "flex", justifyContent: trailing || !focusDirection ? "space-between" : "flex-start", alignItems: "baseline", gap: 10 }}>{
+  return <div style={{ position: "relative" }}><div style={{ display: "flex", justifyContent: trailing || !focusDirection ? "space-between" : "flex-start", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>{
     /* With a trailing figure the left-hand ones are grouped, so
        space-between splits LEFT GROUP vs trailing rather than pushing the
        two directions to opposite edges. Without one the original markup is
        emitted unchanged, which is what keeps the wallet card identical. */
   }{trailing
-    ? <span style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>{paidFigure}{receivedFigure}</span>
+    /* `leading` is the LEFT of that header line, for a caller that has
+       something to put there. The history screen puts its period filter in
+       it: the control and the total it produces then sit on one row, filter
+       on the left and figure on the right, instead of the filter floating
+       above its own answer on a line of its own.
+
+       With a trailing figure the left-hand figures are suppressed anyway
+       (`single`), so this fills a slot that was rendering an empty span. */
+    ? <span style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, flexWrap: "wrap" }}>{leading}{paidFigure}{receivedFigure}</span>
     : paidFigure}{trailing || receivedFigure}</div><div
     onPointerDown={handlePointerDown}
     onPointerMove={handlePointerMove}

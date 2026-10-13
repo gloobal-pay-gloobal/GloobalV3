@@ -367,34 +367,64 @@ describe("what the mapper hands the history screen", () => {
     assert.equal(row.coin, null);
   });
 
-  test("every method a row can carry is a chip, or is Creator Share", () => {
+  test("every method a row can carry is a chip, or is named here with a reason", () => {
     // THE DEAD-CHIP TEST, from the other direction. The History screen's
     // chips are a hardcoded list and the filter is string equality on
     // `t.method`, so a method the chips do not name is a row no filter can
     // reach, and a chip no method produces is a button that always yields an
     // empty list. Both happened.
     //
-    // 'share' is the one intended exception and is asserted as such: a
-    // Creator Share is not an alternative way of paying, and offering it as
-    // a chip would suggest it could be chosen.
-    const screen = readSource("frontend/features/history/TransactionHistoryScreen.jsx");
-    const chips = screen.match(/\[\s*"all",\s*"bank",\s*"paylater",\s*"coin"\s*\]/);
-    assert.ok(chips, "the chip list changed shape — this test needs rereading, not deleting");
+    // Two methods are deliberately chip-less now, and each has to EARN that
+    // here rather than slip through — a row with no chip is still reachable
+    // under "All", so the cost is a missing shortcut, not a hidden row.
+    //
+    //   share — a Creator Share is not an alternative way of paying. It
+    //     describes WHY money moved, not HOW. Offering it as a chip would
+    //     suggest it could be chosen.
+    //
+    //   coin — Gloobal Coin is removed. Nothing can mint, redeem or send
+    //     one, so the chip could only ever select rows from before the
+    //     removal, and on most accounts none at all. A filter that returns
+    //     an empty list on every tap reads as a broken screen rather than
+    //     an empty category. The rows themselves still exist and still
+    //     show under "All", and HISTORY_METHOD_META keeps its `coin` entry
+    //     so they are still LABELLED — removing the way of asking for them
+    //     is not the same decision as removing the way of naming them.
+    const CHIPLESS_ON_PURPOSE = new Set(["share", "coin"]);
 
-    const named = new Set(["bank", "paylater", "coin"]);
+    const screen = readSource("frontend/features/history/TransactionHistoryScreen.jsx");
+    const declared = screen.match(/var HISTORY_METHOD_CHIPS = \[([^\]]*)\];/);
+    assert.ok(declared, "the chip list changed shape — this test needs rereading, not deleting");
+    const chips = declared[1].split(",").map((s) => s.trim().replace(/^"|"$/g, "")).filter(Boolean);
+    assert.ok(chips.includes("all"), "the chip list lost its All");
+    const named = new Set(chips.filter((c) => c !== "all"));
+
     const produced = new Set(
       ["payment", "share", "coin_mint", "coin_redeem", "coin_send", "disbursement", "mystery"]
         .map((type) => historyRowShape(type).method)
     );
     for (const method of produced) {
       assert.ok(
-        named.has(method) || method === "share",
-        `rows are stamped method "${method}" and no chip selects it`
+        named.has(method) || CHIPLESS_ON_PURPOSE.has(method),
+        `rows are stamped method "${method}" and no chip selects it — add a chip, or ` +
+        `add it to CHIPLESS_ON_PURPOSE above with the reason`
       );
     }
     for (const chip of named) {
       assert.ok([...produced].includes(chip) || chip === "paylater",
         `the "${chip}" chip filters for a method no row ever carries`);
+    }
+
+    // And the removed chip must not come back by accident.
+    assert.ok(!named.has("coin"), "the Coin chip is back, for a product that no longer exists");
+
+    // A chip-less method is still LABELLED. This is the half that must not
+    // be removed along with the chip: a historical coin row showing under
+    // "All" with no method name is worse than one that cannot be filtered.
+    const meta = readSource("backend/data/mockData.js");
+    for (const method of CHIPLESS_ON_PURPOSE) {
+      assert.match(meta, new RegExp(`\\n  ${method}: \\{`),
+        `HISTORY_METHOD_META lost its "${method}" entry, so those rows render unlabelled`);
     }
   });
 });

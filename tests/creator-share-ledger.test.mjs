@@ -167,8 +167,17 @@ describe("the row can name itself and its counterparty", () => {
   test("it is not offered as a way to pay", () => {
     // The History screen's method chips are a fixed list. A Creator Share is
     // not an alternative to a bank transfer and must not read as one.
+    //
+    // Asserted as "share is absent from whatever the list is" rather than by
+    // matching the list verbatim: the literal spelling was pinned here, and
+    // it broke when the Coin chip was removed — a test about CREATOR SHARE
+    // failing because an unrelated chip went away is the test naming the
+    // wrong thing.
     const screen = readSource("frontend/features/history/TransactionHistoryScreen.jsx");
-    assert.match(screen, /\["all", "bank", "paylater", "coin"\]/);
+    const chips = screen.match(/var HISTORY_METHOD_CHIPS = \[([^\]]*)\];/);
+    assert.ok(chips, "the chip list moved — this test needs rereading, not deleting");
+    assert.ok(!/["']share["']/.test(chips[1]),
+      `Creator Share is offered as a payment method: ${chips[1].trim()}`);
   });
 });
 

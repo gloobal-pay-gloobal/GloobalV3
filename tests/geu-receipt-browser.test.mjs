@@ -172,19 +172,19 @@ describe("a Gloobal Coin buy, on the History screen", () => {
     assert.match(sent, /300/, `the 300 GEU sale is not on the Paid side:\n${sent}`);
   });
 
-  test("the Coin chip selects the transfer — it has never selected anything", async () => {
-    // The filter is `col.rows.filter((t) => t.method === "coin")` and no
-    // server row has ever carried that value, because App.jsx stamped every
-    // non-share row "bank". This chip has been a button producing an empty
-    // list, for every account, since the day it was added.
-    await chooseChip(page, "Coin");
+  test("the transfer has no chip of its own, and still shows under All", async () => {
+    // There WAS a Coin chip, and this test used to assert it selected the
+    // transfer. The chip is gone with the product: nothing can send a coin
+    // any more, so on nearly every account the button returned an empty
+    // list, which reads as a broken screen rather than an empty category.
+    //
+    // What must still hold is that the ROW did not go with the chip. A
+    // coin_send from before the removal is a real movement somebody made,
+    // and losing it would be erasing financial history to tidy a filter.
+    await chooseChip(page, "All");
     await showColumn(page, "sending");
-    const coinRows = (await visibleRows(page)).join(" | ");
-    assert.match(coinRows, /50/, `the Coin chip still shows nothing:\n${coinRows}`);
-    // And ONLY the transfer: a buy and a sell belong under Bank, where the
-    // money left from and arrived into.
-    assert.ok(!/1,200/.test(coinRows), `the buy is filed under Coin:\n${coinRows}`);
-    assert.ok(!/300/.test(coinRows), `the sale is filed under Coin:\n${coinRows}`);
+    const all = (await visibleRows(page)).join(" | ");
+    assert.match(all, /50/, `the transfer is no longer visible at all:\n${all}`);
   });
 
   test("the Bank chip holds the buy and the sell", async () => {
@@ -194,6 +194,10 @@ describe("a Gloobal Coin buy, on the History screen", () => {
     await showColumn(page, "sending");
     const sent = (await visibleRows(page)).join(" | ");
     assert.match(sent, /300/, "the sale is not under Bank");
+    // The other half of the chip's removal: the transfer must not have been
+    // reclassified to make it filterable again. A coin-to-coin transfer had
+    // no fiat leg, and filing it under Bank would be a tidier screen telling
+    // a lie about where the money went.
     assert.ok(!/\b50\b/.test(sent), `the transfer is filed under Bank:\n${sent}`);
   });
 

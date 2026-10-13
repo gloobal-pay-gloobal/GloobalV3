@@ -32,6 +32,24 @@ var HISTORY_PAGE_SIZE = 10;
 // the holder from the account or shows nobody. This is the same pair
 // GloobalCoinScreen already takes for the same reason, and the country half
 // is derived from `dialCountry` rather than passed again.
+// WHICH METHODS GET A FILTER CHIP.
+//
+// "coin" is gone. Gloobal Coin is removed — nothing can mint, redeem or send
+// one — so the chip could only ever filter down to rows from before the
+// removal, and on most accounts to nothing at all. A filter that returns an
+// empty list on every tap reads as a broken screen rather than an empty
+// category.
+//
+// HISTORY_METHOD_META keeps its `coin` entry on purpose, and the two are not
+// the same decision: historical coin_send rows still carry method "coin" and
+// still need their label when they appear under "All". What is removed is the
+// way of asking for them, not the way of naming them.
+//
+// "share" has never had a chip and still does not: a Creator Share leg
+// describes WHY money moved, not HOW, so it does not belong in a row of
+// payment methods.
+var HISTORY_METHOD_CHIPS = ["all", "bank", "paylater"];
+
 function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], dialCountry, ccy, ccyCode = "USD", openHistoryDirection, onConsumeOpenHistory, historyTab, setHistoryTab, historyMethodFilter, setHistoryMethodFilter, holderName = "", holderSymbolId = "" }) {
   // The display unit, from the shared store. The rows read it themselves —
   // see TransactionRow — but the period total and the chart above them are
@@ -179,36 +197,7 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
        money in, − and red is money out. Screen readers still get the
        full sentence via aria-label, since colour and sign are exactly
        what a reader cannot convey. */
-  }<button
-    onClick={() => setPeriodPickerOpen(true)}
-    aria-label={`Change period. Currently ${historyPeriodMeta(historyPeriod).label}`}
-    aria-haspopup="dialog"
-    className="v2-tap"
-    style={{
-      // ONE box. The three fixed tabs sat on their own tinted band across
-      // the top of this card, which read as a separate control bar stuck
-      // above a chart rather than as part of it — and three tabs was
-      // already the most that would fit, with the period ladder now running
-      // out to five years.
-      //
-      // A funnel and the current period, on the card's own surface: it
-      // takes a corner instead of a row, holds nine options as easily as
-      // three, and the card is a single box again.
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      alignSelf: "flex-start",
-      margin: "12px 0 0 14px",
-      border: `1px solid ${T.line}`,
-      borderRadius: 999,
-      background: "transparent",
-      padding: "5px 12px 5px 9px",
-      cursor: "pointer",
-      fontSize: 11.5,
-      fontWeight: 800,
-      color: T.accent
-    }}
-  ><FilterHist size={13} color={T.accent} />{historyPeriodMeta(historyPeriod).label}</button>{(() => {
+  }{(() => {
     /* ONE box, not two. The period total used to sit in its own card
        directly above the chart's card, and the two were describing the
        same filtered rows — the total for the period, and the figure for
@@ -230,6 +219,41 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
       ? { label: "Paid", sign: "\u2212", value: periodPaidTotal, color: TXN_OUT_COLOR }
       : { label: "Received", sign: "+", value: periodReceivedTotal, color: TXN_IN_COLOR };
     return <div style={{ padding: "14px 16px 16px" }}><DailySpendingChart
+      leading={<button
+    onClick={() => setPeriodPickerOpen(true)}
+    aria-label={`Change period. Currently ${historyPeriodMeta(historyPeriod).label}`}
+    aria-haspopup="dialog"
+    className="v2-tap"
+    style={{
+      // ONE box. The three fixed tabs sat on their own tinted band across
+      // the top of this card, which read as a separate control bar stuck
+      // above a chart rather than as part of it — and three tabs was
+      // already the most that would fit, with the period ladder now running
+      // out to five years.
+      //
+      // A funnel and the current period, on the card's own surface: it
+      // takes a corner instead of a row, holds nine options as easily as
+      // three, and the card is a single box again.
+      //
+      // It sat on a line of its own with the period's total beneath it and
+      // to the right — the filter floating above its own answer. It is now
+      // the LEFT of the chart's header row and the total is the right, so
+      // the control and the figure it produces read as one statement:
+      // "This Week" ......... "+202,205.00 GEU".
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      flexShrink: 0,
+      border: `1px solid ${T.line}`,
+      borderRadius: 999,
+      background: "transparent",
+      padding: "5px 12px 5px 9px",
+      cursor: "pointer",
+      fontSize: 11.5,
+      fontWeight: 800,
+      color: T.accent
+    }}
+  ><FilterHist size={13} color={T.accent} />{historyPeriodMeta(historyPeriod).label}</button>}
       weeks={historyDailyTrend.weeks}
       totals={historyDailyTrend.totals}
       currencyCode={ccyCode}
@@ -257,7 +281,7 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
       >{active.sign}{geuLensMoney(active.value, ccyCode, lens)}</span>}
     /></div>;
   })()}</div>{
-  }<div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>{["all", "bank", "paylater", "coin"].map((m) => <button
+  }<div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>{HISTORY_METHOD_CHIPS.map((m) => <button
     key={m}
     onClick={() => setHistoryMethodFilter(m)}
     className="v2-tap"

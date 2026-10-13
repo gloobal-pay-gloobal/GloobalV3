@@ -231,16 +231,21 @@ var GEU_LENS_CHAR_RATIO = 0.68;
 // rare one having a defect.
 var GEU_LENS_FIGURE_ROOM = 258;
 
-// 32 is the design size and nothing is ever printed larger. 13 is the floor,
-// and it is a floor rather than a continuation because below it the figure
-// stops being the loudest thing on the card, which is a different kind of
-// broken. It holds a twenty-nine character balance — "100,000,000,000,000.00
-// GEU (INR)" and more — so reaching it means the card is the wrong shape for
-// the money in it, not that the rule gave up.
+// 32 is the design size and nothing is ever printed larger. 13 is the floor
+// for the BALANCE, and it is a floor rather than a continuation because below
+// it the figure stops being the loudest thing on the card, which is a
+// different kind of broken. It holds a twenty-nine character balance —
+// "100,000,000,000,000.00 GEU (INR)" and more — so reaching it means the card
+// is the wrong shape for the money in it, not that the rule gave up.
+//
+// A caller may pass its own floor. The week's two figures under the balance
+// do: they are secondary, they share one row between them, and 11px keeps
+// them side by side where 13 would push them onto separate lines. A smaller
+// floor is right exactly where the figure is not the point of the card.
 var GEU_LENS_FIGURE_MAX = 32;
 var GEU_LENS_FIGURE_MIN = 13;
 
-function geuLensFigureFontSize(figure, bracket, availablePx) {
+function geuLensFigureFontSize(figure, bracket, availablePx, floorPx) {
   // 0.45 is the bracket's 13px against the figure's 32px, rounded toward
   // caution for the same reason the ratio above is.
   const weighted = String(figure || "").length + String(bracket || "").length * 0.45;
@@ -251,8 +256,13 @@ function geuLensFigureFontSize(figure, bracket, availablePx) {
   // whether the number is POSITIVE rather than whether it is present.
   const room = Number(availablePx) > 0 ? Number(availablePx) : GEU_LENS_FIGURE_ROOM;
 
+  // Same positive test as the width: Number(null) is 0, and a floor of 0
+  // would let a figure shrink to nothing rather than fall back to the
+  // default.
+  const floor = Number(floorPx) > 0 ? Number(floorPx) : GEU_LENS_FIGURE_MIN;
+
   const ideal = Math.floor(room / (weighted * GEU_LENS_CHAR_RATIO));
-  return Math.max(GEU_LENS_FIGURE_MIN, Math.min(GEU_LENS_FIGURE_MAX, ideal));
+  return Math.max(floor, Math.min(GEU_LENS_FIGURE_MAX, ideal));
 }
 
 // ── THE RULE: ONLY YOUR OWN MONEY IS RELABELLED ─────────────────────────

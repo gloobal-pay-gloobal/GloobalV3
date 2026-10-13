@@ -261,7 +261,7 @@ describe("GEU appears nowhere money moves", () => {
     // available outcome: not a small number, a DIFFERENT number, shown
     // without a warning in the one place a person trusts absolutely.
     const lens = code(LENS);
-    assert.match(lens, /function geuLensFigureFontSize\(figure, bracket, availablePx\)/);
+    assert.match(lens, /function geuLensFigureFontSize\(figure, bracket, availablePx, floorPx\)/);
     assert.match(lens, /const ideal = Math\.floor\(room \/ \(weighted \* GEU_LENS_CHAR_RATIO\)\);/,
       "the size is chosen from a list again instead of computed from the width");
     // Number(null) is 0 and 0 is finite, so a missing width must be caught
@@ -733,5 +733,96 @@ describe("every screen that shows money answers to the one toggle", () => {
     const dash = code(DASH);
     assert.ok(!/useState\d*\(\(\) => readGeuLens\(\)\)/.test(dash),
       "the dashboard holds a private copy of the lens again");
+  });
+});
+
+describe("the week's two figures hold together as well as the balance does", () => {
+  // Reported from a phone as "the dashboard amount is still breaking on
+  // high value" — and it was not the balance. The balance was masked
+  // behind its dots; what broke was the pair underneath it:
+  //
+  //     −1,476,151.51
+  //     GEU                    +1,402,205.00
+  //                            GEU
+  //
+  // The same fault as the balance, one component down, missed because the
+  // fix was applied to the figure the first screenshot showed rather than
+  // to every figure on the card. That is the second time in this session a
+  // defect has been one level away from where it was looked for.
+  const chart = code("frontend/components/cards/misc.jsx");
+
+  test("a figure can never split from its unit", () => {
+    // The actual defect. Whatever the width, "1,476,151.51 GEU" is one
+    // fact and must stay on one line — a number separated from its unit is
+    // two facts where there was one.
+    assert.match(chart, /whiteSpace: "nowrap"/,
+      "the week's figures can still wrap mid-value");
+    assert.match(chart, /const figureStyle = \(color\) => \(\{ fontSize: figureSize[^}]*whiteSpace: "nowrap" \}\)/,
+      "the two figures no longer share one style, so they can drift apart");
+  });
+
+  test("both are sized from the longer of the two, so they print at one size", () => {
+    assert.match(chart, /paidText\.length >= receivedText\.length \? paidText : receivedText/,
+      "the figures are sized independently and can come out at two sizes");
+    assert.ok(!/fontSize: 15, fontWeight: 800, color: C\.(paid|received)Text \}/.test(chart),
+      "a flat 15px figure is back");
+  });
+
+  test("the row may wrap, so an impossible pair stacks whole rather than splitting", () => {
+    // Below the floor even two complete figures will not sit side by side.
+    // Then the ROW wraps and they stack as two intact values, which is the
+    // honest failure: a second line is readable, half a number is not.
+    assert.match(chart, /flexWrap: "wrap"/);
+  });
+
+  test("the rule is the balance's rule, handed a smaller room and floor", () => {
+    // Not a second sizing scheme. One arithmetic, two callers — otherwise
+    // the card's two halves drift apart the next time either is touched.
+    assert.match(chart, /geuLensFigureFontSize\(/);
+    assert.match(chart, /var SPENDING_FIGURE_ROOM_PAIR = \d+;/);
+    assert.match(chart, /var SPENDING_FIGURE_MIN = \d+;/);
+
+    const lens = code(LENS);
+    const sizer = new Function(
+      lens.slice(lens.indexOf("var GEU_LENS_CHAR_RATIO"),
+        lens.indexOf("\n}\n", lens.indexOf("function geuLensFigureFontSize(")) + 2) +
+      "\nreturn geuLensFigureFontSize;"
+    )();
+
+    const PAIR = Number(chart.match(/var SPENDING_FIGURE_ROOM_PAIR = (\d+);/)[1]);
+    const FLOOR = Number(chart.match(/var SPENDING_FIGURE_MIN = (\d+);/)[1]);
+    const RATIO = 0.68;
+
+    // The founder's own week, which is the case that was reported.
+    const paid = "−1,476,151.51 GEU";
+    const received = "+1,402,205.00 GEU";
+    const size = Math.min(15, sizer(paid.length >= received.length ? paid : received, "", PAIR, FLOOR));
+    const widest = Math.max(paid.length, received.length) * size * RATIO;
+    assert.ok(widest <= PAIR,
+      `the reported week needs ${Math.round(widest)}px of ${PAIR} at ${size}px — it would still wrap`);
+
+    // An ordinary week keeps the design size rather than being shrunk for
+    // a problem it does not have.
+    assert.equal(Math.min(15, sizer("−2,400.00₹", "", PAIR, FLOOR)), 15);
+
+    // And the floor is honoured rather than ignored.
+    assert.equal(sizer("x".repeat(400), "", PAIR, FLOOR), FLOOR);
+  });
+
+  test("a floor of nothing falls back rather than shrinking a figure away", () => {
+    // Number(null) is 0 and 0 is finite, so this has to ask whether the
+    // floor is POSITIVE. Without that a caller passing nothing would get a
+    // floor of zero and a figure sized to vanish.
+    const lens = code(LENS);
+    assert.match(lens, /const floor = Number\(floorPx\) > 0 \? Number\(floorPx\) : GEU_LENS_FIGURE_MIN;/);
+    const sizer = new Function(
+      lens.slice(lens.indexOf("var GEU_LENS_CHAR_RATIO"),
+        lens.indexOf("\n}\n", lens.indexOf("function geuLensFigureFontSize(")) + 2) +
+      "\nreturn geuLensFigureFontSize;"
+    )();
+    for (const nothing of [null, undefined, 0, -5, NaN, "small"]) {
+      assert.equal(sizer("x".repeat(400), "", 133, nothing), 13,
+        `a floor of ${JSON.stringify(nothing)} did not fall back to the default`);
+    }
   });
 });

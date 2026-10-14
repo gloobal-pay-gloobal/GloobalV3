@@ -24,10 +24,9 @@ edit in D:\gloobalv3  →  git commit  →  git push origin main
          Netlify → frontend                        Render → API (server/)
 ```
 
-Both halves auto-deployed on a push to `main` when this was last checked
-(7 September 2026) — see the Deployment section for the evidence and for
-what to do if it stops. This reverses the earlier note that neither half
-was automatic.
+**Neither half deploys on a push.** Both are triggered by hand from their
+own dashboards — see the Deployment section for the evidence, the exact
+steps, and how to verify afterwards.
 
 `D:\gloobalv3` is the single active workspace. Every other Gloobal folder
 on this machine — including `D:\Desktop\Gloobal`, `D:\Gloobal project`,
@@ -209,28 +208,52 @@ Two independent deploy targets, from the same repo. See
 
 Neither path may move.
 
-**Auto-deploy was working on both targets on 7 September 2026.** This
-section previously said the opposite — that both GitHub Apps had lost
-repository access after the rename and no push could ever trigger a build.
-That was true when it was written and is not true now.
+**A PUSH TO `main` DEPLOYS NOTHING. Both targets must be triggered by
+hand.** This section has now said three different things, so it is worth
+being precise about what is known rather than restating a conclusion.
 
-What was observed. Merge `d6d9841` was pushed to `main` at 16:42 IST with
-no manual deploy from anyone, and within minutes:
+What was observed on 14 October 2026. Commit `663d28f` was pushed to
+`main`; no build started on either target. Checked through each provider's
+own API rather than by looking at the sites:
 
-- the API served `GET /api/coverage`, a route that exists only in that
-  merge, against real production data;
-- the Netlify site served `/assets/index-B6Q6BnlK.js`, and a local
-  production build of `d6d9841` produced a bundle with the same name.
-  Vite's filename hash is derived from the content, so that is not a
-  coincidence — it identifies the deployed bundle as that exact commit.
+- Netlify's live deploy was still `a735f00`, created 13 October 09:20,
+  with `manual_deploy: false` and `deploy_source: "api"` — i.e. the last
+  thing that built it was an API call, not the push before it.
+- Render's four most recent deploys carry `trigger: "manual"`,
+  `"manual"`, `"manual"`, `"api"`. Not one says `deploy`/`git`.
 
-Note what this does and does not establish. It shows both sides picked up
-one push automatically; it does not prove the underlying GitHub App
-permissions were repaired deliberately, and nobody has re-read those
-settings. Treat auto-deploy as working but verify rather than assume,
-especially after any repository rename or transfer.
+So the 7 September note — "auto-deploy was working on both targets" —
+either described a one-off or has since stopped being true. That note was
+itself a correction of an earlier note saying the opposite. The pattern
+across all three is that somebody checked, concluded, and wrote the
+conclusion down; what survives re-reading is the EVIDENCE, so the figures
+above are what this section is for.
 
-How to verify after a push, without opening either dashboard:
+Do not spend time re-enabling it before asking whether it was ever
+reliably on. Nothing here depends on automatic deploys.
+
+### How to deploy
+
+**Netlify** — the dashboard, and specifically this path, which builds from
+the linked git repo:
+
+> app.netlify.com/projects/gloobalv3 -> Deploys -> Trigger deploy ->
+> Deploy site
+
+There is also a `npx @netlify/mcp ... --proxy-path <token>` command, which
+the Netlify MCP server hands back when asked to deploy. **Do not run it in
+this repository.** It uploads the working directory rather than building
+from git, and `D:\gloobalv3` holds `server/.env` and
+`tools/email/secret.txt`. Whether that upload honours `.gitignore` has not
+been established, and the cost of being wrong is the Mongo URI and the
+auth signing key leaving the machine.
+
+**Render** — Manual Deploy -> Deploy latest commit, on the service
+dashboard. Render only rebuilds when files under `server/` change, so a
+docs- or frontend-only commit leaving Render on an older commit is
+correct and needs no deploy at all.
+
+### How to verify afterwards, without opening either dashboard
 
 ```bash
 # Render — a route that only exists in the commit you just pushed
@@ -242,16 +265,19 @@ ls gloobal-essentials-preview/dist/assets/index-*.js
 curl -s https://gloobalv3.netlify.app/ | grep -o '/assets/index-[^"]*\.js'
 ```
 
-Matching filenames mean the live frontend is your commit. The API is on
-Render's free tier and spins down after about fifteen minutes idle, so the
-first request after a quiet spell can take 20-50 seconds — a slow first
-curl is a cold start, not a failed deploy.
+Matching filenames mean the live frontend is your commit. Vite derives the
+hash from the content, so a match is identification rather than a
+coincidence — and because it is content-based, two checkouts of the same
+tree produce the same name, which is also how you confirm one machine's
+build equals another's.
 
-If a push does not land, trigger a manual deploy from the Render and
-Netlify dashboards, and check the GitHub App's repository access before
-assuming the service is misconfigured. Background in
-`docs/deployment/README.md`, which still describes the earlier broken
+In PowerShell, `Invoke-WebRequest` refuses to parse HTML without
+`-UseBasicParsing`; use `curl.exe` instead of `curl`, which is an alias for
+it.
+
+The API is on Render's free tier and spins down after about fifteen minutes
+idle, so the first request after a quiet spell can take 20-50 seconds — a
+slow first curl is a cold start, not a failed deploy.
+
+Background in `docs/deployment/README.md`, which describes a still earlier
 state and has not been updated.
-
-Render only rebuilds when files under `server/` change, so a docs- or
-frontend-only commit leaving Render on an older commit is correct.

@@ -544,6 +544,36 @@ function geuLensTrailSize(figurePx) {
   return Math.max(8, Math.round(px * GEU_LENS_TRAIL_RATIO));
 }
 
+// ── THE UNIT PAIR ON ITS OWN, FOR A FIELD RATHER THAN A FIGURE ──────────
+//
+// The Send screen's amount box is an INPUT: the digits live in the field a
+// person is typing into, and the currency sits beside it as a marker. So it
+// needs the two names without a figure attached.
+//
+//     your own money      ₹ │ GEU        flipping to    GEU │ ₹
+//     someone else's      $ │ USD        flipping to    GEU │ USD
+//
+// Same rule as geuLensBarMoney and derived from the same function, so a
+// field and a figure cannot name the same currency differently.
+//
+// Worth being explicit about the foreign off-lens case, which looks odd
+// written down: "$ │ USD" is the symbol and the code, and that is exactly
+// what a foreign FIGURE reads in the same lens ("98.00€ │ EUR"). The symbol
+// is what you recognise; the code is which dollar it is.
+function geuLensUnitPair(currencyCode, lens, ownCurrency) {
+  const unit = geuLensBarUnit(currencyCode, lens, ownCurrency);
+  // Not a currency — no marker and no GEU, same as a figure with none.
+  if (!unit) return { lead: "", trail: "" };
+  if (lens === GEU_LENS_GEU) return { lead: COIN_TICKER, trail: unit };
+  const code = String(currencyCode || "").trim().toUpperCase();
+  const symbol = String(typeof currencySuffix === "function" ? currencySuffix(code) : code).trim();
+  const trail = geuLensSameCurrency(code, ownCurrency) ? COIN_TICKER : unit;
+  // The franc again: its symbol IS its code, so "CHF │ CHF" would name it
+  // twice. One name is the honest answer.
+  if (symbol.toUpperCase() === String(trail).toUpperCase()) return { lead: symbol, trail: "" };
+  return { lead: symbol, trail };
+}
+
 // ── WHAT A FOREIGN FIGURE COST YOU ──────────────────────────────────────
 //
 //     98.00 GEU │ EUR

@@ -181,10 +181,45 @@ describe("the number is relabelled, never converted", () => {
 // the figure is FOR. So a request carries Rohan's real tender and John sees
 // what leaves his own account.
 describe("GEU appears nowhere money moves", () => {
-  test("Send Money has no GEU figure and no Coin pay source", () => {
+  test("Send Money names BOTH sides, and never conflates them", () => {
+    // ── WHAT THIS TEST USED TO SAY, AND WHY IT CHANGED ──────────────────
+    //
+    // It forbade GEU on this screen outright: "the amount being entered is
+    // the amount leaving, and that is a moment to be unambiguous about real
+    // currency". That was right while GEU carried a MAGNITUDE — "2 GEU"
+    // meant ₹2 to one reader and $2 to another, and a payment screen is the
+    // last place to write something whose meaning depends on who is looking.
+    //
+    // Under the founder's model GEU never appears without the currency it is
+    // in, so there is no ambiguous way left to write a figure here. The ban
+    // was protecting against a thing that can no longer be expressed.
+    //
+    // WHAT REPLACES IT IS THE RULE THAT ALWAYS MATTERED. This screen shows
+    // two figures from two different currencies — the box is what the
+    // RECEIVER gets in THEIR money, the button is what leaves YOURS — and the
+    // bug this suite exists for is the two being mixed up. ₹478,000 shown as
+    // $478,000 is what that looks like.
     const send = code("frontend/screens/SendMoney/SendMoney.jsx");
-    assert.ok(!/COIN_TICKER|geuLensMoney|GEU_LENS/.test(send),
-      "a GEU figure has reached the send flow");
+
+    // The box is drawn from the RECEIVER's currency, against the sender's as
+    // the viewer — which is what makes a foreign box read "GEU │ USD" rather
+    // than borrowing the payer's symbol.
+    assert.match(send, /geuLensUnitPair\(bottom\.currency, lens, top\.currency\)/,
+      "the amount box is not drawn from the receiver's own currency");
+    // The button is the payer's, both sides of the call.
+    assert.match(send, /geuLensBarParts\(senderAmount, top\.currency, lens, top\.currency\)/,
+      "the Send button is not drawn from the payer's own currency");
+    // Neither may be built from the other's currency. These two lines are
+    // the whole point: a single transposed `top`/`bottom` is the defect.
+    assert.ok(!/geuLens\w+\(bottom\.currency, lens, bottom\.currency\)/.test(send),
+      "the amount box treats the receiver's money as the viewer's own");
+    assert.ok(!/geuLens\w+\(senderAmount, bottom\.currency/.test(send),
+      "the Send button is quoting the payer in the receiver's currency");
+
+    // And the screen reads the SHARED lens rather than keeping its own.
+    assert.match(send, /const lens = useGeuLens\(\);/,
+      "the send screen is not reading the one lens");
+
     assert.ok(!/key: "gcoin"/.test(send), "Gloobal Coin is a pay source again");
   });
 

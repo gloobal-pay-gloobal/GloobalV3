@@ -158,6 +158,25 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     // own account's, never the sender's.
     setBottom((current) => (current.id ? current : buildLocalReceiverPlaceholder(next)));
   }, [sender && sender.iso, sender && sender.dialCode, sender && sender.phoneNumber, sender && sender.mobileNumber, sender && sender.fullName, liveSenderId]);
+  // ── THE LENS REACHES THE SEND SCREEN TOO ──────────────────────────────
+  //
+  // It deliberately did not, and a test asserted as much. The reasoning was
+  // that the amount being entered is the amount leaving, and that is a
+  // moment to be unambiguous about real currency — which was correct while
+  // GEU carried a MAGNITUDE, because "2 GEU" then meant something different
+  // to whoever read it.
+  //
+  // Under the founder's model GEU never appears without the currency it is
+  // in, so there is no longer an ambiguous way to write a figure here. The
+  // screen already shows the two sides he described — "shop is asking 2
+  // GEU │ USD, I pay them 176 GEU │ INR" — one in the box, one on the
+  // button. It was the only screen in the app still answering to nothing.
+  //
+  // WHAT IS STILL TRUE: the two figures come from DIFFERENT currencies and
+  // must never be conflated. The box is the receiver's own money, fixed to
+  // their account; the button is what leaves yours. The bar names both, which
+  // is what makes showing them together safe rather than merely tidy.
+  const lens = useGeuLens();
   const [amount, setAmount] = useState15("");
   const [topOpen, setTopOpen] = useState15(false);
   const [bottomOpen, setBottomOpen] = useState15(true);
@@ -1603,8 +1622,21 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       color: T.inkSoft,
       lineHeight: 1
     }}
+    // The CODE, not the symbol, is what the spoken label carries, and the bar
+    // is left out of it — U+2502 has no reliable spoken form. The eye gets
+    // both names; the ear gets the one that identifies the money.
     aria-label={`Receiver's currency: ${bottom.currency} \u2014 fixed to their account, can't be changed`}
-  >{CURRENCY_SYMBOL[bottom.currency] || bottom.currency}</span></div></>}</div></>}{
+  >{(() => {
+    // The receiver's currency is theirs, so `bottom.currency` is passed as
+    // the figure's code and `top.currency` as the viewer's own — which is
+    // what makes a foreign box read "GEU │ USD" rather than borrowing the
+    // sender's symbol. See geuLensUnitPair.
+    const pair = geuLensUnitPair(bottom.currency, lens, top.currency);
+    if (!pair.lead) return CURRENCY_SYMBOL[bottom.currency] || bottom.currency;
+    return <>{pair.lead}{pair.trail && <span
+      style={{ fontSize: geuLensTrailSize(20), fontWeight: 800 }}
+    > {GEU_LENS_BAR} {pair.trail}</span>}</>;
+  })()}</span></div></>}</div></>}{
     /* SWAP — only once a receiver's been found. Flips currency
        sides and, with it, which card is shown big vs as a strip.
        The search bar itself always looks up the receiver, no
@@ -1684,7 +1716,22 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
     onClick={handleSend}
     style={{ padding: "14px 18px", marginTop: topOpen ? 0 : 24 }}
   ><span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}><SendMoneyLucideIcon size={18} />
-                {bottom.registered === false ? "Simulate " : "Send "}{fmtMoney(senderAmount, top.currency)}</span></button>}</>}{
+                {bottom.registered === false ? "Simulate " : "Send "}{(() => {
+    // What leaves YOUR account, in your own money — so top.currency is both
+    // the figure's currency and the viewer's. The active unit leads and the
+    // other trails at 75%, the same as every figure in the app.
+    //
+    // WRAPPED IN ONE SPAN, and that is not cosmetic. This button's row is a
+    // flex container with `gap: 10` for the icon, and a bare fragment makes
+    // the digits and the trailing unit two separate flex items — so the gap
+    // lands between a number and its own currency, and the pair is free to
+    // break across lines. An amount and its unit are one thing; this keeps
+    // the browser agreeing.
+    const parts = geuLensBarParts(senderAmount, top.currency, lens, top.currency);
+    return <span style={{ whiteSpace: "nowrap" }}>{parts.lead}{parts.trail && <span
+      style={{ fontSize: geuLensTrailSize(16), fontWeight: 800 }}
+    > {parts.trail}</span>}</span>;
+  })()}</span></button>}</>}{
     /* Funding source — the four ways a transfer can be paid. Picking
        one moves straight on to the OTP confirmation. */
   }{payMethodOpen && <div

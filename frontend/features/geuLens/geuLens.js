@@ -490,6 +490,60 @@ function geuLensBarMoney(amount, currencyCode, lens, ownCurrency) {
   return `${geuLensMoney(amount, currencyCode, GEU_LENS_GEU)} ${GEU_LENS_BAR} ${unit}`;
 }
 
+// ── THE UNIT YOU CHOSE IS THE BIGGER ONE ────────────────────────────────
+//
+//     toggle on       8,000.00 GEU │ ₹        GEU full size, ₹ at 75%
+//     toggle off      8,000.00₹ │ GEU         ₹ full size, GEU at 75%
+//
+// The founder's words: "during toggle flip INR big GEU small, like that, so
+// we show them what they chose is bigger than the other".
+//
+// Which makes the size do a job no label can. Both names are always on the
+// line — that is the rule this module exists to keep — so the only thing
+// left to say is WHICH ONE YOU ARE READING IN, and a person should be able
+// to answer that without reading either word. Weight of type answers it at a
+// glance, and it answers it the same way on a balance card, a history row
+// and a receipt, because it is a ratio rather than a size.
+//
+// 0.75 and not smaller. The balance card's old bracket sat at 0.42, which
+// works on a 32px figure and gives 6px on a 14px history row — small enough
+// to be decoration rather than information, on the half of the line that
+// says which currency the money is in.
+//
+// SMALLER, NOT FAINTER. The row's colour already carries direction — red out,
+// green in — and fading half the figure would put a third signal on a line
+// that has two. The size difference is the whole mechanism.
+var GEU_LENS_TRAIL_RATIO = 0.75;
+
+// The barred figure in two pieces, for a caller that can draw two spans.
+//
+// `lead` is the figure with the unit it is being READ in, and `trail` is the
+// bar with the other name. Split here rather than at each call site because
+// the split point depends on the lens — the active unit swaps sides — and
+// ten call sites deriving that independently is nine chances to get it
+// backwards on one screen.
+//
+// A caller that can only take a string keeps using geuLensBarMoney, which is
+// these two joined. Both come from the same function, so they cannot
+// disagree about what the figure says.
+function geuLensBarParts(amount, currencyCode, lens, ownCurrency) {
+  const whole = geuLensBarMoney(amount, currencyCode, lens, ownCurrency);
+  const at = whole.indexOf(GEU_LENS_BAR);
+  // No bar means no second unit — a figure with no currency at all, or one
+  // whose own text already ends in its code. It is one piece, at full size.
+  if (at < 0) return { lead: whole, trail: "" };
+  return { lead: whole.slice(0, at).trimEnd(), trail: whole.slice(at) };
+}
+
+// The size for the trailing half, given the figure's own size. Rounded
+// rather than left fractional: a half-pixel font size is rendered
+// inconsistently across engines, and this lands beside a figure whose size is
+// already an integer from geuLensRowFontSize.
+function geuLensTrailSize(figurePx) {
+  const px = Number(figurePx) > 0 ? Number(figurePx) : GEU_LENS_ROW_BASE;
+  return Math.max(8, Math.round(px * GEU_LENS_TRAIL_RATIO));
+}
+
 // ── WHAT A FOREIGN FIGURE COST YOU ──────────────────────────────────────
 //
 //     98.00 GEU │ EUR

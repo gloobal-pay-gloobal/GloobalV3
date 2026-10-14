@@ -66,6 +66,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
   // padding and the card's own. Floor of 14 rather than the balance's 13:
   // this card has one figure on it and no competition for the width.
   const assetsTotalSize = geuLensRowFontSize(assetsTotalText, 30, 284, 14);
+  const assetsTotalParts = geuLensBarParts(totalAssets, ccyCode, lens, ccyCode);
   return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onClose} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>My Assets</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}>{
     /* The whole chain, in one card: what is here now, how much of the
        spending that is, and where it lands.
@@ -75,7 +76,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
        no quantity, so they explain nothing. The same chain with its
        numbers attached is the only version that says something — that the
        destination is the spending itself, returned in full. */
-  }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "20px" }}><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Current assets</div><div style={{ fontSize: assetsTotalSize, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, letterSpacing: -0.7, marginTop: 3, whiteSpace: "nowrap" }}>{assetsTotalText}</div><div style={{ height: 8, borderRadius: 99, background: "rgba(255,255,255,0.18)", overflow: "hidden", marginTop: 16 }}><div
+  }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "20px" }}><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Current assets</div><div style={{ fontSize: assetsTotalSize, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, letterSpacing: -0.7, marginTop: 3, whiteSpace: "nowrap" }}>{assetsTotalParts.lead}{assetsTotalParts.trail && <span style={{ fontSize: geuLensTrailSize(assetsTotalSize), fontWeight: 800 }}> {assetsTotalParts.trail}</span>}</div><div style={{ height: 8, borderRadius: 99, background: "rgba(255,255,255,0.18)", overflow: "hidden", marginTop: 16 }}><div
     style={{
       // Same rule as every other bar in the app: a floor so a tiny real
       // value is a visible sliver, but zero draws nothing at all.

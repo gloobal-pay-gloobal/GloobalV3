@@ -1938,7 +1938,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // a 13px bracket is nearly the same size as the number it annotates,
     // which inverts the hierarchy \u2014 the name would read as loudly as the
     // amount.
-    style={{ fontSize: Math.max(11, Math.round(balanceFontSize * 0.42)), fontWeight: 700, marginLeft: GEU_LENS_BAR_GAP, opacity: 0.62, letterSpacing: 0.2 }}
+    // 0.75 of the figure, where this was 0.42 — see GEU_LENS_TRAIL_RATIO.
+    // The old ratio was this card's own invention and worked on a 32px
+    // figure; applied to a 14px history row it gave 6px, so the app had two
+    // answers to "how big is the second unit". One ratio now, everywhere.
+    //
+    // The fade goes with it. The founder's rule is that SIZE says which unit
+    // you chose, and a second signal saying the same thing is one the eye has
+    // to reconcile. It also made the rupee look disabled next to a figure it
+    // is every bit as true as.
+    style={{ fontSize: geuLensTrailSize(balanceFontSize), fontWeight: 700, marginLeft: GEU_LENS_BAR_GAP, letterSpacing: 0.2 }}
   >{balanceBracket}</span></> : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}

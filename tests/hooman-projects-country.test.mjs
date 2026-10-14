@@ -269,7 +269,12 @@ describe("the number on the card counts what the list shows", () => {
     // and a symbol alone would not say whose money it was (₹ belongs to five
     // countries, $ to more than twenty).
     assert.match(src, /const hoomanRaisedText = geuLensBarMoney\(hoomanRaisedTotal, displayCurrency, lens, myCurrency\);/);
-    assert.match(src, /\{hoomanRaisedText\}/, "the hero is not rendering the figure it built");
+    // Rendered as two spans now — the unit being read in is the larger half,
+    // see GEU_LENS_TRAIL_RATIO — so the markup carries the PARTS and the
+    // joined string drives the sizing beside it.
+    assert.match(src, /const hoomanRaisedParts = geuLensBarParts\(hoomanRaisedTotal, displayCurrency, lens, myCurrency\);/);
+    assert.match(src, /\{hoomanRaisedParts\.lead\}/, "the hero is not rendering the figure it built");
+    assert.match(src, /geuLensTrailSize\(hoomanRaisedSize\)/, "the hero's second unit is not drawn smaller");
 
     // Only one place inside the projects overlay talks about Our spending now
     // — none. The Coverage panel's row lives outside it.

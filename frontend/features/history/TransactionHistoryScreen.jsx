@@ -225,6 +225,10 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
     // the rule is read from, rather than reaching past the rule with
     // geuLensMoney and hoping the two stay in step.
     const historyTotalText = geuLensBarMoney(active.value, ccyCode, lens, ccyCode);
+    // Two pieces, so the unit being read in is the larger one. The joined
+    // string above still drives the sizing and the spoken label.
+    const historyTotalParts = geuLensBarParts(active.value, ccyCode, lens, ccyCode);
+    const historyTotalSize = geuLensRowFontSize(`${active.sign}${historyTotalText}`, 19, 150, 11);
     return <div style={{ padding: "14px 16px 16px" }}><DailySpendingChart
       leading={<button
     onClick={() => setPeriodPickerOpen(true)}
@@ -287,14 +291,16 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
           // Sized from its own content now that it carries four more
           // characters, down from 19 only when it has to — this figure
           // shares one row with the period chip beside it.
-          fontSize: geuLensRowFontSize(`${active.sign}${historyTotalText}`, 19, 150, 11),
+          fontSize: historyTotalSize,
           fontWeight: 800,
           color: active.color,
           fontFamily: T.fontDisplay,
           whiteSpace: "nowrap",
           flexShrink: 0
         }}
-      >{active.sign}{historyTotalText}</span>}
+      >{active.sign}{historyTotalParts.lead}{historyTotalParts.trail && <span
+        style={{ fontSize: geuLensTrailSize(historyTotalSize), fontWeight: 800 }}
+      > {historyTotalParts.trail}</span>}</span>}
     /></div>;
   })()}</div>{
   }<div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 2 }}>{HISTORY_METHOD_CHIPS.map((m) => <button

@@ -531,20 +531,46 @@ describe("a payment says what it gave back", () => {
   // since the two-sided share work, and nothing new is fetched to show it.
   const row = readSource("frontend/features/history/TransactionRow.jsx");
 
-  test("each side reads its OWN side of the share", () => {
-    // Both sides are carried on a payment row — shareReceiverAmount is the
-    // payer's (from `cashbackCredit`) and shareSenderAmount the payee's
-    // (from `cashback`). This used to read only the payer's and show nothing
-    // on the payee's copy, so half the rows that planted a seed still looked
-    // like rows that had not.
+  test("ONLY A SHARE LEG carries the note", () => {
+    // ── WHAT THE FOUNDER SAW, AND WHY IT WAS WRONG ──────────────────────
     //
-    // It was safe to show only one while the note CARRIED A FIGURE: the two
-    // sides are different numbers in different tenders, and printing the
-    // payee's under the payer's own amount would have been somebody else's
-    // money on your row. The note carries no figure now, so that objection
-    // is gone and the marker can appear wherever a seed exists.
-    assert.match(row, /sign === "\\u2212"\s*\n?\s*\? Number\(t\.shareReceiverAmount\)\s*\n?\s*: Number\(t\.shareSenderAmount\)/,
-      "the row is not picking the share figure that belongs to the side it is drawing");
+    // This keyed on the share FIGURES — shareReceiverAmount on the paid side,
+    // shareSenderAmount on the received one — which put the note on every
+    // PAYMENT that happened to carry a share. On his own Received tab that
+    // read "+200.00 GEU │ ₹ / Assets received" against money somebody had
+    // paid him. It is a payment. Nothing about it was received as assets.
+    //
+    // `kind` comes from HISTORY_ROW_SHAPE_BY_TYPE and is "share" on exactly
+    // the rows that ARE the share — the −4.00 sitting two seconds after the
+    // +200.00 that produced it.
+    assert.match(row, /t\.kind === "share"/,
+      "the note is not keyed on the row being a share leg");
+    assert.ok(!/t\.shareReceiverAmount|t\.shareSenderAmount/.test(row),
+      "the row is still reading share figures to decide whether to label itself");
+  });
+
+  test("and the two labels are now TRUE, which they were not before", () => {
+    // Worth a test of its own, because this file previously carried one
+    // asserting the opposite and explaining why it had to stay.
+    //
+    // On a PAYMENT row the labels were the opposite of the movement in both
+    // directions: a paid payment's share comes BACK to the viewer, and a
+    // received payment's share goes OUT of what they received, so "shared"
+    // sat on the gain and "received" on the loss. That was left as the
+    // founder chose it and pinned so nobody silently flipped it.
+    //
+    // On a SHARE LEG there is nothing to reconcile. The paid leg IS the share
+    // leaving; the received leg IS the share arriving. Same two strings, on
+    // the rows they describe.
+    assert.match(row, /sign === "\\u2212" \? "Assets shared" : "Assets received"/);
+    // The file still EXPLAINS that they used to read backwards on a payment
+    // row — that history is why the labels look odd out of context, and it is
+    // worth keeping. What must be gone is the live admission that shipped
+    // code reads wrong: "Raised with the founder and left as chosen".
+    assert.ok(!/Raised with the founder and left as chosen/.test(row),
+      "the row still says these labels were knowingly left reading backwards");
+    assert.match(row, /true|TRUE/,
+      "nothing in the row explains why these labels are correct where they now sit");
   });
 
   test("the note carries no figure at all", () => {
@@ -553,38 +579,20 @@ describe("a payment says what it gave back", () => {
     // this row opens shows the share with both sides and the rate between
     // them, which is more than a 9.5px line under an amount can honestly say
     // about a cross-border share.
-    //
-    // What the note is FOR survives the figure's removal, because its job
-    // was never to price the share — it was to mark which rows planted a
-    // seed, so My Assets holding more entries than History holds rows stops
-    // looking like a disagreement. A marker needs no number.
-    assert.match(row, /const shareNote = shareBack > 0\s*\n?\s*\? \(sign === "\\u2212" \? "Assets shared" : "Assets received"\)/,
-      "the share note is not the two plain labels");
-    assert.ok(!/geuLens\w*Money\(shareBack/.test(row),
+    assert.ok(!/geuLens\w*Money\(share|geuLens\w*Parts\(share/.test(row),
       "the share note is formatting a figure again");
   });
 
-  test("the labels are the founder's, and they are the opposite of the movement", () => {
-    // PINNED SO NOBODY SILENTLY 'FIXES' IT, and so the next reader knows it
-    // was seen. On a paid row the share comes BACK to this viewer — the
-    // payer is the share's receiver — and on a received row it goes out of
-    // what they received. So "shared" sits on the gain and "received" on the
-    // loss.
-    //
-    // The labels are true of the PAYMENT (this payment shared assets; assets
-    // were received from it), which is the reading they were chosen under.
-    // They are not true of the viewer's own pocket, which is how a line in
-    // your own history, under your own amount, naming no subject, tends to
-    // be read. Raised with the founder and left as chosen.
-    //
-    // If it ever reads wrong to a real person the fix is to swap the two
-    // strings and nothing else — and this test is then the one to change,
-    // deliberately, rather than the thing that stops you.
-    assert.match(row, /sign === "\\u2212" \? "Assets shared" : "Assets received"/);
-    // Tolerating the comment's own line wrap — the claim is that the
-    // explanation is still there, not that it fits on one line.
-    assert.match(row, /opposite of the\s*(\/\/)?\s*movement/,
-      "the comment explaining why these labels read backwards has been removed");
+  test("a payment row says nothing about the share it produced", () => {
+    // The gap this note was originally added for — "my assets history has
+    // more seeds than this filter shows total transaction" — is closed by the
+    // share legs APPEARING AS THEIR OWN ROWS, which they now do: they reach
+    // the list through /api/transactions/:symbolId, which the app reads.
+    // Every seed has a visible row of its own, so a marker on the payment was
+    // solving a problem the rows already solve.
+    const note = row.slice(row.indexOf("const shareNote"), row.indexOf("const amountParts"));
+    assert.ok(!/cashback|shareReceiver|shareSender/.test(note),
+      "the payment row is labelling itself from a share figure again");
   });
 
   test("it does not become a second row", () => {

@@ -286,7 +286,19 @@ describe("the figure on each row is in the currency that row is actually in", ()
 
   test("amountText is used verbatim and keeps the sign outside it", () => {
     const src = code(ROW);
-    assert.match(src, /const amount = amountText != null\s*\? `\$\{sign\}\$\{amountText\}`/);
+    // The row draws its amount as TWO spans now, so the active unit can be
+    // larger than the other — see GEU_LENS_TRAIL_RATIO. amountText takes the
+    // `trail: ""` branch and so renders exactly as it always did: one piece,
+    // at full size, with the sign outside it and nothing appended.
+    //
+    // That branch is the point. The Coin ledger is counted in GC, which is
+    // not a currency, has no second name and must not be given one — so a
+    // caller that owns its whole figure must come out the other side
+    // untouched.
+    assert.match(src, /const amountParts = amountText != null\s*\? \{ lead: `\$\{sign\}\$\{amountText\}`, trail: "" \}/);
+    // And the joined string, which is what the sizer and the screen reader
+    // get, is still the sign outside the caller's own text.
+    assert.match(src, /const amount = `\$\{amountParts\.lead\}\$\{amountParts\.trail \? ` \$\{amountParts\.trail\}` : ""\}`;/);
   });
 });
 

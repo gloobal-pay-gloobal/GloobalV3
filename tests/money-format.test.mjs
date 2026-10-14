@@ -191,7 +191,14 @@ describe("the receipt's symbol field is no longer what renders it", () => {
     // fmtMoney, and all three take the same code — the chain decides whether
     // the unit is renamed for this reader and what the figure's other unit
     // is called, never how the number itself is formatted.
-    assert.match(modal, /geuLensBarMoney\(paymentAmount, paymentCurrency, lens, viewerCurrency\)/);
+    // Through heroFigure, which is where the hero's two halves and its font
+    // size are derived together — the active unit is drawn larger than the
+    // other, so both spans must be sized from one answer. It calls
+    // geuLensBarMoney and geuLensBarParts on the same arguments; the CODE
+    // being the second one is still the claim this test makes.
+    assert.match(modal, /const heroPayment = heroFigure\(paymentAmount, paymentCurrency, /);
+    assert.match(modal, /geuLensBarMoney\(amount, code, lens, viewerCurrency\)/);
+    assert.match(modal, /geuLensBarParts\(amount, code, lens, viewerCurrency\)/);
     assert.match(modal, /const paymentCurrency = isShareReceipt/);
   });
 

@@ -67,6 +67,7 @@ function loadLens() {
     ${lens.match(/var GEU_LENS_GEU = "[^"]+";/)[0]}
     ${lens.match(/var GEU_LENS_BAR = "[^"]+";/)[0]}
     ${lens.match(/var GEU_LENS_BAR_GAP = \d+;/)[0]}
+    ${lens.match(/var GEU_LENS_TRAIL_RATIO = [\d.]+;/)[0]}
     ${lens.match(/var GEU_LENS_CHAR_RATIO = [\d.]+;/)[0]}
     ${lens.match(/var GEU_LENS_FIGURE_ROOM = \d+;/)[0]}
     ${lens.match(/var GEU_LENS_FIGURE_MAX = \d+;/)[0]}
@@ -83,9 +84,12 @@ function loadLens() {
     ${pick("geuLensBarMoney")}
     ${pick("geuLensCostToYou")}
     ${pick("geuLensRowFontSize")}
+    ${pick("geuLensBarParts")}
+    ${pick("geuLensTrailSize")}
     ${pick("geuLensFigureFontSize")}
     return { geuLensMoney, geuLensBadgeSuffix, geuLensUnitLabel, geuLensOwnMoney,
              geuLensBarUnit, geuLensBarMoney, geuLensCostToYou, geuLensRowFontSize,
+             geuLensBarParts, geuLensTrailSize, GEU_LENS_TRAIL_RATIO,
              geuLensFigureFontSize,
              GEU_LENS_LOCAL, GEU_LENS_GEU, GEU_LENS_BAR, GEU_LENS_BAR_GAP,
              GEU_LENS_CHAR_RATIO, GEU_LENS_FIGURE_ROOM, GEU_LENS_ROW_ROOM, GEU_LENS_ROW_MIN };
@@ -769,8 +773,12 @@ describe("every screen that shows money answers to the one toggle", () => {
     test(`${label} reads the shared lens and formats through geuLensBarMoney`, () => {
       const src = code(file);
       assert.match(src, /useGeuLens\(\)/, `${label} does not read the shared lens`);
-      assert.match(src, /geuLensBarMoney\(/,
-        `${label} is not formatting through geuLensBarMoney, so its figures do not say what else they are called`);
+      // Money OR Parts. geuLensBarParts is geuLensBarMoney split in two, for
+      // a surface that draws the active unit larger than the other — see
+      // GEU_LENS_TRAIL_RATIO. It calls the same function, so either satisfies
+      // the thing this test protects: the figure says what else it is called.
+      assert.match(src, /geuLensBar(Money|Parts)\(/,
+        `${label} is not formatting through the shared bar formatter, so its figures do not say what else they are called`);
       // And no raw fmtMoney left printing a figure the lens should have
       // decided on. The exceptions are the probes — fmtMoney(1, code) is
       // asking a question about the CURRENCY, not printing an amount — and
@@ -1386,5 +1394,86 @@ describe("a foreign figure says what it cost you, from a recorded figure only", 
     const out = geuLensCostToYou(8000, "INR", GEU_LENS_GEU, "INR");
     assert.ok(/GEU/.test(out) && out.includes(GEU_LENS_BAR),
       "the cost line carries GEU without a currency beside it");
+  });
+});
+
+// ── THE UNIT YOU CHOSE IS THE BIGGER ONE ────────────────────────────────
+//
+//     toggle on     8,000.00 GEU │ ₹      GEU full size, ₹ at 75%
+//     toggle off    8,000.00₹ │ GEU       ₹ full size, GEU at 75%
+//
+// The founder's words: "during toggle flip INR big GEU small, like that, so
+// we show them what they chose is bigger than the other".
+//
+// Both names are always on the line — that is this module's whole rule — so
+// the only thing left to say is WHICH ONE YOU ARE READING IN, and a person
+// should be able to answer that without reading either word.
+describe("the active unit is drawn larger than the other", () => {
+  const { geuLensBarParts, geuLensTrailSize, geuLensBarMoney, GEU_LENS_TRAIL_RATIO,
+          GEU_LENS_LOCAL, GEU_LENS_GEU, GEU_LENS_BAR } = loadLens();
+
+  test("the split puts the ACTIVE unit in the lead and the other in the trail", () => {
+    const off = geuLensBarParts(8000, "INR", GEU_LENS_LOCAL, "INR");
+    assert.equal(off.lead, "8,000.00\u20B9");
+    assert.equal(off.trail, `${GEU_LENS_BAR} GEU`);
+    const on = geuLensBarParts(8000, "INR", GEU_LENS_GEU, "INR");
+    assert.equal(on.lead, "8,000.00 GEU");
+    assert.equal(on.trail, `${GEU_LENS_BAR} \u20B9`);
+  });
+
+  test("the two halves always rejoin into the string form", () => {
+    // The string is what the screen reader and the sizer get; the split is
+    // only for the eye. If they could disagree, a row would be measured as
+    // one thing and read aloud as another.
+    for (const [amount, code, viewer] of [[8000,"INR","INR"],[98,"EUR","INR"],[9700,"JPY","JPY"],
+                                          [1450.25,"CHF","INR"],[500,"","INR"],[0,"INR","INR"]]) {
+      for (const lens of [GEU_LENS_LOCAL, GEU_LENS_GEU]) {
+        const p = geuLensBarParts(amount, code, lens, viewer);
+        const joined = `${p.lead}${p.trail ? ` ${p.trail}` : ""}`;
+        assert.equal(joined, geuLensBarMoney(amount, code, lens, viewer),
+          `${amount} ${code} as seen by ${viewer} splits into something that does not rejoin`);
+      }
+    }
+  });
+
+  test("a figure with no second unit is ONE piece, at full size", () => {
+    // No currency at all, and the franc whose own text already ends in its
+    // code. Neither has a second name, so neither gets a smaller half —
+    // rather than an empty span that would still cost a space.
+    for (const [amount, code, viewer] of [[500,"","INR"],[500,"GC","INR"],[1450.25,"CHF","INR"]]) {
+      const p = geuLensBarParts(amount, code, GEU_LENS_LOCAL, viewer);
+      assert.equal(p.trail, "", `${code} produced a trailing unit: ${JSON.stringify(p)}`);
+      assert.ok(p.lead.length > 0);
+    }
+  });
+
+  test("the trail is three-quarters of the figure, and never below 8px", () => {
+    assert.equal(GEU_LENS_TRAIL_RATIO, 0.75);
+    assert.equal(geuLensTrailSize(14), 11);   // a history row
+    assert.equal(geuLensTrailSize(32), 24);   // the balance at full size
+    assert.equal(geuLensTrailSize(19), 14);   // the period total
+    // The floor matters because the figure itself can shrink to 10px on an
+    // extraordinary amount, and 7.5px of currency code is decoration rather
+    // than information — on the half of the line that says which money it is.
+    assert.equal(geuLensTrailSize(10), 8);
+    assert.equal(geuLensTrailSize(4), 8);
+  });
+
+  test("it is always an integer, and always smaller than the figure", () => {
+    // A half-pixel font size renders inconsistently across engines, and this
+    // sits beside a figure whose size is already a whole number.
+    for (let px = 8; px <= 40; px++) {
+      const t = geuLensTrailSize(px);
+      assert.equal(t, Math.round(t), `${px} gave a fractional ${t}`);
+      assert.ok(t <= px, `${px} gave a LARGER trail of ${t}`);
+    }
+  });
+
+  test("a missing size falls back rather than collapsing to zero", () => {
+    // Number(null) is 0 and 0 is finite — the trap this codebase keeps
+    // hitting. A trail of 0px is an invisible currency name.
+    for (const bad of [null, undefined, 0, -5, NaN, "abc"]) {
+      assert.ok(geuLensTrailSize(bad) >= 8, `${JSON.stringify(bad)} produced an unreadable size`);
+    }
   });
 });

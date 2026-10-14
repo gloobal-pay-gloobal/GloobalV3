@@ -410,6 +410,21 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // counted in GC, which is not a currency, gets no bar, and still has a
   // ticker worth printing.
   const heroBarUnit = heroCurrencyRaw ? geuLensBarUnit(heroCurrencyRaw, lens, viewerCurrency) : "";
+
+  // ── THE HERO, IN TWO SIZES ────────────────────────────────────────────
+  //
+  // The unit being read in is the larger half — see GEU_LENS_TRAIL_RATIO.
+  // Both halves and the size are derived ONCE here rather than inline in the
+  // markup, because the size depends on the joined string's length and the
+  // two spans must be sized from the same answer. Computed for both tabs
+  // whether or not this receipt has a share; they are three string
+  // operations, and a conditional here is a second thing to keep in step.
+  const heroFigure = (amount, code, sign) => {
+    const parts = geuLensBarParts(amount, code, lens, viewerCurrency);
+    const whole = `${sign}${geuLensBarMoney(amount, code, lens, viewerCurrency)}`;
+    return { lead: parts.lead, trail: parts.trail, size: receiptAmountFontSize(whole, 31) };
+  };
+  const heroPayment = heroFigure(paymentAmount, paymentCurrency, paymentIsSent ? "\u2212" : "+");
   const heroCurrencyCode = heroCurrencyRaw && !heroBarUnit &&
     !String(fmtMoney(1, heroCurrencyRaw)).endsWith(String(heroCurrencyRaw))
     ? String(heroCurrencyRaw)
@@ -444,6 +459,14 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   const shownShareAmount = !isShareReceipt && Number.isFinite(recordedShareAmount) && recordedShareAmount > 0
     ? recordedShareAmount
     : shareAmount;
+
+  // Declared HERE, not beside heroPayment, because it reads shownShareAmount
+  // — which is a const twenty lines further down and therefore in its own
+  // temporal dead zone up there. Same class of mistake as hoomanRaisedText on
+  // the Coverage screen: a derivation written next to its SIBLING rather than
+  // after its DEPENDENCY, and a ReferenceError the moment the component
+  // renders.
+  const heroShare = heroFigure(shownShareAmount, shareCurrency, shareIsCredit ? "+" : "\u2212");
   // The rate to DISPLAY. On a share receipt it comes off the payment, for
   // the reason historyUtils spells out: the share row's own rate is zeroed
   // at the boundary by design, so reading it here would print 0.00%.
@@ -983,7 +1006,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       receipt.title || "Gloobal Coin"
     : paymentKnown ? (paymentIsSent ? "Money sent" : "Money received") : "Payment not available") : shareIsCredit ? "Creator share earned" : "You share back"}</div><div style={{ marginTop: 1 }}>{!onShareTab ? (paymentKnown ? <div
     style={{
-      fontSize: receiptAmountFontSize(`${paymentIsSent ? "\u2212" : "+"}${geuLensBarMoney(paymentAmount, paymentCurrency, lens, viewerCurrency)}`, 31),
+      fontSize: heroPayment.size,
       fontWeight: 800,
       color: "#fff",
       fontFamily: T.fontDisplay,
@@ -992,7 +1015,9 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       overflowWrap: "anywhere"
     }}
     data-testid="receipt-hero-payment"
-  >{paymentIsSent ? "\u2212" : "+"}{geuLensBarMoney(paymentAmount, paymentCurrency, lens, viewerCurrency)}</div> : <div
+  >{paymentIsSent ? "\u2212" : "+"}{heroPayment.lead}{heroPayment.trail && <span
+    style={{ fontSize: geuLensTrailSize(heroPayment.size), fontWeight: 800 }}
+  > {heroPayment.trail}</span>}</div> : <div
     style={{ fontSize: 12.5, fontWeight: 700, color: "rgba(255,255,255,0.88)", lineHeight: 1.4, padding: "6px 0" }}
     data-testid="receipt-payment-unavailable"
   >{
@@ -1002,7 +1027,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        would be quietly wrong for every share that rounded. */
   }This payment isn't on this device. The Creator Share above is complete.</div>) : <div
     style={{
-      fontSize: receiptAmountFontSize(`${shareIsCredit ? "+" : "\u2212"}${geuLensBarMoney(shownShareAmount, shareCurrency, lens, viewerCurrency)}`, 31),
+      fontSize: heroShare.size,
       fontWeight: 800,
       color: "#fff",
       fontFamily: T.fontDisplay,
@@ -1011,7 +1036,9 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       overflowWrap: "anywhere"
     }}
     data-testid="receipt-hero-share"
-  >{shareIsCredit ? "+" : "\u2212"}{geuLensBarMoney(shownShareAmount, shareCurrency, lens, viewerCurrency)}</div>}{
+  >{shareIsCredit ? "+" : "\u2212"}{heroShare.lead}{heroShare.trail && <span
+    style={{ fontSize: geuLensTrailSize(heroShare.size), fontWeight: 800 }}
+  > {heroShare.trail}</span>}</div>}{
     /* The currency CODE under the figure.
        fmtMoney draws the symbol, and a symbol is not the currency: ₹ is
        shared by India, Pakistan, Nepal, Sri Lanka and Mauritius, $ by more

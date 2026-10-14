@@ -299,8 +299,23 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
       : 15
   );
   const figureStyle = (color) => ({ fontSize: figureSize, fontWeight: 800, color, whiteSpace: "nowrap" });
-  const paidFigure = !single && (!focusDirection || focusDirection === "paid") && <span style={figureStyle(C.paidText)}>{paidText}</span>;
-  const receivedFigure = !single && (!focusDirection || focusDirection === "received") && <span style={figureStyle(C.receivedText)}>{receivedText}</span>;
+  // Each figure in two sizes, so the unit being read in is the larger — see
+  // GEU_LENS_TRAIL_RATIO. The sign goes on the lead; the bar and the other
+  // unit trail at 75%. Sizing above still measures the JOINED string, which
+  // errs toward shrinking.
+  const barParts = (value) => (
+    typeof geuLensBarParts === "function"
+      ? geuLensBarParts(value, currencyCode, lens, currencyCode)
+      : { lead: money(value), trail: "" }
+  );
+  const figureSpan = (color, sign, value) => {
+    const parts = barParts(Number(value) || 0);
+    return <span style={figureStyle(color)}>{sign}{parts.lead}{parts.trail && <span
+      style={{ fontSize: geuLensTrailSize(figureSize), fontWeight: 800 }}
+    > {parts.trail}</span>}</span>;
+  };
+  const paidFigure = !single && (!focusDirection || focusDirection === "paid") && figureSpan(C.paidText, "\u2212", displayed.paid);
+  const receivedFigure = !single && (!focusDirection || focusDirection === "received") && figureSpan(C.receivedText, "+", displayed.received);
   // The day the callout speaks for, and the colour it speaks in. Only on
   // the single-series chart: with two series a callout would have to
   // carry two numbers over one column.

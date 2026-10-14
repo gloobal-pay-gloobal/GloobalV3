@@ -140,32 +140,32 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
   // to mark WHICH rows planted one, so the two lists stop looking like they
   // disagree. A marker needs no figure.
   //
-  // Both sides are carried on a payment row already; nothing new is
-  // fetched. `shareReceiverAmount` is the payer's side (from
-  // `cashbackCredit`) and `shareSenderAmount` the payee's (from `cashback`)
-  // \u2014 see mapServerTransaction. Each side reads its own, so the note now
-  // appears on both copies of a shared payment rather than only the payer's.
-  const shareFigure = sign === "\u2212"
-    ? Number(t.shareReceiverAmount)
-    : Number(t.shareSenderAmount);
-  const shareBack = Number.isFinite(shareFigure) && shareFigure > 0 ? shareFigure : 0;
-  // In the payer's own currency, which is the one the seed is denominated
-  // in — so this goes through the same own-money rule as the amount above.
-  // The founder's wording, by side.
+  // ── ONLY A SHARE LEG CARRIES IT ───────────────────────────────────────
   //
-  // NOTE FOR WHOEVER READS THIS NEXT: both labels are the opposite of the
-  // movement, and that is a decision rather than a bug. On a paid row the
-  // share comes BACK to this viewer — the payer is the share's receiver — and
-  // on a received row it goes out of what they received. So "shared" sits on
-  // the gain and "received" on the loss.
+  // `kind` comes from HISTORY_ROW_SHAPE_BY_TYPE and is "share" on exactly the
+  // rows that ARE the Creator Share — the −4.00 beside the +200.00 that
+  // produced it, two seconds apart in the list. Everything else is a payment.
   //
-  // They are true of the PAYMENT (this payment shared assets; assets were
-  // received from it), which is the reading they were chosen under. They are
-  // not true of the viewer's own pocket, which is how a line in your own
-  // history, under your own amount, naming no subject, tends to be read.
-  // Raised with the founder and left as chosen; if it ever reads wrong to a
-  // real person the fix is to swap these two strings and nothing else.
-  const shareNote = shareBack > 0
+  // This read the share FIGURES before (shareReceiverAmount on the paid side,
+  // shareSenderAmount on the received one), which put the label on every
+  // payment that happened to carry a share. The founder saw the result on his
+  // own Received tab: "+200.00 GEU │ ₹ / Assets received" on money somebody
+  // paid him. It is a payment, and nothing about it was received as assets.
+  //
+  // AND THAT IS ALSO WHAT FIXES THE WORDING. On a payment row these two
+  // labels were the opposite of the movement in both directions, which this
+  // file carried a long comment admitting. On a SHARE LEG they are simply
+  // true: the paid leg is the share leaving, the received leg is the share
+  // arriving. Same two strings, put on the rows they describe.
+  //
+  //     Received   +200.00 GEU │ ₹                     (a payment, no label)
+  //     Paid         −4.00 GEU │ ₹   Assets shared    (the share it produced)
+  //
+  // Share legs reach this list through /api/transactions/:symbolId, which the
+  // app reads. They are excluded from /api/transactions/history/:symbolId by
+  // a deliberate `type: { $ne: 'share' }` — Coverage reads that one for its
+  // spend figure and would count the same money twice.
+  const shareNote = t.kind === "share"
     ? (sign === "\u2212" ? "Assets shared" : "Assets received")
     : null;
 
@@ -173,24 +173,30 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
   //
   //     −959.07₹ │ GEU       flipping to      −959.07 GEU │ ₹
   //
-  // geuLensBarMoney owns both halves and the choice of what follows the bar
-  // — the rule is in geuLens.js. The relabelling itself is unchanged (the
-  // viewer's own rows only); what changed is that the row now SAYS so,
-  // instead of the balance card being the only place that did. That is where
-  // the founder found it: a row reading "−959.07₹" with the toggle flipped
-  // looked like the toggle had missed it.
+  // Drawn in TWO PIECES so the unit being read in can be the bigger one —
+  // see GEU_LENS_TRAIL_RATIO. `lead` is the figure with its active unit,
+  // `trail` is the bar and the other name at 75%. Both come out of
+  // geuLensBarParts, so the two halves cannot disagree about which unit is
+  // active, and the string form below is the same two joined.
   //
   // `amountText` stays untouched. The Coin ledger is counted in GC, which is
   // not a currency, has no second name, and must not be given one.
-  const amount = amountText != null
-    ? `${sign}${amountText}`
-    : `${sign}${geuLensBarMoney(Number(t.amount || 0), rowCode, lens, ccyCode)}`;
+  const amountParts = amountText != null
+    ? { lead: `${sign}${amountText}`, trail: "" }
+    : (() => {
+        const parts = geuLensBarParts(Number(t.amount || 0), rowCode, lens, ccyCode);
+        return { lead: `${sign}${parts.lead}`, trail: parts.trail };
+      })();
+  // The whole thing as text, for the screen reader and for the sizer. The
+  // READER of a row hears one phrase; only the eye gets two sizes.
+  const amount = `${amountParts.lead}${amountParts.trail ? ` ${amountParts.trail}` : ""}`;
 
   // Four more characters on the longest string in the narrowest column, so
   // the figure and its bar shrink together and stay on one line. Wrapping
-  // reads as two facts; truncating shows a different number. See
-  // geuLensRowFontSize — and note the figure is only ever made SMALLER than
-  // the 14 the design asked for, never larger.
+  // reads as two facts; truncating shows a different number. Measured on the
+  // JOINED string even though the trail is drawn smaller, which errs toward
+  // shrinking — the safe direction, and the same bias as the character ratio
+  // itself. See geuLensRowFontSize.
   const amountSize = geuLensRowFontSize(amount, 14);
   return <div
     onClick={onSelect}
@@ -255,7 +261,12 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
       // not need to know which list it is in.
       color
     }}
-  >{amount}</span>{
+  >{amountParts.lead}{amountParts.trail && <span
+    // Smaller, NOT fainter. The row's colour already says direction — red
+    // out, green in — and fading half the figure would put a third signal on
+    // a line that has two. It inherits the colour from the span above.
+    style={{ fontSize: geuLensTrailSize(amountSize), fontWeight: 800 }}
+  > {amountParts.trail}</span>}</span>{
     /* Sits under the amount, where a message list puts its unread pill, and
        means the one thing worth interrupting a scan for: this payment never
        actually left the device. */

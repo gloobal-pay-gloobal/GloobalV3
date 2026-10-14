@@ -392,30 +392,141 @@ function geuLensBarUnit(currencyCode, lens, ownCurrency) {
   // rupee: the figure relabelled correctly and its other name came out as
   // the wrong string, with no error anywhere.
   const code = String(currencyCode || "").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) return "";
+
+  // ── YOUR MONEY IS NAMED BY ITS SYMBOL, THEIRS BY ITS CODE ─────────────
+  //
+  // Both are the SAME JOB — say which real money this figure is in — and the
+  // two answers are different because the question behind them is.
+  //
+  // On your own figure the currency is never in doubt; it is the one your
+  // account is in, and you have seen that glyph on every price in your life.
+  // ₹ is the shortest true answer.
+  //
+  // On somebody else's it is exactly what IS in doubt. A symbol is not an
+  // identifier: ₹ is the rupee of five countries, $ belongs to more than
+  // twenty and kr to four, so "98.00 GEU │ €" would still leave a reader
+  // guessing which euro-ish money the other side was in. EUR does not.
   if (geuLensSameCurrency(code, ownCurrency)) {
-    // The viewer's own money: name the unit it is NOT being read in.
     // currencySuffix gives the glyph where there is one ("₹") and the code
     // where there is not ("CHF"), trimmed — it stores several symbols with a
     // trailing space for prefix use.
-    return lens === GEU_LENS_GEU
-      ? String(typeof currencySuffix === "function" ? currencySuffix(code) : code).trim()
-      : COIN_TICKER;
+    return String(typeof currencySuffix === "function" ? currencySuffix(code) : code).trim();
   }
-  // Somebody else's: name their currency exactly.
   return code;
 }
 
-// The formatter every screen calls in place of geuLensOwnMoney. Same rule
-// about whose money gets relabelled — it goes straight through that
-// function — with the bar on the end.
+// ── GEU GOES ON EVERY FIGURE, AND NEVER TRAVELS ALONE ───────────────────
+//
+//   toggle off      8,000.00₹ │ GEU          98.00€ │ EUR
+//   toggle on       8,000.00 GEU │ ₹         98.00 GEU │ EUR
+//
+// ── What this replaced, and why the replacement is not looser ───────────
+//
+// GEU used to be a unit with a MAGNITUDE — 1 GEU = 1 unit of the viewer's
+// own tender — which meant it could only ever be written on the viewer's own
+// money. Writing it on €98 would have been false: for an Indian reader 98
+// GEU was ₹98, and €98 is not. So the old rule was "rename only your own",
+// and a foreign figure kept its symbol untouched.
+//
+// The founder's model is different, and it is the one in force:
+//
+//     "no not type GEU anywhere independently … GEU | INR | rupee symbol
+//      are same things … shop is asking 2 GEU | USD, I pay them 176 GEU |
+//      INR. THEY ARE NOT APART, THEY ARE TRUE."
+//
+// GEU is the name of the SYSTEM, and the currency after the bar says which
+// money the figure is in. "2 GEU │ USD" is two dollars. "176 GEU │ INR" is a
+// hundred and seventy-six rupees. Both are true, neither is ambiguous, and
+// they are not two readings of one quantity — they are two quantities, each
+// fully named.
+//
+// THE SAFETY PROPERTY SURVIVES, IN A DIFFERENT SHAPE. The thing that made
+// "2 GEU" dangerous was never the word GEU; it was GEU with nothing beside
+// it, which a reader completes from their own country. So the invariant
+// moved from
+//
+//     GEU never appears on somebody else's money
+//
+// to the stricter and simpler
+//
+//     GEU never appears without the currency it is in
+//
+// which is the rule this function exists to keep. It is stricter because it
+// now binds the viewer's OWN figures too: under the old rule "9,700.00 GEU"
+// stood alone on the balance card and was fine only because the card
+// happened to be about one account. Nothing in the format said so.
+//
+// Where money MOVES is unchanged and is not this function's business: Send
+// Money, the amount field and a payment request are all in plain real
+// currency on both sides, with no GEU anywhere — the founder confirmed both.
+// A quote that travels between two people cannot carry a unit whose meaning
+// depends on who is reading it, however well it is labelled.
 function geuLensBarMoney(amount, currencyCode, lens, ownCurrency) {
-  const figure = geuLensOwnMoney(amount, currencyCode, lens, ownCurrency);
   const unit = geuLensBarUnit(currencyCode, lens, ownCurrency);
-  if (!unit) return figure;
-  // The franc case. Also catches an unfamiliar code with no symbol in the
-  // table, where fmtMoney already falls back to printing the code.
-  if (String(figure).trim().toUpperCase().endsWith(unit.toUpperCase())) return figure;
-  return `${figure} ${GEU_LENS_BAR} ${unit}`;
+  // No usable currency — a figure that is not money in any tender, or a code
+  // that arrived malformed. GEU would have nothing to stand beside, so it is
+  // not written: the rule above is the whole point.
+  if (!unit) return fmtMoney(amount, currencyCode);
+
+  if (lens !== GEU_LENS_GEU) {
+    // Toggle off: the real money leads and GEU follows — but only on the
+    // viewer's own figure, where GEU is the second NAME for it. On somebody
+    // else's, the second name is already their code, which the bar carries;
+    // adding GEU as a third would say "this is Gloobal" on a line that is
+    // about whose money it is.
+    const figure = fmtMoney(amount, currencyCode);
+    const trailing = geuLensSameCurrency(currencyCode, ownCurrency) ? COIN_TICKER : unit;
+    // The franc case: fmtMoney already ends in the code for a currency with
+    // no symbol of its own, so "1,450.25 CHF │ CHF" would name it twice.
+    if (String(figure).trim().toUpperCase().endsWith(String(trailing).toUpperCase())) return figure;
+    return `${figure} ${GEU_LENS_BAR} ${trailing}`;
+  }
+
+  // Toggle on: GEU leads, the bar names the real money. geuLensMoney is
+  // handed the lens directly rather than going through the own-money gate,
+  // because under this model every figure may carry the name — what keeps it
+  // honest is `unit`, which is never empty on this path.
+  return `${geuLensMoney(amount, currencyCode, GEU_LENS_GEU)} ${GEU_LENS_BAR} ${unit}`;
+}
+
+// ── WHAT A FOREIGN FIGURE COST YOU ──────────────────────────────────────
+//
+//     98.00 GEU │ EUR
+//     ≈ 8,000.00 GEU │ ₹
+//
+// The founder's answer to the reading test — a glance at "2 GEU │ USD" from
+// somebody whose balance is in rupees should land on something true either
+// way, so the figure carries its own cost in the reader's money.
+//
+// ── THE RATE IS READ, NEVER COMPUTED ────────────────────────────────────
+//
+// This takes the COUNTERPART FIGURE, not a rate, and that is the whole
+// design. A cross-border payment already records both sides — what left the
+// payer in their tender and what reached the payee in theirs — so the
+// equivalent is a number the app was given, and no arithmetic happens here
+// at all.
+//
+// Nothing else is allowed to draw this line. Coverage shows another
+// country's totals converted by the SERVER for a currency the viewer picked,
+// and there is no recorded "what this cost me" anywhere in it; deriving one
+// client-side would be the same fault as the bug this codebase already
+// carries a comment about — convert() applied to a figure summed across
+// currencies as bare numbers, converting a number that had no single unit to
+// convert from. So a surface with no recorded counterpart shows no second
+// line, and that is correct rather than incomplete.
+//
+// Returns null when there is nothing honest to say, which every caller
+// renders as nothing.
+function geuLensCostToYou(counterpartAmount, counterpartCurrency, lens, ownCurrency) {
+  // A recorded figure only. Number(null) is 0 and 0 is finite, so this asks
+  // whether the amount is a real number rather than whether it is present —
+  // and a recorded zero is not a cost worth a second line either.
+  const amount = Number(counterpartAmount);
+  if (!Number.isFinite(amount) || amount === 0) return null;
+  // It has to be the READER'S money to be what the figure cost THEM.
+  if (!geuLensSameCurrency(counterpartCurrency, ownCurrency)) return null;
+  return `\u2248 ${geuLensBarMoney(amount, counterpartCurrency, lens, ownCurrency)}`;
 }
 
 // ── KEEPING THE BAR ON THE LINE ─────────────────────────────────────────

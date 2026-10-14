@@ -538,11 +538,29 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // whether the lens may rename them. Asked once here rather than at each of
   // the six places a figure is drawn, because six copies of a rule is five
   // chances for one of them to drift.
-  const lensNames = geuLensAppliesTo(displayCurrency, lens, myCurrency);
+  // ── THE PICKER IS NO LONGER LOCKED BY THE LENS ────────────────────────
+  //
+  // It used to be. A `lensNames` flag asked "is this the viewer's own money,
+  // with the lens on", and when it was, this screen put GEU on the chip,
+  // disabled the currency picker and explained itself: "Showing GEU, which
+  // is your own INR. Switch the balance card to INR to choose another
+  // currency."
+  //
+  // That lock was right under the old model and is wrong under this one. GEU
+  // was a unit with a magnitude — 1 GEU = 1 of the VIEWER'S tender — so
+  // "show me France in GEU" was a contradiction, and refusing one of the two
+  // was the honest response. GEU is now the name of the system and the bar
+  // carries whichever currency the figure is in, so France in GEU is an
+  // ordinary thing to ask for: it reads 98,000.00 GEU │ EUR.
+  //
+  // So the lock comes off and the chip names the CURRENCY in every case —
+  // which is what the chip actually selects. A control that said GEU while
+  // the figure beside it also said GEU was naming the unit twice and
+  // offering to change neither.
+  //
   // The compact tiles print their own unit rather than going through
-  // fmtMoney — see the note at the first one for why. This is the same
-  // decision the lens makes, in the form those tiles need it.
-  const spendSuffix = lensNames ? ` ${COIN_TICKER}` : currencySuffix(displayCurrency);
+  // fmtMoney — see the note at the first one for why.
+  const spendSuffix = currencySuffix(displayCurrency);
 
   // ── Our spending ───────────────────────────────────────────────────────
   //
@@ -1591,17 +1609,16 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     /* Aggregate total — real number, viewable in any currency,
        not just the one this account happens to use. */
   }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "20px 20px", marginTop: 16 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.72)", textTransform: "uppercase", letterSpacing: 0.3 }}>System total</span><button
-    onClick={() => { if (!lensNames) setShowSpendingCurrencyPicker(true); }}
+    onClick={() => setShowSpendingCurrencyPicker(true)}
     className="v2-tap"
-    disabled={lensNames}
-    // Disabled rather than hidden. A control that vanishes leaves a person
-    // hunting for a thing they used yesterday; one that is visibly inert,
-    // with the reason beside it, says the lens is holding it.
-    aria-label={lensNames
-      ? `Showing ${COIN_TICKER}, which is your own ${myCurrency}. Switch the balance card to ${myCurrency} to choose another currency.`
-      : `Showing ${displayCurrency}. Choose another currency.`}
-    style={{ display: "flex", alignItems: "center", gap: 5, border: "none", background: "rgba(255,255,255,0.16)", borderRadius: 999, padding: "6px 11px", cursor: lensNames ? "default" : "pointer", opacity: lensNames ? 0.75 : 1 }}
-  ><span style={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>{lensNames ? COIN_TICKER : displayCurrency}</span>{!lensNames && <ChevronDown3 size={12} color="#fff" />}</button></div><div style={{ fontSize: 28, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 6 }}>{
+    // Always live now. It was disabled whenever the lens was on and this was
+    // the viewer's own currency, with the reason in its own label — a
+    // deliberate choice at the time, because GEU then MEANT the viewer's own
+    // tender and offering to show France in it was offering a contradiction.
+    // GEU no longer carries a magnitude, so there is nothing left to hold.
+    aria-label={`Showing ${displayCurrency}. Choose another currency.`}
+    style={{ display: "flex", alignItems: "center", gap: 5, border: "none", background: "rgba(255,255,255,0.16)", borderRadius: 999, padding: "6px 11px", cursor: "pointer" }}
+  ><span style={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>{displayCurrency}</span><ChevronDown3 size={12} color="#fff" /></button></div><div style={{ fontSize: 28, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 6 }}>{
     /* Picking a currency here refetches; the server converts.
        This used to call the bundle's convert() on a figure
        already summed across currencies as bare numbers, so it
@@ -1609,12 +1626,14 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        convert from. */
     /* NO BAR ON THIS ONE, and it is the single exception on this screen.
        The currency chip immediately above is a CONTROL that already names
-       the unit and already flips to GEU with the lens — see `lensNames`.
-       A bar here would print that name a second time, two lines below
-       itself, and the second copy would not be tappable. The bar exists to
-       say what a figure's other name is where nothing else does; here
-       something else does. */
-  }{totalRealSpend != null ? geuLensOwnMoney(totalRealSpend, displayCurrency, lens, myCurrency) : <span aria-label="No data">∆</span>}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 8, lineHeight: 1.4 }}>
+       this figure's currency, and it is tappable — it is how you change it.
+       A bar here would print that same name a second time, two lines below
+       itself, in a copy you could not tap. The bar exists to say what money
+       a figure is in where nothing else does; here something else does, and
+       does it better.
+       The figure still goes through the lens, so it reads in GEU when the
+       toggle is on. What it does not carry is the second naming. */
+  }{totalRealSpend != null ? geuLensMoney(totalRealSpend, displayCurrency, lens) : <span aria-label="No data">∆</span>}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 8, lineHeight: 1.4 }}>
                 Same real total, shown in whichever currency you pick — not just your own.
               </div></div></div>{
     /* Currency picker for the aggregate total */

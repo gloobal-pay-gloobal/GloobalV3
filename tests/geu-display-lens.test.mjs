@@ -81,10 +81,11 @@ function loadLens() {
     ${pick("geuLensOwnMoney")}
     ${pick("geuLensBarUnit")}
     ${pick("geuLensBarMoney")}
+    ${pick("geuLensCostToYou")}
     ${pick("geuLensRowFontSize")}
     ${pick("geuLensFigureFontSize")}
     return { geuLensMoney, geuLensBadgeSuffix, geuLensUnitLabel, geuLensOwnMoney,
-             geuLensBarUnit, geuLensBarMoney, geuLensRowFontSize,
+             geuLensBarUnit, geuLensBarMoney, geuLensCostToYou, geuLensRowFontSize,
              geuLensFigureFontSize,
              GEU_LENS_LOCAL, GEU_LENS_GEU, GEU_LENS_BAR, GEU_LENS_BAR_GAP,
              GEU_LENS_CHAR_RATIO, GEU_LENS_FIGURE_ROOM, GEU_LENS_ROW_ROOM, GEU_LENS_ROW_MIN };
@@ -161,6 +162,20 @@ describe("the number is relabelled, never converted", () => {
   });
 });
 
+// ── WHERE GEU STILL MAY NOT GO ──────────────────────────────────────────
+//
+// GEU reaches every DISPLAYED figure now. What has not changed, and what the
+// founder confirmed directly, is the place money MOVES: the Send Money
+// amount field and a payment request are plain real currency on both sides,
+// with no GEU anywhere.
+//
+// The reason is the one case his model cannot cover. "176 GEU | INR" is safe
+// because the code is attached. A QUOTE travelling between two people has no
+// single right code to attach: Rohan asking 500 means ₹500, and the same 500
+// read in New York means $500. Eighty-eight times apart, and nothing on the
+// line can be made to say which, because the two readers disagree about what
+// the figure is FOR. So a request carries Rohan's real tender and John sees
+// what leaves his own account.
 describe("GEU appears nowhere money moves", () => {
   test("Send Money has no GEU figure and no Coin pay source", () => {
     const send = code("frontend/screens/SendMoney/SendMoney.jsx");
@@ -169,7 +184,7 @@ describe("GEU appears nowhere money moves", () => {
     assert.ok(!/key: "gcoin"/.test(send), "Gloobal Coin is a pay source again");
   });
 
-  test("the receipt and the confirmation rename only the reader's own money", () => {
+  test("the receipt and the confirmation format through the shared rule, not past it", () => {
     // This used to forbid the lens on these two screens outright, while it
     // was a dashboard-only idea. It now reaches them — a receipt is where a
     // person reads a payment back, and reading it in a unit they did not
@@ -959,17 +974,30 @@ describe("the bar names the figure's other name", () => {
     }
   });
 
-  test("somebody else's money is NOT renamed, and the bar names their currency", () => {
-    // The rule that keeps the lens honest. A cross-border payment holds the
-    // payer's ₹8,000 on one row and the payee's $98 on another; writing GEU
-    // after both would put two quantities eighty-eight times apart under one
-    // name, and somebody would read it as the money shrinking in transit.
-    for (const lens of [GEU_LENS_LOCAL, GEU_LENS_GEU]) {
-      const foreign = geuLensBarMoney(98, "EUR", lens, "INR");
-      assert.equal(foreign, `98.00\u20AC ${GEU_LENS_BAR} EUR`,
-        "a foreign figure was renamed, or lost its code");
-      assert.ok(!/GEU/.test(foreign), "GEU reached somebody else's money");
-    }
+  test("somebody else's money is renamed too, and their CODE is what names it", () => {
+    // ── THE RULE THAT CHANGED, AND THE ONE THAT REPLACED IT ─────────────
+    //
+    // This test used to assert the opposite: that a foreign figure keeps its
+    // symbol and never carries GEU, in either lens. That was correct while
+    // GEU had a MAGNITUDE — 1 GEU = 1 unit of the viewer's own tender — under
+    // which "98 GEU" to an Indian reader meant ₹98, and €98 is not ₹98.
+    //
+    // The founder's model is that GEU is the name of the SYSTEM and the
+    // currency after the bar says which money the figure is in: "shop is
+    // asking 2 GEU | USD, I pay them 176 GEU | INR … they are not apart,
+    // they are true." Two quantities, each fully named, neither ambiguous.
+    //
+    // So GEU now reaches every figure, and the thing that keeps it honest
+    // moved rather than went away — see the sweep below. Here, the specific
+    // guard is that a foreign figure is named by its CODE and never by its
+    // symbol: ₹ is the rupee of five countries and $ belongs to more than
+    // twenty, so "98.00 GEU │ €" would still leave a reader guessing.
+    assert.equal(geuLensBarMoney(98, "EUR", GEU_LENS_LOCAL, "INR"), `98.00\u20AC ${GEU_LENS_BAR} EUR`);
+    assert.equal(geuLensBarMoney(98, "EUR", GEU_LENS_GEU, "INR"), `98.00 GEU ${GEU_LENS_BAR} EUR`);
+    // Toggle off, a foreign figure carries its code and NOT a third name.
+    // "98.00€ │ EUR │ GEU" would say "this is Gloobal" on a line whose job is
+    // to say whose money it is.
+    assert.ok(!/GEU/.test(geuLensBarMoney(98, "EUR", GEU_LENS_LOCAL, "INR")));
   });
 
   test("a currency whose symbol IS its code gets no bar", () => {
@@ -995,15 +1023,21 @@ describe("the bar names the figure's other name", () => {
     assert.equal(geuLensBarMoney(9700, "JPY", GEU_LENS_LOCAL, "JPY"), `9,700\u00A5 ${GEU_LENS_BAR} GEU`);
   });
 
-  test("an unknown viewer currency gets no rename and no GEU", () => {
-    // geuLensOwnCurrency returns null before an account loads, and null must
-    // mean DO NOT RELABEL. The cost of not knowing is a figure that looks
-    // untouched; the cost of guessing is a figure labelled as money it is
-    // not.
+  test("an unknown viewer currency is named by CODE, never by a guessed symbol", () => {
+    // geuLensOwnCurrency returns null before an account loads, and under the
+    // old magnitude model null had to mean DO NOT RELABEL — the cost of
+    // guessing was a figure labelled as money it was not.
+    //
+    // Under this model the figure may carry GEU regardless, because the bar
+    // names the real currency and that is what makes it unambiguous. What
+    // "unknown" still changes is WHICH name the bar uses: the code, never the
+    // symbol, because the symbol is the shorthand you earn by it being your
+    // own money. Not knowing whose money it is falls to the precise form.
     for (const unknown of [null, undefined, "", "rupee", "IN"]) {
       const out = geuLensBarMoney(500, "INR", GEU_LENS_GEU, unknown);
-      assert.ok(!/GEU/.test(out),
-        `a figure was renamed against an unusable viewer currency ${JSON.stringify(unknown)}: ${out}`);
+      assert.equal(out, `500.00 GEU ${GEU_LENS_BAR} INR`,
+        `an unusable viewer currency ${JSON.stringify(unknown)} produced ${out}`);
+      assert.ok(!/\u20B9/.test(out), "a symbol was guessed for a viewer whose currency is unknown");
     }
   });
 
@@ -1031,14 +1065,86 @@ describe("the bar names the figure's other name", () => {
     assert.equal(geuLensBarUnit("eur", GEU_LENS_GEU, "INR"), "EUR");
   });
 
-  test("geuLensBarUnit is the one place the choice is made", () => {
-    // The Coverage tiles and the earnings headline print their unit as their
-    // own element rather than inside a string, so they have to get the name
-    // from here rather than reimplement the choice and drift from it.
-    assert.equal(geuLensBarUnit("INR", GEU_LENS_LOCAL, "INR"), "GEU");
-    assert.equal(geuLensBarUnit("INR", GEU_LENS_GEU, "INR"), "\u20B9");
-    assert.equal(geuLensBarUnit("EUR", GEU_LENS_GEU, "INR"), "EUR");
-    assert.equal(geuLensBarUnit("", GEU_LENS_GEU, "INR"), "");
+  test("geuLensBarUnit names the REAL money, and does not depend on the lens", () => {
+    // It used to answer "the other name for this figure", which meant GEU for
+    // your own money under the local lens and the symbol under the GEU one —
+    // so it flipped with the toggle. It now answers one question only: which
+    // real money is this, your symbol or their code. The toggle decides which
+    // side of the bar GEU goes on, not what the currency is called.
+    //
+    // Asked here rather than rebuilt at each call site because the Coverage
+    // tiles and the earnings headline print their unit as their own element
+    // rather than inside a string.
+    for (const lens of [GEU_LENS_LOCAL, GEU_LENS_GEU]) {
+      assert.equal(geuLensBarUnit("INR", lens, "INR"), "\u20B9");
+      assert.equal(geuLensBarUnit("EUR", lens, "INR"), "EUR");
+      // Not a currency at all: empty, so the caller writes no bar and no GEU.
+      assert.equal(geuLensBarUnit("", lens, "INR"), "");
+      assert.equal(geuLensBarUnit("GC", lens, "INR"), "");
+    }
+  });
+
+  test("GEU NEVER APPEARS WITHOUT THE CURRENCY IT IS IN", () => {
+    // ── THE SAFETY PROPERTY, IN ITS NEW SHAPE ───────────────────────────
+    //
+    // The founder's words: "no not type GEU anywhere independently".
+    //
+    // What made "2 GEU" dangerous was never the word — it was GEU with
+    // nothing beside it, which a reader completes from their own country. A
+    // Londoner reads £2, a New Yorker $2, a Mumbaikar ₹2, and one of them is
+    // about to approve the wrong payment.
+    //
+    // So the old invariant (GEU never on somebody else's money) is replaced
+    // by a stricter one that binds EVERY figure, the viewer's own included.
+    // Under the old rule "9,700.00 GEU" stood alone on the balance card and
+    // was safe only because that card happened to be about one account —
+    // nothing in the format said so. Now the format says so.
+    //
+    // Swept rather than sampled: every amount against every currency against
+    // both lenses against every viewer-currency, including the ones that are
+    // not currencies at all.
+    const AMOUNTS = [0, 0.01, 2, 98, 959.07, 9700, 123456789012.34];
+    const CODES = ["INR", "EUR", "USD", "JPY", "CHF", "KWD", "inr", "", "GC", null];
+    const VIEWERS = ["INR", "EUR", "CHF", "", null, "rupee"];
+    let checked = 0;
+    for (const amount of AMOUNTS) {
+      for (const code of CODES) {
+        for (const lens of [GEU_LENS_LOCAL, GEU_LENS_GEU]) {
+          for (const viewer of VIEWERS) {
+            const out = geuLensBarMoney(amount, code, lens, viewer);
+            checked++;
+            if (!/GEU/.test(out)) continue;
+            // GEU is present, so a currency must be present with it, and on
+            // the other side of a bar. A figure is allowed to carry no GEU at
+            // all — that is what a currency-less amount does.
+            assert.ok(out.includes(GEU_LENS_BAR),
+              `"${out}" carries GEU with no bar (${amount}, ${code}, ${lens}, ${viewer})`);
+            const [left, right] = out.split(GEU_LENS_BAR).map((part) => part.trim());
+            const named = /GEU/.test(left) ? right : left;
+            assert.ok(named && named.length > 0 && !/^GEU$/.test(named),
+              `"${out}" names no real currency beside GEU (${amount}, ${code}, ${lens}, ${viewer})`);
+          }
+        }
+      }
+    }
+    // A guard on the guard: if the loops ever stop running, the assertions
+    // above all pass vacuously and this test becomes decoration.
+    assert.equal(checked, AMOUNTS.length * CODES.length * 2 * VIEWERS.length);
+    assert.ok(checked > 800, `only ${checked} combinations were swept`);
+  });
+
+  test("a figure with no currency carries no GEU either", () => {
+    // The Coin ledger is counted in GC, which is not a currency, has no
+    // symbol and no code. Under the rule above it can carry no GEU, because
+    // there would be nothing for GEU to stand beside — and handing it "GC"
+    // would imply GC is money.
+    for (const lens of [GEU_LENS_LOCAL, GEU_LENS_GEU]) {
+      for (const code of ["", null, undefined, "GC", "G"]) {
+        const out = geuLensBarMoney(500, code, lens, "INR");
+        assert.ok(!/GEU/.test(out), `${JSON.stringify(code)} produced "${out}"`);
+        assert.ok(!out.includes(GEU_LENS_BAR), `${JSON.stringify(code)} produced a bare bar: "${out}"`);
+      }
+    }
   });
 });
 
@@ -1201,5 +1307,84 @@ describe("it does not break as the number increases", () => {
         assert.ok(!/\u2026|\.\.\./.test(text), `${text} came out truncated`);
       }
     }
+  });
+});
+
+// ── WHAT A FOREIGN FIGURE COST YOU ──────────────────────────────────────
+//
+//     98.00 GEU │ EUR
+//     ≈ 8,000.00 GEU │ ₹
+//
+// The founder's answer to the reading test: a glance at "2 GEU │ USD" from
+// somebody whose balance is in rupees should land on something true either
+// way, so a foreign figure carries its cost in the reader's own money.
+//
+// THE RATE IS READ, NEVER COMPUTED. This takes the recorded COUNTERPART
+// FIGURE, not a rate, so no arithmetic happens here at all — a cross-border
+// payment already records both sides, and the equivalent is a number the app
+// was handed. A surface with no recorded counterpart shows no second line,
+// and that is correct rather than incomplete: Coverage's totals are
+// converted by the server for a currency the viewer picked, and deriving a
+// "what this cost me" from them would repeat the bug this codebase already
+// carries a comment about — convert() applied to a figure summed across
+// currencies as bare numbers, converting a number with no single unit to
+// convert from.
+describe("a foreign figure says what it cost you, from a recorded figure only", () => {
+  const { geuLensCostToYou, GEU_LENS_LOCAL, GEU_LENS_GEU, GEU_LENS_BAR } = loadLens();
+
+  test("it reads in the same shape as every other figure, and flips with the toggle", () => {
+    assert.equal(geuLensCostToYou(8000, "INR", GEU_LENS_GEU, "INR"), `\u2248 8,000.00 GEU ${GEU_LENS_BAR} \u20B9`);
+    assert.equal(geuLensCostToYou(8000, "INR", GEU_LENS_LOCAL, "INR"), `\u2248 8,000.00\u20B9 ${GEU_LENS_BAR} GEU`);
+  });
+
+  test("NO recorded counterpart means NO line", () => {
+    // The whole safety of this feature. Null is the normal case on a row
+    // written before both sides were stored, and on every Creator Share leg.
+    for (const missing of [null, undefined, "", NaN, "abc"]) {
+      assert.equal(geuLensCostToYou(missing, "INR", GEU_LENS_GEU, "INR"), null,
+        `${JSON.stringify(missing)} produced a cost line`);
+    }
+  });
+
+  test("a recorded ZERO means no line either", () => {
+    // Number(null) is 0 and 0 is finite — the trap this codebase keeps
+    // hitting. A zero here is also not a cost worth a second line.
+    assert.equal(geuLensCostToYou(0, "INR", GEU_LENS_GEU, "INR"), null);
+  });
+
+  test("a counterpart that is NOT the reader's money is refused", () => {
+    // "≈ 98.00 GEU │ EUR" under "98.00 GEU │ EUR" says nothing, and under a
+    // THIRD currency it would claim a conversion nobody recorded. The line
+    // exists to say what this cost YOU, so it must be in your money or absent.
+    assert.equal(geuLensCostToYou(98, "EUR", GEU_LENS_GEU, "INR"), null);
+    assert.equal(geuLensCostToYou(120, "USD", GEU_LENS_GEU, "INR"), null);
+    for (const unknown of [null, "", "rupee"]) {
+      assert.equal(geuLensCostToYou(8000, "INR", GEU_LENS_GEU, unknown), null,
+        "a cost line was drawn for a viewer whose currency is unknown");
+    }
+  });
+
+  test("it does no arithmetic — the digits it is given are the digits it prints", () => {
+    // It takes a FIGURE, not a rate, and there is no multiplication anywhere
+    // in it. If a rate ever appears in this function, somebody has started
+    // converting on the client.
+    for (const amount of [1, 8000, 0.01, 123456.78]) {
+      const out = geuLensCostToYou(amount, "INR", GEU_LENS_GEU, "INR");
+      const digits = out.replace(/[^\d.]/g, "");
+      assert.ok(digits.includes(String(amount).replace(/[^\d.]/g, "")) ||
+                digits.includes(amount.toFixed(2).replace(/[^\d.]/g, "")),
+        `${amount} came out as ${out}`);
+    }
+    const src = readSource(LENS);
+    const body = src.slice(src.indexOf("function geuLensCostToYou("));
+    const fn = body.slice(0, body.indexOf("\n}\n") + 2).replace(/^\s*\/\/.*$/gm, "");
+    assert.ok(!/[*/]\s*rate|rate\s*[*/]|fxRate/i.test(fn),
+      "a rate reached the cost line, so it is computing rather than reading");
+  });
+
+  test("and it obeys the GEU rule like everything else", () => {
+    const out = geuLensCostToYou(8000, "INR", GEU_LENS_GEU, "INR");
+    assert.ok(/GEU/.test(out) && out.includes(GEU_LENS_BAR),
+      "the cost line carries GEU without a currency beside it");
   });
 });

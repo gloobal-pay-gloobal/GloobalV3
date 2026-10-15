@@ -114,9 +114,49 @@ describe("the banner is the card, not a copy of it", () => {
     assert.match(banner, /id: d\.txnId \|\| ""/);
   });
 
-  test("it goes away on its own, and sits above everything", () => {
-    assert.match(banner, /var GLOOBAL_BANNER_VISIBLE_MS = \d+;/);
+  test("it does NOT go away on its own, and sits above everything", () => {
+    // ── THE TIMER IS GONE, DELIBERATELY ─────────────────────────────────
+    //
+    // This asserted a visible duration existed. It was 5.2 seconds, chosen
+    // as "long enough to read a figure and a name" — a guess about somebody
+    // else's attention that has to be right every time, or they lose a
+    // notification about their own money while looking away.
+    //
+    // The founder's words: "it closes automatically when it comes — give a
+    // cross icon or slide to remove, not automatically, give them time to
+    // read it."
+    //
+    // The cost of being wrong is asymmetric, which is what settles it: a
+    // banner that waits is in the way for a moment; a banner that left is
+    // money you were not told about.
+    assert.ok(!/GLOOBAL_BANNER_VISIBLE_MS/.test(banner),
+      "the banner has a visibility timer again");
+    assert.ok(!/setTimeout\([^)]*setShown\(false\)/.test(banner),
+      "something still hides the banner on a timer");
     assert.match(banner, /zIndex: 520/);
+  });
+
+  test("there are three ways out, and they share one exit", () => {
+    // A cross, a swipe, and opening it. One `dismiss` for all three, so
+    // none of them can animate differently or leave `current` set — which
+    // would wedge the banner permanently, the failure mode a timer used to
+    // hide.
+    assert.match(banner, /const dismiss = \(\) => \{/);
+    assert.match(banner, /aria-label="Dismiss notification"/);
+    assert.match(banner, /var GLOOBAL_BANNER_SWIPE_PX = \d+;/);
+    assert.match(banner, /onPointerDown=\{onPointerDown\}/);
+    // Opening it goes through the same exit rather than clearing state
+    // itself.
+    assert.match(banner, /dismiss\(\);\s*\n\s*if \(onOpen\) onOpen\(row\.id\)/);
+  });
+
+  test("the drag does not fight the finger", () => {
+    // A 240ms ease applied on every pointermove makes the card lag a
+    // quarter-second behind the finger. The transition is dropped while a
+    // drag is live and restored for the release, so a swipe that does not
+    // travel far enough springs home instead of snapping.
+    assert.match(banner, /transition: dragFrom\.current != null\s*\n?\s*\? "none"/);
+    assert.match(banner, /touchAction: "none"/);
   });
 
   test("tapping it opens the real receipt, not one built here", () => {
@@ -198,11 +238,25 @@ describe("on screen", () => {
     assert.match(shown.text, /Creator Share from \| Rajeev Menon/);
   });
 
-  test("it dismisses itself", async () => {
-    // A banner that stayed would be a modal nobody asked for, over the
-    // screen somebody is using.
-    await page.waitForTimeout(6200);
-    assert.equal(await banner(), null, "the banner is still on screen");
+  test("it is STILL THERE after the old timer would have cleared it", () => {
+    // The inverse of what this used to assert. 6.2 seconds was comfortably
+    // past the old 5.2-second timer; the banner must now outlast it.
+    return (async () => {
+      await page.waitForTimeout(6200);
+      assert.ok(await banner(), "the banner cleared itself after the old timer's duration");
+    })();
+  });
+
+  test("the cross dismisses it", async () => {
+    const closed = await page.evaluate(() => {
+      const btn = document.querySelector('[aria-label="Dismiss notification"]');
+      if (!btn) return "no cross on the banner";
+      btn.click();
+      return null;
+    });
+    assert.equal(closed, null, closed || "");
+    await page.waitForTimeout(600);
+    assert.equal(await banner(), null, "the banner survived its own close button");
   });
 
   test("nothing threw", async () => {

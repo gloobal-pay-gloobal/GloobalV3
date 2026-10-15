@@ -32,6 +32,12 @@
 
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// The repo root, for the sweep at the foot of this file.
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 import { readSource, loadDomain } from "./harness.mjs";
 import { ACCOUNTS, buildOnce, login, openPage, teardown } from "./browser-harness.mjs";
 
@@ -1510,5 +1516,98 @@ describe("the active unit is drawn larger than the other", () => {
     for (const bad of [null, undefined, 0, -5, NaN, "abc"]) {
       assert.ok(geuLensTrailSize(bad) >= 8, `${JSON.stringify(bad)} produced an unreadable size`);
     }
+  });
+});
+
+// ── THE NEXT SCREEN SOMEBODY FORGETS ────────────────────────────────────
+//
+// The lens reached the app one screen at a time, by somebody remembering,
+// and the SURFACES list above is the record of which ones were remembered.
+// A list like that cannot catch the screen nobody thought of.
+//
+// EssentialsScreen is what that costs. Every figure on it went through raw
+// fmtMoney — a 28px "Daily limit", "Left today", eight category tiles — so
+// the whole screen stayed in rupees while the rest of the app read in GEU.
+// Nothing failed. It was found by the founder, on his phone, after the
+// toggle had been shipped and revised four times.
+//
+// So this test does not name screens. It FINDS every file that renders
+// money and requires each one to answer to the lens. A new screen is
+// covered the day it is written, and the next person to format an amount
+// with fmtMoney gets a failing test instead of a founder's screenshot.
+describe("every screen that renders money reads the lens — found, not listed", () => {
+  // Files that format money for DISPLAY. Found by looking for a formatter
+  // call, then excluding the three honest reasons a file can hold one
+  // without needing the lens.
+  const moneyFiles = () => {
+    const out = [];
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) { walk(full); continue; }
+        if (!/\.jsx?$/.test(entry.name)) continue;
+        const raw = fs.readFileSync(full, "utf8");
+        const src = raw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+        // A formatter call that actually prints an amount. fmtMoney(1, code)
+        // is a PROBE — it asks a question about the currency, not about any
+        // amount — and every one in the tree is written exactly that way.
+        const prints = /fmtMoney\((?!1,)/.test(src) || /geuLens(Money|OwnMoney|BarMoney|BarParts)\(/.test(src);
+        if (!prints) continue;
+        out.push([path.relative(ROOT, full).split(path.sep).join("/"), src]);
+      }
+    };
+    walk(path.join(ROOT, "frontend"));
+    return out;
+  };
+
+  // ── THE EXEMPTIONS, AND WHY EACH ONE IS A DECISION ──────────────────
+  //
+  // Three files, each for a reason that can be stated. A list of names with
+  // no reasons is how a sweep rots into a list of things somebody silenced.
+  const EXEMPT = new Set([
+    // Defines the formatters. Asking it to read the lens is circular.
+    "frontend/features/geuLens/geuLens.js",
+    // The toggle itself draws no figure — it draws two unit NAMES, and it
+    // is handed the lens it is about to change.
+    "frontend/components/cards/geuLensToggle.jsx",
+    // ── THE PICTURE YOU FORWARD ON WHATSAPP ──────────────────────────
+    //
+    // buildReceiptImageModel is PURE by design — the file's own header
+    // splits deciding from drawing precisely so the decisions can be
+    // tested — so a hook could not go in it even if the lens belonged
+    // there.
+    //
+    // And it does not belong there. This image LEAVES THE DEVICE and
+    // reaches somebody who never chose the unit. A receipt is a record of
+    // what happened; which unit the sender happens to be reading in is a
+    // fact about the sender's phone, not about the payment. Same call as
+    // the OS notification banner, for the same reason.
+    "frontend/features/receipts/receiptImage.js",
+  ]);
+
+  const offenders = moneyFiles().filter(([rel, src]) =>
+    !EXEMPT.has(rel) &&
+    !/useGeuLens\(\)/.test(src) &&
+    // Takes it as a prop or an argument instead — equally fine, and what a
+    // component rendered from six lists must do.
+    !/\blens\b\s*[,=)}]/.test(src) &&
+    !/lens\s*=\s*null/.test(src)
+  );
+
+  test("no file formats an amount without answering to the lens", () => {
+    assert.deepEqual(offenders.map(([rel]) => rel), [],
+      "these files print money and never read the lens, so their figures " +
+      "stay in one currency however the toggle is set");
+  });
+
+  test("and the finder is actually finding things", () => {
+    // A guard on the guard. If the walk breaks, or the formatter pattern
+    // stops matching, the test above passes on an empty list and this
+    // whole file becomes decoration.
+    const found = moneyFiles();
+    assert.ok(found.length >= 10,
+      `only ${found.length} money-rendering files found — the sweep is broken, not the app`);
+    assert.ok(found.some(([rel]) => rel.endsWith("features/essentials/EssentialsScreen.jsx")),
+      "the screen that prompted this test is not being swept");
   });
 });

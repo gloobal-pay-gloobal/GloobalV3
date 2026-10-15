@@ -176,9 +176,38 @@ async function gloobalApiRequest(method, path, body, options) {
       // of those routes still ends the session, because the server marks that
       // case explicitly (`code: "auth_token_invalid"` from requireAuth) — so
       // this stays a narrowing of the rule, not a hole in it.
+      // ── THE RULE IS NOW THE SERVER'S EXPLICIT SIGNAL, NOT A GUESS ─────
+      //
+      // This was `!opts.credentialCheck || code === "auth_token_invalid"`:
+      // an ALLOWLIST. Any 401 signed you out unless the caller had
+      // remembered to pass `credentialCheck: true`, and three callers had.
+      //
+      // The founder hit it anyway — "it asks for relogin unnecessarily
+      // sometimes" — and the reason is the shape of the rule rather than a
+      // missing flag. An opt-in allowlist is wrong by default: the server
+      // can answer 401 from EIGHT places and only ONE of them,
+      // `requireAuth`, means "your token is dead". The other seven are a
+      // wrong OTP, a failed face match, three PIN paths, a project list
+      // wanting a signed-in viewer. Every one of them could end a session
+      // the server never revoked, and the next route added makes nine.
+      //
+      // So the test is inverted: the token is cleared only when the server
+      // SAYS the token is bad. requireAuth sends `code: "auth_token_invalid"`
+      // precisely so this can be asked, and it was being asked in one case
+      // out of eight.
+      //
+      // What this gives up, deliberately: a route that rejects a dead token
+      // without sending the code now fails that one call instead of signing
+      // out. That is the safe direction — a genuinely dead token reaches a
+      // requireAuth route within a tap or two and ends the session then —
+      // and it is far better than the alternative, which is a mistyped
+      // digit throwing away a working session.
+      //
+      // `credentialCheck` stays in the signature and is now redundant at
+      // this line; it is left for its callers' readability and because
+      // removing it is a separate change from fixing the rule.
       const tokenRejected =
-        res.status === 401 &&
-        (!opts.credentialCheck || (parsed && parsed.code === "auth_token_invalid"));
+        res.status === 401 && Boolean(parsed) && parsed.code === "auth_token_invalid";
       if (tokenRejected && authToken && typeof gloobalAuthTokenClear === "function") {
         gloobalAuthTokenClear();
         if (typeof window !== "undefined") {

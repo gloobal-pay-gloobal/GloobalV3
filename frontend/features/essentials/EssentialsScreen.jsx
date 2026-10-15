@@ -7,6 +7,33 @@ var ESSENTIALS_COMPONENT_META = [
   { key: "creativity", label: "Creativity", icon: EssSparkles, color: "#EC4899" }
 ];
 function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEnough, onToggleIHaveEnough, bankUnlocked, onUnlockGloobalBank, onOpenScanAndPay }) {
+  // ── THIS SCREEN ANSWERED TO NOTHING ───────────────────────────────────
+  //
+  // Every figure on it went through raw fmtMoney, so the whole Essentials
+  // baseline — a 28px "Daily limit", "Left today", and all eight category
+  // tiles — stayed in rupees while the rest of the app read in GEU. The
+  // founder's words: "I don't want any single currency representation."
+  //
+  // It was missed because the lens reached screens one at a time, by
+  // somebody remembering. The test added alongside this change is the part
+  // that matters more than the fix: it fails on the NEXT screen that
+  // formats money without reading the lens, so the next one is not found by
+  // a person noticing it on their phone.
+  //
+  // Every figure here is the account's own money in the account's own
+  // currency, so ccyCode is passed as both the figure's code and the
+  // viewer's — the same as My Assets and PayLater.
+  const lens = useGeuLens();
+  const essentialsMoney = (value) => geuLensBarParts(value, ccyCode, lens, ccyCode);
+  // One renderer for all ten, so a tile and the headline cannot end up
+  // drawn differently. `base` is the size the design asked for; the second
+  // unit follows at 75% of it.
+  const essentialsFigure = (value, base) => {
+    const parts = essentialsMoney(value);
+    return <>{parts.lead}{parts.trail && <span
+      style={{ fontSize: geuLensTrailSize(base), fontWeight: 800 }}
+    > {parts.trail}</span>}</>;
+  };
   const baseline = useMemo5(() => computeEssentialsBaseline(dialCountry.iso), [dialCountry.iso]);
   const poolRemainingToday = useEssentialsPoolRemaining(baseline.dailyTotal);
   return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onClose} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>My Essentials</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
@@ -28,7 +55,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
        ledger-backed remaining pool (see useEssentialsPoolRemaining) —
        whatever's used resets automatically at the next calendar day,
        it never carries over or accumulates. */
-  }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "22px 20px" }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}><FlagEmoji flag={dialCountry.flag} width={22} height={16} radius={3} /><span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.78)" }}>{dialCountry.name} Essentials Baseline</span></div><div style={{ display: "flex", alignItems: "flex-end", gap: 24 }}><div><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Daily limit</div><div style={{ fontSize: 28, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 3 }}>{fmtMoney(baseline.dailyTotal, ccyCode)}</div></div><div><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Left today</div><div style={{ fontSize: 20, fontWeight: 800, color: "#34D399", fontFamily: T.fontDisplay, marginTop: 3 }}>{fmtMoney(poolRemainingToday, ccyCode)}</div></div></div><div style={{ marginTop: 16, fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,0.6)" }}>
+  }<div style={{ borderRadius: T.radiusLg, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "22px 20px" }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}><FlagEmoji flag={dialCountry.flag} width={22} height={16} radius={3} /><span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.78)" }}>{dialCountry.name} Essentials Baseline</span></div><div style={{ display: "flex", alignItems: "flex-end", gap: 24 }}><div><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Daily limit</div><div style={{ fontSize: 28, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, marginTop: 3, whiteSpace: "nowrap" }}>{essentialsFigure(baseline.dailyTotal, 28)}</div></div><div><div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>Left today</div><div style={{ fontSize: 20, fontWeight: 800, color: "#34D399", fontFamily: T.fontDisplay, marginTop: 3, whiteSpace: "nowrap" }}>{essentialsFigure(poolRemainingToday, 20)}</div></div></div><div style={{ marginTop: 16, fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,0.6)" }}>
             Refills tomorrow — unused amounts don't carry over · Methodology {baseline.methodologyVersion} · Placeholder data, not verified
           </div>{baseline.usedFallback && <div style={{ marginTop: 4, fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,0.6)" }}>
             No country-specific entry yet — showing a regional default
@@ -39,7 +66,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
         </div><div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>{ESSENTIALS_COMPONENT_META.map((c) => <div
     key={c.key}
     style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "14px 14px" }}
-  ><span style={{ width: 32, height: 32, borderRadius: 10, background: `${c.color}1F`, display: "flex", alignItems: "center", justifyContent: "center" }}><c.icon size={15} color={c.color} /></span><div style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft, marginTop: 10 }}>{c.label}</div><div style={{ fontSize: 16.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 2 }}>{fmtMoney(baseline.components[c.key], ccyCode)}
+  ><span style={{ width: 32, height: 32, borderRadius: 10, background: `${c.color}1F`, display: "flex", alignItems: "center", justifyContent: "center" }}><c.icon size={15} color={c.color} /></span><div style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft, marginTop: 10 }}>{c.label}</div><div style={{ fontSize: 16.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 2, whiteSpace: "nowrap" }}>{essentialsFigure(baseline.components[c.key], 16.5)}
             </div></div>)}</div></div>{
     /* "I have enough" — voluntary, internal, reversible. Copy is
        explicit that this never touches eligibility or financial

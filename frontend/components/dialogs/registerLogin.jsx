@@ -672,7 +672,24 @@ function PinScreen({ value, length, onChange, onSubmit, onBack, revealed, onTogg
     }}
   ><MaskEyeIcon open={revealed} color={T.inkSoft} /></button><SymbolChipRow length={length} value={value} masked={!revealed} boxSize={34} justify="center" /></div><PhoneDialPad value={value} onChange={onChange} minLength={length} maxLength={length} onSubmit={onSubmit} /></div></div>;
 }
-function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, onToggleReveal }) {
+// ── SAYING WHAT THE WAIT IS ─────────────────────────────────────────────
+//
+// `waking` is true once a sign-in has been in flight long enough that the
+// API is clearly asleep rather than slow.
+//
+// The API is on Render's free plan, which spins the service down after
+// about fifteen minutes idle. The next request pays for the boot: 20 to 50
+// seconds, during which the PIN pad sat there having visibly accepted six
+// digits and done nothing. The founder read that as "login speed issue",
+// and anybody would — a screen that has stopped responding and a screen
+// that is waiting look identical when neither says anything.
+//
+// This does not make it faster. Only a paid plan does that, and that is the
+// founder's call rather than something to work around. What it does is stop
+// a known 40-second wait from looking like a fault: the time is the same and
+// the person knows what it is, which is the difference between waiting and
+// wondering whether to force-quit.
+function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, onToggleReveal, waking }) {
   return <div
     style={{
       position: "fixed",
@@ -769,7 +786,32 @@ function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, 
       cursor: "pointer",
       boxShadow: T.shadowCard
     }}
-  ><MaskEyeIcon open={revealed} color={T.inkSoft} /></button><SymbolChipRow length={length} value={value} masked={!revealed} boxSize={34} justify="center" /></div><PhoneDialPad value={value} onChange={onChange} minLength={length} maxLength={length} onSubmit={onSubmit} /></div></div>;
+  ><MaskEyeIcon open={revealed} color={T.inkSoft} /></button><SymbolChipRow length={length} value={value} masked={!revealed} boxSize={34} justify="center" /></div>{waking && <div
+    // role="status" rather than an alert: this is reassurance, not a
+    // problem, and a screen reader should mention it without interrupting
+    // whatever it was reading.
+    role="status"
+    aria-live="polite"
+    data-testid="login-waking"
+    style={{
+      marginTop: 14,
+      padding: "10px 14px",
+      borderRadius: T.radiusLg,
+      background: T.accentSoft,
+      color: T.accent,
+      fontSize: 12,
+      fontWeight: 700,
+      lineHeight: 1.45,
+      textAlign: "center"
+    }}
+  >
+    {/* The dash is interpolated, not written as \u2014 in the text: a
+        backslash escape inside JSX TEXT is not an escape, it is six
+        literal characters, and the banner read "Waking the server \u2014
+        this can take..." on screen. Caught by reading the rendered text
+        back out of a browser rather than by looking at the source. */}
+    Waking the server {"\u2014"} this can take up to a minute the first time today.
+  </div>}<PhoneDialPad value={value} onChange={onChange} minLength={length} maxLength={length} onSubmit={onSubmit} /></div></div>;
 }
 // `notice` carries whatever the real device check had to say — no sensor
 // on this device, a declined prompt, a timed-out one. It is shown on this

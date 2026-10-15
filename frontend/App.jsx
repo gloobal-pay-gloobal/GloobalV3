@@ -1665,6 +1665,11 @@ function GloobalId() {
   // and "Please verify OTP before registration".
   const [authError, setAuthError] = useState19(null);
   const [authBusy, setAuthBusy] = useState19(false);
+  // True once an auth call has been in flight long enough that the API is
+  // asleep rather than slow — see LoginAuthScreen's `waking`. Derived from
+  // authBusy rather than set by each handler, so every auth path gets it and
+  // none can forget to clear it.
+  const [authSlow, setAuthSlow] = useState19(false);
   // What the backend returned for this account. The whole app keys off
   // registeredUser.symbolId once past registration.
   const [registeredUser, setRegisteredUser] = useState19(null);
@@ -2925,6 +2930,24 @@ function GloobalId() {
   // POST /api/login — Secure ID + PIN, verified server-side against the
   // bcrypt hash. The backend locks the account for 10 minutes after 5 bad
   // attempts and says so in its message, which is surfaced as-is.
+  // ── THREE SECONDS, THEN SAY SO ────────────────────────────────────────
+  //
+  // Long enough that a healthy request (a few hundred ms against a warm
+  // service) never trips it, short enough that nobody is left staring at an
+  // unresponsive PIN pad wondering whether their tap registered.
+  //
+  // The wait itself is Render's free plan spinning the service back up —
+  // 20 to 50 seconds — and nothing here shortens it. This only stops it
+  // looking like a fault.
+  useEffect15(() => {
+    if (!authBusy) {
+      setAuthSlow(false);
+      return undefined;
+    }
+    const t = setTimeout(() => setAuthSlow(true), 3000);
+    return () => clearTimeout(t);
+  }, [authBusy]);
+
   const handleSubmitLoginAuth = async () => {
     if (loginAuthPin.length !== PIN_LENGTH || authBusy) return;
     setAuthBusy(true);
@@ -3920,7 +3943,7 @@ function GloobalId() {
   }{stage === "otp" && <div style={{ marginTop: 28, position: "relative", zIndex: 1, width: "100%" }}><PhoneDialPad value={otp} onChange={setOtp} minLength={OTP_LENGTH2} maxLength={OTP_LENGTH2} onSubmit={handleSubmitOtp} processing={otpVerifying} /></div>}{stage === "secureId" && !isLoginAttempt && <div style={{ marginTop: 20 }}><SubmitButton
     onClick={handleSubmitSecureId}
     disabled={secureId.length !== SECURE_ID_LENGTH || authBusy}
-    label={authBusy ? "Checking…" : "Submit"}
+    label={authBusy ? (authSlow ? "Waking the server…" : "Checking…") : "Submit"}
   /></div>}{stage === "secureId" && isLoginAttempt && loginEntryMode === "id" && <div style={{ marginTop: 20, display: "flex", justifyContent: "center" }}><CircularInButton
     onClick={handleSubmitSecureId}
     disabled={secureId.length !== SECURE_ID_LENGTH || authBusy}
@@ -3928,7 +3951,7 @@ function GloobalId() {
   /></div>}{stage === "referral" && <div style={{ marginTop: 20, display: "flex", flexDirection: "column", alignItems: "center" }}><SubmitButton
     onClick={handleSubmitReferral}
     disabled={referralCode.length !== REFERRAL_LENGTH || authBusy}
-    label={authBusy ? "Checking…" : void 0}
+    label={authBusy ? (authSlow ? "Waking the server…" : "Checking…") : void 0}
   /><button
     onClick={() => flipTo("profile")}
     style={{
@@ -4007,6 +4030,7 @@ function GloobalId() {
     onBack={requestBackFromLoginAuth}
     revealed={loginAuthRevealed}
     onToggleReveal={() => setLoginAuthRevealed((v) => !v)}
+    waking={authBusy && authSlow}
   />}{stage === "loginBiometric" && <BiometricVerifyScreen
     onBack={requestBackFromLoginBiometric}
     onVerify={handleLoginBiometricVerify}
@@ -4455,6 +4479,28 @@ function GloobalId() {
        nothing if the row is not there yet. Building a receipt from the
        banner's own partial payload would produce a document that disagreed
        with the one the same payment opens from every other screen. */
-  }<GloobalPaymentBanner onOpen={(txnId) => { if (txnId) setSharedTxnRef(txnId); }} /></div>;
+  }<GloobalPaymentBanner
+    // ── NOT OVER A RECEIPT, AND NOT OVER A FULL-SCREEN TASK ─────────────
+    //
+    // The banner sits at zIndex 520, above the receipt's 500, because a
+    // banner is by definition the topmost thing — it reports something that
+    // just happened over whatever was already there.
+    //
+    // That was fine while it left after 5.2 seconds. It no longer leaves on
+    // its own (the founder asked for time to read it), and a fixed card
+    // pinned to the top of the screen until somebody dismisses it is a card
+    // sitting ON the controls underneath. The receipt's own tab row is
+    // exactly there: payment-unlock caught the Creator Share tab becoming
+    // permanently unclickable the moment a payment produced a banner.
+    //
+    // Suppressed rather than moved or re-stacked, because in both these
+    // cases the banner has nothing to add. A receipt IS the notification,
+    // in more detail and for the payment the person is already looking at;
+    // and somebody mid-way through Send Money or Add Bank is doing the
+    // thing the banner would interrupt. Nothing is lost either way — the
+    // notification is in the list, unread, when they are done.
+    suppressed={Boolean(sharedTxnRef) || Boolean(activeScreen)}
+    onOpen={(txnId) => { if (txnId) setSharedTxnRef(txnId); }}
+  /></div>;
 }
 

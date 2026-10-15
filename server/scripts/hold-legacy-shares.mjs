@@ -61,6 +61,8 @@ if (!process.env.MONGO_URI) {
 
 const User = require(path.join(HERE, "..", "models", "User"));
 const AssetSeed = require(path.join(HERE, "..", "models", "AssetSeed"));
+const PlatformAccount = require(path.join(HERE, "..", "models", "PlatformAccount"));
+const LedgerEntry = require(path.join(HERE, "..", "models", "LedgerEntry"));
 const { decimalsFor } = require(path.join(HERE, "..", "lib", "currencyDecimals"));
 
 const EXECUTE = process.argv.includes("--execute");
@@ -98,11 +100,25 @@ async function main() {
   const seedFilter = { principalHeld: { $ne: true }, cashback: { $gt: 0 } };
   if (ONLY_SYMBOL) seedFilter.symbolId = ONLY_SYMBOL;
 
-  const seeds = await AssetSeed.find(seedFilter).lean();
-  if (!seeds.length) {
+  const allSeeds = await AssetSeed.find(seedFilter).lean();
+  if (!allSeeds.length) {
     console.log("No legacy seeds found. Nothing to do.");
     return;
   }
+
+  // ── DECISION 2, APPLIED BEFORE ANYTHING IS GROUPED ───────────────────
+  //
+  // A seed with no `transactionId` has nothing for its ledger line to hang
+  // off, and LedgerEntry.transactionId is required. The founder's call was
+  // to leave those alone rather than add a Transaction type that exists for
+  // one historical run — the enum's own note warns that an unused value is
+  // exactly what somebody reaches for later believing it means something.
+  //
+  // Filtered FIRST, before grouping, and that ordering matters: excluding a
+  // seed shrinks its owner's total, which can turn an account that could not
+  // cover its whole set into one that can cover the part being moved.
+  const seeds = allSeeds.filter((s) => s.transactionId);
+  const unlinkedSeeds = allSeeds.filter((s) => !s.transactionId);
 
   // Grouped by OWNER and CURRENCY. A person with seeds in two currencies is
   // two separate debits against two separate custody accounts, and summing
@@ -138,7 +154,7 @@ async function main() {
   // LedgerEntry.transactionId is required, so a seed with none has nothing
   // for its ledger line to hang off — see the note at --execute below. This
   // count is the size of that problem.
-  const unlinked = seeds.filter((s) => !s.transactionId).length;
+  const unlinked = unlinkedSeeds.length;
 
   const byCurrency = new Map();
   for (const g of [...covered, ...short]) {
@@ -149,7 +165,9 @@ async function main() {
   }
 
   console.log("── WHAT IS THERE ──────────────────────────────────────────");
-  console.log(`legacy seeds:      ${seeds.length}`);
+  console.log(`legacy seeds:      ${allSeeds.length}`);
+  console.log(`  movable (linked): ${seeds.length}`);
+  console.log(`  left as they are: ${unlinked}   (no transaction to anchor a ledger line)`);
   console.log(`owner x currency:  ${byOwner.size}`);
   for (const [currency, c] of byCurrency) {
     console.log(`  ${currency}: ${c.seeds} seed(s), ${money(c.total, currency)} of principal`);
@@ -178,46 +196,137 @@ async function main() {
 
   if (!EXECUTE) {
     console.log("\nDRY RUN — nothing written.");
-    console.log("Send this output back before anything is written — --execute is");
-    console.log("not implemented until the two questions in this file are decided.");
+    console.log(`--execute would move ${covered.length} account(s), ` +
+      `${covered.reduce((n, g) => n + g.seeds.length, 0)} seed(s).`);
+    console.log(`It would leave ${short.length} short account(s) and ${unlinked} ` +
+      "unlinked seed(s) exactly as they are — both deliberately, see this file.");
     return;
   }
 
-  // ── EXECUTE IS DELIBERATELY NOT IMPLEMENTED YET ──────────────────────
+  // ── EXECUTE ──────────────────────────────────────────────────────────
   //
-  // Not an oversight, and not laziness. Two things have to be decided by a
-  // person before a line of it can be written honestly, and both of them
-  // are above the dry run above:
+  // Both questions this script refused to answer have been answered, and
+  // both answers were the conservative one:
   //
-  //   1. THE SHORTFALL LIST. Accounts that have spent the money this would
-  //      move cannot be made to give it back. Skipping them leaves the
-  //      system in two states; forcing them puts a balance below zero.
-  //      Which it should be is a business decision about real people's
-  //      money, not a flag.
+  //   1. THE SHORT ACCOUNT is skipped and left truthful. That person spent
+  //      the money; their receipt saying "Gloobal balance" is the truth
+  //      about what happened to it. `covered` is the only list that moves,
+  //      and the short ones are named in every run so they are never
+  //      quietly forgotten.
   //
-  //   2. WHAT THE LEDGER LINE HANGS OFF. LedgerEntry.transactionId is
-  //      required, and the Transaction `type` enum has no value that
-  //      honestly describes "a migration moved this". The right answer is
-  //      probably the share leg's own transaction — the hold IS about that
-  //      share — but a seed planted before transactionId was recorded has
-  //      none, and those rows need an answer of their own. Inventing an
-  //      enum value, or pointing the line at a transaction it is not about,
-  //      would put a row in the books that misdescribes itself. A ledger
-  //      exists to make exactly that impossible.
+  //   2. THE UNLINKED SEEDS stay legacy, filtered out above.
   //
-  // The count of seeds that CANNOT be linked is reported above for that
-  // reason: it is the size of problem 2.
+  // ── THE ROWS ARE THE ONES performTransfer ALREADY WRITES ─────────────
   //
-  // So --execute refuses, loudly, rather than doing something defensible-
-  // looking. Read the dry run, decide 1 and 2, then this gets written.
-  console.error(
-    "\n--execute is not implemented.\n\n" +
-    "This script is diagnostic until two questions are answered:\n" +
-    `  1. the ${short.length} account(s) that cannot cover their principal\n` +
-    `  2. what the ledger lines hang off for the ${unlinked} seed(s) with no transaction\n\n` +
-    "Both are decisions about real money. See the long comment in this file."
+  // Nothing here is a new shape. A share held today writes a LedgerEntry
+  // against the PAYMENT'S transaction with `heldInCustody: true` and a
+  // `custodyKey` in its metadata, and `$inc`s the custody PlatformAccount.
+  // This does the same, with one difference that is the whole point of the
+  // migration: today's hold never touches the balance (the share is held
+  // before it ever lands), and this one must TAKE IT OUT, because it landed
+  // months ago.
+  //
+  // So entryType is 'debit' with balanceBefore > balanceAfter, where the
+  // live path writes 'credit' with the two equal. Both are true statements
+  // about what happened to the account, which is the only test a ledger
+  // line has to pass.
+  if (!covered.length) {
+    console.log("\nNothing to move.");
+    return;
+  }
+
+  let moved = 0;
+  let failed = 0;
+  let seedsHeld = 0;
+  for (const group of covered) {
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const user = await User.findById(group.userId).session(session);
+        if (!user) throw new Error("owner vanished between the read and the write");
+        let running = round(Number(user.balance || 0), group.currency);
+        // Re-checked INSIDE the transaction. The dry run's reading is a
+        // snapshot and a payment between the two would make it stale; this
+        // is the check that counts.
+        if (running < group.total) {
+          throw new Error(`balance moved to ${money(running, group.currency)} — skipped`);
+        }
+
+        const custody = await PlatformAccount.custodyFor(group.currency, session);
+        const rows = [];
+        for (const seed of group.seeds) {
+          const amount = round(Number(seed.cashback || 0), group.currency);
+          if (!(amount > 0)) continue;
+          const before = running;
+          running = round(running - amount, group.currency);
+          rows.push({
+            // The payment this seed came from. The hold IS about that
+            // payment, so the line hangs off it rather than off a
+            // transaction minted to give the migration something to point
+            // at — see the long note above.
+            transactionId: seed.transactionId,
+            userId: group.userId,
+            entryType: "debit",
+            amount,
+            balanceBefore: before,
+            balanceAfter: running,
+            currency: group.currency,
+            note: "Creator Share moved to My Assets",
+            metadata: {
+              // The two fields that make this findable as a hold, same as
+              // the live path writes them.
+              heldInCustody: true,
+              custodyKey: `platform:custody:${group.currency}`,
+              cashback: amount,
+              assetSeedId: String(seed._id),
+              // "A migration did it" has to be READABLE six months later
+              // rather than remembered.
+              migration: "hold-legacy-shares",
+              migratedAt: new Date().toISOString(),
+            },
+          });
+        }
+        if (!rows.length) return;
+
+        user.balance = running;
+        await user.save({ session });
+
+        // The half of the pair that makes the books balance. If this did
+        // not apply, the principal has left the account and gone nowhere.
+        const held = await PlatformAccount.updateOne(
+          { _id: custody._id },
+          { $inc: { balance: group.total } },
+          { session }
+        );
+        if (!held.modifiedCount) throw new Error("custody account did not take the hold");
+
+        await LedgerEntry.create(rows, { session, ordered: true });
+
+        // The flag LAST, and only now that the money is genuinely in
+        // custody. This is what AssetSeed.js forbids doing on its own, and
+        // the reason it is safe here: the fact it asserts has just been
+        // made true, three writes above.
+        await AssetSeed.updateMany(
+          { _id: { $in: group.seeds.map((x) => x._id) } },
+          { $set: { principalHeld: true } },
+          { session }
+        );
+        seedsHeld += rows.length;
+      });
+      moved++;
+      console.log(`  held ${group.symbolId}: ${money(group.total, group.currency)}`);
+    } catch (err) {
+      failed++;
+      console.error(`  FAILED ${group.symbolId}: ${err.message}`);
+    } finally {
+      await session.endSession();
+    }
+  }
+
+  console.log(
+    `\naccounts moved: ${moved}   failed: ${failed}   ` +
+    `seeds held: ${seedsHeld}   left truthful: ${short.length} short, ${unlinked} unlinked`
   );
-  process.exitCode = 1;
 }
 
 main()

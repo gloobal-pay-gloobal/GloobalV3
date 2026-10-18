@@ -353,6 +353,71 @@ describe("the screens answer to the lens", () => {
   });
 });
 
+describe("a heart decides what the Send strip offers", () => {
+  const { validateCategoryInput } = require_(path.join(ROOT, "server/lib/categoryValidation.js"));
+
+  // choicesOfKind lives in the store, which imports React — so it is
+  // sliced out and run on its own rather than evaluating that whole file.
+  const sortOf = (() => {
+    const src = readSource(STORE);
+    const at = src.indexOf("function choicesOfKind");
+    const body = src.slice(at, src.indexOf("\n}\n", at) + 2);
+    return new Function(`${body}\nreturn choicesOfKind;`)();
+  })();
+
+  const cat = (name, extra) => Object.assign({ id: name, name, kind: "expense", archived: false, sortIndex: 0 }, extra);
+
+  test("favourites lead, whatever their place in the person's own order", () => {
+    const state = { categories: [
+      cat("Food", { sortIndex: 0 }),
+      cat("Car", { sortIndex: 9, favorite: true }),
+      cat("Bill", { sortIndex: 5 }),
+      cat("Baby", { sortIndex: 7, favorite: true })
+    ] };
+    // Favourites lead; WITHIN each group the person's own order still
+    // applies, so Baby (7) precedes Car (9) and Food (0) precedes Bill (5).
+    // Hearting promotes a category without also reshuffling it against the
+    // other favourites, which is what a "move to the top" would do.
+    assert.deepEqual(sortOf(state, "expense").map((c) => c.name), ["Baby", "Car", "Food", "Bill"]);
+  });
+
+  test("the strip takes the first four of that one list, not a second one", () => {
+    // One rule. A separate "pinned" collection could disagree with the
+    // grid, and then hearting something in one place would not change the
+    // other.
+    const src = code(STORE);
+    assert.match(src, /var CHOICES_STRIP_COUNT = 4;/);
+    const send = code(SEND);
+    assert.match(send, /choicesOfKind\(choicesState, "expense"\)\.slice\(0, CHOICES_STRIP_COUNT\)/,
+      "the Send strip no longer takes its categories from the shared sort");
+  });
+
+  test("an archived category is never offered, however favourited", () => {
+    const state = { categories: [cat("Gone", { favorite: true, archived: true }), cat("Here")] };
+    assert.deepEqual(sortOf(state, "expense").map((c) => c.name), ["Here"]);
+  });
+
+  test("hearting rolls back when the write fails", () => {
+    const src = code(STORE);
+    const fn = src.slice(src.indexOf("async function choicesToggleFavorite"));
+    const body = fn.slice(0, fn.indexOf("\n}\n") + 1);
+    assert.match(body, /catch \(error\)/, "a failed heart now silently claims to have been saved");
+    assert.match(body, /favorite: before/, "the rollback no longer restores the previous state");
+  });
+
+  test("the server coerces a heart rather than refusing one", () => {
+    // There is no input a person can make on a toggle worth a 400.
+    for (const value of [true, 1, "yes", {}]) {
+      assert.equal(validateCategoryInput({ favorite: value }, { strict: false }).value.favorite, true);
+    }
+    for (const value of [false, 0, ""]) {
+      const seen = validateCategoryInput({ name: "A", favorite: value });
+      assert.equal(seen.ok, true);
+      assert.equal(seen.value.favorite, false);
+    }
+  });
+});
+
 describe("one account's labels do not outlive its session", () => {
   test("signing out drops them", () => {
     const src = code("frontend/App.jsx");

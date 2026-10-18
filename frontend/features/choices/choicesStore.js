@@ -241,10 +241,45 @@ function choicesOfKind(state, kind) {
   const rows = (state && Array.isArray(state.categories) ? state.categories : []).filter(
     (row) => row && !row.archived && (row.kind || "expense") === want
   );
+  // Favourites first, then the person's own order, then name. The strip
+  // above the Send button takes the first few of exactly this list, so
+  // hearting something is also how it gets there — one rule, not a
+  // separate "pinned" collection that could disagree with the grid.
   return rows.sort((a, b) => {
+    const byHeart = Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
+    if (byHeart !== 0) return byHeart;
     const byIndex = (Number(a.sortIndex) || 0) - (Number(b.sortIndex) || 0);
     return byIndex !== 0 ? byIndex : String(a.name || "").localeCompare(String(b.name || ""));
   });
+}
+
+// How many of them the Send strip offers. Four fits a narrow phone beside
+// the "All" tile without the row becoming a scroll nobody notices.
+var CHOICES_STRIP_COUNT = 4;
+
+// Hearting is optimistic and rolled back on failure, like tagging: it is a
+// preference, it shows instantly, and if the write fails the heart goes
+// back to what it was rather than lying about having been saved.
+async function choicesToggleFavorite(category) {
+  const id = category && category.id;
+  if (!id) return null;
+  const before = Boolean(category.favorite);
+  const next = !before;
+
+  choicesEmit(Object.assign({}, choicesState, {
+    categories: choicesState.categories.map((row) =>
+      String(row.id) === String(id) ? Object.assign({}, row, { favorite: next }) : row)
+  }));
+
+  try {
+    return await GloobalApi.updateCategory(id, { favorite: next });
+  } catch (error) {
+    choicesEmit(Object.assign({}, choicesState, {
+      categories: choicesState.categories.map((row) =>
+        String(row.id) === String(id) ? Object.assign({}, row, { favorite: before }) : row)
+    }));
+    throw error;
+  }
 }
 
 function choicesById(state, id) {

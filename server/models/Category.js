@@ -100,6 +100,19 @@ const categorySchema = new mongoose.Schema(
       default: null,
     },
 
+    // Favourites lead the grid and are the ones offered above the Send
+    // button, where there is only room for a few.
+    //
+    // A flag rather than a "top four" list, because a list has to be
+    // reordered on every change and can disagree with itself — two rows
+    // both claiming position 2, or a position pointing at a category that
+    // has since been retired. A flag cannot be inconsistent, and "the first
+    // four favourites, then the rest" is a sort, which is derived.
+    favorite: {
+      type: Boolean,
+      default: false,
+    },
+
     // The person's own ordering in the grid. Ties break on name.
     sortIndex: {
       type: Number,

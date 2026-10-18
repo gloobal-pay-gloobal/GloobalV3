@@ -1766,7 +1766,14 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       fontFamily: T.fontBody,
       overflow: "hidden"
     }}
-  ><DashboardAmbientBg /><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 10, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", background: "transparent" }}><button
+  ><DashboardAmbientBg /><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 10, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", background: "transparent" }}>{
+    /* The Coverage search bar is the HOME header, and it was being
+       rendered on every tab with `disabled` doing the explaining. On My
+       Choices that reads as a search box for the categories below it,
+       which is the one thing it is not. The tab gets its own title in
+       the same slot instead, so the header keeps its shape and the
+       embedded grid stops being a screen with no name. */
+  }{activeTab !== "choices" && <button
     onClick={onOpenCoverage}
     aria-label="Gloobal coverage"
     className="v2-tap"
@@ -1782,7 +1789,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       boxShadow: T.shadowCard,
       cursor: "pointer"
     }}
-  ><Search3 size={15} color={T.inkFaint} style={{ flexShrink: 0 }} /><span style={{ flex: 1, fontSize: 13, color: T.inkFaint, fontWeight: 500, textAlign: "center" }}><GloobalWordmark suffix=" Coverage" /></span><span style={{ width: 15, flexShrink: 0 }} aria-hidden="true" /></button>{
+  ><Search3 size={15} color={T.inkFaint} style={{ flexShrink: 0 }} /><span style={{ flex: 1, fontSize: 13, color: T.inkFaint, fontWeight: 500, textAlign: "center" }}><GloobalWordmark suffix=" Coverage" /></span><span style={{ width: 15, flexShrink: 0 }} aria-hidden="true" /></button>}{activeTab === "choices" && <span
+    style={{ flex: 1, fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}
+  >
+      My Choices
+    </span>}{
     /* Profile flip — switches the same account between its two
        sides: user/consumer and merchant/producer. Every flow stays
        identical; only which side the data is read as changes (and

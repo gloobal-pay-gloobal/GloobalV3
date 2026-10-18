@@ -1,6 +1,6 @@
 // src/features/choices/ChoicesScreen.jsx
 import { useState as useState44, useMemo as useMemo13 } from "react";
-import { Plus as Plus5, Search as Search6, ArrowLeft as ArrowLeft8, RefreshCw as RefreshCw8 } from "lucide-react";
+import { Plus as Plus5, Search as Search6, ArrowLeft as ArrowLeft8, RefreshCw as RefreshCw8, Heart as Heart3 } from "lucide-react";
 
 // My Choices — the grid, and everything reachable from it.
 //
@@ -181,10 +181,40 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      fontSize: 44,
+      // The tile is mostly its icon — that is what makes a grid of these
+      // scannable at arm's length rather than a list of words with
+      // decoration. 54 is as large as it goes before the glyph starts
+      // colliding with the Pay pill and the heart in the corners.
+      fontSize: 54,
+      lineHeight: 1,
       cursor: "pointer"
     }}
   >{category.icon || "●"}<button
+    onClick={(e) => { e.stopPropagation(); choicesToggleFavorite(category).catch(() => {}); }}
+    className="v2-tap"
+    aria-label={category.favorite ? `Unfavourite ${category.name}` : `Favourite ${category.name}`}
+    aria-pressed={Boolean(category.favorite)}
+    style={{
+      position: "absolute",
+      top: 9,
+      left: 9,
+      border: "none",
+      borderRadius: "50%",
+      background: category.favorite ? T.surface : "rgba(255,255,255,0.55)",
+      width: 30,
+      height: 30,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer",
+      padding: 0
+    }}
+  ><Heart3
+    size={15}
+    color={category.favorite ? "#E23F45" : T.inkSoft}
+    fill={category.favorite ? "#E23F45" : "none"}
+    strokeWidth={2.3}
+  /></button><button
     onClick={(e) => { e.stopPropagation(); if (onPay) onPay(category); }}
     className="v2-tap"
     aria-label={choicesPayLabel(category)}

@@ -331,9 +331,14 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   const choicesState = useChoices();
   const [choiceId, setChoiceId] = useState15(prefillChoiceId || null);
   const [choicesOpen, setChoicesOpen] = useState15(false);
-  // The strip shows the first few; "All" opens the rest. Six is what fits
-  // on a narrow phone without the row becoming a scroll nobody notices.
-  const sendChoices = useMemo6(() => choicesOfKind(choicesState, "expense").slice(0, 6), [choicesState]);
+  // The strip shows the first few; "All" opens the rest. choicesOfKind
+  // puts favourites first, so the heart on a tile is also what decides
+  // what appears here — one rule rather than a separate pinned list that
+  // could disagree with the grid.
+  const sendChoices = useMemo6(
+    () => choicesOfKind(choicesState, "expense").slice(0, CHOICES_STRIP_COUNT),
+    [choicesState]
+  );
   // DECLARED AFTER choiceId and choicesState, not beside them. It reads
   // both, and a const that reads a const declared below it is a temporal
   // dead zone error at render — the one that has bitten this bundle three

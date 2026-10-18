@@ -89,6 +89,12 @@ const validateCategoryInput = (input, { strict = true } = {}) => {
     out.budgetCurrency = currency;
   }
 
+  if (supplied('favorite')) {
+    // Coerced rather than refused. A heart is a toggle; there is no input
+    // a person can make here that is worth a 400 and a sentence.
+    out.favorite = Boolean(body.favorite);
+  }
+
   if (supplied('sortIndex')) {
     const sortIndex = Number(body.sortIndex);
     if (!Number.isFinite(sortIndex)) {
@@ -116,6 +122,7 @@ const publicCategory = (row) => ({
   color: row.color || '',
   monthlyBudget: Number(row.monthlyBudget) || 0,
   budgetCurrency: row.budgetCurrency || '',
+  favorite: Boolean(row.favorite),
   archived: Boolean(row.archivedAt),
   sortIndex: Number(row.sortIndex) || 0,
   createdAt: row.createdAt,
@@ -129,11 +136,15 @@ const publicCategory = (row) => ({
 // renamed, re-iconed or retired, and the app never relies on a particular
 // one existing — which is why they carry no stable keys. Naming them here
 // is the only place they are special.
+// The ones that start out favourited are simply the first few, so a
+// brand-new account opens Send with a strip that is already populated
+// rather than one that says "pick some first". Nothing depends on which
+// they are, and un-hearting any of them is one tap.
 const DEFAULT_CATEGORIES = [
-  { name: 'Baby', icon: '\u{1F476}', color: '#FBD0DC', kind: 'expense', sortIndex: 0 },
-  { name: 'Beauty', icon: '\u{1F484}', color: '#E5DEFB', kind: 'expense', sortIndex: 1 },
-  { name: 'Bill', icon: '\u{1F9FE}', color: '#DBDDE4', kind: 'expense', sortIndex: 2 },
-  { name: 'Car', icon: '\u{1F697}', color: '#A9DCEE', kind: 'expense', sortIndex: 3 },
+  { name: 'Baby', icon: '\u{1F476}', color: '#FBD0DC', kind: 'expense', sortIndex: 0, favorite: true },
+  { name: 'Beauty', icon: '\u{1F484}', color: '#E5DEFB', kind: 'expense', sortIndex: 1, favorite: true },
+  { name: 'Bill', icon: '\u{1F9FE}', color: '#DBDDE4', kind: 'expense', sortIndex: 2, favorite: true },
+  { name: 'Car', icon: '\u{1F697}', color: '#A9DCEE', kind: 'expense', sortIndex: 3, favorite: true },
   { name: 'Clothing', icon: '\u{1F455}', color: '#FBDCC4', kind: 'expense', sortIndex: 4 },
   { name: 'Education', icon: '\u{1F393}', color: '#FBE7A8', kind: 'expense', sortIndex: 5 },
   { name: 'Electronics', icon: '\u{1F4F1}', color: '#A8E6E0', kind: 'expense', sortIndex: 6 },
@@ -142,7 +153,7 @@ const DEFAULT_CATEGORIES = [
   { name: 'Health', icon: '\u{1FA7A}', color: '#A8E0B0', kind: 'expense', sortIndex: 9 },
   { name: 'Home', icon: '\u{1F3E0}', color: '#FBE7A8', kind: 'expense', sortIndex: 10 },
   { name: 'Insurance', icon: '\u{1F6E1}️', color: '#C5D9F5', kind: 'expense', sortIndex: 11 },
-  { name: 'Salary', icon: '\u{1F4BC}', color: '#BBE8C4', kind: 'income', sortIndex: 0 },
+  { name: 'Salary', icon: '\u{1F4BC}', color: '#BBE8C4', kind: 'income', sortIndex: 0, favorite: true },
   { name: 'Freelance', icon: '\u{1F4BB}', color: '#C5D9F5', kind: 'income', sortIndex: 1 },
   { name: 'Interest', icon: '\u{1F4C8}', color: '#FBE7A8', kind: 'income', sortIndex: 2 },
   { name: 'Rental', icon: '\u{1F3E2}', color: '#E0D4F7', kind: 'income', sortIndex: 3 },

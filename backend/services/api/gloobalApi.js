@@ -921,6 +921,69 @@ var GloobalApi = {
     return Array.isArray(result.transactions) ? result.transactions : [];
   },
 
+  // --- My Choices -------------------------------------------------------
+  //
+  // All six are scoped by the bearer token, so none of them takes a Gloobal
+  // ID. None is on the money path: a category is a label and a tag is one
+  // account's label on one payment, written AFTER a payment has committed.
+  // A failed call here leaves a correct, untagged payment.
+
+  // GET /api/categories — every choice plus its own totals, in one call.
+  // `monthStart` is the viewer's own month boundary; the server falls back
+  // to UTC without it, which is a day out for half the world near the turn
+  // of a month.
+  async getCategories(monthStart) {
+    const query = monthStart ? `?monthStart=${encodeURIComponent(monthStart)}` : "";
+    const result = await gloobalApiClient.get(`/api/categories${query}`);
+    return {
+      categories: Array.isArray(result.categories) ? result.categories : [],
+      monthStart: result.monthStart || null
+    };
+  },
+
+  // GET /api/categories/tags — reference id -> category, for the rows the
+  // app has already loaded. Not a transaction list: the history projection
+  // is per viewer and already correct, and a second one here would drift.
+  async getCategoryTags(limit) {
+    const query = Number(limit) > 0 ? `?limit=${Math.floor(Number(limit))}` : "";
+    const result = await gloobalApiClient.get(`/api/categories/tags${query}`);
+    return Array.isArray(result.tags) ? result.tags : [];
+  },
+
+  async createCategory(payload) {
+    const result = await gloobalApiClient.post("/api/categories", payload || {});
+    return result.category || null;
+  },
+
+  async updateCategory(id, payload) {
+    const result = await gloobalApiClient.patch(`/api/categories/${encodeURIComponent(id)}`, payload || {});
+    return result.category || null;
+  },
+
+  // Archives rather than deletes when the category has ever been used —
+  // the response says which happened, because "removed" and "retired" are
+  // different things to tell somebody.
+  async removeCategory(id) {
+    const result = await gloobalApiClient.delete(`/api/categories/${encodeURIComponent(id)}`);
+    return { archived: Boolean(result.archived), tagged: Number(result.tagged) || 0 };
+  },
+
+  // PUT, not POST: filing the same payment twice is one row updated, not
+  // two rows written, and the server's unique index on
+  // { userId, transactionId } is what guarantees that under a retry.
+  async tagTransaction(referenceId, categoryId) {
+    const result = await gloobalApiClient.put(
+      `/api/transactions/${encodeURIComponent(referenceId)}/tag`,
+      { categoryId }
+    );
+    return result.tag || null;
+  },
+
+  async untagTransaction(referenceId) {
+    const result = await gloobalApiClient.delete(`/api/transactions/${encodeURIComponent(referenceId)}/tag`);
+    return Boolean(result.removed);
+  },
+
   // GET /api/transactions/:symbolId — the same projection plus lifetime
   // totals, in one call, so the balance card's PAID and RECEIVED figures
   // can never be built from three different reads of the ledger.

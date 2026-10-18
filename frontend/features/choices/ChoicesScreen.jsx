@@ -1,0 +1,272 @@
+// src/features/choices/ChoicesScreen.jsx
+import { useState as useState44, useMemo as useMemo13 } from "react";
+import { Plus as Plus5, Search as Search6, ArrowLeft as ArrowLeft8, RefreshCw as RefreshCw8 } from "lucide-react";
+
+// My Choices — the grid, and everything reachable from it.
+//
+// This screen owns the whole section's navigation: the category it has
+// open, which sheet is up, and which category a sheet is about. Those are
+// local state rather than another entry in the Dashboard's overlay list,
+// because none of them is a destination the app should be able to be
+// launched into — they only make sense on top of this grid.
+//
+// The money figures come from the store, which gets them from the server's
+// aggregation. Nothing on this screen adds two currencies together: see
+// choicesTotalIn.
+
+// `embedded` is the Dashboard tab: the same grid, rendered INSIDE the tab
+// body instead of over it. The difference is only the shell — no fixed
+// positioning, no header of its own, and no scroll container, because the
+// Dashboard already supplies all three and two nested scrollers on one
+// screen is how a list ends up unable to reach its own last row.
+//
+// A category opened from either mode is still a full overlay. That is not
+// an inconsistency: the grid is a place in the app, and one category is
+// something you look at and come back from.
+function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
+  const state = useChoices();
+  const [kind, setKind] = useState44("expense");
+  const [query, setQuery] = useState44("");
+  const [openId, setOpenId] = useState44(null);
+  const [sheet, setSheet] = useState44(null);
+  const [editing, setEditing] = useState44(null);
+  const [busy, setBusy] = useState44(false);
+
+  const categories = useMemo13(() => choicesOfKind(state, kind), [state, kind]);
+  const shown = useMemo13(() => {
+    const needle = String(query || "").trim().toLowerCase();
+    if (!needle) return categories;
+    return categories.filter((row) => String(row.name || "").toLowerCase().includes(needle));
+  }, [categories, query]);
+
+  // The hero. Summed from the per-category totals the server already
+  // returned, so it cannot disagree with the tiles underneath it — and only
+  // over buckets in the viewer's own currency, because choicesTotalIn is
+  // what picks them.
+  const headline = useMemo13(
+    () => categories.reduce((sum, row) => sum + (choicesTotalIn(row, ccyCode).total || 0), 0),
+    [categories, ccyCode]
+  );
+
+  const open = openId ? choicesById(state, openId) : null;
+
+  const refresh = async () => {
+    setBusy(true);
+    try {
+      await choicesLoad(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retire = async (category) => {
+    try {
+      const result = await choicesRemove(category.id);
+      setSheet(null);
+      setEditing(null);
+      setOpenId(null);
+      return result;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  // A category opened from the grid takes over the screen. Rendered instead
+  // of the grid rather than on top of it, so the grid's scroll position is
+  // not held behind a full-screen overlay.
+  if (open) {
+    const allTotal = categories.reduce((sum, row) => sum + (choicesTotalIn(row, ccyCode).total || 0), 0);
+    const mine = choicesTotalIn(open, ccyCode).total || 0;
+    return <>
+      <CategoryScreen
+        category={open}
+        onBack={() => setOpenId(null)}
+        history={history}
+        tags={state.tags}
+        ccyCode={ccyCode}
+        onPay={(category) => onPay && onPay(category)}
+        onScan={(category) => onScan && onScan(category)}
+        onEdit={(category) => { setEditing(category); setSheet("editor"); }}
+        shareOfTotal={allTotal > 0 ? mine / allTotal : 0}
+      />
+      <ChoicesEditorSheet
+        open={sheet === "editor"}
+        onClose={() => { setSheet(null); setEditing(null); }}
+        category={editing}
+        kind={kind}
+        ccyCode={ccyCode}
+        onRemove={retire}
+      />
+    </>;
+  }
+
+  return <div
+    style={embedded
+      ? { display: "flex", flexDirection: "column" }
+      : { position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}
+  >{!embedded && <div
+    style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(16px + env(safe-area-inset-top, 0px)) 18px 12px", flexShrink: 0 }}
+  ><button
+    onClick={onClose}
+    aria-label="Back"
+    className="v2-tap"
+    style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+  ><ArrowLeft8 size={18} color={T.ink} /></button><span
+    style={{ flex: 1, fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}
+  >
+      My Choices
+    </span></div>}<div
+    style={embedded
+      ? { padding: "0 0 24px" }
+      : { flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 16px 110px" }}
+  ><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 16px" }}><div
+    style={{ display: "flex", alignItems: "flex-start", gap: 12 }}
+  ><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>{kind === "income" ? "Total received" : "Total spent"}</div><div
+    style={{ marginTop: 2 }}
+  ><ChoiceMoney amount={headline} code={ccyCode} size={30} color={kind === "income" ? TXN_IN_COLOR : T.ink} /></div></div><button
+    onClick={refresh}
+    aria-label="Reload your choices"
+    className="v2-tap"
+    style={{ width: 44, height: 44, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+  ><RefreshCw8 size={17} color={busy ? T.inkFaint : T.accent} /></button></div><div
+    style={{ display: "flex", background: T.surfaceAlt, borderRadius: 999, padding: 4, marginTop: 16 }}
+  >{[["expense", "Expenses"], ["income", "Incomes"]].map(([key, label]) => <button
+    key={key}
+    onClick={() => { setKind(key); setQuery(""); }}
+    className="v2-tap"
+    style={{
+      flex: 1,
+      border: "none",
+      borderRadius: 999,
+      padding: 11,
+      fontSize: 14.5,
+      fontWeight: kind === key ? 800 : 700,
+      cursor: "pointer",
+      background: kind === key ? T.accent : "transparent",
+      color: kind === key ? "#fff" : T.inkSoft
+    }}
+  >{label}</button>)}</div><div
+    style={{ display: "flex", alignItems: "center", gap: 9, background: T.bg, borderRadius: 999, padding: "12px 16px", marginTop: 14 }}
+  ><Search6 size={16} color={T.inkFaint} /><input
+    value={query}
+    onChange={(e) => setQuery(e.target.value)}
+    placeholder="Search categories"
+    aria-label="Search categories"
+    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", fontSize: 14.5, color: T.ink, fontFamily: T.fontBody }}
+  /></div></div>{state.status === "loading" && categories.length === 0 && <div
+    style={{ textAlign: "center", padding: "40px 20px", color: T.inkFaint, fontSize: 13 }}
+  >
+      Loading your choices{"…"}
+    </div>}{state.status === "error" && categories.length === 0 && <div
+    style={{ textAlign: "center", padding: "36px 20px", color: T.inkFaint, fontSize: 13, lineHeight: 1.5 }}
+  >
+      Couldn{"’"}t load your choices. Nothing is lost {"—"} tap reload above to try again.
+    </div>}{shown.length === 0 && categories.length > 0 && <div
+    style={{ textAlign: "center", padding: "34px 20px", color: T.inkFaint, fontSize: 13 }}
+  >
+      No choice called {"“"}{query.trim()}{"”"}.
+    </div>}<div
+    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 16 }}
+  >{shown.map((category) => <div key={category.id}><div
+    onClick={() => setOpenId(category.id)}
+    role="button"
+    tabIndex={0}
+    aria-label={`Open ${category.name}`}
+    className="v2-tap"
+    style={{
+      position: "relative",
+      borderRadius: 20,
+      background: choicesTint(category.color),
+      aspectRatio: "1.03",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 44,
+      cursor: "pointer"
+    }}
+  >{category.icon || "●"}<button
+    onClick={(e) => { e.stopPropagation(); if (onPay) onPay(category); }}
+    className="v2-tap"
+    aria-label={choicesPayLabel(category)}
+    style={{
+      position: "absolute",
+      top: 9,
+      right: 9,
+      border: "none",
+      borderRadius: 999,
+      background: T.surface,
+      padding: "5px 13px",
+      fontSize: 12.5,
+      fontWeight: 800,
+      color: T.ink,
+      cursor: "pointer"
+    }}
+  >
+      Pay
+    </button></div><div
+    style={{ textAlign: "center", fontSize: 14.5, fontWeight: 700, color: T.ink, marginTop: 9, overflowWrap: "anywhere" }}
+  >{category.name}</div></div>)}</div></div><button
+    onClick={() => setSheet("add")}
+    className="v2-tap"
+    aria-label="Add"
+    style={{
+      // Fixed rather than absolute in both modes. Absolute would hang it
+      // off whichever ancestor happens to be positioned, and inside the
+      // Dashboard tab that is not this component — the button would scroll
+      // away with the grid instead of staying under the thumb. The offset
+      // clears the tab bar when embedded.
+      position: "fixed",
+      zIndex: 30,
+      right: 18,
+      bottom: embedded
+        ? "calc(84px + env(safe-area-inset-bottom, 0px))"
+        : "calc(20px + env(safe-area-inset-bottom, 0px))",
+      border: "none",
+      borderRadius: 999,
+      background: T.gradButton,
+      boxShadow: T.shadowRaised,
+      color: "#fff",
+      padding: "14px 22px 14px 18px",
+      fontSize: 15.5,
+      fontWeight: 800,
+      display: "flex",
+      alignItems: "center",
+      gap: 7,
+      cursor: "pointer"
+    }}
+  ><Plus5 size={19} color="#fff" strokeWidth={2.6} />
+    Add
+  </button><ChoicesAddSheet
+    open={sheet === "add"}
+    onClose={() => setSheet(null)}
+    onRoute={(route) => {
+      if (route === "pay") { setKind("expense"); setSheet("pick-pay"); return; }
+      if (route === "income") { setKind("income"); setSheet("pick-income"); return; }
+      if (route === "scan") { setSheet(null); if (onScan) onScan(null); return; }
+      setKind(route === "new-income" ? "income" : "expense");
+      setEditing(null);
+      setSheet("editor");
+    }}
+  /><ChoicesPickerSheet
+    open={sheet === "pick-pay"}
+    onClose={() => setSheet(null)}
+    title="Pay for which category?"
+    categories={choicesOfKind(state, "expense")}
+    onPick={(category) => { setSheet(null); if (onPay) onPay(category); }}
+    onNew={() => { setKind("expense"); setEditing(null); setSheet("editor"); }}
+  /><ChoicesPickerSheet
+    open={sheet === "pick-income"}
+    onClose={() => setSheet(null)}
+    title="Add income to which category?"
+    categories={choicesOfKind(state, "income")}
+    onPick={(category) => { setSheet(null); setKind("income"); setOpenId(category.id); }}
+    onNew={() => { setKind("income"); setEditing(null); setSheet("editor"); }}
+  /><ChoicesEditorSheet
+    open={sheet === "editor"}
+    onClose={() => { setSheet(null); setEditing(null); }}
+    category={editing}
+    kind={kind}
+    ccyCode={ccyCode}
+    onRemove={retire}
+  /></div>;
+}

@@ -1130,6 +1130,11 @@ function GloobalId() {
   // Hands a resolved payee to Send Money, which opens past its search step on
   // the amount. Nothing is sent from here; the amount is entered there.
   const [sendPrefillReceiver, setSendPrefillReceiver] = useState19(null);
+  // The category the Send screen should open with already picked, when it
+  // was opened from a "Pay for X" rather than from the Send button. Null
+  // for an ordinary send — the strip then opens with nothing chosen, which
+  // is what "optional" has to mean.
+  const [sendPrefillChoiceId, setSendPrefillChoiceId] = useState19(null);
   const openSendToPayee = (payee) => {
     const payeeCountry = COUNTRY_BY_ISO[String(payee.countryIso || "").toUpperCase()] || dialCountry;
     setSendPrefillReceiver({
@@ -3334,6 +3339,11 @@ function GloobalId() {
     // Same reasoning: the next person's first real arrival must not be
     // swallowed as "already notified".
     forgetPaymentNotifications();
+    // My Choices is per account. Left in memory, the next person to sign
+    // in on this device would see the previous one's spending labels —
+    // "Baby", "Health" — which say more about somebody than most of what
+    // this sign-out is careful to clear.
+    choicesReset();
     // Money state first, before any of the identity state below is torn down.
     // This ledger lives in a useRef in LedgerProvider and survives sign-out,
     // so without this the next account to sign in inherits this one's seeds —
@@ -4045,6 +4055,7 @@ function GloobalId() {
     dialCountry={dialCountry}
     onLogout={handleStartOver}
     onOpenSend={(opts) => {
+      setSendPrefillChoiceId((opts && opts.choiceId) || null);
       setActiveScreen("send");
     }}
     onOpenBank={() => setActiveScreen("bank")}
@@ -4274,6 +4285,7 @@ function GloobalId() {
     // placeholders.
     sender={{ ...dialCountry, phoneNumber, fullName: documentedName, symbolId: secureId, mobileNumber: (registeredUser && registeredUser.mobileNumber) || fullMobileNumber }}
     prefillReceiver={sendPrefillReceiver}
+    prefillChoiceId={sendPrefillChoiceId}
     history={sendMoneyHistory}
     // Tapping a row in Send Money's Recent list opens that payment's
     // receipt. A BUILDER rather than a handler: Send Money owns the modal

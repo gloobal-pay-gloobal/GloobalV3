@@ -1195,6 +1195,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // never the symbol: a currency with no minor unit printed to two decimals
   // (¥750,000.00) states a precision the currency does not have.
   const ccyCode = COUNTRY_CURRENCY[dialCountry.iso] || "USD";
+  // Both halves of the ledger, for My Choices — a category can hold money
+  // going out and money coming in, so filtering only `sendHistory` would
+  // make every income category permanently empty.
+  //
+  // Memoised rather than concatenated in the markup: a fresh array on every
+  // render is a new dependency on every render, and the grid's own memos
+  // would recompute each time the Dashboard re-rendered for any reason at
+  // all. DECLARED AFTER receivedRows, which it reads.
+  const choicesHistory = useMemo5(
+    () => (Array.isArray(sendHistory) ? sendHistory : []).concat(Array.isArray(receivedRows) ? receivedRows : []),
+    [sendHistory, receivedRows]
+  );
   // Declared after ccyCode because it needs it — this is the account's own
   // balance, the single most-read number on the screen.
   // The whole amount, formatted the way every other amount in this app
@@ -2235,7 +2247,22 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     }}
   ><span style={{ position: "absolute", top: 10, right: 10, zIndex: 1 }}><GH2HFlipCircle size={22} /></span><span style={{ marginBottom: 4 }}><ZeroPercentMark size={38} color={bankHeroColor} /></span><span style={{ fontSize: 14.5, color: T.ink }}><HoomanMark /></span></div><div style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, textAlign: "center" }}>
               Cashless · Taxless · Borderless · Limitless
-            </div></div>}{activeTab === "profile" && <div style={{ padding: "12px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div
+            </div></div>}{activeTab === "choices" && <div style={{ padding: "12px 18px 30px" }}><ChoicesScreen
+    embedded
+    history={choicesHistory}
+    ccyCode={ccyCode}
+    onPay={(category) => {
+      // "Pay" on a tile opens the ordinary Send screen with that choice
+      // already picked, rather than a payment form of its own. There is
+      // one place in this app where money is sent, and a second one that
+      // looked almost the same would be the worst possible thing to build
+      // into a payments app.
+      if (onOpenSend) onOpenSend({ choiceId: category && category.id });
+    }}
+    onScan={(category) => {
+      if (onOpenScan) onOpenScan({ choiceId: category && category.id });
+    }}
+  /></div>}{activeTab === "profile" && <div style={{ padding: "12px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div
     style={{
       borderRadius: T.radiusLg,
       background: T.gradWallet,
@@ -2612,6 +2639,21 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     }}
   ><AccountsTabIcon active={activeTab === "accounts"} /><span style={{ fontSize: 10.5, fontWeight: 700, color: activeTab === "accounts" ? T.accent : T.inkFaint }}>
             Accounts
+          </span></button><button
+    onClick={() => setActiveTab("choices")}
+    style={{
+      flex: 1,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 3,
+      border: "none",
+      background: "none",
+      cursor: "pointer",
+      padding: "4px 0"
+    }}
+  ><ChoicesTabIcon active={activeTab === "choices"} /><span style={{ fontSize: 10.5, fontWeight: 700, color: activeTab === "choices" ? T.accent : T.inkFaint }}>
+            Choices
           </span></button><button
     onClick={() => setActiveTab("profile")}
     style={{

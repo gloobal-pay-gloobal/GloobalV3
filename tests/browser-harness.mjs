@@ -331,7 +331,40 @@ export async function installApi(context, options = {}) {
   // `hooman` is the HoomanAnswer + HoomanProfile collections, per symbolId:
   // { consented, answers: [{ ...record, createdAt }] }. Seed with
   // `options.hooman` in the same shape (answers may omit createdAt).
-  const state = { balances: {}, failNextSend: null, ledger: [], photos: {}, notifications: [], hooman: {} };
+  const state = { balances: {}, failNextSend: null, ledger: [], photos: {}, notifications: [], hooman: {}, categories: [], tags: [] };
+  // My Choices. Seeded per test through `options.categories`; left empty,
+  // the routes still answer and the grid renders its own empty state —
+  // which is the behaviour a brand-new account gets before the server has
+  // seeded its starting set, so it is worth being reachable.
+  //
+  // `totals` is the shape the real aggregation returns: an array of
+  // per-CURRENCY buckets, never one number. A fake that collapsed it to a
+  // scalar would let a client that sums across currencies pass here and
+  // fail against the real server, which is the specific bug these buckets
+  // exist to make impossible.
+  for (const [at, seed] of (options.categories || []).entries()) {
+    state.categories.push({
+      id: seed.id || `cat-${at + 1}`,
+      name: seed.name,
+      kind: seed.kind || "expense",
+      icon: seed.icon || "●",
+      iconStyle: seed.iconStyle || "emoji",
+      color: seed.color || "#FBD0DC",
+      monthlyBudget: Number(seed.monthlyBudget) || 0,
+      budgetCurrency: seed.budgetCurrency || "",
+      archived: Boolean(seed.archived),
+      sortIndex: Number(seed.sortIndex) || at,
+      createdAt: seed.createdAt || new Date().toISOString(),
+      totals: Array.isArray(seed.totals) ? seed.totals : []
+    });
+  }
+  for (const seed of options.categoryTags || []) {
+    state.tags.push({
+      referenceId: seed.referenceId,
+      categoryId: String(seed.categoryId),
+      categoryName: seed.categoryName || ""
+    });
+  }
   for (const [symbolId, seed] of Object.entries(options.hooman || {})) {
     state.hooman[symbolId] = {
       consented: Boolean(seed.consented),
@@ -457,6 +490,7 @@ export async function installApi(context, options = {}) {
     const request = route.request();
     const url = new URL(request.url());
     const pathname = url.pathname;
+    const method = request.method();
     let body = null;
     try {
       body = request.postData() ? JSON.parse(request.postData()) : null;
@@ -1095,6 +1129,86 @@ export async function installApi(context, options = {}) {
     // Here rather than only in server/tests so a browser test can follow the
     // link it just copied, which is the half of the loop no source-level or
     // API-level assertion reaches.
+    // ── My Choices ──────────────────────────────────────────────────────
+    //
+    // Mirrors server.js: categories and their per-currency totals in one
+    // read, the tag map in another, and a PUT that files a payment under a
+    // category idempotently. Nothing here touches the ledger, which is the
+    // property the feature is built around.
+    if (pathname === "/api/categories" && method === "GET") {
+      return json(200, {
+        success: true,
+        monthStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
+        categories: state.categories
+      });
+    }
+    if (pathname === "/api/categories/tags" && method === "GET") {
+      return json(200, { success: true, tags: state.tags });
+    }
+    if (pathname === "/api/categories" && method === "POST") {
+      const name = String((body || {}).name || "").trim();
+      if (!name) return json(400, { success: false, message: "Give this choice a name." });
+      const clash = state.categories.some(
+        (c) => !c.archived && c.kind === ((body || {}).kind || "expense") && c.name.toLowerCase() === name.toLowerCase()
+      );
+      if (clash) return json(400, { success: false, message: `You already have a choice called ${name}.` });
+      const created = {
+        id: `cat-${state.categories.length + 1}-${Date.now()}`,
+        name,
+        kind: (body || {}).kind === "income" ? "income" : "expense",
+        icon: body.icon || "●",
+        iconStyle: body.iconStyle || "emoji",
+        color: body.color || "#FBD0DC",
+        monthlyBudget: Number(body.monthlyBudget) || 0,
+        budgetCurrency: body.budgetCurrency || "",
+        archived: false,
+        sortIndex: state.categories.length,
+        createdAt: new Date().toISOString(),
+        totals: []
+      };
+      state.categories.push(created);
+      return json(201, { success: true, category: created });
+    }
+    if (pathname.startsWith("/api/categories/") && (method === "PATCH" || method === "DELETE")) {
+      const id = decodeURIComponent(pathname.slice("/api/categories/".length));
+      const at = state.categories.findIndex((c) => String(c.id) === id);
+      if (at < 0) return json(404, { success: false, message: "That choice is not one of yours." });
+      if (method === "DELETE") {
+        const used = state.tags.filter((t) => String(t.categoryId) === id).length;
+        if (used > 0) {
+          state.categories[at] = { ...state.categories[at], archived: true };
+          return json(200, { success: true, archived: true, tagged: used, category: state.categories[at] });
+        }
+        state.categories.splice(at, 1);
+        return json(200, { success: true, archived: false, tagged: 0 });
+      }
+      // kind is deliberately NOT applied, matching the real PATCH — moving
+      // a category across the split would orphan every payment under it.
+      const { kind, ...rest } = body || {};
+      state.categories[at] = { ...state.categories[at], ...rest };
+      return json(200, { success: true, category: state.categories[at] });
+    }
+    const tagRoute = pathname.match(/^\/api\/transactions\/([^/]+)\/tag$/);
+    if (tagRoute) {
+      const referenceId = decodeURIComponent(tagRoute[1]);
+      if (method === "DELETE") {
+        const before = state.tags.length;
+        state.tags = state.tags.filter((t) => t.referenceId !== referenceId);
+        return json(200, { success: true, removed: state.tags.length < before });
+      }
+      if (method === "PUT") {
+        const category = state.categories.find((c) => String(c.id) === String((body || {}).categoryId));
+        if (!category) return json(404, { success: false, message: "That choice is not one of yours." });
+        // Upsert, never a second row — the real index is unique on
+        // { userId, transactionId } and a fake that appended would hide a
+        // client that tags twice.
+        state.tags = state.tags.filter((t) => t.referenceId !== referenceId);
+        const tag = { referenceId, categoryId: String(category.id), categoryName: category.name };
+        state.tags.push(tag);
+        return json(200, { success: true, tag });
+      }
+    }
+
     if (pathname.startsWith("/t/")) {
       const handle = decodeURIComponent(pathname.slice(3));
       const row = state.ledger.find(

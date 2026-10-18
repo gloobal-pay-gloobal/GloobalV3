@@ -234,6 +234,17 @@ const FRONTEND_MODULES = [
   // two builders it chooses between.
   "features/history/rowReceipt.js",
   "features/history/TransactionHistoryScreen.jsx",
+  // My Choices. Catalogue first (pure data and derivations), then the
+  // store that feeds every screen, then the sheets, then the two screens —
+  // CategoryScreen before ChoicesScreen because the grid renders it.
+  // Function declarations hoist across the bundle so the order is not load
+  // -bearing for the components; it is here so the file reads in the
+  // direction the dependencies run.
+  "features/choices/choicesCatalog.js",
+  "features/choices/choicesStore.js",
+  "features/choices/ChoiceSheets.jsx",
+  "features/choices/CategoryScreen.jsx",
+  "features/choices/ChoicesScreen.jsx",
   "features/paylater/PayLaterLedger.jsx",
   "features/paylater/PayLaterScreen.jsx",
   "screens/Banks/AddBankScreen.jsx",

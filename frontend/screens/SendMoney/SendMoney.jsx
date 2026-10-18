@@ -20,7 +20,8 @@ import {
   Landmark as Landmark6,
   History as History6,
   RefreshCw as RefreshCw4,
-  Contact as ContactIcon
+  Contact as ContactIcon,
+  Plus as Plus6
 } from "lucide-react";
 
 
@@ -127,7 +128,7 @@ function identityDisplayValue(profile, mode) {
       return profile.name;
   }
 }
-function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = [], onOpenPaidHistory, onSendComplete, onExecuteTransaction, onRemoteSend, onBuildRowReceipt }) {
+function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoiceId = null, history = [], onOpenPaidHistory, onSendComplete, onExecuteTransaction, onRemoteSend, onBuildRowReceipt }) {
   // The account's CURRENT Gloobal ID — the same source the Dashboard reads,
   // so a rename made this session shows here too.
   const liveSenderId = useCurrentSymbolId(sender && sender.symbolId);
@@ -317,6 +318,28 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   // unit — this is the number that leaves their balance, so it has to be a
   // real amount of their own money.
   //
+  // ── My Choices ────────────────────────────────────────────────────────
+  //
+  // The optional label above the Send button. It is not part of the
+  // payment: nothing here is sent to /api/transactions/send, nothing here
+  // can fail the transfer, and clearing it is one tap on the chosen tile.
+  // The filing happens AFTER the payment has committed — see handleSend.
+  //
+  // `choicesOfKind` already drops archived categories, so a choice the
+  // person retired stops being offered while payments already filed under
+  // it keep their label.
+  const choicesState = useChoices();
+  const [choiceId, setChoiceId] = useState15(prefillChoiceId || null);
+  const [choicesOpen, setChoicesOpen] = useState15(false);
+  // The strip shows the first few; "All" opens the rest. Six is what fits
+  // on a narrow phone without the row becoming a scroll nobody notices.
+  const sendChoices = useMemo6(() => choicesOfKind(choicesState, "expense").slice(0, 6), [choicesState]);
+  // DECLARED AFTER choiceId and choicesState, not beside them. It reads
+  // both, and a const that reads a const declared below it is a temporal
+  // dead zone error at render — the one that has bitten this bundle three
+  // times now. Order by dependency, not by subject.
+  const pickedChoice = choiceId ? choicesById(choicesState, choiceId) : null;
+
   // Every consumer of `senderAmount` on this screen — the Send button, the
   // pay-method sheet, the receipt, the local ledger leg — wants "what I
   // paid", and reads correctly against this without changing.
@@ -584,6 +607,15 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
       setFailureReason(result.reason || "Insufficient balance");
       return;
     }
+    // File the payment under the chosen category, now that it has
+    // committed. AFTER the success check and deliberately not awaited:
+    // a label is not part of the transfer, and the one thing that must
+    // never happen is a payment that went through being reported as
+    // failed because a tag write did not. choicesTagQuietly swallows its
+    // own errors for exactly that reason — an untagged payment can be
+    // filed later from its category screen, and a frightened person
+    // cannot unsend money.
+    choicesTagQuietly(confirmedTxnId, choiceId);
     showToast2(
       settledRemotely
         ? `Sending ${CURRENCIES[top.currency].label} ${fmt(
@@ -1711,7 +1743,73 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, history = []
   >{top.currency}</span></div></div></>}</div>}{
     /* SEND BUTTON — just my own currency and amount now, nothing
        about what the receiver gets. */
-  }{searchStage === "found" && <button
+  }{searchStage === "found" && <div style={{ marginTop: topOpen ? 0 : 20 }}><div
+    style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, color: T.inkFaint, textTransform: "uppercase", marginBottom: 9 }}
+  >
+            My Choices <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>{"·"} optional</span>
+          </div><div
+    style={{ display: "flex", gap: 10, overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: 2, scrollbarWidth: "none" }}
+  >{sendChoices.map((category) => {
+    const picked = String(choiceId || "") === String(category.id);
+    return <button
+      key={category.id}
+      onClick={() => setChoiceId(picked ? null : category.id)}
+      className="v2-tap"
+      aria-label={picked ? `${category.name} — chosen, tap to clear` : category.name}
+      aria-pressed={picked}
+      style={{ flexShrink: 0, width: 62, border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
+    ><span
+      style={{
+        width: 56,
+        height: 56,
+        borderRadius: 18,
+        background: choicesTint(category.color),
+        border: picked ? `2.5px solid ${T.accent}` : "2.5px solid transparent",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: 25
+      }}
+    >{category.icon || "●"}</span><span
+      style={{ fontSize: 11.5, fontWeight: picked ? 800 : 700, color: picked ? T.accent : T.inkSoft, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 62 }}
+    >{category.name}</span></button>;
+  })}<button
+    onClick={() => setChoicesOpen(true)}
+    className="v2-tap"
+    aria-label="All my choices"
+    style={{ flexShrink: 0, width: 62, border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
+  ><span
+    style={{ width: 56, height: 56, borderRadius: 18, background: T.surface, border: `2.5px solid ${T.accentSoft}`, display: "flex", alignItems: "center", justifyContent: "center" }}
+  ><Plus6 size={24} color={T.accent} strokeWidth={2.4} /></span><span
+    style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}
+  >
+            All
+          </span></button></div>{
+    /* What this choice has left this month, when it has a budget at all.
+       choicesBudgetProgress returns null for a budget of 0 — "no budget"
+       is not "a budget that is fully spent". */
+  }{(() => {
+    if (!pickedChoice) return null;
+    const totals = choicesTotalIn(pickedChoice, top.currency);
+    const budget = choicesBudgetProgress(totals.thisMonth, pickedChoice.monthlyBudget);
+    if (!budget) return null;
+    const parts = geuLensBarParts(budget.over ? budget.used - budget.limit : budget.left, top.currency, lens, top.currency);
+    return <div style={{ fontSize: 11, color: T.inkFaint, marginTop: 8 }}>{pickedChoice.name} {"·"} <span
+      style={{ fontWeight: 700, color: budget.over ? T.negative : T.inkSoft, whiteSpace: "nowrap" }}
+    >{parts.lead}{parts.trail && <span style={{ fontSize: geuLensTrailSize(11) }}> {parts.trail}</span>}</span>{budget.over ? " over this month" : " left this month"}</div>;
+  })()}</div>}{
+    /* The whole section, reached from the strip's "All". Rendered here
+       rather than handed up to the Dashboard because everything it can do
+       ends by coming back to this screen with a choice picked — including
+       its own "Pay for X", which on this screen means "file what I am
+       already sending under X". */
+  }{choicesOpen && <ChoicesScreen
+    onClose={() => setChoicesOpen(false)}
+    history={history}
+    ccyCode={top.currency}
+    onPay={(category) => { if (category) setChoiceId(category.id); setChoicesOpen(false); }}
+    onScan={(category) => { if (category) setChoiceId(category.id); setChoicesOpen(false); }}
+  />}{searchStage === "found" && <button
     className="send-btn"
     onClick={handleSend}
     style={{ padding: "14px 18px", marginTop: topOpen ? 0 : 24 }}

@@ -240,6 +240,7 @@ const FRONTEND_MODULES = [
   // Function declarations hoist across the bundle so the order is not load
   // -bearing for the components; it is here so the file reads in the
   // direction the dependencies run.
+  "features/choices/choicesIcons.js",
   "features/choices/choicesCatalog.js",
   "features/choices/choicesStore.js",
   "features/choices/ChoiceSheets.jsx",

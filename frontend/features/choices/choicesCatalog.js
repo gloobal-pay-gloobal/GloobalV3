@@ -26,14 +26,10 @@
 // The tile tints. Pastel on purpose: a category tile carries an emoji and a
 // name, and a saturated ground makes both harder to read.
 var CHOICES_TINTS = [
-  "#FBD0DC",
-  "#FBE7A8",
-  "#E5DEFB",
-  "#C5D9F5",
-  "#A8E0B0",
-  "#DBDDE4",
-  "#FBDCC4",
-  "#A8E6E0"
+  "#FBD0DC", "#F9C2D1", "#F5BBD0", "#E5DEFB",
+  "#E0D4F7", "#C5D9F5", "#A9DCEE", "#A8E6E0",
+  "#A8E0B0", "#BBE8C4", "#FBE7A8", "#FBDCC4",
+  "#F9B499", "#F7C8C0", "#DBDDE4", "#D6D2E8"
 ];
 
 // Offered when someone is picking an icon. Not exhaustive and not meant to

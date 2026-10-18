@@ -1,6 +1,6 @@
 // src/features/choices/ChoicesScreen.jsx
 import { useState as useState44, useMemo as useMemo13 } from "react";
-import { Plus as Plus5, Search as Search6, ArrowLeft as ArrowLeft8, RefreshCw as RefreshCw8, Heart as Heart3 } from "lucide-react";
+import { Plus as Plus5, Search as Search6, ArrowLeft as ArrowLeft8, RefreshCw as RefreshCw8, Heart as Heart3, X as X9 } from "lucide-react";
 
 // My Choices — the grid, and everything reachable from it.
 //
@@ -31,6 +31,7 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
   const [sheet, setSheet] = useState44(null);
   const [editing, setEditing] = useState44(null);
   const [busy, setBusy] = useState44(false);
+  const [searchOpen, setSearchOpen] = useState44(false);
 
   const categories = useMemo13(() => choicesOfKind(state, kind), [state, kind]);
   const shown = useMemo13(() => {
@@ -119,41 +120,70 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     style={embedded
       ? { padding: "0 0 24px" }
       : { flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 16px 110px" }}
-  ><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 16px" }}><div
-    style={{ display: "flex", alignItems: "flex-start", gap: 12 }}
-  ><div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>{kind === "income" ? "Total received" : "Total spent"}</div><div
-    style={{ marginTop: 2 }}
-  ><ChoiceMoney amount={headline} code={ccyCode} size={30} color={kind === "income" ? TXN_IN_COLOR : T.ink} /></div></div><button
+  ><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 16px 18px" }}>{
+    /* The screen's name lives IN the card, with the one reload beside
+       it. It used to sit in the Dashboard's header strip, which meant
+       two reload buttons on one screen — the tab's own and the header's
+       — doing different things and looking identical. */
+  }<div style={{ display: "flex", alignItems: "center", gap: 10 }}><span
+    style={{ flex: 1, fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}
+  >
+      My Choices
+    </span><button
     onClick={refresh}
     aria-label="Reload your choices"
     className="v2-tap"
-    style={{ width: 44, height: 44, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
-  ><RefreshCw8 size={17} color={busy ? T.inkFaint : T.accent} /></button></div><div
-    style={{ display: "flex", background: T.surfaceAlt, borderRadius: 999, padding: 4, marginTop: 16 }}
-  >{[["expense", "Expenses"], ["income", "Incomes"]].map(([key, label]) => <button
+    style={{ width: 38, height: 38, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+  ><RefreshCw8 size={17} color={busy ? T.inkFaint : T.accent} /></button></div>{
+    /* ENERGY, NOT SPENDING.
+
+       GEU is the Gloobal Energy Unit, so money leaving is energy used
+       and money arriving is energy created. Saying "Total spent" over a
+       figure denominated in GEU asked a person to hold two vocabularies
+       for one number. */
+  }<div style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft, marginTop: 16 }}>{kind === "income" ? "Total energy created" : "Total energy used"}</div><div
+    style={{ marginTop: 3 }}
+  ><ChoiceMoney amount={headline} code={ccyCode} size={30} color={kind === "income" ? TXN_IN_COLOR : T.ink} /></div>{
+    /* Underlined text tabs rather than a filled pill. The pill read as
+       the primary action on a screen whose primary action is the grid
+       underneath it. */
+  }<div
+    style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 18, borderBottom: `1px solid ${T.line}` }}
+  >{[["expense", "Energy use"], ["income", "Energy created"]].map(([key, label]) => <button
     key={key}
     onClick={() => { setKind(key); setQuery(""); }}
     className="v2-tap"
+    aria-pressed={kind === key}
     style={{
-      flex: 1,
       border: "none",
-      borderRadius: 999,
-      padding: 11,
+      background: "none",
+      padding: "0 0 10px",
+      marginBottom: -1,
       fontSize: 14.5,
-      fontWeight: kind === key ? 800 : 700,
+      fontWeight: kind === key ? 800 : 600,
+      color: kind === key ? T.ink : T.inkFaint,
       cursor: "pointer",
-      background: kind === key ? T.accent : "transparent",
-      color: kind === key ? "#fff" : T.inkSoft
+      borderBottom: `2px solid ${kind === key ? T.accent : "transparent"}`
     }}
-  >{label}</button>)}</div><div
-    style={{ display: "flex", alignItems: "center", gap: 9, background: T.bg, borderRadius: 999, padding: "12px 16px", marginTop: 14 }}
-  ><Search6 size={16} color={T.inkFaint} /><input
+  >{label}</button>)}<span style={{ flex: 1 }} /><button
+    onClick={() => { setSearchOpen(!searchOpen); if (searchOpen) setQuery(""); }}
+    aria-label={searchOpen ? "Close search" : "Search categories"}
+    aria-pressed={searchOpen}
+    className="v2-tap"
+    style={{ border: "none", background: "none", padding: "0 0 10px", cursor: "pointer", display: "flex", alignItems: "center" }}
+  >{searchOpen ? <X9 size={17} color={T.inkSoft} /> : <Search6 size={17} color={T.inkSoft} />}</button></div>{
+    /* The field appears only when asked for. A permanent search bar on a
+       screen holding a dozen tiles is furniture. */
+  }{searchOpen && <div
+    style={{ display: "flex", alignItems: "center", gap: 9, background: T.surfaceAlt, borderRadius: 999, padding: "11px 15px", marginTop: 13 }}
+  ><Search6 size={15} color={T.inkFaint} /><input
     value={query}
     onChange={(e) => setQuery(e.target.value)}
+    autoFocus
     placeholder="Search categories"
     aria-label="Search categories"
     style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", fontSize: 14.5, color: T.ink, fontFamily: T.fontBody }}
-  /></div></div>{state.status === "loading" && categories.length === 0 && <div
+  /></div>}</div>{state.status === "loading" && categories.length === 0 && <div
     style={{ textAlign: "center", padding: "40px 20px", color: T.inkFaint, fontSize: 13 }}
   >
       Loading your choices{"…"}
@@ -166,7 +196,9 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
   >
       No choice called {"“"}{query.trim()}{"”"}.
     </div>}<div
-    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 16 }}
+    style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "18px 2px 0" }}
+  >{kind === "income" ? "My source of energy" : "Where my energy goes"}</div><div
+    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}
   >{shown.map((category) => <div key={category.id}><div
     onClick={() => setOpenId(category.id)}
     role="button"

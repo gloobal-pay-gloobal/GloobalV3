@@ -1766,14 +1766,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       fontFamily: T.fontBody,
       overflow: "hidden"
     }}
-  ><DashboardAmbientBg /><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 10, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", background: "transparent" }}>{
+  ><DashboardAmbientBg />{
+    /* NO HEADER STRIP ON MY CHOICES.
+
+       That strip is Home's: the Coverage search bar plus the share-role
+       button. On the Choices tab it contributed a search box that looked
+       like it filtered the categories below it, and a round reload that
+       was not the one the screen actually uses — two reload buttons, one
+       screen, doing different things and drawn identically. The tab now
+       carries its own title and its own reload inside its first card. */
+  }{activeTab !== "choices" && <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 10, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", background: "transparent" }}>{
     /* The Coverage search bar is the HOME header, and it was being
        rendered on every tab with `disabled` doing the explaining. On My
        Choices that reads as a search box for the categories below it,
        which is the one thing it is not. The tab gets its own title in
        the same slot instead, so the header keeps its shape and the
        embedded grid stops being a screen with no name. */
-  }{activeTab !== "choices" && <button
+  }<button
     onClick={onOpenCoverage}
     aria-label="Gloobal coverage"
     className="v2-tap"
@@ -1789,11 +1798,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       boxShadow: T.shadowCard,
       cursor: "pointer"
     }}
-  ><Search3 size={15} color={T.inkFaint} style={{ flexShrink: 0 }} /><span style={{ flex: 1, fontSize: 13, color: T.inkFaint, fontWeight: 500, textAlign: "center" }}><GloobalWordmark suffix=" Coverage" /></span><span style={{ width: 15, flexShrink: 0 }} aria-hidden="true" /></button>}{activeTab === "choices" && <span
-    style={{ flex: 1, fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}
-  >
-      My Choices
-    </span>}{
+  ><Search3 size={15} color={T.inkFaint} style={{ flexShrink: 0 }} /><span style={{ flex: 1, fontSize: 13, color: T.inkFaint, fontWeight: 500, textAlign: "center" }}><GloobalWordmark suffix=" Coverage" /></span><span style={{ width: 15, flexShrink: 0 }} aria-hidden="true" /></button>{
     /* Profile flip — switches the same account between its two
        sides: user/consumer and merchant/producer. Every flow stays
        identical; only which side the data is read as changes (and
@@ -1822,7 +1827,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       boxShadow: shareRole === "merchant" ? "0 6px 16px rgba(124,58,237,0.3)" : T.shadowCard,
       flexShrink: 0
     }}
-  ><RefreshCw3 size={17} color={shareRole === "merchant" ? "#fff" : T.accent} /></button></div><PullToRefresh
+  ><RefreshCw3 size={17} color={shareRole === "merchant" ? "#fff" : T.accent} /></button></div>}<PullToRefresh
     onRefresh={onRefreshAccount}
     // Only the Home tab. Pulling down inside History or Assets would refresh
     // an account view the person is not looking at, and those tabs have

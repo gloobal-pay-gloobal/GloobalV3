@@ -418,6 +418,135 @@ describe("a heart decides what the Send strip offers", () => {
   });
 });
 
+describe("the icon library is large enough to need searching", () => {
+  const ICONS = "frontend/features/choices/choicesIcons.js";
+  // Pure, no imports, no JSX — so it runs for real rather than being
+  // asserted about as text.
+  const lib = new Function(`${readSource(ICONS)}
+    return { CHOICES_ICON_SET, CHOICES_ICON_GROUPS, choicesIconSearch, choicesSuggestIcon, choicesIconMeta };`)();
+
+  test("there are hundreds of them, in groups that all exist", () => {
+    assert.ok(lib.CHOICES_ICON_SET.length >= 250,
+      `only ${lib.CHOICES_ICON_SET.length} icons — the search and the groups are overhead below that`);
+    const groups = new Set(lib.CHOICES_ICON_GROUPS.map((g) => g.key));
+    for (const icon of lib.CHOICES_ICON_SET) {
+      assert.ok(groups.has(icon.g), `${icon.c} is filed under "${icon.g}", which is not a group`);
+      assert.ok(icon.n && icon.k, `${icon.c} has no name or no keywords, so it can never be found`);
+    }
+  });
+
+  test("every group has something in it", () => {
+    for (const group of lib.CHOICES_ICON_GROUPS) {
+      assert.ok(lib.choicesIconSearch("", group.key).length > 0, `the ${group.label} group is empty`);
+    }
+  });
+
+  test("a search puts the thing you typed first", () => {
+    // The specific regression: a plain substring filter answered "car"
+    // with card, carton and care above the actual car.
+    const leads = (query) => lib.choicesIconSearch(query)[0];
+    assert.equal(leads("car").n, "car");
+    assert.equal(leads("bill").n, "bill");
+    assert.equal(leads("bank").n, "bank");
+    assert.equal(leads("water").n, "water drop");
+    assert.equal(leads("gym").n, "gym");
+  });
+
+  test("a group's own name beats a stray keyword", () => {
+    // "food" used to lead with a dog bone, whose keywords mention food,
+    // above every item actually filed under Food.
+    assert.equal(lib.choicesIconSearch("food")[0].g, "food");
+    assert.equal(lib.choicesIconSearch("health")[0].g, "health");
+  });
+
+  test("the same glyph is never listed twice in one result", () => {
+    for (const query of ["bill", "card", "a", "e", "water", "money"]) {
+      const seen = lib.choicesIconSearch(query).map((i) => i.c);
+      assert.equal(new Set(seen).size, seen.length, `"${query}" returned the same glyph more than once`);
+    }
+  });
+
+  test("a name suggests an icon, and says nothing when it cannot", () => {
+    const of = (name) => { const hit = lib.choicesSuggestIcon(name); return hit ? hit.n : null; };
+    assert.equal(of("Baby care"), "baby");
+    assert.equal(of("Petrol"), "fuel");
+    assert.equal(of("School fees"), "school");
+    assert.equal(of("Groceries"), "groceries");
+    assert.equal(of("Dentist"), "tooth");
+    assert.equal(of("Diwali"), "diya");
+    // A weak guess is worse than none: an icon that is nearly right costs
+    // more than the two taps it saved.
+    for (const nonsense of ["zzqqx", "", "x", "   ", "qwkjfh"]) {
+      assert.equal(lib.choicesSuggestIcon(nonsense), null, `"${nonsense}" produced a confident suggestion`);
+    }
+  });
+
+  test("a stored glyph can be named back, and an unknown one does not throw", () => {
+    const first = lib.CHOICES_ICON_SET[0];
+    assert.equal(lib.choicesIconMeta(first.c).n, first.n);
+    assert.equal(lib.choicesIconMeta("\u{1F9FF}\u{1F9FF}"), null);
+    assert.equal(lib.choicesIconMeta(""), null);
+    assert.equal(lib.choicesIconMeta(null), null);
+  });
+
+  test("the editor searches rather than drawing all of them", () => {
+    const src = code(SHEETS);
+    assert.match(src, /choicesIconSearch\(iconQuery, iconGroup\)/);
+    assert.match(src, /slice\(0, CHOICES_ICON_PAGE\)/,
+      "the grid draws the whole catalogue, which is a long scroll nobody finishes");
+  });
+
+  test("the dead icon-style control is gone", () => {
+    // Only emoji were ever drawn, so Line and Duotone changed nothing
+    // while appearing to. A control that lies about what it did is worse
+    // than one that is not there.
+    const src = code(SHEETS);
+    assert.doesNotMatch(src, /CHOICES_ICON_STYLES\.map/,
+      "the Line / Duotone / Emoji control is back, and still draws only emoji");
+  });
+
+  test("a suggestion never overwrites an icon somebody chose", () => {
+    const src = code(SHEETS);
+    assert.match(src, /if \(!open \|\| iconTouched\) return;/,
+      "the name can now overwrite a hand-picked icon as it is edited");
+  });
+});
+
+describe("the screen is named once, and reloads once", () => {
+  const DASH = "frontend/screens/Dashboard/Dashboard.jsx";
+
+  test("the Dashboard's header strip is not drawn on this tab", () => {
+    // It contributed a Coverage search box that looked like it filtered
+    // the categories below it, and a second reload button.
+    assert.match(code(DASH), /\{activeTab !== "choices" && <div style=\{\{ position: "relative", zIndex: 1, display: "flex"/,
+      "the Home header strip is back on the Choices tab");
+  });
+
+  test("there is exactly one reload on the screen", () => {
+    const src = code(GRID);
+    assert.equal((src.match(/aria-label="Reload your choices"/g) || []).length, 1);
+  });
+
+  test("the figures are described as energy, like the unit they are in", () => {
+    // Comments stripped: the note explaining why the old wording went
+    // quotes it, and a comment is not something a person reads on a phone.
+    // Second time this has caught me — the first was the mask's aria-label
+    // in Essentials, which was the opposite case and a real bug.
+    const src = code(GRID);
+    assert.match(src, /Total energy used/);
+    assert.match(src, /Total energy created/);
+    assert.match(src, /Energy use/);
+    assert.doesNotMatch(src, /Total spent|Total received/,
+      "the headline still uses spending words over a figure denominated in GEU");
+  });
+
+  test("search is a control you reach for, not furniture", () => {
+    const src = code(GRID);
+    assert.match(src, /\{searchOpen && <div/, "the search field is permanent again");
+    assert.match(src, /setSearchOpen\(!searchOpen\)/);
+  });
+});
+
 describe("one account's labels do not outlive its session", () => {
   test("signing out drops them", () => {
     const src = code("frontend/App.jsx");
@@ -438,5 +567,25 @@ describe("one account's labels do not outlive its session", () => {
     const src = code(STORE);
     assert.match(src, /Promise\.allSettled\(/,
       "the two reads are no longer independent, so one failing costs the other");
+  });
+});
+
+describe("the budget field names its unit once", () => {
+  test("the pair's lead and trail are both used, and neither is doubled", () => {
+    // geuLensUnitPair decides both halves: `lead` before the figure,
+    // `trail` after. Printing COIN_TICKER alongside the trail put the
+    // ticker in front of its own pair and the field read "GEU | GEU"
+    // with the lens off. Only a browser showed it — no source-level
+    // assertion in this file would have.
+    const src = code(SHEETS);
+    assert.doesNotMatch(src, /\{COIN_TICKER\}\{unit\.trail/,
+      "the ticker is printed alongside the unit pair that already contains it");
+    assert.match(src, /\{unit\.trail && <span/);
+    assert.match(src, /\{unit\.lead && <span/);
+  });
+
+  test("a full-width field cannot grow past the sheet it is in", () => {
+    assert.match(code(SHEETS), /boxSizing: "border-box"/,
+      "a 100%-width input with padding and a border overflows its container again");
   });
 });

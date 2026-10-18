@@ -1,6 +1,6 @@
 // src/features/choices/ChoiceSheets.jsx
 import { useState as useState43, useEffect as useEffect43, useMemo as useMemo11 } from "react";
-import { Plus as Plus4, Check as Check6, ScanLine as ScanLine2 } from "lucide-react";
+import { Plus as Plus4, Check as Check6, ScanLine as ScanLine2, Search as Search7, X as X8, Heart as Heart4 } from "lucide-react";
 
 // The sheets My Choices opens: pick one, add something, make or edit one.
 //
@@ -160,16 +160,28 @@ function ChoicesAddSheet({ open, onClose, onRoute }) {
 //
 // One component for both because they are the same form — the only
 // difference is whether it opens empty and POSTs, or opens filled and
-// PATCHes. Splitting them would mean two copies of the preview, the emoji
-// grid and the swatch row, which is three chances for the two to drift.
+// PATCHes. Splitting them would mean two copies of the preview, the icon
+// browser and the swatch row, which is three chances for the two to drift.
+//
+// The old Line / Duotone / Emoji control is gone. Only emoji were ever
+// drawn, so picking either of the other two changed nothing while
+// appearing to — a control that lies about what it did is worse than one
+// that is not there. `iconStyle` survives on the model for when the other
+// two are actually drawn.
 function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, onRemove }) {
   const lens = useGeuLens();
   const editing = Boolean(category && category.id);
   const [name, setName] = useState43("");
   const [icon, setIcon] = useState43("");
-  const [iconStyle, setIconStyle] = useState43("emoji");
   const [color, setColor] = useState43(CHOICES_TINTS[0]);
   const [budget, setBudget] = useState43("");
+  const [favorite, setFavorite] = useState43(false);
+  const [iconQuery, setIconQuery] = useState43("");
+  const [iconGroup, setIconGroup] = useState43("all");
+  // Whether the person has picked an icon themselves. Until they have,
+  // the name suggests one as they type; the moment they choose, their
+  // choice stops being overwritten.
+  const [iconTouched, setIconTouched] = useState43(false);
   const [busy, setBusy] = useState43(false);
   const [error, setError] = useState43("");
 
@@ -179,21 +191,45 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
   useEffect43(() => {
     if (!open) return;
     setName(category ? String(category.name || "") : "");
-    setIcon(category ? String(category.icon || "") : CHOICES_EMOJI[0]);
-    setIconStyle(category ? String(category.iconStyle || "emoji") : "emoji");
+    setIcon(category ? String(category.icon || "") : "");
     setColor(category ? choicesTint(category.color) : CHOICES_TINTS[0]);
+    setFavorite(Boolean(category && category.favorite));
     // 0 means "no budget", so the field opens EMPTY rather than showing a
     // zero somebody has to clear before they can type.
     const stored = category ? Number(category.monthlyBudget) : 0;
     setBudget(Number.isFinite(stored) && stored > 0 ? String(stored) : "");
+    setIconQuery("");
+    setIconGroup("all");
+    setIconTouched(Boolean(category && category.icon));
     setBusy(false);
     setError("");
   }, [open, category]);
 
-  const unit = useMemo11(
-    () => geuLensUnitPair(ccyCode, lens, ccyCode),
-    [ccyCode, lens]
+  // An icon from the name, while the person has not chosen one. This is
+  // the manual stand-in for generating one; when that arrives it replaces
+  // choicesSuggestIcon and nothing else in this component moves.
+  //
+  // It only ever fills an UNTOUCHED icon. Overwriting a chosen one as the
+  // name is edited would be the app arguing with somebody about their own
+  // category.
+  useEffect43(() => {
+    if (!open || iconTouched) return;
+    const suggestion = choicesSuggestIcon(name);
+    setIcon(suggestion ? suggestion.c : "");
+  }, [open, name, iconTouched]);
+
+  const icons = useMemo11(
+    () => choicesIconSearch(iconQuery, iconGroup).slice(0, CHOICES_ICON_PAGE),
+    [iconQuery, iconGroup]
   );
+  const unit = useMemo11(() => geuLensUnitPair(ccyCode, lens, ccyCode), [ccyCode, lens]);
+  // Declared after `icon`, which it reads.
+  const chosenMeta = icon ? choicesIconMeta(icon) : null;
+
+  const pickIcon = (glyph) => {
+    setIcon(glyph);
+    setIconTouched(true);
+  };
 
   const save = async () => {
     const trimmed = String(name || "").trim();
@@ -214,8 +250,8 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       const payload = {
         name: trimmed,
         icon,
-        iconStyle,
         color,
+        favorite,
         monthlyBudget,
         budgetCurrency: String(ccyCode || "").toUpperCase()
       };
@@ -236,25 +272,25 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     open={open}
     onClose={onClose}
     title={editing ? "Edit category" : kind === "income" ? "New income category" : "New category"}
-  ><div style={{ display: "flex", alignItems: "center", gap: 13 }}><span
-    style={{
-      width: 58,
-      height: 58,
-      borderRadius: 18,
-      background: tint,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 26,
-      flexShrink: 0
-    }}
-  >{icon || "●"}</span><span style={{ minWidth: 0 }}><span
-    style={{ display: "block", fontSize: 15, fontWeight: 800, color: T.ink }}
+  >{
+    /* The preview, and the heart. Both say what the category WILL be
+       rather than describing it — the tile here is the tile that appears
+       in the grid, at the size it appears. */
+  }<div style={{ display: "flex", alignItems: "center", gap: 13 }}><span
+    style={{ width: 62, height: 62, borderRadius: 19, background: tint, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, flexShrink: 0, lineHeight: 1 }}
+  >{icon || "●"}</span><span style={{ flex: 1, minWidth: 0 }}><span
+    style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >{String(name || "").trim() || "Untitled"}</span><span
     style={{ display: "block", fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}
-  >
-          How it will look on a payment
-        </span></span></div><label
+  >{chosenMeta ? chosenMeta.n : "How it will look on a payment"}</span></span><button
+    onClick={() => setFavorite(!favorite)}
+    className="v2-tap"
+    aria-label={favorite ? "Remove from the Send strip" : "Show on the Send strip"}
+    aria-pressed={favorite}
+    style={{ flexShrink: 0, width: 38, height: 38, borderRadius: "50%", border: `1px solid ${favorite ? "#E23F45" : T.line}`, background: favorite ? "#FDECEE" : T.surface, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
+  ><Heart4 size={17} color={favorite ? "#E23F45" : T.inkFaint} fill={favorite ? "#E23F45" : "none"} strokeWidth={2.3} /></button></div><div
+    style={{ fontSize: 11, color: T.inkFaint, marginTop: 7 }}
+  >{favorite ? "Shown above the Send button" : "Tap the heart to show it above the Send button"}</div><label
     style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "16px 0 7px" }}
   >
       Name
@@ -265,6 +301,9 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     aria-label="Category name"
     style={{
       width: "100%",
+      // Without this the padding and the border are ADDED to 100%, and
+      // the field runs past the right edge of the sheet.
+      boxSizing: "border-box",
       border: `1.5px solid ${T.accent}`,
       borderRadius: 13,
       padding: 13,
@@ -275,56 +314,84 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       fontFamily: T.fontBody,
       outline: "none"
     }}
-  /><label
-    style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "16px 0 7px" }}
-  >
+  />{
+    /* The icon browser. A search box first, because 300-odd icons in a
+       grid is a worse experience than twenty — nobody scrolls that far.
+       The group chips are for browsing when there is no word to type. */
+  }<div
+    style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, margin: "16px 0 7px" }}
+  ><label style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>
       Icon
-    </label><div style={{ display: "flex", background: T.surfaceAlt, borderRadius: 12, padding: 3 }}>{CHOICES_ICON_STYLES.map((style) => <button
-    key={style}
-    onClick={() => setIconStyle(style)}
+    </label><span style={{ fontSize: 11, color: T.inkFaint }}>{icons.length}{icons.length === CHOICES_ICON_PAGE ? "+" : ""} to choose from
+    </span></div><div
+    style={{ display: "flex", alignItems: "center", gap: 9, background: T.surfaceAlt, borderRadius: 999, padding: "11px 15px" }}
+  ><Search7 size={15} color={T.inkFaint} /><input
+    value={iconQuery}
+    onChange={(e) => setIconQuery(e.target.value)}
+    placeholder="Search icons — food, car, rent…"
+    aria-label="Search icons"
+    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", fontSize: 14, color: T.ink, fontFamily: T.fontBody }}
+  />{iconQuery && <button
+    onClick={() => setIconQuery("")}
+    aria-label="Clear icon search"
+    className="v2-tap"
+    style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex" }}
+  ><X8 size={15} color={T.inkFaint} /></button>}</div>{!iconQuery && <div
+    style={{ display: "flex", gap: 7, overflowX: "auto", WebkitOverflowScrolling: "touch", marginTop: 10, paddingBottom: 2, scrollbarWidth: "none" }}
+  >{[{ key: "all", label: "All" }].concat(CHOICES_ICON_GROUPS).map((group) => <button
+    key={group.key}
+    onClick={() => setIconGroup(group.key)}
     className="v2-tap"
     style={{
-      flex: 1,
-      border: "none",
-      borderRadius: 10,
-      padding: 9,
-      fontSize: 12.5,
+      flexShrink: 0,
+      border: `1px solid ${iconGroup === group.key ? T.accent : T.line}`,
+      borderRadius: 999,
+      padding: "7px 13px",
+      fontSize: 12,
       fontWeight: 800,
       cursor: "pointer",
-      textTransform: "capitalize",
-      background: iconStyle === style ? T.accent : "transparent",
-      color: iconStyle === style ? "#fff" : T.inkSoft
+      background: iconGroup === group.key ? T.accentSoft : T.surface,
+      color: iconGroup === group.key ? T.accent : T.inkSoft,
+      whiteSpace: "nowrap"
     }}
-  >{style}</button>)}</div><div
-    style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginTop: 11 }}
-  >{CHOICES_EMOJI.map((glyph) => <button
-    key={glyph}
-    onClick={() => setIcon(glyph)}
+  >{group.label}</button>)}</div>}<div
+    style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 7, marginTop: 11, maxHeight: 186, overflowY: "auto", WebkitOverflowScrolling: "touch" }}
+  >{icons.map((entry) => <button
+    key={entry.g + entry.c}
+    onClick={() => pickIcon(entry.c)}
     className="v2-tap"
-    aria-label={`Use ${glyph}`}
+    title={entry.n}
+    aria-label={entry.n}
+    aria-pressed={icon === entry.c}
     style={{
       aspectRatio: "1",
-      border: icon === glyph ? `1.5px solid ${T.accent}` : `1px solid ${T.line}`,
-      borderRadius: 12,
-      background: icon === glyph ? T.accentSoft : T.surface,
+      border: icon === entry.c ? `1.5px solid ${T.accent}` : `1px solid ${T.line}`,
+      borderRadius: 11,
+      background: icon === entry.c ? T.accentSoft : T.surface,
       fontSize: 19,
+      lineHeight: 1,
       cursor: "pointer",
       display: "flex",
       alignItems: "center",
-      justifyContent: "center"
+      justifyContent: "center",
+      padding: 0
     }}
-  >{glyph}</button>)}</div><label
+  >{entry.c}</button>)}</div>{icons.length === 0 && <div
+    style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", padding: "16px 8px", lineHeight: 1.5 }}
+  >
+      No icon called {"“"}{iconQuery.trim()}{"”"}. Any emoji from your keyboard works too {"—"} type one into the name and pick it from there.
+    </div>}<label
     style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "16px 0 7px" }}
   >
       Colour
-    </label><div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>{CHOICES_TINTS.map((swatch) => <button
+    </label><div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 8 }}>{CHOICES_TINTS.map((swatch) => <button
     key={swatch}
     onClick={() => setColor(swatch)}
     className="v2-tap"
     aria-label={`Use ${swatch}`}
+    aria-pressed={color === swatch}
     style={{
-      width: 32,
-      height: 32,
+      aspectRatio: "1",
       borderRadius: "50%",
       background: swatch,
       border: "none",
@@ -367,7 +434,13 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
        Send button's does: a bare fragment makes the ticker and the bar
        separate flex items and the gap lands between a unit and its own
        currency. */
-  }<span style={{ fontSize: 14, fontWeight: 800, color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0 }}>{COIN_TICKER}{unit.trail && <span style={{ fontSize: geuLensTrailSize(14) }}> {GEU_LENS_BAR} {unit.trail}</span>}</span></div>{error && <div
+  }{
+    /* geuLensUnitPair already decides BOTH halves — `lead` goes before the
+       figure and `trail` after it. Printing COIN_TICKER here as well put
+       the ticker in front of its own pair, so the field read "GEU | GEU"
+       with the lens off. One span, nowrap, for the same flex-gap reason
+       the Send button's unit is wrapped. */
+  }{unit.trail && <span style={{ fontSize: 14, fontWeight: 800, color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0 }}>{GEU_LENS_BAR} {unit.trail}</span>}</div>{error && <div
     style={{ marginTop: 12, fontSize: 12.5, fontWeight: 700, color: T.negative }}
     role="alert"
   >{error}</div>}<button
@@ -411,6 +484,11 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       Retire this choice
     </button>}</HelpSheet>;
 }
+
+// How many icons the grid draws at once. The catalogue is larger than
+// anybody scrolls, and a search that narrows it is the way through — this
+// is a rendering cap, not a limit on what can be found.
+var CHOICES_ICON_PAGE = 120;
 
 // Mirrors CATEGORY_NAME_MAX_LENGTH in server/lib/categoryValidation.js. The
 // field stops at the same place the server does, so nobody types a name

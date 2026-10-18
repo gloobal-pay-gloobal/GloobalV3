@@ -65,36 +65,69 @@ describe("what is hidden stays hidden", () => {
   });
 });
 
-describe("marking does both things, and says so", () => {
-  test("the note is written before the navigation that closes the screen", () => {
-    const src = code(SCREEN);
-    const at = src.indexOf("if (onToggleIHaveEnough) onToggleIHaveEnough();");
-    const nav = src.indexOf("onUnlockGloobalBank()");
-    assert.ok(at > 0 && nav > at,
-      "the unlock runs before the note, so the note is set on a screen already unmounting");
+describe("one card at a time, and one job per button", () => {
+  // These two controls used to be one button doing both jobs. That put an
+  // irreversible act — an account that now exists — behind the same tap as
+  // a reversible note, and offered the note to somebody who had nothing
+  // visible for it to be about.
+  const src = code(SCREEN);
+  const unlockAt = src.indexOf("{!revealed && <div");
+  const noteAt = src.indexOf("{revealed && <div", unlockAt + 1);
+
+  test("both cards exist, and each is behind the opposite flag", () => {
+    assert.ok(unlockAt > 0, "the locked card is gone");
+    assert.ok(noteAt > unlockAt, "the note card is gone, or is no longer behind `revealed`");
   });
 
-  test("it does not try to unlock an account that is already open", () => {
-    assert.match(code(SCREEN), /if \(!revealed && onUnlockGloobalBank\)/,
-      "tapping the note on an open account would navigate away from this screen");
+  test("the note is NOT offered until the account is open", () => {
+    // The founder's words: the mark option comes after they unlock their
+    // bank, not before it. Structurally, every reference to the toggle
+    // must sit after the `{revealed && <div` that opens the note card.
+    const toggle = src.indexOf("onClick={onToggleIHaveEnough}");
+    assert.ok(toggle > noteAt,
+      "the 'I have enough' control is reachable while Essentials is still locked");
+    assert.equal((src.match(/onToggleIHaveEnough/g) || []).length, 2,
+      "the note handler is wired in more than one place, so one of them may not be behind `revealed`");
   });
 
-  test("the copy claims the unlock only while it is still true", () => {
-    const src = code(SCREEN);
-    // "UNLOCKS GLOOBAL BANK" must be inside a !revealed branch — once the
-    // account is open, a card still promising to open it is a lie.
-    const at = src.indexOf("Unlocks <GloobalWordmark");
-    const guard = src.lastIndexOf("{!revealed &&", at);
-    assert.ok(guard > 0 && at - guard < 400,
-      "the unlock claim is shown even once Gloobal Bank is open");
+  test("the unlock is not offered once the account is open", () => {
+    const unlock = src.indexOf("onClick={onUnlockGloobalBank}");
+    assert.ok(unlock > unlockAt && unlock < noteAt,
+      "a card still offering to open Gloobal Bank survives past the point where it is already open");
+    assert.equal((src.match(/onUnlockGloobalBank/g) || []).length, 2,
+      "the unlock handler is wired in more than one place");
   });
 
-  test("the reversible half and the permanent half are described separately", () => {
-    // The note can be changed; the account, once opened, cannot be
-    // un-opened. Copy that offered to undo both would be false.
+  test("neither button does the other's job", () => {
+    // The specific regression: a single handler calling both.
+    assert.doesNotMatch(src, /onToggleIHaveEnough\(\);[\s\S]{0,200}onUnlockGloobalBank\(\)/,
+      "one tap both writes the note and opens the account again");
+  });
+
+  test("the note still says what it does not do", () => {
     const raw = readSource(SCREEN);
-    assert.match(raw, /the account, once opened, stays open/,
-      "the copy no longer distinguishes the note from the account it opens");
+    assert.match(raw, /does not remove eligibility, restrict future use, or change your financial rights/,
+      "the note's guarantees are gone");
+    assert.match(raw, /yours to change at any time/, "the note no longer says it is reversible");
+  });
+
+  test("the country is named in both states", () => {
+    // A baseline is estimated for ONE country and the figure means
+    // nothing without knowing which, so the flag labels what is being
+    // withheld rather than being a reward for unlocking.
+    const flagAt = src.indexOf("<FlagEmoji");
+    assert.ok(flagAt > 0, "the flag is gone");
+    const guarded = /\{revealed && <div[^]{0,120}<FlagEmoji/.test(src);
+    assert.equal(guarded, false, "the flag is only drawn once the figures are revealed");
+  });
+
+  test("nothing rendered tells people to mark something not offered yet", () => {
+    // Stripped of comments: an explanation of why the old pill went is
+    // fine, a string that still reaches a screen is not. This caught the
+    // mask's own aria-label, which a sighted reader would never have
+    // seen and a screen-reader user would have been misled by.
+    assert.doesNotMatch(code(SCREEN), /mark below/i,
+      "something still tells people to mark something that is not offered yet");
   });
 });
 

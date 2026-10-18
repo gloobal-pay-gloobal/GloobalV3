@@ -17,7 +17,12 @@ var ESSENTIALS_MASK_DOTS = 6;
 function EssentialsMasked({ size, light }) {
   const dot = Math.max(5, Math.round((Number(size) || 20) * 0.3));
   return <span
-    aria-label="Hidden until you mark below"
+    // Says only that the figure is hidden, not what to do about it. The
+    // instruction belongs to whichever card is currently showing, and a
+    // mask that named one would be telling a screen-reader user to mark
+    // something that is not offered until the account is open.
+    aria-label="Amount hidden"
+    role="img"
     style={{ display: "inline-flex", alignItems: "center", gap: dot * 0.75, height: Number(size) || 20 }}
   >{Array.from({ length: ESSENTIALS_MASK_DOTS }).map((_, at) => <span
     key={at}
@@ -110,15 +115,18 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
        magnitude, which is the only part that is anybody's business. */
   }<div
     style={{ borderRadius: T.radiusLg, background: T.gradButton, boxShadow: T.shadowRaised, padding: "20px 20px 18px" }}
-  >{!revealed && <span
-    style={{ display: "inline-flex", alignItems: "center", gap: 7, borderRadius: 999, background: "rgba(255,255,255,0.22)", padding: "6px 13px", marginBottom: 14 }}
-  ><Lock8 size={13} color="#fff" /><span style={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>
-          Hidden until you mark below
-        </span></span>}{revealed && <div
+  >{
+    /* The country, in both states. A baseline is estimated for ONE
+       country and the figure means nothing without knowing which — so
+       the flag is not a reward for unlocking, it is the label on what is
+       being withheld. The old pill said "Hidden until you mark below"
+       and said it over the top of this; the dots already carry that, and
+       the card at the foot of the screen says the rest. */
+  }<div
     style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}
   ><FlagEmoji flag={dialCountry.flag} width={22} height={16} radius={3} /><span
     style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}
-  >{dialCountry.name} Essentials Baseline</span></div>}<div
+  >{dialCountry.name} Essentials Baseline</span></div><div
     style={{ fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.78)" }}
   >
       Left today
@@ -171,35 +179,38 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
   ><span style={{ flex: 1, fontSize: 14.5, fontWeight: 700, color: T.ink }}>
       How this is worked out
     </span><ChevronRight6 size={17} color={T.inkFaint} /></button>{
-    /* "I have enough" — voluntary, internal, reversible, and the way
-       Gloobal Bank gets opened. The copy says both halves because the
-       button does both, and because only one of them can be undone. */
-  }<div
+    /* ── TWO CARDS, NEVER BOTH ───────────────────────────────────────
+
+       These used to be one button doing two jobs: marking the note AND
+       opening Gloobal Bank. That put an irreversible act (an account
+       that now exists) behind the same tap as a reversible one (a note
+       to yourself), and it offered the note to somebody who had nothing
+       yet for it to be about — "I have enough" is a statement about a
+       baseline you cannot see.
+
+       So the screen asks for one thing at a time. Locked, the card opens
+       the account. Open, the card is the note. Which one is showing is
+       the same `revealed` flag the figures above answer to, so the
+       screen cannot end up offering a note while still hiding what the
+       note refers to. */
+  }{!revealed && <div
     style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 16px", display: "flex", flexDirection: "column", gap: 13 }}
   ><div style={{ display: "flex", alignItems: "flex-start", gap: 13 }}><span
-    style={{ width: 44, height: 44, borderRadius: 13, background: revealed ? T.positiveSoft : T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-  >{revealed ? <EssCheckCircle size={20} color={T.positive} /> : <Lock8 size={19} color={T.accent} />}</span><span
-    style={{ minWidth: 0 }}
-  ><span style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink }}>
-        I have enough
-      </span>{!revealed && <span
+    style={{ width: 44, height: 44, borderRadius: 13, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+  ><Lock8 size={19} color={T.accent} /></span><span style={{ minWidth: 0 }}><span
+    style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink }}
+  >
+        Open <GloobalWordmark suffix=" Bank" />
+      </span><span
     style={{ display: "block", fontSize: 11.5, fontWeight: 800, letterSpacing: 0.6, color: T.accent, textTransform: "uppercase", marginTop: 3 }}
   >
-        Unlocks <GloobalWordmark suffix=" Bank" />
-      </span>}</span></div><div
+        Reveals your amounts
+      </span></span></div><div
     style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5 }}
-  >{revealed
-    ? <>A voluntary, internal note to yourself. It does not remove eligibility, restrict future use, or change your financial rights, and it is yours to change at any time.</>
-    : <>Marking this opens <GloobalWordmark suffix=" Bank" /> and reveals your amounts. The note is yours to change at any time; the account, once opened, stays open. It never removes eligibility or restricts future use.</>}</div><button
-    onClick={() => {
-      // Both, in this order. The note is this screen's own state and
-      // settles immediately; the unlock NAVIGATES — it closes Essentials
-      // and opens Gloobal Bank — so anything after it would run against a
-      // screen on its way out.
-      if (onToggleIHaveEnough) onToggleIHaveEnough();
-      if (!revealed && onUnlockGloobalBank) onUnlockGloobalBank();
-    }}
-    aria-pressed={Boolean(iHaveEnough)}
+  >
+      Your {dialCountry.name} baseline is worked out already {"—"} opening the account is what shows you the figures. It never removes eligibility or restricts future use.
+    </div><button
+    onClick={onUnlockGloobalBank}
     className="v2-tap"
     style={{
       display: "flex",
@@ -210,26 +221,60 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
       border: "none",
       borderRadius: T.radiusMd,
       padding: "15px 0",
-      background: iHaveEnough && revealed ? T.positiveSoft : T.gradButton,
-      color: iHaveEnough && revealed ? T.positive : "#fff",
-      boxShadow: iHaveEnough && revealed ? "none" : T.shadowRaised,
+      background: T.gradButton,
+      color: "#fff",
+      boxShadow: T.shadowRaised,
+      fontSize: 15,
+      fontWeight: 800,
+      cursor: "pointer"
+    }}
+  ><Lock8 size={16} />
+      Open <GloobalWordmark suffix=" Bank" />
+    </button></div>}{revealed && <div
+    style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 16px", display: "flex", flexDirection: "column", gap: 13 }}
+  ><div style={{ display: "flex", alignItems: "flex-start", gap: 13 }}><span
+    style={{ width: 44, height: 44, borderRadius: 13, background: iHaveEnough ? T.positiveSoft : T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+  >{iHaveEnough ? <EssCheckCircle size={20} color={T.positive} /> : <EssCircle size={20} color={T.inkSoft} />}</span><span
+    style={{ minWidth: 0 }}
+  ><span style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink }}>
+        I have enough
+      </span></span></div><div
+    style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5 }}
+  >
+      A voluntary, internal note to yourself. It does not remove eligibility, restrict future use, or change your financial rights, and it is yours to change at any time.
+    </div><button
+    onClick={onToggleIHaveEnough}
+    aria-pressed={Boolean(iHaveEnough)}
+    className="v2-tap"
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 9,
+      width: "100%",
+      border: iHaveEnough ? `1px solid ${T.positive}` : "none",
+      borderRadius: T.radiusMd,
+      padding: "15px 0",
+      background: iHaveEnough ? T.positiveSoft : T.gradButton,
+      color: iHaveEnough ? T.positive : "#fff",
+      boxShadow: iHaveEnough ? "none" : T.shadowRaised,
       fontSize: 15,
       fontWeight: 800,
       cursor: "pointer"
     }}
   >{iHaveEnough ? <EssCheckCircle size={17} /> : <EssCircle size={17} />}{iHaveEnough
-    ? (revealed ? "Marked — I have enough" : "Marked — open Gloobal Bank")
+    ? "Marked — I have enough"
     : "Mark — I have enough"}</button>{
     /* Once the bank is open, Scan & Pay is the thing somebody actually
-       came here to do next. It replaces nothing: it only appears when
-       there is somewhere for it to go. */
-  }{revealed && <button
+       came here to do next. No guard of its own any more — it lives
+       inside the card that only exists when the account does. */
+  }<button
     onClick={onOpenScanAndPay}
     className="v2-tap"
     style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%", border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "13px 0", background: T.surfaceAlt, color: T.ink, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
   ><ScannerIcon size={17} animated />
       Scan &amp; Pay
-    </button>}</div></div><HelpSheet
+    </button></div>}</div><HelpSheet
     open={howOpen}
     onClose={() => setHowOpen(false)}
     title="How this is worked out"

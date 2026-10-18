@@ -156,6 +156,21 @@ const PushSubscription = require('./models/PushSubscription');
 const pushService = require('./services/pushService');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
+// My Choices — the labels an account puts on its own payments. The model
+// holds the label and nothing financial; every figure the category screens
+// show is aggregated from transactions that carry its id. See
+// models/Category.js for why no total is cached on the row.
+const Category = require('./models/Category');
+// One account's label on one payment. A separate model from Transaction on
+// purpose — a payment has two parties and each may file it differently, and
+// a label must never be written inside the atomic money path. Its header
+// has the full argument.
+const TransactionTag = require('./models/TransactionTag');
+const {
+  DEFAULT_CATEGORIES,
+  validateCategoryInput,
+  publicCategory,
+} = require('./lib/categoryValidation');
 const {
   HOOMAN_WINDOW_DAYS,
   pillarLocks: hoomanPillarLocks,
@@ -8615,6 +8630,373 @@ app.post('/api/push/promotional', writeLimit, async (req, res) => {
   } catch (error) {
     console.error('Push promotional error:', error);
     return res.status(500).json({ success: false, message: 'Could not send that broadcast right now.' });
+  }
+});
+
+// ─── My Choices ─────────────────────────────────────────────────────────────
+//
+// Per account, scoped by the bearer token like notifications, so none of
+// these takes a Gloobal ID.
+//
+// Nothing in this section is on the money path. A category is a label; a tag
+// is one account's label on one payment. POST /api/transactions/send is not
+// touched by any of it, and the client writes a tag AFTER a payment has
+// committed — a failed tag leaves a correct, untagged payment, which is the
+// only acceptable way for a label to fail.
+//
+// Every figure these routes return is aggregated at read time. There is no
+// stored total anywhere in this feature, and there must not be one: see the
+// header of models/Category.js.
+
+const categoryNotFound = (res) =>
+  res.status(404).json({ success: false, message: 'That choice is not one of yours.' });
+
+// Live categories for an account, seeding the starting set on the first read.
+//
+// Seeded here rather than at registration so that accounts which existed
+// before this feature get them too, with no backfill script and no migration.
+// `ordered: false` plus a swallowed error is the race handling: two requests
+// arriving together both find nothing, both insert, and the loser's duplicate
+// rows are rejected individually while the rest land. The re-read below is
+// then the single source of truth for what either caller is told.
+const categoriesForAccount = async (userId) => {
+  const sort = { kind: 1, sortIndex: 1, name: 1 };
+  const existing = await Category.find({ userId }).sort(sort).lean();
+  if (existing.length > 0) return existing;
+
+  try {
+    await Category.insertMany(
+      DEFAULT_CATEGORIES.map((entry) => Object.assign({}, entry, { userId })),
+      { ordered: false }
+    );
+  } catch (error) {
+    console.error('Category seed error:', error.message);
+  }
+
+  return Category.find({ userId }).sort(sort).lean();
+};
+
+// What an account has actually spent or received under each category.
+//
+// Grouped by CURRENCY as well as category, and that is not defensive
+// padding. Transaction.amount is the RECEIVING side's own money — the
+// contract every row in this system follows — so for a payment this account
+// made, the figure that answers "what did this cost me" is
+// metadata.sourceAmount in metadata.sourceCurrency, and only for a domestic
+// payment are those the same number. Summing `amount` across a cross-border
+// payment would quietly total the payee's money. Grouping by currency means
+// two currencies can never be added together even if an account somehow
+// holds both; the client reads the bucket matching its own.
+const categoryTotals = async (userId, monthStart) => {
+  // Mixed metadata is not schema-checked, so a figure read out of it is
+  // whatever was written. Converted with onError/onNull so one malformed row
+  // cannot turn a whole account's totals into null.
+  const asMoney = (expr) => ({ $convert: { input: expr, to: 'double', onError: 0, onNull: 0 } });
+  const paid = { $eq: ['$txn.fromUserId', userId] };
+
+  const rows = await TransactionTag.aggregate([
+    { $match: { userId } },
+    {
+      $lookup: {
+        from: 'transactions',
+        localField: 'transactionId',
+        foreignField: '_id',
+        as: 'txn',
+      },
+    },
+    { $unwind: '$txn' },
+    { $match: { 'txn.status': 'success' } },
+    {
+      $project: {
+        categoryId: 1,
+        at: '$txn.createdAt',
+        amount: {
+          $cond: [paid, asMoney({ $ifNull: ['$txn.metadata.sourceAmount', '$txn.amount'] }), asMoney('$txn.amount')],
+        },
+        currency: {
+          $cond: [paid, { $ifNull: ['$txn.metadata.sourceCurrency', '$txn.currency'] }, '$txn.currency'],
+        },
+      },
+    },
+    {
+      $group: {
+        _id: { categoryId: '$categoryId', currency: { $toUpper: { $ifNull: ['$currency', ''] } } },
+        total: { $sum: '$amount' },
+        count: { $sum: 1 },
+        firstAt: { $min: '$at' },
+        lastAt: { $max: '$at' },
+        thisMonth: { $sum: { $cond: [{ $gte: ['$at', monthStart] }, '$amount', 0] } },
+      },
+    },
+  ]);
+
+  const byCategory = new Map();
+  for (const row of rows) {
+    const key = String(row._id.categoryId);
+    const bucket = byCategory.get(key) || [];
+    bucket.push({
+      currency: row._id.currency || '',
+      total: Number(row.total) || 0,
+      count: Number(row.count) || 0,
+      thisMonth: Number(row.thisMonth) || 0,
+      firstAt: row.firstAt,
+      lastAt: row.lastAt,
+    });
+    byCategory.set(key, bucket);
+  }
+  return byCategory;
+};
+
+// The start of the month the PERSON is in, which is not reliably the start
+// of the month the server is in. A client that knows its own boundary sends
+// it; anything unparseable, in the future, or absurdly old falls back to UTC
+// rather than being refused, because a bad clock should not make the screen
+// unreadable.
+const categoryMonthStart = (raw) => {
+  const now = new Date();
+  const utcStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  if (raw === undefined || raw === null || raw === '') return utcStart;
+
+  const asked = new Date(String(raw));
+  if (Number.isNaN(asked.getTime())) return utcStart;
+  if (asked.getTime() > now.getTime() + 36 * 60 * 60 * 1000) return utcStart;
+  if (now.getTime() - asked.getTime() > 400 * 24 * 60 * 60 * 1000) return utcStart;
+  return asked;
+};
+
+// GET /api/categories?monthStart=<ISO> — every choice this account has,
+// each with its own totals. One call, because the grid cannot draw a tile
+// without both halves and two calls would let them disagree.
+app.get('/api/categories', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const userId = req.authUser._id;
+    const monthStart = categoryMonthStart(req.query.monthStart);
+    const [rows, totals] = await Promise.all([
+      categoriesForAccount(userId),
+      categoryTotals(userId, monthStart),
+    ]);
+
+    return res.json({
+      success: true,
+      monthStart: monthStart.toISOString(),
+      categories: rows.map((row) =>
+        Object.assign({}, publicCategory(row), { totals: totals.get(String(row._id)) || [] })
+      ),
+    });
+  } catch (error) {
+    console.error('Category list error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load your choices right now.' });
+  }
+});
+
+// GET /api/categories/tags?limit=500 — which payments this account has
+// filed, keyed by the payment reference the app already holds.
+//
+// Deliberately NOT a per-category transaction list. The app's history
+// projection is per viewer and already correct; a second one here would be
+// a second place that decides what a row says, and the two would drift. So
+// this returns the labels only, and the client badges rows it already has.
+app.get('/api/categories/tags', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const requested = Number.parseInt(String(req.query.limit ?? ''), 10);
+    const limit = Number.isFinite(requested) ? Math.min(2000, Math.max(1, requested)) : 500;
+
+    const rows = await TransactionTag.find({ userId: req.authUser._id })
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limit)
+      .select('referenceId categoryId categoryName')
+      .lean();
+
+    return res.json({
+      success: true,
+      tags: rows.map((row) => ({
+        referenceId: row.referenceId,
+        categoryId: String(row.categoryId),
+        categoryName: row.categoryName || '',
+      })),
+    });
+  } catch (error) {
+    console.error('Category tag list error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load your tags right now.' });
+  }
+});
+
+// POST /api/categories — create.
+//
+// The owner is taken from the TOKEN, never from the body, for the same
+// reason POST /api/projects does it: a symbolId in the payload would be a
+// field a client could point at somebody else's account.
+app.post('/api/categories', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const validated = validateCategoryInput(req.body || {});
+    if (!validated.ok) return res.status(400).json({ success: false, message: validated.message });
+
+    const userId = req.authUser._id;
+    const kind = validated.value.kind || 'expense';
+    const clash = await Category.findOne({
+      userId,
+      kind,
+      archivedAt: null,
+      name: new RegExp(`^${escapeRegExp(validated.value.name)}$`, 'i'),
+    })
+      .select('_id')
+      .lean();
+    if (clash) {
+      return res.status(400).json({ success: false, message: `You already have a choice called ${validated.value.name}.` });
+    }
+
+    const category = await Category.create(Object.assign({}, validated.value, { userId, kind }));
+    return res.status(201).json({ success: true, category: Object.assign({}, publicCategory(category.toObject()), { totals: [] }) });
+  } catch (error) {
+    console.error('Category create error:', error);
+    return res.status(500).json({ success: false, message: 'Could not save that choice.' });
+  }
+});
+
+// PATCH /api/categories/:id — rename, re-icon, recolour, or set a budget.
+// Any subset; a body naming only monthlyBudget is a budget edit.
+app.patch('/api/categories/:id', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return categoryNotFound(res);
+
+    const userId = req.authUser._id;
+    const existing = await Category.findOne({ _id: id, userId });
+    if (!existing) return categoryNotFound(res);
+
+    const validated = validateCategoryInput(req.body || {}, { strict: false });
+    if (!validated.ok) return res.status(400).json({ success: false, message: validated.message });
+
+    // Kind is not editable. Moving a category between expense and income
+    // would leave every payment already filed under it on the wrong side of
+    // the split, and there is no honest way to reinterpret those rows.
+    delete validated.value.kind;
+
+    if (validated.value.name && validated.value.name.toLowerCase() !== existing.name.toLowerCase()) {
+      const clash = await Category.findOne({
+        userId,
+        kind: existing.kind,
+        archivedAt: null,
+        _id: { $ne: existing._id },
+        name: new RegExp(`^${escapeRegExp(validated.value.name)}$`, 'i'),
+      })
+        .select('_id')
+        .lean();
+      if (clash) {
+        return res.status(400).json({ success: false, message: `You already have a choice called ${validated.value.name}.` });
+      }
+    }
+
+    Object.assign(existing, validated.value);
+    await existing.save();
+
+    const totals = await categoryTotals(userId, categoryMonthStart(req.query.monthStart));
+    return res.json({
+      success: true,
+      category: Object.assign({}, publicCategory(existing.toObject()), { totals: totals.get(String(existing._id)) || [] }),
+    });
+  } catch (error) {
+    console.error('Category update error:', error);
+    return res.status(500).json({ success: false, message: 'Could not change that choice.' });
+  }
+});
+
+// DELETE /api/categories/:id — retire it.
+//
+// A category that has never been used is removed outright. One that has is
+// ARCHIVED, because its name is the only thing that makes the payments filed
+// under it readable, and deleting the row to leave those payments pointing at
+// nothing would be destroying a record to tidy a list. Archived categories
+// leave the grid and the pickers; the payments keep their label.
+app.delete('/api/categories/:id', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return categoryNotFound(res);
+
+    const userId = req.authUser._id;
+    const existing = await Category.findOne({ _id: id, userId });
+    if (!existing) return categoryNotFound(res);
+
+    const used = await TransactionTag.countDocuments({ userId, categoryId: existing._id });
+    if (used > 0) {
+      existing.archivedAt = new Date();
+      await existing.save();
+      return res.json({ success: true, archived: true, tagged: used, category: publicCategory(existing.toObject()) });
+    }
+
+    await Category.deleteOne({ _id: existing._id, userId });
+    return res.json({ success: true, archived: false, tagged: 0 });
+  } catch (error) {
+    console.error('Category delete error:', error);
+    return res.status(500).json({ success: false, message: 'Could not remove that choice.' });
+  }
+});
+
+// PUT /api/transactions/:referenceId/tag — file a payment under a choice.
+//
+// Idempotent by construction: the unique index on { userId, transactionId }
+// means a retry, or two requests racing, update one row rather than writing
+// two. A client that tags the same payment twice with different categories
+// gets the second one, which is what re-filing means.
+app.put('/api/transactions/:referenceId/tag', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const userId = req.authUser._id;
+    const referenceId = String(req.params.referenceId || '').trim();
+    if (!referenceId) return res.status(400).json({ success: false, message: 'Which payment?' });
+
+    const categoryId = String(req.body?.categoryId || '').trim();
+    if (!mongoose.Types.ObjectId.isValid(categoryId)) return categoryNotFound(res);
+
+    const category = await Category.findOne({ _id: categoryId, userId }).lean();
+    if (!category) return categoryNotFound(res);
+
+    // The caller must be a party to the payment. Checked against the
+    // transaction rather than taken on trust from the body, because a
+    // reference id is not a secret — it appears on a receipt that can be
+    // shared — and an account filing a stranger's payment under its own
+    // category would put that payment's figures into its own totals.
+    const transaction = await Transaction.findOne({ referenceId })
+      .select('_id fromUserId toUserId')
+      .lean();
+    if (!transaction) {
+      return res.status(404).json({ success: false, message: 'No payment with that reference.' });
+    }
+    const isParty =
+      String(transaction.fromUserId || '') === String(userId) ||
+      String(transaction.toUserId || '') === String(userId);
+    if (!isParty) {
+      return res.status(403).json({ success: false, message: 'That payment is not yours.' });
+    }
+
+    const tag = await TransactionTag.findOneAndUpdate(
+      { userId, transactionId: transaction._id },
+      { $set: { categoryId: category._id, categoryName: category.name, referenceId } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    return res.json({
+      success: true,
+      tag: { referenceId: tag.referenceId, categoryId: String(tag.categoryId), categoryName: tag.categoryName || '' },
+    });
+  } catch (error) {
+    console.error('Transaction tag error:', error);
+    return res.status(500).json({ success: false, message: 'Could not file that payment.' });
+  }
+});
+
+// DELETE /api/transactions/:referenceId/tag — unfile it. Removing a label
+// has never changed a payment and does not now; the row simply stops
+// appearing under a category.
+app.delete('/api/transactions/:referenceId/tag', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const referenceId = String(req.params.referenceId || '').trim();
+    if (!referenceId) return res.status(400).json({ success: false, message: 'Which payment?' });
+
+    const result = await TransactionTag.deleteOne({ userId: req.authUser._id, referenceId });
+    return res.json({ success: true, removed: result.deletedCount > 0 });
+  } catch (error) {
+    console.error('Transaction untag error:', error);
+    return res.status(500).json({ success: false, message: 'Could not unfile that payment.' });
   }
 });
 

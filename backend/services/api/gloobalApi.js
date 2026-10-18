@@ -979,6 +979,20 @@ var GloobalApi = {
     return result.tag || null;
   },
 
+  // A picture instead of an icon. The client downscales and re-encodes to
+  // JPEG before this is called — the server accepts only JPEG or PNG and
+  // caps what it stores, so sending a phone photo straight from the
+  // camera would simply be refused.
+  async setCategoryPhoto(id, dataUrl) {
+    const result = await gloobalApiClient.put(`/api/categories/${encodeURIComponent(id)}/photo`, { photo: dataUrl });
+    return result.photo || null;
+  },
+
+  async removeCategoryPhoto(id) {
+    const result = await gloobalApiClient.delete(`/api/categories/${encodeURIComponent(id)}/photo`);
+    return Boolean(result.removed);
+  },
+
   async untagTransaction(referenceId) {
     const result = await gloobalApiClient.delete(`/api/transactions/${encodeURIComponent(referenceId)}/tag`);
     return Boolean(result.removed);

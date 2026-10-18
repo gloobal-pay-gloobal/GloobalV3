@@ -167,6 +167,96 @@ async function choicesRemove(id) {
   return result;
 }
 
+// ── A PICTURE INSTEAD OF AN ICON ───────────────────────────────────────
+//
+// 160px square, re-encoded as JPEG, before anything leaves the device.
+//
+// The downscale is not an optimisation, it is what makes the feature
+// possible at all: a category tile is 54 pixels, a phone camera produces
+// several megabytes, and GET /api/categories returns a screenful of these
+// at once. The server caps what it stores at 60 KB and accepts only JPEG
+// or PNG, so a photo sent as it came off the camera would be refused —
+// this is the step that turns one into the other.
+//
+// Centre-cropped to a square because every surface that draws one is
+// square. Cropping here rather than with CSS means the stored bytes are
+// the bytes shown, instead of carrying edges nobody will ever see.
+var CHOICES_PHOTO_EDGE = 160;
+var CHOICES_PHOTO_QUALITY = 0.82;
+
+function choicesReadPhoto(file) {
+  return new Promise(function (resolve, reject) {
+    if (!file) { reject(new Error("No picture chosen.")); return; }
+    if (!/^image\//i.test(String(file.type || ""))) {
+      reject(new Error("That file is not a picture."));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = function () { reject(new Error("That picture could not be read.")); };
+    reader.onload = function () {
+      const img = new Image();
+      img.onerror = function () { reject(new Error("That picture could not be opened.")); };
+      img.onload = function () {
+        try {
+          const edge = Math.min(img.width, img.height);
+          if (!(edge > 0)) { reject(new Error("That picture has no size.")); return; }
+          const canvas = document.createElement("canvas");
+          canvas.width = CHOICES_PHOTO_EDGE;
+          canvas.height = CHOICES_PHOTO_EDGE;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { reject(new Error("This device cannot resize that picture.")); return; }
+          ctx.drawImage(
+            img,
+            (img.width - edge) / 2, (img.height - edge) / 2, edge, edge,
+            0, 0, CHOICES_PHOTO_EDGE, CHOICES_PHOTO_EDGE
+          );
+          // JPEG, always. It is one of the two the server accepts, and it
+          // also normalises whatever the phone handed us — HEIC, WebP — to
+          // something the API will take.
+          resolve(canvas.toDataURL("image/jpeg", CHOICES_PHOTO_QUALITY));
+        } catch (error) {
+          reject(new Error("That picture could not be prepared."));
+        }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Optimistic like the heart: the tile changes at once and goes back if
+// the write fails. The category keeps its icon underneath throughout, so
+// removing a picture restores it rather than leaving a blank tile.
+async function choicesSetPhoto(id, dataUrl) {
+  const before = choicesState.categories;
+  const apply = (photo) => choicesEmit(Object.assign({}, choicesState, {
+    categories: choicesState.categories.map((row) =>
+      String(row.id) === String(id) ? Object.assign({}, row, { photo: photo }) : row)
+  }));
+
+  apply(dataUrl);
+  try {
+    return await GloobalApi.setCategoryPhoto(id, dataUrl);
+  } catch (error) {
+    choicesEmit(Object.assign({}, choicesState, { categories: before }));
+    throw error;
+  }
+}
+
+async function choicesRemovePhoto(id) {
+  const before = choicesState.categories;
+  choicesEmit(Object.assign({}, choicesState, {
+    categories: choicesState.categories.map((row) =>
+      String(row.id) === String(id) ? Object.assign({}, row, { photo: null }) : row)
+  }));
+  try {
+    return await GloobalApi.removeCategoryPhoto(id);
+  } catch (error) {
+    choicesEmit(Object.assign({}, choicesState, { categories: before }));
+    throw error;
+  }
+}
+
 // Optimistic, and rolled back on failure.
 //
 // Filing a payment is a label on something that has already happened, so the

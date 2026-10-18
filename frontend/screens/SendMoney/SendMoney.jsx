@@ -1773,9 +1773,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: 25
+        overflow: "hidden"
       }}
-    >{category.icon || "●"}</span><span
+    ><ChoiceGlyph category={category} size={25} /></span><span
       style={{ fontSize: 11.5, fontWeight: picked ? 800 : 700, color: picked ? T.accent : T.inkSoft, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 62 }}
     >{category.name}</span></button>;
   })}<button

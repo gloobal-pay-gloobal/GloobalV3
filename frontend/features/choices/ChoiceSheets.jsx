@@ -1,6 +1,6 @@
 // src/features/choices/ChoiceSheets.jsx
-import { useState as useState43, useEffect as useEffect43, useMemo as useMemo11 } from "react";
-import { Plus as Plus4, Check as Check6, ScanLine as ScanLine2, Search as Search7, X as X8, Heart as Heart4 } from "lucide-react";
+import { useState as useState43, useEffect as useEffect43, useMemo as useMemo11, useRef as useRef26 } from "react";
+import { Plus as Plus4, Check as Check6, ScanLine as ScanLine2, Search as Search7, X as X8, Heart as Heart4, Camera as Camera3, Trash2 as Trash2Icon } from "lucide-react";
 
 // The sheets My Choices opens: pick one, add something, make or edit one.
 //
@@ -10,6 +10,34 @@ import { Plus as Plus4, Check as Check6, ScanLine as ScanLine2, Search as Search
 // the close button does. A sheet built fresh here would close on the X and
 // leave its entry on the stack, and the next back gesture would eat a real
 // navigation.
+
+// What a category LOOKS like: its picture if it has one, otherwise its
+// icon, otherwise a dot.
+//
+// One component, used by every surface that draws a category — the grid,
+// the Send strip, the pickers, the category hero, its history rows. That
+// is the entire reason it exists. The icon used to be inlined in six
+// places, which was fine while an icon was the only possibility and would
+// have meant photos appearing on whichever of the six somebody remembered
+// to update.
+//
+// Draws the content only, never its container: callers vary between
+// circles, rounded squares and full tiles, and they set the size. A
+// container holding a photo needs `overflow: "hidden"` for its own radius
+// to clip the image.
+function ChoiceGlyph({ category, size }) {
+  const photo = category && category.photo;
+  if (photo) {
+    return <img
+      src={photo}
+      alt=""
+      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+    />;
+  }
+  return <span
+    style={{ fontSize: Number(size) > 0 ? Number(size) : 22, lineHeight: 1 }}
+  >{(category && category.icon) || "●"}</span>;
+}
 
 // One tile in a picker grid: the category's emoji on its own tint, its name
 // underneath. Sized so three fit across a narrow phone with the longest
@@ -41,10 +69,10 @@ function ChoiceTile({ category, onPick, selected }) {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      fontSize: 23,
-      flexShrink: 0
+      flexShrink: 0,
+      overflow: "hidden"
     }}
-  >{category.icon || "●"}</span><span
+  ><ChoiceGlyph category={category} size={23} /></span><span
     style={{
       fontSize: 12.5,
       fontWeight: 700,
@@ -182,6 +210,14 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
   // the name suggests one as they type; the moment they choose, their
   // choice stops being overwritten.
   const [iconTouched, setIconTouched] = useState43(false);
+  // A picture, held here until Save rather than uploaded on the spot —
+  // so that choosing one and then changing your mind costs nothing, and
+  // so a NEW category (which has no id yet, and therefore nowhere to put
+  // a photo) behaves the same as an existing one.
+  const [photo, setPhoto] = useState43(null);
+  const [photoDirty, setPhotoDirty] = useState43(false);
+  const [photoError, setPhotoError] = useState43("");
+  const fileRef = useRef26(null);
   const [busy, setBusy] = useState43(false);
   const [error, setError] = useState43("");
 
@@ -201,6 +237,9 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     setIconQuery("");
     setIconGroup("all");
     setIconTouched(Boolean(category && category.icon));
+    setPhoto((category && category.photo) || null);
+    setPhotoDirty(false);
+    setPhotoError("");
     setBusy(false);
     setError("");
   }, [open, category]);
@@ -219,7 +258,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
   }, [open, name, iconTouched]);
 
   const icons = useMemo11(
-    () => choicesIconSearch(iconQuery, iconGroup).slice(0, CHOICES_ICON_PAGE),
+    () => choicesIconSearch(iconQuery, iconGroup),
     [iconQuery, iconGroup]
   );
   const unit = useMemo11(() => geuLensUnitPair(ccyCode, lens, ccyCode), [ccyCode, lens]);
@@ -258,6 +297,21 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       const saved = editing
         ? await choicesUpdate(category.id, payload)
         : await choicesCreate(Object.assign({ kind: kind === "income" ? "income" : "expense" }, payload));
+      // The picture goes AFTER the category, because a new one has no id
+      // to attach a photo to until the server has given it one. A failure
+      // here is reported WITHOUT losing the save that already succeeded:
+      // the category exists either way, and telling somebody their whole
+      // edit failed because an image did would be false.
+      if (photoDirty && saved && saved.id) {
+        try {
+          if (photo) await choicesSetPhoto(saved.id, photo);
+          else await choicesRemovePhoto(saved.id);
+        } catch (photoFailure) {
+          setBusy(false);
+          setPhotoError(String((photoFailure && photoFailure.message) || "The category was saved, but that picture was not."));
+          return;
+        }
+      }
       setBusy(false);
       if (onSaved) onSaved(saved);
       if (onClose) onClose();
@@ -277,12 +331,12 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
        rather than describing it — the tile here is the tile that appears
        in the grid, at the size it appears. */
   }<div style={{ display: "flex", alignItems: "center", gap: 13 }}><span
-    style={{ width: 62, height: 62, borderRadius: 19, background: tint, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, flexShrink: 0, lineHeight: 1 }}
-  >{icon || "●"}</span><span style={{ flex: 1, minWidth: 0 }}><span
+    style={{ width: 62, height: 62, borderRadius: 19, background: tint, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}
+  ><ChoiceGlyph category={{ icon: icon, photo: photo }} size={30} /></span><span style={{ flex: 1, minWidth: 0 }}><span
     style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >{String(name || "").trim() || "Untitled"}</span><span
     style={{ display: "block", fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}
-  >{chosenMeta ? chosenMeta.n : "How it will look on a payment"}</span></span><button
+  >{photo ? "Your own picture" : chosenMeta ? chosenMeta.n : "How it will look on a payment"}</span></span><button
     onClick={() => setFavorite(!favorite)}
     className="v2-tap"
     aria-label={favorite ? "Remove from the Send strip" : "Show on the Send strip"}
@@ -322,8 +376,57 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, margin: "16px 0 7px" }}
   ><label style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>
       Icon
-    </label><span style={{ fontSize: 11, color: T.inkFaint }}>{icons.length}{icons.length === CHOICES_ICON_PAGE ? "+" : ""} to choose from
-    </span></div><div
+    </label><span style={{ fontSize: 11, color: T.inkFaint }}>{icons.length} to choose from
+    </span></div>{
+    /* A picture of your own, offered BEFORE the icon grid: somebody who
+       wants one is not going to find it by scrolling emoji. Downscaled
+       to a 160px square on this device before it is sent anywhere — see
+       choicesReadPhoto. */
+  }{photo ? <div
+    style={{ display: "flex", alignItems: "center", gap: 12, border: `1px solid ${T.line}`, borderRadius: 13, padding: 10, marginBottom: 11 }}
+  ><span
+    style={{ width: 40, height: 40, borderRadius: 11, overflow: "hidden", flexShrink: 0, background: tint }}
+  ><img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /></span><span
+    style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink }}
+  >
+      Your own picture
+    </span><button
+    onClick={() => { setPhoto(null); setPhotoDirty(true); setPhotoError(""); }}
+    className="v2-tap"
+    aria-label="Remove this picture"
+    style={{ flexShrink: 0, border: "none", background: "none", padding: 8, cursor: "pointer", display: "flex" }}
+  ><Trash2Icon size={16} color={T.negative} /></button></div> : <button
+    onClick={() => fileRef.current && fileRef.current.click()}
+    className="v2-tap"
+    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%", boxSizing: "border-box", border: `1px dashed ${T.line}`, borderRadius: 13, padding: 13, marginBottom: 11, background: T.surface, color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
+  ><Camera3 size={17} color={T.accent} />
+      Use a photo
+    </button>}<input
+    ref={fileRef}
+    type="file"
+    accept="image/*"
+    aria-label="Choose a picture"
+    style={{ display: "none" }}
+    onChange={async (e) => {
+      const file = e.target.files && e.target.files[0];
+      // Cleared straight away so picking the SAME file twice still fires
+      // a change event — otherwise a failed attempt could not be retried
+      // without choosing something else first.
+      e.target.value = "";
+      if (!file) return;
+      setPhotoError("");
+      try {
+        const prepared = await choicesReadPhoto(file);
+        setPhoto(prepared);
+        setPhotoDirty(true);
+      } catch (error) {
+        setPhotoError(String((error && error.message) || "That picture could not be used."));
+      }
+    }}
+  />{photoError && <div
+    style={{ marginBottom: 11, fontSize: 12.5, fontWeight: 700, color: T.negative }}
+    role="alert"
+  >{photoError}</div>}<div
     style={{ display: "flex", alignItems: "center", gap: 9, background: T.surfaceAlt, borderRadius: 999, padding: "11px 15px" }}
   ><Search7 size={15} color={T.inkFaint} /><input
     value={iconQuery}
@@ -484,11 +587,6 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       Retire this choice
     </button>}</HelpSheet>;
 }
-
-// How many icons the grid draws at once. The catalogue is larger than
-// anybody scrolls, and a search that narrows it is the way through — this
-// is a rendering cap, not a limit on what can be found.
-var CHOICES_ICON_PAGE = 120;
 
 // Mirrors CATEGORY_NAME_MAX_LENGTH in server/lib/categoryValidation.js. The
 // field stops at the same place the server does, so nobody types a name

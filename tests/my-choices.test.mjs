@@ -35,8 +35,17 @@ import { readSource } from "./harness.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require_ = createRequire(import.meta.url);
 
+// Source with comments stripped, for assertions about what actually
+// reaches a screen rather than what a comment happens to mention.
+//
+// The block-comment pattern requires the `/*` to follow whitespace, `{`,
+// `(` or `,`. Without that guard it also matched `accept="image/*"` in a
+// file upload input and treated the entire rest of the file as one
+// comment — every assertion after that point silently passed or silently
+// failed depending on which way it was written. A stripper this crude is
+// fine for this job, but only with the guard.
 const code = (relPath) => readSource(relPath)
-  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/(^|[\s{(,])\/\*[\s\S]*?\*\//g, "$1")
   .replace(/^\s*\/\/.*$/gm, "");
 
 const CATALOG = "frontend/features/choices/choicesCatalog.js";
@@ -418,49 +427,58 @@ describe("a heart decides what the Send strip offers", () => {
   });
 });
 
-describe("the icon library is large enough to need searching", () => {
+describe("the icon set is short on purpose", () => {
   const ICONS = "frontend/features/choices/choicesIcons.js";
   // Pure, no imports, no JSX — so it runs for real rather than being
   // asserted about as text.
   const lib = new Function(`${readSource(ICONS)}
     return { CHOICES_ICON_SET, CHOICES_ICON_GROUPS, choicesIconSearch, choicesSuggestIcon, choicesIconMeta };`)();
 
-  test("there are hundreds of them, in groups that all exist", () => {
-    assert.ok(lib.CHOICES_ICON_SET.length >= 250,
-      `only ${lib.CHOICES_ICON_SET.length} icons — the search and the groups are overhead below that`);
+  test("it is about fifty, not everything that exists", () => {
+    // It was 323, from reading "the most icons possible" as "every emoji
+    // there is". A category picker is not an emoji keyboard: its job is
+    // to put the right icon within one glance, and a list long enough to
+    // need scrolling has already failed at that. The ceiling is the
+    // point of this test, not the floor.
+    assert.ok(lib.CHOICES_ICON_SET.length <= 60,
+      `${lib.CHOICES_ICON_SET.length} icons — long enough that somebody has to search rather than look`);
+    assert.ok(lib.CHOICES_ICON_SET.length >= 40,
+      "too few to cover what people actually spend on");
+  });
+
+  test("every one of them is something money goes to, or comes from", () => {
+    // Enforced structurally: each entry must sit in a group, and the
+    // groups are the places money goes. A tortoise has nowhere to live.
     const groups = new Set(lib.CHOICES_ICON_GROUPS.map((g) => g.key));
     for (const icon of lib.CHOICES_ICON_SET) {
       assert.ok(groups.has(icon.g), `${icon.c} is filed under "${icon.g}", which is not a group`);
       assert.ok(icon.n && icon.k, `${icon.c} has no name or no keywords, so it can never be found`);
     }
-  });
-
-  test("every group has something in it", () => {
     for (const group of lib.CHOICES_ICON_GROUPS) {
       assert.ok(lib.choicesIconSearch("", group.key).length > 0, `the ${group.label} group is empty`);
     }
   });
 
-  test("a search puts the thing you typed first", () => {
-    // The specific regression: a plain substring filter answered "car"
-    // with card, carton and care above the actual car.
-    const leads = (query) => lib.choicesIconSearch(query)[0];
-    assert.equal(leads("car").n, "car");
-    assert.equal(leads("bill").n, "bill");
-    assert.equal(leads("bank").n, "bank");
-    assert.equal(leads("water").n, "water drop");
-    assert.equal(leads("gym").n, "gym");
+  test("both sides of the split are covered", () => {
+    // Income categories cannot borrow a spending icon, so the set has to
+    // carry its own.
+    assert.ok(lib.CHOICES_ICON_SET.some((i) => i.g === "income"),
+      "nothing to put on a salary or a refund");
   });
 
-  test("a group's own name beats a stray keyword", () => {
-    // "food" used to lead with a dog bone, whose keywords mention food,
-    // above every item actually filed under Food.
-    assert.equal(lib.choicesIconSearch("food")[0].g, "food");
-    assert.equal(lib.choicesIconSearch("health")[0].g, "health");
+  test("a search puts the thing you typed first", () => {
+    // The regression this protects: a plain substring filter answered
+    // "car" with card, carton and care above the actual car.
+    const leads = (query) => lib.choicesIconSearch(query)[0];
+    assert.equal(leads("car").n, "car");
+    assert.equal(leads("bills").n, "bills");
+    assert.equal(leads("water").n, "water");
+    assert.equal(leads("gym").n, "gym");
+    assert.equal(leads("rent").n, "rent");
   });
 
   test("the same glyph is never listed twice in one result", () => {
-    for (const query of ["bill", "card", "a", "e", "water", "money"]) {
+    for (const query of ["bill", "car", "a", "e", "water", "rent"]) {
       const seen = lib.choicesIconSearch(query).map((i) => i.c);
       assert.equal(new Set(seen).size, seen.length, `"${query}" returned the same glyph more than once`);
     }
@@ -468,12 +486,13 @@ describe("the icon library is large enough to need searching", () => {
 
   test("a name suggests an icon, and says nothing when it cannot", () => {
     const of = (name) => { const hit = lib.choicesSuggestIcon(name); return hit ? hit.n : null; };
-    assert.equal(of("Baby care"), "baby");
+    assert.equal(of("Rent"), "rent");
     assert.equal(of("Petrol"), "fuel");
-    assert.equal(of("School fees"), "school");
+    assert.equal(of("School fees"), "education");
     assert.equal(of("Groceries"), "groceries");
-    assert.equal(of("Dentist"), "tooth");
-    assert.equal(of("Diwali"), "diya");
+    assert.equal(of("Dentist"), "dentist");
+    assert.equal(of("Electricity bill"), "electricity");
+    assert.equal(of("Salary"), "salary");
     // A weak guess is worse than none: an icon that is nearly right costs
     // more than the two taps it saved.
     for (const nonsense of ["zzqqx", "", "x", "   ", "qwkjfh"]) {
@@ -489,26 +508,82 @@ describe("the icon library is large enough to need searching", () => {
     assert.equal(lib.choicesIconMeta(null), null);
   });
 
-  test("the editor searches rather than drawing all of them", () => {
+  test("the whole set is drawn, because the whole set fits", () => {
+    // The rendering cap existed because there were 323. With fifty, a cap
+    // is a thing that can go wrong for no benefit.
     const src = code(SHEETS);
+    assert.doesNotMatch(src, /CHOICES_ICON_PAGE/, "the icon grid is paginated again");
     assert.match(src, /choicesIconSearch\(iconQuery, iconGroup\)/);
-    assert.match(src, /slice\(0, CHOICES_ICON_PAGE\)/,
-      "the grid draws the whole catalogue, which is a long scroll nobody finishes");
-  });
-
-  test("the dead icon-style control is gone", () => {
-    // Only emoji were ever drawn, so Line and Duotone changed nothing
-    // while appearing to. A control that lies about what it did is worse
-    // than one that is not there.
-    const src = code(SHEETS);
-    assert.doesNotMatch(src, /CHOICES_ICON_STYLES\.map/,
-      "the Line / Duotone / Emoji control is back, and still draws only emoji");
   });
 
   test("a suggestion never overwrites an icon somebody chose", () => {
-    const src = code(SHEETS);
-    assert.match(src, /if \(!open \|\| iconTouched\) return;/,
+    assert.match(code(SHEETS), /if \(!open \|\| iconTouched\) return;/,
       "the name can now overwrite a hand-picked icon as it is edited");
+  });
+});
+
+describe("a category can be a photo instead", () => {
+  test("one component draws every category, so a photo reaches all of them", () => {
+    // The icon used to be inlined in six places. Photos would have
+    // appeared on whichever of the six somebody remembered to update.
+    // The inline form, `{category.icon || …}` in markup. ChoiceGlyph
+    // itself reads `.icon` and must — it is the one place allowed to.
+    const inlined = [GRID, DETAIL, SHEETS, SEND]
+      .filter((file) => /\{category\.icon \|\|/.test(code(file)));
+    assert.deepEqual(inlined, [], `${inlined.join(", ")} still draws an icon directly instead of through ChoiceGlyph`);
+    assert.match(code(SHEETS), /function ChoiceGlyph/);
+    for (const file of [GRID, DETAIL, SEND]) {
+      assert.match(code(file), /<ChoiceGlyph/, `${file} does not use the shared glyph`);
+    }
+  });
+
+  test("a container holding a photo clips it", () => {
+    // objectFit: cover fills the box; without overflow hidden the image
+    // ignores the radius and renders as a square over a round tile.
+    for (const file of [GRID, DETAIL, SEND]) {
+      assert.match(code(file), /overflow: "hidden"/, `${file} would render a photo unclipped`);
+    }
+  });
+
+  test("the picture is downscaled on the device, not sent as it came off the camera", () => {
+    const src = code(STORE);
+    assert.match(src, /var CHOICES_PHOTO_EDGE = \d+;/);
+    assert.match(src, /canvas\.toDataURL\("image\/jpeg"/,
+      "the photo is no longer re-encoded, so HEIC and WebP will be refused by the server");
+    assert.match(src, /drawImage\(/);
+  });
+
+  test("the server reuses the photo validator rather than writing a second one", () => {
+    // Two validators for the same job is how one of them ends up
+    // accepting an SVG. Shared, they cannot drift.
+    const src = code(SERVER);
+    const route = src.slice(src.indexOf("app.put('/api/categories/:id/photo'"));
+    const handler = route.slice(0, route.indexOf("\n});") + 4);
+    assert.match(handler, /validateProfilePhoto\(/,
+      "the category photo route validates uploads its own way");
+    assert.match(handler, /CATEGORY_PHOTO_MAX_BYTES/,
+      "a category tile is 54 pixels and the route no longer caps what it stores");
+  });
+
+  test("the photo lives in its own collection, not on the category row", () => {
+    const model = code("server/models/CategoryPhoto.js");
+    assert.match(model, /categoryId:[\s\S]{0,160}unique: true/,
+      "a category can hold more than one picture");
+    assert.match(model, /userId:/, "the photo is not scoped to an account");
+  });
+
+  test("deleting a category takes its picture with it", () => {
+    const src = code(SERVER);
+    const route = src.slice(src.indexOf("app.delete('/api/categories/:id'"));
+    const handler = route.slice(0, route.indexOf("\n});") + 4);
+    assert.match(handler, /CategoryPhoto\.deleteOne/,
+      "a deleted category leaves its picture behind with nothing to illustrate");
+  });
+
+  test("a failed upload does not lose the save that worked", () => {
+    const src = code(SHEETS);
+    assert.match(src, /catch \(photoFailure\)/,
+      "a picture that fails now reports the whole edit as failed, which is untrue");
   });
 });
 

@@ -25,8 +25,17 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "./harness.mjs";
 
+// Source with comments stripped, for assertions about what actually
+// reaches a screen rather than what a comment happens to mention.
+//
+// The block-comment pattern requires the `/*` to follow whitespace, `{`,
+// `(` or `,`. Without that guard it also matched `accept="image/*"` in a
+// file upload input and treated the entire rest of the file as one
+// comment — every assertion after that point silently passed or silently
+// failed depending on which way it was written. A stripper this crude is
+// fine for this job, but only with the guard.
 const code = (relPath) => readSource(relPath)
-  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/(^|[\s{(,])\/\*[\s\S]*?\*\//g, "$1")
   .replace(/^\s*\/\/.*$/gm, "");
 
 const SCREEN = "frontend/features/essentials/EssentialsScreen.jsx";

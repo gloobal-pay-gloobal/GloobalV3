@@ -166,6 +166,10 @@ const Category = require('./models/Category');
 // a label must never be written inside the atomic money path. Its header
 // has the full argument.
 const TransactionTag = require('./models/TransactionTag');
+// A picture chosen instead of an icon, for one category. Its own
+// collection for the same reason ProfilePhoto is: the category list is a
+// constant read and an image on every row would cost all of it.
+const CategoryPhoto = require('./models/CategoryPhoto');
 const {
   DEFAULT_CATEGORIES,
   validateCategoryInput,
@@ -8771,16 +8775,26 @@ app.get('/api/categories', lookupLimit, requireAuth, async (req, res) => {
   try {
     const userId = req.authUser._id;
     const monthStart = categoryMonthStart(req.query.monthStart);
-    const [rows, totals] = await Promise.all([
+    const [rows, totals, photos] = await Promise.all([
       categoriesForAccount(userId),
       categoryTotals(userId, monthStart),
+      // One query for every photo this account has, not one per tile. The
+      // client downscales before uploading and the route caps what it
+      // stores, which is what makes sending them inline cheaper than a
+      // request per category — see models/CategoryPhoto.js.
+      CategoryPhoto.find({ userId }).select('categoryId dataUrl').lean(),
     ]);
+
+    const photoFor = new Map(photos.map((row) => [String(row.categoryId), row.dataUrl]));
 
     return res.json({
       success: true,
       monthStart: monthStart.toISOString(),
       categories: rows.map((row) =>
-        Object.assign({}, publicCategory(row), { totals: totals.get(String(row._id)) || [] })
+        Object.assign({}, publicCategory(row), {
+          totals: totals.get(String(row._id)) || [],
+          photo: photoFor.get(String(row._id)) || null,
+        })
       ),
     });
   } catch (error) {
@@ -8846,7 +8860,10 @@ app.post('/api/categories', writeLimit, requireAuth, async (req, res) => {
     }
 
     const category = await Category.create(Object.assign({}, validated.value, { userId, kind }));
-    return res.status(201).json({ success: true, category: Object.assign({}, publicCategory(category.toObject()), { totals: [] }) });
+    return res.status(201).json({
+      success: true,
+      category: Object.assign({}, publicCategory(category.toObject()), { totals: [], photo: null }),
+    });
   } catch (error) {
     console.error('Category create error:', error);
     return res.status(500).json({ success: false, message: 'Could not save that choice.' });
@@ -8890,10 +8907,19 @@ app.patch('/api/categories/:id', writeLimit, requireAuth, async (req, res) => {
     Object.assign(existing, validated.value);
     await existing.save();
 
-    const totals = await categoryTotals(userId, categoryMonthStart(req.query.monthStart));
+    const [totals, photo] = await Promise.all([
+      categoryTotals(userId, categoryMonthStart(req.query.monthStart)),
+      // Returned with the row because the client REPLACES its copy with
+      // whatever comes back. Leaving it out would make a picture vanish
+      // from the grid the moment somebody renamed the category.
+      CategoryPhoto.findOne({ categoryId: existing._id, userId }).select('dataUrl').lean(),
+    ]);
     return res.json({
       success: true,
-      category: Object.assign({}, publicCategory(existing.toObject()), { totals: totals.get(String(existing._id)) || [] }),
+      category: Object.assign({}, publicCategory(existing.toObject()), {
+        totals: totals.get(String(existing._id)) || [],
+        photo: photo ? photo.dataUrl : null,
+      }),
     });
   } catch (error) {
     console.error('Category update error:', error);
@@ -8925,10 +8951,79 @@ app.delete('/api/categories/:id', writeLimit, requireAuth, async (req, res) => {
     }
 
     await Category.deleteOne({ _id: existing._id, userId });
+    // The picture goes with it. An archived category keeps its own,
+    // because it is still shown on the payments filed under it; a deleted
+    // one has nothing left to illustrate.
+    await CategoryPhoto.deleteOne({ categoryId: existing._id, userId });
     return res.json({ success: true, archived: false, tagged: 0 });
   } catch (error) {
     console.error('Category delete error:', error);
     return res.status(500).json({ success: false, message: 'Could not remove that choice.' });
+  }
+});
+
+// A category tile is 54 pixels. This cap is a fraction of the profile
+// photo's because nothing here is ever shown larger, and because a grid
+// returns a screenful of them at once — see models/CategoryPhoto.js. The
+// client downscales before it uploads; this is the backstop, not the
+// mechanism.
+const CATEGORY_PHOTO_MAX_BYTES = 60000;
+
+// PUT /api/categories/:id/photo — use a picture instead of an icon.
+//
+// Validated by validateProfilePhoto, deliberately: JPEG or PNG only, the
+// declared type checked against the decoded file's own magic bytes, SVG
+// refused because it can carry script. Reusing that function rather than
+// writing a second one means these two uploads cannot drift apart in what
+// they accept, which for the one that decides whether a file is safe is
+// the only arrangement worth having.
+app.put('/api/categories/:id/photo', writeLimit, requireAuth, parseProfilePhotoBody, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return categoryNotFound(res);
+
+    const userId = req.authUser._id;
+    const category = await Category.findOne({ _id: id, userId }).select('_id').lean();
+    if (!category) return categoryNotFound(res);
+
+    const checked = validateProfilePhoto(req.body && req.body.photo);
+    if (!checked.ok) {
+      return res.status(checked.status).json({ success: false, code: checked.code, message: checked.message });
+    }
+    if (checked.bytes > CATEGORY_PHOTO_MAX_BYTES) {
+      return res.status(413).json({
+        success: false,
+        code: 'photo_too_large',
+        message: 'That picture is too large for a category icon.',
+      });
+    }
+
+    await CategoryPhoto.findOneAndUpdate(
+      { categoryId: category._id },
+      { $set: { userId, categoryId: category._id, dataUrl: checked.dataUrl, mimeType: checked.mimeType, bytes: checked.bytes } },
+      { upsert: true, setDefaultsOnInsert: true }
+    );
+
+    return res.json({ success: true, photo: checked.dataUrl });
+  } catch (error) {
+    console.error('Category photo error:', error);
+    return res.status(500).json({ success: false, message: 'Could not save that picture.' });
+  }
+});
+
+// DELETE /api/categories/:id/photo — go back to an icon. The category
+// keeps whatever icon it had underneath, so removing a picture restores
+// rather than blanks it.
+app.delete('/api/categories/:id/photo', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return categoryNotFound(res);
+
+    const result = await CategoryPhoto.deleteOne({ categoryId: id, userId: req.authUser._id });
+    return res.json({ success: true, removed: result.deletedCount > 0 });
+  } catch (error) {
+    console.error('Category photo remove error:', error);
+    return res.status(500).json({ success: false, message: 'Could not remove that picture.' });
   }
 });
 

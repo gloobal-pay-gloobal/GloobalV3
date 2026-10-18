@@ -217,11 +217,11 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
       // scannable at arm's length rather than a list of words with
       // decoration. 54 is as large as it goes before the glyph starts
       // colliding with the Pay pill and the heart in the corners.
-      fontSize: 54,
-      lineHeight: 1,
-      cursor: "pointer"
+      cursor: "pointer",
+      // A photo fills the tile, so the tile has to clip it to its radius.
+      overflow: "hidden"
     }}
-  >{category.icon || "●"}<button
+  ><ChoiceGlyph category={category} size={54} /><button
     onClick={(e) => { e.stopPropagation(); choicesToggleFavorite(category).catch(() => {}); }}
     className="v2-tap"
     aria-label={category.favorite ? `Unfavourite ${category.name}` : `Favourite ${category.name}`}

@@ -23,7 +23,7 @@ function ChoiceMoney({ amount, code, size, color, sign }) {
 
 // A round button on the category's own tinted hero. Translucent white rather
 // than a fixed grey so it reads on every tint in CHOICES_TINTS.
-function ChoiceHeroButton({ onClick, label, solid, children }) {
+function ChoiceHeroButton({ onClick, label, solid, clip, children }) {
   return <button
     onClick={onClick}
     aria-label={label}
@@ -40,7 +40,9 @@ function ChoiceHeroButton({ onClick, label, solid, children }) {
       cursor: onClick ? "pointer" : "default",
       flexShrink: 0,
       fontSize: 19,
-      padding: 0
+      padding: 0,
+      // A photo fills the circle, so the circle has to clip it.
+      overflow: clip ? "hidden" : "visible"
     }}
   >{children}</button>;
 }
@@ -91,7 +93,7 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
     style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "calc(14px + env(safe-area-inset-top, 0px)) 16px 24px" }}
   ><div style={{ borderRadius: T.radiusLg, background: tint, padding: 16 }}><div
     style={{ display: "flex", alignItems: "center", gap: 9 }}
-  ><ChoiceHeroButton onClick={onBack} label="Back"><ArrowLeft7 size={18} color={T.ink} /></ChoiceHeroButton><ChoiceHeroButton solid label={category.name}>{category.icon || "●"}</ChoiceHeroButton><span
+  ><ChoiceHeroButton onClick={onBack} label="Back"><ArrowLeft7 size={18} color={T.ink} /></ChoiceHeroButton><ChoiceHeroButton solid label={category.name} clip><ChoiceGlyph category={category} size={20} /></ChoiceHeroButton><span
     style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >{category.name}</span><span style={{ flex: 1 }} />{
     /* The scanner, inside the category — so a scanned payment is already
@@ -190,8 +192,8 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
     onClick={() => row.txnId && onPay && onPay(category, row)}
     style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderTop: at === 0 ? "none" : `1px solid ${T.line}` }}
   ><span
-    style={{ width: 42, height: 42, borderRadius: 13, background: tint, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}
-  >{category.icon || "●"}</span><span style={{ flex: 1, minWidth: 0 }}><span
+    style={{ width: 42, height: 42, borderRadius: 13, background: tint, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}
+  ><ChoiceGlyph category={category} size={20} /></span><span style={{ flex: 1, minWidth: 0 }}><span
     style={{ display: "block", fontSize: 15, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >{row.name || "Payment"}</span><span style={{ display: "block", fontSize: 12.5, color: T.inkFaint, marginTop: 2 }}>{row.date}{row.method ? ` · ${row.method}` : ""}</span></span><ChoiceMoney
     amount={Math.abs(Number(row.amount) || 0)}

@@ -353,6 +353,7 @@ export async function installApi(context, options = {}) {
       monthlyBudget: Number(seed.monthlyBudget) || 0,
       budgetCurrency: seed.budgetCurrency || "",
       favorite: Boolean(seed.favorite),
+      photo: seed.photo || null,
       archived: Boolean(seed.archived),
       sortIndex: Number(seed.sortIndex) || at,
       createdAt: seed.createdAt || new Date().toISOString(),
@@ -1163,6 +1164,7 @@ export async function installApi(context, options = {}) {
         monthlyBudget: Number(body.monthlyBudget) || 0,
         budgetCurrency: body.budgetCurrency || "",
         favorite: Boolean((body || {}).favorite),
+        photo: null,
         archived: false,
         sortIndex: state.categories.length,
         createdAt: new Date().toISOString(),
@@ -1190,6 +1192,34 @@ export async function installApi(context, options = {}) {
       state.categories[at] = { ...state.categories[at], ...rest };
       return json(200, { success: true, category: state.categories[at] });
     }
+    const photoRoute = pathname.match(/^\/api\/categories\/([^/]+)\/photo$/);
+    if (photoRoute) {
+      const id = decodeURIComponent(photoRoute[1]);
+      const at = state.categories.findIndex((c) => String(c.id) === id);
+      if (at < 0) return json(404, { success: false, message: "That choice is not one of yours." });
+      if (method === "DELETE") {
+        const had = Boolean(state.categories[at].photo);
+        state.categories[at] = { ...state.categories[at], photo: null };
+        return json(200, { success: true, removed: had });
+      }
+      if (method === "PUT") {
+        const photo = (body || {}).photo;
+        // The same two checks the real route delegates to
+        // validateProfilePhoto: JPEG or PNG only, and a size cap. A fake
+        // that accepted anything would let a client that uploads a raw
+        // camera file pass here and fail in production.
+        if (typeof photo !== "string" || !/^data:image\/(jpeg|png);base64,/.test(photo)) {
+          return json(400, { success: false, code: "invalid_photo", message: "Photos must be a JPEG or PNG image." });
+        }
+        const base64 = photo.slice(photo.indexOf(",") + 1);
+        if (Math.floor((base64.length * 3) / 4) > 60000) {
+          return json(413, { success: false, code: "photo_too_large", message: "That picture is too large for a category icon." });
+        }
+        state.categories[at] = { ...state.categories[at], photo };
+        return json(200, { success: true, photo });
+      }
+    }
+
     const tagRoute = pathname.match(/^\/api\/transactions\/([^/]+)\/tag$/);
     if (tagRoute) {
       const referenceId = decodeURIComponent(tagRoute[1]);

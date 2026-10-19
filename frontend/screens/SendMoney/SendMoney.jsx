@@ -1738,24 +1738,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     return <>{pair.lead}{pair.trail && <span
       style={{ fontSize: geuLensTrailSize(20), fontWeight: 800 }}
     > {GEU_LENS_BAR} {pair.trail}</span>}</>;
-  })()}</span></div>{
-    /* WHAT THIS PAYMENT IS FOR, under the box it belongs to.
-
-       This used to be a clause inside the Send button — "Pay 250.00 GEU
-       │ ₹ for School fees and uniforms" — where it had to share one line
-       with the amount and ellipsise itself to fit. Down here it has the
-       whole card's width, so the name wraps rather than truncating and
-       is always readable in full.
-
-       It also leaves the button with nothing but its verb and its
-       figure, which is what that button is actually for. */
-  }{pickedChoice && <div
-    style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 12, fontSize: 12.5, color: T.inkSoft }}
-  ><span style={{ fontWeight: 600, flexShrink: 0 }}>
-      for
-    </span><span
-    style={{ fontWeight: 800, color: T.ink, minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.35 }}
-  >{pickedChoice.name}</span></div>}</>}</div></>}{
+  })()}</span></div></>}</div></>}{
     /* SWAP — only once a receiver's been found. Flips currency
        sides and, with it, which card is shown big vs as a strip.
        The search bar itself always looks up the receiver, no
@@ -1919,23 +1902,46 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   />}{searchStage === "found" && <button
     className="send-btn"
     onClick={handleSend}
-    style={{ padding: "14px 18px", marginTop: topOpen ? 0 : 24 }}
+    style={{
+      padding: pickedChoice ? "11px 18px" : "14px 18px",
+      marginTop: topOpen ? 0 : 24,
+      // TWO LINES WHEN THERE IS A CHOICE, ONE WHEN THERE IS NOT.
+      //
+      // Stacking is what makes this safe at any size. Side by side, the
+      // amount and the category competed for one line: a large figure
+      // and a three-word name together overran the button, and the only
+      // ways out were truncating the name or shrinking the figure. On
+      // its own line the name has the button's full width, and the
+      // figure never moves whatever is underneath it.
+      flexDirection: pickedChoice ? "column" : "row",
+      gap: pickedChoice ? 1 : 10
+    }}
   >{(() => {
-    // Just the verb and the figure now. The paper-plane icon and the
-    // "for <choice>" clause are both gone — the icon said nothing the
-    // word "Pay" does not, and the clause now sits under the amount box
-    // where it has room to be read in full.
-    //
-    // STILL ONE NOWRAP SPAN. This button is a flex row with a 10px gap,
-    // and anything split across two children puts that gap inside the
-    // sentence: it once landed between a figure and its own currency,
-    // and later between the verb and the figure. One span, one line,
-    // nothing for the gap to get into.
+    // ONE NOWRAP SPAN for the figure, still. This button is a flex
+    // container with a gap, and anything split across two children puts
+    // that gap inside the sentence — it has landed between a figure and
+    // its own currency once, and between the verb and the figure once.
     const parts = geuLensBarParts(senderAmount, top.currency, lens, top.currency);
     const verb = bottom.registered === false ? "Simulate" : pickedChoice ? "Pay" : "Send";
-    return <span style={{ whiteSpace: "nowrap" }}>{verb} {parts.lead}{parts.trail && <span
+    return <><span style={{ whiteSpace: "nowrap" }}>{verb} {parts.lead}{parts.trail && <span
       style={{ fontSize: geuLensTrailSize(16), fontWeight: 800 }}
-    > {parts.trail}</span>}</span>;
+    > {parts.trail}</span>}</span>{pickedChoice && <span
+      style={{
+        fontSize: 12.5,
+        fontWeight: 700,
+        opacity: 0.92,
+        maxWidth: "100%",
+        // Names are capped at three words when they are created, so this
+        // line has room for any of them. The clipping is a backstop for
+        // a category named before that rule existed — it should never be
+        // what anybody sees.
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap"
+      }}
+    >
+      for {pickedChoice.name}
+    </span>}</>;
   })()}</button>}</>}{
     /* Funding source — the four ways a transfer can be paid. Picking
        one moves straight on to the OTP confirmation. */

@@ -7,6 +7,26 @@
 // for the same job is how a route ends up answering 500 for a typo.
 
 const CATEGORY_NAME_MAX_LENGTH = 40;
+
+// Up to three words.
+//
+// This is a LAYOUT rule, and it is unusual for one of those to reach the
+// server, so it is worth saying why it does. The pay button carries the
+// chosen category on its own line — "Pay 250.00 GEU │ ₹" above, "for
+// Damroo Baby" below — and a name long enough to overrun that line can
+// only be handled by truncating it, which names nothing, or by shrinking
+// the figure, which is the one thing on that button nobody should have to
+// squint at.
+//
+// Enforcing it where names are CREATED means neither ever happens. The
+// alternative — accepting any name and cutting it at the button — moves
+// the problem to the place with the least room to solve it.
+//
+// Checked at save rather than while typing, so nobody is stopped
+// mid-thought; the message below says what to do about it.
+const CATEGORY_NAME_MAX_WORDS = 3;
+
+const categoryNameWords = (value) => String(value || "").trim().split(/\s+/).filter(Boolean);
 const CATEGORY_ICON_MAX_LENGTH = 16;
 const CATEGORY_KINDS = ['expense', 'income'];
 const CATEGORY_ICON_STYLES = ['emoji', 'line', 'duotone'];
@@ -35,6 +55,13 @@ const validateCategoryInput = (input, { strict = true } = {}) => {
     if (!name) return { ok: false, message: 'Give this choice a name.' };
     if (name.length > CATEGORY_NAME_MAX_LENGTH) {
       return { ok: false, message: `The name can be at most ${CATEGORY_NAME_MAX_LENGTH} characters.` };
+    }
+    const words = categoryNameWords(name);
+    if (words.length > CATEGORY_NAME_MAX_WORDS) {
+      return {
+        ok: false,
+        message: `A choice's name is up to ${CATEGORY_NAME_MAX_WORDS} words \u2014 this one has ${words.length}.`,
+      };
     }
     out.name = name;
   }
@@ -162,6 +189,7 @@ const DEFAULT_CATEGORIES = [
 
 module.exports = {
   CATEGORY_NAME_MAX_LENGTH,
+  CATEGORY_NAME_MAX_WORDS,
   CATEGORY_KINDS,
   CATEGORY_ICON_STYLES,
   CATEGORY_BUDGET_MAX,

@@ -28,7 +28,13 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { readSource } from "./harness.mjs";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require_ = createRequire(import.meta.url);
 
 const RECEIPT = "frontend/components/dialogs/ReceiptModal.jsx";
 const SEND = "frontend/screens/SendMoney/SendMoney.jsx";
@@ -104,19 +110,18 @@ describe("the send button names the choice without breaking", () => {
       "the verb no longer follows whether a choice was picked");
   });
 
-  test("the choice is named under the amount box, not inside the button", () => {
-    // It was a clause in the button sharing one line with the figure,
-    // where it had to ellipsise to fit. Under the box it has the card's
-    // whole width and can be read in full.
-    assert.match(src, /\{pickedChoice\.name\}/, "the chosen category is no longer named at all");
-    // The word "for" and the name are separate spans so the label can
-    // stay a fixed weight while the name wraps, so this looks for the
-    // pair rather than one string.
-    assert.match(src, />\s*for\s*<\/span>/, "the line no longer reads \"for <name>\"");
+  test("the choice is named on the button, on its own line", () => {
+    // Side by side, the amount and the category competed for one line: a
+    // large figure plus a three-word name overran the button, and the
+    // only ways out were truncating the name or shrinking the figure.
+    // Stacked, the name has the button's whole width and the figure
+    // never moves.
     const button = src.slice(src.indexOf('className="send-btn"'));
     const block = button.slice(0, button.indexOf("</button>"));
-    assert.doesNotMatch(block, /pickedChoice\.name/,
-      "the category name is back inside the button, where it has to truncate");
+    assert.match(block, /for \{pickedChoice\.name\}/,
+      "the button no longer names the chosen category");
+    assert.match(block, /flexDirection: pickedChoice \? "column" : "row"/,
+      "the button no longer stacks, so the name and the figure share a line again");
   });
 
   test("the button carries no icon", () => {
@@ -134,13 +139,31 @@ describe("the send button names the choice without breaking", () => {
       "the category name is being shortened before it is shown");
   });
 
-  test("the name wraps rather than truncating, now that it has room", () => {
-    const at = src.indexOf("{pickedChoice.name}");
-    const around = src.slice(Math.max(0, at - 300), at + 40);
-    assert.match(around, /overflowWrap: "anywhere"/,
-      "the category line clips instead of wrapping, which was the point of moving it");
-    assert.doesNotMatch(around, /textOverflow: "ellipsis"/,
-      "the name still truncates, so moving it bought nothing");
+  test("a name is capped at three words where it is created", () => {
+    // A layout rule enforced at the source rather than at the button.
+    // Accepting any name and cutting it on the button would move the
+    // problem to the place with the least room to solve it.
+    const lib = require_(path.join(ROOT, "server/lib/categoryValidation.js"));
+    assert.equal(lib.CATEGORY_NAME_MAX_WORDS, 3);
+    assert.equal(lib.validateCategoryInput({ name: "Damroo Baby" }).ok, true);
+    assert.equal(lib.validateCategoryInput({ name: "School fees uniforms" }).ok, true);
+    assert.equal(lib.validateCategoryInput({ name: "  Two   words  " }).ok, true, "extra spaces are not words");
+    const four = lib.validateCategoryInput({ name: "School fees and uniforms" });
+    assert.equal(four.ok, false);
+    assert.match(four.message, /up to 3 words/, "the message does not say what the limit is");
+    assert.match(four.message, /has 4/, "the message does not say how far over it is");
+  });
+
+  test("the cap is reported at save, not enforced while typing", () => {
+    const sheets = code("frontend/features/choices/ChoiceSheets.jsx");
+    assert.match(sheets, /var CHOICES_NAME_MAX_WORDS = 3;/);
+    // The field must NOT drop words as they are typed.
+    assert.doesNotMatch(sheets, /onChange=\{\(e\) => setName\([^)]*split/,
+      "the name field is now rejecting words while somebody types");
+    // It is checked in save(), before anything is sent.
+    const save = sheets.slice(sheets.indexOf("const save = async"));
+    assert.match(save.slice(0, save.indexOf("try {")), /CHOICES_NAME_MAX_WORDS/,
+      "saving no longer checks the word count before the round trip");
   });
 
   test("the button holds one unbreakable span and nothing else", () => {

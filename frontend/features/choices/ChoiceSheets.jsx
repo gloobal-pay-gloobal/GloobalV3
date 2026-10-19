@@ -384,8 +384,8 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
   /><div
     style={{ fontSize: 11, marginTop: 6, color: wordCount > CHOICES_NAME_MAX_WORDS ? T.negative : T.inkFaint, fontWeight: wordCount > CHOICES_NAME_MAX_WORDS ? 700 : 500 }}
   >{wordCount > CHOICES_NAME_MAX_WORDS
-    ? `${wordCount} words \u2014 the pay button has room for ${CHOICES_NAME_MAX_WORDS}`
-    : `Up to ${CHOICES_NAME_MAX_WORDS} words, so it fits on the pay button`}</div>{
+    ? `${wordCount} words \u2014 a choice's name is up to ${CHOICES_NAME_MAX_WORDS}`
+    : `Up to ${CHOICES_NAME_MAX_WORDS} words, so it reads everywhere it appears`}</div>{
     /* The icon browser. A search box first, because 300-odd icons in a
        grid is a worse experience than twenty — nobody scrolls that far.
        The group chips are for browsing when there is no word to type. */
@@ -613,7 +613,7 @@ var CHOICES_NAME_MAX = 40;
 // Mirrors CATEGORY_NAME_MAX_WORDS. Unlike the length, this one does NOT
 // stop the field — it is reported when Save is pressed, so a name can be
 // typed out and then shortened rather than fought with a word at a time.
-var CHOICES_NAME_MAX_WORDS = 3;
+var CHOICES_NAME_MAX_WORDS = 4;
 
 // A small round confirmation, used where a pick takes effect without
 // closing the sheet it was made in.

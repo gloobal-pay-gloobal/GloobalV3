@@ -110,18 +110,28 @@ describe("the send button names the choice without breaking", () => {
       "the verb no longer follows whether a choice was picked");
   });
 
-  test("the choice is named on the button, on its own line", () => {
-    // Side by side, the amount and the category competed for one line: a
-    // large figure plus a three-word name overran the button, and the
-    // only ways out were truncating the name or shrinking the figure.
-    // Stacked, the name has the button's whole width and the figure
-    // never moves.
+  test("the choice is named under the amount box, not on the button", () => {
+    // It spent a version inside the button sharing a line with the
+    // figure, and another stacked on a second line of it. Under the box
+    // it has the card's full width and can be read in full, and the
+    // button keeps only what it is for.
+    assert.match(src, /\{pickedChoice\.name\}/, "the chosen category is no longer named at all");
+    assert.match(src, />\s*for\s*<\/span>/, "the line no longer reads \"for <name>\"");
     const button = src.slice(src.indexOf('className="send-btn"'));
     const block = button.slice(0, button.indexOf("</button>"));
-    assert.match(block, /for \{pickedChoice\.name\}/,
-      "the button no longer names the chosen category");
-    assert.match(block, /flexDirection: pickedChoice \? "column" : "row"/,
-      "the button no longer stacks, so the name and the figure share a line again");
+    assert.doesNotMatch(block, /pickedChoice\.name/,
+      "the category name is back inside the button, where it has to truncate");
+    assert.doesNotMatch(block, /flexDirection/,
+      "the button is stacking again, which it only needed to do while it carried the name");
+  });
+
+  test("the name wraps rather than truncating, now that it has room", () => {
+    const at = src.indexOf("{pickedChoice.name}");
+    const around = src.slice(Math.max(0, at - 300), at + 40);
+    assert.match(around, /overflowWrap: "anywhere"/,
+      "the category line clips instead of wrapping, which was the point of moving it");
+    assert.doesNotMatch(around, /textOverflow: "ellipsis"/,
+      "the name still truncates, so moving it bought nothing");
   });
 
   test("the button carries no icon", () => {
@@ -139,24 +149,39 @@ describe("the send button names the choice without breaking", () => {
       "the category name is being shortened before it is shown");
   });
 
-  test("a name is capped at three words where it is created", () => {
-    // A layout rule enforced at the source rather than at the button.
-    // Accepting any name and cutting it on the button would move the
-    // problem to the place with the least room to solve it.
+  test("a name is capped at four words where it is created", () => {
+    // The cap is at the source, not at any one surface. A name is shown
+    // in five places and the Send strip's label is the tightest of them;
+    // enforcing it per surface would mean five answers, and the usual
+    // answer is truncation, which names nothing.
     const lib = require_(path.join(ROOT, "server/lib/categoryValidation.js"));
-    assert.equal(lib.CATEGORY_NAME_MAX_WORDS, 3);
+    assert.equal(lib.CATEGORY_NAME_MAX_WORDS, 4);
     assert.equal(lib.validateCategoryInput({ name: "Damroo Baby" }).ok, true);
-    assert.equal(lib.validateCategoryInput({ name: "School fees uniforms" }).ok, true);
+    assert.equal(lib.validateCategoryInput({ name: "School fees and uniforms" }).ok, true);
     assert.equal(lib.validateCategoryInput({ name: "  Two   words  " }).ok, true, "extra spaces are not words");
-    const four = lib.validateCategoryInput({ name: "School fees and uniforms" });
-    assert.equal(four.ok, false);
-    assert.match(four.message, /up to 3 words/, "the message does not say what the limit is");
-    assert.match(four.message, /has 4/, "the message does not say how far over it is");
+    const five = lib.validateCategoryInput({ name: "School fees and uniforms kids" });
+    assert.equal(five.ok, false);
+    assert.match(five.message, /up to 4 words/, "the message does not say what the limit is");
+    assert.match(five.message, /has 5/, "the message does not say how far over it is");
+  });
+
+  test("the two caps agree", () => {
+    // The client's copy exists only to answer instantly. If it drifts
+    // from the server's, somebody is told a name is fine and then told
+    // it is not.
+    const lib = require_(path.join(ROOT, "server/lib/categoryValidation.js"));
+    const sheets = readSource("frontend/features/choices/ChoiceSheets.jsx");
+    const match = /var CHOICES_NAME_MAX_WORDS = (\d+);/.exec(sheets);
+    assert.ok(match, "the client's word cap is gone");
+    assert.equal(Number(match[1]), lib.CATEGORY_NAME_MAX_WORDS,
+      "the client and the server disagree about how many words a name may have");
   });
 
   test("the cap is reported at save, not enforced while typing", () => {
     const sheets = code("frontend/features/choices/ChoiceSheets.jsx");
-    assert.match(sheets, /var CHOICES_NAME_MAX_WORDS = 3;/);
+    // The VALUE is checked by "the two caps agree" above; this test is
+    // only about when the rule is applied.
+    assert.match(sheets, /var CHOICES_NAME_MAX_WORDS = \d+;/);
     // The field must NOT drop words as they are typed.
     assert.doesNotMatch(sheets, /onChange=\{\(e\) => setName\([^)]*split/,
       "the name field is now rejecting words while somebody types");

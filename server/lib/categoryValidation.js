@@ -8,23 +8,23 @@
 
 const CATEGORY_NAME_MAX_LENGTH = 40;
 
-// Up to three words.
+// Up to four words.
 //
-// This is a LAYOUT rule, and it is unusual for one of those to reach the
-// server, so it is worth saying why it does. The pay button carries the
-// chosen category on its own line — "Pay 250.00 GEU │ ₹" above, "for
-// Damroo Baby" below — and a name long enough to overrun that line can
-// only be handled by truncating it, which names nothing, or by shrinking
-// the figure, which is the one thing on that button nobody should have to
-// squint at.
+// A category's name is not shown in one place, it is shown in five: the
+// tile in the grid, the label under the Send strip, the line under the
+// amount box, the heading on its own screen, and inside the sentence on
+// that screen's button ("Pay for Damroo Baby"). The strip label is the
+// tightest of them at 62 pixels across two lines, and a name long enough
+// to defeat that is a name nobody can recognise at a glance — which is
+// the entire job of the strip.
 //
-// Enforcing it where names are CREATED means neither ever happens. The
-// alternative — accepting any name and cutting it at the button — moves
-// the problem to the place with the least room to solve it.
+// So the cap is here, where names are CREATED, rather than at any of the
+// five. Enforcing it at a surface means every surface needs its own
+// answer, and the usual answer is truncation, which names nothing.
 //
 // Checked at save rather than while typing, so nobody is stopped
 // mid-thought; the message below says what to do about it.
-const CATEGORY_NAME_MAX_WORDS = 3;
+const CATEGORY_NAME_MAX_WORDS = 4;
 
 const categoryNameWords = (value) => String(value || "").trim().split(/\s+/).filter(Boolean);
 const CATEGORY_ICON_MAX_LENGTH = 16;

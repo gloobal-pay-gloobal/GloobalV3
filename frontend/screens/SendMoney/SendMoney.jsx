@@ -1877,9 +1877,11 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         color={choicesBarColor(category.barColor)}
         shape={category.shape}
         radius={15.5}
-        // Scaled with the tile's, which went 6 -> 4.5. A chip is a
-        // third the size, so the same proportion is 3.5.
-        stroke={3.5}
+        // The chip is a fixed 56px, so unlike the grid tile it does not
+        // have to measure anything — but it follows the same fraction
+        // the tile does. 56 * 0.026 rounds to 1.5, which is too fine to
+        // survive a round linecap on a curve, so it is floored at 2.
+        stroke={2}
       />;
     })()}</span><span
       style={{

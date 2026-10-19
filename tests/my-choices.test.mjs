@@ -634,8 +634,13 @@ describe("the budget is the tile's own edge", () => {
     assert.match(src, /<path/, "the stroke is a circle again");
     const edge = src.slice(src.indexOf("function ChoiceBudgetEdge"), src.indexOf("function choicesEdgePath"));
     assert.doesNotMatch(edge, /<circle/, "a circle survives inside the edge component");
-    assert.match(grid, /<ChoiceGlyph category=\{category\} size=\{54\} \/>/,
+    // The icon is a third of the tile rather than a number, since the
+    // grid went to three columns — but the point stands: the stroke
+    // traces the edge and takes nothing from the middle.
+    assert.match(grid, /<ChoiceGlyph category=\{category\} size=\{glyphSize\} \/>/,
       "the icon shrank again to make room for the stroke");
+    assert.match(grid, /const glyphSize = clamp\(26, span \* 0\.33, 54\);/,
+      "the icon no longer scales with the tile");
   });
 
   test("the dash maths is a percentage, not a computed perimeter", () => {
@@ -702,10 +707,10 @@ describe("the budget is the tile's own edge", () => {
     assert.match(send, /<ChoiceBudgetEdge/, "the Send strip shows no budget");
     assert.match(send, /radius=\{15\.5\}/,
       "the chip's stroke no longer allows for its 2.5px border");
-    // A chip is a third of a tile, so it carries a proportionally
-    // lighter line — 3.5 to the tile's 4.5, which both came down from
-    // 6 and 4 when the strokes turned out to be too heavy.
-    assert.match(send, /stroke=\{3\.5\}/, "the chip's stroke no longer scales with the tile's");
+    // The chip is a fixed 56px, so it does not measure — but it takes
+    // the same 0.026 of its width the tile does, floored at 2 because
+    // 1.5 is too fine to survive a round linecap on a curve.
+    assert.match(send, /stroke=\{2\}/, "the chip's stroke no longer matches the tile's proportion");
   });
 
   test("nothing spent draws the track and no arc", () => {
@@ -1221,13 +1226,18 @@ describe("the pay control is a corner dot", () => {
       "a long press no longer says what the dot does");
   });
 
-  test("it stays a real tap target", () => {
-    // The dot is 20px. A 20px button is below every touch-target
-    // guideline there is, so the button around it is 34.
+  test("it stays a real tap target, whatever size the tile is", () => {
+    // The dot is what is drawn; the button is what is hit. 11px of
+    // transparent margin all round, so the target is always bigger
+    // than the mark — at three columns on a 390px phone that is an
+    // 18px dot in a 29px button.
     const tile = grid.slice(grid.indexOf("if (onPay) onPay(category)"));
     const control = tile.slice(0, tile.indexOf("</button>"));
-    assert.match(control, /width: 34,\n      height: 34,/,
+    assert.match(control, /width: dotTap,\n      height: dotTap,/,
       "the dot's tap target shrank to the dot");
+    assert.match(grid, /const dotTap = dotSize \+ 11;/);
+    assert.match(grid, /const dotSize = clamp\(16, span \* 0\.17, 22\);/,
+      "the dot stopped scaling with the tile");
   });
 
   test("the dot has an edge on every tint it can sit on", () => {
@@ -1260,7 +1270,10 @@ describe("the pay control is a corner dot", () => {
     // A fixed offset is the edge only on a square tile. On a pill the
     // outline is 16px away diagonally and the dot floated in space.
     // Measured at 390px: sharp +16, rounded +11, soft +7, pill +0.
-    assert.match(grid, /const dotOut = Math\.max\(0, 17 - dotCurve\);/,
+    // Measured from HALF THE BUTTON, not from a 17 that was half of a
+    // button size the tile no longer uses — otherwise the dot drifts
+    // off the corner the moment the tile changes size.
+    assert.match(grid, /const dotOut = Math\.max\(0, Math\.round\(dotTap \/ 2\) - dotCurve\);/,
       "the dot stopped tracking the corner it sits on");
     assert.match(grid, /choicesCornerRadii\(category\.shape, 20, box\.width, box\.height\)\[2\] \|\| 0\) \* 0\.293\)/,
       "the dot reads the wrong corner, or stopped reading one");
@@ -1412,8 +1425,14 @@ describe("a budget stroke is the same weight whatever colour it is", () => {
   test("the stroke that draws them got thinner too", () => {
     // A 6px stroke on a 164px tile is a band, not an outline. Half of
     // "the bars are heavy" was the line, not the colour.
-    assert.match(code(GRID), /stroke=\{4\.5\}/, "the tile's stroke is a band again");
-    assert.match(code(SEND), /stroke=\{3\.5\}/, "the Send chip's stroke no longer scales with the tile's");
+    // Thin, and visible because of contrast rather than mass: 2.6px at
+    // three columns on a 390px phone, which is five or six physical
+    // pixels. Floored at 2 so it survives a round linecap on a curve,
+    // capped at 3.5 so a tablet does not get a band.
+    assert.match(code(GRID), /const strokeWidth = Math\.max\(2, Math\.min\(3\.5, Math\.round\(span \* 0\.026 \* 10\) \/ 10\)\);/,
+      "the tile's stroke is a fixed weight again");
+    assert.match(code(GRID), /stroke=\{strokeWidth\}/);
+    assert.match(code(SEND), /stroke=\{2\}/, "the Send chip's stroke no longer matches the tile's proportion");
   });
 
   test("eight colours, eight distinguishable hues", () => {
@@ -1447,5 +1466,73 @@ describe("a budget stroke is the same weight whatever colour it is", () => {
     }
     assert.equal(new Set(lib.CHOICES_BAR_COLORS.map((o) => o.value.toLowerCase())).size, 8);
     assert.equal(new Set(lib.CHOICES_BAR_COLORS.map((o) => o.key)).size, 8);
+  });
+});
+
+// ── Three to a row ──────────────────────────────────────────────────────
+//
+// The grid went from two columns to three, which took the tile from
+// 164px wide to 105. Everything that used to be a number on that tile
+// was a number chosen for 164 — a 54px icon, a 30px heart, a 4.5px
+// stroke — and at 105 that is a tile which is mostly furniture.
+//
+// So the numbers became fractions of the tile's own width, which is the
+// property worth holding: a fourth column, or a tablet, should not need
+// a third set of constants.
+describe("a tile is a fraction of itself, not a set of constants", () => {
+  const grid = code(GRID);
+
+  test("the grid is three to a row", () => {
+    assert.match(grid, /gridTemplateColumns: "repeat\(3, 1fr\)"/,
+      "the grid is not three to a row");
+    // 20px of gap against a dot that hangs at most half its button out —
+    // 15px at the widest phone measured — which leaves it clear of its
+    // neighbour.
+    assert.match(grid, /gap: 20,/);
+  });
+
+  test("every size on the tile comes off the tile's width", () => {
+    for (const [name, pattern] of [
+      ["icon", /const glyphSize = clamp\(26, span \* 0\.33, 54\);/],
+      ["heart", /const heartSize = clamp\(22, span \* 0\.23, 30\);/],
+      ["dot", /const dotSize = clamp\(16, span \* 0\.17, 22\);/],
+      ["stroke", /const strokeWidth = Math\.max\(2, Math\.min\(3\.5,/]
+    ]) {
+      assert.match(grid, pattern, `the ${name} is a constant again`);
+    }
+    // And the name with them, or a 12-character category on an 81px
+    // tile wraps to three lines while its neighbour wraps to one.
+    assert.match(grid, /fontSize: clamp\(11\.5, span \* 0\.115, 14\.5\)/);
+  });
+
+  test("the clamps are what keep a small tile usable", () => {
+    // Measured at 320px, where the tile is 81x71: without floors the
+    // heart would be 19px and the dot 14, both well under a fingertip.
+    // The floors hold them at 22 and 16.
+    const clamp = (low, value, high) => Math.max(low, Math.min(high, Math.round(value)));
+    assert.equal(clamp(22, 81 * 0.23, 30), 22, "the heart shrinks below its floor on a small phone");
+    assert.equal(clamp(16, 81 * 0.17, 22), 16, "the dot shrinks below its floor on a small phone");
+    // And the ceilings stop a tablet growing a cartoon.
+    assert.equal(clamp(26, 400 * 0.33, 54), 54);
+    assert.equal(clamp(22, 400 * 0.23, 30), 30);
+  });
+
+  test("the stroke stays thin at every width a phone has", () => {
+    // Measured: 2.1px at 320, 2.5 at 360, 2.7 at 390, 3.1 at 430 —
+    // never the 4.5 band it was, never under 2 where a round linecap
+    // on a curve starts to break up.
+    const stroke = (span) => Math.max(2, Math.min(3.5, Math.round(span * 0.026 * 10) / 10));
+    assert.deepEqual([81, 95, 105, 118].map(stroke), [2.1, 2.5, 2.7, 3.1]);
+    assert.equal(stroke(40), 2, "the stroke goes below the floor on a very small tile");
+    assert.equal(stroke(400), 3.5, "the stroke goes above its cap on a tablet");
+  });
+
+  test("the first frame assumes the size it will usually be", () => {
+    // The tile has not measured itself on its first render. Assuming
+    // the three-column width on a 390px phone means that on the common
+    // case nothing moves when the real measurement lands.
+    assert.match(grid, /var CHOICES_TILE_ASSUMED = 105;/);
+    assert.match(grid, /const span = \(box && box\.width > 0\) \? box\.width : CHOICES_TILE_ASSUMED;/,
+      "a tile that has not measured itself has no size to work from");
   });
 });

@@ -42,6 +42,90 @@ var CHOICES_EMOJI = [
   "\u{1F4BC}", "\u{1F4BB}", "\u{1F4C8}", "\u{1F3E2}", "\u{1F6E1}️"
 ];
 
+// The shapes a category's tile can take.
+//
+// Five, because this is a choice somebody makes once and then lives
+// with: a longer list is a longer decision about something that does not
+// repay one, and every extra shape is another outline the budget stroke
+// has to trace correctly.
+//
+// ── WHY MULTIPLIERS AND NOT PIXELS ───────────────────────────────────
+//
+// The same shape is drawn at two very different sizes — a 170px tile in
+// the grid and a 56px chip above the Send button. A radius in pixels
+// that reads as "soft" on the tile is nearly a circle on the chip. So a
+// shape is a multiplier of whatever base radius its surface already
+// uses (20px on the tile, 18px on the chip), which keeps the FAMILY
+// recognisable at both sizes without either one dictating the other.
+//
+// Corners run top-left, top-right, bottom-right, bottom-left — the same
+// order as the CSS border-radius shorthand, so the two cannot drift.
+var CHOICES_SHAPES = [
+  { key: "rounded", label: "Rounded", corners: [1, 1, 1, 1] },
+  { key: "soft", label: "Soft", corners: [1.75, 1.75, 1.75, 1.75] },
+  { key: "sharp", label: "Sharp", corners: [0.25, 0.25, 0.25, 0.25] },
+  // Every corner as round as the box allows. Flagged rather than given a
+  // huge multiplier because "as round as it goes" depends on the box,
+  // and a multiplier large enough for the tile would be meaningless on
+  // the chip.
+  { key: "pill", label: "Pill", pill: true, corners: [1, 1, 1, 1] },
+  // One diagonal round, the other square. The only asymmetric one, and
+  // the reason the budget stroke is drawn as a path with four
+  // independent radii rather than a rect with a single rx.
+  { key: "leaf", label: "Leaf", corners: [1.9, 0.2, 1.9, 0.2] }
+];
+
+var CHOICES_SHAPE_DEFAULT = "rounded";
+
+function choicesShape(key) {
+  const want = String(key || "").trim();
+  return CHOICES_SHAPES.find((shape) => shape.key === want) || CHOICES_SHAPES[0];
+}
+
+// The four corner radii in PIXELS, for a box of this size.
+//
+// Clamped to half the shorter side, which is the largest radius a corner
+// can have before it starts eating its neighbour. The browser does this
+// for CSS already; the budget stroke's path has to be told.
+function choicesCornerRadii(key, base, width, height) {
+  const shape = choicesShape(key);
+  const cap = Math.max(0, Math.min(Number(width) || 0, Number(height) || 0) / 2);
+  if (shape.pill) return [cap, cap, cap, cap];
+  const size = Number(base) > 0 ? Number(base) : 0;
+  return shape.corners.map((multiplier) => Math.max(0, Math.min(cap, size * multiplier)));
+}
+
+// How far in a corner control — the heart, the Pay pill — has to sit so
+// that a rounded corner does not cut it off.
+//
+// On a circle of radius r, the point where the inner 45-degree diagonal
+// meets the arc is r(1 - 1/root 2) from the corner, which is about
+// 0.293r. Anything closer than that is outside the curve. The tile clips
+// to its own radius, so on the "pill" shape a control at the old flat
+// 9px was half outside the visible area.
+//
+// Floored at the original 9px, so the square-ish shapes are unchanged.
+function choicesCornerInset(key, base, corner) {
+  const shape = choicesShape(key);
+  const size = Number(base) > 0 ? Number(base) : 0;
+  // A pill's radius is capped by the box rather than by the multiplier,
+  // and this helper is not given the box — 3.5 bases is past the cap on
+  // every surface that uses it, so it stands in for "as round as it
+  // goes".
+  const multiplier = shape.pill ? 3.5 : (shape.corners[corner] || 0);
+  return Math.max(9, Math.round(size * multiplier * 0.293));
+}
+
+// The same shape as a CSS border-radius. Takes no box size because CSS
+// clamps on its own, so "pill" can simply ask for more than it can have.
+function choicesCornerCss(key, base) {
+  const shape = choicesShape(key);
+  if (shape.pill) return 999;
+  const size = Number(base) > 0 ? Number(base) : 0;
+  const [tl, tr, br, bl] = shape.corners.map((multiplier) => Math.round(size * multiplier));
+  return `${tl}px ${tr}px ${br}px ${bl}px`;
+}
+
 var CHOICES_ICON_STYLES = ["line", "duotone", "emoji"];
 
 // The fallback tile colour. A category created before a colour was picked,

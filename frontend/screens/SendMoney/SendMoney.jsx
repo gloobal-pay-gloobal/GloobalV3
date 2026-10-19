@@ -1848,7 +1848,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         position: "relative",
         width: 56,
         height: 56,
-        borderRadius: 18,
+        borderRadius: choicesCornerCss(category.shape, 18),
         background: choicesTint(category.color),
         border: picked ? `2.5px solid ${T.accent}` : "2.5px solid transparent",
         display: "flex",
@@ -1873,6 +1873,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         fraction={budget ? budget.fraction : null}
         over={Boolean(budget && budget.over)}
         color={T.accent}
+        shape={category.shape}
         radius={15.5}
         stroke={4}
       />;

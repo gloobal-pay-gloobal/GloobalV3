@@ -207,7 +207,10 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     className="v2-tap"
     style={{
       position: "relative",
-      borderRadius: 20,
+      // The shape the person chose, as corner radii off this surface's
+      // own base. 20px here, 18px on the Send chip — the same shape at
+      // two sizes, rather than one radius that is right on one of them.
+      borderRadius: choicesCornerCss(category.shape, 20),
       background: choicesTint(category.color),
       // A little wider than tall, which takes some height out of a grid
       // that had grown bulky. It no longer has to be square: the budget
@@ -248,7 +251,10 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
       // with red reserved for over, the one state worth telling apart
       // without reading.
       color={T.accent}
-      // Pixels, matching the tile's own border-radius above.
+      // The same shape and the same base the tile's own border-radius
+      // uses above, so the stroke traces the outline rather than
+      // approximating it.
+      shape={category.shape}
       radius={20}
       stroke={6}
     />;
@@ -259,8 +265,11 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     aria-pressed={Boolean(category.favorite)}
     style={{
       position: "absolute",
-      top: 9,
-      left: 9,
+      // Pushed in far enough to clear this shape's own corner — see
+      // choicesCornerInset. At a flat 9px the heart sat half outside a
+      // pill-shaped tile, which clips to its radius.
+      top: choicesCornerInset(category.shape, 20, 0),
+      left: choicesCornerInset(category.shape, 20, 0),
       border: "none",
       borderRadius: "50%",
       background: category.favorite ? T.surface : "rgba(255,255,255,0.55)",
@@ -283,8 +292,8 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     aria-label={choicesPayLabel(category)}
     style={{
       position: "absolute",
-      top: 9,
-      right: 9,
+      top: choicesCornerInset(category.shape, 20, 1),
+      right: choicesCornerInset(category.shape, 20, 1),
       border: "none",
       borderRadius: 999,
       background: T.surface,

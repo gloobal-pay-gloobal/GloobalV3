@@ -71,7 +71,7 @@ function ChoiceGlyph({ category, size }) {
 // progress indicator for a thing with no progress — at 0% it reads as
 // "nothing spent", which is a claim, and at any other value it would be
 // a lie. So `fraction` null means nothing is drawn at all.
-function ChoiceBudgetEdge({ fraction, color, over, radius = 20, stroke = 6 }) {
+function ChoiceBudgetEdge({ fraction, color, over, shape, radius = 20, stroke = 6 }) {
   const hostRef = useRef26(null);
   const [box, setBox] = useState43(null);
 
@@ -108,21 +108,22 @@ function ChoiceBudgetEdge({ fraction, color, over, radius = 20, stroke = 6 }) {
     style={{ position: "absolute", inset: 0, pointerEvents: "none", display: "block" }}
   >{shown !== null && box && (() => {
     // Half a stroke in from the edge, so the stroke's outer face sits
-    // flush with the tile's own; its radius is therefore the tile's less
-    // that same half, or the two curves disagree.
+    // flush with the tile's own; each radius is therefore the tile's
+    // less that same half, or the two curves disagree.
     const origin = stroke / 2;
-    const rx = Math.max(0, radius - stroke / 2);
+    const width = Math.max(0, box.width - stroke);
+    const height = Math.max(0, box.height - stroke);
+    const corners = choicesCornerRadii(shape, radius, box.width, box.height)
+      .map((corner) => Math.max(0, Math.min(Math.min(width, height) / 2, corner - stroke / 2)));
+    const outline = choicesEdgePath(origin, origin, width, height, corners);
+
     return <svg
       viewBox={`0 0 ${box.width} ${box.height}`}
       width={box.width}
       height={box.height}
       style={{ display: "block" }}
-    ><rect
-      x={origin}
-      y={origin}
-      width={Math.max(0, box.width - stroke)}
-      height={Math.max(0, box.height - stroke)}
-      rx={rx}
+    ><path
+      d={outline}
       fill="none"
       stroke="rgba(255,255,255,0.6)"
       strokeWidth={stroke}
@@ -130,25 +131,49 @@ function ChoiceBudgetEdge({ fraction, color, over, radius = 20, stroke = 6 }) {
       /* Only once something has been spent. A zero-length dash with a
          round cap still paints a dot, which reads as a sliver of
          spending on a category nothing has gone to yet. */
-    }{shown > 0 && <rect
-      x={origin}
-      y={origin}
-      width={Math.max(0, box.width - stroke)}
-      height={Math.max(0, box.height - stroke)}
-      rx={rx}
+    }{shown > 0 && <path
+      d={outline}
       fill="none"
       stroke={over ? "#E23F45" : color}
       strokeWidth={stroke}
       strokeLinecap="round"
       // pathLength normalises the path to 100 units whatever its real
       // perimeter, so the dash maths is a percentage and nothing here
-      // computes 2(w-2r) + 2(h-2r) + 2πr or redoes it when the radius
-      // changes.
+      // computes the perimeter of a four-radius rounded rectangle, or
+      // redoes it when the shape changes.
       pathLength="100"
       strokeDasharray="100"
       strokeDashoffset={100 - shown * 100}
     />}</svg>;
   })()}</span>;
+}
+
+// A rounded rectangle with FOUR INDEPENDENT corner radii, clockwise from
+// the top-left.
+//
+// A <rect rx> cannot do this, and one of the five shapes — "leaf", round
+// on one diagonal and square on the other — exists precisely because a
+// tile does not have to be symmetrical. Writing the outline as a path
+// costs nine lines and makes every shape, symmetrical or not, the same
+// kind of thing to the stroke that traces it.
+//
+// Each arc is emitted only when its radius is positive: a zero-radius
+// arc is a degenerate command that some renderers draw as a stray line
+// back to the start.
+function choicesEdgePath(x, y, width, height, corners) {
+  const [tl, tr, br, bl] = corners;
+  return [
+    `M${x + tl},${y}`,
+    `H${x + width - tr}`,
+    tr > 0 ? `A${tr},${tr} 0 0 1 ${x + width},${y + tr}` : "",
+    `V${y + height - br}`,
+    br > 0 ? `A${br},${br} 0 0 1 ${x + width - br},${y + height}` : "",
+    `H${x + bl}`,
+    bl > 0 ? `A${bl},${bl} 0 0 1 ${x},${y + height - bl}` : "",
+    `V${y + tl}`,
+    tl > 0 ? `A${tl},${tl} 0 0 1 ${x + tl},${y}` : "",
+    "Z"
+  ].filter(Boolean).join(" ");
 }
 
 // One tile in a picker grid: the category's emoji on its own tint, its name
@@ -314,6 +339,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
   const [name, setName] = useState43("");
   const [icon, setIcon] = useState43("");
   const [color, setColor] = useState43(CHOICES_TINTS[0]);
+  const [shape, setShape] = useState43(CHOICES_SHAPE_DEFAULT);
   const [budget, setBudget] = useState43("");
   const [favorite, setFavorite] = useState43(false);
   const [iconQuery, setIconQuery] = useState43("");
@@ -341,6 +367,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     setName(category ? String(category.name || "") : "");
     setIcon(category ? String(category.icon || "") : "");
     setColor(category ? choicesTint(category.color) : CHOICES_TINTS[0]);
+    setShape((category && category.shape) || CHOICES_SHAPE_DEFAULT);
     setFavorite(Boolean(category && category.favorite));
     // 0 means "no budget", so the field opens EMPTY rather than showing a
     // zero somebody has to clear before they can type.
@@ -360,14 +387,27 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
   // the manual stand-in for generating one; when that arrives it replaces
   // choicesSuggestIcon and nothing else in this component moves.
   //
-  // It only ever fills an UNTOUCHED icon. Overwriting a chosen one as the
-  // name is edited would be the app arguing with somebody about their own
-  // category.
+  // ── WHY IT CHECKS THE CATEGORY AND NOT JUST THE FLAG ─────────────────
+  //
+  // `iconTouched` alone was not enough, and the way it failed was quiet
+  // and destructive: opening Edit on a category CLEARED its icon.
+  //
+  // Both effects run in the same commit when `open` flips. The reset
+  // above queues setIcon("\u{1F476}") and setIconTouched(true), but this
+  // one then reads `iconTouched` from the CURRENT render — still false —
+  // and `name` — still "" — so it suggested nothing and called
+  // setIcon(""), wiping what the reset had just set. The form then showed
+  // the fallback dot, and saving stored an empty icon over a real one.
+  //
+  // Reading `category` instead of the flag is immune to that ordering: an
+  // icon the category already has is never a candidate for replacement,
+  // whatever any queued state happens to say this render.
   useEffect43(() => {
     if (!open || iconTouched) return;
+    if (category && category.icon) return;
     const suggestion = choicesSuggestIcon(name);
     setIcon(suggestion ? suggestion.c : "");
-  }, [open, name, iconTouched]);
+  }, [open, name, iconTouched, category]);
 
   const icons = useMemo11(
     () => choicesIconSearch(iconQuery, iconGroup),
@@ -415,6 +455,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
         name: trimmed,
         icon,
         color,
+        shape,
         favorite,
         monthlyBudget,
         budgetCurrency: String(ccyCode || "").toUpperCase()
@@ -456,7 +497,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
        rather than describing it — the tile here is the tile that appears
        in the grid, at the size it appears. */
   }<div style={{ display: "flex", alignItems: "center", gap: 13 }}><span
-    style={{ width: 62, height: 62, borderRadius: 19, background: tint, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}
+    style={{ width: 62, height: 62, borderRadius: choicesCornerCss(shape, 19), background: tint, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}
   ><ChoiceGlyph category={{ icon: icon, photo: photo }} size={30} /></span><span style={{ flex: 1, minWidth: 0 }}><span
     style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >{String(name || "").trim() || "Untitled"}</span><span
@@ -631,6 +672,34 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       boxShadow: color === swatch ? `0 0 0 2.5px ${T.surface}, 0 0 0 4.5px ${T.accent}` : "none"
     }}
   />)}</div><label
+    style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "16px 0 7px" }}
+  >
+      Shape
+    </label><div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 9 }}>{CHOICES_SHAPES.map((option) => {
+    const picked = shape === option.key;
+    return <button
+      key={option.key}
+      onClick={() => setShape(option.key)}
+      className="v2-tap"
+      aria-label={option.label}
+      aria-pressed={picked}
+      style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
+    >{
+      /* Each swatch IS the shape, in the colour currently chosen,
+         rather than a name or an abstract glyph. A list of words would
+         make somebody imagine the result; this is the result. */
+    }<span
+      style={{
+        width: "100%",
+        aspectRatio: "1",
+        borderRadius: choicesCornerCss(option.key, 13),
+        background: tint,
+        boxShadow: picked ? `0 0 0 2px ${T.surface}, 0 0 0 4px ${T.accent}` : `inset 0 0 0 1px ${T.line}`
+      }}
+    /><span
+      style={{ fontSize: 10.5, fontWeight: picked ? 800 : 600, color: picked ? T.accent : T.inkFaint }}
+    >{option.label}</span></button>;
+  })}</div><label
     style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "16px 0 7px" }}
   >
       Monthly budget <span style={{ fontWeight: 600, color: T.inkFaint }}>{"·"} optional</span>

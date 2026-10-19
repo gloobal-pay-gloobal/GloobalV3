@@ -631,8 +631,8 @@ describe("the budget is the tile's own edge", () => {
     // floating inside a square tile — two boundaries where there is one
     // object. Tracing the tile's edge costs the icon nothing.
     assert.match(src, /function ChoiceBudgetEdge/);
-    assert.match(src, /<rect/, "the stroke is a circle again");
-    const edge = src.slice(src.indexOf("function ChoiceBudgetEdge"), src.indexOf("// One tile in a picker grid:"));
+    assert.match(src, /<path/, "the stroke is a circle again");
+    const edge = src.slice(src.indexOf("function ChoiceBudgetEdge"), src.indexOf("function choicesEdgePath"));
     assert.doesNotMatch(edge, /<circle/, "a circle survives inside the edge component");
     assert.match(grid, /<ChoiceGlyph category=\{category\} size=\{54\} \/>/,
       "the icon shrank again to make room for the stroke");
@@ -650,7 +650,8 @@ describe("the budget is the tile's own edge", () => {
   test("the corner stays concentric with the tile's own", () => {
     // The stroke sits half its width inside the tile, so its radius has
     // to be the tile's less that same half or the two curves disagree.
-    assert.match(src, /const rx = Math\.max\(0, radius - stroke \/ 2\)/);
+    assert.match(src, /corner - stroke \/ 2/,
+      "the stroke's corners are no longer pulled in by half its own width");
     assert.match(grid, /radius=\{20\}/, "the stroke no longer knows the tile's radius");
   });
 
@@ -707,7 +708,7 @@ describe("the budget is the tile's own edge", () => {
   test("nothing spent draws the track and no arc", () => {
     // A zero-length dash with a round cap still paints a dot, which
     // reads as a sliver of spending on a category nothing has gone to.
-    assert.match(src, /\{shown > 0 && <rect/,
+    assert.match(src, /\{shown > 0 && <path/,
       "a zero-length dash is drawn again, which paints a dot under a round cap");
   });
 
@@ -735,6 +736,129 @@ describe("the budget is the tile's own edge", () => {
     // It covers the whole tile, including the heart and the Pay pill.
     assert.match(src, /pointerEvents: "none"/,
       "the stroke overlay is now intercepting taps on the tile underneath it");
+  });
+});
+
+describe("a tile can take one of five shapes", () => {
+  const lib = new Function(`${readSource("frontend/features/choices/choicesCatalog.js")}
+    return { CHOICES_SHAPES, CHOICES_SHAPE_DEFAULT, choicesShape, choicesCornerRadii, choicesCornerCss, choicesCornerInset };`)();
+  const src = code(SHEETS);
+  const grid = code(GRID);
+
+  test("there are five, and the server knows the same five", () => {
+    // The shape is stored as a NAME, so the two lists have to agree or a
+    // save is refused for a shape the picker offered.
+    const server = require_(path.join(ROOT, "server/lib/categoryValidation.js"));
+    assert.equal(lib.CHOICES_SHAPES.length, 5);
+    assert.deepEqual(
+      lib.CHOICES_SHAPES.map((shape) => shape.key).sort(),
+      server.CATEGORY_SHAPES.slice().sort(),
+      "the client offers shapes the server will refuse, or the other way round"
+    );
+    assert.ok(server.CATEGORY_SHAPES.includes(lib.CHOICES_SHAPE_DEFAULT));
+  });
+
+  test("an unknown shape falls back rather than rendering nothing", () => {
+    assert.equal(lib.choicesShape("octagon").key, "rounded");
+    assert.equal(lib.choicesShape("").key, "rounded");
+    assert.equal(lib.choicesShape(null).key, "rounded");
+  });
+
+  test("corners are multipliers, so one shape reads the same at two sizes", () => {
+    // A radius in pixels that is "soft" on a 170px tile is nearly a
+    // circle on a 56px chip.
+    const tile = lib.choicesCornerRadii("soft", 20, 170, 148);
+    const chip = lib.choicesCornerRadii("soft", 18, 51, 51);
+    assert.equal(tile[0], 35);
+    assert.ok(chip[0] < tile[0], "the chip's corner is not scaled down from its own base");
+  });
+
+  test("a radius can never eat its neighbour", () => {
+    // Half the shorter side is the most a corner can have. The browser
+    // clamps CSS for us; the budget stroke's path has to be told.
+    for (const shape of lib.CHOICES_SHAPES) {
+      for (const radius of lib.choicesCornerRadii(shape.key, 400, 170, 148)) {
+        assert.ok(radius <= 74 + 0.001, `${shape.key} asked for ${radius} on a 148px-tall box`);
+      }
+    }
+  });
+
+  test("the pill is as round as its box allows, not a fixed number", () => {
+    const wide = lib.choicesCornerRadii("pill", 20, 200, 100);
+    assert.deepEqual(wide, [50, 50, 50, 50], "a pill on a 100px-tall box is not 50px round");
+    // CSS can simply ask for more than it can have, because CSS clamps.
+    assert.equal(lib.choicesCornerCss("pill", 20), 999);
+  });
+
+  test("the leaf is asymmetric, which is why the stroke is a path", () => {
+    const leaf = lib.choicesCornerRadii("leaf", 20, 170, 148);
+    assert.ok(leaf[0] > leaf[1], "the leaf's diagonal is no longer round-then-square");
+    assert.equal(leaf[0], leaf[2], "the leaf's two round corners differ");
+    assert.equal(leaf[1], leaf[3], "the leaf's two square corners differ");
+    // <rect rx> cannot express that.
+    assert.match(src, /function choicesEdgePath/);
+    const edge = src.slice(src.indexOf("function ChoiceBudgetEdge"), src.indexOf("function choicesEdgePath"));
+    assert.doesNotMatch(edge, /<rect/, "the stroke is back to a rect, which has one radius");
+  });
+
+  test("the css order is the css order", () => {
+    // border-radius shorthand is top-left, top-right, bottom-right,
+    // bottom-left. The path generator reads the same array.
+    assert.equal(lib.choicesCornerCss("leaf", 20), "38px 4px 38px 4px");
+  });
+
+  test("a zero-radius corner emits no arc", () => {
+    // A degenerate arc command is drawn by some renderers as a stray
+    // line back to the start of the path.
+    assert.match(src, /tr > 0 \? `A\$\{tr\},\$\{tr\}/);
+    assert.match(src, /\.filter\(Boolean\)\.join\(" "\)/);
+  });
+
+  test("the corner controls move in far enough to clear the curve", () => {
+    // At a flat 9px the heart sat half outside a pill-shaped tile, which
+    // clips to its own radius. 0.293r is where the inner diagonal meets
+    // the arc.
+    assert.equal(lib.choicesCornerInset("rounded", 20, 0), 9, "the square-ish shapes moved");
+    assert.equal(lib.choicesCornerInset("sharp", 20, 0), 9);
+    assert.ok(lib.choicesCornerInset("pill", 20, 0) > 15, "a pill's controls are still in its corner");
+    assert.match(grid, /top: choicesCornerInset\(category\.shape, 20, 0\)/, "the heart ignores the shape again");
+    assert.match(grid, /top: choicesCornerInset\(category\.shape, 20, 1\)/, "the Pay pill ignores the shape again");
+  });
+
+  test("the picker shows the shapes themselves", () => {
+    // A list of words would make somebody imagine the result.
+    assert.match(src, /CHOICES_SHAPES\.map\(\(option\)/);
+    assert.match(src, /borderRadius: choicesCornerCss\(option\.key, 13\)/,
+      "the swatches no longer draw as the shape they offer");
+    assert.match(src, /shape,\n        favorite,/, "the chosen shape is not saved");
+  });
+
+  test("the tile and the chip both follow it", () => {
+    assert.match(grid, /borderRadius: choicesCornerCss\(category\.shape, 20\)/);
+    assert.match(code(SEND), /borderRadius: choicesCornerCss\(category\.shape, 18\)/,
+      "the Send strip's chips ignore the shape");
+    assert.match(grid, /shape=\{category\.shape\}/, "the budget stroke does not know the shape");
+  });
+});
+
+describe("opening the editor does not destroy what it is editing", () => {
+  test("a suggestion never replaces an icon the category already has", () => {
+    // Both effects run in the same commit when the sheet opens. The
+    // reset queues setIcon("👶") and setIconTouched(true); the
+    // suggestion effect then read `iconTouched` from the CURRENT render
+    // — still false — and `name` — still "" — so it suggested nothing
+    // and called setIcon(""), wiping what the reset had just set. The
+    // form showed the fallback dot and saving stored an empty icon over
+    // a real one.
+    //
+    // Reading `category` is immune to that ordering, where the flag is
+    // not.
+    const src = code(SHEETS);
+    assert.match(src, /if \(category && category\.icon\) return;/,
+      "editing a category can clear its icon again");
+    const effect = src.slice(src.indexOf("if (!open || iconTouched) return;"));
+    assert.match(effect.slice(0, 300), /\}, \[open, name, iconTouched, category\]\)/,
+      "the effect no longer reacts to the category it is editing");
   });
 });
 

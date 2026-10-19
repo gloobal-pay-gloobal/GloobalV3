@@ -30,6 +30,10 @@ const categoryNameWords = (value) => String(value || "").trim().split(/\s+/).fil
 const CATEGORY_ICON_MAX_LENGTH = 16;
 const CATEGORY_KINDS = ['expense', 'income'];
 const CATEGORY_ICON_STYLES = ['emoji', 'line', 'duotone'];
+// Mirrors CHOICES_SHAPES in the client's choicesCatalog.js. A name
+// the client does not know renders as the default rather than as
+// nothing, but it is refused here so the two cannot drift silently.
+const CATEGORY_SHAPES = ['rounded', 'soft', 'sharp', 'pill', 'leaf'];
 
 // #rgb, #rrggbb, #rrggbbaa. Anything else is refused rather than stripped:
 // a colour is not free text, and half-accepting one writes a tile nobody
@@ -89,6 +93,14 @@ const validateCategoryInput = (input, { strict = true } = {}) => {
     out.iconStyle = iconStyle;
   }
 
+  if (supplied('shape')) {
+    const shape = String(body.shape || '').trim().toLowerCase();
+    if (!CATEGORY_SHAPES.includes(shape)) {
+      return { ok: false, message: 'Pick one of the shapes on offer.' };
+    }
+    out.shape = shape;
+  }
+
   if (supplied('color')) {
     const color = String(body.color || '').trim();
     if (color && !CATEGORY_COLOR_PATTERN.test(color)) {
@@ -146,6 +158,7 @@ const publicCategory = (row) => ({
   kind: row.kind || 'expense',
   icon: row.icon || '',
   iconStyle: row.iconStyle || 'emoji',
+  shape: row.shape || 'rounded',
   color: row.color || '',
   monthlyBudget: Number(row.monthlyBudget) || 0,
   budgetCurrency: row.budgetCurrency || '',
@@ -192,6 +205,7 @@ module.exports = {
   CATEGORY_NAME_MAX_WORDS,
   CATEGORY_KINDS,
   CATEGORY_ICON_STYLES,
+  CATEGORY_SHAPES,
   CATEGORY_BUDGET_MAX,
   DEFAULT_CATEGORIES,
   validateCategoryInput,

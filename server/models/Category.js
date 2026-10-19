@@ -58,6 +58,17 @@ const categorySchema = new mongoose.Schema(
       default: 'emoji',
     },
 
+    // The outline the tile takes, from a fixed set of five. Stored as the
+    // NAME of a shape rather than the corner radii it works out to,
+    // because the radii differ per surface — 20px on a grid tile, 18px on
+    // a Send chip — and a stored number would be right on one of them.
+    // See CHOICES_SHAPES in the client's choicesCatalog.js.
+    shape: {
+      type: String,
+      enum: ['rounded', 'soft', 'sharp', 'pill', 'leaf'],
+      default: 'rounded',
+    },
+
     // The tile's background tint, as a hex string the client wrote. Capped
     // and pattern-checked in lib/categoryValidation.js rather than here,
     // because a bad colour should be a 400 with a sentence, not a mongoose

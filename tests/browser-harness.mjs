@@ -351,6 +351,11 @@ export async function installApi(context, options = {}) {
       iconStyle: seed.iconStyle || "emoji",
       shape: seed.shape || "rounded",
       color: seed.color || "#FBD0DC",
+      // Mirrors publicCategory: empty means "never chosen", which the
+      // client renders as the accent. Dropping the field here instead
+      // made every tile in a shape-and-colour probe come back violet,
+      // and the probe was measuring the fake rather than the app.
+      barColor: seed.barColor || "",
       monthlyBudget: Number(seed.monthlyBudget) || 0,
       budgetCurrency: seed.budgetCurrency || "",
       favorite: Boolean(seed.favorite),
@@ -1163,6 +1168,7 @@ export async function installApi(context, options = {}) {
         iconStyle: body.iconStyle || "emoji",
         shape: (body || {}).shape || "rounded",
         color: body.color || "#FBD0DC",
+        barColor: body.barColor || "",
         monthlyBudget: Number(body.monthlyBudget) || 0,
         budgetCurrency: body.budgetCurrency || "",
         favorite: Boolean((body || {}).favorite),

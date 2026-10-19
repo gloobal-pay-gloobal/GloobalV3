@@ -52,6 +52,11 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
   const tint = choicesTint(category && category.color);
   const heroInk = choicesInkOn(category && category.color);
   const mark = choicesMarkOn(category && category.color);
+  // The budget's own colour, which is a separate decision from the tile's
+  // tint — see CHOICES_BAR_COLORS. `mark` stays for the chart's current
+  // column, where the job is to pick one bar out of six of the SAME
+  // tint and the tint-derived shade is exactly right.
+  const barInk = choicesBarColor(category && category.barColor);
 
   // Rows this category owns, out of the history already in memory.
   const rows = useMemo12(
@@ -133,7 +138,7 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
   ><ChoiceMoney amount={budget.limit} code={code} size={14} /></div></div><div
     style={{ height: 9, borderRadius: 999, background: T.surfaceSunk, overflow: "hidden", margin: "10px 0 9px" }}
   ><div
-    style={{ height: "100%", width: `${Math.round(budget.fraction * 100)}%`, borderRadius: 999, background: budget.over ? T.negative : mark }}
+    style={{ height: "100%", width: `${Math.round(budget.fraction * 100)}%`, borderRadius: 999, background: budget.over ? T.negative : barInk }}
   /></div><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}><div
     style={{ fontSize: 12.5, fontWeight: 600, color: budget.over ? T.negative : T.inkSoft, minWidth: 0 }}
   >{budget.over

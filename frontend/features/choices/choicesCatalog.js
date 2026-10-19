@@ -44,10 +44,16 @@ var CHOICES_EMOJI = [
 
 // The shapes a category's tile can take.
 //
-// Five, because this is a choice somebody makes once and then lives
-// with: a longer list is a longer decision about something that does not
-// repay one, and every extra shape is another outline the budget stroke
-// has to trace correctly.
+// Ten, laid out as two rows of five. The first five are the symmetrical
+// family — the same corner everywhere, from nearly square to fully
+// round. The second five each break the symmetry in one deliberate way,
+// which is what makes a grid of tiles read as a composition rather than
+// as a column of identical boxes.
+//
+// Every one of them is only four numbers, so nothing downstream had to
+// change to accept them: the stroke already traces four independent
+// radii, and the corner controls already ask each corner how far in
+// they have to sit.
 //
 // ── WHY MULTIPLIERS AND NOT PIXELS ───────────────────────────────────
 //
@@ -69,10 +75,26 @@ var CHOICES_SHAPES = [
   // and a multiplier large enough for the tile would be meaningless on
   // the chip.
   { key: "pill", label: "Pill", pill: true, corners: [1, 1, 1, 1] },
-  // One diagonal round, the other square. The only asymmetric one, and
+  // One diagonal round, the other square. The first asymmetric one, and
   // the reason the budget stroke is drawn as a path with four
   // independent radii rather than a rect with a single rx.
-  { key: "leaf", label: "Leaf", corners: [1.9, 0.2, 1.9, 0.2] }
+  { key: "leaf", label: "Leaf", corners: [1.9, 0.2, 1.9, 0.2] },
+  // Leaf's other diagonal. Worth having as its own shape rather than as
+  // a rotation: two tiles side by side, one leaf and one petal, lean
+  // into each other, and that is the whole reason somebody picks one.
+  { key: "petal", label: "Petal", corners: [0.2, 1.9, 0.2, 1.9] },
+  // Round across the top, flat along the bottom — a tile that sits on
+  // its own base rather than floating.
+  { key: "arch", label: "Arch", corners: [1.9, 1.9, 0.3, 0.3] },
+  // Arch inverted. Reads as something held rather than something
+  // standing, and pairs with arch down a column.
+  { key: "cup", label: "Cup", corners: [0.3, 0.3, 1.9, 1.9] },
+  // Three corners at the surface's own radius and one squared off, so
+  // it reads as a label with a point on it.
+  { key: "tag", label: "Tag", corners: [1, 1, 0.15, 1] },
+  // Three corners as round as leaf's round pair, one squared. The most
+  // lopsided of the ten, and the one a photo looks best in.
+  { key: "drop", label: "Drop", corners: [1.9, 1.9, 1.9, 0.15] }
 ];
 
 var CHOICES_SHAPE_DEFAULT = "rounded";
@@ -168,6 +190,58 @@ function choicesMarkOn(color) {
   if (parts.some((n) => !Number.isFinite(n))) return "#7C3AED";
   const mark = parts.map((n) => Math.round(n * 0.62));
   return `#${mark.map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+}
+
+// The colours a budget stroke can be.
+//
+// ── WHY THESE ARE NOT THE TILE TINTS ─────────────────────────────────
+//
+// CHOICES_TINTS are pastels, chosen so an emoji and a name read on top
+// of them. A stroke drawn in one of those, on a tile already painted
+// one of those, disappears. These are the opposite job: saturated, mid
+// to dark, each one legible against every tint in the list above.
+//
+// ── WHY NONE OF THEM IS RED ──────────────────────────────────────────
+//
+// Over budget is drawn in #E23F45 and is not configurable, because it
+// is the one state worth recognising without reading a figure. A
+// stroke the person had set to red themselves would make the two
+// indistinguishable, so red is simply not on offer — that is a
+// deliberate hole in the palette, not an oversight.
+//
+// The warm end is therefore thin on purpose, and it cost a colour to
+// get right: a clay brown was in this list until a test measured it at
+// 27 degrees of hue from the over colour, which is close enough that a
+// person under budget in brown reads as a person over it. Amber sits
+// at 43 degrees and survives; plum covers the pink end from the other
+// side. The test is the spec — see "no colour on offer can be mistaken
+// for over budget" in tests/my-choices.test.mjs.
+var CHOICES_BAR_COLORS = [
+  { key: "violet", label: "Violet", value: "#7C3AED" },
+  { key: "indigo", label: "Indigo", value: "#4F46E5" },
+  { key: "sky", label: "Sky", value: "#0284C7" },
+  { key: "teal", label: "Teal", value: "#0D9488" },
+  { key: "green", label: "Green", value: "#16A34A" },
+  { key: "amber", label: "Amber", value: "#CA8A04" },
+  { key: "plum", label: "Plum", value: "#86198F" },
+  { key: "slate", label: "Slate", value: "#475569" }
+];
+
+// Violet, because it is T.accent — every stroke drawn before this
+// choice existed was that colour, and a category that has never been
+// told otherwise should not change appearance the day the option
+// ships.
+var CHOICES_BAR_DEFAULT = "#7C3AED";
+
+// A stored bar colour, or the default.
+//
+// Takes any hex rather than only the eight above, for the same reason
+// choicesTint does: the palette is a shortcut for choosing, not a
+// constraint the stored data has to keep satisfying. Growing the list
+// later must not make yesterday's categories invalid.
+function choicesBarColor(color) {
+  const value = String(color || "").trim();
+  return CHOICES_HEX_PATTERN.test(value) ? value : CHOICES_BAR_DEFAULT;
 }
 
 // The server groups a category's totals BY CURRENCY and never sums across

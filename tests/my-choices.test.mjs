@@ -718,11 +718,13 @@ describe("the budget is the tile's own edge", () => {
     assert.match(grid, /over=\{Boolean\(budget && budget\.over\)\}/);
   });
 
-  test("every other stroke is the same colour, not the category's own", () => {
+  test("the stroke is never darkened out of the tile's own tint", () => {
     // choicesMarkOn darkens a tint, and darkening a pastel desaturates
-    // it — grey-brown on pink, grey-lilac on lilac. The tile's tint says
-    // which category it is; the stroke answers a different question.
-    assert.match(grid, /color=\{T\.accent\}/, "the stroke takes the category's own colour again");
+    // it — grey-brown on pink, grey-lilac on lilac. The stroke's colour
+    // is now a choice of its own, from a saturated palette; what must
+    // never come back is deriving it from the ground it sits on.
+    assert.match(grid, /color=\{choicesBarColor\(category\.barColor\)\}/,
+      "the stroke no longer takes the colour the person picked");
     const tile = grid.slice(grid.indexOf("<ChoiceBudgetEdge"), grid.indexOf("/>;", grid.indexOf("<ChoiceBudgetEdge")));
     assert.doesNotMatch(tile, /choicesMarkOn/, "the stroke is being darkened from the tint again");
   });
@@ -739,17 +741,17 @@ describe("the budget is the tile's own edge", () => {
   });
 });
 
-describe("a tile can take one of five shapes", () => {
+describe("a tile can take one of ten shapes", () => {
   const lib = new Function(`${readSource("frontend/features/choices/choicesCatalog.js")}
     return { CHOICES_SHAPES, CHOICES_SHAPE_DEFAULT, choicesShape, choicesCornerRadii, choicesCornerCss, choicesCornerInset };`)();
   const src = code(SHEETS);
   const grid = code(GRID);
 
-  test("there are five, and the server knows the same five", () => {
+  test("there are ten, and the server knows the same ten", () => {
     // The shape is stored as a NAME, so the two lists have to agree or a
     // save is refused for a shape the picker offered.
     const server = require_(path.join(ROOT, "server/lib/categoryValidation.js"));
-    assert.equal(lib.CHOICES_SHAPES.length, 5);
+    assert.equal(lib.CHOICES_SHAPES.length, 10);
     assert.deepEqual(
       lib.CHOICES_SHAPES.map((shape) => shape.key).sort(),
       server.CATEGORY_SHAPES.slice().sort(),
@@ -822,7 +824,8 @@ describe("a tile can take one of five shapes", () => {
     assert.equal(lib.choicesCornerInset("sharp", 20, 0), 9);
     assert.ok(lib.choicesCornerInset("pill", 20, 0) > 15, "a pill's controls are still in its corner");
     assert.match(grid, /top: choicesCornerInset\(category\.shape, 20, 0\)/, "the heart ignores the shape again");
-    assert.match(grid, /top: choicesCornerInset\(category\.shape, 20, 1\)/, "the Pay pill ignores the shape again");
+    assert.match(grid, /top: Math\.max\(2, choicesCornerInset\(category\.shape, 20, 1\) - 7\)/,
+      "the pay dot ignores the shape again");
   });
 
   test("the picker shows the shapes themselves", () => {
@@ -830,7 +833,46 @@ describe("a tile can take one of five shapes", () => {
     assert.match(src, /CHOICES_SHAPES\.map\(\(option\)/);
     assert.match(src, /borderRadius: choicesCornerCss\(option\.key, 13\)/,
       "the swatches no longer draw as the shape they offer");
-    assert.match(src, /shape,\n        favorite,/, "the chosen shape is not saved");
+    assert.match(src, /shape,\n        barColor,\n        favorite,/,
+      "the chosen shape or bar colour is not saved");
+  });
+
+  test("the five new shapes are the five that break symmetry", () => {
+    // The first five are one radius repeated. These five each break it
+    // in a different place, which is the whole reason to have them — a
+    // sixth symmetrical shape would be another word for "soft".
+    const added = ["petal", "arch", "cup", "tag", "drop"];
+    const keys = lib.CHOICES_SHAPES.map((shape) => shape.key);
+    for (const key of added) assert.ok(keys.includes(key), `${key} is missing`);
+    for (const key of added) {
+      const corners = lib.choicesShape(key).corners;
+      assert.equal(corners.length, 4, `${key} does not have four corners`);
+      assert.ok(
+        new Set(corners).size > 1,
+        `${key} is symmetrical, which makes it a duplicate of one of the first five`
+      );
+    }
+  });
+
+  test("every shape is four finite, non-negative multipliers", () => {
+    // The stroke multiplies these by a base and feeds them to an SVG
+    // arc. A NaN there does not throw — it drops the whole path, so the
+    // tile silently loses its budget.
+    for (const shape of lib.CHOICES_SHAPES) {
+      assert.equal(shape.corners.length, 4, `${shape.key} does not have four corners`);
+      for (const corner of shape.corners) {
+        assert.ok(Number.isFinite(corner) && corner >= 0,
+          `${shape.key} has a corner that is not a usable number`);
+      }
+      assert.ok(String(shape.label || "").trim(), `${shape.key} has no label`);
+    }
+  });
+
+  test("a shape the person has never heard of still renders", () => {
+    // A row written by an older build, or by a future one rolled back.
+    assert.equal(lib.choicesShape("origami").key, lib.CHOICES_SHAPE_DEFAULT);
+    assert.equal(lib.choicesShape("").key, lib.CHOICES_SHAPE_DEFAULT);
+    assert.equal(lib.choicesShape(null).key, lib.CHOICES_SHAPE_DEFAULT);
   });
 
   test("the tile and the chip both follow it", () => {
@@ -902,5 +944,304 @@ describe("the budget field names its unit once", () => {
   test("a full-width field cannot grow past the sheet it is in", () => {
     assert.match(code(SHEETS), /boxSizing: "border-box"/,
       "a 100%-width input with padding and a border overflows its container again");
+  });
+});
+
+// ── The budget's own colour ─────────────────────────────────────────────
+//
+// Worth testing for one reason that is not about taste: over budget is
+// red and is not configurable, so a palette containing a red would make
+// the one state worth recognising without reading indistinguishable from
+// the eight that are not it.
+describe("a budget bar can be a colour the person picked", () => {
+  const lib = new Function(`${readSource(CATALOG)}
+    return { CHOICES_BAR_COLORS, CHOICES_BAR_DEFAULT, choicesBarColor, CHOICES_TINTS };`)();
+  const sheets = code(SHEETS);
+
+  test("no colour on offer can be mistaken for over budget", () => {
+    // #E23F45 is what `over` draws in, and it is the one state worth
+    // recognising without reading a figure. Nothing in the palette may
+    // sit near it in HUE, which is what the eye sorts by at a glance —
+    // a straight RGB distance says a dark brown is far from a bright
+    // red when the two are 27 degrees apart and read as the same
+    // warning.
+    //
+    // A colour with almost no saturation is exempt: a grey cannot be
+    // mistaken for a saturated red whatever its nominal hue, and hue
+    // is numerically unstable down there anyway.
+    const hsl = (value) => {
+      const full = String(value).replace("#", "");
+      const [r, g, b] = [0, 2, 4].map((at) => parseInt(full.slice(at, at + 2), 16) / 255);
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const delta = max - min;
+      const light = (max + min) / 2;
+      if (!delta) return { hue: 0, saturation: 0, light };
+      const saturation = delta / (1 - Math.abs(2 * light - 1));
+      let hue;
+      if (max === r) hue = 60 * (((g - b) / delta + 6) % 6);
+      else if (max === g) hue = 60 * ((b - r) / delta + 2);
+      else hue = 60 * ((r - g) / delta + 4);
+      return { hue, saturation, light };
+    };
+    const over = hsl("#E23F45");
+    for (const option of lib.CHOICES_BAR_COLORS) {
+      const mark = hsl(option.value);
+      if (mark.saturation < 0.25) continue;
+      const apart = Math.abs(mark.hue - over.hue);
+      const distance = Math.min(apart, 360 - apart);
+      assert.ok(distance > 35,
+        `${option.label} (${option.value}) is ${Math.round(distance)} degrees from the over-budget red, which is close enough to be confused with it`);
+    }
+  });
+
+  test("none of them is one of the tile tints", () => {
+    // The tints are pastels chosen to be read ON TOP OF. A stroke in one
+    // of them, drawn on a tile painted one of them, disappears.
+    const tints = new Set(lib.CHOICES_TINTS.map((tint) => tint.toLowerCase()));
+    for (const option of lib.CHOICES_BAR_COLORS) {
+      assert.ok(!tints.has(option.value.toLowerCase()),
+        `${option.label} is a tile tint, so a stroke in it is invisible on that tile`);
+    }
+  });
+
+  test("a category that was never asked keeps the colour it already had", () => {
+    // Every stroke drawn before this choice existed was T.accent. A
+    // default of anything else would repaint the whole grid on deploy.
+    assert.equal(lib.CHOICES_BAR_DEFAULT, "#7C3AED");
+    assert.equal(lib.choicesBarColor(""), lib.CHOICES_BAR_DEFAULT);
+    assert.equal(lib.choicesBarColor(null), lib.CHOICES_BAR_DEFAULT);
+    assert.equal(lib.choicesBarColor(undefined), lib.CHOICES_BAR_DEFAULT);
+    assert.equal(lib.choicesBarColor("plum"), lib.CHOICES_BAR_DEFAULT);
+  });
+
+  test("a stored colour outside the palette is still honoured", () => {
+    // The palette is a shortcut for choosing, not a constraint the
+    // stored data has to keep satisfying — growing it must not make
+    // yesterday's rows invalid.
+    assert.equal(lib.choicesBarColor("#123456"), "#123456");
+    assert.equal(lib.choicesBarColor("#abc"), "#abc");
+  });
+
+  test("the server takes a hex and refuses anything else", () => {
+    const server = require_(path.join(ROOT, "server/lib/categoryValidation.js"));
+    const ok = server.validateCategoryInput({ barColor: "#0D9488" }, { strict: false });
+    assert.equal(ok.ok, true);
+    assert.equal(ok.value.barColor, "#0D9488");
+    const bad = server.validateCategoryInput({ barColor: "teal" }, { strict: false });
+    assert.equal(bad.ok, false);
+    // Clearing it back to the default has to stay possible.
+    const cleared = server.validateCategoryInput({ barColor: "" }, { strict: false });
+    assert.equal(cleared.ok, true);
+    assert.equal(cleared.value.barColor, "");
+  });
+
+  test("the row the app gets back carries it", () => {
+    const server = require_(path.join(ROOT, "server/lib/categoryValidation.js"));
+    const row = server.publicCategory({ _id: "abc", name: "Baby", barColor: "#16A34A" });
+    assert.equal(row.barColor, "#16A34A");
+    // Unset stays unset rather than being filled in with the default —
+    // "never chosen" and "chose the default" are different facts.
+    assert.equal(server.publicCategory({ _id: "abc", name: "Baby" }).barColor, "");
+  });
+
+  test("every surface that draws a budget uses it", () => {
+    assert.match(code(GRID), /color=\{choicesBarColor\(category\.barColor\)\}/,
+      "the grid tile's stroke ignores the chosen colour");
+    assert.match(code(SEND), /color=\{choicesBarColor\(category\.barColor\)\}/,
+      "the Send strip's chip ignores the chosen colour");
+    assert.match(code(DETAIL), /choicesBarColor\(category && category\.barColor\)/,
+      "the category screen's budget bar ignores the chosen colour");
+    assert.match(code(DETAIL), /background: budget\.over \? T\.negative : barInk/,
+      "the category screen's bar no longer turns red when over");
+  });
+
+  test("the picker previews the stroke rather than only a dot", () => {
+    assert.match(sheets, /CHOICES_BAR_COLORS\.map\(\(option\)/);
+    assert.match(sheets, /width: "62%", borderRadius: 999, background: bar/,
+      "the bar colour is offered without showing what a bar in it looks like");
+  });
+});
+
+// ── The editor is a screen, not a sheet ─────────────────────────────────
+//
+// This exists because of a bug that no amount of reading the CSS would
+// have found: the icon grid scrolled inside a sheet that also scrolled,
+// and on a real phone the sheet won every gesture. Fifty icons were
+// loaded and twelve could be reached.
+//
+// The property worth keeping is not "it is full screen". It is that there
+// is exactly ONE scrolling surface, which is why these assertions are
+// about overflow rather than about height.
+describe("the editor has exactly one scrolling surface", () => {
+  const sheets = code(SHEETS);
+  const editor = sheets.slice(sheets.indexOf("function ChoicesEditorSheet"));
+  const shell = sheets.slice(sheets.indexOf("function ChoiceFullScreen"), sheets.indexOf("function ChoiceFieldCard"));
+
+  test("the icon grid does not scroll inside the form", () => {
+    assert.doesNotMatch(editor, /maxHeight: 186/,
+      "the icon grid has its own scroll again, which on a phone means it has none");
+    const grid = editor.slice(editor.indexOf('gridTemplateColumns: "repeat(6, 1fr)"'));
+    const row = grid.slice(0, grid.indexOf("}"));
+    assert.doesNotMatch(row, /overflowY/, "the icon grid scrolls inside a scroll again");
+    assert.doesNotMatch(row, /maxHeight/, "the icon grid is capped again");
+  });
+
+  test("nothing inside the body scrolls vertically", () => {
+    // The group chips scroll sideways, which is a different axis and
+    // does not fight the body.
+    assert.doesNotMatch(editor, /overflowY: "auto"/,
+      "something inside the editor scrolls vertically again");
+    assert.match(editor, /overflowX: "auto"/,
+      "the icon group chips stopped scrolling sideways");
+  });
+
+  test("the one scroller is the shell's body, and it can actually shrink", () => {
+    // A flex child's default min-height is its content. Without
+    // minHeight 0 the body grows to fit the form, pushes the footer off
+    // the screen, and never scrolls.
+    assert.match(shell, /flex: 1, minHeight: 0, overflowY: "auto"/,
+      "the body is not the single scroller, or cannot shrink below its content");
+    assert.equal((shell.match(/overflowY: "auto"/g) || []).length, 1,
+      "the shell has more than one vertical scroller");
+  });
+
+  test("the header and the footer are outside the scroll", () => {
+    // The preview is what makes the colour, shape and icon choices
+    // readable as you make them; a preview you scroll away from is not
+    // one. Save is pinned for the same reason in reverse.
+    assert.match(shell, /flexShrink: 0[\s\S]{0,200}borderBottom/,
+      "the header scrolls with the form again");
+    assert.match(shell, /flexShrink: 0[\s\S]{0,200}borderTop/,
+      "Save scrolls with the form again");
+  });
+
+  test("the back gesture still unwinds the same entry the X does", () => {
+    // The reason all three sheets sat on HelpSheet in the first place.
+    // A shell that closes on the X and leaves its history entry behind
+    // makes the next back gesture eat a real navigation.
+    assert.match(shell, /const requestClose = useBackClose\(open, onClose\);/,
+      "the full screen closes without unwinding its history entry");
+    assert.match(shell, /onClick=\{requestClose\}/);
+    // Called before the early return, because it is a hook.
+    assert.ok(
+      shell.indexOf("useBackClose") < shell.indexOf("if (!open) return null;"),
+      "useBackClose is called conditionally"
+    );
+  });
+
+  test("it is a dialog, and it says what it is", () => {
+    assert.match(shell, /role="dialog"/);
+    assert.match(shell, /aria-modal="true"/);
+    assert.match(shell, /aria-label=\{title\}/);
+  });
+
+  test("the preview draws a stroke only when there is a budget to draw", () => {
+    // A tile with no budget has no stroke. A preview showing one would
+    // promise a mark that never appears on the real thing.
+    assert.match(editor, /const previewFraction = Number\(String\(budget \|\| ""\)\.trim\(\)\) > 0 \? 0\.62 : null;/,
+      "the preview promises a budget stroke the tile will not have");
+  });
+});
+
+describe("fifty icons are all reachable", () => {
+  const sheets = code(SHEETS);
+  const editor = sheets.slice(sheets.indexOf("function ChoicesEditorSheet"));
+
+  test("collapsed shows two rows, and says how many more there are", () => {
+    assert.match(sheets, /var CHOICES_ICON_ROWS = 2;/);
+    assert.match(editor, /icons\.slice\(0, CHOICES_ICON_ROWS \* 6\)/);
+    assert.match(editor, /Show all \$\{icons\.length\}/,
+      "the expander does not say how many icons are behind it");
+    assert.match(editor, /Show fewer/);
+  });
+
+  test("a search is never collapsed", () => {
+    // A search is already a narrowing; hiding half of three results
+    // behind "show all" is the opposite of helping.
+    assert.match(editor, /if \(iconsOpen \|\| iconQuery\) return icons;/);
+    assert.match(editor, /\{!iconQuery && icons\.length > CHOICES_ICON_ROWS \* 6 &&/,
+      "the expander shows up under a search as well");
+  });
+
+  test("the icon you already have is never hidden behind the expander", () => {
+    // A collapsed grid that does not contain the current selection looks
+    // exactly like a grid with nothing selected, and the person re-picks
+    // an icon they already had.
+    assert.match(editor, /if \(!icon \|\| head\.some\(\(entry\) => entry\.c === icon\)\) return head;/);
+    assert.match(editor, /return hit \? \[hit\]\.concat\(head\.slice\(0, head\.length - 1\)\) : head;/);
+  });
+
+  test("the grid draws what the memo decided, not the whole list", () => {
+    assert.match(editor, /\{iconsShown\.map\(\(entry\)/,
+      "the grid renders every icon regardless of whether it is expanded");
+  });
+});
+
+// ── The pay control is a dot ────────────────────────────────────────────
+//
+// It used to say "Pay". A word is better than a mark at explaining
+// itself, so the only honest way to drop it is to keep the word
+// everywhere a word can still be read — which is what these assert.
+describe("the pay control is a corner dot", () => {
+  const grid = code(GRID);
+
+  test("the word is gone from the tile but not from the control", () => {
+    const tile = grid.slice(grid.indexOf("if (onPay) onPay(category)"));
+    const control = tile.slice(0, tile.indexOf("</button>"));
+    assert.doesNotMatch(control, />\s*Pay\s*</, "the tile still prints the word");
+    assert.match(control, /aria-label=\{choicesPayLabel\(category\)\}/,
+      "a screen reader is no longer told what the dot does");
+    assert.match(control, /title=\{choicesPayLabel\(category\)\}/,
+      "a long press no longer says what the dot does");
+  });
+
+  test("it stays a real tap target", () => {
+    // The dot is 20px. A 20px button is below every touch-target
+    // guideline there is, so the button around it is 34.
+    const tile = grid.slice(grid.indexOf("if (onPay) onPay(category)"));
+    const control = tile.slice(0, tile.indexOf("</button>"));
+    assert.match(control, /width: 34,\n      height: 34,/,
+      "the dot's tap target shrank to the dot");
+  });
+
+  test("the dot has an edge on every tint it can sit on", () => {
+    // Sixteen possible grounds, several of them violet. A flat accent
+    // circle disappears on those.
+    const tile = grid.slice(grid.indexOf("if (onPay) onPay(category)"));
+    assert.match(tile, /boxShadow: `0 0 0 2\.5px rgba\(255,255,255,0\.9\)`/,
+      "the dot lost the ring that separates it from the tile");
+  });
+
+  test("it cannot be pushed off the tile by a square shape", () => {
+    // The inset is 9 at its smallest, so inset - 7 is 2 — but the floor
+    // is what stops a future shape with a smaller inset from hanging
+    // the button over an edge the tile clips.
+    const tile = grid.slice(grid.indexOf("if (onPay) onPay(category)"));
+    assert.match(tile, /Math\.max\(2, choicesCornerInset\(category\.shape, 20, 1\) - 7\)/);
+  });
+});
+
+describe("the editor is not shared with a floating launcher", () => {
+  const sheets = code(SHEETS);
+  const shell = sheets.slice(sheets.indexOf("function ChoiceFullScreen"), sheets.indexOf("function ChoiceFieldCard"));
+
+  test("it asks the app map's launcher to step aside", () => {
+    // That launcher sits at z-index 10000 and was covering the Shape
+    // card and the word "optional" on the budget field.
+    assert.match(shell, /gloobal:blockingOverlay/,
+      "the map launcher floats over the editor again");
+    assert.match(shell, /fire\(true\);\n    return \(\) => fire\(false\);/,
+      "the launcher is hidden without being brought back");
+  });
+
+  test("it is keyed on open, not on mount", () => {
+    // This component stays mounted and renders null when closed. A
+    // mount-only effect hides the launcher for the rest of the session,
+    // and the count on the other end never comes back down.
+    const effect = shell.slice(shell.indexOf("gloobal:blockingOverlay"));
+    assert.match(effect.slice(0, effect.indexOf("}, [") + 12), /\}, \[open\]\)/,
+      "the blocking effect does not re-run when the editor opens and closes");
+    assert.match(shell, /if \(!open \|\| typeof window === "undefined"\) return undefined;/);
   });
 });

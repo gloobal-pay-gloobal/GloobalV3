@@ -238,19 +238,17 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     return <ChoiceBudgetEdge
       fraction={budget ? budget.fraction : null}
       over={Boolean(budget && budget.over)}
-      // ONE colour for every tile, not the category's own.
+      // The stroke's own colour, chosen in the editor, defaulting to the
+      // app's accent for every category that has never been asked.
       //
-      // The first version used choicesMarkOn — the category's tint,
-      // darkened — and darkening a pastel desaturates it: the strokes
-      // came out grey-brown on pink and grey-lilac on lilac, muddy and
-      // nearly invisible against the tile they sit on.
-      //
-      // The tile's tint already carries which category this is. The
-      // stroke answers a different question, and the same answer should
-      // look the same on every tile, so it is the app's own accent —
-      // with red reserved for over, the one state worth telling apart
-      // without reading.
-      color={T.accent}
+      // Deliberately NOT derived from the tile's tint. The first version
+      // used choicesMarkOn — the tint, darkened — and darkening a pastel
+      // desaturates it: the strokes came out grey-brown on pink and
+      // grey-lilac on lilac, muddy and nearly invisible against the tile
+      // they sit on. CHOICES_BAR_COLORS is a separate, saturated palette
+      // for exactly that reason, and it contains no red, because red is
+      // what `over` means.
+      color={choicesBarColor(category.barColor)}
       // The same shape and the same base the tile's own border-radius
       // uses above, so the stroke traces the outline rather than
       // approximating it.
@@ -290,22 +288,50 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     onClick={(e) => { e.stopPropagation(); if (onPay) onPay(category); }}
     className="v2-tap"
     aria-label={choicesPayLabel(category)}
+    title={choicesPayLabel(category)}
     style={{
       position: "absolute",
-      top: choicesCornerInset(category.shape, 20, 1),
-      right: choicesCornerInset(category.shape, 20, 1),
+      // The DOT is what has to land on the corner inset, not the button
+      // around it. The button is 34px so it is a real tap target — the
+      // dot it draws is 20 — so it starts 7px earlier in both axes and
+      // centres the dot where the old pill's corner sat. Floored at 2
+      // rather than allowed to go negative, which on the squarest
+      // shapes would hang the button over the tile's edge and let it
+      // be clipped.
+      top: Math.max(2, choicesCornerInset(category.shape, 20, 1) - 7),
+      right: Math.max(2, choicesCornerInset(category.shape, 20, 1) - 7),
+      width: 34,
+      height: 34,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
       border: "none",
-      borderRadius: 999,
-      background: T.surface,
-      padding: "5px 13px",
-      fontSize: 12.5,
-      fontWeight: 800,
-      color: T.ink,
+      background: "none",
+      padding: 0,
       cursor: "pointer"
     }}
-  >
-      Pay
-    </button></div><div
+  >{
+    /* A dot rather than the word "Pay".
+
+       It loses a word, and the word was doing real work — so the label
+       it loses is kept in `aria-label` and `title`, which is what a
+       screen reader and a long-press each read. What it buys is a tile
+       that is its icon and its name, with one mark on it, instead of a
+       tile with a button parked on top of a photo of somebody's child.
+
+       The ring is not decoration: the dot sits on sixteen possible
+       tints, and a flat accent circle on the violet ones is nearly
+       invisible. The ring gives it an edge on every one of them. */
+  }<span
+    style={{
+      width: 20,
+      height: 20,
+      borderRadius: "50%",
+      background: T.accent,
+      boxShadow: `0 0 0 2.5px rgba(255,255,255,0.9)`,
+      display: "block"
+    }}
+  /></button></div><div
     style={{ textAlign: "center", fontSize: 14.5, fontWeight: 700, color: T.ink, marginTop: 9, overflowWrap: "anywhere" }}
   >{category.name}</div></div>)}</div></div><button
     onClick={() => setSheet("add")}

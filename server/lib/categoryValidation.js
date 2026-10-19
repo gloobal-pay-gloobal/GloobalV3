@@ -33,7 +33,10 @@ const CATEGORY_ICON_STYLES = ['emoji', 'line', 'duotone'];
 // Mirrors CHOICES_SHAPES in the client's choicesCatalog.js. A name
 // the client does not know renders as the default rather than as
 // nothing, but it is refused here so the two cannot drift silently.
-const CATEGORY_SHAPES = ['rounded', 'soft', 'sharp', 'pill', 'leaf'];
+const CATEGORY_SHAPES = [
+  'rounded', 'soft', 'sharp', 'pill', 'leaf',
+  'petal', 'arch', 'cup', 'tag', 'drop',
+];
 
 // #rgb, #rrggbb, #rrggbbaa. Anything else is refused rather than stripped:
 // a colour is not free text, and half-accepting one writes a tile nobody
@@ -109,6 +112,18 @@ const validateCategoryInput = (input, { strict = true } = {}) => {
     out.color = color;
   }
 
+  // The budget stroke's own colour. Checked with the same pattern as the
+  // tile's tint and NOT against a list of the eight the client offers:
+  // that palette is a shortcut for choosing, and pinning it here would
+  // make every category saved today invalid the day a ninth is added.
+  if (supplied('barColor')) {
+    const barColor = String(body.barColor || '').trim();
+    if (barColor && !CATEGORY_COLOR_PATTERN.test(barColor)) {
+      return { ok: false, message: 'That colour is not a hex value like #7C3AED.' };
+    }
+    out.barColor = barColor;
+  }
+
   if (supplied('monthlyBudget')) {
     const budget = Number(body.monthlyBudget);
     if (!Number.isFinite(budget) || budget < 0) {
@@ -160,6 +175,12 @@ const publicCategory = (row) => ({
   iconStyle: row.iconStyle || 'emoji',
   shape: row.shape || 'rounded',
   color: row.color || '',
+  // Empty means "never chosen", which the client renders as the app's
+  // accent. Deliberately not defaulted to that hex here: a stored
+  // colour and an unset one are different facts, and collapsing them
+  // would make a later change of default invisible to every category
+  // that had simply never been asked.
+  barColor: row.barColor || '',
   monthlyBudget: Number(row.monthlyBudget) || 0,
   budgetCurrency: row.budgetCurrency || '',
   favorite: Boolean(row.favorite),

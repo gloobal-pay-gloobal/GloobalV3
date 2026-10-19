@@ -58,14 +58,17 @@ const categorySchema = new mongoose.Schema(
       default: 'emoji',
     },
 
-    // The outline the tile takes, from a fixed set of five. Stored as the
+    // The outline the tile takes, from a fixed set of ten. Stored as the
     // NAME of a shape rather than the corner radii it works out to,
     // because the radii differ per surface — 20px on a grid tile, 18px on
     // a Send chip — and a stored number would be right on one of them.
     // See CHOICES_SHAPES in the client's choicesCatalog.js.
     shape: {
       type: String,
-      enum: ['rounded', 'soft', 'sharp', 'pill', 'leaf'],
+      enum: [
+        'rounded', 'soft', 'sharp', 'pill', 'leaf',
+        'petal', 'arch', 'cup', 'tag', 'drop',
+      ],
       default: 'rounded',
     },
 
@@ -74,6 +77,19 @@ const categorySchema = new mongoose.Schema(
     // because a bad colour should be a 400 with a sentence, not a mongoose
     // ValidationError surfacing as a 500.
     color: {
+      type: String,
+      trim: true,
+      default: '',
+      maxlength: 9,
+    },
+
+    // The colour of the budget stroke that traces the tile's edge. A
+    // separate field from `color` rather than derived from it: darkening
+    // a pastel tint desaturates it, and the strokes that produced came
+    // out grey-brown on pink and grey-lilac on lilac. Empty means the
+    // app's accent, which is what every stroke was before this was a
+    // choice.
+    barColor: {
       type: String,
       trim: true,
       default: '',

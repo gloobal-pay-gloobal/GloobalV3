@@ -1,6 +1,6 @@
 // src/features/choices/ChoiceSheets.jsx
 import { useState as useState43, useEffect as useEffect43, useMemo as useMemo11, useRef as useRef26 } from "react";
-import { Plus as Plus4, Check as Check6, ScanLine as ScanLine2, Search as Search7, X as X8, Heart as Heart4, Camera as Camera3, Trash2 as Trash2Icon } from "lucide-react";
+import { Plus as Plus4, Check as Check6, ScanLine as ScanLine2, Search as Search7, X as X8, Heart as Heart4, Camera as Camera3, Trash2 as Trash2Icon, ChevronDown as ChevronDown5, ChevronUp as ChevronUp3 } from "lucide-react";
 
 // The sheets My Choices opens: pick one, add something, make or edit one.
 //
@@ -333,6 +333,106 @@ function ChoicesAddSheet({ open, onClose, onRoute }) {
 // appearing to — a control that lies about what it did is worse than one
 // that is not there. `iconStyle` survives on the model for when the other
 // two are actually drawn.
+// A full-height screen rather than a bottom sheet, for the one surface
+// where the difference decides whether it works at all.
+//
+// ── WHY THE EDITOR STOPPED BEING A SHEET ─────────────────────────────
+//
+// HelpSheet caps itself at 82vh and scrolls inside. That is right for a
+// glossary and it was wrong here, for a reason that only shows up on a
+// real phone: the icon grid had a scroll of its OWN nested inside that
+// one. A drag beginning on the grid is claimed by whichever of the two
+// the browser decides, and on the device it was always the sheet — so
+// the grid could not be scrolled at all. Fifty icons were loaded;
+// twelve were reachable.
+//
+// The fix is structural rather than a CSS flag, because every flag here
+// only changes which of two scrollers wins. There is now exactly ONE
+// scrolling surface on the screen and nothing inside it scrolls — which
+// needs the room a full screen has and a sheet does not.
+//
+// Header and footer sit outside that scroll, which is the second reason
+// to do it this way: the preview stays visible while you change the
+// thing it is previewing, and Save is reachable without first scrolling
+// past every decision to the bottom of the form.
+//
+// useBackClose is called before the `open` early-return, and is passed
+// `open` rather than being called conditionally — the same contract
+// HelpSheet keeps, and for the same reason. The handler it RETURNS is
+// what the close button is wired to, so the Android back gesture and
+// the X unwind the same history entry.
+function ChoiceFullScreen({ open, onClose, title, header, footer, children }) {
+  const requestClose = useBackClose(open, onClose);
+
+  // The app map's floating launcher sits at z-index 10000 so it is always
+  // reachable, which is right on an ordinary screen and wrong on top of
+  // this one: it was hovering over the Shape card and covering the word
+  // "optional" on the budget field. Same channel PaymentProcessing and
+  // PaymentUnlock use — a count on the other end, so the only obligation
+  // here is that every fire(true) is matched, which the cleanup does.
+  //
+  // Keyed on `open` rather than on mount, because this component stays
+  // mounted and merely renders null when closed. A mount-only effect
+  // would hide the launcher for the rest of the session.
+  useEffect43(() => {
+    if (!open || typeof window === "undefined") return undefined;
+    const fire = (active) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active } }));
+    fire(true);
+    return () => fire(false);
+  }, [open]);
+
+  if (!open) return null;
+  return <div
+    role="dialog"
+    aria-modal="true"
+    aria-label={title}
+    style={{ position: "fixed", inset: 0, zIndex: 600, background: T.bg, display: "flex", flexDirection: "column" }}
+  ><div
+    style={{ flexShrink: 0, background: T.surface, borderBottom: `1px solid ${T.line}`, padding: "calc(13px + env(safe-area-inset-top, 0px)) 18px 13px" }}
+  ><div style={{ display: "flex", alignItems: "center", gap: 12 }}><button
+    onClick={requestClose}
+    aria-label="Close"
+    className="v2-tap"
+    style={{ flexShrink: 0, width: 32, height: 32, borderRadius: "50%", border: `1px solid ${T.line}`, background: T.surface, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
+  ><X8 size={16} color={T.inkSoft} /></button><span
+    style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}
+  >{title}</span></div>{header}</div>{
+    /* minHeight 0 is what actually makes this scroll. A flex child's
+       default min-height is its content, so without it the body grows
+       to fit the form and pushes the footer off the screen instead of
+       scrolling — and the one scroller this whole component exists to
+       guarantee would not exist. */
+  }<div
+    style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "14px 18px 22px" }}
+  >{children}</div><div
+    style={{ flexShrink: 0, background: T.surface, borderTop: `1px solid ${T.line}`, padding: "12px 18px calc(12px + env(safe-area-inset-bottom, 0px))" }}
+  >{footer}</div></div>;
+}
+
+// One decision in the editor: a label, an optional note against the
+// right edge, and its controls on a surface of their own.
+//
+// A full screen of form rows on one flat ground reads as a wall, and
+// the point of taking the extra room was to make room for MORE
+// decisions. Giving each its own card is what keeps a long form
+// skimmable, and it is why the next one costs the ones above it
+// nothing.
+function ChoiceFieldCard({ label, note, children }) {
+  return <div
+    style={{ background: T.surface, borderRadius: T.radiusMd, boxShadow: T.shadowCard, padding: 15, marginBottom: 12 }}
+  ><div
+    style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 11 }}
+  ><span style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft }}>{label}</span>{note && <span
+    style={{ fontSize: 11, color: T.inkFaint, flexShrink: 0 }}
+  >{note}</span>}</div>{children}</div>;
+}
+
+// How many rows of icons a collapsed grid shows. Two, which is twelve —
+// enough to see that there is a choice and that it is browsable,
+// without putting nine rows of emoji between the name field and the
+// colour.
+var CHOICES_ICON_ROWS = 2;
+
 function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, onRemove }) {
   const lens = useGeuLens();
   const editing = Boolean(category && category.id);
@@ -340,10 +440,18 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
   const [icon, setIcon] = useState43("");
   const [color, setColor] = useState43(CHOICES_TINTS[0]);
   const [shape, setShape] = useState43(CHOICES_SHAPE_DEFAULT);
+  // Empty means "never chosen", which choicesBarColor renders as the
+  // app's accent. Held as the hex rather than as a palette key, so a
+  // category saved before this palette existed round-trips unchanged.
+  const [barColor, setBarColor] = useState43("");
   const [budget, setBudget] = useState43("");
   const [favorite, setFavorite] = useState43(false);
   const [iconQuery, setIconQuery] = useState43("");
   const [iconGroup, setIconGroup] = useState43("all");
+  // Whether the icon grid is showing every icon or only its first two
+  // rows. Collapsed by default: nine rows of emoji between the name
+  // field and the colour is a form nobody reaches the bottom of.
+  const [iconsOpen, setIconsOpen] = useState43(false);
   // Whether the person has picked an icon themselves. Until they have,
   // the name suggests one as they type; the moment they choose, their
   // choice stops being overwritten.
@@ -368,6 +476,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     setIcon(category ? String(category.icon || "") : "");
     setColor(category ? choicesTint(category.color) : CHOICES_TINTS[0]);
     setShape((category && category.shape) || CHOICES_SHAPE_DEFAULT);
+    setBarColor(category ? String(category.barColor || "") : "");
     setFavorite(Boolean(category && category.favorite));
     // 0 means "no budget", so the field opens EMPTY rather than showing a
     // zero somebody has to clear before they can type.
@@ -375,6 +484,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     setBudget(Number.isFinite(stored) && stored > 0 ? String(stored) : "");
     setIconQuery("");
     setIconGroup("all");
+    setIconsOpen(false);
     setIconTouched(Boolean(category && category.icon));
     setPhoto((category && category.photo) || null);
     setPhotoDirty(false);
@@ -413,6 +523,20 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     () => choicesIconSearch(iconQuery, iconGroup),
     [iconQuery, iconGroup]
   );
+  // What the grid actually draws. A search is already a narrowing, so
+  // results are never collapsed — only the unfiltered list is.
+  //
+  // The chosen icon is pulled to the front when it would otherwise be
+  // past the fold, because a collapsed grid that does not contain the
+  // current selection looks exactly like a grid with nothing selected,
+  // and the person would re-pick an icon they already had.
+  const iconsShown = useMemo11(() => {
+    if (iconsOpen || iconQuery) return icons;
+    const head = icons.slice(0, CHOICES_ICON_ROWS * 6);
+    if (!icon || head.some((entry) => entry.c === icon)) return head;
+    const hit = icons.find((entry) => entry.c === icon);
+    return hit ? [hit].concat(head.slice(0, head.length - 1)) : head;
+  }, [icons, iconsOpen, iconQuery, icon]);
   const unit = useMemo11(() => geuLensUnitPair(ccyCode, lens, ccyCode), [ccyCode, lens]);
   // Declared after `icon`, which it reads.
   const chosenMeta = icon ? choicesIconMeta(icon) : null;
@@ -456,6 +580,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
         icon,
         color,
         shape,
+        barColor,
         favorite,
         monthlyBudget,
         budgetCurrency: String(ccyCode || "").toUpperCase()
@@ -488,33 +613,63 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
   };
 
   const tint = choicesTint(color);
-  return <HelpSheet
+  const bar = choicesBarColor(barColor);
+  // A budget typed in means the real tile WILL carry a stroke, so the
+  // preview draws one — at a fixed illustrative 62% rather than at the
+  // true figure, which this screen does not hold and should not fetch
+  // to decorate itself. With no budget the real tile has no stroke, so
+  // neither does the preview: drawing one would promise a mark that
+  // never appears. The bar-colour card carries a sample of its own, so
+  // that choice is previewed either way.
+  const previewFraction = Number(String(budget || "").trim()) > 0 ? 0.62 : null;
+
+  return <ChoiceFullScreen
     open={open}
     onClose={onClose}
     title={editing ? "Edit category" : kind === "income" ? "New income category" : "New category"}
-  >{
-    /* The preview, and the heart. Both say what the category WILL be
-       rather than describing it — the tile here is the tile that appears
-       in the grid, at the size it appears. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 13 }}><span
-    style={{ width: 62, height: 62, borderRadius: choicesCornerCss(shape, 19), background: tint, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}
-  ><ChoiceGlyph category={{ icon: icon, photo: photo }} size={30} /></span><span style={{ flex: 1, minWidth: 0 }}><span
-    style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-  >{String(name || "").trim() || "Untitled"}</span><span
-    style={{ display: "block", fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}
-  >{photo ? "Your own picture" : chosenMeta ? chosenMeta.n : "How it will look on a payment"}</span></span><button
-    onClick={() => setFavorite(!favorite)}
-    className="v2-tap"
-    aria-label={favorite ? "Remove from the Send strip" : "Show on the Send strip"}
-    aria-pressed={favorite}
-    style={{ flexShrink: 0, width: 38, height: 38, borderRadius: "50%", border: `1px solid ${favorite ? "#E23F45" : T.line}`, background: favorite ? "#FDECEE" : T.surface, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
-  ><Heart4 size={17} color={favorite ? "#E23F45" : T.inkFaint} fill={favorite ? "#E23F45" : "none"} strokeWidth={2.3} /></button></div><div
-    style={{ fontSize: 11, color: T.inkFaint, marginTop: 7 }}
-  >{favorite ? "Shown above the Send button" : "Tap the heart to show it above the Send button"}</div><label
-    style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "16px 0 7px" }}
-  >
-      Name
-    </label><input
+    header={
+      /* The preview lives in the header, OUTSIDE the scroll, because
+         almost everything below it changes how this looks — the icon,
+         the colour, the shape, the stroke. A preview you have to
+         scroll back up to is not one. */
+      <div style={{ display: "flex", alignItems: "center", gap: 13, marginTop: 13 }}><span
+        style={{ position: "relative", width: 58, height: 58, borderRadius: choicesCornerCss(shape, 18), background: tint, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}
+      ><ChoiceBudgetEdge
+        fraction={previewFraction}
+        over={false}
+        color={bar}
+        shape={shape}
+        radius={18}
+        stroke={5}
+      /><ChoiceGlyph category={{ icon: icon, photo: photo }} size={28} /></span><span
+        style={{ flex: 1, minWidth: 0 }}
+      ><span
+        style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+      >{String(name || "").trim() || "Untitled"}</span><span
+        style={{ display: "block", fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}
+      >{photo ? "Your own picture" : chosenMeta ? chosenMeta.n : "How it will look on a payment"}</span></span></div>
+    }
+    footer={<>{error && <div
+      style={{ marginBottom: 10, fontSize: 12.5, fontWeight: 700, color: T.negative }}
+      role="alert"
+    >{error}</div>}<button
+      onClick={save}
+      disabled={busy}
+      className="v2-tap"
+      style={{
+        width: "100%",
+        borderRadius: 14,
+        border: "none",
+        padding: 16,
+        fontSize: 15.5,
+        fontWeight: 800,
+        color: "#fff",
+        background: busy ? T.gradButtonDisabled : T.gradButton,
+        boxShadow: busy ? "none" : T.shadowRaised,
+        cursor: busy ? "default" : "pointer"
+      }}
+    >{busy ? "Saving…" : editing ? "Save" : "Create category"}</button></>}
+  ><ChoiceFieldCard label="Name" note={`Up to ${CHOICES_NAME_MAX_WORDS} words`}><input
     value={name}
     onChange={(e) => setName(e.target.value.slice(0, CHOICES_NAME_MAX))}
     placeholder="Baby care"
@@ -522,7 +677,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     style={{
       width: "100%",
       // Without this the padding and the border are ADDED to 100%, and
-      // the field runs past the right edge of the sheet.
+      // the field runs past the right edge of its card.
       boxSizing: "border-box",
       border: `1.5px solid ${T.accent}`,
       borderRadius: 13,
@@ -535,19 +690,29 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       outline: "none"
     }}
   /><div
-    style={{ fontSize: 11, marginTop: 6, color: wordCount > CHOICES_NAME_MAX_WORDS ? T.negative : T.inkFaint, fontWeight: wordCount > CHOICES_NAME_MAX_WORDS ? 700 : 500 }}
+    style={{ fontSize: 11, marginTop: 7, color: wordCount > CHOICES_NAME_MAX_WORDS ? T.negative : T.inkFaint, fontWeight: wordCount > CHOICES_NAME_MAX_WORDS ? 700 : 500 }}
   >{wordCount > CHOICES_NAME_MAX_WORDS
-    ? `${wordCount} words \u2014 a choice's name is up to ${CHOICES_NAME_MAX_WORDS}`
-    : `Up to ${CHOICES_NAME_MAX_WORDS} words, so it reads everywhere it appears`}</div>{
-    /* The icon browser. A search box first, because 300-odd icons in a
-       grid is a worse experience than twenty — nobody scrolls that far.
-       The group chips are for browsing when there is no word to type. */
-  }<div
-    style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, margin: "16px 0 7px" }}
-  ><label style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>
-      Icon
-    </label><span style={{ fontSize: 11, color: T.inkFaint }}>{icons.length} to choose from
-    </span></div>{
+    ? `${wordCount} words — a choice's name is up to ${CHOICES_NAME_MAX_WORDS}`
+    : "So it reads everywhere it appears"}</div></ChoiceFieldCard>{
+    /* Favourite is its own decision now rather than a heart floating
+       beside the preview. On a sheet there was no room to say what the
+       heart did; on a full screen there is, and a control that explains
+       itself is worth the row it costs. */
+  }<ChoiceFieldCard label="Above the Send button"><button
+    onClick={() => setFavorite(!favorite)}
+    className="v2-tap"
+    aria-pressed={favorite}
+    style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", boxSizing: "border-box", border: "none", background: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+  ><span
+    style={{ flexShrink: 0, width: 38, height: 38, borderRadius: "50%", border: `1px solid ${favorite ? "#E23F45" : T.line}`, background: favorite ? "#FDECEE" : T.surface, display: "flex", alignItems: "center", justifyContent: "center" }}
+  ><Heart4 size={17} color={favorite ? "#E23F45" : T.inkFaint} fill={favorite ? "#E23F45" : "none"} strokeWidth={2.3} /></span><span
+    style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.5, color: T.inkSoft }}
+  >{favorite
+    ? "Shown on the strip above the Send button, so you can file a payment as you make it."
+    : "Tap the heart to put this on the strip above the Send button."}</span></button></ChoiceFieldCard><ChoiceFieldCard
+    label="Icon"
+    note={`${icons.length} to choose from`}
+  >{
     /* A picture of your own, offered BEFORE the icon grid: somebody who
        wants one is not going to find it by scrolling emoji. Downscaled
        to a 160px square on this device before it is sent anywhere — see
@@ -627,9 +792,14 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       color: iconGroup === group.key ? T.accent : T.inkSoft,
       whiteSpace: "nowrap"
     }}
-  >{group.label}</button>)}</div>}<div
-    style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 7, marginTop: 11, maxHeight: 186, overflowY: "auto", WebkitOverflowScrolling: "touch" }}
-  >{icons.map((entry) => <button
+  >{group.label}</button>)}</div>}{
+    /* No maxHeight and no overflow. This grid used to scroll inside the
+       sheet's scroll, and on a phone that meant it did not scroll at
+       all — see ChoiceFullScreen. It now flows, and the expander below
+       is what keeps it from burying the rest of the form. */
+  }<div
+    style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 7, marginTop: 11 }}
+  >{iconsShown.map((entry) => <button
     key={entry.g + entry.c}
     onClick={() => pickIcon(entry.c)}
     className="v2-tap"
@@ -649,15 +819,20 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       justifyContent: "center",
       padding: 0
     }}
-  >{entry.c}</button>)}</div>{icons.length === 0 && <div
+  >{entry.c}</button>)}</div>{!iconQuery && icons.length > CHOICES_ICON_ROWS * 6 && <button
+    onClick={() => setIconsOpen(!iconsOpen)}
+    className="v2-tap"
+    aria-expanded={iconsOpen}
+    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, width: "100%", boxSizing: "border-box", marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 12, background: T.surface, padding: "10px 12px", fontSize: 12.5, fontWeight: 800, color: T.accent, cursor: "pointer" }}
+  >{iconsOpen ? "Show fewer" : `Show all ${icons.length}`}{iconsOpen
+    ? <ChevronUp3 size={15} color={T.accent} />
+    : <ChevronDown5 size={15} color={T.accent} />}</button>}{icons.length === 0 && <div
     style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", padding: "16px 8px", lineHeight: 1.5 }}
   >
       No icon called {"“"}{iconQuery.trim()}{"”"}. Any emoji from your keyboard works too {"—"} type one into the name and pick it from there.
-    </div>}<label
-    style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "16px 0 7px" }}
-  >
-      Colour
-    </label><div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 8 }}>{CHOICES_TINTS.map((swatch) => <button
+    </div>}</ChoiceFieldCard><ChoiceFieldCard label="Colour" note={`${CHOICES_TINTS.length} tints`}><div
+    style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 8 }}
+  >{CHOICES_TINTS.map((swatch) => <button
     key={swatch}
     onClick={() => setColor(swatch)}
     className="v2-tap"
@@ -671,11 +846,10 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       cursor: "pointer",
       boxShadow: color === swatch ? `0 0 0 2.5px ${T.surface}, 0 0 0 4.5px ${T.accent}` : "none"
     }}
-  />)}</div><label
-    style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "16px 0 7px" }}
-  >
-      Shape
-    </label><div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 9 }}>{CHOICES_SHAPES.map((option) => {
+  />)}</div></ChoiceFieldCard><ChoiceFieldCard
+    label="Shape"
+    note={`${CHOICES_SHAPES.length} to choose from`}
+  ><div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 9 }}>{CHOICES_SHAPES.map((option) => {
     const picked = shape === option.key;
     return <button
       key={option.key}
@@ -699,11 +873,10 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     /><span
       style={{ fontSize: 10.5, fontWeight: picked ? 800 : 600, color: picked ? T.accent : T.inkFaint }}
     >{option.label}</span></button>;
-  })}</div><label
-    style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "16px 0 7px" }}
-  >
-      Monthly budget <span style={{ fontWeight: 600, color: T.inkFaint }}>{"·"} optional</span>
-    </label><div
+  })}</div></ChoiceFieldCard><ChoiceFieldCard
+    label="Monthly budget"
+    note={"optional"}
+  ><div
     style={{
       display: "flex",
       alignItems: "center",
@@ -731,47 +904,56 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       fontFamily: T.fontBody
     }}
   />{
-    /* The unit sits INSIDE the field, as one span, for the same reason the
-       Send button's does: a bare fragment makes the ticker and the bar
-       separate flex items and the gap lands between a unit and its own
-       currency. */
-  }{
     /* geuLensUnitPair already decides BOTH halves — `lead` goes before the
        figure and `trail` after it. Printing COIN_TICKER here as well put
        the ticker in front of its own pair, so the field read "GEU | GEU"
        with the lens off. One span, nowrap, for the same flex-gap reason
        the Send button's unit is wrapped. */
-  }{unit.trail && <span style={{ fontSize: 14, fontWeight: 800, color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0 }}>{GEU_LENS_BAR} {unit.trail}</span>}</div>{error && <div
-    style={{ marginTop: 12, fontSize: 12.5, fontWeight: 700, color: T.negative }}
-    role="alert"
-  >{error}</div>}<button
-    onClick={save}
-    disabled={busy}
+  }{unit.trail && <span style={{ fontSize: 14, fontWeight: 800, color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0 }}>{GEU_LENS_BAR} {unit.trail}</span>}</div></ChoiceFieldCard><ChoiceFieldCard
+    label="Budget colour"
+    note={`${CHOICES_BAR_COLORS.length} to choose from`}
+  >{
+    /* A sample rather than only swatches, because what is being chosen
+       is not a dot — it is the stroke that traces the tile and the bar
+       on the category screen. Shown at the same 62% the preview uses. */
+  }<div
+    style={{ height: 9, borderRadius: 999, background: T.surfaceSunk, overflow: "hidden", marginBottom: 12 }}
+  ><div style={{ height: "100%", width: "62%", borderRadius: 999, background: bar }} /></div><div
+    style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 8 }}
+  >{CHOICES_BAR_COLORS.map((option) => <button
+    key={option.key}
+    onClick={() => setBarColor(option.value)}
     className="v2-tap"
+    aria-label={option.label}
+    aria-pressed={bar.toLowerCase() === option.value.toLowerCase()}
     style={{
-      marginTop: 18,
-      width: "100%",
-      borderRadius: 14,
+      aspectRatio: "1",
+      borderRadius: "50%",
+      background: option.value,
       border: "none",
-      padding: 16,
-      fontSize: 15.5,
-      fontWeight: 800,
-      color: "#fff",
-      background: busy ? T.gradButtonDisabled : T.gradButton,
-      boxShadow: busy ? "none" : T.shadowRaised,
-      cursor: busy ? "default" : "pointer"
+      cursor: "pointer",
+      boxShadow: bar.toLowerCase() === option.value.toLowerCase() ? `0 0 0 2.5px ${T.surface}, 0 0 0 4.5px ${T.accent}` : "none"
     }}
-  >{busy ? "Saving…" : editing ? "Save" : "Create category"}</button>{
+  />)}</div><div
+    style={{ fontSize: 11, color: T.inkFaint, marginTop: 10, lineHeight: 1.5 }}
+  >{Number(String(budget || "").trim()) > 0
+    ? "Over budget is always red, whichever colour you pick."
+    : "Set a monthly budget above and this traces the tile's edge as you spend."}</div></ChoiceFieldCard>{
     /* Retiring one is deliberately quiet and deliberately not destructive —
        a category that has been used is archived, not deleted, because its
        name is the only thing that makes the payments filed under it
-       readable. The server decides which happens and says so. */
+       readable. The server decides which happens and says so.
+
+       At the end of the scroll rather than in the pinned footer: Save is
+       what the footer is for, and a destructive-sounding control pinned
+       next to it is a control somebody eventually hits by accident. */
   }{editing && onRemove && <button
     onClick={() => onRemove(category)}
     className="v2-tap"
     style={{
-      marginTop: 10,
+      marginTop: 4,
       width: "100%",
+      boxSizing: "border-box",
       borderRadius: 14,
       border: "none",
       background: "transparent",
@@ -783,7 +965,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
     }}
   >
       Retire this choice
-    </button>}</HelpSheet>;
+    </button>}</ChoiceFullScreen>;
 }
 
 // Mirrors CATEGORY_NAME_MAX_LENGTH in server/lib/categoryValidation.js. The

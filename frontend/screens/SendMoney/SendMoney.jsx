@@ -1872,7 +1872,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       return <ChoiceBudgetEdge
         fraction={budget ? budget.fraction : null}
         over={Boolean(budget && budget.over)}
-        color={T.accent}
+        // The same stroke colour the grid tile uses, so a category is
+        // recognisable by it on both surfaces.
+        color={choicesBarColor(category.barColor)}
         shape={category.shape}
         radius={15.5}
         stroke={4}

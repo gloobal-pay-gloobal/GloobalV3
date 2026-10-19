@@ -13,7 +13,6 @@ import {
   ArrowUpDown as ArrowUpDown2,
   ArrowUpRight as ArrowUpRight2,
   ArrowDownLeft as ArrowDownLeft2,
-  Send as SendMoneyLucideIcon,
   Lock as Lock5,
   X as X4,
   ChevronRight as ChevronRight4,
@@ -1739,7 +1738,24 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     return <>{pair.lead}{pair.trail && <span
       style={{ fontSize: geuLensTrailSize(20), fontWeight: 800 }}
     > {GEU_LENS_BAR} {pair.trail}</span>}</>;
-  })()}</span></div></>}</div></>}{
+  })()}</span></div>{
+    /* WHAT THIS PAYMENT IS FOR, under the box it belongs to.
+
+       This used to be a clause inside the Send button — "Pay 250.00 GEU
+       │ ₹ for School fees and uniforms" — where it had to share one line
+       with the amount and ellipsise itself to fit. Down here it has the
+       whole card's width, so the name wraps rather than truncating and
+       is always readable in full.
+
+       It also leaves the button with nothing but its verb and its
+       figure, which is what that button is actually for. */
+  }{pickedChoice && <div
+    style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 12, fontSize: 12.5, color: T.inkSoft }}
+  ><span style={{ fontWeight: 600, flexShrink: 0 }}>
+      for
+    </span><span
+    style={{ fontWeight: 800, color: T.ink, minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.35 }}
+  >{pickedChoice.name}</span></div>}</>}</div></>}{
     /* SWAP — only once a receiver's been found. Flips currency
        sides and, with it, which card is shown big vs as a strip.
        The search bar itself always looks up the receiver, no
@@ -1883,7 +1899,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     const budget = choicesBudgetProgress(totals.thisMonth, pickedChoice.monthlyBudget);
     if (!budget) return null;
     const parts = geuLensBarParts(budget.over ? budget.used - budget.limit : budget.left, top.currency, lens, top.currency);
-    return <div style={{ fontSize: 11, color: T.inkFaint, marginTop: 8 }}>{pickedChoice.name} {"·"} <span
+    // The name is stated under the amount box now, so this line is only
+    // about the budget rather than repeating which category it belongs to.
+    return <div style={{ fontSize: 11, color: T.inkFaint, marginTop: 8 }}><span
       style={{ fontWeight: 700, color: budget.over ? T.negative : T.inkSoft, whiteSpace: "nowrap" }}
     >{parts.lead}{parts.trail && <span style={{ fontSize: geuLensTrailSize(11) }}> {parts.trail}</span>}</span>{budget.over ? " over this month" : " left this month"}</div>;
   })()}</div>}{
@@ -1903,44 +1921,21 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     onClick={handleSend}
     style={{ padding: "14px 18px", marginTop: topOpen ? 0 : 24 }}
   >{(() => {
-    // ── WHAT THE BUTTON SAYS ──────────────────────────────────────────
+    // Just the verb and the figure now. The paper-plane icon and the
+    // "for <choice>" clause are both gone — the icon said nothing the
+    // word "Pay" does not, and the clause now sits under the amount box
+    // where it has room to be read in full.
     //
-    // "Send 250.00₹ │ GEU", or — once a choice is picked above it —
-    // "Pay 250.00₹ │ GEU for Damroo Baby". The sentence follows the same
-    // rule the category screen's own button does: the choice's name goes
-    // in verbatim, never shortened to one word or title-cased. See
-    // choicesPayLabel, which is where that rule lives for the screens
-    // that can use it; this one cannot, because the amount sits in the
-    // middle of the sentence rather than after it.
-    //
-    // ── WHY THE NESTING LOOKS LIKE THIS ───────────────────────────────
-    //
-    // The amount and its unit are ONE span with nowrap, because this row
-    // is a flex container with a gap: a bare fragment makes the digits
-    // and the trailing unit separate flex items, so the gap lands between
-    // a number and its own currency and the pair can break across lines.
-    // That bug has been fixed here once already; the verb was still
-    // outside the span and had the same fault, which is why "Send" and
-    // the figure sat a gap apart.
-    //
-    // The category clause is the ONLY part allowed to shrink. It takes
-    // minWidth 0 and an ellipsis, while the amount holds flexShrink 0, so
-    // a category called "School fees and uniforms" truncates its own name
-    // and can never push the figure out of the button or on to a second
-    // line.
+    // STILL ONE NOWRAP SPAN. This button is a flex row with a 10px gap,
+    // and anything split across two children puts that gap inside the
+    // sentence: it once landed between a figure and its own currency,
+    // and later between the verb and the figure. One span, one line,
+    // nothing for the gap to get into.
     const parts = geuLensBarParts(senderAmount, top.currency, lens, top.currency);
     const verb = bottom.registered === false ? "Simulate" : pickedChoice ? "Pay" : "Send";
-    return <span
-      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%", minWidth: 0 }}
-    ><SendMoneyLucideIcon size={18} style={{ flexShrink: 0 }} /><span
-      style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 6, minWidth: 0, overflow: "hidden" }}
-    ><span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{verb} {parts.lead}{parts.trail && <span
+    return <span style={{ whiteSpace: "nowrap" }}>{verb} {parts.lead}{parts.trail && <span
       style={{ fontSize: geuLensTrailSize(16), fontWeight: 800 }}
-    > {parts.trail}</span>}</span>{pickedChoice && <span
-      style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13.5, fontWeight: 700, opacity: 0.93 }}
-    >
-      for {pickedChoice.name}
-    </span>}</span></span>;
+    > {parts.trail}</span>}</span>;
   })()}</button>}</>}{
     /* Funding source — the four ways a transfer can be paid. Picking
        one moves straight on to the OTP confirmation. */

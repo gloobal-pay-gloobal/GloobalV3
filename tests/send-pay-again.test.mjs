@@ -99,11 +99,33 @@ describe("pay again carries the payee's number", () => {
 describe("the send button names the choice without breaking", () => {
   const src = code(SEND);
 
-  test("it says Pay … for <choice> when one is picked, Send when not", () => {
+  test("the verb follows whether a choice was picked", () => {
     assert.match(src, /const verb = bottom\.registered === false \? "Simulate" : pickedChoice \? "Pay" : "Send";/,
       "the verb no longer follows whether a choice was picked");
-    assert.match(src, /for \{pickedChoice\.name\}/,
-      "the button no longer names the chosen category");
+  });
+
+  test("the choice is named under the amount box, not inside the button", () => {
+    // It was a clause in the button sharing one line with the figure,
+    // where it had to ellipsise to fit. Under the box it has the card's
+    // whole width and can be read in full.
+    assert.match(src, /\{pickedChoice\.name\}/, "the chosen category is no longer named at all");
+    // The word "for" and the name are separate spans so the label can
+    // stay a fixed weight while the name wraps, so this looks for the
+    // pair rather than one string.
+    assert.match(src, />\s*for\s*<\/span>/, "the line no longer reads \"for <name>\"");
+    const button = src.slice(src.indexOf('className="send-btn"'));
+    const block = button.slice(0, button.indexOf("</button>"));
+    assert.doesNotMatch(block, /pickedChoice\.name/,
+      "the category name is back inside the button, where it has to truncate");
+  });
+
+  test("the button carries no icon", () => {
+    const button = src.slice(src.indexOf('className="send-btn"'));
+    const block = button.slice(0, button.indexOf("</button>"));
+    assert.doesNotMatch(block, /<Send|LucideIcon|<svg/,
+      "the button has an icon again");
+    assert.doesNotMatch(code(SEND), /SendMoneyLucideIcon/,
+      "the icon import survives its last use");
   });
 
   test("the name goes in verbatim", () => {
@@ -112,26 +134,24 @@ describe("the send button names the choice without breaking", () => {
       "the category name is being shortened before it is shown");
   });
 
-  test("the amount and its unit cannot be split by the row's gap", () => {
-    // This button's row is a flex container with a gap. A bare fragment
-    // makes the digits and the trailing unit separate flex items, so the
-    // gap lands inside the figure. Fixed here once before — the verb was
-    // still outside the span and had the same fault.
-    const button = src.slice(src.indexOf('className="send-btn"'));
-    const block = button.slice(0, button.indexOf("</button>"));
-    assert.match(block, /<span style=\{\{ whiteSpace: "nowrap", flexShrink: 0 \}\}>\{verb\} \{parts\.lead\}/,
-      "the verb, the figure and its unit are no longer one unbreakable span");
+  test("the name wraps rather than truncating, now that it has room", () => {
+    const at = src.indexOf("{pickedChoice.name}");
+    const around = src.slice(Math.max(0, at - 300), at + 40);
+    assert.match(around, /overflowWrap: "anywhere"/,
+      "the category line clips instead of wrapping, which was the point of moving it");
+    assert.doesNotMatch(around, /textOverflow: "ellipsis"/,
+      "the name still truncates, so moving it bought nothing");
   });
 
-  test("only the category clause is allowed to shrink", () => {
-    // So a long name truncates itself instead of pushing the figure out
-    // of the button or on to a second line.
+  test("the button holds one unbreakable span and nothing else", () => {
+    // Its row is a flex container with a 10px gap, and anything split
+    // across two children puts that gap inside the sentence — it has
+    // landed between a figure and its own currency once, and between the
+    // verb and the figure once.
     const button = src.slice(src.indexOf('className="send-btn"'));
     const block = button.slice(0, button.indexOf("</button>"));
-    assert.match(block, /minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"/,
-      "the category clause can no longer ellipsise");
-    assert.match(block, /flexShrink: 0 \}\}>\{verb\}/,
-      "the figure is allowed to shrink, so it can be truncated instead");
+    assert.match(block, /<span style=\{\{ whiteSpace: "nowrap" \}\}>\{verb\} \{parts\.lead\}/,
+      "the verb, the figure and its unit are no longer one unbreakable span");
   });
 
   test("a strip label shows two lines rather than half a word", () => {

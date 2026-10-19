@@ -723,8 +723,9 @@ describe("the budget is the tile's own edge", () => {
     // it — grey-brown on pink, grey-lilac on lilac. The stroke's colour
     // is now a choice of its own, from a saturated palette; what must
     // never come back is deriving it from the ground it sits on.
-    assert.match(grid, /color=\{choicesBarColor\(category\.barColor\)\}/,
+    assert.match(grid, /const mark = choicesBarColor\(category\.barColor\);/,
       "the stroke no longer takes the colour the person picked");
+    assert.match(grid, /color=\{mark\}/);
     const tile = grid.slice(grid.indexOf("<ChoiceBudgetEdge"), grid.indexOf("/>;", grid.indexOf("<ChoiceBudgetEdge")));
     assert.doesNotMatch(tile, /choicesMarkOn/, "the stroke is being darkened from the tint again");
   });
@@ -743,7 +744,7 @@ describe("the budget is the tile's own edge", () => {
 
 describe("a tile can take one of ten shapes", () => {
   const lib = new Function(`${readSource("frontend/features/choices/choicesCatalog.js")}
-    return { CHOICES_SHAPES, CHOICES_SHAPE_DEFAULT, choicesShape, choicesCornerRadii, choicesCornerCss, choicesCornerInset };`)();
+    return { CHOICES_SHAPES, CHOICES_SHAPE_DEFAULT, choicesShape, choicesCornerRadii, choicesCornerCss, choicesCornerInset, choicesCornerInsetIn };`)();
   const src = code(SHEETS);
   const grid = code(GRID);
 
@@ -823,9 +824,25 @@ describe("a tile can take one of ten shapes", () => {
     assert.equal(lib.choicesCornerInset("rounded", 20, 0), 9, "the square-ish shapes moved");
     assert.equal(lib.choicesCornerInset("sharp", 20, 0), 9);
     assert.ok(lib.choicesCornerInset("pill", 20, 0) > 15, "a pill's controls are still in its corner");
-    assert.match(grid, /top: choicesCornerInset\(category\.shape, 20, 0\)/, "the heart ignores the shape again");
-    assert.match(grid, /top: Math\.max\(2, choicesCornerInset\(category\.shape, 20, 1\) - 7\)/,
-      "the pay dot ignores the shape again");
+    assert.match(grid, /top: inset\(0\),\n      left: inset\(0\),/, "the heart ignores the shape again");
+  });
+
+  test("a corner control follows the radius the tile ACTUALLY has", () => {
+    // choicesCornerInset works from the base radius alone, and a real
+    // radius is that CLAMPED to half the shorter side. The two agree on
+    // a roomy tile and come apart the moment one is not — which is what
+    // "it breaks when the size changes" was. Measured in a browser at
+    // 320/360/390/430: a pill's heart now moves 16 -> 19 -> 21 -> 23
+    // rather than sitting at a flat 20 on all four.
+    assert.equal(lib.choicesCornerInsetIn("pill", 20, 0, 129, 112), 16);
+    assert.equal(lib.choicesCornerInsetIn("pill", 20, 0, 164, 143), 21);
+    // The floor still holds for a near-straight edge.
+    assert.equal(lib.choicesCornerInsetIn("sharp", 20, 0, 164, 143), 9);
+    // And the tile asks the measured one whenever it has measured.
+    assert.match(grid, /box\s*\?\s*choicesCornerInsetIn\(category\.shape, 20, corner, box\.width, box\.height\)/,
+      "the tile stopped measuring itself");
+    assert.match(grid, /:\s*choicesCornerInset\(category\.shape, 20, corner\)/,
+      "there is no answer before the first measurement");
   });
 
   test("the picker shows the shapes themselves", () => {
@@ -1046,7 +1063,7 @@ describe("a budget bar can be a colour the person picked", () => {
   });
 
   test("every surface that draws a budget uses it", () => {
-    assert.match(code(GRID), /color=\{choicesBarColor\(category\.barColor\)\}/,
+    assert.match(code(GRID), /const mark = choicesBarColor\(category\.barColor\);/,
       "the grid tile's stroke ignores the chosen colour");
     assert.match(code(SEND), /color=\{choicesBarColor\(category\.barColor\)\}/,
       "the Send strip's chip ignores the chosen colour");
@@ -1209,16 +1226,44 @@ describe("the pay control is a corner dot", () => {
     // Sixteen possible grounds, several of them violet. A flat accent
     // circle disappears on those.
     const tile = grid.slice(grid.indexOf("if (onPay) onPay(category)"));
-    assert.match(tile, /boxShadow: `0 0 0 2\.5px rgba\(255,255,255,0\.9\)`/,
-      "the dot lost the ring that separates it from the tile");
+    assert.match(tile, /boxShadow: `0 0 0 3px \$\{T\.bg\}, 0 1px 3px rgba\(23,16,61,0\.28\)`/,
+      "the dot lost the ring that separates it from the tile and the page");
   });
 
-  test("it cannot be pushed off the tile by a square shape", () => {
-    // The inset is 9 at its smallest, so inset - 7 is 2 — but the floor
-    // is what stops a future shape with a smaller inset from hanging
-    // the button over an edge the tile clips.
+  test("it sits outside the tile, which means it is not inside it", () => {
+    // The tile clips to its own radius — it has to, or a photo would
+    // square off the corners — so a dot that hangs off the edge cannot
+    // be a child of it. This is the whole reason the tile gained a
+    // holder.
+    assert.match(grid, /<div style=\{\{ position: "relative" \}\}>/,
+      "the dot has no unclipped box to hang off");
+    const holder = grid.slice(grid.indexOf('<div style={{ position: "relative" }}>'));
+    const tileEnd = holder.indexOf("</button></div><button");
+    assert.ok(tileEnd > 0, "the dot is not a sibling of the tile");
+    assert.ok(
+      holder.indexOf("if (onPay) onPay(category)") > tileEnd,
+      "the pay dot is back inside the tile, where its radius clips it"
+    );
+    assert.match(grid, /right: -dotOut,\n      bottom: -dotOut,/,
+      "the dot is no longer offset outside the box");
+  });
+
+  test("it lands on the tile's outline, not on the box around it", () => {
+    // A fixed offset is the edge only on a square tile. On a pill the
+    // outline is 16px away diagonally and the dot floated in space.
+    // Measured at 390px: sharp +16, rounded +11, soft +7, pill +0.
+    assert.match(grid, /const dotOut = Math\.max\(0, 17 - dotCurve\);/,
+      "the dot stopped tracking the corner it sits on");
+    assert.match(grid, /choicesCornerRadii\(category\.shape, 20, box\.width, box\.height\)\[2\] \|\| 0\) \* 0\.293\)/,
+      "the dot reads the wrong corner, or stopped reading one");
+  });
+
+  test("it is the category's own colour, not one flat accent", () => {
+    // Ten identical violet dots is not a colourful grid; ten dots in
+    // ten colours is.
     const tile = grid.slice(grid.indexOf("if (onPay) onPay(category)"));
-    assert.match(tile, /Math\.max\(2, choicesCornerInset\(category\.shape, 20, 1\) - 7\)/);
+    assert.match(tile, /background: mark,/, "every dot is the same colour again");
+    assert.doesNotMatch(tile.slice(0, tile.indexOf("</button>")), /background: T\.accent/);
   });
 });
 
@@ -1243,5 +1288,63 @@ describe("the editor is not shared with a floating launcher", () => {
     assert.match(effect.slice(0, effect.indexOf("}, [") + 12), /\}, \[open\]\)/,
       "the blocking effect does not re-run when the editor opens and closes");
     assert.match(shell, /if \(!open \|\| typeof window === "undefined"\) return undefined;/);
+  });
+});
+
+describe("a tile's controls survive being resized", () => {
+  const lib = new Function(`${readSource(CATALOG)}
+    return { choicesCornerInsetIn, choicesCornerInset, choicesCornerRadii, CHOICES_SHAPES };`)();
+  const sheets = code(SHEETS);
+
+  test("the measured inset tracks the box, the flat one cannot", () => {
+    // The specific failure: one tile, four screen widths, a control
+    // that did not move. 129x112 at 320px up to 184x160 at 430px.
+    const sizes = [[129, 112], [149, 130], [164, 143], [184, 160]];
+    const measured = sizes.map(([w, h]) => lib.choicesCornerInsetIn("pill", 20, 0, w, h));
+    assert.deepEqual(measured, [16, 19, 21, 23]);
+    // The flat answer is the same number every time, which is the bug.
+    const flat = sizes.map(() => lib.choicesCornerInset("pill", 20, 0));
+    assert.equal(new Set(flat).size, 1);
+    assert.notDeepEqual(measured, flat);
+  });
+
+  test("a control is never placed outside the curve it has to clear", () => {
+    // Every shape, every plausible tile size: the inset must be at
+    // least where the arc actually is, or the tile's own clipping cuts
+    // the control in half.
+    for (const shape of lib.CHOICES_SHAPES) {
+      for (const [w, h] of [[120, 104], [129, 112], [164, 143], [184, 160], [240, 209]]) {
+        const radius = lib.choicesCornerRadii(shape.key, 20, w, h)[0];
+        const inset = lib.choicesCornerInsetIn(shape.key, 20, 0, w, h);
+        assert.ok(inset + 0.5 >= radius * 0.293,
+          `${shape.key} at ${w}x${h}: control at ${inset} is outside an arc that reaches ${(radius * 0.293).toFixed(1)}`);
+      }
+    }
+  });
+
+  test("it measures once, in one place, for both things that need it", () => {
+    // The stroke needs real pixels for an SVG viewBox and the tile
+    // needs them for its corner controls. Two ResizeObservers watching
+    // the same box is two chances to get the bookkeeping wrong.
+    assert.match(sheets, /function useChoiceBox\(\)/);
+    assert.equal((sheets.match(/new ResizeObserver/g) || []).length, 1,
+      "something is observing the same box a second time");
+    assert.match(sheets, /const \[hostRef, box\] = useChoiceBox\(\);/,
+      "the budget stroke stopped sharing the measurement");
+  });
+
+  test("it does not re-render itself in a loop", () => {
+    // A ResizeObserver callback that hands React a fresh object every
+    // time re-renders, which resizes nothing and fires the observer's
+    // own bookkeeping again.
+    assert.match(sheets, /current && current\.width === width && current\.height === height/,
+      "the box is replaced on every observer callback again");
+  });
+
+  test("a browser with no ResizeObserver still renders the tile", () => {
+    // And the SSR probe, which has no layout at all. The flat inset is
+    // the fallback; nothing is left unpositioned.
+    assert.match(sheets, /if \(typeof ResizeObserver === "undefined"\) return undefined;/);
+    assert.match(code(GRID), /:\s*choicesCornerInset\(category\.shape, 20, corner\)/);
   });
 });

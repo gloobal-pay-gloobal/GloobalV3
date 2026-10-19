@@ -23,6 +23,216 @@ import { Plus as Plus5, Search as Search6, ArrowLeft as ArrowLeft8, RefreshCw as
 // A category opened from either mode is still a full overlay. That is not
 // an inconsistency: the grid is a place in the app, and one category is
 // something you look at and come back from.
+// One tile in the grid.
+//
+// ── WHY THIS IS A COMPONENT AND NOT A MAP BODY ───────────────────────
+//
+// It has to measure itself, and a hook cannot be called inside a loop.
+// That is the whole reason it moved out of the map it used to be
+// written inline in.
+//
+// It measures because two of its corner controls are positioned against
+// a radius that is CLAMPED by the box. The flat helper works from the
+// base radius alone and is right only while the tile has room; resize
+// the grid and the two answers come apart, which on a pill-shaped tile
+// meant the heart either sat a long way inside the curve or was clipped
+// by it. See choicesCornerInsetIn.
+function ChoiceGridTile({ category, ccyCode, onOpen, onPay }) {
+  const [tileRef, box] = useChoiceBox();
+
+  // The measured answer once there is one, the flat answer until then.
+  // The flat one is right for the common shapes and wrong only at the
+  // extremes, so one frame of it is a far better opening state than a
+  // control that is not placed at all.
+  const inset = (corner) => (box
+    ? choicesCornerInsetIn(category.shape, 20, corner, box.width, box.height)
+    : choicesCornerInset(category.shape, 20, corner));
+
+  // choicesBudgetProgress returns null for a budget of 0 — "no budget"
+  // is not "a budget that is 0% spent" — and ChoiceBudgetEdge draws
+  // nothing for a null, so a stroke on a tile always means there is a
+  // limit to be near.
+  const totals = choicesTotalIn(category, ccyCode);
+  const budget = choicesBudgetProgress(totals.thisMonth, category.monthlyBudget);
+  const mark = choicesBarColor(category.barColor);
+
+  // How far outside its bounding box the pay dot starts.
+  //
+  // ── WHY THIS IS NOT A CONSTANT ───────────────────────────────────────
+  //
+  // The dot is meant to straddle the tile's EDGE. A fixed offset puts it
+  // on the corner of the bounding box, which is the edge only on a
+  // square tile — on a pill, the outline is 16px away diagonally and the
+  // dot floated in empty space with nothing to sit on.
+  //
+  // The arc of a corner of radius r passes 0.293r in from that corner on
+  // both axes (the same 1 - 1/root 2 the heart's inset is built on). So
+  // the dot moves in by exactly that much, and lands on the outline of
+  // every one of the ten shapes rather than on the box around it.
+  //
+  // Unfloored, unlike choicesCornerInset: that floor of 9 exists to keep
+  // the heart off a near-straight edge, and here it would drag a sharp
+  // tile's dot 9px inside the one corner it should be straddling.
+  //
+  // 17 is half the 34px button, so an offset of 17 puts the dot's centre
+  // on the box corner and anything less brings it inward. Clamped at 0
+  // because a radius past half the button would otherwise push the dot
+  // fully inside the tile, where it would be clipped.
+  const dotCurve = box
+    ? Math.round((choicesCornerRadii(category.shape, 20, box.width, box.height)[2] || 0) * 0.293)
+    : 0;
+  const dotOut = Math.max(0, 17 - dotCurve);
+
+  return <div>{
+    /* The tile and its dot, in a box of their own. The tile clips to its
+       own radius — it has to, or a photo would square off the corners —
+       so anything meant to sit OUTSIDE the tile cannot be a child of it.
+       This holder is what the dot hangs off. */
+  }<div style={{ position: "relative" }}><div
+    ref={tileRef}
+    onClick={() => onOpen(category.id)}
+    role="button"
+    tabIndex={0}
+    aria-label={`Open ${category.name}`}
+    className="v2-tap"
+    style={{
+      position: "relative",
+      // The shape the person chose, as corner radii off this surface's
+      // own base. 20px here, 18px on the Send chip — the same shape at
+      // two sizes, rather than one radius that is right on one of them.
+      borderRadius: choicesCornerCss(category.shape, 20),
+      background: choicesTint(category.color),
+      // A little wider than tall, which takes some height out of a grid
+      // that had grown bulky. It no longer has to be square: the budget
+      // stroke measures the tile and takes its viewBox from the real
+      // pixels, so any shape maps one to one.
+      aspectRatio: "1.15",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      // The tile is mostly its icon — that is what makes a grid of these
+      // scannable at arm's length rather than a list of words with
+      // decoration.
+      cursor: "pointer",
+      // A photo fills the circle inside, and the tile still clips its own
+      // corners.
+      overflow: "hidden"
+    }}
+  ><ChoiceBudgetEdge
+    fraction={budget ? budget.fraction : null}
+    over={Boolean(budget && budget.over)}
+    // The stroke's own colour, chosen in the editor, defaulting to the
+    // app's accent for every category that has never been asked.
+    //
+    // Deliberately NOT derived from the tile's tint. The first version
+    // used choicesMarkOn — the tint, darkened — and darkening a pastel
+    // desaturates it: the strokes came out grey-brown on pink and
+    // grey-lilac on lilac, muddy and nearly invisible against the tile
+    // they sit on. CHOICES_BAR_COLORS is a separate, saturated palette
+    // for exactly that reason, and it contains no red, because red is
+    // what `over` means.
+    color={mark}
+    // The same shape and the same base the tile's own border-radius
+    // uses above, so the stroke traces the outline rather than
+    // approximating it.
+    shape={category.shape}
+    radius={20}
+    stroke={6}
+  /><ChoiceGlyph category={category} size={54} /><button
+    onClick={(e) => { e.stopPropagation(); choicesToggleFavorite(category).catch(() => {}); }}
+    className="v2-tap"
+    aria-label={category.favorite ? `Unfavourite ${category.name}` : `Favourite ${category.name}`}
+    aria-pressed={Boolean(category.favorite)}
+    style={{
+      position: "absolute",
+      // Measured, not assumed. At a flat inset the heart drifted into
+      // the middle of a small tile and off the edge of a large one,
+      // because a pill's real radius is whatever half its shorter side
+      // happens to be and that changes with the grid.
+      top: inset(0),
+      left: inset(0),
+      border: "none",
+      borderRadius: "50%",
+      background: category.favorite ? T.surface : "rgba(255,255,255,0.55)",
+      width: 30,
+      height: 30,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer",
+      padding: 0,
+      // The heart is round and the tile clips to a curve; without this
+      // a corner that has just grown rounder crops the circle into a
+      // shape nobody chose, mid-resize.
+      flexShrink: 0
+    }}
+  ><Heart3
+    size={15}
+    color={category.favorite ? "#E23F45" : T.inkSoft}
+    fill={category.favorite ? "#E23F45" : "none"}
+    strokeWidth={2.3}
+  /></button></div><button
+    onClick={(e) => { e.stopPropagation(); if (onPay) onPay(category); }}
+    className="v2-tap"
+    aria-label={choicesPayLabel(category)}
+    title={choicesPayLabel(category)}
+    style={{
+      position: "absolute",
+      // Outside the tile, hanging off its bottom-right corner — which
+      // is only possible because this is a sibling of the tile rather
+      // than a child of it. A child would be clipped by the tile's own
+      // radius, and on the rounder shapes most of the dot would be.
+      //
+      // 34px of button around a 22px dot: a 22px tap target is below
+      // every touch guideline there is. dotOut is measured per shape so
+      // the dot lands on the tile's OUTLINE rather than on the corner
+      // of the box around it — see above. At its largest, on the
+      // squarest shapes, it hangs 16px out, which is what the grid's
+      // gap and the name's margin were widened to clear.
+      right: -dotOut,
+      bottom: -dotOut,
+      width: 34,
+      height: 34,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      border: "none",
+      background: "none",
+      padding: 0,
+      cursor: "pointer"
+    }}
+  >{
+    /* A dot rather than the word "Pay".
+
+       It loses a word, and the word was doing real work — so the label
+       it loses is kept in `aria-label` and `title`, which is what a
+       screen reader and a long press each read. What it buys is a tile
+       that is its icon and its name, with one mark beside it, instead
+       of a button parked on top of a photo of somebody's child.
+
+       It is the category's OWN colour, not one flat accent, so that a
+       grid of ten reads as ten things rather than as one thing ten
+       times. That is the same colour the budget stroke uses, which is
+       why the editor calls the field an accent rather than a budget
+       colour.
+
+       The ring is not decoration. The dot straddles the tile's edge, so
+       half of it sits on one of sixteen tints and half on the page; a
+       flat circle with no edge is legible on neither reliably. */
+  }<span
+    style={{
+      width: 22,
+      height: 22,
+      borderRadius: "50%",
+      background: mark,
+      boxShadow: `0 0 0 3px ${T.bg}, 0 1px 3px rgba(23,16,61,0.28)`,
+      display: "block"
+    }}
+  /></button></div><div
+    style={{ textAlign: "center", fontSize: 14.5, fontWeight: 700, color: T.ink, marginTop: 14, overflowWrap: "anywhere" }}
+  >{category.name}</div></div>;
+}
+
 function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
   const state = useChoices();
   const [kind, setKind] = useState44("expense");
@@ -198,142 +408,14 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     </div>}<div
     style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "18px 2px 0" }}
   >{kind === "income" ? "My source of energy" : "Where my energy goes"}</div><div
-    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}
-  >{shown.map((category) => <div key={category.id}><div
-    onClick={() => setOpenId(category.id)}
-    role="button"
-    tabIndex={0}
-    aria-label={`Open ${category.name}`}
-    className="v2-tap"
-    style={{
-      position: "relative",
-      // The shape the person chose, as corner radii off this surface's
-      // own base. 20px here, 18px on the Send chip — the same shape at
-      // two sizes, rather than one radius that is right on one of them.
-      borderRadius: choicesCornerCss(category.shape, 20),
-      background: choicesTint(category.color),
-      // A little wider than tall, which takes some height out of a grid
-      // that had grown bulky. It no longer has to be square: the budget
-      // stroke measures the tile and takes its viewBox from the real
-      // pixels, so any shape maps one to one.
-      aspectRatio: "1.15",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      // The tile is mostly its icon — that is what makes a grid of these
-      // scannable at arm's length rather than a list of words with
-      // decoration.
-      cursor: "pointer",
-      // A photo fills the circle inside, and the tile still clips its own
-      // corners.
-      overflow: "hidden"
-    }}
-  >{(() => {
-    // The budget, traced on the tile's own edge. choicesBudgetProgress
-    // returns null for a budget of 0 — "no budget" is not "a budget that
-    // is 0% spent" — and ChoiceBudgetEdge draws nothing for a null, so a
-    // stroke on a tile always means there is a limit to be near.
-    const totals = choicesTotalIn(category, ccyCode);
-    const budget = choicesBudgetProgress(totals.thisMonth, category.monthlyBudget);
-    return <ChoiceBudgetEdge
-      fraction={budget ? budget.fraction : null}
-      over={Boolean(budget && budget.over)}
-      // The stroke's own colour, chosen in the editor, defaulting to the
-      // app's accent for every category that has never been asked.
-      //
-      // Deliberately NOT derived from the tile's tint. The first version
-      // used choicesMarkOn — the tint, darkened — and darkening a pastel
-      // desaturates it: the strokes came out grey-brown on pink and
-      // grey-lilac on lilac, muddy and nearly invisible against the tile
-      // they sit on. CHOICES_BAR_COLORS is a separate, saturated palette
-      // for exactly that reason, and it contains no red, because red is
-      // what `over` means.
-      color={choicesBarColor(category.barColor)}
-      // The same shape and the same base the tile's own border-radius
-      // uses above, so the stroke traces the outline rather than
-      // approximating it.
-      shape={category.shape}
-      radius={20}
-      stroke={6}
-    />;
-  })()}<ChoiceGlyph category={category} size={54} /><button
-    onClick={(e) => { e.stopPropagation(); choicesToggleFavorite(category).catch(() => {}); }}
-    className="v2-tap"
-    aria-label={category.favorite ? `Unfavourite ${category.name}` : `Favourite ${category.name}`}
-    aria-pressed={Boolean(category.favorite)}
-    style={{
-      position: "absolute",
-      // Pushed in far enough to clear this shape's own corner — see
-      // choicesCornerInset. At a flat 9px the heart sat half outside a
-      // pill-shaped tile, which clips to its radius.
-      top: choicesCornerInset(category.shape, 20, 0),
-      left: choicesCornerInset(category.shape, 20, 0),
-      border: "none",
-      borderRadius: "50%",
-      background: category.favorite ? T.surface : "rgba(255,255,255,0.55)",
-      width: 30,
-      height: 30,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      padding: 0
-    }}
-  ><Heart3
-    size={15}
-    color={category.favorite ? "#E23F45" : T.inkSoft}
-    fill={category.favorite ? "#E23F45" : "none"}
-    strokeWidth={2.3}
-  /></button><button
-    onClick={(e) => { e.stopPropagation(); if (onPay) onPay(category); }}
-    className="v2-tap"
-    aria-label={choicesPayLabel(category)}
-    title={choicesPayLabel(category)}
-    style={{
-      position: "absolute",
-      // The DOT is what has to land on the corner inset, not the button
-      // around it. The button is 34px so it is a real tap target — the
-      // dot it draws is 20 — so it starts 7px earlier in both axes and
-      // centres the dot where the old pill's corner sat. Floored at 2
-      // rather than allowed to go negative, which on the squarest
-      // shapes would hang the button over the tile's edge and let it
-      // be clipped.
-      top: Math.max(2, choicesCornerInset(category.shape, 20, 1) - 7),
-      right: Math.max(2, choicesCornerInset(category.shape, 20, 1) - 7),
-      width: 34,
-      height: 34,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      border: "none",
-      background: "none",
-      padding: 0,
-      cursor: "pointer"
-    }}
-  >{
-    /* A dot rather than the word "Pay".
-
-       It loses a word, and the word was doing real work — so the label
-       it loses is kept in `aria-label` and `title`, which is what a
-       screen reader and a long-press each read. What it buys is a tile
-       that is its icon and its name, with one mark on it, instead of a
-       tile with a button parked on top of a photo of somebody's child.
-
-       The ring is not decoration: the dot sits on sixteen possible
-       tints, and a flat accent circle on the violet ones is nearly
-       invisible. The ring gives it an edge on every one of them. */
-  }<span
-    style={{
-      width: 20,
-      height: 20,
-      borderRadius: "50%",
-      background: T.accent,
-      boxShadow: `0 0 0 2.5px rgba(255,255,255,0.9)`,
-      display: "block"
-    }}
-  /></button></div><div
-    style={{ textAlign: "center", fontSize: 14.5, fontWeight: 700, color: T.ink, marginTop: 9, overflowWrap: "anywhere" }}
-  >{category.name}</div></div>)}</div></div><button
+    style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 26, marginTop: 12 }}
+  >{shown.map((category) => <ChoiceGridTile
+    key={category.id}
+    category={category}
+    ccyCode={ccyCode}
+    onOpen={setOpenId}
+    onPay={onPay}
+  />)}</div></div><button
     onClick={() => setSheet("add")}
     className="v2-tap"
     aria-label="Add"

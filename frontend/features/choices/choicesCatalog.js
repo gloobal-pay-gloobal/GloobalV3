@@ -127,6 +127,28 @@ function choicesCornerRadii(key, base, width, height) {
 // 9px was half outside the visible area.
 //
 // Floored at the original 9px, so the square-ish shapes are unchanged.
+// The same question, asked by something that has MEASURED its box.
+//
+// ── WHY THE FLAT VERSION WAS NOT ENOUGH ──────────────────────────────
+//
+// choicesCornerInset below works from the base radius alone, and a
+// corner's real radius is not the base times a multiplier — it is that,
+// CLAMPED to half the shorter side. The two agree on a roomy tile and
+// disagree the moment one is not, which is exactly when a grid is
+// resized: on a narrow phone a pill tile's real radius is capped by the
+// box, and the flat answer pushed the heart a long way inside a curve
+// that had stopped being that round. On a wide one the opposite — the
+// real radius grew past what the flat answer allowed for and the heart
+// was clipped by a corner it was supposed to clear.
+//
+// So anything that can read its own width and height asks this instead,
+// and gets an inset that tracks the shape it can actually see.
+function choicesCornerInsetIn(key, base, corner, width, height) {
+  const radii = choicesCornerRadii(key, base, width, height);
+  const radius = Number(radii[corner]) || 0;
+  return Math.max(9, Math.round(radius * 0.293));
+}
+
 function choicesCornerInset(key, base, corner) {
   const shape = choicesShape(key);
   const size = Number(base) > 0 ? Number(base) : 0;

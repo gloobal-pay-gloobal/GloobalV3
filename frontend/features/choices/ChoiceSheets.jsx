@@ -71,12 +71,26 @@ function ChoiceGlyph({ category, size }) {
 // progress indicator for a thing with no progress — at 0% it reads as
 // "nothing spent", which is a claim, and at any other value it would be
 // a lie. So `fraction` null means nothing is drawn at all.
-function ChoiceBudgetEdge({ fraction, color, over, shape, radius = 20, stroke = 6 }) {
-  const hostRef = useRef26(null);
+// The size of a box, as the box itself reports it.
+//
+// Pulled out of ChoiceBudgetEdge because a second thing now needs it for
+// a different reason. The stroke needs real pixels to set an SVG
+// viewBox; the tile needs them so its corner controls can be placed
+// against the radius the corner ACTUALLY has rather than the one its
+// multiplier asked for — see choicesCornerInsetIn. Both break in the
+// same way when a tile is resized and neither can be answered from CSS.
+//
+// Returns null until it has measured, which every caller treats as
+// "draw nothing positioned yet" rather than guessing. On a browser
+// without ResizeObserver — and in the SSR probe, which has no layout at
+// all — it stays null, and a decoration that does not appear is the
+// right way for one to fail.
+function useChoiceBox() {
+  const ref = useRef26(null);
   const [box, setBox] = useState43(null);
 
   useEffect43(() => {
-    const host = hostRef.current;
+    const host = ref.current;
     if (!host) return undefined;
     const read = () => {
       const width = Math.round(host.clientWidth);
@@ -91,14 +105,17 @@ function ChoiceBudgetEdge({ fraction, color, over, shape, radius = 20, stroke = 
         : { width, height }));
     };
     read();
-    // Absent in the SSR probe, and on old browsers. The stroke simply
-    // does not draw there, which is the right way for a decoration to
-    // fail.
     if (typeof ResizeObserver === "undefined") return undefined;
     const observer = new ResizeObserver(read);
     observer.observe(host);
     return () => observer.disconnect();
   }, []);
+
+  return [ref, box];
+}
+
+function ChoiceBudgetEdge({ fraction, color, over, shape, radius = 20, stroke = 6 }) {
+  const [hostRef, box] = useChoiceBox();
 
   const shown = fraction === null || fraction === undefined ? null : Math.max(0, Math.min(1, Number(fraction) || 0));
 
@@ -910,7 +927,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
        with the lens off. One span, nowrap, for the same flex-gap reason
        the Send button's unit is wrapped. */
   }{unit.trail && <span style={{ fontSize: 14, fontWeight: 800, color: T.inkSoft, whiteSpace: "nowrap", flexShrink: 0 }}>{GEU_LENS_BAR} {unit.trail}</span>}</div></ChoiceFieldCard><ChoiceFieldCard
-    label="Budget colour"
+    label="Accent colour"
     note={`${CHOICES_BAR_COLORS.length} to choose from`}
   >{
     /* A sample rather than only swatches, because what is being chosen
@@ -937,8 +954,8 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
   />)}</div><div
     style={{ fontSize: 11, color: T.inkFaint, marginTop: 10, lineHeight: 1.5 }}
   >{Number(String(budget || "").trim()) > 0
-    ? "Over budget is always red, whichever colour you pick."
-    : "Set a monthly budget above and this traces the tile's edge as you spend."}</div></ChoiceFieldCard>{
+    ? "The dot beside this tile, and the budget it traces. Over budget is always red, whichever colour you pick."
+    : "The dot beside this tile. Set a monthly budget above and it traces the tile's edge too."}</div></ChoiceFieldCard>{
     /* Retiring one is deliberately quiet and deliberately not destructive —
        a category that has been used is archived, not deleted, because its
        name is the only thing that makes the payments filed under it

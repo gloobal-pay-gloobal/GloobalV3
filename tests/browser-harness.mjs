@@ -1192,6 +1192,32 @@ export async function installApi(context, options = {}) {
       state.categories[at] = { ...state.categories[at], ...rest };
       return json(200, { success: true, category: state.categories[at] });
     }
+    // GET /api/payees/current — who a Gloobal ID belongs to NOW. Pay again
+    // calls it before reopening Send Money, and the masked mobile number it
+    // answers with is the one the receiver card shows: the full number never
+    // leaves the server (GLB-17). A fake that returned the whole number
+    // would let a client that renders it pass here and leak in production.
+    if (pathname === "/api/payees/current" && method === "GET") {
+      const wanted = String(url.searchParams.get("gloobalId") || "");
+      const account = Object.values(accounts).find((a) => a.symbolId === wanted);
+      if (!account) return json(404, { success: false, code: "payee_not_found", message: "Could not find where it went." });
+      const mask = (raw) => {
+        const m = /^(\+\d{1,4})(\d+)$/.exec(String(raw || "").replace(/[\s\-()]/g, ""));
+        if (!m || m[2].length < 4) return "";
+        return `${m[1]}${"\u2022".repeat(Math.max(2, m[2].length - 2))}${m[2].slice(-2)}`;
+      };
+      return json(200, {
+        success: true,
+        changed: false,
+        user: {
+          fullName: account.fullName || "",
+          symbolId: account.symbolId,
+          mobileNumber: mask(account.mobileNumber),
+          countryIso: account.iso || null
+        }
+      });
+    }
+
     const photoRoute = pathname.match(/^\/api\/categories\/([^/]+)\/photo$/);
     if (photoRoute) {
       const id = decodeURIComponent(photoRoute[1]);

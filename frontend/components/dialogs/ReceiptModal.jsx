@@ -787,17 +787,35 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // than falling back to the stored ID — falling back would make the check
   // decorative exactly when it is load-bearing.
   const canPayAgain = !isCoinReceipt && !!receipt.id && receipt.status !== "simulated";
-  const payAgainDetail = (gloobalId) => ({
+  // ── WHAT PAY AGAIN HANDS TO SEND MONEY ────────────────────────────────
+  //
+  // `resolved` is the payee as the server just described them — the same
+  // answer the ID check below already fetched, which was being thrown away.
+  //
+  // It is thrown away no longer because `receipt.phone` DOES NOT EXIST.
+  // Neither mapServerTransaction nor buildTransactionSnapshot produces a
+  // phone field, so this was `mobileNumber: ""` on every payment ever
+  // reopened, and Send Money drew the receiver card with an empty number
+  // row. Not intermittent: always.
+  //
+  // The number it uses instead is the MASKED one — "+9190••••••04" — which
+  // is the only form that leaves the server (audit finding GLB-17, see
+  // cleanResolvedTransactionUserPayload). That is enough to confirm the
+  // right person and is exactly what the screen shows when somebody is
+  // found by searching, so Pay again now matches the path beside it.
+  const payAgainDetail = (gloobalId, resolved) => ({
     gloobalId,
-    name: receipt.name || "",
-    mobileNumber: receipt.phone || "",
-    countryIso: receipt.counterpartyIso || null,
+    // The live name wins over the stored one: the whole point of the check
+    // this follows is that the account may have changed since the payment.
+    name: (resolved && resolved.fullName) || receipt.name || "",
+    mobileNumber: (resolved && resolved.mobileNumber) || receipt.phone || "",
+    countryIso: (resolved && resolved.countryIso) || receipt.counterpartyIso || null,
     shareRate: Number(receipt.shareRate) || 0
   });
-  const openSendMoney = (gloobalId) => {
+  const openSendMoney = (gloobalId, resolved) => {
     (onDone || onClose)();
     if (typeof window !== "undefined") {
-      setTimeout(() => window.dispatchEvent(new CustomEvent("gloobal:payAgain", { detail: payAgainDetail(gloobalId) })), 0);
+      setTimeout(() => window.dispatchEvent(new CustomEvent("gloobal:payAgain", { detail: payAgainDetail(gloobalId, resolved) })), 0);
     }
   };
   const handlePayAgain = async () => {
@@ -815,10 +833,19 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       }
       if (!answer.changed && now === receipt.id) {
         setPayAgainState(null);
-        openSendMoney(receipt.id);
+        openSendMoney(receipt.id, answer.user);
         return;
       }
-      setPayAgainState({ status: "changed", was: receipt.id, now, name: (answer.user && answer.user.fullName) || receipt.name || "" });
+      // The resolved payee is carried on the state so the confirm button
+      // below hands Send Money the same answer this check just got, rather
+      // than looking them up a second time or falling back to the receipt.
+      setPayAgainState({
+        status: "changed",
+        was: receipt.id,
+        now,
+        name: (answer.user && answer.user.fullName) || receipt.name || "",
+        user: answer.user || null
+      });
     } catch (err) {
       const message = (err && err.message) || "";
       // The route answers 404 with its own sentence; anything that is not a
@@ -1342,7 +1369,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     style={{ flex: 1, minHeight: 40, borderRadius: 999, border: `1px solid ${T.line}`, background: T.surface, color: T.inkSoft, fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}
   >Cancel</button><button
     data-testid="receipt-id-changed-go"
-    onClick={() => { const next = payAgainState.now; setPayAgainState(null); openSendMoney(next); }}
+    onClick={() => { const next = payAgainState.now; const resolved = payAgainState.user; setPayAgainState(null); openSendMoney(next, resolved); }}
     className="v2-tap"
     style={{ flex: 1, minHeight: 40, borderRadius: 999, border: "none", background: T.gradButton, color: "#fff", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}
   >{`Pay ${payAgainState.name ? payAgainState.name.split(" ")[0] : "them"}`}</button></div></div>}{payAgainState && (payAgainState.status === "gone" || payAgainState.status === "unreachable") && <p

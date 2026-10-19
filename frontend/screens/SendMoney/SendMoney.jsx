@@ -1842,7 +1842,25 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         overflow: "hidden"
       }}
     ><ChoiceGlyph category={category} size={25} /></span><span
-      style={{ fontSize: 11.5, fontWeight: picked ? 800 : 700, color: picked ? T.accent : T.inkSoft, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 62 }}
+      style={{
+        fontSize: 11.5,
+        fontWeight: picked ? 800 : 700,
+        color: picked ? T.accent : T.inkSoft,
+        textAlign: "center",
+        maxWidth: 62,
+        // Two lines, then clip. One line with an ellipsis turned "Damroo
+        // Baby" into "Damroo …", which names nothing — the whole point of
+        // the strip is recognising your own category at a glance, and the
+        // half that got cut is usually the half that distinguishes it.
+        // Widening the chip instead would push "All" off the end of the
+        // row, which is worse: that is the way in to the rest of them.
+        display: "-webkit-box",
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: "vertical",
+        overflow: "hidden",
+        lineHeight: 1.25,
+        wordBreak: "break-word"
+      }}
     >{category.name}</span></button>;
   })}<button
     onClick={() => setChoicesOpen(true)}
@@ -1884,23 +1902,46 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     className="send-btn"
     onClick={handleSend}
     style={{ padding: "14px 18px", marginTop: topOpen ? 0 : 24 }}
-  ><span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}><SendMoneyLucideIcon size={18} />
-                {bottom.registered === false ? "Simulate " : "Send "}{(() => {
-    // What leaves YOUR account, in your own money — so top.currency is both
-    // the figure's currency and the viewer's. The active unit leads and the
-    // other trails at 75%, the same as every figure in the app.
+  >{(() => {
+    // ── WHAT THE BUTTON SAYS ──────────────────────────────────────────
     //
-    // WRAPPED IN ONE SPAN, and that is not cosmetic. This button's row is a
-    // flex container with `gap: 10` for the icon, and a bare fragment makes
-    // the digits and the trailing unit two separate flex items — so the gap
-    // lands between a number and its own currency, and the pair is free to
-    // break across lines. An amount and its unit are one thing; this keeps
-    // the browser agreeing.
+    // "Send 250.00₹ │ GEU", or — once a choice is picked above it —
+    // "Pay 250.00₹ │ GEU for Damroo Baby". The sentence follows the same
+    // rule the category screen's own button does: the choice's name goes
+    // in verbatim, never shortened to one word or title-cased. See
+    // choicesPayLabel, which is where that rule lives for the screens
+    // that can use it; this one cannot, because the amount sits in the
+    // middle of the sentence rather than after it.
+    //
+    // ── WHY THE NESTING LOOKS LIKE THIS ───────────────────────────────
+    //
+    // The amount and its unit are ONE span with nowrap, because this row
+    // is a flex container with a gap: a bare fragment makes the digits
+    // and the trailing unit separate flex items, so the gap lands between
+    // a number and its own currency and the pair can break across lines.
+    // That bug has been fixed here once already; the verb was still
+    // outside the span and had the same fault, which is why "Send" and
+    // the figure sat a gap apart.
+    //
+    // The category clause is the ONLY part allowed to shrink. It takes
+    // minWidth 0 and an ellipsis, while the amount holds flexShrink 0, so
+    // a category called "School fees and uniforms" truncates its own name
+    // and can never push the figure out of the button or on to a second
+    // line.
     const parts = geuLensBarParts(senderAmount, top.currency, lens, top.currency);
-    return <span style={{ whiteSpace: "nowrap" }}>{parts.lead}{parts.trail && <span
+    const verb = bottom.registered === false ? "Simulate" : pickedChoice ? "Pay" : "Send";
+    return <span
+      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, width: "100%", minWidth: 0 }}
+    ><SendMoneyLucideIcon size={18} style={{ flexShrink: 0 }} /><span
+      style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 6, minWidth: 0, overflow: "hidden" }}
+    ><span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>{verb} {parts.lead}{parts.trail && <span
       style={{ fontSize: geuLensTrailSize(16), fontWeight: 800 }}
-    > {parts.trail}</span>}</span>;
-  })()}</span></button>}</>}{
+    > {parts.trail}</span>}</span>{pickedChoice && <span
+      style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13.5, fontWeight: 700, opacity: 0.93 }}
+    >
+      for {pickedChoice.name}
+    </span>}</span></span>;
+  })()}</button>}</>}{
     /* Funding source — the four ways a transfer can be paid. Picking
        one moves straight on to the OTP confirmation. */
   }{payMethodOpen && <div

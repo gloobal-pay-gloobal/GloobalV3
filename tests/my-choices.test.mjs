@@ -622,26 +622,59 @@ describe("the screen is named once, and reloads once", () => {
   });
 });
 
-describe("the budget is the ring around the icon", () => {
+describe("the budget is the tile's own edge", () => {
   const src = code(SHEETS);
   const grid = code(GRID);
 
-  test("a ring is drawn only when there is a budget", () => {
-    // choicesBudgetProgress returns null for a budget of 0, and the ring
-    // draws nothing at all for a null. A progress ring on a category
-    // with no limit would be a claim about progress toward nothing: at
-    // 0% it reads as "nothing spent", at anything else it is a lie.
-    assert.match(src, /const shown = fraction === null \|\| fraction === undefined \? null/);
-    assert.match(src, /\{shown !== null && <svg/, "the ring is drawn even without a budget");
+  test("it is a rounded rectangle on the tile, not a circle inside it", () => {
+    // A circle meant shrinking the icon to make room and left a ring
+    // floating inside a square tile — two boundaries where there is one
+    // object. Tracing the tile's edge costs the icon nothing.
+    assert.match(src, /function ChoiceBudgetEdge/);
+    assert.match(src, /<rect/, "the stroke is a circle again");
+    const edge = src.slice(src.indexOf("function ChoiceBudgetEdge"), src.indexOf("// One tile in a picker grid:"));
+    assert.doesNotMatch(edge, /<circle/, "a circle survives inside the edge component");
+    assert.match(grid, /<ChoiceGlyph category=\{category\} size=\{54\} \/>/,
+      "the icon shrank again to make room for the stroke");
+  });
+
+  test("the dash maths is a percentage, not a computed perimeter", () => {
+    // pathLength normalises the path to 100 units whatever its real
+    // length, so nothing here computes 2(w-2r) + 2(h-2r) + 2πr or has to
+    // redo it when the radius changes.
+    assert.match(src, /pathLength="100"/);
+    assert.match(src, /strokeDasharray="100"/);
+    assert.match(src, /strokeDashoffset=\{100 - shown \* 100\}/);
+  });
+
+  test("the corner stays concentric with the tile's own", () => {
+    // The stroke sits half its width inside the tile, so its radius has
+    // to be the tile's less that same half or the corners disagree.
+    assert.match(src, /const rx = Math\.max\(0, radius - stroke \/ 2 - inset\)/);
+    assert.match(grid, /radius=\{20\}/, "the stroke no longer knows the tile's radius");
+  });
+
+  test("the tile is square, so the stroke keeps an even weight", () => {
+    // preserveAspectRatio="none" on a 1.03 tile thinned the stroke on
+    // two sides and ovalled the corners.
+    assert.match(grid, /aspectRatio: "1",/, "the tile is non-square again");
+  });
+
+  test("a stroke is drawn only when there is a budget", () => {
+    // choicesBudgetProgress returns null for a budget of 0, and the edge
+    // draws nothing for a null. A track on a category with no limit
+    // would be progress toward nothing: at 0% it reads as "nothing
+    // spent", which is a claim, and at anything else it is a lie.
+    assert.match(src, /if \(shown === null\) return null;/);
     assert.match(grid, /fraction=\{budget \? budget\.fraction : null\}/,
       "the tile no longer passes null for an unbudgeted category");
   });
 
-  test("nothing spent draws a track and no arc", () => {
-    // A zero-length arc with a round cap still paints a dot, which reads
-    // as a sliver of spending on a category nothing has gone to.
-    assert.match(src, /\{shown > 0 && <circle/,
-      "a zero-length arc is drawn again, which paints a dot under a round cap");
+  test("nothing spent draws the track and no arc", () => {
+    // A zero-length dash with a round cap still paints a dot, which
+    // reads as a sliver of spending on a category nothing has gone to.
+    assert.match(src, /\{shown > 0 && <rect/,
+      "a zero-length dash is drawn again, which paints a dot under a round cap");
   });
 
   test("over budget is the one state with its own colour", () => {
@@ -650,34 +683,24 @@ describe("the budget is the ring around the icon", () => {
     assert.match(grid, /over=\{Boolean\(budget && budget\.over\)\}/);
   });
 
-  test("every other ring is the same colour, not the category's own", () => {
+  test("every other stroke is the same colour, not the category's own", () => {
     // choicesMarkOn darkens a tint, and darkening a pastel desaturates
-    // it — the rings came out grey-brown on pink and grey-lilac on
-    // lilac. The tile's tint says which category it is; the ring answers
-    // a different question and should look the same answering it.
-    assert.match(grid, /color=\{T\.accent\}/, "the ring takes the category's own colour again");
-    const tile = grid.slice(grid.indexOf("<ChoiceRing"), grid.indexOf("</ChoiceRing>"));
-    assert.doesNotMatch(tile, /choicesMarkOn/, "the ring is being darkened from the tint again");
+    // it — grey-brown on pink, grey-lilac on lilac. The tile's tint says
+    // which category it is; the stroke answers a different question.
+    assert.match(grid, /color=\{T\.accent\}/, "the stroke takes the category's own colour again");
+    const tile = grid.slice(grid.indexOf("<ChoiceBudgetEdge"), grid.indexOf("/>;", grid.indexOf("<ChoiceBudgetEdge")));
+    assert.doesNotMatch(tile, /choicesMarkOn/, "the stroke is being darkened from the tint again");
   });
 
-  test("the arc cannot run past a full circle", () => {
+  test("the arc cannot run past a full lap", () => {
     // An overspend is reported by colour, not by a second lap.
     assert.match(src, /Math\.max\(0, Math\.min\(1, Number\(fraction\) \|\| 0\)\)/);
   });
 
-  test("the icon is the same size whether or not its category is budgeted", () => {
-    // Sizing the glyph off whether a ring happened to be there would
-    // make a tidy grid depend on an unrelated setting.
-    assert.match(src, /inset: "11%"/, "the glyph's circle is no longer inset by a constant");
-    const ring = src.slice(src.indexOf("function ChoiceRing"), src.indexOf("// One tile in a picker grid:"));
-    assert.doesNotMatch(ring, /shown [!=]== null \? "\d+%"/,
-      "the inset now depends on whether a ring is drawn, so glyphs differ between tiles");
-  });
-
-  test("it scales with the tile rather than being pinned to pixels", () => {
-    assert.match(src, /viewBox="0 0 100 100"/);
-    assert.match(src, /width: "78%", aspectRatio: "1"/,
-      "the ring is a fixed pixel size, so it is wrong on a wider phone");
+  test("it cannot swallow the taps meant for the tile", () => {
+    // It covers the whole tile, including the heart and the Pay pill.
+    assert.match(src, /pointerEvents: "none"/,
+      "the stroke overlay is now intercepting taps on the tile underneath it");
   });
 });
 

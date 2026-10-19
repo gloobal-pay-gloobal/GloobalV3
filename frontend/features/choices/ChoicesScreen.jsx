@@ -209,7 +209,10 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
       position: "relative",
       borderRadius: 20,
       background: choicesTint(category.color),
-      aspectRatio: "1.03",
+      // Exactly square, so the budget stroke's viewBox maps to it one to
+      // one. At 1.03 the stroke thinned on two sides and the corners
+      // went slightly oval.
+      aspectRatio: "1",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -222,30 +225,31 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
       overflow: "hidden"
     }}
   >{(() => {
-    // The budget, as the ring around the icon. choicesBudgetProgress
+    // The budget, traced on the tile's own edge. choicesBudgetProgress
     // returns null for a budget of 0 — "no budget" is not "a budget that
-    // is 0% spent" — and ChoiceRing draws nothing at all for a null, so
-    // a ring on a tile always means there is a limit to be near.
+    // is 0% spent" — and ChoiceBudgetEdge draws nothing for a null, so a
+    // stroke on a tile always means there is a limit to be near.
     const totals = choicesTotalIn(category, ccyCode);
     const budget = choicesBudgetProgress(totals.thisMonth, category.monthlyBudget);
-    return <ChoiceRing
+    return <ChoiceBudgetEdge
       fraction={budget ? budget.fraction : null}
       over={Boolean(budget && budget.over)}
-      // ONE colour for every ring, not the category's own.
+      // ONE colour for every tile, not the category's own.
       //
       // The first version used choicesMarkOn — the category's tint,
-      // darkened — and darkening a pastel desaturates it: the rings came
-      // out grey-brown on pink and grey-lilac on lilac, which is both
-      // muddy and nearly invisible against the tile it sits on.
+      // darkened — and darkening a pastel desaturates it: the strokes
+      // came out grey-brown on pink and grey-lilac on lilac, muddy and
+      // nearly invisible against the tile they sit on.
       //
-      // The tile's tint already carries which category this is. The ring
-      // answers a different question, and the same answer should look the
-      // same on every tile, so it is the app's own accent — with red
-      // reserved for over, which is the one state worth telling apart at
-      // a glance.
+      // The tile's tint already carries which category this is. The
+      // stroke answers a different question, and the same answer should
+      // look the same on every tile, so it is the app's own accent —
+      // with red reserved for over, the one state worth telling apart
+      // without reading.
       color={T.accent}
-    ><ChoiceGlyph category={category} size={50} /></ChoiceRing>;
-  })()}<button
+      radius={20}
+    />;
+  })()}<ChoiceGlyph category={category} size={54} /><button
     onClick={(e) => { e.stopPropagation(); choicesToggleFavorite(category).catch(() => {}); }}
     className="v2-tap"
     aria-label={category.favorite ? `Unfavourite ${category.name}` : `Favourite ${category.name}`}

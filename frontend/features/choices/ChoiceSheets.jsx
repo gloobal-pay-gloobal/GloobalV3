@@ -39,73 +39,81 @@ function ChoiceGlyph({ category, size }) {
   >{(category && category.icon) || "●"}</span>;
 }
 
-// A category's icon, with its budget drawn as the ring around it.
+// A category's budget, drawn along the edge of its own tile.
 //
-// The ring IS the budget bar. On the category's own screen that bar is a
-// track with figures beside it, which is right there — you went in to
+// The budget IS the tile's boundary. On the category's own screen it is
+// a bar with figures beside it, which is right there — you went in to
 // read numbers. On the grid there is no room for figures and no reason
 // to want them: what a tile has to answer is "am I near the limit on
-// this one", and an arc answers that at a glance from across a table.
+// this one", and a stroke running round its edge answers that at a
+// glance without taking a single pixel from the icon.
+//
+// ── A ROUNDED RECTANGLE, NOT A CIRCLE ────────────────────────────────
+//
+// It was a circle around the icon first, which meant shrinking the icon
+// to make room for it and left a ring floating inside a square tile —
+// two boundaries where there is one object. Tracing the tile's own edge
+// costs the icon nothing and reads as the tile filling up.
+//
+// `pathLength="100"` is what makes this practical: it tells the browser
+// to treat the path as 100 units long whatever its real perimeter, so
+// the dash maths is a percentage and nothing here has to compute the
+// perimeter of a rounded rectangle (2(w-2r) + 2(h-2r) + 2πr) or redo it
+// when the radius changes.
 //
 // ── IT IS DRAWN ONLY WHEN THERE IS A BUDGET ──────────────────────────
 //
-// Most categories have none, and a ring on one of those would be a
+// Most categories have none, and a track on one of those would be a
 // progress indicator for a thing with no progress — at 0% it reads as
 // "nothing spent", which is a claim, and at any other value it would be
-// a lie. So `fraction` null means no circles at all.
-//
-// The CONTAINER is drawn either way, at the same size, so every icon in
-// the grid is the same size whether or not its category is budgeted.
-// Sizing the glyph off whether a ring happened to be present would make
-// a tidy grid depend on an unrelated setting.
-function ChoiceRing({ fraction, color, over, children }) {
-  // viewBox units, so the whole thing scales with the tile rather than
-  // being pinned to a pixel size that is wrong on a wider phone.
-  const stroke = 7;
-  const radius = (100 - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
+// a lie. So `fraction` null means nothing is drawn at all.
+function ChoiceBudgetEdge({ fraction, color, over, radius = 20, inset = 0 }) {
   const shown = fraction === null || fraction === undefined ? null : Math.max(0, Math.min(1, Number(fraction) || 0));
+  if (shown === null) return null;
 
-  return <span
-    style={{ position: "relative", width: "78%", aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-  >{shown !== null && <svg
+  // viewBox units. The tile is square, so a square box maps to it
+  // exactly and the stroke keeps an even weight all the way round —
+  // preserveAspectRatio="none" on a non-square tile would thin the
+  // stroke on two sides and oval the corners.
+  const stroke = 6;
+  const edge = 100 - stroke - inset * 2;
+  const origin = stroke / 2 + inset;
+  // Concentric with the tile's own corner: the rect sits half a stroke
+  // in, so its radius is the tile's less that same half.
+  const rx = Math.max(0, radius - stroke / 2 - inset);
+
+  return <svg
     viewBox="0 0 100 100"
+    preserveAspectRatio="none"
     aria-hidden="true"
-    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", transform: "rotate(-90deg)" }}
-  ><circle
-    cx="50"
-    cy="50"
-    r={radius}
+    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
+  ><rect
+    x={origin}
+    y={origin}
+    width={edge}
+    height={edge}
+    rx={rx}
     fill="none"
-    stroke="rgba(255,255,255,0.62)"
+    stroke="rgba(255,255,255,0.6)"
     strokeWidth={stroke}
   />{
-    /* Only drawn once something has been spent. A zero-length arc with a
+    /* Only once something has been spent. A zero-length dash with a
        round cap still paints a dot, which reads as a sliver of spending
        on a category nothing has gone to yet. */
-  }{shown > 0 && <circle
-    cx="50"
-    cy="50"
-    r={radius}
+  }{shown > 0 && <rect
+    x={origin}
+    y={origin}
+    width={edge}
+    height={edge}
+    rx={rx}
     fill="none"
     stroke={over ? "#E23F45" : color}
     strokeWidth={stroke}
     strokeLinecap="round"
-    strokeDasharray={circumference}
-    strokeDashoffset={circumference * (1 - shown)}
-  />}</svg>}<span
-    style={{
-      position: "absolute",
-      // Clear of the stroke when there is one, and the same inset when
-      // there is not, so the glyph does not change size between tiles.
-      inset: "11%",
-      borderRadius: "50%",
-      overflow: "hidden",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }}
-  >{children}</span></span>;
+    pathLength="100"
+    strokeDasharray="100"
+    strokeDashoffset={100 - shown * 100}
+  />}</svg>;
 }
 
 // One tile in a picker grid: the category's emoji on its own tint, its name

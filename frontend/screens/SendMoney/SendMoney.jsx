@@ -264,7 +264,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   const effectiveSearchCountry = searchCountry || toCountryLike(top);
   const [minMobileDigits, maxMobileDigits] = mobileDigitRange(effectiveSearchCountry.iso);
   const filteredSearchCountries = useMemo6(
-    () => ALL_COUNTRIES.filter((c) => countryMatches(c, searchCountryQuery)),
+    // Ranked, not merely filtered — see countrySearch. "ind" puts India
+    // before Indonesia, "91" puts India first, and "IN" finds it at all.
+    () => countrySearch(ALL_COUNTRIES, searchCountryQuery),
     [searchCountryQuery]
   );
   // The two sides of the payment, each named for whose money it is.
@@ -1273,20 +1275,51 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         .dropdown-item:hover { background: #F3F2F8; }
         .dropdown-item.active { color: #7c3aed; background: #f4f2fb; }
 
-        .flag-grid-menu {
+        .country-menu {
           position: absolute; z-index: 50; top: calc(100% + 10px); left: 0;
           background: #fff; border-radius: 16px; box-shadow: 0 16px 40px -8px rgba(20,18,43,0.22);
-          padding: 10px; border: 1px solid rgba(20,18,43,0.05);
-          display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
-          width: 264px; max-height: 240px; overflow-y: auto;
+          padding: 6px; border: 1px solid rgba(20,18,43,0.05);
+          display: flex; flex-direction: column;
+          /* Wide enough for the longest country name beside its dial
+             code, and capped so it cannot run off a narrow phone. Scrolls
+             on ONE axis: the grid it replaced overflowed sideways by 2px
+             and grew a horizontal scrollbar for the privilege. */
+          width: min(300px, calc(100vw - 72px));
+          max-height: 300px; overflow-y: auto; overflow-x: hidden;
+          overscroll-behavior: contain;
         }
-        .flag-grid-item {
-          display: flex; align-items: center; justify-content: center;
-          border: 1.5px solid transparent; border-radius: 8px; background: transparent;
-          padding: 4px; cursor: pointer; transition: background 0.12s ease, border-color 0.12s ease;
+        .country-row {
+          display: flex; align-items: center; gap: 10px; width: 100%;
+          padding: 9px 10px; border: none; border-radius: 10px;
+          background: transparent; cursor: pointer; text-align: left;
+          transition: background 0.12s ease;
         }
-        .flag-grid-item:hover { background: #F3F2F8; }
-        .flag-grid-item.active { border-color: #7c3aed; background: #f4f2fb; }
+        .country-row:hover { background: #F3F2F8; }
+        .country-row.active { background: #F4F2FB; }
+        .country-flag {
+          width: 26px; height: 20px; border-radius: 4px; overflow: hidden;
+          flex-shrink: 0; box-shadow: 0 0 0 1px rgba(20,18,43,0.08);
+        }
+        .country-name {
+          flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: #14122B;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .country-row.active .country-name { color: #7c3aed; font-weight: 800; }
+        .country-live {
+          width: 6px; height: 6px; border-radius: 50%; background: #22C55E; flex-shrink: 0;
+        }
+        .country-soon {
+          font-size: 10px; font-weight: 700; color: #9C96AF; flex-shrink: 0;
+          white-space: nowrap; letter-spacing: 0.2px;
+        }
+        .country-code {
+          font-size: 12.5px; font-weight: 700; color: #6B6580; flex-shrink: 0;
+          font-variant-numeric: tabular-nums; min-width: 42px; text-align: right;
+        }
+        .country-empty {
+          padding: 16px 12px; font-size: 12.5px; color: #9C96AF;
+          font-weight: 600; line-height: 1.5; text-align: center;
+        }
 
         .swap-wrap { display: flex; justify-content: center; margin: -22px 0; position: relative; z-index: 6; }
         .swap-btn {
@@ -1509,15 +1542,48 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       fontWeight: 600,
       color: "#14122B"
     }}
-  /><ChevronDown2 size={14} style={{ color: "#9C96AF", flexShrink: 0 }} /></div>}{countryDropdownOpen && <><div className="dropdown-overlay" onClick={() => setCountryDropdownOpen(false)} /><div className="flag-grid-menu">{filteredSearchCountries.length === 0 && <div style={{ padding: "10px 6px", fontSize: 12.5, color: "#9C96AF", fontWeight: 600 }}>
-                          No countries found
-                        </div>}{filteredSearchCountries.map((c) => <button
-    key={c.iso}
-    className={`flag-grid-item ${c.iso === effectiveSearchCountry.iso ? "active" : ""}`}
-    onClick={() => selectSearchCountry(c)}
-    aria-label={c.name}
-    title={c.name}
-  ><div style={{ position: "relative", width: 26, height: 20, borderRadius: 5, ...countryGlowStyle(ACTIVE_ISO_SET.has(c.iso), true) }}><div style={{ position: "absolute", inset: 0, borderRadius: 5, overflow: "hidden" }}><FlagEmoji flag={c.flag} width={26} height={20} /></div></div></button>)}</div></>}</div>{searchStage === "found" && <button className="collapse-btn" onClick={() => setBottomOpen((o) => !o)} aria-label="Toggle details">{bottomOpen ? <ChevronUp2 size={20} /> : <ChevronDown2 size={20} />}</button>}</div>{searchStage === "dialing" && <div className="dial-entry">{searchMode === "id" ? <><SymbolChipRow length={ID_SEARCH_LENGTH} value={idBuffer} masked={false} /><div style={{ marginTop: 22, width: "100%" }}><SymbolDialPad value={idBuffer} onChange={(v) => { setSearchError(null); setIdBuffer(v); }} length={ID_SEARCH_LENGTH} /></div></> : <PhoneDialPad
+  /><ChevronDown2 size={14} style={{ color: "#9C96AF", flexShrink: 0 }} /></div>}{countryDropdownOpen && <><div className="dropdown-overlay" onClick={() => setCountryDropdownOpen(false)} />{
+    /* ── A LIST, NOT A WALL OF FLAGS ──────────────────────────────────
+
+       This was a six-column grid of 194 unlabelled flags, 33 rows deep,
+       with a red or green halo around each one. Three things were wrong
+       with it, and the search made all three worse.
+
+       You could not tell what you were picking. Typing "ind" left two
+       flags side by side with no names — India and Indonesia, and no way
+       to know which was which without recognising both at 26 pixels.
+
+       The halos read as errors. Green meant Gloobal operates there and
+       red meant it does not, which is worth saying, but saying it as a
+       red glow on 150 of the 194 made the whole panel look like a
+       failure state.
+
+       And it overflowed its own width: six 36px cells plus five 6px gaps
+       plus padding came to 266px inside a 264px box, so the panel grew a
+       horizontal scrollbar it could never usefully scroll.
+
+       A row per country — flag, name, dial code — fixes all three and
+       costs only vertical space, which this panel scrolls anyway. */
+  }<div className="country-menu" role="listbox" aria-label="Choose a country">{filteredSearchCountries.length === 0 && <div className="country-empty">
+      No country matches {"“"}{searchCountryQuery.trim()}{"”"}. Try its name, or its dialling code.
+    </div>}{filteredSearchCountries.map((c) => {
+    const live = ACTIVE_ISO_SET.has(c.iso);
+    const chosen = c.iso === effectiveSearchCountry.iso;
+    return <button
+      key={c.iso}
+      role="option"
+      aria-selected={chosen}
+      className={`country-row ${chosen ? "active" : ""}`}
+      onClick={() => selectSearchCountry(c)}
+      aria-label={`${c.name}${c.dialCode ? ` ${c.dialCode}` : ""}${live ? "" : " — not live yet"}`}
+    ><span className="country-flag"><FlagEmoji flag={c.flag} width={26} height={20} /></span><span className="country-name">{c.name}</span>{
+      /* Where Gloobal actually operates, said once and quietly. A dot
+         for live, a word for not — rather than a coloured halo on every
+         row, which is the same fact shouted 194 times. */
+    }{!live && <span className="country-soon">
+        not live yet
+      </span>}{live && <span className="country-live" aria-hidden="true" />}<span className="country-code">{c.dialCode || ""}</span></button>;
+  })}</div></>}</div>{searchStage === "found" && <button className="collapse-btn" onClick={() => setBottomOpen((o) => !o)} aria-label="Toggle details">{bottomOpen ? <ChevronUp2 size={20} /> : <ChevronDown2 size={20} />}</button>}</div>{searchStage === "dialing" && <div className="dial-entry">{searchMode === "id" ? <><SymbolChipRow length={ID_SEARCH_LENGTH} value={idBuffer} masked={false} /><div style={{ marginTop: 22, width: "100%" }}><SymbolDialPad value={idBuffer} onChange={(v) => { setSearchError(null); setIdBuffer(v); }} length={ID_SEARCH_LENGTH} /></div></> : <PhoneDialPad
     value={mobileBuffer}
     onChange={(v) => { setSearchError(null); setMobileBuffer(v); }}
     minLength={minMobileDigits}

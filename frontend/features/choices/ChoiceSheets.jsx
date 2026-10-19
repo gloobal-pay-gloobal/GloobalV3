@@ -39,6 +39,75 @@ function ChoiceGlyph({ category, size }) {
   >{(category && category.icon) || "●"}</span>;
 }
 
+// A category's icon, with its budget drawn as the ring around it.
+//
+// The ring IS the budget bar. On the category's own screen that bar is a
+// track with figures beside it, which is right there — you went in to
+// read numbers. On the grid there is no room for figures and no reason
+// to want them: what a tile has to answer is "am I near the limit on
+// this one", and an arc answers that at a glance from across a table.
+//
+// ── IT IS DRAWN ONLY WHEN THERE IS A BUDGET ──────────────────────────
+//
+// Most categories have none, and a ring on one of those would be a
+// progress indicator for a thing with no progress — at 0% it reads as
+// "nothing spent", which is a claim, and at any other value it would be
+// a lie. So `fraction` null means no circles at all.
+//
+// The CONTAINER is drawn either way, at the same size, so every icon in
+// the grid is the same size whether or not its category is budgeted.
+// Sizing the glyph off whether a ring happened to be present would make
+// a tidy grid depend on an unrelated setting.
+function ChoiceRing({ fraction, color, over, children }) {
+  // viewBox units, so the whole thing scales with the tile rather than
+  // being pinned to a pixel size that is wrong on a wider phone.
+  const stroke = 7;
+  const radius = (100 - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const shown = fraction === null || fraction === undefined ? null : Math.max(0, Math.min(1, Number(fraction) || 0));
+
+  return <span
+    style={{ position: "relative", width: "78%", aspectRatio: "1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+  >{shown !== null && <svg
+    viewBox="0 0 100 100"
+    aria-hidden="true"
+    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", transform: "rotate(-90deg)" }}
+  ><circle
+    cx="50"
+    cy="50"
+    r={radius}
+    fill="none"
+    stroke="rgba(255,255,255,0.62)"
+    strokeWidth={stroke}
+  />{
+    /* Only drawn once something has been spent. A zero-length arc with a
+       round cap still paints a dot, which reads as a sliver of spending
+       on a category nothing has gone to yet. */
+  }{shown > 0 && <circle
+    cx="50"
+    cy="50"
+    r={radius}
+    fill="none"
+    stroke={over ? "#E23F45" : color}
+    strokeWidth={stroke}
+    strokeLinecap="round"
+    strokeDasharray={circumference}
+    strokeDashoffset={circumference * (1 - shown)}
+  />}</svg>}<span
+    style={{
+      position: "absolute",
+      // Clear of the stroke when there is one, and the same inset when
+      // there is not, so the glyph does not change size between tiles.
+      inset: "11%",
+      borderRadius: "50%",
+      overflow: "hidden",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }}
+  >{children}</span></span>;
+}
+
 // One tile in a picker grid: the category's emoji on its own tint, its name
 // underneath. Sized so three fit across a narrow phone with the longest
 // default name ("Entertainment") wrapping to two lines rather than clipping.

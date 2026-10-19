@@ -622,6 +622,65 @@ describe("the screen is named once, and reloads once", () => {
   });
 });
 
+describe("the budget is the ring around the icon", () => {
+  const src = code(SHEETS);
+  const grid = code(GRID);
+
+  test("a ring is drawn only when there is a budget", () => {
+    // choicesBudgetProgress returns null for a budget of 0, and the ring
+    // draws nothing at all for a null. A progress ring on a category
+    // with no limit would be a claim about progress toward nothing: at
+    // 0% it reads as "nothing spent", at anything else it is a lie.
+    assert.match(src, /const shown = fraction === null \|\| fraction === undefined \? null/);
+    assert.match(src, /\{shown !== null && <svg/, "the ring is drawn even without a budget");
+    assert.match(grid, /fraction=\{budget \? budget\.fraction : null\}/,
+      "the tile no longer passes null for an unbudgeted category");
+  });
+
+  test("nothing spent draws a track and no arc", () => {
+    // A zero-length arc with a round cap still paints a dot, which reads
+    // as a sliver of spending on a category nothing has gone to.
+    assert.match(src, /\{shown > 0 && <circle/,
+      "a zero-length arc is drawn again, which paints a dot under a round cap");
+  });
+
+  test("over budget is the one state with its own colour", () => {
+    assert.match(src, /stroke=\{over \? "#E23F45" : color\}/,
+      "an overspend no longer looks different from an underspend");
+    assert.match(grid, /over=\{Boolean\(budget && budget\.over\)\}/);
+  });
+
+  test("every other ring is the same colour, not the category's own", () => {
+    // choicesMarkOn darkens a tint, and darkening a pastel desaturates
+    // it — the rings came out grey-brown on pink and grey-lilac on
+    // lilac. The tile's tint says which category it is; the ring answers
+    // a different question and should look the same answering it.
+    assert.match(grid, /color=\{T\.accent\}/, "the ring takes the category's own colour again");
+    const tile = grid.slice(grid.indexOf("<ChoiceRing"), grid.indexOf("</ChoiceRing>"));
+    assert.doesNotMatch(tile, /choicesMarkOn/, "the ring is being darkened from the tint again");
+  });
+
+  test("the arc cannot run past a full circle", () => {
+    // An overspend is reported by colour, not by a second lap.
+    assert.match(src, /Math\.max\(0, Math\.min\(1, Number\(fraction\) \|\| 0\)\)/);
+  });
+
+  test("the icon is the same size whether or not its category is budgeted", () => {
+    // Sizing the glyph off whether a ring happened to be there would
+    // make a tidy grid depend on an unrelated setting.
+    assert.match(src, /inset: "11%"/, "the glyph's circle is no longer inset by a constant");
+    const ring = src.slice(src.indexOf("function ChoiceRing"), src.indexOf("// One tile in a picker grid:"));
+    assert.doesNotMatch(ring, /shown [!=]== null \? "\d+%"/,
+      "the inset now depends on whether a ring is drawn, so glyphs differ between tiles");
+  });
+
+  test("it scales with the tile rather than being pinned to pixels", () => {
+    assert.match(src, /viewBox="0 0 100 100"/);
+    assert.match(src, /width: "78%", aspectRatio: "1"/,
+      "the ring is a fixed pixel size, so it is wrong on a wider phone");
+  });
+});
+
 describe("one account's labels do not outlive its session", () => {
   test("signing out drops them", () => {
     const src = code("frontend/App.jsx");

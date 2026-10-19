@@ -215,13 +215,37 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
       justifyContent: "center",
       // The tile is mostly its icon — that is what makes a grid of these
       // scannable at arm's length rather than a list of words with
-      // decoration. 54 is as large as it goes before the glyph starts
-      // colliding with the Pay pill and the heart in the corners.
+      // decoration.
       cursor: "pointer",
-      // A photo fills the tile, so the tile has to clip it to its radius.
+      // A photo fills the circle inside, and the tile still clips its own
+      // corners.
       overflow: "hidden"
     }}
-  ><ChoiceGlyph category={category} size={54} /><button
+  >{(() => {
+    // The budget, as the ring around the icon. choicesBudgetProgress
+    // returns null for a budget of 0 — "no budget" is not "a budget that
+    // is 0% spent" — and ChoiceRing draws nothing at all for a null, so
+    // a ring on a tile always means there is a limit to be near.
+    const totals = choicesTotalIn(category, ccyCode);
+    const budget = choicesBudgetProgress(totals.thisMonth, category.monthlyBudget);
+    return <ChoiceRing
+      fraction={budget ? budget.fraction : null}
+      over={Boolean(budget && budget.over)}
+      // ONE colour for every ring, not the category's own.
+      //
+      // The first version used choicesMarkOn — the category's tint,
+      // darkened — and darkening a pastel desaturates it: the rings came
+      // out grey-brown on pink and grey-lilac on lilac, which is both
+      // muddy and nearly invisible against the tile it sits on.
+      //
+      // The tile's tint already carries which category this is. The ring
+      // answers a different question, and the same answer should look the
+      // same on every tile, so it is the app's own accent — with red
+      // reserved for over, which is the one state worth telling apart at
+      // a glance.
+      color={T.accent}
+    ><ChoiceGlyph category={category} size={50} /></ChoiceRing>;
+  })()}<button
     onClick={(e) => { e.stopPropagation(); choicesToggleFavorite(category).catch(() => {}); }}
     className="v2-tap"
     aria-label={category.favorite ? `Unfavourite ${category.name}` : `Favourite ${category.name}`}

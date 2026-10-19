@@ -41,25 +41,29 @@ function ChoiceGlyph({ category, size }) {
 
 // A category's budget, drawn along the edge of its own tile.
 //
-// The budget IS the tile's boundary. On the category's own screen it is
-// a bar with figures beside it, which is right there — you went in to
-// read numbers. On the grid there is no room for figures and no reason
-// to want them: what a tile has to answer is "am I near the limit on
-// this one", and a stroke running round its edge answers that at a
-// glance without taking a single pixel from the icon.
+// The budget IS the boundary. On the category's own screen it is a bar
+// with figures beside it, which is right there — you went in to read
+// numbers. On a tile there is no room for figures and no reason to want
+// them: what a tile has to answer is "am I near the limit on this one",
+// and a stroke running round its edge answers that at a glance without
+// taking a single pixel from the icon.
 //
-// ── A ROUNDED RECTANGLE, NOT A CIRCLE ────────────────────────────────
+// ── WHY IT MEASURES ITSELF ───────────────────────────────────────────
 //
-// It was a circle around the icon first, which meant shrinking the icon
-// to make room for it and left a ring floating inside a square tile —
-// two boundaries where there is one object. Tracing the tile's own edge
-// costs the icon nothing and reads as the tile filling up.
+// Because `rx` has to be in the same units as the tile's own
+// border-radius, and a viewBox is not.
 //
-// `pathLength="100"` is what makes this practical: it tells the browser
-// to treat the path as 100 units long whatever its real perimeter, so
-// the dash maths is a percentage and nothing here has to compute the
-// perimeter of a rounded rectangle (2(w-2r) + 2(h-2r) + 2πr) or redo it
-// when the radius changes.
+// The first version used viewBox="0 0 100 100" and passed radius={20},
+// meaning 20 viewBox units. On a 172px tile a unit is 1.72px, so the
+// stroke drew a 34px corner against the tile's 20px one — a 14px
+// mismatch that looks like a rendering fault rather than a decision.
+// Scaling the number by hand only moves the error, because the tile is
+// fluid and the scale changes with the screen.
+//
+// Measuring gives a viewBox in real pixels, so `radius` means pixels,
+// `stroke` means pixels, and the corner matches by construction at any
+// width. It also frees the tile from having to be square: a viewBox
+// that matches the box exactly cannot thin the stroke on two sides.
 //
 // ── IT IS DRAWN ONLY WHEN THERE IS A BUDGET ──────────────────────────
 //
@@ -67,53 +71,84 @@ function ChoiceGlyph({ category, size }) {
 // progress indicator for a thing with no progress — at 0% it reads as
 // "nothing spent", which is a claim, and at any other value it would be
 // a lie. So `fraction` null means nothing is drawn at all.
-function ChoiceBudgetEdge({ fraction, color, over, radius = 20, inset = 0 }) {
+function ChoiceBudgetEdge({ fraction, color, over, radius = 20, stroke = 6 }) {
+  const hostRef = useRef26(null);
+  const [box, setBox] = useState43(null);
+
+  useEffect43(() => {
+    const host = hostRef.current;
+    if (!host) return undefined;
+    const read = () => {
+      const width = Math.round(host.clientWidth);
+      const height = Math.round(host.clientHeight);
+      if (!(width > 0) || !(height > 0)) return;
+      // Compared before setting, because this runs from a
+      // ResizeObserver: handing React a fresh object on every callback
+      // re-renders, which resizes nothing but fires the observer's
+      // bookkeeping again.
+      setBox((current) => (current && current.width === width && current.height === height
+        ? current
+        : { width, height }));
+    };
+    read();
+    // Absent in the SSR probe, and on old browsers. The stroke simply
+    // does not draw there, which is the right way for a decoration to
+    // fail.
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(read);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
   const shown = fraction === null || fraction === undefined ? null : Math.max(0, Math.min(1, Number(fraction) || 0));
-  if (shown === null) return null;
 
-  // viewBox units. The tile is square, so a square box maps to it
-  // exactly and the stroke keeps an even weight all the way round —
-  // preserveAspectRatio="none" on a non-square tile would thin the
-  // stroke on two sides and oval the corners.
-  const stroke = 6;
-  const edge = 100 - stroke - inset * 2;
-  const origin = stroke / 2 + inset;
-  // Concentric with the tile's own corner: the rect sits half a stroke
-  // in, so its radius is the tile's less that same half.
-  const rx = Math.max(0, radius - stroke / 2 - inset);
-
-  return <svg
-    viewBox="0 0 100 100"
-    preserveAspectRatio="none"
+  return <span
+    ref={hostRef}
     aria-hidden="true"
-    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
-  ><rect
-    x={origin}
-    y={origin}
-    width={edge}
-    height={edge}
-    rx={rx}
-    fill="none"
-    stroke="rgba(255,255,255,0.6)"
-    strokeWidth={stroke}
-  />{
-    /* Only once something has been spent. A zero-length dash with a
-       round cap still paints a dot, which reads as a sliver of spending
-       on a category nothing has gone to yet. */
-  }{shown > 0 && <rect
-    x={origin}
-    y={origin}
-    width={edge}
-    height={edge}
-    rx={rx}
-    fill="none"
-    stroke={over ? "#E23F45" : color}
-    strokeWidth={stroke}
-    strokeLinecap="round"
-    pathLength="100"
-    strokeDasharray="100"
-    strokeDashoffset={100 - shown * 100}
-  />}</svg>;
+    style={{ position: "absolute", inset: 0, pointerEvents: "none", display: "block" }}
+  >{shown !== null && box && (() => {
+    // Half a stroke in from the edge, so the stroke's outer face sits
+    // flush with the tile's own; its radius is therefore the tile's less
+    // that same half, or the two curves disagree.
+    const origin = stroke / 2;
+    const rx = Math.max(0, radius - stroke / 2);
+    return <svg
+      viewBox={`0 0 ${box.width} ${box.height}`}
+      width={box.width}
+      height={box.height}
+      style={{ display: "block" }}
+    ><rect
+      x={origin}
+      y={origin}
+      width={Math.max(0, box.width - stroke)}
+      height={Math.max(0, box.height - stroke)}
+      rx={rx}
+      fill="none"
+      stroke="rgba(255,255,255,0.6)"
+      strokeWidth={stroke}
+    />{
+      /* Only once something has been spent. A zero-length dash with a
+         round cap still paints a dot, which reads as a sliver of
+         spending on a category nothing has gone to yet. */
+    }{shown > 0 && <rect
+      x={origin}
+      y={origin}
+      width={Math.max(0, box.width - stroke)}
+      height={Math.max(0, box.height - stroke)}
+      rx={rx}
+      fill="none"
+      stroke={over ? "#E23F45" : color}
+      strokeWidth={stroke}
+      strokeLinecap="round"
+      // pathLength normalises the path to 100 units whatever its real
+      // perimeter, so the dash maths is a percentage and nothing here
+      // computes 2(w-2r) + 2(h-2r) + 2πr or redoes it when the radius
+      // changes.
+      pathLength="100"
+      strokeDasharray="100"
+      strokeDashoffset={100 - shown * 100}
+    />}</svg>;
+  })()}</span>;
 }
 
 // One tile in a picker grid: the category's emoji on its own tint, its name

@@ -209,10 +209,11 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
       position: "relative",
       borderRadius: 20,
       background: choicesTint(category.color),
-      // Exactly square, so the budget stroke's viewBox maps to it one to
-      // one. At 1.03 the stroke thinned on two sides and the corners
-      // went slightly oval.
-      aspectRatio: "1",
+      // A little wider than tall, which takes some height out of a grid
+      // that had grown bulky. It no longer has to be square: the budget
+      // stroke measures the tile and takes its viewBox from the real
+      // pixels, so any shape maps one to one.
+      aspectRatio: "1.15",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -247,7 +248,9 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
       // with red reserved for over, the one state worth telling apart
       // without reading.
       color={T.accent}
+      // Pixels, matching the tile's own border-radius above.
       radius={20}
+      stroke={6}
     />;
   })()}<ChoiceGlyph category={category} size={54} /><button
     onClick={(e) => { e.stopPropagation(); choicesToggleFavorite(category).catch(() => {}); }}

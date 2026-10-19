@@ -649,15 +649,36 @@ describe("the budget is the tile's own edge", () => {
 
   test("the corner stays concentric with the tile's own", () => {
     // The stroke sits half its width inside the tile, so its radius has
-    // to be the tile's less that same half or the corners disagree.
-    assert.match(src, /const rx = Math\.max\(0, radius - stroke \/ 2 - inset\)/);
+    // to be the tile's less that same half or the two curves disagree.
+    assert.match(src, /const rx = Math\.max\(0, radius - stroke \/ 2\)/);
     assert.match(grid, /radius=\{20\}/, "the stroke no longer knows the tile's radius");
   });
 
-  test("the tile is square, so the stroke keeps an even weight", () => {
-    // preserveAspectRatio="none" on a 1.03 tile thinned the stroke on
-    // two sides and ovalled the corners.
-    assert.match(grid, /aspectRatio: "1",/, "the tile is non-square again");
+  test("it measures the tile, because a viewBox is not pixels", () => {
+    // The first version used viewBox="0 0 100 100" and passed
+    // radius={20} meaning 20 viewBox units. On a 172px tile a unit is
+    // 1.72px, so it drew a 34px corner against the tile's 20px one.
+    // Measuring makes `radius` and `stroke` mean pixels at any width.
+    assert.match(src, /new ResizeObserver\(read\)/,
+      "the stroke no longer follows the tile when it resizes");
+    assert.match(src, /viewBox=\{`0 0 \$\{box\.width\} \$\{box\.height\}`\}/,
+      "the viewBox is a fixed 100x100 again, so radius is not in pixels");
+    assert.doesNotMatch(src, /viewBox="0 0 100 100"/);
+  });
+
+  test("a measurement that does not change does not re-render", () => {
+    // The observer fires on every layout pass. Handing React a fresh
+    // object each time re-renders, which resizes nothing and fires the
+    // observer's own bookkeeping again.
+    assert.match(src, /current && current\.width === width && current\.height === height/,
+      "the box is replaced on every observer callback");
+  });
+
+  test("it degrades rather than throwing where there is no observer", () => {
+    // The SSR probe has no ResizeObserver. A decoration must not be the
+    // thing that stops a screen rendering.
+    assert.match(src, /typeof ResizeObserver === "undefined"/,
+      "the stroke now throws where ResizeObserver is absent");
   });
 
   test("a stroke is drawn only when there is a budget", () => {
@@ -665,9 +686,22 @@ describe("the budget is the tile's own edge", () => {
     // draws nothing for a null. A track on a category with no limit
     // would be progress toward nothing: at 0% it reads as "nothing
     // spent", which is a claim, and at anything else it is a lie.
-    assert.match(src, /if \(shown === null\) return null;/);
+    assert.match(src, /\{shown !== null && box &&/,
+      "the stroke is drawn without a budget, or before the box is known");
     assert.match(grid, /fraction=\{budget \? budget\.fraction : null\}/,
       "the tile no longer passes null for an unbudgeted category");
+  });
+
+  test("the same stroke is on the Send strip", () => {
+    // That strip is where a category is chosen for a payment about to
+    // happen, which is the moment "how much is left on this one"
+    // matters most — and it was the one place showing a category
+    // without showing that.
+    const send = code(SEND);
+    assert.match(send, /<ChoiceBudgetEdge/, "the Send strip shows no budget");
+    assert.match(send, /radius=\{15\.5\}/,
+      "the chip's stroke no longer allows for its 2.5px border");
+    assert.match(send, /stroke=\{4\}/, "the chip uses the grid's heavier stroke");
   });
 
   test("nothing spent draws the track and no arc", () => {

@@ -1845,6 +1845,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       style={{ flexShrink: 0, width: 62, border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
     ><span
       style={{
+        position: "relative",
         width: 56,
         height: 56,
         borderRadius: 18,
@@ -1855,7 +1856,27 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         justifyContent: "center",
         overflow: "hidden"
       }}
-    ><ChoiceGlyph category={category} size={25} /></span><span
+    ><ChoiceGlyph category={category} size={25} />{(() => {
+      // The same budget stroke the grid tiles carry, on the chip. This
+      // strip is where a category is chosen for a payment about to
+      // happen, which is the moment "how much is left on this one"
+      // matters most — and it was the one place showing a category
+      // without showing that.
+      //
+      // Smaller numbers than the grid for a smaller box: a 4px stroke,
+      // and a radius of the chip's 18 less its 2.5px border, since
+      // box-sizing is border-box here and the overlay covers the
+      // padding box rather than the border one.
+      const totals = choicesTotalIn(category, top.currency);
+      const budget = choicesBudgetProgress(totals.thisMonth, category.monthlyBudget);
+      return <ChoiceBudgetEdge
+        fraction={budget ? budget.fraction : null}
+        over={Boolean(budget && budget.over)}
+        color={T.accent}
+        radius={15.5}
+        stroke={4}
+      />;
+    })()}</span><span
       style={{
         fontSize: 11.5,
         fontWeight: picked ? 800 : 700,

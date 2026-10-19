@@ -137,7 +137,12 @@ function ChoiceGridTile({ category, ccyCode, onOpen, onPay }) {
     // approximating it.
     shape={category.shape}
     radius={20}
-    stroke={6}
+    // 4.5 rather than 6. Half of "the bars are heavy" was the palette
+    // and half was the weight of the line drawing it: a 6px stroke on
+    // a 164px tile is a band, not an outline. At 4.5 it still reads
+    // all the way round a pill at 320px, which is the narrowest the
+    // tile gets.
+    stroke={4.5}
   /><ChoiceGlyph category={category} size={54} /><button
     onClick={(e) => { e.stopPropagation(); choicesToggleFavorite(category).catch(() => {}); }}
     className="v2-tap"

@@ -702,7 +702,10 @@ describe("the budget is the tile's own edge", () => {
     assert.match(send, /<ChoiceBudgetEdge/, "the Send strip shows no budget");
     assert.match(send, /radius=\{15\.5\}/,
       "the chip's stroke no longer allows for its 2.5px border");
-    assert.match(send, /stroke=\{4\}/, "the chip uses the grid's heavier stroke");
+    // A chip is a third of a tile, so it carries a proportionally
+    // lighter line — 3.5 to the tile's 4.5, which both came down from
+    // 6 and 4 when the strokes turned out to be too heavy.
+    assert.match(send, /stroke=\{3\.5\}/, "the chip's stroke no longer scales with the tile's");
   });
 
   test("nothing spent draws the track and no arc", () => {
@@ -1022,10 +1025,15 @@ describe("a budget bar can be a colour the person picked", () => {
     }
   });
 
-  test("a category that was never asked keeps the colour it already had", () => {
-    // Every stroke drawn before this choice existed was T.accent. A
-    // default of anything else would repaint the whole grid on deploy.
-    assert.equal(lib.CHOICES_BAR_DEFAULT, "#7C3AED");
+  test("the default is the accent at the list's own weight", () => {
+    // T.accent itself is luminance 0.134, a third of the way down to
+    // the plum that started this. A default of the raw accent would
+    // make "never chose a colour" the second heaviest state on offer.
+    assert.equal(lib.CHOICES_BAR_DEFAULT, "#9561DD");
+    assert.ok(
+      lib.CHOICES_BAR_COLORS.some((option) => option.value === lib.CHOICES_BAR_DEFAULT),
+      "the default is not one of the colours the picker offers, so an untouched category shows nothing selected"
+    );
     assert.equal(lib.choicesBarColor(""), lib.CHOICES_BAR_DEFAULT);
     assert.equal(lib.choicesBarColor(null), lib.CHOICES_BAR_DEFAULT);
     assert.equal(lib.choicesBarColor(undefined), lib.CHOICES_BAR_DEFAULT);
@@ -1346,5 +1354,98 @@ describe("a tile's controls survive being resized", () => {
     // the fallback; nothing is left unpositioned.
     assert.match(sheets, /if \(typeof ResizeObserver === "undefined"\) return undefined;/);
     assert.match(code(GRID), /:\s*choicesCornerInset\(category\.shape, 20, corner\)/);
+  });
+});
+
+// ── One weight, eight colours ───────────────────────────────────────────
+//
+// The complaint was that the dark bars broke the UI. The dark ones were
+// only half of it: the first palette's luminances ran 0.08 to 0.31, so
+// one tile carried a near-black outline and its neighbour a faint wash.
+// A row of tiles looked like a mistake rather than like a set.
+//
+// These assertions are the spec that replaced picking colours by eye.
+// Changing one of them means re-solving for it, not nudging it.
+describe("a budget stroke is the same weight whatever colour it is", () => {
+  const lib = new Function(`${readSource(CATALOG)}
+    return { CHOICES_BAR_COLORS, CHOICES_BAR_DEFAULT, CHOICES_TINTS };`)();
+
+  // Relative luminance, the WCAG definition — the one that knows a
+  // saturated yellow is light and a saturated blue is not. A plain
+  // average of the channels says #D618D6 and #438C10 are miles apart
+  // and the eye says they are not.
+  const luminance = (value) => {
+    const full = String(value).replace("#", "");
+    const parts = [0, 2, 4].map((at) => parseInt(full.slice(at, at + 2), 16) / 255);
+    const linear = parts.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  };
+  const ratio = (a, b) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  test("every colour carries the same weight", () => {
+    const lums = lib.CHOICES_BAR_COLORS.map((option) => luminance(option.value));
+    for (const [at, value] of lums.entries()) {
+      assert.ok(Math.abs(value - 0.2) < 0.015,
+        `${lib.CHOICES_BAR_COLORS[at].label} is at luminance ${value.toFixed(3)}, not the 0.20 the rest of the set sits at`);
+    }
+    // The spread is the thing that broke it, so it gets its own bound.
+    assert.ok(Math.max(...lums) - Math.min(...lums) < 0.03,
+      `the palette spans ${(Math.max(...lums) - Math.min(...lums)).toFixed(3)} of luminance; the version that looked broken spanned 0.23`);
+  });
+
+  test("none of them disappears on a tile, and none of them shouts", () => {
+    // Both ends matter. Under about 2:1 a stroke is lost on the warm
+    // tints; over about 4:1 it is the outline a person sees before
+    // they see the category.
+    for (const option of lib.CHOICES_BAR_COLORS) {
+      for (const tint of lib.CHOICES_TINTS) {
+        const seen = ratio(option.value, tint);
+        assert.ok(seen >= 2.2, `${option.label} on ${tint} is ${seen.toFixed(2)}:1 — too faint to see`);
+        assert.ok(seen <= 4.0, `${option.label} on ${tint} is ${seen.toFixed(2)}:1 — reads as an outline before the tile does`);
+      }
+    }
+  });
+
+  test("the stroke that draws them got thinner too", () => {
+    // A 6px stroke on a 164px tile is a band, not an outline. Half of
+    // "the bars are heavy" was the line, not the colour.
+    assert.match(code(GRID), /stroke=\{4\.5\}/, "the tile's stroke is a band again");
+    assert.match(code(SEND), /stroke=\{3\.5\}/, "the Send chip's stroke no longer scales with the tile's");
+  });
+
+  test("eight colours, eight distinguishable hues", () => {
+    // Two colours of the same weight and nearly the same hue are one
+    // colour offered twice.
+    const hue = (value) => {
+      const full = String(value).replace("#", "");
+      const [r, g, b] = [0, 2, 4].map((at) => parseInt(full.slice(at, at + 2), 16) / 255);
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const delta = max - min;
+      if (!delta) return { hue: 0, saturation: 0 };
+      const light = (max + min) / 2;
+      const saturation = delta / (1 - Math.abs(2 * light - 1));
+      if (max === r) return { hue: 60 * (((g - b) / delta + 6) % 6), saturation };
+      if (max === g) return { hue: 60 * ((b - r) / delta + 2), saturation };
+      return { hue: 60 * ((r - g) / delta + 4), saturation };
+    };
+    assert.equal(lib.CHOICES_BAR_COLORS.length, 8);
+    const marks = lib.CHOICES_BAR_COLORS.map((option) => ({ label: option.label, ...hue(option.value) }));
+    for (let i = 0; i < marks.length; i += 1) {
+      for (let j = i + 1; j < marks.length; j += 1) {
+        // A near-grey is told apart by its saturation, not its hue —
+        // slate's nominal hue sits 11 degrees from indigo's and nobody
+        // would ever confuse the two.
+        if (marks[i].saturation < 0.3 || marks[j].saturation < 0.3) continue;
+        const apart = Math.abs(marks[i].hue - marks[j].hue);
+        const gap = Math.min(apart, 360 - apart);
+        assert.ok(gap > 20, `${marks[i].label} and ${marks[j].label} are ${Math.round(gap)} degrees apart — that is one colour offered twice`);
+      }
+    }
+    assert.equal(new Set(lib.CHOICES_BAR_COLORS.map((o) => o.value.toLowerCase())).size, 8);
+    assert.equal(new Set(lib.CHOICES_BAR_COLORS.map((o) => o.key)).size, 8);
   });
 });

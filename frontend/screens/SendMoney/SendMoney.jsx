@@ -1877,7 +1877,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         color={choicesBarColor(category.barColor)}
         shape={category.shape}
         radius={15.5}
-        stroke={4}
+        // Scaled with the tile's, which went 6 -> 4.5. A chip is a
+        // third the size, so the same proportion is 3.5.
+        stroke={3.5}
       />;
     })()}</span><span
       style={{

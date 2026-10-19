@@ -216,12 +216,27 @@ function choicesMarkOn(color) {
 
 // The colours a budget stroke can be.
 //
-// ── WHY THESE ARE NOT THE TILE TINTS ─────────────────────────────────
+// ── WHY THEY ARE ALL THE SAME WEIGHT ─────────────────────────────────
 //
-// CHOICES_TINTS are pastels, chosen so an emoji and a name read on top
-// of them. A stroke drawn in one of those, on a tile already painted
-// one of those, disappears. These are the opposite job: saturated, mid
-// to dark, each one legible against every tint in the list above.
+// The first version of this list picked eight colours that looked good
+// one at a time, and the grid showed why that is not the same thing.
+// Their luminances ran from 0.08 (a plum) to 0.31 (a mustard): on one
+// tile the stroke read as a near-black outline and on the tile beside
+// it as a faint wash, so a row of tiles looked like a mistake rather
+// than like a set. The complaint was that the dark ones broke the UI,
+// and the dark ones were only half of it — the SPREAD was the fault.
+//
+// So these are not chosen, they are solved for. Each one is the most
+// saturated colour of its hue that lands on a relative luminance of
+// 0.20, which puts every stroke between 2.4:1 and 3.4:1 against every
+// tint in CHOICES_TINTS: visible on all sixteen, heavy on none, and —
+// the part that matters — indistinguishable from each other in weight.
+// Changing one means re-solving it, not nudging it, and the test
+// "every colour carries the same weight" is what enforces that.
+//
+// Slate is the one that looks like an outlier and is not: at a
+// saturation of 0.16 it reads as a grey, so its nominal hue sitting
+// 11 degrees from Indigo's is a number rather than a resemblance.
 //
 // ── WHY NONE OF THEM IS RED ──────────────────────────────────────────
 //
@@ -231,36 +246,30 @@ function choicesMarkOn(color) {
 // indistinguishable, so red is simply not on offer — that is a
 // deliberate hole in the palette, not an oversight.
 //
-// The warm end is therefore thin on purpose, and it cost a colour to
-// get right: a clay brown was in this list until a test measured it at
-// 27 degrees of hue from the over colour, which is close enough that a
-// person under budget in brown reads as a person over it. Amber sits
-// at 43 degrees and survives; plum covers the pink end from the other
-// side. The test is the spec — see "no colour on offer can be mistaken
-// for over budget" in tests/my-choices.test.mjs.
+// It also costs the warm end, and that is worth being plain about: a
+// yellow or an orange bright enough to be worth having is far too
+// light to sit at 0.20, and one forced down to 0.20 is a mustard. The
+// warm half is covered by lime and fuchsia from either side of it, and
+// there is no amber here because every honest amber was either dull or
+// too close to the over colour.
 var CHOICES_BAR_COLORS = [
-  { key: "violet", label: "Violet", value: "#7C3AED" },
-  { key: "indigo", label: "Indigo", value: "#4F46E5" },
-  { key: "sky", label: "Sky", value: "#0284C7" },
-  { key: "teal", label: "Teal", value: "#0D9488" },
-  { key: "green", label: "Green", value: "#16A34A" },
-  { key: "amber", label: "Amber", value: "#CA8A04" },
-  { key: "plum", label: "Plum", value: "#86198F" },
-  { key: "slate", label: "Slate", value: "#475569" }
+  { key: "violet", label: "Violet", value: "#9561DD" },
+  { key: "indigo", label: "Indigo", value: "#6969FB" },
+  { key: "sky", label: "Sky", value: "#1781CC" },
+  { key: "teal", label: "Teal", value: "#238A7C" },
+  { key: "green", label: "Green", value: "#238D50" },
+  { key: "lime", label: "Lime", value: "#438C10" },
+  { key: "fuchsia", label: "Fuchsia", value: "#D618D6" },
+  { key: "slate", label: "Slate", value: "#737A99" }
 ];
 
-// Violet, because it is T.accent — every stroke drawn before this
-// choice existed was that colour, and a category that has never been
-// told otherwise should not change appearance the day the option
-// ships.
-var CHOICES_BAR_DEFAULT = "#7C3AED";
+// Violet, because it is the app's accent lifted to the weight the rest
+// of the list sits at. T.accent itself (#7C3AED) is luminance 0.134 —
+// a third of the way down to the plum that started this — so a default
+// of the raw accent would have made "never chose a colour" the second
+// heaviest state available.
+var CHOICES_BAR_DEFAULT = "#9561DD";
 
-// A stored bar colour, or the default.
-//
-// Takes any hex rather than only the eight above, for the same reason
-// choicesTint does: the palette is a shortcut for choosing, not a
-// constraint the stored data has to keep satisfying. Growing the list
-// later must not make yesterday's categories invalid.
 function choicesBarColor(color) {
   const value = String(color || "").trim();
   return CHOICES_HEX_PATTERN.test(value) ? value : CHOICES_BAR_DEFAULT;

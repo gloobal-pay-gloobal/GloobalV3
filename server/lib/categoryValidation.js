@@ -29,6 +29,10 @@ const CATEGORY_NAME_MAX_WORDS = 4;
 const categoryNameWords = (value) => String(value || "").trim().split(/\s+/).filter(Boolean);
 const CATEGORY_ICON_MAX_LENGTH = 16;
 const CATEGORY_KINDS = ['expense', 'income'];
+// The two books a category can sit in. A second axis beside `kind`:
+// the creator side has income and expense just as the personal side
+// does, which is why this is not a third kind.
+const CATEGORY_SIDES = ['personal', 'creator'];
 const CATEGORY_ICON_STYLES = ['emoji', 'line', 'duotone'];
 // Mirrors CHOICES_SHAPES in the client's choicesCatalog.js. A name
 // the client does not know renders as the default rather than as
@@ -94,6 +98,14 @@ const validateCategoryInput = (input, { strict = true } = {}) => {
       return { ok: false, message: 'Pick one of the icon styles on offer.' };
     }
     out.iconStyle = iconStyle;
+  }
+
+  if (supplied('side')) {
+    const side = String(body.side || '').trim().toLowerCase();
+    if (!CATEGORY_SIDES.includes(side)) {
+      return { ok: false, message: 'A choice belongs to your personal side or your creator side.' };
+    }
+    out.side = side;
   }
 
   if (supplied('shape')) {
@@ -171,6 +183,7 @@ const publicCategory = (row) => ({
   id: String(row._id),
   name: row.name,
   kind: row.kind || 'expense',
+  side: row.side || 'personal',
   icon: row.icon || '',
   iconStyle: row.iconStyle || 'emoji',
   shape: row.shape || 'rounded',
@@ -227,6 +240,7 @@ module.exports = {
   CATEGORY_KINDS,
   CATEGORY_ICON_STYLES,
   CATEGORY_SHAPES,
+  CATEGORY_SIDES,
   CATEGORY_BUDGET_MAX,
   DEFAULT_CATEGORIES,
   validateCategoryInput,

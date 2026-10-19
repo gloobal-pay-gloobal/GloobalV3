@@ -58,6 +58,25 @@ const categorySchema = new mongoose.Schema(
       default: 'emoji',
     },
 
+    // Which book this category belongs to.
+    //
+    // A vegetable seller buys vegetables twice: once for the stall and
+    // once for the kitchen. Both are an expense, both might be called
+    // "Vegetables", and totalling them together answers no question
+    // either of them was asked. So `side` is a second axis beside
+    // `kind`, not a kind of its own — every combination is real, and
+    // the creator side has income (what the stall takes) exactly as
+    // the personal side does.
+    //
+    // Default 'personal', so every category that existed before this
+    // field stays where its owner left it. The creator side starts
+    // empty and is filled deliberately.
+    side: {
+      type: String,
+      enum: ['personal', 'creator'],
+      default: 'personal',
+    },
+
     // The outline the tile takes, from a fixed set of ten. Stored as the
     // NAME of a shape rather than the corner radii it works out to,
     // because the radii differ per surface — 20px on a grid tile, 18px on

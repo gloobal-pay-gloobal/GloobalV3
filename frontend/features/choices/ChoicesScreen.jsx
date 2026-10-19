@@ -1,5 +1,5 @@
 // src/features/choices/ChoicesScreen.jsx
-import { useState as useState44, useMemo as useMemo13 } from "react";
+import { useState as useState44, useMemo as useMemo13, useEffect as useEffect45 } from "react";
 import { Plus as Plus5, Search as Search6, ArrowLeft as ArrowLeft8, RefreshCw as RefreshCw8, Heart as Heart3, X as X9 } from "lucide-react";
 
 // My Choices — the grid, and everything reachable from it.
@@ -281,10 +281,14 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
   const [openId, setOpenId] = useState44(null);
   const [sheet, setSheet] = useState44(null);
   const [editing, setEditing] = useState44(null);
-  const [busy, setBusy] = useState44(false);
   const [searchOpen, setSearchOpen] = useState44(false);
+  // Which book is open. Local rather than stored: it is where somebody
+  // is looking, not something about them, and a person who opens the
+  // app expects to land on their own spending rather than wherever
+  // they last happened to be.
+  const [side, setSide] = useState44("personal");
 
-  const categories = useMemo13(() => choicesOfKind(state, kind), [state, kind]);
+  const categories = useMemo13(() => choicesOfKind(state, kind, side), [state, kind, side]);
   const shown = useMemo13(() => {
     const needle = String(query || "").trim().toLowerCase();
     if (!needle) return categories;
@@ -302,14 +306,53 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
 
   const open = openId ? choicesById(state, openId) : null;
 
-  const refresh = async () => {
-    setBusy(true);
-    try {
-      await choicesLoad(true);
-    } finally {
-      setBusy(false);
-    }
-  };
+  // An empty BOOK, which is a different thing from a search with no
+  // hits and from a load that has not finished. Declared here rather
+  // than inline because the caption below the card hides on it too — a
+  // heading sitting over nothing reads as a section that failed to
+  // load, which is the opposite of what an empty creator side means.
+  const empty = state.status === "ready" && categories.length === 0 && !query.trim();
+
+  // ── NOBODY ASKS AN APP TO TELL THEM THE TRUTH ────────────────────────
+  //
+  // There was a reload button in the corner. It is gone rather than
+  // moved, because the only reason to press it was that the figures
+  // might be stale — and an app that needs to be asked whether it is
+  // showing the current number has already told the person not to
+  // trust it.
+  //
+  // Three moments reload instead, which between them are every moment
+  // the data can have changed under the screen:
+  //
+  //   mount            choicesLoad's own cache decides whether this
+  //                    costs a request at all.
+  //   coming back      a tab the phone suspended for an hour, or an
+  //                    app switched away from, is showing a snapshot.
+  //                    visibilitychange is the event that fires for
+  //                    both; `focus` catches desktop, where a window
+  //                    can be behind another without being hidden.
+  //   money moved      the one thing that changes a total while this
+  //                    screen is sitting open. gloobal:paymentBanner is
+  //                    fired by usePaymentNotifications for exactly the
+  //                    case that matters here — a payment landing while
+  //                    the page is VISIBLE. When it is not visible that
+  //                    event does not fire, and it does not need to:
+  //                    coming back is already covered above.
+  //
+  // Forced, because a cached read would defeat the point of asking.
+  useEffect45(() => {
+    if (typeof window === "undefined") return undefined;
+    const reload = () => { choicesLoad(true).catch(() => {}); };
+    const onVisible = () => { if (!document.hidden) reload(); };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("gloobal:paymentBanner", reload);
+    return () => {
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("gloobal:paymentBanner", reload);
+    };
+  }, []);
 
   const retire = async (category) => {
     try {
@@ -371,35 +414,61 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     style={embedded
       ? { padding: "0 0 24px" }
       : { flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 16px 110px" }}
-  ><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 16px 18px" }}>{
-    /* The screen's name lives IN the card, with the one reload beside
-       it. It used to sit in the Dashboard's header strip, which meant
-       two reload buttons on one screen — the tab's own and the header's
-       — doing different things and looking identical. */
+  ><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "13px 15px 14px" }}>{
+    /* The screen's name on the card's top line, with the one control
+       that changes what the whole card is about beside it.
+
+       There used to be a reload button here. It is gone — not moved —
+       because a person should never have to ask an app to tell them
+       the truth; see the effect that replaced it. The space it freed
+       went into the padding, which came down from 16/18 to 13/14, so
+       a row of tiles starts higher up the screen. */
   }<div style={{ display: "flex", alignItems: "center", gap: 10 }}><span
-    style={{ flex: 1, fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}
+    style={{ flex: 1, minWidth: 0, fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >
       My Choices
     </span><button
-    onClick={refresh}
-    aria-label="Reload your choices"
+    onClick={() => { setSide(side === "creator" ? "personal" : "creator"); setQuery(""); setSearchOpen(false); }}
+    aria-label={side === "creator" ? "Switch to your personal side" : "Switch to your creator side"}
+    title={side === "creator" ? "Switch to your personal side" : "Switch to your creator side"}
     className="v2-tap"
-    style={{ width: 38, height: 38, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
-  ><RefreshCw8 size={17} color={busy ? T.inkFaint : T.accent} /></button></div>{
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      flexShrink: 0,
+      height: 34,
+      padding: "0 12px 0 10px",
+      borderRadius: 999,
+      border: "none",
+      background: side === "creator" ? T.accent : T.surfaceAlt,
+      color: side === "creator" ? "#fff" : T.accent,
+      fontSize: 12.5,
+      fontWeight: 800,
+      cursor: "pointer"
+    }}
+  >{
+    /* A pill, not a bare icon. The icon says "this flips"; it cannot
+       say WHICH WAY it is currently facing, and a person looking at an
+       empty creator side needs to know they are on the creator side
+       rather than that their categories have vanished. */
+  }<RefreshCw8 size={15} color={side === "creator" ? "#fff" : T.accent} />{side === "creator" ? "Creator" : "Personal"}</button></div>{
     /* ENERGY, NOT SPENDING.
 
        GEU is the Gloobal Energy Unit, so money leaving is energy used
        and money arriving is energy created. Saying "Total spent" over a
        figure denominated in GEU asked a person to hold two vocabularies
        for one number. */
-  }<div style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft, marginTop: 16 }}>{kind === "income" ? "Total energy created" : "Total energy used"}</div><div
+  }<div style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft, marginTop: 12 }}>{side === "creator"
+    ? (kind === "income" ? "Total energy created by your work" : "Total energy your work used")
+    : (kind === "income" ? "Total energy created" : "Total energy used")}</div><div
     style={{ marginTop: 3 }}
   ><ChoiceMoney amount={headline} code={ccyCode} size={30} color={kind === "income" ? TXN_IN_COLOR : T.ink} /></div>{
     /* Underlined text tabs rather than a filled pill. The pill read as
        the primary action on a screen whose primary action is the grid
        underneath it. */
   }<div
-    style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 18, borderBottom: `1px solid ${T.line}` }}
+    style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 14, borderBottom: `1px solid ${T.line}` }}
   >{[["expense", "Energy use"], ["income", "Energy created"]].map(([key, label]) => <button
     key={key}
     onClick={() => { setKind(key); setQuery(""); }}
@@ -441,14 +510,29 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     </div>}{state.status === "error" && categories.length === 0 && <div
     style={{ textAlign: "center", padding: "36px 20px", color: T.inkFaint, fontSize: 13, lineHeight: 1.5 }}
   >
-      Couldn{"’"}t load your choices. Nothing is lost {"—"} tap reload above to try again.
-    </div>}{shown.length === 0 && categories.length > 0 && <div
+      Couldn{"’"}t load your choices. Nothing is lost {"—"} it will try again on its own.
+    </div>}{
+    /* An empty CREATOR side is the normal first sight of it, not a
+       failure: the seeded set is all personal, and this book is filled
+       deliberately. Saying so, and saying what to do, is the whole
+       difference between "new" and "broken". */
+  }{empty && <div
+    style={{ textAlign: "center", padding: "34px 24px", color: T.inkFaint, fontSize: 13, lineHeight: 1.6 }}
+  >{side === "creator"
+    ? (kind === "income"
+      ? <>Nothing here yet. Add what your work brings in, and it stays apart from your own money.</>
+      : <>Nothing on your creator side yet. Add what your work costs you {"—"} the stock you buy, what you pay to get it there {"—"} and it stays apart from your own spending.</>)
+    : (kind === "income"
+      ? <>No choices here yet. Add one and money arriving can be filed under it.</>
+      : <>No choices here yet. Add one and your payments can be filed under it.</>)}</div>}{shown.length === 0 && categories.length > 0 && <div
     style={{ textAlign: "center", padding: "34px 20px", color: T.inkFaint, fontSize: 13 }}
   >
       No choice called {"“"}{query.trim()}{"”"}.
-    </div>}<div
+    </div>}{!empty && <div
     style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, margin: "18px 2px 0" }}
-  >{kind === "income" ? "My source of energy" : "Where my energy goes"}</div><div
+  >{side === "creator"
+    ? (kind === "income" ? "What my work brings in" : "What my work costs me")
+    : (kind === "income" ? "My source of energy" : "Where my energy goes")}</div>}<div
     style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, marginTop: 12 }}
   >{shown.map((category) => <ChoiceGridTile
     key={category.id}
@@ -502,14 +586,14 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     open={sheet === "pick-pay"}
     onClose={() => setSheet(null)}
     title="Pay for which category?"
-    categories={choicesOfKind(state, "expense")}
+    categories={choicesOfKind(state, "expense", side)}
     onPick={(category) => { setSheet(null); if (onPay) onPay(category); }}
     onNew={() => { setKind("expense"); setEditing(null); setSheet("editor"); }}
   /><ChoicesPickerSheet
     open={sheet === "pick-income"}
     onClose={() => setSheet(null)}
     title="Add income to which category?"
-    categories={choicesOfKind(state, "income")}
+    categories={choicesOfKind(state, "income", side)}
     onPick={(category) => { setSheet(null); setKind("income"); setOpenId(category.id); }}
     onNew={() => { setKind("income"); setEditing(null); setSheet("editor"); }}
   /><ChoicesEditorSheet
@@ -517,6 +601,7 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
     onClose={() => { setSheet(null); setEditing(null); }}
     category={editing}
     kind={kind}
+    side={side}
     ccyCode={ccyCode}
     onRemove={retire}
   /></div>;

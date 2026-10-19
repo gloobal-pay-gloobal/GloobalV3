@@ -326,10 +326,21 @@ function choicesTagQuietly(referenceId, categoryId) {
 // Live categories of one kind, in the person's own order. Archived ones are
 // excluded everywhere a category can be CHOSEN; they still resolve by id so
 // an already-filed payment keeps its label.
-function choicesOfKind(state, kind) {
+// `side` is optional, and leaving it out is a deliberate case rather than
+// a convenience: the grid wants one book at a time, and the strip above
+// the Send button wants BOTH. At the moment of paying, a person does not
+// first decide which of their two lives they are in — they are buying
+// vegetables, and whether those are the stall's or dinner's is what the
+// category they pick says. Filtering the strip to one book would hide
+// half of their favourites behind a toggle on another screen.
+function choicesOfKind(state, kind, side) {
   const want = kind === "income" ? "income" : "expense";
+  const book = side === "creator" || side === "personal" ? side : null;
   const rows = (state && Array.isArray(state.categories) ? state.categories : []).filter(
-    (row) => row && !row.archived && (row.kind || "expense") === want
+    (row) => row
+      && !row.archived
+      && (row.kind || "expense") === want
+      && (!book || (row.side || "personal") === book)
   );
   // Favourites first, then the person's own order, then name. The strip
   // above the Send button takes the first few of exactly this list, so

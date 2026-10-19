@@ -347,6 +347,9 @@ export async function installApi(context, options = {}) {
       id: seed.id || `cat-${at + 1}`,
       name: seed.name,
       kind: seed.kind || "expense",
+      // Mirrors publicCategory. Left out once already for barColor, and
+      // the probe that followed measured the harness instead of the app.
+      side: seed.side || "personal",
       icon: seed.icon || "●",
       iconStyle: seed.iconStyle || "emoji",
       shape: seed.shape || "rounded",
@@ -1157,13 +1160,19 @@ export async function installApi(context, options = {}) {
       const name = String((body || {}).name || "").trim();
       if (!name) return json(400, { success: false, message: "Give this choice a name." });
       const clash = state.categories.some(
-        (c) => !c.archived && c.kind === ((body || {}).kind || "expense") && c.name.toLowerCase() === name.toLowerCase()
+        // Per BOOK, like the server: "Vegetables" on the creator side
+        // and "Vegetables" on the personal side are two categories.
+        (c) => !c.archived
+          && c.kind === ((body || {}).kind || "expense")
+          && (c.side || "personal") === ((body || {}).side === "creator" ? "creator" : "personal")
+          && c.name.toLowerCase() === name.toLowerCase()
       );
       if (clash) return json(400, { success: false, message: `You already have a choice called ${name}.` });
       const created = {
         id: `cat-${state.categories.length + 1}-${Date.now()}`,
         name,
         kind: (body || {}).kind === "income" ? "income" : "expense",
+        side: (body || {}).side === "creator" ? "creator" : "personal",
         icon: body.icon || "●",
         iconStyle: body.iconStyle || "emoji",
         shape: (body || {}).shape || "rounded",

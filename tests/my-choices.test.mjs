@@ -597,9 +597,41 @@ describe("the screen is named once, and reloads once", () => {
       "the Home header strip is back on the Choices tab");
   });
 
-  test("there is exactly one reload on the screen", () => {
+  test("there is no reload on the screen at all", () => {
+    // There used to be exactly one, which was already an improvement on
+    // the two this screen briefly had. It is now none: a person should
+    // never have to ask an app whether it is showing the current
+    // number, and a button that exists only for that says it might not
+    // be. The effect below is what replaced it.
     const src = code(GRID);
-    assert.equal((src.match(/aria-label="Reload your choices"/g) || []).length, 1);
+    assert.equal((src.match(/aria-label="Reload your choices"/g) || []).length, 0,
+      "the reload button is back");
+    assert.doesNotMatch(src, /tap reload above/,
+      "the error state still tells somebody to press a button that is not there");
+  });
+
+  test("it reloads itself at the three moments it can be stale", () => {
+    const src = code(GRID);
+    // Coming back to a tab the phone suspended, and the desktop case
+    // where a window is behind another without being hidden.
+    assert.match(src, /document\.addEventListener\("visibilitychange", onVisible\)/);
+    assert.match(src, /window\.addEventListener\("focus", onVisible\)/);
+    assert.match(src, /if \(!document\.hidden\) reload\(\)/,
+      "it reloads when the page is HIDDEN as well, which is work nobody can see");
+    // And money moving while the screen sits open.
+    assert.match(src, /window\.addEventListener\("gloobal:paymentBanner", reload\)/);
+    // A real event, not one invented for this comment to point at: it is
+    // dispatched by usePaymentNotifications.
+    assert.match(code("frontend/hooks/usePaymentNotifications.js"), /CustomEvent\("gloobal:paymentBanner"/,
+      "this screen listens for an event nothing fires");
+    // Forced, or the cache answers and the reload was theatre.
+    assert.match(src, /choicesLoad\(true\)\.catch\(\(\) => \{\}\)/);
+    // Every listener removed. A screen that is mounted and unmounted on
+    // every tab change leaks one of each otherwise.
+    for (const name of ["focus", "visibilitychange", "gloobal:paymentBanner"]) {
+      assert.match(src, new RegExp(`removeEventListener\\("${name}"`),
+        `the ${name} listener is never removed`);
+    }
   });
 
   test("the figures are described as energy, like the unit they are in", () => {
@@ -1534,5 +1566,120 @@ describe("a tile is a fraction of itself, not a set of constants", () => {
     assert.match(grid, /var CHOICES_TILE_ASSUMED = 105;/);
     assert.match(grid, /const span = \(box && box\.width > 0\) \? box\.width : CHOICES_TILE_ASSUMED;/,
       "a tile that has not measured itself has no size to work from");
+  });
+});
+
+// ── Two books, not two tabs ─────────────────────────────────────────────
+//
+// A vegetable seller buys vegetables twice: once for the stall and once
+// for the kitchen. Both are an expense, both might be called
+// "Vegetables", and adding them together answers no question either of
+// them was asked.
+//
+// So `side` is a second AXIS beside `kind`, not a third kind. Every
+// combination is real — the creator side has income, which is what the
+// stall takes — and that is the property most of these hold.
+describe("a category belongs to a book", () => {
+  const server = require_(path.join(ROOT, "server/lib/categoryValidation.js"));
+  const grid = code(GRID);
+  const store = code(STORE);
+  const routes = code(SERVER);
+
+  test("the two books are a separate axis from the two kinds", () => {
+    assert.deepEqual(server.CATEGORY_SIDES.slice().sort(), ["creator", "personal"]);
+    // If this ever became a kind, every screen that splits expense from
+    // income would silently start splitting three ways.
+    assert.deepEqual(server.CATEGORY_KINDS.slice().sort(), ["expense", "income"]);
+  });
+
+  test("everything that existed before this field stays personal", () => {
+    assert.equal(server.publicCategory({ _id: "a", name: "Food" }).side, "personal");
+    assert.equal(server.publicCategory({ _id: "a", name: "Food", side: "creator" }).side, "creator");
+    const seeded = server.DEFAULT_CATEGORIES.filter((row) => row.side && row.side !== "personal");
+    assert.equal(seeded.length, 0, "a seeded category lands on the creator side, which starts empty on purpose");
+  });
+
+  test("the server takes the two it knows and refuses the rest", () => {
+    assert.equal(server.validateCategoryInput({ side: "creator" }, { strict: false }).value.side, "creator");
+    assert.equal(server.validateCategoryInput({ side: "PERSONAL" }, { strict: false }).value.side, "personal");
+    assert.equal(server.validateCategoryInput({ side: "business" }, { strict: false }).ok, false);
+    assert.equal(server.validateCategoryInput({ side: "" }, { strict: false }).ok, false);
+  });
+
+  test("the same name can exist in both books", () => {
+    // The whole point. Refusing the second "Vegetables" because the
+    // first exists is refusing the distinction this field was added to
+    // make — so the clash query is per userId+kind+SIDE.
+    assert.match(routes, /const side = validated\.value\.side \|\| 'personal';/);
+    assert.match(routes, /userId,\n      kind,\n      side,\n      archivedAt: null,/,
+      "a new category clashes across both books again");
+    assert.match(routes, /kind: existing\.kind,\n        side: existing\.side \|\| 'personal',/,
+      "a rename clashes across both books again");
+  });
+
+  test("a category cannot be moved between books", () => {
+    // Moving one would move every payment ever filed under it, silently,
+    // into a total somebody keeps for a different purpose. Same reason
+    // `kind` is not editable, doubled.
+    assert.match(routes, /delete validated\.value\.side;/,
+      "a PATCH can move a category between books");
+  });
+
+  test("a new one is born into the book that was open", () => {
+    assert.match(code(SHEETS), /side: side === "creator" \? "creator" : "personal"/,
+      "a category added from the creator side lands on the personal side");
+  });
+
+  test("the grid shows one book and the Send strip shows both", () => {
+    // Not an oversight. At the moment of paying, a person is buying
+    // vegetables — whether those are the stall's or dinner's is what
+    // the category they pick SAYS. Filtering the strip to one book
+    // would hide half their favourites behind a toggle on a screen
+    // they are not on.
+    assert.match(grid, /choicesOfKind\(state, kind, side\)/, "the grid shows both books at once");
+    assert.match(code(SEND), /choicesOfKind\(choicesState, "expense"\)\.slice\(0, CHOICES_STRIP_COUNT\)/,
+      "the Send strip now hides half of somebody's favourites");
+    assert.match(store, /const book = side === "creator" \|\| side === "personal" \? side : null;/);
+    assert.match(store, /&& \(!book \|\| \(row\.side \|\| "personal"\) === book\)/);
+  });
+
+  test("the flip says which way it is facing", () => {
+    // An icon can say "this flips". It cannot say which side you are
+    // on, and somebody looking at an empty creator side needs to know
+    // they are on the creator side rather than that their categories
+    // have vanished.
+    assert.match(grid, /\{side === "creator" \? "Creator" : "Personal"\}/,
+      "the flip is a bare icon again");
+    assert.match(grid, /aria-label=\{side === "creator" \? "Switch to your personal side" : "Switch to your creator side"\}/);
+  });
+
+  test("an empty creator side reads as new, not as broken", () => {
+    assert.match(grid, /Nothing on your creator side yet/,
+      "an empty book shows nothing at all, which looks like a failure");
+    assert.match(grid, /const empty = state\.status === "ready" && categories\.length === 0 && !query\.trim\(\);/,
+      "the empty state fires while still loading, or over a search with no hits");
+    // The caption below the card goes with it. A heading sitting over
+    // nothing reads as a section that failed to load, which is the
+    // opposite of what an empty creator side means.
+    assert.match(grid, /\}\{!empty && <div\n    style=\{\{ fontSize: 12\.5, fontWeight: 700/,
+      "the section heading still prints over an empty book");
+  });
+
+  test("the empty copy knows which tab it is on", () => {
+    // It said "add what your work costs you" on the Energy CREATED
+    // tab — the expense wording over the income side. Found by looking
+    // at the screen, not by reading the code.
+    assert.match(grid, /Add what your work brings in/,
+      "the creator income tab is told to add what its work costs");
+    assert.match(grid, /money arriving can be filed under it/,
+      "the personal income tab is told about payments it makes");
+  });
+
+  test("the headline and the caption both follow the book", () => {
+    // A figure labelled "Total energy used" on the creator side is the
+    // same words over a different fact.
+    assert.match(grid, /Total energy your work used/);
+    assert.match(grid, /What my work costs me/);
+    assert.match(grid, /Total energy created by your work/);
   });
 });

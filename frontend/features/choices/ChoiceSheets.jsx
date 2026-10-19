@@ -450,7 +450,7 @@ function ChoiceFieldCard({ label, note, children }) {
 // colour.
 var CHOICES_ICON_ROWS = 2;
 
-function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, onRemove }) {
+function ChoicesEditorSheet({ open, onClose, category, kind, side, ccyCode, onSaved, onRemove }) {
   const lens = useGeuLens();
   const editing = Boolean(category && category.id);
   const [name, setName] = useState43("");
@@ -604,7 +604,14 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
       };
       const saved = editing
         ? await choicesUpdate(category.id, payload)
-        : await choicesCreate(Object.assign({ kind: kind === "income" ? "income" : "expense" }, payload));
+        // The book is set at birth and never edited — see the PATCH
+        // route, which deletes `side` from an update for the same
+        // reason it deletes `kind`. A new one belongs to whichever
+        // book the person was looking at when they tapped Add.
+        : await choicesCreate(Object.assign({
+          kind: kind === "income" ? "income" : "expense",
+          side: side === "creator" ? "creator" : "personal"
+        }, payload));
       // The picture goes AFTER the category, because a new one has no id
       // to attach a photo to until the server has given it one. A failure
       // here is reported WITHOUT losing the save that already succeeded:
@@ -643,7 +650,11 @@ function ChoicesEditorSheet({ open, onClose, category, kind, ccyCode, onSaved, o
   return <ChoiceFullScreen
     open={open}
     onClose={onClose}
-    title={editing ? "Edit category" : kind === "income" ? "New income category" : "New category"}
+    title={editing
+      ? "Edit category"
+      : side === "creator"
+        ? (kind === "income" ? "New creator income" : "New creator category")
+        : (kind === "income" ? "New income category" : "New category")}
     header={
       /* The preview lives in the header, OUTSIDE the scroll, because
          almost everything below it changes how this looks — the icon,

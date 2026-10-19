@@ -8664,7 +8664,7 @@ const categoryNotFound = (res) =>
 // rows are rejected individually while the rest land. The re-read below is
 // then the single source of truth for what either caller is told.
 const categoriesForAccount = async (userId) => {
-  const sort = { kind: 1, sortIndex: 1, name: 1 };
+  const sort = { side: 1, kind: 1, sortIndex: 1, name: 1 };
   const existing = await Category.find({ userId }).sort(sort).lean();
   if (existing.length > 0) return existing;
 
@@ -8847,9 +8847,15 @@ app.post('/api/categories', writeLimit, requireAuth, async (req, res) => {
 
     const userId = req.authUser._id;
     const kind = validated.value.kind || 'expense';
+    // Per BOOK, not per account. "Vegetables" on the creator side is the
+    // stall's stock and "Vegetables" on the personal side is dinner;
+    // refusing the second because the first exists would be refusing a
+    // distinction this field was added to make.
+    const side = validated.value.side || 'personal';
     const clash = await Category.findOne({
       userId,
       kind,
+      side,
       archivedAt: null,
       name: new RegExp(`^${escapeRegExp(validated.value.name)}$`, 'i'),
     })
@@ -8859,7 +8865,7 @@ app.post('/api/categories', writeLimit, requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: `You already have a choice called ${validated.value.name}.` });
     }
 
-    const category = await Category.create(Object.assign({}, validated.value, { userId, kind }));
+    const category = await Category.create(Object.assign({}, validated.value, { userId, kind, side }));
     return res.status(201).json({
       success: true,
       category: Object.assign({}, publicCategory(category.toObject()), { totals: [], photo: null }),
@@ -8888,11 +8894,17 @@ app.patch('/api/categories/:id', writeLimit, requireAuth, async (req, res) => {
     // would leave every payment already filed under it on the wrong side of
     // the split, and there is no honest way to reinterpret those rows.
     delete validated.value.kind;
+    // Nor is the book, and for the same reason doubled: moving a category
+    // from personal to creator would move every payment ever filed under
+    // it, silently, into a total somebody keeps for a different purpose.
+    // Make a second category and retire the first.
+    delete validated.value.side;
 
     if (validated.value.name && validated.value.name.toLowerCase() !== existing.name.toLowerCase()) {
       const clash = await Category.findOne({
         userId,
         kind: existing.kind,
+        side: existing.side || 'personal',
         archivedAt: null,
         _id: { $ne: existing._id },
         name: new RegExp(`^${escapeRegExp(validated.value.name)}$`, 'i'),

@@ -4480,39 +4480,21 @@ function GloobalId() {
       pointerEvents: "none"
     }}
   >{rootToast}</div>}<AppMapLauncher entries={appMapEntries} currentKey={appMapCurrentKey} onLockedPress={handleAppMapLockedPress} />{
-    /* A payment arriving while the app is OPEN, drawn by the app rather
-       than handed to the operating system's tray — the same notification
-       card the sheet uses, slid over whatever screen is up. See
-       components/cards/paymentBanner.jsx.
+    /* ── THE IN-APP BANNER IS GONE ────────────────────────────────────
 
-       Tapping it opens that payment's receipt through `sharedTxnRef`, the
-       path a shared receipt link already uses: it finds the row in this
-       account's own history and opens the real document, or quietly does
-       nothing if the row is not there yet. Building a receipt from the
-       banner's own partial payload would produce a document that disagreed
-       with the one the same payment opens from every other screen. */
-  }<GloobalPaymentBanner
-    // ── NOT OVER A RECEIPT, AND NOT OVER A FULL-SCREEN TASK ─────────────
-    //
-    // The banner sits at zIndex 520, above the receipt's 500, because a
-    // banner is by definition the topmost thing — it reports something that
-    // just happened over whatever was already there.
-    //
-    // That was fine while it left after 5.2 seconds. It no longer leaves on
-    // its own (the founder asked for time to read it), and a fixed card
-    // pinned to the top of the screen until somebody dismisses it is a card
-    // sitting ON the controls underneath. The receipt's own tab row is
-    // exactly there: payment-unlock caught the Creator Share tab becoming
-    // permanently unclickable the moment a payment produced a banner.
-    //
-    // Suppressed rather than moved or re-stacked, because in both these
-    // cases the banner has nothing to add. A receipt IS the notification,
-    // in more detail and for the payment the person is already looking at;
-    // and somebody mid-way through Send Money or Add Bank is doing the
-    // thing the banner would interrupt. Nothing is lost either way — the
-    // notification is in the list, unread, when they are done.
-    suppressed={Boolean(sharedTxnRef) || Boolean(activeScreen)}
-    onOpen={(txnId) => { if (txnId) setSharedTxnRef(txnId); }}
-  /></div>;
+       A payment arriving while the app was open used to be drawn by the
+       app, as a card slid over whatever screen was up, INSTEAD of being
+       handed to the operating system. That was one notification in two
+       shapes depending on where the person happened to be looking, and
+       the founder's answer to seeing all three side by side was to keep
+       the one in the tray and the one in the bell, and drop this.
+
+       So the branch that chose between them is gone too: every payment
+       now goes to the tray, whether the app is in front of the person
+       or not. See usePaymentNotifications.
+
+       The gloobal:paymentBanner event it listened for still fires —
+       it is the "money moved while this page was visible" signal, and
+       My Choices reloads its totals on it. */
+  }</div>;
 }
-

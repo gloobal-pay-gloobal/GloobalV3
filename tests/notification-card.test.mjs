@@ -70,14 +70,22 @@ describe("the card is built from what the server recorded", () => {
     // Rajeev Menon" on the first page is, and the reference is on the
     // receipt one tap away. Both pages are gone and neither comes back.
     //
-    // "currency" took its place: the unit the headline figure is in,
-    // written out. The symbol is not an answer on its own — ₹ is four
-    // countries' rupee, ¥ is two currencies that disagree about minor
-    // units — and on a cross-border row the card shows two figures whose
-    // symbols do not say which is which.
+    // "currency" is the third, and it went for the opposite reason to
+    // the other two: not because nobody reads it, but because it was
+    // ONE TURN OF A PAGER away from a figure that could simply say it.
+    // The point it made was right — the symbol is not an answer on its
+    // own, ₹ is four countries' rupee and ¥ is two currencies that
+    // disagree about minor units — so the ISO code moved INTO the
+    // figure instead, between the two halves the lens already prints.
+    // See gloobalNotifCardAmount.
     //
     //   "what"   the sentence on a notification that has only a sentence
-    assert.deepEqual(keys, ["what", "when", "who", "currency", "money", "id", "when"]);
+    assert.deepEqual(keys, ["what", "when", "who", "money", "id", "when"]);
+    assert.ok(!/label: "Currency"/.test(card), "the currency page is back");
+    // And the fact it carried is still on the card, on the line the eye
+    // lands on first rather than one tap away.
+    assert.match(card, /function gloobalNotifCardAmount/,
+      "the currency page went without the figure taking over what it said");
     assert.ok(!/Transaction ID/.test(card), "the transaction id page is back");
     assert.ok(!/label: "Share on"/.test(card), "the share's payment reference page is back");
     // The FIELD is untouched. Only the page is gone: the Creator Share
@@ -316,52 +324,54 @@ describe("in the app", () => {
       assert.match(await card.innerText(), /\+[\d,.]/s, "the head does not carry the figure");
       assert.ok(!/ received| sent/.test(await card.innerText()), "the word is back on the headline");
 
-      // Five pages, turned by the chevron, each naming what it shows.
-      // Five, not four: the unit of the headline figure now sits between
-      // the person and the other side of the payment.
+      // FOUR pages now, turned by the chevron, each naming what it
+      // shows. It was five: the unit of the headline figure had a page
+      // of its own, one turn away from a figure that can simply say it.
+      // The ISO code moved onto the headline and the page went.
+      const head = (await card.innerText()).split("\n")[0].trim();
       const seen = [];
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 4; i++) {
         seen.push((await card.getByTestId("notification-card-page").innerText()).replace(/\s+/g, " ").trim());
         await card.getByRole("button", { name: "Next detail", exact: true }).click();
         await page.waitForTimeout(320);
       }
       assert.match(seen[0], /^From /);
-      // THE UNIT, WRITTEN OUT. The headline carries a symbol and a symbol
-      // is not an answer: this leg arrives in EUR, and the page below it
-      // quotes a figure in another currency entirely.
-      assert.match(seen[1], /^Currency/);
-      assert.match(seen[1], new RegExp(`\\b${B.currency}\\b`),
-        `the currency page does not name the unit: ${seen[1]}`);
-      // The page is "<name> · <code>", and when the platform has no name
-      // for a code it must print the code ALONE rather than gloss it with
-      // itself. Pinned because the fallback is the branch nobody looks at.
-      assert.ok(!new RegExp(`${B.currency} · ${B.currency}`).test(seen[1]),
-        "the code is being printed as its own gloss");
-      assert.match(seen[2], /Sender paid/);
-      assert.match(seen[2], /0\.009165/, "the rate is not the one recorded");
+      // THE UNIT IS ON THE HEADLINE, not a page below it. A symbol is
+      // still not an answer on its own — this leg arrives in one
+      // currency and the page below quotes a figure in another — so the
+      // ISO code is printed with the figure rather than one tap away.
+      assert.ok(!seen.some((text) => /^Currency/.test(text)), "the currency page is back");
+      assert.match(head, new RegExp(`\\b${B.currency}\\b`),
+        `the headline does not name the unit: ${head}`);
+      // Named ONCE. A pair that already ends in its own code must not be
+      // glossed with it a second time.
+      assert.ok(!new RegExp(`${B.currency}[^A-Za-z]+${B.currency}`).test(head),
+        `the code is printed twice on the headline: ${head}`);
+      assert.match(seen[1], /Sender paid/);
+      assert.match(seen[1], /0\.009165/, "the rate is not the one recorded");
       // THE RECORDED DIRECTION: 1 unit of the RECEIVER's currency in the
       // SENDER's, which is the one sentence receiptPaymentConversion prints
       // too. B is the receiver here, so the base is B's currency.
-      assert.match(seen[2], new RegExp(`1 ${B.currency} = 0\\.009165 EUR`),
-        `the rate is stated in the wrong direction: ${seen[2]}`);
+      assert.match(seen[1], new RegExp(`1 ${B.currency} = 0\\.009165 EUR`),
+        `the rate is stated in the wrong direction: ${seen[1]}`);
       // Their Gloobal ID — ten symbols, someone you can pay again — and not
       // the twenty-symbol transaction reference, which is a receipt's job.
       assert.ok(!seen.some((s) => /Transaction ID/.test(s)), "the transaction id page is back");
-      assert.equal((seen[3].match(/[−+×=○□●■]/g) || []).length, A.symbolId.length);
+      assert.equal((seen[2].match(/[\u2212+\u00D7=\u25CB\u25A1\u25CF\u25A0]/g) || []).length, A.symbolId.length);
       // A DATE AND A TIME, not "3h". The page used to print the same
       // relative stamp the plain rows carry, which answers "how fresh is
       // this?" — a different question from the one its label asks, and one
       // that stops answering anything an hour later.
-      assert.match(seen[4], /Date and time/);
+      assert.match(seen[3], /Date and time/);
       // The receipt's own date format, so the notification and the
       // document it opens print one payment's time one way.
-      assert.match(seen[4], /\w{3} \d{1,2}, \d{4} · \d{2}:\d{2}:\d{2}/,
-        `the Date and time page is not a date and a time: ${seen[4]}`);
-      assert.ok(!/Just now|^\d+[mh]$|ago/.test(seen[4]), "the relative stamp is back on the Date and time page");
+      assert.match(seen[3], /\w{3} \d{1,2}, \d{4} \u00B7 \d{2}:\d{2}:\d{2}/,
+        `the Date and time page is not a date and a time: ${seen[3]}`);
+      assert.ok(!/Just now|^\d+[mh]$|ago/.test(seen[3]), "the relative stamp is back on the Date and time page");
       // And it is the PAYMENT's instant, not this row's. The seed below
       // dates the payment to a fixed day; a card reading its own createdAt
       // would print today.
-      assert.match(seen[4], /Mar 14, 2031/, `the card is not showing the payment's own time: ${seen[4]}`);
+      assert.match(seen[3], /Mar 14, 2031/, `the card is not showing the payment's own time: ${seen[3]}`);
       // And it came back round to the first page.
       assert.match((await card.getByTestId("notification-card-page").innerText()).trim(), /^From/);
       assert.deepEqual(errors, []);

@@ -242,6 +242,45 @@ function gloobalNotifDiscIcon(id) {
   return `/icons/notif/disc-${gloobalNotifDiscIndex(id)}.png`;
 }
 
+// ── THE FIGURE NAMES ITS OWN TENDER ────────────────────────────────────
+//
+// The card used to carry a Currency page reading "Indian Rupee · INR",
+// one turn of the pager away from a figure that already said ₹. Two
+// controls and two rows for one fact, and the fact was the least
+// interesting thing on the card.
+//
+// So the code goes INTO the figure, between the two halves the lens
+// already prints, and the page is gone:
+//
+//     lens off     −250.00₹ │ INR │ GEU
+//     lens on      −250.00 GEU │ INR │ ₹
+//
+// Between them rather than appended, so each unit is named once and the
+// ISO code sits next to the currency it is the code FOR.
+//
+// Skipped when the pair already contains the code — foreign money with
+// no symbol of its own renders as "250.00 USD", and "USD │ USD" is the
+// bug this guard exists to prevent.
+//
+// THE LOCK SCREEN DOES NOT GET THIS. gloobalNotifHeadline stays as it
+// is: that line is read aloud, and U+2502 has no reliable reading. One
+// extra bar there is one more thing a screen reader says wrong.
+function gloobalNotifCardAmount(meta, lens, ownCurrency) {
+  const amount = meta == null ? null : meta.amount;
+  const currency = meta == null ? null : meta.currency;
+  if (amount == null || !Number.isFinite(Number(amount)) || !currency) return null;
+  const parts = geuLensBarParts(Number(amount), currency, lens, ownCurrency);
+  const code = String(currency).toUpperCase();
+  const whole = `${parts.lead} ${parts.trail}`;
+  const named = new RegExp(`(^|[^A-Za-z])${code}([^A-Za-z]|$)`).test(whole);
+  const body = named || !parts.lead
+    ? whole.trimEnd()
+    : parts.trail
+      ? `${parts.lead} ${GEU_LENS_BAR} ${code} ${parts.trail}`
+      : `${parts.lead} ${GEU_LENS_BAR} ${code}`;
+  return `${(meta.direction === "sent") ? "\u2212" : "+"}${body}`;
+}
+
 // The pages a payment notification can show, in the order they are turned
 // through. `value` returns null when the page has nothing to say, and a page
 // that says nothing is never drawn.
@@ -323,15 +362,6 @@ function gloobalNotifCardPages(meta, when, row, lens, ownCurrency) {
   // somebody glances at. `metadata.paymentReferenceId` is untouched — the
   // Creator Share receipt still names the payment it came from, which is
   // where that question is actually answered.
-  //
-  // Drawn from `meta.currency` and nothing else, by the same rule as every
-  // other page on this card: a row whose metadata never carried a currency
-  // draws no currency page rather than a guessed one.
-  if (meta.currency) {
-    const code = String(meta.currency).toUpperCase();
-    const named = gloobalCurrencyName(code);
-    pages.push({ key: "currency", label: "Currency", text: named ? `${named} · ${code}` : code });
-  }
   // What was paid, against what arrived, with the rate between them. Drawn
   // only when the payment really crossed a currency: on a domestic one the
   // two figures are the same number said twice.
@@ -516,7 +546,14 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
   // own title is the headline there, which is what the plain row this card
   // replaces already showed.
   const money = gloobalNotifIsMoney(row);
-  const headline = money ? gloobalNotifHeadline(meta, cardLens, cardOwnCurrency) : ((row && row.title) || "Gloobal");
+  // The CARD's figure, not the lock screen's: it carries the bar pair
+  // and the ISO code, which is what the Currency page used to say.
+  // gloobalNotifHeadline is still what the tray gets — see the note on
+  // gloobalNotifCardAmount for why those two must not be the same
+  // string.
+  const headline = money
+    ? (gloobalNotifCardAmount(meta, cardLens, cardOwnCurrency) || gloobalNotifHeadline(meta, cardLens, cardOwnCurrency))
+    : ((row && row.title) || "Gloobal");
   // Red out, green in — and neither for a notice about no money at all,
   // where a green sentence would read as something having arrived.
   const tint = money ? (sent ? T.negative : T.positive) : T.ink;

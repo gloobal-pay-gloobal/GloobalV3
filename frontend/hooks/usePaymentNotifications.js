@@ -334,22 +334,22 @@ function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currency
   // at all. That was right while the only way to tell anybody was the
   // operating system's tray, which genuinely needs permission.
   //
-  // It is wrong for a card the app draws inside itself. Nobody has to grant
-  // permission for an app to show something in its own window, and the
-  // person who declined the browser prompt is precisely the one who will
-  // only ever see what the app draws.
+  // ── THE PERMISSION BYPASS WENT WITH THE BANNER ──────────────────────
   //
-  // So: visible means the app can tell them, permission or not. Hidden
-  // means the tray is the only route, and the tray needs the grant.
-  const canDrawInApp = typeof document !== "undefined"
-    && document.visibilityState === "visible"
-    && typeof window !== "undefined";
-
-  // Returns BEFORE marking, deliberately. A payment that could not be
-  // reported must stay unreported, so the next poll — after the app is
-  // reopened, or permission is granted — still raises it. Marking here
-  // would swallow it permanently.
-  if (!canDrawInApp && !paymentNotificationsGranted()) return false;
+  // This used to read: visible means the app can tell them, permission
+  // or not — because an app needs nobody's permission to draw a card in
+  // its own window, and the person who declined the browser prompt was
+  // precisely the one who would only ever see what the app drew.
+  //
+  // That argument was entirely about the banner, and the banner is
+  // gone. The tray is now the only route, and the tray needs the grant,
+  // so there is nothing left for "visible" to permit.
+  //
+  // Returns BEFORE marking, deliberately, and that part is unchanged. A
+  // payment that could not be reported must stay unreported, so the
+  // next poll — after permission is granted — still raises it. Marking
+  // here would swallow it permanently.
+  if (!paymentNotificationsGranted()) return false;
 
   markPaymentNotified(txnId);
   const meta = {
@@ -391,14 +391,22 @@ function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currency
   // A DOM event rather than a callback: this module is plain functions with
   // no route into the React tree, which is the same reason
   // gloobal:sessionExpired and gloobal:openNotifications are events.
-  if (canDrawInApp) {
+  // ── MONEY MOVED, WHILE THIS PAGE WAS LOOKING ────────────────────────
+  //
+  // Still fired, and no longer a branch. It used to decide WHO DREW the
+  // notification — the app, as a banner, when the page was visible;
+  // the tray otherwise — which made one event appear in two shapes
+  // depending on where the person's eyes were. The banner is gone, so
+  // this is now only what its name says: a signal that money moved
+  // while this page was open. My Choices reloads its totals on it.
+  //
+  // Dispatched whether or not the page is visible, because a listener
+  // that wants it only when visible can ask, and one that wants it
+  // always could not have had it before.
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
     window.dispatchEvent(new CustomEvent("gloobal:paymentBanner", {
       detail: { ...meta, txnId, title, body, occurredAt: occurredAt || null }
     }));
-    // Treated as shown. The dedupe above has already marked this txnId, and
-    // reporting false here would say the person was not told — they were,
-    // by the better of the two.
-    return true;
   }
 
   return showPaymentNotification({

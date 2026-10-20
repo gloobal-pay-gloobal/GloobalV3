@@ -300,13 +300,15 @@ describe("the banner names the figure the server recorded", () => {
         if (typeof ServiceWorkerRegistration !== "undefined") {
           ServiceWorkerRegistration.prototype.showNotification = function (t, o) { rec(t, o); return Promise.resolve(); };
         }
-        // If the in-app route ever fires here, the pin above has stopped
-        // working and this test is no longer testing the tray. Recorded
-        // with a marker rather than silently, so it fails loudly on the
-        // title assertion instead of passing against the wrong surface.
-        window.addEventListener("gloobal:paymentBanner", () => {
-          rec("IN-APP BANNER FIRED — the visibility pin is broken", {});
-        });
+        // gloobal:paymentBanner used to be recorded here as a marker:
+        // if the in-app route fired, the visibility pin had stopped
+        // working and this test was no longer testing the tray.
+        //
+        // There is no in-app route any more, and that event is no
+        // longer one — it is "money moved while this page was open",
+        // which My Choices listens for to reload its totals. Recording
+        // it would count a data signal as a notification and this test
+        // would see two where one was shown.
       });
       await page.reload();
       await page.waitForSelector("#root *", { timeout: 15000 });

@@ -1,265 +1,113 @@
 // tests/payment-banner.test.mjs
 //
-//   PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome \
-//     node --test tests/payment-banner.test.mjs
+//   node --test tests/payment-banner.test.mjs
 //
-// A payment arriving while the app is open is drawn by the app.
+// THERE IS NO BANNER. This file used to assert the opposite, at length,
+// and the argument it made was a good one:
 //
-// ── What this replaced ─────────────────────────────────────────────────
+//   A payment reaches a phone three ways — the card in the notifications
+//   sheet, the system tray while the app is backgrounded, and a server
+//   push while it is closed. Two of those three are drawn by Android,
+//   and a web app controls four things inside that frame. The third was
+//   ours, and the page was handing it to Android anyway: the one surface
+//   whose appearance we own was borrowing somebody else's, over the app
+//   the person was looking at.
 //
-// A payment reaches a phone three ways: the card in the notifications
-// sheet, a banner in the system tray while the app is backgrounded, and a
-// server push while it is closed. Those three were already made to SAY the
-// same thing — one headline function, one subline function, one disc
-// colour, with tests/notification-card.test.mjs failing if they diverge.
+// So the card became the banner. Shown all three side by side, the
+// founder's answer was to keep the two he cannot change the look of and
+// drop the one he can — one notification, in the tray, wherever the
+// person happens to be looking, and the bell for the list of them.
 //
-// They still did not LOOK the same, and for two of the three they cannot:
-// Android draws the tray banner, and a web app controls four things inside
-// it — title, body, disc, timestamp. The frame, the app-name line and the
-// chevron are the operating system's.
+// What that argument was really about was CONSISTENCY, and deleting the
+// banner serves it better than duplicating the card did: there is now
+// one in-app design and one route out, instead of two routes chosen by
+// whether the page happened to be visible.
 //
-// That is unavoidable when the app is not in front of you. It was never
-// necessary for the third case. With the app OPEN and a payment arriving,
-// the page handed the banner to Android anyway — so the one surface whose
-// appearance is ours was borrowing somebody else's, over the app the person
-// was looking at, for an event the app had a card for.
-//
-// The card is now that banner. Not a second design resembling it: the same
-// component, so there is no third thing to keep in step.
+// This file keeps the properties that outlived the component.
 
-import { test, describe, before, after } from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "./harness.mjs";
-import { ACCOUNTS, buildOnce, login, openPage, teardown } from "./browser-harness.mjs";
 
 const HOOK = "frontend/hooks/usePaymentNotifications.js";
-const BANNER = "frontend/components/cards/paymentBanner.jsx";
+const APP = "frontend/App.jsx";
 const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-describe("who draws an arriving payment", () => {
+describe("the banner is gone, not hidden", () => {
   const hook = strip(readSource(HOOK));
-  const notify = hook.slice(hook.indexOf("function notifyPaymentEvent"), hook.indexOf("function notifyPaymentReceived"));
+  const app = strip(readSource(APP));
 
-  test("the app draws it when the app is visible", () => {
-    assert.match(notify, /document\.visibilityState === "visible"/);
-    assert.match(notify, /dispatchEvent\(new CustomEvent\("gloobal:paymentBanner"/);
+  test("nothing renders it and nothing can", () => {
+    assert.doesNotMatch(app, /<GloobalPaymentBanner/, "the banner is mounted again");
+    assert.doesNotMatch(strip(readSource("build_app.mjs")), /paymentBanner\.jsx/,
+      "the banner's file is still in the bundle");
   });
 
-  test("the tray still fires when it is not", () => {
-    // This adds a branch; it removes nothing. Backgrounded or closed, the
-    // tray is the only thing that can reach anybody.
-    assert.match(notify, /return showPaymentNotification\(\{/);
+  test("the branch that chose between the app and the tray is gone", () => {
+    // One event, one route. `canDrawInApp` existed only to answer "who
+    // draws this", and there is no longer a second answer.
+    assert.doesNotMatch(hook, /canDrawInApp/,
+      "the hook still decides who draws an arriving payment");
   });
 
-  test("the permission gate belongs to the tray alone", () => {
-    // It used to be the first line of the function, so an account that had
-    // never granted notification permission — or had refused it — was told
-    // nothing at all. Right while the tray was the only route; wrong for a
-    // card the app draws in its own window, which needs no permission, and
-    // wrong for exactly the person who declined the browser prompt and will
-    // therefore only ever see what the app draws.
-    assert.match(notify, /if \(!canDrawInApp && !paymentNotificationsGranted\(\)\) return false;/);
-    const firstGate = notify.indexOf("paymentNotificationsGranted()");
-    const dedupe = notify.indexOf("paymentAlreadyNotified(txnId)");
-    assert.ok(dedupe < firstGate, "the permission check is back in front of everything again");
+  test("a payment goes to the tray whether the app is in front of you or not", () => {
+    assert.match(hook, /return showPaymentNotification\(\{/);
+    // Nothing between the dedupe and the tray may return early on
+    // visibility. The one early return left is the permission gate.
+    const body = hook.slice(hook.indexOf("function notifyPaymentEvent"), hook.indexOf("function notifyPaymentReceived"));
+    assert.doesNotMatch(body, /document\.visibilityState/,
+      "whether the page is visible decides something again");
+  });
+
+  test("the permission gate is absolute now", () => {
+    // It used to be bypassable while the page was visible, and the
+    // reason was sound: nobody needs permission for an app to draw in
+    // its own window, and the person who declined the prompt was
+    // exactly the one who would only ever see what the app drew.
+    //
+    // That argument was entirely about the banner. With the tray as the
+    // only route there is nothing left for "visible" to permit.
+    assert.match(hook, /if \(!paymentNotificationsGranted\(\)\) return false;/);
   });
 
   test("a payment nobody could be told about stays untold", () => {
-    // The return is BEFORE markPaymentNotified. A payment that could not be
-    // reported must stay unreported, so the next poll — after the app is
-    // reopened, or permission granted — still raises it. Marking first
-    // would swallow it for good.
-    const gate = notify.indexOf("if (!canDrawInApp && !paymentNotificationsGranted()) return false;");
-    const mark = notify.indexOf("markPaymentNotified(txnId)");
-    assert.ok(gate > 0 && mark > gate, "the dedupe mark now runs before the thing that might fail");
+    // Unchanged, and the most important thing in this file. The return
+    // is BEFORE markPaymentNotified, so a payment that could not be
+    // reported is raised again by the next poll once permission is
+    // granted. Marking first would swallow it for ever.
+    const gate = hook.indexOf("if (!paymentNotificationsGranted()) return false;");
+    const mark = hook.indexOf("markPaymentNotified(txnId);");
+    assert.ok(gate > 0 && mark > gate,
+      "a payment is marked as notified before the thing that could fail to notify");
   });
 
-  test("both routes are handed the same two strings", () => {
-    // The whole arrangement in server/lib/notificationText.js and the card:
-    // one event, one wording, wherever it is drawn. The in-app branch must
-    // not compose its own.
-    assert.match(notify, /const body = gloobalNotifSubline\(meta\);/);
-    assert.match(notify, /detail: \{ \.\.\.meta, txnId, title, body/);
-    assert.match(notify, /body,\n/);
-  });
-});
-
-describe("the banner is the card, not a copy of it", () => {
-  const banner = strip(readSource(BANNER));
-
-  test("it renders GloobalNotificationCard", () => {
-    // The point of the whole change. A second component that merely looked
-    // like the card would be the third thing to keep in step, which is the
-    // problem this is solving rather than a way of solving it.
-    assert.match(banner, /<GloobalNotificationCard/);
+  test("the event survives the component, because something else listens", () => {
+    // gloobal:paymentBanner is no longer "draw a banner" — it is "money
+    // moved while this page was open", and My Choices reloads its
+    // totals on it. Deleting the dispatch with the component would have
+    // broken a screen that has nothing to do with banners.
+    assert.match(hook, /new CustomEvent\("gloobal:paymentBanner"/,
+      "the money-moved event went with the banner");
+    assert.match(strip(readSource("frontend/features/choices/ChoicesScreen.jsx")),
+      /window\.addEventListener\("gloobal:paymentBanner", reload\)/,
+      "My Choices no longer hears that money moved");
   });
 
-  test("it draws no figure, name or flag of its own", () => {
-    // Everything visible comes from the card. This file places it and
-    // animates it, and that is all.
-    for (const drawn of ["fmtMoney(", "FlagEmoji", "gloobalNotifHeadline("]) {
-      assert.ok(!banner.includes(drawn), `the banner is drawing ${drawn} itself`);
-    }
+  test("the tray and the card still say the same thing", () => {
+    // The whole reason the three surfaces were worth testing together.
+    // They share gloobalNotifHeadline and gloobalNotifSubline, and
+    // tests/notification-card.test.mjs fails if they drift.
+    assert.match(hook, /gloobalNotifHeadline\(meta\)/);
+    assert.match(hook, /const body = gloobalNotifSubline\(meta\);/);
   });
 
-  test("the arriving payment is shaped into the row the card reads", () => {
-    // The card takes `row` in the server's publicNotification form. The
-    // banner has the same facts from the poll instead, so they are put into
-    // that shape rather than the card being taught a second one.
-    assert.match(banner, /function gloobalBannerRow\(detail\)/);
-    assert.match(banner, /referenceId: d\.txnId \|\| null/);
-    // Seeded on the transaction reference, so the banner, the row that
-    // reaches the sheet moments later and the tray notification for the
-    // same payment are all the same colour.
-    assert.match(banner, /id: d\.txnId \|\| ""/);
-  });
-
-  test("it does NOT go away on its own, and sits above everything", () => {
-    // ── THE TIMER IS GONE, DELIBERATELY ─────────────────────────────────
-    //
-    // This asserted a visible duration existed. It was 5.2 seconds, chosen
-    // as "long enough to read a figure and a name" — a guess about somebody
-    // else's attention that has to be right every time, or they lose a
-    // notification about their own money while looking away.
-    //
-    // The founder's words: "it closes automatically when it comes — give a
-    // cross icon or slide to remove, not automatically, give them time to
-    // read it."
-    //
-    // The cost of being wrong is asymmetric, which is what settles it: a
-    // banner that waits is in the way for a moment; a banner that left is
-    // money you were not told about.
-    assert.ok(!/GLOOBAL_BANNER_VISIBLE_MS/.test(banner),
-      "the banner has a visibility timer again");
-    assert.ok(!/setTimeout\([^)]*setShown\(false\)/.test(banner),
-      "something still hides the banner on a timer");
-    assert.match(banner, /zIndex: 520/);
-  });
-
-  test("there are three ways out, and they share one exit", () => {
-    // A cross, a swipe, and opening it. One `dismiss` for all three, so
-    // none of them can animate differently or leave `current` set — which
-    // would wedge the banner permanently, the failure mode a timer used to
-    // hide.
-    assert.match(banner, /const dismiss = \(\) => \{/);
-    assert.match(banner, /aria-label="Dismiss notification"/);
-    assert.match(banner, /var GLOOBAL_BANNER_SWIPE_PX = \d+;/);
-    assert.match(banner, /onPointerDown=\{onPointerDown\}/);
-    // Opening it goes through the same exit rather than clearing state
-    // itself.
-    assert.match(banner, /dismiss\(\);\s*\n\s*if \(onOpen\) onOpen\(row\.id\)/);
-  });
-
-  test("the drag does not fight the finger", () => {
-    // A 240ms ease applied on every pointermove makes the card lag a
-    // quarter-second behind the finger. The transition is dropped while a
-    // drag is live and restored for the release, so a swipe that does not
-    // travel far enough springs home instead of snapping.
-    assert.match(banner, /transition: dragFrom\.current != null\s*\n?\s*\? "none"/);
-    assert.match(banner, /touchAction: "none"/);
-  });
-
-  test("tapping it opens the real receipt, not one built here", () => {
-    // The banner knows what arrived; the app knows how to find that payment
-    // in the history it holds. Building a receipt from this partial payload
-    // would produce a document disagreeing with the one the same payment
-    // opens from every other screen.
-    assert.match(banner, /if \(onOpen\) onOpen\(row\.id\)/);
-    assert.match(strip(readSource("frontend/App.jsx")), /onOpen=\{\(txnId\) => \{ if \(txnId\) setSharedTxnRef\(txnId\); \}\}/);
-  });
-});
-
-describe("on screen", () => {
-  let page;
-  let errors;
-
-  before(async () => {
-    await buildOnce();
-    const opened = await openPage({
-      account: ACCOUNTS.india,
-      permissions: ["geolocation"],
-      geolocation: { latitude: 19.076, longitude: 72.8777 },
-    });
-    page = opened.page;
-    errors = opened.errors;
-    await login(page, ACCOUNTS.india);
-    await page.waitForTimeout(1500);
-  });
-
-  after(async () => {
-    await teardown();
-  });
-
-  const raise = (detail) =>
-    page.evaluate((d) => {
-      window.dispatchEvent(new CustomEvent("gloobal:paymentBanner", { detail: d }));
-    }, detail);
-
-  const banner = () =>
-    page.evaluate(() => {
-      const el = document.querySelector('[data-testid="payment-banner"]');
-      if (!el) return null;
-      const box = el.getBoundingClientRect();
-      return {
-        text: (el.innerText || "").replace(/\n+/g, " | "),
-        top: Math.round(box.top),
-        zIndex: getComputedStyle(el).zIndex,
-      };
-    });
-
-  test("a payment slides in, reading as the card reads", async () => {
-    await raise({
-      direction: "received", amount: 2000, currency: "INR",
-      counterpartyName: "Rajeev Menon", counterpartySymbolId: "GLB-RAJEEV-01", counterpartyIso: "US",
-      txnId: "GLB-PAY-9001", title: "+2,000.00₹", body: "From Rajeev Menon",
-      occurredAt: new Date().toISOString(),
-    });
-    await page.waitForTimeout(900);
-
-    const shown = await banner();
-    assert.ok(shown, "no banner appeared");
-    assert.match(shown.text, /\+2,000\.00₹/);
-    assert.match(shown.text, /From \| Rajeev Menon/);
-    assert.ok(shown.top >= 0 && shown.top < 80, `the banner is off-screen at top=${shown.top}`);
-    // Above the receipt modal's 500: a banner reports something that just
-    // happened, over whatever was already up.
-    assert.equal(shown.zIndex, "520");
-  });
-
-  test("a Creator Share is told apart from a payment", async () => {
-    await raise({
-      type: "share", direction: "received", amount: 20, currency: "INR",
-      counterpartyName: "Rajeev Menon", counterpartySymbolId: "GLB-RAJEEV-01", counterpartyIso: "US",
-      txnId: "GLB-SHR-0001", title: "+20.00₹", body: "Creator Share from Rajeev Menon",
-      occurredAt: new Date().toISOString(),
-    });
-    await page.waitForTimeout(900);
-    const shown = await banner();
-    assert.match(shown.text, /Creator Share from \| Rajeev Menon/);
-  });
-
-  test("it is STILL THERE after the old timer would have cleared it", () => {
-    // The inverse of what this used to assert. 6.2 seconds was comfortably
-    // past the old 5.2-second timer; the banner must now outlast it.
-    return (async () => {
-      await page.waitForTimeout(6200);
-      assert.ok(await banner(), "the banner cleared itself after the old timer's duration");
-    })();
-  });
-
-  test("the cross dismisses it", async () => {
-    const closed = await page.evaluate(() => {
-      const btn = document.querySelector('[aria-label="Dismiss notification"]');
-      if (!btn) return "no cross on the banner";
-      btn.click();
-      return null;
-    });
-    assert.equal(closed, null, closed || "");
-    await page.waitForTimeout(600);
-    assert.equal(await banner(), null, "the banner survived its own close button");
-  });
-
-  test("nothing threw", async () => {
-    assert.deepEqual(errors, []);
+  test("the card's figure is NOT the tray's, and that is deliberate", () => {
+    // The card gained the bar pair and the ISO code when the Currency
+    // page was folded into it. The tray did not: that line is read
+    // aloud, and U+2502 has no reliable reading.
+    const cardSrc = strip(readSource("frontend/components/cards/notificationCard.jsx"));
+    assert.match(cardSrc, /function gloobalNotifCardAmount/);
+    assert.doesNotMatch(hook, /gloobalNotifCardAmount/,
+      "the tray is being handed the card's barred figure");
   });
 });

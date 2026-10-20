@@ -27,6 +27,46 @@ const CATEGORY_NAME_MAX_LENGTH = 40;
 const CATEGORY_NAME_MAX_WORDS = 4;
 
 const categoryNameWords = (value) => String(value || "").trim().split(/\s+/).filter(Boolean);
+
+// ── COUNTING CHARACTERS THE WAY A READER COUNTS THEM ───────────────────
+//
+// String#length counts UTF-16 code units, which is not what anybody
+// means by "characters" outside the Latin alphabet. "नमस्ते" is six
+// letters to a reader and eight code units to JavaScript; a single
+// emoji is two; a flag is four. A cap of 40 code units is therefore a
+// cap of 40 characters in English and roughly 20 in Hindi — a limit
+// that quietly punishes people for the script they write in.
+//
+// Intl.Segmenter counts GRAPHEMES, which is the reader's unit: one
+// Devanagari syllable with its vowel sign is one, one emoji with a skin
+// tone is one. Node has had it since 16 and every current browser has
+// it, but the fallback still beats code units — Array.from iterates
+// code POINTS, so a surrogate pair counts once even there.
+const categoryNameLength = (value) => {
+  const text = String(value || '');
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') {
+      return [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].length;
+    }
+  } catch (error) {
+    // A runtime without a working Segmenter falls through to code points.
+  }
+  return Array.from(text).length;
+};
+
+// Composed form, so that two names a reader cannot tell apart are the
+// same string to the uniqueness check. Devanagari, Korean and accented
+// Latin can each be typed two ways that look identical and compare
+// unequal; a person who pasted one and typed the other would be told
+// they already have a category they cannot see.
+const categoryNameNormalised = (value) => {
+  const text = String(value || '').trim();
+  try {
+    return text.normalize('NFC');
+  } catch (error) {
+    return text;
+  }
+};
 const CATEGORY_ICON_MAX_LENGTH = 16;
 const CATEGORY_KINDS = ['expense', 'income'];
 // The two books a category can sit in. A second axis beside `kind`:
@@ -62,9 +102,9 @@ const validateCategoryInput = (input, { strict = true } = {}) => {
   const supplied = (key) => body[key] !== undefined && body[key] !== null;
 
   if (strict || supplied('name')) {
-    const name = String(body.name || '').trim();
+    const name = categoryNameNormalised(body.name);
     if (!name) return { ok: false, message: 'Give this choice a name.' };
-    if (name.length > CATEGORY_NAME_MAX_LENGTH) {
+    if (categoryNameLength(name) > CATEGORY_NAME_MAX_LENGTH) {
       return { ok: false, message: `The name can be at most ${CATEGORY_NAME_MAX_LENGTH} characters.` };
     }
     const words = categoryNameWords(name);
@@ -241,6 +281,8 @@ module.exports = {
   CATEGORY_ICON_STYLES,
   CATEGORY_SHAPES,
   CATEGORY_SIDES,
+  categoryNameLength,
+  categoryNameNormalised,
   CATEGORY_BUDGET_MAX,
   DEFAULT_CATEGORIES,
   validateCategoryInput,

@@ -557,8 +557,11 @@ function ChoicesEditorSheet({ open, onClose, category, kind, side, ccyCode, onSa
   const unit = useMemo11(() => geuLensUnitPair(ccyCode, lens, ccyCode), [ccyCode, lens]);
   // Declared after `icon`, which it reads.
   const chosenMeta = icon ? choicesIconMeta(icon) : null;
-  // Declared after `name`, which it reads.
+  // Declared after `name`, which they read.
   const wordCount = String(name || "").trim().split(/\s+/).filter(Boolean).length;
+  const nameLength = choicesNameLength(String(name || "").trim());
+  const tooLong = nameLength > CHOICES_NAME_MAX;
+  const tooMany = wordCount > CHOICES_NAME_MAX_WORDS;
 
   const pickIcon = (glyph) => {
     setIcon(glyph);
@@ -577,6 +580,24 @@ function ChoicesEditorSheet({ open, onClose, category, kind, side, ccyCode, onSa
     const words = trimmed.split(/\s+/).filter(Boolean);
     if (words.length > CHOICES_NAME_MAX_WORDS) {
       setError(`A choice's name is up to ${CHOICES_NAME_MAX_WORDS} words \u2014 this one has ${words.length}.`);
+      return;
+    }
+    // ── NOTHING IS CUT AS IT ARRIVES ──────────────────────────────────
+    //
+    // The field used to slice on every keystroke, which was wrong
+    // twice over. It counted UTF-16 code units, so it cut a name in a
+    // non-Latin script at roughly half the length it allowed an
+    // English one — and slicing by code unit can land in the MIDDLE of
+    // a character, turning the last letter of a pasted name into a
+    // broken glyph.
+    //
+    // So the field takes whatever is typed or pasted, in any script,
+    // and the length is judged here, whole, in the same grapheme unit
+    // the server counts in — or this would pass something the save
+    // refuses.
+    const letters = choicesNameLength(trimmed);
+    if (letters > CHOICES_NAME_MAX) {
+      setError(`The name can be at most ${CHOICES_NAME_MAX} characters \u2014 this one has ${letters}.`);
       return;
     }
     setBusy(true);
@@ -699,9 +720,12 @@ function ChoicesEditorSheet({ open, onClose, category, kind, side, ccyCode, onSa
     >{busy ? "Saving…" : editing ? "Save" : "Create category"}</button></>}
   ><ChoiceFieldCard label="Name" note={`Up to ${CHOICES_NAME_MAX_WORDS} words`}><input
     value={name}
-    onChange={(e) => setName(e.target.value.slice(0, CHOICES_NAME_MAX))}
+    onChange={(e) => setName(e.target.value)}
     placeholder="Baby care"
     aria-label="Category name"
+    autoComplete="off"
+    autoCapitalize="none"
+    spellCheck={false}
     style={{
       width: "100%",
       // Without this the padding and the border are ADDED to 100%, and
@@ -718,10 +742,12 @@ function ChoicesEditorSheet({ open, onClose, category, kind, side, ccyCode, onSa
       outline: "none"
     }}
   /><div
-    style={{ fontSize: 11, marginTop: 7, color: wordCount > CHOICES_NAME_MAX_WORDS ? T.negative : T.inkFaint, fontWeight: wordCount > CHOICES_NAME_MAX_WORDS ? 700 : 500 }}
-  >{wordCount > CHOICES_NAME_MAX_WORDS
-    ? `${wordCount} words — a choice's name is up to ${CHOICES_NAME_MAX_WORDS}`
-    : "So it reads everywhere it appears"}</div></ChoiceFieldCard>{
+    style={{ fontSize: 11, marginTop: 7, color: (tooMany || tooLong) ? T.negative : T.inkFaint, fontWeight: (tooMany || tooLong) ? 700 : 500 }}
+  >{tooLong
+    ? `${nameLength} characters — a choice's name is up to ${CHOICES_NAME_MAX}`
+    : tooMany
+      ? `${wordCount} words — a choice's name is up to ${CHOICES_NAME_MAX_WORDS}`
+      : "Any language. So it reads everywhere it appears."}</div></ChoiceFieldCard>{
     /* Favourite is its own decision now rather than a heart floating
        beside the preview. On a sheet there was no room to say what the
        heart did; on a full screen there is, and a control that explains

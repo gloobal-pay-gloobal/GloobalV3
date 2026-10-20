@@ -270,6 +270,29 @@ var CHOICES_BAR_COLORS = [
 // heaviest state available.
 var CHOICES_BAR_DEFAULT = "#9561DD";
 
+// How long a name is, counted the way the person writing it counts.
+//
+// Mirrors categoryNameLength in server/lib/categoryValidation.js, and
+// mirrors it for a reason: the two have to agree or the field says a
+// name is fine and the save says it is not.
+//
+// String#length counts UTF-16 code units. "नमस्ते" is six letters to a
+// reader and eight code units to JavaScript, one emoji is two, a flag
+// is four — so a cap measured in code units is a shorter cap for
+// anybody not writing in Latin script. Intl.Segmenter counts what a
+// reader counts; Array.from at least counts code points.
+function choicesNameLength(value) {
+  const text = String(value || "");
+  try {
+    if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+      return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].length;
+    }
+  } catch (error) {
+    // Fall through to code points.
+  }
+  return Array.from(text).length;
+}
+
 function choicesBarColor(color) {
   const value = String(color || "").trim();
   return CHOICES_HEX_PATTERN.test(value) ? value : CHOICES_BAR_DEFAULT;

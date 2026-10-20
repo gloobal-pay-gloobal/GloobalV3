@@ -342,8 +342,16 @@ describe("the screens answer to the lens", () => {
     // Six bars labelled "420 510 610" with no unit anywhere is the
     // single-currency representation the lens exists to prevent. Repeating
     // the unit on each bar is unreadable, so it is stated for the axis.
-    assert.match(code(DETAIL), /Amounts in \{geuLensUnitLabel\(/,
+    assert.match(code(DETAIL), /Amounts in \{chartUnit\.lead\}/,
       "the month chart no longer says what unit its bars are in");
+    // BOTH units, not one. geuLensUnitLabel names a single unit, which
+    // left the caption reading "Amounts in INR" directly under a hero
+    // reading "30,500.00 GEU | ₹" — same screen, same money, two
+    // vocabularies.
+    assert.match(code(DETAIL), /const chartUnit = geuLensUnitPair\(code, lens, code\);/,
+      "the chart names one unit where every figure above it names two");
+    assert.match(code(DETAIL), /\{chartUnit\.trail \? ` \$\{chartUnit\.trail\}` : ""\}/,
+      "the second unit is dropped when there is one");
   });
 
   test("the stat columns carry their unit too", () => {
@@ -1681,5 +1689,161 @@ describe("a category belongs to a book", () => {
     assert.match(grid, /Total energy your work used/);
     assert.match(grid, /What my work costs me/);
     assert.match(grid, /Total energy created by your work/);
+  });
+});
+
+// ── A figure and its two units, on one line, whatever the figure ────────
+//
+// Three stat columns printed into each other at 30,500 — a perfectly
+// ordinary amount. `nowrap` had kept the pair together and had never
+// kept it inside anything: a nowrap span in a flex child simply paints
+// past its edge.
+describe("money fits the room it is given", () => {
+  const detail = code(DETAIL);
+  const money = detail.slice(detail.indexOf("function ChoiceMoney"), detail.indexOf("function ChoiceHeroButton"));
+
+  test("it measures the room rather than assuming it", () => {
+    assert.match(money, /const natural = text\.scrollWidth;/);
+    assert.match(money, /const room = host\.clientWidth;/);
+    // Character counts are the wrong tool: a currency with a wider
+    // symbol, or a locale that groups digits differently, makes the
+    // same count a different width.
+    assert.doesNotMatch(money, /\.length \* /, "the fit is back to estimating from a character count");
+  });
+
+  test("the estimate is checked, not trusted", () => {
+    // Glyph widths do not scale linearly with the font size. The
+    // proportion returned 14px for "30,500.00 GEU | ₹", at which the
+    // text is 118px wide in a 116px column — two pixels, and two
+    // columns printed into each other.
+    assert.match(money, /for \(let guard = 0; guard < 8; guard \+= 1\) \{/,
+      "the opening guess is used without being verified");
+    assert.match(money, /if \(text\.scrollWidth <= room \|\| size <= floor\) break;/);
+  });
+
+  test("it puts back the style it borrows to measure", () => {
+    // The bug that cost the most time here. measure() writes inline
+    // style onto the live node; when the answer is unchanged the
+    // updater returns `current`, React does not re-render, and nothing
+    // restores it — so a figure that had correctly shrunk was reset to
+    // full size by the next ResizeObserver callback and overflowed
+    // again.
+    assert.match(money, /const hadFont = text\.style\.fontSize;/);
+    assert.match(money, /const restore = \(\) => \{ text\.style\.fontSize = hadFont; text\.style\.whiteSpace = hadWhite; \};/);
+    // Both exits restore: the early return as well as the normal one.
+    assert.equal((money.match(/restore\(\);/g) || []).length, 2,
+      "one of the paths out of measure() leaves the borrowed style behind");
+  });
+
+  test("the unit is never what gets cut", () => {
+    // What overflows is the END of the string, and the end of the
+    // string is the unit — so clipping leaves a bare number, which is
+    // the single-currency representation the whole lens exists to
+    // prevent. Past about eleven digits it wraps instead.
+    assert.doesNotMatch(money, /overflow: "hidden"/,
+      "the figure clips again, and what it clips is its unit");
+    assert.match(money, /wrap = text\.scrollWidth > room;/);
+    assert.match(money, /whiteSpace: fit && shown\.wrap \? "normal" : "nowrap"/);
+    // A figure is one long token no browser breaks on its own.
+    assert.match(money, /overflowWrap: fit && shown\.wrap \? "anywhere" : "normal"/,
+      "the wrap cannot take effect, so the clip comes back");
+  });
+
+  test("it never inflates a short figure", () => {
+    // This rule exists to rescue a long figure. A column with "0.00"
+    // in it must not grow to fill the space.
+    assert.match(money, /let size = px;/);
+    assert.match(money, /if \(natural > room\) \{/,
+      "a figure that already fits is being resized anyway");
+  });
+
+  test("it does not re-render itself in a loop", () => {
+    // Wrapping changes the host's height, which fires the observer
+    // again. A fresh object every time would never settle.
+    assert.match(money, /current\.size === next\.size && current\.wrap === next\.wrap \? current : next/);
+  });
+
+  test("every figure that shares a row with another one fits", () => {
+    // The three stat columns are the ones that broke, but a figure
+    // beside a label or beside another figure is the general case.
+    const uses = detail.split("<ChoiceMoney").slice(1).map((tail) => tail.slice(0, tail.indexOf("/>")));
+    assert.ok(uses.length >= 6, `expected every ChoiceMoney in this screen, found ${uses.length}`);
+    for (const use of uses) {
+      // The two exceptions are deliberate and they are the two inside
+      // a SENTENCE — "4,575.00 GEU | ₹ left this month". Fitting makes
+      // the figure a block, which would drop the words onto their own
+      // line; there the figure stays nowrap and the sentence wraps
+      // around it, which is what should happen in running text.
+      if (/size=\{12\.5\}/.test(use)) {
+        assert.doesNotMatch(use, /\bfit\b/, "a figure inside a sentence was made a block");
+        continue;
+      }
+      assert.match(use, /\bfit\b/, `a figure that shares its row does not fit its room: ${use.slice(0, 90)}`);
+    }
+    assert.match(code(GRID), /<ChoiceMoney amount=\{headline\} code=\{ccyCode\} size=\{30\} fit/,
+      "the grid's own headline does not fit its card");
+  });
+});
+
+// ── A name in any script ────────────────────────────────────────────────
+describe("a category can be named in any language", () => {
+  const server = require_(path.join(ROOT, "server/lib/categoryValidation.js"));
+  const lib = new Function(`${readSource(CATALOG)}
+    return { choicesNameLength };`)();
+  const sheets = code(SHEETS);
+
+  test("length is counted the way a reader counts it", () => {
+    // String#length counts UTF-16 code units. "नमस्ते" is six letters
+    // to a reader and eight code units to JavaScript, one emoji is
+    // two, a flag is four — so a cap in code units is a shorter cap
+    // for anybody not writing in Latin script.
+    assert.equal(server.categoryNameLength("Damroo Baby"), 11);
+    assert.ok(server.categoryNameLength("नमस्ते बच्चा") < "नमस्ते बच्चा".length,
+      "a Devanagari name is still counted in code units");
+    assert.equal(server.categoryNameLength("👶"), 1, "one emoji counts as two characters");
+    assert.equal(server.categoryNameLength("🇮🇳"), 1, "a flag counts as four characters");
+  });
+
+  test("the client counts the same way the server does", () => {
+    // They have to agree, or the field says a name is fine and the
+    // save refuses it.
+    for (const name of ["Damroo Baby", "नमस्ते बच्चा", "野菜の仕入れ", "👶 Baby", "خضروات"]) {
+      assert.equal(lib.choicesNameLength(name), server.categoryNameLength(name), name);
+    }
+  });
+
+  test("names in several scripts are accepted", () => {
+    for (const name of ["नमस्ते बच्चा", "가게 채소", "野菜の仕入れ", "Légumes frais", "خضروات", "Ovoshchi"]) {
+      const result = server.validateCategoryInput({ name, kind: "expense" });
+      assert.equal(result.ok, true, `${name} was refused: ${result.message}`);
+      assert.equal(result.value.name, name.normalize("NFC"));
+    }
+  });
+
+  test("two names a reader cannot tell apart are one name", () => {
+    // Devanagari, Korean and accented Latin can each be typed two ways
+    // that look identical and compare unequal. Somebody who pasted one
+    // and typed the other would be told they already have a category
+    // they cannot see.
+    const composed = "Café";
+    const decomposed = "Café";
+    assert.notEqual(composed, decomposed);
+    assert.equal(
+      server.validateCategoryInput({ name: decomposed, kind: "expense" }).value.name,
+      server.validateCategoryInput({ name: composed, kind: "expense" }).value.name,
+      "the same name typed two ways is stored as two different names"
+    );
+  });
+
+  test("the field never cuts what was pasted", () => {
+    // Slicing by code unit can land in the MIDDLE of a character,
+    // turning the last letter of a pasted name into a broken glyph.
+    assert.doesNotMatch(sheets, /setName\(e\.target\.value\.slice\(/,
+      "the name field truncates on every keystroke again");
+    assert.match(sheets, /onChange=\{\(e\) => setName\(e\.target\.value\)\}/);
+    // Judged whole, at save, in the same unit the server uses.
+    assert.match(sheets, /const letters = choicesNameLength\(trimmed\);/);
+    assert.match(sheets, /if \(letters > CHOICES_NAME_MAX\) \{/);
+    assert.match(sheets, /Any language\. So it reads everywhere it appears\./);
   });
 });

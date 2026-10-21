@@ -495,14 +495,61 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
     }}
   /></div>}</div></div></div>;
 }
-function PhoneDialPad({ value, onChange, minLength = 0, maxLength, onSubmit, masked, onToggleMask }) {
+// ── WHAT THE PAD SHOWS, AND WHEN IT SENDS ──────────────────────────────
+//
+// `showValue` false stops the pad printing the digits under itself. It
+// exists because of a bug that was in front of everybody and invisible
+// for exactly that reason: a PIN screen masks the six boxes above the
+// pad and has an eye to reveal them, and the pad then printed the same
+// PIN as plain text two centimetres below, "999 999", whatever the eye
+// said. The eye had never been passed down here. Where the digits ARE
+// the point — a phone number, an OTP — this stays true.
+//
+// `autoSubmit` sends as soon as the last digit lands. On a PIN that is
+// the whole interaction: six digits and nothing else to decide, and a
+// person who has typed six digits has said what they came to say.
+//
+// `busy` locks every key and turns the IN button into the status. A
+// cold server on Render's free plan takes 20 to 50 seconds to answer,
+// during which the old pad sat there having visibly accepted six digits
+// and done nothing — so people typed them again, which is how a slow
+// login becomes a failed one.
+//
+// `done` is the moment after it answered and before the screen changes.
+function PhoneDialPad({ value, onChange, minLength = 0, maxLength, onSubmit, masked, onToggleMask, showValue = true, autoSubmit = false, busy = false, done = false }) {
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "back", "0", "in"];
   const press = (k) => {
+    if (busy) return;
     if (k === "back") onChange(value.slice(0, -1));
     else if (k && value.length < maxLength) onChange(value + k);
   };
   const grouped = value.replace(/(\d{3})(?=\d)/g, "$1 ");
-  const canSubmit = !!onSubmit && value.length >= (minLength || maxLength) && value.length <= maxLength;
+  const canSubmit = !busy && !!onSubmit && value.length >= (minLength || maxLength) && value.length <= maxLength;
+
+  // ── SENT ONCE, FOR ONE VALUE ────────────────────────────────────────
+  //
+  // Keyed on the value itself rather than on a boolean, which is what
+  // makes a correction behave: type six, it sends, it comes back wrong,
+  // delete a digit and type another, and the new six send. A flag would
+  // have latched after the first and the pad would have gone quiet.
+  //
+  // `busy` is deliberately NOT a dependency. If it were, the effect
+  // would re-run the moment a request finished and send the same six
+  // digits a second time — the precise double-submit this is supposed
+  // to prevent.
+  const sentRef = useRef3("");
+  useEffect5(() => {
+    if (!autoSubmit || !onSubmit) return;
+    if (value.length !== maxLength) {
+      // Below full length again — a deletion — so the next complete
+      // value is a new answer and may be sent.
+      if (value.length < maxLength) sentRef.current = "";
+      return;
+    }
+    if (sentRef.current === value) return;
+    sentRef.current = value;
+    onSubmit();
+  }, [value, maxLength, autoSubmit, onSubmit]);
   const maskable = masked !== void 0;
   const DOT_COLORS = ["#EF4444", "#10B981", "#3B82F6", "#F59E0B", "#EC4899", "#22C55E", "#8B5CF6", "#06B6D4"];
   const digitBox = <div
@@ -529,7 +576,16 @@ function PhoneDialPad({ value, onChange, minLength = 0, maxLength, onSubmit, mas
       background: DOT_COLORS[i % DOT_COLORS.length]
     }}
   />)}</span> : <span style={{ color: T.inkFaint, fontWeight: 600, fontSize: 14 }}>—</span> : grouped || <span style={{ color: T.inkFaint, fontWeight: 600, fontSize: 14 }}>—</span>}</div>;
-  return <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 20, width: "100%" }}><span
+  return <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 20, width: "100%" }}><style>{`
+        @keyframes dialInWait {
+          0%, 80%, 100% { opacity: 0.35; transform: scale(0.8); }
+          40% { opacity: 1; transform: scale(1); }
+        }
+        .dial-in-wait > span { animation: dialInWait 1.1s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .dial-in-wait > span { animation: none !important; opacity: 0.85 !important; transform: none !important; }
+        }
+      `}</style><span
     style={{
       position: "absolute",
       top: -4,
@@ -539,7 +595,7 @@ function PhoneDialPad({ value, onChange, minLength = 0, maxLength, onSubmit, mas
       color: T.inkFaint,
       letterSpacing: 0.3
     }}
-  >{minLength && minLength !== maxLength ? `${value.length} (${minLength}\u2013${maxLength})` : `${value.length}/${maxLength}`}</span>{maskable ? <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>{digitBox}<button
+  >{minLength && minLength !== maxLength ? `${value.length} (${minLength}\u2013${maxLength})` : `${value.length}/${maxLength}`}</span>{!showValue ? null : maskable ? <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>{digitBox}<button
     onClick={onToggleMask}
     aria-label={masked ? "Show PIN" : "Hide PIN"}
     className="v2-tap"
@@ -567,18 +623,31 @@ function PhoneDialPad({ value, onChange, minLength = 0, maxLength, onSubmit, mas
   >{keys.map((k, i) => {
     if (k === "in") {
       if (!onSubmit) return <span key={i} />;
+      // ── THE SUBMIT KEY IS ALSO THE STATUS ──────────────────────────
+      //
+      // It is not removed when the pad sends by itself. It keeps the
+      // grid square — a 3x4 pad with a hole in it reads as broken —
+      // and, more to the point, it is the only thing on this screen in
+      // the place a person is already looking when they finish typing.
+      // So it answers them there: a pulse while the server thinks, a
+      // tick when it agrees.
+      //
+      // Still tappable when it is not busy, even with autoSubmit on. A
+      // person who taps it has lost nothing: sentRef has already sent
+      // that value, and `canSubmit` is false while busy.
       return <button
         key={i}
         onClick={() => canSubmit && onSubmit()}
         disabled={!canSubmit}
-        aria-label="Log in"
+        aria-label={busy ? "Checking your PIN" : done ? "Accepted" : "Log in"}
+        aria-busy={busy ? "true" : void 0}
         className="v2-tap"
         style={{
           width: "100%",
           aspectRatio: "1",
           borderRadius: 14,
           border: "none",
-          background: canSubmit ? T.gradButton : T.gradButtonDisabled,
+          background: done ? T.positive : (canSubmit || busy) ? T.gradButton : T.gradButtonDisabled,
           color: "#fff",
           fontSize: 14,
           fontWeight: 800,
@@ -587,18 +656,32 @@ function PhoneDialPad({ value, onChange, minLength = 0, maxLength, onSubmit, mas
           alignItems: "center",
           justifyContent: "center",
           cursor: canSubmit ? "pointer" : "not-allowed",
-          opacity: canSubmit ? 1 : 0.6,
-          boxShadow: canSubmit ? "0 8px 18px rgba(124,58,237,0.32)" : "none",
-          transition: "opacity 0.15s ease, box-shadow 0.15s ease"
+          opacity: (canSubmit || busy || done) ? 1 : 0.6,
+          boxShadow: (canSubmit || busy || done) ? "0 8px 18px rgba(124,58,237,0.32)" : "none",
+          transition: "opacity 0.15s ease, box-shadow 0.15s ease, background 0.2s ease"
         }}
-      >
-                IN
-              </button>;
+      >{busy
+        ? <span className="dial-in-wait" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>{[0, 1, 2].map((d) => <span
+          key={d}
+          style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff", animationDelay: `${d * 160}ms` }}
+        />)}</span>
+        : done
+          ? <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          : "IN"}</button>;
     }
     const isBack = k === "back";
     return <button
       key={i}
       onClick={() => press(k)}
+      // ── LOCKED, AND LOOKING IT ──────────────────────────────────────
+      //
+      // `press` already ignores a key while the server is answering, so
+      // this changes nothing about what happens. It changes what the
+      // pad SAYS is happening, which is the whole complaint: a pad that
+      // still looks live is a pad people keep pressing, and a measured
+      // run found exactly that — presses doing nothing against keys
+      // that gave no sign of being out of service.
+      disabled={busy}
       aria-label={isBack ? "Delete last digit" : `Digit ${k}`}
       className="v2-tap"
       style={{
@@ -613,9 +696,10 @@ function PhoneDialPad({ value, onChange, minLength = 0, maxLength, onSubmit, mas
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        cursor: "pointer",
-        boxShadow: T.shadowCard,
-        transition: "transform 0.1s ease, box-shadow 0.15s ease"
+        cursor: busy ? "default" : "pointer",
+        opacity: busy ? 0.45 : 1,
+        boxShadow: busy ? "none" : T.shadowCard,
+        transition: "transform 0.1s ease, box-shadow 0.15s ease, opacity 0.2s ease"
       }}
     >{isBack ? <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#EF4444" strokeWidth="2.4"><path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" /></svg> : k}</button>;
   })}</div></div>;

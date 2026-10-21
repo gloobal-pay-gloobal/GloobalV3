@@ -2696,6 +2696,23 @@ function GloobalId() {
     { key: "paylater", section: "Move money", group: "post", label: "PayLater", locked: !everRegistered, onPress: () => goToDashboardDestination("paylater") },
     { key: "history", section: "Move money", group: "post", label: "Transaction History", locked: !everRegistered, onPress: () => goToDashboardDestination("history") },
     { key: "share", section: "Move money", group: "post", label: "Creator Share", locked: !everRegistered, onPress: () => goToDashboardDestination("share") },
+    // ── THE TWO THE MAP DID NOT KNOW ABOUT ─────────────────────────────
+    //
+    // My Choices is a whole tab of the app and was on no branch of this
+    // map; My Essentials was reachable only from inside Accounts. A map
+    // that omits a tab is not a map of this app, and both of these are
+    // screens a person would look for by name — which is what the
+    // search box at the top of the map searches.
+    //
+    // "Your money" rather than "Move money": neither of them moves any.
+    // Choices is a reading of where it went, Essentials is what an
+    // account is for.
+    //
+    // Choices opens through the Dashboard's own gate, not straight into
+    // the tab — see the deep-link effect there. A map entry that walked
+    // past a check would be a hole in it.
+    { key: "choices", section: "Your money", group: "post", label: "My Choices", locked: !everRegistered, onPress: () => goToDashboardDestination("choices") },
+    { key: "essentials", section: "Your money", group: "post", label: "My Essentials", locked: !everRegistered, onPress: () => goToDashboardDestination("essentials") },
     { key: "ghscore", section: "You", group: "post", label: "Hooman Score", locked: !everRegistered, onPress: () => goToDashboardDestination("ghscore") },
     { key: "updateId", section: "You", group: "post", label: "Update Gloobal ID", locked: !everRegistered, onPress: () => goToDashboardDestination("updateId") },
     { key: "referralnet", section: "You", group: "post", label: "Referral Network", locked: !everRegistered, onPress: () => goToDashboardDestination("referral") },
@@ -4011,6 +4028,7 @@ function GloobalId() {
     onBack={requestBackFromPin}
     revealed={pinRevealed}
     onToggleReveal={() => setPinRevealed((v) => !v)}
+    busy={authBusy}
   />}{stage === "biometric" && <BiometricVerifyScreen
     // No back chevron: this step is terminal (see
     // requestBackFromRegBiometric). A control that cannot go anywhere is
@@ -4041,6 +4059,7 @@ function GloobalId() {
     revealed={loginAuthRevealed}
     onToggleReveal={() => setLoginAuthRevealed((v) => !v)}
     waking={authBusy && authSlow}
+    busy={authBusy}
   />}{stage === "loginBiometric" && <BiometricVerifyScreen
     onBack={requestBackFromLoginBiometric}
     onVerify={handleLoginBiometricVerify}

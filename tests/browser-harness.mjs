@@ -1401,7 +1401,18 @@ export async function login(page, account) {
   for (const digit of account.pin) {
     await page.getByLabel(`Digit ${digit}`, { exact: true }).click({ timeout: 10000 });
   }
-  await page.getByLabel("Log in", { exact: true }).click({ timeout: 15000 });
+  // ── THE PAD SENDS ITSELF NOW ──────────────────────────────────────────
+  //
+  // There used to be a second click on "Log in" here, and it broke the
+  // day the pad started submitting on its own: by the time Playwright
+  // reached the button it was already disabled and mid-swap for the
+  // waiting state, so the click retried against a detached element
+  // until it timed out.
+  //
+  // Nothing replaces it, deliberately. Waiting for the dashboard below
+  // is the assertion that the PIN went — if auto-submit ever stopped
+  // working, this would hang exactly as a person's login would, which
+  // is the failure worth having.
   // The dashboard's own Send button, not a word in the copy: the balance
   // line reads "Balance unavailable" when the server read fails and a
   // currency figure when it works, so waiting on text would go green on the

@@ -296,6 +296,44 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     e.target.value = "";
   };
   const [activeTab, setActiveTab] = useState14("home");
+  // ── CHOICES IS BEHIND A CHECK ─────────────────────────────────────────
+  //
+  // It is a reading of what somebody spends their money on, by name,
+  // with photographs of their family on the tiles. Nothing in it can
+  // MOVE money, so it is not guarded for the reason Send Money is — it
+  // is guarded because of what it says about a person to anybody
+  // holding their unlocked phone.
+  //
+  // requireBiometric is the same gate every other guarded action uses:
+  // the passkey where there is one, and POST /api/pin/verify where
+  // there is not. An account with biometrics switched off is checked
+  // exactly as strictly, which is why this cannot be turned off from a
+  // settings screen.
+  //
+  // ONCE PER SESSION, not once per tap. Verifying every time somebody
+  // comes back from Home would be a prompt for crossing a tab bar, and
+  // a prompt that frequent is one people learn to clear without
+  // reading. Closing the app drops this state with the component, so
+  // the next open asks again.
+  const [choicesUnlocked, setChoicesUnlocked] = useState14(false);
+  const [choicesChecking, setChoicesChecking] = useState14(false);
+  const openChoices = async () => {
+    if (choicesUnlocked) { setActiveTab("choices"); return; }
+    if (choicesChecking) return;
+    setChoicesChecking(true);
+    try {
+      const ok = await requireBiometric({
+        pinReason: "Confirm it's you to open My Choices."
+      });
+      // A refusal leaves the person where they were. No error, no
+      // toast: declining a check is an answer, not a fault.
+      if (!ok) return;
+      setChoicesUnlocked(true);
+      setActiveTab("choices");
+    } finally {
+      setChoicesChecking(false);
+    }
+  };
   const [showPayLater, setShowPayLater] = useState14(false);
   const requestClosePayLater = useBackClose(showPayLater, () => setShowPayLater(false));
   const [showAssets, setShowAssets] = useState14(false);
@@ -1094,6 +1132,14 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     else if (deepLinkTarget === "share") setProfileOverlay("share");
     else if (deepLinkTarget === "updateId") setProfileOverlay("updateId");
     else if (deepLinkTarget === "referral") setProfileOverlay("referral");
+    // Through the SAME gate the tab bar uses, not straight to the tab.
+    // A second door into a guarded room is how a guard gets bypassed,
+    // and the app map is a list of doors.
+    else if (deepLinkTarget === "choices") openChoices();
+    // My Essentials was reachable only from inside Accounts. It is a
+    // screen with a name on the map's own terms, so it gets an entry
+    // and a way in.
+    else if (deepLinkTarget === "essentials") setShowEssentials(true);
     if (onConsumeDeepLink) onConsumeDeepLink();
   }, [deepLinkTarget]);
   useEffect12(() => {
@@ -2656,7 +2702,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   ><AccountsTabIcon active={activeTab === "accounts"} /><span style={{ fontSize: 10.5, fontWeight: 700, color: activeTab === "accounts" ? T.accent : T.inkFaint }}>
             Accounts
           </span></button><button
-    onClick={() => setActiveTab("choices")}
+    onClick={openChoices}
+    disabled={choicesChecking}
+    aria-busy={choicesChecking ? "true" : void 0}
     style={{
       flex: 1,
       display: "flex",

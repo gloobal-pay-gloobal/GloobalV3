@@ -570,7 +570,7 @@ function CountryPickerScreen({ topCountries, countries, search, onSearch, onSele
     }}
   ><FlagEmoji flag={c.flag} size={30} radius={9} dropShadow="drop-shadow(0 1px 3px rgba(76,29,149,0.12))" /><span style={{ flex: 1, fontSize: 14, color: T.ink, fontWeight: 600 }}>{c.name}</span><span style={{ fontSize: 13, color: T.inkFaint, fontWeight: 600 }}>{c.dialCode}</span></button>)}</div>}</div></div>;
 }
-function PinScreen({ value, length, onChange, onSubmit, onBack, revealed, onToggleReveal }) {
+function PinScreen({ value, length, onChange, onSubmit, onBack, revealed, onToggleReveal, busy }) {
   const complete = value.length === length;
   return <div
     style={{
@@ -670,7 +670,19 @@ function PinScreen({ value, length, onChange, onSubmit, onBack, revealed, onTogg
       cursor: "pointer",
       boxShadow: T.shadowCard
     }}
-  ><MaskEyeIcon open={revealed} color={T.inkSoft} /></button><SymbolChipRow length={length} value={value} masked={!revealed} boxSize={34} justify="center" /></div><PhoneDialPad value={value} onChange={onChange} minLength={length} maxLength={length} onSubmit={onSubmit} /></div></div>;
+  ><MaskEyeIcon open={revealed} color={T.inkSoft} /></button><SymbolChipRow length={length} value={value} masked={!revealed} boxSize={34} justify="center" /></div><PhoneDialPad
+    value={value}
+    onChange={onChange}
+    minLength={length}
+    maxLength={length}
+    onSubmit={onSubmit}
+    // The six boxes above ARE the value. The pad used to print it again
+    // underneath as plain text, which is how a masked PIN stayed legible
+    // whatever the eye said.
+    showValue={false}
+    autoSubmit
+    busy={busy}
+  /></div></div>;
 }
 // ── SAYING WHAT THE WAIT IS ─────────────────────────────────────────────
 //
@@ -689,7 +701,7 @@ function PinScreen({ value, length, onChange, onSubmit, onBack, revealed, onTogg
 // a known 40-second wait from looking like a fault: the time is the same and
 // the person knows what it is, which is the difference between waiting and
 // wondering whether to force-quit.
-function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, onToggleReveal, waking }) {
+function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, onToggleReveal, waking, busy }) {
   return <div
     style={{
       position: "fixed",
@@ -811,7 +823,16 @@ function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, 
         this can take..." on screen. Caught by reading the rendered text
         back out of a browser rather than by looking at the source. */}
     Waking the server {"\u2014"} this can take up to a minute the first time today.
-  </div>}<PhoneDialPad value={value} onChange={onChange} minLength={length} maxLength={length} onSubmit={onSubmit} /></div></div>;
+  </div>}<PhoneDialPad
+    value={value}
+    onChange={onChange}
+    minLength={length}
+    maxLength={length}
+    onSubmit={onSubmit}
+    showValue={false}
+    autoSubmit
+    busy={busy}
+  /></div></div>;
 }
 // `notice` carries whatever the real device check had to say — no sensor
 // on this device, a declined prompt, a timed-out one. It is shown on this
@@ -824,6 +845,40 @@ function LoginAuthScreen({ value, length, onChange, onSubmit, onBack, revealed, 
 // an account that HAS a passkey passes no handler at all, which is what
 // makes the check mandatory there rather than advisory.
 function BiometricVerifyScreen({ onBack, onVerify, scanning, notice, onSkip, skipLabel }) {
+  // ── IT ASKS WITHOUT BEING ASKED ───────────────────────────────────────
+  //
+  // The screen exists to collect one fingerprint. Making somebody tap a
+  // button to be shown the system prompt that collects it is a tap that
+  // decides nothing: there is no other thing to do here.
+  //
+  // So it fires once, on arrival. ONCE is the whole discipline:
+  //
+  //   A cancelled prompt is a decision. Somebody who dismissed the
+  //   sheet wants it gone, and an app that puts it straight back has
+  //   stopped asking and started insisting.
+  //
+  //   Browsers may refuse it anyway. navigator.credentials.get() wants
+  //   user activation in some engines — Chrome on Android generally
+  //   allows a call this early, iOS Safari often does not — and there
+  //   is no way to find out except to try. A refusal is silent, which
+  //   is exactly why the button has to stay.
+  //
+  // So the button is never removed; it becomes the second attempt and
+  // says so. Between the automatic try and that button, the screen
+  // works without a tap where it can and is never a dead end where it
+  // cannot.
+  const [autoTried, setAutoTried] = useState6(false);
+  useEffect6(() => {
+    if (autoTried || !onVerify) return;
+    setAutoTried(true);
+    // A frame of breathing room: fired inside the same commit that
+    // mounts the screen, the system sheet can animate in over a screen
+    // that has not finished painting, and the person sees a prompt
+    // about an app they cannot yet see.
+    const timer = setTimeout(() => { onVerify(); }, 350);
+    return () => clearTimeout(timer);
+  }, [autoTried, onVerify]);
+
   const CONTENT_TYPES = ["fingerprint", "face", "logo"];
   const COLOR_CYCLE = LOGO_FLIP_COLORS;
   const [step, setStep] = useState6(0);
@@ -965,7 +1020,14 @@ function BiometricVerifyScreen({ onBack, onVerify, scanning, notice, onSkip, ski
       cursor: scanning ? "default" : "pointer",
       opacity: scanning ? 0.7 : 1
     }}
-  >{scanning ? "Verifying\u2026" : "Verify"}</button>{
+  >{scanning
+    ? "Verifying\u2026"
+    : autoTried
+      // It has already been asked for once. "Verify" on a screen that
+      // just asked reads as though the first attempt did not count;
+      // "Try again" says what this actually is.
+      ? "Try again"
+      : "Verify"}</button>{
     /* What the device actually said - no sensor on this device, a
        declined prompt, a timed-out one. Shown on this screen rather
        than through the root error banner because the next move (try
@@ -1149,5 +1211,11 @@ function BiometricPinFallbackModal({ open, symbolId, reason, onResolve }) {
     minLength={PIN_LENGTH}
     maxLength={PIN_LENGTH}
     onSubmit={submit}
+    // Same rule as the two auth screens: the boxes above are the value,
+    // and a PIN printed under the pad is a PIN anybody standing behind
+    // you can read.
+    showValue={false}
+    autoSubmit
+    busy={checking}
   /></div></div>;
 }

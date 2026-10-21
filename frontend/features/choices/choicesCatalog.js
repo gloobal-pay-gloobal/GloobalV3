@@ -281,6 +281,13 @@ var CHOICES_BAR_DEFAULT = "#9561DD";
 // is four — so a cap measured in code units is a shorter cap for
 // anybody not writing in Latin script. Intl.Segmenter counts what a
 // reader counts; Array.from at least counts code points.
+// What a choice is called when its name is being kept to itself.
+//
+// Eight dots, fixed, rather than one per letter: a mask whose length
+// tracks the name tells a reader how long it is, and on a list of four
+// that is most of the way to telling them which is which.
+var CHOICE_NAME_MASK = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+
 function choicesNameLength(value) {
   const text = String(value || "");
   try {

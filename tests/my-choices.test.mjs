@@ -1847,3 +1847,115 @@ describe("a category can be named in any language", () => {
     assert.match(sheets, /Any language\. So it reads everywhere it appears\./);
   });
 });
+
+// ── One ring, one meaning ───────────────────────────────────────────────
+//
+// A chip on the Send strip is 56 pixels across. It used to draw a violet
+// ring when it was the chosen one AND the budget stroke at the same
+// time: two concentric rings on a circle that size, saying two
+// unrelated things. Nobody can tell which is which, and only one of them
+// has no other way to be shown.
+describe("the Send chip's edge belongs to the budget", () => {
+  const send = code(SEND);
+  // Bounded FORWARDS from the chip's own first line. An earlier
+  // attempt ended the slice at "CHOICES_STRIP_COUNT)", which occurs
+  // 47,000 characters EARLIER in this file — so the slice was empty and
+  // every assertion in it passed against nothing.
+  const chipStart = send.indexOf("const picked = String(choiceId");
+  const chip = send.slice(chipStart, send.indexOf("</span></button>;", chipStart));
+
+  test("the slice actually contains the chip", () => {
+    assert.ok(chipStart > 0 && chip.length > 500, `chip slice is ${chip.length} characters`);
+    assert.match(chip, /<ChoiceBudgetEdge/, "the slice stops before the budget stroke");
+  });
+
+  test("the edge never means 'chosen'", () => {
+    assert.doesNotMatch(chip, /border: picked \?/,
+      "the chip draws a second ring when it is the chosen one");
+    // The transparent border STAYS. The stroke's radius is the chip's
+    // 18 less this border, because box-sizing is border-box and the
+    // overlay covers the padding box — removing it would move the
+    // stroke off the edge it traces.
+    assert.match(chip, /border: "2\.5px solid transparent"/,
+      "the border was removed rather than emptied, which moves the budget stroke");
+  });
+
+  test("chosen is said by a tick and by the label", () => {
+    assert.match(chip, /\{picked && <span\s+aria-hidden="true"/, "nothing marks the chosen chip");
+    assert.match(chip, /fontWeight: picked \? 800 : 700/);
+    assert.match(chip, /color: picked \? T\.accent : T\.inkSoft/);
+  });
+
+  test("the tick is outside the chip, which clips", () => {
+    // A badge inside the chip's own span would be cut in half by its
+    // radius on the rounder shapes.
+    const tickAt = chip.search(/\{picked && <span\s+aria-hidden="true"/);
+    const chipEnds = chip.indexOf("})()}</span>");
+    assert.ok(tickAt > chipEnds && chipEnds > 0,
+      "the tick is inside the chip, where its own radius clips it");
+    assert.match(chip, /position: "relative", flexShrink: 0, width: 62/,
+      "the tick has nothing to be positioned against");
+  });
+});
+
+// ── Names are the person's, not the room's ──────────────────────────────
+//
+// A choice is named by the person who made it, for themselves, and they
+// name them things like "Damroo Baby" and put a photograph of the child
+// on the tile. The Send screen printed that under the amount and again,
+// larger, on four chips below — on a phone held up at a counter.
+describe("one eye hides every name on the Send screen", () => {
+  const send = code(SEND);
+  const lib = new Function(`${readSource(CATALOG)}
+    return { CHOICE_NAME_MASK };`)();
+
+  test("the mask does not leak the length", () => {
+    // A mask with one dot per letter tells a reader how long the name
+    // is, and across four chips that is most of the way to telling
+    // them which is which.
+    assert.equal(lib.CHOICE_NAME_MASK, "•".repeat(8));
+    assert.doesNotMatch(send, /repeat\(.*name.*length/,
+      "the mask is drawn from the name's own length again");
+  });
+
+  test("it covers the line under the amount", () => {
+    assert.match(send, /\{choiceNamesHidden \? CHOICE_NAME_MASK : pickedChoice\.name\}/);
+    // The line STAYS. That a payment is being filed is worth knowing
+    // even when which choice is not, and a line that vanishes moves
+    // the Pay button under the thumb that was about to press it.
+    assert.match(send, /\{pickedChoice && <div/, "the whole line disappears when the eye is closed");
+  });
+
+  test("it covers the strip, which is where the names are biggest", () => {
+    // Hiding the line under the amount while the same name sits in
+    // large type two centimetres below it hides nothing.
+    assert.match(send, /\{choiceNamesHidden \? CHOICE_NAME_MASK : category\.name\}/,
+      "the chip labels stay readable");
+    assert.match(send, /filter: choiceNamesHidden \? "blur\(5px\)" : "none"/,
+      "the photographs stay sharp");
+  });
+
+  test("the blur is on the picture, not the chip", () => {
+    // A blurred chip would be a blurred budget stroke, which is a
+    // blurred figure.
+    const at = send.indexOf("const picked = String(choiceId");
+    const chip = send.slice(at, send.indexOf("</span></button>;", at));
+    const blurAt = chip.indexOf("filter: choiceNamesHidden");
+    const strokeAt = chip.indexOf("<ChoiceBudgetEdge");
+    assert.ok(blurAt > 0 && strokeAt > blurAt, "the budget stroke is inside the blurred box");
+  });
+
+  test("a screen reader is a reader too", () => {
+    // The chip's aria-label said the name out loud in the same room.
+    assert.match(send, /\? \(picked \? "Hidden choice — chosen, tap to clear" : "Hidden choice"\)/,
+      "the name is still spoken when it is hidden on screen");
+  });
+
+  test("it starts visible and resets with the screen", () => {
+    // A shoulder you choose to turn, not a setting somebody has to
+    // find to get their own labels back.
+    assert.match(send, /const \[choiceNamesHidden, setChoiceNamesHidden\] = useState15\(false\);/);
+    assert.doesNotMatch(send, /localStorage[^\n]*choiceNamesHidden/,
+      "hiding is remembered across sessions, which makes it a setting");
+  });
+});

@@ -345,6 +345,23 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   // dead zone error at render — the one that has bitten this bundle three
   // times now. Order by dependency, not by subject.
   const pickedChoice = choiceId ? choicesById(choicesState, choiceId) : null;
+  // ── WHOSE NAMES THESE ARE ─────────────────────────────────────────────
+  //
+  // A choice is named by the person who made it, for themselves, and
+  // they name them things like "Damroo Baby" and put a photograph of
+  // the child on the tile. This screen then prints that under the
+  // amount and again, larger, on four chips below it — on a phone held
+  // up at a counter while somebody is paying.
+  //
+  // So one control covers all of it. Hiding the line under the amount
+  // while the same name sits in large type two centimetres below hides
+  // nothing, which is why this is screen-wide rather than per-element.
+  //
+  // Default VISIBLE: this is a shoulder you choose to turn, not a
+  // setting somebody has to find to get their own labels back. It
+  // resets with the screen, because the reason to hide is the room you
+  // are standing in rather than something about the account.
+  const [choiceNamesHidden, setChoiceNamesHidden] = useState15(false);
 
   // Every consumer of `senderAmount` on this screen — the Send button, the
   // pay-method sheet, the receipt, the local ledger leg — wants "what I
@@ -1753,7 +1770,32 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       for
     </span><span
     style={{ fontWeight: 800, color: T.ink, minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.35 }}
-  >{pickedChoice.name}</span></div>}</>}</div></>}{
+  >{
+    /* HIDDEN, NOT REMOVED. The line still says a choice is attached —
+       that the payment will be filed is worth knowing even when which
+       one is not — and it keeps the same height either way, so the Pay
+       button underneath does not move when the eye is tapped. */
+  }{choiceNamesHidden ? CHOICE_NAME_MASK : pickedChoice.name}</span><button
+    onClick={() => setChoiceNamesHidden((v) => !v)}
+    className="v2-tap"
+    aria-label={choiceNamesHidden ? "Show choice names" : "Hide choice names"}
+    aria-pressed={choiceNamesHidden}
+    style={{
+      marginLeft: "auto",
+      flexShrink: 0,
+      alignSelf: "center",
+      width: 26,
+      height: 26,
+      borderRadius: "50%",
+      border: `1px solid ${T.line}`,
+      background: T.surface,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer",
+      padding: 0
+    }}
+  ><MaskEyeIcon open={!choiceNamesHidden} color={T.inkSoft} /></button></div>}</>}</div></>}{
     /* SWAP — only once a receiver's been found. Flips currency
        sides and, with it, which card is shown big vs as a strip.
        The search bar itself always looks up the receiver, no
@@ -1840,9 +1882,13 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       key={category.id}
       onClick={() => setChoiceId(picked ? null : category.id)}
       className="v2-tap"
-      aria-label={picked ? `${category.name} — chosen, tap to clear` : category.name}
+      // The label a screen reader speaks is a name being said out
+      // loud in the same room, so it masks with the rest.
+      aria-label={choiceNamesHidden
+        ? (picked ? "Hidden choice — chosen, tap to clear" : "Hidden choice")
+        : (picked ? `${category.name} — chosen, tap to clear` : category.name)}
       aria-pressed={picked}
-      style={{ flexShrink: 0, width: 62, border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
+      style={{ position: "relative", flexShrink: 0, width: 62, border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
     ><span
       style={{
         position: "relative",
@@ -1850,13 +1896,47 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         height: 56,
         borderRadius: choicesCornerCss(category.shape, 18),
         background: choicesTint(category.color),
-        border: picked ? `2.5px solid ${T.accent}` : "2.5px solid transparent",
+        // ── THE EDGE BELONGS TO THE BUDGET ────────────────────────────
+        //
+        // This used to go violet when the chip was chosen, which put
+        // two concentric rings on a 56px circle saying two different
+        // things: one "this is the one you picked", one "this is how
+        // much is left". At that size nobody can tell which is which,
+        // and the budget is the one that cannot be shown any other way.
+        //
+        // So chosen is said by the tick below and by the label going
+        // bold violet, and the edge has one meaning again. The border
+        // STAYS at 2.5px transparent rather than being removed: the
+        // stroke's radius is the chip's 18 less this border, because
+        // box-sizing is border-box here and the overlay covers the
+        // padding box. Taking it away would move the stroke.
+        border: "2.5px solid transparent",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         overflow: "hidden"
       }}
-    ><ChoiceGlyph category={category} size={25} />{(() => {
+    >{
+      /* BLURRED, NOT REPLACED. The photographs are how a person finds
+         their own choice in a row of four, so they stay — shape,
+         colour and a soft impression of the picture are enough to pick
+         from at arm's length, and none of it identifies anybody to
+         somebody reading across a counter.
+
+         Applied here rather than to the chip, so the budget stroke
+         drawn below stays sharp: a blurred edge would be a blurred
+         figure. */
+    }<span
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: "100%",
+        height: "100%",
+        filter: choiceNamesHidden ? "blur(5px)" : "none",
+        transition: "filter 0.18s ease"
+      }}
+    ><ChoiceGlyph category={category} size={25} /></span>{(() => {
       // The same budget stroke the grid tiles carry, on the chip. This
       // strip is where a category is chosen for a payment about to
       // happen, which is the moment "how much is left on this one"
@@ -1883,7 +1963,27 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         // survive a round linecap on a curve, so it is floored at 2.
         stroke={2}
       />;
-    })()}</span><span
+    })()}</span>{
+      /* CHOSEN. Outside the chip's own span, which clips to its radius
+         — a badge inside would be cut in half on the rounder shapes.
+         The chip is 56 centred in a 62 button, so its top-right corner
+         is 3px in from this edge. */
+    }{picked && <span
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        top: -2,
+        right: 0,
+        width: 18,
+        height: 18,
+        borderRadius: "50%",
+        background: T.accent,
+        border: `2px solid ${T.bg}`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      }}
+    ><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="#fff" strokeWidth="4"><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" /></svg></span>}<span
       style={{
         fontSize: 11.5,
         fontWeight: picked ? 800 : 700,
@@ -1903,7 +2003,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         lineHeight: 1.25,
         wordBreak: "break-word"
       }}
-    >{category.name}</span></button>;
+      // Masked with the same eight dots the line under the amount
+      // uses, so one control reads as one control.
+      title={choiceNamesHidden ? void 0 : category.name}
+    >{choiceNamesHidden ? CHOICE_NAME_MASK : category.name}</span></button>;
   })}<button
     onClick={() => setChoicesOpen(true)}
     className="v2-tap"

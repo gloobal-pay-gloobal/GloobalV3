@@ -115,7 +115,11 @@ describe("the send button names the choice without breaking", () => {
     // figure, and another stacked on a second line of it. Under the box
     // it has the card's full width and can be read in full, and the
     // button keeps only what it is for.
-    assert.match(src, /\{pickedChoice\.name\}/, "the chosen category is no longer named at all");
+    // Named, or masked — the name now sits behind an eye, so the
+    // assertion is that the line carries the NAME when it is showing,
+    // not that it is unconditional.
+    assert.match(src, /\{choiceNamesHidden \? CHOICE_NAME_MASK : pickedChoice\.name\}/,
+      "the chosen category is no longer named at all");
     assert.match(src, />\s*for\s*<\/span>/, "the line no longer reads \"for <name>\"");
     const button = src.slice(src.indexOf('className="send-btn"'));
     const block = button.slice(0, button.indexOf("</button>"));
@@ -126,8 +130,10 @@ describe("the send button names the choice without breaking", () => {
   });
 
   test("the name wraps rather than truncating, now that it has room", () => {
-    const at = src.indexOf("{pickedChoice.name}");
-    const around = src.slice(Math.max(0, at - 300), at + 40);
+    // Anchored on the masked expression, since the bare name no longer
+    // appears on its own — it sits behind the eye.
+    const at = src.indexOf("{choiceNamesHidden ? CHOICE_NAME_MASK : pickedChoice.name}");
+    const around = src.slice(Math.max(0, at - 300), at + 60);
     assert.match(around, /overflowWrap: "anywhere"/,
       "the category line clips instead of wrapping, which was the point of moving it");
     assert.doesNotMatch(around, /textOverflow: "ellipsis"/,

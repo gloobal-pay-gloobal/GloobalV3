@@ -112,7 +112,7 @@ function GloobalBankScreen({
     style={{ position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, marginTop: 5 }}
   ><span
     style={{ fontSize: 29, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, letterSpacing: -0.5, minWidth: 0 }}
-  >{balanceStatus === "loading" ? <BalanceLoading /> : balanceStatus === "error" ? <BalanceError onRetry={onRetryBalance} /> : balanceVisible ? balance : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
+  >{balanceStatus === "loading" ? <BalanceLoading /> : balanceStatus === "error" ? <BalanceError onRetry={onRetryBalance} /> : balanceVisible ? balance : <BalanceMaskFace size={29} />}</span><button
     onClick={onToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"

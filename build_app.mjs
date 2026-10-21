@@ -127,6 +127,7 @@ const FRONTEND_MODULES = [
   "components/common/brand.jsx",
   "components/common/coloredId.jsx",
   "components/common/icons.jsx",
+  "components/common/balanceMask.jsx",
   // The pull-to-refresh wrapper. Needs the theme (emitted first) and is
   // rendered by the Dashboard, so it sits ahead of every screen.
   "components/common/PullToRefresh.jsx",

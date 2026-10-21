@@ -1437,17 +1437,21 @@ export async function revealBalance(page, account) {
   for (const digit of account.pin) {
     await page.getByLabel(`Digit ${digit}`, { exact: true }).click({ force: true });
   }
-  // The fallback sheet reuses the login pad, submit button and all, so the
-  // six digits are entered but not sent until this is pressed.
-  await page.getByLabel("Log in", { exact: true }).last().click({ force: true });
-  // Wait on the masking dots disappearing rather than on the sheet's copy:
-  // the copy contains a typographic apostrophe, and matching it from a test
-  // is a trap that fails silently the day someone rewrites the sentence.
-  await page.waitForFunction(
-    () => !document.body.innerText.includes("•••••"),
-    undefined,
-    { timeout: 25000 }
-  );
+  // The fallback sheet reuses the login pad, which now sends itself on
+  // the sixth digit — so the click that used to be here is gone for the
+  // same reason it went from login(): by the time Playwright reaches
+  // the button it is disabled and mid-swap for the waiting state.
+  //
+  // Wait on the balance arriving rather than on the sheet's copy: that
+  // copy contains a typographic apostrophe, and matching it from a test
+  // is a trap that fails silently the day somebody rewrites the
+  // sentence.
+  //
+  // And not on the dots disappearing either, which is what this used to
+  // do — a hidden balance is a FACE now, not seven bullets, so that
+  // condition was true before the PIN was even typed. It waits for the
+  // eye to flip instead, which is the state actually being changed.
+  await page.getByLabel("Hide balance", { exact: true }).waitFor({ timeout: 25000 });
 }
 
 // The balance as a person reads it, currency and all.

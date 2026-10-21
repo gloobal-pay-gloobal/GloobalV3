@@ -2022,7 +2022,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // to reconcile. It also made the rupee look disabled next to a figure it
     // is every bit as true as.
     style={{ fontSize: geuLensTrailSize(balanceFontSize), fontWeight: 700, marginLeft: GEU_LENS_BAR_GAP, letterSpacing: 0.2 }}
-  >{balanceBracket}</span></> : "\u2022\u2022\u2022\u2022\u2022\u2022\u2022"}</span><button
+  >{balanceBracket}</span></> : <BalanceMaskFace size={balanceFontSize} />}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"
@@ -2042,7 +2042,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Spending mini chart — sits below its own divider so it
        reads as a distinct footer section of the wallet card
        rather than competing with the balance above it. */
-  }<div style={{ position: "relative", marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.18)" }}><DailySpendingChart weeks={dailySpending.weeks} totals={dailySpending.totals} currencyCode={ccyCode} lens={displayLens} /></div>{showIdTag && <div
+  }<div style={{ position: "relative", marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.18)" }}><DailySpendingChart
+    weeks={dailySpending.weeks}
+    totals={dailySpending.totals}
+    currencyCode={ccyCode}
+    lens={displayLens}
+    // The eye covers the whole card. Hiding the balance while the
+    // week's spend, the week's income and the shape of the week stay
+    // readable two centimetres below it is not hiding much.
+    masked={!balanceVisible}
+  /></div>{showIdTag && <div
     style={{
       position: "absolute",
       top: 66,

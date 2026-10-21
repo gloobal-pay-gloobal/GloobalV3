@@ -1775,7 +1775,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
        that the payment will be filed is worth knowing even when which
        one is not — and it keeps the same height either way, so the Pay
        button underneath does not move when the eye is tapped. */
-  }{choiceNamesHidden ? CHOICE_NAME_MASK : pickedChoice.name}</span><button
+  }{choiceNamesHidden ? <ChoiceNameMask size={13} line={17} /> : pickedChoice.name}</span><button
     onClick={() => setChoiceNamesHidden((v) => !v)}
     className="v2-tap"
     aria-label={choiceNamesHidden ? "Show choice names" : "Hide choice names"}
@@ -2003,10 +2003,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         lineHeight: 1.25,
         wordBreak: "break-word"
       }}
-      // Masked with the same eight dots the line under the amount
-      // uses, so one control reads as one control.
+      // Masked with the same character the line under the amount uses,
+      // so one control reads as one control.
       title={choiceNamesHidden ? void 0 : category.name}
-    >{choiceNamesHidden ? CHOICE_NAME_MASK : category.name}</span></button>;
+    >{choiceNamesHidden ? <ChoiceNameMask size={15} /> : category.name}</span></button>;
   })}<button
     onClick={() => setChoicesOpen(true)}
     className="v2-tap"

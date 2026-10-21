@@ -2042,16 +2042,22 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Spending mini chart — sits below its own divider so it
        reads as a distinct footer section of the wallet card
        rather than competing with the balance above it. */
-  }<div style={{ position: "relative", marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.18)" }}><DailySpendingChart
-    weeks={dailySpending.weeks}
-    totals={dailySpending.totals}
-    currencyCode={ccyCode}
-    lens={displayLens}
-    // The eye covers the whole card. Hiding the balance while the
-    // week's spend, the week's income and the shape of the week stay
-    // readable two centimetres below it is not hiding much.
-    masked={!balanceVisible}
-  /></div>{showIdTag && <div
+  }<div style={{ position: "relative", marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.18)" }}>{
+    /* ── THE EYE IS THE BALANCE'S, NOT THE CARD'S ──────────────────────
+
+       This briefly masked the week's two figures and flattened the
+       bars with the balance, on the argument that hiding one number
+       while the week's spending stays readable beneath it hides
+       little.
+
+       The founder's call is that the two are different in kind. The
+       balance is what you have; the week is what moved. Someone
+       glancing at this card learns nothing from "−2,100 this week"
+       that they could not guess from watching you use the phone, and
+       the chart is the part of the card worth looking at — flattening
+       it to protect a figure that is already hidden takes away the
+       reason the card is there. */
+  }<DailySpendingChart weeks={dailySpending.weeks} totals={dailySpending.totals} currencyCode={ccyCode} lens={displayLens} /></div>{showIdTag && <div
     style={{
       position: "absolute",
       top: 66,

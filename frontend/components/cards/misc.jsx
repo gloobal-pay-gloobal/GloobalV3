@@ -147,10 +147,7 @@ var SPENDING_FIGURE_ROOM_PAIR = 133;
 var SPENDING_FIGURE_ROOM_SOLO = 276;
 var SPENDING_FIGURE_MIN = 11;
 
-// `masked` hides every figure this chart draws and flattens its bars,
-// for the one caller whose balance sits directly above it. Default
-// false, so every other chart in the app is untouched.
-function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "dark", trailing = null, leading = null, currencyCode, lens = null, masked = false }) {
+function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "dark", trailing = null, leading = null, currencyCode, lens = null }) {
   // One formatter for every figure below, so a total and a day's callout
   // cannot end up in different units.
   const money = (value) => (
@@ -312,10 +309,6 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
       : { lead: money(value), trail: "" }
   );
   const figureSpan = (color, sign, value) => {
-    // No sign either. A bare "−" beside the dots still says which of
-    // the two this is, which is fine — but printing it next to a
-    // figure-shaped gap invites reading a length into the gap.
-    if (masked) return <span style={figureStyle(color)}>{BALANCE_FIGURE_MASK}</span>;
     const parts = barParts(Number(value) || 0);
     return <span style={figureStyle(color)}>{sign}{parts.lead}{parts.trail && <span
       style={{ fontSize: geuLensTrailSize(figureSize), fontWeight: 800 }}
@@ -386,12 +379,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
          baseline because the column itself is bottom-aligned. */
     }{isSelected && calloutDay && <span style={{ fontSize: 10, fontWeight: 800, color: palette === "light" ? T.accent : "#fff", whiteSpace: "nowrap", marginBottom: 1 }}>{calloutText}</span>}<div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: single ? void 0 : 34 }}>{showPaid && <div
       role="img"
-      // A screen reader is a reader in the same room. Masking the
-      // figure on screen while the bar beside it reads the amount out
-      // loud hides it from one person and not the other.
-      aria-label={masked
-        ? `${SPENDING_DAY_LABELS[i]} paid: hidden`
-        : `${SPENDING_DAY_LABELS[i]} paid: ${money(Number(d.paid) || 0)}`}
+      aria-label={`${SPENDING_DAY_LABELS[i]} paid: ${money(Number(d.paid) || 0)}`}
       style={{
         width: barWidth,
         // Zero draws NOTHING. This was Math.max(3, …), so a day on
@@ -400,10 +388,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
         // week were that floor, and the chart said money moved on days
         // it did not. The 2px stub below is for the SELECTED empty day
         // only, so tapping it still shows what you tapped.
-        // Flat while masked: every day the same low line, so the
-        // SHAPE of the week is hidden along with its figures. A chart
-        // whose bars still rise and fall says which days were heavy.
-        height: masked ? 3 : (d.paid > 0 ? Math.max(3, d.paid / max * 34) : (isSelected ? 2 : 0)),
+        height: d.paid > 0 ? Math.max(3, d.paid / max * 34) : (isSelected ? 2 : 0),
         borderRadius: 3,
         background: highlighted ? C.paid : C.paidMuted,
         boxShadow: isSelected ? `0 0 0 1.5px ${C.selectRing}` : "none",
@@ -411,9 +396,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
       }}
     />}{showReceived && <div
       role="img"
-      aria-label={masked
-        ? `${SPENDING_DAY_LABELS[i]} received: hidden`
-        : `${SPENDING_DAY_LABELS[i]} received: ${money(Number(d.received) || 0)}`}
+      aria-label={`${SPENDING_DAY_LABELS[i]} received: ${money(Number(d.received) || 0)}`}
       style={{
         width: barWidth,
         // Zero draws NOTHING. This was Math.max(3, …), so a day on
@@ -422,7 +405,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
         // week were that floor, and the chart said money moved on days
         // it did not. The 2px stub below is for the SELECTED empty day
         // only, so tapping it still shows what you tapped.
-        height: masked ? 3 : (d.received > 0 ? Math.max(3, d.received / max * 34) : (isSelected ? 2 : 0)),
+        height: d.received > 0 ? Math.max(3, d.received / max * 34) : (isSelected ? 2 : 0),
         borderRadius: 3,
         background: highlighted ? C.received : C.receivedMuted,
         boxShadow: isSelected ? `0 0 0 1.5px ${C.selectRing}` : "none",

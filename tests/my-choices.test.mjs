@@ -1906,20 +1906,35 @@ describe("the Send chip's edge belongs to the budget", () => {
 // larger, on four chips below — on a phone held up at a counter.
 describe("one eye hides every name on the Send screen", () => {
   const send = code(SEND);
-  const lib = new Function(`${readSource(CATALOG)}
-    return { CHOICE_NAME_MASK };`)();
 
   test("the mask does not leak the length", () => {
     // A mask with one dot per letter tells a reader how long the name
     // is, and across four chips that is most of the way to telling
-    // them which is which.
-    assert.equal(lib.CHOICE_NAME_MASK, "•".repeat(8));
+    // them which is which. It was eight fixed dots; it is now a drawn
+    // character, which has no length at all to leak.
     assert.doesNotMatch(send, /repeat\(.*name.*length/,
       "the mask is drawn from the name's own length again");
+    assert.doesNotMatch(code(CATALOG), /CHOICE_NAME_MASK/,
+      "the dot mask is back in the catalogue");
+    // Sized by the call site rather than by anything about the name.
+    for (const call of send.match(/<ChoiceNameMask[^>]*\/>/g) || []) {
+      assert.match(call, /^<ChoiceNameMask size=\{\d+(\.\d+)?\}( line=\{\d+\})? \/>$/,
+        `the name mask is being passed something other than a size: ${call}`);
+    }
+  });
+
+  test("it is the same character that covers the balance", () => {
+    // Three conventions for "covered" — a character on the balance, dots
+    // on the names, other dots beside the chart — is three things to
+    // learn. The wrapper exists so there is one.
+    const mask = code("frontend/components/common/balanceMask.jsx");
+    assert.match(mask, /function ChoiceNameMask\(\{ size = \d+, line = \d+ \}\) \{/);
+    assert.match(mask, /<BalanceMaskFace size=\{px\} label="Name hidden" \/>/,
+      "the name mask has stopped being the balance's character");
   });
 
   test("it covers the line under the amount", () => {
-    assert.match(send, /\{choiceNamesHidden \? CHOICE_NAME_MASK : pickedChoice\.name\}/);
+    assert.match(send, /\{choiceNamesHidden \? <ChoiceNameMask size=\{13\} line=\{17\} \/> : pickedChoice\.name\}/);
     // The line STAYS. That a payment is being filed is worth knowing
     // even when which choice is not, and a line that vanishes moves
     // the Pay button under the thumb that was about to press it.
@@ -1929,7 +1944,7 @@ describe("one eye hides every name on the Send screen", () => {
   test("it covers the strip, which is where the names are biggest", () => {
     // Hiding the line under the amount while the same name sits in
     // large type two centimetres below it hides nothing.
-    assert.match(send, /\{choiceNamesHidden \? CHOICE_NAME_MASK : category\.name\}/,
+    assert.match(send, /\{choiceNamesHidden \? <ChoiceNameMask size=\{15\} \/> : category\.name\}/,
       "the chip labels stay readable");
     assert.match(send, /filter: choiceNamesHidden \? "blur\(5px\)" : "none"/,
       "the photographs stay sharp");

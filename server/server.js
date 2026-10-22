@@ -166,6 +166,7 @@ const Category = require('./models/Category');
 // a label must never be written inside the atomic money path. Its header
 // has the full argument.
 const TransactionTag = require('./models/TransactionTag');
+const CategoryLink = require('./models/CategoryLink');
 // A picture chosen instead of an icon, for one category. Its own
 // collection for the same reason ProfilePhoto is: the category list is a
 // constant read and an image on every row would cost all of it.
@@ -174,6 +175,9 @@ const {
   DEFAULT_CATEGORIES,
   validateCategoryInput,
   publicCategory,
+  categoryNameNormalised,
+  categoryNameLength,
+  CATEGORY_NAME_MAX_LENGTH,
 } = require('./lib/categoryValidation');
 const {
   HOOMAN_WINDOW_DAYS,
@@ -9101,6 +9105,313 @@ app.delete('/api/categories/:id/photo', writeLimit, requireAuth, async (req, res
   }
 });
 
+// ── CONNECTED CATEGORIES ────────────────────────────────────────────────
+//
+// A merchant pays Ramu his wages and files it under "Staff salary". Ramu
+// needs the same payment on his own books, as income, under a name he
+// chose. Both of those records already exist in this system — TransactionTag
+// is per viewer precisely so two parties can label one payment differently
+// — but until now the second one had to be typed by hand, and the person
+// who forgets is always the one being paid.
+//
+// A link is the standing agreement that writes it for him. See
+// models/CategoryLink.js for what a link is and, more importantly, what it
+// is not: no money, no shared sight of anybody's totals, and nothing that
+// unfiles a payment already filed.
+
+const categoryLinkNotFound = (res) =>
+  res.status(404).json({ success: false, message: 'That connection is not one of yours.' });
+
+// What a link looks like from one side or the other.
+//
+// `role` rather than two shapes, because every screen that shows these
+// shows both: the categories you have invited people onto and the ones you
+// have been invited onto are one list to the person reading it, and a
+// client that has to merge two differently-shaped arrays will eventually
+// merge them wrong.
+const publicCategoryLink = (row, viewerId, names) => {
+  const mine = String(row.ownerId) === String(viewerId);
+  return {
+    id: String(row._id),
+    role: mine ? 'owner' : 'member',
+    status: row.status,
+    // The category on the READER's side of the link, whichever side that
+    // is. Never the other person's: a member has no business knowing which
+    // of the owner's categories they sit under, and the owner's own screen
+    // already knows, because it asked about that category.
+    categoryId: mine ? String(row.ownerCategoryId) : (row.memberCategoryId ? String(row.memberCategoryId) : null),
+    // Who is on the other end, by Gloobal ID and name only. No figures, no
+    // category, nothing about what else they do.
+    withSymbolId: mine ? (row.invitedSymbolId || '') : (names.ownerSymbolId || ''),
+    withName: mine ? (names.memberName || '') : (names.ownerName || ''),
+    // What the owner calls their side. Sent to the MEMBER only, and only
+    // while the invitation is pending, so somebody deciding whether to
+    // accept can see what they are being asked to join. Once accepted
+    // their own name is the only one that matters to them.
+    invitedTo: !mine && row.status === 'pending' ? (names.ownerCategoryName || '') : '',
+    invitedAt: row.createdAt,
+    respondedAt: row.respondedAt,
+    endedAt: row.endedAt,
+    endedBy: row.endedBy || null,
+  };
+};
+
+// Fills in the names publicCategoryLink needs, for a page of links at once.
+// One query per collection rather than one per row: a merchant with twenty
+// people on payroll would otherwise make sixty round trips to draw a list.
+const decorateCategoryLinks = async (rows, viewerId) => {
+  if (!rows.length) return [];
+  const userIds = new Set();
+  const categoryIds = new Set();
+  for (const row of rows) {
+    userIds.add(String(row.ownerId));
+    userIds.add(String(row.memberId));
+    categoryIds.add(String(row.ownerCategoryId));
+  }
+  const [users, categories] = await Promise.all([
+    User.find({ _id: { $in: [...userIds] } }).select('_id symbolId fullName').lean(),
+    Category.find({ _id: { $in: [...categoryIds] } }).select('_id name').lean(),
+  ]);
+  const userById = new Map(users.map((u) => [String(u._id), u]));
+  const categoryById = new Map(categories.map((c) => [String(c._id), c]));
+  return rows.map((row) => {
+    const owner = userById.get(String(row.ownerId));
+    const member = userById.get(String(row.memberId));
+    const ownerCategory = categoryById.get(String(row.ownerCategoryId));
+    return publicCategoryLink(row, viewerId, {
+      ownerSymbolId: owner ? owner.symbolId : '',
+      ownerName: owner ? owner.fullName : '',
+      memberName: member ? member.fullName : '',
+      ownerCategoryName: ownerCategory ? ownerCategory.name : '',
+    });
+  });
+};
+
+// POST /api/categories/:id/links — invite a Gloobal ID onto one of my
+// categories.
+//
+// Nothing is created on their side here. The invitation is a row with
+// memberCategoryId still null, and their category comes into existence when
+// they accept it and name it — putting an unasked-for row on somebody's
+// grid is exactly the kind of thing a handshake exists to prevent.
+app.post('/api/categories/:id/links', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const ownerId = req.authUser._id;
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return categoryNotFound(res);
+
+    const category = await Category.findOne({ _id: id, userId: ownerId }).lean();
+    if (!category) return categoryNotFound(res);
+    if (category.archivedAt) {
+      return res.status(400).json({ success: false, message: 'That choice has been retired.' });
+    }
+
+    const symbolId = String(req.body?.symbolId || '').trim();
+    if (!symbolId) return res.status(400).json({ success: false, message: 'Whose Gloobal ID?' });
+
+    const member = await User.findOne({ symbolId }).select('_id symbolId').lean();
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'No account with that Gloobal ID.' });
+    }
+    if (String(member._id) === String(ownerId)) {
+      return res.status(400).json({ success: false, message: 'You cannot connect a choice to yourself.' });
+    }
+
+    const existing = await CategoryLink.findOne({ ownerCategoryId: category._id, memberId: member._id }).lean();
+    if (existing) {
+      // Three different "already" cases, and they are not the same answer.
+      // Re-inviting somebody who said no is the one worth refusing outright:
+      // a declined invitation that can be sent again is a way to pester
+      // somebody through an app they trust.
+      if (existing.status === 'pending') {
+        return res.status(409).json({ success: false, message: 'They have already been asked.' });
+      }
+      if (existing.status === 'active') {
+        return res.status(409).json({ success: false, message: 'They are already connected to this choice.' });
+      }
+      if (existing.status === 'declined') {
+        return res.status(409).json({ success: false, message: 'They turned this down.' });
+      }
+      // 'ended' is the one case that may be re-opened: an arrangement that
+      // existed and stopped can start again, and reusing the row keeps the
+      // unique index honest.
+      await CategoryLink.updateOne(
+        { _id: existing._id },
+        { $set: { status: 'pending', memberCategoryId: null, respondedAt: null, endedAt: null, endedBy: null, invitedSymbolId: symbolId } }
+      );
+    } else {
+      await CategoryLink.create({
+        ownerId,
+        ownerCategoryId: category._id,
+        memberId: member._id,
+        invitedSymbolId: symbolId,
+        status: 'pending',
+      });
+    }
+
+    const link = await CategoryLink.findOne({ ownerCategoryId: category._id, memberId: member._id }).lean();
+
+    // The invitation has to be SEEN, and a row on a screen nobody opens is
+    // not seen. Best-effort and outside any transaction, like every other
+    // notification here: a failure to notify must not undo an invitation
+    // that was made.
+    try {
+      await Notification.create({
+        userId: member._id,
+        type: 'link',
+        title: 'A choice wants to connect',
+        message: `${req.authUser.fullName || 'Someone'} would like payments for "${category.name}" to file themselves under a choice of yours.`,
+        metadata: { linkId: String(link._id), categoryName: category.name },
+      });
+      await pruneNotifications(member._id);
+    } catch (error) {
+      console.error('Category link notification failed:', error.message);
+    }
+
+    const [decorated] = await decorateCategoryLinks([link], ownerId);
+    return res.status(201).json({ success: true, link: decorated });
+  } catch (error) {
+    console.error('Category link invite error:', error);
+    return res.status(500).json({ success: false, message: 'Could not send that invitation.' });
+  }
+});
+
+// GET /api/category-links — every link I am either side of.
+app.get('/api/category-links', requireAuth, async (req, res) => {
+  try {
+    const viewerId = req.authUser._id;
+    const rows = await CategoryLink.find({
+      $or: [{ ownerId: viewerId }, { memberId: viewerId }],
+      status: { $in: ['pending', 'active'] },
+    })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
+    return res.json({ success: true, links: await decorateCategoryLinks(rows, viewerId) });
+  } catch (error) {
+    console.error('Category links read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load your connections.' });
+  }
+});
+
+// POST /api/category-links/:id/accept — take the invitation, under a name
+// of my own.
+//
+// The category is created HERE, by the member, with the member as its
+// owner. It is an ordinary category in every respect: it appears on their
+// grid, they can rename it, give it a colour, set a budget on it, and
+// delete it. Nothing about it is special except that a link points at it.
+app.post('/api/category-links/:id/accept', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const memberId = req.authUser._id;
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return categoryLinkNotFound(res);
+
+    const link = await CategoryLink.findOne({ _id: id, memberId }).lean();
+    if (!link) return categoryLinkNotFound(res);
+    if (link.status !== 'pending') {
+      return res.status(409).json({ success: false, message: 'That invitation has already been answered.' });
+    }
+
+    const name = categoryNameNormalised(req.body?.name);
+    if (!name) return res.status(400).json({ success: false, message: 'What will you call it?' });
+    if (categoryNameLength(name) > CATEGORY_NAME_MAX_LENGTH) {
+      return res.status(400).json({ success: false, message: `Keep it under ${CATEGORY_NAME_MAX_LENGTH} characters.` });
+    }
+
+    // Income, and on the creator side. Both are forced rather than offered:
+    // the money arriving through a link is money this person earned, and
+    // filing earnings as an expense on the personal side would put them in
+    // the wrong half of every total they have.
+    const category = await Category.create({
+      userId: memberId,
+      name,
+      kind: 'income',
+      side: 'creator',
+      icon: String(req.body?.icon || '').trim().slice(0, 16),
+    });
+
+    await CategoryLink.updateOne(
+      { _id: link._id },
+      { $set: { status: 'active', memberCategoryId: category._id, respondedAt: new Date() } }
+    );
+
+    const updated = await CategoryLink.findById(link._id).lean();
+    const [decorated] = await decorateCategoryLinks([updated], memberId);
+    return res.json({
+      success: true,
+      link: decorated,
+      category: Object.assign({}, publicCategory(category.toObject()), { totals: [], photo: null }),
+    });
+  } catch (error) {
+    console.error('Category link accept error:', error);
+    return res.status(500).json({ success: false, message: 'Could not accept that invitation.' });
+  }
+});
+
+// POST /api/category-links/:id/decline — no thank you.
+//
+// Recorded rather than deleted, which is what makes the refusal stick: the
+// invite route refuses to re-send to a link in this state, so saying no
+// once is saying no.
+app.post('/api/category-links/:id/decline', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const memberId = req.authUser._id;
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return categoryLinkNotFound(res);
+
+    const result = await CategoryLink.updateOne(
+      { _id: id, memberId, status: 'pending' },
+      { $set: { status: 'declined', respondedAt: new Date() } }
+    );
+    if (!result.matchedCount) return categoryLinkNotFound(res);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Category link decline error:', error);
+    return res.status(500).json({ success: false, message: 'Could not decline that invitation.' });
+  }
+});
+
+// DELETE /api/category-links/:id — stop it, from either side.
+//
+// Either party may end it and neither needs the other's agreement: a
+// merchant who has let somebody go and a worker who has left are the same
+// act from two directions, and an arrangement that one side cannot leave is
+// not an arrangement.
+//
+// Payments already filed are untouched. The label on them is the record of
+// what happened, and tidying a connection must not rewrite history — the
+// same rule DELETE /api/categories already follows.
+app.delete('/api/category-links/:id', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const viewerId = req.authUser._id;
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return categoryLinkNotFound(res);
+
+    const link = await CategoryLink.findOne({
+      _id: id,
+      $or: [{ ownerId: viewerId }, { memberId: viewerId }],
+      status: { $in: ['pending', 'active'] },
+    }).lean();
+    if (!link) return categoryLinkNotFound(res);
+
+    await CategoryLink.updateOne(
+      { _id: link._id },
+      {
+        $set: {
+          status: 'ended',
+          endedAt: new Date(),
+          endedBy: String(link.ownerId) === String(viewerId) ? 'owner' : 'member',
+        },
+      }
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Category link end error:', error);
+    return res.status(500).json({ success: false, message: 'Could not end that connection.' });
+  }
+});
+
 // PUT /api/transactions/:referenceId/tag — file a payment under a choice.
 //
 // Idempotent by construction: the unique index on { userId, transactionId }
@@ -9143,9 +9454,75 @@ app.put('/api/transactions/:referenceId/tag', writeLimit, requireAuth, async (re
       { new: true, upsert: true, setDefaultsOnInsert: true }
     ).lean();
 
+    // ── AND THE OTHER SIDE, IF THEY ASKED FOR IT ────────────────────────
+    //
+    // This is the whole point of a connected category. The merchant files a
+    // wage payment under "Staff salary"; Ramu's copy of the same payment
+    // files itself under whatever he called his side of it, without him
+    // touching anything.
+    //
+    // Three conditions, all of them load-bearing:
+    //
+    //   The link must be ACTIVE. Pending means he has not agreed; declined
+    //   and ended mean he has agreed to stop.
+    //
+    //   The link's member must be the OTHER PARTY to this very payment.
+    //   A merchant with Ramu and Sita both on one category files a payment
+    //   to Sita, and only Sita's copy may be written — writing Ramu's would
+    //   put money he never received into his earnings.
+    //
+    //   And it only fires when the person tagging is the link's OWNER. The
+    //   member tagging their own copy is them re-filing it by hand, which
+    //   is allowed and must not reach back across and relabel the merchant's
+    //   books.
+    //
+    // Best-effort, after the caller's own tag and outside any transaction,
+    // exactly as the comment at the top of models/TransactionTag.js argues
+    // for: a label that fails to write leaves a payment untagged, and that
+    // is a smaller wrong than a failed request on a payment that happened.
+    let alsoFiled = null;
+    try {
+      if (String(transaction.fromUserId || '') === String(userId)) {
+        const otherPartyId = transaction.toUserId;
+        if (otherPartyId) {
+          const link = await CategoryLink.findOne({
+            ownerCategoryId: category._id,
+            memberId: otherPartyId,
+            status: 'active',
+          }).lean();
+          if (link && link.memberCategoryId) {
+            // Read rather than trusted: the member may have renamed or
+            // deleted their side since accepting, and a name copied at
+            // accept time would go stale the first time they edited it.
+            const theirs = await Category.findOne({
+              _id: link.memberCategoryId,
+              userId: otherPartyId,
+            }).select('_id name archivedAt').lean();
+            if (theirs && !theirs.archivedAt) {
+              await TransactionTag.updateOne(
+                { userId: otherPartyId, transactionId: transaction._id },
+                { $set: { categoryId: theirs._id, categoryName: theirs.name, referenceId } },
+                // upsert, not update: their copy has no tag yet. And
+                // $set over an existing one is deliberate — a connected
+                // category is a standing instruction, so a later payment
+                // on the same link re-files the same way.
+                { upsert: true, setDefaultsOnInsert: true }
+              );
+              alsoFiled = { categoryName: theirs.name };
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Linked category tag failed:', error.message);
+    }
+
     return res.json({
       success: true,
       tag: { referenceId: tag.referenceId, categoryId: String(tag.categoryId), categoryName: tag.categoryName || '' },
+      // So the payer can be told it reached the other side's books too,
+      // which is the only visible evidence that connecting did anything.
+      alsoFiled,
     });
   } catch (error) {
     console.error('Transaction tag error:', error);

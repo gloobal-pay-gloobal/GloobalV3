@@ -45,7 +45,10 @@ const notificationSchema = new mongoose.Schema(
       // fall back to the default, it fails validation outright and the
       // write is rejected. That is how a share notification would have been
       // silently dropped had this list not been updated with the writer.
-      enum: ['login', 'payment', 'share', 'coin', 'security', 'referral', 'system', 'offer'],
+      // 'link' is an invitation to connect a choice to somebody else's —
+      // see models/CategoryLink.js. Added here WITH its writer, which is
+      // the discipline the paragraph above is about.
+      enum: ['login', 'payment', 'share', 'coin', 'security', 'referral', 'system', 'offer', 'link'],
       default: 'system',
       index: true,
     },

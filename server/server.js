@@ -367,6 +367,28 @@ app.use((req, res, next) => {
 // are allowed through — CORS is a browser mechanism and refusing them would
 // break non-browser callers without stopping anything, since a program that
 // sets no Origin was never subject to it in the first place.
+// ── THE SLIDING SESSION ─────────────────────────────────────────────────
+//
+// Declared up here because the CORS block below needs it and that block
+// runs at module load, long before the auth section further down.
+//
+// A bearer token lasts seven days from the credential that minted it, and
+// nothing used to extend it: the only routes that issue one are login,
+// registration, PIN change, PIN reset, passkey and PIN verify. So somebody
+// who used the app every single day was signed out on the eighth, with no
+// warning and nothing they could have done differently.
+//
+// requireAuth now hands back a fresh token, in this header, once the one
+// it was given is more than halfway through its life. The client stores it
+// and the window slides. What that preserves is the property worth having:
+// seven days of INACTIVITY still ends a session, so a phone left in a
+// drawer expires exactly as before.
+//
+// A header rather than the body, because this has to apply to every
+// authenticated route at once and not one of them has a response shape
+// with room for it.
+const AUTH_TOKEN_REFRESH_HEADER = 'X-Gloobal-Token';
+
 const ALLOWED_ORIGINS = String(
   process.env.ALLOWED_ORIGINS ||
     'https://gloobalv3.netlify.app,http://localhost:5173,http://127.0.0.1:5173'
@@ -382,6 +404,13 @@ app.use(
       return callback(null, false);
     },
     allowedHeaders: ['Content-Type', 'Authorization'],
+    // Without this the browser receives the refreshed token and refuses to
+    // let the page read it. A cross-origin response's headers are hidden
+    // from script unless they are named here, and the frontend is served
+    // from Netlify while this API is on Render — every request the app
+    // makes is cross-origin. Omit it and the sliding session silently does
+    // nothing, which is the failure this whole change exists to end.
+    exposedHeaders: [AUTH_TOKEN_REFRESH_HEADER],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: 600
   })
@@ -946,7 +975,40 @@ const requireAuth = async (req, res, next) => {
   }
 
   req.authUser = user;
+  maybeRefreshAuthToken(req, res, user);
   next();
+};
+
+// Hand back a fresh token once the one in hand is past half its life.
+//
+// HALF, not "every request": re-minting on all of them would write to
+// localStorage on every tap for no gain, and would mean a token's lifetime
+// could never be reasoned about from the token itself. Half a window is
+// the standard point — it guarantees that anybody active at any time in
+// the last 3.5 days carries a token good for at least another 3.5.
+//
+// Deliberately NOT a route, and deliberately not an error. A refresh
+// endpoint is one more thing to call, one more thing to forget to call,
+// and one more 401 to mishandle; this rides on requests the app is
+// already making. If the header never reaches the client — CORS
+// misconfigured, an old build, a proxy stripping it — nothing breaks:
+// the session simply expires at seven days as it always did.
+//
+// The claims are re-read rather than threaded out of authenticatedUser,
+// which several routes call directly for their own reasons. One HMAC on a
+// request that has already done one is not worth widening that signature
+// for.
+const maybeRefreshAuthToken = (req, res, user) => {
+  try {
+    const claims = readAuthToken(bearerFrom(req));
+    if (!claims || typeof claims.exp !== 'number') return;
+    if (claims.exp - Date.now() > AUTH_TOKEN_TTL_MS / 2) return;
+    res.set(AUTH_TOKEN_REFRESH_HEADER, issueAuthToken(user));
+  } catch (error) {
+    // A session that could not be extended is a session that still works
+    // for as long as it had left. Never fail a request over this.
+    console.error('Token refresh error:', error);
+  }
 };
 
 // Confirms the authenticated account is the one the route is about. Reads the

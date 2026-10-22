@@ -228,6 +228,27 @@ var GloobalApi = {
       { credentialCheck: true }
     );
     if (!result || !result.verified) throw new Error((result && result.message) || "That PIN wasn't recognized.");
+    // ── THE TOKEN THIS ROUTE HAS ALWAYS RETURNED, AND THIS LINE DROPPED ──
+    //
+    // /api/pin/verify mints a bearer token on success and says in its own
+    // comment why: it is the re-authentication step behind a restored
+    // session, so a verify has to leave the person holding a token. The
+    // two functions either side of this one — login and passkeyAuthVerify —
+    // both store it. This one returned a bare `true` and threw it away.
+    //
+    // What that cost: this route backs EVERY PIN gate in the app — the
+    // biometric fallback, the payment confirmation, Send. Anybody without
+    // an enrolled passkey (choose "set this up later" at registration, or
+    // own a phone with no sensor) goes through it constantly, and each time
+    // the server handed back a fresh seven days that was discarded. Their
+    // token's clock therefore never moved from their last full sign-in, so
+    // they were signed out on the seventh day no matter how much they had
+    // used the app in between — the "asks me to log in again and again"
+    // the founder reported twice.
+    //
+    // Passkey users never saw it, because their gate stores its token. That
+    // asymmetry is why it looked random.
+    if (result.token && typeof gloobalAuthTokenSave === "function") gloobalAuthTokenSave(result.token);
     return true;
   },
 

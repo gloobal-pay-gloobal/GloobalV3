@@ -38,6 +38,11 @@
 // /api/transactions/send carries an idempotencyKey and the backend runs
 // its own 15-second identical-resend guard, so waiting is safe while
 // timing out early risks a retry the person did not intend.
+// The response header a refreshed bearer token arrives in. Must match
+// AUTH_TOKEN_REFRESH_HEADER in server/server.js, and must be listed in that
+// file's CORS `exposedHeaders` or the browser will not let this read it.
+var GLOOBAL_API_TOKEN_REFRESH_HEADER = "X-Gloobal-Token";
+
 var GLOOBAL_API_DEFAULT_TIMEOUT_MS = 45e3;
 
 // Render's free tier spins the backend down when idle and takes 20-50s to
@@ -138,10 +143,41 @@ async function gloobalApiRequest(method, path, body, options) {
     const contentType = res.headers.get("content-type") || "";
     const parsed = contentType.includes("application/json") ? await res.json().catch(() => null) : null;
 
+    // ── THE SLIDING SESSION ──────────────────────────────────────────────
+    //
+    // The server hands back a fresh token once the one it was given is more
+    // than halfway through its seven days (maybeRefreshAuthToken in
+    // server/server.js). Storing it here means every authenticated request
+    // the app already makes extends the session, so somebody who uses the
+    // app keeps working — which is what everybody assumes already happens,
+    // and did not.
+    //
+    // Before and regardless of the response's own status: a refreshed token
+    // on a request that failed for some unrelated reason is still a good
+    // token, and the next call should carry it.
+    //
+    // Only when we actually sent one. The header should never arrive
+    // otherwise — the server sets it on authenticated routes only — but a
+    // token accepted on a call that had no credential of its own would be a
+    // session minted by a response, which is not a thing this client should
+    // ever let happen.
+    if (authToken && !opts.anonymous && typeof gloobalAuthTokenSave === "function") {
+      const refreshed = res.headers.get(GLOOBAL_API_TOKEN_REFRESH_HEADER);
+      if (refreshed && refreshed !== authToken) gloobalAuthTokenSave(refreshed);
+    }
+
     if (!res.ok) {
       // 401 usually means this token is gone — expired, or signed by a key the
-      // server no longer has (AUTH_TOKEN_SECRET is regenerated at boot when the
-      // environment does not set one, so a restart invalidates every token).
+      // server no longer has.
+      //
+      // That parenthesis used to read "AUTH_TOKEN_SECRET is regenerated at
+      // boot when the environment does not set one, so a restart invalidates
+      // every token", which stopped being true the day the server started
+      // refusing to boot in production without it. It was left here long
+      // enough to send somebody hunting a cold-start key rotation that
+      // cannot happen on a deploy that is running at all — the real cause
+      // was the seven-day expiry nothing extended. Corrected rather than
+      // deleted, because the wrong explanation is the one worth naming.
       // Dropping it here stops every subsequent call re-sending a credential
       // that is known not to work, and lets the app fall back to its sign-in
       // flow instead of looping on failures it cannot explain.

@@ -4193,7 +4193,43 @@ function GloobalId() {
           Scan QR
         </span><span style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>
           Point at any Gloobal code
-        </span></span></div><input
+        </span></span></div>{
+    /* ── THE WORDS GO ABOVE THE FRAME ────────────────────────────────────
+       They used to sit at the bottom of the screen, in a column anchored
+       to the floor — the same band the scanner draws its control row and
+       its zoom arc into. With a torch, a picker, an arc and an error
+       message all competing for it, the founder photographed the result:
+       the arc through the instruction line, and "This is your own QR"
+       behind the flashlight button.
+       There was never a shortage of room, only a shortage in the wrong
+       place. The strip between the title and the frame is empty on every
+       phone, it is where the eye already is on the way down to the
+       square, and a message about what just went wrong belongs closer to
+       the thing it is about than to the floor. */
+  }{scanLive && !scanPayee && <div
+    style={{
+      position: "relative",
+      zIndex: 1,
+      flexShrink: 0,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 10,
+      padding: "6px 24px 0"
+    }}
+  ><div
+    style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
+  >{scanResolving ? "Looking this QR up…" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div
+    role="alert"
+    style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "8px 14px", textAlign: "center", fontWeight: 700, maxWidth: 300, lineHeight: 1.4 }}
+  >{scanError}</div>}{scanRetry && <button
+    onClick={() => {
+      setScanError(null);
+      setScanRetry(null);
+    }}
+    className="v2-tap"
+    style={{ border: "none", borderRadius: 999, padding: "10px 24px", background: "rgba(255,255,255,0.94)", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
+  >{scanRetry}</button>}</div>}<input
       ref={scanGalleryInputRef}
       type="file"
       accept="image/*"
@@ -4303,20 +4339,10 @@ function GloobalId() {
        This is that promise kept. It opens the real Send flow, where a
        number or a Gloobal ID can actually be entered. */
   }<ScanSendButton onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></div></>
-  ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: scanLive ? "flex-end" : "center", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))", gap: 16 }}>{!scanPayee ? <><div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}>{scanResolving ? "Looking this QR up…" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div role="alert" style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "8px 14px", textAlign: "center", fontWeight: 700 }}>{scanError}</div>}{scanRetry && <button
-    onClick={() => {
-      setScanError(null);
-      setScanRetry(null);
-    }}
-    className="v2-tap"
-    style={{ border: "none", borderRadius: 999, padding: "10px 24px", background: "rgba(255,255,255,0.94)", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
-  >{scanRetry}</button>}{
+  ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: scanLive ? "flex-end" : "center", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))", gap: 16 }}>{!scanPayee ? <>{
     /* Upload moved into the scanner's own control row, beside the torch and
-       the zoom — one row of controls under the square rather than a circle
-       on the picture and a text button below it. It is still reachable when
-       the camera cannot start: QrCameraScanner draws it on that card too,
-       from the same handler. */
-  }<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Gloobal ID</div><ScanPayeeAvatar gloobalId={scanPayee.gloobalId} name={scanPayee.name} />{
+       the zoom. */
+  }}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Gloobal ID</div><ScanPayeeAvatar gloobalId={scanPayee.gloobalId} name={scanPayee.name} />{
     /* The name the server returned for this account — a QR carries no name,
        so nothing printed on a sticker can put one here. */
   }<div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPayee.name}</div><div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 20 }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button

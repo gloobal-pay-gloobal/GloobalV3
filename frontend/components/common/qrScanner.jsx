@@ -399,6 +399,13 @@ function ZoomArc({ range, level, onPick }) {
   const span = ZOOM_ARC_W - ZOOM_ARC_PAD * 2;
   const ends = zoomArcPoint(0);
   const mid = { x: ZOOM_ARC_W / 2, y: ZOOM_ARC_SAG * 2 };
+  const track = `M${ends.x} ${ends.y}Q${mid.x} ${mid.y} ${ZOOM_ARC_W - ZOOM_ARC_PAD} ${ends.y}`;
+  // Close enough for a dasharray and exact enough to land under the
+  // handle: a shallow quadratic is within a fraction of a pixel of the
+  // average of its chord and its control polygon over this sag.
+  const chord = span;
+  const legs = 2 * Math.sqrt((span / 2) ** 2 + (ZOOM_ARC_SAG * 2) ** 2);
+  const trackLength = (chord + legs) / 2;
 
   // A thumb's x, turned into a zoom level, snapping to a mark it lands
   // near. Snapping is in PIXELS rather than in zoom units: ten pixels is
@@ -474,18 +481,38 @@ function ZoomArc({ range, level, onPick }) {
     viewBox={`0 ${-12} ${ZOOM_ARC_W} ${ZOOM_ARC_SAG + 24}`}
     style={{ position: "absolute", left: 0, bottom: 0, overflow: "visible" }}
     aria-hidden="true"
-  ><path
-    d={`M${ends.x} ${ends.y}Q${mid.x} ${mid.y} ${ZOOM_ARC_W - ZOOM_ARC_PAD} ${ends.y}`}
+  >{
+    /* Three strokes, not two.
+       The track was a dark line with a hairline on it, and on a bright
+       camera picture that is a smudge — the founder's photograph shows it
+       disappearing into a hedge. A dark halo under a light track reads on
+       anything the lens can point at, because whatever is behind it, one
+       of the two has contrast against it.
+       The third is the part BEHIND the handle, drawn in the accent: it
+       says how far along the range you are without having to read the
+       number, which is the thing an arc can say that three buttons could
+       not. */
+  }<path
+    d={track}
     fill="none"
-    stroke="rgba(0,0,0,0.45)"
-    strokeWidth="12"
+    stroke="rgba(0,0,0,0.55)"
+    strokeWidth="15"
     strokeLinecap="round"
   /><path
-    d={`M${ends.x} ${ends.y}Q${mid.x} ${mid.y} ${ZOOM_ARC_W - ZOOM_ARC_PAD} ${ends.y}`}
+    d={track}
     fill="none"
-    stroke="rgba(255,255,255,0.32)"
-    strokeWidth="1.5"
+    stroke="rgba(255,255,255,0.38)"
+    strokeWidth="9"
     strokeLinecap="round"
+  /><path
+    d={track}
+    fill="none"
+    stroke={T.accent}
+    strokeWidth="9"
+    strokeLinecap="round"
+    // Dasharray along the curve's own length, so the filled part ends
+    // exactly under the handle however the sag is shaped.
+    strokeDasharray={`${trackLength * at} ${trackLength}`}
   />{marks.map((mark) => {
     const point = zoomArcPoint(mark.t);
     const here = Math.abs(mark.t - at) * span <= ZOOM_ARC_SNAP_PX;
@@ -502,17 +529,29 @@ function ZoomArc({ range, level, onPick }) {
       fill="rgba(255,255,255,0.72)"
     /><text
       x={point.x}
-      y={point.y - 11}
+      y={point.y - 13}
       textAnchor="middle"
-      fontSize="9.5"
-      fontWeight="700"
-      fill="rgba(255,255,255,0.55)"
+      fontSize="10"
+      fontWeight="800"
+      fill="#FFFFFF"
+      // The labels were 55% white with nothing behind them, which is
+      // legible against a dark room and invisible against a hedge. A dark
+      // stroke under white type is the same trick the title on this
+      // screen already uses, and it survives whatever the camera sees.
+      stroke="rgba(0,0,0,0.55)"
+      strokeWidth="2.6"
+      paintOrder="stroke"
     >{`${mark.times}x`}</text></g>;
-  })}<circle cx={handle.x} cy={handle.y} r="11" fill="#FFFFFF" /><text
+  })}<circle cx={handle.x} cy={handle.y} r="13.5" fill="rgba(0,0,0,0.35)" /><circle
+    cx={handle.x}
+    cy={handle.y}
+    r="12"
+    fill="#FFFFFF"
+  /><text
     x={handle.x}
-    y={handle.y + 3.4}
+    y={handle.y + 3.6}
     textAnchor="middle"
-    fontSize="9.5"
+    fontSize="10"
     fontWeight="800"
     fill="#14122B"
   >{formatZoom(level, range)}</text></svg></div>;
@@ -1065,7 +1104,13 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
         position: "absolute",
         left: 0,
         right: 0,
-        bottom: "calc(132px + env(safe-area-inset-bottom, 0px))",
+        // Measured against what is underneath rather than chosen. The
+        // Send button occupies the bottom ~82px of the screen; the row is
+        // 52 tall; so 96 clears it with air and leaves the arc somewhere
+        // to go above it. At 132 the row sat on top of the screen's own
+        // error message, which is how the founder came to photograph
+        // "This is your own QR" behind a flashlight.
+        bottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -1097,7 +1142,11 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
         position: "absolute",
         left: 0,
         right: 0,
-        bottom: "calc(196px + env(safe-area-inset-bottom, 0px))",
+        // 96 for the row, 52 for its height, 12 of air: 160. The arc is
+        // 72 tall, so it reaches 232 — and the framing square's lower
+        // edge is never nearer than ~280 on a phone, which is the gap
+        // this has to fit inside.
+        bottom: "calc(160px + env(safe-area-inset-bottom, 0px))",
         display: "flex",
         justifyContent: "center",
         zIndex: 2,

@@ -265,3 +265,76 @@ describe("one screen for the camera, asked for or not", () => {
     assert.match(s, /\{scanLive && <QrCameraScanner/, "the camera mounts before it is allowed");
   });
 });
+
+// ── THE BANDS ───────────────────────────────────────────────────────────
+//
+// The founder photographed the live scanner with the zoom arc drawn
+// through the instruction line and "This is your own QR" behind the
+// flashlight button. Three things were sharing one strip of screen: the
+// screen's own words, the scanner's control row and the arc.
+//
+// There was never a shortage of room, only a shortage in the wrong place.
+// The words moved above the frame, into the band that is empty on every
+// phone, and the controls dropped into the space that left.
+//
+// These are arithmetic, not opinion: the numbers below are the ones the
+// stack has to fit inside at 390x844, measured rather than assumed.
+describe("nothing on the live scanner sits on anything else", () => {
+  const scanner = code(SCANNER);
+  const app = code(APP);
+  const px = (src, label) => {
+    const hit = src.match(new RegExp(`bottom: "calc\\((\\d+)px \\+ env\\(safe-area-inset-bottom`, "g")) || [];
+    assert.ok(hit.length >= 1, `${label}: no anchored band found`);
+    return hit.map((h) => Number(h.match(/(\d+)px/)[1]));
+  };
+
+  test("the control row clears the Send button", () => {
+    // Send occupies the bottom ~82px: 26 of padding and a 56 button.
+    const bands = px(scanner, "scanner");
+    const row = Math.min(...bands);
+    assert.ok(row >= 90, `the control row sits at ${row}px, inside the Send button's 82`);
+  });
+
+  test("the arc clears the control row", () => {
+    const bands = px(scanner, "scanner").sort((a, b) => a - b);
+    const [row, arc] = bands;
+    assert.ok(arc >= row + 52, `the arc at ${arc} overlaps a 52px row at ${row}`);
+  });
+
+  test("and the arc clears the framing square", () => {
+    // The square is min(72vw, 300px), centred. At 390x844 that is 281 to
+    // 563 from the top, so its lower edge is 281 from the bottom. The arc
+    // is 72 tall.
+    const bands = px(scanner, "scanner").sort((a, b) => a - b);
+    const arc = bands[1];
+    assert.ok(arc + 72 <= 281, `the arc reaches ${arc + 72}px, through a square whose edge is at 281`);
+  });
+
+  test("the words are above the frame, not in the controls' band", () => {
+    // Anchored on the condition rather than on a pixel: they are drawn in
+    // the header's own flow now, which is what makes them unable to
+    // collide with anything anchored to the floor.
+    assert.match(app, /\{scanLive && !scanPayee && <div/,
+      "the instruction and error are not drawn above the frame");
+    const at = app.indexOf("{scanLive && !scanPayee && <div");
+    const block = app.slice(at, at + 1200);
+    assert.match(block, /Hold a Gloobal QR code inside the frame/);
+    assert.match(block, /\{scanError &&/, "the error still sits at the bottom of the screen");
+    assert.doesNotMatch(block, /position: "absolute"/,
+      "the words are anchored, which is how they collided in the first place");
+  });
+
+  test("the arc reads on whatever the camera is pointed at", () => {
+    // 55% white on a hedge is nothing. A dark halo under a light track,
+    // and a stroke under the labels, survive any picture.
+    assert.match(scanner, /stroke="rgba\(0,0,0,0\.55\)"\s*\n\s*strokeWidth="15"/,
+      "the track lost the dark halo that makes it visible on a bright picture");
+    assert.match(scanner, /paintOrder="stroke"/,
+      "the mark labels have nothing behind them again");
+  });
+
+  test("the filled part of the track ends under the handle", () => {
+    assert.match(scanner, /strokeDasharray=\{`\$\{trackLength \* at\} \$\{trackLength\}`\}/,
+      "the arc no longer shows how far along the range you are");
+  });
+});

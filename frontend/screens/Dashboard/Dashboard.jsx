@@ -656,11 +656,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   useEffect12(() => {
     if (onMyShareRateChange) onMyShareRateChange(myShareRate);
   }, [myShareRate]);
-  const [myShareIconFlipped, setMyShareIconFlipped] = useState14(false);
-  useEffect12(() => {
-    const interval = setInterval(() => setMyShareIconFlipped((f) => !f), 2500);
-    return () => clearInterval(interval);
-  }, []);
+  // The badge that flipped every 2.5 seconds between a pie icon and the
+  // rate is gone, and so is the timer that drove it. It existed because a
+  // 32px disc could not show both at once — the opened-out block shows the
+  // rate outright, so there is nothing left to alternate between, and a
+  // setInterval running for the life of the dashboard to animate something
+  // nobody is looking at is not worth keeping for its own sake.
   const [showMyShare, setShowMyShare] = useState14(false);
   const requestCloseMyShare = useBackClose(showMyShare, () => setShowMyShare(false));
   const [showMyShareBiometric, setShowMyShareBiometric] = useState14(false);
@@ -3024,41 +3025,43 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     name={myName}
     onToast={showToast2}
     headerAction={
-      /* My Share, as an icon only, on the title row beside "Your Gloobal
-         QR" — out of the QR itself, so nothing overlaps a module. It flips
-         to show the current rate on its back face. */
-      <button
+      /* ── MY SHARE, OPENED OUT ──────────────────────────────────────
+         This was a 32px disc that flipped between a pie icon and the
+         rate. The rate did not fit: "1%" sat inside it, "4.56%" did
+         not, and the founder watched it burst its own circle. A round
+         badge is a container with a fixed width holding a number with
+         a variable one, which is a layout that works until somebody
+         picks a rate with four characters in it.
+
+         So it is written out, in the same corner the icon was in: the
+         figure, a rule under it, and the control that changes it. The
+         rule is a plain coloured one — asked for as a bar, and a bar
+         that MEASURED something here would invite reading the rate
+         against a scale nobody set.
+
+         tabular-nums so 1.00% and 4.56% are the same width and the
+         block does not twitch when the rate changes. */
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}><span
+        style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: T.inkFaint, lineHeight: 1 }}
+      >
+        My Share
+      </span><span
+        data-testid="receive-share-rate"
+        style={{ fontSize: 16, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: -0.3 }}
+      >{`${myShareRate.toFixed(2)}%`}</span><span
+        aria-hidden="true"
+        style={{ width: 48, height: 3, borderRadius: 999, background: T.gradButton }}
+      /><button
         onClick={() => {
           requestCloseReceive();
           setShowMyShare(true);
         }}
-        aria-label={`My Share, currently ${myShareRate}%`}
+        aria-label={`Edit My Share, currently ${myShareRate.toFixed(2)}%`}
         className="v2-tap"
-        style={{ display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "none", padding: 0, cursor: "pointer", perspective: 200 }}
-      ><span
-    style={{
-      position: "relative",
-      width: 32,
-      height: 32,
-      borderRadius: "50%",
-      flexShrink: 0,
-      transformStyle: "preserve-3d",
-      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
-      transform: myShareIconFlipped ? "rotateY(180deg)" : "rotateY(0deg)"
-    }}
-  ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: T.gradButton, display: "flex", alignItems: "center", justifyContent: "center" }}><PieChart size={15} color="#fff" /></span><span
-    style={{
-      position: "absolute",
-      inset: 0,
-      borderRadius: "50%",
-      backfaceVisibility: "hidden",
-      transform: "rotateY(180deg)",
-      background: T.gradButton,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }}
-  ><span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff" }}>{myShareRate}%</span></span></span></button>
+        style={{ border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: 11, fontWeight: 800, color: T.accent, lineHeight: 1 }}
+      >
+        Edit
+      </button></div>
     }
   />{
     /* Recent — the last five payments actually received on this

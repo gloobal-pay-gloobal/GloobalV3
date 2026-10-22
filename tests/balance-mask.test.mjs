@@ -257,7 +257,14 @@ describe("it breathes, unless asked not to", () => {
   });
 
   test("both call sites still ask for it by the card's own font size", () => {
-    assert.match(strip(readSource(DASH)), /<BalanceMaskFace size=\{balanceFontSize\} \/>/);
+    assert.match(strip(readSource(DASH)), /<BalanceMaskFace size=\{balanceFontSize\} nudge=\{\d+\} \/>/);
+    // The drawing is larger than the figure it stands in for, and the row
+    // it sits in is not: a character read whole needs more room than a
+    // number read glyph by glyph, but the card must not change height when
+    // the eye is tapped.
+    const mask = strip(readSource(MASK));
+    assert.match(mask, /const box = Math\.round\(px \* 1\.75\);/);
+    assert.match(mask, /height: px/, "the row grows with the drawing");
     assert.match(strip(readSource(BANK)), /<BalanceMaskFace size=\{29\} \/>/);
   });
 });

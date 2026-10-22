@@ -2023,7 +2023,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // to reconcile. It also made the rupee look disabled next to a figure it
     // is every bit as true as.
     style={{ fontSize: geuLensTrailSize(balanceFontSize), fontWeight: 700, marginLeft: GEU_LENS_BAR_GAP, letterSpacing: 0.2 }}
-  >{balanceBracket}</span></> : <BalanceMaskFace size={balanceFontSize} />}</span><button
+  >{balanceBracket}</span></> : <BalanceMaskFace size={balanceFontSize} nudge={12} />}</span><button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"

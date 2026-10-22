@@ -351,14 +351,36 @@ function BalanceMaskCreature({ kind }) {
 // `size` is the balance's own font size, so the figure takes the space the
 // number would have taken and the card does not change height when the eye
 // is tapped.
-function BalanceMaskFace({ size = 32, label = "Balance hidden" }) {
+function BalanceMaskFace({ size = 32, label = "Balance hidden", nudge = 0 }) {
   const [kind] = useState47(balanceMaskPick);
   const px = Number(size) > 0 ? Number(size) : 32;
-  const box = Math.round(px * 1.35);
+  // 1.75 of the figure's own size, up from 1.35. At 1.35 the character was
+  // drawn to the footprint of the NUMBER it replaces, which is the right
+  // instinct for a mask and the wrong one for a drawing: a figure is read
+  // glyph by glyph and a character is read whole, so the same box leaves it
+  // looking like a small mark rather than somebody waving.
+  //
+  // The card's height does not follow this. The row is as tall as the
+  // balance line either way, and the drawing is allowed to overflow it —
+  // the same arrangement ChoiceNameMask uses, and for the same reason.
+  const box = Math.round(px * 1.75);
   return <span
     role="img"
     aria-label={label}
-    style={{ display: "inline-flex", alignItems: "center", lineHeight: 1 }}
+    style={{
+      display: "inline-flex",
+      alignItems: "center",
+      lineHeight: 1,
+      // Pushed off the card's left edge. The balance sits hard against the
+      // gutter because a number starts at its first digit; a character has
+      // a raised arm and a shadow of space around it, and tucked into the
+      // corner it reads as something that slipped rather than something
+      // placed.
+      marginLeft: nudge,
+      // The box is the figure's height, not the drawing's, so growing the
+      // character cannot grow the row it sits in.
+      height: px
+    }}
   ><style>{`
         @keyframes balanceMaskBreath { 0%,100% { transform: scale(1); } 50% { transform: scale(1.045); } }
         @keyframes balanceMaskWave { 0%,100% { transform: rotate(0deg); } 25% { transform: rotate(-20deg); } 60% { transform: rotate(10deg); } }

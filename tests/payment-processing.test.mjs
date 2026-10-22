@@ -89,7 +89,7 @@ describe("nothing on the screen is invented", () => {
     const s = code(SCREEN);
     assert.match(s, /<ProcessingStage state="done">Verified/);
     assert.match(s, /<ProcessingStage state="now">/);
-    assert.match(s, /<ProcessingStage state="next">Settling/);
+    assert.match(s, /<ProcessingStage state="next" last>Settling/);
     assert.ok(!/state="done">Settling/.test(s), "the third row is ticking on a screen that cannot know");
     // And the specific shape this must never become.
     for (const staged of ["Confirming", "Step 1", "step:"]) {
@@ -198,8 +198,21 @@ describe("the figure on screen is the one leaving the balance", () => {
     // button and the local ledger leg already read.
     assert.match(
       code(SEND),
-      /amountLabel=\{`\\u2212\$\{fmtMoney\(senderAmount, top\.currency\)\}`\}/
+      /amount=\{geuLensBarParts\(senderAmount, top\.currency, lens, top\.currency\)\}/
     );
+  });
+
+  test("it names the currency the way every other screen does", () => {
+    // This was the one money line in the app built with fmtMoney alone, so
+    // it showed "−250.00₹" with no "│ GEU" beside it — on the screen
+    // somebody stares at for thirty seconds, between a Send screen and a
+    // receipt that both carry the bar.
+    const s = code(SCREEN);
+    assert.match(s, /geuLensTrailSize\(PROCESSING_AMOUNT_SIZE\)/,
+      "the unit is set at the same size as the figure");
+    assert.match(s, /\{"\u2212"\}\{amount\.lead\}/,
+      "the sign and the figure are not drawn together");
+    assert.doesNotMatch(s, /fmtMoney/, "the dialog formats money of its own again");
   });
 
   test("the recipient is named", () => {

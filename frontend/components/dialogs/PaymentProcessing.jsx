@@ -53,8 +53,22 @@ var PROCESSING_SLOW_AFTER_MS = 6000;
 // eye lands on "who" rather than on a spinner. Nothing was added to say it:
 // the ring is the same honest not-a-percentage it always was, and the flag
 // was already on the screen.
-var PROCESSING_HERO = 118;
-var PROCESSING_RING_STROKE = 3.5;
+// ── THE CARD'S RHYTHM ───────────────────────────────────────────────────
+//
+// These were tuned together, by measuring, after the founder said the
+// screen looked thin: a 445px card centred in an 800px page left about
+// 180px of blank above it and 180 below, so the payment read as a small
+// notice adrift rather than as the thing the phone was doing.
+//
+// Nothing was ADDED to fill that — adding content to a waiting screen is
+// how a progress dialog turns into a page nobody reads. The same four
+// things are simply given the room they were short of: the hero is
+// larger, the figure has air above it, and the three stages are spaced
+// like a list instead of stacked like a caption.
+var PROCESSING_HERO = 134;
+var PROCESSING_RING_STROKE = 4;
+var PROCESSING_AMOUNT_SIZE = 40;
+var PROCESSING_AMOUNT_GAP = 10;
 
 // Not a percentage. There is no percentage to know — there are exactly two
 // transitions this side of the wire, posting and posted — so the arc turns to
@@ -164,26 +178,40 @@ function PaymentHero({ flag, failed }) {
 // `state` is "done" | "now" | "next", and it comes from the payment's own
 // status — never from a clock. See the note at the top of this file for why
 // the third row is always "next" while this screen is up.
-function ProcessingStage({ state, children }) {
+// The three rows were three separate lines with a gap between them, which
+// is how you set a caption, not how you draw a sequence. A rail joins them
+// now: each dot carries the segment down to the next one, and the segment
+// is green where that step is behind us and grey where it is not. The list
+// then says where the payment has got to at a glance, before any of the
+// words are read — and it does it with the same three facts, not new ones.
+var PROCESSING_STAGE_DOT = 22;
+var PROCESSING_STAGE_STEP = 40;
+
+function ProcessingStage({ state, last, children }) {
   const done = state === "done";
   const now = state === "now";
   return <div
     style={{
       display: "flex",
-      alignItems: "center",
-      gap: 10,
-      fontSize: 12.5,
+      alignItems: "flex-start",
+      gap: 12,
+      fontSize: 13,
       fontWeight: 700,
-      color: done || now ? T.ink : T.inkFaint
+      color: done || now ? T.ink : T.inkFaint,
+      // The row is as tall as one step of the rail, so the segment below
+      // the dot has somewhere to go. The last row is only its own dot —
+      // nothing hangs off the bottom of the list.
+      minHeight: last ? PROCESSING_STAGE_DOT : PROCESSING_STAGE_STEP
     }}
+  ><span
+    style={{ position: "relative", flexShrink: 0, width: PROCESSING_STAGE_DOT, height: PROCESSING_STAGE_DOT }}
   ><span
     aria-hidden="true"
     data-gp-breathe={now ? "" : void 0}
     style={{
-      width: 20,
-      height: 20,
+      width: PROCESSING_STAGE_DOT,
+      height: PROCESSING_STAGE_DOT,
       borderRadius: "50%",
-      flexShrink: 0,
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -191,7 +219,19 @@ function ProcessingStage({ state, children }) {
       boxShadow: now ? `0 0 0 4px ${T.accentSoft}` : "none",
       animation: now ? "gp-breathe 1.6s ease-in-out infinite" : "none"
     }}
-  >{done ? <CheckProcessing size={12} color="#fff" strokeWidth={3} /> : null}</span><span>{children}</span></div>;
+  >{done ? <CheckProcessing size={13} color="#fff" strokeWidth={3} /> : null}</span>{!last ? <span
+    aria-hidden="true"
+    style={{
+      position: "absolute",
+      top: PROCESSING_STAGE_DOT + 3,
+      left: "50%",
+      marginLeft: -1,
+      width: 2,
+      height: PROCESSING_STAGE_STEP - PROCESSING_STAGE_DOT - 6,
+      borderRadius: 1,
+      background: done ? T.positive : T.line
+    }}
+  /> : null}</span><span style={{ paddingTop: 2.5, overflowWrap: "anywhere" }}>{children}</span></div>;
 }
 
 // status  — "processing" | "failed". Anything else renders nothing.
@@ -202,7 +242,7 @@ function ProcessingStage({ state, children }) {
 function PaymentProcessing({
   status,
   recipientName,
-  amountLabel,
+  amount,
   flag,
   reason,
   onRetry,
@@ -311,9 +351,9 @@ function PaymentProcessing({
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      gap: 18,
+      gap: 22,
       textAlign: "center",
-      padding: "24px 20px 22px"
+      padding: "34px 22px 28px"
     }}
   ><PaymentHero flag={flag} failed={failed} />{
     /* Who and how much, carried through from the screen behind. A person
@@ -324,11 +364,11 @@ function PaymentProcessing({
        The eyebrow carries the STATE and the line under it carries the NAME,
        rather than both being crushed into one "Paying Chdg" at 13px. A name
        is a proper noun and deserves to be set like one. */
-  }<div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}><div
+  }<div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}><div
     style={{
-      fontSize: 11,
+      fontSize: 11.5,
       fontWeight: 800,
-      letterSpacing: 1.1,
+      letterSpacing: 1.4,
       textTransform: "uppercase",
       color: failed ? T.negative : T.inkFaint
     }}
@@ -342,10 +382,10 @@ function PaymentProcessing({
       maxWidth: 300,
       overflowWrap: "anywhere"
     }}
-  >{recipientName}</div> : null}{amountLabel ? <div
+  >{recipientName}</div> : null}{amount && amount.lead ? <div
     style={{
-      marginTop: 6,
-      fontSize: 38,
+      marginTop: PROCESSING_AMOUNT_GAP,
+      fontSize: PROCESSING_AMOUNT_SIZE,
       fontWeight: 800,
       color: failed ? T.inkSoft : T.ink,
       fontFamily: T.fontDisplay,
@@ -355,7 +395,13 @@ function PaymentProcessing({
       // re-renders and so it reads as money rather than as text.
       fontVariantNumeric: "tabular-nums"
     }}
-  >{amountLabel}</div> : null}</div>{
+  >{
+    /* The minus belongs to the screen, not to the caller: this dialog only
+       ever shows money on its way OUT. A payment coming in has no "please
+       wait" — it arrives. */
+  }{"−"}{amount.lead}{amount.trail ? <span
+    style={{ fontSize: geuLensTrailSize(PROCESSING_AMOUNT_SIZE), fontWeight: 800, letterSpacing: 0, opacity: 0.72 }}
+  >{` ${amount.trail}`}</span> : null}</div> : null}</div>{
     failed
       ? <p style={{
           margin: 0,
@@ -424,13 +470,13 @@ function PaymentProcessing({
     data-testid="processing-stages"
     style={{
       borderTop: `1px solid ${T.line}`,
-      padding: "13px 20px 15px",
+      padding: "20px 24px 22px",
       display: "flex",
       flexDirection: "column",
-      gap: 11,
+      gap: 0,
       textAlign: "left"
     }}
-  ><ProcessingStage state="done">Verified it&#39;s you</ProcessingStage><ProcessingStage state="now">{recipientName ? `Sending to ${recipientName}` : "Sending your payment"}</ProcessingStage><ProcessingStage state="next">Settling into their account</ProcessingStage></div> : null}</div>{
+  ><ProcessingStage state="done">Verified it&#39;s you</ProcessingStage><ProcessingStage state="now">{recipientName ? `Sending to ${recipientName}` : "Sending your payment"}</ProcessingStage><ProcessingStage state="next" last>Settling into their account</ProcessingStage></div> : null}</div>{
     failed ? <div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}>{
       /* Try again is offered because the server never posted this payment —
          both failure paths return before anything moved, and one of them

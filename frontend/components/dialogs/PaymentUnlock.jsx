@@ -435,11 +435,25 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
   };
 
   // The figure behind the foil, which is the whole point of the card it sits
-  // on — so it stands alone and takes the bar. geuLensBarMoney keeps the
+  // on — so it stands alone and takes the bar. geuLensBarParts keeps the
   // own-money rule this already went through: a share on a cross-border
   // payment is in the payer's currency and the payee's copy is in theirs, and
   // only the reader's own is renamed.
-  const shareText = share > 0 ? `+${geuLensBarMoney(share, shareCurrency, lens, viewerCurrency)}` : null;
+  const shareParts = share > 0 ? geuLensBarParts(share, shareCurrency, lens, viewerCurrency) : null;
+
+  // ── THE FIGURE LEADS; THE UNIT FOLLOWS ────────────────────────────────
+  //
+  // This was one string at one size, so "GEU" was set as large as the money
+  // itself and the headline read as two words of equal weight rather than
+  // as an amount. Every other money line in the app already splits the two
+  // — geuLensTrailSize is the rule — and a celebration is not a reason to
+  // keep a second convention for the same number.
+  //
+  // Split here rather than at each of the two faces so the scratch card and
+  // the card behind it cannot end up sized differently.
+  const shareFigure = (size) => <span style={{ fontVariantNumeric: "tabular-nums" }}>+{shareParts.lead}{shareParts.trail ? <span
+    style={{ fontSize: geuLensTrailSize(size), fontWeight: 800, letterSpacing: 0, opacity: 0.88 }}
+  >{` ${shareParts.trail}`}</span> : null}</span>;
   const optionButton = (key, label, value, extra = {}) => {
     const chosen = picked === value;
     const right = verdict && verdict.rightChoice === value && picked !== null && question.kind !== "checkin";
@@ -612,8 +626,8 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
               >
                 <div aria-live="polite" style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: 16, textAlign: "center" }}>
                   <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: T.inkFaint }}>BACK TO YOU</div>
-                  <div data-testid="unlock-share" style={{ fontFamily: T.fontDisplay, fontSize: shareText ? 32 : 22, fontWeight: 800, color: shareText ? T.positive : T.inkSoft, fontVariantNumeric: "tabular-nums" }}>
-                    {shareText || "No share on this one"}
+                  <div data-testid="unlock-share" style={{ fontFamily: T.fontDisplay, fontSize: shareParts ? 32 : 22, fontWeight: 800, color: shareParts ? T.positive : T.inkSoft, fontVariantNumeric: "tabular-nums" }}>
+                    {shareParts ? shareFigure(32) : "No share on this one"}
                   </div>
                 </div>
                 <canvas
@@ -668,7 +682,7 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
                 <div aria-hidden="true" style={{ fontSize: 17, letterSpacing: 6 }}>★ ✦ ★</div>
                 <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 2, opacity: 0.85, marginTop: 9 }}>CREATOR SHARE EARNED</div>
                 <div data-testid="unlock-earned" style={{ fontFamily: T.fontDisplay, fontSize: 38, fontWeight: 800, letterSpacing: -1.4, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
-                  {shareText || "Nothing this time"}
+                  {shareParts ? shareFigure(38) : "Nothing this time"}
                 </div>
                 <div data-testid="unlock-rate" style={{ fontSize: 11.5, fontWeight: 800, opacity: 0.92, marginTop: 2 }}>
                   {`${shareRate.toFixed(2)}% of what you paid`}

@@ -2161,14 +2161,20 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     onToggleMask={() => setPinRevealed((v) => !v)}
   /></div></div></div>}{toast && <div className="toast">{toast.startsWith("Sending") && <span className="toast-icon"><Check3 size={12} strokeWidth={3} /></span>}<span>{toast}</span></div>}{
     /* The screen between "verified" and the receipt.
-       `amountLabel` is the SENDER's own figure — what actually leaves the
+       `amount` is the SENDER's own figure — what actually leaves the
        balance — not the receiver's face value. On a cross-border payment the
        two are different numbers, and the one a person is waiting to lose is
-       theirs. Same `senderAmount` the Send button and the ledger leg read. */
+       theirs. Same `senderAmount` the Send button and the ledger leg read.
+
+       Through geuLensBarParts, like every other figure on this screen. It
+       used to go through fmtMoney alone, which is why this was the one
+       money line in the app with no "│ GEU" beside it — a screen somebody
+       stares at for thirty seconds, naming the currency differently from
+       the screen they just left and the receipt they are about to get. */
   }<PaymentProcessing
     status={transactionStatus}
     recipientName={bottom.name}
-    amountLabel={`\u2212${fmtMoney(senderAmount, top.currency)}`}
+    amount={geuLensBarParts(senderAmount, top.currency, lens, top.currency)}
     flag={bottom.flag}
     reason={failureReason}
     onRetry={() => {

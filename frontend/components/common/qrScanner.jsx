@@ -625,7 +625,18 @@ function QrFrameGuide({ children }) {
 // torch and the zoom. The picker's <input> and its decoding stay where they
 // were, in the scan screen — this only asks for it, so the row can hold all
 // three controls without the scanner learning anything about files.
-function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen = false, onUploadRequested = null }) {
+// `quiet` takes every control off the picture.
+//
+// It is passed while the screen is saying something — looking a code up,
+// or telling somebody the one they held up is their own. The scanner is
+// already PAUSED in exactly those moments, so a torch and a gallery
+// picker and a zoom arc are three controls that do nothing, sitting over
+// the sentence explaining why nothing is happening.
+//
+// Clearing them is also what gives that sentence somewhere to go: the
+// message takes the band the controls were in, which is the only part of
+// the screen below the square that is not already spoken for.
+function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen = false, onUploadRequested = null, quiet = false }) {
   // "starting" | "running" | "blocked" | "busy" | "denied" | "unavailable" | "error"
   const [state, setState] = useState32("starting");
   // Bumped by "Try again". The camera effect reads it, so asking again is a
@@ -1099,7 +1110,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
          row is one, two or three buttons wide and stays centred either way.
          There is no disabled state anywhere in it: a dead button is worse
          than no button, especially mid-scan. */
-    }<div
+    }{!quiet && <div
       style={{
         position: "absolute",
         left: 0,
@@ -1131,13 +1142,13 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       aria-pressed={torchOn}
       className="v2-tap"
       style={{ ...scannerControlStyle(torchOn), pointerEvents: "auto" }}
-    >{torchOn ? <FlashlightOff1 size={22} color="#14122B" /> : <Flashlight1 size={22} color="#FFFFFF" />}</button>}</div>{
+    >{torchOn ? <FlashlightOff1 size={22} color="#14122B" /> : <Flashlight1 size={22} color="#FFFFFF" />}</button>}</div>}{
       /* The arc, directly above the control row — one thumb's reach from
          the buttons, and clear of the framing square above it. Drawn only
          when the lens reports a zoom range, the same rule the torch and the
          picker follow: a dead control is worse than no control, and most of
          all mid-scan. */
-    }{zoomRange && <div
+    }{zoomRange && !quiet && <div
       style={{
         position: "absolute",
         left: 0,

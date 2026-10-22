@@ -4179,6 +4179,9 @@ function GloobalId() {
     active={showScanScreen}
     paused={scanResolving || Boolean(scanRetry)}
     onDetected={handleQrScanned}
+    // Every control off the picture while the screen is saying
+    // something. The scanner is paused in exactly those moments anyway.
+    quiet={Boolean(scanResolving || scanError || scanRetry)}
     onUploadRequested={() => {
       setScanError(null);
       setScanRetry(null);
@@ -4206,30 +4209,13 @@ function GloobalId() {
        phone, it is where the eye already is on the way down to the
        square, and a message about what just went wrong belongs closer to
        the thing it is about than to the floor. */
-  }{scanLive && !scanPayee && <div
-    style={{
-      position: "relative",
-      zIndex: 1,
-      flexShrink: 0,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 10,
-      padding: "6px 24px 0"
-    }}
+  }{scanLive && !scanPayee && !scanError && !scanRetry && !scanResolving && <div
+    style={{ position: "relative", zIndex: 1, flexShrink: 0, display: "flex", justifyContent: "center", padding: "6px 24px 0" }}
   ><div
     style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
-  >{scanResolving ? "Looking this QR up…" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div
-    role="alert"
-    style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "8px 14px", textAlign: "center", fontWeight: 700, maxWidth: 300, lineHeight: 1.4 }}
-  >{scanError}</div>}{scanRetry && <button
-    onClick={() => {
-      setScanError(null);
-      setScanRetry(null);
-    }}
-    className="v2-tap"
-    style={{ border: "none", borderRadius: 999, padding: "10px 24px", background: "rgba(255,255,255,0.94)", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
-  >{scanRetry}</button>}</div>}<input
+  >
+      Hold a Gloobal QR code inside the frame.
+    </div></div>}<input
       ref={scanGalleryInputRef}
       type="file"
       accept="image/*"
@@ -4342,7 +4328,38 @@ function GloobalId() {
   ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: scanLive ? "flex-end" : "center", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))", gap: 16 }}>{!scanPayee ? <>{
     /* Upload moved into the scanner's own control row, beside the torch and
        the zoom. */
-  }}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Gloobal ID</div><ScanPayeeAvatar gloobalId={scanPayee.gloobalId} name={scanPayee.name} />{
+  }}{(scanResolving || scanError || scanRetry) && <div
+    style={{
+      position: "absolute",
+      left: 0,
+      right: 0,
+      // The band the torch and the picker sit in when there is nothing to
+      // say. They are hidden whenever this is showing — see `quiet` on
+      // QrCameraScanner — so the two can never be here at once, which is
+      // the collision the founder photographed.
+      bottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
+      zIndex: 2,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 11,
+      padding: "0 24px"
+    }}
+  >{scanResolving && <div
+    style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
+  >
+      Looking this QR up…
+    </div>}{scanError && <div
+    role="alert"
+    style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "9px 15px", textAlign: "center", fontWeight: 700, maxWidth: 300, lineHeight: 1.4 }}
+  >{scanError}</div>}{scanRetry && <button
+    onClick={() => {
+      setScanError(null);
+      setScanRetry(null);
+    }}
+    className="v2-tap"
+    style={{ border: "none", borderRadius: 999, padding: "10px 24px", background: "rgba(255,255,255,0.94)", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
+  >{scanRetry}</button>}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Gloobal ID</div><ScanPayeeAvatar gloobalId={scanPayee.gloobalId} name={scanPayee.name} />{
     /* The name the server returned for this account — a QR carries no name,
        so nothing printed on a sticker can put one here. */
   }<div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPayee.name}</div><div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 20 }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button

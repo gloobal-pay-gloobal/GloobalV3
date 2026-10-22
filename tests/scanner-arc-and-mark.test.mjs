@@ -310,18 +310,43 @@ describe("nothing on the live scanner sits on anything else", () => {
     assert.ok(arc + 72 <= 281, `the arc reaches ${arc + 72}px, through a square whose edge is at 281`);
   });
 
-  test("the words are above the frame, not in the controls' band", () => {
-    // Anchored on the condition rather than on a pixel: they are drawn in
-    // the header's own flow now, which is what makes them unable to
-    // collide with anything anchored to the floor.
-    assert.match(app, /\{scanLive && !scanPayee && <div/,
-      "the instruction and error are not drawn above the frame");
-    const at = app.indexOf("{scanLive && !scanPayee && <div");
-    const block = app.slice(at, at + 1200);
-    assert.match(block, /Hold a Gloobal QR code inside the frame/);
-    assert.match(block, /\{scanError &&/, "the error still sits at the bottom of the screen");
-    assert.doesNotMatch(block, /position: "absolute"/,
-      "the words are anchored, which is how they collided in the first place");
+  test("the standing hint sits above the frame, and only when there is nothing to say", () => {
+    assert.match(app, /\{scanLive && !scanPayee && !scanError && !scanRetry && !scanResolving && <div/,
+      "the hint is drawn while the screen is also saying something else");
+  });
+
+  test("what the screen has to say sits under the camera", () => {
+    // Asked for in those words. The message belongs near the picture it
+    // is about, not at the top of the screen.
+    const at = app.indexOf("{(scanResolving || scanError || scanRetry) && <div");
+    assert.ok(at > 0, "the message band is gone");
+    const block = app.slice(at, at + 900);
+    assert.match(block, /bottom: "calc\(96px \+ env\(safe-area-inset-bottom/,
+      "the message is not in the band under the square");
+    assert.match(block, /role="alert"/);
+  });
+
+  test("and the controls get out of its way", () => {
+    // The torch, the picker and the arc all hide while a message shows.
+    // The scanner is PAUSED in exactly those moments, so they are three
+    // controls doing nothing, sitting over the sentence that explains why
+    // nothing is happening — and they are what the message collided with.
+    assert.match(app, /quiet=\{Boolean\(scanResolving \|\| scanError \|\| scanRetry\)\}/,
+      "the scanner is not told to go quiet while the screen is talking");
+    assert.match(scanner, /\{!quiet && <div/, "the control row stays up during a message");
+    assert.match(scanner, /\{zoomRange && !quiet && <div/, "the zoom arc stays up during a message");
+  });
+
+  test("so the message and the controls can never share the band", () => {
+    // Both are anchored at 96. That is safe only because one is drawn
+    // when the other is not, and this is the assertion that keeps it so.
+    const messageAt = app.indexOf("{(scanResolving || scanError || scanRetry) && <div");
+    const message = app.slice(messageAt, messageAt + 900);
+    const rowBand = scanner.match(/bottom: "calc\((\d+)px \+ env/);
+    const messageBand = message.match(/bottom: "calc\((\d+)px \+ env/);
+    assert.ok(rowBand && messageBand);
+    assert.equal(rowBand[1], messageBand[1],
+      "the two now sit at different heights, so one of them is somewhere nobody measured");
   });
 
   test("the arc reads on whatever the camera is pointed at", () => {

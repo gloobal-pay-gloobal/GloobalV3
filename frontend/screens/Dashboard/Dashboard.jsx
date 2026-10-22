@@ -96,6 +96,31 @@ var GH_ID_ROW_RESERVE = 10;
 // row laid out and painted before the first one is visible.
 var REFERRAL_PAGE_SIZE = 10;
 
+// ── A RATE THAT FITS THE DISC IT IS DRAWN IN ────────────────────────────
+//
+// The badge is a fixed 32px circle and the rate is a string of unknown
+// length: "1%" is two characters, "4.56%" is five, "12.75%" is six. A font
+// size chosen once for the short case is a layout that works until somebody
+// picks a longer rate, which is exactly what happened.
+//
+// So it is derived from the string that will actually be drawn. 0.58em is
+// the advance of a bold digit in this stack — a per-cent sign is wider and a
+// decimal point much narrower, and across the strings this can hold the two
+// cancel out closely enough that measuring in a browser would buy nothing a
+// clamp does not.
+//
+// Floored at 7px, which is the smallest a white glyph stays legible on this
+// gradient, and capped at 11 so a two-character rate does not swell to fill
+// the disc and sit tight against its edge.
+var MY_SHARE_BADGE = 32;
+var MY_SHARE_BADGE_INNER = MY_SHARE_BADGE - 7;
+
+function myShareBadgeFontSize(text) {
+  const length = String(text == null ? "" : text).length;
+  if (length <= 0) return 11;
+  return Math.max(7, Math.min(11, Math.floor(MY_SHARE_BADGE_INNER / (length * 0.58))));
+}
+
 // My Share's preview rows, coloured to match the halves of the split bar
 // above them: the shared amount is the green half, the remainder the
 // purple one. Keyed by the row key from myShareSplitRows rather than by
@@ -656,12 +681,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   useEffect12(() => {
     if (onMyShareRateChange) onMyShareRateChange(myShareRate);
   }, [myShareRate]);
-  // The badge that flipped every 2.5 seconds between a pie icon and the
-  // rate is gone, and so is the timer that drove it. It existed because a
-  // 32px disc could not show both at once — the opened-out block shows the
-  // rate outright, so there is nothing left to alternate between, and a
-  // setInterval running for the life of the dashboard to animate something
-  // nobody is looking at is not worth keeping for its own sake.
+  const [myShareIconFlipped, setMyShareIconFlipped] = useState14(false);
+  useEffect12(() => {
+    const interval = setInterval(() => setMyShareIconFlipped((f) => !f), 2500);
+    return () => clearInterval(interval);
+  }, []);
   const [showMyShare, setShowMyShare] = useState14(false);
   const requestCloseMyShare = useBackClose(showMyShare, () => setShowMyShare(false));
   const [showMyShareBiometric, setShowMyShareBiometric] = useState14(false);
@@ -3025,37 +3049,63 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     name={myName}
     onToast={showToast2}
     headerAction={
-      /* ── MY SHARE, OPENED OUT ──────────────────────────────────────
-         This was a 32px disc that flipped between a pie icon and the
-         rate. The rate did not fit: "1%" sat inside it, "4.56%" did
-         not, and the founder watched it burst its own circle. A round
-         badge is a container with a fixed width holding a number with
-         a variable one, which is a layout that works until somebody
-         picks a rate with four characters in it.
+      /* ── THE CIRCLE, AND WHY IT BURST ────────────────────────────────
+         My Share rides here as an icon that flips to its own rate, out of
+         the QR itself so nothing overlaps a module.
 
-         So it is written out, in the same corner the icon was in: the
-         figure, a rule under it, and the control that changes it. The
-         rule is a plain coloured one — asked for as a bar, and a bar
-         that MEASURED something here would invite reading the rate
-         against a scale nobody set.
+         The founder photographed it squashed into a vertical ellipse at
+         4.56% and it was briefly replaced by an opened-out block; he
+         preferred the circle, so it is back with the actual fault fixed.
+         The fault was not the circle. This BUTTON had no flexShrink, and
+         it is a flex item in a grid column sized 1fr: when its contents
+         grew past the space the column had, the column won and compressed
+         the button — and a compressed circle is an ellipse. The disc
+         inside always carried flexShrink: 0; the thing wrapping it did
+         not, which is why the guard looked present and was not.
 
-         tabular-nums so 1.00% and 4.56% are the same width and the
-         block does not twitch when the rate changes. */
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}><span
-        data-testid="receive-share-rate"
-        style={{ fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: -0.2 }}
-      >{`${myShareRate.toFixed(2)}%`}</span><span
-        aria-hidden="true"
-        style={{ width: 40, height: 2.5, borderRadius: 999, background: T.gradButton }}
-      /><button
+         The text is the second half. A fixed font size in a fixed circle
+         works until somebody picks a rate with more characters in it, so
+         the size is derived from the string that is actually going to be
+         drawn rather than chosen once for "1%". */
+      <button
         onClick={() => {
           requestCloseReceive();
           setShowMyShare(true);
         }}
-        aria-label={`Edit My Share, currently ${myShareRate.toFixed(2)}%`}
+        aria-label={`My Share, currently ${myShareRate}%`}
         className="v2-tap"
-        style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: T.accent, lineHeight: 0 }}
-      ><Pencil size={13} /></button></div>
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "none", padding: 0, cursor: "pointer", perspective: 200, flexShrink: 0 }}
+      ><span
+    style={{
+      position: "relative",
+      width: MY_SHARE_BADGE,
+      height: MY_SHARE_BADGE,
+      borderRadius: "50%",
+      flexShrink: 0,
+      transformStyle: "preserve-3d",
+      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
+      transform: myShareIconFlipped ? "rotateY(180deg)" : "rotateY(0deg)"
+    }}
+  ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: T.gradButton, display: "flex", alignItems: "center", justifyContent: "center" }}><PieChart size={15} color="#fff" /></span><span
+    style={{
+      position: "absolute",
+      inset: 0,
+      borderRadius: "50%",
+      backfaceVisibility: "hidden",
+      transform: "rotateY(180deg)",
+      background: T.gradButton,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      // Nothing may spill past the disc's edge even if the rule below is
+      // ever wrong about a glyph's width: the circle keeps its shape and
+      // the text is clipped to it rather than bursting it.
+      overflow: "hidden"
+    }}
+  ><span
+    data-testid="receive-share-rate"
+    style={{ fontSize: myShareBadgeFontSize(`${myShareRate}%`), fontWeight: 800, color: "#fff", lineHeight: 1, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+  >{`${myShareRate}%`}</span></span></span></button>
     }
   />{
     /* Recent — the last five payments actually received on this

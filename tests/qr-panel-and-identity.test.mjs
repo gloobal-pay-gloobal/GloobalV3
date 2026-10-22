@@ -110,3 +110,58 @@ describe("every Gloobal QR is drawn by one component", () => {
     assert.ok(title > 0 && action > title && qr > action, "the action is not in the title row above the code");
   });
 });
+
+// ── THE BADGE THAT BURST ────────────────────────────────────────────────
+//
+// The founder photographed My Share's disc squashed into a vertical
+// ellipse at 4.56%. It was briefly replaced by an opened-out block; he
+// preferred the circle, so it came back with the real fault fixed.
+//
+// The fault was not the circle and not the number. The BUTTON around the
+// disc had no flexShrink, and it is a flex item inside a grid column sized
+// 1fr: once its contents outgrew the room the column had, the column won
+// and compressed the button. A compressed circle is an ellipse. The disc
+// itself always carried flexShrink: 0, which is why the guard looked
+// present and was not.
+describe("My Share's disc cannot be squashed or burst", () => {
+  const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+
+  test("the button holds its width, not just the disc inside it", () => {
+    const at = dash.indexOf('aria-label={`My Share, currently');
+    assert.ok(at > 0, "the badge is gone");
+    const style = dash.slice(at, at + 420);
+    assert.match(style, /perspective: 200, flexShrink: 0/,
+      "the button can still be compressed by the column it sits in");
+  });
+
+  test("the disc is square, from one number", () => {
+    // Two literals drift; a width and a height that disagree is an ellipse
+    // by construction.
+    assert.match(dash, /width: MY_SHARE_BADGE,\s*height: MY_SHARE_BADGE,/);
+  });
+
+  test("nothing can spill past the disc's edge", () => {
+    const at = dash.indexOf('transform: "rotateY(180deg)"');
+    assert.ok(at > 0);
+    assert.match(dash.slice(at, at + 700), /overflow: "hidden"/,
+      "a long rate would burst the circle instead of being clipped by it");
+  });
+
+  test("every rate anybody can set fits inside the disc", () => {
+    const lib = new Function(`${dash.slice(dash.indexOf("var MY_SHARE_BADGE ="), dash.indexOf("// My Share's preview rows"))}
+      return { MY_SHARE_BADGE, MY_SHARE_BADGE_INNER, myShareBadgeFontSize };`)();
+    for (const rate of ["1%", "0%", "0.5%", "1.5%", "4.56%", "12.75%", "100%", "99.99%"]) {
+      const size = lib.myShareBadgeFontSize(rate);
+      const width = rate.length * 0.58 * size;
+      assert.ok(width <= lib.MY_SHARE_BADGE_INNER + 0.5,
+        `${rate} needs ${Math.round(width)}px of ${lib.MY_SHARE_BADGE_INNER}`);
+      assert.ok(size >= 7, `${rate} would be drawn at ${size}px, too small to read`);
+    }
+  });
+
+  test("the size comes from the string, not from a constant", () => {
+    // A fixed size in a fixed circle works until somebody picks a longer
+    // rate, which is how this broke the first time.
+    assert.match(dash, /fontSize: myShareBadgeFontSize\(`\$\{myShareRate\}%`\)/);
+  });
+});

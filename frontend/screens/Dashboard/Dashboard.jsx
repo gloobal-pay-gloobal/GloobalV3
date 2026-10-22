@@ -2378,6 +2378,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
               Cashless · Taxless · Borderless · Limitless
             </div></div>}{activeTab === "choices" && <div style={{ padding: "12px 18px 30px" }}><ChoicesScreen
     embedded
+    onToast={showToast2}
     history={choicesHistory}
     ccyCode={ccyCode}
     onPay={(category) => {

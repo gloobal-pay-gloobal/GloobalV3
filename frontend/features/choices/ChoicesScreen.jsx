@@ -274,7 +274,14 @@ function ChoiceGridTile({ category, ccyCode, onOpen, onPay }) {
   >{category.name}</div></div>;
 }
 
-function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
+function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded, onToast }) {
+  // Invitations waiting on this account, and the sheet that answers one.
+  // They belong on the grid rather than on a screen of their own: an
+  // invitation is a category somebody is offering, and the grid is where
+  // categories are.
+  const { links: categoryLinks } = useCategoryLinks();
+  const [acceptLink, setAcceptLink] = useState44(null);
+  const say = (message) => { if (onToast) onToast(message); };
   const state = useChoices();
   const [kind, setKind] = useState44("expense");
   const [query, setQuery] = useState44("");
@@ -383,6 +390,7 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
         onScan={(category) => onScan && onScan(category)}
         onEdit={(category) => { setEditing(category); setSheet("editor"); }}
         shareOfTotal={allTotal > 0 ? mine / allTotal : 0}
+        onToast={say}
       />
       <ChoicesEditorSheet
         open={sheet === "editor"}
@@ -453,6 +461,16 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded }) {
        empty creator side needs to know they are on the creator side
        rather than that their categories have vanished. */
   }<RefreshCw8 size={15} color={side === "creator" ? "#fff" : T.accent} />{side === "creator" ? "Creator" : "Personal"}</button></div>{
+    /* What somebody is offering you, above what you already have. On
+       BOTH sides deliberately: an invitation arrives whichever side you
+       happen to be looking at, and one waiting behind a pill you have not
+       tapped is one nobody answers. */
+  }<ChoiceInviteList links={categoryLinks} onAccept={setAcceptLink} onToast={say} /><ChoiceAcceptSheet
+    open={Boolean(acceptLink)}
+    link={acceptLink}
+    onClose={() => setAcceptLink(null)}
+    onToast={say}
+  />{
     /* ENERGY, NOT SPENDING.
 
        GEU is the Gloobal Energy Unit, so money leaving is energy used

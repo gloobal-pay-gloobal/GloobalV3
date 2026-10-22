@@ -244,6 +244,7 @@ const FRONTEND_MODULES = [
   "features/choices/choicesCatalog.js",
   "features/choices/choicesStore.js",
   "features/choices/ChoiceSheets.jsx",
+  "features/choices/ChoiceLinks.jsx",
   "features/choices/CategoryScreen.jsx",
   "features/choices/ChoicesScreen.jsx",
   "features/paylater/PayLaterLedger.jsx",

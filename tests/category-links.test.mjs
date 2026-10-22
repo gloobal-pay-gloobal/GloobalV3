@@ -260,3 +260,99 @@ describe("either side can walk away", () => {
       "who ended it is not recorded");
   });
 });
+
+// ── AND THE SCREENS ─────────────────────────────────────────────────────
+//
+// Three moments: the merchant asking, the other person deciding, and
+// either of them seeing afterwards who is connected to what. Deliberately
+// not a fourth — no screen here shows one side anything about the other's
+// money.
+describe("the screens keep the same promises the routes do", () => {
+  const UI = "frontend/features/choices/ChoiceLinks.jsx";
+  const CATEGORY = "frontend/features/choices/CategoryScreen.jsx";
+  const GRID = "frontend/features/choices/ChoicesScreen.jsx";
+  const ui = code(UI);
+
+  test("connecting is offered on the creator side only", () => {
+    // The personal side is one person's own life. There is no second party
+    // to it, and an invitation to join somebody's groceries is not a thing
+    // anybody means to send.
+    assert.match(code(CATEGORY), /canInvite=\{\(category\.side \|\| "personal"\) === "creator"\}/,
+      "a personal category can be connected to somebody");
+  });
+
+  test("no screen shows one side the other's figures", () => {
+    for (const forbidden of ["total", "amount", "balance", "spent", "budget"]) {
+      assert.doesNotMatch(ui, new RegExp(`row\\.${forbidden}`, "i"),
+        `a link row's ${forbidden} is being drawn`);
+    }
+  });
+
+  test("only invitations addressed to me, and only unanswered ones", () => {
+    assert.match(ui, /row\.role === "member" && row\.status === "pending"/,
+      "the invitation list shows links that are not mine to answer");
+  });
+
+  test("the connections list shows only this category's", () => {
+    assert.match(ui, /row\.categoryId === String\(categoryId \|\| ""\)/,
+      "a category screen lists connections belonging to other categories");
+  });
+
+  test("accepting asks for a name and nothing else", () => {
+    // Everything else about the category is editable afterwards on a
+    // screen built for it. Asking for all of it here turns a yes into a
+    // form.
+    const at = ui.indexOf("function ChoiceAcceptSheet");
+    const body = ui.slice(at, ui.indexOf("function ChoiceInviteList"));
+    assert.match(body, /acceptCategoryLink\(link\.id, chosen\)/,
+      "accepting sends more than the name");
+    // One field, and it is the name. Anchored on what is SENT and on the
+    // inputs that exist, rather than on the words that appear: the first
+    // version of this matched "side" in the sheet's own title and called
+    // a heading a form field.
+    assert.equal((body.match(/<input/g) || []).length, 1,
+      "the accept sheet has grown a second field");
+    assert.doesNotMatch(body, /kind:|side:|budget:/,
+      "the accept sheet is choosing more than the name");
+  });
+
+  test("every change tells the other screens", () => {
+    // The two screens that show links are not on the same branch of the
+    // tree, and the thing that changes them is a tap on whichever one the
+    // person is looking at.
+    for (const action of ["connectCategory", "acceptCategoryLink", "declineCategoryLink", "endCategoryLink"]) {
+      const at = ui.indexOf(action);
+      assert.ok(at > 0, `${action} is not called from the UI`);
+      assert.match(ui.slice(at, at + 220), /choiceLinksChanged\(\)/,
+        `${action} does not refresh the other screen`);
+    }
+  });
+
+  test("and the list reloads when the app comes back", () => {
+    // The other half of every invitation happens on somebody else's
+    // phone, so the answer arrives while this app is in the background or
+    // not at all.
+    const at = ui.indexOf("function useCategoryLinks");
+    const body = ui.slice(at, ui.indexOf("function ChoiceConnectSheet"));
+    assert.match(body, /visibilitychange/);
+    assert.match(body, /removeEventListener/, "the listeners are never removed");
+  });
+
+  test("a failed load is not an error on a screen about something else", () => {
+    const at = ui.indexOf("function useCategoryLinks");
+    const body = ui.slice(at, ui.indexOf("function ChoiceConnectSheet"));
+    assert.match(body, /catch \(e\) \{[\s\S]*?setLinks\(\[\]\)/,
+      "a connection list that will not load breaks the grid");
+  });
+
+  test("the invitation list is on the grid, on both sides", () => {
+    // An invitation arrives whichever side you happen to be looking at,
+    // and one waiting behind a pill you have not tapped is one nobody
+    // answers.
+    const grid = code(GRID);
+    const at = grid.indexOf("<ChoiceInviteList");
+    assert.ok(at > 0, "invitations are not on the grid");
+    assert.doesNotMatch(grid.slice(Math.max(0, at - 160), at), /side === "creator" &&/,
+      "invitations are hidden behind the side pill");
+  });
+});

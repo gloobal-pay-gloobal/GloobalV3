@@ -168,7 +168,13 @@ function ChoiceHeroButton({ onClick, label, solid, clip, children }) {
   >{children}</button>;
 }
 
-function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onScan, onEdit, shareOfTotal }) {
+function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onScan, onEdit, shareOfTotal, onToast }) {
+  // Connections live on the category they are about. A separate screen
+  // listing everybody you are connected to would be a screen about a
+  // relationship rather than about the money it files, and the question
+  // people actually have is "who is on this one".
+  const { links: categoryLinks } = useCategoryLinks();
+  const [connectOpen, setConnectOpen] = useState46(false);
   const lens = useGeuLens();
   const tint = choicesTint(category && category.color);
   const heroInk = choicesInkOn(category && category.color);
@@ -283,6 +289,22 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
   >
             Edit budget
           </button></div></div>}{
+    /* Who is connected to this one, and the way out of it. Above the
+       chart because it is a fact about the category rather than about its
+       figures, and because either side may want to end an arrangement
+       without scrolling past six months of history to find the control. */
+  }<ChoiceConnections
+    categoryId={category.id}
+    links={categoryLinks}
+    onToast={onToast}
+    canInvite={(category.side || "personal") === "creator"}
+    onInvite={() => setConnectOpen(true)}
+  /><ChoiceConnectSheet
+    open={connectOpen}
+    category={category}
+    onClose={() => setConnectOpen(false)}
+    onToast={onToast}
+  />{
     /* The chart. Its bars are labelled with bare numbers, so the unit is
        stated ONCE for the axis rather than six times — repeating it on
        every column makes the chart unreadable, and leaving it off

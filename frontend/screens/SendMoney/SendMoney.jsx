@@ -2046,6 +2046,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
        already sending under X". */
   }{choicesOpen && <ChoicesScreen
     onClose={() => setChoicesOpen(false)}
+    onToast={setToast}
     history={history}
     ccyCode={top.currency}
     onPay={(category) => { if (category) setChoiceId(category.id); setChoicesOpen(false); }}

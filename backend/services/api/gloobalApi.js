@@ -992,12 +992,64 @@ var GloobalApi = {
   // PUT, not POST: filing the same payment twice is one row updated, not
   // two rows written, and the server's unique index on
   // { userId, transactionId } is what guarantees that under a retry.
+  //
+  // `alsoFiled` is the other side of a connected category: when the
+  // category this was filed under is linked to the person who was paid,
+  // the server writes their copy too and says so. Returned rather than
+  // swallowed because it is the only visible evidence that connecting did
+  // anything — without it, the feature works and looks like it did not.
   async tagTransaction(referenceId, categoryId) {
     const result = await gloobalApiClient.put(
       `/api/transactions/${encodeURIComponent(referenceId)}/tag`,
       { categoryId }
     );
-    return result.tag || null;
+    if (!result || !result.tag) return null;
+    return Object.assign({}, result.tag, { alsoFiled: result.alsoFiled || null });
+  },
+
+  // ── CONNECTED CATEGORIES ──────────────────────────────────────────────
+  //
+  // See server/models/CategoryLink.js. A link is a standing agreement that
+  // a payment filed under one person's category also files itself under
+  // another person's, each side named by its own owner.
+
+  // POST /api/categories/:id/links — invite a Gloobal ID onto my category.
+  async connectCategory(categoryId, symbolId) {
+    const result = await gloobalApiClient.post(
+      `/api/categories/${encodeURIComponent(categoryId)}/links`,
+      { symbolId }
+    );
+    return result.link || null;
+  },
+
+  // GET /api/category-links — every connection I am either side of, as
+  // one list. `role` says which side I am on; nothing in a row carries
+  // the other person's figures.
+  async getCategoryLinks() {
+    const result = await gloobalApiClient.get("/api/category-links");
+    return Array.isArray(result.links) ? result.links : [];
+  },
+
+  // POST /api/category-links/:id/accept — take it, under a name of my own.
+  // The category comes into existence here, owned by me.
+  async acceptCategoryLink(id, name, icon) {
+    const result = await gloobalApiClient.post(
+      `/api/category-links/${encodeURIComponent(id)}/accept`,
+      { name, icon: icon || "" }
+    );
+    return { link: result.link || null, category: result.category || null };
+  },
+
+  async declineCategoryLink(id) {
+    await gloobalApiClient.post(`/api/category-links/${encodeURIComponent(id)}/decline`, {});
+    return true;
+  },
+
+  // Either side may end it, and neither needs the other's agreement.
+  // Payments already filed keep their labels.
+  async endCategoryLink(id) {
+    await gloobalApiClient.delete(`/api/category-links/${encodeURIComponent(id)}`);
+    return true;
   },
 
   // A picture instead of an icon. The client downscales and re-encodes to

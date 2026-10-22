@@ -112,13 +112,40 @@ var REFERRAL_PAGE_SIZE = 10;
 // Floored at 7px, which is the smallest a white glyph stays legible on this
 // gradient, and capped at 11 so a two-character rate does not swell to fill
 // the disc and sit tight against its edge.
-var MY_SHARE_BADGE = 32;
-var MY_SHARE_BADGE_INNER = MY_SHARE_BADGE - 7;
+// 38, up from 32. Asked for, and it earns it: the disc has to hold up to
+// five characters of rate, and at 32 the longest of them was legible only
+// by being small.
+var MY_SHARE_BADGE = 38;
+var MY_SHARE_BADGE_INNER = MY_SHARE_BADGE - 8;
+
+// ── THE STRING THAT ACTUALLY BURST THE CIRCLE ───────────────────────────
+//
+// The rate is stored as a number and was drawn with `${myShareRate}%`,
+// which is the default stringification of a float. That is fine for 1 and
+// for 4.56. It is not fine for what this value actually becomes:
+//
+//   savedPercent = Math.round(saved * 1e4) / 100
+//   saved = 0.0456  ->  456.00000000000006  ->  456  ->  4.5600000000000005
+//
+// The round is undone by the divide. The toast beside it calls toFixed(2)
+// and reads "4.56%"; the badge printed NINETEEN characters. That is the
+// 4.56% the founder reported, and no amount of shrinking a font or holding
+// a width fixes a nineteen-character string in a disc — it was always
+// going to look broken.
+//
+// So the rate is formatted where it is shown: two decimals at most, and
+// trailing zeros dropped, so 1 stays "1" rather than becoming "1.00".
+function myShareRateText(rate) {
+  const value = Number(rate);
+  if (!Number.isFinite(value)) return "0";
+  const fixed = value.toFixed(2);
+  return fixed.replace(/\.?0+$/, "") || "0";
+}
 
 function myShareBadgeFontSize(text) {
   const length = String(text == null ? "" : text).length;
   if (length <= 0) return 11;
-  return Math.max(7, Math.min(11, Math.floor(MY_SHARE_BADGE_INNER / (length * 0.58))));
+  return Math.max(8, Math.min(14, Math.floor(MY_SHARE_BADGE_INNER / (length * 0.58))));
 }
 
 // My Share's preview rows, coloured to match the halves of the split bar
@@ -3072,7 +3099,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
           requestCloseReceive();
           setShowMyShare(true);
         }}
-        aria-label={`My Share, currently ${myShareRate}%`}
+        aria-label={`My Share, currently ${myShareRateText(myShareRate)}%`}
         className="v2-tap"
         style={{ display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "none", padding: 0, cursor: "pointer", perspective: 200, flexShrink: 0 }}
       ><span
@@ -3104,8 +3131,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     }}
   ><span
     data-testid="receive-share-rate"
-    style={{ fontSize: myShareBadgeFontSize(`${myShareRate}%`), fontWeight: 800, color: "#fff", lineHeight: 1, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
-  >{`${myShareRate}%`}</span></span></span></button>
+    style={{ fontSize: myShareBadgeFontSize(`${myShareRateText(myShareRate)}%`), fontWeight: 800, color: "#fff", lineHeight: 1, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+  >{`${myShareRateText(myShareRate)}%`}</span></span></span></button>
     }
   />{
     /* Recent — the last five payments actually received on this

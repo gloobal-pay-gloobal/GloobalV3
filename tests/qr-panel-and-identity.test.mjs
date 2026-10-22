@@ -125,6 +125,8 @@ describe("every Gloobal QR is drawn by one component", () => {
 // present and was not.
 describe("My Share's disc cannot be squashed or burst", () => {
   const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+  const badgeLib = () => new Function(`${dash.slice(dash.indexOf("var MY_SHARE_BADGE ="), dash.indexOf("// My Share's preview rows"))}
+    return { MY_SHARE_BADGE, MY_SHARE_BADGE_INNER, myShareBadgeFontSize, myShareRateText };`)();
 
   test("the button holds its width, not just the disc inside it", () => {
     const at = dash.indexOf('aria-label={`My Share, currently');
@@ -148,20 +150,61 @@ describe("My Share's disc cannot be squashed or burst", () => {
   });
 
   test("every rate anybody can set fits inside the disc", () => {
-    const lib = new Function(`${dash.slice(dash.indexOf("var MY_SHARE_BADGE ="), dash.indexOf("// My Share's preview rows"))}
-      return { MY_SHARE_BADGE, MY_SHARE_BADGE_INNER, myShareBadgeFontSize };`)();
+    const lib = badgeLib();
     for (const rate of ["1%", "0%", "0.5%", "1.5%", "4.56%", "12.75%", "100%", "99.99%"]) {
       const size = lib.myShareBadgeFontSize(rate);
       const width = rate.length * 0.58 * size;
       assert.ok(width <= lib.MY_SHARE_BADGE_INNER + 0.5,
         `${rate} needs ${Math.round(width)}px of ${lib.MY_SHARE_BADGE_INNER}`);
-      assert.ok(size >= 7, `${rate} would be drawn at ${size}px, too small to read`);
+      assert.ok(size >= 8, `${rate} would be drawn at ${size}px, too small to read`);
     }
+  });
+
+  // ── AND THE STRING THAT ACTUALLY BURST IT ────────────────────────────
+  //
+  // The rate is a float, and savedPercent is computed as
+  // Math.round(saved * 1e4) / 100 — a round undone by the divide. For the
+  // rate the founder reported, 0.0456 comes back as 4.5600000000000005,
+  // and `${rate}%` is nineteen characters. No font rule and no fixed width
+  // survives that; it had to be formatted where it is drawn.
+  test("a float rate is drawn as a rate, not as its own rounding error", () => {
+    const lib = badgeLib();
+    const cases = [
+      [1, "1"],
+      [4.5600000000000005, "4.56"],
+      [7.000000000000001, "7"],
+      [1.9999999999999998, "2"],
+      [0.35, "0.35"],
+      [0, "0"]
+    ];
+    for (const [input, want] of cases) {
+      assert.equal(lib.myShareRateText(input), want, `${input} rendered wrong`);
+    }
+    for (const junk of [NaN, Infinity, null, undefined, "x"]) {
+      assert.equal(lib.myShareRateText(junk), "0", `${junk} was not handled`);
+    }
+  });
+
+  test("the formatted rate always fits, including the float cases", () => {
+    const lib = badgeLib();
+    for (const rate of [0, 0.35, 1, 1.9999999999999998, 4.5600000000000005, 7.000000000000001, 12.75, 99.99]) {
+      const text = `${lib.myShareRateText(rate)}%`;
+      const width = text.length * 0.58 * lib.myShareBadgeFontSize(text);
+      assert.ok(width <= lib.MY_SHARE_BADGE_INNER + 0.5,
+        `${rate} drew "${text}" needing ${Math.round(width)}px of ${lib.MY_SHARE_BADGE_INNER}`);
+    }
+  });
+
+  test("the badge draws the formatted rate, not the raw number", () => {
+    assert.match(dash, /\$\{myShareRateText\(myShareRate\)\}%/,
+      "the raw float reaches the disc again");
+    assert.doesNotMatch(dash, />\{`\$\{myShareRate\}%`\}</,
+      "the raw float is still being drawn somewhere");
   });
 
   test("the size comes from the string, not from a constant", () => {
     // A fixed size in a fixed circle works until somebody picks a longer
     // rate, which is how this broke the first time.
-    assert.match(dash, /fontSize: myShareBadgeFontSize\(`\$\{myShareRate\}%`\)/);
+    assert.match(dash, /fontSize: myShareBadgeFontSize\(`\$\{myShareRateText\(myShareRate\)\}%`\)/);
   });
 });

@@ -306,6 +306,55 @@ function gloobalQrPaintCornerMark(ctx, corner, face, scale) {
   ctx.fillText(face.letter, corner.cx * scale, corner.cy * scale);
 }
 
+// ── THE HALLMARK, BESIDE THE CODE RATHER THAN ONLY INSIDE IT ───────────
+//
+// The founder asked for this mark to sit on the left of the card, facing
+// My Share across the title. Inside the code it cannot: a QR leaves
+// exactly one corner free — the bottom-right — because the other three
+// carry the finder squares a scanner locks onto, and a mark moved onto one
+// of those is a code that may not read.
+//
+// So this is the same mark drawn at card level, in the header row's left
+// cell, which was an empty spacer. The one inside the code stays where it
+// is, and that is deliberate rather than an oversight: it is painted into
+// the picture Share hands over, so a code that is screenshotted, sent or
+// printed still carries it. This one belongs to the SCREEN and goes no
+// further than the screen.
+//
+// Same letter, same colour, same cycle — gloobalQrCornerFace is the single
+// source for both, so the two marks can never be showing different letters
+// at the same moment.
+function GloobalQrHallmark({ step = 0, size = 26 }) {
+  const face = gloobalQrCornerFace(step);
+  const r = 11;
+  return <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+    focusable="false"
+    style={{ display: "block", flexShrink: 0 }}
+  ><circle
+    cx="12"
+    cy="12"
+    r={r}
+    fill="none"
+    stroke={face.color}
+    // The same fraction of the diameter the in-code disc uses, so the two
+    // read as one mark at two sizes rather than as two marks.
+    strokeWidth={r * 2 * 0.09}
+  /><text
+    x="12"
+    y="12"
+    textAnchor="middle"
+    dominantBaseline="central"
+    fontSize={r * 0.95}
+    fontWeight="800"
+    fontFamily={T.fontDisplay}
+    fill={face.color}
+  >{face.letter}</text></svg>;
+}
+
 function GloobalQrSvg({ value, logo = true, discColor, markStep = 0 }) {
   const matrix = buildGloobalQrMatrix(value);
   if (!matrix) return null;
@@ -643,7 +692,7 @@ function GloobalReceiveQrCard({ gloobalId, name, onToast, headerAction = null })
           Three columns so the title stays centred whether or not the
           action is there. */}
       <div style={{ width: "100%", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 8 }}>
-        <span aria-hidden="true" />
+        <GloobalQrHallmark step={markStep} />
         <h2
           id="gloobal-receive-qr-title"
           style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}

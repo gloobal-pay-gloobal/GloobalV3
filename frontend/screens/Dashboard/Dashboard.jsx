@@ -3042,15 +3042,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
          tabular-nums so 1.00% and 4.56% are the same width and the
          block does not twitch when the rate changes. */
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}><span
-        style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: T.inkFaint, lineHeight: 1 }}
+        style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkFaint, lineHeight: 1 }}
       >
         My Share
       </span><span
         data-testid="receive-share-rate"
-        style={{ fontSize: 16, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: -0.3 }}
+        style={{ fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: -0.2 }}
       >{`${myShareRate.toFixed(2)}%`}</span><span
         aria-hidden="true"
-        style={{ width: 48, height: 3, borderRadius: 999, background: T.gradButton }}
+        style={{ width: 40, height: 2.5, borderRadius: 999, background: T.gradButton }}
       /><button
         onClick={() => {
           requestCloseReceive();
@@ -3058,10 +3058,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
         }}
         aria-label={`Edit My Share, currently ${myShareRate.toFixed(2)}%`}
         className="v2-tap"
-        style={{ border: "none", background: "none", padding: 0, cursor: "pointer", fontSize: 11, fontWeight: 800, color: T.accent, lineHeight: 1 }}
-      >
-        Edit
-      </button></div>
+        style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: T.accent, lineHeight: 0 }}
+      ><Pencil size={13} /></button></div>
     }
   />{
     /* Recent — the last five payments actually received on this

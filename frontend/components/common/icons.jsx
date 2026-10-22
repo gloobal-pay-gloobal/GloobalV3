@@ -6,12 +6,53 @@ function EyeIcon({ open }) {
     strokeLinejoin="round"
   /></svg>;
 }
-// A moving scan-line, not a static one — the bracket corners stay
-// fixed (that's the "viewfinder" itself) while the line inside sweeps
-// up and down via a plain CSS keyframe animation, same technique as
-// every other animated icon in this file (no JS interval needed).
-function ScannerIcon({ size = 20, animated = false }) {
-  return <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M4 8V6a2 2 0 012-2h2M20 8V6a2 2 0 00-2-2h-2M4 16v2a2 2 0 002 2h2M20 16v2a2 2 0 01-2 2h-2" strokeLinecap="round" strokeLinejoin="round" />{animated ? <><style>{`@keyframes scannerLineSweep { 0%, 100% { transform: translateY(-5px); opacity: 0.35; } 50% { transform: translateY(5px); opacity: 1; } }`}</style><line x1="4" y1="12" x2="20" y2="12" strokeLinecap="round" style={{ animation: "scannerLineSweep 1.6s ease-in-out infinite", transformOrigin: "12px 12px" }} /></> : <path d="M4 12h16" strokeLinecap="round" />}</svg>;
+// ── THE ONE SCAN MARK ───────────────────────────────────────────────────
+//
+// There were two. This one — viewfinder corners with a line sweeping
+// between them — sat on the dashboard tile, the camera permission screen
+// and My Essentials, while lucide's ScanLine sat in My Choices and on a
+// category's scan-to-pay button. Two marks for one action, in an app where
+// scanning is one of four things the dashboard offers.
+//
+// And the founder could not read either of them: "the icon you have built
+// is not understandable". He is right about why. Corners plus a line is a
+// picture of a VIEWFINDER, which says "point the camera" and stops there —
+// the same mark would serve a document scanner, a barcode, a face unlock.
+// Nothing in it says the thing being pointed at is a Gloobal QR code.
+//
+// So the code goes inside the corners: three solid blocks in the
+// arrangement a QR's finder patterns actually take, plus two smaller ones
+// trailing off the fourth corner where a QR carries data rather than a
+// finder. Solid rather than outlined because this is used at 17px in two
+// places, and an outlined 3-unit square at 17px is a grey smudge.
+//
+// `animated` is the founder's second ask — "make it colours change after
+// 3 second so user get to know". The mark cycles violet → blue → teal, a
+// little under three seconds each, which is enough movement to catch an
+// eye crossing the screen without the jitter of something that pulses.
+// Driven by `color` on a class, with the shapes painting themselves in
+// currentColor, so one keyframe moves the whole mark at once. The class is
+// defined in App.jsx beside the other shared keyframes, and is explicitly
+// switched OFF under prefers-reduced-motion there — the blanket
+// "animation-duration: 0.001ms" that rule applies would otherwise turn a
+// slow colour cycle into a strobe, which is worse than the animation.
+function ScannerIcon({ size = 20, animated = false, color = "#7c3aed" }) {
+  return <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    fill="none"
+    className={animated ? "scan-mark-cycle" : void 0}
+    style={{ color }}
+    aria-hidden="true"
+    focusable="false"
+  ><path
+    d="M3.2 8.6V5.8A2.6 2.6 0 015.8 3.2h2.8M20.8 8.6V5.8a2.6 2.6 0 00-2.6-2.6h-2.8M3.2 15.4v2.8a2.6 2.6 0 002.6 2.6h2.8M20.8 15.4v2.8a2.6 2.6 0 01-2.6 2.6h-2.8"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  /><g fill="currentColor"><rect x="7.2" y="7.2" width="4" height="4" rx="0.9" /><rect x="12.8" y="7.2" width="4" height="4" rx="0.9" /><rect x="7.2" y="12.8" width="4" height="4" rx="0.9" /><rect x="12.8" y="12.8" width="1.8" height="1.8" rx="0.5" /><rect x="15" y="15" width="1.8" height="1.8" rx="0.5" /></g></svg>;
 }
 function AddBankIcon({ size = 20 }) {
   return <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M3 10l9-6 9 6M4 10v8M20 10v8M9 10v8M15 10v8M2 19h20" strokeLinecap="round" strokeLinejoin="round" /></svg>;

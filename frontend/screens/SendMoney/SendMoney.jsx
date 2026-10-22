@@ -127,7 +127,7 @@ function identityDisplayValue(profile, mode) {
       return profile.name;
   }
 }
-function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoiceId = null, history = [], onOpenPaidHistory, onSendComplete, onExecuteTransaction, onRemoteSend, onBuildRowReceipt }) {
+function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoiceId = null, history = [], onOpenPaidHistory, onOpenScan, onSendComplete, onExecuteTransaction, onRemoteSend, onBuildRowReceipt }) {
   // The account's CURRENT Gloobal ID — the same source the Dashboard reads,
   // so a rename made this session shows here too.
   const liveSenderId = useCurrentSymbolId(sender && sender.symbolId);
@@ -1433,7 +1433,12 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
        cards together through name → Gloobal ID → mobile number →
        country name. Replaces the old per-card flip button that used
        to sit on the found receiver card's own corner. */
-  }<div className="header"><NavBackButton onClick={onClose} /><div style={{ display: "flex", alignItems: "center", gap: 10 }}><NavIconButton onClick={openContactPicker} label="Choose from contacts"><ContactIcon size={17} color={T.ink} /></NavIconButton><NavHistoryButton onClick={onOpenPaidHistory} label="Paid history" /></div></div>{searchStage !== "closed" && <>{bottomOpen && <>{
+  }<div className="header"><NavBackButton onClick={onClose} /><div style={{ display: "flex", alignItems: "center", gap: 10 }}><NavIconButton onClick={openContactPicker} label="Choose from contacts"><ContactIcon size={17} color={T.ink} /></NavIconButton>{
+    /* Scan, beside history, where the founder asked for it. Somebody on
+       this screen is about to type twelve symbols they are reading off
+       another phone; the code on that phone says the same thing and
+       cannot be mistyped. */
+  }{onOpenScan && <NavIconButton onClick={onOpenScan} label="Scan a Gloobal QR code"><ScannerIcon size={17} animated color={T.ink} /></NavIconButton>}<NavHistoryButton onClick={onOpenPaidHistory} label="Paid history" /></div></div>{searchStage !== "closed" && <>{bottomOpen && <>{
     /* RECEIVER CARD — now shown first/up top: their name/ID and
        the editable amount (in their currency) are what matters
        while searching and typing. Hosts the active search dial

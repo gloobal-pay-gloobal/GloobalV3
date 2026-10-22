@@ -1,6 +1,6 @@
 // src/features/choices/CategoryScreen.jsx
 import { useMemo as useMemo12, useRef as useRef27, useState as useState46, useEffect as useEffect46 } from "react";
-import { ScanLine as ScanLine3, Pencil as Pencil2, ArrowLeft as ArrowLeft7 } from "lucide-react";
+import { Pencil as Pencil2, ArrowLeft as ArrowLeft7 } from "lucide-react";
 
 // One category, and everything this account has filed under it.
 //
@@ -237,7 +237,7 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
     /* The scanner, inside the category — so a scanned payment is already
        filed under the category it was opened from and needs no second
        step to tag it. */
-  }<ChoiceHeroButton onClick={() => onScan && onScan(category)} label={`Scan to pay for ${category.name}`}><ScanLine3 size={18} color={T.ink} /></ChoiceHeroButton><ChoiceHeroButton onClick={() => onEdit && onEdit(category)} label={`Edit ${category.name}`}><Pencil2 size={17} color={T.ink} /></ChoiceHeroButton></div><div
+  }<ChoiceHeroButton onClick={() => onScan && onScan(category)} label={`Scan to pay for ${category.name}`}><ScannerIcon size={18} animated color={T.ink} /></ChoiceHeroButton><ChoiceHeroButton onClick={() => onEdit && onEdit(category)} label={`Edit ${category.name}`}><Pencil2 size={17} color={T.ink} /></ChoiceHeroButton></div><div
     style={{ fontSize: 13, fontWeight: 600, color: heroInk, marginTop: 16 }}
   >{(category.kind || "expense") === "income" ? "Total received by now" : "Total spendings by now"}</div><div style={{ marginTop: 2 }}><ChoiceMoney amount={totals.total} code={code} size={30} fit /></div><div
     style={{ fontSize: 12.5, fontWeight: 600, color: heroInk, marginTop: 5 }}

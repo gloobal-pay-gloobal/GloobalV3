@@ -1,6 +1,6 @@
 // src/features/choices/ChoiceSheets.jsx
 import { useState as useState43, useEffect as useEffect43, useMemo as useMemo11, useRef as useRef26 } from "react";
-import { Plus as Plus4, Check as Check6, ScanLine as ScanLine2, Search as Search7, X as X8, Heart as Heart4, Camera as Camera3, Trash2 as Trash2Icon, ChevronDown as ChevronDown5, ChevronUp as ChevronUp3 } from "lucide-react";
+import { Plus as Plus4, Check as Check6, Search as Search7, X as X8, Heart as Heart4, Camera as Camera3, Trash2 as Trash2Icon, ChevronDown as ChevronDown5, ChevronUp as ChevronUp3 } from "lucide-react";
 
 // The sheets My Choices opens: pick one, add something, make or edit one.
 //
@@ -331,7 +331,7 @@ function ChoicesAddSheet({ open, onClose, onRoute }) {
       color: T.accent,
       flexShrink: 0
     }}
-  >{glyph === "scan" ? <ScanLine2 size={19} color={T.accent} /> : glyph}</span><span style={{ minWidth: 0 }}><span
+  >{glyph === "scan" ? <ScannerIcon size={19} animated /> : glyph}</span><span style={{ minWidth: 0 }}><span
     style={{ display: "block", fontSize: 15, fontWeight: 800, color: T.ink }}
   >{label}</span><span style={{ display: "block", fontSize: 12.5, color: T.inkSoft, marginTop: 2 }}>
             {caption}

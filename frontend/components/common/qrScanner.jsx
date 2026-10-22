@@ -3,7 +3,6 @@ import { useState as useState32, useEffect as useEffect22, useRef as useRef17, u
 import jsQR from "jsqr";
 import {
   CameraOff as CameraOff1,
-  ScanLine as ScanLine1,
   Flashlight as Flashlight1,
   FlashlightOff as FlashlightOff1,
   Image as ImageIcon2
@@ -317,20 +316,270 @@ function currentZoomOf(track, range, fallback) {
   return Math.min(range.max, Math.max(range.min, value));
 }
 
-// The stops a zoom button offers.
+// ── THE ZOOM ARC ────────────────────────────────────────────────────────
 //
-// A slider is the wrong control on a screen someone is holding at arm's
-// length with one hand, pointed at a code: it needs a drag, and a drag on a
-// live viewfinder moves the phone. Three taps through min → middle → max
-// covers what scanning a small or distant code actually needs, and every
-// value is inside the range the lens reported.
-function zoomStopsOf(range) {
-  if (!range) return [];
-  const mid = range.min + (range.max - range.min) / 2;
-  const stops = [range.min, mid, range.max];
-  // A lens with a tiny range can produce stops that round to the same label;
-  // duplicates are dropped so the button never appears to do nothing.
-  return stops.filter((v, i) => i === 0 || Math.abs(v - stops[i - 1]) > (range.step || 0) / 2);
+// This was three stops — minimum, middle, maximum — cycled by tapping a
+// round button, and the reasoning written here was that a slider needs a
+// drag and a drag on a live viewfinder moves the phone. That argument was
+// sound and the result was still wrong, because "middle" is an arithmetic
+// midpoint of whatever the lens reports. On the founder's phone that is a
+// 1×–5.5×–10× button: three taps, and nothing between 1 and 5.5, which
+// is where every QR code on a counter or a poster actually lives.
+//
+// So it is an arc, which is what he asked for. A bowed track above the
+// control row, where a thumb already sweeps, with the whole of the lens's
+// range along it and marks at the round numbers. Drag for anything, tap a
+// mark for exactly 1× or 2×.
+//
+// LOGARITHMIC, not linear. A linear 1–10 track spends half its length
+// between 5.5× and 10×, which is the half nobody scans in; doubling is
+// what the eye reads as "one step more", so equal distances along the arc
+// double the magnification. 1× and 10× sit at the ends either way, and
+// the useful middle gets the room.
+//
+// The x of a quadratic Bézier whose three control points are evenly spaced
+// across the width is LINEAR in t — 2 × (W/2) is exactly pad + (W − pad) —
+// so a thumb's x maps to a position on the curve by plain arithmetic, with
+// no curve-walking and no approximation. The sag only moves y.
+var ZOOM_ARC_W = 236;
+var ZOOM_ARC_SAG = 26;
+var ZOOM_ARC_PAD = 16;
+var ZOOM_ARC_SNAP_PX = 10;
+
+// The round numbers worth landing on exactly. Expressed as multiples of the
+// lens's own minimum rather than as absolute values, because a device may
+// report its range as 100..800 — "2" here means twice as close, on any lens.
+var ZOOM_ARC_MARKS = [1, 2, 3, 5, 10];
+
+function zoomArcRatio(range) {
+  return range && range.min > 0 && range.max > range.min ? range.max / range.min : 0;
+}
+
+// Where a zoom level sits along the track, 0 at the left end and 1 at the
+// right. Clamped, so a lens reporting a level outside its own stated range
+// cannot push the handle off the arc.
+function zoomArcPosition(value, range) {
+  const ratio = zoomArcRatio(range);
+  if (!ratio) return 0;
+  const level = Math.min(range.max, Math.max(range.min, value == null ? range.min : value));
+  return Math.log(level / range.min) / Math.log(ratio);
+}
+
+// And back the other way.
+function zoomArcLevel(t, range) {
+  const ratio = zoomArcRatio(range);
+  if (!ratio) return range ? range.min : 0;
+  return range.min * Math.pow(ratio, Math.min(1, Math.max(0, t)));
+}
+
+// A point on the track. y is the Bézier's own curve, 4·sag·t·(1−t), which
+// is the sag at the middle and zero at both ends.
+function zoomArcPoint(t) {
+  return {
+    x: ZOOM_ARC_PAD + t * (ZOOM_ARC_W - ZOOM_ARC_PAD * 2),
+    y: 4 * ZOOM_ARC_SAG * t * (1 - t)
+  };
+}
+
+// The marks this lens can actually reach, with where each one sits.
+function zoomArcMarks(range) {
+  const ratio = zoomArcRatio(range);
+  if (!ratio) return [];
+  return ZOOM_ARC_MARKS
+    .filter((times) => times <= ratio + 1e-6)
+    .map((times) => ({ times, t: Math.log(times) / Math.log(ratio) }));
+}
+
+function ZoomArc({ range, level, onPick }) {
+  const hostRef = useRef17(null);
+  const draggingRef = useRef17(false);
+  const marks = zoomArcMarks(range);
+  const at = zoomArcPosition(level, range);
+  const handle = zoomArcPoint(at);
+  const span = ZOOM_ARC_W - ZOOM_ARC_PAD * 2;
+  const ends = zoomArcPoint(0);
+  const mid = { x: ZOOM_ARC_W / 2, y: ZOOM_ARC_SAG * 2 };
+
+  // A thumb's x, turned into a zoom level, snapping to a mark it lands
+  // near. Snapping is in PIXELS rather than in zoom units: ten pixels is
+  // ten pixels wherever it falls, where a tolerance in zoom units would be
+  // generous at the wide end and unreachable at the long one.
+  const pickAt = (clientX) => {
+    const host = hostRef.current;
+    if (!host || !range) return;
+    const box = host.getBoundingClientRect();
+    const scale = box.width > 0 ? ZOOM_ARC_W / box.width : 1;
+    const x = (clientX - box.left) * scale;
+    let t = Math.min(1, Math.max(0, (x - ZOOM_ARC_PAD) / span));
+    for (const mark of marks) {
+      if (Math.abs(mark.t - t) * span <= ZOOM_ARC_SNAP_PX) {
+        t = mark.t;
+        break;
+      }
+    }
+    onPick(zoomArcLevel(t, range));
+  };
+
+  const nudge = (direction) => {
+    // One mark at a time on a keyboard, which is the only input here that
+    // cannot aim: landing between two round numbers by arrow key is not
+    // something anybody wants.
+    if (!marks.length) return;
+    const order = direction > 0 ? marks : marks.slice().reverse();
+    const next = order.find((mark) => (direction > 0 ? mark.t > at + 1e-6 : mark.t < at - 1e-6));
+    if (next) onPick(zoomArcLevel(next.t, range));
+  };
+
+  if (!range || !zoomArcRatio(range)) return null;
+
+  return <div
+    ref={hostRef}
+    role="slider"
+    tabIndex={0}
+    aria-label="Zoom"
+    aria-valuemin={1}
+    aria-valuemax={Math.round(zoomArcRatio(range) * 10) / 10}
+    aria-valuenow={Math.round((level == null ? range.min : level) / range.min * 10) / 10}
+    aria-valuetext={formatZoom(level, range)}
+    onPointerDown={(e) => {
+      draggingRef.current = true;
+      if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
+      pickAt(e.clientX);
+    }}
+    onPointerMove={(e) => { if (draggingRef.current) pickAt(e.clientX); }}
+    onPointerUp={(e) => {
+      draggingRef.current = false;
+      if (e.currentTarget.releasePointerCapture) e.currentTarget.releasePointerCapture(e.pointerId);
+    }}
+    onPointerCancel={() => { draggingRef.current = false; }}
+    onKeyDown={(e) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowUp") { e.preventDefault(); nudge(1); }
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") { e.preventDefault(); nudge(-1); }
+    }}
+    style={{
+      width: ZOOM_ARC_W,
+      // Room for the sag, the handle and the label above it. touchAction
+      // none so a horizontal drag zooms instead of scrolling the page
+      // underneath — on a fixed overlay there is nothing to scroll, and the
+      // browser's own panning gesture would otherwise eat the drag.
+      height: ZOOM_ARC_SAG + 46,
+      touchAction: "none",
+      pointerEvents: "auto",
+      cursor: "pointer",
+      position: "relative"
+    }}
+  ><svg
+    width={ZOOM_ARC_W}
+    height={ZOOM_ARC_SAG + 24}
+    viewBox={`0 ${-12} ${ZOOM_ARC_W} ${ZOOM_ARC_SAG + 24}`}
+    style={{ position: "absolute", left: 0, bottom: 0, overflow: "visible" }}
+    aria-hidden="true"
+  ><path
+    d={`M${ends.x} ${ends.y}Q${mid.x} ${mid.y} ${ZOOM_ARC_W - ZOOM_ARC_PAD} ${ends.y}`}
+    fill="none"
+    stroke="rgba(0,0,0,0.45)"
+    strokeWidth="12"
+    strokeLinecap="round"
+  /><path
+    d={`M${ends.x} ${ends.y}Q${mid.x} ${mid.y} ${ZOOM_ARC_W - ZOOM_ARC_PAD} ${ends.y}`}
+    fill="none"
+    stroke="rgba(255,255,255,0.32)"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+  />{marks.map((mark) => {
+    const point = zoomArcPoint(mark.t);
+    const here = Math.abs(mark.t - at) * span <= ZOOM_ARC_SNAP_PX;
+    // The mark under the handle is not drawn at all. Its dot would be
+    // covered anyway, and its label sat directly above a handle already
+    // reading "5x" — the same number twice, a few pixels apart. Measured
+    // rather than imagined: it is the one fault a render of this control
+    // showed that reading it did not.
+    if (here) return null;
+    return <g key={mark.times}><circle
+      cx={point.x}
+      cy={point.y}
+      r="2.1"
+      fill="rgba(255,255,255,0.72)"
+    /><text
+      x={point.x}
+      y={point.y - 11}
+      textAnchor="middle"
+      fontSize="9.5"
+      fontWeight="700"
+      fill="rgba(255,255,255,0.55)"
+    >{`${mark.times}x`}</text></g>;
+  })}<circle cx={handle.x} cy={handle.y} r="11" fill="#FFFFFF" /><text
+    x={handle.x}
+    y={handle.y + 3.4}
+    textAnchor="middle"
+    fontSize="9.5"
+    fontWeight="800"
+    fill="#14122B"
+  >{formatZoom(level, range)}</text></svg></div>;
+}
+
+// ── THE FRAMING SQUARE, WITH OR WITHOUT A CAMERA BEHIND IT ─────────────
+//
+// The square is not decoration: the decoder crops to it (QR_SCAN_ROI) and
+// reads those pixels at full sensor resolution, so filling it genuinely is
+// what makes a code resolve. Every fourth pass still reads the whole frame,
+// so aiming badly costs a beat rather than a failure.
+//
+// It lives out here, as its own component, because the camera permission
+// step draws it too. Asking for the camera used to be a SEPARATE SCREEN —
+// a white page with a circle and a headline — and granting swapped it for
+// a black one with a square. Two screens for one action, and the founder
+// asked for them to be one.
+//
+// They cannot share a camera: no browser hands over pixels before consent,
+// so there is nothing to show behind the ask on a first run. What they CAN
+// share is everything else, and this is the piece that matters — the same
+// square, the same size, the same corners, in the same place. Granting then
+// fills the square that was already there instead of replacing the screen
+// it was on.
+//
+// Sharing the component rather than copying its numbers is the whole point:
+// two copies drift, and a square that jumps by four pixels on grant is the
+// flicker this change exists to remove.
+//
+// The full outline is a hairline and the four corners carry the shape. A
+// solid frame reads as a border around the picture; corners read as an
+// instruction about where to put the code.
+//
+// `children` is the permission ask. The wrapper never takes taps — it
+// covers the whole screen, and anything interactive here would swallow the
+// Send button underneath — so only the content inside the square does.
+var QR_FRAME_CORNERS = [
+  { top: -1, left: -1, borderWidth: "3px 0 0 3px", borderRadius: "26px 0 0 0" },
+  { top: -1, right: -1, borderWidth: "3px 3px 0 0", borderRadius: "0 26px 0 0" },
+  { bottom: -1, right: -1, borderWidth: "0 3px 3px 0", borderRadius: "0 0 26px 0" },
+  { bottom: -1, left: -1, borderWidth: "0 0 3px 3px", borderRadius: "0 0 0 26px" }
+];
+
+function QrFrameGuide({ children }) {
+  return <div
+    aria-hidden={children ? void 0 : "true"}
+    style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}
+  ><div
+    style={{
+      position: "relative",
+      width: "min(72vw, 300px)",
+      aspectRatio: "1",
+      borderRadius: 26,
+      border: "1px solid rgba(255,255,255,0.28)",
+      // One enormous spread shadow rather than four positioned panels: it
+      // can never leave a seam, and it resizes with the square for free.
+      boxShadow: "0 0 0 100vmax rgba(0,0,0,0.45)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }}
+  >{QR_FRAME_CORNERS.map((corner, i) => <span
+    key={i}
+    style={{ position: "absolute", width: 34, height: 34, borderStyle: "solid", borderColor: "#FFFFFF", ...corner }}
+  />)}{children ? <div
+    style={{ pointerEvents: "auto", padding: "20px 18px", textAlign: "center", width: "100%" }}
+  >{children}</div> : null}</div></div>;
 }
 
 // `onUploadRequested` puts the gallery picker in the control row beside the
@@ -662,14 +911,16 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
   // A rejection leaves the displayed level where the track actually is, so a
   // lens that refuses simply does not move rather than showing a level it is
   // not at.
-  const stepZoom = useCallback10(async () => {
+  const applyZoom = useCallback10(async (wantedRaw) => {
     const track = trackRef.current;
     if (!track || !zoomRange || typeof track.applyConstraints !== "function") return;
-    const stops = zoomStopsOf(zoomRange);
-    if (stops.length === 0) return;
-    const at = stops.findIndex((v) => Math.abs(v - (zoomLevel == null ? stops[0] : zoomLevel)) <= (zoomRange.step || 0) / 2 + 1e-9);
-    const next = stops[(at === -1 ? 0 : at + 1) % stops.length];
-    const wanted = Math.min(zoomRange.max, Math.max(zoomRange.min, next));
+    const wanted = Math.min(zoomRange.max, Math.max(zoomRange.min, wantedRaw));
+    // Painted where the thumb is before the lens has moved. applyConstraints
+    // is a round trip to the camera and a handle that waits for it lags the
+    // finger dragging it, which reads as a broken control rather than a slow
+    // one. The read-back below is still the authority: a lens that refuses,
+    // or that lands somewhere else, pulls the handle to where it actually is.
+    setZoomLevel(wanted);
     try {
       await track.applyConstraints({ advanced: [{ zoom: wanted }] });
       setZoomLevel(currentZoomOf(track, zoomRange, wanted));
@@ -794,40 +1045,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
          The dimming is one enormous spread shadow on the square rather than
          four positioned panels: it can never leave a seam, and it resizes
          with the square for free. */
-    }<div
-      aria-hidden="true"
-      style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}
-    ><div
-      style={{
-        position: "relative",
-        width: "min(72vw, 300px)",
-        aspectRatio: "1",
-        borderRadius: 26,
-        // The full outline is now a hairline and the four corners carry the
-        // shape. A solid frame reads as a border around the picture; corners
-        // read as an instruction about where to put the code, which is what
-        // this is for. The square itself is unchanged — it is still exactly
-        // the region the decoder crops to (QR_SCAN_ROI), so what the eye is
-        // told to fill is still what the sensor actually reads.
-        border: "1px solid rgba(255,255,255,0.28)",
-        boxShadow: "0 0 0 100vmax rgba(0,0,0,0.45)"
-      }}
-    >{[
-      { top: -1, left: -1, borderWidth: "3px 0 0 3px", borderRadius: "26px 0 0 0" },
-      { top: -1, right: -1, borderWidth: "3px 3px 0 0", borderRadius: "0 26px 0 0" },
-      { bottom: -1, right: -1, borderWidth: "0 3px 3px 0", borderRadius: "0 0 26px 0" },
-      { bottom: -1, left: -1, borderWidth: "0 0 3px 3px", borderRadius: "0 0 0 26px" }
-    ].map((corner, i) => <span
-      key={i}
-      style={{
-        position: "absolute",
-        width: 34,
-        height: 34,
-        borderStyle: "solid",
-        borderColor: "#FFFFFF",
-        ...corner
-      }}
-    />)}</div></div>{
+    }<QrFrameGuide />{
       /* The controls, in one row under the framing square.
 
          They were not a row before: the torch alone sat at
@@ -868,20 +1086,24 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       aria-pressed={torchOn}
       className="v2-tap"
       style={{ ...scannerControlStyle(torchOn), pointerEvents: "auto" }}
-    >{torchOn ? <FlashlightOff1 size={22} color="#14122B" /> : <Flashlight1 size={22} color="#FFFFFF" />}</button>}{zoomRange && <button
-      type="button"
-      onClick={stepZoom}
-      aria-label={`Zoom, currently ${formatZoom(zoomLevel, zoomRange)}`}
-      className="v2-tap"
+    >{torchOn ? <FlashlightOff1 size={22} color="#14122B" /> : <Flashlight1 size={22} color="#FFFFFF" />}</button>}</div>{
+      /* The arc, directly above the control row — one thumb's reach from
+         the buttons, and clear of the framing square above it. Drawn only
+         when the lens reports a zoom range, the same rule the torch and the
+         picker follow: a dead control is worse than no control, and most of
+         all mid-scan. */
+    }{zoomRange && <div
       style={{
-        ...scannerControlStyle(false),
-        pointerEvents: "auto",
-        fontSize: 13,
-        fontWeight: 800,
-        color: "#FFFFFF",
-        fontFamily: T.fontDisplay
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: "calc(196px + env(safe-area-inset-bottom, 0px))",
+        display: "flex",
+        justifyContent: "center",
+        zIndex: 2,
+        pointerEvents: "none"
       }}
-    >{formatZoom(zoomLevel, zoomRange)}</button>}</div><canvas ref={canvasRef} style={{ display: "none" }} /></>;
+    ><ZoomArc range={zoomRange} level={zoomLevel} onPick={applyZoom} /></div>}<canvas ref={canvasRef} style={{ display: "none" }} /></>;
   }
 
   return <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div
@@ -914,7 +1136,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       boxShadow: "0 0 0 100vmax rgba(0,0,0,0.28)",
       pointerEvents: "none"
     }}
-  /></div><canvas ref={canvasRef} style={{ display: "none" }} /><div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}><ScanLine1 size={14} />{state === "starting" ? "Starting camera…" : paused ? "Paused" : "Point at a Gloobal QR code"}</div></div>;
+  /></div><canvas ref={canvasRef} style={{ display: "none" }} /><div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}><ScannerIcon size={14} color={T.inkFaint} />{state === "starting" ? "Starting camera…" : paused ? "Paused" : "Point at a Gloobal QR code"}</div></div>;
 }
 
 

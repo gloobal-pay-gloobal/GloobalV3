@@ -1045,6 +1045,32 @@ function GloobalId() {
   // screens, so the scanner isn't locked to a single fixed tint.
   const [scanHeroColor] = useState19(() => randomLogoFlipColor());
   const [scanCameraAccessGranted, setScanCameraAccessGranted] = useState19(false);
+
+  // ── A GRANT ALREADY ON RECORD SKIPS THE ASK ─────────────────────────
+  //
+  // The browser remembers "granted" across visits, so somebody who allowed
+  // the camera last week should be handed the camera, not asked a second
+  // time for permission they have already given. Without this, the ask was
+  // the first thing on screen every single time the scanner opened, which
+  // is a tap and a half-second between the person and the code they are
+  // standing in front of.
+  //
+  // Checked when the screen OPENS rather than once at mount: the answer can
+  // change while the app is running, since site settings are reachable
+  // without a reload.
+  //
+  // Silent when the browser will not answer. cameraPermissionState returns
+  // null for an engine with no Permissions API or no "camera" descriptor,
+  // and null means "ask" — exactly the behaviour this replaces, so nothing
+  // regresses on a browser that cannot say.
+  useEffect15(() => {
+    if (!showScanScreen) return undefined;
+    let alive = true;
+    cameraPermissionState().then((state) => {
+      if (alive && state === "granted") setScanCameraAccessGranted(true);
+    });
+    return () => { alive = false; };
+  }, [showScanScreen]);
   // The account a scanned Gloobal QR resolved to, as the SERVER named it.
   // A Gloobal QR is a static pay link (see backend/utils/gloobalPayLink.js):
   // it names an account and nothing else — no amount, no name, no session —
@@ -4143,7 +4169,7 @@ function GloobalId() {
     // scanning — not before permission, and not once a code has resolved and
     // there is a confirm card to look at.
     const scanLive = scanCameraAccessGranted && !scanPayee;
-    return <div style={{ position: "fixed", inset: 0, zIndex: 400, background: scanLive ? "#000" : T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>{!scanLive && <DashboardAmbientBg />}{
+    return <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "#000", display: "flex", flexDirection: "column", overflow: "hidden" }}>{
     /* The camera layer. A direct child of the overlay rather than an item
        in the column below, which is what lets it run edge to edge behind
        the back button. Paused while a lookup runs and after a failed one,
@@ -4163,55 +4189,82 @@ function GloobalId() {
        live picture with a square drawn on it, this is the only thing saying
        what the square is for. On the permission screen below it would be
        the restatement, so it is not drawn there. */
-  }{scanLive && <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>
+  }<span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>
           Scan QR
         </span><span style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>
           Point at any Gloobal code
-        </span></span>}</div><input
+        </span></span></div><input
       ref={scanGalleryInputRef}
       type="file"
       accept="image/*"
       onChange={handleScanGalleryFile}
       style={{ display: "none" }}
     />{!scanCameraAccessGranted ? (
-    // "Allow Access" only moves into the scan view; the real camera request
-    // happens when QrCameraScanner mounts there.
-    <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", padding: "10px 24px 0" }}>{
-    /* The "Scan any QR code" headline is gone. The screen below it already
-       shows a scanner icon the size of a saucer and a button that says
-       Allow Access — the heading restated the tab that got you here. */
-  }<div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 22, paddingBottom: 60 }}><div
-      style={{
-        width: 200,
-        height: 200,
-        borderRadius: "50%",
-        background: `${scanHeroColor}1A`,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        transition: "background 0.4s ease"
-      }}
-    ><ScannerIcon size={72} animated /></div><div style={{ textAlign: "center" }}><div style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginBottom: 8 }}>
-                    Allow Camera Access
-                  </div><div style={{ fontSize: 13, color: T.inkFaint, lineHeight: 1.5, maxWidth: 260 }}>
-                    We need access to your camera to scan QR codes. Your browser will ask you to confirm.
-                  </div></div><button
+    // ── ONE SCREEN, NOT TWO ──────────────────────────────────────────────
+    //
+    // This was a separate white page: an ambient background, a 200px circle
+    // with a scan mark in it, a headline, and a button. Granting replaced
+    // the whole thing with a black screen and a square. The founder asked
+    // for the two to be one — "build that permission screen upon the real
+    // camera".
+    //
+    // The live camera cannot literally be behind this: no browser hands
+    // over pixels before consent, so on a first run there is nothing to
+    // show. Everything else is shared. Same black ground, same title, same
+    // framing square from QrFrameGuide in the same place at the same size,
+    // same Send button at the bottom. Granting fills the square that is
+    // already on screen; nothing moves, and there is no white-to-black
+    // flash between the two.
+    //
+    // "Allow Access" still only flips this flag — the real request happens
+    // when QrCameraScanner mounts and calls getUserMedia, which is what
+    // puts the browser's own prompt up. Keeping our ask in front of it is
+    // deliberate: a prompt somebody taps away without reading is a denial
+    // that takes a trip into browser settings to undo.
+    <><QrFrameGuide><ScannerIcon size={52} animated color="#FFFFFF" /><div
+      style={{ fontSize: 16, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, marginTop: 14 }}
+    >
+                  Allow camera access
+                </div><div
+      style={{ fontSize: 12.5, color: "rgba(255,255,255,0.78)", lineHeight: 1.45, marginTop: 6 }}
+    >
+                  Your browser will ask you to confirm.
+                </div><button
       onClick={() => setScanCameraAccessGranted(true)}
       className="v2-tap"
       style={{
+        marginTop: 18,
         border: "none",
         borderRadius: 999,
-        padding: "14px 40px",
+        padding: "12px 32px",
         background: T.gradButton,
         color: "#fff",
-        fontSize: 14.5,
+        fontSize: 14,
         fontWeight: 800,
         cursor: "pointer",
-        boxShadow: "0 8px 20px rgba(124,58,237,0.28)"
+        boxShadow: "0 8px 20px rgba(124,58,237,0.35)"
       }}
     >
                   Allow Access
-                </button><button
+                </button>{scanError && <div
+      role="alert"
+      style={{ fontSize: 12, color: "#fff", background: T.negative, borderRadius: 10, padding: "7px 12px", textAlign: "center", fontWeight: 700, marginTop: 14, lineHeight: 1.4 }}
+    >{scanError}</div>}</QrFrameGuide>{
+    /* Where the scanner's own control row sits, so the gallery picker does
+       not move when the camera comes up. It stays reachable here because a
+       code that arrived as a screenshot never needs the camera at all. */
+  }<div
+      style={{
+        position: "absolute",
+        left: 0,
+        right: 0,
+        bottom: "calc(132px + env(safe-area-inset-bottom, 0px))",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 2
+      }}
+    ><button
       onClick={() => {
         // Opens the picker. This used to set scanCameraAccessGranted and
         // nothing else — a control labelled "Upload from gallery" that
@@ -4226,19 +4279,21 @@ function GloobalId() {
         display: "flex",
         alignItems: "center",
         gap: 8,
-        border: "none",
-        background: "none",
-        color: T.accent,
-        fontSize: 14,
+        border: "1px solid rgba(255,255,255,0.35)",
+        borderRadius: 999,
+        padding: "10px 18px",
+        background: "rgba(0,0,0,0.45)",
+        backdropFilter: "blur(6px)",
+        color: "#fff",
+        fontSize: 13,
         fontWeight: 700,
         cursor: "pointer"
       }}
-    ><ImageIcon size={17} />
+    ><ImageIcon size={16} />
                   Upload from gallery
-                </button>{scanError && <div
-      role="alert"
-      style={{ fontSize: 12.5, color: T.negative, textAlign: "center", fontWeight: 700, maxWidth: 260, lineHeight: 1.45 }}
-    >{scanError}</div>}</div><div style={{ paddingBottom: "calc(26px + env(safe-area-inset-bottom, 0px))" }}>{
+                </button></div><div
+      style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))" }}
+    >{
     /* Was a div reading "Enter Mobile Number to Pay" that was styled to
        look like a text field but was not one — no input, no handler, no
        tap target. It could not be typed into and it did nothing, which is
@@ -4247,7 +4302,7 @@ function GloobalId() {
 
        This is that promise kept. It opens the real Send flow, where a
        number or a Gloobal ID can actually be entered. */
-  }<ScanSendButton onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></div></div>
+  }<ScanSendButton onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></div></>
   ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: scanLive ? "flex-end" : "center", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))", gap: 16 }}>{!scanPayee ? <><div style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}>{scanResolving ? "Looking this QR up…" : "Hold a Gloobal QR code inside the frame."}</div>{scanError && <div role="alert" style={{ fontSize: 12.5, color: "#fff", background: T.negative, borderRadius: 12, padding: "8px 14px", textAlign: "center", fontWeight: 700 }}>{scanError}</div>}{scanRetry && <button
     onClick={() => {
       setScanError(null);
@@ -4319,6 +4374,10 @@ function GloobalId() {
     onOpenPaidHistory={() => {
       requestCloseActiveScreen();
       setDashboardHistoryDirection("sending");
+    }}
+    onOpenScan={() => {
+      requestCloseActiveScreen();
+      setShowScanScreen(true);
     }}
   /></div>}{activeScreen === "bank" && <ScreenErrorBoundary name="Add bank" onClose={requestCloseActiveScreen}><AddBankScreen onClose={requestCloseActiveScreen} country={dialCountry} /></ScreenErrorBoundary>}{activeScreen === "coverage" && <ScreenErrorBoundary name="Gloobal Coverage" onClose={requestCloseActiveScreen}><GloobalCoverageScreen
     onClose={requestCloseActiveScreen}
@@ -4477,9 +4536,27 @@ function GloobalId() {
         .gh-blink-circle {
           animation: ghColorCycle 7s linear infinite, ghBlink 1.6s ease-in-out infinite;
         }
+        /* The scan mark, everywhere it appears as something to tap.
+           Roughly three seconds a colour, which is what the founder asked
+           for: long enough to be a change somebody notices rather than a
+           flicker they only feel. One property for the whole mark — the
+           corners stroke in currentColor and the code blocks fill in it —
+           so the two halves cannot drift out of step. */
+        @keyframes scanMarkCycle {
+          0%, 26%   { color: #7C3AED; }
+          33%, 59%  { color: #1781CC; }
+          66%, 92%  { color: #1C8F74; }
+          100%      { color: #7C3AED; }
+        }
+        .scan-mark-cycle { animation: scanMarkCycle 9s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
           * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
           .v2-tap:active { transform: none; }
+          /* Stopped outright, not sped up. The rule above collapses every
+             animation to a millisecond, which for an INFINITE colour cycle
+             is not "no motion" but a strobe — the exact thing somebody
+             asking for reduced motion is protecting themselves from. */
+          .scan-mark-cycle { animation: none !important; }
         }
       `}</style>{rootToast && <div
     style={{

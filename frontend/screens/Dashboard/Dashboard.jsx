@@ -3000,7 +3000,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       }, 700);
     }}
     scanning={payTargetBiometricScanning}
-  />}{showReceive && <div style={{ position: "fixed", inset: 0, zIndex: 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px 6px", flexShrink: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" ID" withSymbols /></span><div style={{ display: "flex", alignItems: "center", gap: 8 }}><NavHistoryButton
+  />}{showReceive && <div style={{ position: "fixed", inset: 0, zIndex: 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px 6px", flexShrink: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" ID" withSymbols /></span><div style={{ display: "flex", alignItems: "center", gap: 8 }}>{
+    /* Scan, beside history. This screen shows YOUR code; half the time
+       two people open it at once and one of them needs to be scanning
+       instead. Without this that person backs out to the dashboard to
+       find the scanner, having already found a QR screen. */
+  }{onOpenScan && <NavIconButton
+    onClick={() => {
+      requestCloseReceive();
+      onOpenScan();
+    }}
+    label="Scan a Gloobal QR code"
+  ><ScannerIcon size={17} animated color={T.ink} /></NavIconButton>}<NavHistoryButton
     onClick={() => {
       requestCloseReceive();
       setActiveTab("profile");

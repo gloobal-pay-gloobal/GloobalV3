@@ -208,3 +208,44 @@ describe("My Share's disc cannot be squashed or burst", () => {
     assert.match(dash, /fontSize: myShareBadgeFontSize\(`\$\{myShareRateText\(myShareRate\)\}%`\)/);
   });
 });
+
+// ── TWO MARKS, TWO RULES ────────────────────────────────────────────────
+//
+// The mark INSIDE the code shows letters only, deliberately: on something
+// people photograph, a mark spending half its life showing a stray "×"
+// reads as noise ON the code. The mark BESIDE it, in the card's header, is
+// in the same context the Send and Receive tiles are in, so it follows the
+// tiles' rule instead — letters alternating with dial symbols, in colour.
+//
+// Easy to collapse the two by accident, in either direction, which is what
+// these pin.
+describe("the card's hallmark and the code's mark follow different rules", () => {
+  const card = readSource("frontend/components/common/gloobalReceiveQrCard.jsx");
+
+  test("the header's hallmark is the app's own flipping mark", () => {
+    assert.match(card, /<GH2HFlipCircle size=\{GLOOBAL_QR_HALLMARK_SIZE\} \/>/,
+      "the hallmark is a still copy again instead of the shared mark");
+  });
+
+  test("it sits in the header's left cell, facing My Share", () => {
+    const at = card.indexOf("<GH2HFlipCircle");
+    assert.ok(at > 0);
+    const row = card.slice(at, at + 700);
+    assert.match(row, /Your Gloobal QR/, "the hallmark is not on the title row");
+    assert.ok(
+      card.indexOf("<GH2HFlipCircle") < card.indexOf('data-testid="qr-header-action"'),
+      "the hallmark is not on the opposite side from My Share"
+    );
+  });
+
+  test("the code's own mark still carries no symbols", () => {
+    // gloobalQrCornerFace is what the in-code disc reads, and it must stay
+    // letters-only however the card's mark changes.
+    const at = card.indexOf("function gloobalQrCornerFace");
+    assert.ok(at > 0, "the code's mark is gone");
+    const body = card.slice(at, card.indexOf("\n}", at));
+    assert.doesNotMatch(body, /DIAL_SYMBOLS/,
+      "the code's mark has started showing dial symbols");
+    assert.match(body, /GH2H_LETTERS/, "the code's mark no longer reads the shared letters");
+  });
+});

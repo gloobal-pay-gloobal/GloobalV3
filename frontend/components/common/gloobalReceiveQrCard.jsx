@@ -312,48 +312,28 @@ function gloobalQrPaintCornerMark(ctx, corner, face, scale) {
 // My Share across the title. Inside the code it cannot: a QR leaves
 // exactly one corner free — the bottom-right — because the other three
 // carry the finder squares a scanner locks onto, and a mark moved onto one
-// of those is a code that may not read.
+// of those is a code that may not read. So it is drawn at card level, in
+// the header row's left cell, which was an empty spacer.
 //
-// So this is the same mark drawn at card level, in the header row's left
-// cell, which was an empty spacer. The one inside the code stays where it
-// is, and that is deliberate rather than an oversight: it is painted into
-// the picture Share hands over, so a code that is screenshotted, sent or
-// printed still carries it. This one belongs to the SCREEN and goes no
-// further than the screen.
+// It is GH2HFlipCircle — the app's own mark, the one already turning on
+// the Send and Receive tiles — rather than a still copy of it. The founder
+// asked for "symbols and colour in hallmark flip", and that is precisely
+// what that component is: a coloured letter on white, flipping to a dial
+// symbol on a coloured face, G → H → 2 → H with a different symbol between
+// each.
 //
-// Same letter, same colour, same cycle — gloobalQrCornerFace is the single
-// source for both, so the two marks can never be showing different letters
-// at the same moment.
-function GloobalQrHallmark({ step = 0, size = 26 }) {
-  const face = gloobalQrCornerFace(step);
-  const r = 11;
-  return <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    aria-hidden="true"
-    focusable="false"
-    style={{ display: "block", flexShrink: 0 }}
-  ><circle
-    cx="12"
-    cy="12"
-    r={r}
-    fill="none"
-    stroke={face.color}
-    // The same fraction of the diameter the in-code disc uses, so the two
-    // read as one mark at two sizes rather than as two marks.
-    strokeWidth={r * 2 * 0.09}
-  /><text
-    x="12"
-    y="12"
-    textAnchor="middle"
-    dominantBaseline="central"
-    fontSize={r * 0.95}
-    fontWeight="800"
-    fontFamily={T.fontDisplay}
-    fill={face.color}
-  >{face.letter}</text></svg>;
-}
+// Which settles a question the first version of this got wrong by
+// omission. The mark INSIDE the code deliberately shows letters only —
+// see gloobalQrCornerFace — because on something people photograph, a
+// mark spending half its life showing a stray "×" reads as noise ON the
+// code. That reasoning is about being on the code. This one is beside it,
+// on the card, in exactly the context the tiles are in, so the rule that
+// applies to it is the tiles' rule and not the code's.
+//
+// Reusing the component rather than restating its letters and colours is
+// the other half: a second copy of G/H/2/H is a second thing to remember
+// to change.
+var GLOOBAL_QR_HALLMARK_SIZE = 28;
 
 function GloobalQrSvg({ value, logo = true, discColor, markStep = 0 }) {
   const matrix = buildGloobalQrMatrix(value);
@@ -692,7 +672,7 @@ function GloobalReceiveQrCard({ gloobalId, name, onToast, headerAction = null })
           Three columns so the title stays centred whether or not the
           action is there. */}
       <div style={{ width: "100%", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 8 }}>
-        <GloobalQrHallmark step={markStep} />
+        <GH2HFlipCircle size={GLOOBAL_QR_HALLMARK_SIZE} />
         <h2
           id="gloobal-receive-qr-title"
           style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}

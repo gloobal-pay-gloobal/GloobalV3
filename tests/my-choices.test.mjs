@@ -354,10 +354,22 @@ describe("the screens answer to the lens", () => {
       "the second unit is dropped when there is one");
   });
 
-  test("the stat columns carry their unit too", () => {
+  test("the stat rows carry their unit too", () => {
+    // Bounded by the end of the block that draws them rather than by a
+    // count of characters from the last label. The three stats became
+    // rows — label left, figure right — and a 400-character window that
+    // fitted three narrow columns did not reach past one row's styles.
     const src = code(DETAIL);
-    const stats = src.slice(src.indexOf('["This month"'), src.indexOf('Share of total') + 400);
+    const from = src.indexOf('["This month"');
+    assert.ok(from > 0, "the stats are gone");
+    const to = src.indexOf("</div>)}</div>", from);
+    assert.ok(to > from, "the stat block has no end");
+    const stats = src.slice(from, to);
     assert.match(stats, /ChoiceMoney/, "the stat figures are printed as bare numbers");
+    // And the shape they are drawn in, since that is what the window was
+    // implicitly checking: a label and a figure, side by side.
+    assert.match(stats, /justifyContent: "space-between"/,
+      "the stats are no longer a label beside its figure");
   });
 
   test("the budget field names its unit without splitting it across a flex gap", () => {

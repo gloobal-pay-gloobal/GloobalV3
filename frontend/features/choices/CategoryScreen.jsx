@@ -237,7 +237,15 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
     style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "calc(14px + env(safe-area-inset-top, 0px)) 16px 24px" }}
   ><div style={{ borderRadius: T.radiusLg, background: tint, padding: 16 }}><div
     style={{ display: "flex", alignItems: "center", gap: 9 }}
-  ><ChoiceHeroButton onClick={onBack} label="Back"><ArrowLeft7 size={18} color={T.ink} /></ChoiceHeroButton><ChoiceHeroButton solid label={category.name} clip><ChoiceGlyph category={category} size={20} /></ChoiceHeroButton><span
+  ><ChoiceHeroButton onClick={onBack} label="Back"><ArrowLeft7 size={18} color={T.ink} /></ChoiceHeroButton>{
+    /* The icon is gone from this row.
+       It sat in a circle of its own between Back and the name, and it was
+       the third thing on a row that already had a back arrow, a name and
+       two actions. It told nobody anything the name did not: you reached
+       this screen by tapping that very icon on the grid, and the tile you
+       tapped is still the picture you are holding in your head. Removing
+       it gives the name the width it was losing. */
+  }<span
     style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >{category.name}</span><span style={{ flex: 1 }} />{
     /* The scanner, inside the category — so a scanned payment is already
@@ -250,22 +258,34 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
   >{totals.firstAt
     ? `Since ${new Date(totals.firstAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })} · ${totals.count} ${totals.count === 1 ? "payment" : "payments"}`
     : "Nothing filed here yet"}</div></div>{
-    /* Three figures, each with its own unit underneath rather than beside
-       it — a bare "510" in a stat column is exactly the single-currency
-       representation the lens exists to prevent, and the unit does not fit
-       alongside at this width. */
+    /* Three figures, down rather than across: label on the left, figure
+       on the right.
+       Three columns had to divide the card's width three ways, and each
+       figure then carried its unit UNDERNEATH it because "0.00₹ │ GEU"
+       does not fit in a third of a phone. A row gives the figure the whole
+       width minus a label, so the unit sits beside the number where it
+       belongs and a long one has somewhere to go instead of wrapping. */
   }<div
-    style={{ display: "flex", borderRadius: T.radiusMd, background: T.surface, boxShadow: T.shadowCard, padding: "14px 4px", marginTop: 11 }}
+    style={{ borderRadius: T.radiusMd, background: T.surface, boxShadow: T.shadowCard, padding: "4px 15px", marginTop: 11 }}
   >{[
     ["This month", totals.thisMonth, true],
     ["Monthly avg", monthlyAverage, true],
     ["Share of total", sharePercent, false]
   ].map(([label, value, money], at) => <div
     key={label}
-    style={{ flex: 1, textAlign: "center", borderLeft: at === 0 ? "none" : `1px solid ${T.line}`, minWidth: 0 }}
-  ><div style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600 }}>{label}</div>{money
-    ? <div style={{ marginTop: 3 }}><ChoiceMoney amount={value} code={code} size={15} fit /></div>
-    : <div style={{ marginTop: 3, fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{value}%</div>}</div>)}</div>{
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+      padding: "11px 0",
+      borderTop: at === 0 ? "none" : `1px solid ${T.line}`
+    }}
+  ><span style={{ fontSize: 13, color: T.inkSoft, fontWeight: 600, flexShrink: 0 }}>{label}</span><span
+    style={{ minWidth: 0, textAlign: "right" }}
+  >{money
+    ? <ChoiceMoney amount={value} code={code} size={15} fit />
+    : <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{value}%</span>}</span></div>)}</div>{
     /* The budget strip appears only when there is a budget. A category
        without one is not a category that is 0% through its budget. */
   }{budget && <div

@@ -3041,11 +3041,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
 
          tabular-nums so 1.00% and 4.56% are the same width and the
          block does not twitch when the rate changes. */
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}><span
-        style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkFaint, lineHeight: 1 }}
-      >
-        My Share
-      </span><span
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}><span
         data-testid="receive-share-rate"
         style={{ fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: -0.2 }}
       >{`${myShareRate.toFixed(2)}%`}</span><span

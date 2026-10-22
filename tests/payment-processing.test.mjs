@@ -29,6 +29,7 @@ import { readSource } from "./harness.mjs";
 
 const SCREEN = "frontend/components/dialogs/PaymentProcessing.jsx";
 const SEND = "frontend/screens/SendMoney/SendMoney.jsx";
+const UNLOCK = "frontend/components/dialogs/PaymentUnlock.jsx";
 
 const code = (p) => readSource(p)
   .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -235,5 +236,78 @@ describe("it behaves for someone who cannot use motion", () => {
     const s = code(SCREEN);
     assert.match(s, /aria-live="polite"/);
     assert.match(s, /aria-label=\{failed \? "Payment not completed" : "Processing payment"\}/);
+  });
+});
+
+// ── WHAT ARRIVES, NOT ONLY WHAT LEAVES ──────────────────────────────────
+//
+// Send ₹302.14 to Japan and ¥500 lands there. For most of this screen's
+// life only the first of those two numbers was on it, and the second is
+// usually the one the payer is waiting on: it is the figure they quoted
+// and the figure the receipt gets checked against.
+describe("a cross-border payment shows both sides", () => {
+  test("the receiver's own figure is passed, in the receiver's own currency", () => {
+    assert.match(
+      code(SEND),
+      /receives=\{top\.currency === bottom\.currency\s*\?\s*null\s*:\s*geuLensBarParts\(receiverAmount, bottom\.currency, lens, top\.currency\)\}/,
+      "the arriving figure is not the receiver's amount in the receiver's currency"
+    );
+  });
+
+  test("it is withheld when both sides are in the same currency", () => {
+    // Otherwise it is the same number said twice, under a figure that
+    // already said it.
+    const s = code(SEND);
+    const at = s.indexOf("receives={");
+    assert.ok(at > 0, "nothing is passed at all");
+    assert.match(s.slice(at, at + 160), /top\.currency === bottom\.currency\s*\?\s*null/,
+      "a same-currency payment prints the figure twice");
+  });
+
+  test("the screen draws nothing when it is not passed", () => {
+    assert.match(code(SCREEN), /\{receives && receives\.lead \?/,
+      "an absent arriving figure would render an empty line");
+  });
+});
+
+// ── THE FIGURES DO NOT SHRINK AS THE CARD TURNS ─────────────────────────
+//
+// The coupon shows the share behind a foil, then the card turns and shows
+// it again on the green head. Those two sizes have to move together: make
+// the head smaller on its own and the money appears to get smaller the
+// moment it is revealed, which is the one thing a reward screen must
+// never look like.
+describe("the Creator Share figures keep their order", () => {
+  test("the revealed figure is larger than the one on the coupon", () => {
+    const s = code(UNLOCK);
+    const read = (name) => {
+      const hit = s.match(new RegExp(`var ${name} = (\\d+(?:\\.\\d+)?);`));
+      assert.ok(hit, `${name} is not declared`);
+      return Number(hit[1]);
+    };
+    const coupon = read("PAYMENT_UNLOCK_FIGURE_COUPON");
+    const head = read("PAYMENT_UNLOCK_FIGURE_HEAD");
+    assert.ok(head > coupon, `the share shrinks on reveal: ${coupon} then ${head}`);
+  });
+
+  test("both faces read their size from the constants, not from a literal", () => {
+    const s = code(UNLOCK);
+    assert.match(s, /shareFigure\(PAYMENT_UNLOCK_FIGURE_COUPON\)/);
+    assert.match(s, /shareFigure\(PAYMENT_UNLOCK_FIGURE_HEAD\)/);
+    assert.doesNotMatch(s, /shareFigure\(\d/, "a face is sized with a loose number again");
+  });
+
+  test("where it is leads, and why it exists follows", () => {
+    const s = code(UNLOCK);
+    const at = s.indexOf("Planted in My Assets");
+    assert.ok(at > 0, "the line no longer says where the share went");
+    const after = s.slice(at, at + 420);
+    assert.match(after, /shares part of every payment back/,
+      "the reason the share exists was dropped rather than moved");
+    assert.ok(
+      after.indexOf("Planted in My Assets") < after.indexOf("shares part of every payment back"),
+      "the payee's name is back in front of the useful half"
+    );
+    assert.match(after, /color: T\.inkFaint/, "both halves carry the same weight");
   });
 });

@@ -2175,6 +2175,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     status={transactionStatus}
     recipientName={bottom.name}
     amount={geuLensBarParts(senderAmount, top.currency, lens, top.currency)}
+    receives={top.currency === bottom.currency
+      ? null
+      : geuLensBarParts(receiverAmount, bottom.currency, lens, top.currency)}
     flag={bottom.flag}
     reason={failureReason}
     onRetry={() => {

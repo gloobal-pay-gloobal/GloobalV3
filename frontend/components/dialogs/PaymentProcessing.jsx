@@ -67,7 +67,12 @@ var PROCESSING_SLOW_AFTER_MS = 6000;
 // like a list instead of stacked like a caption.
 var PROCESSING_HERO = 134;
 var PROCESSING_RING_STROKE = 4;
-var PROCESSING_AMOUNT_SIZE = 40;
+// 31 rather than 40. The founder read the 40 as shouting, and he is right
+// about what it cost: at 40 the figure plus its unit was one line away from
+// wrapping inside a 334px card, and a money line that wraps is a money line
+// somebody has to read twice. It is still the largest thing on the card and
+// still the first thing the eye lands on.
+var PROCESSING_AMOUNT_SIZE = 31;
 var PROCESSING_AMOUNT_GAP = 10;
 
 // Not a percentage. There is no percentage to know — there are exactly two
@@ -243,6 +248,7 @@ function PaymentProcessing({
   status,
   recipientName,
   amount,
+  receives,
   flag,
   reason,
   onRetry,
@@ -401,7 +407,30 @@ function PaymentProcessing({
        wait" — it arrives. */
   }{"−"}{amount.lead}{amount.trail ? <span
     style={{ fontSize: geuLensTrailSize(PROCESSING_AMOUNT_SIZE), fontWeight: 800, letterSpacing: 0, opacity: 0.72 }}
-  >{` ${amount.trail}`}</span> : null}</div> : null}</div>{
+  >{` ${amount.trail}`}</span> : null}</div> : null}{
+    /* THE OTHER HALF OF A CROSS-BORDER PAYMENT.
+       The figure above is what leaves this balance. It is not what arrives:
+       send ₹302.14 to Japan and ¥500 lands there, and only the first of
+       those two numbers was on the screen. The person waiting is usually
+       waiting on the second one — it is the number they quoted, and the
+       one the receipt will be checked against.
+
+       Passed as null when both sides are in the same currency, because
+       then it is the same number said twice. */
+  }{receives && receives.lead ? <div
+    style={{
+      marginTop: 7,
+      fontSize: 12,
+      fontWeight: 700,
+      color: T.inkSoft,
+      maxWidth: 290,
+      lineHeight: 1.4
+    }}
+  >{recipientName ? `${recipientName} receives ` : "They receive "}<span
+    style={{ color: failed ? T.inkSoft : T.ink, fontVariantNumeric: "tabular-nums" }}
+  >{receives.lead}</span>{receives.trail ? <span
+    style={{ color: T.inkFaint }}
+  >{` ${receives.trail}`}</span> : null}</div> : null}</div>{
     failed
       ? <p style={{
           margin: 0,

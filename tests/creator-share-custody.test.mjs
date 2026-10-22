@@ -293,7 +293,11 @@ describe("the app stops telling people the share is spendable", () => {
     const unlock = code("frontend/components/dialogs/PaymentUnlock.jsx");
     assert.ok(!/It's in your Gloobal balance already/.test(unlock),
       "the unlock screen still says the share is in the balance");
-    assert.match(unlock, /planted in My Assets/);
+    // Case-insensitive: the line was resplit so that where the share went
+    // comes first, which made "Planted in My Assets" the start of its own
+    // sentence. What this guards is that the screen still names the place,
+    // not where the capital letter falls.
+    assert.match(unlock, /planted in My Assets/i);
   });
 
   test("the help sheet already said this, and still does", () => {

@@ -39,6 +39,19 @@ var PAYMENT_UNLOCK_FOIL_SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "
 var PAYMENT_UNLOCK_HEAD_OUT = "linear-gradient(135deg,#312E81 0%,#4F46E5 55%,#7C3AED 100%)";
 var PAYMENT_UNLOCK_HEAD_IN = "linear-gradient(135deg,#064E3B 0%,#047857 55%,#0FA372 100%)";
 
+// ── THE FIGURE, AT TWO SIZES ────────────────────────────────────────────
+//
+// The founder read the old pair — 32 behind the foil, 38 once the card
+// turned — as shouting, and at 38 the "│ GEU" beside it was set nearly as
+// large as the money.
+//
+// Named rather than written twice because the relationship matters more
+// than either number: the coupon's figure must stay SMALLER than the one
+// it becomes. Shrink only the head and the money appears to shrink as the
+// card turns, which is the one thing a reward screen must never look like.
+var PAYMENT_UNLOCK_FIGURE_COUPON = 26;
+var PAYMENT_UNLOCK_FIGURE_HEAD = 30;
+
 // The line over the share, which used to be the single word "Nice one" on
 // every reveal a person ever saw.
 //
@@ -626,8 +639,8 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
               >
                 <div aria-live="polite" style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: 16, textAlign: "center" }}>
                   <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.4, color: T.inkFaint }}>BACK TO YOU</div>
-                  <div data-testid="unlock-share" style={{ fontFamily: T.fontDisplay, fontSize: shareParts ? 32 : 22, fontWeight: 800, color: shareParts ? T.positive : T.inkSoft, fontVariantNumeric: "tabular-nums" }}>
-                    {shareParts ? shareFigure(32) : "No share on this one"}
+                  <div data-testid="unlock-share" style={{ fontFamily: T.fontDisplay, fontSize: shareParts ? PAYMENT_UNLOCK_FIGURE_COUPON : 22, fontWeight: 800, color: shareParts ? T.positive : T.inkSoft, fontVariantNumeric: "tabular-nums" }}>
+                    {shareParts ? shareFigure(PAYMENT_UNLOCK_FIGURE_COUPON) : "No share on this one"}
                   </div>
                 </div>
                 <canvas
@@ -681,8 +694,8 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
               <div style={{ padding: "18px 16px 20px", color: "#fff", background: PAYMENT_UNLOCK_HEAD_IN, textAlign: "center" }}>
                 <div aria-hidden="true" style={{ fontSize: 17, letterSpacing: 6 }}>★ ✦ ★</div>
                 <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 2, opacity: 0.85, marginTop: 9 }}>CREATOR SHARE EARNED</div>
-                <div data-testid="unlock-earned" style={{ fontFamily: T.fontDisplay, fontSize: 38, fontWeight: 800, letterSpacing: -1.4, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
-                  {shareParts ? shareFigure(38) : "Nothing this time"}
+                <div data-testid="unlock-earned" style={{ fontFamily: T.fontDisplay, fontSize: PAYMENT_UNLOCK_FIGURE_HEAD, fontWeight: 800, letterSpacing: -1.4, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
+                  {shareParts ? shareFigure(PAYMENT_UNLOCK_FIGURE_HEAD) : "Nothing this time"}
                 </div>
                 <div data-testid="unlock-rate" style={{ fontSize: 11.5, fontWeight: 800, opacity: 0.92, marginTop: 2 }}>
                   {`${shareRate.toFixed(2)}% of what you paid`}
@@ -699,7 +712,15 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
                         it is claimed. The app's own explainer has always
                         described it this way — this line was the one
                         telling people something else. */}
-                  {`${payeeName} shares a part of every payment back. It's planted in My Assets, earning until you claim it.`}
+                  {/* WHERE IT IS LEADS; WHY IT EXISTS FOLLOWS.
+                        This was one sentence that opened with the payee's
+                        name and arrived at the useful half last, so the
+                        line had to be read to the end to answer the only
+                        question anybody has here: where did it go. The
+                        two halves are the same two facts, reordered and
+                        weighted. */}
+                  <span style={{ color: T.ink, fontWeight: 600 }}>Planted in My Assets, earning until you claim it.</span>
+                  <span style={{ display: "block", color: T.inkFaint, marginTop: 3 }}>{`${payeeName} shares part of every payment back.`}</span>
                 </div>
               </div>
               <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", gap: 9 }}>

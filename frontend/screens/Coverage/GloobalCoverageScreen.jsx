@@ -53,7 +53,7 @@ import {
 // all. It is the whole live-update mechanism: this screen refetches when it
 // changes, so nothing here has to poll and nothing goes stale behind a
 // payment the person just made.
-function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryProp, isFullyRegistered, onOpenMyShare, coverageRefreshToken }) {
+function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryProp, isFullyRegistered, onOpenMyShare, onContributeToProject, coverageRefreshToken }) {
   // Three separate call sites iterate this prop; a missing one threw
   // "sendHistory is not iterable" and blanked the screen instead of
   // showing an empty history. Normalise once, here.
@@ -129,6 +129,11 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   const [projectsLoading, setProjectsLoading] = useState16(false);
   const [projectsToken, setProjectsToken] = useState16(0);
   const [showProjectForm, setShowProjectForm] = useState16(false);
+  // The project somebody has tapped Give on, while the one question that
+  // cannot be asked later — may we print your name — is still open. Cleared
+  // when that sheet closes, either way; the payment itself happens on the
+  // Send screen, which this screen hands over to and does not host.
+  const [giveToProject, setGiveToProject] = useState16(null);
   const [projectTitle, setProjectTitle] = useState16("");
   const [projectSummary, setProjectSummary] = useState16("");
   const [projectLink, setProjectLink] = useState16("");
@@ -591,6 +596,24 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // sending it, every bar and total on this screen becomes live with no
   // further change here.
   const projectRaised = (project) => Number(project?.raised) || 0;
+  // A stored goal, in the units everything else on this screen is in.
+  //
+  // THE DIVISOR IS NOT ALWAYS A HUNDRED. Both call sites used to hardcode
+  // `goal.minor / 100`, which is right for the currencies that have two
+  // decimal places and wrong by a factor of a hundred for the seventeen
+  // that have none — a ¥500,000 goal read as ¥5,000.
+  //
+  // It was invisible until now because `raised` was always zero, so the
+  // percentage and the bar were always zero whatever the goal said. The
+  // moment real money is counted against it, a Japanese project would show
+  // itself as having passed a goal a hundred times smaller than the one it
+  // set. currencyDecimals is the app's existing answer to this question
+  // (backend/utils/format.js) and is what the server rounds by.
+  const projectGoalMajor = (goal) => {
+    if (!goal || goal.minor == null) return 0;
+    const places = typeof currencyDecimals === "function" ? currencyDecimals(goal.currency) : 2;
+    return Number(goal.minor) / Math.pow(10, places);
+  };
   const projectBackers = (project) => Number(project?.backers) || 0;
 
   // Is the person searching right now?
@@ -1089,10 +1112,11 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        screen is how all three get confused. This is money put INTO projects,
        and it is its own thing.
 
-       It reads zero, and that zero is real: nothing in this system can take
-       a contribution, so nobody has given to anything. It is summed from the
-       visible rows rather than written as a literal, so the day contributions
-       exist the figure follows them. */
+       It was written as a sum of the visible rows rather than as a literal
+       zero, against the day contributions existed. They do, and the figure
+       followed them with no change here — which is the only reason this
+       note is worth keeping: the alternative at the time was hardcoding a
+       0 and a sentence apologising for it. */
   }<div style={{ position: "relative", overflow: "hidden", borderRadius: T.radiusXl, background: T.gradWallet, boxShadow: T.shadowRaised, padding: "16px 18px 20px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>{
     /* The location filter, and the label for the figure beneath it.
 
@@ -1109,8 +1133,9 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     aria-label={`Showing ${country.name}. Change country`}
     style={{ display: "flex", alignItems: "center", gap: 7, height: 34, padding: "0 10px 0 6px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.16)", minWidth: 0, cursor: "pointer" }}
   ><FlagEmoji flag={country.flag} size={24} shape="circle" border="none" /><span style={{ fontSize: 12, fontWeight: 800, color: "#FFFFFF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{country.name}</span><ChevronDown3 size={13} color="rgba(255,255,255,0.85)" style={{ flexShrink: 0 }} /></button><span style={{ display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.12)", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}><Layers3 size={13} />{projectsData ? `${hoomanVisibleProjects.length} ${hoomanVisibleProjects.length === 1 ? "project" : "projects"}` : "∆"}</span></div><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.66)", marginTop: 18 }}>Raised</div><div style={{ fontSize: hoomanRaisedSize, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, lineHeight: 1.1, marginTop: 4, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{hoomanRaisedParts.lead}{hoomanRaisedParts.trail && <span style={{ fontSize: geuLensTrailSize(hoomanRaisedSize), fontWeight: 800 }}> {hoomanRaisedParts.trail}</span>}</div><div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.56)", marginTop: 8, lineHeight: 1.45 }}>
-      Gloobal cannot take contributions yet, so every project is at zero.
-    </div></div>{projectFiledIn === country.code && <div
+{hoomanRaisedTotal > 0
+      ? `Given to ${hoomanVisibleProjects.filter((p) => projectRaised(p) > 0).length} of these projects.`
+      : "Nothing given here yet. Open a project to be the first."}</div></div>{projectFiledIn === country.code && <div
     role="status"
     style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: T.radiusMd, background: T.accentSoft }}
   ><FlagEmoji flag={country.flag} width={18} height={13} radius={3} /><span style={{ fontSize: 11.5, fontWeight: 600, color: T.accent, lineHeight: 1.45 }}>
@@ -1226,12 +1251,16 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
          to. The bar appears when there is something to put in it. */
     }{(() => {
       const raised = projectRaised(project);
-      const goalMajor = project.goal ? project.goal.minor / 100 : 0;
+      const goalMajor = projectGoalMajor(project.goal);
       const currency = project.goal ? project.goal.currency : displayCurrency;
       // Guarded: a goal of zero would make this Infinity, and a bar that is
       // 100% because it was divided by nothing is worse than no bar.
-      const pct = goalMajor > 0 ? Math.min(100, Math.round((raised / goalMajor) * 100)) : 0;
-      return <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.line}` }}><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginTop: 9 }}><span style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}>{geuLensOwnMoney(raised, currency, lens, myCurrency)}</span>{project.goal ? <span style={{ fontSize: 11.5, color: T.inkFaint }}>of {geuLensOwnMoney(goalMajor, currency, lens, myCurrency)}</span> : <span style={{ fontSize: 11.5, color: T.inkFaint }}>raised</span>}</span>{project.goal && <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>}</div></div>;
+      // Same rule as the project's own page: the FIGURE may pass a hundred
+      // because a goal is a target and giving stays open past it; the BAR
+      // is clamped, because a bar is a container.
+      const pct = goalMajor > 0 ? Math.round((raised / goalMajor) * 100) : 0;
+      const barPct = Math.min(100, pct);
+      return <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.line}` }}><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden" }}><div style={{ width: `${barPct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginTop: 9 }}><span style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}>{geuLensOwnMoney(raised, currency, lens, myCurrency)}</span>{project.goal ? <span style={{ fontSize: 11.5, color: T.inkFaint }}>of {geuLensOwnMoney(goalMajor, currency, lens, myCurrency)}</span> : <span style={{ fontSize: 11.5, color: T.inkFaint }}>raised</span>}</span>{project.goal && <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>}</div></div>;
     })()}<div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.inkFaint, marginTop: 10 }}><span>{project.summaryWordCount} words</span>{projectDateText(project.createdAt) && <><span>·</span><span>{projectDateText(project.createdAt)}</span></>}{project.countryIso && COUNTRY_BY_ISO[project.countryIso] && <><span>·</span><FlagEmoji flag={COUNTRY_BY_ISO[project.countryIso].flag} width={16} height={12} radius={3} /></>}</div></button>;
   })}</div>}</div>{
     /* Add a project, floating in the bottom-right corner.
@@ -1347,9 +1376,17 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     }{(() => {
       const raised = projectRaised(hoomanProject);
       const backers = projectBackers(hoomanProject);
-      const goalMajor = hoomanProject.goal ? hoomanProject.goal.minor / 100 : 0;
+      const goalMajor = projectGoalMajor(hoomanProject.goal);
       const currency = hoomanProject.goal ? hoomanProject.goal.currency : displayCurrency;
-      const pct = goalMajor > 0 ? Math.min(100, Math.round((raised / goalMajor) * 100)) : 0;
+      // The TRUE percentage, which can be more than a hundred.
+      //
+      // A goal is a target, not a cap: giving stays open after it is met,
+      // because turning somebody away from a project they want to support
+      // would be a strange thing for this to do. So the figure says 128%
+      // when 128% is what happened — the BAR is what gets clamped, since a
+      // bar is a container and cannot be more than full.
+      const pct = goalMajor > 0 ? Math.round((raised / goalMajor) * 100) : 0;
+      const barPct = Math.min(100, pct);
       const cell = (label, body) => <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3, padding: "0 12px" }}><span style={{ fontSize: 10.5, color: T.inkFaint }}>{label}</span>{body}</span>;
       const figure = (text) => <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>;
       // Compact, not full. Three figures share one phone's width here, and
@@ -1357,14 +1394,20 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       // which is not a number, it is the shape of one. Same compact form the
       // Coverage panel uses for Total spending, so the two read alike.
       const money = (amount) => `${fmtCompact(amount)}${currencySuffix(currency)}`;
-      return <div style={{ marginTop: 16, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 6px" }}><div style={{ display: "flex", alignItems: "stretch" }}>{cell("Raised", figure(money(raised)))}<span style={{ width: 1, background: T.line, flexShrink: 0 }} />{cell("Goal", figure(hoomanProject.goal ? money(goalMajor) : "—"))}<span style={{ width: 1, background: T.line, flexShrink: 0 }} />{cell("Backers", figure(String(backers)))}</div><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden", margin: "16px 12px 0" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div></div>;
+      return <div style={{ marginTop: 16, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 6px" }}><div style={{ display: "flex", alignItems: "stretch" }}>{cell("Raised", figure(money(raised)))}<span style={{ width: 1, background: T.line, flexShrink: 0 }} />{cell("Goal", figure(hoomanProject.goal ? money(goalMajor) : "—"))}<span style={{ width: 1, background: T.line, flexShrink: 0 }} />{cell("Backers", figure(String(backers)))}</div><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden", margin: "16px 12px 0" }}><div style={{ width: `${barPct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div>{hoomanProject.goal && raised > 0 && <div
+        style={{ fontSize: 11.5, fontWeight: 700, color: pct >= 100 ? T.positive : T.inkFaint, marginTop: 9, paddingInline: 12, fontVariantNumeric: "tabular-nums" }}
+      >{pct >= 100 ? `${pct}% of goal — passed` : `${pct}% of goal`}</div>}</div>;
     })()}{
-      /* Said once, and about the row above it. Three figures that all read
-         zero look like a project nobody wants; the sentence is what makes
-         them read as a flow that is not open yet. */
-    }<div style={{ fontSize: 11, color: T.inkFaint, lineHeight: 1.5, marginTop: 9, paddingInline: 2 }}>
-      Zero because Gloobal cannot take contributions yet — not because nobody has given.
-    </div><div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 22 }}>About</div><div style={{ marginTop: 9, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", fontSize: 13.5, color: T.inkSoft, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{hoomanProject.summary}</div>{details.length > 0 && <><div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 22 }}>Details</div><div style={{ marginTop: 9, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{details.map((row, i) => {
+      /* The line that used to sit here said "Zero because Gloobal cannot
+         take contributions yet — not because nobody has given." It was the
+         honest thing to write under three zeroes that described a flow
+         which did not exist. The flow exists; a zero here now means the
+         ordinary thing, and needs no apology under it. */
+    }<ProjectGiveButton
+      project={hoomanProject}
+      tint={paint.tint}
+      onGive={() => setGiveToProject(hoomanProject)}
+    /><div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 22 }}>About</div><div style={{ marginTop: 9, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", fontSize: 13.5, color: T.inkSoft, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{hoomanProject.summary}</div>{details.length > 0 && <><div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 22 }}>Details</div><div style={{ marginTop: 9, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{details.map((row, i) => {
       const RowIcon = row.Icon;
       const body = <><span style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: paint.tint, color: paint.ink, display: "flex", alignItems: "center", justifyContent: "center" }}><RowIcon size={16} /></span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}><span style={{ fontSize: 11, color: T.inkFaint }}>{row.label}</span><span style={{ fontSize: 13, fontWeight: 600, color: T.ink, wordBreak: "break-all" }}>{row.value}</span></span></>;
       const style = { display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` };
@@ -1379,7 +1422,22 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       target="_blank"
       rel="noopener noreferrer"
       style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, borderRadius: T.radiusMd, background: T.surface, boxShadow: T.shadowCard, padding: "13px 16px", textDecoration: "none" }}
-    ><Paperclip2 size={16} color={paint.ink} /><span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ink, wordBreak: "break-all" }}>{hoomanProject.attachment.filename}</span><span style={{ fontSize: 11, color: T.inkFaint, flexShrink: 0 }}>{Math.max(1, Math.round(hoomanProject.attachment.byteSize / 1024))} KB</span></a>}<div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.inkFaint, marginTop: 18 }}><span>{hoomanProject.summaryWordCount} words</span>{projectDateText(hoomanProject.createdAt) && <><span>·</span><span>{projectDateText(hoomanProject.createdAt)}</span></>}{hoomanProject.ownerSymbolId && <><span>·</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanProject.ownerSymbolId}</span></>}</div></div></div></div>;
+    ><Paperclip2 size={16} color={paint.ink} /><span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ink, wordBreak: "break-all" }}>{hoomanProject.attachment.filename}</span><span style={{ fontSize: 11, color: T.inkFaint, flexShrink: 0 }}>{Math.max(1, Math.round(hoomanProject.attachment.byteSize / 1024))} KB</span></a>}{
+      /* Who has given. Below the project's own words rather than above
+         them: somebody who has just opened this page is deciding whether
+         to care about the project, and a list of other people's names
+         cannot answer that question until the project has.
+
+         Not rendered for a draft at all — a draft cannot be given to, so a
+         list under one would be an empty state describing a rule rather
+         than a fact. */
+    }<ProjectContributionList
+      projectId={hoomanProject.id}
+      enabled={hoomanProject.status === "published"}
+      tint={paint.tint}
+      accent={paint.ink}
+      money={(amount, currency) => geuLensOwnMoney(amount, currency || displayCurrency, lens, myCurrency)}
+    /><div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.inkFaint, marginTop: 18 }}><span>{hoomanProject.summaryWordCount} words</span>{projectDateText(hoomanProject.createdAt) && <><span>·</span><span>{projectDateText(hoomanProject.createdAt)}</span></>}{hoomanProject.ownerSymbolId && <><span>·</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanProject.ownerSymbolId}</span></>}</div></div></div></div>;
   })()}{showProjectForm && <div style={{ position: "fixed", inset: 0, zIndex: 350, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
       setShowProjectForm(false);
       resetProjectForm();
@@ -1425,7 +1483,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        It is a TARGET. Nothing can contribute towards it yet, which the
        hint under the field says plainly — a goal box with no such line
        invites somebody to expect a collection to open. */
-  }<div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-goal" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Funding goal (optional)</label><div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 7 }}><input id="project-goal" type="text" inputMode="decimal" value={projectGoal} onChange={(e) => { setProjectError(null); setProjectGoal(e.target.value.replace(/[^0-9.]/g, "")); }} placeholder="20000" style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /><input id="project-goal-currency" type="text" value={projectGoalCurrency} maxLength={3} onChange={(e) => { setProjectError(null); setProjectGoalCurrency(e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase()); }} placeholder="INR" aria-label="Goal currency" style={{ width: 62, flexShrink: 0, textAlign: "center", border: `1px solid ${T.line}`, borderRadius: T.radiusSm, padding: "7px 0", outline: "none", background: T.surfaceAlt, fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: "inherit" }} /></div><div style={{ fontSize: 10.5, color: T.inkFaint, marginTop: 7, lineHeight: 1.45 }}>A stated target. Gloobal cannot take contributions towards it yet.</div></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-website" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Website (optional)</label><input id="project-website" type="url" inputMode="url" value={projectWebsite} onChange={(e) => { setProjectError(null); setProjectWebsite(e.target.value); }} placeholder="https://" style={{ width: "100%", marginTop: 7, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-email" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Email (optional)</label><input id="project-email" type="email" inputMode="email" value={projectEmail} onChange={(e) => { setProjectError(null); setProjectEmail(e.target.value); }} placeholder="hello@example.org" style={{ width: "100%", marginTop: 7, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-address" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Address (optional)</label><input id="project-address" type="text" value={projectAddress} maxLength={300} onChange={(e) => { setProjectError(null); setProjectAddress(e.target.value); }} placeholder="Street, town" style={{ width: "100%", marginTop: 7, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-file" style={{ display: "block", fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>File (optional)</label><input
+  }<div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-goal" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Funding goal (optional)</label><div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 7 }}><input id="project-goal" type="text" inputMode="decimal" value={projectGoal} onChange={(e) => { setProjectError(null); setProjectGoal(e.target.value.replace(/[^0-9.]/g, "")); }} placeholder="20000" style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /><input id="project-goal-currency" type="text" value={projectGoalCurrency} maxLength={3} onChange={(e) => { setProjectError(null); setProjectGoalCurrency(e.target.value.replace(/[^A-Za-z]/g, "").toUpperCase()); }} placeholder="INR" aria-label="Goal currency" style={{ width: 62, flexShrink: 0, textAlign: "center", border: `1px solid ${T.line}`, borderRadius: T.radiusSm, padding: "7px 0", outline: "none", background: T.surfaceAlt, fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: "inherit" }} /></div><div style={{ fontSize: 10.5, color: T.inkFaint, marginTop: 7, lineHeight: 1.45 }}>A stated target. People can give towards it once the project is live.</div></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-website" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Website (optional)</label><input id="project-website" type="url" inputMode="url" value={projectWebsite} onChange={(e) => { setProjectError(null); setProjectWebsite(e.target.value); }} placeholder="https://" style={{ width: "100%", marginTop: 7, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-email" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Email (optional)</label><input id="project-email" type="email" inputMode="email" value={projectEmail} onChange={(e) => { setProjectError(null); setProjectEmail(e.target.value); }} placeholder="hello@example.org" style={{ width: "100%", marginTop: 7, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-address" style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Address (optional)</label><input id="project-address" type="text" value={projectAddress} maxLength={300} onChange={(e) => { setProjectError(null); setProjectAddress(e.target.value); }} placeholder="Street, town" style={{ width: "100%", marginTop: 7, border: "none", outline: "none", background: "none", fontSize: 15, color: T.ink, fontFamily: "inherit" }} /></div><div style={{ padding: "14px 16px", borderTop: `1px solid ${T.line}` }}><label htmlFor="project-file" style={{ display: "block", fontSize: 11, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>File (optional)</label><input
     id="project-file"
     type="file"
     accept={PROJECT_ATTACHMENT_ACCEPT}
@@ -1537,7 +1595,19 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        Same 194 countries, same search, and one thing that list has no reason
        to carry: the account's own country, at the top, because "show me mine"
        is the most common reason to open this at all. */
-  }{showHoomanCountryPicker && (() => {
+  }<ProjectGiveSheet
+    project={giveToProject}
+    tint={T.accentSoft}
+    onClose={() => setGiveToProject(null)}
+    onContinue={({ showName }) => {
+      const project = giveToProject;
+      setGiveToProject(null);
+      // Everything from here is App's: it owns the Send screen, the payee
+      // resolver and the location gate, and it is the only level that is
+      // still mounted once Send Money opens over the top of this one.
+      if (project && onContributeToProject) onContributeToProject({ project, showName });
+    }}
+  />{showHoomanCountryPicker && (() => {
     const q = hoomanCountryQuery.trim();
     const matches = COVERAGE_ALL_COUNTRIES.filter((c) => countryMatches(c, hoomanCountryQuery));
     // dialCountry is the country this ACCOUNT is registered in — not the one

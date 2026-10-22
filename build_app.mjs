@@ -264,6 +264,10 @@ const FRONTEND_MODULES = [
   "screens/About/AboutUsScreen.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",
+  // Giving to a Hooman Project, and the list of who has. Emitted before the
+  // Coverage screen, which renders all three of its exports. Nothing in it
+  // moves money — see server/models/Contribution.js for why that matters.
+  "features/projects/ProjectContributions.jsx",
   "screens/Coverage/GloobalCoverageScreen.jsx",
   "adapters/diagnostics/useDiagnostics.js",
   "screens/DevTools/DiagnosticsScreen.jsx",

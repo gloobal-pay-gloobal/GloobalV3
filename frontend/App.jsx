@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useState as useState19, useEffect as useEffect15, useRef as useRef13, useCallback as useCallback11, useEffect as useEffect30, useRef as useRef22 } from "react";
+import { useState as useState19, useEffect as useEffect15, useRef as useRef13, useCallback as useCallback11, useEffect as useEffect30, useRef as useRef22, useRef as useRef29 } from "react";
 import {
   ChevronLeft as ChevronLeft4,
   Lock as Lock7,
@@ -890,6 +890,11 @@ function GloobalId() {
     // Nothing financial is fired-and-forgotten here — only the location
     // report, which is independent by design (see reportSenderLocation).
     reportSenderLocation(entry.txnId);
+    // And, if this payment was a gift to a Hooman Project, tell the project
+    // which payment it was. Nothing financial here either: the money has
+    // already settled, and this only decides whether a list knows about it.
+    // Unobserved on purpose, exactly as the location report above is.
+    attributePendingContribution(entry);
   };
   // POST /api/transactions/send — the authoritative leg of a payment.
   // Runs before the local ledger posts (see SendMoneyScreen.completePayment),
@@ -1180,6 +1185,91 @@ function GloobalId() {
     setScanRetry(null);
     setScanCameraAccessGranted(false);
     setActiveScreen("send");
+  };
+
+  // ── GIVING TO A HOOMAN PROJECT ────────────────────────────────────────
+  //
+  // Which project the payment now being made is FOR, and whether the giver
+  // allowed their name to be printed. Set when they tap Continue on the
+  // Coverage screen's give sheet, read once the payment lands, cleared
+  // either way.
+  //
+  // A ref rather than state, and that is not an optimisation. Send Money
+  // opens over Coverage and the completion handler fires from inside it, by
+  // which point several renders have gone by; a state value captured in a
+  // closure at the moment the sheet closed would be the value from before
+  // the sheet existed. The ref is read at the moment it is needed.
+  const contributionTargetRef = useRef29(null);
+
+  // Opens Send Money with the project's owner already resolved and filled
+  // in, exactly as scanning their QR would.
+  //
+  // THE PAYMENT IS AN ORDINARY PAYMENT. There is no project-payment path:
+  // the money goes to the owner's account through the same route, gate,
+  // ledger and receipt as everything else, and the project is told about it
+  // afterwards. See server/models/Contribution.js for why it is built that
+  // way round.
+  const openSendToProject = async ({ project, showName }) => {
+    if (!project || !project.ownerSymbolId) {
+      showToast("This project has no account to pay.");
+      return;
+    }
+    const result = await resolveGloobalPayee(project.ownerSymbolId);
+    if (!result.ok) {
+      // resolveGloobalPayee words its failures for a scanned QR ("No
+      // Gloobal account uses this QR"), which is not what happened here.
+      // The retryable case keeps its own message, since "check your
+      // connection" is true in both.
+      showToast(result.retryable
+        ? result.error
+        : "This project's account could not be found.");
+      return;
+    }
+    contributionTargetRef.current = {
+      projectId: project.id,
+      title: project.title,
+      showName: Boolean(showName)
+    };
+    requestCloseActiveScreen();
+    openSendToPayee(result.payee);
+  };
+
+  // Called once a payment has completed, from handleSendMoneyComplete.
+  //
+  // Everything here is best-effort and nothing in it can lose money: by the
+  // time it runs the payment has already settled. A failure means the gift
+  // arrived but the project does not yet know it was a gift, which the
+  // person is told plainly rather than left to discover from a list that
+  // does not mention them.
+  const attributePendingContribution = async (entry) => {
+    const target = contributionTargetRef.current;
+    if (!target) return;
+    contributionTargetRef.current = null;
+    // A payment that never reached the server has no stored row to point
+    // at, and the project's figures are counted from stored rows. Saying so
+    // beats a failed call whose message would be about a reference id.
+    if (!entry || entry.status === "simulated") {
+      showToast("That payment stayed on this device, so the project wasn't updated.");
+      return;
+    }
+    // confirmedTxnId — the reference the SERVER kept, not the one this
+    // device minted, which the send route is free to replace.
+    const referenceId = entry.txnId;
+    if (!referenceId) return;
+    try {
+      await GloobalApi.attributeContribution(target.projectId, {
+        referenceId,
+        showName: target.showName
+      });
+      announceProjectContribution(target.projectId);
+      bumpCoverage();
+      showToast(`Your gift to ${target.title} is recorded.`);
+    } catch (err) {
+      // Deliberately specific. "Something went wrong" after a payment has
+      // left the account is the most frightening message this app could
+      // show, and it would be false: the money arrived.
+      showToast("Your payment went through, but we couldn't add it to the project yet.");
+    }
   };
 
   const handleQrScanned = async (rawCode) => {
@@ -4328,7 +4418,7 @@ function GloobalId() {
   ) : <div style={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: scanLive ? "flex-end" : "center", padding: "0 24px calc(26px + env(safe-area-inset-bottom, 0px))", gap: 16 }}>{!scanPayee ? <>{
     /* Upload moved into the scanner's own control row, beside the torch and
        the zoom. */
-  }}{(scanResolving || scanError || scanRetry) && <div
+  }{(scanResolving || scanError || scanRetry) && <div
     style={{
       position: "absolute",
       left: 0,
@@ -4432,6 +4522,7 @@ function GloobalId() {
       requestCloseActiveScreen();
       setPendingOpenMyShare(true);
     }}
+    onContributeToProject={openSendToProject}
   /></ScreenErrorBoundary>}{
     /* Backend errors, shown over every stage — the PIN and login screens
        are their own full-screen overlays, so an in-card banner would be

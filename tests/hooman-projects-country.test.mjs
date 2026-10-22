@@ -401,12 +401,15 @@ describe("the stale scaffolding comment is gone", () => {
     assert.match(src, /details\.length > 0 && </, "the Details card is drawn even when empty");
   });
 
-  test("a goal on the project page says it cannot be given to", () => {
-    // Without this line the figure reads as something you can contribute
-    // towards. It is the one sentence that stops a stated target being
-    // mistaken for an open collection.
+  test("the goal field says what a goal now is", () => {
+    // This asked for "Gloobal cannot take contributions towards it yet",
+    // which was the one sentence stopping a stated target being mistaken
+    // for an open collection. It IS an open collection now, so the line
+    // the form needs is the opposite one — and it still has to say
+    // something, because a bare number labelled "Funding goal" tells
+    // somebody filling the form nothing about what will happen to it.
     const src = code(SCREEN);
-    assert.match(src, /cannot take contributions towards it/);
+    assert.match(src, /A stated target\. People can give towards it once the project is live\./);
   });
 
   test("every funding figure is derived, never a literal zero", () => {
@@ -428,17 +431,41 @@ describe("the stale scaffolding comment is gone", () => {
     // A bar at 100% because it was divided by nothing is worse than no bar:
     // it reports a project as fully funded.
     const src = code(SCREEN);
-    const guards = src.match(/goalMajor > 0 \? Math\.min\(100, Math\.round\(\(raised \/ goalMajor\) \* 100\)\) : 0/g) || [];
+    const guards = src.match(/goalMajor > 0 \? Math\.round\(\(raised \/ goalMajor\) \* 100\) : 0/g) || [];
     assert.equal(guards.length, 2, "a progress percentage is computed without the zero-goal guard");
   });
 
-  test("the zero is explained wherever it is shown", () => {
-    // Three figures all reading zero look like a project nobody wants. The
-    // sentence is what makes them read as a flow that is not open yet, and
-    // it appears on the hero, the project page and the form.
+  test("the clamp moved off the figure and onto the bar", () => {
+    // It used to be Math.min(100, ...) around the percentage itself, which
+    // was right while nothing could be given: every project was at 0 and a
+    // goal could not be passed. Now that it can be, clamping the FIGURE
+    // would report a project that raised 128% of its goal as having raised
+    // exactly 100% — the one number on the page somebody would most want
+    // to be true. The bar is still clamped, because a bar is a container.
     const src = code(SCREEN);
-    const says = (src.match(/cannot take contributions/g) || []).length;
-    assert.ok(says >= 3, `the zero is explained in ${says} place(s); expected the hero, the project page and the form`);
+    assert.equal((src.match(/const barPct = Math\.min\(100, pct\);/g) || []).length, 2,
+      "a progress bar is drawn from an unclamped percentage");
+    assert.equal((src.match(/width: `\$\{barPct\}%`/g) || []).length, 2);
+    assert.doesNotMatch(src, /Math\.min\(100, Math\.round\(\(raised/,
+      "the percentage itself is clamped again, so a passed goal reads as exactly met");
+  });
+
+  test("the zero is no longer apologised for anywhere", () => {
+    // This test used to REQUIRE the apology, in three places: "Gloobal
+    // cannot take contributions yet — not because nobody has given." That
+    // was the honest thing to write under three zeroes describing a flow
+    // which did not exist, and it was right for as long as it was true.
+    //
+    // It is not true now. A zero on a project means the ordinary thing —
+    // nobody has given to this one yet — and a sentence under it insisting
+    // that giving is impossible would be the app lying about itself.
+    // Inverted rather than deleted so that putting the line back, on a
+    // screen where people can now give, fails.
+    const src = code(SCREEN);
+    assert.doesNotMatch(src, /cannot take contributions/,
+      "the app still tells people contributions are impossible");
+    assert.doesNotMatch(src, /every project is at zero/,
+      "the hero still claims every project is at zero");
   });
 
   test("every outbound link on the project page is safe", () => {

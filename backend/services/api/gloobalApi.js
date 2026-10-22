@@ -708,6 +708,63 @@ var GloobalApi = {
     return (result && result.project) || null;
   },
 
+  // --- Contributions ----------------------------------------------------
+  //
+  // GIVING IS TWO CALLS, and the order matters.
+  //
+  //   1. sendTransaction() — the ordinary payment to the project's owner,
+  //      through the route every other payment in this app goes through.
+  //      This is where the money moves, where the PIN is checked and where
+  //      the receipt comes from.
+  //   2. attributeContribution() — tells the project which payment that
+  //      was.
+  //
+  // The second call can fail after the first succeeded, and that is the
+  // honest trade for not having a second path to the ledger (the whole
+  // reasoning is in server/models/Contribution.js). When it does, the money
+  // has still reached the owner, and this call is safe to repeat with the
+  // same referenceId forever: the server's unique index turns a retry into
+  // a read of the row that is already there, and answers `alreadyRecorded`.
+  async attributeContribution(projectId, { referenceId, showName = false }) {
+    const result = await gloobalApiClient.post(
+      `/api/projects/${encodeURIComponent(projectId)}/contributions`,
+      { referenceId, showName: Boolean(showName) },
+      { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS }
+    );
+    return {
+      contribution: (result && result.contribution) || null,
+      project: (result && result.project) || null,
+      alreadyRecorded: Boolean(result && result.alreadyRecorded)
+    };
+  },
+
+  // GET /api/projects/:id/contributions. Returns null on failure rather
+  // than throwing, the same way getProjects does: "could not reach the
+  // server" and "nobody has given" are different facts, and a project page
+  // that renders an empty list for the first one tells the owner a lie
+  // about their own project.
+  async getProjectContributions(projectId, { cursor = "", limit = 20 } = {}) {
+    try {
+      const query = new URLSearchParams();
+      if (cursor) query.set("cursor", cursor);
+      if (limit) query.set("limit", String(limit));
+      const suffix = query.toString() ? `?${query}` : "";
+      const result = await gloobalApiClient.get(
+        `/api/projects/${encodeURIComponent(projectId)}/contributions${suffix}`,
+        { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS }
+      );
+      return {
+        contributions: Array.isArray(result.contributions) ? result.contributions : [],
+        nextCursor: result.nextCursor || null,
+        raised: Number(result.raised) || 0,
+        backers: Number(result.backers) || 0,
+        currency: result.currency || ""
+      };
+    } catch (e) {
+      return null;
+    }
+  },
+
   async getPlatformUserCount() {
     const stats = await this._fetchPlatformStats();
     return stats ? stats.total : null;

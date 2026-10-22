@@ -144,6 +144,11 @@ const {
 // models/ProjectAttachment.js for why its file lives in MongoDB.
 const Project = require('./models/Project');
 const ProjectAttachment = require('./models/ProjectAttachment');
+// What people have given to a project. NOT a money record — an attribution
+// of a payment that already happened through /api/transactions/send. The
+// whole reasoning is in models/Contribution.js and is worth reading before
+// touching either of the two routes near the end of the project block.
+const Contribution = require('./models/Contribution');
 
 // Profile photos (one server-side copy per account, never stamped onto a
 // payment — see models/ProfilePhoto.js) and the in-app payment notifications
@@ -5872,7 +5877,55 @@ app.get('/api/assets/paylater/:symbolId', lookupLimit, requireAuth, requireSelf(
 // The project as the API presents it. Never spreads the raw document: that
 // is how an internal field becomes a public one by accident, and the
 // attachment sub-document in particular must never carry its bytes here.
-const publicProject = (project, viewerId) => ({
+// What a set of projects has raised, counted from the contributions
+// themselves rather than from a running total on the project.
+//
+// A `raised` field on Project, incremented on every gift, would be one
+// number maintained in two places — and the first time an attribution is
+// written and the increment is not, or is written twice, the figure on the
+// screen stops being the sum of the list under it. There is no way to
+// notice that, and no way to repair it afterwards without the very
+// aggregate this function performs. So the aggregate IS the figure, always,
+// and the list and the total cannot disagree.
+//
+// Takes a set of ids and answers for all of them in one round trip, because
+// the listing renders up to a page of projects and a per-project query
+// there would be a page of queries.
+async function projectTotals(projectIds) {
+  const ids = (projectIds || [])
+    .map((id) => String(id || ''))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  const totals = new Map();
+  if (ids.length === 0) return totals;
+  const rows = await Contribution.aggregate([
+    { $match: { projectId: { $in: ids } } },
+    {
+      $group: {
+        _id: '$projectId',
+        // What ARRIVED, in the owner's currency — the only figure
+        // comparable with the goal. See the note on the two amounts in
+        // models/Contribution.js.
+        raised: { $sum: '$amount' },
+        // DISTINCT people, not a row count. Somebody who gives three times
+        // is one backer, and counting rows would let a project look
+        // thirty-backed by one enthusiast.
+        backerIds: { $addToSet: '$backerId' },
+        currency: { $last: '$currency' },
+      },
+    },
+  ]);
+  for (const row of rows) {
+    totals.set(String(row._id), {
+      raised: Number(row.raised) || 0,
+      backers: (row.backerIds || []).length,
+      currency: row.currency || '',
+    });
+  }
+  return totals;
+}
+
+const publicProject = (project, viewerId, totals) => ({
   id: String(project._id),
   title: project.title,
   category: project.category,
@@ -5888,17 +5941,23 @@ const publicProject = (project, viewerId) => ({
   website: project.website || '',
   email: project.email || '',
   address: project.address || '',
-  // A TARGET, and nothing else. There is no `raised` and no `backers`
-  // alongside it on purpose: nothing in this system can accept a
-  // contribution yet, and a zero next to a goal would read as "nobody has
-  // given" when the truth is "nobody can". Those arrive with the flow that
-  // fills them.
-  //
-  // Both halves travel together, or neither does. A goal figure with no
-  // currency beside it is a number with no unit.
+  // The target. Both halves travel together, or neither does: a goal
+  // figure with no currency beside it is a number with no unit.
   goal: project.goalMinor != null && project.goalCurrency
     ? { minor: project.goalMinor, currency: project.goalCurrency }
     : null,
+  // And what has actually come in. These used to be deliberately absent,
+  // with a line on the screen explaining that a zero here would mean
+  // "nobody can give" rather than "nobody has". Contributions exist now, so
+  // the zero means the ordinary thing again.
+  //
+  // Computed, never stored — see projectTotals above for why. A caller that
+  // did not ask for totals gets zeroes rather than nothing: the project
+  // page would otherwise have to tell "no gifts" apart from "this endpoint
+  // did not count", and every one of them would have got that wrong at
+  // least once.
+  raised: totals ? totals.raised : 0,
+  backers: totals ? totals.backers : 0,
   // So a client can render edit/delete affordances without having to know
   // the ownership rule or compare ids itself.
   isOwner: Boolean(viewerId) && String(project.ownerId) === String(viewerId),
@@ -6046,9 +6105,12 @@ app.get('/api/projects', lookupLimit, async (req, res) => {
       if (Object.prototype.hasOwnProperty.call(counts, row._id)) counts[row._id] = row.count;
     }
 
+    // One aggregate for the whole page, not one per project.
+    const totals = await projectTotals(page.map((project) => project._id));
+
     return res.json({
       success: true,
-      projects: page.map((project) => publicProject(project, viewer && viewer._id)),
+      projects: page.map((project) => publicProject(project, viewer && viewer._id, totals.get(String(project._id)))),
       nextCursor,
       counts,
       categories: PROJECT_CATEGORIES,
@@ -6065,7 +6127,11 @@ app.get('/api/projects/:id', lookupLimit, async (req, res) => {
     const viewer = await authenticatedUser(req);
     const found = await loadVisibleProject(req.params.id, viewer && viewer._id);
     if (!found.project) return res.status(found.status).json({ success: false, message: found.message });
-    return res.json({ success: true, project: publicProject(found.project, viewer && viewer._id) });
+    const totals = await projectTotals([found.project._id]);
+    return res.json({
+      success: true,
+      project: publicProject(found.project, viewer && viewer._id, totals.get(String(found.project._id))),
+    });
   } catch (error) {
     console.error('Project read error:', error);
     return res.status(500).json({ success: false, message: 'Could not load that project.' });
@@ -6140,7 +6206,14 @@ app.patch('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
     ).lean();
 
     if (!updated) return res.status(404).json({ success: false, message: 'Project not found.' });
-    return res.json({ success: true, project: publicProject(updated, req.authUser._id) });
+    // Counted here too: an owner editing a project that has already been
+    // backed gets the real figures back, not the zeroes a default would
+    // paint over them with until the next reload.
+    const editedTotals = await projectTotals([updated._id]);
+    return res.json({
+      success: true,
+      project: publicProject(updated, req.authUser._id, editedTotals.get(String(updated._id))),
+    });
   } catch (error) {
     console.error('Project update error:', error);
     return res.status(500).json({ success: false, message: 'Could not update that project.' });
@@ -6259,9 +6332,10 @@ app.post(
       };
       await project.save();
 
+      const attachedTotals = await projectTotals([project._id]);
       return res.status(201).json({
         success: true,
-        project: publicProject(project.toObject(), req.authUser._id),
+        project: publicProject(project.toObject(), req.authUser._id, attachedTotals.get(String(project._id))),
       });
     } catch (error) {
       console.error('Project attachment upload error:', error);
@@ -6315,6 +6389,257 @@ app.get('/api/projects/:id/attachment', lookupLimit, async (req, res) => {
   } catch (error) {
     console.error('Project attachment read error:', error);
     return res.status(500).json({ success: false, message: 'Could not load that file.' });
+  }
+});
+
+// ── CONTRIBUTIONS ───────────────────────────────────────────────────────
+//
+// Read models/Contribution.js first. The short version: these routes do not
+// move money. The backer's app pays the project's owner through
+// /api/transactions/send — the ordinary payment path, with its PIN gate and
+// its ledger and its idempotency — and then calls POST here to say which
+// project that payment was for. This route's whole job is to check that the
+// claim is true before recording it.
+
+// How a contribution is presented. The backer's real name appears only
+// where it is allowed to; see the `showName` note in the model.
+const publicContribution = (row, { viewerIsOwner = false, viewerId = null } = {}) => {
+  const viewerIsBacker = viewerId && String(row.backerId) === String(viewerId);
+  // Three people may see the name: the backer who gave it, the owner of the
+  // project it was given to, and — only when the backer allowed it —
+  // everybody. The first two are not a courtesy: a backer who cannot see
+  // their own gift in the list cannot tell whether it registered, and an
+  // owner who cannot see who gave cannot thank them or send it back.
+  const maySeeName = viewerIsOwner || viewerIsBacker || row.showName;
+  return {
+    id: String(row._id),
+    // The payment itself, so the backer's app can open the receipt it
+    // already has. Nobody else is told it: a referenceId is how a payment
+    // is addressed, and a stranger holding one of somebody else's is a
+    // handle on a transaction that is not theirs.
+    referenceId: viewerIsOwner || viewerIsBacker ? row.referenceId : null,
+    name: maySeeName ? (row.backerName || '') : '',
+    // Whether the blank above is a withheld name or a person with no name
+    // set. A client rendering "Someone" for both would be right by luck.
+    anonymous: !maySeeName,
+    // Shown to the owner and the backer only, for the same reason as the
+    // referenceId: it identifies an account.
+    symbolId: viewerIsOwner || viewerIsBacker ? row.backerSymbolId : null,
+    isMine: Boolean(viewerIsBacker),
+    amount: row.amount,
+    currency: row.currency,
+    // What the BACKER paid, returned only to the backer. To anyone else it
+    // is noise at best — the project counts what arrived — and to the owner
+    // it would be a detail of somebody else's account.
+    sourceAmount: viewerIsBacker ? row.sourceAmount : null,
+    sourceCurrency: viewerIsBacker ? (row.sourceCurrency || '') : '',
+    note: row.note || '',
+    paidAt: row.paidAt,
+  };
+};
+
+// POST /api/projects/:id/contributions — attribute a payment to a project.
+//
+// Body: { referenceId, showName?, note? }
+//
+// Everything about the MONEY is read from the stored Transaction, never
+// from this body. The body says which payment; the server says what it was.
+app.post('/api/projects/:id/contributions', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const { referenceId, showName } = req.body || {};
+    const cleanReference = String(referenceId || '').trim();
+    if (!cleanReference) {
+      return res.status(400).json({ success: false, message: 'Which payment was this?' });
+    }
+
+    const found = await loadVisibleProject(req.params.id, req.authUser._id);
+    if (!found.project) {
+      return res.status(found.status).json({ success: false, message: found.message });
+    }
+    const project = found.project;
+
+    // A draft has not been published, so there is nothing to back yet. Its
+    // owner is the only person who can see it at all, and the check below
+    // would stop them anyway, but this is the clearer refusal.
+    if (project.status !== 'published') {
+      return res.status(409).json({ success: false, message: 'That project is not live yet.' });
+    }
+
+    // An owner cannot back their own project.
+    //
+    // Not a moral rule — a structural one. The payment would have to be a
+    // self-transfer, which /api/transactions/send refuses everywhere else,
+    // so any row that got here claiming to be one is a row built from
+    // something other than a real payment. It is also the cheapest way to
+    // fake a total.
+    if (String(project.ownerId) === String(req.authUser._id)) {
+      return res.status(409).json({ success: false, message: 'You cannot back your own project.' });
+    }
+
+    const payment = await Transaction.findOne({ referenceId: cleanReference }).lean();
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'That payment could not be found.' });
+    }
+
+    // ── THE FOUR CHECKS THAT MAKE THE CLAIM TRUE ────────────────────────
+    //
+    // Each one closes a way of putting a number on a project's page that
+    // nobody actually gave it.
+
+    // 1. It is this account's own payment. Without this, anybody could
+    //    attribute anybody's payment to anything.
+    if (String(payment.fromUserId || '') !== String(req.authUser._id)) {
+      return res.status(403).json({ success: false, message: 'That payment is not yours.' });
+    }
+
+    // 2. It went to this project's owner. Without this, a payment to a
+    //    friend could be hung on a stranger's project.
+    if (String(payment.toUserId || '') !== String(project.ownerId)) {
+      return res.status(409).json({
+        success: false,
+        message: 'That payment did not go to this project.',
+      });
+    }
+
+    // 3. It is an ordinary money transfer that SUCCEEDED. A failed payment
+    //    is not a gift; neither is a coin movement, a mint or a redeem,
+    //    whose amounts are not in the project's currency at all.
+    if (payment.status !== 'success') {
+      return res.status(409).json({ success: false, message: 'That payment did not go through.' });
+    }
+    if (!['send', 'qr_payment'].includes(String(payment.type || ''))) {
+      return res.status(409).json({ success: false, message: 'That is not a payment that can be given.' });
+    }
+
+    // 4. It is recent. A contribution is made in the moment of giving; an
+    //    old payment being attributed weeks later is either a mistake or
+    //    somebody mining their own history for something to point at a
+    //    project. One day is generous for a flow whose two calls are a
+    //    second apart, and short enough that nothing old qualifies.
+    const paidAt = payment.createdAt ? new Date(payment.createdAt) : null;
+    if (!paidAt || Number.isNaN(paidAt.getTime())) {
+      return res.status(409).json({ success: false, message: 'That payment cannot be dated.' });
+    }
+    if (Date.now() - paidAt.getTime() > 24 * 60 * 60 * 1000) {
+      return res.status(409).json({
+        success: false,
+        message: 'That payment is too old to be given to a project.',
+      });
+    }
+
+    // What arrived, and what was paid. Both out of the stored payment.
+    //
+    // `amount` on a Transaction is the RECEIVER's face value — what landed
+    // in the owner's account, in the owner's currency — which is exactly
+    // the figure a goal is measured against. The sender's side, when the
+    // corridor crossed a currency, is in the metadata the send route wrote.
+    const meta = payment.metadata || {};
+    const sourceAmount = Number(meta.sourceAmount);
+    const sourceCurrency = String(meta.sourceCurrency || '').trim().toUpperCase();
+
+    const row = {
+      projectId: project._id,
+      projectOwnerId: project.ownerId,
+      backerId: req.authUser._id,
+      backerSymbolId: req.authUser.symbolId,
+      backerName: String(req.authUser.fullName || '').trim().slice(0, 120),
+      showName: showName === true || String(showName) === 'true',
+      referenceId: cleanReference,
+      amount: Number(payment.amount) || 0,
+      currency: String(payment.currency || '').trim().toUpperCase(),
+      sourceAmount: Number.isFinite(sourceAmount) && sourceAmount > 0 ? sourceAmount : null,
+      sourceCurrency: sourceCurrency || '',
+      // The backer's own words, taken from the payment they already wrote
+      // rather than asked for twice.
+      note: String(payment.note || '').trim().slice(0, 140),
+      paidAt,
+    };
+
+    let stored;
+    try {
+      stored = await Contribution.create(row);
+    } catch (error) {
+      // The unique index on referenceId firing is the RETRY case, not an
+      // error: the client's first call succeeded and its reply was lost.
+      // Answering with the row that already exists is what makes the retry
+      // safe, and is why the client may repeat this call forever.
+      if (error && error.code === 11000) {
+        const existing = await Contribution.findOne({ referenceId: cleanReference }).lean();
+        if (existing) {
+          return res.json({
+            success: true,
+            alreadyRecorded: true,
+            contribution: publicContribution(existing, { viewerId: req.authUser._id }),
+          });
+        }
+      }
+      throw error;
+    }
+
+    const totals = await projectTotals([project._id]);
+    return res.status(201).json({
+      success: true,
+      contribution: publicContribution(stored.toObject(), { viewerId: req.authUser._id }),
+      project: publicProject(project, req.authUser._id, totals.get(String(project._id))),
+    });
+  } catch (error) {
+    console.error('Project contribution error:', error);
+    return res.status(500).json({ success: false, message: 'Could not record that contribution.' });
+  }
+});
+
+// GET /api/projects/:id/contributions — who has given, newest first.
+//
+// Visibility follows the project, exactly as the attachment route does: see
+// the project, see its gifts. What each viewer is told about each giver is
+// decided by publicContribution above.
+app.get('/api/projects/:id/contributions', lookupLimit, async (req, res) => {
+  try {
+    const viewer = await authenticatedUser(req);
+    const found = await loadVisibleProject(req.params.id, viewer && viewer._id);
+    if (!found.project) {
+      return res.status(found.status).json({ success: false, message: found.message });
+    }
+
+    // Keyset paging on (paidAt, _id), the same shape /api/projects and the
+    // history routes use: an offset drifts as rows arrive, and rows arrive
+    // here exactly while somebody is reading the list.
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
+    const filter = { projectId: found.project._id };
+    const cursor = String(req.query.cursor || '').trim();
+    if (cursor) {
+      const at = new Date(cursor);
+      if (!Number.isNaN(at.getTime())) filter.paidAt = { $lt: at };
+    }
+
+    const rows = await Contribution.find(filter)
+      .sort({ paidAt: -1, _id: -1 })
+      .limit(limit + 1)
+      .lean();
+    const page = rows.slice(0, limit);
+    const nextCursor = rows.length > limit && page.length
+      ? new Date(page[page.length - 1].paidAt).toISOString()
+      : null;
+
+    const totals = await projectTotals([found.project._id]);
+    const summary = totals.get(String(found.project._id)) || { raised: 0, backers: 0, currency: '' };
+
+    return res.json({
+      success: true,
+      contributions: page.map((row) => publicContribution(row, {
+        viewerIsOwner: Boolean(found.isOwner),
+        viewerId: viewer && viewer._id,
+      })),
+      nextCursor,
+      // The totals travel with the list so the page's figures and the rows
+      // under them come from one read and cannot disagree on screen.
+      raised: summary.raised,
+      backers: summary.backers,
+      currency: summary.currency,
+    });
+  } catch (error) {
+    console.error('Project contribution list error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load contributions.' });
   }
 });
 

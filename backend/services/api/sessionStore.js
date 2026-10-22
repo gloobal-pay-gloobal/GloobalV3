@@ -270,6 +270,37 @@ function gloobalAuthToken() {
   return (parsed && parsed.token) || null;
 }
 
+// ── WHICH SIGN-IN IS THIS ───────────────────────────────────────────────
+//
+// A short, stable name for the current session, for features that need to
+// do something once per sign-in rather than once per page load: pick a
+// character to hide the balance behind, remember that somebody dismissed
+// the install banner, and so on.
+//
+// The bearer token is the right thing to derive it from because it is
+// minted fresh at every login, registration, PIN reset and passkey
+// sign-in, and it changes when the account is switched — which is exactly
+// the set of moments "a new sign-in" means.
+//
+// A 32-bit FNV-1a fold: one of about four billion values, narrowed from a
+// credential that is never itself stored anywhere this is written. Nothing
+// is recoverable from it, which matters because callers put it in
+// localStorage beside whatever they are remembering.
+//
+// Empty string when there is no token. Callers treat that as "this page
+// view", which is the right answer for somebody not signed in.
+function gloobalSessionFingerprint() {
+  const token = gloobalAuthToken();
+  const raw = String(token || "");
+  if (!raw) return "";
+  let hash = 2166136261;
+  for (let at = 0; at < raw.length; at += 1) {
+    hash ^= raw.charCodeAt(at);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 function gloobalAuthTokenClear() {
   gloobalAuthTokenSave(null);
 }

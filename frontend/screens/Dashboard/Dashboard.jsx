@@ -1950,7 +1950,17 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        16 is the deepest overhang plus two. Raising the padding rather than
        trimming the overhangs is deliberate: the offsets are the design,
        and this number was only ever incidental. */
-  }{activeTab === "home" && <div style={{ padding: "16px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}><div
+  }{activeTab === "home" && <div style={{ padding: "16px 18px 30px", display: "flex", flexDirection: "column", gap: 22 }}>{
+    /* "This is an app, not a web page" — above the balance card, which is
+       the first thing anybody looks at, and the first thing that makes the
+       case worth making.
+
+       Not on the login screen, where somebody is mid-PIN and the worst
+       interruption possible; and not at the bottom of the scroll, where
+       the people who most need it are least likely to reach. It draws
+       nothing at all for anybody who already has the app installed, which
+       is most people who get this far. */
+  }<InstallBanner /><div
     style={{
       position: "relative",
       borderRadius: T.radiusXl,
@@ -2712,7 +2722,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       justifyContent: "center",
       cursor: "pointer"
     }}
-  ><Share22 size={15} color={T.accent} /></span></button></div><button
+  ><Share22 size={15} color={T.accent} /></span></button></div>{
+    /* The way back for somebody who dismissed the banner and then wanted
+       it. Above Exit because that is where a person goes looking for "the
+       app itself" rather than for a payment; and it disappears entirely
+       once the app is installed, since an Install row inside the installed
+       app can only confuse. */
+  }<InstallProfileRow onToast={showToast2} /><button
     onClick={onLogout}
     className="v2-tap"
     style={{

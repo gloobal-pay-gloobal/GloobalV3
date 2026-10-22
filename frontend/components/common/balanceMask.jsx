@@ -69,16 +69,11 @@ var BALANCE_MASK_SEEN_KEY = "gloobal:balanceMaskSeen";
 // phone with storage blocked — there, every hide would otherwise re-pick.
 var balanceMaskSession = null;
 
+// The fold itself now lives beside the token, in sessionStore.js, because
+// the install banner needs the same answer to the same question — "is this
+// a new sign-in" — and two copies of a hash are two things to keep in step.
 function balanceMaskSignature() {
-  const token = typeof gloobalAuthToken === "function" ? gloobalAuthToken() : null;
-  const raw = String(token || "");
-  if (!raw) return "";
-  let hash = 2166136261;
-  for (let at = 0; at < raw.length; at += 1) {
-    hash ^= raw.charCodeAt(at);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
+  return typeof gloobalSessionFingerprint === "function" ? gloobalSessionFingerprint() : "";
 }
 
 function balanceMaskRemembered() {

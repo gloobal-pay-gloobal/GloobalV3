@@ -57,9 +57,23 @@ function makeLib(token) {
     }
   };
   let current = token;
-  const lib = new Function("gloobalAuthToken", "window", `${PURE}
+  // The fold moved to sessionStore.js, beside the token it folds, because
+  // the install banner asks the same question. This file no longer owns
+  // it, so the fixture supplies it the way the bundle does — one hoisted
+  // function, reading whatever token the test has signed in with.
+  const fingerprint = () => {
+    const raw = String(current || "");
+    if (!raw) return "";
+    let hash = 2166136261;
+    for (let at = 0; at < raw.length; at += 1) {
+      hash ^= raw.charCodeAt(at);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  };
+  const lib = new Function("gloobalSessionFingerprint", "window", `${PURE}
     return { BALANCE_MASK_CAST, balanceMaskPick, balanceMaskSignature };`)(
-    () => current,
+    fingerprint,
     window
   );
   lib.signIn = (next) => { current = next; };
@@ -218,9 +232,9 @@ describe("one character per sign-in", () => {
   });
 
   test("a phone with storage blocked still holds one character", () => {
-    const lib = new Function("gloobalAuthToken", "window", `${PURE}
+    const lib = new Function("gloobalSessionFingerprint", "window", `${PURE}
       return { balanceMaskPick };`)(
-      () => "token-one",
+      () => "abc123",
       { localStorage: { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } } }
     );
     const first = lib.balanceMaskPick();

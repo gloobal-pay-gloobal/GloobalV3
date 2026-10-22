@@ -128,6 +128,11 @@ const FRONTEND_MODULES = [
   "components/common/coloredId.jsx",
   "components/common/icons.jsx",
   "components/common/balanceMask.jsx",
+  // Asking people to install the app. Reads gloobalSessionFingerprint out of
+  // backend/services/api/sessionStore.js (emitted with the backend, well
+  // ahead of here) so "dismissed" means dismissed for this sign-in, and is
+  // rendered by both the Dashboard and Profile — hence ahead of every screen.
+  "components/common/installPrompt.jsx",
   // The pull-to-refresh wrapper. Needs the theme (emitted first) and is
   // rendered by the Dashboard, so it sits ahead of every screen.
   "components/common/PullToRefresh.jsx",

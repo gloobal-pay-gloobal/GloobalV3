@@ -1781,12 +1781,19 @@ describe("money fits the room it is given", () => {
     const uses = detail.split("<ChoiceMoney").slice(1).map((tail) => tail.slice(0, tail.indexOf("/>")));
     assert.ok(uses.length >= 6, `expected every ChoiceMoney in this screen, found ${uses.length}`);
     for (const use of uses) {
-      // The two exceptions are deliberate and they are the two inside
-      // a SENTENCE — "4,575.00 GEU | ₹ left this month". Fitting makes
-      // the figure a block, which would drop the words onto their own
-      // line; there the figure stays nowrap and the sentence wraps
-      // around it, which is what should happen in running text.
-      if (/size=\{12\.5\}/.test(use)) {
+      // The exceptions are the figures inside a SENTENCE — "4,575.00 GEU
+      // | ₹ left this month", and the Essentials line naming what the
+      // daily share is a quarter of. Fitting makes the figure a block,
+      // which would drop the words onto their own line; in running text
+      // the figure stays nowrap and the sentence wraps around it, which
+      // is what should happen.
+      //
+      // Matched by the sizes running text uses here rather than by any
+      // structural signal, because the slice this loop holds is one
+      // element and cannot see what surrounds it. A new sentence size
+      // has to be added deliberately, which is the point: the default
+      // for a figure on this screen is still `fit`.
+      if (/size=\{1[12]\.5\}/.test(use)) {
         assert.doesNotMatch(use, /\bfit\b/, "a figure inside a sentence was made a block");
         continue;
       }

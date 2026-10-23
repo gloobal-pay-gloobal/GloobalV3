@@ -146,6 +146,31 @@ const categorySchema = new mongoose.Schema(
       default: null,
     },
 
+    // ── A CATEGORY GLOOBAL PUT HERE, NOT THE OWNER ────────────────────
+    //
+    // Empty for every category anybody made, which is almost all of them.
+    // Set to a stable key for the ones the app itself needs to be able to
+    // find — currently just 'essentials', the one every account has.
+    //
+    // A KEY rather than a boolean, because "is this special" is not the
+    // question any caller actually has. The question is "which one is
+    // Essentials", and a boolean cannot answer it: the day there is a
+    // second system category, every `isSystem` check becomes ambiguous
+    // and has to be rewritten against whatever replaced it.
+    //
+    // What it buys is narrow and worth stating exactly: the row cannot be
+    // deleted, and its kind and side cannot be changed. Everything else —
+    // the name, the icon, the colour, the shape, the photograph, whether
+    // it is a favourite — belongs to the owner exactly as on any other
+    // category. A default nobody can restyle is a foreign object sitting
+    // in somebody's own grid.
+    systemKey: {
+      type: String,
+      trim: true,
+      default: '',
+      maxlength: 40,
+    },
+
     // Favourites lead the grid and are the ones offered above the Send
     // button, where there is only room for a few.
     //
@@ -172,6 +197,24 @@ const categorySchema = new mongoose.Schema(
 
 // The grid's read: one account's live categories of one kind.
 categorySchema.index({ userId: 1, kind: 1, archivedAt: 1 });
+
+// One system category of each key per account, enforced by the database
+// rather than by the code that creates it.
+//
+// The partial filter is what makes this usable: without it every ordinary
+// category would carry systemKey '' and the second one inserted for an
+// account would collide. With it the index covers only the handful of rows
+// that actually have a key, which is also the only place the uniqueness
+// means anything.
+//
+// It matters because the read path upserts this row on EVERY categories
+// request. Two requests arriving together both find nothing and both
+// insert; this is what turns the loser into a duplicate-key error to
+// swallow instead of a second Essentials sitting in somebody's grid.
+categorySchema.index(
+  { userId: 1, systemKey: 1 },
+  { unique: true, partialFilterExpression: { systemKey: { $type: 'string', $gt: '' } } }
+);
 
 // Duplicate names are rejected in the route rather than by a unique index,
 // and that is deliberate. The rule people actually want is "no two LIVE

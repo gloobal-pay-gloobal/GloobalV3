@@ -85,24 +85,53 @@ var EssentialsBaselineRepository = {
 // repository so tests (and, later, a real data layer) can inject a
 // substitute without touching this function.
 // ---------------------------------------------------------------------
+// ── GLOOBAL'S SHARE OF A DAY ─────────────────────────────────────────
+//
+// The table above estimates what a day of food, water, shelter and
+// creativity costs. This is the fraction of that day Gloobal carries.
+//
+// A quarter, asked for in those words: "daily total 75% less then what we
+// have". It is applied HERE, in the one function both the Essentials
+// screen and the My Essentials category read, because the alternative is
+// two screens quoting different daily totals for the same thing — a
+// disagreement nobody reports and everybody notices.
+//
+// What the number is NOT is a cost of living. A quarter of an estimated
+// day is a quarter of an estimated day, and every screen that shows it
+// says "a quarter of" rather than letting the figure stand as the whole.
+// The full estimate stays reachable in `fullDailyTotal` below so the two
+// can be shown together without either being recomputed somewhere else
+// and drifting.
+var ESSENTIALS_GLOOBAL_SHARE = 0.25;
+
 function computeEssentialsBaseline(iso, repository) {
   const repo = repository || EssentialsBaselineRepository;
   const currencyCode = COUNTRY_CURRENCY[iso] || "USD";
   const usedFallback = !repo.hasCountry(iso);
   const usd = repo.getBaselineUSD(iso);
   const toLocal = (v) => currencyCode === "USD" ? v : convert(v, "USD", currencyCode);
+  // Scaled per component rather than only on the total, so the four bars
+  // and the headline are the same arithmetic. Scaling the total alone
+  // would leave four components that no longer add up to it.
+  const share = (v) => toLocal(v) * ESSENTIALS_GLOOBAL_SHARE;
   const components = {
-    food: toLocal(usd.food),
-    water: toLocal(usd.water),
-    shelter: toLocal(usd.shelter),
-    creativity: toLocal(usd.creativity)
+    food: share(usd.food),
+    water: share(usd.water),
+    shelter: share(usd.shelter),
+    creativity: share(usd.creativity)
   };
+  const fullDaily = toLocal(usd.food + usd.water + usd.shelter + usd.creativity);
   const dailyTotal = Math.round((components.food + components.water + components.shelter + components.creativity) * 100) / 100;
   return {
     currencyCode,
     components,
     dailyTotal,
     monthlyTotal: Math.round(dailyTotal * 30 * 100) / 100,
+    // The whole estimated day, before Gloobal's share is taken. Carried so
+    // a screen can say what the quarter is a quarter OF without working it
+    // back out from the share and arriving at a different rounding.
+    fullDailyTotal: Math.round(fullDaily * 100) / 100,
+    share: ESSENTIALS_GLOOBAL_SHARE,
     methodologyVersion: ESSENTIALS_BASELINE_METHODOLOGY_VERSION,
     dataSource: repo.dataSource,
     usedFallback

@@ -238,6 +238,11 @@ const publicCategory = (row) => ({
   budgetCurrency: row.budgetCurrency || '',
   favorite: Boolean(row.favorite),
   archived: Boolean(row.archivedAt),
+  // Empty for everything anybody made. 'essentials' for the one the app
+  // puts there itself. The client reads it to withhold the Delete
+  // control — a button that is present and always refused teaches people
+  // that the app is broken rather than that the row is permanent.
+  systemKey: row.systemKey || '',
   sortIndex: Number(row.sortIndex) || 0,
   createdAt: row.createdAt,
 });
@@ -274,6 +279,32 @@ const DEFAULT_CATEGORIES = [
   { name: 'Gifts', icon: '\u{1F381}', color: '#F9C2D1', kind: 'income', sortIndex: 4 },
 ];
 
+// ── THE ONE DEFAULT THAT IS NOT LIKE THE OTHERS ──────────────────────
+//
+// Everything in DEFAULT_CATEGORIES above is a suggestion: deletable,
+// renameable, and nothing in the app relies on any particular one
+// existing — which is why none of them carries a key.
+//
+// This one does. Every account has it, it cannot be deleted, and the app
+// looks it up by its key to hang the Essentials baseline off it.
+//
+// Filed under 'income' rather than 'expense' on purpose. The Choices
+// screen labels the two kinds "Energy use" and "Energy created", and an
+// Essentials baseline is not money the owner spent — it is the daily
+// amount Gloobal recognises them as being owed, which arrives as a grant
+// (see essentialsService.addGrant). Money arriving is energy created.
+const ESSENTIALS_SYSTEM_KEY = 'essentials';
+const ESSENTIALS_DEFAULT_CATEGORY = {
+  name: 'My Essentials',
+  icon: '\u{1F33E}',
+  color: '#CFEBD8',
+  kind: 'income',
+  shape: 'leaf',
+  sortIndex: -1,
+  favorite: true,
+  systemKey: ESSENTIALS_SYSTEM_KEY,
+};
+
 module.exports = {
   CATEGORY_NAME_MAX_LENGTH,
   CATEGORY_NAME_MAX_WORDS,
@@ -285,6 +316,8 @@ module.exports = {
   categoryNameNormalised,
   CATEGORY_BUDGET_MAX,
   DEFAULT_CATEGORIES,
+  ESSENTIALS_SYSTEM_KEY,
+  ESSENTIALS_DEFAULT_CATEGORY,
   validateCategoryInput,
   publicCategory,
 };

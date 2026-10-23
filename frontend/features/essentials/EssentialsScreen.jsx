@@ -141,6 +141,19 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
     : "Nothing spent yet"}</span><span style={{ whiteSpace: "nowrap" }}>{revealed
     ? <>Daily limit {essentialsFigure(baseline.dailyTotal, 12.5)}</>
     : "Daily limit hidden"}</span></div></div>{
+    /* WHAT THE FIGURE IS A QUARTER OF.
+       The daily total is Gloobal's share of an estimated day, not the
+       cost of that day. Printing the share on its own would state
+       something false about the world — that a day of food, water,
+       shelter and creativity costs a quarter of what the table estimates
+       — so the whole estimate is named beside it rather than left
+       implied. One line, and it is the line that makes the rest of the
+       screen true. */
+  }<div
+    style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.5, margin: "11px 2px 0" }}
+  >{revealed
+    ? <>Gloobal carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here, which is worked out at {essentialsFigure(baseline.fullDailyTotal, 11.5)} a day. The rest is yours.</>
+    : <>Gloobal carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here. The rest is yours.</>}</div>{
     /* The four components */
   }<div><div
     style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}
@@ -166,7 +179,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
   })}</div><div
     style={{ fontSize: 11, color: T.inkFaint, margin: "9px 2px 0", lineHeight: 1.45 }}
   >
-      Each bar is that component{"’"}s share of your daily baseline {"—"} not what you have spent on it.
+      Each bar is that component{"’"}s share of what Gloobal carries {"—"} not what you have spent on it.
     </div></div>{
     /* How the baseline is arrived at. A row rather than a footnote,
        because the caveats underneath it — placeholder data, a regional

@@ -1,5 +1,5 @@
 // src/features/choices/CategoryScreen.jsx
-import { useMemo as useMemo12, useRef as useRef27, useState as useState46, useEffect as useEffect46 } from "react";
+import { useMemo as useMemo12, useRef as useRef27, useState as useState46, useEffect as useEffect46, useState as useState51 } from "react";
 import { Pencil as Pencil2, ArrowLeft as ArrowLeft7 } from "lucide-react";
 
 // One category, and everything this account has filed under it.
@@ -168,6 +168,28 @@ function ChoiceHeroButton({ onClick, label, solid, clip, children }) {
   >{children}</button>;
 }
 
+// Which country's Essentials baseline applies — the account's own, not
+// the one the app opens on.
+//
+// Read from the session blob rather than threaded down as a prop. The
+// alternative is passing dialCountry from App through Dashboard and Send
+// Money and ChoicesScreen to get here, four components none of which has
+// any other reason to know about Essentials, and two call sites that would
+// each have to remember. The backend returns countryIso on every response
+// carrying a user, so the blob has it.
+//
+// An empty answer is not a crash: computeEssentialsBaseline falls back to
+// its default entry and flags usedFallback, which is already how it
+// handles a country with no row of its own.
+function choiceEssentialsIso() {
+  try {
+    const session = typeof gloobalSessionLoad === "function" ? gloobalSessionLoad() : null;
+    return String((session && session.user && session.user.countryIso) || "").trim().toUpperCase();
+  } catch (e) {
+    return "";
+  }
+}
+
 function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onScan, onEdit, shareOfTotal, onToast }) {
   // Connections live on the category they are about. A separate screen
   // listing everybody you are connected to would be a screen about a
@@ -202,6 +224,47 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
   // over every tagged payment, not from the page of history loaded here, so
   // an account with two years of payments still gets a true lifetime total.
   const totals = choicesTotalIn(category, ccyCode);
+
+  // ── MY ESSENTIALS, AND ONLY MY ESSENTIALS ─────────────────────────
+  //
+  // The one category the app puts there itself carries a figure none of
+  // the others do: the daily amount Gloobal recognises this account as
+  // being owed, worked out from the country rather than from anything
+  // the owner has done.
+  //
+  // It opens MASKED, behind the same check as the choices strip and the
+  // dashboard balance. Three controls that hide a figure and ask the same
+  // question in the same way is one thing to learn; three that each ask
+  // differently is three.
+  const isEssentials = Boolean(category && category.systemKey === "essentials");
+  const [essentialsHidden, setEssentialsHidden] = useState51(true);
+  const [showEssentialsGate, setShowEssentialsGate] = useState51(false);
+  const [essentialsScanning, setEssentialsScanning] = useState51(false);
+  const essentialsBaseline = useMemo12(
+    () => (isEssentials ? computeEssentialsBaseline(choiceEssentialsIso()) : null),
+    [isEssentials]
+  );
+
+  // Hiding needs no permission; showing does.
+  const toggleEssentials = () => {
+    if (!essentialsHidden) {
+      setEssentialsHidden(true);
+      return;
+    }
+    setShowEssentialsGate(true);
+  };
+  const verifyEssentials = async () => {
+    if (essentialsScanning) return;
+    setEssentialsScanning(true);
+    const ok = await requireBiometric({ pinReason: "Confirm it's you to show your Essentials." });
+    setEssentialsScanning(false);
+    setShowEssentialsGate(false);
+    if (!ok) {
+      if (onToast) onToast("Couldn't verify it's you — the figure stays hidden");
+      return;
+    }
+    setEssentialsHidden(false);
+  };
   const code = totals.currency || ccyCode;
   // The chart prints bare figures — a unit on each of six columns is
   // six times the ink for one fact — so the caption carries it. It used
@@ -286,6 +349,42 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
   >{money
     ? <ChoiceMoney amount={value} code={code} size={15} fit />
     : <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{value}%</span>}</span></div>)}</div>{
+    /* ── WHAT GLOOBAL CARRIES, ON MY ESSENTIALS ONLY ─────────────────
+       Every other category totals what this account did. This one also
+       carries a figure the account did not produce: the daily amount
+       Gloobal recognises it as being owed, worked out from the country.
+
+       Masked on arrival behind the same check as the choices strip and
+       the dashboard balance, because the founder asked for this figure to
+       be kept to himself and because it is the one number on the screen
+       that says something about a person rather than about their
+       spending.
+
+       The sentence under it names what the figure is a quarter OF. A
+       quarter of an estimated day printed on its own would read as the
+       cost of that day, which it is not. */
+  }{isEssentials && essentialsBaseline && <div
+    data-testid="essentials-block"
+    style={{ borderRadius: T.radiusMd, background: T.surface, boxShadow: T.shadowCard, padding: 15, marginTop: 11 }}
+  ><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}><span
+    style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}
+  >
+      Gloobal carries, each day
+    </span><button
+    onClick={toggleEssentials}
+    className="v2-tap"
+    aria-label={essentialsHidden ? "Show what Gloobal carries" : "Hide what Gloobal carries"}
+    aria-pressed={essentialsHidden}
+    style={{ width: 26, height: 26, borderRadius: "50%", border: `1px solid ${T.line}`, background: T.surface, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, flexShrink: 0 }}
+  ><MaskEyeIcon open={!essentialsHidden} color={T.inkSoft} /></button></div><div
+    style={{ marginTop: 7, minHeight: 34, display: "flex", alignItems: "center" }}
+  >{essentialsHidden
+    ? <BalanceMaskFace size={24} label="Essentials hidden" seed={category.id} />
+    : <ChoiceMoney amount={essentialsBaseline.dailyTotal} code={essentialsBaseline.currencyCode} size={24} fit />}</div><div
+    style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 8, lineHeight: 1.5 }}
+  >{essentialsHidden
+    ? <>A share of an estimated day where your account is registered. The rest is yours.</>
+    : <>{Math.round((Number(essentialsBaseline.share) || 0) * 100)}% of an estimated day where your account is registered, worked out at <ChoiceMoney amount={essentialsBaseline.fullDailyTotal} code={essentialsBaseline.currencyCode} size={11.5} /> a day. The rest is yours.</>}</div></div>}{
     /* The budget strip appears only when there is a budget. A category
        without one is not a category that is 0% through its budget. */
   }{budget && <div
@@ -403,5 +502,11 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
       boxShadow: T.shadowRaised,
       cursor: "pointer"
     }}
-  >{choicesPayLabel(category)}</button></div></div>;
+  >{choicesPayLabel(category)}</button></div>{
+    /* The same screen the payment and the choices strip use. */
+  }{showEssentialsGate && <BiometricVerifyScreen
+    onBack={() => setShowEssentialsGate(false)}
+    onVerify={verifyEssentials}
+    scanning={essentialsScanning}
+  />}</div>;
 }

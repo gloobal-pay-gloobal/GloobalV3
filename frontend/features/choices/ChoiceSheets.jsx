@@ -1001,7 +1001,20 @@ function ChoicesEditorSheet({ open, onClose, category, kind, side, ccyCode, onSa
        At the end of the scroll rather than in the pinned footer: Save is
        what the footer is for, and a destructive-sounding control pinned
        next to it is a control somebody eventually hits by accident. */
-  }{editing && onRemove && <button
+  }{editing && onRemove && (category && category.systemKey
+    ? <div
+      style={{ marginTop: 6, padding: "11px 13px", borderRadius: 14, background: T.surfaceAlt, fontSize: 12, color: T.inkSoft, lineHeight: 1.5 }}
+    >{
+      /* NOT A DISABLED BUTTON. A control that is drawn and then refuses
+         teaches people that the app is broken rather than that the row
+         is permanent — and the refusal arrives after the tap, which is
+         the worst moment to learn it. A sentence instead, which says the
+         same thing before anybody reaches for anything. */
+    }
+      This one stays on every account. You can rename it and change how it
+      looks, but it can{"\u2019"}t be retired.
+    </div>
+    : <button
     onClick={() => onRemove(category)}
     className="v2-tap"
     style={{
@@ -1019,7 +1032,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, side, ccyCode, onSa
     }}
   >
       Retire this choice
-    </button>}</ChoiceFullScreen>;
+    </button>)}</ChoiceFullScreen>;
 }
 
 // Mirrors CATEGORY_NAME_MAX_LENGTH in server/lib/categoryValidation.js. The

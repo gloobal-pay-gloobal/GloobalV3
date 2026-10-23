@@ -178,6 +178,8 @@ const CategoryLink = require('./models/CategoryLink');
 const CategoryPhoto = require('./models/CategoryPhoto');
 const {
   DEFAULT_CATEGORIES,
+  ESSENTIALS_SYSTEM_KEY,
+  ESSENTIALS_DEFAULT_CATEGORY,
   validateCategoryInput,
   publicCategory,
   categoryNameNormalised,
@@ -9057,7 +9059,36 @@ const categoryNotFound = (res) =>
 const categoriesForAccount = async (userId) => {
   const sort = { side: 1, kind: 1, sortIndex: 1, name: 1 };
   const existing = await Category.find({ userId }).sort(sort).lean();
-  if (existing.length > 0) return existing;
+
+  // ── TWO DIFFERENT JOBS, WHICH IS WHY THIS IS NOT ONE BRANCH ───────
+  //
+  // The suggestions are seeded ONCE, on an account that has nothing:
+  // re-adding them later would push 'Baby' and 'Beauty' back into the
+  // grid of somebody who deliberately deleted them.
+  //
+  // The Essentials row is different — every account has one, by
+  // definition — so it is ensured on EVERY read. Without that, the only
+  // accounts that would ever get it are ones registering after this
+  // deploy, and every account that exists today would be missing the one
+  // category the product says everybody has. This is the backfill, and it
+  // costs one upsert per categories read.
+  const needsSuggestions = existing.length === 0;
+
+  try {
+    await Category.updateOne(
+      { userId, systemKey: ESSENTIALS_SYSTEM_KEY },
+      { $setOnInsert: Object.assign({}, ESSENTIALS_DEFAULT_CATEGORY, { userId }) },
+      { upsert: true }
+    );
+  } catch (error) {
+    // A duplicate key here is two requests racing, and the loser has
+    // nothing to do: the winner wrote exactly the row it was going to.
+    if (error && error.code !== 11000) console.error('Essentials category error:', error.message);
+  }
+
+  if (!needsSuggestions) {
+    return Category.find({ userId }).sort(sort).lean();
+  }
 
   try {
     await Category.insertMany(
@@ -9345,6 +9376,24 @@ app.delete('/api/categories/:id', writeLimit, requireAuth, async (req, res) => {
     const userId = req.authUser._id;
     const existing = await Category.findOne({ _id: id, userId });
     if (!existing) return categoryNotFound(res);
+
+    // ── THE ONE CATEGORY THAT DOES NOT GO ────────────────────────────
+    //
+    // My Essentials is not a suggestion, it is part of what an account
+    // IS: every account has one and the app looks it up by key. Deleting
+    // it would leave the Essentials baseline with nowhere to hang.
+    //
+    // Refused here as well as hidden in the client, because a control the
+    // client happens not to draw is not a rule — the route is the rule,
+    // and anything else is a rule that holds until somebody writes their
+    // own request. Renaming, re-iconing and recolouring all still work;
+    // this blocks removal only, which is why the message says so.
+    if (existing.systemKey) {
+      return res.status(409).json({
+        success: false,
+        message: 'This one stays — but you can rename it, or change how it looks.',
+      });
+    }
 
     const used = await TransactionTag.countDocuments({ userId, categoryId: existing._id });
     if (used > 0) {

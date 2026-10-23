@@ -364,6 +364,11 @@ export async function installApi(context, options = {}) {
       favorite: Boolean(seed.favorite),
       photo: seed.photo || null,
       archived: Boolean(seed.archived),
+      // Mirrors publicCategory. 'essentials' on the one every account has
+      // and empty on everything else — the client reads it to withhold
+      // the retire control, so a fake that dropped it would let a test
+      // pass against a build that offers Delete on an undeletable row.
+      systemKey: seed.systemKey || "",
       sortIndex: Number(seed.sortIndex) || at,
       createdAt: seed.createdAt || new Date().toISOString(),
       totals: Array.isArray(seed.totals) ? seed.totals : []

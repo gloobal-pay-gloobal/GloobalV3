@@ -383,6 +383,24 @@ async function choicesToggleFavorite(category) {
   }
 }
 
+// The category the app itself put there, by its stable key — currently
+// only 'essentials'. Looked up by key rather than by name, because the
+// name is the one thing about it the owner is free to change: somebody
+// who renamed theirs "Roti" would otherwise stop having their Essentials
+// payments filed anywhere.
+//
+// Returns the id so callers can hand it straight to a tag write, and null
+// when the categories have not loaded yet — which is a payment filed
+// nowhere rather than a crash, and can be filed later from the category
+// screen like any other untagged one.
+function choicesSystemCategoryId(state, key) {
+  const want = String(key || "");
+  if (!want) return null;
+  const rows = state && Array.isArray(state.categories) ? state.categories : [];
+  const found = rows.find((row) => String(row.systemKey || "") === want);
+  return found ? found.id : null;
+}
+
 function choicesById(state, id) {
   const want = String(id || "");
   if (!want) return null;

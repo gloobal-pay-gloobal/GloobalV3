@@ -1,5 +1,6 @@
 // src/screens/SendMoney/SendMoney.jsx
 import { useState as useState15, useEffect as useEffect13, useRef as useRef11, useMemo as useMemo6 } from "react";
+import { Sprout as Sprout2 } from "lucide-react";
 import {
   ChevronLeft as ChevronLeft2,
   Search as Search4,
@@ -127,7 +128,20 @@ function identityDisplayValue(profile, mode) {
       return profile.name;
   }
 }
-function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoiceId = null, history = [], onOpenPaidHistory, onOpenScan, onSendComplete, onExecuteTransaction, onRemoteSend, onBuildRowReceipt }) {
+// The label this method is stored under on a transaction, and the string
+// choosePayMethod matches on. One constant rather than the literal in
+// three places, because a payMethod that disagrees with itself by one
+// character is a payment that silently falls through to the bank.
+var ESSENTIALS_PAY_METHOD = "Gloobal Essentials";
+
+// Drawn green rather than the app's violet: this row is the one that is
+// not the person's own money, and the colour is the quickest way to say
+// so before anybody reads the words.
+function EssentialsPayIcon({ size, color }) {
+  return <Sprout2 size={size} color={color} />;
+}
+
+function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoiceId = null, history = [], onOpenPaidHistory, onOpenScan, onSendComplete, onExecuteTransaction, onRemoteSend, onBuildRowReceipt, onDrawEssentials, essentialsDailyLimit = 0 }) {
   // The account's CURRENT Gloobal ID — the same source the Dashboard reads,
   // so a rename made this session shows here too.
   const liveSenderId = useCurrentSymbolId(sender && sender.symbolId);
@@ -680,7 +694,16 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     // own errors for exactly that reason — an untagged payment can be
     // filed later from its category screen, and a frightened person
     // cannot unsend money.
-    choicesTagQuietly(confirmedTxnId, choiceId);
+    // ── A PAYMENT ESSENTIALS CARRIED IS FILED UNDER ESSENTIALS ─────
+    //
+    // Asked for in those words: Essentials can pay for anything, but
+    // whatever it touches lands in My Essentials so the record is honest
+    // about where the money came from. An explicit choice still wins —
+    // somebody who picked "Food" meant Food, and overriding that would
+    // be the app arguing with them about their own record.
+    const filedUnder = choiceId
+      || (essentialsAppliedRef.current > 0 ? choicesSystemCategoryId(choicesState, "essentials") : null);
+    choicesTagQuietly(confirmedTxnId, filedUnder);
     showToast2(
       settledRemotely
         ? `Sending ${CURRENCIES[top.currency].label} ${fmt(
@@ -1065,6 +1088,12 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   const [payMethodOpen, setPayMethodOpen] = useState15(false);
   const requestClosePayMethod = useBackClose(payMethodOpen, () => setPayMethodOpen(false));
   const [payMethod, setPayMethod] = useState15(null);
+  // What the pool still has today. Reactive to the ledger, so drawing on
+  // it anywhere updates this row without a reload.
+  const essentialsLeft = useEssentialsPoolRemaining(Number(essentialsDailyLimit) || 0);
+  // How much Essentials actually carried of the payment in flight. Read
+  // by the receipt; cleared whenever a new payment starts.
+  const essentialsAppliedRef = useRef11(0);
   function handleSend() {
     // A payment of nothing is not a payment. Stopped before the pay-method
     // sheet and PIN, so nobody is asked to authorise it; completePayment and
@@ -1073,7 +1102,34 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     setPayMethod(null);
     setPayMethodOpen(true);
   }
-  function choosePayMethod(label) {
+  async function choosePayMethod(label) {
+    // ── THE ONE METHOD THAT DOES SOMETHING BEFORE THE PIN ──────────
+    //
+    // Essentials is not a separate place money leaves from. Choosing it
+    // tops this account's own bank balance up by whatever the pool has
+    // left today, and then the payment proceeds from the bank exactly
+    // as it would have anyway — one source of funds, one deduction, one
+    // row in the ledger.
+    //
+    // Applied HERE rather than after the PIN because the top-up has to
+    // be real bank balance by the time the payment's own risk check
+    // runs. It is not a charge: if the person backs out at the PIN, the
+    // money sits in their bank account where the pool put it, which is
+    // the honest outcome of "Gloobal credited you today" and is exactly
+    // what the standing-top-up design always did.
+    if (label === ESSENTIALS_PAY_METHOD && onDrawEssentials) {
+      const drawn = await onDrawEssentials(senderAmount);
+      essentialsAppliedRef.current = Number(drawn && drawn.applied) || 0;
+      if (essentialsAppliedRef.current > 0) {
+        showToast2(`${fmtMoney(essentialsAppliedRef.current, top.currency)} from your Essentials`);
+      } else {
+        // Nothing left in the pool today. Say so rather than letting the
+        // payment proceed as though Essentials had carried part of it.
+        showToast2("Nothing left in your Essentials today — paying from your bank");
+      }
+    } else {
+      essentialsAppliedRef.current = 0;
+    }
     setPayMethod(label);
     requestClosePayMethod();
     setPin("");
@@ -2150,12 +2206,27 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   ><div className="pin-modal" onClick={(e) => e.stopPropagation()}><button className="pin-close" onClick={requestClosePayMethod} aria-label="Cancel"><X4 size={18} /></button><h3 className="pin-title">Pay with</h3><p className="pin-sub">{CURRENCIES[top.currency].label} {fmt(senderAmount, top.currency)}{top.currency !== bottom.currency && <> — they get {CURRENCY_SYMBOL[bottom.currency] || ""}{fmt(receiverAmount, bottom.currency)} {bottom.currency} at 1 {top.currency} = {fmt(convert(1, top.currency, bottom.currency), bottom.currency)} {bottom.currency}</>}{" "}
               to {bottom.phone}</p><div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6, textAlign: "left" }}>{[
     { key: "gbank", label: "Gloobal Bank", displayLabel: <GloobalWordmark suffix=" Bank" /> },
+    {
+      key: "gessentials",
+      label: ESSENTIALS_PAY_METHOD,
+      displayLabel: <GloobalWordmark suffix=" Essentials" />,
+      // ── THE FIGURE STAYS HIDDEN HERE TOO ────────────────────────
+      // The same figure the category screen masks behind a check. A
+      // row reading "₹162 left today" in a sheet anyone can open
+      // mid-payment would undo that masking in the one place the
+      // phone is most likely to be visible to somebody else.
+      // What it says instead is whether there is anything to draw on,
+      // which is the only thing needed to choose.
+      note: essentialsLeft > 0 ? "Covers what it can today" : "Nothing left today",
+      disabled: !(essentialsLeft > 0)
+    },
     { key: "gpaylater", label: "Gloobal PayLater", displayLabel: <GloobalWordmark suffix=" PayLater" /> },
     { key: "local", label: "Local Banks" }
-  ].map(({ key, label, displayLabel }) => <button
+  ].map(({ key, label, displayLabel, note, disabled }) => <button
     key={key}
-    onClick={() => choosePayMethod(label)}
+    onClick={() => { if (!disabled) choosePayMethod(label); }}
     className="v2-tap"
+    aria-disabled={disabled ? "true" : void 0}
     style={{
       display: "flex",
       alignItems: "center",
@@ -2165,7 +2236,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       background: "#fff",
       borderRadius: 16,
       padding: "12px 14px",
-      cursor: "pointer",
+      cursor: disabled ? "default" : "pointer",
+      opacity: disabled ? 0.55 : 1,
       textAlign: "left"
     }}
   ><span
@@ -2181,7 +2253,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       overflow: "hidden",
       transition: "background 0.4s ease"
     }}
-  >{key === "gbank" ? <img src={G_LOGO_DATA_URI} alt="" style={{ width: 32, height: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }} /> : key === "gpaylater" ? <CreditCard4 size={19} color="#7C3AED" /> : key === "gcoin" ? <Coins3 size={19} color="#7C3AED" /> : <Landmark6 size={19} color="#7C3AED" />}</span><span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, color: "#14122B" }}>{displayLabel || label}</span><ChevronRight4 size={17} color="#B9B3CC" style={{ flexShrink: 0 }} /></button>)}</div></div></div>}{pinOpen && <div className="pin-overlay" role="dialog" aria-modal="true" aria-label="Enter OTP to confirm transfer"><div className="pin-modal"><button className="pin-close" onClick={requestClosePin} aria-label="Cancel"><X4 size={18} /></button><div className="pin-lock-icon"><Lock5 size={22} /></div><h3 className="pin-title">Enter OTP</h3>{
+  >{key === "gbank" ? <img src={G_LOGO_DATA_URI} alt="" style={{ width: 32, height: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }} /> : key === "gessentials" ? <EssentialsPayIcon size={19} color="#2E7A4F" /> : key === "gpaylater" ? <CreditCard4 size={19} color="#7C3AED" /> : key === "gcoin" ? <Coins3 size={19} color="#7C3AED" /> : <Landmark6 size={19} color="#7C3AED" />}</span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14, fontWeight: 700, color: "#14122B" }}>{displayLabel || label}</span>{note && <span style={{ fontSize: 11.5, color: "#8A84A0" }}>{note}</span>}</span><ChevronRight4 size={17} color="#B9B3CC" style={{ flexShrink: 0 }} /></button>)}</div></div></div>}{pinOpen && <div className="pin-overlay" role="dialog" aria-modal="true" aria-label="Enter OTP to confirm transfer"><div className="pin-modal"><button className="pin-close" onClick={requestClosePin} aria-label="Cancel"><X4 size={18} /></button><div className="pin-lock-icon"><Lock5 size={22} /></div><h3 className="pin-title">Enter OTP</h3>{
     /* Just the amount now, in a box — same "card holding the
        thing being verified" concept as registration's OTP
        screen (which shows the phone number in its own card),

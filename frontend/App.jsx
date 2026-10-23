@@ -1272,6 +1272,55 @@ function GloobalId() {
     }
   };
 
+  // ── DRAWING ON THE ESSENTIALS POOL ────────────────────────────────
+  //
+  // THIS WAS DEAD CODE. applyEssentialsPoolSubsidy has been exposed by
+  // useTransactionActions and destructured here for a long time, and the
+  // orchestrator's own comment says "a caller (currently Scan & Pay)
+  // applies this once" — but no such caller exists anywhere in the
+  // frontend. Grep it: the destructure above was the only reference. So
+  // the Essentials baseline has been computed, displayed and masked all
+  // this time without ever being spendable.
+  //
+  // This is the caller. It runs BEFORE the payment, tops the account's
+  // own bank balance up by whatever the pool still has today, and then
+  // gets out of the way — the payment that follows is an ordinary
+  // payment from an ordinary bank balance, through the same route and
+  // the same ledger as every other one.
+  //
+  // That is the whole reason it is built this way rather than as a
+  // fourth account to deduct from. Both produce the same split on screen
+  // (Essentials covers what it can, the bank covers the rest); only this
+  // one leaves /api/transactions/send with exactly one source of funds
+  // to reason about.
+  const drawEssentialsForPayment = async (amount) => {
+    const typed = Number(amount);
+    if (!Number.isFinite(typed) || typed <= 0) return { applied: 0 };
+    const iso = dialCountry && dialCountry.iso;
+    const baseline = computeEssentialsBaseline(iso);
+    const currency = COUNTRY_CURRENCY[iso] || "USD";
+    try {
+      const result = applyEssentialsPoolSubsidy({
+        // Never more than the payment: a subsidy larger than what is
+        // being paid for would be a standing top-up, which is a
+        // different product and not what was asked for.
+        requestedAmount: typed,
+        dailyLimit: Number(baseline.dailyTotal) || 0,
+        currency
+      });
+      const applied = Number(result && result.subsidyAmount) || 0;
+      // The balance moved underneath the dashboard, so re-read it rather
+      // than assuming this device's arithmetic matches the server's.
+      if (applied > 0) setRefreshBalanceToken((n) => n + 1);
+      return { applied, code: result && result.code };
+    } catch (err) {
+      // A failed subsidy is not a failed payment. The pool is untouched
+      // (the orchestrator rolls its own snapshot back), and the payment
+      // that follows simply draws entirely on the bank.
+      return { applied: 0, code: "SUBSIDY_FAILED" };
+    }
+  };
+
   const handleQrScanned = async (rawCode) => {
     if (scanBusyRef.current || scanRetry) return;
     setScanError(null);
@@ -4504,6 +4553,8 @@ function GloobalId() {
     onSendComplete={handleSendMoneyComplete}
     onExecuteTransaction={handleExecuteTransaction}
     onRemoteSend={handleRemoteSend}
+    onDrawEssentials={drawEssentialsForPayment}
+    essentialsDailyLimit={computeEssentialsBaseline(dialCountry.iso).dailyTotal}
     onOpenPaidHistory={() => {
       requestCloseActiveScreen();
       setDashboardHistoryDirection("sending");

@@ -110,6 +110,41 @@ function balanceMaskPick() {
   return picked;
 }
 
+// ── A CHARACTER PER CHOICE, NOT ONE FOR ALL OF THEM ────────────────────
+//
+// balanceMaskPick above answers "which character is this SIGN-IN", which
+// is the right question for the balance: there is one balance and it gets
+// one mask. The choices strip asked the same question four times and got
+// the same answer four times, so every hidden tile wore the same face and
+// the row read as one thing repeated.
+//
+// This deals a DIFFERENT character to each choice — and reshuffles the
+// deal every sign-in.
+//
+// Reshuffling is the part that matters. A fixed pairing would be easier to
+// recognise, and that is exactly the problem: anybody who watches the
+// screen once learns that the bear is Donation, and from then on the mask
+// hides the name from the owner's shoulder-surfer and nobody else. Dealing
+// again each session keeps the four distinguishable from each other
+// without any of them meaning anything for longer than one sitting.
+//
+// Deterministic within a session, so a re-render never reshuffles the row
+// under somebody's thumb: the session's own fingerprint is folded together
+// with the choice's id, and the same pair always lands on the same
+// character.
+function choiceMaskPick(choiceKey) {
+  const raw = String(choiceKey == null ? "" : choiceKey);
+  // The session's answer, so the whole deal changes when the sign-in does.
+  const salt = typeof balanceMaskSignature === "function" ? balanceMaskSignature() : "";
+  const mixed = salt + "\u0000" + raw;
+  let hash = 2166136261;
+  for (let at = 0; at < mixed.length; at += 1) {
+    hash ^= mixed.charCodeAt(at);
+    hash = Math.imul(hash, 16777619);
+  }
+  return BALANCE_MASK_CAST[(hash >>> 0) % BALANCE_MASK_CAST.length];
+}
+
 // There was a BALANCE_FIGURE_MASK here \u2014 four fixed dots for the week's
 // paid and received figures, which the eye hid along with the balance.
 //
@@ -346,8 +381,15 @@ function BalanceMaskCreature({ kind }) {
 // `size` is the balance's own font size, so the figure takes the space the
 // number would have taken and the card does not change height when the eye
 // is tapped.
-function BalanceMaskFace({ size = 32, label = "Balance hidden", nudge = 0 }) {
-  const [kind] = useState47(balanceMaskPick);
+function BalanceMaskFace({ size = 32, label = "Balance hidden", nudge = 0, seed = null }) {
+  // No seed is the balance: one character for the whole sign-in, picked
+  // once per mount so a re-render never swaps it mid-look.
+  //
+  // A seed is a choice, and choices each get their own — see
+  // choiceMaskPick. The initialiser is a function either way, so the pick
+  // happens once; passing choiceMaskPick(seed) directly would re-run the
+  // fold on every render to throw the answer away.
+  const [kind] = useState47(() => (seed == null ? balanceMaskPick() : choiceMaskPick(seed)));
   const px = Number(size) > 0 ? Number(size) : 32;
   // 1.75 of the figure's own size, up from 1.35. At 1.35 the character was
   // drawn to the footprint of the NUMBER it replaces, which is the right
@@ -436,12 +478,15 @@ function BalanceMaskFace({ size = 32, label = "Balance hidden", nudge = 0 }) {
 // Where the row's height is already fixed — the chip labels are two lines
 // tall whether they hold "Rent" or "Damroo Baby" — `line` is left off and
 // the drawing sets its own box.
-function ChoiceNameMask({ size = 14, line = 0 }) {
+// `seed` is the choice's own id. Without one every hidden tile in the row
+// wore the session's single character and the strip read as one thing
+// repeated four times.
+function ChoiceNameMask({ size = 14, line = 0, seed = null }) {
   const px = Number(size) > 0 ? Number(size) : 14;
   const tall = Number(line) > 0 ? Number(line) : Math.round(px * 1.35);
   return <span
     style={{ display: "inline-block", height: tall, lineHeight: `${tall}px`, verticalAlign: "bottom" }}
   ><span
     style={{ display: "inline-flex", alignItems: "center", height: tall, overflow: "visible" }}
-  ><BalanceMaskFace size={px} label="Name hidden" /></span></span>;
+  ><BalanceMaskFace size={px} label="Name hidden" seed={seed} /></span></span>;
 }

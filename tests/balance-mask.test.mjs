@@ -254,7 +254,13 @@ describe("one character per sign-in", () => {
 
 describe("it breathes, unless asked not to", () => {
   test("the picking happens once per mount, not in the render body", () => {
-    assert.match(strip(source), /const \[kind\] = useState47\(balanceMaskPick\);/,
+    // The initialiser is a lambda now, because the face also serves the
+    // choices strip, where the character comes from the choice's own id
+    // rather than from the session. Still an INITIALISER either way —
+    // which is the property this test is about: called once per mount,
+    // not re-rolled on every render.
+    assert.match(strip(source),
+      /const \[kind\] = useState47\(\(\) => \(seed == null \? balanceMaskPick\(\) : choiceMaskPick\(seed\)\)\);/,
       "the character is not pinned for the life of the mount");
   });
 

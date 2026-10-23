@@ -357,11 +357,53 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   // while the same name sits in large type two centimetres below hides
   // nothing, which is why this is screen-wide rather than per-element.
   //
-  // Default VISIBLE: this is a shoulder you choose to turn, not a
-  // setting somebody has to find to get their own labels back. It
-  // resets with the screen, because the reason to hide is the room you
-  // are standing in rather than something about the account.
-  const [choiceNamesHidden, setChoiceNamesHidden] = useState15(false);
+  // ── DEFAULT HIDDEN ────────────────────────────────────────────────
+  //
+  // This was default VISIBLE, on the argument that hiding is "a shoulder
+  // you choose to turn". That argument is wrong in the one way that
+  // matters: a mask you have to switch on has already failed by the time
+  // you think to switch it on. The names are "Darling", "Donation",
+  // "Dream" — the private ones are exactly the ones nobody remembers to
+  // hide before opening the screen in front of somebody.
+  //
+  // So the strip opens masked and the eye is what opens it, behind the
+  // same check the dashboard's balance sits behind. It resets with the
+  // screen — see the effect below.
+  const [choiceNamesHidden, setChoiceNamesHidden] = useState15(true);
+  const [showChoiceBiometric, setShowChoiceBiometric] = useState15(false);
+  const [choiceBiometricScanning, setChoiceBiometricScanning] = useState15(false);
+
+  // Hiding needs no permission; showing does. Tapping the eye while the
+  // names are open just closes them.
+  const handleToggleChoiceNames = () => {
+    if (!choiceNamesHidden) {
+      setChoiceNamesHidden(true);
+      return;
+    }
+    setShowChoiceBiometric(true);
+  };
+
+  // THE GATE THIS CONTROL NEVER HAD.
+  //
+  // The eye used to be `setChoiceNamesHidden((v) => !v)` and nothing else
+  // — no check at all, which is why it sometimes seemed to ask and
+  // sometimes did not: what asked was the DASHBOARD's balance eye, a
+  // different control in a different file. This is the same gate that one
+  // uses, and the same screen the payment below already uses.
+  const handleChoiceBiometricVerify = async () => {
+    if (choiceBiometricScanning) return;
+    setChoiceBiometricScanning(true);
+    const ok = await requireBiometric({ pinReason: "Confirm it's you to show your choice names." });
+    setChoiceBiometricScanning(false);
+    setShowChoiceBiometric(false);
+    if (!ok) {
+      // A refused check leaves the names masked, which is the entire point
+      // of putting a gate on the eye.
+      showToast2("Couldn't verify it's you — names stay hidden");
+      return;
+    }
+    setChoiceNamesHidden(false);
+  };
 
   // Every consumer of `senderAmount` on this screen — the Send button, the
   // pay-method sheet, the receipt, the local ledger leg — wants "what I
@@ -1770,18 +1812,45 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
        the button is left with its verb and its figure, which is what
        that button is for. */
   }{pickedChoice && <div
-    style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 12, fontSize: 12.5, color: T.inkSoft }}
+    style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12, fontSize: 12.5, color: T.inkSoft }}
   ><span style={{ fontWeight: 600, flexShrink: 0 }}>
       for
-    </span><span
+    </span>{
+    /* THE CHOICE'S OWN FACE, which this line never showed.
+       It said "for hosting" in plain text while the strip below drew
+       every category as a photograph or an emoji on a coloured chip —
+       so the one category actually attached to the payment was the only
+       one on the screen with nothing to recognise it by. Worse when the
+       chosen one is not among the four chips in view, which is exactly
+       when this line is the only thing naming it.
+
+       Blurred, not removed, when the names are hidden — the same
+       treatment the chips get, for the same reason: shape and colour
+       are enough to recognise your own, and nothing in a 20px smear
+       identifies anybody to somebody reading across a counter. */
+  }<span
+    aria-hidden="true"
+    style={{
+      width: 22,
+      height: 22,
+      borderRadius: 7,
+      flexShrink: 0,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+      filter: choiceNamesHidden ? "blur(3.5px)" : "none",
+      transition: "filter 0.18s ease"
+    }}
+  ><ChoiceGlyph category={pickedChoice} size={14} /></span><span
     style={{ fontWeight: 800, color: T.ink, minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.35 }}
   >{
     /* HIDDEN, NOT REMOVED. The line still says a choice is attached —
        that the payment will be filed is worth knowing even when which
        one is not — and it keeps the same height either way, so the Pay
        button underneath does not move when the eye is tapped. */
-  }{choiceNamesHidden ? <ChoiceNameMask size={13} line={17} /> : pickedChoice.name}</span><button
-    onClick={() => setChoiceNamesHidden((v) => !v)}
+  }{choiceNamesHidden ? <ChoiceNameMask size={13} line={17} seed={pickedChoice.id} /> : pickedChoice.name}</span><button
+    onClick={handleToggleChoiceNames}
     className="v2-tap"
     aria-label={choiceNamesHidden ? "Show choice names" : "Hide choice names"}
     aria-pressed={choiceNamesHidden}
@@ -2011,7 +2080,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       // Masked with the same character the line under the amount uses,
       // so one control reads as one control.
       title={choiceNamesHidden ? void 0 : category.name}
-    >{choiceNamesHidden ? <ChoiceNameMask size={15} /> : category.name}</span></button>;
+    >{choiceNamesHidden ? <ChoiceNameMask size={15} seed={category.id} /> : category.name}</span></button>;
   })}<button
     onClick={() => setChoicesOpen(true)}
     className="v2-tap"
@@ -2236,6 +2305,15 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     onBack={() => setShowPayBiometric(false)}
     onVerify={handlePayBiometricVerify}
     scanning={payBiometricScanning}
+  />}{
+    /* The same screen, for the choice names. Deliberately the SAME
+       component rather than a lighter one of its own: a second kind of
+       "prove it's you" is a second thing to get wrong, and this one is
+       already carrying a real payment. */
+  }{showChoiceBiometric && <BiometricVerifyScreen
+    onBack={() => setShowChoiceBiometric(false)}
+    onVerify={handleChoiceBiometricVerify}
+    scanning={choiceBiometricScanning}
   />}</div></div>;
 }
 var SendMoney_default = SendMoneyScreen;

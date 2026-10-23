@@ -1930,23 +1930,33 @@ describe("one eye hides every name on the Send screen", () => {
       "the dot mask is back in the catalogue");
     // Sized by the call site rather than by anything about the name.
     for (const call of send.match(/<ChoiceNameMask[^>]*\/>/g) || []) {
-      assert.match(call, /^<ChoiceNameMask size=\{\d+(\.\d+)?\}( line=\{\d+\})? \/>$/,
-        `the name mask is being passed something other than a size: ${call}`);
+      // `seed` is the choice's ID, which is how the four tiles get four
+      // different characters instead of the session's one four times. An
+      // id is not the name and carries none of its length — passing
+      // `category.name` here would put the thing being hidden into the
+      // thing doing the hiding, which is what this loop exists to catch.
+      assert.match(call, /^<ChoiceNameMask size=\{\d+(\.\d+)?\}( line=\{\d+\})?( seed=\{(pickedChoice|category)\.id\})? \/>$/,
+        `the name mask is being passed something other than a size and an id: ${call}`);
     }
   });
 
-  test("it is the same character that covers the balance", () => {
-    // Three conventions for "covered" — a character on the balance, dots
-    // on the names, other dots beside the chart — is three things to
-    // learn. The wrapper exists so there is one.
+  test("it is the same CAST as the balance, but a character per choice", () => {
+    // This asked for the same character as the balance, which was right
+    // while there was one thing to hide. It stopped being right the day
+    // four tiles were hidden at once: they all wore the session's one
+    // face and the row read as one thing repeated. One convention still
+    // — the same ten drawn characters, the same wrapper — but dealt per
+    // choice. See choiceMaskPick.
     const mask = code("frontend/components/common/balanceMask.jsx");
-    assert.match(mask, /function ChoiceNameMask\(\{ size = \d+, line = \d+ \}\) \{/);
-    assert.match(mask, /<BalanceMaskFace size=\{px\} label="Name hidden" \/>/,
-      "the name mask has stopped being the balance's character");
+    assert.match(mask, /function ChoiceNameMask\(\{ size = \d+, line = \d+, seed = null \}\) \{/);
+    assert.match(mask, /<BalanceMaskFace size=\{px\} label="Name hidden" seed=\{seed\} \/>/,
+      "the name mask has stopped being drawn from the balance's cast");
+    assert.match(mask, /function choiceMaskPick\(choiceKey\)/,
+      "there is no per-choice picker, so every hidden tile wears one face again");
   });
 
   test("it covers the line under the amount", () => {
-    assert.match(send, /\{choiceNamesHidden \? <ChoiceNameMask size=\{13\} line=\{17\} \/> : pickedChoice\.name\}/);
+    assert.match(send, /\{choiceNamesHidden \? <ChoiceNameMask size=\{13\} line=\{17\} seed=\{pickedChoice\.id\} \/> : pickedChoice\.name\}/);
     // The line STAYS. That a payment is being filed is worth knowing
     // even when which choice is not, and a line that vanishes moves
     // the Pay button under the thumb that was about to press it.
@@ -1956,7 +1966,7 @@ describe("one eye hides every name on the Send screen", () => {
   test("it covers the strip, which is where the names are biggest", () => {
     // Hiding the line under the amount while the same name sits in
     // large type two centimetres below it hides nothing.
-    assert.match(send, /\{choiceNamesHidden \? <ChoiceNameMask size=\{15\} \/> : category\.name\}/,
+    assert.match(send, /\{choiceNamesHidden \? <ChoiceNameMask size=\{15\} seed=\{category\.id\} \/> : category\.name\}/,
       "the chip labels stay readable");
     assert.match(send, /filter: choiceNamesHidden \? "blur\(5px\)" : "none"/,
       "the photographs stay sharp");
@@ -1978,10 +1988,14 @@ describe("one eye hides every name on the Send screen", () => {
       "the name is still spoken when it is hidden on screen");
   });
 
-  test("it starts visible and resets with the screen", () => {
-    // A shoulder you choose to turn, not a setting somebody has to
-    // find to get their own labels back.
-    assert.match(send, /const \[choiceNamesHidden, setChoiceNamesHidden\] = useState15\(false\);/);
+  test("it starts HIDDEN and resets with the screen", () => {
+    // This required the opposite, on the argument that hiding is "a
+    // shoulder you choose to turn". That argument is wrong in the one way
+    // that matters: a mask you have to switch on has already failed by
+    // the time you think to switch it on, and the names that need hiding
+    // are exactly the ones nobody remembers to hide before opening the
+    // screen in company.
+    assert.match(send, /const \[choiceNamesHidden, setChoiceNamesHidden\] = useState15\(true\);/);
     assert.doesNotMatch(send, /localStorage[^\n]*choiceNamesHidden/,
       "hiding is remembered across sessions, which makes it a setting");
   });

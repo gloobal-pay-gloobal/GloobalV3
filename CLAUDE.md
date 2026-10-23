@@ -271,9 +271,19 @@ coincidence — and because it is content-based, two checkouts of the same
 tree produce the same name, which is also how you confirm one machine's
 build equals another's.
 
-In PowerShell, `Invoke-WebRequest` refuses to parse HTML without
-`-UseBasicParsing`; use `curl.exe` instead of `curl`, which is an alias for
-it.
+### The shell on this machine is PowerShell, not bash
+
+Three things have now gone wrong twice each by forgetting that. Commands
+handed over for the founder to run must survive all three.
+
+- **`Invoke-WebRequest` refuses to parse HTML** without `-UseBasicParsing`.
+  Use `curl.exe`, not `curl` — the latter is an alias for `Invoke-WebRequest`.
+- **PowerShell does not expand `*` for external programs.** `git am
+  patches-choices\00*.patch` fails with "could not open ... No such file or
+  directory". Spell every filename out.
+- **There is no `head`, `tail`, `grep` or `wc`.** A bash pipe like
+  `curl.exe … | head -c 200` dies on the `head`. Use `Select-String
+  '<pattern>'` to filter and `Select-Object -First n` to take the first n.
 
 The API is on Render's free tier and spins down after about fifteen minutes
 idle, so the first request after a quiet spell can take 20-50 seconds — a

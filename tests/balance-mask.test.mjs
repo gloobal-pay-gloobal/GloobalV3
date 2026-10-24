@@ -128,15 +128,19 @@ describe("the mask cannot be read", () => {
 });
 
 describe("ten characters, not one in ten colours", () => {
-  test("the cast is ten, named once each, and all of them are drawn", () => {
+  test("the cast is named once each, and all of them are drawn", () => {
+    // Counted against ITSELF rather than against a literal. The number
+    // grew from ten to twenty and will grow again; what must stay true is
+    // that every name is unique and every name has a drawing — a literal
+    // here just means the next addition fails a test about nothing.
     const lib = makeLib("tok-a");
-    assert.equal(lib.BALANCE_MASK_CAST.length, 10);
-    assert.equal(new Set(lib.BALANCE_MASK_CAST).size, 10, "a character is listed twice");
+    assert.ok(lib.BALANCE_MASK_CAST.length >= 10, "the cast has shrunk below ten");
+    assert.equal(new Set(lib.BALANCE_MASK_CAST).size, lib.BALANCE_MASK_CAST.length, "a character is listed twice");
     const drawn = drawings();
     for (const name of lib.BALANCE_MASK_CAST) {
       assert.ok(drawn.has(name), `${name} is in the cast with nothing drawn for it`);
     }
-    assert.equal(drawn.size, 10, "there is a drawing for somebody not in the cast");
+    assert.equal(drawn.size, lib.BALANCE_MASK_CAST.length, "there is a drawing for somebody not in the cast");
   });
 
   test("they differ in shape, not only in colour", () => {
@@ -206,14 +210,30 @@ describe("one character per sign-in", () => {
     }
   });
 
-  test("all ten are reachable", () => {
+  test("every one of them is reachable", () => {
+    // A character in the cast that the picker can never choose is a
+    // drawing nobody will ever see. Rounds scaled to the cast so adding
+    // more does not quietly make this flaky.
     const lib = makeLib("token-one");
     const seen = new Set();
-    for (let round = 0; round < 600; round += 1) {
+    const rounds = lib.BALANCE_MASK_CAST.length * 80;
+    for (let round = 0; round < rounds; round += 1) {
       lib.signIn(`token-${round}`);
       seen.add(lib.balanceMaskPick());
     }
-    assert.equal(seen.size, 10, `only ${seen.size} of the ten ever appear`);
+    assert.equal(seen.size, lib.BALANCE_MASK_CAST.length,
+      `only ${seen.size} of the ${lib.BALANCE_MASK_CAST.length} ever appear`);
+  });
+
+  test("every character has a speed-mark colour of its own", () => {
+    // Missing entries fall back to one yellow, so a new character would
+    // silently wear somebody else's flash.
+    const lib = makeLib("tok-a");
+    const marks = strip(source).slice(strip(source).indexOf("var BALANCE_MASK_MARKS"));
+    for (const name of lib.BALANCE_MASK_CAST) {
+      assert.match(marks.slice(0, marks.indexOf("};")), new RegExp(`\\b${name}:`),
+        `${name} has no mark colour and would fall back to the default`);
+    }
   });
 
   test("the signature stored is not the token", () => {

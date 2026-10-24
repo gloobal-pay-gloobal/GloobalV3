@@ -20,6 +20,12 @@
 // behaved differently, and the inconsistency was real even though the
 // "sometimes" was not.
 //
+// A gate was added here to settle that, and then taken off again: the
+// balance is a number somebody could use against you, while these are
+// your own labels on a screen you are already mid-payment on. The
+// consistency was made the other way round — the strip opens hidden, and
+// one tap opens it. See "the eye is just an eye" below.
+//
 // The other three: the strip opened VISIBLE, every hidden tile wore the
 // same character, and the "for <choice>" line printed a bare name while
 // every tile beside it drew a picture.
@@ -60,48 +66,62 @@ describe("the names start hidden", () => {
   });
 });
 
-describe("the eye asks who you are", () => {
+describe("the eye is just an eye", () => {
   const body = strip(send);
 
-  test("it no longer toggles on its own", () => {
-    // The exact line that was the whole bug.
-    assert.doesNotMatch(body, /onClick=\{\(\) => setChoiceNamesHidden\(\(v\) => !v\)\}/,
-      "the eye is a bare toggle again — it reveals private names with no check");
+  test("the toggle is named, not inlined into the onClick", () => {
+    // This used to assert that the inline toggle was GONE, on the
+    // grounds that it was the bug. It is the intended behaviour now, so
+    // what is left worth asserting is only that it lives in a named
+    // handler — which is where the reasoning about it sits, and the
+    // thing anybody changing this will read first.
+    assert.match(body, /onClick=\{handleToggleChoiceNames\}/);
+    assert.doesNotMatch(body, /onClick=\{\(\) => setChoiceNamesHidden/,
+      "the toggle was inlined back into the JSX, away from the note explaining it");
   });
 
-  test("showing goes through requireBiometric; hiding does not", () => {
+  test("it is a plain toggle, and that is now deliberate", () => {
+    // ── THE GATE WENT BACK OFF ────────────────────────────────────────
+    //
+    // A previous patch put requireBiometric on this eye. That was built
+    // to answer "sometimes it asks, sometimes it doesn't" — and the real
+    // cause turned out to be that this control had NO check while the
+    // dashboard's balance eye had one, so the two looked alike and
+    // behaved differently.
+    //
+    // Adding a check made them consistent and made this worse. The
+    // balance is a number somebody could use against you; these are your
+    // own labels for your own spending, on a screen you are already
+    // mid-payment on, having passed a check to get into the app at all.
+    // A fingerprint prompt to read the word "Donation" on your own phone
+    // is friction charged for nothing.
+    //
+    // The consistency went the other way instead: the strip still opens
+    // HIDDEN, which is the part that protects anything, and opening it
+    // is one tap. This test exists so that putting the gate back is a
+    // decision somebody makes on purpose rather than a tidy-up.
     const at = body.indexOf("const handleToggleChoiceNames");
     assert.ok(at > 0, "the eye's handler is gone");
-    const toggle = body.slice(at, body.indexOf("\n  };", at));
-    // Hiding needs no permission. Only revealing does.
-    assert.match(toggle, /if \(!choiceNamesHidden\)/);
-    assert.match(toggle, /setShowChoiceBiometric\(true\)/);
-
-    const verifyAt = body.indexOf("const handleChoiceBiometricVerify");
-    assert.ok(verifyAt > 0, "the verify handler is gone");
-    const verify = body.slice(verifyAt, body.indexOf("\n  };", verifyAt));
-    assert.match(verify, /await requireBiometric\(/);
-    assert.match(verify, /setChoiceNamesHidden\(false\)/);
+    const toggle = body.slice(at, body.indexOf(";", at) + 1);
+    assert.match(toggle, /setChoiceNamesHidden\(\(v\) => !v\)/);
+    assert.doesNotMatch(toggle, /requireBiometric|Biometric/,
+      "the choices eye has a verification gate on it again");
   });
 
-  test("a refused check leaves the names hidden", () => {
-    // Which is the entire point of putting a gate on the eye: a gate that
-    // opens anyway is a prompt, not a gate.
-    const verifyAt = body.indexOf("const handleChoiceBiometricVerify");
-    const verify = body.slice(verifyAt, body.indexOf("\n  };", verifyAt));
-    const refused = verify.slice(verify.indexOf("if (!ok)"));
-    assert.doesNotMatch(refused.slice(0, refused.indexOf("}")), /setChoiceNamesHidden\(false\)/,
-      "the names are revealed on a failed check");
-    assert.match(verify, /names stay hidden/);
+  test("and no verification screen is rendered for it", () => {
+    assert.doesNotMatch(body, /showChoiceBiometric/,
+      "the choice-names verify screen is back");
+    // The PAYMENT's gate is untouched — that one guards money.
+    assert.equal((readSource(SEND).match(/<BiometricVerifyScreen/g) || []).length, 1,
+      "the payment's own verification screen was removed or duplicated");
   });
 
-  test("it is the same screen the payment uses, not a second one", () => {
-    // A second kind of "prove it's you" is a second thing to get wrong,
-    // and this file already renders the real one for the payment.
-    assert.equal((send.match(/<BiometricVerifyScreen/g) || []).length, 2,
-      "the choice gate is not using the screen the payment uses");
-    assert.match(body, /showChoiceBiometric && <BiometricVerifyScreen/);
-    assert.match(body, /onVerify=\{handleChoiceBiometricVerify\}/);
+  test("the Essentials figure keeps ITS gate, which is a different thing", () => {
+    // Asked for separately and for a different reason: that figure says
+    // something about a person rather than about their own labels.
+    const cat = strip(readSource("frontend/features/choices/CategoryScreen.jsx"));
+    assert.match(cat, /await requireBiometric\(/,
+      "removing the choices gate also removed the Essentials one");
   });
 });
 

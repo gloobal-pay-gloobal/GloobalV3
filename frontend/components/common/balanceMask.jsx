@@ -41,7 +41,18 @@ import { useState as useState47 } from "react";
 // watcher could learn to read.
 var BALANCE_MASK_CAST = [
   "penguin", "cat", "chick", "bear", "bunny",
-  "robot", "ghost", "cactus", "octo", "star"
+  "robot", "ghost", "cactus", "octo", "star",
+  // The second ten. Chosen to be told apart at 24px by SILHOUETTE alone,
+  // which is the test the first set was rejected on — ten tints of one
+  // round body read as one character however different the hex codes are.
+  //
+  // So each of these takes a shape none of the first ten had: ears that
+  // point down rather than up (puppy), a shell (turtle), a trunk
+  // (elephant), a mane (lion), wings held out (bee), a long neck
+  // (dino), a crescent rather than a disc (moon), a cap (mushroom),
+  // petals (flower) and a hull (rocket).
+  "puppy", "turtle", "elephant", "lion", "bee",
+  "dino", "moon", "mushroom", "flower", "rocket"
 ];
 
 // ── ONE PER SIGN-IN ─────────────────────────────────────────────────────
@@ -168,7 +179,20 @@ var BALANCE_MASK_MARKS = {
   ghost: "#D9CFF7",
   cactus: "#6FC46A",
   octo: "#C47BE8",
-  star: "#FFD166"
+  star: "#FFD166",
+  // The second ten. Each is the character's own dominant colour, so the
+  // speed marks beside it read as belonging to it rather than as a fixed
+  // yellow flash stuck on whoever happens to be waving.
+  puppy: "#D8A062",
+  turtle: "#6FBF80",
+  elephant: "#99A0BC",
+  lion: "#E0A93C",
+  bee: "#F2C53D",
+  dino: "#6CC47E",
+  moon: "#EDD277",
+  mushroom: "#E26E6E",
+  flower: "#F58FB4",
+  rocket: "#C4CDE0"
 };
 
 // ── THE DRAWINGS ────────────────────────────────────────────────────────
@@ -367,6 +391,182 @@ function BalanceMaskCreature({ kind }) {
       <ellipse cx="37.5" cy="29" rx="3.1" ry="3.627" fill="#2F2208"/>
       <circle cx="29.678" cy="27.636" r="1.147" fill="#fff"/>
       <circle cx="38.678" cy="27.636" r="1.147" fill="#fff"/><path d="M28 35.5a5 5 0 0 0 10 0z" fill="#2F2208"/></g>;
+  }
+  if (kind === "puppy") {
+    return <g><defs><radialGradient id="bmGPup" cx="36%" cy="28%" r="80%"><stop offset="0%" stopColor="#E8B778"/><stop offset="100%" stopColor="#B07B3E"/></radialGradient></defs>
+      <path d="M26 54l-6 5h6z" fill="#B07B3E"/>
+      <path d="M40 54l6 5h-6z" fill="#B07B3E"/>
+      <path className="bm-wave" d="M17 33L5 24" stroke="#B07B3E" strokeWidth="5" strokeLinecap="round" fill="none"/>
+      <path d="M49 38l10 7" stroke="#B07B3E" strokeWidth="5" strokeLinecap="round" fill="none"/>
+      <path d="M18 20q-6 2-5 14t8 9z" fill="#8A5C2A"/>
+      <path d="M48 20q6 2 5 14t-8 9z" fill="#8A5C2A"/>
+      <ellipse cx="33" cy="33" rx="16" ry="18" fill="url(#bmGPup)" stroke="#8A5C2A" strokeWidth="1.5"/>
+      <ellipse cx="33" cy="41" rx="9" ry="7.5" fill="#FBEDD8"/>
+      <ellipse cx="25.5" cy="35" rx="3.6" ry="2.5" fill="#FF9FB0" opacity="0.6"/>
+      <ellipse cx="40.5" cy="35" rx="3.6" ry="2.5" fill="#FF9FB0" opacity="0.6"/>
+      <ellipse cx="28" cy="29" rx="2.9" ry="3.4" fill="#2F2208"/>
+      <ellipse cx="38" cy="29" rx="2.9" ry="3.4" fill="#2F2208"/>
+      <circle cx="29.1" cy="27.7" r="1.1" fill="#fff"/>
+      <circle cx="39.1" cy="27.7" r="1.1" fill="#fff"/>
+      <ellipse cx="33" cy="38" rx="2.6" ry="2" fill="#2F2208"/></g>;
+  }
+  if (kind === "turtle") {
+    return <g><defs><radialGradient id="bmGTur" cx="36%" cy="26%" r="82%"><stop offset="0%" stopColor="#7FC88B"/><stop offset="100%" stopColor="#3E7A4C"/></radialGradient></defs>
+      <ellipse cx="19" cy="50" rx="6" ry="4" fill="#A8DCB0"/>
+      <ellipse cx="47" cy="50" rx="6" ry="4" fill="#A8DCB0"/>
+      <path className="bm-wave" d="M13 36L2 28" stroke="#A8DCB0" strokeWidth="5" strokeLinecap="round" fill="none"/>
+      <ellipse cx="52" cy="26" rx="10" ry="8.5" fill="#A8DCB0" stroke="#3E7A4C" strokeWidth="1.4"/>
+      <path d="M8 44a25 18 0 0 1 50 0z" fill="url(#bmGTur)" stroke="#2E5E3A" strokeWidth="1.6"/>
+      <path d="M8 44h50" stroke="#2E5E3A" strokeWidth="1.6" fill="none"/>
+      <path d="M22 44a11 13 0 0 1 22 0" fill="none" stroke="#2E5E3A" strokeWidth="1.3"/>
+      <path d="M33 31v13" stroke="#2E5E3A" strokeWidth="1.3" fill="none"/>
+      <path d="M17 44q2 -9 7 -12" stroke="#2E5E3A" strokeWidth="1.3" fill="none"/>
+      <path d="M49 44q-2 -9 -7 -12" stroke="#2E5E3A" strokeWidth="1.3" fill="none"/>
+      <ellipse cx="49" cy="24" rx="2.3" ry="2.8" fill="#2F2208"/>
+      <ellipse cx="56" cy="24" rx="2.3" ry="2.8" fill="#2F2208"/>
+      <circle cx="49.9" cy="22.9" r="0.95" fill="#fff"/>
+      <circle cx="56.9" cy="22.9" r="0.95" fill="#fff"/>
+      <ellipse cx="46" cy="29.5" rx="2.8" ry="2" fill="#FF9FB0" opacity="0.55"/></g>;
+  }
+  if (kind === "elephant") {
+    return <g><defs><radialGradient id="bmGEle" cx="36%" cy="28%" r="80%"><stop offset="0%" stopColor="#B9BFD4"/><stop offset="100%" stopColor="#6E7694"/></radialGradient></defs>
+      <path d="M26 55l-5 4h5z" fill="#6E7694"/>
+      <path d="M40 55l5 4h-5z" fill="#6E7694"/>
+      <path className="bm-wave" d="M15 30L3 22" stroke="#6E7694" strokeWidth="5" strokeLinecap="round" fill="none"/>
+      <ellipse cx="15" cy="32" rx="9" ry="12" fill="#8A91AC"/>
+      <ellipse cx="51" cy="32" rx="9" ry="12" fill="#8A91AC"/>
+      <ellipse cx="33" cy="32" rx="15" ry="17" fill="url(#bmGEle)" stroke="#5A6180" strokeWidth="1.5"/>
+      <path d="M33 40q-3 8 0 14t5 3" stroke="#8A91AC" strokeWidth="6" strokeLinecap="round" fill="none"/>
+      <ellipse cx="24.5" cy="34" rx="3.4" ry="2.4" fill="#FF9FB0" opacity="0.55"/>
+      <ellipse cx="41.5" cy="34" rx="3.4" ry="2.4" fill="#FF9FB0" opacity="0.55"/>
+      <ellipse cx="28" cy="28" rx="2.8" ry="3.3" fill="#2F2208"/>
+      <ellipse cx="38" cy="28" rx="2.8" ry="3.3" fill="#2F2208"/>
+      <circle cx="29" cy="26.7" r="1.05" fill="#fff"/>
+      <circle cx="39" cy="26.7" r="1.05" fill="#fff"/></g>;
+  }
+  if (kind === "lion") {
+    return <g><defs><radialGradient id="bmGLio" cx="36%" cy="28%" r="80%"><stop offset="0%" stopColor="#F2B978"/><stop offset="100%" stopColor="#C2762C"/></radialGradient></defs>
+      <path d="M26 55l-5 4h5z" fill="#A85F1C"/>
+      <path d="M40 55l5 4h-5z" fill="#A85F1C"/>
+      <path className="bm-wave" d="M16 33L4 25" stroke="#C2762C" strokeWidth="5" strokeLinecap="round" fill="none"/>
+      <path d="M50 38l10 8" stroke="#C2762C" strokeWidth="5" strokeLinecap="round" fill="none"/>
+      <circle cx="33" cy="18" r="8" fill="#A85F1C"/>
+      <circle cx="18" cy="26" r="8.5" fill="#A85F1C"/>
+      <circle cx="48" cy="26" r="8.5" fill="#A85F1C"/>
+      <circle cx="16" cy="40" r="8" fill="#A85F1C"/>
+      <circle cx="50" cy="40" r="8" fill="#A85F1C"/>
+      <circle cx="26" cy="49" r="7.5" fill="#A85F1C"/>
+      <circle cx="40" cy="49" r="7.5" fill="#A85F1C"/>
+      <circle cx="33" cy="33" r="15" fill="#B86A22"/>
+      <circle cx="33" cy="33" r="12.5" fill="url(#bmGLio)" stroke="#9A5E18" strokeWidth="1.3"/>
+      <ellipse cx="25.5" cy="35" rx="3.2" ry="2.3" fill="#FF9FB0" opacity="0.6"/>
+      <ellipse cx="40.5" cy="35" rx="3.2" ry="2.3" fill="#FF9FB0" opacity="0.6"/>
+      <ellipse cx="29" cy="30" rx="2.6" ry="3.1" fill="#2F2208"/>
+      <ellipse cx="37" cy="30" rx="2.6" ry="3.1" fill="#2F2208"/>
+      <circle cx="29.9" cy="28.9" r="1" fill="#fff"/>
+      <circle cx="37.9" cy="28.9" r="1" fill="#fff"/>
+      <path d="M33 36l-3 2.4h6z" fill="#2F2208"/>
+      <path d="M33 38.4v2.6" stroke="#2F2208" strokeWidth="1.2" fill="none"/></g>;
+  }
+  if (kind === "bee") {
+    return <g><defs><radialGradient id="bmGBee" cx="36%" cy="26%" r="82%"><stop offset="0%" stopColor="#FBDC7A"/><stop offset="100%" stopColor="#D9A41E"/></radialGradient></defs>
+      <path d="M26 56l-4 3h4z" fill="#D9A41E"/>
+      <path d="M40 56l4 3h-4z" fill="#D9A41E"/>
+      <path d="M27 15l-4-9" stroke="#3A3326" strokeWidth="2" strokeLinecap="round" fill="none"/>
+      <path d="M39 15l4-9" stroke="#3A3326" strokeWidth="2" strokeLinecap="round" fill="none"/>
+      <circle cx="22.5" cy="5" r="2.4" fill="#3A3326"/>
+      <circle cx="43.5" cy="5" r="2.4" fill="#3A3326"/>
+      <ellipse cx="13" cy="26" rx="11" ry="7" fill="#DCEBFB" opacity="0.85" stroke="#A9C4E2" strokeWidth="1.1" transform="rotate(-22 13 26)"/>
+      <ellipse cx="53" cy="26" rx="11" ry="7" fill="#DCEBFB" opacity="0.85" stroke="#A9C4E2" strokeWidth="1.1" transform="rotate(22 53 26)"/>
+      <path className="bm-wave" d="M19 40L7 46" stroke="#D9A41E" strokeWidth="4.5" strokeLinecap="round" fill="none"/>
+      <ellipse cx="33" cy="35" rx="15" ry="18" fill="url(#bmGBee)" stroke="#9E7514" strokeWidth="1.5"/>
+      <path d="M19.5 42h27" stroke="#3A3326" strokeWidth="4.5" fill="none"/>
+      <path d="M22 51h22" stroke="#3A3326" strokeWidth="4" fill="none"/>
+      <ellipse cx="28" cy="29" rx="2.8" ry="3.3" fill="#2F2208"/>
+      <ellipse cx="38" cy="29" rx="2.8" ry="3.3" fill="#2F2208"/>
+      <circle cx="29" cy="27.7" r="1.05" fill="#fff"/>
+      <circle cx="39" cy="27.7" r="1.05" fill="#fff"/></g>;
+  }
+  if (kind === "dino") {
+    return <g><defs><radialGradient id="bmGDin" cx="36%" cy="26%" r="82%"><stop offset="0%" stopColor="#8FD79B"/><stop offset="100%" stopColor="#3E8C52"/></radialGradient></defs>
+      <path d="M24 57l-5 3h5z" fill="#3E8C52"/>
+      <path d="M38 57l5 3h-5z" fill="#3E8C52"/>
+      <path className="bm-wave" d="M46 44L58 38" stroke="#3E8C52" strokeWidth="5" strokeLinecap="round" fill="none"/>
+      <path d="M18 56q-3 -22 10 -30" stroke="#3E8C52" strokeWidth="11" strokeLinecap="round" fill="none"/>
+      <ellipse cx="22" cy="50" rx="15" ry="11" fill="url(#bmGDin)" stroke="#2C6B3C" strokeWidth="1.5"/>
+      <path d="M30 24q-3 -5 1 -8 4 5 1 8z" fill="#2C6B3C"/>
+      <path d="M34 31q-3 -5 1 -8 4 5 1 8z" fill="#2C6B3C"/>
+      <ellipse cx="34" cy="21" rx="12" ry="10" fill="url(#bmGDin)" stroke="#2C6B3C" strokeWidth="1.5"/>
+      <ellipse cx="30" cy="18" rx="2.6" ry="3" fill="#2F2208"/>
+      <ellipse cx="39" cy="18" rx="2.6" ry="3" fill="#2F2208"/>
+      <circle cx="30.9" cy="16.9" r="1" fill="#fff"/>
+      <circle cx="39.9" cy="16.9" r="1" fill="#fff"/>
+      <path d="M38 25h7" stroke="#2F2208" strokeWidth="1.6" strokeLinecap="round" fill="none"/></g>;
+  }
+  if (kind === "moon") {
+    return <g><defs><radialGradient id="bmGMoo" cx="34%" cy="26%" r="84%"><stop offset="0%" stopColor="#FBF0B8"/><stop offset="100%" stopColor="#E2BE43"/></radialGradient></defs>
+      <path className="bm-wave" d="M18 44L6 50" stroke="#E2BE43" strokeWidth="4.5" strokeLinecap="round" fill="none"/>
+      <path d="M48 42l11 5" stroke="#E2BE43" strokeWidth="4.5" strokeLinecap="round" fill="none"/>
+      <path d="M44 9a23 23 0 1 0 0 46 27 27 0 0 1 0-46z" fill="url(#bmGMoo)" stroke="#C4A032" strokeWidth="1.5"/>
+      <circle cx="26" cy="20" r="3.4" fill="#E7CC6B" opacity="0.8"/>
+      <circle cx="21" cy="40" r="2.4" fill="#E7CC6B" opacity="0.8"/>
+      <circle cx="31" cy="48" r="2" fill="#E7CC6B" opacity="0.8"/>
+      <ellipse cx="29" cy="30" rx="3.8" ry="2.6" fill="#FF9FB0" opacity="0.55"/>
+      <ellipse cx="42" cy="30" rx="3.8" ry="2.6" fill="#FF9FB0" opacity="0.55"/>
+      <ellipse cx="32" cy="25" rx="2.7" ry="3.2" fill="#2F2208"/>
+      <ellipse cx="41" cy="25" rx="2.7" ry="3.2" fill="#2F2208"/>
+      <circle cx="32.9" cy="23.8" r="1" fill="#fff"/>
+      <circle cx="41.9" cy="23.8" r="1" fill="#fff"/>
+      <path d="M33 33a4.5 4.5 0 0 0 8 0z" fill="#2F2208"/></g>;
+  }
+  if (kind === "mushroom") {
+    return <g><defs><radialGradient id="bmGMus" cx="36%" cy="24%" r="84%"><stop offset="0%" stopColor="#F49A9A"/><stop offset="100%" stopColor="#C33F3F"/></radialGradient></defs>
+      <path className="bm-wave" d="M19 46L7 52" stroke="#E8D9BC" strokeWidth="4.5" strokeLinecap="round" fill="none"/>
+      <path d="M47 46l11 6" stroke="#E8D9BC" strokeWidth="4.5" strokeLinecap="round" fill="none"/>
+      <path d="M22 36h22v16a11 11 0 0 1-22 0z" fill="#F6ECD8" stroke="#CDBB99" strokeWidth="1.4"/>
+      <path d="M7 36a26 26 0 0 1 52 0z" fill="url(#bmGMus)" stroke="#A32E2E" strokeWidth="1.6"/>
+      <circle cx="19" cy="27" r="4.4" fill="#FBE9E0" opacity="0.9"/>
+      <circle cx="44" cy="24" r="5.4" fill="#FBE9E0" opacity="0.9"/>
+      <circle cx="33" cy="16" r="3.4" fill="#FBE9E0" opacity="0.9"/>
+      <ellipse cx="25" cy="47" rx="3.4" ry="2.4" fill="#FF9FB0" opacity="0.6"/>
+      <ellipse cx="41" cy="47" rx="3.4" ry="2.4" fill="#FF9FB0" opacity="0.6"/>
+      <ellipse cx="28" cy="43" rx="2.6" ry="3.1" fill="#2F2208"/>
+      <ellipse cx="38" cy="43" rx="2.6" ry="3.1" fill="#2F2208"/>
+      <circle cx="28.9" cy="41.9" r="1" fill="#fff"/>
+      <circle cx="38.9" cy="41.9" r="1" fill="#fff"/></g>;
+  }
+  if (kind === "flower") {
+    return <g><defs><radialGradient id="bmGFlo" cx="36%" cy="28%" r="80%"><stop offset="0%" stopColor="#FBE38A"/><stop offset="100%" stopColor="#E0A92C"/></radialGradient></defs>
+      <path d="M33 46v14" stroke="#4E9A5A" strokeWidth="4" strokeLinecap="round" fill="none"/>
+      <path className="bm-wave" d="M33 52q-10 -2 -13 6" stroke="#4E9A5A" strokeWidth="4" strokeLinecap="round" fill="none"/>
+      <path d="M33 56q10 -2 13 5" stroke="#4E9A5A" strokeWidth="4" strokeLinecap="round" fill="none"/>
+      <ellipse cx="33" cy="11" rx="8" ry="11" fill="#F58FB4"/>
+      <ellipse cx="33" cy="45" rx="8" ry="11" fill="#F58FB4"/>
+      <ellipse cx="16" cy="28" rx="11" ry="8" fill="#F58FB4"/>
+      <ellipse cx="50" cy="28" rx="11" ry="8" fill="#F58FB4"/>
+      <ellipse cx="21" cy="16" rx="8" ry="10" fill="#F7A3C2" transform="rotate(-40 21 16)"/>
+      <ellipse cx="45" cy="16" rx="8" ry="10" fill="#F7A3C2" transform="rotate(40 45 16)"/>
+      <circle cx="33" cy="28" r="13" fill="url(#bmGFlo)" stroke="#C08E1E" strokeWidth="1.5"/>
+      <ellipse cx="26" cy="30" rx="3.2" ry="2.3" fill="#FF8FA6" opacity="0.6"/>
+      <ellipse cx="40" cy="30" rx="3.2" ry="2.3" fill="#FF8FA6" opacity="0.6"/>
+      <ellipse cx="29" cy="25" rx="2.6" ry="3.1" fill="#2F2208"/>
+      <ellipse cx="37" cy="25" rx="2.6" ry="3.1" fill="#2F2208"/>
+      <circle cx="29.9" cy="23.9" r="1" fill="#fff"/>
+      <circle cx="37.9" cy="23.9" r="1" fill="#fff"/></g>;
+  }
+  if (kind === "rocket") {
+    return <g><defs><linearGradient id="bmGRoc" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#EDF1F8"/><stop offset="100%" stopColor="#A9B4CB"/></linearGradient></defs>
+      <path d="M33 54q-5 6 0 11 5 -5 0 -11z" fill="#F7A92B"/>
+      <path className="bm-wave" d="M21 40L8 34" stroke="#D45B4A" strokeWidth="4.5" strokeLinecap="round" fill="none"/>
+      <path d="M19 36q-8 6 -5 16 7 -2 9 -8z" fill="#D45B4A"/>
+      <path d="M47 36q8 6 5 16 -7 -2 -9 -8z" fill="#D45B4A"/>
+      <path d="M33 4q13 13 13 30v18H20V34Q20 17 33 4z" fill="url(#bmGRoc)" stroke="#7D8AA6" strokeWidth="1.5"/>
+      <circle cx="33" cy="23" r="8" fill="#9ED6F0" stroke="#5E93B5" strokeWidth="1.5"/>
+      <ellipse cx="29.5" cy="22" rx="2.3" ry="2.7" fill="#2F2208"/>
+      <ellipse cx="36.5" cy="22" rx="2.3" ry="2.7" fill="#2F2208"/>
+      <circle cx="30.3" cy="21" r="0.9" fill="#fff"/>
+      <circle cx="37.3" cy="21" r="0.9" fill="#fff"/>
+      <path d="M22 44h22" stroke="#7D8AA6" strokeWidth="1.4" fill="none"/></g>;
   }
   return null;
 }

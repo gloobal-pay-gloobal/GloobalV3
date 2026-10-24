@@ -384,40 +384,23 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   // same check the dashboard's balance sits behind. It resets with the
   // screen — see the effect below.
   const [choiceNamesHidden, setChoiceNamesHidden] = useState15(true);
-  const [showChoiceBiometric, setShowChoiceBiometric] = useState15(false);
-  const [choiceBiometricScanning, setChoiceBiometricScanning] = useState15(false);
-
-  // Hiding needs no permission; showing does. Tapping the eye while the
-  // names are open just closes them.
-  const handleToggleChoiceNames = () => {
-    if (!choiceNamesHidden) {
-      setChoiceNamesHidden(true);
-      return;
-    }
-    setShowChoiceBiometric(true);
-  };
-
-  // THE GATE THIS CONTROL NEVER HAD.
+  // ── THE EYE IS JUST AN EYE ────────────────────────────────────────
   //
-  // The eye used to be `setChoiceNamesHidden((v) => !v)` and nothing else
-  // — no check at all, which is why it sometimes seemed to ask and
-  // sometimes did not: what asked was the DASHBOARD's balance eye, a
-  // different control in a different file. This is the same gate that one
-  // uses, and the same screen the payment below already uses.
-  const handleChoiceBiometricVerify = async () => {
-    if (choiceBiometricScanning) return;
-    setChoiceBiometricScanning(true);
-    const ok = await requireBiometric({ pinReason: "Confirm it's you to show your choice names." });
-    setChoiceBiometricScanning(false);
-    setShowChoiceBiometric(false);
-    if (!ok) {
-      // A refused check leaves the names masked, which is the entire point
-      // of putting a gate on the eye.
-      showToast2("Couldn't verify it's you — names stay hidden");
-      return;
-    }
-    setChoiceNamesHidden(false);
-  };
+  // It had a biometric gate on it for one patch. That was built to answer
+  // "sometimes it asks, sometimes it doesn't" — and the real cause turned
+  // out to be that this control had NO check while the dashboard's
+  // balance eye had one, so the two looked alike and behaved differently.
+  //
+  // Adding a check here made them consistent and made this worse. The
+  // balance is a number somebody could use against you; these are your
+  // own labels for your own spending, on a screen you are already mid-
+  // payment on, having just passed a check to get into the app. A
+  // fingerprint prompt to read the word "Donation" on your own phone is
+  // friction charged for nothing.
+  //
+  // So the consistency goes the other way: the strip still opens HIDDEN,
+  // which is the part that protects anything, and opening it is one tap.
+  const handleToggleChoiceNames = () => setChoiceNamesHidden((v) => !v);
 
   // Every consumer of `senderAmount` on this screen — the Send button, the
   // pay-method sheet, the receipt, the local ledger leg — wants "what I
@@ -2382,11 +2365,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
        component rather than a lighter one of its own: a second kind of
        "prove it's you" is a second thing to get wrong, and this one is
        already carrying a real payment. */
-  }{showChoiceBiometric && <BiometricVerifyScreen
-    onBack={() => setShowChoiceBiometric(false)}
-    onVerify={handleChoiceBiometricVerify}
-    scanning={choiceBiometricScanning}
-  />}</div></div>;
+  }</div></div>;
 }
 var SendMoney_default = SendMoneyScreen;
 

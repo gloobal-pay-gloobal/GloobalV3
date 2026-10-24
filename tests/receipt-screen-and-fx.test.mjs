@@ -201,9 +201,14 @@ describe("the receipt is a screen", () => {
   test("Pay again hands the counterparty to Send Money, and no amount", () => {
     // A second payment to somebody is rarely the same size as the first, and
     // a form that opens holding a figure is a form that gets sent holding it.
-    assert.match(modal, /new CustomEvent\("gloobal:payAgain", \{ detail: payAgainDetail\(gloobalId\) \}\)/);
+    // Two arguments since "Pay again knows the number": the id, and the
+    // RESOLVED payee the receipt looked up, so the send screen opens on the
+    // account's current Gloobal ID rather than the one printed on an old
+    // receipt. This assertion still named the one-argument form and had
+    // been failing quietly since that patch landed.
+    assert.match(modal, /new CustomEvent\("gloobal:payAgain", \{ detail: payAgainDetail\(gloobalId, resolved\) \}\)/);
     assert.ok(!/requestedAmount/.test(modal), "Pay again is carrying an amount");
-    const detail = modal.slice(modal.indexOf("const payAgainDetail = (gloobalId) => ({"), modal.indexOf("const openSendMoney"));
+    const detail = modal.slice(modal.indexOf("const payAgainDetail = (gloobalId, resolved) => ({"), modal.indexOf("const openSendMoney"));
     for (const field of ["gloobalId", "name", "mobileNumber", "countryIso", "shareRate"]) {
       assert.match(detail, new RegExp(`${field}[,:]`), `Pay again drops ${field}`);
     }

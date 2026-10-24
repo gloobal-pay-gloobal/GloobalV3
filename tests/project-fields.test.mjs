@@ -143,17 +143,31 @@ describe('what the API hands back', () => {
     assert.match(SERVER, /goal: project\.goalMinor != null && project\.goalCurrency/);
   });
 
-  test('there is no raised, backers or progress field yet', () => {
-    // The honest gap. Nothing can accept a contribution, so a zero beside a
-    // goal would say "nobody has given" when the truth is "nobody can".
-    // These appear with the flow that fills them, not before.
-    const shaper = SERVER.slice(SERVER.indexOf('const publicProject ='), SERVER.indexOf('const publicProject =') + 1800);
-    for (const field of ['raised', 'backers', 'contributions', 'progress']) {
+  test('raised and backers are exposed, and there IS a flow behind them', () => {
+    // This required their ABSENCE, and was right while it was true: a zero
+    // beside a goal would have said "nobody has given" when the truth was
+    // "nobody can". People can now, so the fields are here — but the thing
+    // worth guarding is unchanged, which is that a field on this shaper
+    // must have something real behind it. Inverted rather than deleted, so
+    // exposing a `progress` or `contributors` that nothing computes still
+    // fails.
+    const shaper = SERVER.slice(SERVER.indexOf('const publicProject ='), SERVER.indexOf('const publicProject =') + 2600);
+    for (const field of ['raised', 'backers']) {
+      assert.ok(new RegExp(`\\b${field}:`).test(shaper), `publicProject no longer exposes ${field}`);
+    }
+    for (const field of ['contributions', 'progress', 'contributors']) {
       assert.ok(!new RegExp(`\\b${field}:`).test(shaper), `publicProject exposes ${field} with nothing behind it`);
     }
+    // And the something: an aggregate, not a stored counter.
+    assert.ok(/async function projectTotals\(projectIds\)/.test(SERVER),
+      'raised and backers are exposed with no aggregate computing them');
   });
 
-  test('the model carries no raised or backers field either', () => {
+  test('the model still carries no raised or backers field', () => {
+    // Unchanged, and now load-bearing rather than incidental. The figures
+    // are aggregated from the contributions on every read precisely so
+    // that they cannot drift from the list beneath them; a counter on the
+    // Project row would be the same number maintained in two places.
     const model = readFileSync(join(ROOT, 'server/models/Project.js'), 'utf8');
     for (const field of ['raised', 'backers', 'contributors']) {
       assert.ok(!new RegExp(`^\\s+${field}:`, 'm').test(model), `Project has a ${field} field nothing writes`);

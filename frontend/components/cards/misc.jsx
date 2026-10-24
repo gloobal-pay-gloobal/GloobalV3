@@ -466,7 +466,13 @@ function GlobeHero({ size = 460 }) {
     style={{
       boxShadow: "0 0 0 1px rgba(255,255,255,0.4), -6px -4px 30px rgba(255,255,255,0.5), inset -30px -20px 70px rgba(10,20,50,0.55), inset 16px 14px 50px rgba(255,255,255,0.25)"
     }}
-  ><div className="absolute inset-0 flex animate-[spinearth_3s_linear_infinite]" style={{ width: "200%" }}><img
+  ><div // ── THE EARTH TURNS AT THE SPEED AN EARTH TURNS ─────────────────
+       // Three seconds for a full rotation, which is roughly 28,000 times
+       // real time and reads as a spinning logo rather than a planet.
+       // Ninety makes it a slow drift you notice only if you watch, which
+       // is what was asked for and is the right register for something
+       // sitting behind a headline somebody is trying to read.
+       className="absolute inset-0 flex animate-[spinearth_90s_linear_infinite]" style={{ width: "200%" }}><img
     src="https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg"
     alt=""
     className="w-1/2 h-full object-cover"

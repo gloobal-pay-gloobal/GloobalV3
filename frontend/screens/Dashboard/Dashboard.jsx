@@ -3448,7 +3448,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     ...(assetDetail.row.paymentReference
       ? [["From payment", assetDetail.row.paymentReference, findSeedPayment(assetDetail.row.paymentReference)]]
       : [])
-  ].map(([label, value, openable]) => <div key={label} onClick={openable ? () => { setAssetDetailKey(null); openRowReceipt(openable, "sent"); } : void 0} role={openable ? "button" : void 0} tabIndex={openable ? 0 : void 0} aria-label={openable ? `Open the receipt for ${value}` : void 0} className={openable ? "v2-tap" : void 0} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: openable ? "pointer" : void 0 }}><span style={{ fontSize: 12, color: T.inkFaint }}>{label}</span><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{value}</span></div>)}</div></div></div>}{profileDetail && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileDetail} />{profileDetail !== "History" && <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{profileDetail}</span>}{profileDetail === "History" && <div style={{ display: "flex", gap: 8, flex: 1 }}><button
+  ].map(([label, value, openable]) => <div key={label} onClick={openable ? () => { setAssetDetailKey(null); openRowReceipt(openable, "sent"); } : void 0} role={openable ? "button" : void 0} tabIndex={openable ? 0 : void 0} aria-label={openable ? `Open the receipt for ${value}` : void 0} className={openable ? "v2-tap" : void 0} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: openable ? "pointer" : void 0 }}><span style={{ fontSize: 12, color: T.inkFaint }}>{label}</span><span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{value}</span></div>)}</div></div></div>}{profileDetail && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileDetail} />{profileDetail !== "History" && profileDetail !== "Personal Details" && <span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{profileDetail}</span>}{
+    /* ── NO TITLE ON PERSONAL DETAILS, AND THE FLAG INSTEAD ──────────
+       Asked for in those words: "No personal details text", and the flag
+       "in opposite corner of back nagivation". The name on the card
+       below is the largest thing on the screen, which is what tells you
+       where you are better than a label would — and it is what a
+       document does anyway. The flag is nationality, which belongs to
+       the page rather than sitting beside the holder's name. */
+  }{profileDetail === "Personal Details" && <><span style={{ flex: 1 }} /><FlagEmoji flag={dialCountry.flag} size={40} shape="circle" border="none" /></>}{profileDetail === "History" && <div style={{ display: "flex", gap: 8, flex: 1 }}><button
     onClick={() => setHistoryTab("receiving")}
     aria-label="Received"
     className="v2-tap"
@@ -3484,22 +3492,19 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     }}
   >
                   Paid
-                </button></div>}</div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{profileDetail === "Personal Details" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{
-    /* Identity row — flag on the left, real registered name
-       on the right, not a generic label:value pair. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 18px" }}><FlagEmoji flag={dialCountry.flag} size={24} shape="circle" /><span style={{ flex: 1, fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</span></div>{[
-    // The number this account is registered against. It was the one piece of
-    // identity the screen knew and did not show.
-    ...(mobileNumber ? [["Mobile", mobileNumber]] : []),
-    ["Country", dialCountry.name],
-    ["Dial code", dialCountry.dialCode]
-  ].map(([k, v], i) => <div key={k} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>{k}</span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</span></div>)}{
-    /* Gloobal ID — colored per character, same as everywhere
-       else the ID itself is shown. */
-  }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}><GloobalWordmark suffix=" ID" /></span><span style={{ fontSize: 13, fontWeight: 700, textAlign: "right" }}>{personalGloobalId ? <ColoredGloobalId id={personalGloobalId} /> : "\u2014"}</span></div>{
-    /* Join date + time — the real moment this session
-       actually started, not a fixed placeholder year. */
-  }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}>Joined</span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink, textAlign: "right" }}>{accountCreatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}, {formatClockTime(accountCreatedAt)}</span></div></div>}{profileDetail === "Linked Banks" && <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px" }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Manage your linked banks</div><div style={{ fontSize: 12, color: T.inkFaint, marginTop: 3, lineHeight: 1.5 }}>
+                </button></div>}</div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{profileDetail === "Personal Details" && <PersonalDetailsScreen
+    myName={myName}
+    mobileNumber={mobileNumber}
+    dialCountry={dialCountry}
+    gloobalId={personalGloobalId}
+    accountCreatedAt={accountCreatedAt}
+    profilePhoto={profilePhoto}
+    onChangePhoto={() => profilePhotoInputRef.current?.click()}
+    // Both directions: a crossing is a payment between two countries, and
+    // which way the money went does not make it less of one. Paid and
+    // received are the two halves of this account's own border history.
+    history={roleSendHistory.concat(receivedRows)}
+  />}{profileDetail === "Linked Banks" && <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px" }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Manage your linked banks</div><div style={{ fontSize: 12, color: T.inkFaint, marginTop: 3, lineHeight: 1.5 }}>
                     Add, view, and link bank accounts from your country on the Add Bank screen.
                   </div></div><button
     onClick={() => {

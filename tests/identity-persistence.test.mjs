@@ -155,7 +155,14 @@ describe("3. personal details shows the mobile number", () => {
 
   test("it is rendered as a row, and omitted when there isn't one", () => {
     // An empty row reading "Mobile —" is worse than no row.
-    assert.match(dash, /\.\.\.\(mobileNumber \? \[\["Mobile", mobileNumber\]\] : \[\]\)/);
+    //
+    // The rows moved out of Dashboard.jsx and into the Personal Details
+    // screen's own file when that screen was rebuilt around the stamps.
+    // The property is unchanged and is asserted where it now lives.
+    const pd = readSource("frontend/features/identity/PersonalDetailsScreen.jsx");
+    assert.match(pd, /\.\.\.\(mobileNumber \? \[\["Mobile", mobileNumber\]\] : \[\]\)/);
+    assert.doesNotMatch(dash, /\[\["Mobile", mobileNumber\]\]/,
+      "the Dashboard renders its own Mobile row again, so there are two");
   });
 });
 

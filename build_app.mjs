@@ -262,6 +262,11 @@ const FRONTEND_MODULES = [
   "components/cards/GloobalTaglineCard.jsx",
   "screens/Banks/GloobalBankScreen.jsx",
   "screens/About/AboutUsScreen.jsx",
+  // The account's identity page, with the crossings pressed on it. Emitted
+  // before the Dashboard, which hosts it. Reads ProfileAvatar,
+  // ColoredGloobalId, GloobalWordmark and COUNTRY_BY_ISO — all emitted
+  // earlier, all function declarations or module-level consts.
+  "features/identity/PersonalDetailsScreen.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",
   // Giving to a Hooman Project, and the list of who has. Emitted before the

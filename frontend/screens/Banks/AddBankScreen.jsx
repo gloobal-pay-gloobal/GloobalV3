@@ -69,18 +69,53 @@ function AddBankScreen({ onClose, country: countryProp }) {
               </h1><p className="text-slate-500 text-[14px] leading-relaxed">
                 Link your bank account securely and create your <GloobalWordmark suffix=" ID" /> instantly.
               </p></div></div>}<div key={country.iso} className="px-5 flex flex-col gap-3">{
-    /* Gloobal Bank — always first, regardless of country or search */
-  }<BankRow bank={gloobalBank} index={0} accent onLockedTap={onLockedTap} />{
+    /* ── GLOOBAL BANK, IN A BOX OF ITS OWN ────────────────────────────
+       It used to be the first row of the same list, differing only by a
+       tint — which made the one bank Gloobal actually runs look like the
+       most-favoured entry in a directory of other people's banks.
+       It is its own thing: a separate card, above the list and outside
+       it, with the headline saying what it is rather than a star saying
+       it ranks first. */
+  }<div className="ab-bank-row rounded-3xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-blue-50 p-4 shadow-sm"><div className="flex items-center gap-2 mb-3"><div className="w-5 h-5 rounded-full bg-violet-600 flex items-center justify-center flex-shrink-0"><Star size={10} className="text-white fill-white" /></div><span className="font-bold text-slate-900 text-[13px] tracking-tight uppercase" style={{ letterSpacing: "0.06em" }}>
+              Ours
+            </span></div><BankRow bank={gloobalBank} index={0} accent onLockedTap={onLockedTap} /></div>{
     /* Country-specific top 5 */
-  }<div className="flex items-center gap-2 mt-1 mb-0.5"><div className="w-5 h-5 rounded-full bg-violet-600 flex items-center justify-center flex-shrink-0"><Star size={10} className="text-white fill-white" /></div><span className="font-bold text-slate-900 text-[15px] tracking-tight">{searching ? `Results for "${query}"` : `Top 5 banks in ${country.name}`}</span></div>{countryBanks.length === 0 && <p className="text-slate-400 text-[13.5px] py-1">
+  }<div className="flex items-center gap-2 mt-2 mb-0.5"><div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center flex-shrink-0"><Landmark4 size={11} className="text-slate-600" /></div><span className="font-bold text-slate-900 text-[15px] tracking-tight">{searching ? `Results for "${query}"` : `Top 5 banks in ${country.name}`}</span></div>{countryBanks.length === 0 && <p className="text-slate-400 text-[13.5px] py-1">
               No additional banks currently supported for {country.name}.
-            </p>}{filteredCountryBanks.map((bank, i) => <BankRow key={bank.id} bank={bank} index={i + 1} onLockedTap={onLockedTap} />)}{searching && countryBanks.length > 0 && filteredCountryBanks.length === 0 && <p className="text-slate-400 text-[13.5px] py-1">No banks found for "{query}".</p>}{!searching && <button
+            </p>}{
+    /* ── THREE TO A ROW ───────────────────────────────────────────────
+       Five banks as five full-width rows filled a whole phone screen to
+       say five words. As a grid they are one glance, and the room that
+       buys goes to the thing underneath.
+
+       Search results take the same grid: a result list that changed
+       shape from the list it filters would read as a different screen.
+       The logo carries the recognition either way — the name underneath
+       it is confirmation, which is why it may wrap to two lines and clip
+       rather than widening the cell. */
+  }<div className="grid grid-cols-3 gap-2.5">{filteredCountryBanks.map((bank, i) => <BankTile key={bank.id} bank={bank} index={i + 1} onLockedTap={onLockedTap} />)}{!searching && <button
     onClick={onLockedTap}
     aria-label="Other bank — locked"
-    className="ab-bank-row relative w-full flex items-center gap-4 px-4 py-4 rounded-3xl border border-dashed border-slate-200 hover:border-violet-300 hover:bg-violet-50/30 active:scale-[0.99] transition-all text-left"
+    className="ab-bank-row relative flex flex-col items-center gap-2 px-2 py-3.5 rounded-3xl border border-dashed border-slate-200 hover:border-violet-300 hover:bg-violet-50/30 active:scale-[0.99] transition-all"
     style={{ animationDelay: `${(filteredCountryBanks.length + 1) * 45}ms` }}
-  ><div className="w-[54px] h-[54px] rounded-2xl bg-slate-100 flex items-center justify-center flex-shrink-0"><Landmark4 size={22} className="text-slate-400" /></div><span className="flex-1 text-slate-500 text-[15.5px] font-semibold">Other bank</span><ServiceLock size={18} /></button>}</div>{!searching && <div className="px-5 mt-5"><div className="w-full flex items-center gap-3 bg-gradient-to-r from-violet-50 to-violet-100 rounded-2xl px-4 py-3.5 border border-violet-100/60"><div className="relative w-9 h-9 flex-shrink-0 flex items-center justify-center"><Shield2 size={24} className="text-violet-600 fill-violet-100" /><Lock3 size={11} className="text-violet-700 absolute bottom-0 right-0" /></div><div className="flex-1"><p className="font-bold text-slate-900 text-[14px]">Your security is our priority</p><p className="text-slate-500 text-[12px] leading-snug">Bank-grade encryption &amp; secure onboarding</p></div><ChevronRight3 size={17} className="text-slate-400 flex-shrink-0" /></div></div>}</div>{toast && <div className="absolute bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[13.5px] font-medium px-4 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">{toast}</div>}</div>;
+  ><div className="w-[46px] h-[46px] rounded-2xl bg-slate-100 flex items-center justify-center flex-shrink-0"><Landmark4 size={20} className="text-slate-400" /></div><span className="text-slate-500 text-[12px] font-semibold leading-tight text-center">Other</span></button>}</div>{searching && countryBanks.length > 0 && filteredCountryBanks.length === 0 && <p className="text-slate-400 text-[13.5px] py-1">No banks found for "{query}".</p>}</div>{!searching && <div className="px-5 mt-5"><div className="w-full flex items-center gap-3 bg-gradient-to-r from-violet-50 to-violet-100 rounded-2xl px-4 py-3.5 border border-violet-100/60"><div className="relative w-9 h-9 flex-shrink-0 flex items-center justify-center"><Shield2 size={24} className="text-violet-600 fill-violet-100" /><Lock3 size={11} className="text-violet-700 absolute bottom-0 right-0" /></div><div className="flex-1"><p className="font-bold text-slate-900 text-[14px]">Your security is our priority</p><p className="text-slate-500 text-[12px] leading-snug">Bank-grade encryption &amp; secure onboarding</p></div><ChevronRight3 size={17} className="text-slate-400 flex-shrink-0" /></div></div>}</div>{toast && <div className="absolute bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[13.5px] font-medium px-4 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">{toast}</div>}</div>;
 }
+// One bank in the grid. The row form (BankRow, below) is kept and still
+// used by the Gloobal Bank card above, where there is one bank and the
+// full width to say its name in.
+function BankTile({ bank, index, onLockedTap }) {
+  return <button
+    onClick={() => onLockedTap(bank)}
+    aria-label={`${bank.name} \u2014 locked`}
+    className="ab-bank-row relative flex flex-col items-center gap-2 px-2 py-3.5 rounded-3xl border border-slate-100 bg-white shadow-sm hover:shadow-md active:scale-[0.99] transition-all"
+    style={{ animationDelay: `${index * 45}ms` }}
+  ><div className="relative flex-shrink-0"><BankAvatar bank={bank} size={46} /><span className="absolute -right-1.5 -bottom-1.5"><ServiceLock size={14} /></span></div><span
+    className="text-slate-700 text-[12px] font-semibold leading-tight text-center w-full"
+    style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+    title={bank.name}
+  >{bank.name}</span></button>;
+}
+
 function BankRow({ bank, index, accent, onLockedTap }) {
   return <button
     onClick={() => onLockedTap(bank)}

@@ -375,9 +375,43 @@ describe("nothing on the live scanner sits on anything else", () => {
       `the reading reaches ${Math.round(hostLeft + left + width)}px on a 390px screen`);
   });
 
-  test("the standing hint sits above the frame, and only when there is nothing to say", () => {
+  test("the standing hint sits under the camera, and only when there is nothing to say", () => {
+    // It was under the camera, moved above the frame, and has moved back.
+    // The reason changed rather than the opinion: it was moved UP because
+    // the band below held the control row, the zoom arc AND any message
+    // the screen had to say. The arc is gone — the zoom is inside the
+    // square now — so that band holds the control row and nothing else.
     assert.match(app, /\{scanLive && !scanPayee && !scanError && !scanRetry && !scanResolving && <div/,
       "the hint is drawn while the screen is also saying something else");
+    const at = app.indexOf("{scanLive && !scanPayee && !scanError && !scanRetry && !scanResolving && <div");
+    const hint = app.slice(at, at + 700);
+    assert.match(hint, /bottom: "calc\(160px \+ env\(safe-area-inset-bottom/,
+      "the hint is not anchored under the picture");
+    // 96 for the control row, 52 for its height, 12 of air. One line of
+    // 12.5px type then reaches ~180, against a square whose lower edge is
+    // never nearer than ~281 on a phone.
+    const row = Math.min(...px(scanner, "scanner"));
+    assert.ok(160 >= row + 52, `the hint at 160 overlaps a 52px row at ${row}`);
+    assert.ok(160 + 20 <= 281, "the hint reaches through the framing square");
+    assert.match(hint, /pointerEvents: "none"/,
+      "the hint takes taps, so it can swallow the Send button underneath it");
+  });
+
+  test("the title names the thing, centred, and says it once", () => {
+    // It was "Scan QR" over "Point at any Gloobal code", pinned beside
+    // the back button. "Scan QR" names an action already obvious from a
+    // camera with a square on it; what is NOT obvious is that this reads
+    // Gloobal codes and only Gloobal codes.
+    assert.doesNotMatch(app, /\n\s*Scan QR\n/, "the old action title is back");
+    assert.match(app, /\n\s*Gloobal QR\n/);
+    assert.equal((app.match(/Point at any Gloobal code/g) || []).length, 1,
+      "the instruction is printed twice, or not at all");
+    // Centred on the SCREEN, not on the space left beside the back
+    // button — without the spacer it sits 27px right of centre, which is
+    // enough to read as a mistake and not enough to read as a decision.
+    assert.match(app, /<span style=\{\{ flex: 1, textAlign: "center", fontSize: 17/);
+    assert.match(app, /<span aria-hidden="true" style=\{\{ width: 42, flexShrink: 0 \}\} \/>/,
+      "the title has no counterweight, so it is not centred on the screen");
   });
 
   test("what the screen has to say sits under the camera", () => {

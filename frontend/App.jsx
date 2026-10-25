@@ -4339,33 +4339,59 @@ function GloobalId() {
       if (scanGalleryInputRef.current) scanGalleryInputRef.current.click();
     }}
   />}<div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={closeScanScreen} />{
-    /* A title, once the camera is up. It is not restating the tab: over a
-       live picture with a square drawn on it, this is the only thing saying
-       what the square is for. On the permission screen below it would be
-       the restatement, so it is not drawn there. */
-  }<span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>
-          Scan QR
-        </span><span style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>
-          Point at any Gloobal code
-        </span></span></div>{
-    /* ── THE WORDS GO ABOVE THE FRAME ────────────────────────────────────
-       They used to sit at the bottom of the screen, in a column anchored
-       to the floor — the same band the scanner draws its control row and
-       its zoom arc into. With a torch, a picker, an arc and an error
-       message all competing for it, the founder photographed the result:
-       the arc through the instruction line, and "This is your own QR"
-       behind the flashlight button.
-       There was never a shortage of room, only a shortage in the wrong
-       place. The strip between the title and the frame is empty on every
-       phone, it is where the eye already is on the way down to the
-       square, and a message about what just went wrong belongs closer to
-       the thing it is about than to the floor. */
+    /* ── ONE TITLE, CENTRED, AND IT NAMES THE THING ──────────────────────
+       It was a two-line block pinned beside the back button: "Scan QR"
+       over "Point at any Gloobal code". Two faults in that.
+       "Scan QR" names the ACTION, and the action is already obvious from
+       a camera with a square drawn on it. What is not obvious is WHICH
+       codes this reads — it is not a general QR scanner, it will only
+       resolve a Gloobal code — so the title is the name of the thing.
+       And a subtitle in the header is an instruction printed where the
+       eye is not: somebody holding a phone up at a code is looking at
+       the square, not at a caption above it. It moved under the camera,
+       below. */
+  }<span style={{ flex: 1, textAlign: "center", fontSize: 17, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>
+          Gloobal QR
+        </span>{
+    /* The back button's own width, so the title is centred on the SCREEN
+       rather than on the space left over beside it. Without this it sits
+       27px right of centre, which is just enough to read as a mistake
+       and not enough to read as a decision. */
+  }<span aria-hidden="true" style={{ width: 42, flexShrink: 0 }} /></div>{
+    /* ── AND THE WORDS WENT BACK UNDER THE CAMERA ────────────────────────
+       They were under it once, moved above the frame, and have now moved
+       back. The history is worth keeping because the reason changed.
+       They were moved UP because the band under the square held the
+       control row, the zoom arc and any message the screen had to say,
+       all at once — the founder photographed the arc drawn through the
+       instruction line and "This is your own QR" behind the flashlight.
+       The arc is gone: the zoom is drawn inside the square now, on its
+       right-hand edge. That band holds the control row and nothing else,
+       so there is room again, and under the picture is where an
+       instruction about aiming belongs — it is the last thing read on
+       the way from the square to the thumb.
+       Anchored at 160: the control row sits at 96 and is 52 tall, so
+       this clears it by 12, and one line of 12.5px type reaches about
+       180 against a square whose lower edge is never nearer than ~281.
+       A MESSAGE still replaces it rather than joining it — same
+       condition as before — because two sentences in one band is the
+       fault this screen already had once. */
   }{scanLive && !scanPayee && !scanError && !scanRetry && !scanResolving && <div
-    style={{ position: "relative", zIndex: 1, flexShrink: 0, display: "flex", justifyContent: "center", padding: "6px 24px 0" }}
+    style={{
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: "calc(160px + env(safe-area-inset-bottom, 0px))",
+      zIndex: 1,
+      display: "flex",
+      justifyContent: "center",
+      padding: "0 24px",
+      pointerEvents: "none"
+    }}
   ><div
     style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
   >
-      Hold a Gloobal QR code inside the frame.
+      Point at any Gloobal code
     </div></div>}<input
       ref={scanGalleryInputRef}
       type="file"

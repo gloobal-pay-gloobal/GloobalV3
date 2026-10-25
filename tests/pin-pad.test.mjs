@@ -168,11 +168,56 @@ describe("My Choices is behind the same check as everything else", () => {
     assert.match(dash, /if \(!ok\) return;/, "declining the check opens it anyway");
   });
 
-  test("once per session, not once per tap", () => {
-    // Asking every time somebody crosses the tab bar is a prompt people
-    // learn to clear without reading.
-    assert.match(dash, /if \(choicesUnlocked\) \{ setActiveTab\("choices"\); return; \}/);
+  test("every tap, not once per session", () => {
+    // ── THIS TEST USED TO ASSERT THE OPPOSITE ─────────────────────────
+    //
+    // It required `if (choicesUnlocked) { setActiveTab("choices");
+    // return; }` on the grounds that asking every time somebody crosses
+    // the tab bar is a prompt people learn to clear without reading.
+    //
+    // The founder reported it from the other side — "most time skip it
+    // automatically" — and he is right. That flag was set on the first
+    // successful check and never cleared until the component unmounted,
+    // which on a phone is days. A gate that exists so that not everybody
+    // holding an unlocked phone may read these names stopped doing that
+    // job after one yes.
+    //
+    // The old argument was about a risk; the open door was the behaviour.
+    assert.doesNotMatch(dash, /choicesUnlocked/,
+      "the once-per-session unlock is back, so the gate stops asking again");
     assert.match(dash, /if \(choicesChecking\) return;/, "two taps start two checks");
+  });
+
+  test("tapping the tab you are already on asks nothing", () => {
+    // The one case where re-asking would be a prompt for nothing: there
+    // is no door to open, so there is nothing to prove.
+    assert.match(dash, /if \(activeTab === "choices"\) return;/,
+      "re-tapping the Choices tab puts the check up again");
+  });
+
+  test("and it goes through the verify screen, not straight to the PIN", () => {
+    // The other half of the same report: "it's still showed just pin".
+    // Calling requireBiometric() bare opens the PIN fallback's own modal
+    // first, and on a phone with no passkey enrolled for this site that
+    // is the ONLY thing it ever shows. Every other guarded action in the
+    // app puts BiometricVerifyScreen up first and falls through to the
+    // PIN underneath it.
+    assert.match(dash, /\{showChoicesGate && <BiometricVerifyScreen/,
+      "the Choices gate has no verify screen, so it drops into the PIN modal");
+    assert.match(dash, /onVerify=\{verifyChoices\}/);
+    assert.match(dash, /scanning=\{choicesChecking\}/,
+      "the screen cannot show that a check is running");
+  });
+
+  test("the gate closes whichever way the check goes", () => {
+    // A refusal that left the screen up would be a dead end: the same
+    // screen, the same button, and no way to tell it had already said no.
+    const open = dash.slice(dash.indexOf("const verifyChoices"));
+    const body = open.slice(0, open.indexOf("\n  };"));
+    assert.ok(
+      body.indexOf("setShowChoicesGate(false)") < body.indexOf("if (!ok) return;"),
+      "the gate is only closed on success, so a refusal strands the screen"
+    );
   });
 
   test("the app map goes through the gate too", () => {

@@ -63,6 +63,72 @@ describe("the earth turns slowly", () => {
   });
 });
 
+// ── THE HEADLINE WAS PRINTED ON THE ATLANTIC ────────────────────────────
+//
+// The founder photographed this screen with "Bank globally. One ID for
+// all." running straight into the globe behind it. It was arithmetic, not
+// taste: a 340px globe at -right-24 puts its left edge at (screen + 96 -
+// 340), which on a 390px phone is x=146, and the text column — px-6 plus
+// max-w-[210px] — ran to x=234. Eighty-eight pixels of overlap.
+//
+// It survived development for the reason at the top of this file: this is
+// the one screen written in Tailwind utility classes, so it renders
+// unstyled in the test harness and the overlap cannot happen there. It
+// was found by building the real Vite bundle and taking a screenshot.
+describe("the hero's text and its globe do not overlap", () => {
+  // The three numbers the layout actually depends on, read out of the
+  // source rather than restated.
+  const globeRight = Number(bank.match(/-right-\[(\d+)px\] -top-16 z-0/)[1]);
+  const globeSize = Number(bank.match(/<GlobeHero size=\{(\d+)\} \/>/)[1]);
+  const textPct = Number(bank.match(/className="relative z-10 px-6 max-w-\[(\d+)%\]"/)[1]) / 100;
+
+  // Where the globe's left edge and the text column's right edge land, at
+  // a given screen width.
+  const globeLeft = (w) => w + globeRight - globeSize;
+  const textRight = (w) => w * textPct;
+
+  test("they clear each other at every phone width", () => {
+    // 320 is the narrowest phone still in use; 430 is the widest common
+    // one. The check is run across the range rather than at one width
+    // because the two edges move at DIFFERENT rates — the globe's left
+    // edge tracks the screen 1:1, the text column's right edge tracks it
+    // at the percentage — so a gap at 390 says nothing about 320.
+    for (let w = 320; w <= 430; w += 1) {
+      assert.ok(globeLeft(w) >= textRight(w),
+        `at ${w}px the globe starts at ${globeLeft(w).toFixed(0)} and the text runs to ${textRight(w).toFixed(0)}`);
+    }
+  });
+
+  test("the globe shows the same amount of itself on every phone", () => {
+    // screen + 190 - 300 leaves a constant 110px visible, so the crescent
+    // is the same on a 360 and on a 430 rather than growing with the
+    // screen.
+    const visible = (w) => w - globeLeft(w);
+    assert.equal(visible(360), visible(430), "the visible crescent changes width with the screen");
+    assert.ok(visible(390) > 80, `only ${visible(390)}px of the globe is left, which is an edge rather than a planet`);
+  });
+
+  test("the text column is a fraction of the screen, not a fixed width", () => {
+    // A fixed 210px column cannot be checked against a screen width, so
+    // the overlap above could only ever be found at one size at a time.
+    assert.doesNotMatch(bank, /max-w-\[\d+px\]/,
+      "the hero's text column went back to a fixed pixel width");
+  });
+
+  test("and the brand name cannot break across a line inside it", () => {
+    // Widening that column to 65% moved the wrap point into the middle of
+    // the wordmark: "GL(dot)" on one line and "(dot)BAL ID" on the next,
+    // because the two coloured circles are inline-block elements and the
+    // gaps around them are ordinary break opportunities.
+    //
+    // Fixed in the wordmark rather than at this call site: a brand name
+    // breaking mid-word is wrong everywhere it appears.
+    assert.match(strip(readSource("frontend/components/common/brand.jsx")),
+      /fontFamily: T\.fontWordmark, whiteSpace: "nowrap" \}\}/,
+      "the Gloobal wordmark can break across a line again");
+  });
+});
+
 describe("Gloobal Bank sits in a box of its own", () => {
   test("it is outside the list, not the first row of it", () => {
     // It used to be the first row of the same list, differing only by a

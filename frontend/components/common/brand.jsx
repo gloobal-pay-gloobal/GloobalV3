@@ -88,7 +88,20 @@ function GloobalWordmark({ suffix = "", withSymbols = false }) {
   // text ("GL", "BAL ID") now renders at the weight this was always
   // asking for. The two coloured circles are untouched: they are sized in
   // em, so they track the text and keep their proportions.
-  return <span aria-label={`Gloobal${suffix}`} style={{ textTransform: "uppercase", fontWeight: 800, fontFamily: T.fontWordmark }}>
+  // ── IT MUST NOT BREAK ACROSS A LINE ───────────────────────────────────
+  //
+  // The two circles are inline-block elements inside the word, so a
+  // browser treats the gaps around them as perfectly ordinary break
+  // opportunities. Widen the Add Bank hero's text column by thirty pixels
+  // and the paragraph wraps as "GL●" / "●BAL ID" — the company's name
+  // split down the middle, with a coloured dot stranded at the end of one
+  // line and another at the start of the next.
+  //
+  // Found by rendering the real Tailwind build, which is the only way to
+  // see this screen at all. nowrap here rather than at the one call site
+  // that exposed it: a brand name breaking mid-word is wrong everywhere,
+  // and the next column somebody widens would find it again.
+  return <span aria-label={`Gloobal${suffix}`} style={{ textTransform: "uppercase", fontWeight: 800, fontFamily: T.fontWordmark, whiteSpace: "nowrap" }}>
       Gl{dot(c1, s1, flipped1)}{dot(c2, s2, flipped2)}bal{suffix}</span>;
 }
 function CyclingBadge({ words, intervalMs = 1400 }) {

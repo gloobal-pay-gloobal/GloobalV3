@@ -57,12 +57,30 @@ function AddBankScreen({ onClose, country: countryProp }) {
     onChange={(e) => setQuery(e.target.value)}
     placeholder="Search bank name"
     className="bg-transparent outline-none text-[14.5px] text-slate-700 placeholder:text-slate-400 w-full"
-  /></div></div><div className="flex-1 overflow-y-auto pb-6" style={{ scrollbarWidth: "none" }}>{!searching && <div className="relative pt-2 pb-8 overflow-hidden bg-gradient-to-b from-sky-50 via-sky-50/40 to-transparent"><div className="absolute -right-24 -top-16 z-0"><GlobeHero size={340} /></div>{
+  /></div></div><div className="flex-1 overflow-y-auto pb-6" style={{ scrollbarWidth: "none" }}>{!searching && <div className="relative pt-2 pb-8 overflow-hidden bg-gradient-to-b from-sky-50 via-sky-50/40 to-transparent"><div className="absolute -right-[190px] -top-16 z-0"><GlobeHero size={300} /></div>{
+    /* ── THE HEADLINE WAS UNDER THE GLOBE ─────────────────────────────
+       A 340px globe at -right-24 puts its left edge at (screen + 96 −
+       340). On a 390px phone that is x=146, and the text column — px-6
+       plus max-w-[210px] — runs to x=234. Eighty-eight pixels of
+       "Bank globally. One ID for all." were printed over a photograph
+       of the Atlantic, which is what the founder photographed.
+       It was invisible in development for the usual reason: the only
+       screen in this app written in Tailwind utility classes is this
+       one, so it renders completely unstyled in the browser test
+       harness (esbuild, no Tailwind pass) and the overlap cannot
+       happen there. See tests/add-bank-layout.test.mjs.
+       The fix is arithmetic rather than taste. Pushing the globe out to
+       -190px leaves a CONSTANT 110px of it showing at every width —
+       screen + 190 − 300 — so the crescent is the same on a 360 and on
+       a 430, and the text column is sized as a fraction of the screen
+       rather than a fixed 210px so it cannot grow into that strip on a
+       narrow phone. */
+  }{
     /* soft fade so the globe blends into the white content below, like the reference */
   }<div
     className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-white to-transparent pointer-events-none"
     style={{ zIndex: 1 }}
-  /><div className="relative z-10 px-6 max-w-[210px]"><div className="flex items-center gap-1.5 mb-4"><div className="w-7 h-[3px] bg-violet-600 rounded-full" /><div className="w-1.5 h-1.5 bg-violet-300 rounded-full" /></div><h1 className="text-[32px] font-extrabold text-slate-900 leading-[1.1] tracking-tight">
+  /><div className="relative z-10 px-6 max-w-[65%]"><div className="flex items-center gap-1.5 mb-4"><div className="w-7 h-[3px] bg-violet-600 rounded-full" /><div className="w-1.5 h-1.5 bg-violet-300 rounded-full" /></div><h1 className="text-[32px] font-extrabold text-slate-900 leading-[1.1] tracking-tight">
                 Bank globally.
               </h1><h1 className="text-[32px] font-extrabold text-violet-600 leading-[1.1] tracking-tight mb-3">
                 One ID for all.

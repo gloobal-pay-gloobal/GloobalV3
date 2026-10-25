@@ -362,25 +362,59 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // exactly as strictly, which is why this cannot be turned off from a
   // settings screen.
   //
-  // ONCE PER SESSION, not once per tap. Verifying every time somebody
-  // comes back from Home would be a prompt for crossing a tab bar, and
-  // a prompt that frequent is one people learn to clear without
-  // reading. Closing the app drops this state with the component, so
-  // the next open asks again.
-  const [choicesUnlocked, setChoicesUnlocked] = useState14(false);
+  // ── IT USED TO UNLOCK ONCE PER SESSION ────────────────────────────────
+  //
+  // There was a `choicesUnlocked` flag here, set on the first successful
+  // check and never cleared until the component unmounted. The argument
+  // written for it was that verifying on every tab crossing is a prompt
+  // people learn to clear without reading.
+  //
+  // The founder's report was "most time skip it automatically", which is
+  // that flag described from the outside — and it is the right complaint.
+  // A gate whose whole purpose is "not everybody holding this unlocked
+  // phone may read this" stops doing that job the moment it answers yes
+  // once and then stays open for as long as the app is in memory, which
+  // on a phone is days. The prompt-fatigue argument was about a risk; the
+  // open door was the actual behaviour.
+  //
+  // So: every open is checked. If that proves tiring in use, the cure is
+  // a short idle re-lock, not a flag that never re-locks at all.
+  //
+  // ── AND IT WENT STRAIGHT TO THE PIN ───────────────────────────────────
+  //
+  // requireBiometric() is still the gate underneath, but calling it bare
+  // meant the first thing anybody saw was the PIN fallback's own modal —
+  // on a phone with no passkey enrolled for this site, which is the
+  // founder's, that is the ONLY thing they ever saw. Every other guarded
+  // action in the app (the balance eye, My Share, Update ID, the
+  // Essentials figure) puts BiometricVerifyScreen in front of it first.
+  // This one did not, which is the "it's still showed just pin" half of
+  // the same report.
+  //
+  // Now it opens that screen like everything else, and the PIN appears
+  // underneath it where the device cannot do better.
+  const [showChoicesGate, setShowChoicesGate] = useState14(false);
   const [choicesChecking, setChoicesChecking] = useState14(false);
-  const openChoices = async () => {
-    if (choicesUnlocked) { setActiveTab("choices"); return; }
+  const openChoices = () => {
+    // Already there. Tapping the tab you are on is not a request to
+    // prove anything, and asking would be a prompt for nothing.
+    if (activeTab === "choices") return;
+    if (choicesChecking) return;
+    setShowChoicesGate(true);
+  };
+  const verifyChoices = async () => {
     if (choicesChecking) return;
     setChoicesChecking(true);
     try {
       const ok = await requireBiometric({
         pinReason: "Confirm it's you to open My Choices."
       });
-      // A refusal leaves the person where they were. No error, no
-      // toast: declining a check is an answer, not a fault.
+      // The gate closes either way — the same as every other verify
+      // screen in the app. A refusal leaves the person where they were:
+      // no error, no toast, because declining a check is an answer
+      // rather than a fault.
+      setShowChoicesGate(false);
       if (!ok) return;
-      setChoicesUnlocked(true);
       setActiveTab("choices");
     } finally {
       setChoicesChecking(false);
@@ -3403,6 +3437,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     onBack={() => setShowSettleAssetsBiometric(false)}
     onVerify={handleSettleAssetsBiometricVerify}
     scanning={settleAssetsBiometricScanning}
+  />}{
+    /* Opening My Choices. The same screen as every other gate, which is
+       the whole point of the change — this tab used to drop straight
+       into the PIN fallback's modal while the balance eye two taps away
+       put this screen up first. */
+  }{showChoicesGate && <BiometricVerifyScreen
+    onBack={() => setShowChoicesGate(false)}
+    onVerify={verifyChoices}
+    scanning={choicesChecking}
   />}{showSettleReferralBiometric && <BiometricVerifyScreen
     onBack={() => setShowSettleReferralBiometric(false)}
     onVerify={handleSettleReferralBiometricVerify}

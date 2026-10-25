@@ -267,14 +267,21 @@ async function cameraPermissionState() {
 // against a camera feed. This is that idiom translated for video — dark,
 // blurred, white-on-top — and it is shared so the three controls in the row
 // cannot drift apart. `lit` is the torch's on-state, which inverts.
+//
+// The violet edge is the same one the ring and the zoom rail carry: three
+// controls on one picture, and nothing else on the screen, so if they do
+// not agree with each other the screen has no look at all. `lit` still
+// inverts to a solid white button, because a torch that is ON has to be
+// readable as on from the corner of an eye.
 function scannerControlStyle(lit) {
   return {
     width: 52,
     height: 52,
     borderRadius: "50%",
-    border: lit ? "none" : "1px solid rgba(255,255,255,0.35)",
-    background: lit ? "#FFFFFF" : "rgba(0,0,0,0.45)",
-    backdropFilter: "blur(6px)",
+    border: lit ? "none" : "1px solid rgba(167,139,250,0.55)",
+    background: lit ? "#FFFFFF" : "rgba(10,6,24,0.45)",
+    boxShadow: lit ? "0 6px 18px rgba(0,0,0,0.4)" : "0 0 18px rgba(124,58,237,0.28)",
+    backdropFilter: "blur(10px)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -337,14 +344,33 @@ function currentZoomOf(track, range, fallback) {
 // double the magnification. 1× and 10× sit at the ends either way, and
 // the useful middle gets the room.
 //
-// The x of a quadratic Bézier whose three control points are evenly spaced
-// across the width is LINEAR in t — 2 × (W/2) is exactly pad + (W − pad) —
-// so a thumb's x maps to a position on the curve by plain arithmetic, with
-// no curve-walking and no approximation. The sag only moves y.
-var ZOOM_ARC_W = 236;
-var ZOOM_ARC_SAG = 26;
-var ZOOM_ARC_PAD = 16;
+// ── AND THEN IT STOPPED BEING AN ARC ───────────────────────────────────
+//
+// The arc was a bowed track floating in the band between the framing
+// square and the control row. Everything above about the SCALE survived
+// this change — logarithmic, marks at the round numbers, snapping in
+// pixels. What did not survive is where it sat.
+//
+// The founder's reference puts the zoom on the frame's own right-hand
+// line: the rail IS that edge of the square, the round numbers read down
+// the inside of the picture, and the current reading sits just outside
+// it. That is better than an arc for a reason worth writing down — the
+// arc was a second object in a band of its own, competing with the
+// instruction line and the control row for the only empty strip on the
+// screen, while the rail is drawn ON something already there and costs
+// no vertical room at all.
+//
+// It also means the zoom cannot collide with anything, which is the
+// fault that produced the arc's last two commits.
+//
+// 1× is at the BOTTOM and the maximum at the top, because a rail is read
+// as a level and a level fills upwards.
 var ZOOM_ARC_SNAP_PX = 10;
+
+// The rail's own geometry, in the square's percentage space rather than
+// pixels: the framing square is min(72vw, 300px), so it is a different
+// size on every phone and the rail has to be the same fraction of it.
+var ZOOM_RAIL_INSET = 0.055;
 
 // The round numbers worth landing on exactly. Expressed as multiples of the
 // lens's own minimum rather than as absolute values, because a device may
@@ -355,9 +381,9 @@ function zoomArcRatio(range) {
   return range && range.min > 0 && range.max > range.min ? range.max / range.min : 0;
 }
 
-// Where a zoom level sits along the track, 0 at the left end and 1 at the
-// right. Clamped, so a lens reporting a level outside its own stated range
-// cannot push the handle off the arc.
+// Where a zoom level sits along the track, 0 at the bottom (1×) and 1 at
+// the top. Clamped, so a lens reporting a level outside its own stated
+// range cannot push the handle off the rail.
 function zoomArcPosition(value, range) {
   const ratio = zoomArcRatio(range);
   if (!ratio) return 0;
@@ -372,15 +398,6 @@ function zoomArcLevel(t, range) {
   return range.min * Math.pow(ratio, Math.min(1, Math.max(0, t)));
 }
 
-// A point on the track. y is the Bézier's own curve, 4·sag·t·(1−t), which
-// is the sag at the middle and zero at both ends.
-function zoomArcPoint(t) {
-  return {
-    x: ZOOM_ARC_PAD + t * (ZOOM_ARC_W - ZOOM_ARC_PAD * 2),
-    y: 4 * ZOOM_ARC_SAG * t * (1 - t)
-  };
-}
-
 // The marks this lens can actually reach, with where each one sits.
 function zoomArcMarks(range) {
   const ratio = zoomArcRatio(range);
@@ -390,34 +407,37 @@ function zoomArcMarks(range) {
     .map((times) => ({ times, t: Math.log(times) / Math.log(ratio) }));
 }
 
-function ZoomArc({ range, level, onPick }) {
+// ── THE RAIL ───────────────────────────────────────────────────────────
+//
+// It renders INSIDE the framing square (QrFrameGuide passes it through as
+// `rail`), positioned against the square's right-hand edge, so it is the
+// same fraction of the picture on every phone with no media query and no
+// measurement.
+//
+// Three columns, right to left: the round-number labels inside the
+// picture, the rail line itself ON the square's edge, the ticks stepping
+// outward, and the live reading in a pill clear of the frame. The host
+// box straddles the edge so there is a thumb's width of target on both
+// sides of the line — a 1.5px line is not something anybody can grab.
+function ZoomRail({ range, level, onPick }) {
   const hostRef = useRef17(null);
   const draggingRef = useRef17(false);
   const marks = zoomArcMarks(range);
   const at = zoomArcPosition(level, range);
-  const handle = zoomArcPoint(at);
-  const span = ZOOM_ARC_W - ZOOM_ARC_PAD * 2;
-  const ends = zoomArcPoint(0);
-  const mid = { x: ZOOM_ARC_W / 2, y: ZOOM_ARC_SAG * 2 };
-  const track = `M${ends.x} ${ends.y}Q${mid.x} ${mid.y} ${ZOOM_ARC_W - ZOOM_ARC_PAD} ${ends.y}`;
-  // Close enough for a dasharray and exact enough to land under the
-  // handle: a shallow quadratic is within a fraction of a pixel of the
-  // average of its chord and its control polygon over this sag.
-  const chord = span;
-  const legs = 2 * Math.sqrt((span / 2) ** 2 + (ZOOM_ARC_SAG * 2) ** 2);
-  const trackLength = (chord + legs) / 2;
 
-  // A thumb's x, turned into a zoom level, snapping to a mark it lands
+  // A thumb's y, turned into a zoom level, snapping to a mark it lands
   // near. Snapping is in PIXELS rather than in zoom units: ten pixels is
-  // ten pixels wherever it falls, where a tolerance in zoom units would be
-  // generous at the wide end and unreachable at the long one.
-  const pickAt = (clientX) => {
+  // ten pixels wherever it falls, where a tolerance in zoom units would
+  // be generous at the wide end and unreachable at the long one.
+  //
+  // The rail is read bottom-up, so t is 1 − the fraction down the box.
+  const pickAt = (clientY) => {
     const host = hostRef.current;
     if (!host || !range) return;
     const box = host.getBoundingClientRect();
-    const scale = box.width > 0 ? ZOOM_ARC_W / box.width : 1;
-    const x = (clientX - box.left) * scale;
-    let t = Math.min(1, Math.max(0, (x - ZOOM_ARC_PAD) / span));
+    const span = box.height;
+    if (!(span > 0)) return;
+    let t = Math.min(1, Math.max(0, 1 - (clientY - box.top) / span));
     for (const mark of marks) {
       if (Math.abs(mark.t - t) * span <= ZOOM_ARC_SNAP_PX) {
         t = mark.t;
@@ -439,6 +459,15 @@ function ZoomArc({ range, level, onPick }) {
 
   if (!range || !zoomArcRatio(range)) return null;
 
+  // Fraction-of-the-square down from the top, for a given t.
+  const topOf = (t) => `${(ZOOM_RAIL_INSET + (1 - t) * (1 - ZOOM_RAIL_INSET * 2)) * 100}%`;
+
+  // Everything on the rail carries a dark halo. White type on a camera
+  // picture is legible against a dark room and invisible against a hedge;
+  // this is the same trick the title on this screen already uses, and it
+  // is the one lesson the arc's own history is worth keeping.
+  const halo = "0 1px 5px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9)";
+
   return <div
     ref={hostRef}
     role="slider"
@@ -451,9 +480,9 @@ function ZoomArc({ range, level, onPick }) {
     onPointerDown={(e) => {
       draggingRef.current = true;
       if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
-      pickAt(e.clientX);
+      pickAt(e.clientY);
     }}
-    onPointerMove={(e) => { if (draggingRef.current) pickAt(e.clientX); }}
+    onPointerMove={(e) => { if (draggingRef.current) pickAt(e.clientY); }}
     onPointerUp={(e) => {
       draggingRef.current = false;
       if (e.currentTarget.releasePointerCapture) e.currentTarget.releasePointerCapture(e.pointerId);
@@ -464,97 +493,119 @@ function ZoomArc({ range, level, onPick }) {
       if (e.key === "ArrowLeft" || e.key === "ArrowDown") { e.preventDefault(); nudge(-1); }
     }}
     style={{
-      width: ZOOM_ARC_W,
-      // Room for the sag, the handle and the label above it. touchAction
-      // none so a horizontal drag zooms instead of scrolling the page
-      // underneath — on a fixed overlay there is nothing to scroll, and the
-      // browser's own panning gesture would otherwise eat the drag.
-      height: ZOOM_ARC_SAG + 46,
+      position: "absolute",
+      // The host is 56 wide with its line 22 in from the left, so the
+      // line lands exactly on the square's edge and there is a grabbable
+      // band on both sides of it.
+      right: -34,
+      top: 0,
+      bottom: 0,
+      width: 56,
+      // touchAction none so a vertical drag zooms instead of scrolling
+      // the page underneath — on a fixed overlay there is nothing to
+      // scroll, and the browser's own panning gesture would otherwise eat
+      // the drag outright.
       touchAction: "none",
       pointerEvents: "auto",
-      cursor: "pointer",
-      position: "relative"
+      cursor: "pointer"
     }}
-  ><svg
-    width={ZOOM_ARC_W}
-    height={ZOOM_ARC_SAG + 24}
-    viewBox={`0 ${-12} ${ZOOM_ARC_W} ${ZOOM_ARC_SAG + 24}`}
-    style={{ position: "absolute", left: 0, bottom: 0, overflow: "visible" }}
-    aria-hidden="true"
   >{
-    /* Three strokes, not two.
-       The track was a dark line with a hairline on it, and on a bright
-       camera picture that is a smudge — the founder's photograph shows it
-       disappearing into a hedge. A dark halo under a light track reads on
-       anything the lens can point at, because whatever is behind it, one
-       of the two has contrast against it.
-       The third is the part BEHIND the handle, drawn in the accent: it
-       says how far along the range you are without having to read the
-       number, which is the thing an arc can say that three buttons could
-       not. */
-  }<path
-    d={track}
-    fill="none"
-    stroke="rgba(0,0,0,0.55)"
-    strokeWidth="15"
-    strokeLinecap="round"
-  /><path
-    d={track}
-    fill="none"
-    stroke="rgba(255,255,255,0.38)"
-    strokeWidth="9"
-    strokeLinecap="round"
-  /><path
-    d={track}
-    fill="none"
-    stroke={T.accent}
-    strokeWidth="9"
-    strokeLinecap="round"
-    // Dasharray along the curve's own length, so the filled part ends
-    // exactly under the handle however the sag is shaped.
-    strokeDasharray={`${trackLength * at} ${trackLength}`}
-  />{marks.map((mark) => {
-    const point = zoomArcPoint(mark.t);
-    const here = Math.abs(mark.t - at) * span <= ZOOM_ARC_SNAP_PX;
-    // The mark under the handle is not drawn at all. Its dot would be
-    // covered anyway, and its label sat directly above a handle already
-    // reading "5x" — the same number twice, a few pixels apart. Measured
-    // rather than imagined: it is the one fault a render of this control
-    // showed that reading it did not.
-    if (here) return null;
-    return <g key={mark.times}><circle
-      cx={point.x}
-      cy={point.y}
-      r="2.1"
-      fill="rgba(255,255,255,0.72)"
-    /><text
-      x={point.x}
-      y={point.y - 13}
-      textAnchor="middle"
-      fontSize="10"
-      fontWeight="800"
-      fill="#FFFFFF"
-      // The labels were 55% white with nothing behind them, which is
-      // legible against a dark room and invisible against a hedge. A dark
-      // stroke under white type is the same trick the title on this
-      // screen already uses, and it survives whatever the camera sees.
-      stroke="rgba(0,0,0,0.55)"
-      strokeWidth="2.6"
-      paintOrder="stroke"
-    >{`${mark.times}x`}</text></g>;
-  })}<circle cx={handle.x} cy={handle.y} r="13.5" fill="rgba(0,0,0,0.35)" /><circle
-    cx={handle.x}
-    cy={handle.y}
-    r="12"
-    fill="#FFFFFF"
-  /><text
-    x={handle.x}
-    y={handle.y + 3.6}
-    textAnchor="middle"
-    fontSize="10"
-    fontWeight="800"
-    fill="#14122B"
-  >{formatZoom(level, range)}</text></svg></div>;
+    /* The line. It is drawn the full height of the square rather than
+       only between 1× and the maximum, because it is standing in for the
+       square's own right-hand edge — the ring behind it has a gap exactly
+       here, and a line that stopped short would leave that gap open. */
+  }<span
+    aria-hidden="true"
+    style={{
+      position: "absolute",
+      left: 22,
+      top: 0,
+      bottom: 0,
+      width: 1.5,
+      borderRadius: 2,
+      background: "linear-gradient(180deg, rgba(167,139,250,0.15), rgba(233,213,255,0.9) 18%, rgba(233,213,255,0.9) 82%, rgba(167,139,250,0.15))",
+      boxShadow: "0 0 8px rgba(124,58,237,0.75)"
+    }}
+  />{
+    /* The part of the line BELOW the handle, in the accent: it says how
+       far up the range you are without having to read the number, which
+       is the thing a rail can say that three buttons could not. */
+  }<span
+    aria-hidden="true"
+    style={{
+      position: "absolute",
+      left: 21,
+      top: topOf(at),
+      bottom: `${ZOOM_RAIL_INSET * 100}%`,
+      width: 3.5,
+      borderRadius: 2,
+      background: "linear-gradient(180deg, #E9D5FF, #7C3AED)",
+      boxShadow: "0 0 10px rgba(124,58,237,0.9)"
+    }}
+  />{
+    /* Two passes rather than one with a Fragment: this file has no React
+       default import, and adding one for a wrapper that renders nothing
+       is a worse trade than mapping twice over five marks. */
+  }{marks.map((mark) => <span
+    key={`tick-${mark.times}`}
+    aria-hidden="true"
+    style={{
+      position: "absolute",
+      left: 22,
+      top: topOf(mark.t),
+      width: Math.abs(mark.t - at) <= 0.02 ? 15 : 13,
+      height: 1.5,
+      marginTop: -0.75,
+      borderRadius: 1,
+      background: Math.abs(mark.t - at) <= 0.02 ? "#E9D5FF" : "rgba(255,255,255,0.75)",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.8)"
+    }}
+  />)}{
+    /* The labels sit INSIDE the picture, right-aligned to just short of
+       the line, which is where the founder's reference puts them. */
+  }{marks.map((mark) => <span
+    key={`label-${mark.times}`}
+    style={{
+      position: "absolute",
+      right: 40,
+      top: topOf(mark.t),
+      transform: "translateY(-50%)",
+      fontSize: 13,
+      fontWeight: 800,
+      letterSpacing: "0.01em",
+      whiteSpace: "nowrap",
+      color: Math.abs(mark.t - at) <= 0.02 ? "#E9D5FF" : "#FFFFFF",
+      textShadow: halo
+    }}
+  >{`${mark.times}x`}</span>)}{
+    /* The live reading, outside the frame. It is the only thing on this
+       control that moves while a thumb is down, so it is the only thing
+       that needs to be unmistakable. */
+  }<span
+    aria-hidden="true"
+    style={{
+      position: "absolute",
+      // 26, not 30, and a smaller pill than the labels. Measured rather
+      // than chosen: the host's right edge is already 34px past the
+      // square, the square is 72vw, and on a 390px phone a 50px pill at
+      // left:30 ends at x=393 — three pixels off the screen. The widest
+      // reading this can show is "10x", so 26 plus this padding lands at
+      // 383 there and stays on screen at every width the cap allows.
+      left: 26,
+      top: topOf(at),
+      transform: "translateY(-50%)",
+      padding: "3px 8px",
+      borderRadius: 999,
+      fontSize: 12,
+      fontWeight: 800,
+      whiteSpace: "nowrap",
+      color: "#F3E8FF",
+      background: "rgba(44,16,92,0.72)",
+      border: "1px solid rgba(167,139,250,0.85)",
+      backdropFilter: "blur(8px)",
+      boxShadow: "0 0 16px rgba(124,58,237,0.55)"
+    }}
+  >{formatZoom(level, range)}</span></div>;
 }
 
 // ── THE FRAMING SQUARE, WITH OR WITHOUT A CAMERA BEHIND IT ─────────────
@@ -581,21 +632,46 @@ function ZoomArc({ range, level, onPick }) {
 // two copies drift, and a square that jumps by four pixels on grant is the
 // flicker this change exists to remove.
 //
-// The full outline is a hairline and the four corners carry the shape. A
-// solid frame reads as a border around the picture; corners read as an
-// instruction about where to put the code.
+// ── WHY IT IS NO LONGER FOUR WHITE CORNERS ─────────────────────────────
 //
-// `children` is the permission ask. The wrapper never takes taps — it
-// covers the whole screen, and anything interactive here would swallow the
-// Send button underneath — so only the content inside the square does.
-var QR_FRAME_CORNERS = [
-  { top: -1, left: -1, borderWidth: "3px 0 0 3px", borderRadius: "26px 0 0 0" },
-  { top: -1, right: -1, borderWidth: "3px 3px 0 0", borderRadius: "0 26px 0 0" },
-  { bottom: -1, right: -1, borderWidth: "0 3px 3px 0", borderRadius: "0 0 26px 0" },
-  { bottom: -1, left: -1, borderWidth: "0 0 3px 3px", borderRadius: "0 0 0 26px" }
-];
+// It was a hairline outline with four white corner brackets on it, and the
+// reasoning written here was sound: corners read as an instruction about
+// where to put the code, where a solid frame reads as a border around the
+// picture. All of that is still true. The problem was a different one —
+// four white corner brackets is what EVERY scanner looks like, in every
+// app on the phone, and the founder's note was exactly that: "we need
+// something that works exactly but looks different."
+//
+// So the outline is one ring, broken in four places, in the brand's own
+// violet with a glow under it. A continuous ring would be the solid frame
+// the old comment warns about; the four breaks are what keep it reading
+// as an aperture rather than a border, and they fall in the middle of
+// each side rather than at the corners, which is the inverse of what was
+// here before and the reason the two do not look alike.
+//
+// The break on the RIGHT is load-bearing, not decoration: the zoom rail
+// is drawn on that edge, and the ring opens exactly where it enters.
+//
+// `children` is the permission ask. `rail` is the zoom. The wrapper never
+// takes taps — it covers the whole screen, and anything interactive here
+// would swallow the Send button underneath — so only the content inside
+// the square does.
+//
+// ── THE DASH ARITHMETIC ────────────────────────────────────────────────
+//
+// On a 300-unit viewBox with rx 34 and a 1.5 inset, the rounded rect's
+// perimeter is 4 × (297 − 68) + 2π × 34 = 916 + 213.6 = 1129.6. Four
+// equal dash-and-gap repeats put each repeat at 282.4; a 70-unit gap
+// leaves a 212.4 dash. An SVG <rect> starts its path at (x + rx, y) and
+// runs clockwise, so the top edge's midpoint is 114.5 along it, and
+// centring a gap there means the pattern must begin 35 units earlier —
+// hence the offset below. Written out because a dasharray nobody can
+// derive is a dasharray nobody can safely change.
+var QR_RING_DASH = 212.4;
+var QR_RING_GAP = 70;
+var QR_RING_OFFSET = 202.9;
 
-function QrFrameGuide({ children }) {
+function QrFrameGuide({ children, rail = null, hunting = false }) {
   return <div
     aria-hidden={children ? void 0 : "true"}
     style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}
@@ -604,21 +680,82 @@ function QrFrameGuide({ children }) {
       position: "relative",
       width: "min(72vw, 300px)",
       aspectRatio: "1",
-      borderRadius: 26,
-      border: "1px solid rgba(255,255,255,0.28)",
+      borderRadius: 34,
       // One enormous spread shadow rather than four positioned panels: it
       // can never leave a seam, and it resizes with the square for free.
-      boxShadow: "0 0 0 100vmax rgba(0,0,0,0.45)",
+      // Darker and bluer than the old neutral 45%: the point of dimming
+      // the surround is that the picture inside the ring becomes the
+      // brightest thing on the screen, and at 45% neutral it was not.
+      boxShadow: "0 0 0 100vmax rgba(6,4,14,0.62)",
       display: "flex",
       alignItems: "center",
       justifyContent: "center"
     }}
-  >{QR_FRAME_CORNERS.map((corner, i) => <span
-    key={i}
-    style={{ position: "absolute", width: 34, height: 34, borderStyle: "solid", borderColor: "#FFFFFF", ...corner }}
-  />)}{children ? <div
+  ><svg
+    viewBox="0 0 300 300"
+    width="100%"
+    height="100%"
+    aria-hidden="true"
+    style={{ position: "absolute", inset: 0, overflow: "visible" }}
+  ><defs><filter id="gloobalRingGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter></defs>{
+    /* Two strokes on the same path. The wide blurred one is the glow and
+       carries the colour; the hairline on top is what the eye actually
+       reads as an edge. A single stroke can be one or the other — glowing
+       enough to see against a bright wall, or crisp enough to aim at —
+       and this screen needs both at once. */
+  }<rect
+    x="1.5" y="1.5" width="297" height="297" rx="34"
+    fill="none"
+    stroke="#A78BFA"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeDasharray={`${QR_RING_DASH} ${QR_RING_GAP}`}
+    strokeDashoffset={QR_RING_OFFSET}
+    filter="url(#gloobalRingGlow)"
+  /><rect
+    x="1.5" y="1.5" width="297" height="297" rx="34"
+    fill="none"
+    stroke="rgba(233,213,255,0.95)"
+    strokeWidth="1"
+    strokeLinecap="round"
+    strokeDasharray={`${QR_RING_DASH} ${QR_RING_GAP}`}
+    strokeDashoffset={QR_RING_OFFSET}
+  /></svg>{
+    /* The sweep. It says the camera is looking, which four static corners
+       never could — the old screen was indistinguishable from a frozen
+       one. Drawn only while actually hunting, so a paused scanner looks
+       paused.
+       It is clipped to the square by the wrapper's overflow, and it
+       respects prefers-reduced-motion by sitting still at the middle
+       rather than disappearing: somebody who has asked for less motion
+       still wants to know the thing is on. */
+  }{hunting && <span
+    aria-hidden="true"
+    style={{
+      position: "absolute",
+      left: "7%",
+      right: "7%",
+      // Animated in PERCENT, not pixels: the square is min(72vw, 300px),
+      // so a fixed travel would sweep the whole height on a small phone
+      // and two thirds of it on a large one.
+      top: "50%",
+      height: 2,
+      borderRadius: 2,
+      background: "linear-gradient(90deg, rgba(167,139,250,0), #A78BFA, #F3E8FF, #A78BFA, rgba(167,139,250,0))",
+      boxShadow: "0 0 20px 4px rgba(167,139,250,0.6)",
+      animation: "gloobalScanSweep 2.6s ease-in-out infinite"
+    }}
+  />}{rail}{children ? <div
     style={{ pointerEvents: "auto", padding: "20px 18px", textAlign: "center", width: "100%" }}
-  >{children}</div> : null}</div></div>;
+  >{children}</div> : null}</div><style>{`
+      @keyframes gloobalScanSweep {
+        0%, 100% { top: 12%; opacity: 0.3; }
+        50% { top: 88%; opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        @keyframes gloobalScanSweep { 0%, 100% { top: 50%; opacity: 0.7; } }
+      }
+    `}</style></div>;
 }
 
 // `onUploadRequested` puts the gallery picker in the control row beside the
@@ -719,6 +856,28 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
     const video = videoRef.current;
     if (video) video.srcObject = null;
   }, []);
+
+  // ── THE FLOATING MAP BUTTON STANDS ASIDE ──────────────────────────────
+  //
+  // AppMapButton is fixed at z-index 10000 and remembers where it was last
+  // dragged, which defaults to 62% down the right-hand edge — and the zoom
+  // rail is now drawn on the right-hand edge of the framing square. A
+  // render of this screen put the map button directly on top of the 2×
+  // mark, so the two controls fought for the same thumb.
+  //
+  // It already listens for `gloobal:blockingOverlay` and hides itself,
+  // which is how it stays off a payment in flight. A full-screen camera is
+  // the same case for a weaker reason: the button does nothing useful here
+  // and its only effect would be to abandon the scan.
+  //
+  // Full-screen only. The small embedded scanner is one card on a scrolling
+  // screen, and hiding a global control for it would be wrong.
+  useEffect22(() => {
+    if (!fullScreen || !active || typeof window === "undefined") return undefined;
+    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
+    fire(true);
+    return () => fire(false);
+  }, [fullScreen, active]);
 
   useEffect22(() => {
     if (!active) {
@@ -1095,7 +1254,22 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
          The dimming is one enormous spread shadow on the square rather than
          four positioned panels: it can never leave a seam, and it resizes
          with the square for free. */
-    }<QrFrameGuide />{
+    }<QrFrameGuide
+      // The zoom goes INSIDE the guide so it can be positioned against
+      // the square's own right-hand edge. It used to be a sibling of it,
+      // anchored to the bottom of the screen and sized in viewport units
+      // — which is how a control meant to sit beside the square ended up
+      // needing a comment explaining which gap it had to fit between.
+      // Drawn only when the lens reports a zoom range, the same rule the
+      // torch and the picker follow: a dead control is worse than no
+      // control, and most of all mid-scan.
+      rail={zoomRange && !quiet
+        ? <ZoomRail range={zoomRange} level={zoomLevel} onPick={applyZoom} />
+        : null}
+      // The sweep means "looking". While paused it must stop, or the
+      // screen claims to be scanning when it is not.
+      hunting={state === "running" && !paused}
+    />{
       /* The controls, in one row under the framing square.
 
          They were not a row before: the torch alone sat at
@@ -1142,28 +1316,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       aria-pressed={torchOn}
       className="v2-tap"
       style={{ ...scannerControlStyle(torchOn), pointerEvents: "auto" }}
-    >{torchOn ? <FlashlightOff1 size={22} color="#14122B" /> : <Flashlight1 size={22} color="#FFFFFF" />}</button>}</div>}{
-      /* The arc, directly above the control row — one thumb's reach from
-         the buttons, and clear of the framing square above it. Drawn only
-         when the lens reports a zoom range, the same rule the torch and the
-         picker follow: a dead control is worse than no control, and most of
-         all mid-scan. */
-    }{zoomRange && !quiet && <div
-      style={{
-        position: "absolute",
-        left: 0,
-        right: 0,
-        // 96 for the row, 52 for its height, 12 of air: 160. The arc is
-        // 72 tall, so it reaches 232 — and the framing square's lower
-        // edge is never nearer than ~280 on a phone, which is the gap
-        // this has to fit inside.
-        bottom: "calc(160px + env(safe-area-inset-bottom, 0px))",
-        display: "flex",
-        justifyContent: "center",
-        zIndex: 2,
-        pointerEvents: "none"
-      }}
-    ><ZoomArc range={zoomRange} level={zoomLevel} onPick={applyZoom} /></div>}<canvas ref={canvasRef} style={{ display: "none" }} /></>;
+    >{torchOn ? <FlashlightOff1 size={22} color="#14122B" /> : <Flashlight1 size={22} color="#FFFFFF" />}</button>}</div>}<canvas ref={canvasRef} style={{ display: "none" }} /></>;
   }
 
   return <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div

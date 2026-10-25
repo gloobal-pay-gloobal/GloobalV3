@@ -54,11 +54,26 @@ const code = (p) => readSource(p)
 // appear in a sentence of prose.
 const raw = (p) => readSource(p);
 
-// The arc's maths, lifted out of the component so the geometry can be
+// The zoom's maths, lifted out of the component so the scale can be
 // exercised against real lens ranges rather than described in a comment.
+//
+// ── THE ARC BECAME A RAIL ───────────────────────────────────────────────
+//
+// The control was a bowed track floating between the framing square and
+// the control row. It is now a vertical rail drawn ON the square's own
+// right-hand edge, which is where the founder's reference puts it.
+//
+// Everything about the SCALE survived that move unchanged — logarithmic,
+// marks at the round numbers, snapping in pixels — which is why the tests
+// below still read the way they did. What went is the Bézier: a straight
+// line needs no curve, so zoomArcPoint and the three ZOOM_ARC_W/SAG/PAD
+// constants went with it, and the test that exercised the sag went too.
+// The functions kept their names because they describe the SCALE rather
+// than the shape, and renaming four of them to say "rail" would have made
+// a diff nobody could read out of a change that touched no arithmetic.
 const src = readSource(SCANNER);
-const arc = new Function(`${src.slice(src.indexOf("var ZOOM_ARC_W"), src.indexOf("function ZoomArc("))}
-  return { ZOOM_ARC_W, ZOOM_ARC_PAD, ZOOM_ARC_SAG, ZOOM_ARC_MARKS, zoomArcRatio, zoomArcPosition, zoomArcLevel, zoomArcPoint, zoomArcMarks };`)();
+const arc = new Function(`${src.slice(src.indexOf("var ZOOM_ARC_SNAP_PX"), src.indexOf("function ZoomRail("))}
+  return { ZOOM_ARC_SNAP_PX, ZOOM_ARC_MARKS, ZOOM_RAIL_INSET, zoomArcRatio, zoomArcPosition, zoomArcLevel, zoomArcMarks };`)();
 
 const TEN = { min: 1, max: 10 };
 const DEVICE_UNITS = { min: 100, max: 800 };
@@ -190,15 +205,25 @@ describe("the zoom arc covers the range the old stops skipped", () => {
     }
   });
 
-  test("the track's ends sit level, and only the middle sags", () => {
-    assert.ok(near(arc.zoomArcPoint(0).y, 0));
-    assert.ok(near(arc.zoomArcPoint(1).y, 0));
-    assert.ok(near(arc.zoomArcPoint(0.5).y, arc.ZOOM_ARC_SAG));
-    // x is linear in t, which is what lets a thumb's x map to a position
-    // with arithmetic rather than by walking the curve.
-    const span = arc.ZOOM_ARC_W - arc.ZOOM_ARC_PAD * 2;
-    for (const t of [0.1, 0.33, 0.7]) {
-      assert.ok(near(arc.zoomArcPoint(t).x, arc.ZOOM_ARC_PAD + t * span, 1e-9));
+  test("the rail is read bottom-up, with 1x at the floor", () => {
+    // t runs 0..1 from the minimum to the maximum, and the rail turns
+    // that into a distance DOWN from the top — so t=0 must land at the
+    // bottom. Getting this backwards would put 10x under the thumb at
+    // rest, which is the one position nobody scans from.
+    const s = raw(SCANNER);
+    const at = s.indexOf("const topOf = (t) =>");
+    assert.ok(at > 0, "the rail's position helper is gone");
+    const topOf = new Function("ZOOM_RAIL_INSET", `${s.slice(at, s.indexOf(";", at) + 1)}
+      return topOf;`)(arc.ZOOM_RAIL_INSET);
+    const pct = (t) => parseFloat(topOf(t));
+    assert.ok(pct(0) > pct(1), "the rail runs top-down, so 1x is at the ceiling");
+    assert.ok(near(pct(0), (1 - arc.ZOOM_RAIL_INSET) * 100, 1e-9), "1x does not sit at the bottom inset");
+    assert.ok(near(pct(1), arc.ZOOM_RAIL_INSET * 100, 1e-9), "the maximum does not sit at the top inset");
+    // And everything stays inside the square at every t, which is what
+    // the inset is for: a mark at exactly 0% sits on the ring itself.
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      assert.ok(pct(t) >= arc.ZOOM_RAIL_INSET * 100 - 1e-9 && pct(t) <= (1 - arc.ZOOM_RAIL_INSET) * 100 + 1e-9,
+        `t=${t} put a mark at ${pct(t)}%`);
     }
   });
 
@@ -228,7 +253,7 @@ describe("one screen for the camera, asked for or not", () => {
     // Two copies drift, and a square that jumps four pixels on grant is
     // the flicker this change exists to remove.
     const s = code(SCANNER);
-    assert.match(s, /function QrFrameGuide\(\{ children \}\)/);
+    assert.match(s, /function QrFrameGuide\(\{ children, rail = null, hunting = false \}\)/);
     assert.equal((s.match(/<QrFrameGuide/g) || []).length, 1, "the scanner draws more than one frame");
     assert.match(raw(APP), /<QrFrameGuide>/, "the permission state draws its own square");
   });
@@ -295,19 +320,59 @@ describe("nothing on the live scanner sits on anything else", () => {
     assert.ok(row >= 90, `the control row sits at ${row}px, inside the Send button's 82`);
   });
 
-  test("the arc clears the control row", () => {
-    const bands = px(scanner, "scanner").sort((a, b) => a - b);
-    const [row, arc] = bands;
-    assert.ok(arc >= row + 52, `the arc at ${arc} overlaps a 52px row at ${row}`);
+  test("the zoom is not in this stack at all any more", () => {
+    // ── THE TWO TESTS THAT USED TO BE HERE ────────────────────────────
+    //
+    // One checked that the arc cleared the 52px control row; the other
+    // that the arc plus its 72px height cleared the framing square's
+    // lower edge at 281. Both were arithmetic about a third object
+    // squeezed into the band between the square and the buttons.
+    //
+    // The rail is drawn INSIDE the square, against its right-hand edge,
+    // so there is no third object and nothing to measure. This is the
+    // assertion that keeps it that way: one anchored band in this file,
+    // the control row's, and a zoom that cannot be put back into the
+    // stack without failing here.
+    const bands = px(scanner, "scanner");
+    assert.equal(bands.length, 1,
+      `the scanner anchors ${bands.length} bands to the bottom; the zoom is back in the stack`);
+    assert.match(scanner, /rail=\{zoomRange && !quiet/,
+      "the zoom is no longer passed into the framing square");
   });
 
-  test("and the arc clears the framing square", () => {
-    // The square is min(72vw, 300px), centred. At 390x844 that is 281 to
-    // 563 from the top, so its lower edge is 281 from the bottom. The arc
-    // is 72 tall.
-    const bands = px(scanner, "scanner").sort((a, b) => a - b);
-    const arc = bands[1];
-    assert.ok(arc + 72 <= 281, `the arc reaches ${arc + 72}px, through a square whose edge is at 281`);
+  test("and it sits on the square's own right-hand edge", () => {
+    // right: -34 with the line 22 in from the host's left puts the line
+    // exactly on the square's edge, with a grabbable band on both sides
+    // of it. A 1.5px line is not something anybody can take hold of.
+    const at = scanner.indexOf("function ZoomRail");
+    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
+    assert.match(rail, /right: -34,/);
+    assert.match(rail, /width: 56,/);
+    assert.match(rail, /left: 22,/, "the rail's line is not 22 in from the host's left");
+    assert.match(rail, /touchAction: "none"/,
+      "a vertical drag will scroll the page instead of zooming");
+  });
+
+  test("the reading stays on the screen at the narrowest width", () => {
+    // The pill is the one thing that sticks out PAST the host, and the
+    // host's right edge is already 34px past the square. At 390 the
+    // square is 72vw = 280.8, so its right edge is at 335.4, the host's
+    // at 369.4 — and a pill at left:30 with 9px padding ended at 393.
+    // Three pixels off the screen, which a render caught and no amount
+    // of reading the source would have.
+    const at = scanner.indexOf("function ZoomRail");
+    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
+    const pill = rail.slice(rail.lastIndexOf("left: "));
+    const left = Number(pill.match(/left: (\d+)/)[1]);
+    const pad = Number(pill.match(/padding: "\d+px (\d+)px"/)[1]);
+    const font = Number(pill.match(/fontSize: (\d+)/)[1]);
+    // "10x" is the widest reading this can show. 0.62em per character is
+    // a deliberate over-estimate for a bold grotesque's digits.
+    const width = 3 * font * 0.62 + pad * 2 + 2;
+    const square = Math.min(390 * 0.72, 300);
+    const hostLeft = 390 / 2 + square / 2 + 34 - 56;
+    assert.ok(hostLeft + left + width <= 390,
+      `the reading reaches ${Math.round(hostLeft + left + width)}px on a 390px screen`);
   });
 
   test("the standing hint sits above the frame, and only when there is nothing to say", () => {
@@ -334,7 +399,8 @@ describe("nothing on the live scanner sits on anything else", () => {
     assert.match(app, /quiet=\{Boolean\(scanResolving \|\| scanError \|\| scanRetry\)\}/,
       "the scanner is not told to go quiet while the screen is talking");
     assert.match(scanner, /\{!quiet && <div/, "the control row stays up during a message");
-    assert.match(scanner, /\{zoomRange && !quiet && <div/, "the zoom arc stays up during a message");
+    assert.match(scanner, /rail=\{zoomRange && !quiet\s*\n\s*\? <ZoomRail/,
+      "the zoom rail stays up during a message");
   });
 
   test("so the message and the controls can never share the band", () => {
@@ -349,17 +415,140 @@ describe("nothing on the live scanner sits on anything else", () => {
       "the two now sit at different heights, so one of them is somewhere nobody measured");
   });
 
-  test("the arc reads on whatever the camera is pointed at", () => {
-    // 55% white on a hedge is nothing. A dark halo under a light track,
-    // and a stroke under the labels, survive any picture.
-    assert.match(scanner, /stroke="rgba\(0,0,0,0\.55\)"\s*\n\s*strokeWidth="15"/,
-      "the track lost the dark halo that makes it visible on a bright picture");
-    assert.match(scanner, /paintOrder="stroke"/,
-      "the mark labels have nothing behind them again");
+  test("the zoom reads on whatever the camera is pointed at", () => {
+    // 55% white on a hedge is nothing. The arc carried a dark halo under
+    // a light track and a stroke under its labels; the rail carries the
+    // same idea as a text-shadow, because these are DOM nodes rather
+    // than SVG and paint-order does not apply to them.
+    const at = scanner.indexOf("function ZoomRail");
+    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
+    assert.match(rail, /const halo = "0 1px 5px rgba\(0,0,0,0\.85\)/,
+      "the rail's type lost the dark halo that makes it readable on a bright picture");
+    assert.match(rail, /textShadow: halo/,
+      "the round-number labels have nothing behind them");
+    assert.match(rail, /boxShadow: "0 1px 3px rgba\(0,0,0,0\.8\)"/,
+      "the tick marks have nothing behind them");
   });
 
-  test("the filled part of the track ends under the handle", () => {
-    assert.match(scanner, /strokeDasharray=\{`\$\{trackLength \* at\} \$\{trackLength\}`\}/,
-      "the arc no longer shows how far along the range you are");
+  test("the filled part of the rail ends under the handle", () => {
+    // The arc did this with a dasharray along the curve's own length.
+    // A straight line needs no such thing: the fill is an element from
+    // the handle's position down to the bottom inset.
+    const at = scanner.indexOf("function ZoomRail");
+    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
+    assert.match(rail, /top: topOf\(at\),\s*\n\s*bottom: `\$\{ZOOM_RAIL_INSET \* 100\}%`/,
+      "the rail no longer shows how far up the range you are");
+  });
+});
+
+// ── THE LOOK ────────────────────────────────────────────────────────────
+//
+// "That kind of scanner we need something that work exactly but look
+// different." Four white corner brackets is what every scanner in every
+// app on the phone looks like, and it was what this one looked like too.
+//
+// Everything below is about appearance, which is usually not worth a
+// test — except that each of these is load-bearing for something that is
+// not appearance, and the comment on each says which.
+describe("the aperture is ours, not every scanner's", () => {
+  const scanner = code(SCANNER);
+
+  test("the corner brackets are gone and the ring replaced them", () => {
+    assert.doesNotMatch(scanner, /QR_FRAME_CORNERS/,
+      "the four white corner brackets are back");
+    assert.match(scanner, /var QR_RING_DASH = 212\.4;/);
+    assert.match(scanner, /var QR_RING_GAP = 70;/);
+    assert.match(scanner, /var QR_RING_OFFSET = 202\.9;/);
+  });
+
+  test("the dash arithmetic actually closes four equal gaps", () => {
+    // This is the part worth running rather than eyeballing. On a
+    // 300-unit box with rx 34 and a 1.5 inset the perimeter is
+    // 4 x (297 - 68) + 2pi x 34. Four dash-and-gap repeats have to
+    // divide it exactly, or the gaps crawl around the ring and the one
+    // on the right — the one the zoom rail enters through — stops being
+    // on the right.
+    const s = readSource(SCANNER);
+    const dash = Number(s.match(/var QR_RING_DASH = ([\d.]+);/)[1]);
+    const gap = Number(s.match(/var QR_RING_GAP = ([\d.]+);/)[1]);
+    const perimeter = 4 * (297 - 2 * 34) + 2 * Math.PI * 34;
+    assert.ok(Math.abs((dash + gap) * 4 - perimeter) < 0.5,
+      `four repeats of ${dash}+${gap} make ${((dash + gap) * 4).toFixed(1)}, not ${perimeter.toFixed(1)}`);
+    // And the offset centres a gap on the middle of the top edge, which
+    // is what makes the other three land mid-side as well.
+    const topMid = 229 / 2;
+    const offset = Number(s.match(/var QR_RING_OFFSET = ([\d.]+);/)[1]);
+    const gapStart = (dash + gap) - offset;
+    assert.ok(Math.abs((gapStart + gap / 2) - topMid) < 1,
+      `the first gap centres at ${(gapStart + gap / 2).toFixed(1)}, not on the top edge's midpoint ${topMid}`);
+  });
+
+  test("the ring is two strokes, because one cannot be both", () => {
+    // A single stroke is either glowing enough to see against a bright
+    // wall or crisp enough to aim at. The blurred one carries the colour
+    // and the hairline is what the eye reads as an edge.
+    assert.match(scanner, /filter="url\(#gloobalRingGlow\)"/);
+    assert.equal((scanner.match(/strokeDasharray=\{`\$\{QR_RING_DASH\} \$\{QR_RING_GAP\}`\}/g) || []).length, 2,
+      "the ring is drawn once, so it is either a glow or an edge and not both");
+  });
+
+  test("the sweep stops when the scanner stops", () => {
+    // A moving line says "looking". Leaving it running while paused
+    // would be the screen claiming to scan when it is not — which is
+    // worse than the four static corners it replaced.
+    assert.match(scanner, /hunting=\{state === "running" && !paused\}/);
+    assert.match(scanner, /\{hunting && <span/);
+  });
+
+  test("the sweep travels in percent, so it crosses the whole square on any phone", () => {
+    // The square is min(72vw, 300px). A fixed pixel travel would sweep
+    // the whole height on a small phone and two thirds of it on a large
+    // one.
+    const s = readSource(SCANNER);
+    const frames = s.slice(s.indexOf("@keyframes gloobalScanSweep"), s.indexOf("@media (prefers-reduced-motion"));
+    assert.match(frames, /top: 12%/);
+    assert.match(frames, /top: 88%/);
+    assert.doesNotMatch(frames, /translateY\(-?\d+px\)/, "the sweep travels a fixed number of pixels again");
+  });
+
+  test("reduced motion gets a still line rather than no line", () => {
+    // Somebody who has asked for less motion still wants to know the
+    // camera is on.
+    const s = readSource(SCANNER);
+    const reduced = s.slice(s.indexOf("@media (prefers-reduced-motion"));
+    assert.match(reduced, /gloobalScanSweep \{ 0%, 100% \{ top: 50%; opacity: 0\.7; \} \}/);
+  });
+
+  test("the three controls on the picture agree with each other", () => {
+    // The ring, the rail and the two round buttons are the only things
+    // on this screen. If they do not share a colour the screen has no
+    // look at all — which is the state the founder was reporting.
+    assert.match(scanner, /border: lit \? "none" : "1px solid rgba\(167,139,250,0\.55\)"/,
+      "the round controls went back to a neutral white edge");
+    assert.match(scanner, /boxShadow: lit \? "0 6px 18px rgba\(0,0,0,0\.4\)" : "0 0 18px rgba\(124,58,237,0\.28\)"/);
+  });
+
+  test("Send is the brand gradient over the camera too", () => {
+    const app = code(APP);
+    const at = app.indexOf("function ScanSendButton");
+    const button = app.slice(at, app.indexOf("\n}", at));
+    assert.doesNotMatch(button, /rgba\(255,255,255,0\.94\)/,
+      "the Send button goes white over the camera again");
+    assert.match(button, /background: T\.gradButton,/);
+    assert.match(button, /overVideo\s*\n?\s*\? "0 10px 34px rgba\(124,58,237,0\.55\)/,
+      "the Send button has a drop shadow over a camera picture, which has no surface to fall on");
+  });
+
+  test("the floating map button stands aside for the full-screen camera", () => {
+    // AppMapButton is fixed at z-index 10000 and defaults to 62% down the
+    // RIGHT edge — which is now where the zoom rail is. A render put it
+    // directly on top of the 2x mark.
+    //
+    // Full-screen only: the embedded scanner is one card on a scrolling
+    // screen, and hiding a global control for it would be wrong.
+    assert.match(scanner, /if \(!fullScreen \|\| !active \|\| typeof window === "undefined"\) return undefined;/);
+    assert.match(scanner, /new CustomEvent\("gloobal:blockingOverlay", \{ detail: \{ active: on \} \}\)/);
+    assert.match(code("frontend/components/common/appMap.jsx"), /window\.addEventListener\("gloobal:blockingOverlay", onBlocking\)/,
+      "the map button no longer listens, so nothing hides it");
   });
 });

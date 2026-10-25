@@ -41,13 +41,25 @@ function ScanSendButton({ onClick, overVideo = false }) {
       border: "none",
       borderRadius: 999,
       padding: "15px 20px",
-      background: overVideo ? "rgba(255,255,255,0.94)" : T.gradButton,
-      color: overVideo ? T.accent : "#fff",
+      // ── IT USED TO GO WHITE OVER THE CAMERA ──────────────────────────
+      //
+      // A near-white pill with violet type, which read as the system's
+      // button rather than as part of the screen it was on. The scan
+      // screen now carries one colour — the ring, the zoom rail and the
+      // two round controls are all the same violet — and the single
+      // largest object on it was the one thing opting out.
+      //
+      // It is the brand gradient in both places now. Over video it takes
+      // a glow instead of a drop shadow, because a shadow needs a surface
+      // underneath to fall on and a camera picture is not one.
+      background: T.gradButton,
+      color: "#fff",
       fontSize: 14.5,
       fontWeight: 800,
       cursor: "pointer",
-      boxShadow: overVideo ? "0 6px 22px rgba(0,0,0,0.35)" : "0 8px 20px rgba(124,58,237,0.28)",
-      backdropFilter: overVideo ? "blur(6px)" : undefined
+      boxShadow: overVideo
+        ? "0 10px 34px rgba(124,58,237,0.55), inset 0 1px 0 rgba(255,255,255,0.3)"
+        : "0 8px 20px rgba(124,58,237,0.28)"
     }}
   ><ArrowUpRight5 size={17} />Send</button>;
 }

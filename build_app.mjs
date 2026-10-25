@@ -274,6 +274,16 @@ const FRONTEND_MODULES = [
   // fitProfilePhotoForUpload (components/payments/PayPinModal.jsx), all
   // emitted earlier.
   "features/creator/CreatorSetupScreen.jsx",
+  // Which businesses this account pinned. Plain functions and two `var`
+  // initialisers — and PAY_PINS_VISIBLE is read by the strip in
+  // businessMark.jsx below, so it has to come first. (Only at render
+  // time, so the order is not strictly load-bearing today; it is written
+  // this way so it never becomes load-bearing by accident.)
+  "features/creator/payPins.js",
+  // What a business looks like in a list: its own logo where it has one,
+  // and a mark generated from its own name where it does not. Also the
+  // pinned strip on Pay & Services, drawn from the same marks.
+  "features/creator/businessMark.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",
   // Giving to a Hooman Project, and the list of who has. Emitted before the

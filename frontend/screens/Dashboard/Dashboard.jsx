@@ -31,7 +31,8 @@ import {
   ArrowRight as ArrowRight2,
   PieChart,
   Pencil,
-  BarChart3
+  BarChart3,
+  Pin as Pin1
 } from "lucide-react";
 
 
@@ -833,12 +834,37 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   const [showElectricity, setShowElectricity] = useState14(false);
   const requestCloseElectricity = useBackClose(showElectricity, () => setShowElectricity(false));
   const [showMore, setShowMore] = useState14(false);
+  // ── PINNED BUSINESSES ─────────────────────────────────────────────────
+  //
+  // Which businesses this account has put at the top of Pay & Services.
+  // As many as they want — the founder's instruction — with about five
+  // visible and the rest a swipe away, so a long list costs no height.
+  //
+  // Read from browser storage once, keyed by Gloobal ID so two people
+  // sharing a phone do not inherit each other's shortcuts. See
+  // features/creator/payPins.js for what that storage choice costs.
+  //
+  // Lazy initialiser rather than an effect: the strip is above the fold
+  // on a screen that opens instantly, and loading it a frame later would
+  // show an empty strip and then fill it.
+  const [payPins, setPayPins] = useState14(() => loadPayPins(myGloobalId));
+  const togglePin = (key) => {
+    setPayPins((keys) => {
+      const next = togglePayPin(keys, key);
+      savePayPins(myGloobalId, next);
+      return next;
+    });
+  };
   const requestCloseMore = useBackClose(showMore, () => {
     setShowMore(false);
     setMoreQuery("");
     setTravelExpanded(false);
   });
   const [moreQuery, setMoreQuery] = useState14("");
+  // The second half of the Pay & Services search. Two boxes, the same
+  // shape as a creator's `first.last` name — see the comment at the
+  // inputs for why both of them filter the business list too.
+  const [moreQueryLast, setMoreQueryLast] = useState14("");
   const [travelExpanded, setTravelExpanded] = useState14(false);
   const [payTarget, setPayTarget] = useState14(null);
   // Pay a Business now follows the same options -> PIN -> biometric
@@ -3103,11 +3129,42 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   }{showMore && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseMore} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Pay & Services</span></div><div style={{ padding: "0 18px 10px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px", boxShadow: T.shadowCard }}><Search3 size={16} color={T.inkFaint} /><input
     value={moreQuery}
     onChange={(e) => setMoreQuery(e.target.value)}
-    placeholder="Search businesses & services"
-    style={{ flex: 1, border: "none", outline: "none", background: "none", fontSize: 13.5, color: T.ink, fontFamily: "inherit" }}
-  />{moreQuery && <button onClick={() => setMoreQuery("")} aria-label="Clear search" style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex" }}><X3 size={14} color={T.inkFaint} /></button>}</div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 18 }}>{(() => {
-    const q = moreQuery.trim().toLowerCase();
-    const pinned = [
+    placeholder="First name"
+    aria-label="First name"
+    autoCapitalize="none"
+    autoCorrect="off"
+    spellCheck={false}
+    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 13.5, color: T.ink, fontFamily: "inherit" }}
+  />{
+    /* ── TWO BOXES, THE SAME SHAPE AS A CREATOR'S NAME ────────────────
+       A creator is `first.last`, so this is how you look one up. The
+       divider is drawn between the two inputs rather than typed into
+       either, exactly as the dot is on the setup screen — one idea, one
+       appearance, in both of the places it turns up.
+       Both boxes feed ONE query: typing in either filters businesses by
+       name, and typing in both looks for `first.last`. A second box that
+       only worked for creators would be dead space on a screen that is
+       mostly businesses. */
+  }<span aria-hidden="true" style={{ width: 1, alignSelf: "stretch", background: T.line, flexShrink: 0 }} /><input
+    value={moreQueryLast}
+    onChange={(e) => setMoreQueryLast(e.target.value)}
+    placeholder="Last name"
+    aria-label="Last name"
+    autoCapitalize="none"
+    autoCorrect="off"
+    spellCheck={false}
+    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 13.5, color: T.ink, fontFamily: "inherit" }}
+  />{(moreQuery || moreQueryLast) && <button onClick={() => { setMoreQuery(""); setMoreQueryLast(""); }} aria-label="Clear search" style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex" }}><X3 size={14} color={T.inkFaint} /></button>}</div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 18 }}>{(() => {
+    // The two boxes make one query. Joined with a space so "uber" +
+    // "eats" finds Uber Eats, and compared against the name with its own
+    // dots and spaces flattened, so `rasoi` + `ghar` finds rasoi.ghar
+    // whichever way it is written down.
+    const flatten = (s) => String(s || "").toLowerCase().replace(/[.\s]+/g, " ").trim();
+    const q = flatten(`${moreQuery} ${moreQueryLast}`);
+    // Renamed from `pinned`: there are real pins on this screen now, and
+    // two things called the same thing in one function is how the wrong
+    // one gets rendered.
+    const quickPay = [
       { key: "recharge", label: "Recharge", Icon: Smartphone2, color: bankHeroColor, onClick: () => {
         requestCloseMore();
         setShowRecharge(true);
@@ -3124,13 +3181,29 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
         requestCloseMore();
         showToast2("Autopay \u2014 coming soon");
       } }
-    ].filter((a) => !q || a.label.toLowerCase().includes(q));
-    const businesses = TOP_BUSINESSES.filter((b) => !q || b.label.toLowerCase().includes(q));
-    const travelMatches = TRAVEL_ACTIONS.filter((t) => t.label.toLowerCase().includes(q));
+    ].filter((a) => !q || flatten(a.label).includes(q));
+    const businesses = TOP_BUSINESSES.filter((b) => !q || flatten(b.label).includes(q));
+    const travelMatches = TRAVEL_ACTIONS.filter((t) => flatten(t.label).includes(q));
+    // The pinned strip is NOT filtered by the search. It is a set of
+    // shortcuts rather than a section of the catalogue, and watching your
+    // own pins disappear as you type a business's name reads as losing
+    // them. It hides outright while searching instead.
+    const pinnedBusinesses = payPinnedFrom(TOP_BUSINESSES, payPins);
+    // One way into a business, used by the row and by the pinned tile,
+    // so the two cannot start behaving differently.
+    const openBusiness = (b) => {
+      requestCloseMore();
+      setPayTarget({ key: b.key, label: b.label, chip: b.chip, logo: b.logo || null, Icon: null, cashbackRate: b.cashbackRate });
+      setPayAmount("25.00");
+    };
     const showTravelSection = !q || travelMatches.length > 0;
-    return <>{pinned.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
+    return <>{!q && pinnedBusinesses.length > 0 && <PayPinnedStrip
+      items={pinnedBusinesses}
+      onOpen={openBusiness}
+      onUnpin={togglePin}
+    />}{quickPay.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
                         Quick pay
-                      </div><div style={{ display: "flex", gap: 10 }}>{pinned.map(({ key, label, Icon, onClick }) => <button
+                      </div><div style={{ display: "flex", gap: 10 }}>{quickPay.map(({ key, label, Icon, onClick }) => <button
       key={key}
       onClick={onClick}
       aria-label={label}
@@ -3158,23 +3231,47 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 4px", border: `1px solid ${T.line}`, background: T.surface, borderRadius: 16, cursor: "pointer", boxShadow: T.shadowCard }}
     ><span style={{ width: 38, height: 38, borderRadius: 12, background: T.positiveSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={18} color={T.positive} /></span><span style={{ fontSize: 11, fontWeight: 700, color: T.ink, textAlign: "center" }}>{label}</span></button>)}</div>}</div>}<div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
                       Top businesses
-                    </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{businesses.length === 0 ? <div style={{ padding: "22px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>No matches</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 3 }}>Try a different search.</div></div> : businesses.map((b, i) => <button
+                    </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{businesses.length === 0 ? <div style={{ padding: "22px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>No matches</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 3 }}>Try a different search.</div></div> : businesses.map((b, i) => {
+      const isPinned = payPins.indexOf(b.key) >= 0;
+      // ── THE ROW IS NOT THE BUTTON ANY MORE ────────────────────────
+      //
+      // It was one <button> wrapping everything. A pin control inside
+      // it would be a button inside a button, which is invalid HTML and
+      // behaves differently in every browser — and tapping the pin would
+      // also open the payment underneath it.
+      //
+      // So the row is a plain div with TWO buttons in it: the wide one
+      // that pays, and the pin. The wide one keeps the row's whole hit
+      // area minus the pin's, which is what it had before.
+      return <div
       key={b.key}
-      onClick={() => {
-        requestCloseMore();
-        setPayTarget({ key: b.key, label: b.label, chip: b.chip, Icon: null, cashbackRate: b.cashbackRate });
-        setPayAmount("25.00");
-      }}
-      aria-label={`Pay ${b.label}`}
       className="v2-row"
-      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 15px", border: "none", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, background: "none", cursor: "pointer", textAlign: "left" }}
-    ><span style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: T.accent }}>{b.chip}</span><span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.label}</span><ChevronRightIcon /></button>)}</div></div></>;
+      style={{ display: "flex", alignItems: "center", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
+    ><button
+      onClick={() => openBusiness(b)}
+      aria-label={`Pay ${b.label}`}
+      style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 12, padding: "13px 4px 13px 15px", border: "none", background: "none", cursor: "pointer", textAlign: "left" }}
+    ><BusinessMark name={b.label} logo={b.logo} size={36} /><span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.label}</span></button><button
+      onClick={() => togglePin(b.key)}
+      aria-label={isPinned ? `Unpin ${b.label}` : `Pin ${b.label}`}
+      aria-pressed={isPinned}
+      className="v2-tap"
+      style={{ border: "none", background: "none", padding: "13px 6px", cursor: "pointer", display: "flex", alignItems: "center", flexShrink: 0 }}
+    ><Pin1 size={16} color={isPinned ? T.accent : T.inkFaint} fill={isPinned ? T.accent : "none"} /></button><span style={{ paddingRight: 15, display: "flex", alignItems: "center", flexShrink: 0 }}><ChevronRightIcon /></span></div>;
+    })}</div></div></>;
   })()}</div></div>}{
     /* Generic Pay sheet — opened from a business or Travel option in
        More. Deliberately minimal: same functional core as Send Money
        (amount in, confirm, done) without the receiver search, since
        the "receiver" here is a fixed business rather than a person. */
-  }{payTarget && <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px calc(30px + env(safe-area-inset-bottom, 0px))" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}><span style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: T.accent }}>{payTarget.Icon ? <payTarget.Icon size={17} color={T.accent} /> : payTarget.chip}</span><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Pay {payTarget.label}</span></span><button
+  }{payTarget && <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px calc(30px + env(safe-area-inset-bottom, 0px))" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}><span style={{ display: "flex", alignItems: "center", gap: 10 }}>{
+    /* The same mark the list showed, so the business somebody tapped is
+       the one they are now looking at. A Travel option carries an Icon
+       instead and keeps the accent treatment, because those are Gloobal's
+       own categories rather than somebody else's brand. */
+  }{payTarget.Icon
+    ? <span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><payTarget.Icon size={17} color={T.accent} /></span>
+    : <BusinessMark name={payTarget.label} logo={payTarget.logo} size={34} radius={11} />}<span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Pay {payTarget.label}</span></span><button
     onClick={requestClosePayTarget}
     aria-label="Close"
     style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}

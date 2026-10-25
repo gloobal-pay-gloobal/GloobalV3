@@ -267,6 +267,13 @@ const FRONTEND_MODULES = [
   // ColoredGloobalId, GloobalWordmark and COUNTRY_BY_ISO — all emitted
   // earlier, all function declarations or module-level consts.
   "features/identity/PersonalDetailsScreen.jsx",
+  // The Creator side's own name, mark and address. Emitted before the
+  // Dashboard, which both hosts the setup screen and calls
+  // creatorHandleLabel() to decide what to show for a creator who skipped
+  // it. Reads ProfileToggle (components/cards/misc.jsx), NavBackButton and
+  // fitProfilePhotoForUpload (components/payments/PayPinModal.jsx), all
+  // emitted earlier.
+  "features/creator/CreatorSetupScreen.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",
   // Giving to a Hooman Project, and the list of who has. Emitted before the

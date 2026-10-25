@@ -1453,6 +1453,95 @@ var GloobalApi = {
     return { hasPhoto: Boolean(result && result.hasPhoto) };
   },
 
+  // --- The Creator side -------------------------------------------------
+  //
+  // One account, two sides. These four routes are about how the Creator
+  // side presents itself — its mark, its name, its address — and about
+  // turning that name back into the account it belongs to.
+  //
+  // The name is `first.last`, in any script, and it is a PAYMENT ADDRESS:
+  // unique across every account, which is why there is an availability
+  // check separate from the save.
+
+  // GET /api/creator/handle-available — answered while somebody types.
+  //
+  // Never trusted as a reservation. "Available" here means "no account
+  // held it a moment ago", and two creators typing the same name at the
+  // same time are both told yes; the save below is what decides. Any
+  // network failure answers "don't know" rather than throwing, because
+  // this runs on every keystroke and a dead connection must not make the
+  // box turn red.
+  async creatorHandleAvailable(first, last) {
+    try {
+      const result = await gloobalApiClient.get(
+        `/api/creator/handle-available?first=${encodeURIComponent(first || "")}&last=${encodeURIComponent(last || "")}`
+      );
+      // ── AN ANSWER THAT IS NOT AN ANSWER IS "DON'T KNOW" ────────────
+      //
+      // `available` has to be a real boolean. Reading it as
+      // Boolean(result && result.available) turned every reply that did
+      // not carry the field — an old server, a proxy's own 200, a
+      // route that is not deployed yet — into `false`, which the setup
+      // screen paints as "That name is taken."
+      //
+      // Found by rendering: the test harness's fake API answers unknown
+      // routes with a bare success, and the screen told me `rasoi.ghar`
+      // was taken on a server with no creators on it at all. Telling
+      // somebody their name is taken when the truth is that nobody
+      // asked is the worst of the three states to guess at.
+      if (!result || typeof result.available !== "boolean") {
+        return { known: false, handle: "", available: false, message: "" };
+      }
+      return {
+        known: true,
+        handle: typeof result.handle === "string" ? result.handle : "",
+        available: result.available,
+        message: typeof result.message === "string" ? result.message : ""
+      };
+    } catch (err) {
+      return { known: false, handle: "", available: false, message: "" };
+    }
+  },
+
+  // GET /api/creator/:symbolId/profile — the creator as the viewer may see
+  // them. The owner gets their own address back whether or not it is
+  // public; anybody else gets it only if they published it.
+  async getCreatorProfile(symbolId) {
+    try {
+      const result = await gloobalApiClient.get(`/api/creator/${encodeURIComponent(symbolId)}/profile`);
+      return (result && result.creator) || null;
+    } catch (err) {
+      if (err instanceof GloobalApiError && err.status === 404) return null;
+      throw err;
+    }
+  },
+
+  // PUT /api/creator/:symbolId/profile — save any subset.
+  //
+  // The handle is all-or-nothing: send both halves or neither. `skipped:
+  // true` records that the setup screen was dismissed unfinished, which is
+  // what lets the Creator dashboard keep offering it without putting the
+  // whole screen back in the way every time.
+  async saveCreatorProfile(symbolId, patch) {
+    const result = await gloobalApiClient.put(
+      `/api/creator/${encodeURIComponent(symbolId)}/profile`,
+      patch || {}
+    );
+    return (result && result.creator) || null;
+  },
+
+  // GET /api/creator/resolve/:handle — a name, turned into an account.
+  // This is what makes the handle a payment address rather than a label.
+  async resolveCreatorHandle(handle) {
+    try {
+      const result = await gloobalApiClient.get(`/api/creator/resolve/${encodeURIComponent(handle)}`);
+      return (result && result.creator) || null;
+    } catch (err) {
+      if (err instanceof GloobalApiError && (err.status === 404 || err.status === 400)) return null;
+      throw err;
+    }
+  },
+
   // --- Notifications ----------------------------------------------------
   //
   // Server-held, per account, created by the payment route after a transfer

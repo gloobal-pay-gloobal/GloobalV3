@@ -1142,6 +1142,75 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // role-aware — same source of truth toggleShareRole/roleSendHistory
   // further down use, just introduced here instead of down there.
   const [shareRole, setShareRole] = useState14("user");
+  // ── THE CREATOR SIDE'S OWN IDENTITY ───────────────────────────────────
+  //
+  // The handle people pay this account at when it is acting as a creator,
+  // its mark and its address. Loaded once, lazily, the first time the
+  // Creator side is touched — the Personal side never needs it, and most
+  // accounts never flip.
+  //
+  // `null` means "not loaded yet" and is NOT the same as a creator who has
+  // no handle: the second is an object with an empty handle, which is a
+  // real and supported state because the founder chose a skippable setup
+  // screen. Anything reading this has to tell those two apart, which is
+  // why creatorSetupDone() takes the object rather than a boolean.
+  const [creatorProfile, setCreatorProfile] = useState14(null);
+  const [showCreatorSetup, setShowCreatorSetup] = useState14(false);
+  const [creatorSaving, setCreatorSaving] = useState14(false);
+  const [creatorError, setCreatorError] = useState14("");
+  const creatorLoadedRef = useRef10(false);
+
+  // Fetch it once, the first time anything wants it.
+  const loadCreatorProfile = async () => {
+    if (creatorLoadedRef.current || !myGloobalId) return null;
+    creatorLoadedRef.current = true;
+    try {
+      const fetched = await GloobalApi.getCreatorProfile(myGloobalId);
+      // A brand-new account has no creator row at all; an empty shape
+      // stands in, so every reader sees an object either way.
+      const next = fetched || { handle: "", handleFirst: "", handleLast: "", logo: null, address: "", addressPublic: false };
+      setCreatorProfile(next);
+      return next;
+    } catch (e) {
+      // Offline, or the server is cold. Left unloaded rather than
+      // substituted: a creator shown as "no handle" because the network
+      // failed would be offered a setup screen they have already done.
+      creatorLoadedRef.current = false;
+      return null;
+    }
+  };
+
+  const saveCreatorProfile = async (patch) => {
+    if (creatorSaving) return;
+    setCreatorSaving(true);
+    setCreatorError("");
+    try {
+      const saved = await GloobalApi.saveCreatorProfile(myGloobalId, patch);
+      if (saved) setCreatorProfile(saved);
+      setShowCreatorSetup(false);
+      showToast2("Creator name saved");
+    } catch (e) {
+      // The server's own words where it gave any — "That name was just
+      // taken" is more use than anything this screen could invent.
+      setCreatorError((e && e.message) || "Could not save that right now.");
+    } finally {
+      setCreatorSaving(false);
+    }
+  };
+
+  // Dismissed without finishing. Recorded so the Creator dashboard can
+  // keep offering it without putting the whole screen back in the way on
+  // every flip — see creatorProfile.setupSkippedAt on the server.
+  const skipCreatorSetup = async () => {
+    setShowCreatorSetup(false);
+    try {
+      const saved = await GloobalApi.saveCreatorProfile(myGloobalId, { skipped: true });
+      if (saved) setCreatorProfile(saved);
+    } catch (e) {
+      // Not worth telling anybody about: the screen is already closed and
+      // the only cost of a lost skip is being offered it again.
+    }
+  };
   const [newIdBuffer, setNewIdBuffer] = useState14("");
   const [suggestedUpdateId, setSuggestedUpdateId] = useState14(() => genSuggestedId(12));
   // Renames made in THIS session. Kept because a rename should appear in the
@@ -1936,12 +2005,32 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        identical; only which side the data is read as changes (and
        share links already carry the active side via shareRole). */
   }<button
-    onClick={() => {
-      setShareRole((r) => {
-        const next = r === "user" ? "merchant" : "user";
-        showToast2(next === "merchant" ? "Switched to Creator profile" : "Switched to Personal profile");
-        return next;
-      });
+    onClick={async () => {
+      const next = shareRole === "user" ? "merchant" : "user";
+      setShareRole(next);
+      showToast2(next === "merchant" ? "Switched to Creator profile" : "Switched to Personal profile");
+      if (next !== "merchant") return;
+      // ── THE FIRST FLIP ASKS FOR A NAME ────────────────────────────
+      //
+      // The Creator side is paid at a handle rather than at a Gloobal
+      // ID, and a creator with no handle cannot be found or said out
+      // loud. So the first time somebody comes over here, the setup
+      // screen is what they land on.
+      //
+      // ONLY the first time, and only if they have neither finished it
+      // nor put it off: `setupSkippedAt` is what a "Set this up later"
+      // writes, and honouring it is the difference between an offer and
+      // a nag. The Creator dashboard keeps a banner either way, so a
+      // skip loses nothing but the interruption.
+      //
+      // Awaited rather than fired and forgotten: the profile has to be
+      // read before anything can decide, and showing the screen first
+      // and withdrawing it would be worse than a moment's delay.
+      const loaded = creatorProfile || (await loadCreatorProfile());
+      if (!loaded) return;
+      if (creatorSetupDone(loaded) || loaded.setupSkippedAt) return;
+      setCreatorError("");
+      setShowCreatorSetup(true);
     }}
     aria-label={shareRole === "merchant" ? "Switch to personal profile" : "Switch to creator profile"}
     className="v2-tap"
@@ -1994,7 +2083,42 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        the people who most need it are least likely to reach. It draws
        nothing at all for anybody who already has the app installed, which
        is most people who get this far. */
-  }<InstallBanner /><div
+  }<InstallBanner />{
+    /* ── THE OFFER THAT SURVIVES A SKIP ───────────────────────────────
+       The founder chose a skippable setup screen, and this is the price
+       of that choice paid honestly: a creator who put it off has to be
+       able to find it again without hunting through Profile.
+       Drawn only on the CREATOR side, only once the profile has actually
+       loaded, and only while there is no handle — so it disappears the
+       moment the name is saved and never appears for somebody who
+       finished it on their first flip.
+       It is a notice rather than a wallet-coloured card, which is the
+       lesson the install banner's own first draft taught: anything
+       wearing the wallet's gradient directly above the wallet card runs
+       into it. */
+  }{shareRole === "merchant" && creatorProfile && !creatorSetupDone(creatorProfile) && <button
+    onClick={() => {
+      setCreatorError("");
+      setShowCreatorSetup(true);
+    }}
+    className="v2-tap"
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      width: "100%",
+      textAlign: "left",
+      border: `1px solid ${T.line}`,
+      background: T.accentSoft,
+      borderRadius: T.radiusLg,
+      padding: "13px 15px",
+      cursor: "pointer"
+    }}
+  ><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>
+        Pick your creator name
+      </span><span style={{ display: "block", fontSize: 11.5, lineHeight: 1.45, color: T.inkSoft, marginTop: 2 }}>
+        So people can pay you at a name instead of twelve symbols.
+      </span></span><ChevronRightIcon /></button>}<div
     style={{
       position: "relative",
       borderRadius: T.radiusXl,
@@ -2690,7 +2814,21 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        the GH Score circle rather than an afterthought; IdSymbolDots still
        shrinks each dot to fit whatever width is actually free (see its
        own comment), so this is a ceiling, not a fixed size. */
-  }<IdSymbolDots id={personalGloobalId} revealed oneLine size={48} /></button></div></div><div style={{ borderRadius: T.radiusLg, overflow: "hidden", boxShadow: T.shadowCard, display: "flex", flexDirection: "column", gap: 2 }}>{PROFILE_ROWS.map((label, i) => {
+  }<IdSymbolDots id={personalGloobalId} revealed oneLine size={48} /></button></div></div><div style={{ borderRadius: T.radiusLg, overflow: "hidden", boxShadow: T.shadowCard, display: "flex", flexDirection: "column", gap: 2 }}>{
+    /* ── ONE EXTRA ROW ON THE CREATOR SIDE ────────────────────────────
+       Asked for: a line on the Creator side holding the creator's own
+       name, mark and address.
+       It sits directly under "Personal Details" because it is that row's
+       opposite number — one is who this account is as a person, the
+       other is who it is as a creator — and putting them side by side is
+       what makes the pairing legible. Appending it to the end would have
+       filed the creator's identity below "Help & Support".
+       Named "Creator Profile" rather than "About creator profile",
+       because there is already an "About" row in this list and two rows
+       starting with that word is a menu nobody can scan. */
+  }{(shareRole === "merchant"
+    ? PROFILE_ROWS.slice(0, 1).concat(["Creator Profile"], PROFILE_ROWS.slice(1))
+    : PROFILE_ROWS).map((label, i) => {
     const rowColor = POSITION_COLORS[i % POSITION_COLORS.length];
     return <button
       key={label}
@@ -3442,7 +3580,20 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
        the whole point of the change — this tab used to drop straight
        into the PIN fallback's modal while the balance eye two taps away
        put this screen up first. */
-  }{showChoicesGate && <BiometricVerifyScreen
+  }{showCreatorSetup && <CreatorSetupScreen
+    myGloobalId={myGloobalId}
+    creator={creatorProfile}
+    onSave={saveCreatorProfile}
+    onSkip={skipCreatorSetup}
+    // Closing with the back arrow is the same thing as skipping, and is
+    // recorded the same way. Treating a dismissal as "ask me again next
+    // flip" and a tap on "Set this up later" as "don't" would make the
+    // difference between two ways of leaving a screen load-bearing,
+    // which nobody would guess and nobody should have to.
+    onClose={skipCreatorSetup}
+    saving={creatorSaving}
+    error={creatorError}
+  />}{showChoicesGate && <BiometricVerifyScreen
     onBack={() => setShowChoicesGate(false)}
     onVerify={verifyChoices}
     scanning={choicesChecking}
@@ -3547,6 +3698,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     // which way the money went does not make it less of one. Paid and
     // received are the two halves of this account's own border history.
     history={roleSendHistory.concat(receivedRows)}
+  />}{
+    /* ── THE CREATOR'S OWN PAGE ───────────────────────────────────────
+       The mark, the handle and the address, with one way to change all
+       three: the same setup screen that asked for them. A second editor
+       would be a second place for the rules about what a handle may
+       contain to live, and those two copies would drift.
+       Loaded lazily — opening this row is one of the two things that can
+       be the first touch of the Creator side, the other being the flip
+       itself. */
+  }{profileDetail === "Creator Profile" && <CreatorProfilePanel
+    creator={creatorProfile}
+    myGloobalId={myGloobalId}
+    onLoad={loadCreatorProfile}
+    onEdit={() => {
+      setCreatorError("");
+      setShowCreatorSetup(true);
+    }}
   />}{profileDetail === "Linked Banks" && <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px" }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Manage your linked banks</div><div style={{ fontSize: 12, color: T.inkFaint, marginTop: 3, lineHeight: 1.5 }}>
                     Add, view, and link bank accounts from your country on the Add Bank screen.
                   </div></div><button

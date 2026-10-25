@@ -154,6 +154,9 @@ const Contribution = require('./models/Contribution');
 // payment — see models/ProfilePhoto.js) and the in-app payment notifications
 // POST /api/transactions/send writes once a transfer has committed.
 const ProfilePhoto = require('./models/ProfilePhoto');
+// The Creator side's own mark. A different picture of a different thing
+// from the profile photo above — see models/CreatorLogo.js.
+const CreatorLogo = require('./models/CreatorLogo');
 const Notification = require('./models/Notification');
 // Web Push. The model holds one row per subscribed browser; the service is the
 // only thing that talks to a push service and is inert when VAPID is unset.
@@ -3618,6 +3621,303 @@ app.get('/api/users/:symbolId/photo', lookupLimit, requireAuth, async (req, res)
   } catch (error) {
     console.error('Profile photo read error:', error);
     return res.status(500).json({ success: false, message: 'Could not load that photo right now.' });
+  }
+});
+
+// ── THE CREATOR HANDLE ──────────────────────────────────────────────────
+//
+// `first.last` — the Creator side's payable address, and the reason the
+// setup screen asks for two boxes rather than one. A person can say
+// "rasoi.ghar" across a counter; nobody can say a twelve-symbol Gloobal ID.
+//
+// ── ANY SCRIPT, DELIBERATELY ────────────────────────────────────────────
+//
+// The founder's requirement was that a name can be saved "in any language",
+// so this does NOT restrict to ASCII. What it refuses is only what would
+// break a handle rather than what looks unfamiliar:
+//
+//   * the dot, because the dot is the separator;
+//   * whitespace, because a handle is said and typed as one word;
+//   * control characters and the Unicode direction overrides, which can
+//     make a handle render as something other than what is stored;
+//   * the empty string.
+//
+// ── NORMALISATION ───────────────────────────────────────────────────────
+//
+// NFC first, then case-folded. NFC matters more than case here: "é" can be
+// one code point or two, the two forms are visually identical, and without
+// normalising them a second creator could register a handle nobody could
+// tell apart from the first.
+//
+// ── WHAT THIS DOES NOT SOLVE ────────────────────────────────────────────
+//
+// Confusables. Cyrillic "а" and Latin "a" are different code points that
+// NFC will not merge and no amount of case-folding will, so `rasoi.ghar`
+// and `rаsoi.ghar` can both exist. That is a real risk for an address
+// people pay, and the honest fix is a confusable-skeleton index
+// (UTS #39), which is a job of its own rather than a line here. Written
+// down so it is a known gap rather than an assumption.
+const CREATOR_HANDLE_PART_MAX = 24;
+const CREATOR_HANDLE_FORBIDDEN = /[\s.\u0000-\u001f\u007f‎‏‪-‮⁦-⁩]/;
+
+function normaliseHandlePart(value) {
+  if (typeof value !== 'string') return '';
+  let out = value.trim();
+  try {
+    out = out.normalize('NFC');
+  } catch (e) {
+    // An engine without full NFC still gets the trim and the fold; the
+    // uniqueness guarantee is weaker on that engine, not absent.
+  }
+  return out.toLowerCase();
+}
+
+// Returns { ok: true, handle, first, last } or { ok: false, code, message }.
+function buildCreatorHandle(firstRaw, lastRaw) {
+  const first = typeof firstRaw === 'string' ? firstRaw.trim() : '';
+  const last = typeof lastRaw === 'string' ? lastRaw.trim() : '';
+  const bad = (message) => ({ ok: false, code: 'invalid_handle', message });
+
+  if (!first || !last) return bad('A creator name needs both halves.');
+  if ([...first].length > CREATOR_HANDLE_PART_MAX || [...last].length > CREATOR_HANDLE_PART_MAX) {
+    // Counted in code points rather than UTF-16 units, so a name in a
+    // script outside the Basic Multilingual Plane is not charged double
+    // for characters a person would count as one.
+    return bad(`Each half can be up to ${CREATOR_HANDLE_PART_MAX} characters.`);
+  }
+  if (CREATOR_HANDLE_FORBIDDEN.test(first) || CREATOR_HANDLE_FORBIDDEN.test(last)) {
+    return bad('A creator name cannot contain spaces or dots.');
+  }
+
+  const handle = `${normaliseHandlePart(first)}.${normaliseHandlePart(last)}`;
+  if (handle === '.') return bad('A creator name needs both halves.');
+  return { ok: true, handle, first, last };
+}
+
+// Is this handle free? Free means no OTHER account holds it.
+async function creatorHandleTaken(handle, exceptUserId) {
+  const owner = await User.findOne({ 'creatorProfile.handle': handle }).select('_id').lean();
+  if (!owner) return false;
+  return !exceptUserId || String(owner._id) !== String(exceptUserId);
+}
+
+// What a creator looks like to SOMEBODY ELSE.
+//
+// The address is the field that decides itself: it is only ever included
+// when its owner has turned addressPublic on. Everything else here is
+// already public by the act of being a creator — you cannot be paid at a
+// name nobody is allowed to read.
+function publicCreator(user, logoDataUrl) {
+  const profile = (user && user.creatorProfile) || {};
+  return {
+    symbolId: user.symbolId,
+    handle: profile.handle || null,
+    handleFirst: profile.handleFirst || '',
+    handleLast: profile.handleLast || '',
+    logo: logoDataUrl || null,
+    address: profile.addressPublic ? (profile.address || '') : '',
+    addressPublic: Boolean(profile.addressPublic)
+  };
+}
+
+// GET /api/creator/handle-available?first=…&last=… — live, as somebody types.
+//
+// Deliberately NOT a reservation: answering "free" here does not hold the
+// handle, and two creators typing the same name at the same moment will
+// both be told it is free. The unique index on creatorProfile.handle is
+// what actually decides, and the save route below turns its refusal into
+// the same message. This route exists so the common case is answered while
+// the person is still looking at the box, not so it can be trusted.
+app.get('/api/creator/handle-available', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const built = buildCreatorHandle(req.query.first, req.query.last);
+    if (!built.ok) {
+      return res.json({ success: true, available: false, code: built.code, message: built.message });
+    }
+    const taken = await creatorHandleTaken(built.handle, req.authUser._id);
+    return res.json({
+      success: true,
+      handle: built.handle,
+      available: !taken,
+      message: taken ? 'That name is already taken.' : ''
+    });
+  } catch (error) {
+    console.error('Creator handle availability error:', error);
+    return res.status(500).json({ success: false, message: 'Could not check that name right now.' });
+  }
+});
+
+// GET /api/creator/:symbolId/profile — the creator as others see them.
+//
+// The owner reading their own gets the address back whether or not it is
+// public, because it is theirs; anybody else gets it only if they published
+// it. That single branch is the whole privacy rule.
+app.get('/api/creator/:symbolId/profile', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+    const user = symbolId ? await User.findOne({ symbolId }).select('_id symbolId creatorProfile').lean() : null;
+    if (!user) {
+      return res.status(404).json({
+        success: false, code: 'user_not_found', message: 'No account found for that Gloobal ID.'
+      });
+    }
+    const logo = await CreatorLogo.findOne({ userId: user._id }).select('dataUrl').lean();
+    const isOwner = String(user._id) === String(req.authUser._id);
+    const out = publicCreator(user, logo?.dataUrl);
+    if (isOwner) {
+      const profile = user.creatorProfile || {};
+      out.address = profile.address || '';
+      out.setupSkippedAt = profile.setupSkippedAt || null;
+      out.completedAt = profile.completedAt || null;
+    }
+    res.set('Cache-Control', 'private, max-age=60');
+    return res.json({ success: true, creator: out, isOwner });
+  } catch (error) {
+    console.error('Creator profile read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load that creator right now.' });
+  }
+});
+
+// PUT /api/creator/:symbolId/profile — the owner saves their creator side.
+//
+// Every field is optional on its own, but the handle is all-or-nothing: a
+// request carrying one half and not the other is a bug, not a half-save,
+// and is refused rather than stored as `rasoi.`.
+app.put(
+  '/api/creator/:symbolId/profile',
+  writeLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  parseProfilePhotoBody,
+  async (req, res) => {
+    try {
+      const userId = req.authUser._id;
+      const body = req.body || {};
+      const set = {};
+
+      const wantsHandle = body.handleFirst !== undefined || body.handleLast !== undefined;
+      if (wantsHandle) {
+        const built = buildCreatorHandle(body.handleFirst, body.handleLast);
+        if (!built.ok) {
+          return res.status(400).json({ success: false, code: built.code, message: built.message });
+        }
+        if (await creatorHandleTaken(built.handle, userId)) {
+          return res.status(409).json({
+            success: false, code: 'handle_taken', message: 'That name is already taken.'
+          });
+        }
+        set['creatorProfile.handleFirst'] = built.first;
+        set['creatorProfile.handleLast'] = built.last;
+        set['creatorProfile.handle'] = built.handle;
+        set['creatorProfile.completedAt'] = new Date();
+        // Finishing clears the "they skipped it" mark, so the Creator
+        // dashboard stops offering a screen that has been dealt with.
+        set['creatorProfile.setupSkippedAt'] = null;
+      }
+
+      if (body.address !== undefined) {
+        if (typeof body.address !== 'string' || body.address.length > 400) {
+          return res.status(400).json({
+            success: false, code: 'invalid_address', message: 'That address is too long.'
+          });
+        }
+        set['creatorProfile.address'] = body.address.trim();
+      }
+      if (body.addressPublic !== undefined) {
+        set['creatorProfile.addressPublic'] = Boolean(body.addressPublic);
+      }
+      // Sent when somebody dismisses the setup screen without finishing.
+      // Never clears `completedAt` — skipping after finishing is not a way
+      // to un-finish.
+      if (body.skipped === true && !wantsHandle) {
+        set['creatorProfile.setupSkippedAt'] = new Date();
+      }
+
+      if (body.logo !== undefined) {
+        if (body.logo === null) {
+          await CreatorLogo.deleteOne({ userId });
+        } else {
+          // The same validator the profile photo uses: JPEG or PNG only,
+          // magic bytes checked against the declared type, 200 KB cap.
+          const validated = validateProfilePhoto(body.logo);
+          if (!validated.ok) {
+            return res.status(validated.status).json({
+              success: false, code: validated.code, message: validated.message
+            });
+          }
+          const fields = { dataUrl: validated.dataUrl, mimeType: validated.mimeType, bytes: validated.bytes };
+          try {
+            await CreatorLogo.updateOne({ userId }, { $set: fields }, { upsert: true });
+          } catch (writeError) {
+            // Two uploads racing for an account with no row yet can both
+            // try the insert; the unique userId index refuses the second.
+            if (writeError?.code !== 11000) throw writeError;
+            await CreatorLogo.updateOne({ userId }, { $set: fields });
+          }
+        }
+      }
+
+      if (Object.keys(set).length) {
+        try {
+          await User.updateOne({ _id: userId }, { $set: set });
+        } catch (writeError) {
+          // The index is the real decision, not the availability check
+          // above: two creators can be told the same name is free and only
+          // one of them can have it.
+          if (writeError?.code === 11000) {
+            return res.status(409).json({
+              success: false, code: 'handle_taken', message: 'That name was just taken.'
+            });
+          }
+          throw writeError;
+        }
+      }
+
+      const fresh = await User.findById(userId).select('_id symbolId creatorProfile').lean();
+      const logo = await CreatorLogo.findOne({ userId }).select('dataUrl').lean();
+      const out = publicCreator(fresh, logo?.dataUrl);
+      out.address = (fresh.creatorProfile || {}).address || '';
+      out.setupSkippedAt = (fresh.creatorProfile || {}).setupSkippedAt || null;
+      out.completedAt = (fresh.creatorProfile || {}).completedAt || null;
+      return res.json({ success: true, creator: out });
+    } catch (error) {
+      console.error('Creator profile update error:', error);
+      return res.status(500).json({ success: false, message: 'Could not save that right now.' });
+    }
+  }
+);
+
+// GET /api/creator/resolve/:handle — a handle, turned into an account.
+//
+// This is the route that makes the handle a payment address rather than a
+// label: the Send flow hands it `rasoi.ghar` and gets back the symbolId it
+// already knows how to pay. The handle is normalised the same way it was
+// stored, so somebody typing it with different capitalisation still lands.
+app.get('/api/creator/resolve/:handle', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const raw = typeof req.params.handle === 'string' ? decodeURIComponent(req.params.handle) : '';
+    const at = raw.indexOf('.');
+    if (at <= 0 || at === raw.length - 1) {
+      return res.status(400).json({
+        success: false, code: 'invalid_handle', message: 'A creator name looks like first.last.'
+      });
+    }
+    const built = buildCreatorHandle(raw.slice(0, at), raw.slice(at + 1));
+    if (!built.ok) {
+      return res.status(400).json({ success: false, code: built.code, message: built.message });
+    }
+    const user = await User.findOne({ 'creatorProfile.handle': built.handle })
+      .select('_id symbolId fullName creatorProfile').lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false, code: 'creator_not_found', message: 'No creator found with that name.'
+      });
+    }
+    const logo = await CreatorLogo.findOne({ userId: user._id }).select('dataUrl').lean();
+    return res.json({ success: true, creator: publicCreator(user, logo?.dataUrl) });
+  } catch (error) {
+    console.error('Creator resolve error:', error);
+    return res.status(500).json({ success: false, message: 'Could not look that name up right now.' });
   }
 });
 

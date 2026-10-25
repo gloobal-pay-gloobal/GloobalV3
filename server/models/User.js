@@ -241,6 +241,78 @@ const userSchema = new mongoose.Schema({
     appLock: { type: Boolean, default: false }
   },
 
+  // ── THE CREATOR SIDE OF THE SAME ACCOUNT ─────────────────────────────
+  //
+  // One account, two sides. The Personal side is paid at its Gloobal ID;
+  // the Creator side is paid at a handle a person can say out loud —
+  // `rasoi.ghar`, `chacha.tea` — which is the whole reason this exists.
+  // A twelve-symbol Gloobal ID cannot be shouted across a counter.
+  //
+  // It is NOT a second account and must never become one. There is no
+  // separate balance, no separate ledger and no separate login here: the
+  // handle resolves to this same `symbolId`, and every payment to it is a
+  // payment to this user. What the fields below hold is how the Creator
+  // side PRESENTS itself.
+  //
+  // Absent on an account that has never flipped to the Creator side, and
+  // on one that flipped and skipped the setup — which is a real state, by
+  // the founder's choice, so every reader has to handle a creator with no
+  // name rather than assuming one.
+  creatorProfile: {
+    // The two halves as typed, in whatever script they were typed in.
+    // Kept separately from `handle` because the display form preserves
+    // case and composition and the handle does not, and recovering one
+    // from the other is not possible.
+    handleFirst: { type: String, trim: true, default: '' },
+    handleLast: { type: String, trim: true, default: '' },
+
+    // ── THE PAYABLE FORM ───────────────────────────────────────────────
+    //
+    // `first.last`, case-folded and NFC-normalised (see normaliseHandle in
+    // server.js). This is what somebody types to pay, so it is unique
+    // across every account, and it is the field an index is built on.
+    //
+    // Sparse, for the same reason referralCode is: accounts that have
+    // never set one hold no value, and a plain unique index would read
+    // every one of those nulls as a collision with every other.
+    //
+    // NOT re-registerable once released would be the right rule here too —
+    // the same argument as GLB-12 for Gloobal IDs, since a handle people
+    // have saved would start paying whoever claimed it next. Handles
+    // cannot be changed yet, so there is nothing to release; the day an
+    // edit route exists it needs a history array like symbolIdHistory and
+    // this comment is the reason.
+    handle: {
+      type: String,
+      trim: true,
+      default: null,
+      index: { unique: true, sparse: true }
+    },
+
+    // Free text, in any script. Not parsed, not geocoded, not validated —
+    // an address format that is true everywhere does not exist.
+    address: { type: String, trim: true, default: '', maxlength: 400 },
+
+    // Whether anybody paying this creator sees the address.
+    //
+    // FALSE BY DEFAULT, and that default is the point: the app cannot tell
+    // a shop's address from the kitchen somebody cooks in, and the cost of
+    // guessing wrong falls entirely on the person who typed it. Turning it
+    // on is a decision the creator makes on a switch that says plainly who
+    // will see it.
+    addressPublic: { type: Boolean, default: false },
+
+    // When the setup screen was last dismissed without being completed.
+    // Held so the Creator dashboard can keep offering it without putting
+    // the whole screen back in the way on every flip.
+    setupSkippedAt: { type: Date, default: null },
+
+    // When a handle was first successfully set. `completedAt` being null
+    // with a handle present should be impossible; it is read as "has this
+    // creator finished setting up" and the handle is what finishes it.
+    completedAt: { type: Date, default: null }
+  },
+
   createdAt: {
     type: Date,
     default: Date.now

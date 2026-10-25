@@ -462,11 +462,12 @@ function ZoomRail({ range, level, onPick }) {
   // Fraction-of-the-square down from the top, for a given t.
   const topOf = (t) => `${(ZOOM_RAIL_INSET + (1 - t) * (1 - ZOOM_RAIL_INSET * 2)) * 100}%`;
 
-  // Everything on the rail carries a dark halo. White type on a camera
-  // picture is legible against a dark room and invisible against a hedge;
-  // this is the same trick the title on this screen already uses, and it
-  // is the one lesson the arc's own history is worth keeping.
-  const halo = "0 1px 5px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9)";
+  // Everything on the rail carries a dark halo. White on a camera picture
+  // is legible against a dark room and invisible against a hedge; this is
+  // the same trick the title on this screen already uses, and it is the
+  // one lesson the arc's own history is worth keeping. There is no type
+  // left on the rail to hang a text-shadow on, so the ticks carry it as a
+  // box-shadow and the reading carries its own filled ground.
 
   return <div
     ref={hostRef}
@@ -561,26 +562,21 @@ function ZoomRail({ range, level, onPick }) {
       boxShadow: "0 1px 3px rgba(0,0,0,0.8)"
     }}
   />)}{
-    /* The labels sit INSIDE the picture, right-aligned to just short of
-       the line, which is where the founder's reference puts them. */
-  }{marks.map((mark) => <span
-    key={`label-${mark.times}`}
-    style={{
-      position: "absolute",
-      right: 40,
-      top: topOf(mark.t),
-      transform: "translateY(-50%)",
-      fontSize: 13,
-      fontWeight: 800,
-      letterSpacing: "0.01em",
-      whiteSpace: "nowrap",
-      color: Math.abs(mark.t - at) <= 0.02 ? "#E9D5FF" : "#FFFFFF",
-      textShadow: halo
-    }}
-  >{`${mark.times}x`}</span>)}{
+    /* ── THE ROUND NUMBERS CAME OFF ───────────────────────────────────
+       There was a second pass here printing "1x" "2x" "3x" "5x" "10x"
+       down the inside of the picture, right-aligned to just short of the
+       line, which is where the founder's reference put them.
+       Rendered on a real camera they were five pieces of permanent type
+       sitting on the one part of the screen somebody is trying to look
+       THROUGH — and four of the five are only ever a label for a place
+       the thumb is not. The ticks still say where the stops are, which
+       is the part that helps you aim; the reading below says where you
+       actually are, which is the part you can only get from a number.
+       So: no numbers except the one that is true right now. */
+  }{
     /* The live reading, outside the frame. It is the only thing on this
-       control that moves while a thumb is down, so it is the only thing
-       that needs to be unmistakable. */
+       control that moves while a thumb is down, and now the only type on
+       it at all, so it is the only thing that needs to be unmistakable. */
   }<span
     aria-hidden="true"
     style={{

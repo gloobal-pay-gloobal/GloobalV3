@@ -422,12 +422,36 @@ describe("nothing on the live scanner sits on anything else", () => {
     // than SVG and paint-order does not apply to them.
     const at = scanner.indexOf("function ZoomRail");
     const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.match(rail, /const halo = "0 1px 5px rgba\(0,0,0,0\.85\)/,
-      "the rail's type lost the dark halo that makes it readable on a bright picture");
-    assert.match(rail, /textShadow: halo/,
-      "the round-number labels have nothing behind them");
     assert.match(rail, /boxShadow: "0 1px 3px rgba\(0,0,0,0\.8\)"/,
       "the tick marks have nothing behind them");
+    // The reading is the only type left, and it carries a filled ground
+    // rather than a shadow — which is stronger, and is why it can be the
+    // one thing on this control that has to be read at a glance.
+    assert.match(rail, /background: "rgba\(44,16,92,0\.72\)"/,
+      "the live reading lost the ground that makes it readable on a bright picture");
+  });
+
+  test("the round numbers are off the picture", () => {
+    // ── THEY WERE THERE AND THEN THEY WENT ────────────────────────────
+    //
+    // "Don't show zoom scale numbers, just where it is currently."
+    //
+    // The rail printed 1x/2x/3x/5x/10x down the inside of the frame,
+    // copied from the founder's reference. On a real camera that is five
+    // pieces of permanent type on the one part of the screen somebody is
+    // trying to look THROUGH, and four of the five label a place the
+    // thumb is not.
+    //
+    // The ticks stayed: they say where the stops are, which is what
+    // helps you aim. Only the number that is true right now is printed.
+    const at = scanner.indexOf("function ZoomRail");
+    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
+    assert.doesNotMatch(rail, /\$\{mark\.times\}x/,
+      "the round-number labels are back on the picture");
+    assert.equal((rail.match(/marks\.map/g) || []).length, 1,
+      "the rail maps over the marks twice again, so something besides the ticks is drawn per mark");
+    assert.match(rail, /\{formatZoom\(level, range\)\}/,
+      "the live reading is gone, so the control shows no number at all");
   });
 
   test("the filled part of the rail ends under the handle", () => {

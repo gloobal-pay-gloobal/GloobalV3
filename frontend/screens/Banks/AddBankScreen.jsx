@@ -127,7 +127,17 @@ function BankTile({ bank, index, onLockedTap }) {
     aria-label={`${bank.name} \u2014 locked`}
     className="ab-bank-row relative flex flex-col items-center gap-2 px-2 py-3.5 rounded-3xl border border-slate-100 bg-white shadow-sm hover:shadow-md active:scale-[0.99] transition-all"
     style={{ animationDelay: `${index * 45}ms` }}
-  ><div className="relative flex-shrink-0"><BankAvatar bank={bank} size={46} /><span className="absolute -right-1.5 -bottom-1.5"><ServiceLock size={14} /></span></div><span
+  >{
+    /* ── THE PADLOCK RIDES THE TILE, NOT THE LOGO ─────────────────────
+       It was pinned to the bottom-right of the 46px avatar, which in a
+       three-across grid puts it in the middle of the card, floating over
+       nothing and reading as part of the bank's own mark — a red padlock
+       apparently belonging to SBI rather than to Gloobal's connection to
+       it.
+       On the tile's own corner it is unmistakably a state of the TILE,
+       which is what it means: nothing here connects to a real bank yet.
+       Outside the column flow, so it cannot shift the logo or the name. */
+  }<span className="absolute right-2 top-2"><ServiceLock size={14} /></span><div className="relative flex-shrink-0"><BankAvatar bank={bank} size={46} /></div><span
     className="text-slate-700 text-[12px] font-semibold leading-tight text-center w-full"
     style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
     title={bank.name}

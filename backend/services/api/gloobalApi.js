@@ -1496,6 +1496,12 @@ var GloobalApi = {
         known: true,
         handle: typeof result.handle === "string" ? result.handle : "",
         available: result.available,
+        // "Taken" and "not a usable name" are different answers and the
+        // box has to say which. The route sends a `code` for the second
+        // (invalid_handle, mixed_scripts) and none for the first, so a
+        // name refused for mixing alphabets does not read as one
+        // somebody else already holds.
+        code: typeof result.code === "string" ? result.code : "",
         message: typeof result.message === "string" ? result.message : ""
       };
     } catch (err) {

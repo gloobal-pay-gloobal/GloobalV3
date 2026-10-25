@@ -96,8 +96,14 @@ function useHandleAvailability(first, last) {
         setState({ status: "unknown", message: "", handle: "" });
         return;
       }
+      // Three refusals, not one. "Taken" means somebody holds it;
+      // "invalid" means it is not a name this app can use at all — a
+      // mix of alphabets, a dot inside a half, something too long. The
+      // box says which, because "that name is taken" sent to somebody
+      // who typed a Cyrillic letter by accident is an answer they can
+      // do nothing with.
       setState({
-        status: answer.available ? "free" : "taken",
+        status: answer.available ? "free" : (answer.code ? "invalid" : "taken"),
         message: answer.message || "",
         handle: answer.handle || ""
       });
@@ -176,12 +182,13 @@ function CreatorSetupScreen({
     return () => fire(false);
   }, []);
   const bothTyped = Boolean(first.trim() && last.trim());
-  // "Taken" is the only state that turns a box red. "Checking" and
-  // "unknown" leave it neutral, because neither is a fault of the name.
-  const tone = availability.status === "taken" ? "bad" : availability.status === "free" ? "good" : null;
+  // A refusal turns the box red; "checking" and "unknown" leave it
+  // neutral, because neither is a fault of the name.
+  const refused = availability.status === "taken" || availability.status === "invalid";
+  const tone = refused ? "bad" : availability.status === "free" ? "good" : null;
   // Save is allowed while the answer is unknown — a dead connection is
   // not a reason to refuse, and the server will decide anyway.
-  const canSave = bothTyped && !saving && availability.status !== "taken";
+  const canSave = bothTyped && !saving && !refused;
 
   const pickLogo = (e) => {
     const file = e.target.files && e.target.files[0];
@@ -324,7 +331,7 @@ function CreatorSetupScreen({
     fontSize: 12,
     fontWeight: 700,
     marginBottom: 24
-  }}>{availability.status === "checking" && <><Loader5 size={13} color={T.inkFaint} /><span style={{ color: T.inkFaint }}>Checking…</span></>}{availability.status === "free" && <><Check9 size={13} color={T.positive} /><span style={{ color: T.positive }}>{availability.handle} is yours</span></>}{availability.status === "taken" && <><X12 size={13} color={T.negative} /><span style={{ color: T.negative }}>{availability.message || "That name is taken."}</span></>}{(availability.status === "idle" || availability.status === "unknown") && <span style={{ color: T.inkFaint, fontWeight: 600 }}>
+  }}>{availability.status === "checking" && <><Loader5 size={13} color={T.inkFaint} /><span style={{ color: T.inkFaint }}>Checking…</span></>}{availability.status === "free" && <><Check9 size={13} color={T.positive} /><span style={{ color: T.positive }}>{availability.handle} is yours</span></>}{refused && <><X12 size={13} color={T.negative} /><span style={{ color: T.negative }}>{availability.message || "That name is taken."}</span></>}{(availability.status === "idle" || availability.status === "unknown") && <span style={{ color: T.inkFaint, fontWeight: 600 }}>
         {bothTyped ? preview : "Both halves are needed."}
       </span>}</div>{
     /* ── THE ADDRESS ──────────────────────────────────────────────────

@@ -49,8 +49,8 @@ const PURE = server.slice(
   server.indexOf("const CREATOR_HANDLE_PART_MAX"),
   server.indexOf("async function creatorHandleTaken")
 );
-const { buildCreatorHandle, normaliseHandlePart } = new Function(`${PURE}
-  return { buildCreatorHandle, normaliseHandlePart };`)();
+const { buildCreatorHandle, normaliseHandlePart, creatorScriptsIn, creatorScriptsAgree } = new Function(`${PURE}
+  return { buildCreatorHandle, normaliseHandlePart, creatorScriptsIn, creatorScriptsAgree };`)();
 
 describe("a name in any language", () => {
   test("Latin, Devanagari, Arabic and Han all make handles", () => {
@@ -113,6 +113,110 @@ describe("what a handle may not contain", () => {
     for (const bad of [null, undefined, 42, {}, []]) {
       assert.equal(buildCreatorHandle(bad, "ghar").ok, false, `${JSON.stringify(bad)} was accepted`);
     }
+  });
+});
+
+describe("one alphabet per half", () => {
+  // ── THE HOLE THE FOUNDER'S RULE LEFT OPEN ──────────────────────────
+  //
+  // His rule — a name is taken once in exactly its own form, and
+  // rasoi.ghar and रसोई.घर are two different names — is right, and it
+  // worked. What also worked, and should not have:
+  //
+  //     rasoi.ghar      Latin
+  //     rаsoi.ghar      the same with ONE Cyrillic а
+  //
+  // Two different strings, both registerable, visually identical. On an
+  // address people type to send money, that is how impersonation is
+  // done. One alphabet per half closes it without touching his rule.
+  const refused = (a, b) => {
+    const built = buildCreatorHandle(a, b);
+    assert.equal(built.ok, false, `${a}.${b} was accepted`);
+    assert.equal(built.code, "mixed_scripts", `${a}.${b} was refused for the wrong reason: ${built.message}`);
+  };
+  const allowed = (a, b, why) => {
+    const built = buildCreatorHandle(a, b);
+    assert.equal(built.ok, true, `${why} (${a}.${b}) was refused: ${built.message}`);
+  };
+
+  test("a Latin name with one Cyrillic letter hidden in it is refused", () => {
+    refused("r\u0430soi", "ghar");
+    refused("ras\u043Ei", "ghar");
+    refused("rasoi", "gh\u0430r");
+  });
+
+  test("and one Greek letter is no different", () => {
+    refused("\u03C1asoi", "ghar");
+    refused("rasoi", "gh\u03B1r");
+  });
+
+  test("but the founder's own example still gives two names", () => {
+    // The whole point: this rule must not collapse his example into one.
+    const latin = buildCreatorHandle("rasoi", "ghar");
+    const deva = buildCreatorHandle("\u0930\u0938\u094B\u0908", "\u0918\u0930");
+    assert.equal(latin.ok, true);
+    assert.equal(deva.ok, true);
+    assert.notEqual(latin.handle, deva.handle, "two scripts collapsed into one name");
+  });
+
+  test("digits and accents are not a second alphabet", () => {
+    allowed("chacha2", "tea", "a digit");
+    allowed("caf\u00E9", "bar", "an accented Latin letter");
+    allowed("cafe\u0301", "bar", "a combining accent");
+  });
+
+  test("Japanese and Korean keep the scripts they really use", () => {
+    // Japanese mixes Han with Hiragana and Katakana; Korean mixes
+    // Hangul with Han. Refusing those would be refusing ordinary names
+    // rather than attacks, so they are listed as sets.
+    allowed("\u30E9\u30FC\u30E1\u30F3", "\u5C4B", "katakana with han");
+    allowed("\u3053\u3053\u308D", "\u5C4B", "hiragana with han");
+    allowed("\uC9D1\uBC25", "\uC9D1", "hangul");
+  });
+
+  test("the two halves may differ from each other", () => {
+    // `rasoi.घर` is two alphabets but it is not a lookalike of
+    // anything, so refusing it would be refusing a name rather than an
+    // attack. The rule is per half, deliberately.
+    allowed("rasoi", "\u0918\u0930", "Latin first, Devanagari last");
+  });
+
+  test("an unrecognised character counts as its own alphabet", () => {
+    // Fails closed: a script this build cannot name must not be read as
+    // "agrees with everything".
+    assert.equal(creatorScriptsAgree(new Set(["Latin", "Unknown:\u2603"])), false);
+    assert.equal(creatorScriptsAgree(new Set(["Latin"])), true);
+    assert.equal(creatorScriptsAgree(new Set()), true);
+  });
+
+  test("neutral characters are not counted at all", () => {
+    assert.equal(creatorScriptsIn("1234").size, 0, "digits were counted as an alphabet");
+    assert.equal(creatorScriptsIn("rasoi2").size, 1);
+  });
+
+  test("a name written ENTIRELY in a confusable script still passes, and that is known", () => {
+    // раѕоі is all Cyrillic, so it agrees with itself and is allowed —
+    // and it looks like `rasoi`. Closing this needs the Unicode
+    // confusables table and a second index on the skeleton, and it has
+    // a real cost: a Russian shop could not then use a name whose
+    // letters happen to look Latin.
+    //
+    // Asserted as the CURRENT behaviour rather than wished away, so the
+    // day somebody closes it this test is what tells them it was a
+    // decision and not an accident.
+    const built = buildCreatorHandle("\u0440\u0430\u0455\u043E\u0456", "\u0433\u04BB\u0430\u0433");
+    assert.equal(built.ok, true,
+      "the all-one-script lookalike is now refused — if that was deliberate, rewrite this test");
+  });
+
+  test("the box says \"not a usable name\", not \"taken\"", () => {
+    // "That name is taken" sent to somebody who typed one Cyrillic
+    // letter by accident is an answer they can do nothing with.
+    const setup = readSource(SETUP);
+    assert.match(setup, /answer\.available \? "free" : \(answer\.code \? "invalid" : "taken"\)/);
+    assert.match(setup, /const refused = availability\.status === "taken" \|\| availability\.status === "invalid";/);
+    assert.match(readSource(API), /code: typeof result\.code === "string" \? result\.code : "",/,
+      "the refusal code is dropped on the way back, so the box cannot tell the two apart");
   });
 });
 
@@ -224,9 +328,12 @@ describe("the three answers stay three", () => {
       "a dead connection turns the name box red");
   });
 
-  test("and only \"taken\" turns the box red", () => {
-    assert.match(strip(setup), /const tone = availability\.status === "taken" \? "bad" : availability\.status === "free" \? "good" : null;/);
-    assert.match(strip(setup), /availability\.status !== "taken"/,
+  test("and only a refusal turns the box red", () => {
+    // "Checking" and "unknown" leave it neutral, because neither is a
+    // fault of the name. Both refusals — taken, and not a usable name —
+    // turn it red and block the save.
+    assert.match(strip(setup), /const tone = refused \? "bad" : availability\.status === "free" \? "good" : null;/);
+    assert.match(strip(setup), /const canSave = bothTyped && !saving && !refused;/,
       "the save button is disabled by states that are not a refusal");
   });
 

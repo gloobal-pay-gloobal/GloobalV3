@@ -3672,6 +3672,102 @@ function normaliseHandlePart(value) {
   return out.toLowerCase();
 }
 
+// ── ONE ALPHABET PER HALF ───────────────────────────────────────────────
+//
+// The founder's rule is that a name is taken once in exactly its own form,
+// and that rasoi.ghar and रसोई.घर are two different names. Both of those
+// are right and both already worked.
+//
+// What also worked, and should not have, is this:
+//
+//     rasoi.ghar      ← Latin
+//     rаsoi.ghar      ← the same, with ONE Cyrillic а
+//
+// Two different strings, so both can be registered, and no eye on earth
+// can tell them apart. On an address people type to send money that is
+// not a cosmetic problem: it is how handle impersonation is done
+// everywhere it has ever been done.
+//
+// The rule that closes it without touching his: each half of the name has
+// to be written in ONE alphabet. Devanagari stays Devanagari, Latin stays
+// Latin, and a Latin word with a Cyrillic letter hidden in it is refused
+// at the box rather than silently becoming somebody else's shopfront.
+//
+// ── WHAT COUNTS AS ONE ALPHABET ─────────────────────────────────────────
+//
+// Digits and anything script-neutral (Common, Inherited — which is where
+// combining marks live) belong to whatever is around them and are ignored.
+//
+// Two real writing systems legitimately use more than one script at once,
+// and refusing those would be refusing ordinary names rather than attacks:
+//
+//   * Japanese mixes Han with Hiragana and Katakana — ラーメン屋;
+//   * Korean mixes Hangul with Han.
+//
+// Those are listed below as sets rather than hard-coded exceptions, which
+// is the same shape UTS #39 gives them.
+//
+// ── WHAT THIS STILL DOES NOT SOLVE ──────────────────────────────────────
+//
+// A name written ENTIRELY in one confusable script. `раѕоі` is all
+// Cyrillic, passes this rule, and looks like `rasoi`. Closing that needs
+// the Unicode confusables table and a second uniqueness index on the
+// skeleton — and it has a real cost, because it would stop a Russian shop
+// using a name whose letters happen to look Latin. That is a decision,
+// not an oversight, and it is the founder's to make.
+const CREATOR_SCRIPT_NAMES = [
+  'Latin', 'Cyrillic', 'Greek', 'Arabic', 'Hebrew', 'Armenian', 'Georgian',
+  'Thai', 'Lao', 'Khmer', 'Myanmar', 'Devanagari', 'Bengali', 'Gurmukhi',
+  'Gujarati', 'Oriya', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Sinhala',
+  'Han', 'Hiragana', 'Katakana', 'Hangul', 'Thaana', 'Ethiopic'
+];
+
+// Built once. A runtime without Unicode property escapes, or without one
+// of these script names, drops that entry rather than throwing — and a
+// character no listed script claims is counted as its own alphabet, so
+// the check fails closed.
+const CREATOR_SCRIPT_TESTS = CREATOR_SCRIPT_NAMES.map((name) => {
+  try {
+    return [name, new RegExp(`\\p{Script=${name}}`, 'u')];
+  } catch (e) {
+    return null;
+  }
+}).filter(Boolean);
+
+let CREATOR_SCRIPT_NEUTRAL = null;
+try {
+  CREATOR_SCRIPT_NEUTRAL = /[\p{Script=Common}\p{Script=Inherited}]/u;
+} catch (e) {
+  // No property escapes at all: every character then reads as neutral
+  // below and the rule does nothing, which is the previous behaviour
+  // rather than a refusal of every name.
+  CREATOR_SCRIPT_NEUTRAL = /[\s\S]/;
+}
+
+const CREATOR_SCRIPT_SETS = [
+  ['Han', 'Hiragana', 'Katakana'],
+  ['Han', 'Hangul']
+];
+
+function creatorScriptsIn(value) {
+  const found = new Set();
+  for (const ch of String(value || '')) {
+    if (CREATOR_SCRIPT_NEUTRAL.test(ch)) continue;
+    let hit = null;
+    for (const [name, re] of CREATOR_SCRIPT_TESTS) {
+      if (re.test(ch)) { hit = name; break; }
+    }
+    found.add(hit || `Unknown:${ch}`);
+  }
+  return found;
+}
+
+function creatorScriptsAgree(found) {
+  if (found.size <= 1) return true;
+  const all = Array.from(found);
+  return CREATOR_SCRIPT_SETS.some((set) => all.every((s) => set.indexOf(s) >= 0));
+}
+
 // Returns { ok: true, handle, first, last } or { ok: false, code, message }.
 function buildCreatorHandle(firstRaw, lastRaw) {
   const first = typeof firstRaw === 'string' ? firstRaw.trim() : '';
@@ -3687,6 +3783,16 @@ function buildCreatorHandle(firstRaw, lastRaw) {
   }
   if (CREATOR_HANDLE_FORBIDDEN.test(first) || CREATOR_HANDLE_FORBIDDEN.test(last)) {
     return bad('A creator name cannot contain spaces or dots.');
+  }
+  // Each half on its own, not the two together: `rasoi.घर` is two
+  // alphabets but it is not a lookalike of anything, and refusing it
+  // would be refusing an ordinary name rather than an attack.
+  if (!creatorScriptsAgree(creatorScriptsIn(first)) || !creatorScriptsAgree(creatorScriptsIn(last))) {
+    return {
+      ok: false,
+      code: 'mixed_scripts',
+      message: 'Each half has to be written in one alphabet.'
+    };
   }
 
   const handle = `${normaliseHandlePart(first)}.${normaliseHandlePart(last)}`;

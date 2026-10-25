@@ -3768,36 +3768,127 @@ function creatorScriptsAgree(found) {
   return CREATOR_SCRIPT_SETS.some((set) => all.every((s) => set.indexOf(s) >= 0));
 }
 
+
+// ── NAMES NOBODY GETS ───────────────────────────────────────────────────
+//
+// A one-word name is a far more contested thing than `first.last`, and it
+// is exactly what somebody takes to collect payments meant for a brand.
+// This list is not an answer to that in general — it is the subset where
+// the damage happens INSIDE Gloobal's own app, which is the part we can
+// actually control:
+//
+//   * `gloobal` and its near relatives, because a code reading "gloobal"
+//     on a screen made by Gloobal is indistinguishable from the company;
+//   * the words a person would read as the app talking to them — support,
+//     help, security, official — which is how a refund scam opens;
+//   * the operational words a route or a screen might one day want.
+//
+// Brand squatting in general is NOT solved by this. Somebody can still
+// take `netflix`. The honest fix for that is a dispute process and a
+// verified badge, which is a product decision rather than a list.
+const CREATOR_RESERVED = new Set([
+  'gloobal', 'gloobl', 'globaal', 'gloobalpay', 'gloobalbank', 'geu', 'hooman',
+  'admin', 'administrator', 'root', 'system', 'official', 'verified', 'staff', 'team',
+  'support', 'help', 'helpdesk', 'security', 'safety', 'legal', 'privacy', 'terms',
+  'pay', 'payment', 'payments', 'bank', 'banking', 'wallet', 'money', 'refund', 'refunds',
+  'account', 'accounts', 'settings', 'billing', 'invoice',
+  'api', 'www', 'mail', 'email', 'info', 'contact', 'news', 'app', 'web',
+  'null', 'undefined', 'none', 'test', 'me', 'my'
+]);
+
+
+// ── THE MINIMUM IS NOT TWO EVERYWHERE ───────────────────────────────────
+//
+// A two-character floor stops somebody taking `a` because it is short.
+// Applied to every script it also refuses \u5bb6 and \u5c4b, which are whole words
+// — a one-character floor for Han, kana and Hangul is not a loophole, it
+// is the difference between a rule about length and a rule that says
+// "write your name the way English is written".
+//
+// Found by a test: the suite's own Japanese fixture broke the moment the
+// floor went in, which is exactly what that fixture is for.
+function creatorMinLength(part) {
+  const scripts = creatorScriptsIn(part);
+  if (!scripts.size) return 2;
+  const dense = ['Han', 'Hiragana', 'Katakana', 'Hangul'];
+  return Array.from(scripts).every((s) => dense.indexOf(s) >= 0) ? 1 : 2;
+}
+
 // Returns { ok: true, handle, first, last } or { ok: false, code, message }.
 function buildCreatorHandle(firstRaw, lastRaw) {
   const first = typeof firstRaw === 'string' ? firstRaw.trim() : '';
   const last = typeof lastRaw === 'string' ? lastRaw.trim() : '';
   const bad = (message) => ({ ok: false, code: 'invalid_handle', message });
 
-  if (!first || !last) return bad('A creator name needs both halves.');
-  if ([...first].length > CREATOR_HANDLE_PART_MAX || [...last].length > CREATOR_HANDLE_PART_MAX) {
-    // Counted in code points rather than UTF-16 units, so a name in a
-    // script outside the Basic Multilingual Plane is not charged double
-    // for characters a person would count as one.
-    return bad(`Each half can be up to ${CREATOR_HANDLE_PART_MAX} characters.`);
+  // ── ONE WORD IS A NAME TOO ───────────────────────────────────────────
+  //
+  // Asked for: a creator whose name is one word — amazon, netflix,
+  // chacha — should be able to hold just that word, with no dot.
+  //
+  // The FIRST box is the required one and the second is optional, so
+  // leaving the last name empty gives a one-word handle. The other way
+  // round is a mistake rather than a one-word name: somebody has typed
+  // into the wrong box, and silently reordering it for them would mean
+  // the name they end up with is not the one they typed.
+  if (!first) return bad('A creator name needs a first part.');
+
+  const parts = last ? [first, last] : [first];
+  for (const part of parts) {
+    if ([...part].length > CREATOR_HANDLE_PART_MAX) {
+      // Counted in code points rather than UTF-16 units, so a name in a
+      // script outside the Basic Multilingual Plane is not charged double
+      // for characters a person would count as one.
+      return bad(`Each part can be up to ${CREATOR_HANDLE_PART_MAX} characters.`);
+    }
+    if ([...part].length < creatorMinLength(part)) {
+      // A single Latin character is not a name anybody says; it is a
+      // thing somebody takes because it is short. Two is the floor
+      // there — but NOT everywhere, see creatorMinLength.
+      return bad('Each part needs at least two characters.');
+    }
+    if (CREATOR_HANDLE_FORBIDDEN.test(part)) {
+      return bad('A creator name cannot contain spaces or dots.');
+    }
+    // Each part on its own, not the two together: `rasoi.घर` is two
+    // alphabets but it is not a lookalike of anything, and refusing it
+    // would be refusing an ordinary name rather than an attack.
+    if (!creatorScriptsAgree(creatorScriptsIn(part))) {
+      return {
+        ok: false,
+        code: 'mixed_scripts',
+        message: 'Each part has to be written in one alphabet.'
+      };
+    }
   }
-  if (CREATOR_HANDLE_FORBIDDEN.test(first) || CREATOR_HANDLE_FORBIDDEN.test(last)) {
-    return bad('A creator name cannot contain spaces or dots.');
-  }
-  // Each half on its own, not the two together: `rasoi.घर` is two
-  // alphabets but it is not a lookalike of anything, and refusing it
-  // would be refusing an ordinary name rather than an attack.
-  if (!creatorScriptsAgree(creatorScriptsIn(first)) || !creatorScriptsAgree(creatorScriptsIn(last))) {
+
+  const head = normaliseHandlePart(first);
+  const tail = last ? normaliseHandlePart(last) : '';
+  const handle = tail ? `${head}.${tail}` : head;
+
+  // ── THE RESERVED LIST ────────────────────────────────────────────────
+  //
+  // Checked against the WHOLE one-word handle, and separately against the
+  // first part of a two-word one. `gloobal` alone is refused because a
+  // code reading "gloobal" inside Gloobal's own app is indistinguishable
+  // from the company; `gloobal.cafe` is refused for the same reason, and
+  // a café really called Gloobal is a problem worth having rather than
+  // the one this prevents.
+  //
+  // `support.chacha` IS refused, and that is the point of checking the
+  // head rather than the whole string: somebody reading it at a counter
+  // reads "support" first and can take the rest for a department.
+  // `chacha.support` is allowed — the reserved word is not what the name
+  // leads with, and refusing every name containing one of these words
+  // would take `tea.help` off a real tea shop.
+  if (CREATOR_RESERVED.has(head)) {
     return {
       ok: false,
-      code: 'mixed_scripts',
-      message: 'Each half has to be written in one alphabet.'
+      code: 'reserved_name',
+      message: 'That name is kept for Gloobal. Try another.'
     };
   }
 
-  const handle = `${normaliseHandlePart(first)}.${normaliseHandlePart(last)}`;
-  if (handle === '.') return bad('A creator name needs both halves.');
-  return { ok: true, handle, first, last };
+  return { ok: true, handle, first, last: last || '', single: !tail };
 }
 
 // Is this handle free? Free means no OTHER account holds it.
@@ -4002,13 +4093,13 @@ app.put(
 app.get('/api/creator/resolve/:handle', lookupLimit, requireAuth, async (req, res) => {
   try {
     const raw = typeof req.params.handle === 'string' ? decodeURIComponent(req.params.handle) : '';
+    // A name may be one word or two. Split on the FIRST dot only — a
+    // second dot is not a third part, it is a character this never
+    // allowed inside a part, and buildCreatorHandle refuses it below.
     const at = raw.indexOf('.');
-    if (at <= 0 || at === raw.length - 1) {
-      return res.status(400).json({
-        success: false, code: 'invalid_handle', message: 'A creator name looks like first.last.'
-      });
-    }
-    const built = buildCreatorHandle(raw.slice(0, at), raw.slice(at + 1));
+    const built = at < 0
+      ? buildCreatorHandle(raw, '')
+      : buildCreatorHandle(raw.slice(0, at), raw.slice(at + 1));
     if (!built.ok) {
       return res.status(400).json({ success: false, code: built.code, message: built.message });
     }

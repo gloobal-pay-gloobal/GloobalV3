@@ -181,14 +181,25 @@ function CreatorSetupScreen({
     fire(true);
     return () => fire(false);
   }, []);
-  const bothTyped = Boolean(first.trim() && last.trim());
+  // ── THE SECOND BOX IS OPTIONAL ────────────────────────────────────────
+  //
+  // A creator whose name is one word — amazon, netflix, chacha — holds
+  // just that word, with no dot. The FIRST box is the required one, so
+  // leaving the second empty gives a one-word name, and the dot fades out
+  // when there is nothing on its right.
+  //
+  // The other way round is a mistake rather than a one-word name:
+  // somebody has typed into the wrong box, and quietly reordering it for
+  // them would hand them a name they did not type. The server refuses it.
+  const enough = Boolean(first.trim());
+  const twoParts = Boolean(first.trim() && last.trim());
   // A refusal turns the box red; "checking" and "unknown" leave it
   // neutral, because neither is a fault of the name.
   const refused = availability.status === "taken" || availability.status === "invalid";
   const tone = refused ? "bad" : availability.status === "free" ? "good" : null;
   // Save is allowed while the answer is unknown — a dead connection is
   // not a reason to refuse, and the server will decide anyway.
-  const canSave = bothTyped && !saving && !refused;
+  const canSave = enough && !saving && !refused;
 
   const pickLogo = (e) => {
     const file = e.target.files && e.target.files[0];
@@ -204,7 +215,9 @@ function CreatorSetupScreen({
     reader.readAsDataURL(file);
   };
 
-  const preview = `${(first || "").trim().toLowerCase() || "first"}.${(last || "").trim().toLowerCase() || "last"}`;
+  const preview = twoParts
+    ? `${first.trim().toLowerCase()}.${last.trim().toLowerCase()}`
+    : (first.trim().toLowerCase() || "your name");
 
   return <div style={{
     position: "fixed",
@@ -311,11 +324,16 @@ function CreatorSetupScreen({
     color: T.accent,
     lineHeight: 1,
     paddingBottom: 4,
-    flexShrink: 0
+    flexShrink: 0,
+    // It fades rather than disappears. Removing it would resize both
+    // boxes under somebody's thumb the moment they start typing the
+    // second half, and bring them back the moment they clear it.
+    opacity: twoParts ? 1 : 0.22,
+    transition: "opacity 0.18s ease"
   }}>.</span><CreatorNameBox
     value={last}
     onChange={setLast}
-    placeholder="ghar"
+    placeholder="ghar (optional)"
     label="Second part of your creator name"
     tone={tone}
   /></div>{
@@ -332,7 +350,7 @@ function CreatorSetupScreen({
     fontWeight: 700,
     marginBottom: 24
   }}>{availability.status === "checking" && <><Loader5 size={13} color={T.inkFaint} /><span style={{ color: T.inkFaint }}>Checking…</span></>}{availability.status === "free" && <><Check9 size={13} color={T.positive} /><span style={{ color: T.positive }}>{availability.handle} is yours</span></>}{refused && <><X12 size={13} color={T.negative} /><span style={{ color: T.negative }}>{availability.message || "That name is taken."}</span></>}{(availability.status === "idle" || availability.status === "unknown") && <span style={{ color: T.inkFaint, fontWeight: 600 }}>
-        {bothTyped ? preview : "Both halves are needed."}
+        {enough ? preview : "A first part is needed."}
       </span>}</div>{
     /* ── THE ADDRESS ──────────────────────────────────────────────────
        Private unless its owner says otherwise, and the switch says who

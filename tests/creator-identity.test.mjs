@@ -103,10 +103,23 @@ describe("what a handle may not contain", () => {
     }
   });
 
-  test("not half a name", () => {
-    assert.equal(buildCreatorHandle("rasoi", "").ok, false);
+  test("not a name with no first part", () => {
+    // This used to assert that ONE half was refused. A single word is a
+    // name now — see "one word is a name too" below — so what is left to
+    // refuse is a name with nothing in the first box, which is somebody
+    // typing into the wrong one.
+    assert.equal(buildCreatorHandle("rasoi", "").ok, true, "a one-word name is being refused");
     assert.equal(buildCreatorHandle("", "ghar").ok, false);
     assert.equal(buildCreatorHandle("   ", "ghar").ok, false, "whitespace stood in for a name");
+  });
+
+  test("and the length floor is not written for Latin only", () => {
+    // Two characters stops somebody taking `a`. Applied everywhere it
+    // also refuses \u5bb6 and \u5c4b, which are whole words \u2014 so the floor is one
+    // for Han, kana and Hangul.
+    assert.equal(buildCreatorHandle("a", "").ok, false, "a single Latin letter was allowed");
+    assert.equal(buildCreatorHandle("\u5BB6", "").ok, true, "a one-character Han name was refused");
+    assert.equal(buildCreatorHandle("\u5C4B", "").ok, true);
   });
 
   test("and nothing that is not a string", () => {
@@ -270,6 +283,119 @@ describe("two creators cannot hold the same name", () => {
   });
 });
 
+describe("one word is a name too", () => {
+  // Asked for in these words: "allow user to pick one name if available
+  // ... someone just pick amazon walmart netflix even our gloobal".
+  //
+  // The first box is the required one and the second is optional, so a
+  // one-word name is a name with nothing in its second half \u2014 and the
+  // handle is just that word, with no dot to be typed or remembered.
+  test("a single word makes a handle with no dot", () => {
+    for (const word of ["amazon", "netflix", "chacha", "\u0930\u0938\u094B\u0908"]) {
+      const built = buildCreatorHandle(word, "");
+      assert.equal(built.ok, true, `${word} was refused: ${built.message}`);
+      assert.equal(built.handle, word.toLowerCase(), `${word} produced ${built.handle}`);
+      assert.equal(built.single, true);
+      assert.doesNotMatch(built.handle, /\./);
+    }
+  });
+
+  test("the FIRST box is the required one", () => {
+    // Typing only into the second box is somebody using the wrong box,
+    // not a one-word name. Reordering it for them would hand them a name
+    // they did not type.
+    assert.equal(buildCreatorHandle("", "tea").ok, false);
+    assert.equal(buildCreatorHandle("   ", "tea").ok, false);
+  });
+
+  test("two words still make two words", () => {
+    const built = buildCreatorHandle("chacha", "tea");
+    assert.equal(built.handle, "chacha.tea");
+    assert.equal(built.single, false);
+  });
+
+  test("one character is not a name", () => {
+    // It is not a thing anybody says; it is a thing somebody takes
+    // because it is short.
+    assert.equal(buildCreatorHandle("a", "").ok, false);
+    assert.equal(buildCreatorHandle("ab", "").ok, true);
+    assert.equal(buildCreatorHandle("chacha", "t").ok, false);
+  });
+
+  test("and a one-word name is still one alphabet", () => {
+    assert.equal(buildCreatorHandle("r\u0430soi", "").code, "mixed_scripts");
+  });
+});
+
+describe("names nobody gets", () => {
+  // A one-word namespace is where brand squatting happens. This list is
+  // not an answer to that in general \u2014 it is the subset where the damage
+  // happens INSIDE Gloobal's own app.
+  const reserved = (a, b) => {
+    const built = buildCreatorHandle(a, b);
+    assert.equal(built.ok, false, `${a}${b ? "." + b : ""} was allowed`);
+    assert.equal(built.code, "reserved_name", `${a} was refused for the wrong reason: ${built.message}`);
+  };
+
+  test("Gloobal's own name, in any casing", () => {
+    reserved("gloobal", "");
+    reserved("GLOOBAL", "");
+    reserved("Gloobal", "");
+  });
+
+  test("and as the head of a two-part name", () => {
+    // `gloobal.cafe` reads as Gloobal first. A caf\u00e9 really called
+    // Gloobal is a problem worth having rather than the one this stops.
+    reserved("gloobal", "cafe");
+    reserved("support", "chacha");
+  });
+
+  test("but not when the reserved word is the tail", () => {
+    // Refusing every name that contains one of these would take
+    // `tea.help` off a real tea shop.
+    assert.equal(buildCreatorHandle("chacha", "support").ok, true);
+    assert.equal(buildCreatorHandle("tea", "help").ok, true);
+  });
+
+  test("the words a refund scam would want", () => {
+    for (const word of ["support", "security", "official", "refund", "admin", "verified"]) {
+      reserved(word, "");
+    }
+  });
+
+  test("an ordinary name is not caught by it", () => {
+    for (const word of ["chacha", "rasoi", "amazon", "netflix", "walmart"]) {
+      assert.equal(buildCreatorHandle(word, "").ok, true, `${word} was refused`);
+    }
+  });
+
+  test("brand squatting in general is NOT solved, and says so", () => {
+    // Somebody can still take `netflix`. Asserted as the current state so
+    // that whoever adds a dispute process later knows this was a known
+    // gap and not an oversight.
+    assert.equal(buildCreatorHandle("netflix", "").ok, true);
+    assert.match(server, /Brand squatting in general is NOT solved by this\./);
+  });
+});
+
+describe("the second box is optional on the screen too", () => {
+  test("the dot fades rather than disappearing", () => {
+    // Removing it would resize both boxes under somebody's thumb the
+    // moment they start typing the second half.
+    assert.match(strip(setup), /opacity: twoParts \? 1 : 0\.22/);
+  });
+
+  test("saving needs only the first part", () => {
+    assert.match(strip(setup), /const canSave = enough && !saving && !refused;/);
+    assert.match(strip(setup), /const enough = Boolean\(first\.trim\(\)\);/);
+  });
+
+  test("and the resolve route takes a dotless name", () => {
+    assert.match(server, /const built = at < 0\s*\n\s*\? buildCreatorHandle\(raw, ''\)/,
+      "a one-word name cannot be resolved, so it cannot be paid");
+  });
+});
+
 describe("the address belongs to whoever typed it", () => {
   test("private by default", () => {
     assert.match(readSource(MODEL), /addressPublic: \{ type: Boolean, default: false \}/,
@@ -333,7 +459,7 @@ describe("the three answers stay three", () => {
     // fault of the name. Both refusals — taken, and not a usable name —
     // turn it red and block the save.
     assert.match(strip(setup), /const tone = refused \? "bad" : availability\.status === "free" \? "good" : null;/);
-    assert.match(strip(setup), /const canSave = bothTyped && !saving && !refused;/,
+    assert.match(strip(setup), /const canSave = enough && !saving && !refused;/,
       "the save button is disabled by states that are not a refusal");
   });
 

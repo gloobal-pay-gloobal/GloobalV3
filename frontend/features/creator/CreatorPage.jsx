@@ -1,0 +1,528 @@
+// src/features/creator/CreatorPage.jsx
+//
+// THE SCREEN BEHIND A CREATOR'S NAME.
+//
+// Search finds a name, this is what opens. It is the same page whether a
+// customer or the owner is looking: one layout, with the owner given edit
+// controls and a second tab the customer is not told about.
+//
+// ── Three decisions worth knowing before reading the code ───────────────
+//
+// 1. THE BASKET IS A CALCULATOR. Picking items adds prices up and hands the
+//    total to the ordinary Send flow. No order is created, nothing is
+//    reserved and the creator receives a plain payment. Gloobal is a
+//    payments rail; an order system needs stock, fulfilment and per-line
+//    disputes, which is a product of its own.
+//
+// 2. PRICES ARE THE CREATOR'S OWN MONEY, never converted here. A buyer in
+//    Tokyo reading a Jaipur tea stall sees ₹20 with its GEU bar. Send does
+//    the conversion against a recorded rate, which is the only place in
+//    this codebase allowed to.
+//
+// 3. THE BUYING TAB IS OWNER-ONLY. Items a creator sells are public — one
+//    price list everybody sees. Who supplies them is not: published, it
+//    hands a competitor the supply chain and tells customers what the stock
+//    cost. The server enforces this; the UI simply never draws the tab for
+//    anyone else.
+import { useState as useState54, useEffect as useEffect51 } from "react";
+import { Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare } from "lucide-react";
+
+var CREATOR_PAGE_TABS = ["Selling", "Buying"];
+
+// The basket lives for as long as the page is open and no longer.
+//
+// Not persisted, deliberately. A total a person assembled yesterday,
+// restored without being asked for, is a figure they did not choose sitting
+// on a Pay button — and prices may have changed underneath it. Leaving the
+// page is how you clear it.
+function creatorBasketTotal(items, basket) {
+  let total = 0;
+  for (const item of items) {
+    const n = Number(basket[item.id]) || 0;
+    if (n > 0) total += n * (Number(item.price) || 0);
+  }
+  return total;
+}
+
+function creatorBasketCount(basket) {
+  let n = 0;
+  for (const key of Object.keys(basket)) n += Number(basket[key]) || 0;
+  return n;
+}
+
+function creatorBasketLines(items, basket) {
+  const lines = [];
+  for (const item of items) {
+    const n = Number(basket[item.id]) || 0;
+    if (n <= 0) continue;
+    lines.push({
+      title: item.title,
+      quantity: n,
+      amount: n * (Number(item.price) || 0),
+      currency: item.currency
+    });
+  }
+  return lines;
+}
+
+// The mark a creator is known by: their uploaded logo where there is one,
+// and otherwise the generated mark every business row on Pay & Services
+// already uses, so a creator with no picture still looks like themselves
+// rather than like a gap.
+function CreatorMark({ creator, size = 88, radius = 26 }) {
+  const label = creator.handle || creator.handleFirst || "";
+  if (creator.logo) {
+    return <img
+      src={creator.logo}
+      alt=""
+      style={{ width: size, height: size, borderRadius: radius, objectFit: "cover", display: "block" }}
+    />;
+  }
+  const paint = businessMarkInk(label);
+  return <span style={{
+    width: size, height: size, borderRadius: radius, background: paint.bg,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: Math.round(size * 0.34), fontWeight: 800, color: paint.fg, fontFamily: T.fontDisplay
+  }}>{businessMarkInitials(label)}</span>;
+}
+
+function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, onAdd, onRemove, onEdit }) {
+  const paint = businessMarkInk(item.title);
+  return <div style={{
+    display: "flex", alignItems: "center", gap: 12,
+    background: T.surface, borderRadius: 16, padding: "10px 12px", marginBottom: 9,
+    boxShadow: T.shadowCard, opacity: item.soldOut ? 0.55 : 1
+  }}>{item.photo
+    ? <img src={item.photo} alt="" style={{ width: 48, height: 48, borderRadius: 13, objectFit: "cover", flexShrink: 0 }} />
+    : <span style={{
+      width: 48, height: 48, borderRadius: 13, flexShrink: 0, background: paint.bg,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: 15, fontWeight: 800, color: paint.fg
+    }}>{businessMarkInitials(item.title)}</span>
+  }<span style={{ flex: 1, minWidth: 0 }}><span style={{
+    display: "block", fontSize: 13, fontWeight: 700, color: T.ink,
+    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+  }}>{item.title}{item.soldOut && <span style={{
+    marginLeft: 7, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase",
+    color: T.negative, background: "#FDECEC", borderRadius: 6, padding: "2px 6px"
+  }}>Sold out</span>}</span><span style={{ display: "block", marginTop: 3 }}>{
+    /* The price in the creator's own money, with its other name beside it —
+       the same pair every figure in the app carries. See GeuFigure. */
+  }<GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} size={12.5} /></span>{
+    item.note ? <span style={{
+      display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 2,
+      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+    }}>{item.note}</span> : null
+  }</span>{owner
+    ? <button
+      onClick={onEdit}
+      aria-label={`Edit ${item.title}`}
+      style={{
+        width: 30, height: 30, borderRadius: 10, background: T.surfaceAlt, border: "none",
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer"
+      }}
+    ><Pencil3 size={13} color={T.inkSoft} /></button>
+    : item.soldOut ? null : (qty > 0
+      ? <span style={{ display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}><button
+        onClick={onRemove}
+        aria-label={`One fewer ${item.title}`}
+        style={{ width: 28, height: 28, borderRadius: 9, background: T.surfaceAlt, border: "none", cursor: "pointer", color: T.inkSoft, fontSize: 16, fontWeight: 800 }}
+      ><Minus2 size={14} /></button><span style={{
+        fontSize: 13, fontWeight: 800, color: T.ink, minWidth: 12, textAlign: "center"
+      }}>{qty}</span><button
+        onClick={onAdd}
+        aria-label={`One more ${item.title}`}
+        style={{ width: 28, height: 28, borderRadius: 9, background: T.accentSoft, border: "none", cursor: "pointer", color: T.accent }}
+      ><Plus7 size={14} /></button></span>
+      : <button
+        onClick={onAdd}
+        aria-label={`Add ${item.title}`}
+        style={{
+          width: 28, height: 28, borderRadius: 9, background: T.accentSoft, border: "none",
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", color: T.accent
+        }}
+      ><Plus7 size={15} /></button>)
+  }</div>;
+}
+
+function CreatorPage({
+  creator,
+  isOwner = false,
+  ccyCode = "USD",
+  lens = null,
+  pinned = false,
+  onTogglePin,
+  onClose,
+  onPay,
+  onScan,
+  onShare,
+  onFeedback,
+  onSaveItems,
+  onOpenSupplier,
+  onAddSupplier,
+  suppliers = [],
+  purchases = []
+}) {
+  const [basket, setBasket] = useState54({});
+  const [detailsOpen, setDetailsOpen] = useState54(false);
+  const [tab, setTab] = useState54("Selling");
+  // The item being added or edited, as a DRAFT. Nothing is written until
+  // Save, so backing out of the sheet leaves the list exactly as it was.
+  const [draft, setDraft] = useState54(null);
+  const [saving, setSaving] = useState54(false);
+  const [saveError, setSaveError] = useState54("");
+
+  const items = Array.isArray(creator && creator.items) ? creator.items : [];
+  const total = creatorBasketTotal(items, basket);
+  const count = creatorBasketCount(basket);
+  const name = creatorDisplayName(creator);
+  const itemCurrency = (items[0] && items[0].currency) || ccyCode;
+
+  // ── THE FLOATING MAP BUTTON SITS ON THE + CONTROLS ──────────────────
+  //
+  // AppMapButton is fixed at z-index 10000, 62% down the right edge —
+  // which on this page lands squarely on an item's stepper. It already
+  // listens for this event, which the scanner fires for the same reason.
+  // Found by rendering: a tap meant for "one more chai" hit the map.
+  useEffect51(() => {
+    if (typeof window === "undefined") return undefined;
+    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
+    fire(true);
+    return () => fire(false);
+  }, []);
+
+  const bump = (id, by) => setBasket((prev) => {
+    const next = { ...prev };
+    const n = (Number(next[id]) || 0) + by;
+    if (n <= 0) delete next[id]; else next[id] = n;
+    return next;
+  });
+
+  return <div style={{
+    position: "fixed", inset: 0, zIndex: 345, background: T.bg,
+    display: "flex", flexDirection: "column", overflow: "hidden"
+  }}>{
+    /* ── THE HEADER CARRIES WHO YOU ARE PAYING ────────────────────────
+       Not a label inside the page: the title follows the creator, so the
+       answer to "who is this money going to" is in the same place it is on
+       every other screen in the app. The flag and the scanner sit at the
+       top corner beside it rather than floating over the content. */
+  }<div style={{
+    display: "flex", alignItems: "center", gap: 10,
+    padding: "calc(15px + env(safe-area-inset-top, 0px)) 16px 10px", flexShrink: 0
+  }}><NavBackButton onClick={onClose} /><span style={{
+    fontSize: 14, fontWeight: 700, color: T.inkSoft, overflow: "hidden",
+    textOverflow: "ellipsis", whiteSpace: "nowrap"
+  }}>{isOwner ? "Your creator page" : `Paying ${name}`}</span><span style={{ flex: 1 }} />{
+    creator.flag ? <span style={{
+      width: 34, height: 34, borderRadius: 11, background: T.surface, boxShadow: T.shadowCard,
+      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0
+    }}>{creator.flag}</span> : null
+  }<button
+    onClick={onScan}
+    aria-label="Scan a Gloobal code"
+    style={{
+      width: 34, height: 34, borderRadius: 11, background: T.surface, boxShadow: T.shadowCard,
+      border: "none", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer"
+    }}
+  ><ScannerIcon size={18} color={T.inkSoft} /></button></div>
+
+  <div style={{
+    flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",
+    padding: `0 18px ${count > 0 && !isOwner ? 110 : 30}px`
+  }}><div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span style={{ position: "relative", display: "inline-flex" }}><CreatorMark creator={creator} />{
+    /* The pin sits on the mark's corner, the way a star sits on a thing you
+       keep rather than on a row of controls beside it. */
+  }<button
+    onClick={onTogglePin}
+    aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`}
+    style={{
+      position: "absolute", top: -5, right: -5, width: 26, height: 26, borderRadius: "50%",
+      background: T.surface, border: "none", boxShadow: T.shadowCard, cursor: "pointer",
+      display: "flex", alignItems: "center", justifyContent: "center"
+    }}
+  ><Star2 size={14} color={pinned ? "#F2B01E" : T.inkFaint} fill={pinned ? "#F2B01E" : "none"} /></button></span>
+
+  <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 11 }}><span style={{
+    fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay
+  }}>{name}</span><button
+    onClick={() => setDetailsOpen((v) => !v)}
+    aria-label={detailsOpen ? "Hide creator details" : "Show creator details"}
+    style={{
+      width: 22, height: 22, borderRadius: 7, border: "none", cursor: "pointer",
+      background: detailsOpen ? T.accentSoft : T.surfaceAlt,
+      display: "flex", alignItems: "center", justifyContent: "center"
+    }}
+  ><Eye2 size={12} color={detailsOpen ? T.accent : T.inkSoft} /></button></div>
+
+  {
+    /* ── A COUNT NOBODY CAN TYPE ──────────────────────────────────────
+       This was a pin count, which is a tap, which its own subject can run
+       up from throwaway accounts — in the position a reader takes as
+       reputation. Repeat payers is a by-product of payments that already
+       settled. Hidden below ten, because "1 person" reads as a verdict on a
+       creator who simply started last week. */
+    Number(creator.repeatPayers) >= 10 ? <div style={{
+      fontSize: 11.5, fontWeight: 600, color: T.inkFaint, marginTop: 7
+    }}><span style={{ color: T.positive, fontWeight: 800 }}>{creator.repeatPayers}</span> people have paid them more than once</div> : null
+  }
+
+  <div style={{ display: "flex", gap: 9, marginTop: 13 }}>{[
+    { key: "share", label: "Share", Icon: Share25, onClick: onShare, on: false },
+    { key: "feedback", label: isOwner ? "Feedback" : "Send a note", Icon: MessageSquare, onClick: onFeedback, on: false }
+  ].map(({ key, label, Icon, onClick, on }) => <button
+    key={key}
+    onClick={onClick}
+    style={{
+      display: "flex", alignItems: "center", gap: 6, border: "none", cursor: "pointer",
+      background: on ? T.accentSoft : T.surface, color: on ? T.accent : T.inkSoft,
+      borderRadius: 12, padding: "8px 14px", fontSize: 11.5, fontWeight: 700, boxShadow: T.shadowCard
+    }}
+  ><Icon size={13} />{label}</button>)}</div></div>
+
+  {detailsOpen && <div style={{
+    background: T.surface, borderRadius: 16, padding: "4px 14px", marginTop: 13, boxShadow: T.shadowCard
+  }}>{[
+    ["Creator name", creator.handle || "—"],
+    ["Gloobal ID", creator.symbolId || "—"],
+    creator.addressPublic && creator.address ? ["Address", creator.address] : null
+  ].filter(Boolean).map(([k, v], i) => <div
+    key={k}
+    style={{
+      display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0",
+      borderTop: i === 0 ? "none" : `1px solid ${T.line}`
+    }}
+  ><span style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint }}>{k}</span><span style={{
+    fontSize: 12, fontWeight: 700, color: T.ink, textAlign: "right", overflowWrap: "anywhere"
+  }}>{v}</span></div>)}</div>}
+
+  {isOwner && <div style={{ display: "flex", gap: 7, margin: "16px 0 12px" }}>{CREATOR_PAGE_TABS.map((t) => <button
+    key={t}
+    onClick={() => setTab(t)}
+    style={{
+      flex: 1, borderRadius: 12, padding: 9, border: "none", cursor: "pointer",
+      fontSize: 12, fontWeight: 800, fontFamily: "inherit",
+      background: tab === t ? T.accent : T.surface,
+      color: tab === t ? "#fff" : T.inkSoft,
+      boxShadow: T.shadowCard
+    }}
+  >{t}</button>)}</div>}
+
+  {(!isOwner || tab === "Selling") && <>{
+    !isOwner && items.length === 0
+      ? <div style={{
+        background: T.surface, borderRadius: 16, padding: "26px 18px", textAlign: "center",
+        boxShadow: T.shadowCard, marginTop: 16
+      }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Nothing listed yet</div><div style={{
+        fontSize: 11.5, color: T.inkFaint, marginTop: 4
+      }}>You can still pay {name} any amount.</div></div>
+      : <>{isOwner ? null : <div style={{
+        fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase",
+        color: T.inkSoft, margin: "18px 0 10px"
+      }}>What they sell</div>}{
+        isOwner ? <button
+          onClick={() => { setSaveError(""); setDraft({ id: null, title: "", price: "", note: "", soldOut: false }); }}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%",
+            border: `1.6px dashed ${T.line}`, background: "none", borderRadius: 16, padding: 16,
+            color: T.accent, fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", marginBottom: 9
+          }}
+        ><Plus7 size={15} />Add something you sell</button> : null
+      }{items.map((item) => <CreatorPageItemRow
+        key={item.id}
+        item={item}
+        qty={Number(basket[item.id]) || 0}
+        owner={isOwner}
+        lens={lens}
+        ccyCode={ccyCode}
+        onAdd={() => bump(item.id, 1)}
+        onRemove={() => bump(item.id, -1)}
+        onEdit={() => { setSaveError(""); setDraft({ id: item.id, title: item.title, price: String(item.price), note: item.note || "", soldOut: Boolean(item.soldOut) }); }}
+      />)}</>
+  }</>}
+
+  {isOwner && tab === "Buying" && <><button
+    onClick={onAddSupplier}
+    style={{
+      display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%",
+      border: `1.6px dashed ${T.line}`, background: "none", borderRadius: 16, padding: 16,
+      color: T.accent, fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", marginBottom: 9
+    }}
+  ><Plus7 size={15} />Add a supplier by their name</button>{
+    suppliers.map((s) => {
+      const paint = businessMarkInk(s.handle || s.symbolId);
+      return <button
+        key={s.symbolId}
+        onClick={() => onOpenSupplier && onOpenSupplier(s)}
+        style={{
+          display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
+          background: T.surface, borderRadius: 16, padding: "11px 13px", marginBottom: 9,
+          border: "none", boxShadow: T.shadowCard, cursor: "pointer", fontFamily: "inherit"
+        }}
+      ><span style={{
+        width: 44, height: 44, borderRadius: 14, background: paint.bg, flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 15, fontWeight: 800, color: paint.fg
+      }}>{businessMarkInitials(s.handle || s.symbolId)}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{
+        display: "block", fontSize: 13, fontWeight: 700, color: T.ink
+      }}>{s.handle || s.symbolId}</span><span style={{
+        display: "block", fontSize: 11, color: T.inkFaint, marginTop: 2
+      }}>{s.lastOrderAt ? `last order ${creatorWhen(s.lastOrderAt)}` : "no orders yet"}</span></span><ChevronRight8 size={15} color={T.inkFaint} /></button>;
+    })
+  }{purchases.length > 0 && <><div style={{
+    fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase",
+    color: T.inkSoft, margin: "18px 0 10px"
+  }}>What I bought</div><div style={{
+    background: T.surface, borderRadius: 16, padding: "4px 14px", boxShadow: T.shadowCard
+  }}>{purchases.map((p, i) => <div
+    key={p.id}
+    style={{
+      display: "flex", justifyContent: "space-between", gap: 10, padding: "11px 0",
+      borderTop: i === 0 ? "none" : `1px solid ${T.line}`
+    }}
+  ><span style={{ minWidth: 0 }}><span style={{
+    display: "block", fontSize: 12.5, fontWeight: 700, color: T.ink,
+    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+  }}>{p.title}{p.quantity > 1 ? ` × ${p.quantity}` : ""}</span><span style={{
+    display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 2
+  }}>{p.supplierHandle || p.supplierSymbolId} · {creatorWhen(p.paidAt)}</span></span><GeuFigure
+    amount={p.amount}
+    currency={p.currency}
+    lens={lens}
+    own={ccyCode}
+    size={12.5}
+  /></div>)}</div></>}</>}
+  </div>
+
+  {draft && <div style={{
+    position: "absolute", inset: 0, zIndex: 5, background: "rgba(21,19,42,0.35)",
+    display: "flex", alignItems: "flex-end"
+  }} onClick={() => setDraft(null)}><div
+    onClick={(e) => e.stopPropagation()}
+    style={{
+      width: "100%", background: T.bg, borderRadius: "24px 24px 0 0",
+      padding: "16px 18px calc(22px + env(safe-area-inset-bottom, 0px))", maxHeight: "88%", overflowY: "auto"
+    }}
+  ><div style={{ width: 38, height: 4, borderRadius: 2, background: T.line, margin: "0 auto 14px" }} />{[
+    { key: "title", label: "What is it", value: draft.title, placeholder: "Masala chai", mode: "text" },
+    { key: "price", label: `Price (${itemCurrency})`, value: draft.price, placeholder: "20", mode: "decimal" },
+    { key: "note", label: "Note (optional)", value: draft.note, placeholder: "Cutting or full glass", mode: "text" }
+  ].map(({ key, label, value, placeholder, mode }) => <div
+    key={key}
+    style={{ background: T.surface, borderRadius: 15, padding: "11px 14px", marginBottom: 10, boxShadow: T.shadowCard }}
+  ><label htmlFor={`creator-item-${key}`} style={{
+    display: "block", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.7,
+    textTransform: "uppercase", color: T.inkFaint
+  }}>{label}</label><input
+    id={`creator-item-${key}`}
+    value={value}
+    inputMode={mode === "decimal" ? "decimal" : "text"}
+    placeholder={placeholder}
+    onChange={(e) => setDraft((d) => ({
+      ...d,
+      [key]: key === "price" ? e.target.value.replace(/[^0-9.]/g, "") : e.target.value
+    }))}
+    style={{
+      width: "100%", border: "none", outline: "none", background: "none", marginTop: 4,
+      fontSize: 14, fontWeight: 700, color: T.ink, fontFamily: "inherit"
+    }}
+  /></div>)}<button
+    onClick={() => setDraft((d) => ({ ...d, soldOut: !d.soldOut }))}
+    style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
+      background: T.surface, borderRadius: 15, padding: "13px 14px", marginBottom: 10,
+      border: "none", boxShadow: T.shadowCard, cursor: "pointer", fontFamily: "inherit"
+    }}
+  ><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Sold out</span><ProfileToggle
+    on={draft.soldOut}
+    onToggle={() => setDraft((d) => ({ ...d, soldOut: !d.soldOut }))}
+    label="Sold out"
+  /></button>{saveError && <div style={{
+    fontSize: 11.5, fontWeight: 700, color: T.negative, margin: "2px 2px 10px"
+  }}>{saveError}</div>}<div style={{ display: "flex", gap: 10 }}>{draft.id && <button
+    onClick={async () => {
+      setSaving(true);
+      const next = items.filter((i) => i.id !== draft.id).map((i) => ({
+        title: i.title, price: i.price, note: i.note, photo: i.photo, soldOut: i.soldOut
+      }));
+      const ok = onSaveItems ? await onSaveItems(next) : false;
+      setSaving(false);
+      if (ok) setDraft(null); else setSaveError("Could not save that just now.");
+    }}
+    disabled={saving}
+    style={{
+      background: T.surface, color: T.negative, border: "none", borderRadius: 14,
+      padding: "13px 18px", fontSize: 13.5, fontWeight: 800, fontFamily: "inherit",
+      cursor: saving ? "default" : "pointer", boxShadow: T.shadowCard, flexShrink: 0
+    }}
+  >Remove</button>}<button
+    onClick={async () => {
+      const title = String(draft.title || "").trim();
+      const price = Number(draft.price);
+      if (!title) { setSaveError("Give it a name."); return; }
+      if (!Number.isFinite(price) || price < 0) { setSaveError("Give it a price."); return; }
+      setSaving(true);
+      setSaveError("");
+      const row = { title, price, note: String(draft.note || "").trim(), photo: "", soldOut: Boolean(draft.soldOut) };
+      const next = draft.id
+        ? items.map((i) => (i.id === draft.id
+          ? { ...row }
+          : { title: i.title, price: i.price, note: i.note, photo: i.photo, soldOut: i.soldOut }))
+        : items.map((i) => ({ title: i.title, price: i.price, note: i.note, photo: i.photo, soldOut: i.soldOut })).concat([row]);
+      const ok = onSaveItems ? await onSaveItems(next) : false;
+      setSaving(false);
+      if (ok) setDraft(null); else setSaveError("Could not save that just now.");
+    }}
+    disabled={saving}
+    style={{
+      flex: 1, background: T.gradButton, color: "#fff", border: "none", borderRadius: 14,
+      padding: "13px 18px", fontSize: 14, fontWeight: 800, fontFamily: "inherit",
+      cursor: saving ? "default" : "pointer", opacity: saving ? 0.7 : 1
+    }}
+  >{saving ? "Saving\u2026" : "Save item"}</button></div></div></div>}
+
+  {
+    /* ── THE BASKET BAR ───────────────────────────────────────────────
+       Only when something is in it, and never for the owner: a creator
+       looking at their own page is editing a price list, not shopping.
+       Pay hands the total to Send, which is where money actually moves. */
+    count > 0 && !isOwner && <div style={{
+      flexShrink: 0, background: T.surface, borderTop: `1px solid ${T.line}`,
+      padding: "13px 18px calc(18px + env(safe-area-inset-bottom, 0px))",
+      display: "flex", alignItems: "center", gap: 13
+    }}><span style={{ flex: 1, minWidth: 0 }}><span style={{
+      display: "block", fontSize: 10.5, fontWeight: 600, color: T.inkFaint,
+      textTransform: "uppercase", letterSpacing: 0.6
+    }}>{count} item{count === 1 ? "" : "s"}</span><span style={{ display: "block", marginTop: 2 }}><GeuFigure
+      amount={total}
+      currency={itemCurrency}
+      lens={lens}
+      own={ccyCode}
+      size={17}
+    /></span></span><button
+      onClick={() => onPay && onPay({
+        amount: total,
+        currency: itemCurrency,
+        lines: creatorBasketLines(items, basket),
+        creator
+      })}
+      style={{
+        background: T.gradButton, color: "#fff", border: "none", borderRadius: 14,
+        padding: "13px 24px", fontSize: 14, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", flexShrink: 0
+      }}
+    >Pay</button></div>
+  }</div>;
+}
+
+// "4 days ago" / "yesterday" — short enough for a supplier row, and never a
+// bare date, which makes a reader do the arithmetic.
+function creatorWhen(value) {
+  const then = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(then.getTime())) return "";
+  const days = Math.floor((Date.now() - then.getTime()) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  return months === 1 ? "a month ago" : `${months} months ago`;
+}

@@ -289,6 +289,10 @@ const FRONTEND_MODULES = [
   // and a mark generated from its own name where it does not. Also the
   // pinned strip on Pay & Services, drawn from the same marks.
   "features/creator/businessMark.jsx",
+  // The screen behind a creator's name: their list, the basket, and the
+  // owner's second tab. After businessMark.jsx, whose ink and initials it
+  // uses to draw a creator who has uploaded no logo.
+  "features/creator/CreatorPage.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",
   // Giving to a Hooman Project, and the list of who has. Emitted before the

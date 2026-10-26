@@ -4254,6 +4254,33 @@ function GloobalId() {
       setSendPrefillChoiceId((opts && opts.choiceId) || null);
       setActiveScreen("send");
     }}
+    // ── PAYING A CREATOR FROM THEIR OWN PAGE ──────────────────────────
+    //
+    // The basket decided WHO and HOW MUCH; everything after that is the
+    // ordinary Send screen — same resolve, same PIN, same ledger, same
+    // receipt. A creator page must not grow a second way to move money.
+    //
+    // The amount is carried as a prefill rather than paid outright,
+    // because the founder's rule for this button is that the payer still
+    // sees the figure on the Send screen and confirms it there.
+    onPayCreator={({ creator, amount }) => {
+      if (!creator) return;
+      const iso = String(creator.countryIso || "").toUpperCase();
+      const creatorCountry = COUNTRY_BY_ISO[iso] || dialCountry;
+      setSendPrefillChoiceId(null);
+      setSendPrefillReceiver({
+        country: creatorCountry.name,
+        flag: creatorCountry.flag,
+        iso: creatorCountry.iso,
+        id: creator.symbolId,
+        name: creatorDisplayName(creator),
+        mobileNumber: "",
+        currency: COUNTRY_CURRENCY[creatorCountry.iso] || "USD",
+        registered: true,
+        prefillAmount: Number(amount) > 0 ? String(Number(amount).toFixed(2)) : ""
+      });
+      setActiveScreen("send");
+    }}
     onOpenBank={() => setActiveScreen("bank")}
     onOpenCoverage={() => setActiveScreen("coverage")}
     onOpenScan={() => setShowScanScreen(true)}

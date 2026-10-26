@@ -444,6 +444,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   // how the person changes their mind about who they are paying.
   useEffect13(() => {
     if (!prefillReceiver) return;
+    // A basket on a creator page already decided the figure. Seeded here
+    // rather than paid from there: the payer still reads the amount on this
+    // screen and confirms it, which is the only place an amount is agreed.
+    if (prefillReceiver.prefillAmount) setAmount(String(prefillReceiver.prefillAmount));
     setBottom({
       // Already the RECIPIENT's own country by the time it arrives — Scan
       // resolves the ID against GET /api/users/resolve and reads countryIso

@@ -157,6 +157,9 @@ const ProfilePhoto = require('./models/ProfilePhoto');
 // The Creator side's own mark. A different picture of a different thing
 // from the profile photo above — see models/CreatorLogo.js.
 const CreatorLogo = require('./models/CreatorLogo');
+const CreatorItem = require('./models/CreatorItem');
+const CreatorSupplier = require('./models/CreatorSupplier');
+const CreatorPurchase = require('./models/CreatorPurchase');
 const Notification = require('./models/Notification');
 // Web Push. The model holds one row per subscribed browser; the service is the
 // only thing that talks to a push service and is inert when VAPID is unset.
@@ -3908,6 +3911,11 @@ function publicCreator(user, logoDataUrl) {
   const profile = (user && user.creatorProfile) || {};
   return {
     symbolId: user.symbolId,
+    // The country the account lives in, so a page opened from search can
+    // hand the Send flow a receiver without a second lookup. Not personal
+    // detail: it is which money their prices are in, which anybody paying
+    // them needs and the price list already implies.
+    countryIso: user.countryIso || '',
     handle: profile.handle || null,
     handleFirst: profile.handleFirst || '',
     handleLast: profile.handleLast || '',
@@ -3952,7 +3960,7 @@ app.get('/api/creator/handle-available', lookupLimit, requireAuth, async (req, r
 app.get('/api/creator/:symbolId/profile', lookupLimit, requireAuth, async (req, res) => {
   try {
     const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
-    const user = symbolId ? await User.findOne({ symbolId }).select('_id symbolId creatorProfile').lean() : null;
+    const user = symbolId ? await User.findOne({ symbolId }).select('_id symbolId creatorProfile countryIso').lean() : null;
     if (!user) {
       return res.status(404).json({
         success: false, code: 'user_not_found', message: 'No account found for that Gloobal ID.'
@@ -3967,6 +3975,12 @@ app.get('/api/creator/:symbolId/profile', lookupLimit, requireAuth, async (req, 
       out.setupSkippedAt = profile.setupSkippedAt || null;
       out.completedAt = profile.completedAt || null;
     }
+    const [items, repeatPayers] = await Promise.all([
+      creatorItemsFor(user.symbolId),
+      creatorRepeatPayers(user._id)
+    ]);
+    out.items = items;
+    out.repeatPayers = repeatPayers;
     res.set('Cache-Control', 'private, max-age=60');
     return res.json({ success: true, creator: out, isOwner });
   } catch (error) {
@@ -4070,7 +4084,7 @@ app.put(
         }
       }
 
-      const fresh = await User.findById(userId).select('_id symbolId creatorProfile').lean();
+      const fresh = await User.findById(userId).select('_id symbolId creatorProfile countryIso').lean();
       const logo = await CreatorLogo.findOne({ userId }).select('dataUrl').lean();
       const out = publicCreator(fresh, logo?.dataUrl);
       out.address = (fresh.creatorProfile || {}).address || '';
@@ -4104,19 +4118,356 @@ app.get('/api/creator/resolve/:handle', lookupLimit, requireAuth, async (req, re
       return res.status(400).json({ success: false, code: built.code, message: built.message });
     }
     const user = await User.findOne({ 'creatorProfile.handle': built.handle })
-      .select('_id symbolId fullName creatorProfile').lean();
+      .select('_id symbolId fullName creatorProfile countryIso').lean();
     if (!user) {
       return res.status(404).json({
         success: false, code: 'creator_not_found', message: 'No creator found with that name.'
       });
     }
     const logo = await CreatorLogo.findOne({ userId: user._id }).select('dataUrl').lean();
-    return res.json({ success: true, creator: publicCreator(user, logo?.dataUrl) });
+    // The whole page in one call. A creator page opened from search draws
+    // the mark, the name, the repeat-payer count and the price list at
+    // once; three round trips would show it assembling itself in pieces on
+    // a phone connection.
+    const [items, repeatPayers] = await Promise.all([
+      creatorItemsFor(user.symbolId),
+      creatorRepeatPayers(user._id)
+    ]);
+    const creator = publicCreator(user, logo?.dataUrl);
+    creator.items = items;
+    creator.repeatPayers = repeatPayers;
+    return res.json({ success: true, creator });
   } catch (error) {
     console.error('Creator resolve error:', error);
     return res.status(500).json({ success: false, message: 'Could not look that name up right now.' });
   }
 });
+
+// ════════════════════════════════════════════════════════════════════════
+// A CREATOR'S TWO LISTS
+//
+// What I sell, which anybody can read, and who I buy from, which only I
+// can. Both hang off a creator page; only the first is part of a creator's
+// public face. The reasoning for the split lives in models/CreatorSupplier.js.
+// ════════════════════════════════════════════════════════════════════════
+
+// How many DIFFERENT people have paid this creator more than once.
+//
+// This replaced a count of pins. A pin is a tap, so a pin count is a number
+// its own subject can run up from throwaway accounts, and it was being shown
+// in the position a reader takes as reputation. This one cannot be typed: it
+// is a by-product of payments that already settled, and inflating it costs
+// real money moved between real accounts twice.
+//
+// Deliberately not "total payments" — one devoted customer paying daily
+// would read as a crowd. Distinct payers, each counted once, who came back.
+async function creatorRepeatPayers(userId) {
+  try {
+    const rows = await Transaction.aggregate([
+      { $match: { toUserId: new mongoose.Types.ObjectId(String(userId)), status: 'completed' } },
+      { $group: { _id: '$fromUserId', n: { $sum: 1 } } },
+      { $match: { n: { $gte: 2 } } },
+      { $count: 'people' }
+    ]);
+    return rows.length ? rows[0].people : 0;
+  } catch (error) {
+    // A count is decoration on a page whose job is payment. If the
+    // aggregation fails the page still has to open, so this answers zero
+    // rather than taking the screen down with it.
+    console.error('Creator repeat-payer count error:', error);
+    return 0;
+  }
+}
+
+var CREATOR_ITEMS_MAX = 60;
+
+function publicCreatorItem(row) {
+  return {
+    id: String(row._id),
+    title: row.title,
+    price: row.price,
+    currency: row.currency,
+    note: row.note || '',
+    photo: row.photo || '',
+    soldOut: Boolean(row.soldOut),
+    order: Number(row.order) || 0
+  };
+}
+
+async function creatorItemsFor(symbolId) {
+  const rows = await CreatorItem.find({ ownerSymbolId: symbolId })
+    .sort({ order: 1, createdAt: 1 }).limit(CREATOR_ITEMS_MAX).lean();
+  return rows.map(publicCreatorItem);
+}
+
+// GET /api/creator/:symbolId/items — the price list, readable by anybody.
+app.get('/api/creator/:symbolId/items', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+    if (!symbolId) return res.status(400).json({ success: false, message: 'A Gloobal ID is needed.' });
+    const items = await creatorItemsFor(symbolId);
+    res.set('Cache-Control', 'private, max-age=30');
+    return res.json({ success: true, items });
+  } catch (error) {
+    console.error('Creator items read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load that list right now.' });
+  }
+});
+
+// PUT /api/creator/:symbolId/items — the owner replaces their whole list.
+//
+// Replace rather than per-item CRUD, because the client already holds the
+// whole list to draw it and reordering is the common edit. One request that
+// states the final shape cannot leave the order half-applied the way a
+// sequence of per-item PATCHes can when the third one fails.
+app.put(
+  '/api/creator/:symbolId/items',
+  writeLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+      const incoming = Array.isArray(req.body && req.body.items) ? req.body.items : null;
+      if (!incoming) {
+        return res.status(400).json({ success: false, message: 'A list of items is needed.' });
+      }
+      if (incoming.length > CREATOR_ITEMS_MAX) {
+        return res.status(400).json({
+          success: false,
+          message: `A creator can list up to ${CREATOR_ITEMS_MAX} things.`
+        });
+      }
+
+      // The currency is the ACCOUNT'S, read from the server rather than
+      // taken from the body. A price is a claim about money, and the client
+      // does not get to say which money.
+      const owner = await User.findOne({ symbolId }).select('_id currency').lean();
+      if (!owner) return res.status(404).json({ success: false, code: 'user_not_found', message: 'No account found.' });
+      const currency = String(owner.currency || 'USD').toUpperCase();
+
+      const clean = [];
+      for (let i = 0; i < incoming.length; i += 1) {
+        const raw = incoming[i] || {};
+        const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+        const price = Number(raw.price);
+        if (!title) return res.status(400).json({ success: false, message: 'Every item needs a name.' });
+        if (!Number.isFinite(price) || price < 0) {
+          return res.status(400).json({ success: false, message: `"${title}" needs a price.` });
+        }
+        const photo = typeof raw.photo === 'string' ? raw.photo : '';
+        if (photo) {
+          // Same validator as a profile photo: JPEG or PNG data URLs only,
+          // magic bytes checked, 200 KB cap, SVG refused because it can
+          // carry script and this picture is shown to strangers.
+          const verdict = validateProfilePhoto(photo);
+          if (!verdict.ok) {
+            return res.status(400).json({ success: false, message: `"${title}": ${verdict.message}` });
+          }
+        }
+        clean.push({
+          ownerSymbolId: symbolId,
+          title: title.slice(0, 80),
+          price,
+          currency,
+          note: typeof raw.note === 'string' ? raw.note.trim().slice(0, 140) : '',
+          photo,
+          soldOut: Boolean(raw.soldOut),
+          order: i
+        });
+      }
+
+      await CreatorItem.deleteMany({ ownerSymbolId: symbolId });
+      if (clean.length) await CreatorItem.insertMany(clean);
+      return res.json({ success: true, items: await creatorItemsFor(symbolId) });
+    } catch (error) {
+      console.error('Creator items write error:', error);
+      return res.status(500).json({ success: false, message: 'Could not save that list right now.' });
+    }
+  }
+);
+
+// GET /api/creator/:symbolId/suppliers — OWNER ONLY. See the model for why.
+app.get(
+  '/api/creator/:symbolId/suppliers',
+  lookupLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+      const rows = await CreatorSupplier.find({ ownerSymbolId: symbolId })
+        .sort({ lastOrderAt: -1, createdAt: -1 }).limit(100).lean();
+      return res.json({
+        success: true,
+        suppliers: rows.map((r) => ({
+          symbolId: r.supplierSymbolId,
+          handle: r.supplierHandle || '',
+          lastOrderAt: r.lastOrderAt || null
+        }))
+      });
+    } catch (error) {
+      console.error('Creator suppliers read error:', error);
+      return res.status(500).json({ success: false, message: 'Could not load your suppliers right now.' });
+    }
+  }
+);
+
+// POST /api/creator/:symbolId/suppliers — add one BY THEIR CREATOR NAME.
+//
+// By name and not by Gloobal ID, because the point of a supplier row is the
+// list behind it, and only a creator has one. Resolving here also means a
+// typo is refused at the moment it is made rather than stored as a row that
+// opens onto nothing.
+app.post(
+  '/api/creator/:symbolId/suppliers',
+  writeLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+      const raw = typeof (req.body && req.body.handle) === 'string' ? req.body.handle.trim() : '';
+      const at = raw.indexOf('.');
+      const built = at < 0 ? buildCreatorHandle(raw, '') : buildCreatorHandle(raw.slice(0, at), raw.slice(at + 1));
+      if (!built.ok) return res.status(400).json({ success: false, code: built.code, message: built.message });
+
+      const supplier = await User.findOne({ 'creatorProfile.handle': built.handle })
+        .select('symbolId').lean();
+      if (!supplier) {
+        return res.status(404).json({
+          success: false, code: 'creator_not_found', message: 'No creator found with that name.'
+        });
+      }
+      if (supplier.symbolId === symbolId) {
+        return res.status(400).json({ success: false, message: 'That is you.' });
+      }
+
+      // Already there is not an error. Somebody adding a supplier twice
+      // means the same thing both times.
+      await CreatorSupplier.updateOne(
+        { ownerSymbolId: symbolId, supplierSymbolId: supplier.symbolId },
+        { $set: { supplierHandle: built.handle } },
+        { upsert: true }
+      );
+      return res.json({ success: true, supplier: { symbolId: supplier.symbolId, handle: built.handle } });
+    } catch (error) {
+      console.error('Creator supplier add error:', error);
+      return res.status(500).json({ success: false, message: 'Could not add that supplier right now.' });
+    }
+  }
+);
+
+app.delete(
+  '/api/creator/:symbolId/suppliers/:supplierSymbolId',
+  writeLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+      const supplierSymbolId = safeDecodeSymbolId(req.params.supplierSymbolId).trim();
+      await CreatorSupplier.deleteOne({ ownerSymbolId: symbolId, supplierSymbolId });
+      return res.json({ success: true });
+    } catch (error) {
+      console.error('Creator supplier remove error:', error);
+      return res.status(500).json({ success: false, message: 'Could not remove that supplier right now.' });
+    }
+  }
+);
+
+// GET /api/creator/:symbolId/purchases — what this merchant bought. Owner only.
+app.get(
+  '/api/creator/:symbolId/purchases',
+  lookupLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+      const rows = await CreatorPurchase.find({ buyerSymbolId: symbolId })
+        .sort({ paidAt: -1 }).limit(100).lean();
+      return res.json({
+        success: true,
+        purchases: rows.map((r) => ({
+          id: String(r._id),
+          supplierSymbolId: r.supplierSymbolId,
+          supplierHandle: r.supplierHandle || '',
+          title: r.title,
+          quantity: r.quantity,
+          amount: r.amount,
+          currency: r.currency,
+          paidAt: r.paidAt
+        }))
+      });
+    } catch (error) {
+      console.error('Creator purchases read error:', error);
+      return res.status(500).json({ success: false, message: 'Could not load what you bought right now.' });
+    }
+  }
+);
+
+// POST /api/creator/:symbolId/purchases — write the lines AFTER a payment.
+//
+// The client calls this once the send has succeeded, with the basket it
+// just paid for. It records intent, not entitlement: nothing downstream
+// reads these, the supplier never sees them, and no money is moved here.
+app.post(
+  '/api/creator/:symbolId/purchases',
+  writeLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+      const body = req.body || {};
+      const lines = Array.isArray(body.lines) ? body.lines : [];
+      const supplierSymbolId = typeof body.supplierSymbolId === 'string' ? body.supplierSymbolId.trim() : '';
+      if (!supplierSymbolId || !lines.length) {
+        return res.status(400).json({ success: false, message: 'A supplier and at least one line are needed.' });
+      }
+      if (lines.length > CREATOR_ITEMS_MAX) {
+        return res.status(400).json({ success: false, message: 'Too many lines in one purchase.' });
+      }
+      const supplierHandle = typeof body.supplierHandle === 'string' ? body.supplierHandle.trim() : '';
+      const transactionRef = typeof body.transactionRef === 'string' ? body.transactionRef.trim().slice(0, 64) : '';
+
+      const docs = [];
+      for (const raw of lines) {
+        const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+        const quantity = Math.max(1, Math.round(Number(raw.quantity) || 1));
+        const amount = Number(raw.amount);
+        const currency = String(raw.currency || '').toUpperCase();
+        if (!title || !Number.isFinite(amount) || amount < 0 || !/^[A-Z]{3}$/.test(currency)) continue;
+        docs.push({
+          buyerSymbolId: symbolId,
+          supplierSymbolId,
+          supplierHandle,
+          title: title.slice(0, 80),
+          quantity,
+          amount,
+          currency,
+          transactionRef,
+          paidAt: new Date()
+        });
+      }
+      if (!docs.length) {
+        return res.status(400).json({ success: false, message: 'No usable lines in that purchase.' });
+      }
+      await CreatorPurchase.insertMany(docs);
+      // The supplier list sorts by who you actually deal with.
+      await CreatorSupplier.updateOne(
+        { ownerSymbolId: symbolId, supplierSymbolId },
+        { $set: { lastOrderAt: new Date(), supplierHandle } },
+        { upsert: true }
+      );
+      return res.json({ success: true, written: docs.length });
+    } catch (error) {
+      console.error('Creator purchase write error:', error);
+      return res.status(500).json({ success: false, message: 'Could not record that purchase right now.' });
+    }
+  }
+);
 
 async function getWebAuthnServer() {
   return await import('@simplewebauthn/server');

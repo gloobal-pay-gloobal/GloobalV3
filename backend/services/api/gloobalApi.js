@@ -1548,6 +1548,71 @@ var GloobalApi = {
     }
   },
 
+  // --- A creator's two lists --------------------------------------------
+  //
+  // What they sell, which anybody may read, and who they buy from, which
+  // only they may. The server enforces that split; these are the calls.
+
+  async getCreatorItems(symbolId) {
+    const result = await gloobalApiClient.get(`/api/creator/${encodeURIComponent(symbolId)}/items`);
+    return Array.isArray(result && result.items) ? result.items : [];
+  },
+
+  // The whole list in one request. The client already holds every item to
+  // draw them, and reordering is the common edit — one call that states the
+  // final shape cannot leave the order half-applied.
+  async saveCreatorItems(symbolId, items) {
+    const result = await gloobalApiClient.put(
+      `/api/creator/${encodeURIComponent(symbolId)}/items`,
+      { items: Array.isArray(items) ? items : [] }
+    );
+    return Array.isArray(result && result.items) ? result.items : [];
+  },
+
+  async getCreatorSuppliers(symbolId) {
+    const result = await gloobalApiClient.get(`/api/creator/${encodeURIComponent(symbolId)}/suppliers`);
+    return Array.isArray(result && result.suppliers) ? result.suppliers : [];
+  },
+
+  // Added by NAME, because the point of a supplier is the list behind them
+  // and only a creator has one. Returns null when the name resolves to
+  // nobody, so the caller can say so rather than storing a dead row.
+  async addCreatorSupplier(symbolId, handle) {
+    try {
+      const result = await gloobalApiClient.post(
+        `/api/creator/${encodeURIComponent(symbolId)}/suppliers`,
+        { handle }
+      );
+      return (result && result.supplier) || null;
+    } catch (err) {
+      if (err instanceof GloobalApiError && (err.status === 404 || err.status === 400)) return null;
+      throw err;
+    }
+  },
+
+  async removeCreatorSupplier(symbolId, supplierSymbolId) {
+    await gloobalApiClient.delete(
+      `/api/creator/${encodeURIComponent(symbolId)}/suppliers/${encodeURIComponent(supplierSymbolId)}`
+    );
+    return true;
+  },
+
+  async getCreatorPurchases(symbolId) {
+    const result = await gloobalApiClient.get(`/api/creator/${encodeURIComponent(symbolId)}/purchases`);
+    return Array.isArray(result && result.purchases) ? result.purchases : [];
+  },
+
+  // Written AFTER the payment succeeds, never before: a line must not exist
+  // for money that did not move. A failure here costs a book-keeping row,
+  // not the payment, so callers log it and carry on.
+  async recordCreatorPurchase(symbolId, { supplierSymbolId, supplierHandle, lines, transactionRef }) {
+    const result = await gloobalApiClient.post(
+      `/api/creator/${encodeURIComponent(symbolId)}/purchases`,
+      { supplierSymbolId, supplierHandle, lines, transactionRef }
+    );
+    return Number(result && result.written) || 0;
+  },
+
   // --- Notifications ----------------------------------------------------
   //
   // Server-held, per account, created by the payment route after a transfer

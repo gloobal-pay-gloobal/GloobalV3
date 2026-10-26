@@ -51,6 +51,34 @@ function creatorHandleLabel(creator, fallbackGloobalId) {
   return fallbackGloobalId || "";
 }
 
+// ── THE NAME A PERSON READS, AS DISTINCT FROM THE ONE THEY TYPE ────────
+//
+//     shown      रसोई ghar
+//     behind     रसोई.ghar
+//     the eye
+//
+// The handle is an ADDRESS: lower-cased, dotted, unique, and the thing
+// somebody types to send money. It is not a name, and showing it as one
+// puts punctuation in the middle of what a person calls their shop.
+//
+// So the page shows the two parts as they were typed, with a space, and the
+// dotted form lives behind the eye beside the Gloobal ID — which is exactly
+// where the founder put it: "just show chacha tea hide chacha.tea with
+// details inside eye button".
+//
+// The RAW parts are used, not the normalised handle, because normalising
+// lower-cases and NFC-folds for uniqueness. "McDonald" would come back
+// "mcdonald", and a creator's own name is not the place to correct their
+// capitalisation.
+function creatorDisplayName(creator, fallbackGloobalId) {
+  const first = creator && typeof creator.handleFirst === "string" ? creator.handleFirst.trim() : "";
+  const last = creator && typeof creator.handleLast === "string" ? creator.handleLast.trim() : "";
+  if (first) return last ? `${first} ${last}` : first;
+  // Nothing typed survives — fall back to the address rather than to
+  // nothing, because a page with no name on it is worse than a dotted one.
+  return creatorHandleLabel(creator, fallbackGloobalId);
+}
+
 function creatorSetupDone(creator) {
   return Boolean(creator && typeof creator.handle === "string" && creator.handle.trim());
 }
@@ -480,7 +508,7 @@ function CreatorSetupScreen({
 // One editor, deliberately. A second one would be a second place for the
 // rules about what a handle may contain to live, and two copies of a rule
 // drift until one of them is wrong.
-function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit }) {
+function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage }) {
   // Opening this row can be the first touch of the Creator side — the
   // other being the flip itself — so it may arrive with nothing loaded.
   useEffect50(() => {
@@ -573,7 +601,21 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit }) {
       ? (creator.addressPublic ? "Anybody who pays you" : "Only you")
       : "—",
     !creator.address
-  )}</div></div><button
+  )}</div></div>{
+    /* ── THE WAY INTO YOUR OWN PAGE ──────────────────────────────────
+       This panel describes the creator identity; the page is where the
+       identity does its job — the list people buy from, and the suppliers
+       you buy from. Without a door here the inventory existed on the
+       server and nowhere a creator could reach it. */
+  }<button
+    onClick={onOpenPage}
+    className="v2-tap"
+    style={{
+      border: "none", borderRadius: T.radiusMd, padding: "14px 0",
+      background: T.surface, boxShadow: T.shadowCard, color: T.accent,
+      fontSize: 13.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", width: "100%"
+    }}
+  >Your page &amp; what you sell</button><button
     onClick={onEdit}
     className="v2-tap"
     style={{

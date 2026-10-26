@@ -253,7 +253,7 @@ function BalanceError({ onRetry }) {
   >Retry</button>}</span>;
 }
 
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -865,6 +865,57 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
   // shape as a creator's `first.last` name — see the comment at the
   // inputs for why both of them filter the business list too.
   const [moreQueryLast, setMoreQueryLast] = useState14("");
+  // ── A NAME TYPED IN THE SEARCH BAR IS LOOKED UP ON THE SERVER ─────────
+  //
+  // The list below is TOP_BUSINESSES, a local catalogue of placeholder
+  // brands. Searching it for a real creator returned "No matches" however
+  // correctly the name was typed, because the catalogue is the only thing
+  // it ever searched — resolveCreatorHandle existed and was called from
+  // nowhere. This is the wire.
+  //
+  // EXACT NAME ONLY, which is the founder's own rule and the safe one: a
+  // prefix search would publish a browsable directory of every creator and
+  // put rasoi.ghar next to a lookalike registered an hour ago. Typing the
+  // whole name gets you that creator; typing half of it gets you nothing,
+  // and the scanner is the other way in.
+  const [creatorHit, setCreatorHit] = useState14(null);
+  const [creatorLookupBusy, setCreatorLookupBusy] = useState14(false);
+  const [openCreator, setOpenCreator] = useState14(null);
+  const [creatorSuppliers, setCreatorSuppliers] = useState14([]);
+  const [creatorPurchases, setCreatorPurchases] = useState14([]);
+
+  // Debounced, and guarded by a sequence number: a slow answer for "rasoi"
+  // must not land after a fast one for "rasoi.ghar" and overwrite it. Same
+  // guard as useHandleAvailability in CreatorSetupScreen, for the same
+  // reason.
+  const creatorLookupSeq = useRef10(0);
+  useEffect12(() => {
+    const first = String(moreQuery || "").trim();
+    const last = String(moreQueryLast || "").trim();
+    if (!first) {
+      setCreatorHit(null);
+      setCreatorLookupBusy(false);
+      return undefined;
+    }
+    const handle = last ? `${first}.${last}` : first;
+    const seq = creatorLookupSeq.current + 1;
+    creatorLookupSeq.current = seq;
+    setCreatorLookupBusy(true);
+    const timer = setTimeout(async () => {
+      let found = null;
+      try {
+        found = await GloobalApi.resolveCreatorHandle(handle);
+      } catch (e) {
+        // Offline, or the API asleep. A lookup that could not run is not a
+        // creator who does not exist, so nothing is asserted either way.
+        found = null;
+      }
+      if (creatorLookupSeq.current !== seq) return;
+      setCreatorHit(found);
+      setCreatorLookupBusy(false);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [moreQuery, moreQueryLast]);
   const [travelExpanded, setTravelExpanded] = useState14(false);
   const [payTarget, setPayTarget] = useState14(null);
   // Pay a Business now follows the same options -> PIN -> biometric
@@ -3219,7 +3270,31 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       setPayAmount("25.00");
     };
     const showTravelSection = !q || travelMatches.length > 0;
-    return <>{!q && pinnedBusinesses.length > 0 && <PayPinnedStrip
+    // ── THE CREATOR THE NAME RESOLVED TO ────────────────────────────
+    //
+    // Above the catalogue, because this is the row somebody typed a whole
+    // name to reach. It carries the HANDLE under the name, in accent
+    // colour, and a mark in the creator's own ink — which is how a real
+    // payable creator is told apart from a placeholder brand in the same
+    // list, without a "verified" badge that would have to mean something
+    // nobody has defined.
+    const creatorResult = creatorHit ? <button
+      onClick={() => setOpenCreator(creatorHit)}
+      style={{
+        display: "flex", alignItems: "center", gap: 13, width: "100%", textAlign: "left",
+        background: T.surface, borderRadius: 17, padding: "11px 13px", marginBottom: 14,
+        border: `1.5px solid ${T.accent}`, boxShadow: "0 4px 14px rgba(124,58,237,0.16)",
+        cursor: "pointer", fontFamily: "inherit"
+      }}
+    ><BusinessMark name={creatorHit.handle || ""} logo={creatorHit.logo} size={46} radius={14} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
+      display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink,
+      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+    }}>{creatorDisplayName(creatorHit)}</span><span style={{
+      display: "block", fontSize: 11, fontWeight: 600, color: T.accent, marginTop: 1,
+      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+    }}>{creatorHit.handle}</span></span><ChevronRight2 size={15} color={T.inkFaint} /></button> : null;
+
+    return <>{creatorResult}{!q && pinnedBusinesses.length > 0 && <PayPinnedStrip
       items={pinnedBusinesses}
       onOpen={openBusiness}
       onUnpin={togglePin}
@@ -3253,7 +3328,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
       style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 4px", border: `1px solid ${T.line}`, background: T.surface, borderRadius: 16, cursor: "pointer", boxShadow: T.shadowCard }}
     ><span style={{ width: 38, height: 38, borderRadius: 12, background: T.positiveSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={18} color={T.positive} /></span><span style={{ fontSize: 11, fontWeight: 700, color: T.ink, textAlign: "center" }}>{label}</span></button>)}</div>}</div>}<div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
                       Top businesses
-                    </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{businesses.length === 0 ? <div style={{ padding: "22px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>No matches</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 3 }}>Try a different search.</div></div> : businesses.map((b, i) => {
+                    </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{businesses.length === 0 ? <div style={{ padding: "22px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{creatorLookupBusy ? "Looking\u2026" : "No matches"}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 3 }}>{creatorLookupBusy ? "Checking that name on Gloobal." : "A creator is found by their exact name."}</div></div> : businesses.map((b, i) => {
       const isPinned = payPins.indexOf(b.key) >= 0;
       // ── THE ROW IS NOT THE BUTTON ANY MORE ────────────────────────
       //
@@ -3724,7 +3799,51 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
-  }{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3, whiteSpace: "nowrap" }}>{geuLensBarMoney(assetDetail.row.value, ccyCode, displayLens, ccyCode)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${geuLensBarMoney(assetDetail.target, ccyCode, displayLens, ccyCode)}`}</div>{
+  }{openCreator && <ScreenErrorBoundary name="Creator page" onClose={() => setOpenCreator(null)}><CreatorPage
+    creator={openCreator}
+    isOwner={Boolean(openCreator.symbolId) && openCreator.symbolId === myGloobalId}
+    ccyCode={ccyCode}
+    lens={displayLens}
+    pinned={payPins.includes(openCreator.symbolId)}
+    onTogglePin={() => togglePin(openCreator.symbolId)}
+    onClose={() => setOpenCreator(null)}
+    onScan={onOpenScan}
+    onShare={() => setShowReceive(true)}
+    onFeedback={() => showToast2("Feedback is coming next.")}
+    onSaveItems={async (next) => {
+      try {
+        const saved = await GloobalApi.saveCreatorItems(myGloobalId, next);
+        setOpenCreator((c) => (c ? { ...c, items: saved } : c));
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }}
+    onAddSupplier={async () => {
+      const typed = typeof window !== "undefined" && window.prompt
+        ? window.prompt("Supplier's creator name")
+        : "";
+      if (!typed) return;
+      const added = await GloobalApi.addCreatorSupplier(myGloobalId, typed.trim());
+      if (!added) { showToast2("No creator found with that name."); return; }
+      setCreatorSuppliers(await GloobalApi.getCreatorSuppliers(myGloobalId));
+    }}
+    onOpenSupplier={async (s) => {
+      const found = await GloobalApi.resolveCreatorHandle(s.handle || "");
+      if (found) setOpenCreator(found); else showToast2("Could not open that supplier.");
+    }}
+    suppliers={creatorSuppliers}
+    purchases={creatorPurchases}
+    onPay={({ amount, creator }) => {
+      // Hands the basket's total to the REAL Send flow — the receiver
+      // filled in, the amount carried across, and the PIN, the ledger and
+      // the receipt all the ordinary ones. Nothing is paid from this
+      // screen; it only decides who and how much.
+      setOpenCreator(null);
+      requestCloseMore();
+      if (onPayCreator) onPayCreator({ creator, amount });
+    }}
+  /></ScreenErrorBoundary>}{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3, whiteSpace: "nowrap" }}>{geuLensBarMoney(assetDetail.row.value, ccyCode, displayLens, ccyCode)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${geuLensBarMoney(assetDetail.target, ccyCode, displayLens, ccyCode)}`}</div>{
     /* Growth curve: cashback (t=0) compounding at 1%/month up
        to the point it equals 100% of the original spend. */
   }<svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} width="100%" height="150" style={{ marginTop: 14, display: "block" }} preserveAspectRatio="none">{
@@ -3833,6 +3952,24 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onOpenBank, onOpen
     onEdit={() => {
       setCreatorError("");
       setShowCreatorSetup(true);
+    }}
+    onOpenPage={async () => {
+      // Read back through the same route a buyer uses, so the owner sees
+      // exactly the page everybody else does — plus the Buying tab, which
+      // the server only answers to them.
+      try {
+        const mine = await GloobalApi.getCreatorProfile(myGloobalId);
+        if (!mine) { showToast2("Finish your creator name first."); return; }
+        setOpenCreator(mine);
+        const [sup, buys] = await Promise.all([
+          GloobalApi.getCreatorSuppliers(myGloobalId).catch(() => []),
+          GloobalApi.getCreatorPurchases(myGloobalId).catch(() => [])
+        ]);
+        setCreatorSuppliers(sup);
+        setCreatorPurchases(buys);
+      } catch (e) {
+        showToast2("Could not open your page just now.");
+      }
     }}
   />}{profileDetail === "Linked Banks" && <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px" }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Manage your linked banks</div><div style={{ fontSize: 12, color: T.inkFaint, marginTop: 3, lineHeight: 1.5 }}>
                     Add, view, and link bank accounts from your country on the Add Bank screen.

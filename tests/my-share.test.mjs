@@ -173,8 +173,8 @@ describe("the money on this screen is formatted like money everywhere else", () 
     // when the display lens is on. The claim is unchanged — one formatter,
     // taking the currency CODE, so the separators and decimals come from the
     // currency rather than from whoever typed the line.
-    assert.match(code, /geuLensMoney\(MY_SHARE_PREVIEW_BASE, ccyCode, displayLens\)/);
-    assert.match(code, /geuLensMoney\(row\.amount, ccyCode, displayLens\)/);
+    assert.match(code, /<GeuFigure amount=\{MY_SHARE_PREVIEW_BASE\}/);
+    assert.match(code, /<GeuFigure amount=\{row\.amount\}/);
   });
 
   test("and the example payment is one constant, not a repeated 1000", () => {
@@ -199,6 +199,8 @@ describe("the screen still says what it is", () => {
   test("the bar is announced to a screen reader as amounts", () => {
     // A bar with no text in it is nothing at all without this.
     assert.match(code, /role="img"/);
-    assert.match(code, /you keep \$\{geuLensMoney\(/);
+    // Spoken, so it takes the comma form rather than the bar glyph — both
+    // names either way. See geuLensSpokenMoney.
+    assert.match(code, /you keep \$\{geuLensSpokenMoney\(/);
   });
 });

@@ -158,11 +158,17 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
   // because this chart only ever plots the viewer's own rows in the viewer's
   // own currency; there is no counterparty figure on it to get wrong.
   //
-  // Used for the WEEK'S TWO TOTALS and not for a day's callout. The callout
-  // is a tooltip on a bar in a strip of seven, a few characters wide, and a
-  // bar in it would be most of the tooltip. The two figures above the chart
-  // are the ones read as figures, and they are the ones that have to agree
-  // with the balance sitting directly above them.
+  // Used for the WEEK'S TWO TOTALS, as a string. The day callout now draws
+  // the same pair through GeuFigure instead — it used to be excluded on the
+  // grounds that "a bar in it would be most of the tooltip", which was a
+  // judgement about WIDTH being allowed to decide whether a figure names its
+  // currency. With the toggle on that callout read "−820.00 GEU" above a
+  // single bar, and width is not a reason to show somebody a unit they have
+  // to guess. The trail is set at 75% there, which is the answer to the
+  // width problem that does not cost the second name.
+  //
+  // What `money` is still right for is a string that is SPOKEN — see the
+  // aria-labels below, which take geuLensSpokenMoney for the same reason.
   const barMoney = (value) => (
     typeof geuLensBarMoney === "function"
       ? geuLensBarMoney(value, currencyCode, lens, currencyCode)
@@ -324,7 +330,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
     ? (focusDirection === "paid" ? Number(calloutDay.paid) || 0 : Number(calloutDay.received) || 0)
     : 0;
   const calloutText = calloutDay
-    ? `${focusDirection === "paid" ? "\u2212" : "+"}${money(calloutValue)}`
+    ? <GeuFigure amount={calloutValue} currency={currencyCode} lens={lens} sign={focusDirection === "paid" ? "\u2212" : "+"} size={10} />
     : "";
   return <div style={{ position: "relative" }}><div style={{ display: "flex", justifyContent: trailing || !focusDirection ? "space-between" : "flex-start", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>{
     /* With a trailing figure the left-hand ones are grouped, so
@@ -379,7 +385,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
          baseline because the column itself is bottom-aligned. */
     }{isSelected && calloutDay && <span style={{ fontSize: 10, fontWeight: 800, color: palette === "light" ? T.accent : "#fff", whiteSpace: "nowrap", marginBottom: 1 }}>{calloutText}</span>}<div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: single ? void 0 : 34 }}>{showPaid && <div
       role="img"
-      aria-label={`${SPENDING_DAY_LABELS[i]} paid: ${money(Number(d.paid) || 0)}`}
+      aria-label={`${SPENDING_DAY_LABELS[i]} paid: ${geuLensSpokenMoney(Number(d.paid) || 0, currencyCode, lens, currencyCode)}`}
       style={{
         width: barWidth,
         // Zero draws NOTHING. This was Math.max(3, …), so a day on
@@ -396,7 +402,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
       }}
     />}{showReceived && <div
       role="img"
-      aria-label={`${SPENDING_DAY_LABELS[i]} received: ${money(Number(d.received) || 0)}`}
+      aria-label={`${SPENDING_DAY_LABELS[i]} received: ${geuLensSpokenMoney(Number(d.received) || 0, currencyCode, lens, currencyCode)}`}
       style={{
         width: barWidth,
         // Zero draws NOTHING. This was Math.max(3, …), so a day on

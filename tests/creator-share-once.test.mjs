@@ -153,7 +153,11 @@ describe("Today's Collection is money collected, not share received", () => {
     // when the display lens arrived — the claim being made here is that My
     // Assets still offers its own settle for the asset total, which is true
     // whichever unit that total is written in.
-    assert.match(assets, /Settle \{geuLens(Own)?Money\(totalAssets, ccyCode[^}]*\)\} to Gloobal Bank/);
+    // Pinned to the FIGURE, not to whatever draws it. This assertion has
+    // now broken twice for the same reason — once when the display lens
+    // replaced fmtMoney, and again when GeuFigure replaced the lens's plain
+    // formatter — and both times the claim it makes was still true.
+    assert.match(assets, /Settle .{0,160}totalAssets.{0,160} to Gloobal Bank/);
   });
 });
 

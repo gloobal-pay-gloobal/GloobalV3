@@ -86,7 +86,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
       background: "#fff",
       transition: "width 0.3s ease"
     }}
-  /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginTop: 8, fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}><span>{pctOfSpend.toFixed(1)}% of what you spent</span><span style={{ textAlign: "right" }}>{geuLensMoney(totalSpending, ccyCode, lens)}{maxMonthsToTarget > 0 ? ` · ~${(maxMonthsToTarget / 12).toFixed(0)} yrs` : ""}</span></div></div>{
+  /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginTop: 8, fontSize: 10.5, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}><span>{pctOfSpend.toFixed(1)}% of what you spent</span><span style={{ textAlign: "right" }}><GeuFigure amount={totalSpending} currency={ccyCode} lens={lens} size={10.5} />{maxMonthsToTarget > 0 ? ` · ~${(maxMonthsToTarget / 12).toFixed(0)} yrs` : ""}</span></div></div>{
     /* Settle — moves the real current assets total into the real
        Gloobal Bank balance, gated behind verification. Disabled at
        zero, since there's genuinely nothing to settle then. */
@@ -110,7 +110,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
       boxShadow: totalAssets > 0 ? "0 8px 20px rgba(124,58,237,0.3)" : "none"
     }}
   ><Landmark3 size={16} />
-          Settle {geuLensMoney(totalAssets, ccyCode, lens)} to Gloobal Bank
+          Settle <GeuFigure amount={totalAssets} currency={ccyCode} lens={lens} size={13.5} /> to Gloobal Bank
         </button>{
     /* One row per seed, each carrying its own chain end to end:
        what was paid, what it is worth today, and what it grows back
@@ -151,7 +151,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
         background: color,
         transition: "width 0.3s ease"
       }}
-    /></span><span style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 5, fontSize: 10, fontWeight: 700, color: T.inkFaint, whiteSpace: "nowrap", overflow: "hidden" }}><span style={{ flexShrink: 0 }}>{geuLensMoney(paid, ccyCode, lens)}</span><ArrowRight size={10} style={{ flexShrink: 0 }} /><span style={{ flexShrink: 0, color: T.positive }}>{geuLensMoney(now, ccyCode, lens)}</span><ArrowRight size={10} style={{ flexShrink: 0 }} />{
+    /></span><span style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 5, fontSize: 10, fontWeight: 700, color: T.inkFaint, whiteSpace: "nowrap", overflow: "hidden" }}><span style={{ flexShrink: 0 }}><GeuFigure amount={paid} currency={ccyCode} lens={lens} size={10} /></span><ArrowRight size={10} style={{ flexShrink: 0 }} /><span style={{ flexShrink: 0, color: T.positive }}><GeuFigure amount={now} currency={ccyCode} lens={lens} size={10} /></span><ArrowRight size={10} style={{ flexShrink: 0 }} />{
       /* Everything up to here refuses to shrink, so a narrow screen eats
          THIS figure and not the years behind it.
 
@@ -162,7 +162,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
          anything on screen. On a 320px phone the tail used to ellipsize
          from the right and cut "in 25.1 yr" down to "in 25.1…", losing
          the only number on the row that is not repeated somewhere else. */
-    }<span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{geuLensMoney(paid, ccyCode, lens)}</span><span style={{ flexShrink: 0 }}>in {(r.monthsToTarget / 12).toFixed(1)} yr</span></span></span></button>;
+    }<span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}><GeuFigure amount={paid} currency={ccyCode} lens={lens} size={10} /></span><span style={{ flexShrink: 0 }}>in {(r.monthsToTarget / 12).toFixed(1)} yr</span></span></span></button>;
   })}</div>{assetRows.length > 4 && <button
     onClick={() => setAssetsExpanded((v) => !v)}
     className="v2-tap"
@@ -188,6 +188,6 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
     className="v2-tap"
     style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, border: "none", borderTop: `1px solid ${T.line}`, background: "none", padding: "12px 2px 0", cursor: "pointer", textAlign: "left" }}
   ><span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>
-            This {geuLensMoney(totalAssets, ccyCode, lens)} is also your PayLater limit
+            This <GeuFigure amount={totalAssets} currency={ccyCode} lens={lens} size={11.5} /> is also your PayLater limit
           </span><ChevronRight size={14} color={T.inkFaint} style={{ flexShrink: 0 }} /></button></div></div>;
 }

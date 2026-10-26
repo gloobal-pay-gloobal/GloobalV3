@@ -174,6 +174,11 @@ const FRONTEND_MODULES = [
   // and a var initialiser does not hoist its value the way a function
   // declaration does.
   "features/geuLens/geuLens.js",
+  // The drawing half of the same rule: one figure, both its names, the
+  // trailing one at 75%. Immediately after the module whose parts and
+  // sizing functions it calls, and ahead of every screen that draws a
+  // figure through it.
+  "features/geuLens/GeuFigure.jsx",
   "components/cards/misc.jsx",
   "components/cards/geuLensToggle.jsx",
   "components/cards/notificationCard.jsx",

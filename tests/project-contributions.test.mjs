@@ -235,7 +235,7 @@ describe("what the project page does and does not offer", () => {
   test("the list formats money the way the rest of the page does", () => {
     // Two renderings of one currency on one screen is the fault this
     // avoids: the page already decided through the GEU lens.
-    assert.match(screen, /money=\{\(amount, currency\) => geuLensOwnMoney\(/);
+    assert.match(screen, /money=\{\(amount, currency\) => <GeuFigure /);
     assert.doesNotMatch(strip(ui), /fmtMoney|fmtCompact|toLocaleString\(\s*\)/,
       "the contribution list now formats money itself");
   });

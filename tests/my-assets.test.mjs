@@ -51,11 +51,11 @@ describe("the balance card states the chain with its quantities", () => {
     assert.ok(!/Future assets/.test(src), "the second balance is back");
     // Every render of totalSpending on this screen is the one in the
     // footer line, and that line carries the years with it.
-    const renders = src.match(/geuLensMoney\(totalSpending, ccyCode, lens\)/g) || [];
+    const renders = src.match(/<GeuFigure amount=\{totalSpending\}/g) || [];
     assert.equal(renders.length, 1, "total spending is drawn somewhere new");
     assert.match(
       src,
-      /\{geuLensMoney\(totalSpending, ccyCode, lens\)\}\{maxMonthsToTarget > 0 \? ` · ~\$\{\(maxMonthsToTarget \/ 12\)\.toFixed\(0\)\} yrs` : ""\}/,
+      /<GeuFigure amount=\{totalSpending\}[^>]*\/>\{maxMonthsToTarget > 0 \? ` · ~\$\{\(maxMonthsToTarget \/ 12\)\.toFixed\(0\)\} yrs` : ""\}/,
       "the projection has been separated from its horizon"
     );
   });
@@ -93,9 +93,13 @@ describe("the balance card states the chain with its quantities", () => {
 describe("each seed carries its own chain, end to end", () => {
   test("the row prints paid → worth now → back to paid, and when", () => {
     const src = code();
-    assert.match(src, /<span style=\{\{ flexShrink: 0 \}\}>\{geuLensMoney\(paid, ccyCode, lens\)\}<\/span>/);
-    assert.match(src, /<span style=\{\{ flexShrink: 0, color: T\.positive \}\}>\{geuLensMoney\(now, ccyCode, lens\)\}<\/span>/);
-    assert.match(src, /<span style=\{\{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" \}\}>\{geuLensMoney\(paid, ccyCode, lens\)\}<\/span>/);
+    // Each figure through GeuFigure, so the row names both units. These
+    // three are a 10px row inside overflow:hidden — the place the second
+    // name was most tempting to drop and the place a reader is least able
+    // to supply it, since the row has no other currency on it.
+    assert.match(src, /<span style=\{\{ flexShrink: 0 \}\}><GeuFigure amount=\{paid\}[^>]*\/><\/span>/);
+    assert.match(src, /<span style=\{\{ flexShrink: 0, color: T\.positive \}\}><GeuFigure amount=\{now\}[^>]*\/><\/span>/);
+    assert.match(src, /<span style=\{\{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" \}\}><GeuFigure amount=\{paid\}[^>]*\/><\/span>/);
     assert.match(src, /<span style=\{\{ flexShrink: 0 \}\}>in \{\(r\.monthsToTarget \/ 12\)\.toFixed\(1\)\} yr<\/span>/);
   });
 
@@ -187,7 +191,7 @@ describe("PayLater", () => {
     // enough to the total to read as part of it.
     const src = code();
     assert.ok(!/= your PayLater limit/.test(src));
-    assert.match(src, /This \{geuLensMoney\(totalAssets, ccyCode, lens\)\} is also your PayLater limit/);
+    assert.match(src, /This <GeuFigure amount=\{totalAssets\}[^>]*\/> is also your PayLater limit/);
     assert.match(src, /onClick=\{onViewPayLater\}/);
   });
 });

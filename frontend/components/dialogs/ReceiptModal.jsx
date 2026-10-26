@@ -608,7 +608,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   const receiptShareSummary = (For) => {
     const r = For || receipt;
     const sent = r.direction === "sent";
-    const money = geuLensOwnMoney(Number(r.amount || 0), r.currencyCode, lens, viewerCurrency);
+    const money = geuLensBarMoney(Number(r.amount || 0), r.currencyCode, lens, viewerCurrency);
     const who = r.name ? `${sent ? "To" : "From"}: ${r.name}${receiptCountryName ? ` (${receiptCountryName})` : ""}` : "";
     return [
       `Gloobal receipt - ${sent ? "money sent" : "money received"}`,
@@ -715,6 +715,12 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       outcome = await shareReceiptImage(tabReceipt, {
         viewerName,
         viewerSymbolId: viewerSymbolId || "",
+        // The picture goes out in the lens the sender is reading in, so it
+        // matches the screen they shared it from. Both names are on every
+        // figure either way — see receiptImageMoney — so the only thing this
+        // decides is which of the two leads.
+        lens,
+        viewerCurrency,
         link: receiptShareUrl
       });
     } catch (e) {
@@ -872,11 +878,30 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   const heroChip = onShareTab
     ? (displayShareRate == null ? "" : `${receipt.name || "They"} share${/s$/i.test(String(receipt.name || "")) ? "" : "s"} ${displayShareRate.toFixed(2)}% of every payment`)
     : (hasShareEvent && !canReveal && shownShareAmount > 0
-      // No bar in here: this chip is a SENTENCE ("Creator share 18.33€
-      // back"), the words around the figure already say what it is, and a
-      // bar would break the sentence in half. Same call as the toasts and
-      // the button labels — the bar goes on a figure standing alone.
-      ? `Creator share ${geuLensOwnMoney(shownShareAmount, shareCurrency, lens, viewerCurrency)} ${shareIsCredit ? "back" : "shared"}`
+      // This chip is a SENTENCE ("Creator share 18.33€ │ EUR back"), and it
+      // used to be the argument for leaving the bar off — the words around
+      // the figure already say what it is, so a bar read as breaking the
+      // sentence in half.
+      //
+      // THAT RULE IS REVERSED, by the founder, in the words that prompted
+      // this pass: "i still saw many places that geu is not together with
+      // local unit and some place local unit is not connected with geu".
+      //
+      // The old rule was wrong in a way worth writing down, because it
+      // sounds reasonable. "The sentence says what it is" is true of the
+      // WORDS and false of the UNIT: "Creator share 18.33 back" with the
+      // toggle on names no currency at all, and a reader supplies their own.
+      // A sentence is not a context that makes a figure safe to half-label;
+      // it is just a context where the second name is less convenient to
+      // set. Convenience was doing the arguing.
+      //
+      // So the bar goes on here too, and the sentence carries it. Where the
+      // figure sits inside running type the TRAIL IS SET SMALLER rather than
+      // dropped — see GeuFigure — which is the founder's own answer to how
+      // the pair should sit in a sentence. This particular string is handed
+      // to a share sheet rather than drawn by us, so it gets the one-size
+      // form; everything the app draws itself gets the two-size one.
+      ? `Creator share ${geuLensBarMoney(shownShareAmount, shareCurrency, lens, viewerCurrency)} ${shareIsCredit ? "back" : "shared"}`
       : "");
   const dateTimeValue = [receipt.date, receipt.time].filter(Boolean).join(" \xB7 ");
   // A figure in a row, with its currency spelled out beside it.

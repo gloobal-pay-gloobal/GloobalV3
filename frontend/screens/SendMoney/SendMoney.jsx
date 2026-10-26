@@ -741,7 +741,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     // the top of it, which made a game the toll gate on a document somebody
     // had just paid for.
     if (settledRemotely && typeof gloobalAuthToken === "function" && gloobalAuthToken()) {
-      setUnlock({ receipt: finalReceipt, amountLabel: fmtMoney(senderAmount, top.currency) });
+      setUnlock({ receipt: finalReceipt, amountLabel: geuLensBarMoney(senderAmount, top.currency, lens, top.currency) });
     }
     setTransactionStatus("completed");
     if (onSendComplete) onSendComplete(finalHistoryEntry);
@@ -1104,7 +1104,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       const drawn = await onDrawEssentials(senderAmount);
       essentialsAppliedRef.current = Number(drawn && drawn.applied) || 0;
       if (essentialsAppliedRef.current > 0) {
-        showToast2(`${fmtMoney(essentialsAppliedRef.current, top.currency)} from your Essentials`);
+        showToast2(`${geuLensBarMoney(essentialsAppliedRef.current, top.currency, lens, top.currency)} from your Essentials`);
       } else {
         // Nothing left in the pool today. Say so rather than letting the
         // payment proceed as though Essentials had carried part of it.
@@ -2268,7 +2268,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   ><GH2HFlipCircle size={22} /></div><div
     style={{
       marginTop: 14,
-      fontSize: receiptAmountFontSize(`\u2212${fmtMoney(senderAmount, top.currency)}`, 26),
+      fontSize: receiptAmountFontSize(`\u2212${geuLensBarMoney(senderAmount, top.currency, lens, top.currency)}`, 26),
       fontWeight: 800,
       color: T.negative,
       fontFamily: T.fontDisplay,
@@ -2276,7 +2276,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       overflowWrap: "anywhere"
     }}
   >
-                −{fmtMoney(senderAmount, top.currency)}</div></div>{
+                <GeuFigure amount={senderAmount} currency={top.currency} lens={lens} sign="\u2212" size={receiptAmountFontSize(`\u2212${geuLensBarMoney(senderAmount, top.currency, lens, top.currency)}`, 26)} /></div></div>{
     /* Same dial pad used for PIN/OTP everywhere else in the app
        (registration, login) instead of this screen's own
        separate keypad — one PIN entry pattern app-wide. Reaching

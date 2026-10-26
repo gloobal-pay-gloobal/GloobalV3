@@ -280,13 +280,21 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
         // geuLensMoney rather than geuLensOwnMoney: this figure is a sum of
         // the viewer's own rows in the viewer's own currency, so the
         // own-currency question the rows have to ask is already answered.
-        // The BAR IS LEFT OUT OF THE SPOKEN LABEL on purpose. A screen
+        // The BAR IS LEFT OUT OF THE SPOKEN LABEL on purpose — a screen
         // reader announces U+2502 as "box drawings light vertical" or skips
         // it silently depending on the engine, and neither is the second
-        // unit's name. The ear gets the figure in the unit being read; the
-        // eye gets both names. Same rule everywhere an aria-label carries a
-        // figure.
-        aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${geuLensMoney(active.value, ccyCode, lens)}`}
+        // unit's name.
+        //
+        // What does NOT follow, and used to be written here, is that the ear
+        // should get one name while the eye gets two. That left this label
+        // saying "30,500.00 GEU" with the toggle on, which names no money at
+        // all to the one person who cannot see the unit beside it. The
+        // accessible reading is not the shorter one, it is the one that is
+        // still true read aloud.
+        //
+        // geuLensSpokenMoney swaps the glyph for a comma and keeps the pair.
+        // Same rule everywhere an aria-label carries a figure.
+        aria-label={`${active.label} ${historyPeriodMeta(historyPeriod).emptyLabel}: ${geuLensSpokenMoney(active.value, ccyCode, lens, ccyCode)}`}
         style={{
           // Sized from its own content now that it carries four more
           // characters, down from 19 only when it has to — this figure

@@ -1260,7 +1260,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       // is clamped, because a bar is a container.
       const pct = goalMajor > 0 ? Math.round((raised / goalMajor) * 100) : 0;
       const barPct = Math.min(100, pct);
-      return <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.line}` }}><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden" }}><div style={{ width: `${barPct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginTop: 9 }}><span style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}>{geuLensOwnMoney(raised, currency, lens, myCurrency)}</span>{project.goal ? <span style={{ fontSize: 11.5, color: T.inkFaint }}>of {geuLensOwnMoney(goalMajor, currency, lens, myCurrency)}</span> : <span style={{ fontSize: 11.5, color: T.inkFaint }}>raised</span>}</span>{project.goal && <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>}</div></div>;
+      return <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.line}` }}><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden" }}><div style={{ width: `${barPct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div><div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginTop: 9 }}><span style={{ display: "flex", alignItems: "baseline", gap: 5, minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}><GeuFigure amount={raised} currency={currency} lens={lens} own={myCurrency} size={14} /></span>{project.goal ? <span style={{ fontSize: 11.5, color: T.inkFaint }}>of <GeuFigure amount={goalMajor} currency={currency} lens={lens} own={myCurrency} size={11.5} /></span> : <span style={{ fontSize: 11.5, color: T.inkFaint }}>raised</span>}</span>{project.goal && <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{pct}%</span>}</div></div>;
     })()}<div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: T.inkFaint, marginTop: 10 }}><span>{project.summaryWordCount} words</span>{projectDateText(project.createdAt) && <><span>·</span><span>{projectDateText(project.createdAt)}</span></>}{project.countryIso && COUNTRY_BY_ISO[project.countryIso] && <><span>·</span><FlagEmoji flag={COUNTRY_BY_ISO[project.countryIso].flag} width={16} height={12} radius={3} /></>}</div></button>;
   })}</div>}</div>{
     /* Add a project, floating in the bottom-right corner.
@@ -1436,7 +1436,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       enabled={hoomanProject.status === "published"}
       tint={paint.tint}
       accent={paint.ink}
-      money={(amount, currency) => geuLensOwnMoney(amount, currency || displayCurrency, lens, myCurrency)}
+      money={(amount, currency) => <GeuFigure amount={amount} currency={currency || displayCurrency} lens={lens} own={myCurrency} size={13.5} />}
     /><div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: T.inkFaint, marginTop: 18 }}><span>{hoomanProject.summaryWordCount} words</span>{projectDateText(hoomanProject.createdAt) && <><span>·</span><span>{projectDateText(hoomanProject.createdAt)}</span></>}{hoomanProject.ownerSymbolId && <><span>·</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanProject.ownerSymbolId}</span></>}</div></div></div></div>;
   })()}{showProjectForm && <div style={{ position: "fixed", inset: 0, zIndex: 350, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
       setShowProjectForm(false);
@@ -1704,7 +1704,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        does it better.
        The figure still goes through the lens, so it reads in GEU when the
        toggle is on. What it does not carry is the second naming. */
-  }{totalRealSpend != null ? geuLensMoney(totalRealSpend, displayCurrency, lens) : <span aria-label="No data">∆</span>}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 8, lineHeight: 1.4 }}>
+  }{totalRealSpend != null ? <GeuFigure amount={totalRealSpend} currency={displayCurrency} lens={lens} own={myCurrency} size={28} /> : <span aria-label="No data">∆</span>}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 8, lineHeight: 1.4 }}>
                 Same real total, shown in whichever currency you pick — not just your own.
               </div></div></div>{
     /* Currency picker for the aggregate total */

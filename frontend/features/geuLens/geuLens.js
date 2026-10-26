@@ -535,6 +535,40 @@ function geuLensBarParts(amount, currencyCode, lens, ownCurrency) {
   return { lead: whole.slice(0, at).trimEnd(), trail: whole.slice(at) };
 }
 
+// ── THE SAME PAIR, FOR TEXT THAT IS SPOKEN RATHER THAN DRAWN ────────────
+//
+//     drawn       −820.00 GEU │ ₹
+//     spoken      −820.00 GEU, ₹
+//
+// An OS notification banner and an aria-label are not surfaces this app
+// draws. They are plain strings handed to something else to render or to
+// read aloud, and U+2502 does not survive that trip: a screen reader
+// announces it as "box drawings light vertical" or drops it silently
+// depending on the engine, and neither is the second unit's name.
+//
+// That was the reasoning behind leaving the bar off those three strings
+// entirely, and the reasoning was half right. The bar had to go; THE SECOND
+// NAME DID NOT. Without it the banner on a lock screen read
+//
+//     −820.00 GEU
+//
+// which is the one shape the whole module exists to prevent — GEU with
+// nothing beside it, completed by the reader from their own country, on the
+// surface a person sees first and trusts most and cannot tap to check.
+//
+// So the rule holds and only the punctuation changes. A comma is the
+// separator because every screen reader already knows what to do with one:
+// it reads as a pause, which is exactly the relationship between a figure's
+// two names.
+function geuLensSpokenMoney(amount, currencyCode, lens, ownCurrency) {
+  const whole = geuLensBarMoney(amount, currencyCode, lens, ownCurrency);
+  const at = whole.indexOf(GEU_LENS_BAR);
+  // No bar means one unit and nothing to separate — a figure with no
+  // currency, or one whose own text already ends in its code.
+  if (at < 0) return whole;
+  return `${whole.slice(0, at).trimEnd()}, ${whole.slice(at + GEU_LENS_BAR.length).trim()}`;
+}
+
 // The size for the trailing half, given the figure's own size. Rounded
 // rather than left fractional: a half-pixel font size is rendered
 // inconsistently across engines, and this lands beside a figure whose size is

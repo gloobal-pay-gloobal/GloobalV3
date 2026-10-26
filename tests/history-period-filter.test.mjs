@@ -142,13 +142,29 @@ describe("both figures on the card are formatted the same way", () => {
     assert.match(chart, /geuLensBarMoney\(value, currencyCode, lens, currencyCode\)/);
     assert.match(chart, /barMoney\(Number\(displayed\.paid\) \|\| 0\)/);
     assert.match(chart, /barMoney\(Number\(displayed\.received\) \|\| 0\)/);
-    // The callouts inside the chart deliberately DO NOT take the bar: a
-    // tooltip on one of seven bars is a few characters wide, and a bar in it
-    // would be most of the tooltip. The figures above the chart are the ones
-    // read as figures, and the ones that have to agree with the balance
-    // sitting directly over them.
-    assert.ok(/money\(d\.|money\(Number\(d\.|money\(weekTotal|money\(sel/.test(chart),
-      "nothing inside the chart formats through money() any more, so barMoney has no sibling to be the plain one");
+    // ── THE CALLOUT TAKES THE PAIR NOW ──────────────────────────────────
+    //
+    // This used to assert the opposite, and the reasoning it carried was:
+    // "a tooltip on one of seven bars is a few characters wide, and a bar in
+    // it would be most of the tooltip."
+    //
+    // That is a width argument, and width is not allowed to decide whether a
+    // figure names its currency. With the toggle on, the callout read
+    // "−820.00 GEU" over a single bar — GEU with nothing beside it, which is
+    // the one shape geuLens.js exists to prevent. The founder put it plainly:
+    // "i still saw many places that geu is not together with local unit".
+    //
+    // The width problem is real and has its own answer: GeuFigure sets the
+    // trailing half at 75%, so the second name costs a few narrow pixels
+    // instead of the figure's own size. Narrow is a layout outcome; unnamed
+    // is a correctness one.
+    assert.match(chart, /<GeuFigure amount=\{calloutValue\}/,
+      "the day callout must draw both names through GeuFigure");
+    // The two labels a screen reader says keep BOTH NAMES and lose only the
+    // glyph — U+2502 has no spoken form, but that is an argument against the
+    // character, never against the second unit.
+    assert.match(chart, /geuLensSpokenMoney\(Number\(d\.paid\) \|\| 0, currencyCode, lens, currencyCode\)/);
+    assert.match(chart, /geuLensSpokenMoney\(Number\(d\.received\) \|\| 0, currencyCode, lens, currencyCode\)/);
     // And nothing bypasses it.
     const direct = (chart.match(/fmtMoney\(/g) || []).length;
     assert.equal(direct, 1, `${direct} direct fmtMoney calls in the chart; only the one inside money() is allowed`);

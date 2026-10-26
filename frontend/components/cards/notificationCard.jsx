@@ -87,12 +87,22 @@ function gloobalNotifHeadline(meta, lens, ownCurrency) {
   if (amount == null || !Number.isFinite(Number(amount)) || !currency) {
     return sent ? "Money sent" : "Money received";
   }
-  // NO BAR. This is the operating system's banner, not a surface this app
-  // draws — it is one line of plain text on a lock screen, next to the app
-  // name, read in a glance and often read aloud. U+2502 has no reliable
-  // spoken form, and a second unit name is not what a banner is for. The
-  // card this banner opens carries both names.
-  return `${sent ? "\u2212" : "+"}${geuLensOwnMoney(Number(amount), currency, lens, ownCurrency)}`;
+  // NO BAR, BUT BOTH NAMES. This is the operating system's banner, not a
+  // surface this app draws — one line of plain text on a lock screen, next
+  // to the app name, read in a glance and often read aloud. U+2502 has no
+  // reliable spoken form, so the bar cannot come here.
+  //
+  // It used to follow from that that the second unit could not come either,
+  // and that was the wrong conclusion from a right premise. With the toggle
+  // on this banner read "−820.00 GEU" — GEU with no currency beside it, on
+  // the one surface a person cannot tap to check, completed from whatever
+  // country they happen to be in. "The card this banner opens carries both
+  // names" is no defence: the banner is read by people who never open it.
+  //
+  // geuLensSpokenMoney keeps the rule and changes only the punctuation —
+  // "−820.00 GEU, ₹" — because a comma is a thing every screen reader
+  // already knows how to say.
+  return `${sent ? "\u2212" : "+"}${geuLensSpokenMoney(Number(amount), currency, lens, ownCurrency)}`;
 }
 // WHICH NOTIFICATIONS ARE ABOUT MONEY.
 //

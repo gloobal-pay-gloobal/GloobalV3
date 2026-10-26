@@ -53,13 +53,33 @@ function receiptImageCountry(receipt) {
   };
 }
 
-function receiptImageMoney(amount, currency) {
+// ── EVERY FIGURE ON THE PICTURE CARRIES BOTH NAMES ──────────────────────
+//
+// This file draws the one thing Gloobal makes that LEAVES Gloobal: the
+// receipt picture a person sends into a chat, where it is seen by people who
+// may never have opened the app. It was the last surface still printing a
+// figure under one name, which made it the worst one — a picture of
+// "500.00₹" with no GEU anywhere says Gloobal is a rupee app, and a picture
+// of "500.00 GEU" with no rupee says nothing a stranger can price.
+//
+// WHICH LENS THE PICTURE IS IN is the sender's, by the founder's decision:
+// the picture looks like the screen they were looking at when they shared
+// it. The pair is on it either way, so the reader is never left completing a
+// unit from their own country — only the order of the two names changes.
+//
+// `lens` is optional and absent means no relabelling, because the model is
+// pure and is built with no lens at all by the preview path and the tests.
+// Falling back to fmtMoney there is right: a figure with one true name is
+// better than a figure wearing a lens nobody chose.
+function receiptImageMoney(amount, currency, lens, ownCurrency) {
   const n = Number(amount);
   if (!Number.isFinite(n)) return "";
-  return currency ? fmtMoney(n, currency) : fmt(n);
+  if (!currency) return fmt(n);
+  if (!lens) return fmtMoney(n, currency);
+  return geuLensBarMoney(n, currency, lens, ownCurrency || currency);
 }
 
-function buildReceiptImageModel(receipt, { viewerName, viewerSymbolId } = {}) {
+function buildReceiptImageModel(receipt, { viewerName, viewerSymbolId, lens, viewerCurrency } = {}) {
   const r = receipt || {};
   const isShare = r.kind === "share";
   const isCoin = r.kind === "coin";
@@ -78,7 +98,7 @@ function buildReceiptImageModel(receipt, { viewerName, viewerSymbolId } = {}) {
   const heroAmount = isShare
     ? (r.shareAmount != null ? r.shareAmount : r.amount)
     : r.amount;
-  const amountText = receiptImageMoney(heroAmount, currency);
+  const amountText = receiptImageMoney(heroAmount, currency, lens, viewerCurrency);
 
   const counterpartyName = r.name ? String(r.name) : "";
   const counterpartyId = r.id ? String(r.id).replace(/\s/g, "") : "";
@@ -93,8 +113,8 @@ function buildReceiptImageModel(receipt, { viewerName, viewerSymbolId } = {}) {
   const facts = isShare ? receiptShareConversion(r) : receiptPaymentConversion(r);
   const conversion = facts
     ? {
-      sentText: receiptImageMoney(facts.paidAmount, facts.paidCurrency),
-      receivedText: receiptImageMoney(facts.gotAmount, facts.gotCurrency),
+      sentText: receiptImageMoney(facts.paidAmount, facts.paidCurrency, lens, viewerCurrency),
+      receivedText: receiptImageMoney(facts.gotAmount, facts.gotCurrency, lens, viewerCurrency),
       rateText: facts.rateLabel
     }
     : null;
@@ -159,14 +179,14 @@ function buildReceiptImageModel(receipt, { viewerName, viewerSymbolId } = {}) {
     heroAmountText: isSent && amountText ? `−${amountText}` : amountText,
     shareRate: shareRatePercent,
     shareRateText,
-    shareAmountText: receiptImageMoney(shareAmountValue, currency),
-    shareText: `${shareRateText} \u00b7 ${receiptImageMoney(shareAmountValue, currency)}`,
+    shareAmountText: receiptImageMoney(shareAmountValue, currency, lens, viewerCurrency),
+    shareText: `${shareRateText} \u00b7 ${receiptImageMoney(shareAmountValue, currency, lens, viewerCurrency)}`,
     // What the chip on the purple says. On a share receipt the figure above
     // IS the share amount, so repeating it under a "Creator Share" eyebrow
     // says the same thing three times; the rate is the part not already
     // shown. Everywhere else the chip carries both, at zero included.
     shareChipLabel: isShare ? "Share rate" : "Creator share",
-    shareChipValue: isShare ? shareRateText : `${shareRateText} \u00b7 ${receiptImageMoney(shareAmountValue, currency)}`,
+    shareChipValue: isShare ? shareRateText : `${shareRateText} \u00b7 ${receiptImageMoney(shareAmountValue, currency, lens, viewerCurrency)}`,
     kind: isShare ? "share" : isCoin ? "coin" : "payment",
     kindLabel: isShare ? "Creator Share" : "",
     direction: isSent ? "sent" : "received",

@@ -74,7 +74,7 @@ describe("the share sheet gets the picture and a link", () => {
     // and so whether the figure may be renamed. A row in somebody else's
     // tender keeps its own symbol, which is what stops a shared receipt
     // repeating the cross-border mislabelling in a new form.
-    assert.match(summaryFn, /geuLensOwnMoney\(Number\(r\.amount \|\| 0\), r\.currencyCode, lens, viewerCurrency\)/);
+    assert.match(summaryFn, /geuLensBarMoney\(Number\(r\.amount \|\| 0\), r\.currencyCode, lens, viewerCurrency\)/);
   });
 
   test("and the code is not appended a second time", () => {

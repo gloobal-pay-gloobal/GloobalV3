@@ -170,6 +170,48 @@ test("the three surfaces that are read aloud use the spoken form, not the bar", 
   }
 });
 
+test("no JSX attribute hides an escape sequence inside a quoted string", () => {
+  // ── THE BUG THIS CAUGHT, SHIPPED IN 0089 ──────────────────────────────
+  //
+  //     sign="\u2212"      renders the seven characters \u2212
+  //     sign={"\u2212"}    renders the minus sign
+  //
+  // A JSX attribute written with quotes is NOT a JavaScript string. It is
+  // JSX text, and JSX text does not process backslash escapes — so the
+  // escape survives to the screen verbatim. There is no error, no warning
+  // and nothing to notice in review, because the source line looks exactly
+  // like the working one two thousand lines above it.
+  //
+  // It reached the founder's phone on the OTP screen, as
+  //
+  //     \u22122,384.95 GEU │ ₹
+  //
+  // on the figure a person reads immediately before they approve a payment.
+  // That is the worst place in the app for an amount to be unreadable, and
+  // it is the exact figure this patch set out to make trustworthy.
+  //
+  // The rule is mechanical, so a machine should be the one checking it:
+  // a braced expression `{"\u2212"}`, the literal character, or an HTML
+  // entity `&#8722;` all work. A quoted escape never does.
+  const offenders = [];
+  for (const file of jsxFiles(FRONTEND)) {
+    if (!/\.jsx$/.test(file)) continue;
+    const rel = path.relative(FRONTEND, file).split(path.sep).join("/");
+    fs.readFileSync(file, "utf8").split("\n").forEach((line, i) => {
+      if (/^\s*(\/\/|\*)/.test(line)) return;
+      for (const m of line.matchAll(/\s([a-zA-Z][a-zA-Z0-9]*)="([^"]*\\u[0-9a-fA-F]{4}[^"]*)"/g)) {
+        offenders.push(`${rel}:${i + 1}  ${m[1]}="${m[2]}"`);
+      }
+    });
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    "A quoted JSX attribute does not process \\uXXXX — it prints the escape. " +
+    "Use {\"\\uXXXX\"}, the character itself, or an HTML entity:\n  " + offenders.join("\n  ")
+  );
+});
+
 test("the balance card's bar names GEU, not the currency twice", () => {
   // The largest number in the app derived its own trailing half by hand and
   // got it backwards, reading "10,000.00₹ │ ₹" with the toggle off — the

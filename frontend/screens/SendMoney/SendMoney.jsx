@@ -2276,7 +2276,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       overflowWrap: "anywhere"
     }}
   >
-                <GeuFigure amount={senderAmount} currency={top.currency} lens={lens} sign="\u2212" size={receiptAmountFontSize(`\u2212${geuLensBarMoney(senderAmount, top.currency, lens, top.currency)}`, 26)} /></div></div>{
+                <GeuFigure amount={senderAmount} currency={top.currency} lens={lens} sign={"\u2212"} size={receiptAmountFontSize(`\u2212${geuLensBarMoney(senderAmount, top.currency, lens, top.currency)}`, 26)} /></div></div>{
     /* Same dial pad used for PIN/OTP everywhere else in the app
        (registration, login) instead of this screen's own
        separate keypad — one PIN entry pattern app-wide. Reaching

@@ -177,6 +177,43 @@ test("the creator page hides the floating map button", () => {
     "the page must fire the blocking-overlay event the map button listens for");
 });
 
+test("the three corner controls are one component, so they cannot drift", () => {
+  const src = page();
+  // Back was a 40px circle; the flag and the scanner were hand-rolled 34px
+  // rounded squares next to it. Three sizes and two shapes on one row is
+  // what "logo icon and name are not aligned" was looking at. Sharing
+  // NavIconButton makes alignment structural rather than a number somebody
+  // has to keep matching by hand.
+  assert.match(src, /<NavIconButton\s+label=\{`\$\{creatorCountryName\(creator\)\}/,
+    "the flag uses the shared nav button");
+  assert.match(src, /<NavIconButton\s+label="Scan a Gloobal code"/,
+    "so does the scanner");
+  assert.match(src, /<ScannerIcon size=\{NAV_GLYPH_SIZE\}/,
+    "and it carries the app's own scan mark at the shared glyph size");
+  assert.ok(!/width: 34, height: 34/.test(src), "no hand-rolled corner control sizes remain");
+});
+
+test("the flag is derived from the ISO code the server actually sends", () => {
+  const src = page();
+  // publicCreator carries countryIso and has never carried `flag`. The
+  // header asked for creator.flag, got undefined and rendered nothing — so
+  // the flag was missing from the built screen while the code that drew it
+  // read as correct.
+  assert.match(src, /function creatorFlag\(creator\)/);
+  assert.match(src, /COUNTRY_BY_ISO\[iso\]/, "the flag comes from the country table");
+  assert.ok(!/creator\.flag \?/.test(src), "nothing may read a flag field the server does not send");
+  assert.match(server(), /countryIso: user\.countryIso \|\| '',/,
+    "and the server must send the ISO code on a public creator");
+});
+
+test("every row's control occupies the same width", () => {
+  // A bare "+" is 28px and a stepper is 68px. Left to size themselves, a
+  // list where one item is in the basket and the next is not puts their
+  // right edges 40px apart.
+  assert.match(page(), /width: 86, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end"/,
+    "the control column is a fixed width with its contents pushed right");
+});
+
 test("the owner has a door into their own page", () => {
   // Without one the inventory existed on the server and nowhere a creator
   // could reach it — which is exactly what the founder reported.

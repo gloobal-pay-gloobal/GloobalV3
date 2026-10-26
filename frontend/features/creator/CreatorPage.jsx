@@ -29,6 +29,28 @@ import { Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Penci
 
 var CREATOR_PAGE_TABS = ["Selling", "Buying"];
 
+// The creator's own country, from the ISO code the server sends.
+//
+// publicCreator carries countryIso and has never carried a `flag`. The
+// header asked for creator.flag, found undefined, and rendered nothing —
+// so the flag the founder asked for twice was absent from the built screen
+// while the code that drew it looked correct.
+function creatorCountry(creator) {
+  const iso = creator && creator.countryIso ? String(creator.countryIso).toUpperCase() : "";
+  if (!iso) return null;
+  return (typeof COUNTRY_BY_ISO !== "undefined" && COUNTRY_BY_ISO[iso]) || null;
+}
+
+function creatorFlag(creator) {
+  const country = creatorCountry(creator);
+  return country ? country.flag : "";
+}
+
+function creatorCountryName(creator) {
+  const country = creatorCountry(creator);
+  return country ? country.name : "";
+}
+
 // The basket lives for as long as the page is open and no longer.
 //
 // Not persisted, deliberately. A total a person assembled yesterday,
@@ -113,7 +135,16 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, onAdd, onRemove, 
       display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 2,
       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
     }}>{item.note}</span> : null
-  }</span>{owner
+  }</span>{
+    /* ── THE CONTROL COLUMN IS ONE WIDTH ──────────────────────────────
+       A bare "+" is 28px and a stepper is 28 + 12 + 28; left to size
+       themselves, a list where one item is in the basket and the next is
+       not puts their right edges 40px apart, and the column reads as
+       ragged. Fixed width, contents pushed right: every row's control
+       ends on the same vertical line whatever state it is in. */
+  }<span style={{
+    width: 86, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end"
+  }}>{owner
     ? <button
       onClick={onEdit}
       aria-label={`Edit ${item.title}`}
@@ -123,7 +154,7 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, onAdd, onRemove, 
       }}
     ><Pencil3 size={13} color={T.inkSoft} /></button>
     : item.soldOut ? null : (qty > 0
-      ? <span style={{ display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}><button
+      ? <span style={{ display: "flex", alignItems: "center", gap: 9 }}><button
         onClick={onRemove}
         aria-label={`One fewer ${item.title}`}
         style={{ width: 28, height: 28, borderRadius: 9, background: T.surfaceAlt, border: "none", cursor: "pointer", color: T.inkSoft, fontSize: 16, fontWeight: 800 }}
@@ -142,7 +173,7 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, onAdd, onRemove, 
           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", color: T.accent
         }}
       ><Plus7 size={15} /></button>)
-  }</div>;
+  }</span></div>;
 }
 
 function CreatorPage({
@@ -211,21 +242,33 @@ function CreatorPage({
     display: "flex", alignItems: "center", gap: 10,
     padding: "calc(15px + env(safe-area-inset-top, 0px)) 16px 10px", flexShrink: 0
   }}><NavBackButton onClick={onClose} /><span style={{
+    flex: 1, minWidth: 0,
     fontSize: 14, fontWeight: 700, color: T.inkSoft, overflow: "hidden",
     textOverflow: "ellipsis", whiteSpace: "nowrap"
-  }}>{isOwner ? "Your creator page" : `Paying ${name}`}</span><span style={{ flex: 1 }} />{
-    creator.flag ? <span style={{
-      width: 34, height: 34, borderRadius: 11, background: T.surface, boxShadow: T.shadowCard,
-      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0
-    }}>{creator.flag}</span> : null
-  }<button
+  }}>{isOwner ? "Your creator page" : `Paying ${name}`}</span>{
+    /* ── THE THREE CORNER CONTROLS ARE ONE COMPONENT ──────────────────
+       Back, flag and scanner all go through NavIconButton, which is a
+       40px circle with the app's own surface and shadow. They used to be
+       a 40px circle beside two 34px rounded squares, hand-rolled here —
+       three sizes and two shapes on one row, which is what "logo icon and
+       name are not aligned" was looking at. Sharing the primitive means
+       they cannot drift apart again.
+
+       The flag is the CREATOR'S country, derived from countryIso rather
+       than read off a `flag` field — publicCreator never sent one, so the
+       conditional that looked for it silently rendered nothing and the
+       flag was simply missing from the shipped screen. */
+  }{creatorFlag(creator) ? <NavIconButton
+    label={`${creatorCountryName(creator)} — where this creator is`}
+    onClick={undefined}
+  ><span style={{ fontSize: 17, lineHeight: 1 }}>{creatorFlag(creator)}</span></NavIconButton> : null}<NavIconButton
+    label="Scan a Gloobal code"
     onClick={onScan}
-    aria-label="Scan a Gloobal code"
-    style={{
-      width: 34, height: 34, borderRadius: 11, background: T.surface, boxShadow: T.shadowCard,
-      border: "none", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer"
-    }}
-  ><ScannerIcon size={18} color={T.inkSoft} /></button></div>
+  >{
+    /* The app's OWN scan mark — three solid blocks in the arrangement a
+       QR's finder patterns take — not a camera glyph and not a redraw.
+       See components/common/icons.jsx. */
+  }<ScannerIcon size={NAV_GLYPH_SIZE} color={T.ink} /></NavIconButton></div>
 
   <div style={{
     flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",

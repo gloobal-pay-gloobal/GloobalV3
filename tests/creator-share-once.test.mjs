@@ -157,7 +157,13 @@ describe("Today's Collection is money collected, not share received", () => {
     // now broken twice for the same reason — once when the display lens
     // replaced fmtMoney, and again when GeuFigure replaced the lens's plain
     // formatter — and both times the claim it makes was still true.
-    assert.match(assets, /Settle .{0,160}totalAssets.{0,160} to Gloobal Bank/);
+    // Pinned to the FIGURE and the DESTINATION, not to their order on the
+    // line. This assertion has now broken three times for the same reason
+    // — fmtMoney became the lens, the lens became GeuFigure, and the one
+    // line became two when the figure stopped fitting beside the words —
+    // and every time the claim it makes was still true.
+    assert.match(assets, /Settle to Gloobal Bank/);
+    assert.match(assets, /<GeuFigure amount=\{totalAssets\}/);
   });
 });
 

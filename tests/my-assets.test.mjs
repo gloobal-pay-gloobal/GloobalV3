@@ -91,27 +91,35 @@ describe("the balance card states the chain with its quantities", () => {
 });
 
 describe("each seed carries its own chain, end to end", () => {
-  test("the row prints paid → worth now → back to paid, and when", () => {
+  test("the row prints paid → worth now, and when it is back", () => {
     const src = code();
-    // Each figure through GeuFigure, so the row names both units. These
-    // three are a 10px row inside overflow:hidden — the place the second
-    // name was most tempting to drop and the place a reader is least able
-    // to supply it, since the row has no other currency on it.
+    // Each figure through GeuFigure, so the row names both units. This is
+    // a 10px row — the place the second name was most tempting to drop
+    // and the place a reader is least able to supply it, since the row
+    // has no other currency on it.
     assert.match(src, /<span style=\{\{ flexShrink: 0 \}\}><GeuFigure amount=\{paid\}[^>]*\/><\/span>/);
     assert.match(src, /<span style=\{\{ flexShrink: 0, color: T\.positive \}\}><GeuFigure amount=\{now\}[^>]*\/><\/span>/);
-    assert.match(src, /<span style=\{\{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" \}\}><GeuFigure amount=\{paid\}[^>]*\/><\/span>/);
-    assert.match(src, /<span style=\{\{ flexShrink: 0 \}\}>in \{\(r\.monthsToTarget \/ 12\)\.toFixed\(1\)\} yr<\/span>/);
+    assert.match(src, /back in \{\(r\.monthsToTarget \/ 12\)\.toFixed\(1\)\} yr/);
   });
 
-  test("a narrow screen truncates the repeat, never the horizon", () => {
-    // The chain's last figure repeats its first, and is printed at the
-    // front of the same line. "in 25.1 yr" is not repeated anywhere on the
-    // screen, so it is the one segment that must survive a 320px phone.
+  test("the chain no longer reprints its own first figure", () => {
+    // ── WHAT CHANGED, AND WHY ──────────────────────────────────────────
+    //
+    // The chain was paid → worth now → paid. The third was the SAME
+    // NUMBER as the first, on the same line, a few centimetres away. It
+    // survived while a figure was "250.00₹"; once every figure carried
+    // its other name it became "250.00₹ │ GEU" three times over, the row
+    // ran out of width, and the repeat was ellipsized to "250.0…" —
+    // taking the space and no longer stating the number.
+    //
+    // "back in 31.6 yr" can only mean back to the figure at the front of
+    // the line, and that one is printed in full.
     const src = code();
     const tail = src.slice(src.indexOf("alignItems: \"center\", gap: 4, marginTop: 5"));
-    const repeat = tail.indexOf("minWidth: 0, overflow: \"hidden\", textOverflow: \"ellipsis\"");
-    const years = tail.indexOf("}}>in {(r.monthsToTarget / 12)");
-    assert.ok(repeat > -1 && years > repeat, "the years are no longer pinned behind the shrinkable figure");
+    const figures = (tail.match(/<GeuFigure amount=\{paid\}/g) || []).length;
+    assert.equal(figures, 1, "the paid figure appears once on the chain, not twice");
+    assert.ok(!/textOverflow: "ellipsis"/.test(tail),
+      "nothing on the chain needs ellipsizing any more");
   });
 
   test("the bar and the chain are drawn from the same two numbers", () => {
@@ -152,12 +160,16 @@ describe("each seed carries its own chain, end to end", () => {
   test("the row's marker and its bar are the same colour", () => {
     const src = code();
     assert.match(src, /const color = rowColor\(i\);/);
-    assert.match(src, /<Sprout size=\{17\} color=\{color\} \/>/);
+    // 14px inside a 28px circle. The marker was 36px with a 17px sprout,
+    // which gave a decorative seed more weight on the row than the figures
+    // beside it — the founder asked for it smaller and he was right.
+    assert.match(src, /<Sprout size=\{14\} color=\{color\} \/>/);
+    assert.match(src, /width: 28, height: 28, borderRadius: "50%"/);
     assert.match(src, /background: color,/);
   });
 
   test("Creator Share seeds keep their flip symbol", () => {
-    assert.match(code(), /r\.chip === "CS" \? <FlipSymbolCircle size=\{36\} \/>/);
+    assert.match(code(), /r\.chip === "CS" \? <FlipSymbolCircle size=\{28\} \/>/);
   });
 
   test("the seed's date survived the rebuild", () => {
@@ -251,5 +263,30 @@ describe("a seed can show the payment it came out of", () => {
     assert.match(dash, /role=\{openable \? "button" : void 0\}/);
     assert.match(dash, /tabIndex=\{openable \? 0 : void 0\}/);
     assert.match(dash, /aria-label=\{openable \? `Open the receipt for \$\{value\}` : void 0\}/);
+  });
+});
+
+describe("the settle button says where the money is going", () => {
+  test("the amount is on its own line", () => {
+    // It was one line: icon, "Settle", the figure, "to Gloobal Bank".
+    // That fitted while a figure was "256,334.91₹"; with its other name
+    // beside it the line ran past the button and was cut to "to Gloobal
+    // Ba…", so the button stopped saying where the money went.
+    //
+    // Two lines rather than a smaller font, because shrinking the figure
+    // as it grows is exactly backwards for the number somebody is about
+    // to act on.
+    const src = code();
+    assert.match(src, /<span>Settle to Gloobal Bank<\/span>/);
+    assert.match(src, /flexDirection: "column"/);
+    assert.ok(!/Settle <GeuFigure/.test(src), "the old one-line form is gone");
+  });
+
+  test("the map button stops sitting on it", () => {
+    // AppMapButton is fixed at z-index 10000 against the right edge and
+    // landed across the end of the settle button. Hidden rather than
+    // nudged — which is what the scanner, the creator page and every
+    // other full-screen overlay already do with this event.
+    assert.match(code(), /gloobal:blockingOverlay/);
   });
 });

@@ -1,11 +1,29 @@
 // src/features/assets/AssetsScreen.jsx
-import React2, { useState as useState10, Fragment } from "react";
+import React2, { useState as useState10, useEffect as useEffect53, Fragment } from "react";
 import { ArrowLeft, ArrowRight, ChevronRight, TrendingUp, Sprout, Landmark as Landmark3 } from "lucide-react";
 function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater, onViewDetail, onRequestSettle }) {
   // Every figure on this screen is the account's own money in the account's
   // own currency, so the lens applies to all of them or none. Read from the
   // shared store the balance card's toggle writes.
   const lens = useGeuLens();
+
+  // ── THE MAP BUTTON SAT ON THE SETTLE BUTTON ─────────────────────────
+  //
+  // AppMapButton is fixed at z-index 10000 against the right edge, and on
+  // this screen it lands across the end of "Settle … to Gloobal Bank" —
+  // so the button stopped saying where the money was going. Seen on the
+  // founder's phone, not here.
+  //
+  // Hidden rather than nudged, which is what the scanner, the creator page
+  // and every other full-screen overlay in this app already do with the
+  // same event. The map belongs to the dashboard; a screen stacked on top
+  // of it is not a place to open one from.
+  useEffect53(() => {
+    if (typeof window === "undefined") return undefined;
+    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
+    fire(true);
+    return () => fire(false);
+  }, []);
   const [assetsExpanded, setAssetsExpanded] = useState10(false);
   const totalAssets = assetRows.reduce((s, r) => s + r.value, 0);
   // This number used to sit on the wallet card under the heading "Future
@@ -98,10 +116,11 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      gap: 8,
+      flexDirection: "column",
+      gap: 0,
       border: "none",
       borderRadius: T.radiusMd,
-      padding: "14px 0",
+      padding: "12px 14px",
       background: totalAssets > 0 ? T.gradButton : T.surfaceAlt,
       color: totalAssets > 0 ? "#fff" : T.inkFaint,
       fontSize: 13.5,
@@ -109,8 +128,19 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
       cursor: totalAssets > 0 ? "pointer" : "not-allowed",
       boxShadow: totalAssets > 0 ? "0 8px 20px rgba(124,58,237,0.3)" : "none"
     }}
-  ><Landmark3 size={16} />
-          Settle <GeuFigure amount={totalAssets} currency={ccyCode} lens={lens} size={13.5} /> to Gloobal Bank
+  >{
+    /* ── THE AMOUNT GETS ITS OWN LINE ─────────────────────────────────
+       This was one line: icon, "Settle", the figure, "to Gloobal Bank".
+       It fitted while a figure was "256,334.91₹"; with its other name
+       beside it the line ran past the button and was cut to "to Gloobal
+       Ba…", so the button no longer said where the money was going.
+       Two lines rather than a smaller font, because the alternative is a
+       figure that shrinks as it grows — exactly backwards for the number
+       a person is about to act on. */
+  }<span style={{ display: "flex", alignItems: "center", gap: 8 }}><Landmark3 size={16} />
+    <span>Settle to Gloobal Bank</span></span><span style={{
+      display: "block", marginTop: 3, fontSize: 15, fontWeight: 800, whiteSpace: "nowrap"
+    }}><GeuFigure amount={totalAssets} currency={ccyCode} lens={lens} size={15} /></span>
         </button>{
     /* One row per seed, each carrying its own chain end to end:
        what was paid, what it is worth today, and what it grows back
@@ -142,7 +172,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
       /* Creator Share seeds keep their flip-symbol circle; everything
          else gets a sprout in the colour its bar is drawn in, so the
          row's marker and its progress are the same colour. */
-    }{r.chip === "CS" ? <FlipSymbolCircle size={36} /> : <span style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0, background: `${color}1A`, display: "flex", alignItems: "center", justifyContent: "center" }}><Sprout size={17} color={color} /></span>}<span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "flex", alignItems: "baseline", gap: 8 }}><span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.business}</span>{r.date ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: T.inkFaint }}>{r.date}</span> : null}</span><span style={{ display: "block", marginTop: 5, height: 5, borderRadius: 99, background: T.line, overflow: "hidden" }}><span
+    }{r.chip === "CS" ? <FlipSymbolCircle size={28} /> : <span style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: `${color}1A`, display: "flex", alignItems: "center", justifyContent: "center" }}><Sprout size={14} color={color} /></span>}<span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "flex", alignItems: "baseline", gap: 8 }}><span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.business}</span>{r.date ? <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: T.inkFaint }}>{r.date}</span> : null}</span><span style={{ display: "block", marginTop: 5, height: 5, borderRadius: 99, background: T.line, overflow: "hidden" }}><span
       style={{
         width: pct > 0 ? `${Math.max(pct, 2)}%` : 0,
         height: "100%",
@@ -151,18 +181,19 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
         background: color,
         transition: "width 0.3s ease"
       }}
-    /></span><span style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 5, fontSize: 10, fontWeight: 700, color: T.inkFaint, whiteSpace: "nowrap", overflow: "hidden" }}><span style={{ flexShrink: 0 }}><GeuFigure amount={paid} currency={ccyCode} lens={lens} size={10} /></span><ArrowRight size={10} style={{ flexShrink: 0 }} /><span style={{ flexShrink: 0, color: T.positive }}><GeuFigure amount={now} currency={ccyCode} lens={lens} size={10} /></span><ArrowRight size={10} style={{ flexShrink: 0 }} />{
-      /* Everything up to here refuses to shrink, so a narrow screen eats
-         THIS figure and not the years behind it.
-
-         The chain ends by repeating the payment it started with — that
-         repetition is the point of the row, and it is also the one part
-         a reader can reconstruct, because it is already printed at the
-         front of the same line. The horizon cannot be reconstructed from
-         anything on screen. On a 320px phone the tail used to ellipsize
-         from the right and cut "in 25.1 yr" down to "in 25.1…", losing
-         the only number on the row that is not repeated somewhere else. */
-    }<span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}><GeuFigure amount={paid} currency={ccyCode} lens={lens} size={10} /></span><span style={{ flexShrink: 0 }}>in {(r.monthsToTarget / 12).toFixed(1)} yr</span></span></span></button>;
+    /></span><span style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 5, fontSize: 10, fontWeight: 700, color: T.inkFaint, whiteSpace: "nowrap", overflow: "hidden" }}><span style={{ flexShrink: 0 }}><GeuFigure amount={paid} currency={ccyCode} lens={lens} size={10} /></span><ArrowRight size={10} style={{ flexShrink: 0 }} /><span style={{ flexShrink: 0, color: T.positive }}><GeuFigure amount={now} currency={ccyCode} lens={lens} size={10} /></span>{
+      /* ── THE CHAIN USED TO END BY REPRINTING ITS OWN FIRST FIGURE ───
+         paid → worth now → paid. The third was the same number as the
+         first, on the same line, four centimetres away.
+         It survived as long as a figure was "250.00₹". Once every figure
+         carried its other name it became "250.00₹ │ GEU" three times
+         over, the row ran out of width, and the repeat was ellipsized to
+         "250.0…" — which is the worst of both: still taking the space,
+         no longer stating the number.
+         So it is gone, and the horizon says what it was there to say.
+         "back in 31.6 yr" can only mean back to the figure at the front
+         of the line, and that figure is printed in full. */
+    }<span style={{ flexShrink: 0 }}>back in {(r.monthsToTarget / 12).toFixed(1)} yr</span></span></span></button>;
   })}</div>{assetRows.length > 4 && <button
     onClick={() => setAssetsExpanded((v) => !v)}
     className="v2-tap"

@@ -243,8 +243,56 @@ describe("the zoom arc covers the range the old stops skipped", () => {
       body.indexOf("setZoomLevel(wanted)") < body.indexOf("await track.applyConstraints"),
       "the handle only moves once the lens has answered"
     );
-    assert.match(body, /catch \(e\) \{\s*setZoomLevel\(currentZoomOf\(track, zoomRange, zoomLevel\)\);/,
-      "a lens that refuses leaves the handle somewhere it is not");
+    assert.match(body, /if \(!accepted\) \{\s*\n[\s\S]{0,260}?setZoomLevel\(currentZoomOf\(track, zoomRange, zoomLevel\)\);/,
+      "a lens that refuses leaves the handle where it actually is");
+  });
+
+  test("a resolved constraint is not second-guessed by a stale read", () => {
+    // ── THE BUG THIS PINS ────────────────────────────────────────────
+    //
+    // The read-back used to happen the instant applyConstraints resolved,
+    // and was trusted outright. On Chrome for Android that read is
+    // routinely STALE — the promise settles before the lens has moved, so
+    // getSettings() still reports the OLD zoom and the handle was pulled
+    // straight back to where it started. Every drag. Which is exactly
+    // "the zoom does not work" from the only side that matters.
+    //
+    // A resolved applyConstraints is the authority on whether the
+    // constraint was ACCEPTED. getSettings() is the authority on where
+    // the lens ended up — but only once it has had a moment to get there.
+    const s = raw(SCANNER);
+    const at = s.indexOf("const applyZoom");
+    const body = s.slice(at, s.indexOf("}, [zoomRange, zoomLevel]);", at));
+    assert.ok(!/await track\.applyConstraints\(\{ advanced: \[\{ zoom: wanted \}\] \}\);\s*\n\s*setZoomLevel\(currentZoomOf/.test(body),
+      "the read-back must not run in the same tick as the constraint");
+    assert.match(body, /zoomSettleRef\.current = setTimeout\(/, "it is deferred");
+    // And the honesty the original argued for survives: a lens that lands
+    // somewhere genuinely different still corrects the handle.
+    assert.match(body, /if \(Math\.abs\(settled - wanted\) > \(zoomRange\.step \|\| 0\)\) setZoomLevel\(settled\);/);
+  });
+
+  test("zoom is tried in both constraint shapes before giving up", () => {
+    // `advanced` is what Chrome documents. Some engines only honour zoom
+    // as a plain constraint and reject the advanced form outright — so a
+    // lens that can zoom does nothing at all, and reports no error
+    // anywhere a person can see.
+    const s = raw(SCANNER);
+    const body = s.slice(s.indexOf("const applyZoom"), s.indexOf("}, [zoomRange, zoomLevel]);", s.indexOf("const applyZoom")));
+    assert.match(body, /applyConstraints\(\{ advanced: \[\{ zoom: wanted \}\] \}\)/);
+    assert.match(body, /applyConstraints\(\{ zoom: wanted \}\)/);
+  });
+
+  test("a zoom range that arrives late still gets a rail", () => {
+    // getCapabilities() is read the moment the stream is handed over, and
+    // on Chrome for Android it can come back WITHOUT zoom on a track that
+    // has it — the lens has not finished opening. The rail is drawn only
+    // when a range exists, so a late capability meant no zoom control for
+    // the whole session on a camera that could zoom perfectly well.
+    const s = raw(SCANNER);
+    assert.match(s, /CAPABILITIES CAN ARRIVE LATE/);
+    // It may only ever ADD what was missing — a device that reported a
+    // range first time keeps it, so this cannot take a control away.
+    assert.match(s, /setZoomRange\(\(had\) => \{\s*\n\s*if \(had \|\| !lateRange\) return had;/);
   });
 });
 

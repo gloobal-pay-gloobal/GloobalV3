@@ -793,6 +793,9 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
   const canvasRef = useRef17(null);
   const streamRef = useRef17(null);
   const trackRef = useRef17(null);
+  // Holds the deferred zoom read-back, so a fast drag does not stack one
+  // timer per pick and have an early one overwrite a later value.
+  const zoomSettleRef = useRef17(null);
   const rafRef = useRef17(null);
   const frameRef = useRef17(0);
   const decodeCountRef = useRef17(0);
@@ -834,6 +837,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
     // lit when a track carrying torch:true is stopped, and a phone whose
     // flash stays on after the user backed out of a scanner reads as the
     // app doing something it was not asked to.
+    if (zoomSettleRef.current) { clearTimeout(zoomSettleRef.current); zoomSettleRef.current = null; }
     const track = trackRef.current;
     trackRef.current = null;
     if (track) {
@@ -1050,6 +1054,38 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
         if (cancelled) return;
         setState("running");
         rafRef.current = requestAnimationFrame(tick);
+
+        // ── CAPABILITIES CAN ARRIVE LATE ──────────────────────────────
+        //
+        // getCapabilities() is read the moment the stream is handed over,
+        // and on Chrome for Android it can come back WITHOUT zoom or torch
+        // on a track that has both — the lens has not finished opening, so
+        // the device has nothing to report yet. The rail is drawn only
+        // when a zoom range exists, so a late capability meant no zoom
+        // control at all for the whole session, on a camera that could
+        // zoom perfectly well.
+        //
+        // One re-read once the picture is actually running. It only ever
+        // ADDS what was missing: a device that reported a range first time
+        // keeps it, so this cannot take a working control away.
+        setTimeout(() => {
+          if (cancelled) return;
+          const live = trackRef.current;
+          if (!live || typeof live.getCapabilities !== "function") return;
+          let late = {};
+          try {
+            late = live.getCapabilities() || {};
+          } catch (e) {
+            return;
+          }
+          const lateRange = zoomRangeOf(late);
+          setZoomRange((had) => {
+            if (had || !lateRange) return had;
+            setZoomLevel(currentZoomOf(live, lateRange));
+            return lateRange;
+          });
+          if (late.torch) setTorchAvailable(true);
+        }, 600);
       } catch (err) {
         if (cancelled) return;
         const next = await classifyCameraFailure(err);
@@ -1126,12 +1162,61 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
     // one. The read-back below is still the authority: a lens that refuses,
     // or that lands somewhere else, pulls the handle to where it actually is.
     setZoomLevel(wanted);
+
+    // ── TWO SHAPES, BECAUSE ENGINES DISAGREE ABOUT WHICH ONE ZOOM TAKES
+    //
+    // `advanced` is what Chrome documents and what the focus constraints
+    // above use. Some engines only honour zoom as a plain constraint, and
+    // reject the advanced form outright — so a lens that can zoom does
+    // nothing at all and reports no error anywhere a person can see.
+    // Trying the second shape costs one rejected promise on the devices
+    // that took the first.
+    let accepted = false;
     try {
       await track.applyConstraints({ advanced: [{ zoom: wanted }] });
-      setZoomLevel(currentZoomOf(track, zoomRange, wanted));
+      accepted = true;
     } catch (e) {
-      setZoomLevel(currentZoomOf(track, zoomRange, zoomLevel));
+      try {
+        await track.applyConstraints({ zoom: wanted });
+        accepted = true;
+      } catch (e2) {
+        accepted = false;
+      }
     }
+
+    if (!accepted) {
+      // It refused. Put the handle where the lens actually is, so a rail
+      // that cannot move does not pretend it did.
+      setZoomLevel(currentZoomOf(track, zoomRange, zoomLevel));
+      return;
+    }
+
+    // ── WHY THE READ-BACK IS DEFERRED, NOT IMMEDIATE ──────────────────
+    //
+    // This used to read getSettings() the instant applyConstraints
+    // resolved, and trust it. On Chrome for Android that read is
+    // routinely STALE — the promise settles before the lens has moved, so
+    // getSettings() still reports the OLD zoom. The handle was then pulled
+    // straight back to where it started, every drag, which is exactly
+    // "the zoom does not work" from the only side that matters.
+    //
+    // A RESOLVED applyConstraints is the authority on whether the
+    // constraint was accepted; getSettings() is the authority on where the
+    // lens ended up, but only once it has had a moment to get there. So
+    // the accepted value stands, and a later read corrects it ONLY if the
+    // device genuinely landed somewhere else — more than one step away,
+    // which is the smallest move the lens claims it can make.
+    //
+    // The honesty this file argued for is kept: a lens that lands at 2.4x
+    // when asked for 3x still ends up reading 2.4x. It just is not told
+    // it failed before it has had a chance to succeed.
+    if (zoomSettleRef.current) clearTimeout(zoomSettleRef.current);
+    zoomSettleRef.current = setTimeout(() => {
+      const live = trackRef.current;
+      if (!live) return;
+      const settled = currentZoomOf(live, zoomRange, wanted);
+      if (Math.abs(settled - wanted) > (zoomRange.step || 0)) setZoomLevel(settled);
+    }, 320);
   }, [zoomRange, zoomLevel]);
 
   // Tap the viewfinder to focus there.

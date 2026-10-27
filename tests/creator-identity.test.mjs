@@ -611,8 +611,11 @@ test("the shop button waits until there is a shop", () => {
   // open a page with nothing to put on it. The setup button is the only
   // thing that row offers until a name exists.
   const src = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
-  assert.match(src, /\}\{done \? <button\s*\n?\s*onClick=\{onOpenPage\}/);
-  assert.match(src, /Your page and what you sell<\/span>/);
+  // The door is the digital address row now — see "the address is a
+  // door, not a label" below. What this test is still about is that it
+  // does not exist at all until there is a name behind it.
+  assert.match(src, /\{done \? <button\s*\n?\s*onClick=\{onOpenPage\}/);
+  assert.match(src, /<\/button> : null\}/);
   // And the panel offers setup instead when there is none — the same
   // branch, the other side of it.
   assert.match(src, /Set up my creator name<\/button>\}/);
@@ -639,9 +642,9 @@ describe("the creator's name is presented as a name", () => {
   test("the mark and the name sit side by side on their own field", () => {
     const src = panel();
     assert.match(src, /background: T\.gradButton/, "the name is back on a plain white card");
-    assert.match(src, /\{done \? handle : "No creator name yet"\}/);
-    assert.match(src, /People can pay you at this name/,
-      "the line that says what the name is FOR");
+    assert.match(src, /\{done \? creatorDisplayName\(creator\) : "No creator name yet"\}/);
+    assert.match(src, /People pay you at your digital address below/,
+      "the line that points at the address row");
   });
 
   test("the three things you do with a name are on it", () => {
@@ -841,5 +844,127 @@ describe("a creator's name is drawn once", () => {
     assert.match(page, /detailsOpen/);
     assert.ok(page.includes("creator.handle") || page.includes("handleLabel"),
       "the creator page no longer shows the address anywhere");
+  });
+});
+
+// ── THE NAME AND THE ADDRESS ARE TWO DIFFERENT THINGS ───────────────────
+//
+// The violet card used to carry the handle as its title. A handle is an
+// ADDRESS — lower-cased, dotted, unique, the string somebody types to
+// send money — and the card is where the shop's NAME belongs.
+//
+// "Keep रसोई.ghar in below details list as digital adress on tap lead me
+// to the inventory page they are selling."
+//
+// This is not 0102 coming back. 0102 removed a second line that repeated
+// the first and did nothing else; the address row is a button that opens
+// the page, and it REPLACED the separate "Your page and what you sell"
+// row rather than being added beside it. One screen, two forms of one
+// name, each doing its own job.
+describe("the address is a door, not a label", () => {
+  const panel = () => {
+    const src = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
+    return src.slice(src.indexOf("THE CREATOR'S OWN IDENTITY"));
+  };
+
+  test("the card says the name and the row says the address", () => {
+    const src = panel();
+    assert.match(src, /\{done \? creatorDisplayName\(creator\) : "No creator name yet"\}/,
+      "the card still leads with the dotted address");
+    assert.match(src, /\}\}>\{handle\}<\/span>/, "the address is not drawn anywhere");
+    assert.match(src, /Your digital address/, "the row never says what it is");
+  });
+
+  test("tapping the address opens the page it addresses", () => {
+    const src = panel();
+    const at = src.indexOf("THE DIGITAL ADDRESS, WHICH IS ALSO THE DOOR");
+    assert.ok(at > 0, "the address row is gone");
+    const row = src.slice(at, at + 1800);
+    assert.match(row, /onClick=\{onOpenPage\}/);
+    assert.match(row, /aria-label=\{`Open your page, \$\{handle\}`\}/);
+  });
+
+  test("and it is the only door, not a second one", () => {
+    // The panel used to carry a "Your page and what you sell" card of its
+    // own underneath. An address and the place it addresses are one
+    // thing; two rows for them is two doors to one room — the same
+    // objection that kept the mockup's second map icon out.
+    const src = panel();
+    assert.equal(
+      (src.match(/onClick=\{onOpenPage\}/g) || []).length, 1,
+      "there are two ways into the page from one screen"
+    );
+    assert.doesNotMatch(src, /Your page and what you sell<\/span>/);
+  });
+});
+
+// ── BOTH SIDES OF THE BOOK ──────────────────────────────────────────────
+describe("sales and purchases", () => {
+  const ledger = () => readSource("frontend/features/creator/CreatorLedger.jsx");
+
+  test("the screen is reachable from the creator profile", () => {
+    assert.match(panelSource(), /onClick=\{onOpenLedger\}/);
+    assert.match(readSource("frontend/screens/Dashboard/Dashboard.jsx"),
+      /onOpenLedger=\{\(\) => setShowCreatorLedger\(true\)\}/);
+    assert.match(readSource("frontend/screens/Dashboard/Dashboard.jsx"),
+      /<CreatorLedgerScreen/, "the dashboard never mounts it");
+  });
+
+  function panelSource() {
+    const src = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
+    return src.slice(src.indexOf("THE CREATOR'S OWN IDENTITY"));
+  }
+
+  test("the bought side is itemised, because the server records lines", () => {
+    const src = ledger();
+    assert.match(src, /GloobalApi\.getCreatorPurchases/);
+    // Quantity and the supplier, which is what makes a purchase line
+    // worth more than the payment it came from.
+    assert.match(src, /row\.quantity/);
+    assert.match(src, /row\.supplierHandle/);
+  });
+
+  test("the sold side says it is payments, not items", () => {
+    // The asymmetry is real and the screen must not paper over it: a
+    // customer paying a tea stall gets a plain payment with no order
+    // attached — CreatorPurchase's own header says why — so nothing
+    // records which samosas were in the bag.
+    //
+    // It could not be narrower even if we wanted: creatorId === secureId,
+    // so the server cannot tell a payment made to the shop from one made
+    // to the person. They are the same payment to the same ID.
+    const src = ledger();
+    assert.match(src, /Money people paid you/);
+    assert.match(src, /records the payment, not the basket/);
+    assert.match(src, /THE CREATOR SIDE AND THE PERSONAL SIDE ARE ONE ACCOUNT/,
+      "the reason the sold side cannot be filtered should stay written down");
+  });
+
+  test("a figure here carries both of its names, like every other", () => {
+    // A history screen is not an exception to the GEU rule and was never
+    // going to be allowed to become one.
+    assert.match(ledger(), /<GeuFigure/);
+    assert.doesNotMatch(ledger(), /toLocaleString\(\)/,
+      "a raw figure would name one of its two units and not the other");
+  });
+
+  test("a failed load is not an empty list", () => {
+    // "You have never bought anything" and "we could not reach the
+    // server" are different sentences, and only one of them is true
+    // offline.
+    const src = ledger();
+    assert.match(src, /Could not load your purchases just now\./);
+    assert.match(src, /bought === null/, "there is no third state for not-yet-loaded");
+  });
+
+  test("the purchases are fetched when that tab opens, not on mount", () => {
+    // Most visits are to check what came in. A request for the other
+    // list on every open is a request nobody asked for.
+    assert.match(ledger(), /if \(tab !== "bought" \|\| bought !== null\) return undefined;/);
+  });
+
+  test("the screen is in the build", () => {
+    assert.match(readSource("build_app.mjs"), /"features\/creator\/CreatorLedger\.jsx"/,
+      "a source file missing from FRONTEND_MODULES is silently not in the app");
   });
 });

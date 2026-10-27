@@ -282,7 +282,12 @@ test("the finder shows who it found before anything is added", () => {
 test("the owner has a door into their own page", () => {
   // Without one the inventory existed on the server and nowhere a creator
   // could reach it — which is exactly what the founder reported.
+  // The door is the digital address row now: the handle, as a button,
+  // opening the page it addresses. It replaced a separate "Your page and
+  // what you sell" card rather than joining it — two rows for an address
+  // and the place it addresses is two doors to one room.
   assert.match(readSource("frontend/features/creator/CreatorSetupScreen.jsx"),
-    /Your page and what you sell/, "the creator profile panel opens the page");
+    /aria-label=\{`Open your page, \$\{handle\}`\}/,
+    "the creator profile panel no longer opens the page at all");
   assert.match(dash(), /onOpenPage=\{async \(\) => \{/, "and the dashboard wires it");
 });

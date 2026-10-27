@@ -1,6 +1,6 @@
 // src/features/creator/CreatorSetupScreen.jsx
 import { useState as useState53, useEffect as useEffect50, useRef as useRef30 } from "react";
-import { Camera as Camera6, Check as Check9, X as X12, MapPin as MapPin5, Loader as Loader5, Pencil as Pencil4, QrCode as QrCode2, Share2 as Share26, Copy as Copy5, Eye as Eye3, EyeOff as EyeOff4, Store as Store3, ShieldCheck as ShieldCheck2, ChevronRight as ChevronRight9, Contact as Contact4 } from "lucide-react";
+import { Camera as Camera6, Check as Check9, X as X12, MapPin as MapPin5, Loader as Loader5, Pencil as Pencil4, QrCode as QrCode2, Share2 as Share26, Copy as Copy5, Eye as Eye3, EyeOff as EyeOff4, Store as Store3, ShieldCheck as ShieldCheck2, ChevronRight as ChevronRight9, Contact as Contact4, ArrowLeftRight } from "lucide-react";
 
 // ── THE CREATOR SIDE INTRODUCES ITSELF ──────────────────────────────────
 //
@@ -603,7 +603,7 @@ function CreatorSetupScreen({
 //     but made to mean the one true thing available here: whether the
 //     name is live. Green once a handle exists — people can pay you at
 //     it — and grey before that.
-function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage, onShowQr, onToast }) {
+function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage, onShowQr, onOpenLedger, onToast }) {
   // Opening this row can be the first touch of the Creator side — the
   // other being the flip itself — so it may arrive with nothing loaded.
   useEffect50(() => {
@@ -724,7 +724,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
   }} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{
     display: "block", fontSize: 21, fontWeight: 800, color: "#FFFFFF",
     fontFamily: T.fontDisplay, lineHeight: 1.2, overflowWrap: "anywhere"
-  }}>{done ? handle : "No creator name yet"}</span></span><button
+  }}>{done ? creatorDisplayName(creator) : "No creator name yet"}</span></span><button
     onClick={onEdit}
     aria-label={done ? "Edit your creator profile" : "Set up your creator name"}
     className="v2-tap"
@@ -736,7 +736,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
   ><Pencil4 size={17} color="#FFFFFF" /></button></div><div style={{
     marginTop: 14, fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.82)", lineHeight: 1.5
   }}>{done
-    ? "People can pay you at this name"
+    ? "People pay you at your digital address below"
     : "Until you pick one, people pay your creator side at your Gloobal ID"}</div><div style={{
     display: "flex", gap: 10, marginTop: 15
   }}>{[
@@ -748,7 +748,60 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
        Three facts, each with its own icon, in one card. */
   }<div style={{
     borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden"
-  }}>{fact(
+  }}>{
+    /* ── THE DIGITAL ADDRESS, WHICH IS ALSO THE DOOR ──────────────────
+       The handle used to be the big title on the card above. It is an
+       ADDRESS — lower-cased, dotted, unique, the string somebody types
+       to send money — and the card above now carries the name people
+       say instead. One screen, two forms, each where it belongs.
+
+       It is a BUTTON rather than a line of text, because what sits
+       behind an address is the thing it addresses: the page, and the
+       list people buy from. That also retires the separate "Your page
+       and what you sell" row this panel carried underneath — two doors
+       to one room, which is the same objection that kept the mockup's
+       second map icon out. */
+  }{done ? <button
+    onClick={onOpenPage}
+    aria-label={`Open your page, ${handle}`}
+    className="v2-row"
+    style={{
+      display: "flex", alignItems: "center", gap: 13, width: "100%",
+      padding: "13px 15px", border: "none", background: "none",
+      cursor: "pointer", textAlign: "left", fontFamily: "inherit"
+    }}
+  ><Store3 size={18} color={T.accent} style={{ flexShrink: 0 }} /><span style={{
+    flex: 1, minWidth: 0
+  }}><span style={{
+    display: "block", fontSize: 14, fontWeight: 800, color: T.accent, overflowWrap: "anywhere"
+  }}>{handle}</span><span style={{
+    display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 2
+  }}>{
+    /* Two lines deep on a 390px phone when it read "your page and what
+       you sell", which pushed the row taller than every other one in
+       the card. Shorter, and the store mark plus the chevron carry the
+       rest of the sentence. */
+  }Your digital address &middot; opens your page</span></span><ChevronRight9
+    size={17} color={T.accent} style={{ flexShrink: 0 }}
+  /></button> : null}{
+    /* The ledger sits with the address rather than on the page behind
+       it: what came in and what went out is a fact about the BUSINESS,
+       not part of the shopfront customers see. */
+  }{done ? <button
+    onClick={onOpenLedger}
+    aria-label="Your sales and purchases"
+    className="v2-row"
+    style={{
+      display: "flex", alignItems: "center", gap: 13, width: "100%",
+      padding: "13px 15px", border: "none", background: "none",
+      borderTop: `1px solid ${T.line}`,
+      cursor: "pointer", textAlign: "left", fontFamily: "inherit"
+    }}
+  ><ArrowLeftRight size={18} color={T.accent} style={{ flexShrink: 0 }} /><span style={{
+    flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink
+  }}>Sales &amp; purchases</span><ChevronRight9
+    size={17} color={T.inkFaint} style={{ flexShrink: 0 }}
+  /></button> : null}{fact(
     "id",
     Contact4,
     idShown
@@ -769,7 +822,9 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
     >{idShown
       ? <EyeOff4 size={16} color={T.inkSoft} />
       : <Eye3 size={16} color={T.inkSoft} />}</button>,
-    true
+    // Only the top row of the card goes without a divider, and the two
+    // buttons above now hold that place whenever there is a handle.
+    !done
   )}{fact(
     "address",
     MapPin5,
@@ -797,18 +852,11 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
        identity does its job — the list people buy from, and the
        suppliers you buy from. Without a door here the inventory existed
        on the server and nowhere a creator could reach it. */
-  }{done ? <button
-    onClick={onOpenPage}
-    className="v2-tap"
-    style={{
-      display: "flex", alignItems: "center", gap: 13, width: "100%",
-      border: "none", borderRadius: T.radiusLg, padding: "15px 15px",
-      background: T.surface, boxShadow: T.shadowCard, cursor: "pointer",
-      fontFamily: "inherit", textAlign: "left"
-    }}
-  ><Store3 size={19} color={T.accent} style={{ flexShrink: 0 }} /><span style={{
-    flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, color: T.accent
-  }}>Your page and what you sell</span><ChevronRight9 size={17} color={T.accent} /></button> : <button
+    /* The door into the page used to be a card of its own down here. It
+       is the address row above now — an address and the place it
+       addresses are one thing, and two rows for them was two doors to
+       one room. */
+  }{done ? null : <button
     onClick={onEdit}
     className="v2-tap"
     style={{

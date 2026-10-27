@@ -884,6 +884,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
   // alphabet their phone cannot write — the most common case being a
   // Latin-keyboard phone and a Devanagari shop two streets away.
   const [moreKbField, setMoreKbField] = useState14("");
+  // Sold and bought. Layered above the profile detail it opens from, so
+  // closing it returns to the creator profile rather than to the list.
+  const [showCreatorLedger, setShowCreatorLedger] = useState14(false);
+  const requestCloseCreatorLedger = useBackClose(showCreatorLedger, () => setShowCreatorLedger(false));
   // ── A NAME TYPED IN THE SEARCH BAR IS LOOKED UP ON THE SERVER ─────────
   //
   // The list below is TOP_BUSINESSES, a local catalogue of placeholder
@@ -3859,7 +3863,17 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
-  }{showSupplierFinder && <ScreenErrorBoundary name="Find a supplier" onClose={() => setShowSupplierFinder(false)}><CreatorFinder
+  }{showCreatorLedger && <ScreenErrorBoundary name="Sales & purchases" onClose={() => setShowCreatorLedger(false)}><CreatorLedgerScreen
+    symbolId={myGloobalId}
+    handle={(creatorProfile && creatorProfile.handle) || ""}
+    // The same rows the personal history reads. A merchant's incoming
+    // payments ARE their sales — the account has one identity, so there
+    // is no narrower set to hand it, and the screen says so in words
+    // rather than implying it filtered something.
+    received={receivedHistory}
+    lens={displayLens}
+    onClose={requestCloseCreatorLedger}
+  /></ScreenErrorBoundary>}{showSupplierFinder && <ScreenErrorBoundary name="Find a supplier" onClose={() => setShowSupplierFinder(false)}><CreatorFinder
     title="Add who you buy from"
     note="A supplier is a creator with their own list. Find them by the name they are paid at, and their list opens the way a customer opens yours."
     actionLabel="Add"
@@ -4058,6 +4072,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     // the account, not a second one that would have to be kept in step
     // with it. It is the same account either way.
     onShowQr={() => setShowReceive(true)}
+    onOpenLedger={() => setShowCreatorLedger(true)}
     onToast={showToast2}
     onOpenPage={async () => {
       // Read back through the same route a buyer uses, so the owner sees

@@ -314,6 +314,10 @@ const FRONTEND_MODULES = [
   // Finding a creator by their exact name, wherever that has to happen —
   // the supplier sheet today, and the Pay & Services search it was lifted
   // from. Replaced a window.prompt.
+  // Sold and bought, on one screen. Reads GeuFigure (so a history figure
+  // carries both of its names like every other), NavBackButton and
+  // GloobalApi — all emitted earlier.
+  "features/creator/CreatorLedger.jsx",
   "features/creator/CreatorFinder.jsx",
   "features/creator/ShopThemeEditor.jsx",
   "screens/Dashboard/Dashboard.jsx",

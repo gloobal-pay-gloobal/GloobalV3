@@ -1185,7 +1185,11 @@ function GloobalId() {
       flag: payeeCountry.flag,
       iso: payeeCountry.iso,
       id: payee.gloobalId,
-      name: payee.name,
+      // The name on the Send screen has to match the card the person just
+      // tapped Pay on. Scanning a shop and then being asked to confirm a
+      // payment to somebody's given name reads as the wrong recipient,
+      // which on a payment screen is the one doubt worth never creating.
+      name: (payee.creator && creatorDisplayName(payee.creator)) || payee.name,
       mobileNumber: payee.mobileNumber,
       currency: COUNTRY_CURRENCY[payeeCountry.iso] || "USD",
       shareRate: payee.shareRate,
@@ -1351,7 +1355,27 @@ function GloobalId() {
     try {
       const result = await resolveGloobalPayee(parsed.gloobalId);
       if (result.ok) {
-        setScanPayee(result.payee);
+        // ── IS THIS A SHOP OR A PERSON? ─────────────────────────────────
+        //
+        // A Gloobal QR carries an ID and nothing else, so the card has
+        // always drawn whatever the account lookup returned — a profile
+        // photo and a person's name. For an account that is also a
+        // creator that is the wrong half of their identity: somebody who
+        // scanned a sticker on a tea stall got the owner's face and the
+        // owner's given name, with no sign of the shop they were standing
+        // in front of.
+        //
+        // One extra lookup, and only to decide what the card SAYS. A
+        // failure here leaves the person's own details, which is what the
+        // card showed before and is never wrong, only less specific.
+        let creator = null;
+        try {
+          creator = await GloobalApi.getCreatorProfile(parsed.gloobalId);
+        } catch (e) {
+          creator = null;
+        }
+        const named = creator && typeof creator.handle === "string" && creator.handle.trim();
+        setScanPayee(named ? { ...result.payee, creator } : result.payee);
       } else {
         setScanError(result.error);
         setScanRetry(result.retryable ? "Try again" : "Scan again");
@@ -4563,18 +4587,62 @@ function GloobalId() {
     }}
     className="v2-tap"
     style={{ border: "none", borderRadius: 999, padding: "10px 24px", background: "rgba(255,255,255,0.94)", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
-  >{scanRetry}</button>}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Gloobal ID</div><ScanPayeeAvatar gloobalId={scanPayee.gloobalId} name={scanPayee.name} />{
+  >{scanRetry}</button>}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPayee.creator ? "Gloobal Shop" : "Gloobal ID"}</div>{
+    /* ── A SHOP IS SHOWN AS ITS SHOP ──────────────────────────────────
+       Scanning a sticker on a tea stall used to give the owner's face and
+       the owner's given name — true, and not what anybody standing in
+       front of the stall is trying to pay. When the account behind the
+       code has a creator name, the card leads with the shop's own mark
+       and the shop's own name, and the person's details stay on the
+       account they belong to.
+       The mark falls back to the generated one, so a shop that has not
+       uploaded a logo still looks like itself rather than like a gap. */
+  }{scanPayee.creator
+    ? <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>{scanPayee.creator.logo
+      ? <img
+        src={scanPayee.creator.logo}
+        alt=""
+        style={{ width: 72, height: 72, borderRadius: 22, objectFit: "cover", display: "block" }}
+      />
+      : <span style={{
+        width: 72, height: 72, borderRadius: 22,
+        background: businessMarkInk(scanPayee.creator.handle || "").bg,
+        color: businessMarkInk(scanPayee.creator.handle || "").fg,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 25, fontWeight: 800, fontFamily: T.fontDisplay
+      }}>{businessMarkInitials(scanPayee.creator.handle || "")}</span>
+    }</div>
+    : <ScanPayeeAvatar gloobalId={scanPayee.gloobalId} name={scanPayee.name} />
+  }{
     /* The name the server returned for this account — a QR carries no name,
        so nothing printed on a sticker can put one here. */
-  }<div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{scanPayee.name}</div><div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 20 }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button
+  }<div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: scanPayee.creator ? 2 : 6 }}>{
+    scanPayee.creator ? creatorDisplayName(scanPayee.creator) : scanPayee.name
+  }</div>{
+    /* The address they are paid at, under the name they are known by —
+       the same pairing the search result and the shop page use. */
+  }{scanPayee.creator ? <div style={{
+    fontSize: 12, fontWeight: 700, color: T.accent, marginBottom: 6
+  }}>{scanPayee.creator.handle}</div> : null}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 20 }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button
     onClick={handleSendToScanned}
     className="v2-tap"
     style={{ width: "100%", border: "none", borderRadius: T.radiusMd, padding: "14px 0", background: T.gradButton, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}
   >Pay</button><button
     onClick={() => setScanPayee(null)}
     className="v2-tap"
-    style={{ width: "100%", border: "none", background: "none", padding: "12px 0 0", fontSize: 12.5, color: T.inkFaint, cursor: "pointer" }}
-  >Scan again</button></div>}</div>}</div>;
+    aria-label="Scan another code"
+    style={{
+      width: "100%", border: "none", background: "none", padding: "14px 0 0",
+      display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer"
+    }}
+  >{
+    /* ── ONE SCAN MARK, EVERYWHERE ────────────────────────────────────
+       This said "Scan again" in words while the header, the shop page
+       and the dashboard tile all used the app's own scan mark — three
+       surfaces drawing a symbol and this one spelling it out. The mark
+       is the same component they use, at the same weight, so there is
+       one thing to learn for "point this at a code". */
+  }<ScannerIcon size={22} color={T.inkFaint} /></button></div>}</div>}</div>;
   })()}{
     /* A shared receipt link, opened on a payment in this account's own
        history. The same read-only document History shows. */

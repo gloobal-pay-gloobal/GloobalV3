@@ -616,3 +616,58 @@ test("the shop button waits until there is a shop", () => {
   // And the panel still offers setup when there is none.
   assert.match(src, /done \? "Edit creator profile" : "Set up my creator name"/);
 });
+
+describe("scanning a shop shows the shop", () => {
+  const app = () => readSource("frontend/App.jsx");
+
+  test("a scanned ID is checked for a creator name", () => {
+    // ── WHAT THIS FIXES ──────────────────────────────────────────────
+    //
+    // A Gloobal QR carries an ID and nothing else, so the card drew
+    // whatever the account lookup returned: a profile photo and a
+    // person's given name. For an account that is ALSO a creator that is
+    // the wrong half of their identity — somebody scanning a sticker on
+    // a tea stall got the owner's face, with no sign of the shop they
+    // were standing in front of.
+    assert.match(app(), /creator = await GloobalApi\.getCreatorProfile\(parsed\.gloobalId\)/);
+    // Only an account with a NAME is a shop. A creator row that exists
+    // but was never finished is not one.
+    assert.match(app(), /const named = creator && typeof creator\.handle === "string" && creator\.handle\.trim\(\)/);
+  });
+
+  test("a failed lookup leaves the person's own card, never a blank one", () => {
+    const src = app();
+    const at = src.indexOf("IS THIS A SHOP OR A PERSON");
+    const block = src.slice(at, at + 1400);
+    assert.match(block, /catch \(e\) \{\s*\n\s*creator = null;/,
+      "the extra lookup must not be able to break the card");
+    assert.match(block, /setScanPayee\(named \? \{ \.\.\.result\.payee, creator \} : result\.payee\)/,
+      "and the account's own details stay as the floor");
+  });
+
+  test("the card leads with the mark and the brand name", () => {
+    const src = app();
+    assert.match(src, /scanPayee\.creator \? "Gloobal Shop" : "Gloobal ID"/);
+    assert.match(src, /src=\{scanPayee\.creator\.logo\}/, "their logo where they have one");
+    assert.match(src, /businessMarkInitials\(scanPayee\.creator\.handle \|\| ""\)/,
+      "and the generated mark where they do not, so a shop is never a gap");
+    assert.match(src, /scanPayee\.creator \? creatorDisplayName\(scanPayee\.creator\) : scanPayee\.name/);
+    assert.match(src, /\{scanPayee\.creator\.handle\}<\/div> : null/, "with the address under the name");
+  });
+
+  test("Pay names what the card named", () => {
+    // Scanning a shop and then being asked to confirm a payment to
+    // somebody's given name reads as the wrong recipient, which on a
+    // payment screen is the one doubt worth never creating.
+    assert.match(app(), /name: \(payee\.creator && creatorDisplayName\(payee\.creator\)\) \|\| payee\.name,/);
+  });
+
+  test("the card uses the app's own scan mark, not the word", () => {
+    // The header, the shop page and the dashboard tile all draw the mark;
+    // this one spelled it out. One thing to learn for "point this at a
+    // code".
+    const src = app();
+    assert.match(src, /aria-label="Scan another code"/);
+    assert.match(src, /<ScannerIcon size=\{22\} color=\{T\.inkFaint\} \/><\/button>/);
+  });
+});

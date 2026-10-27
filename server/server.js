@@ -4327,6 +4327,11 @@ async function creatorRepeatPayers(userId) {
 
 var CREATOR_ITEMS_MAX = 60;
 
+// Four pictures per thing. These are data URLs living on the item document,
+// so a shop with sixty products and four photos each is the difference
+// between a list that loads on a phone and one that does not.
+var CREATOR_ITEM_PHOTOS_MAX = 4;
+
 function publicCreatorItem(row) {
   return {
     id: String(row._id),
@@ -4337,6 +4342,7 @@ function publicCreatorItem(row) {
     category: row.category || '',
     badge: row.badge || '',
     photo: row.photo || '',
+    photos: Array.isArray(row.photos) && row.photos.length ? row.photos : (row.photo ? [row.photo] : []),
     soldOut: Boolean(row.soldOut),
     order: Number(row.order) || 0
   };
@@ -4403,16 +4409,29 @@ app.put(
         if (!Number.isFinite(price) || price < 0) {
           return res.status(400).json({ success: false, message: `"${title}" needs a price.` });
         }
-        const photo = typeof raw.photo === 'string' ? raw.photo : '';
-        if (photo) {
+        // ── EVERY PICTURE OF THIS THING, COVER FIRST ──────────────────
+        //
+        // A client may send `photos` (the new shape) or `photo` alone (what
+        // the first version of this screen sent). Both are accepted and the
+        // two are kept in step here, so nothing downstream has to work out
+        // which one is authoritative: photo IS photos[0], always.
+        const sent = Array.isArray(raw.photos)
+          ? raw.photos
+          : (typeof raw.photo === 'string' && raw.photo ? [raw.photo] : []);
+        const photos = [];
+        for (const candidate of sent) {
+          if (typeof candidate !== 'string' || !candidate) continue;
+          if (photos.length >= CREATOR_ITEM_PHOTOS_MAX) break;
           // Same validator as a profile photo: JPEG or PNG data URLs only,
           // magic bytes checked, 200 KB cap, SVG refused because it can
-          // carry script and this picture is shown to strangers.
-          const verdict = validateProfilePhoto(photo);
+          // carry script and these are shown to strangers.
+          const verdict = validateProfilePhoto(candidate);
           if (!verdict.ok) {
             return res.status(400).json({ success: false, message: `"${title}": ${verdict.message}` });
           }
+          photos.push(candidate);
         }
+        const photo = photos[0] || '';
         clean.push({
           ownerSymbolId: symbolId,
           title: title.slice(0, 80),
@@ -4422,6 +4441,7 @@ app.put(
           category: typeof raw.category === 'string' ? raw.category.trim().slice(0, 40) : '',
           badge: typeof raw.badge === 'string' ? raw.badge.trim().slice(0, 24) : '',
           photo,
+          photos,
           soldOut: Boolean(raw.soldOut),
           order: i
         });
@@ -4448,11 +4468,33 @@ app.get(
       const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
       const rows = await CreatorSupplier.find({ ownerSymbolId: symbolId })
         .sort({ lastOrderAt: -1, createdAt: -1 }).limit(100).lean();
+
+      // ── A SUPPLIER'S OWN MARK ───────────────────────────────────────
+      //
+      // The rows carry a symbolId and a cached handle, so the list drew
+      // initials for shops that have a logo sitting one collection away.
+      // Two queries for the whole list rather than one per row: the ids
+      // first, then every logo in a single `$in`.
+      const ids = rows.map((r) => r.supplierSymbolId).filter(Boolean);
+      const logoBySymbol = Object.create(null);
+      if (ids.length) {
+        const users = await User.find({ symbolId: { $in: ids } }).select('_id symbolId').lean();
+        const byId = Object.create(null);
+        for (const u of users) byId[String(u._id)] = u.symbolId;
+        const logos = await CreatorLogo.find({ userId: { $in: users.map((u) => u._id) } })
+          .select('userId dataUrl').lean();
+        for (const l of logos) {
+          const sym = byId[String(l.userId)];
+          if (sym) logoBySymbol[sym] = l.dataUrl;
+        }
+      }
+
       return res.json({
         success: true,
         suppliers: rows.map((r) => ({
           symbolId: r.supplierSymbolId,
           handle: r.supplierHandle || '',
+          logo: logoBySymbol[r.supplierSymbolId] || null,
           lastOrderAt: r.lastOrderAt || null
         }))
       });

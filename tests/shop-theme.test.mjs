@@ -169,12 +169,14 @@ test("saving the list never reads the chip-filtered view", () => {
     "no save path may iterate the filtered view");
 });
 
-test("a product can actually be given a photo", () => {
-  // The model and the validation have accepted one since the list was
-  // built; there was nothing to put it there with, so every product fell
-  // back to its initials.
-  assert.match(page(), /<ShopPhotoPicker\s+id="creator-item-photo"/);
-  assert.match(page(), /onPicked=\{\(photo\) => setDraft\(\(d\) => \(\{ \.\.\.d, photo \}\)\)\}/);
+test("a product can actually be given photos", () => {
+  // The model and the validation accepted a picture from the day the list
+  // was built; there was nothing to put one there with, so every product
+  // fell back to its initials. It takes several now, so the sheet draws
+  // the strip rather than a single slot.
+  assert.match(page(), /<ShopItemPhotos\s/);
+  assert.match(page(), /onChange=\{\(photos\) => setDraft\(\(d\) => \(\{ \.\.\.d, photos \}\)\)\}/);
+  assert.match(readSource("frontend/features/creator/shopPhotoPicker.jsx"), /function ShopItemPhotos\(/);
 });
 
 test("a photo is shrunk before it is sent, not after it is refused", () => {
@@ -198,6 +200,56 @@ test("the cover's crop is a stored percentage, never baked in", () => {
   assert.match(src, /onMove && onMove\(Number\(e\.target\.value\)\)/);
   assert.match(page(), /objectPosition: `50% \$\{Number\(cover\.focusY\) \|\| 50\}%`/,
     "and the page honours it");
+});
+
+test("an item may carry several photos, cover first", () => {
+  const srv = server();
+  const at = srv.indexOf("EVERY PICTURE OF THIS THING");
+  assert.ok(at > 0, "the item route takes a list of photos");
+  const block = srv.slice(at, at + 1800);
+  // A client may send the new shape or the old one. Both are accepted and
+  // kept in step here, so nothing downstream decides which is
+  // authoritative: photo IS photos[0], always.
+  assert.match(block, /Array\.isArray\(raw\.photos\)/);
+  assert.match(block, /typeof raw\.photo === 'string' && raw\.photo \? \[raw\.photo\] : \[\]/,
+    "an item saved by the single-photo version must still save");
+  assert.match(block, /const photo = photos\[0\] \|\| '';/, "the cover is the first one");
+  // Every one of them through the same validator as a profile photo.
+  assert.match(block, /validateProfilePhoto\(candidate\)/);
+  assert.match(block, /photos\.length >= CREATOR_ITEM_PHOTOS_MAX/, "and the count is capped");
+  assert.match(srv, /var CREATOR_ITEM_PHOTOS_MAX = 4;/);
+});
+
+test("the cover can be changed without deleting the others", () => {
+  const src = readSource("frontend/features/creator/shopPhotoPicker.jsx");
+  // Somebody who wants a different cover should not have to remove three
+  // photos to get it.
+  assert.match(src, /aria-label="Make this the cover"/);
+  assert.match(src, /onChange\(\[src\]\.concat\(list\.filter\(\(_, k\) => k !== i\)\)\)/,
+    "promoting one keeps the rest, in order");
+  // A tap, not a drag: on a 74px thumbnail inside a sheet that scrolls, a
+  // drag gesture fights the scroll and loses.
+  assert.ok(!/onDragStart|draggable/.test(src), "no drag on a thumbnail inside a scrolling sheet");
+});
+
+test("extra photos are reachable, not just stored", () => {
+  const src = page();
+  // More than one picture of a thing is worth nothing if nobody can reach
+  // the others, and a flat thumbnail can only carry a count.
+  assert.match(src, /aria-label=\{`See \$\{shots\.length\} photos of \$\{item\.title\}`\}/);
+  assert.match(src, /onViewPhotos=\{setPhotoView\}/);
+  assert.match(src, /\{shots\.length\}<\/span><\/button>/, "the count sits on the thumbnail");
+});
+
+test("a supplier is drawn with their own mark where they have one", () => {
+  const srv = server();
+  const at = srv.indexOf("A SUPPLIER'S OWN MARK");
+  assert.ok(at > 0, "the supplier list sends logos");
+  const block = srv.slice(at, at + 1400);
+  // Two queries for the whole list, not one per row.
+  assert.match(block, /symbolId: \{ \$in: ids \}/);
+  assert.match(block, /userId: \{ \$in: users\.map\(\(u\) => u\._id\) \}/);
+  assert.match(page(), /\{s\.logo\s*\n?\s*\? <img src=\{s\.logo\}/, "and the row draws it");
 });
 
 test("chips appear only when they filter something", () => {

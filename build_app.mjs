@@ -303,6 +303,10 @@ const FRONTEND_MODULES = [
   // all of which go to routes that validate them identically. Before the
   // editor that uses it.
   "features/creator/shopPhotoPicker.jsx",
+  // Finding a creator by their exact name, wherever that has to happen —
+  // the supplier sheet today, and the Pay & Services search it was lifted
+  // from. Replaced a window.prompt.
+  "features/creator/CreatorFinder.jsx",
   "features/creator/ShopThemeEditor.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",

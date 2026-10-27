@@ -139,8 +139,13 @@ test("a price's currency comes from the account, never from the request", () => 
 test("an item photo is validated like every other picture in this codebase", () => {
   const srv = server();
   const at = srv.indexOf("app.put(\n  '/api/creator/:symbolId/items'");
-  assert.match(srv.slice(at, at + 2600), /validateProfilePhoto\(photo\)/,
+  // Several per item now, and EVERY one of them through the validator —
+  // not just the first. A list where only the cover is checked is a list
+  // with an unchecked upload behind it.
+  assert.match(srv.slice(at, at + 3200), /validateProfilePhoto\(candidate\)/,
     "item photos go through the same validator — JPEG/PNG only, magic bytes, 200KB, no SVG");
+  assert.match(srv.slice(at, at + 3200), /for \(const candidate of sent\)/,
+    "the validator runs over every photo sent, not only the cover");
 });
 
 test("the repeat-payer count cannot be typed", () => {
@@ -212,6 +217,51 @@ test("every row's control occupies the same width", () => {
   // right edges 40px apart.
   assert.match(page(), /width: 86, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end"/,
     "the control column is a fixed width with its contents pushed right");
+});
+
+test("no native browser dialog asks for a creator's name", () => {
+  // ── WHAT THIS REPLACED ───────────────────────────────────────────────
+  //
+  // Adding a supplier called window.prompt("Supplier's creator name"). A
+  // native dialog ignores the app's type and colours, puts
+  // "gloobalv3.netlify.app says" above the question, cannot show whether
+  // the name resolves to anybody, cannot show their mark, and on a name
+  // typed one character wrong fails only after the fact. It was a
+  // shortcut, and the fix is not a nicer prompt — it is the search that
+  // already exists in the one other place a creator's name is typed.
+  assert.ok(!/window\.prompt/.test(dash()), "a prompt must not ask for a creator's name");
+  assert.match(dash(), /<CreatorFinder\s/, "the supplier sheet uses the finder");
+  assert.match(dash(), /onAddSupplier=\{\(\) => setShowSupplierFinder\(true\)\}/);
+});
+
+test("the finder searches the way the other search does", () => {
+  const src = readSource("frontend/features/creator/CreatorFinder.jsx");
+  // Two boxes shaped like the name itself. A single box makes somebody
+  // type the dot, and a dot in the wrong half is the one thing
+  // buildCreatorHandle refuses outright.
+  assert.match(src, /placeholder="First name"/);
+  assert.match(src, /placeholder="Last name"/);
+  assert.match(src, /last\.trim\(\) \? `\$\{typed\}\.\$\{last\.trim\(\)\}` : typed/,
+    "exact name, built from both boxes");
+  // Same guards as Pay & Services: debounced, and ordered.
+  assert.match(src, /CREATOR_FINDER_DEBOUNCE_MS/);
+  assert.match(src, /if \(seq\.current !== mine\) return;/,
+    "a slow answer for half a name must not overwrite a fast one for the whole name");
+  // And a lookup that could not run is not a creator who does not exist.
+  assert.match(src, /catch \(e\) \{/);
+  assert.match(src, /A creator is found by their exact name\./);
+});
+
+test("the finder shows who it found before anything is added", () => {
+  const src = readSource("frontend/features/creator/CreatorFinder.jsx");
+  // The whole point over a prompt: you see the shop, their mark and their
+  // handle, and the button names them — so adding the wrong one takes a
+  // deliberate misreading rather than a typo.
+  assert.match(src, /creatorDisplayName\(found\)/);
+  assert.match(src, /\{found\.handle\}/);
+  assert.match(src, /\$\{actionLabel\} \$\{creatorDisplayName\(found\)\}/);
+  // And you cannot add yourself as your own supplier.
+  assert.match(src, /const isSelf = Boolean\(found && excludeSymbolId && found\.symbolId === excludeSymbolId\)/);
 });
 
 test("the owner has a door into their own page", () => {

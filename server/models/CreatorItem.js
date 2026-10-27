@@ -34,10 +34,27 @@ const CreatorItemSchema = new mongoose.Schema(
 
     note: { type: String, trim: true, maxlength: 140, default: '' },
 
-    // Optional, and capped like every other picture in this codebase —
-    // validated by validateProfilePhoto in server.js, which refuses SVG
-    // because it can carry script and this one is shown to strangers.
+    // ── THE COVER, AND THE REST ───────────────────────────────────────
+    //
+    // `photo` is the COVER — the one the row and the grid draw. `photos`
+    // is every picture of this thing, cover first, which is what the sheet
+    // shows and what somebody flicks through.
+    //
+    // Both, rather than photos[0] alone, because `photo` shipped first and
+    // is what every existing row was written with. Keeping it as the cover
+    // means an item saved before this renders exactly as it did, and the
+    // route keeps the two in step on every write rather than leaving a
+    // reader to work out which is authoritative.
+    //
+    // Each is validated by validateProfilePhoto in server.js — JPEG or PNG
+    // only, magic bytes checked, 200 KB each, SVG refused because it can
+    // carry script and these are shown to strangers.
     photo: { type: String, default: '' },
+
+    // Capped at four. Not arbitrary: these are data URLs on the item
+    // document, so a shop with sixty products and four photos each is the
+    // difference between a list that loads and one that does not.
+    photos: { type: [String], default: [] },
 
     // The owner's own grouping, in their own words — "Chai", "Cold
     // drinks", whatever they say in the shop. Free text rather than a fixed

@@ -134,3 +134,68 @@ function ShopCoverPicker({ cover, onPick, onMove, onRemove, onError, accent }) {
     style={{ width: "100%", accentColor: accent || T.accent }}
   /></div> : null}</div>;
 }
+
+var SHOP_ITEM_PHOTOS_MAX = 4;
+
+// EVERY PICTURE OF ONE THING, COVER FIRST.
+//
+// A strip of what has been added, plus a tile to add another. The first one
+// is labelled, because "first is the cover" is a rule nobody can see — and
+// a person who wants a different cover should not have to delete three
+// photos to get it, so any photo can be promoted in one tap.
+//
+// Reordering is "Make cover" rather than drag. On a 62px thumbnail inside a
+// sheet that itself scrolls, a drag gesture fights the scroll and loses; a
+// tap on the photo you want is unambiguous and works with one thumb.
+function ShopItemPhotos({ photos, onChange, onError, accent }) {
+  const list = Array.isArray(photos) ? photos.filter(Boolean) : [];
+  const full = list.length >= SHOP_ITEM_PHOTOS_MAX;
+  const ink = accent || T.accent;
+
+  return <div style={{ marginBottom: 12 }}><div style={{
+    display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8
+  }}><span style={{
+    fontSize: 9.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkFaint
+  }}>Photos</span><span style={{
+    fontSize: 10.5, fontWeight: 700, color: T.inkFaint
+  }}>{list.length ? `${list.length} of ${SHOP_ITEM_PHOTOS_MAX} · first is the cover` : "Optional"}</span></div>
+
+  <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>{list.map((src, i) => <span
+    key={`${i}-${src.slice(-24)}`}
+    style={{ position: "relative", width: 74, height: 74, flexShrink: 0 }}
+  ><img
+    src={src}
+    alt=""
+    style={{ width: 74, height: 74, borderRadius: 16, objectFit: "cover", display: "block" }}
+  />{i === 0 ? <span style={{
+    position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(21,19,42,0.62)",
+    color: "#fff", fontSize: 8, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase",
+    textAlign: "center", padding: "3px 0", borderRadius: "0 0 16px 16px"
+  }}>Cover</span> : <button
+    onClick={() => onChange([src].concat(list.filter((_, k) => k !== i)))}
+    aria-label="Make this the cover"
+    style={{
+      position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(21,19,42,0.62)",
+      color: "#fff", fontSize: 8, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
+      textAlign: "center", padding: "3px 0", borderRadius: "0 0 16px 16px", border: "none", cursor: "pointer"
+    }}
+  >Make cover</button>}<button
+    onClick={() => onChange(list.filter((_, k) => k !== i))}
+    aria-label="Remove this photo"
+    style={{
+      position: "absolute", top: 4, right: 4, width: 19, height: 19, borderRadius: "50%",
+      background: "rgba(21,19,42,0.66)", border: "none", cursor: "pointer", color: "#fff",
+      display: "flex", alignItems: "center", justifyContent: "center"
+    }}
+  ><X13 size={10} /></button></span>)}{
+    full ? null : <span style={{ width: 74, height: 74, flexShrink: 0 }}><ShopPhotoPicker
+      id={`shop-item-photo-${list.length}`}
+      onError={onError}
+      onPicked={(photo) => onChange(list.concat([photo]).slice(0, SHOP_ITEM_PHOTOS_MAX))}
+    >{(busy) => <span style={{
+      width: 74, height: 74, borderRadius: 16, border: `1.6px dashed ${T.line}`,
+      background: T.surface, color: ink, display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", gap: 2
+    }}><ImagePlus size={17} /><span style={{ fontSize: 8.5, fontWeight: 800 }}>{busy ? "…" : "Add"}</span></span>}</ShopPhotoPicker></span>
+  }</div></div>;
+}

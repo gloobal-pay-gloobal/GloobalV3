@@ -897,6 +897,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
   const [creatorSuppliers, setCreatorSuppliers] = useState14([]);
   const [creatorPurchases, setCreatorPurchases] = useState14([]);
   const [showShopTheme, setShowShopTheme] = useState14(false);
+  const [showSupplierFinder, setShowSupplierFinder] = useState14(false);
   // The tile-sized cards for pinned CREATORS. See payPins.js: a creator's
   // key resolves against no local catalogue, so pinning one used to store
   // the key and show nothing — the star said yes and the strip disagreed.
@@ -3826,7 +3827,20 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
-  }{showShopTheme && <ScreenErrorBoundary name="Shop look" onClose={() => setShowShopTheme(false)}><ShopThemeEditor
+  }{showSupplierFinder && <ScreenErrorBoundary name="Find a supplier" onClose={() => setShowSupplierFinder(false)}><CreatorFinder
+    title="Add who you buy from"
+    note="A supplier is a creator with their own list. Find them by the name they are paid at, and their list opens the way a customer opens yours."
+    actionLabel="Add"
+    excludeSymbolId={myGloobalId}
+    excludeMessage="That is your own shop."
+    onClose={() => setShowSupplierFinder(false)}
+    onPick={async (creator) => {
+      const added = await GloobalApi.addCreatorSupplier(myGloobalId, creator.handle || "");
+      if (!added) { showToast2("Could not add that supplier."); return false; }
+      setCreatorSuppliers(await GloobalApi.getCreatorSuppliers(myGloobalId));
+      return true;
+    }}
+  /></ScreenErrorBoundary>}{showShopTheme && <ScreenErrorBoundary name="Shop look" onClose={() => setShowShopTheme(false)}><ShopThemeEditor
     cover={(creatorProfile && creatorProfile.cover) || null}
     onSaveCover={async (change) => {
       try {
@@ -3881,15 +3895,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
         return false;
       }
     }}
-    onAddSupplier={async () => {
-      const typed = typeof window !== "undefined" && window.prompt
-        ? window.prompt("Supplier's creator name")
-        : "";
-      if (!typed) return;
-      const added = await GloobalApi.addCreatorSupplier(myGloobalId, typed.trim());
-      if (!added) { showToast2("No creator found with that name."); return; }
-      setCreatorSuppliers(await GloobalApi.getCreatorSuppliers(myGloobalId));
-    }}
+    onAddSupplier={() => setShowSupplierFinder(true)}
     onOpenSupplier={async (s) => {
       const found = await GloobalApi.resolveCreatorHandle(s.handle || "");
       if (found) setOpenCreator(found); else showToast2("Could not open that supplier.");

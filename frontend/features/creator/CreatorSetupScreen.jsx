@@ -227,6 +227,11 @@ function CreatorSetupScreen({
   const [logo, setLogo] = useState53((creator && creator.logo) || null);
   const [address, setAddress] = useState53((creator && creator.address) || "");
   const [addressPublic, setAddressPublic] = useState53(Boolean(creator && creator.addressPublic));
+  // A line for whoever scans the code, and nowhere else. Deliberately
+  // separate from the shop's announcement band: that one is read while
+  // browsing a page, this one in the two seconds before money moves, and
+  // the two say different things for that reason.
+  const [scanNote, setScanNote] = useState53((creator && creator.scanNote) || "");
   const fileRef = useRef30(null);
   // Which half Gloobal's own keyboard is typing into, "" when it is shut.
   //
@@ -484,7 +489,51 @@ function CreatorSetupScreen({
     on={addressPublic}
     onToggle={() => setAddressPublic((v) => !v)}
     label="Show my address to people who pay me"
-  /></div>{error && <div
+  /></div>{
+    /* ── WHAT YOUR CODE SAYS ──────────────────────────────────────────
+       One short line under the Pay button on the card somebody gets
+       from scanning. "Cash only after 9pm", "Order number on the slip
+       please" — the things a counter says out loud, said by the code.
+
+       Capped at 120 characters by the server and by this box. A payer
+       is not reading a notice board with their thumb over Pay, and a
+       long message would push that button off a small screen. */
+  }<div style={{
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: 10, marginTop: 20, marginBottom: 8
+  }}><span style={{
+    fontSize: 11, fontWeight: 800, color: T.inkSoft,
+    textTransform: "uppercase", letterSpacing: 0.4
+  }}>A message on your code</span><span style={{
+    fontSize: 11, fontWeight: 700, color: scanNote.length > 104 ? T.negative : T.inkFaint
+  }}>{`${scanNote.length}/120`}</span></div><textarea
+    id="creator-scan-note"
+    value={scanNote}
+    onChange={(e) => setScanNote(e.target.value.slice(0, 120))}
+    placeholder="Cash only after 9pm. Optional."
+    aria-label="A message for people who scan your code"
+    rows={2}
+    style={{
+      width: "100%",
+      border: `1.5px solid ${T.line}`,
+      borderRadius: T.radiusMd,
+      background: T.surface,
+      padding: "12px 14px",
+      fontSize: 14,
+      lineHeight: 1.5,
+      color: T.ink,
+      fontFamily: "inherit",
+      outline: "none",
+      resize: "none",
+      boxSizing: "border-box"
+    }}
+  /><div style={{
+    fontSize: 11.5, lineHeight: 1.45, color: T.inkFaint, marginTop: 6
+  }}>{
+    /* Said plainly, because a creator deciding what to write needs to
+       know who reads it and when. "Everybody" is the honest answer and
+       it is not the same answer the address field gives. */
+  }Anybody who scans your code sees this, right under the Pay button.</div>{error && <div
     role="alert"
     style={{
       marginTop: 16,
@@ -503,6 +552,7 @@ function CreatorSetupScreen({
       handleLast: last.trim(),
       address: address.trim(),
       addressPublic,
+      scanNote: scanNote.trim(),
       logo: logo || undefined
     })}
     disabled={!canSave}

@@ -310,8 +310,14 @@ describe("one screen for the camera, asked for or not", () => {
     const s = raw(APP);
     const at = s.indexOf('zIndex: 400');
     assert.ok(at > 0, "the scan overlay is gone");
-    const shell = s.slice(at, at + 300);
-    assert.match(shell, /background: "#000"/, "the screen is still white before permission");
+    // Wider than it was: the background line now carries the comment
+    // explaining why black is right for the camera and wrong for the
+    // card that replaces it.
+    const shell = s.slice(at, at + 1400);
+    assert.match(shell, /: "#000"/, "the screen is still white before permission");
+    // And it is black ONLY while aiming. Once a code resolves, a white
+    // confirmation card floating on black reads as an error dialog.
+    assert.match(shell, /background: scanPayee \? scanBackdropCss\(scanPayee\.gloobalId\) : "#000"/);
     assert.doesNotMatch(shell, /DashboardAmbientBg/, "the dashboard's background is back on the scanner");
     // The title is now true before permission too: there is a square on
     // screen and this is the only thing saying what it is for.

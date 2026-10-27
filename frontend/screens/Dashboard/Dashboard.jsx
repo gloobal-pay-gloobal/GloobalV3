@@ -1381,6 +1381,21 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
   // if the target string didn't change.
   useEffect12(() => {
     if (!deepLinkTarget) return;
+    // ── A SHOP, HANDED OVER WHOLE ─────────────────────────────────────
+    //
+    // Every other target is a string naming a screen. This one carries
+    // the creator object itself, because the scan screen has already
+    // resolved it — asking for it again here would be a second request
+    // for something already in hand, and a spinner between a tap and a
+    // page that could have opened instantly.
+    //
+    // Checked FIRST and returned from, so an object can never fall
+    // through the string comparisons below into the final else.
+    if (deepLinkTarget && typeof deepLinkTarget === "object" && deepLinkTarget.creator) {
+      setOpenCreator(deepLinkTarget.creator);
+      onConsumeDeepLink && onConsumeDeepLink();
+      return;
+    }
     if (deepLinkTarget === "bank") setShowGloobalBankInfo(true);
     else if (deepLinkTarget === "assets") setShowAssets(true);
     else if (deepLinkTarget === "paylater") setShowPayLater(true);

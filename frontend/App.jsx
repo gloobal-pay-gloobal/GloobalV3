@@ -7,7 +7,8 @@ import {
   RefreshCw as RefreshCw6,
   Fingerprint as Fingerprint2,
   ImageIcon,
-  ArrowUpRight as ArrowUpRight5
+  ArrowUpRight as ArrowUpRight5,
+  Store as Store4
 } from "lucide-react";
 
 
@@ -4371,7 +4372,24 @@ function GloobalId() {
     // scanning — not before permission, and not once a code has resolved and
     // there is a confirm card to look at.
     const scanLive = scanCameraAccessGranted && !scanPayee;
-    return <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "#000", display: "flex", flexDirection: "column", overflow: "hidden" }}>{
+    return <div style={{
+      position: "fixed", inset: 0, zIndex: 400,
+      // ── BLACK WHILE AIMING, COLOURED ONCE IT LANDS ──────────────────
+      //
+      // A dark frame is what lets somebody see the picture they are
+      // pointing at a code, so the camera keeps its black. The moment a
+      // code resolves, a white confirmation card floating on a black
+      // field reads as an error dialog — which is the one thing a
+      // payment card must not read as.
+      //
+      // The colour is derived from the scanned ID and nothing else: no
+      // setting, no shop's own colour, nobody choosing. See
+      // scanBackdrop.js for why that also makes it impossible for the
+      // colour to shift under somebody mid-payment.
+      background: scanPayee ? scanBackdropCss(scanPayee.gloobalId) : "#000",
+      transition: "background 0.45s ease",
+      display: "flex", flexDirection: "column", overflow: "hidden"
+    }}>{
     /* The camera layer. A direct child of the overlay rather than an item
        in the column below, which is what lets it run edge to edge behind
        the back button. Paused while a lookup runs and after a failed one,
@@ -4408,7 +4426,29 @@ function GloobalId() {
        rather than on the space left over beside it. Without this it sits
        27px right of centre, which is just enough to read as a mistake
        and not enough to read as a decision. */
-  }<span aria-hidden="true" style={{ width: 42, flexShrink: 0 }} /></div>{
+  }{scanPayee ? <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>{
+    /* ── THE CORNER, ONCE A CODE HAS LANDED ───────────────────────────
+       Both of these lived inside the card: the scan mark under the Pay
+       button, and nothing at all for "show me what this shop sells".
+       Under Pay is the wrong place for either — it is the row a thumb is
+       already heading for, and a control there is a control somebody
+       reaches past or hits by accident on the screen where a mistake
+       costs money.
+
+       In the corner they are where every other secondary control in this
+       app lives, and the card below holds only the thing it is for. */
+  }{scanPayee.creator ? <NavIconButton
+    onClick={() => {
+      const creator = scanPayee.creator;
+      closeScanScreen();
+      setActiveScreen("home");
+      setDashboardDeepLink({ creator });
+    }}
+    label={`See what ${creatorDisplayName(scanPayee.creator)} sells`}
+  ><Store4 size={NAV_GLYPH_SIZE} color={T.ink} /></NavIconButton> : null}<NavIconButton
+    onClick={() => setScanPayee(null)}
+    label="Scan another code"
+  ><ScannerIcon size={NAV_GLYPH_SIZE} color={T.ink} /></NavIconButton></div> : <span aria-hidden="true" style={{ width: 42, flexShrink: 0 }} />}</div>{
     /* ── AND THE WORDS WENT BACK UNDER THE CAMERA ────────────────────────
        They were under it once, moved above the frame, and have now moved
        back. The history is worth keeping because the reason changed.
@@ -4634,22 +4674,28 @@ function GloobalId() {
     onClick={handleSendToScanned}
     className="v2-tap"
     style={{ width: "100%", border: "none", borderRadius: T.radiusMd, padding: "14px 0", background: T.gradButton, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}
-  >Pay</button><button
-    onClick={() => setScanPayee(null)}
-    className="v2-tap"
-    aria-label="Scan another code"
-    style={{
-      width: "100%", border: "none", background: "none", padding: "14px 0 0",
-      display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer"
-    }}
-  >{
-    /* ── ONE SCAN MARK, EVERYWHERE ────────────────────────────────────
-       This said "Scan again" in words while the header, the shop page
-       and the dashboard tile all used the app's own scan mark — three
-       surfaces drawing a symbol and this one spelling it out. The mark
-       is the same component they use, at the same weight, so there is
-       one thing to learn for "point this at a code". */
-  }<ScannerIcon size={22} color={T.inkFaint} /></button></div>}</div>}</div>;
+  >Pay</button>{
+    /* ── WHAT THE CODE ITSELF SAYS ────────────────────────────────────
+       A line the creator wrote for whoever scans them, and the only
+       place it appears. "Cash only after 9pm", "Order number on the
+       slip please" — the things a counter says out loud, said by the
+       code instead.
+
+       UNDER the Pay button rather than above it, deliberately. Above,
+       it would sit between the name and the button and push the button
+       down the screen on every card that has one; and a message is not
+       a condition of paying, so it must not look like one standing in
+       the way. Capped at 120 characters by the server, so it cannot
+       grow into a notice board under somebody's thumb.
+
+       Drawn as a quoted line rather than as a boxed alert: this is a
+       shopkeeper talking, not the app warning anybody. */
+  }{scanPayee.creator && scanPayee.creator.scanNote ? <div style={{
+    marginTop: 16, padding: "11px 13px", borderRadius: T.radiusMd,
+    background: T.surfaceAlt, border: `1px solid ${T.line}`,
+    fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5,
+    textAlign: "left", overflowWrap: "anywhere"
+  }}>{scanPayee.creator.scanNote}</div> : null}</div>}</div>}</div>;
   })()}{
     /* A shared receipt link, opened on a payment in this account's own
        history. The same read-only document History shows. */

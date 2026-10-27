@@ -3927,7 +3927,10 @@ function publicCreator(user, logoDataUrl) {
     // profile with no `shop` block renders as the app's own look.
     shop: creatorShopOut(profile.shop),
     address: profile.addressPublic ? (profile.address || '') : '',
-    addressPublic: Boolean(profile.addressPublic)
+    addressPublic: Boolean(profile.addressPublic),
+    // Sent to everybody, unlike the address: a message written FOR the
+    // person scanning is of no use if only its author can read it.
+    scanNote: profile.scanNote || ''
   };
 }
 
@@ -4041,6 +4044,14 @@ app.put(
           });
         }
         set['creatorProfile.address'] = body.address.trim();
+      }
+      if (body.scanNote !== undefined) {
+        if (typeof body.scanNote !== 'string' || body.scanNote.length > 120) {
+          return res.status(400).json({
+            success: false, code: 'invalid_scan_note', message: 'That message is too long.'
+          });
+        }
+        set['creatorProfile.scanNote'] = body.scanNote.trim();
       }
       if (body.addressPublic !== undefined) {
         set['creatorProfile.addressPublic'] = Boolean(body.addressPublic);

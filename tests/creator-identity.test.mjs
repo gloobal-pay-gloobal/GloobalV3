@@ -762,9 +762,21 @@ describe("scanning a shop shows the shop", () => {
     // The header, the shop page and the dashboard tile all draw the mark;
     // this one spelled it out. One thing to learn for "point this at a
     // code".
+    //
+    // The control then left the card entirely — under the Pay button is
+    // the row a thumb is already heading for — and lives in the corner
+    // with the other nav controls, at their size rather than its own.
+    // See scan-card.test.mjs; what this test still owns is that it is a
+    // MARK and not the word "Scan again".
     const src = app();
-    assert.match(src, /aria-label="Scan another code"/);
-    assert.match(src, /<ScannerIcon size=\{22\} color=\{T\.inkFaint\} \/><\/button>/);
+    assert.match(src, /label="Scan another code"/);
+    assert.match(src, /<ScannerIcon size=\{NAV_GLYPH_SIZE\}/);
+    // Scoped to the confirm card. "Scan again" is still the right words
+    // on the RETRY button after a lookup fails — that one is a sentence
+    // about what went wrong, not a control sitting beside Pay.
+    const card = src.slice(src.indexOf('{scanPayee.creator ? "Gloobal Shop" : "Gloobal ID"}'));
+    assert.doesNotMatch(card.slice(0, card.indexOf("</div>}</div>}</div>;")), /Scan again/,
+      "the word is back on the confirm card");
   });
 });
 

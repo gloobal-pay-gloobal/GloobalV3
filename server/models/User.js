@@ -302,6 +302,20 @@ const userSchema = new mongoose.Schema({
     // will see it.
     addressPublic: { type: Boolean, default: false },
 
+    // ── A LINE FOR WHOEVER SCANS YOUR CODE ────────────────────────────
+    //
+    // Shown under the Pay button on the card a payer gets from scanning,
+    // and NOWHERE ELSE. Deliberately not the shop's `announceText`: that
+    // one is a band across a page somebody is browsing, and this one is
+    // read in the two seconds before money moves. "Cash only after 9pm",
+    // "Order number on the slip please" — the things a counter says out
+    // loud, said by the code instead.
+    //
+    // Kept short on purpose. A payer is not reading a notice board with
+    // their thumb over Pay, and a long message would push that button
+    // off a small screen.
+    scanNote: { type: String, trim: true, default: '', maxlength: 120 },
+
     // When the setup screen was last dismissed without being completed.
     // Held so the Creator dashboard can keep offering it without putting
     // the whole screen back in the way on every flip.

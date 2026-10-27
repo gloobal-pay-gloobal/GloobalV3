@@ -317,6 +317,10 @@ const FRONTEND_MODULES = [
   // Sold and bought, on one screen. Reads GeuFigure (so a history figure
   // carries both of its names like every other), NavBackButton and
   // GloobalApi — all emitted earlier.
+  // The colour behind a scanned code, derived from the code itself. Pure
+  // functions over a `var` table, read by App.jsx at the very end of the
+  // build — so anywhere before App.jsx is early enough.
+  "features/scan/scanBackdrop.js",
   "features/creator/CreatorLedger.jsx",
   "features/creator/CreatorFinder.jsx",
   "features/creator/ShopThemeEditor.jsx",

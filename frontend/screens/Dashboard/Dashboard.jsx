@@ -2933,20 +2933,28 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
        shrinks each dot to fit whatever width is actually free (see its
        own comment), so this is a ceiling, not a fixed size. */
   }<IdSymbolDots id={personalGloobalId} revealed oneLine size={48} /></button></div></div><div style={{ borderRadius: T.radiusLg, overflow: "hidden", boxShadow: T.shadowCard, display: "flex", flexDirection: "column", gap: 2 }}>{
-    /* ── ONE EXTRA ROW ON THE CREATOR SIDE ────────────────────────────
-       Asked for: a line on the Creator side holding the creator's own
-       name, mark and address.
+    /* ── ONE EXTRA ROW, ON BOTH SIDES ─────────────────────────────────
+       Asked for: a line holding the creator's own name, mark and address.
        It sits directly under "Personal Details" because it is that row's
        opposite number — one is who this account is as a person, the
        other is who it is as a creator — and putting them side by side is
        what makes the pairing legible. Appending it to the end would have
        filed the creator's identity below "Help & Support".
+
+       IT USED TO SHOW ONLY ON THE CREATOR SIDE, and that was backwards.
+       The row is where somebody sets a creator name up, so hiding it from
+       everyone who has not got one yet meant the only way to find it was
+       to flip to a side you would only flip to if you already knew. A
+       person on the Personal side opens it and is offered the setup; a
+       creator opens it and sees their name, their mark and their shop.
+       The panel has always drawn both states — "No creator name yet" and
+       "Set up my creator name" — so nothing needed inventing for this.
+
        Named "Creator Profile" rather than "About creator profile",
        because there is already an "About" row in this list and two rows
        starting with that word is a menu nobody can scan. */
-  }{(shareRole === "merchant"
-    ? PROFILE_ROWS.slice(0, 1).concat(["Creator Profile"], PROFILE_ROWS.slice(1))
-    : PROFILE_ROWS).map((label, i) => {
+  }{PROFILE_ROWS.slice(0, 1)
+    .concat(["Creator Profile"], PROFILE_ROWS.slice(1)).map((label, i) => {
     const rowColor = POSITION_COLORS[i % POSITION_COLORS.length];
     return <button
       key={label}

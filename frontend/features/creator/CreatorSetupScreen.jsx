@@ -607,7 +607,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage 
        identity does its job — the list people buy from, and the suppliers
        you buy from. Without a door here the inventory existed on the
        server and nowhere a creator could reach it. */
-  }<button
+  }{done ? <button
     onClick={onOpenPage}
     className="v2-tap"
     style={{
@@ -615,7 +615,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage 
       background: T.surface, boxShadow: T.shadowCard, color: T.accent,
       fontSize: 13.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", width: "100%"
     }}
-  >Your page &amp; what you sell</button><button
+  >Your page &amp; what you sell</button> : null}<button
     onClick={onEdit}
     className="v2-tap"
     style={{

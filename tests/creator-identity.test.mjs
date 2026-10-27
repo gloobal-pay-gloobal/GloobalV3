@@ -582,3 +582,37 @@ describe("it is one account, not two", () => {
     );
   });
 });
+
+test("the creator row is on both sides of the profile", () => {
+  // ── WHY THIS WAS BACKWARDS ───────────────────────────────────────────
+  //
+  // The row only appeared when shareRole was "merchant". But the row is
+  // where a creator name gets SET UP — so hiding it from everybody who
+  // has not got one meant the only way to find it was to flip to a side
+  // you would only flip to if you already knew it was there.
+  //
+  // It now shows for both, in the same place, and the panel's two states
+  // do the rest: "No creator name yet" with "Set up my creator name" for
+  // a person, the name and the shop for a creator.
+  const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+  assert.match(
+    dash,
+    /\}\{PROFILE_ROWS\.slice\(0, 1\)\s*\n?\s*\.concat\(\["Creator Profile"\], PROFILE_ROWS\.slice\(1\)\)\.map/,
+    "the row must not be gated on shareRole"
+  );
+  assert.ok(
+    !/shareRole === "merchant"\s*\n?\s*\? PROFILE_ROWS\.slice/.test(dash),
+    "the old merchant-only branch is gone"
+  );
+});
+
+test("the shop button waits until there is a shop", () => {
+  // "Your page & what you sell" on an account with no creator name would
+  // open a page with nothing to put on it. The setup button is the only
+  // thing that row offers until a name exists.
+  const src = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
+  assert.match(src, /\}\{done \? <button\s*\n?\s*onClick=\{onOpenPage\}/);
+  assert.match(src, /Your page &amp; what you sell<\/button> : null\}/);
+  // And the panel still offers setup when there is none.
+  assert.match(src, /done \? "Edit creator profile" : "Set up my creator name"/);
+});

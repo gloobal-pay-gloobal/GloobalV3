@@ -34,27 +34,45 @@
 // before money moves — which is the one moment on this screen that
 // matters.
 //
+// ── THE COLOUR IS ON THE CARD, NOT BEHIND IT ────────────────────────────
+//
+// First built the other way round: a dark coloured field with the white
+// card floating on it. The founder looked at it and inverted it —
+// "make background colour light white and make that box of data
+// colorful" — and he is right, for a reason worth writing down.
+//
+// The field is the biggest thing on the screen and the card is the only
+// thing anybody is reading. Colouring the field spent all that area
+// saying who you are paying, in the place nobody looks, and left the
+// card — where the name, the code and the Pay button are — as plain
+// white. The colour now sits on the thing it is about.
+//
+// So each entry carries three values:
+//
+//   from / to   the card's own gradient, dark enough for white text,
+//   tint        the page behind it: white, with a few percent of the
+//               same hue mixed in, so the screen is recognisably warm
+//               or cool without ever stopping being white.
+//
 // ── WHY THESE COLOURS ───────────────────────────────────────────────────
 //
-// Each is dark enough that a white card and a white title sit on it with
-// real contrast, and none of them is Gloobal's own violet: this field is
-// about WHO IS BEING PAID, and a row of app-violet backdrops would say
-// Gloobal rather than saying them. Two-stop gradients rather than flats,
-// because a flat fill at full screen reads as a coloured error page
-// while a gradient reads as a surface.
+// Each is dark enough that white text sits on it with real contrast, and
+// none of them is Gloobal's own violet: the card is about WHO IS BEING
+// PAID, and a row of app-violet cards would say Gloobal rather than
+// saying them. Two-stop gradients rather than flats, because a flat fill
+// reads as a coloured block while a gradient reads as a surface.
 //
 // THE TWO STOPS ARE A LONG WAY APART IN VALUE, and a render is why. The
-// first set kept each pair close so the field would stay quiet, and at
-// full screen that is not quiet, it is flat — a wash of one brown with
-// no light in it. A dark anchor and a genuinely lighter second stop
-// gives the field somewhere to travel, which is what makes it read as
-// a lit surface behind a card rather than as a filled rectangle.
+// first set kept each pair close so the colour would stay quiet, and at
+// size that is not quiet, it is flat — a wash of one brown with no light
+// in it. A dark anchor and a genuinely lighter second stop gives the
+// gradient somewhere to travel.
 //
 // Four of the lighter stops were then pulled back down, because a test
-// measured them: the screen's title is WHITE on this field, and teal,
-// moss, gold and pine had travelled far enough to put white text under
-// 4.5:1. Picked by eye, corrected by arithmetic — which is the right way
-// round for a contrast ratio, since nobody can see 3.53:1 and know it.
+// measured them: the card's text is WHITE, and teal, moss, gold and pine
+// had travelled far enough to put white text under 4.5:1. Picked by eye,
+// corrected by arithmetic — which is the right way round for a contrast
+// ratio, since nobody can see 3.53:1 and know it.
 var SCAN_BACKDROPS = [
   { key: "indigo", from: "#16205E", to: "#4A3FC0" },
   { key: "teal", from: "#053C38", to: "#0F8174" },
@@ -85,10 +103,35 @@ function scanBackdropFor(seed) {
   return SCAN_BACKDROPS[hash % SCAN_BACKDROPS.length];
 }
 
-// Ready to drop into a `background`. Diagonal, so the two stops are both
-// visible on a tall screen — a vertical gradient on a phone puts most of
-// one colour above the fold and most of the other below it.
+// The CARD's own fill. Diagonal, so the two stops are both visible —
+// a vertical gradient puts most of one colour above the middle and most
+// of the other below it.
 function scanBackdropCss(seed) {
   const pick = scanBackdropFor(seed);
   return `linear-gradient(150deg, ${pick.from} 0%, ${pick.to} 100%)`;
+}
+
+// How much of the hue reaches the page behind the card.
+//
+// Six percent. Low enough that "light white" is still a fair description
+// of what somebody sees, high enough that the screen is recognisably
+// warm or cool with the card on it. Ten read as a coloured page; three
+// was indistinguishable from the app's own ground, which would make the
+// whole thing pointless on half the hues.
+var SCAN_PAGE_TINT = 0.06;
+
+// White with a trace of the card's hue mixed in, as a hex.
+//
+// Mixed rather than listed as twelve more literals, so a colour cannot
+// be changed in one table and left stale in the other — the page and the
+// card it sits behind must always be the same hue or the screen looks
+// like two unrelated decisions.
+function scanPageTint(seed) {
+  const pick = scanBackdropFor(seed);
+  const n = parseInt(pick.to.slice(1), 16);
+  const mix = (channel) => {
+    const value = Math.round(255 + (channel - 255) * SCAN_PAGE_TINT);
+    return Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0");
+  };
+  return `#${mix((n >> 16) & 255)}${mix((n >> 8) & 255)}${mix(n & 255)}`.toUpperCase();
 }

@@ -113,12 +113,100 @@ test("none of them is the app's own violet", () => {
 });
 
 // ── BLACK IS STILL RIGHT, BUT ONLY WHILE AIMING ─────────────────────────
-test("the screen is black for the camera and coloured for the card", () => {
+test("the screen is black for the camera and light for the card", () => {
   const src = app();
-  assert.match(src, /background: scanPayee \? scanBackdropCss\(scanPayee\.gloobalId\) : "#000"/,
+  assert.match(src, /background: scanPayee \? scanPageTint\(scanPayee\.gloobalId\) : "#000"/,
     "the scan overlay is either always black or always coloured");
   // A dark frame is what lets somebody see the picture they are aiming.
-  assert.match(src, /BLACK WHILE AIMING, COLOURED ONCE IT LANDS/);
+  assert.match(src, /BLACK WHILE AIMING, LIGHT ONCE IT LANDS/);
+});
+
+// ── THE COLOUR IS ON THE CARD, NOT BEHIND IT ────────────────────────────
+//
+// Built the other way round first — a dark coloured field, a white card
+// floating on it — and inverted on sight: "make background colour light
+// white and make that box of data colorful".
+//
+// He is right, and the reason is worth keeping: the field is the biggest
+// thing on the screen and the card is the only thing anybody reads.
+// Colouring the field spent all that area in the place nobody looks.
+test("the card carries the hue and the page stays white", () => {
+  const src = app();
+  assert.match(src, /background: scanBackdropCss\(scanPayee\.gloobalId\)/,
+    "the confirm card is not drawn in the payee's colour");
+  // And the things on it flipped with it.
+  assert.match(src, /fontSize: 16, fontWeight: 800, color: "#FFFFFF"/, "the name is still dark on a dark card");
+  assert.match(src, /color: "rgba\(255,255,255,0\.72\)"/, "the card's label is still grey on colour");
+});
+
+test("every page tint is still white to look at", () => {
+  // "Light white" is the brief. A tint that stops being white has
+  // reinvented the thing he asked me to take away.
+  const { scanPageTint, SCAN_BACKDROPS, scanBackdropFor } = backdrop(
+    ["scanPageTint", "SCAN_BACKDROPS", "scanBackdropFor"]
+  );
+  const seen = new Set();
+  for (let i = 0; i < 400 && seen.size < SCAN_BACKDROPS.length; i += 1) {
+    const id = `G-${i * 7919}`;
+    const key = scanBackdropFor(id).key;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const hex = scanPageTint(id);
+    assert.match(hex, /^#[0-9A-F]{6}$/, `${key}'s tint is not a hex colour`);
+    const n = parseInt(hex.slice(1), 16);
+    for (const ch of [(n >> 16) & 255, (n >> 8) & 255, n & 255]) {
+      assert.ok(ch >= 235, `${key}'s page tint ${hex} has a channel at ${ch} — that is a coloured page, not a white one`);
+    }
+  }
+  assert.equal(seen.size, SCAN_BACKDROPS.length, "some colours never produced a tint");
+});
+
+test("the page and the card are always the same hue", () => {
+  // Two tables would be two things to keep in step, and a page in one
+  // hue behind a card in another looks like two unrelated decisions.
+  assert.match(backdropSrc(), /function scanPageTint\(seed\) \{\s*\n\s*const pick = scanBackdropFor\(seed\);/);
+});
+
+test("Pay is white on the card, and its text passes on white", () => {
+  // A violet button on a teal card is two unrelated colours arguing over
+  // the most important control on the screen.
+  const src = app();
+  assert.match(src, /background: "#FFFFFF", color: scanBackdropFor\(scanPayee\.gloobalId\)\.from/);
+  const { SCAN_BACKDROPS } = backdrop(["SCAN_BACKDROPS"]);
+  const lum = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  };
+  for (const b of SCAN_BACKDROPS) {
+    const contrast = 1.05 / (lum(b.from) + 0.05);
+    assert.ok(contrast >= 7, `Pay in ${b.key} reads ${contrast.toFixed(2)}:1 on white`);
+  }
+});
+
+test("the Gloobal ID keeps a white ground under it", () => {
+  // ColoredGloobalId draws every symbol in a different colour from a
+  // rotating rainbow, chosen to read on the app's white surface. Half of
+  // them — the blues, the deep violet — would disappear into a dark card.
+  const src = app();
+  const at = src.indexOf("THE ID KEEPS ITS OWN WHITE GROUND");
+  assert.ok(at > 0, "the id lost its own ground");
+  const block = src.slice(at, at + 900);
+  assert.match(block, /background: "#FFFFFF", borderRadius: 999/);
+  assert.match(block, /<ColoredGloobalId id=\{scanPayee\.gloobalId\} \/>/,
+    "the id is no longer drawn by the app's own component");
+});
+
+test("the title is readable on both grounds", () => {
+  // White over the camera, where it needs a shadow to survive whatever
+  // the lens is pointed at; ink once the page goes light, where white
+  // would simply be gone.
+  const src = app();
+  assert.match(src, /color: scanPayee \? T\.ink : "#FFFFFF"/);
+  assert.match(src, /textShadow: scanPayee \? "none" : "0 1px 8px rgba\(0,0,0,0\.5\)"/);
 });
 
 test("the backdrop is in the build", () => {

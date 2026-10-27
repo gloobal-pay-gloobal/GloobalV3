@@ -4374,7 +4374,7 @@ function GloobalId() {
     const scanLive = scanCameraAccessGranted && !scanPayee;
     return <div style={{
       position: "fixed", inset: 0, zIndex: 400,
-      // ── BLACK WHILE AIMING, COLOURED ONCE IT LANDS ──────────────────
+      // ── BLACK WHILE AIMING, LIGHT ONCE IT LANDS ─────────────────────
       //
       // A dark frame is what lets somebody see the picture they are
       // pointing at a code, so the camera keeps its black. The moment a
@@ -4382,11 +4382,18 @@ function GloobalId() {
       // field reads as an error dialog — which is the one thing a
       // payment card must not read as.
       //
-      // The colour is derived from the scanned ID and nothing else: no
+      // The page then goes to WHITE with a trace of the payee's hue in
+      // it, and the colour itself goes on the card. The first build had
+      // that the other way round, and the founder inverted it: the field
+      // is the biggest thing on screen and the card is the only thing
+      // anybody reads, so colouring the field spent all that area in the
+      // place nobody looks.
+      //
+      // The hue is derived from the scanned ID and nothing else: no
       // setting, no shop's own colour, nobody choosing. See
       // scanBackdrop.js for why that also makes it impossible for the
       // colour to shift under somebody mid-payment.
-      background: scanPayee ? scanBackdropCss(scanPayee.gloobalId) : "#000",
+      background: scanPayee ? scanPageTint(scanPayee.gloobalId) : "#000",
       transition: "background 0.45s ease",
       display: "flex", flexDirection: "column", overflow: "hidden"
     }}>{
@@ -4419,7 +4426,15 @@ function GloobalId() {
        eye is not: somebody holding a phone up at a code is looking at
        the square, not at a caption above it. It moved under the camera,
        below. */
-  }<span style={{ flex: 1, textAlign: "center", fontSize: 17, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, textShadow: "0 1px 8px rgba(0,0,0,0.5)" }}>
+  }<span style={{
+    flex: 1, textAlign: "center", fontSize: 17, fontWeight: 800, fontFamily: T.fontDisplay,
+    // White over the camera, where it needs a shadow to survive whatever
+    // the lens is pointed at. Ink once the page goes light, where white
+    // would simply be gone — the title is the same title either way and
+    // only the ground under it changed.
+    color: scanPayee ? T.ink : "#FFFFFF",
+    textShadow: scanPayee ? "none" : "0 1px 8px rgba(0,0,0,0.5)"
+  }}>
           Gloobal QR
         </span>{
     /* The back button's own width, so the title is centred on the SCREEN
@@ -4627,7 +4642,14 @@ function GloobalId() {
     }}
     className="v2-tap"
     style={{ border: "none", borderRadius: 999, padding: "10px 24px", background: "rgba(255,255,255,0.94)", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
-  >{scanRetry}</button>}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{ width: "100%", maxWidth: 340, borderRadius: T.radiusXl, background: T.surface, boxShadow: T.shadowCard, border: `1px solid ${T.line}`, padding: "28px 24px", textAlign: "center" }}><div style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPayee.creator ? "Gloobal Shop" : "Gloobal ID"}</div>{
+  >{scanRetry}</button>}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{
+    width: "100%", maxWidth: 340, borderRadius: T.radiusXl,
+    // The payee's own hue, derived from the code that was scanned.
+    background: scanBackdropCss(scanPayee.gloobalId),
+    boxShadow: "0 18px 44px rgba(20,18,43,0.28)",
+    border: "none",
+    padding: "26px 22px", textAlign: "center"
+  }}><div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.72)", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPayee.creator ? "Gloobal Shop" : "Gloobal ID"}</div>{
     /* ── A SHOP IS SHOWN AS ITS SHOP ──────────────────────────────────
        Scanning a sticker on a tea stall used to give the owner's face and
        the owner's given name — true, and not what anybody standing in
@@ -4657,11 +4679,11 @@ function GloobalId() {
     /* The name the server returned for this account — a QR carries no name,
        so nothing printed on a sticker can put one here. */
   }<div style={{
-    fontSize: 15, fontWeight: 800, color: T.ink,
+    fontSize: 16, fontWeight: 800, color: "#FFFFFF",
     // 6 for everybody again, now that nothing is drawn between the name
     // and the Gloobal ID. It was tightened to 2 to make room for the
     // handle line; left at 2 it would sit the name on top of the ID.
-    marginBottom: 6
+    marginBottom: 10
   }}>{
     scanPayee.creator ? creatorDisplayName(scanPayee.creator) : scanPayee.name
   }</div>{
@@ -4670,10 +4692,32 @@ function GloobalId() {
        in the half-second before they pay, which is the worst screen in
        the app to spend a line on nothing. The Gloobal ID below already
        says this is an account money can reach. */
-  }<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 20 }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button
+  }<div style={{
+    // ── THE ID KEEPS ITS OWN WHITE GROUND ────────────────────────────
+    //
+    // ColoredGloobalId draws every symbol in a different colour from a
+    // rotating rainbow. Those are chosen to read on the app's white
+    // surface, and half of them — the blues, the deep violet — would
+    // disappear into a dark card. So the ID sits on a white pill
+    // instead of on the colour, which also gives the one piece of data
+    // on this card a frame of its own.
+    display: "inline-flex", maxWidth: "100%",
+    background: "#FFFFFF", borderRadius: 999,
+    padding: "7px 14px", marginBottom: 18,
+    fontSize: 13, color: T.inkSoft
+  }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button
     onClick={handleSendToScanned}
     className="v2-tap"
-    style={{ width: "100%", border: "none", borderRadius: T.radiusMd, padding: "14px 0", background: T.gradButton, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}
+    style={{
+      // White on the hue, not the app's violet gradient on it. A violet
+      // button on a teal card is two unrelated colours arguing over the
+      // most important control on the screen; white is the hue's own
+      // highest contrast and reads as the primary action on all twelve.
+      width: "100%", border: "none", borderRadius: T.radiusMd, padding: "15px 0",
+      background: "#FFFFFF", color: scanBackdropFor(scanPayee.gloobalId).from,
+      fontSize: 15, fontWeight: 800, cursor: "pointer",
+      boxShadow: "0 4px 14px rgba(0,0,0,0.18)"
+    }}
   >Pay</button>{
     /* ── WHAT THE CODE ITSELF SAYS ────────────────────────────────────
        A line the creator wrote for whoever scans them, and the only
@@ -4691,9 +4735,12 @@ function GloobalId() {
        Drawn as a quoted line rather than as a boxed alert: this is a
        shopkeeper talking, not the app warning anybody. */
   }{scanPayee.creator && scanPayee.creator.scanNote ? <div style={{
-    marginTop: 16, padding: "11px 13px", borderRadius: T.radiusMd,
-    background: T.surfaceAlt, border: `1px solid ${T.line}`,
-    fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5,
+    marginTop: 14, padding: "11px 13px", borderRadius: T.radiusMd,
+    // Translucent white rather than a fixed tint: it then sits correctly
+    // on all twelve hues without twelve more colours to keep in step.
+    background: "rgba(255,255,255,0.16)",
+    border: "1px solid rgba(255,255,255,0.26)",
+    fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.94)", lineHeight: 1.5,
     textAlign: "left", overflowWrap: "anywhere"
   }}>{scanPayee.creator.scanNote}</div> : null}</div>}</div>}</div>;
   })()}{

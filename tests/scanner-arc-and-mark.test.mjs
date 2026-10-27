@@ -317,7 +317,11 @@ describe("one screen for the camera, asked for or not", () => {
     assert.match(shell, /: "#000"/, "the screen is still white before permission");
     // And it is black ONLY while aiming. Once a code resolves, a white
     // confirmation card floating on black reads as an error dialog.
-    assert.match(shell, /background: scanPayee \? scanBackdropCss\(scanPayee\.gloobalId\) : "#000"/);
+    // Black only while aiming. Once a code resolves the page goes to
+    // white with a trace of the payee's hue, and the hue itself goes on
+    // the card — the founder inverted the first build, where the field
+    // was coloured and the card was white.
+    assert.match(shell, /background: scanPayee \? scanPageTint\(scanPayee\.gloobalId\) : "#000"/);
     assert.doesNotMatch(shell, /DashboardAmbientBg/, "the dashboard's background is back on the scanner");
     // The title is now true before permission too: there is a square on
     // screen and this is the only thing saying what it is for.
@@ -463,7 +467,10 @@ describe("nothing on the live scanner sits on anything else", () => {
     // Centred on the SCREEN, not on the space left beside the back
     // button — without the spacer it sits 27px right of centre, which is
     // enough to read as a mistake and not enough to read as a decision.
-    assert.match(app, /<span style=\{\{ flex: 1, textAlign: "center", fontSize: 17/);
+    // The style block went multi-line when the title learned to switch
+    // ink with the ground under it, so this checks the properties rather
+    // than one spelling of them.
+    assert.match(app, /flex: 1, textAlign: "center", fontSize: 17, fontWeight: 800/);
     assert.match(app, /<span aria-hidden="true" style=\{\{ width: 42, flexShrink: 0 \}\} \/>/,
       "the title has no counterweight, so it is not centred on the screen");
   });

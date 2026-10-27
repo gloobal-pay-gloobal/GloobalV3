@@ -95,7 +95,7 @@ function ShopThemePreview({ shop, lens, ccyCode }) {
   }}>+</span></div></div></div>;
 }
 
-function ShopThemeEditor({ shop, symbolId, ccyCode = "USD", lens = null, onClose, onSave }) {
+function ShopThemeEditor({ shop, cover, symbolId, ccyCode = "USD", lens = null, onClose, onSave, onSaveCover }) {
   // Edited as a draft and written once. A screen with eleven controls that
   // saved on every tap would be eleven requests and eleven chances for a
   // half-applied look.
@@ -159,6 +159,15 @@ function ShopThemeEditor({ shop, symbolId, ccyCode = "USD", lens = null, onClose
   <div style={{
     fontSize: 11, color: T.inkFaint, fontWeight: 600, margin: "9px 2px 18px", lineHeight: 1.5
   }}>Your colour lands on the chip, the badge and the Add button. The price keeps the app's own look in every shop, so people can read a figure the same way everywhere.</div>
+
+  {row("Cover photo", <ShopCoverPicker
+    cover={cover}
+    accent={theme.color}
+    onError={(m) => setError(m)}
+    onPick={async (photo) => { setError(""); if (onSaveCover) await onSaveCover({ photo }); }}
+    onMove={(focusY) => { if (onSaveCover) onSaveCover({ focusY }); }}
+    onRemove={async () => { if (onSaveCover) await onSaveCover({ remove: true }); }}
+  />)}
 
   {row("Theme", <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{
     SHOP_THEME_KEYS.map((key) => {

@@ -299,6 +299,10 @@ const FRONTEND_MODULES = [
   "features/creator/CreatorPage.jsx",
   // Where an owner changes how their shop looks. After CreatorPage only
   // for reading order; both are function declarations.
+  // One picker for the three pictures a shop has — cover, mark, product —
+  // all of which go to routes that validate them identically. Before the
+  // editor that uses it.
+  "features/creator/shopPhotoPicker.jsx",
   "features/creator/ShopThemeEditor.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",

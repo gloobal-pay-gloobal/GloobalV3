@@ -250,9 +250,51 @@ describe("the strip itself", () => {
   });
 
   test("one way into a business, used by the strip and the row", () => {
-    assert.match(dash, /const openBusiness = \(b\) => \{/);
+    // Async now: a pinned CREATOR tile has to resolve before it can open,
+    // and the claim this test makes is about there being ONE way in, not
+    // about whether it awaits.
+    assert.match(dash, /const openBusiness = async \(b\) => \{/);
     assert.match(dash, /onClick=\{\(\) => openBusiness\(b\)\}/);
     assert.match(dash, /onOpen=\{openBusiness\}/);
+  });
+
+  test("a pinned creator survives being pinned", () => {
+    // ── THE BUG ──────────────────────────────────────────────────────
+    //
+    // payPinnedFrom resolves a key against TOP_BUSINESSES and nothing
+    // else. Pinning a creator stored their symbolId in the same list,
+    // flipped the star on their page, and then showed NOTHING in the
+    // strip: the key matched no business and was dropped without a word.
+    // The star said yes and the strip disagreed, which is what "ping was
+    // not working" was looking at.
+    assert.match(dash, /payPinnedTiles\(TOP_BUSINESSES, payPins, pinnedCreators\)/,
+      "the strip must resolve creators as well as businesses");
+    assert.match(pinsSrc, /function payPinnedTiles\(all, keys, creatorCards\)/);
+    // Cached at pin time rather than looked up on every open: a dozen
+    // requests to draw a row of shortcuts is not a trade worth making.
+    assert.match(pinsSrc, /function pinnedCreatorCard\(creator\)/);
+    assert.match(dash, /onTogglePin=\{\(\) => togglePin\(openCreator\.symbolId, openCreator\)\}/,
+      "the page's own star must hand the creator over so its card can be cached");
+  });
+
+  test("what is cached for a tile is only what a tile draws", () => {
+    const fn = pinsSrc.slice(pinsSrc.indexOf("function pinnedCreatorCard"));
+    const body = fn.slice(0, fn.indexOf("\n}"));
+    // A stale cache should cost an out-of-date name on a shortcut, never
+    // an out-of-date price: the page behind it is always fetched fresh.
+    for (const banned of ["items", "price", "address", "repeatPayers"]) {
+      assert.ok(!new RegExp(`\\b${banned}\\b`).test(body),
+        `a pinned tile must not cache ${banned}`);
+    }
+    assert.match(body, /label:/);
+    assert.match(body, /handle:/);
+  });
+
+  test("a creator tile opens the shop, not the pay sheet", () => {
+    const at = dash.indexOf("const openBusiness = async");
+    const fn = dash.slice(at, at + 900);
+    assert.match(fn, /if \(b && b\.isCreator\)/, "the tile knows which kind it is");
+    assert.match(fn, /resolveCreatorHandle/, "and a creator is resolved fresh before opening");
   });
 });
 

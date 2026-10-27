@@ -101,3 +101,81 @@ function payPinnedFrom(all, keys) {
   for (const key of list) if (byKey[key]) out.push(byKey[key]);
   return out;
 }
+
+// ── A PINNED CREATOR IS NOT A PINNED BUSINESS ───────────────────────────
+//
+// payPinnedFrom resolves a pin KEY against TOP_BUSINESSES. That is the only
+// thing it has ever been able to resolve, so pinning a creator stored their
+// symbolId in the same list, flipped the star on their page, and then showed
+// NOTHING in the Pinned strip — the key matched no business and was silently
+// dropped. The founder's "ping was not working" is exactly that: the star
+// said yes and the strip disagreed.
+//
+// A creator is not in any local catalogue, so there is nothing to resolve
+// them against. The options were a lookup per pinned creator every time Pay
+// & Services opens — a dozen requests to draw a row of shortcuts — or
+// keeping the little that a tile needs at the moment it is pinned. This is
+// the second.
+//
+// WHAT IS CACHED IS WHAT A TILE DRAWS, and nothing else: the name, the
+// handle, the mark and the shop's colour. No prices, no items, no address.
+// A stale cache therefore costs an out-of-date name on a shortcut, and the
+// page behind it is always fetched fresh.
+var GLOOBAL_PAY_PIN_CREATORS_PREFIX = "gloobal.payPinCreators.v1.";
+
+function payPinCreatorsKey(symbolId) {
+  return `${GLOOBAL_PAY_PIN_CREATORS_PREFIX}${symbolId || "anon"}`;
+}
+
+function loadPinnedCreators(symbolId) {
+  try {
+    const raw = window.localStorage.getItem(payPinCreatorsKey(symbolId));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (e) {
+    // A corrupt or unreadable store costs a row of shortcuts, never the
+    // screen: every caller treats {} as "none pinned yet".
+    return {};
+  }
+}
+
+function savePinnedCreators(symbolId, map) {
+  try {
+    window.localStorage.setItem(payPinCreatorsKey(symbolId), JSON.stringify(map || {}));
+  } catch (e) {
+    // Out of quota, or private browsing. The pin itself still lives in
+    // payPins; only the shortcut's label is lost.
+  }
+}
+
+// The handful of fields a tile needs, taken off a resolved creator.
+function pinnedCreatorCard(creator) {
+  if (!creator || !creator.symbolId) return null;
+  return {
+    key: creator.symbolId,
+    label: typeof creatorDisplayName === "function" ? creatorDisplayName(creator) : (creator.handle || ""),
+    handle: creator.handle || "",
+    logo: creator.logo || null,
+    color: (creator.shop && creator.shop.color) || "",
+    isCreator: true
+  };
+}
+
+// Pins, in the order they were pinned, as tiles — businesses resolved from
+// the catalogue and creators from the cache, so one strip can hold both.
+//
+// A key that resolves to neither is skipped rather than drawn as a gap: it
+// is a business that has left the catalogue, or a creator pinned on another
+// device whose card this one has never seen.
+function payPinnedTiles(all, keys, creatorCards) {
+  const list = Array.isArray(keys) ? keys : [];
+  const byKey = Object.create(null);
+  for (const item of all || []) if (item && item.key) byKey[item.key] = item;
+  const cards = creatorCards && typeof creatorCards === "object" ? creatorCards : {};
+  const out = [];
+  for (const key of list) {
+    if (byKey[key]) out.push(byKey[key]);
+    else if (cards[key]) out.push(cards[key]);
+  }
+  return out;
+}

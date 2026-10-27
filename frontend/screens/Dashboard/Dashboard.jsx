@@ -848,10 +848,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
   // on a screen that opens instantly, and loading it a frame later would
   // show an empty strip and then fill it.
   const [payPins, setPayPins] = useState14(() => loadPayPins(myGloobalId));
-  const togglePin = (key) => {
+  // `creator` is passed when the thing being pinned is one. Its card is
+  // cached on the way in and dropped on the way out, so the Pinned strip can
+  // draw a creator it has no catalogue entry for.
+  const togglePin = (key, creator) => {
     setPayPins((keys) => {
       const next = togglePayPin(keys, key);
       savePayPins(myGloobalId, next);
+      const nowPinned = next.indexOf(key) >= 0;
+      if (creator) {
+        setPinnedCreators((cards) => {
+          const card = pinnedCreatorCard(creator);
+          const copy = Object.assign({}, cards);
+          if (nowPinned && card) copy[key] = card; else delete copy[key];
+          savePinnedCreators(myGloobalId, copy);
+          return copy;
+        });
+      }
       return next;
     });
   };
@@ -884,6 +897,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
   const [creatorSuppliers, setCreatorSuppliers] = useState14([]);
   const [creatorPurchases, setCreatorPurchases] = useState14([]);
   const [showShopTheme, setShowShopTheme] = useState14(false);
+  // The tile-sized cards for pinned CREATORS. See payPins.js: a creator's
+  // key resolves against no local catalogue, so pinning one used to store
+  // the key and show nothing — the star said yes and the strip disagreed.
+  const [pinnedCreators, setPinnedCreators] = useState14(() => loadPinnedCreators(myGloobalId));
 
   // Debounced, and guarded by a sequence number: a slow answer for "rasoi"
   // must not land after a fast one for "rasoi.ghar" and overwrite it. Same
@@ -3262,10 +3279,19 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     // shortcuts rather than a section of the catalogue, and watching your
     // own pins disappear as you type a business's name reads as losing
     // them. It hides outright while searching instead.
-    const pinnedBusinesses = payPinnedFrom(TOP_BUSINESSES, payPins);
+    const pinnedBusinesses = payPinnedTiles(TOP_BUSINESSES, payPins, pinnedCreators);
     // One way into a business, used by the row and by the pinned tile,
     // so the two cannot start behaving differently.
-    const openBusiness = (b) => {
+    const openBusiness = async (b) => {
+      // A pinned creator opens their page. A business opens the pay sheet.
+      // Same strip, two different things behind it, and the tile knows
+      // which it is because the card said so when it was cached.
+      if (b && b.isCreator) {
+        const found = await GloobalApi.resolveCreatorHandle(b.handle || "");
+        if (found) { setOpenCreator(found); return; }
+        showToast2("Could not open that shop just now.");
+        return;
+      }
       requestCloseMore();
       setPayTarget({ key: b.key, label: b.label, chip: b.chip, logo: b.logo || null, Icon: null, cashbackRate: b.cashbackRate });
       setPayAmount("25.00");
@@ -3801,6 +3827,20 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
   }{showShopTheme && <ScreenErrorBoundary name="Shop look" onClose={() => setShowShopTheme(false)}><ShopThemeEditor
+    cover={(creatorProfile && creatorProfile.cover) || null}
+    onSaveCover={async (change) => {
+      try {
+        const saved = await GloobalApi.saveCreatorCover(myGloobalId, change);
+        // Both copies again: the profile this editor reads from, and the
+        // page behind it. A cover changed here and stale there is the same
+        // fault as a colour changed here and stale there.
+        setCreatorProfile((c) => (c ? { ...c, cover: saved } : c));
+        setOpenCreator((c) => (c ? { ...c, cover: saved } : c));
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }}
     shop={(creatorProfile && creatorProfile.shop) || null}
     symbolId={myGloobalId}
     ccyCode={ccyCode}
@@ -3826,7 +3866,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     ccyCode={ccyCode}
     lens={displayLens}
     pinned={payPins.includes(openCreator.symbolId)}
-    onTogglePin={() => togglePin(openCreator.symbolId)}
+    onTogglePin={() => togglePin(openCreator.symbolId, openCreator)}
     onClose={() => setOpenCreator(null)}
     onScan={onOpenScan}
     onShare={() => setShowReceive(true)}

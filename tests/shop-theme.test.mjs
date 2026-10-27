@@ -151,6 +151,55 @@ test("switching a category chip cannot drop something from the basket", () => {
   assert.match(src, /const items = activeCat/, "and the filtered list is only for drawing");
 });
 
+test("saving the list never reads the chip-filtered view", () => {
+  // The item routes REPLACE the whole list with what they are sent. Saving
+  // from `items` — which is what the active chip is showing — would delete
+  // every product in every other category, silently, the first time
+  // somebody edited a price with a chip selected. The chip filters what is
+  // DRAWN and nothing else.
+  const src = page();
+  assert.match(src, /const next = allItems\.filter\(\(i\) => i\.id !== draft\.id\)/,
+    "delete must start from the whole list");
+  assert.match(src, /\? allItems\.map\(\(i\) => \(i\.id === draft\.id/,
+    "edit must start from the whole list");
+  assert.match(src, /: allItems\.map\(\(i\) => \(\{ title: i\.title/,
+    "and so must adding");
+  const saveBlock = src.slice(src.indexOf("const next = allItems.filter"), src.indexOf("const next = allItems.filter") + 2600);
+  assert.ok(!/\bitems\.(map|filter)\(/.test(saveBlock),
+    "no save path may iterate the filtered view");
+});
+
+test("a product can actually be given a photo", () => {
+  // The model and the validation have accepted one since the list was
+  // built; there was nothing to put it there with, so every product fell
+  // back to its initials.
+  assert.match(page(), /<ShopPhotoPicker\s+id="creator-item-photo"/);
+  assert.match(page(), /onPicked=\{\(photo\) => setDraft\(\(d\) => \(\{ \.\.\.d, photo \}\)\)\}/);
+});
+
+test("a photo is shrunk before it is sent, not after it is refused", () => {
+  const src = readSource("frontend/features/creator/shopPhotoPicker.jsx");
+  // A phone camera makes four megabytes; the cap is 200 KB. Uploading the
+  // original and letting the server say no is a long wait on a bad line
+  // that ends in a true, useless message — the person did not pick the
+  // size, their camera did.
+  assert.match(src, /fitProfilePhotoForUpload/);
+  assert.match(src, /data:image\\\/\(jpeg\|png\)/, "and anything that is not a JPEG or PNG is refused here");
+  // Picking the same file twice must still fire, which is what happens
+  // when somebody re-crops and tries again.
+  assert.match(src, /input\.current\.value = ""/);
+});
+
+test("the cover's crop is a stored percentage, never baked in", () => {
+  const src = readSource("frontend/features/creator/shopPhotoPicker.jsx");
+  assert.match(src, /objectPosition: `50% \$\{y\}%`/);
+  // Nudged five times, a baked crop would be five generations of JPEG loss
+  // away from the photo that was taken.
+  assert.match(src, /onMove && onMove\(Number\(e\.target\.value\)\)/);
+  assert.match(page(), /objectPosition: `50% \$\{Number\(cover\.focusY\) \|\| 50\}%`/,
+    "and the page honours it");
+});
+
 test("chips appear only when they filter something", () => {
   // One chip filters nothing and is a label pretending to be a control.
   assert.match(page(), /categories\.length > 1 &&/);

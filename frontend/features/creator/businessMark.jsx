@@ -196,6 +196,22 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
     WebkitBoxOrient: "vertical",
     overflow: "hidden"
   }} title={b.label}>{b.label}</span>{
+    /* A pinned CREATOR carries their handle under the name, in their own
+       shop colour where they have picked one. Same reason the search result
+       does: a real shop that can take money should not be indistinguishable
+       from a placeholder brand that cannot, and the honest difference is
+       that one of them has an address people type. */
+  }{b.isCreator && b.handle ? <span style={{
+    fontSize: 9.5,
+    fontWeight: 700,
+    color: b.color || T.accent,
+    textAlign: "center",
+    width: "100%",
+    marginTop: -3,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap"
+  }} title={b.handle}>{b.handle}</span> : null}{
     /* Unpinning lives ON the tile. The alternative is finding the same
        business down in the list and unpinning it there, which is the
        long way round to undo something that took one tap. */

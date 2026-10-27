@@ -489,7 +489,7 @@ function CreatorPage({
         color: theme.inkSoft, margin: `${theme.density.sectionGap}px 0 10px`
       }}>{activeCat || "What they sell"}</div>}{
         isOwner ? <button
-          onClick={() => { setSaveError(""); setDraft({ id: null, title: "", price: "", note: "", soldOut: false }); }}
+          onClick={() => { setSaveError(""); setDraft({ id: null, title: "", price: "", note: "", category: "", badge: "", photo: "", soldOut: false }); }}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%",
             border: `1.6px dashed ${T.line}`, background: "none", borderRadius: 16, padding: 16,
@@ -506,7 +506,7 @@ function CreatorPage({
         theme={theme}
         onAdd={() => bump(item.id, 1)}
         onRemove={() => bump(item.id, -1)}
-        onEdit={() => { setSaveError(""); setDraft({ id: item.id, title: item.title, price: String(item.price), note: item.note || "", soldOut: Boolean(item.soldOut) }); }}
+        onEdit={() => { setSaveError(""); setDraft({ id: item.id, title: item.title, price: String(item.price), note: item.note || "", category: item.category || "", badge: item.badge || "", photo: item.photo || "", soldOut: Boolean(item.soldOut) }); }}
       />)}</>
   }</>}
 
@@ -572,9 +572,42 @@ function CreatorPage({
       width: "100%", background: T.bg, borderRadius: "24px 24px 0 0",
       padding: "16px 18px calc(22px + env(safe-area-inset-bottom, 0px))", maxHeight: "88%", overflowY: "auto"
     }}
-  ><div style={{ width: 38, height: 4, borderRadius: 2, background: T.line, margin: "0 auto 14px" }} />{[
+  ><div style={{ width: 38, height: 4, borderRadius: 2, background: T.line, margin: "0 auto 14px" }} />{
+    /* ── THE PRODUCT'S OWN PHOTO ──────────────────────────────────────
+       The model and the validation have accepted one since the list was
+       built; there was simply nothing to put it there with, so every
+       product fell back to its initials. A photo is the difference
+       between a price list and a shop. */
+  }<div style={{ marginBottom: 12 }}>{draft.photo
+    ? <div style={{ position: "relative", borderRadius: 16, overflow: "hidden", height: 130 }}><img
+      src={draft.photo}
+      alt=""
+      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+    /><button
+      onClick={() => setDraft((d) => ({ ...d, photo: "" }))}
+      aria-label="Remove this photo"
+      style={{
+        position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: "50%",
+        background: "rgba(21,19,42,0.6)", border: "none", cursor: "pointer", color: "#fff",
+        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800
+      }}
+    >✕</button></div>
+    : <ShopPhotoPicker
+      id="creator-item-photo"
+      onError={(m) => setSaveError(m)}
+      onPicked={(photo) => setDraft((d) => ({ ...d, photo }))}
+    >{(busy) => <span style={{
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      gap: 7, height: 104, borderRadius: 16, border: `1.6px dashed ${T.line}`, background: T.surface,
+      color: T.accent, fontSize: 12.5, fontWeight: 800
+    }}>{busy ? "Working\u2026" : "Add a photo"}<span style={{
+      fontSize: 10.5, fontWeight: 600, color: T.inkFaint
+    }}>Optional, but it sells better than words</span></span>}</ShopPhotoPicker>
+  }</div>{[
     { key: "title", label: "What is it", value: draft.title, placeholder: "Masala chai", mode: "text" },
     { key: "price", label: `Price (${itemCurrency})`, value: draft.price, placeholder: "20", mode: "decimal" },
+    { key: "category", label: "Group it under", value: draft.category, placeholder: "Chai", mode: "text" },
+    { key: "badge", label: "Your badge (optional)", value: draft.badge, placeholder: "Bestseller", mode: "text" },
     { key: "note", label: "Note (optional)", value: draft.note, placeholder: "Cutting or full glass", mode: "text" }
   ].map(({ key, label, value, placeholder, mode }) => <div
     key={key}
@@ -611,8 +644,15 @@ function CreatorPage({
   }}>{saveError}</div>}<div style={{ display: "flex", gap: 10 }}>{draft.id && <button
     onClick={async () => {
       setSaving(true);
-      const next = items.filter((i) => i.id !== draft.id).map((i) => ({
-        title: i.title, price: i.price, note: i.note, photo: i.photo, soldOut: i.soldOut
+      // ── allItems, NEVER the filtered view ──────────────────────────
+      //
+      // `items` is what the active category chip is showing. Saving the
+      // whole list from it would delete every product in every OTHER
+      // category, silently, because this route replaces the list with what
+      // it is sent. The chip filters what is DRAWN and nothing else.
+      const next = allItems.filter((i) => i.id !== draft.id).map((i) => ({
+        title: i.title, price: i.price, note: i.note, photo: i.photo,
+        category: i.category, badge: i.badge, soldOut: i.soldOut
       }));
       const ok = onSaveItems ? await onSaveItems(next) : false;
       setSaving(false);
@@ -632,12 +672,19 @@ function CreatorPage({
       if (!Number.isFinite(price) || price < 0) { setSaveError("Give it a price."); return; }
       setSaving(true);
       setSaveError("");
-      const row = { title, price, note: String(draft.note || "").trim(), photo: "", soldOut: Boolean(draft.soldOut) };
+      const row = {
+        title, price,
+        note: String(draft.note || "").trim(),
+        category: String(draft.category || "").trim(),
+        badge: String(draft.badge || "").trim(),
+        photo: draft.photo || "",
+        soldOut: Boolean(draft.soldOut)
+      };
       const next = draft.id
-        ? items.map((i) => (i.id === draft.id
+        ? allItems.map((i) => (i.id === draft.id
           ? { ...row }
-          : { title: i.title, price: i.price, note: i.note, photo: i.photo, soldOut: i.soldOut }))
-        : items.map((i) => ({ title: i.title, price: i.price, note: i.note, photo: i.photo, soldOut: i.soldOut })).concat([row]);
+          : { title: i.title, price: i.price, note: i.note, photo: i.photo, category: i.category, badge: i.badge, soldOut: i.soldOut }))
+        : allItems.map((i) => ({ title: i.title, price: i.price, note: i.note, photo: i.photo, category: i.category, badge: i.badge, soldOut: i.soldOut })).concat([row]);
       const ok = onSaveItems ? await onSaveItems(next) : false;
       setSaving(false);
       if (ok) setDraft(null); else setSaveError("Could not save that just now.");

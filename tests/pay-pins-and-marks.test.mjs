@@ -200,15 +200,15 @@ describe("as many pins as somebody wants", () => {
 });
 
 describe("the strip itself", () => {
-  test("every pin is rendered and the row scrolls", () => {
-    // Not a slice. PAY_PINS_VISIBLE is what the TILE WIDTH is derived
-    // from, so exactly that many fill the row and the rest are a swipe.
+  test("every pin is rendered", () => {
+    // Not a slice, and now not a scroll either: PAY_PINS_VISIBLE is what
+    // the TILE WIDTH is derived from, so exactly that many fill a row and
+    // the rest wrap onto the next one. Every pin is on screen.
     const at = markSrc.indexOf("function PayPinnedStrip");
     const fn = markSrc.slice(at, markSrc.length);
-    assert.match(fn, /overflowX: "auto"/);
     assert.match(fn, /items\.map\(/);
     assert.doesNotMatch(fn, /\.slice\(0, PAY_PINS_VISIBLE\)/,
-      "the strip renders only the visible pins, so the rest cannot be reached");
+      "the strip renders only the first few pins, so the rest cannot be reached");
   });
 
   test("a row holds four whole tiles, not four and a half", () => {
@@ -227,21 +227,49 @@ describe("the strip itself", () => {
       "the tile width is no longer an exact division of the row");
   });
 
+  test("more than four wraps onto another row", () => {
+    // ── THE MISREADING ───────────────────────────────────────────────
+    //
+    // "in one raw max 4 pings" was built as a strip of four-and-a-bit
+    // scrolling sideways. He meant it literally, and said so again
+    // looking at the result: "Make a new raw below it, if they have 9 we
+    // have 3 raw."
+    //
+    // Nine pins is three rows. A sideways scroll meant the fifth existed
+    // only for somebody who already knew to look for it, which is the
+    // opposite of what a shortcut is for.
+    const at = markSrc.indexOf("function PayPinnedStrip");
+    const fn = strip(markSrc.slice(at));
+    assert.match(fn, /flexWrap: "wrap"/, "the strip does not wrap, so a fifth pin is unreachable");
+    assert.doesNotMatch(fn, /overflowX/, "the strip still scrolls sideways");
+    assert.doesNotMatch(fn, /margin: "0 -18px"/,
+      "the negative gutter is only for a row that bleeds off the screen edge");
+    // The column gap is load-bearing — the tile width is derived from it
+    // — and the row gap is deliberately larger, or a name would read as
+    // belonging to the tile below it.
+    assert.match(fn, /columnGap: 10/);
+    assert.match(fn, /rowGap: 14/);
+  });
+
   test("and the header count is what says there are more", () => {
-    // Half a cropped square used to. Against a pale mark the eight pixels
-    // that remain are almost nothing, so the number carries it: "Pinned ·
-    // 6" beside four tiles is unambiguous in a way the crop never was.
+    // Nothing is hidden any more — every pin is on screen, four to a row.
+    // The count stays because it is still the fastest read of "how many
+    // shortcuts do I have", and because a three-row block wants a number
+    // at the top of it.
     const at = markSrc.indexOf("function PayPinnedStrip");
     const fn = markSrc.slice(at);
     assert.match(fn, /"· " \+ items\.length/, "the strip no longer counts its own pins");
   });
 
-  test("the tiles reach the screen edge, so the cut one reads as more", () => {
+  test("the tiles stay inside the page gutter", () => {
+    // They used to bleed to the screen edge with a negative margin, so a
+    // tile scrolled past it was cut by the SCREEN rather than clipped
+    // mid-card. Nothing leaves the row now, so that trick would only
+    // push the first tile out of line with everything else on the page.
     const at = markSrc.indexOf("function PayPinnedStrip");
-    const fn = markSrc.slice(at);
-    assert.match(fn, /margin: "0 -18px"/);
-    assert.match(fn, /padding: "2px 18px 6px"/,
-      "the first tile sits under the screen edge instead of in the gutter");
+    const fn = strip(markSrc.slice(at));
+    assert.doesNotMatch(fn, /margin: "0 -18px"/);
+    assert.match(fn, /padding: "2px 0 6px"/);
   });
 
   test("and it does not snap", () => {

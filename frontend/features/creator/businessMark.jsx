@@ -159,38 +159,31 @@ function BusinessMark({ name, logo, size = 36, radius }) {
 // ── THE PINNED STRIP ────────────────────────────────────────────────────
 //
 // The businesses somebody actually pays, across the top of Pay &
-// Services. As many as they want, about five visible, the rest a swipe to
-// the left — which is what the half-tile showing at the right edge is
-// for. A row that ended flush would look like the end of the list.
+// Services. As many as they want, FOUR TO A ROW, wrapping downward: nine
+// pins is three rows, the last of them holding one.
 //
-// Horizontal scroll rather than a "show more" link: a pin is a shortcut,
-// and putting a shortcut behind a tap defeats it.
+// ── IT USED TO SCROLL SIDEWAYS, AND THAT WAS A MISREADING ──────────────
+//
+// The founder asked for "in one raw max 4 pings". That was built as a
+// strip of four-and-a-bit scrolling horizontally, on the reasoning that a
+// long list should cost no vertical room.
+//
+// He meant what he wrote, and said so again looking at the result: "Make
+// a new raw below it, if they have 9 we have 3 raw."
+//
+// It is the better answer, and the reasoning against it was weak. A pin
+// is something its owner chose, and all of them being VISIBLE is most of
+// the point of choosing; a sideways scroll means the fifth exists only
+// for somebody who already knows to look for it. Rows cost height, and
+// height on a screen that scrolls down anyway is the cheap axis.
 function PayPinnedStrip({ items, onOpen, onUnpin }) {
   if (!items || !items.length) return null;
   // Sized so PAY_PINS_VISIBLE of them plus their gaps fill the row
-  // EXACTLY. Percentages rather than pixels, because a fixed tile width
-  // shows four on a small phone and six on a large one, and the count
-  // only reads as deliberate at one size.
+  // EXACTLY, which is now what wraps the fifth onto a row of its own.
   //
-  // It used to divide by PAY_PINS_VISIBLE - 0.4, which left HALF a fifth
-  // tile showing to say "there is more" and made all four narrower to pay
-  // for it. Dividing exactly still says it, for free, and the arithmetic
-  // is worth writing down because it looks like luck and is not:
-  //
-  //     tile       = (W - 36 gutters - 30 gaps) / 4
-  //     fifth left = 18 + 4 x (tile + 10)  =  W - 8
-  //
-  // Eight pixels of the fifth tile therefore sit at the screen edge
-  // whatever the screen is — 320px or 430px, the same eight.
-  //
-  // Be honest about what those eight do: against a pale mark they are
-  // almost nothing. They are a secondary hint, and WHAT ACTUALLY SAYS
-  // THERE IS MORE IS THE COUNT IN THE HEADER — "Pinned · 6" beside four
-  // tiles is unambiguous in a way half a cropped square never was.
-  //
-  // A gradient was tried over that edge and taken straight back out: at
-  // any width worth drawing, it covered the whole eight pixels and hid
-  // the one thing it had been added to soften.
+  // Percentages rather than pixels: a fixed tile width gives four on a
+  // small phone and five on a large one, and a row of four only reads as
+  // deliberate when it is four on every phone.
   const tile = `calc((100% - ${(PAY_PINS_VISIBLE - 1) * 10}px) / ${PAY_PINS_VISIBLE})`;
   return <div><div style={{
     display: "flex",
@@ -206,21 +199,18 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
   }}>Pinned</span><span style={{ fontSize: 11, fontWeight: 700, color: T.inkFaint }}>{"· " + items.length}</span></div><div
     style={{
       display: "flex",
-      gap: 10,
-      overflowX: "auto",
-      // The strip scrolls; the page does not scroll sideways with it.
-      // Negative margin and matching padding let the tiles reach the
-      // screen edge, so a tile scrolled past the edge is cut by the
-      // SCREEN rather than clipped mid-card inside a gutter.
-      margin: "0 -18px",
-      padding: "2px 18px 6px",
-      scrollbarWidth: "none",
-      WebkitOverflowScrolling: "touch"
-      // No scroll-snap. "Proximity" snapping on a strip of shortcuts
-      // adds nothing a thumb wanted, and it leaves the row resting
-      // half-way between two tiles after anything scrolls it
-      // programmatically — which a render showed, with the first tile
-      // clipped by the screen edge.
+      flexWrap: "wrap",
+      // The column gap is the one the tile width is derived from and may
+      // not change without changing that sum. The ROW gap is free, and is
+      // larger because every tile carries a name under it: 10px between
+      // rows would read as a name belonging to the tile beneath it.
+      columnGap: 10,
+      rowGap: 14,
+      padding: "2px 0 6px"
+      // No overflow and no negative margins. Nothing leaves the row any
+      // more, so there is nothing to bleed to the screen edge and nothing
+      // to scroll — which also means no scroll position to lose and no
+      // half-tile resting state for a render to catch.
     }}
   >{items.map((b) => <div
     key={b.key}

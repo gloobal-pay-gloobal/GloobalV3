@@ -57,7 +57,7 @@
 // is in, so it can say so at the first keystroke that would break the
 // rule — the same rule, the same message, several seconds earlier.
 import { useState as useState58, useEffect as useEffect54, useMemo as useMemo15, useRef as useRef33 } from "react";
-import { Delete as Delete2, ArrowUp as ArrowUp2, Check as Check11, X as X14, Keyboard } from "lucide-react";
+import { Delete as Delete2, ArrowUp as ArrowUp2, Check as Check11, X as X14, Keyboard, Search as Search8 } from "lucide-react";
 
 // ── THE ALPHABETS ───────────────────────────────────────────────────────
 //
@@ -91,7 +91,7 @@ import { Delete as Delete2, ArrowUp as ArrowUp2, Check as Check11, X as X14, Key
 // one board most likely to open by default in India.
 var NAME_KEYBOARD_LAYOUTS = [
   {
-    id: "latin", script: "Latin", name: "Latin", native: "Aa", caps: true,
+    id: "latin", script: "Latin", name: "English", nativeName: "English", also: ["Spanish", "French", "Portuguese", "Indonesian", "German", "Vietnamese", "Turkish", "Italian", "Polish", "Swahili", "Tagalog", "Dutch", "Malay", "Romanian", "Zulu", "Yoruba", "Hausa"], speakers: 3000, native: "Aa", caps: true,
     groups: [{ rows: [
       // QWERTY as rows rather than as a 10-wide grid. Flowed into a grid
       // it came out `a s d f g h j k l z`, with the z of the bottom row
@@ -107,7 +107,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ] }]
   },
   {
-    id: "cyrillic", script: "Cyrillic", name: "Cyrillic", native: "Аб", caps: true,
+    id: "cyrillic", script: "Cyrillic", name: "Russian", nativeName: "Русский", also: ["Ukrainian", "Serbian", "Bulgarian", "Kazakh", "Belarusian", "Macedonian", "Mongolian", "Kyrgyz", "Tajik"], speakers: 320, native: "Аб", caps: true,
     groups: [{ rows: [
       ["й","ц","у","к","е","н","г","ш","щ","з","х","ъ"],
       ["ф","ы","в","а","п","р","о","л","д","ж","э"],
@@ -115,7 +115,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ] }, { label: "Also", keys: ["і","ї","є","ґ","ў","ќ","љ","њ","џ","ђ","ћ","ј"] }]
   },
   {
-    id: "greek", script: "Greek", name: "Greek", native: "Αα", caps: true,
+    id: "greek", script: "Greek", name: "Greek", nativeName: "Ελληνικά", also: [], speakers: 13, native: "Αα", caps: true,
     groups: [{ rows: [
       ["ς","ε","ρ","τ","υ","θ","ι","ο","π"],
       ["α","σ","δ","φ","γ","η","ξ","κ","λ"],
@@ -123,7 +123,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ] }, { label: "Accents", keys: ["ά","έ","ή","ί","ό","ύ","ώ","ϊ","ϋ","ΐ","ΰ"] }]
   },
   {
-    id: "devanagari", script: "Devanagari", name: "Devanagari", native: "अ",
+    id: "devanagari", script: "Devanagari", name: "Hindi", nativeName: "हिन्दी", also: ["Marathi", "Nepali", "Sanskrit", "Konkani", "Maithili", "Bhojpuri", "Dogri"], speakers: 725, native: "अ",
     groups: [
       { label: "Letters", keys: [
         "क","ख","ग","घ","ङ","च","छ","ज","झ","ञ",
@@ -136,7 +136,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "bengali", script: "Bengali", name: "Bengali", native: "অ",
+    id: "bengali", script: "Bengali", name: "Bengali", nativeName: "বাংলা", also: ["Assamese", "Bangla", "Meitei", "Bishnupriya"], speakers: 270, native: "অ",
     groups: [
       { label: "Letters", keys: [
         "ক","খ","গ","ঘ","ঙ","চ","ছ","জ","ঝ","ঞ",
@@ -149,7 +149,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "gurmukhi", script: "Gurmukhi", name: "Gurmukhi", native: "ਅ",
+    id: "gurmukhi", script: "Gurmukhi", name: "Punjabi", nativeName: "ਪੰਜਾਬੀ", also: ["Gurmukhi"], speakers: 33, native: "ਅ",
     groups: [
       { label: "Letters", keys: [
         "ਕ","ਖ","ਗ","ਘ","ਙ","ਚ","ਛ","ਜ","ਝ","ਞ",
@@ -162,7 +162,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "gujarati", script: "Gujarati", name: "Gujarati", native: "અ",
+    id: "gujarati", script: "Gujarati", name: "Gujarati", nativeName: "ગુજરાતી", also: ["Kutchi"], speakers: 62, native: "અ",
     groups: [
       { label: "Letters", keys: [
         "ક","ખ","ગ","ઘ","ઙ","ચ","છ","જ","ઝ","ઞ",
@@ -175,7 +175,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "oriya", script: "Oriya", name: "Odia", native: "ଅ",
+    id: "oriya", script: "Oriya", name: "Odia", nativeName: "ଓଡ଼ିଆ", also: ["Oriya", "Santali"], speakers: 35, native: "ଅ",
     groups: [
       { label: "Letters", keys: [
         "କ","ଖ","ଗ","ଘ","ଙ","ଚ","ଛ","ଜ","ଝ","ଞ",
@@ -188,7 +188,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "tamil", script: "Tamil", name: "Tamil", native: "அ",
+    id: "tamil", script: "Tamil", name: "Tamil", nativeName: "தமிழ்", also: [], speakers: 87, native: "அ",
     groups: [
       { label: "Letters", keys: [
         "க","ங","ச","ஞ","ட","ண","த","ந","ப","ம",
@@ -200,7 +200,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "telugu", script: "Telugu", name: "Telugu", native: "అ",
+    id: "telugu", script: "Telugu", name: "Telugu", nativeName: "తెలుగు", also: [], speakers: 96, native: "అ",
     groups: [
       { label: "Letters", keys: [
         "క","ఖ","గ","ఘ","ఙ","చ","ఛ","జ","ఝ","ఞ",
@@ -213,7 +213,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "kannada", script: "Kannada", name: "Kannada", native: "ಅ",
+    id: "kannada", script: "Kannada", name: "Kannada", nativeName: "ಕನ್ನಡ", also: ["Tulu", "Konkani"], speakers: 59, native: "ಅ",
     groups: [
       { label: "Letters", keys: [
         "ಕ","ಖ","ಗ","ಘ","ಙ","ಚ","ಛ","ಜ","ಝ","ಞ",
@@ -226,7 +226,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "malayalam", script: "Malayalam", name: "Malayalam", native: "അ",
+    id: "malayalam", script: "Malayalam", name: "Malayalam", nativeName: "മലയാളം", also: [], speakers: 36, native: "അ",
     groups: [
       { label: "Letters", keys: [
         "ക","ഖ","ഗ","ഘ","ങ","ച","ഛ","ജ","ഝ","ഞ",
@@ -239,7 +239,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "sinhala", script: "Sinhala", name: "Sinhala", native: "අ",
+    id: "sinhala", script: "Sinhala", name: "Sinhala", nativeName: "සිංහල", also: ["Sinhalese"], speakers: 17, native: "අ",
     groups: [
       { label: "Letters", keys: [
         "ක","ඛ","ග","ඝ","ච","ඡ","ජ","ඣ","ට","ඨ",
@@ -252,7 +252,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "arabic", script: "Arabic", name: "Arabic", native: "\u0627\u0628", rtl: true,
+    id: "arabic", script: "Arabic", name: "Arabic", nativeName: "العربية", also: ["Urdu", "Persian", "Farsi", "Pashto", "Kurdish", "Sindhi", "Uyghur", "Dari"], speakers: 760, native: "\u0627\u0628", rtl: true,
     groups: [
       { label: "Letters", keys: [
         "ا","ب","ت","ث","ج","ح","خ","د","ذ","ر",
@@ -264,7 +264,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "hebrew", script: "Hebrew", name: "Hebrew", native: "א", rtl: true,
+    id: "hebrew", script: "Hebrew", name: "Hebrew", nativeName: "עברית", also: ["Yiddish"], speakers: 9, native: "א", rtl: true,
     groups: [
       { label: "Letters", keys: [
         "א","ב","ג","ד","ה","ו","ז","ח","ט","י",
@@ -275,7 +275,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "thai", script: "Thai", name: "Thai", native: "ก",
+    id: "thai", script: "Thai", name: "Thai", nativeName: "ไทย", also: ["Isan"], speakers: 71, native: "ก",
     groups: [
       { label: "Letters", keys: [
         "ก","ข","ค","ฆ","ง","จ","ฉ","ช","ซ","ฌ",
@@ -288,7 +288,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "lao", script: "Lao", name: "Lao", native: "ກ",
+    id: "lao", script: "Lao", name: "Lao", nativeName: "ລາວ", also: [], speakers: 30, native: "ກ",
     groups: [
       { label: "Letters", keys: [
         "ກ","ຂ","ຄ","ງ","ຈ","ສ","ຊ","ຍ","ດ","ຕ",
@@ -300,7 +300,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "khmer", script: "Khmer", name: "Khmer", native: "ក",
+    id: "khmer", script: "Khmer", name: "Khmer", nativeName: "ខ្មែរ", also: ["Cambodian"], speakers: 17, native: "ក",
     groups: [
       { label: "Letters", keys: [
         "ក","ខ","គ","ឃ","ង","ច","ឆ","ជ","ឈ","ញ",
@@ -313,7 +313,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "myanmar", script: "Myanmar", name: "Myanmar", native: "က",
+    id: "myanmar", script: "Myanmar", name: "Burmese", nativeName: "မြန်မာ", also: ["Myanmar", "Shan", "Mon"], speakers: 43, native: "က",
     groups: [
       { label: "Letters", keys: [
         "က","ခ","ဂ","ဃ","င","စ","ဆ","ဇ","ဈ","ည",
@@ -325,7 +325,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "armenian", script: "Armenian", name: "Armenian", native: "Աա", caps: true,
+    id: "armenian", script: "Armenian", name: "Armenian", nativeName: "Հայերեն", also: [], speakers: 6, native: "Աա", caps: true,
     groups: [{ keys: [
       "ա","բ","գ","դ","ե","զ","է","ը","թ","ժ",
       "ի","լ","խ","ծ","կ","հ","ձ","ղ","ճ","մ",
@@ -334,7 +334,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ] }]
   },
   {
-    id: "georgian", script: "Georgian", name: "Georgian", native: "ა",
+    id: "georgian", script: "Georgian", name: "Georgian", nativeName: "ქართული", also: [], speakers: 4, native: "ა",
     groups: [{ keys: [
       "ა","ბ","გ","დ","ე","ვ","ზ","თ","ი","კ",
       "ლ","მ","ნ","ო","პ","ჟ","რ","ს","ტ","უ",
@@ -343,7 +343,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ] }]
   },
   {
-    id: "thaana", script: "Thaana", name: "Thaana", native: "ހ", rtl: true,
+    id: "thaana", script: "Thaana", name: "Dhivehi", nativeName: "ދިވެހި", also: ["Maldivian", "Thaana"], speakers: 1, native: "ހ", rtl: true,
     groups: [
       { label: "Letters", keys: [
         "ހ","ށ","ނ","ރ","ބ","ޅ","ކ","އ","ވ","މ",
@@ -354,7 +354,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "hiragana", script: "Hiragana", name: "Hiragana", native: "あ",
+    id: "hiragana", script: "Hiragana", name: "Hiragana", nativeName: "ひらがな", also: ["Japanese", "Nihongo"], speakers: 125, native: "あ",
     groups: [
       { label: "Letters", keys: [
         "あ","い","う","え","お","か","き","く","け","こ",
@@ -372,7 +372,7 @@ var NAME_KEYBOARD_LAYOUTS = [
     ]
   },
   {
-    id: "katakana", script: "Katakana", name: "Katakana", native: "ア",
+    id: "katakana", script: "Katakana", name: "Katakana", nativeName: "カタカナ", also: ["Japanese", "Nihongo"], speakers: 2, native: "ア",
     groups: [
       { label: "Letters", keys: [
         "ア","イ","ウ","エ","オ","カ","キ","ク","ケ","コ",
@@ -425,6 +425,98 @@ var NAME_KEYBOARD_BY_COUNTRY = {
 function nameKeyboardDefaultId(countryIso) {
   const iso = String(countryIso || "").trim().toUpperCase();
   return (iso && NAME_KEYBOARD_BY_COUNTRY[iso]) || "latin";
+}
+
+// ── HOW MANY ALPHABETS FIT ON THE ROW ───────────────────────────────────
+//
+// Twenty-four chips do not. They used to all be on one scrolling strip,
+// which meant the alphabet somebody needed was usually off-screen and
+// they had to swipe a row of single letters hunting for it.
+//
+// Seven are shown and the rest are behind a search, which is the
+// founder's call: "top 7 most speaking language as default list and keep
+// rest with search bar".
+var NAME_KEYBOARD_ROW = 7;
+
+// The seven, in order, with two rules:
+//
+//   1. THE ACCOUNT'S OWN COUNTRY GOES FIRST, always, even when its
+//      alphabet is nowhere near the top by speakers. A Lao account
+//      opening a row of Hindi and Russian would be a row of seven wrong
+//      answers, and Lao is thirty million people deep in a search.
+//
+//   2. The rest are ordered by how many people write in them. Not by how
+//      many SPEAK the language — by how many write it in THIS alphabet,
+//      which is a different number and the honest one here: Punjabi has
+//      about 113 million speakers and roughly 33 million of them write
+//      Gurmukhi, the rest writing Shahmukhi, which is the Arabic board.
+//
+// A board the person has actually CHOSEN is appended if it is not among
+// the seven, rather than sorted into them — the row would otherwise
+// reshuffle under a thumb the moment something was picked from search.
+function nameKeyboardRow(countryIso, selectedId) {
+  const out = [];
+  const take = (layout, force) => {
+    if (!layout || out.indexOf(layout) >= 0) return;
+    if (!force && out.length >= NAME_KEYBOARD_ROW) return;
+    out.push(layout);
+  };
+  take(nameKeyboardLayout(nameKeyboardDefaultId(countryIso)));
+  const byUse = NAME_KEYBOARD_LAYOUTS.slice().sort(
+    (a, b) => (b.speakers || 0) - (a.speakers || 0)
+  );
+  for (const layout of byUse) take(layout);
+  take(nameKeyboardLayout(selectedId), true);
+  return out;
+}
+
+// Does this board write that language? Matched against the name on the
+// chip, the alphabet's own name, the language written in its own letters,
+// and every other language the board writes — so "Spanish" finds the
+// Latin board and "Urdu" finds the Arabic one, which is the entire point
+// of a search over a list of alphabet names nobody knows.
+function nameKeyboardMatches(layout, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return true;
+  const hay = [layout.name, layout.script, layout.nativeName, layout.id]
+    .concat(Array.isArray(layout.also) ? layout.also : []);
+  for (const value of hay) {
+    if (String(value || "").toLowerCase().indexOf(q) >= 0) return true;
+  }
+  return false;
+}
+
+// The line under a language's name in the finder, or "" when there is
+// nothing to put there.
+//
+// Both halves are earned rather than printed unconditionally, and a
+// render is why. Printing the alphabet always gave twelve rows reading
+// "Tamil / Tamil", "Greek / Greek" — a second line that repeats the
+// first teaches nothing and makes the list twice as long to skim. And
+// printing `also` unfiltered gave "Gurmukhi · also Gurmukhi", because
+// the search list carries the alphabet's own name as a search term.
+//
+// So: the alphabet appears only when it is NOT what the language is
+// called, and `also` lists only the languages not already on the row.
+// The two deliberate omissions, and their common names, so the empty
+// state can tell "not built yet, on purpose, and here is why" apart from
+// "never heard of it".
+var NAME_KEYBOARD_SOON = /chin|mandarin|cantonese|hanzi|kore|hangul|hanja/i;
+
+function nameKeyboardSubline(layout) {
+  const said = [String(layout.name || "").toLowerCase()];
+  const bits = [];
+  if (layout.script && String(layout.script).toLowerCase() !== said[0]) {
+    bits.push(layout.script);
+    said.push(String(layout.script).toLowerCase());
+  }
+  const also = (Array.isArray(layout.also) ? layout.also : [])
+    .filter((x) => said.indexOf(String(x || "").toLowerCase()) < 0);
+  // Three, not all seventeen. The row is one line and the point is "this
+  // is the board for languages like yours", which three names make and a
+  // clipped list of seventeen does not.
+  if (also.length) bits.push(`also ${also.slice(0, 3).join(", ")}`);
+  return bits.join(" · ");
 }
 
 function nameKeyboardLayout(id) {
@@ -597,6 +689,9 @@ function CreatorNameKeyboard({
 }) {
   const [layoutId, setLayoutId] = useState58(() => nameKeyboardDefaultId(countryIso));
   const [shift, setShift] = useState58(false);
+  // The language finder, over the board rather than inside it — see
+  // NameKeyboardLanguages for why it cannot live in this panel.
+  const [searching, setSearching] = useState58(false);
 
   // The country arrives after the account loads, which is usually AFTER
   // this mounts. Re-deriving on a country change rather than only at
@@ -622,6 +717,7 @@ function CreatorNameKeyboard({
   }, [open]);
 
   const layout = useMemo15(() => nameKeyboardLayout(layoutId), [layoutId]);
+  const row = useMemo15(() => nameKeyboardRow(countryIso, layoutId), [countryIso, layoutId]);
   const value = field === "last" ? last : first;
   const setValue = field === "last" ? onLast : onFirst;
   const strip = useRef33(null);
@@ -742,32 +838,64 @@ function CreatorNameKeyboard({
       display: "flex", alignItems: "center", justifyContent: "center", marginLeft: 2
     }}
   ><X14 size={14} color={T.inkFaint} /></button></div>{
-    /* ── THE ALPHABET STRIP ───────────────────────────────────────────
-       Every board, written in its own letters, scrolling horizontally.
+    /* ── THE ALPHABET ROW ─────────────────────────────────────────────
+       Seven boards, each as its own letter with the LANGUAGE under it.
+       The letter alone was a row of single glyphs — অ, અ, ଅ, அ — which
+       is only legible to somebody who already reads that one, and the
+       whole point is to reach an alphabet your phone cannot write.
+
        The one in use is filled rather than outlined, because an outline
-       on a strip of outlines is not a state anybody sees. */
-  }<div ref={strip} style={{
-    display: "flex", gap: 6, overflowX: "auto", padding: "7px 10px",
-    scrollbarWidth: "none", WebkitOverflowScrolling: "touch",
+       on a row of outlines is not a state anybody sees.
+
+       The row scrolls; the SEARCH DOES NOT. It is pinned outside the
+       scrolling part, at the right corner, so the way to the other
+       seventeen is in the same place whatever the row is showing. */
+  }<div style={{
+    display: "flex", alignItems: "stretch", gap: 6, padding: "7px 10px",
     borderBottom: `1px solid ${T.line}`
-  }}>{NAME_KEYBOARD_LAYOUTS.map((l) => <button
+  }}><div ref={strip} style={{
+    flex: 1, minWidth: 0, display: "flex", gap: 6, overflowX: "auto",
+    scrollbarWidth: "none", WebkitOverflowScrolling: "touch"
+  }}>{row.map((l) => <button
     key={l.id}
     type="button"
     data-kb-on={l.id === layoutId ? "1" : "0"}
     onPointerDown={(e) => { e.preventDefault(); setLayoutId(l.id); setShift(false); }}
-    aria-label={l.name}
+    aria-label={`${l.name}, written in ${l.script}`}
     aria-pressed={l.id === layoutId}
     title={l.name}
     style={{
-      flex: "0 0 auto", minWidth: 36, height: 30, borderRadius: 9,
+      flex: "0 0 auto", minWidth: 42, borderRadius: 10,
       border: "none",
       background: l.id === layoutId ? T.accent : T.surface,
       color: l.id === layoutId ? "#fff" : T.inkSoft,
       boxShadow: l.id === layoutId ? "none" : "0 1px 2px rgba(20,18,43,0.08)",
-      fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer",
-      padding: "0 9px", display: "flex", alignItems: "center", justifyContent: "center"
+      fontFamily: "inherit", cursor: "pointer",
+      padding: "5px 9px 4px",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1
     }}
-  >{l.native}</button>)}</div>{
+  ><span style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.1 }}>{l.native}</span><span style={{
+    fontSize: 8.5, fontWeight: 700, lineHeight: 1.1, letterSpacing: 0.1,
+    // Never clipped: a name cut to "Malayal" identifies nothing. The
+    // chip widens to its own word instead, which is why the row scrolls.
+    whiteSpace: "nowrap",
+    opacity: l.id === layoutId ? 0.92 : 0.75
+  }}>{l.name}</span></button>)}</div><button
+    type="button"
+    onPointerDown={(e) => { e.preventDefault(); setSearching(true); }}
+    aria-label="Find another language"
+    style={{
+      // Accent-tinted rather than the grey surface the chips sit on. A
+      // render showed it reading as a disabled chip at the end of the
+      // row — which is the opposite of what it is, the way to the other
+      // seventeen alphabets.
+      flexShrink: 0, width: 44, borderRadius: 10, border: "none",
+      background: T.accentSoft, cursor: "pointer",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2
+    }}
+  ><Search8 size={14} color={T.accent} /><span style={{
+    fontSize: 8.5, fontWeight: 800, color: T.accent, lineHeight: 1.1
+  }}>More</span></button></div>{
     /* ── THE KEYS ─────────────────────────────────────────────────────
        Capped at 34% of the screen and scrolled beyond that. An abugida
        board is genuinely tall, and a keyboard that grows past half the
@@ -877,7 +1005,127 @@ function CreatorNameKeyboard({
   }{locked && !conflict ? <div style={{
     fontSize: 10, fontWeight: 600, color: T.inkFaint, textAlign: "center",
     padding: "0 14px 8px", lineHeight: 1.45
-  }}>This part is in {locked}. Each part of a name is written in one alphabet — clear it to switch.</div> : null}</div>;
+  }}>This part is in {locked}. Each part of a name is written in one alphabet — clear it to switch.</div> : null}{
+    searching ? <NameKeyboardLanguages
+      selectedId={layoutId}
+      onPick={(id) => { setLayoutId(id); setShift(false); setSearching(false); }}
+      onClose={() => setSearching(false)}
+    /> : null
+  }</div>;
+}
+
+// ── THE OTHER SEVENTEEN ─────────────────────────────────────────────────
+//
+// A full screen rather than a panel inside the keyboard, for one hard
+// reason: this is the one place in the whole feature that WANTS the
+// phone's own keyboard. You type "Spanish" here, in Latin letters, to
+// reach a board that is not Latin. Opening the device keyboard over a
+// panel that is itself pinned to the bottom of the screen leaves about an
+// inch to show results in.
+//
+// Searched by LANGUAGE, not by alphabet. "Urdu" finds the Arabic board;
+// "Spanish" finds the Latin one; "Punjabi" finds Gurmukhi. A list of
+// alphabet names would be a list most people cannot search, because
+// almost nobody knows what their own alphabet is called — which is the
+// same reason the chips gained names in the first place.
+function NameKeyboardLanguages({ selectedId, onPick, onClose }) {
+  const [query, setQuery] = useState58("");
+  const found = useMemo15(
+    () => NAME_KEYBOARD_LAYOUTS.filter((l) => nameKeyboardMatches(l, query)),
+    [query]
+  );
+
+  return <div style={{
+    position: "fixed", inset: 0, zIndex: 440, background: T.bg,
+    display: "flex", flexDirection: "column", overflow: "hidden"
+  }}><div style={{
+    display: "flex", alignItems: "center", gap: 10,
+    padding: "calc(15px + env(safe-area-inset-top, 0px)) 16px 10px", flexShrink: 0
+  }}><NavBackButton onClick={onClose} /><span style={{
+    flex: 1, minWidth: 0, fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay
+  }}>Languages</span></div>
+
+  <div style={{ padding: "0 18px 10px", flexShrink: 0 }}><div style={{
+    display: "flex", alignItems: "center", gap: 10, background: T.surface,
+    border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px",
+    boxShadow: T.shadowCard
+  }}><Search8 size={16} color={T.inkFaint} /><input
+    id="name-keyboard-language-search"
+    value={query}
+    onChange={(e) => setQuery(e.target.value)}
+    placeholder="Hindi, Urdu, Spanish…"
+    aria-label="Search for a language"
+    autoComplete="off"
+    autoCapitalize="none"
+    autoCorrect="off"
+    spellCheck={false}
+    style={{
+      flex: 1, minWidth: 0, border: "none", outline: "none", background: "none",
+      fontSize: 13.5, color: T.ink, fontFamily: "inherit"
+    }}
+  />{query ? <button
+    type="button"
+    onClick={() => setQuery("")}
+    aria-label="Clear"
+    style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex" }}
+  ><X14 size={14} color={T.inkFaint} /></button> : null}</div></div>
+
+  <div style={{
+    flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",
+    padding: "4px 18px 30px"
+  }}>{found.length ? <div style={{
+    borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden"
+  }}>{found.map((l, i) => <button
+    key={l.id}
+    type="button"
+    onClick={() => onPick && onPick(l.id)}
+    aria-label={`Type in ${l.name}`}
+    aria-pressed={l.id === selectedId}
+    className="v2-row"
+    style={{
+      width: "100%", display: "flex", alignItems: "center", gap: 13,
+      padding: "11px 14px", border: "none", cursor: "pointer", textAlign: "left",
+      background: l.id === selectedId ? T.accentSoft : "none",
+      borderTop: i === 0 ? "none" : `1px solid ${T.line}`, fontFamily: "inherit"
+    }}
+  ><span style={{
+    width: 38, height: 38, borderRadius: 12, flexShrink: 0,
+    background: l.id === selectedId ? T.accent : T.surfaceAlt,
+    color: l.id === selectedId ? "#fff" : T.inkSoft,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 15, fontWeight: 700
+  }}>{l.native}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{
+    display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink,
+    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+  }}>{l.name}{
+    /* The language in its own letters, beside the English name. It is
+       the line somebody recognises when the English one means nothing
+       to them, and it costs one field. */
+    l.nativeName && l.nativeName !== l.name
+      ? <span style={{ fontWeight: 600, color: T.inkFaint }}>{"  ·  " + l.nativeName}</span>
+      : null
+  }</span>{
+    /* What else this board writes, named rather than counted. "also
+       Spanish, French, Portuguese" is why a Spanish speaker trusts a row
+       labelled English; "17 more" is not. Absent entirely where there is
+       nothing to add — see nameKeyboardSubline. */
+    nameKeyboardSubline(l) ? <span style={{
+      display: "block", fontSize: 10.5, fontWeight: 600, color: T.inkFaint, marginTop: 2,
+      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+    }}>{nameKeyboardSubline(l)}</span> : null
+  }</span>{l.id === selectedId ? <Check11 size={15} color={T.accent} /> : null}</button>)}</div> : <div style={{
+    background: T.surface, borderRadius: T.radiusLg, padding: "26px 18px",
+    textAlign: "center", boxShadow: T.shadowCard
+  }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>No alphabet for that yet</div><div style={{
+    fontSize: 11.5, color: T.inkFaint, marginTop: 5, lineHeight: 1.5
+  }}>{
+    /* The two that are missing ON PURPOSE get the reason; everything else
+       gets the plain answer. Telling somebody who searched for Tibetan
+       about Chinese input methods is a non-sequitur dressed as help. */
+    NAME_KEYBOARD_SOON.test(query)
+      ? "Chinese and Korean need a typing system rather than a grid of keys \u2014 you pick a character from a sound, or letters combine into blocks \u2014 and a half-built one writes names that look right and compare wrong. They are coming. Your phone's own keyboard still works for them today."
+      : "This board is for alphabets a phone often cannot write, and that one is not on it yet. Your phone's own keyboard still works here."
+  }</div></div>}</div></div>;
 }
 
 // The little button that opens the board, to sit beside a name box.

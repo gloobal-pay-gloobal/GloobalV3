@@ -313,3 +313,144 @@ test("the board moves the floating map button out of its own way", () => {
   assert.match(src, /return \(\) => fire\(false\)/,
     "the map button has to come back when the board closes");
 });
+
+
+// ── THE ROW SAYS WHAT EACH ALPHABET IS FOR ──────────────────────────────
+//
+// Every chip used to be a single letter — অ, અ, ଅ, அ — which is legible
+// only to somebody who already reads that one, on a board whose whole
+// purpose is to reach an alphabet their phone cannot write. The founder:
+// "i need language name under language sign".
+//
+// Names mean LANGUAGES, not alphabets: almost nobody knows what their own
+// alphabet is called. So the chip says Hindi, not Devanagari, and the
+// search has to find the Latin board from the word "Spanish".
+function kbFn(names) {
+  const src = kbSrc();
+  const start = src.indexOf("var NAME_KEYBOARD_LAYOUTS = [");
+  // Stops at the first component: everything below it is JSX, which a
+  // plain Function() cannot parse.
+  const end = src.indexOf("function NameKey(");
+  // eslint-disable-next-line no-new-func
+  return new Function(`${src.slice(start, end)}; return { ${names.join(", ")} };`)();
+}
+
+test("every alphabet says which language it is for", () => {
+  for (const layout of layouts()) {
+    assert.ok(layout.name, `${layout.id} has no language name for its chip`);
+    assert.ok(layout.nativeName, `${layout.id} has no name in its own letters`);
+    assert.ok(Array.isArray(layout.also), `${layout.id} has no list of other languages`);
+    assert.equal(typeof layout.speakers, "number",
+      `${layout.id} has no speaker count, so the default row cannot order it`);
+    assert.ok(layout.speakers > 0, `${layout.id} claims nobody writes it`);
+  }
+});
+
+test("no two chips carry the same word", () => {
+  // Two chips both reading "Japanese" is a row with a coin-flip on it.
+  const seen = new Map();
+  for (const layout of layouts()) {
+    assert.ok(!seen.has(layout.name),
+      `${layout.id} and ${seen.get(layout.name)} both label their chip "${layout.name}"`);
+    seen.set(layout.name, layout.id);
+  }
+});
+
+test("the row is seven, and the first is the account's own country", () => {
+  const { nameKeyboardRow, NAME_KEYBOARD_ROW } = kbFn(["nameKeyboardRow", "NAME_KEYBOARD_ROW"]);
+  assert.equal(NAME_KEYBOARD_ROW, 7);
+  // A Lao account opening a row of Hindi and Russian is seven wrong
+  // answers, with Lao thirty million people deep in a search.
+  assert.equal(nameKeyboardRow("LA", "latin")[0].id, "lao");
+  assert.equal(nameKeyboardRow("IN", "latin")[0].id, "devanagari");
+  assert.equal(nameKeyboardRow("TH", "latin")[0].id, "thai");
+  // An unknown country still gets a full row, led by the most written.
+  const anon = nameKeyboardRow("ZZ", "latin");
+  assert.equal(anon.length, 7);
+  assert.equal(anon[0].id, "latin");
+});
+
+test("a board chosen from search is appended, not sorted in", () => {
+  // The row would otherwise reshuffle under a thumb the moment something
+  // was picked — and the chip just tapped would move.
+  const { nameKeyboardRow } = kbFn(["nameKeyboardRow"]);
+  const row = nameKeyboardRow("IN", "malayalam");
+  assert.equal(row[row.length - 1].id, "malayalam", "the chosen board is not on the row at all");
+  assert.equal(row[0].id, "devanagari", "picking from search reordered the row");
+  // And picking one that is already on the row does not duplicate it.
+  const again = nameKeyboardRow("IN", "latin");
+  assert.equal(again.filter((l) => l.id === "latin").length, 1);
+  assert.equal(again.length, 7);
+});
+
+test("the search finds a board by any language it writes", () => {
+  const { nameKeyboardMatches, nameKeyboardLayout } = kbFn(["nameKeyboardMatches", "nameKeyboardLayout"]);
+  const finds = (query) => layouts().filter((l) => nameKeyboardMatches(l, query)).map((l) => l.id);
+  // The whole point: a Spanish speaker does not know to look for "Latin".
+  assert.deepEqual(finds("spanish"), ["latin"]);
+  assert.deepEqual(finds("urdu"), ["arabic"]);
+  assert.deepEqual(finds("persian"), ["arabic"]);
+  assert.deepEqual(finds("punjabi"), ["gurmukhi"]);
+  assert.deepEqual(finds("nepali"), ["devanagari"]);
+  // By the alphabet's name too, for anybody who does know it.
+  assert.ok(finds("devanagari").includes("devanagari"));
+  // And in its own letters.
+  assert.ok(finds("हिन्दी").includes("devanagari"));
+  assert.ok(finds("বাংলা").includes("bengali"));
+  // Case and padding are what a search box actually receives.
+  assert.deepEqual(finds("  URDU "), ["arabic"]);
+  // Empty shows everything rather than nothing.
+  assert.equal(finds("").length, layouts().length);
+});
+
+test("the line under a language never just repeats it", () => {
+  // A render had twelve rows reading "Tamil / Tamil" and one reading
+  // "Gurmukhi · also Gurmukhi" — a second line that repeats the first
+  // teaches nothing and doubles the list's height to skim.
+  const { nameKeyboardSubline } = kbFn(["nameKeyboardSubline"]);
+  for (const layout of layouts()) {
+    const sub = nameKeyboardSubline(layout);
+    if (!sub) continue;
+    const words = sub.toLowerCase().replace(/^also /, "").split(/[,·]\s*/).map((w) => w.trim());
+    assert.ok(!words.includes(layout.name.toLowerCase()),
+      `the ${layout.id} row says "${layout.name}" and then "${sub}"`);
+    const bits = sub.split(" · ");
+    assert.equal(new Set(bits).size, bits.length, `the ${layout.id} row repeats itself: "${sub}"`);
+  }
+  assert.equal(nameKeyboardSubline(nameKeyboardLayoutById("greek")), "",
+    "Greek written in the Greek alphabet needs no second line");
+  assert.equal(nameKeyboardSubline(nameKeyboardLayoutById("gurmukhi")), "Gurmukhi");
+  assert.match(nameKeyboardSubline(nameKeyboardLayoutById("latin")), /^Latin · also Spanish, French, Portuguese$/);
+});
+
+function nameKeyboardLayoutById(id) {
+  for (const l of layouts()) if (l.id === id) return l;
+  throw new Error(`no board ${id}`);
+}
+
+test("the two missing on purpose are told apart from the unknown", () => {
+  // Telling somebody who searched for Tibetan about Chinese input methods
+  // is a non-sequitur dressed as help.
+  const { NAME_KEYBOARD_SOON } = kbFn(["NAME_KEYBOARD_SOON"]);
+  for (const q of ["chinese", "Mandarin", "hanzi", "korean", "Hangul", "hanja"]) {
+    assert.ok(NAME_KEYBOARD_SOON.test(q), `"${q}" should get the reason, not the shrug`);
+  }
+  for (const q of ["tibetan", "cherokee", "klingon", "amharic"]) {
+    assert.ok(!NAME_KEYBOARD_SOON.test(q), `"${q}" should not be told about Chinese input`);
+  }
+});
+
+test("the finder is a screen, not a panel inside the board", () => {
+  // It is the one place in this feature that WANTS the phone's keyboard —
+  // you type "Spanish" in Latin letters to reach a board that is not
+  // Latin. Opening that over a panel pinned to the bottom of the screen
+  // leaves about an inch to show results in.
+  const src = kbSrc();
+  assert.match(src, /function NameKeyboardLanguages/);
+  const fn = src.slice(src.indexOf("function NameKeyboardLanguages"));
+  assert.match(fn, /position: "fixed", inset: 0/);
+  assert.doesNotMatch(fn, /inputMode=\{[^}]*"none"/,
+    "the language search suppresses the keyboard it needs");
+  assert.match(fn, /id="name-keyboard-language-search"/,
+    "the search box needs a stable id, since a republish carries form values by it");
+});

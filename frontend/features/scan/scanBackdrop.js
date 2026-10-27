@@ -135,3 +135,33 @@ function scanPageTint(seed) {
   };
   return `#${mix((n >> 16) & 255)}${mix((n >> 8) & 255)}${mix(n & 255)}`.toUpperCase();
 }
+
+// ── THE RIBBON UNDER THE CARD ───────────────────────────────────────────
+//
+// The creator's message hangs off the bottom of the card rather than
+// sitting inside it, on a band a little wider than the card so its two
+// ends show on either side: "keep them message BELOW that pay box like a
+// two side hanging and little flowing".
+//
+// Two shades, both darker than the card's own darkest stop. The BAR is
+// the band itself; the FOLD is the small triangle at each end, which is
+// what makes a rectangle read as a ribbon rather than as a second card
+// that happens to be wider. A fold is in shadow, so it is darker again.
+//
+// Derived from the same entry as everything else on this screen, for the
+// same reason: three tables would be three things to keep in step.
+function scanRibbonInk(seed) {
+  const pick = scanBackdropFor(seed);
+  const shade = (factor) => {
+    const n = parseInt(pick.from.slice(1), 16);
+    const part = (channel) => {
+      const value = Math.round(channel * factor);
+      return Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0");
+    };
+    return `#${part((n >> 16) & 255)}${part((n >> 8) & 255)}${part(n & 255)}`.toUpperCase();
+  };
+  // 0.82 keeps the band clearly related to the card and clearly behind
+  // it; 0.55 puts the fold deep enough in shadow to read as a crease at
+  // a glance rather than as a slightly different rectangle.
+  return { bar: shade(0.82), fold: shade(0.55) };
+}

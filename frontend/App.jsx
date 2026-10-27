@@ -4643,12 +4643,26 @@ function GloobalId() {
     className="v2-tap"
     style={{ border: "none", borderRadius: 999, padding: "10px 24px", background: "rgba(255,255,255,0.94)", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
   >{scanRetry}</button>}</div>}<ScanSendButton overVideo onClick={() => { closeScanScreen(); setActiveScreen("send"); }} /></> : <div style={{
-    width: "100%", maxWidth: 340, borderRadius: T.radiusXl,
+    width: "100%", maxWidth: 340, display: "flex", flexDirection: "column", alignItems: "center"
+  }}><div style={{
+    width: "100%", borderRadius: T.radiusXl,
     // The payee's own hue, derived from the code that was scanned.
     background: scanBackdropCss(scanPayee.gloobalId),
     boxShadow: "0 18px 44px rgba(20,18,43,0.28)",
     border: "none",
-    padding: "26px 22px", textAlign: "center"
+    padding: "26px 22px", textAlign: "center",
+    // ── THE CARD WAS 44px WIDER THAN IT ASKED TO BE ──────────────────
+    //
+    // Found by measuring, while checking that the ribbon hangs the right
+    // amount off each side: the wrapper came back 340 and the card
+    // inside it 384 — its own horizontal padding, added on top, because
+    // nothing here had declared a box model.
+    //
+    // There IS a `* { box-sizing: border-box }` in the app, but it lives
+    // in a style tag inside SendMoney, so the width of this card
+    // depended on whether that screen had ever mounted. Declared here,
+    // where it is relied on.
+    boxSizing: "border-box"
   }}><div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.72)", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPayee.creator ? "Gloobal Shop" : "Gloobal ID"}</div>{
     /* ── A SHOP IS SHOWN AS ITS SHOP ──────────────────────────────────
        Scanning a sticker on a tea stall used to give the owner's face and
@@ -4718,31 +4732,70 @@ function GloobalId() {
       fontSize: 15, fontWeight: 800, cursor: "pointer",
       boxShadow: "0 4px 14px rgba(0,0,0,0.18)"
     }}
-  >Pay</button>{
+  >Pay</button></div>{
     /* ── WHAT THE CODE ITSELF SAYS ────────────────────────────────────
        A line the creator wrote for whoever scans them, and the only
        place it appears. "Cash only after 9pm", "Order number on the
        slip please" — the things a counter says out loud, said by the
        code instead.
 
-       UNDER the Pay button rather than above it, deliberately. Above,
-       it would sit between the name and the button and push the button
-       down the screen on every card that has one; and a message is not
-       a condition of paying, so it must not look like one standing in
-       the way. Capped at 120 characters by the server, so it cannot
-       grow into a notice board under somebody's thumb.
+       It was a panel INSIDE the card, under the Pay button. It is a
+       ribbon hanging BELOW the card now — "like a two side hanging and
+       little flowing" — and the move is right for a reason the first
+       version missed: inside, it was one more thing in the box somebody
+       is reading to decide whether to pay, which is exactly where a
+       shopkeeper's aside does not belong. Hanging off the bottom it is
+       plainly attached to them and plainly not part of the decision.
 
-       Drawn as a quoted line rather than as a boxed alert: this is a
-       shopkeeper talking, not the app warning anybody. */
+       Below the button either way, never above: above, it would sit
+       between the name and the button and push Pay down the screen on
+       every card that has one.
+
+       A little WIDER than the card, by fifteen pixels on each side, so
+       both ends show — which is what makes it read as a band strung
+       under the card rather than as a second card that happens to be
+       bigger. The two triangles at the ends are the folds; a fold is in
+       shadow, which is why they are darker than the band.
+
+       Capped at 120 characters by the server, so it cannot grow into a
+       notice board under somebody's thumb. */
   }{scanPayee.creator && scanPayee.creator.scanNote ? <div style={{
-    marginTop: 14, padding: "11px 13px", borderRadius: T.radiusMd,
-    // Translucent white rather than a fixed tint: it then sits correctly
-    // on all twelve hues without twelve more colours to keep in step.
-    background: "rgba(255,255,255,0.16)",
-    border: "1px solid rgba(255,255,255,0.26)",
-    fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.94)", lineHeight: 1.5,
-    textAlign: "left", overflowWrap: "anywhere"
-  }}>{scanPayee.creator.scanNote}</div> : null}</div>}</div>}</div>;
+    position: "relative",
+    width: "calc(100% + 30px)",
+    // Tucked up under the card's bottom edge, so it hangs from it
+    // rather than floating below it with a gap.
+    marginTop: -14,
+    animation: "gloobalScanRibbon 5.5s ease-in-out infinite"
+  }}>{
+    /* The folds, behind the band and poking out at each end. Drawn as
+       two clipped triangles rather than as a border trick, so they keep
+       their shape at any width. */
+  }<span aria-hidden="true" style={{
+    position: "absolute", left: 0, top: 10, width: 15, height: 22,
+    background: scanRibbonInk(scanPayee.gloobalId).fold,
+    clipPath: "polygon(0 0, 100% 0, 100% 100%)"
+  }} /><span aria-hidden="true" style={{
+    position: "absolute", right: 0, top: 10, width: 15, height: 22,
+    background: scanRibbonInk(scanPayee.gloobalId).fold,
+    clipPath: "polygon(0 0, 100% 0, 0 100%)"
+  }} /><div style={{
+    position: "relative",
+    margin: "0 7px",
+    background: scanRibbonInk(scanPayee.gloobalId).bar,
+    borderRadius: 12,
+    padding: "13px 16px",
+    boxShadow: "0 8px 18px rgba(20,18,43,0.22)",
+    fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.94)",
+    lineHeight: 1.45, textAlign: "center", overflowWrap: "anywhere"
+  }}>{scanPayee.creator.scanNote}</div></div> : null}<style>{`
+      @keyframes gloobalScanRibbon {
+        0%, 100% { transform: translateY(0) rotate(-0.4deg); }
+        50% { transform: translateY(2px) rotate(0.4deg); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        @keyframes gloobalScanRibbon { 0%, 100% { transform: none; } }
+      }
+    `}</style></div>}</div>}</div>;
   })()}{
     /* A shared receipt link, opened on a payment in this account's own
        history. The same read-only document History shows. */

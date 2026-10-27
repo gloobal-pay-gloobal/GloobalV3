@@ -303,3 +303,83 @@ test("the creator can write it, and is told who reads it", () => {
   assert.match(src, /Anybody who scans your code sees this, right under the Pay button\./,
     "nothing on the form says who reads it");
 });
+
+// ── THE MESSAGE HANGS OFF THE CARD, IT IS NOT IN IT ─────────────────────
+//
+// "Can you keep them message BELOW that pay box like a two side hanging
+// and little flowing."
+//
+// It was a panel inside the card, under Pay. Moved out, it stops being
+// one more thing in the box somebody is reading to decide whether to pay
+// — which is exactly where a shopkeeper's aside does not belong — and
+// becomes something plainly attached to them and plainly not part of the
+// decision.
+test("the ribbon is outside the card, below it", () => {
+  const src = app();
+  const cardOpen = src.indexOf("The payee's own hue, derived from the code");
+  const pay = src.indexOf(">Pay</button></div>");
+  const ribbon = src.indexOf("scanPayee.creator.scanNote");
+  assert.ok(cardOpen > 0 && pay > cardOpen, "the Pay button is no longer inside the card");
+  assert.ok(ribbon > pay, "the message is still drawn inside the card");
+  // The card and the ribbon share a wrapper, so the ribbon can be wider
+  // than the card without widening it.
+  assert.match(src, /maxWidth: 340, display: "flex", flexDirection: "column", alignItems: "center"/);
+});
+
+test("it hangs the same amount off each side", () => {
+  // A band exactly the card's width reads as a second card that happens
+  // to be shorter. Both ends showing is what makes it a ribbon.
+  const src = app();
+  assert.match(src, /width: "calc\(100% \+ 30px\)"/);
+  const { SCAN_BACKDROPS } = backdrop(["SCAN_BACKDROPS"]);
+  assert.ok(SCAN_BACKDROPS.length > 0);
+  // Pulled up under the card's edge, so it hangs from it rather than
+  // floating below it with a gap.
+  assert.match(src, /marginTop: -14,/);
+  // Two folds, one at each end, mirrored.
+  assert.match(src, /clipPath: "polygon\(0 0, 100% 0, 100% 100%\)"/);
+  assert.match(src, /clipPath: "polygon\(0 0, 100% 0, 0 100%\)"/);
+});
+
+test("a fold is darker than the band it folds under", () => {
+  // It is in shadow. Equal shades would make the ends read as a wider
+  // rectangle rather than as a crease.
+  const { scanRibbonInk, scanBackdropFor, SCAN_BACKDROPS } = backdrop(
+    ["scanRibbonInk", "scanBackdropFor", "SCAN_BACKDROPS"]
+  );
+  const sum = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    return ((n >> 16) & 255) + ((n >> 8) & 255) + (n & 255);
+  };
+  const seen = new Set();
+  for (let i = 0; i < 400 && seen.size < SCAN_BACKDROPS.length; i += 1) {
+    const id = `G-${i * 7919}`;
+    const pick = scanBackdropFor(id);
+    if (seen.has(pick.key)) continue;
+    seen.add(pick.key);
+    const ink = scanRibbonInk(id);
+    assert.ok(sum(ink.fold) < sum(ink.bar), `${pick.key}'s fold is not darker than its band`);
+    assert.ok(sum(ink.bar) < sum(pick.from), `${pick.key}'s band is not darker than the card`);
+  }
+  assert.equal(seen.size, SCAN_BACKDROPS.length);
+});
+
+test("the flow stops for anybody who asked it to", () => {
+  const src = app();
+  assert.match(src, /animation: "gloobalScanRibbon 5\.5s ease-in-out infinite"/);
+  assert.match(src, /@keyframes gloobalScanRibbon \{/);
+  assert.match(src, /@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*@keyframes gloobalScanRibbon \{ 0%, 100% \{ transform: none; \} \}/);
+});
+
+test("the card declares its own box model", () => {
+  // Measured while checking the ribbon's overhang: the wrapper came back
+  // 340 and the card inside it 384 — its own horizontal padding added on
+  // top, because nothing here had declared one. There IS a global
+  // `* { box-sizing: border-box }` in this app, but it lives in a style
+  // tag inside SendMoney, so this card's width depended on whether that
+  // screen had ever mounted.
+  const src = app();
+  const at = src.indexOf("THE CARD WAS 44px WIDER THAN IT ASKED TO BE");
+  assert.ok(at > 0, "the note explaining the box model is gone");
+  assert.match(src.slice(at, at + 900), /boxSizing: "border-box"/);
+});

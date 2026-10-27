@@ -27,9 +27,18 @@ const code = (f) => readSource(f)
 describe("the padlock agrees with itself", () => {
   const misc = () => code("frontend/components/common/misc.jsx");
 
-  test("unlocked draws an OPEN padlock, not a green closed one", () => {
-    assert.match(misc(), /const Glyph = locked \? Lock2 : Unlock3;/);
-    assert.match(misc(), /<Glyph/);
+  test("connected fills the star, it is not just a greener one", () => {
+    // It was an open padlock against a closed one. The founder asked for
+    // a star, and a star has no open and closed — so the difference had
+    // to stay a SHAPE difference some other way, or the whole meaning
+    // falls back onto red against green, which is the pair a large
+    // minority of people cannot separate and the exact fault the two
+    // padlocks had been introduced to fix.
+    //
+    // Hollow reads as an outline waiting to be completed; solid reads as
+    // done. The same difference already marks a pinned shop.
+    assert.match(misc(), /<Star3/);
+    assert.match(misc(), /fill=\{locked \? "none" : T\.positive\}/);
   });
 
   test("and the colour still agrees with the shape", () => {
@@ -40,11 +49,12 @@ describe("the padlock agrees with itself", () => {
     // build_app.mjs concatenates every module into ONE scope and
     // consolidates the imports, so two files aliasing the same lucide
     // export to the same name is a duplicate declaration and the whole
-    // bundle fails to parse. Unlock2 was already taken by the Coverage
-    // screen; esbuild caught it, but only after the build.
-    const takenElsewhere = code("frontend/screens/Coverage/GloobalCoverageScreen.jsx");
-    assert.match(takenElsewhere, /Unlock as Unlock2/);
-    assert.match(misc(), /Unlock as Unlock3/);
+    // bundle fails to parse. It bit Unlock2 (taken by the Coverage
+    // screen) and then Star (taken by Add Bank), and esbuild catches it
+    // only after the build.
+    const takenElsewhere = code("frontend/screens/Banks/AddBankScreen.jsx");
+    assert.match(takenElsewhere, /\n  Star,/);
+    assert.match(misc(), /Star as Star3/);
   });
 });
 

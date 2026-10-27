@@ -193,12 +193,34 @@ describe("the country's banks are three to a row", () => {
     assert.match(tile, /title=\{bank\.name\}/, "the full name is not recoverable on hover");
   });
 
-  test("the lock still reads on every tile", () => {
-    // Nothing here connects to a real bank yet, and a tile that dropped
-    // the padlock would imply it does.
+  test("every tile still says whether it connects to anything", () => {
+    // Nothing here reaches a real bank yet, and a tile that dropped the
+    // badge would imply it does.
     const at = bank.indexOf("function BankTile");
     const tile = bank.slice(at, bank.indexOf("\n}", at));
-    assert.match(tile, /<ServiceLock size=\{14\} \/>/);
-    assert.match(tile, /locked/);
+    assert.match(tile, /<ServiceLock locked=\{!bank\.live\} size=\{14\} \/>/);
+    // The state comes from the DATA, so the day a bank's API is connected
+    // its star turns green with nothing else to change.
+    assert.match(tile, /bank\.live \? "connected" : "not connected yet"/,
+      "and the label a screen reader gets must agree with the star");
+  });
+
+  test("the badge is a star that fills, not two colours of the same shape", () => {
+    // The founder asked for a star in place of the padlock. A star has no
+    // open and closed, so drawing it red or green and nothing else would
+    // put the whole meaning back into colour alone — and red against
+    // green is the pair a large minority of people cannot separate, which
+    // is the exact fault the padlock's two shapes had just removed.
+    //
+    // Hollow reads as an outline waiting to be completed; solid reads as
+    // done. Colour agrees with the fill rather than carrying it alone,
+    // and the same difference already marks a pinned shop.
+    const misc = readSource("frontend/components/common/misc.jsx");
+    const fn = misc.slice(misc.indexOf("function ServiceLock"));
+    const body = fn.slice(0, fn.indexOf("\n}"));
+    assert.match(body, /<Star3/, "it is a star");
+    assert.match(body, /fill=\{locked \? "none" : T\.positive\}/, "which fills when connected");
+    assert.match(body, /color=\{locked \? T\.negative : T\.positive\}/, "with the colour agreeing");
+    assert.ok(!/Lock2|Unlock3/.test(misc), "no padlock left behind");
   });
 });

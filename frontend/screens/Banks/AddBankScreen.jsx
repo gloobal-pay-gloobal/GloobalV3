@@ -124,20 +124,20 @@ function AddBankScreen({ onClose, country: countryProp }) {
 function BankTile({ bank, index, onLockedTap }) {
   return <button
     onClick={() => onLockedTap(bank)}
-    aria-label={`${bank.name} \u2014 locked`}
+    aria-label={`${bank.name} \u2014 ${bank.live ? "connected" : "not connected yet"}`}
     className="ab-bank-row relative flex flex-col items-center gap-2 px-2 py-3.5 rounded-3xl border border-slate-100 bg-white shadow-sm hover:shadow-md active:scale-[0.99] transition-all"
     style={{ animationDelay: `${index * 45}ms` }}
   >{
-    /* ── THE PADLOCK RIDES THE TILE, NOT THE LOGO ─────────────────────
+    /* ── THE BADGE RIDES THE TILE, NOT THE LOGO ───────────────────────
        It was pinned to the bottom-right of the 46px avatar, which in a
        three-across grid puts it in the middle of the card, floating over
-       nothing and reading as part of the bank's own mark — a red padlock
+       nothing and reading as part of the bank's own mark — a red badge
        apparently belonging to SBI rather than to Gloobal's connection to
        it.
        On the tile's own corner it is unmistakably a state of the TILE,
        which is what it means: nothing here connects to a real bank yet.
        Outside the column flow, so it cannot shift the logo or the name. */
-  }<span className="absolute right-2 top-2"><ServiceLock size={14} /></span><div className="relative flex-shrink-0"><BankAvatar bank={bank} size={46} /></div><span
+  }<span className="absolute right-2 top-2"><ServiceLock locked={!bank.live} size={14} /></span><div className="relative flex-shrink-0"><BankAvatar bank={bank} size={46} /></div><span
     className="text-slate-700 text-[12px] font-semibold leading-tight text-center w-full"
     style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
     title={bank.name}
@@ -147,9 +147,9 @@ function BankTile({ bank, index, onLockedTap }) {
 function BankRow({ bank, index, accent, onLockedTap }) {
   return <button
     onClick={() => onLockedTap(bank)}
-    aria-label={`${bank.name} \u2014 locked`}
+    aria-label={`${bank.name} \u2014 ${bank.live ? "connected" : "not connected yet"}`}
     className={`ab-bank-row relative w-full flex items-center gap-4 px-4 py-4 rounded-3xl border text-left transition-all ${accent ? "border-violet-100 bg-gradient-to-r from-blue-50/70 to-violet-50/70 shadow-sm hover:shadow-md active:scale-[0.99]" : "border-slate-100 bg-white shadow-sm hover:shadow-md active:scale-[0.99]"}`}
     style={{ animationDelay: `${index * 45}ms` }}
-  ><BankAvatar bank={bank} size={54} /><span className="flex-1 min-w-0 text-slate-800 text-[15.5px] font-semibold truncate">{bank.isGloobal ? <GloobalWordmark suffix=" Bank" /> : bank.name}</span><ServiceLock size={18} /></button>;
+  ><BankAvatar bank={bank} size={54} /><span className="flex-1 min-w-0 text-slate-800 text-[15.5px] font-semibold truncate">{bank.isGloobal ? <GloobalWordmark suffix=" Bank" /> : bank.name}</span><ServiceLock locked={!bank.live} size={18} /></button>;
 }
 

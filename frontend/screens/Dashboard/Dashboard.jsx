@@ -2630,9 +2630,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
        green as the only difference — so the shape said "locked" on the
        three services that were open, and colour alone (red against green,
        the pair a large minority cannot separate) carried the truth.
-       ServiceLock now opens when unlocked, but an open padlock on every
+       ServiceLock is a star now — hollow and red while a service has no
+       live API, solid and green once it has — but a green star on every
        available tile is six badges saying nothing. Absent is the quieter
-       way to say "nothing in the way here". */
+       way to say "nothing in the way here", so this tab still draws the
+       badge only on what is not ready. */
   }{locked && <span style={{ position: "absolute", top: 10, right: 10, zIndex: 1, display: "flex" }}><ServiceLock locked size={14} /></span>}{
     /* A circle, centred, with the icon in it — and the name centred
        underneath. The label used to sit outside the tile entirely, which

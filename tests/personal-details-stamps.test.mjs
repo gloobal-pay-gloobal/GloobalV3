@@ -35,8 +35,16 @@ const dash = strip(readSource(DASH));
 
 // The grouping, sliced out and run — this is arithmetic over data, which
 // is worth executing rather than pattern-matching.
-const PURE = src.slice(src.indexOf("function identityCrossings"), src.indexOf("function identityStampDate"));
-const { identityCrossings } = new Function(`${PURE}
+// identityCrossings leans on identityRowIso, which sits just above it, so
+// the slice starts there — otherwise lifting the one function out gives a
+// ReferenceError that says nothing about the behaviour being tested.
+const PURE = src.slice(src.indexOf("function identityRowIso"), src.indexOf("function identityStampDate"));
+const { identityCrossings } = new Function(`var ALL_COUNTRIES = [
+    { iso: "JP", flag: "\u{1F1EF}\u{1F1F5}" },
+    { iso: "US", flag: "\u{1F1FA}\u{1F1F8}" },
+    { iso: "IN", flag: "\u{1F1EE}\u{1F1F3}" }
+  ];
+  ${PURE}
   return { identityCrossings };`)();
 
 const row = (iso, when) => ({ counterpartyIso: iso, occurredAt: when });
@@ -211,5 +219,73 @@ describe("where it gets its history", () => {
       modules.indexOf("PersonalDetailsScreen.jsx") < modules.indexOf("screens/Dashboard/Dashboard.jsx"),
       "the screen is emitted after the Dashboard that renders it"
     );
+  });
+});
+
+describe("a crossing is found however the row happens to name it", () => {
+  test("a row with only a flag still stamps", () => {
+    // ── WHY THIS MATTERS MORE THAN IT LOOKS ──────────────────────────
+    //
+    // This read counterpartyIso and countryIso only. Both are set by the
+    // paths that build a row from a resolved counterparty — but a row
+    // that arrived carrying a FLAG and no ISO stamped nothing, silently,
+    // and a missing stamp looks exactly like a payment that never
+    // crossed a border. Every row on this screen draws a flag, so the
+    // flag is the last thing worth asking before giving up.
+    const out = identityCrossings([{ flag: "🇯🇵", occurredAt: "2026-09-02" }], "IN");
+    assert.equal(out.length, 1);
+    assert.equal(out[0].iso, "JP");
+  });
+
+  test("your own flag is still not a crossing", () => {
+    const out = identityCrossings([{ flag: "🇮🇳", occurredAt: "2026-09-02" }], "IN");
+    assert.deepEqual(out, []);
+  });
+
+  test("an unknown flag is skipped, not guessed", () => {
+    const out = identityCrossings([{ flag: "🏴‍☠️", occurredAt: "2026-09-02" }], "IN");
+    assert.deepEqual(out, []);
+  });
+
+  test("a row with no timestamp falls back to its display date", () => {
+    // occurredAt is what the server records. A row built locally — Pay a
+    // Business, and anything written before that field existed — carries
+    // only the display date, which is still a date and still better than
+    // a stamp with a blank line where one should be.
+    const out = identityCrossings([{ countryIso: "JP", date: "2026-09-02" }], "IN");
+    assert.equal(out.length, 1);
+    assert.ok(out[0].first instanceof Date, "the stamp gets a date to print");
+  });
+});
+
+describe("the sheet is the size of what is on it", () => {
+  const sheet = new Function(`${src.slice(src.indexOf("var IDENTITY_STAMP_SLOTS"), src.indexOf("// The inks a border officer"))}
+    ${src.slice(src.indexOf("function identitySheetHeight"), src.indexOf("// The inks a border officer's pad would hold.", src.indexOf("function identitySheetHeight")))}
+    return identitySheetHeight;`)();
+
+  test("one stamp does not get a postcard of empty paper", () => {
+    // It was a flat 362px — the height five stamps need — whatever was on
+    // the page. An account with one crossing got one mark in the corner of
+    // an empty beige rectangle, which reads as a page that failed to load
+    // rather than as a passport with one stamp in it.
+    const one = sheet(1);
+    const five = sheet(5);
+    assert.ok(one < five, "a page with one stamp is shorter than a page with five");
+    assert.ok(one >= 150, "but not so short that the stamp fills it edge to edge");
+    assert.ok(five >= 300, "five still get the room they need");
+  });
+
+  test("it grows with the stamps, not in steps somebody guessed", () => {
+    // Measured from the lowest slot in use, so moving a slot moves the
+    // sheet with it and the two cannot drift apart.
+    const heights = [1, 2, 3, 4, 5].map(sheet);
+    for (let i = 1; i < heights.length; i += 1) {
+      assert.ok(heights[i] >= heights[i - 1], "never shrinks as stamps are added");
+    }
+    assert.ok(heights[4] > heights[0]);
+  });
+
+  test("zero is treated as one, so an empty page still looks like paper", () => {
+    assert.equal(sheet(0), sheet(1));
   });
 });

@@ -50,6 +50,28 @@ var IDENTITY_STAMP_SLOTS = [
   { x: 104, y: 244, rot: -6, shape: "rect" }
 ];
 
+// How tall the sheet has to be for the stamps actually on it.
+//
+// It was a flat 362px — the height five stamps need — whatever was on the
+// page. An account with one crossing got one mark in the top-left corner
+// of an empty beige rectangle the size of a postcard, which reads as a
+// page that failed to load rather than as a passport with one stamp in it.
+//
+// Measured from the lowest slot in use rather than from a table of
+// heights, so moving a slot moves the sheet with it and the two cannot
+// drift apart. The floor keeps a single stamp sitting on a sheet rather
+// than in a box that fits it exactly, because the empty paper around a
+// stamp is what makes it look pressed into something.
+function identitySheetHeight(count) {
+  const used = IDENTITY_STAMP_SLOTS.slice(0, Math.max(1, Math.min(count, IDENTITY_STAMP_SLOTS.length)));
+  let lowest = 0;
+  for (const slot of used) {
+    const height = slot.shape === "circle" ? 102 : 56;
+    if (slot.y + height > lowest) lowest = slot.y + height;
+  }
+  return Math.max(150, lowest + 22);
+}
+
 // The inks a border officer's pad would hold. Assigned per country by a
 // fold of the ISO code, so one country is always the same colour and two
 // countries beside each other are reliably different.
@@ -78,13 +100,36 @@ function identityStampInk(iso) {
 // One mark per country, carrying the FIRST crossing to it and the total
 // that has gone there since. A page with one stamp per payment would be a
 // list with rotations.
+// The country a row crossed to, however the row happens to name it.
+//
+// This read counterpartyIso and countryIso only. Both are set by the paths
+// that build a row from a resolved counterparty — but a row that reached
+// this screen carrying a FLAG and no ISO stamped nothing at all, silently,
+// and a missing stamp looks exactly like a payment that never crossed a
+// border. Every row on this screen has a flag, because the history rows
+// draw one, so the flag is the last thing worth asking before giving up.
+function identityRowIso(row) {
+  if (!row) return "";
+  const direct = String(row.counterpartyIso || row.countryIso || "").toUpperCase();
+  if (direct) return direct;
+  const flag = row.flag ? String(row.flag) : "";
+  if (!flag || typeof ALL_COUNTRIES === "undefined") return "";
+  const match = ALL_COUNTRIES.find((c) => c.flag === flag);
+  return match ? String(match.iso).toUpperCase() : "";
+}
+
 function identityCrossings(rows, ownIso) {
   const mine = String(ownIso || "").toUpperCase();
   const byCountry = new Map();
   for (const row of Array.isArray(rows) ? rows : []) {
-    const iso = String((row && (row.counterpartyIso || row.countryIso)) || "").toUpperCase();
+    const iso = identityRowIso(row);
     if (!iso || iso === mine) continue;
-    const when = row.occurredAt ? new Date(row.occurredAt) : null;
+    // occurredAt is the ISO timestamp the server recorded. A row built
+    // locally — Pay a Business, and anything written before the field
+    // existed — carries only the display date, which is still a date and
+    // still better than a stamp with a blank line where one should be.
+    const raw = row.occurredAt || row.date || null;
+    const when = raw ? new Date(raw) : null;
     const at = when && !Number.isNaN(when.getTime()) ? when : null;
     const held = byCountry.get(iso);
     if (!held) {
@@ -242,7 +287,7 @@ function PersonalDetailsScreen({
   >{crossings.length === 0
     ? "NO CROSSINGS YET"
     : `${crossings.length} ${crossings.length === 1 ? "COUNTRY" : "COUNTRIES"}`}</span></div><div style={{ position: "relative" }}><div
-    style={{ position: "relative", height: 362, borderRadius: T.radiusLg, background: "#F4F1E8", boxShadow: T.shadowCard, overflow: "hidden" }}
+    style={{ position: "relative", height: identitySheetHeight(slice.length), borderRadius: T.radiusLg, background: "#F4F1E8", boxShadow: T.shadowCard, overflow: "hidden" }}
   >{crossings.length === 0
     ? <div
       style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 34px", textAlign: "center", fontSize: 12.5, color: "#A79F8C", lineHeight: 1.6 }}

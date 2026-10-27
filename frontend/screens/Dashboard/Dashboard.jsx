@@ -31,8 +31,7 @@ import {
   ArrowRight as ArrowRight2,
   PieChart,
   Pencil,
-  BarChart3,
-  Pin as Pin1
+  BarChart3
 } from "lucide-react";
 
 
@@ -878,6 +877,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
   // shape as a creator's `first.last` name — see the comment at the
   // inputs for why both of them filter the business list too.
   const [moreQueryLast, setMoreQueryLast] = useState14("");
+  // Which half of the search Gloobal's own keyboard is typing into, or ""
+  // when the board is closed and the phone's keyboard has the field.
+  //
+  // This screen is where somebody looks up a shop whose name is in an
+  // alphabet their phone cannot write — the most common case being a
+  // Latin-keyboard phone and a Devanagari shop two streets away.
+  const [moreKbField, setMoreKbField] = useState14("");
   // ── A NAME TYPED IN THE SEARCH BAR IS LOOKED UP ON THE SERVER ─────────
   //
   // The list below is TOP_BUSINESSES, a local catalogue of placeholder
@@ -3236,6 +3242,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     autoCapitalize="none"
     autoCorrect="off"
     spellCheck={false}
+    // Suppressed while Gloobal's own board is open, so the phone's
+    // keyboard does not come up underneath it.
+    inputMode={moreKbField ? "none" : undefined}
+    onFocus={() => { if (moreKbField) setMoreKbField("first"); }}
     style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 13.5, color: T.ink, fontFamily: "inherit" }}
   />{
     /* ── TWO BOXES, THE SAME SHAPE AS A CREATOR'S NAME ────────────────
@@ -3255,8 +3265,14 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     autoCapitalize="none"
     autoCorrect="off"
     spellCheck={false}
+    inputMode={moreKbField ? "none" : undefined}
+    onFocus={() => { if (moreKbField) setMoreKbField("last"); }}
     style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 13.5, color: T.ink, fontFamily: "inherit" }}
-  />{(moreQuery || moreQueryLast) && <button onClick={() => { setMoreQuery(""); setMoreQueryLast(""); }} aria-label="Clear search" style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex" }}><X3 size={14} color={T.inkFaint} /></button>}</div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 18 }}>{(() => {
+  />{(moreQuery || moreQueryLast) && <button onClick={() => { setMoreQuery(""); setMoreQueryLast(""); }} aria-label="Clear search" style={{ border: "none", background: "none", padding: 0, cursor: "pointer", display: "flex" }}><X3 size={14} color={T.inkFaint} /></button>}<NameKeyboardButton
+    active={Boolean(moreKbField)}
+    onOpen={() => setMoreKbField((f) => (f ? "" : "first"))}
+    label="Type a name in another alphabet"
+  /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: moreKbField ? "6px 18px 58vh" : "6px 18px 30px", display: "flex", flexDirection: "column", gap: 18 }}>{(() => {
     // The two boxes make one query. Joined with a space so "uber" +
     // "eats" finds Uber Eats, and compared against the name with its own
     // dots and spaces flattened, so `rasoi` + `ghar` finds rasoi.ghar
@@ -3386,15 +3402,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
       onClick={() => openBusiness(b)}
       aria-label={`Pay ${b.label}`}
       style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 12, padding: "13px 4px 13px 15px", border: "none", background: "none", cursor: "pointer", textAlign: "left" }}
-    ><BusinessMark name={b.label} logo={b.logo} size={36} /><span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.label}</span></button><button
-      onClick={() => togglePin(b.key)}
-      aria-label={isPinned ? `Unpin ${b.label}` : `Pin ${b.label}`}
-      aria-pressed={isPinned}
-      className="v2-tap"
-      style={{ border: "none", background: "none", padding: "13px 6px", cursor: "pointer", display: "flex", alignItems: "center", flexShrink: 0 }}
-    ><Pin1 size={16} color={isPinned ? T.accent : T.inkFaint} fill={isPinned ? T.accent : "none"} /></button><span style={{ paddingRight: 15, display: "flex", alignItems: "center", flexShrink: 0 }}><ChevronRightIcon /></span></div>;
+    ><BusinessMark name={b.label} logo={b.logo} size={36} /><span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: T.inkSoft, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.label}</span></button><PayPinStar
+      pinned={isPinned}
+      onToggle={() => togglePin(b.key)}
+      label={b.label}
+    /><span style={{ paddingRight: 15, display: "flex", alignItems: "center", flexShrink: 0 }}><ChevronRightIcon /></span></div>;
     })}</div></div></>;
-  })()}</div></div>}{
+  })()}</div><CreatorNameKeyboard
+    open={Boolean(moreKbField)}
+    field={moreKbField || "first"}
+    onField={setMoreKbField}
+    first={moreQuery}
+    last={moreQueryLast}
+    onFirst={setMoreQuery}
+    onLast={setMoreQueryLast}
+    countryIso={dialCountry && dialCountry.iso}
+    onClose={() => setMoreKbField("")}
+  /></div>}{
     /* Generic Pay sheet — opened from a business or Travel option in
        More. Deliberately minimal: same functional core as Send Money
        (amount in, confirm, done) without the receiver search, since
@@ -3823,6 +3847,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     // difference between two ways of leaving a screen load-bearing,
     // which nobody would guess and nobody should have to.
     onClose={skipCreatorSetup}
+    countryIso={dialCountry && dialCountry.iso}
     saving={creatorSaving}
     error={creatorError}
   />}{showChoicesGate && <BiometricVerifyScreen
@@ -3843,6 +3868,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     actionLabel="Add"
     excludeSymbolId={myGloobalId}
     excludeMessage="That is your own shop."
+    countryIso={dialCountry && dialCountry.iso}
     onClose={() => setShowSupplierFinder(false)}
     onPick={async (creator) => {
       const added = await GloobalApi.addCreatorSupplier(myGloobalId, creator.handle || "");

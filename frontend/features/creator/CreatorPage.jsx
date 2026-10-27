@@ -391,12 +391,16 @@ function CreatorPage({
   }<button
     onClick={onTogglePin}
     aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`}
+    aria-pressed={Boolean(pinned)}
     style={{
       position: "absolute", top: -5, right: -5, width: 26, height: 26, borderRadius: "50%",
       background: T.surface, border: "none", boxShadow: T.shadowCard, cursor: "pointer",
       display: "flex", alignItems: "center", justifyContent: "center"
     }}
-  ><Star2 size={14} color={pinned ? "#F2B01E" : T.inkFaint} fill={pinned ? "#F2B01E" : "none"} /></button></span>
+  >{
+    /* The gold was written out here and again on the strip and again on
+       the rows. One constant now, so the three cannot drift. */
+  }<Star2 size={14} color={pinned ? PAY_PIN_STAR : T.inkFaint} fill={pinned ? PAY_PIN_STAR : "none"} /></button></span>
 
   <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 11 }}><span style={{
     fontSize: 19, fontWeight: theme.font.weight, color: theme.ink, fontFamily: theme.font.stack

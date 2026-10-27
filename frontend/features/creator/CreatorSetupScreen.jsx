@@ -145,12 +145,16 @@ function useHandleAvailability(first, last) {
 // One name box. Tapping it edits; the dot between two of them is drawn by
 // the parent, not by either box, so neither can be typed into to produce
 // a second dot.
-function CreatorNameBox({ value, onChange, placeholder, label, tone }) {
+function CreatorNameBox({ value, onChange, placeholder, label, tone, quiet = false, onFocus }) {
   return <input
     value={value}
     onChange={(e) => onChange(e.target.value)}
     placeholder={placeholder}
     aria-label={label}
+    // `quiet` suppresses the PHONE's keyboard, for when Gloobal's own is
+    // up. Not readOnly, which would take the caret with it.
+    inputMode={quiet ? "none" : undefined}
+    onFocus={onFocus}
     // No autocapitalize and no autocorrect: a handle is not prose, and a
     // phone keyboard "helpfully" capitalising `rasoi` produces a display
     // name that does not match what everybody else types.
@@ -181,6 +185,7 @@ function CreatorSetupScreen({
   onSave,
   onSkip,
   onClose,
+  countryIso = "",
   saving = false,
   error = ""
 }) {
@@ -190,6 +195,13 @@ function CreatorSetupScreen({
   const [address, setAddress] = useState53((creator && creator.address) || "");
   const [addressPublic, setAddressPublic] = useState53(Boolean(creator && creator.addressPublic));
   const fileRef = useRef30(null);
+  // Which half Gloobal's own keyboard is typing into, "" when it is shut.
+  //
+  // It matters MOST here. Everywhere else somebody is typing a name they
+  // were shown; here they are choosing the one they will be paid at for
+  // good, and a phone that cannot write their own alphabet is how a shop
+  // ends up called something its owner would not have chosen.
+  const [kbField, setKbField] = useState53("");
 
   const availability = useHandleAvailability(first, last);
 
@@ -276,7 +288,10 @@ function CreatorSetupScreen({
     minHeight: 0,
     overflowY: "auto",
     WebkitOverflowScrolling: "touch",
-    padding: "4px 22px calc(26px + env(safe-area-inset-bottom, 0px))"
+    // Room for the board, so the availability line under the name boxes
+    // — the one that says whether the name is yours — is not the first
+    // thing it covers.
+    padding: kbField ? "4px 22px 58vh" : "4px 22px calc(26px + env(safe-area-inset-bottom, 0px))"
   }}><p style={{
     fontSize: 13,
     lineHeight: 1.55,
@@ -346,6 +361,8 @@ function CreatorSetupScreen({
     placeholder="rasoi"
     label="First part of your creator name"
     tone={tone}
+    quiet={Boolean(kbField)}
+    onFocus={() => { if (kbField) setKbField("first"); }}
   /><span aria-hidden="true" style={{
     fontSize: 24,
     fontWeight: 900,
@@ -364,6 +381,12 @@ function CreatorSetupScreen({
     placeholder="ghar (optional)"
     label="Second part of your creator name"
     tone={tone}
+    quiet={Boolean(kbField)}
+    onFocus={() => { if (kbField) setKbField("last"); }}
+  /><NameKeyboardButton
+    active={Boolean(kbField)}
+    onOpen={() => setKbField((f) => (f ? "" : "first"))}
+    label="Write your name in another alphabet"
   /></div>{
     /* One line that is always present, so nothing below it moves as the
        answer changes. A row that appears and disappears shifts the
@@ -496,7 +519,19 @@ function CreatorSetupScreen({
     margin: "10px 0 0"
   }}>
       Until you do, people can still pay your creator side at your Gloobal ID.
-    </p></div></div>;
+    </p></div><CreatorNameKeyboard
+    open={Boolean(kbField)}
+    field={kbField || "first"}
+    onField={setKbField}
+    first={first}
+    last={last}
+    onFirst={setFirst}
+    onLast={setLast}
+    countryIso={countryIso}
+    firstLabel="First part"
+    lastLabel="Second part"
+    onClose={() => setKbField("")}
+  /></div>;
 }
 
 // ── THE CREATOR'S PAGE, UNDER PROFILE ───────────────────────────────────

@@ -33,6 +33,7 @@ function CreatorFinder({
   actionLabel = "Add",
   excludeSymbolId = "",
   excludeMessage = "That is you.",
+  countryIso = "",
   onPick,
   onClose
 }) {
@@ -41,6 +42,7 @@ function CreatorFinder({
   const [found, setFound] = useState57(null);
   const [busy, setBusy] = useState57(false);
   const [working, setWorking] = useState57(false);
+  const [kbField, setKbField] = useState57("");
   const seq = useRef32(0);
 
   const typed = first.trim();
@@ -86,7 +88,12 @@ function CreatorFinder({
     flex: 1, minWidth: 0, fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay
   }}>{title}</span></div>
 
-  <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "0 18px 30px" }}>
+  <div style={{
+    flex: 1, minHeight: 0, overflowY: "auto",
+    // Room for the board, so the shop that comes back is not hidden
+    // behind the keys that found it.
+    padding: kbField ? "0 18px 58vh" : "0 18px 30px"
+  }}>
   {note ? <div style={{
     fontSize: 12, color: T.inkFaint, fontWeight: 600, lineHeight: 1.5, margin: "2px 2px 14px"
   }}>{note}</div> : null}
@@ -104,6 +111,12 @@ function CreatorFinder({
     onChange={(e) => setFirst(e.target.value)}
     placeholder="First name"
     autoComplete="off"
+    // While Gloobal's own board is up, the phone's must not also open:
+    // two keyboards stacked leaves about an inch of screen. inputMode
+    // "none" is the one thing that suppresses it without making the
+    // field read-only, which would take the caret away with it.
+    inputMode={kbField ? "none" : undefined}
+    onFocus={() => { if (kbField) setKbField("first"); }}
     style={{
       flex: 1, minWidth: 0, border: "none", outline: "none", background: "none",
       padding: "11px 12px", fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: "inherit"
@@ -116,10 +129,16 @@ function CreatorFinder({
     onChange={(e) => setLast(e.target.value)}
     placeholder="Last name"
     autoComplete="off"
+    inputMode={kbField ? "none" : undefined}
+    onFocus={() => { if (kbField) setKbField("last"); }}
     style={{
       flex: 1, minWidth: 0, border: "none", outline: "none", background: "none",
       padding: "11px 12px", fontSize: 13.5, fontWeight: 600, color: T.ink, fontFamily: "inherit"
     }}
+  /><NameKeyboardButton
+    active={Boolean(kbField)}
+    onOpen={() => setKbField((f) => (f ? "" : "first"))}
+    label="Type this name in another alphabet"
   /></div>
 
   <div style={{ marginTop: 16 }}>{
@@ -183,5 +202,15 @@ function CreatorFinder({
           }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>No creator with that name</div><div style={{
             fontSize: 11.5, color: T.inkFaint, marginTop: 5, lineHeight: 1.5
           }}>A creator is found by their exact name. Check the spelling, or scan their code instead.</div></div>
-  }</div></div></div>;
+  }</div></div><CreatorNameKeyboard
+    open={Boolean(kbField)}
+    field={kbField || "first"}
+    onField={setKbField}
+    first={first}
+    last={last}
+    onFirst={setFirst}
+    onLast={setLast}
+    countryIso={countryIso}
+    onClose={() => setKbField("")}
+  /></div>;
 }

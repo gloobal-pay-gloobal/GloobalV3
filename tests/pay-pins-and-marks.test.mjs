@@ -42,7 +42,7 @@ const dash = strip(readSource(DASH));
 const mark = new Function(`${markSrc.slice(markSrc.indexOf("var BUSINESS_MARK_INKS"), markSrc.indexOf("function BusinessMark("))}
   return { BUSINESS_MARK_INKS, businessMarkInk, businessMarkInitials };`)();
 const pins = new Function(`${pinsSrc.replace(/^import .*$/gm, "")}
-  return { PAY_PINS_VISIBLE, togglePayPin, payPinnedFrom, loadPayPins, savePayPins };`)();
+  return { PAY_PINS_VISIBLE, PAY_PIN_STAR, togglePayPin, payPinnedFrom, loadPayPins, savePayPins };`)();
 
 describe("a mark that is the business's own", () => {
   test("neighbours in the list get different colours", () => {
@@ -243,8 +243,16 @@ describe("the strip itself", () => {
     // A pin control inside the row's own <button> would be a button
     // inside a button: invalid, inconsistent across browsers, and a tap
     // on the pin would also open the payment underneath it.
-    assert.match(dash, /aria-label=\{isPinned \? `Unpin \$\{b\.label\}` : `Pin \$\{b\.label\}`\}/);
-    assert.match(dash, /aria-pressed=\{isPinned\}/);
+    // The control moved into PayPinStar, so the claim is checked where it
+    // now lives rather than against the markup it used to be spelled in.
+    // What has to stay true is that the pin is its OWN button, a sibling
+    // of the row's pay button, and that it announces its state.
+    assert.match(dash, /<PayPinStar\s/, "the row has no pin control at all");
+    assert.match(dash, /onToggle=\{\(\) => togglePin\(b\.key\)\}/);
+    const at = markSrc.indexOf("function PayPinStar");
+    const fn = markSrc.slice(at, markSrc.indexOf("\n}\n", at));
+    assert.match(fn, /aria-label=\{`\$\{pinned \? "Unpin" : "Pin"\} \$\{label\}`\}/);
+    assert.match(fn, /aria-pressed=\{Boolean\(pinned\)\}/);
     assert.doesNotMatch(dash, /aria-label=\{`Pay \$\{b\.label\}`\}\s*\n\s*className="v2-row"/,
       "the whole row is a single button again, so the pin is nested inside it");
   });
@@ -333,5 +341,47 @@ describe("the search is shaped like a creator's name", () => {
     const at = dash.indexOf('placeholder="First name"');
     const block = dash.slice(at - 400, at + 400);
     assert.match(block, /autoCapitalize="none"/);
+  });
+});
+
+
+// ── ONE PIN CONTROL, NOT THREE ──────────────────────────────────────────
+//
+// The same verb was drawn three ways: a pushpin outline on the Pay &
+// Services rows, a × badge on the pinned tile, and a gold star on a
+// creator's own page. The × was the worst of them — a cross DELETES
+// everywhere else in this app, and there it only removed a shortcut.
+describe("pinning looks like one thing everywhere", () => {
+  test("the control is a star, and the fill is what carries the state", () => {
+    const at = markSrc.indexOf("function PayPinStar");
+    assert.ok(at >= 0, "there is no shared pin control");
+    const fn = markSrc.slice(at, markSrc.indexOf("\n}\n", at));
+    assert.match(fn, /<Star4/, "the pin control is not a star");
+    // A FILL, not two colours. Red-and-green is invisible to about one
+    // man in twelve, which is the same reason the bank badges fill.
+    assert.match(fn, /fill=\{pinned \? PAY_PIN_STAR : "none"\}/,
+      "the star's state is colour alone, which some people cannot see");
+  });
+
+  test("no pushpin is left on the rows", () => {
+    assert.doesNotMatch(dash, /<Pin1\b/, "the Pay & Services rows still draw a pushpin");
+    assert.doesNotMatch(dash, /Pin as Pin1/, "the pushpin import is still carried");
+  });
+
+  test("the pinned tile unpins with a star, not with a cross", () => {
+    const at = markSrc.indexOf("function PayPinnedStrip");
+    const fn = markSrc.slice(at);
+    assert.doesNotMatch(fn, /<X12/, "the tile badge is still a cross, which reads as delete");
+    assert.match(fn, /<Star4 size=\{11\} color=\{PAY_PIN_STAR\} fill=\{PAY_PIN_STAR\}/);
+    assert.match(fn, /aria-label=\{`Unpin \$\{b\.label\}`\}/);
+  });
+
+  test("the gold is one constant, so the three cannot drift", () => {
+    assert.equal(pins.PAY_PIN_STAR, "#F2B01E");
+    const page = readSource("frontend/features/creator/CreatorPage.jsx");
+    assert.match(page, /color=\{pinned \? PAY_PIN_STAR : T\.inkFaint\}/);
+    for (const [what, src] of [["the creator page", page], ["the strip", markSrc]]) {
+      assert.doesNotMatch(src, /"#F2B01E"/, `${what} writes the gold out by hand again`);
+    }
   });
 });

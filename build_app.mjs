@@ -278,6 +278,14 @@ const FRONTEND_MODULES = [
   // it. Reads ProfileToggle (components/cards/misc.jsx), NavBackButton and
   // fitProfilePhotoForUpload (components/payments/PayPinModal.jsx), all
   // emitted earlier.
+  // Gloobal's own multi-script keyboard, for typing a creator name on a
+  // phone whose keyboard cannot write that alphabet. Emitted BEFORE the
+  // setup screen and everything else that takes a creator name, since all
+  // three of those name boxes mount it.
+  //
+  // Its NAME_SCRIPT_TESTS is a `var` initialiser — an IIFE run at load —
+  // so order is load-bearing here rather than merely tidy.
+  "features/creator/nameKeyboard.jsx",
   "features/creator/CreatorSetupScreen.jsx",
   // Which businesses this account pinned. Plain functions and two `var`
   // initialisers — and PAY_PINS_VISIBLE is read by the strip in

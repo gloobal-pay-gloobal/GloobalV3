@@ -34,6 +34,35 @@
 // the overwhelming majority of entries in a directory of small traders
 // will always look like, because most of them have no logo at all.
 
+import { Star as Star4 } from "lucide-react";
+
+// ── THE PIN CONTROL ─────────────────────────────────────────────────────
+//
+// One component for every place something can be pinned, so the three
+// places cannot drift apart again. Filled gold when pinned, hollow grey
+// when not: the FILL carries the state, and the colour only confirms it.
+//
+// aria-pressed rather than two different labels doing the work, so a
+// screen reader announces it as a toggle that is on or off — which is
+// what it is — rather than as two unrelated buttons.
+function PayPinStar({ pinned, onToggle, label, size = 16, hitPadding = "13px 6px" }) {
+  return <button
+    type="button"
+    onClick={onToggle}
+    aria-label={`${pinned ? "Unpin" : "Pin"} ${label}`}
+    aria-pressed={Boolean(pinned)}
+    className="v2-tap"
+    style={{
+      border: "none", background: "none", padding: hitPadding, cursor: "pointer",
+      display: "flex", alignItems: "center", flexShrink: 0
+    }}
+  ><Star4
+    size={size}
+    color={pinned ? PAY_PIN_STAR : T.inkFaint}
+    fill={pinned ? PAY_PIN_STAR : "none"}
+  /></button>;
+}
+
 // Twelve grounds, chosen to be distinguishable from each other at 36px
 // and to sit on a white card without vibrating. Deliberately NOT the
 // app's accent: these mark other people's businesses, and a row of
@@ -214,10 +243,18 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
   }} title={b.handle}>{b.handle}</span> : null}{
     /* Unpinning lives ON the tile. The alternative is finding the same
        business down in the list and unpinning it there, which is the
-       long way round to undo something that took one tap. */
+       long way round to undo something that took one tap.
+
+       It was a ×, and a × is wrong here twice over: everywhere else in
+       this app a cross DELETES the thing it sits on, and this one only
+       removes a shortcut — and it was a different picture of the same
+       verb the list rows and the creator page both drew as a star. It is
+       the star now, filled, because what it says is "pinned", and
+       tapping a thing that says pinned is how you unpin it. */
   }<button
     onClick={() => onUnpin(b.key)}
     aria-label={`Unpin ${b.label}`}
+    aria-pressed={true}
     className="v2-tap"
     style={{
       position: "absolute",
@@ -226,8 +263,8 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
       // Half the tile, less the badge's own overhang: it rides the
       // corner rather than sitting beside it.
       marginRight: -34,
-      width: 18,
-      height: 18,
+      width: 20,
+      height: 20,
       borderRadius: "50%",
       border: `1px solid ${T.line}`,
       background: T.surface,
@@ -238,5 +275,5 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><X12 size={9} color={T.inkFaint} /></button></div>)}</div></div>;
+  ><Star4 size={11} color={PAY_PIN_STAR} fill={PAY_PIN_STAR} /></button></div>)}</div></div>;
 }

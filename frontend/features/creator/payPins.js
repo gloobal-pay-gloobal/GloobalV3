@@ -30,6 +30,22 @@
 // Every access is wrapped: localStorage throws outright in Safari's
 // private mode and when storage is disabled, and a shortcut list is never
 // worth taking a screen down over.
+// ── ONE PIN CONTROL, NOT THREE ──────────────────────────────────────────
+//
+// The same act — pin this, unpin this — was drawn three different ways:
+// a pushpin outline on the Pay & Services rows, a × badge on the pinned
+// tile, and a gold star on a creator's own page. Three pictures of one
+// verb, and the × was the worst of them, because a cross means DELETE
+// everywhere else in this app and on the tile it meant "remove the
+// shortcut, keep the shop".
+//
+// The founder's call is the star, everywhere, and it is the right one:
+// the star already said "pinned" on the creator page, it fills when on
+// and outlines when off, and a FILL is visible to somebody who cannot
+// tell gold from grey — which is the same reason the bank badges became
+// fills rather than two colours.
+var PAY_PIN_STAR = "#F2B01E";
+
 var GLOOBAL_PAY_PINS_KEY_PREFIX = "gloobal.payPins.v1.";
 
 function payPinsKey(symbolId) {

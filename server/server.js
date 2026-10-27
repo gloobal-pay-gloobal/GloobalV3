@@ -160,6 +160,7 @@ const CreatorLogo = require('./models/CreatorLogo');
 const CreatorItem = require('./models/CreatorItem');
 const CreatorSupplier = require('./models/CreatorSupplier');
 const CreatorPurchase = require('./models/CreatorPurchase');
+const CreatorCover = require('./models/CreatorCover');
 const Notification = require('./models/Notification');
 // Web Push. The model holds one row per subscribed browser; the service is the
 // only thing that talks to a push service and is inert when VAPID is unset.
@@ -3920,6 +3921,11 @@ function publicCreator(user, logoDataUrl) {
     handleFirst: profile.handleFirst || '',
     handleLast: profile.handleLast || '',
     logo: logoDataUrl || null,
+    // How this shop looks. Sent to everybody, because it is what the page
+    // is drawn with — there is nothing private in a colour. Resolved on the
+    // client by shopTheme.js, which falls back field by field, so an older
+    // profile with no `shop` block renders as the app's own look.
+    shop: creatorShopOut(profile.shop),
     address: profile.addressPublic ? (profile.address || '') : '',
     addressPublic: Boolean(profile.addressPublic)
   };
@@ -3975,12 +3981,14 @@ app.get('/api/creator/:symbolId/profile', lookupLimit, requireAuth, async (req, 
       out.setupSkippedAt = profile.setupSkippedAt || null;
       out.completedAt = profile.completedAt || null;
     }
-    const [items, repeatPayers] = await Promise.all([
+    const [items, repeatPayers, cover] = await Promise.all([
       creatorItemsFor(user.symbolId),
-      creatorRepeatPayers(user._id)
+      creatorRepeatPayers(user._id),
+      CreatorCover.findOne({ userId: user._id }).select('dataUrl focusY').lean()
     ]);
     out.items = items;
     out.repeatPayers = repeatPayers;
+    out.cover = cover ? { photo: cover.dataUrl, focusY: cover.focusY } : null;
     res.set('Cache-Control', 'private, max-age=60');
     return res.json({ success: true, creator: out, isOwner });
   } catch (error) {
@@ -4129,19 +4137,157 @@ app.get('/api/creator/resolve/:handle', lookupLimit, requireAuth, async (req, re
     // the mark, the name, the repeat-payer count and the price list at
     // once; three round trips would show it assembling itself in pieces on
     // a phone connection.
-    const [items, repeatPayers] = await Promise.all([
+    const [items, repeatPayers, cover] = await Promise.all([
       creatorItemsFor(user.symbolId),
-      creatorRepeatPayers(user._id)
+      creatorRepeatPayers(user._id),
+      CreatorCover.findOne({ userId: user._id }).select('dataUrl focusY').lean()
     ]);
     const creator = publicCreator(user, logo?.dataUrl);
     creator.items = items;
     creator.repeatPayers = repeatPayers;
+    creator.cover = cover ? { photo: cover.dataUrl, focusY: cover.focusY } : null;
     return res.json({ success: true, creator });
   } catch (error) {
     console.error('Creator resolve error:', error);
     return res.status(500).json({ success: false, message: 'Could not look that name up right now.' });
   }
 });
+
+// ── A SHOP'S LOOK, ON THE WAY OUT ───────────────────────────────────────
+//
+// The colour is checked against the palette HERE as well as on the way in.
+// Validating once, at write time, would be enough if nothing else ever wrote
+// to this document — but a value that reaches a style attribute is worth
+// refusing twice, and the cost is a loop over twelve strings.
+var CREATOR_SHOP_COLORS = [
+  '#C2663A', '#B2473F', '#9A6A2F', '#4F7A46',
+  '#2F7A74', '#2E5E9E', '#4A4BA8', '#7C3AED',
+  '#A3327E', '#5A4636', '#36414E', '#1F6B4B'
+];
+var CREATOR_SHOP_ENUMS = {
+  theme: ['gloobal', 'street', 'studio', 'market', 'night'],
+  font: ['grotesk', 'fraunces', 'inter', 'mono'],
+  corners: ['sharp', 'soft', 'round', 'leaf'],
+  cards: ['raised', 'flat', 'outline', 'plain'],
+  density: ['compact', 'cosy', 'roomy'],
+  photoShape: ['rounded', 'circle', 'wide', 'tall']
+};
+
+function creatorShopColor(value) {
+  const raw = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  for (const c of CREATOR_SHOP_COLORS) if (c === raw) return c;
+  return '';
+}
+
+function creatorShopOut(shop) {
+  const s = (shop && typeof shop === 'object') ? shop : {};
+  const pick = (field) => (CREATOR_SHOP_ENUMS[field].indexOf(s[field]) >= 0 ? s[field] : CREATOR_SHOP_ENUMS[field][0]);
+  return {
+    theme: pick('theme'),
+    color: creatorShopColor(s.color),
+    font: pick('font'),
+    corners: pick('corners'),
+    cards: pick('cards'),
+    density: pick('density'),
+    photoShape: pick('photoShape'),
+    dark: Boolean(s.dark),
+    tagline: typeof s.tagline === 'string' ? s.tagline : '',
+    announceText: typeof s.announceText === 'string' ? s.announceText : '',
+    announceColor: creatorShopColor(s.announceColor),
+    announceOn: s.announceOn !== false
+  };
+}
+
+// PUT /api/creator/:symbolId/shop — the owner saves how their shop looks.
+//
+// Separate from the profile route because these are different things changed
+// at different moments: the profile is an identity (name, address) and this
+// is a look. Keeping them apart means saving a colour cannot touch a handle,
+// which is the field with a unique index and real consequences.
+app.put(
+  '/api/creator/:symbolId/shop',
+  writeLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  async (req, res) => {
+    try {
+      const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+      const body = (req.body && typeof req.body === 'object') ? req.body : {};
+      const user = await User.findOne({ symbolId }).select('_id creatorProfile').lean();
+      if (!user) return res.status(404).json({ success: false, code: 'user_not_found', message: 'No account found.' });
+
+      // Merged over what is stored, so a screen that saves only the colour
+      // does not blank the tagline somebody typed on a different screen.
+      const next = creatorShopOut(Object.assign({}, (user.creatorProfile || {}).shop || {}, body));
+      // Enums and the palette are handled by creatorShopOut; the two free
+      // strings are the ones to bound here.
+      next.tagline = String(next.tagline || '').trim().slice(0, 60);
+      next.announceText = String(next.announceText || '').trim().slice(0, 70);
+
+      await User.updateOne({ _id: user._id }, { $set: { 'creatorProfile.shop': next } });
+      return res.json({ success: true, shop: next });
+    } catch (error) {
+      console.error('Creator shop write error:', error);
+      return res.status(500).json({ success: false, message: 'Could not save how your shop looks right now.' });
+    }
+  }
+);
+
+// PUT /api/creator/:symbolId/cover — the photo across the top, and its crop.
+//
+// `focusY` alone is a valid request: nudging the crop must not make the
+// client re-upload 200 KB it already sent, and re-encoding a photo every
+// time somebody drags it would lose quality on each drag.
+app.put(
+  '/api/creator/:symbolId/cover',
+  writeLimit,
+  requireAuth,
+  requireSelf('symbolId'),
+  parseProfilePhotoBody,
+  async (req, res) => {
+    try {
+      const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+      const user = await User.findOne({ symbolId }).select('_id').lean();
+      if (!user) return res.status(404).json({ success: false, code: 'user_not_found', message: 'No account found.' });
+      const body = (req.body && typeof req.body === 'object') ? req.body : {};
+
+      if (body.remove === true) {
+        await CreatorCover.deleteOne({ userId: user._id });
+        return res.json({ success: true, cover: null });
+      }
+
+      const focusY = Number.isFinite(Number(body.focusY))
+        ? Math.min(100, Math.max(0, Number(body.focusY)))
+        : null;
+
+      if (typeof body.photo === 'string' && body.photo) {
+        // Same validator as the profile photo and the shop's mark: JPEG or
+        // PNG only, magic bytes checked, 200 KB, SVG refused — and it
+        // matters most on this one, which is the first thing a stranger
+        // loads when they open a shop they found by searching a name.
+        const verdict = validateProfilePhoto(body.photo);
+        if (!verdict.ok) return res.status(400).json({ success: false, message: verdict.message });
+        await CreatorCover.updateOne(
+          { userId: user._id },
+          { $set: { dataUrl: body.photo, mimeType: verdict.mimeType, bytes: verdict.bytes, focusY: focusY == null ? 50 : focusY } },
+          { upsert: true }
+        );
+      } else if (focusY != null) {
+        const existing = await CreatorCover.findOne({ userId: user._id }).select('_id').lean();
+        if (!existing) return res.status(400).json({ success: false, message: 'There is no cover photo to move yet.' });
+        await CreatorCover.updateOne({ userId: user._id }, { $set: { focusY } });
+      } else {
+        return res.status(400).json({ success: false, message: 'Send a photo, a crop position, or remove.' });
+      }
+
+      const saved = await CreatorCover.findOne({ userId: user._id }).select('dataUrl focusY').lean();
+      return res.json({ success: true, cover: saved ? { photo: saved.dataUrl, focusY: saved.focusY } : null });
+    } catch (error) {
+      console.error('Creator cover write error:', error);
+      return res.status(500).json({ success: false, message: 'Could not save that cover right now.' });
+    }
+  }
+);
 
 // ════════════════════════════════════════════════════════════════════════
 // A CREATOR'S TWO LISTS
@@ -4188,6 +4334,8 @@ function publicCreatorItem(row) {
     price: row.price,
     currency: row.currency,
     note: row.note || '',
+    category: row.category || '',
+    badge: row.badge || '',
     photo: row.photo || '',
     soldOut: Boolean(row.soldOut),
     order: Number(row.order) || 0
@@ -4271,6 +4419,8 @@ app.put(
           price,
           currency,
           note: typeof raw.note === 'string' ? raw.note.trim().slice(0, 140) : '',
+          category: typeof raw.category === 'string' ? raw.category.trim().slice(0, 40) : '',
+          badge: typeof raw.badge === 'string' ? raw.badge.trim().slice(0, 24) : '',
           photo,
           soldOut: Boolean(raw.soldOut),
           order: i

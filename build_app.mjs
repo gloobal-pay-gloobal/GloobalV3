@@ -288,11 +288,18 @@ const FRONTEND_MODULES = [
   // What a business looks like in a list: its own logo where it has one,
   // and a mark generated from its own name where it does not. Also the
   // pinned strip on Pay & Services, drawn from the same marks.
+  // How one shop looks: a theme and the dials behind it, resolved into the
+  // values CreatorPage draws with. Plain functions and `var` tables, ahead
+  // of every screen that reads them.
+  "features/creator/shopTheme.js",
   "features/creator/businessMark.jsx",
   // The screen behind a creator's name: their list, the basket, and the
   // owner's second tab. After businessMark.jsx, whose ink and initials it
   // uses to draw a creator who has uploaded no logo.
   "features/creator/CreatorPage.jsx",
+  // Where an owner changes how their shop looks. After CreatorPage only
+  // for reading order; both are function declarations.
+  "features/creator/ShopThemeEditor.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",
   // Giving to a Hooman Project, and the list of who has. Emitted before the

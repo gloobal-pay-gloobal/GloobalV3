@@ -310,7 +310,47 @@ const userSchema = new mongoose.Schema({
     // When a handle was first successfully set. `completedAt` being null
     // with a handle present should be impossible; it is read as "has this
     // creator finished setting up" and the handle is what finishes it.
-    completedAt: { type: Date, default: null }
+    completedAt: { type: Date, default: null },
+
+    // ── HOW THE SHOP LOOKS ────────────────────────────────────────────
+    //
+    // A handful of choices, each a short enumerated string, that
+    // frontend/features/creator/shopTheme.js turns into the values the page
+    // draws with. Stored on the profile rather than in their own collection
+    // because the whole block is under 200 bytes and is read by exactly the
+    // request that already loads this document.
+    //
+    // NONE OF THIS REACHES MONEY. A theme changes the cover, mark, name,
+    // chips, cards, badges and add buttons. The price, the GEU pair, the
+    // cart total and the Pay button render from the app's own tokens in
+    // every shop under every theme — a customer has to read a figure the
+    // same way in every shop, and a shop that could restyle its own total
+    // could make 550 read as 55. shopTheme.js holds the list; the tests
+    // assert against it.
+    //
+    // Every field is optional and every reader falls back, so a profile
+    // written before this existed renders as the app's own look.
+    shop: {
+      theme: { type: String, enum: ['gloobal', 'street', 'studio', 'market', 'night'], default: 'gloobal' },
+      // Validated against the fixed palette on the way in AND on the way
+      // out, because this string ends up inside a style attribute.
+      color: { type: String, default: '' },
+      font: { type: String, enum: ['grotesk', 'fraunces', 'inter', 'mono'], default: 'grotesk' },
+      corners: { type: String, enum: ['sharp', 'soft', 'round', 'leaf'], default: 'round' },
+      cards: { type: String, enum: ['raised', 'flat', 'outline', 'plain'], default: 'raised' },
+      density: { type: String, enum: ['compact', 'cosy', 'roomy'], default: 'cosy' },
+      photoShape: { type: String, enum: ['rounded', 'circle', 'wide', 'tall'], default: 'rounded' },
+      dark: { type: Boolean, default: false },
+
+      // One line under the name: "Chai since 2015".
+      tagline: { type: String, trim: true, maxlength: 60, default: '' },
+
+      // The band across the very top. Blank text is the same as off, and
+      // the page refuses to draw a coloured strip with nothing in it.
+      announceText: { type: String, trim: true, maxlength: 70, default: '' },
+      announceColor: { type: String, default: '' },
+      announceOn: { type: Boolean, default: true }
+    }
   },
 
   createdAt: {

@@ -25,7 +25,7 @@
 //    cost. The server enforces this; the UI simply never draws the tab for
 //    anyone else.
 import { useState as useState54, useEffect as useEffect51 } from "react";
-import { Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare } from "lucide-react";
+import { Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare } from "lucide-react";
 
 var CREATOR_PAGE_TABS = ["Selling", "Buying"];
 
@@ -91,8 +91,14 @@ function creatorBasketLines(items, basket) {
 // and otherwise the generated mark every business row on Pay & Services
 // already uses, so a creator with no picture still looks like themselves
 // rather than like a gap.
-function CreatorMark({ creator, size = 88, radius = 26 }) {
+// The mark a creator is known by: their uploaded logo where there is one,
+// and otherwise the generated mark every business row on Pay & Services
+// already uses, so a creator with no picture still looks like themselves
+// rather than like a gap. The corner radius comes from the shop's theme, so
+// a sharp-cornered shop does not have one round thing in the middle of it.
+function CreatorMark({ creator, theme, size = 88 }) {
   const label = creator.handle || creator.handleFirst || "";
+  const radius = (theme && theme.corners && theme.corners.mark) || 26;
   if (creator.logo) {
     return <img
       src={creator.logo}
@@ -100,48 +106,81 @@ function CreatorMark({ creator, size = 88, radius = 26 }) {
       style={{ width: size, height: size, borderRadius: radius, objectFit: "cover", display: "block" }}
     />;
   }
-  const paint = businessMarkInk(label);
+  // A shop that picked a colour gets its mark in that colour; one that has
+  // not keeps the generated ink, which is at least its own.
+  const paint = theme && theme.key !== "gloobal"
+    ? { bg: theme.soft, fg: theme.color }
+    : businessMarkInk(label);
   return <span style={{
     width: size, height: size, borderRadius: radius, background: paint.bg,
     display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: Math.round(size * 0.34), fontWeight: 800, color: paint.fg, fontFamily: T.fontDisplay
+    fontSize: Math.round(size * 0.34), fontWeight: 800, color: paint.fg,
+    fontFamily: (theme && theme.font && theme.font.stack) || T.fontDisplay
   }}>{businessMarkInitials(label)}</span>;
 }
 
-function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, onAdd, onRemove, onEdit }) {
+function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, theme, onAdd, onRemove, onEdit }) {
   const paint = businessMarkInk(item.title);
+  const thumb = shopThumbBox(theme);
+  const card = shopCardStyle(theme);
   return <div style={{
     display: "flex", alignItems: "center", gap: 12,
-    background: T.surface, borderRadius: 16, padding: "10px 12px", marginBottom: 9,
-    boxShadow: T.shadowCard, opacity: item.soldOut ? 0.55 : 1
+    padding: theme.density.rowPad, marginBottom: theme.density.gap,
+    opacity: item.soldOut ? 0.55 : 1, ...card
   }}>{item.photo
-    ? <img src={item.photo} alt="" style={{ width: 48, height: 48, borderRadius: 13, objectFit: "cover", flexShrink: 0 }} />
+    ? <img src={item.photo} alt="" style={{ ...thumb, objectFit: "cover", flexShrink: 0 }} />
     : <span style={{
-      width: 48, height: 48, borderRadius: 13, flexShrink: 0, background: paint.bg,
+      ...thumb, flexShrink: 0, background: paint.bg,
       display: "flex", alignItems: "center", justifyContent: "center",
       fontSize: 15, fontWeight: 800, color: paint.fg
     }}>{businessMarkInitials(item.title)}</span>
   }<span style={{ flex: 1, minWidth: 0 }}><span style={{
-    display: "block", fontSize: 13, fontWeight: 700, color: T.ink,
-    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-  }}>{item.title}{item.soldOut && <span style={{
-    marginLeft: 7, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase",
-    color: T.negative, background: "#FDECEC", borderRadius: 6, padding: "2px 6px"
-  }}>Sold out</span>}</span><span style={{ display: "block", marginTop: 3 }}>{
-    /* The price in the creator's own money, with its other name beside it —
-       the same pair every figure in the app carries. See GeuFigure. */
-  }<GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} size={12.5} /></span>{
+    display: "flex", alignItems: "center", gap: 7, minWidth: 0
+  }}>{
+    /* The name ellipsises; the badge beside it does not. They used to share
+       one nowrap span, so a long name ate the badge from the right and left
+       "BESTSELL…" sitting where a word should be. */
+  }<span style={{
+    fontSize: 13, fontWeight: 700, color: theme.ink,
+    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0
+  }}>{item.title}</span>{
+    /* ── THE OWNER'S OWN CLAIM, IN THE OWNER'S OWN COLOUR ──────────────
+       "Bestseller" is something a shopkeeper wrote about their own shop.
+       Drawing it in THEIR colour rather than in Gloobal's is the whole
+       mechanism by which a reader can tell it apart from anything the app
+       asserts — nothing here is checked, and the editor says so where it
+       is typed. */
+  }{item.badge && !item.soldOut ? <span style={{
+    flexShrink: 0, fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
+    color: theme.color, background: theme.soft, borderRadius: 5, padding: "2px 5px", whiteSpace: "nowrap"
+  }}>{item.badge}</span> : null}{item.soldOut && <span style={{
+    flexShrink: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase",
+    color: T.negative, background: "#FDECEC", borderRadius: 6, padding: "2px 6px", whiteSpace: "nowrap"
+  }}>Sold out</span>}</span>{
     item.note ? <span style={{
-      display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 2,
+      display: "block", fontSize: 10.5, color: theme.inkFaint, marginTop: 2,
       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
     }}>{item.note}</span> : null
-  }</span>{
-    /* ── THE CONTROL COLUMN IS ONE WIDTH ──────────────────────────────
-       A bare "+" is 28px and a stepper is 28 + 12 + 28; left to size
-       themselves, a list where one item is in the basket and the next is
-       not puts their right edges 40px apart, and the column reads as
-       ragged. Fixed width, contents pushed right: every row's control
-       ends on the same vertical line whatever state it is in. */
+  }<span style={{ display: "block", marginTop: 4, color: theme.ink }}>{
+    /* ── CONTRAST IS NOT STYLING ──────────────────────────────────────
+       The figure takes `theme.ink`, and that is NOT the shop choosing how
+       its price looks: ink is derived from one thing only, whether the
+       shop is dark, and the owner picks that by picking a dark theme, not
+       by picking a colour. Without it a dark shop rendered its prices in
+       the app's near-black on a near-black row — found by rendering all
+       four themes. A price nobody can read is worse than a themed one. */
+  }{
+    /* ── THE ONE THING A THEME MAY NOT TOUCH ──────────────────────────
+       The price, and its other name. No theme colour, no theme font, no
+       theme size: GeuFigure draws it exactly as every other figure in the
+       app is drawn, in every shop, under every theme. A customer walking
+       between two shops has to read a figure the same way in both, and a
+       shop that could restyle its own total could make 550 read as 55.
+       See shopTheme.js, SHOP_THEME_FORBIDDEN. */
+  }<GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} size={12.5} /></span></span>{
+    /* The control column is one fixed width with its contents pushed right,
+       so a row with a stepper and a row with a bare + end on the same
+       vertical line. */
   }<span style={{
     width: 86, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "flex-end"
   }}>{owner
@@ -149,28 +188,28 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, onAdd, onRemove, 
       onClick={onEdit}
       aria-label={`Edit ${item.title}`}
       style={{
-        width: 30, height: 30, borderRadius: 10, background: T.surfaceAlt, border: "none",
+        width: 30, height: 30, borderRadius: theme.corners.pill, background: theme.soft, border: "none",
         display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer"
       }}
-    ><Pencil3 size={13} color={T.inkSoft} /></button>
+    ><Pencil3 size={13} color={theme.color} /></button>
     : item.soldOut ? null : (qty > 0
       ? <span style={{ display: "flex", alignItems: "center", gap: 9 }}><button
         onClick={onRemove}
         aria-label={`One fewer ${item.title}`}
-        style={{ width: 28, height: 28, borderRadius: 9, background: T.surfaceAlt, border: "none", cursor: "pointer", color: T.inkSoft, fontSize: 16, fontWeight: 800 }}
+        style={{ width: 28, height: 28, borderRadius: theme.corners.pill, background: theme.soft, border: "none", cursor: "pointer", color: theme.color }}
       ><Minus2 size={14} /></button><span style={{
-        fontSize: 13, fontWeight: 800, color: T.ink, minWidth: 12, textAlign: "center"
+        fontSize: 13, fontWeight: 800, color: theme.ink, minWidth: 12, textAlign: "center"
       }}>{qty}</span><button
         onClick={onAdd}
         aria-label={`One more ${item.title}`}
-        style={{ width: 28, height: 28, borderRadius: 9, background: T.accentSoft, border: "none", cursor: "pointer", color: T.accent }}
+        style={{ width: 28, height: 28, borderRadius: theme.corners.pill, background: theme.color, border: "none", cursor: "pointer", color: "#fff" }}
       ><Plus7 size={14} /></button></span>
       : <button
         onClick={onAdd}
         aria-label={`Add ${item.title}`}
         style={{
-          width: 28, height: 28, borderRadius: 9, background: T.accentSoft, border: "none",
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", color: T.accent
+          width: 28, height: 28, borderRadius: theme.corners.pill, background: theme.soft, border: "none",
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", color: theme.color
         }}
       ><Plus7 size={15} /></button>)
   }</span></div>;
@@ -189,6 +228,7 @@ function CreatorPage({
   onShare,
   onFeedback,
   onSaveItems,
+  onEditLook,
   onOpenSupplier,
   onAddSupplier,
   suppliers = [],
@@ -202,12 +242,36 @@ function CreatorPage({
   const [draft, setDraft] = useState54(null);
   const [saving, setSaving] = useState54(false);
   const [saveError, setSaveError] = useState54("");
+  // Which of the owner's own groupings is being shown. "" is all of them.
+  const [activeCat, setActiveCat] = useState54("");
 
-  const items = Array.isArray(creator && creator.items) ? creator.items : [];
-  const total = creatorBasketTotal(items, basket);
+  const allItems = Array.isArray(creator && creator.items) ? creator.items : [];
+  const items = activeCat
+    ? allItems.filter((i) => String(i.category || "").trim() === activeCat)
+    : allItems;
+  // Over ALL items, never the filtered view: switching a chip must not
+  // quietly drop something already in the basket.
+  const total = creatorBasketTotal(allItems, basket);
   const count = creatorBasketCount(basket);
   const name = creatorDisplayName(creator);
-  const itemCurrency = (items[0] && items[0].currency) || ccyCode;
+  // Everything about how this shop looks, resolved field by field with the
+  // app's own look as the floor — see shopTheme.js. A profile written before
+  // themes existed, or one with a colour that is not in the palette, lands
+  // on Gloobal purple rather than on nothing.
+  const theme = resolveShopTheme(creator && creator.shop);
+  const announce = shopAnnouncement(creator && creator.shop);
+  const tagline = (creator && creator.shop && creator.shop.tagline) || "";
+  const cover = creator && creator.cover;
+
+  // The owner's own groupings, in the order their products are in. Built
+  // from whatever they typed rather than from a fixed list, because a tea
+  // stall and a tailor do not share categories.
+  const categories = [];
+  for (const item of (Array.isArray(creator && creator.items) ? creator.items : [])) {
+    const c = String(item.category || "").trim();
+    if (c && categories.indexOf(c) < 0) categories.push(c);
+  }
+  const itemCurrency = (allItems[0] && allItems[0].currency) || ccyCode;
 
   // ── THE FLOATING MAP BUTTON SITS ON THE + CONTROLS ──────────────────
   //
@@ -230,9 +294,18 @@ function CreatorPage({
   });
 
   return <div style={{
-    position: "fixed", inset: 0, zIndex: 345, background: T.bg,
+    position: "fixed", inset: 0, zIndex: 345, background: theme.page,
     display: "flex", flexDirection: "column", overflow: "hidden"
   }}>{
+    /* ── THE ANNOUNCEMENT BAND ────────────────────────────────────────
+       Above everything, in the shop's own colour, and only when there is
+       something in it: blank text is the same as switched off, and a
+       coloured strip with nothing in it is furniture. */
+  }{announce ? <div style={{
+    flexShrink: 0, background: announce.color, color: "#fff",
+    padding: "calc(7px + env(safe-area-inset-top, 0px)) 16px 7px",
+    fontSize: 10.5, fontWeight: 800, letterSpacing: 0.3, textAlign: "center"
+  }}>{announce.text}</div> : null}{
     /* ── THE HEADER CARRIES WHO YOU ARE PAYING ────────────────────────
        Not a label inside the page: the title follows the creator, so the
        answer to "who is this money going to" is in the same place it is on
@@ -240,12 +313,13 @@ function CreatorPage({
        top corner beside it rather than floating over the content. */
   }<div style={{
     display: "flex", alignItems: "center", gap: 10,
-    padding: "calc(15px + env(safe-area-inset-top, 0px)) 16px 10px", flexShrink: 0
+    padding: announce ? "13px 16px 10px" : "calc(15px + env(safe-area-inset-top, 0px)) 16px 10px",
+    flexShrink: 0
   }}><NavBackButton onClick={onClose} /><span style={{
     flex: 1, minWidth: 0,
-    fontSize: 14, fontWeight: 700, color: T.inkSoft, overflow: "hidden",
+    fontSize: 14, fontWeight: 700, color: theme.inkSoft, overflow: "hidden",
     textOverflow: "ellipsis", whiteSpace: "nowrap"
-  }}>{isOwner ? "Your creator page" : `Paying ${name}`}</span>{
+  }}>{isOwner ? "Your shop" : `Paying ${name}`}</span>{
     /* ── THE THREE CORNER CONTROLS ARE ONE COMPONENT ──────────────────
        Back, flag and scanner all go through NavIconButton, which is a
        40px circle with the app's own surface and shadow. They used to be
@@ -273,7 +347,28 @@ function CreatorPage({
   <div style={{
     flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",
     padding: `0 18px ${count > 0 && !isOwner ? 110 : 30}px`
-  }}><div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span style={{ position: "relative", display: "inline-flex" }}><CreatorMark creator={creator} />{
+  }}>{
+    /* ── THE COVER ────────────────────────────────────────────────────
+       Full-bleed out of the scroll container's own padding, with the
+       owner's crop position honoured so a photo framed on a shopfront is
+       not re-centred on the sky above it. Faded into the page at the
+       bottom so the mark sits on the join rather than on a hard edge. */
+  }{cover && cover.photo ? <div style={{
+    margin: "0 -18px", height: 168, position: "relative", overflow: "hidden"
+  }}><img
+    src={cover.photo}
+    alt=""
+    style={{
+      width: "100%", height: "100%", objectFit: "cover",
+      objectPosition: `50% ${Number(cover.focusY) || 50}%`, display: "block"
+    }}
+  /><span style={{
+    position: "absolute", inset: 0,
+    background: `linear-gradient(180deg, rgba(21,19,42,0.18) 0 24%, transparent 52%, ${theme.page} 100%)`
+  }} /></div> : null}<div style={{
+    display: "flex", flexDirection: "column", alignItems: "center",
+    marginTop: cover && cover.photo ? -42 : 0, position: "relative", zIndex: 2
+  }}><span style={{ position: "relative", display: "inline-flex" }}><CreatorMark creator={creator} theme={theme} />{
     /* The pin sits on the mark's corner, the way a star sits on a thing you
        keep rather than on a row of controls beside it. */
   }<button
@@ -287,7 +382,7 @@ function CreatorPage({
   ><Star2 size={14} color={pinned ? "#F2B01E" : T.inkFaint} fill={pinned ? "#F2B01E" : "none"} /></button></span>
 
   <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 11 }}><span style={{
-    fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay
+    fontSize: 19, fontWeight: theme.font.weight, color: theme.ink, fontFamily: theme.font.stack
   }}>{name}</span><button
     onClick={() => setDetailsOpen((v) => !v)}
     aria-label={detailsOpen ? "Hide creator details" : "Show creator details"}
@@ -305,6 +400,10 @@ function CreatorPage({
        reputation. Repeat payers is a by-product of payments that already
        settled. Hidden below ten, because "1 person" reads as a verdict on a
        creator who simply started last week. */
+    tagline ? <div style={{
+      fontSize: 11.5, fontWeight: 700, color: theme.color, marginTop: 4, textAlign: "center"
+    }}>{tagline}</div> : null
+  }{
     Number(creator.repeatPayers) >= 10 ? <div style={{
       fontSize: 11.5, fontWeight: 600, color: T.inkFaint, marginTop: 7
     }}><span style={{ color: T.positive, fontWeight: 800 }}>{creator.repeatPayers}</span> people have paid them more than once</div> : null
@@ -313,7 +412,12 @@ function CreatorPage({
   <div style={{ display: "flex", gap: 9, marginTop: 13 }}>{[
     { key: "share", label: "Share", Icon: Share25, onClick: onShare, on: false },
     { key: "feedback", label: isOwner ? "Feedback" : "Send a note", Icon: MessageSquare, onClick: onFeedback, on: false }
-  ].map(({ key, label, Icon, onClick, on }) => <button
+  ].concat(isOwner && onEditLook ? [
+    // The owner's way into the look of their own shop, on the shop itself
+    // rather than buried in a settings list — which is where somebody
+    // standing in front of their page actually wants it.
+    { key: "look", label: "Look", Icon: Palette2, onClick: onEditLook, on: false }
+  ] : []).map(({ key, label, Icon, onClick, on }) => <button
     key={key}
     onClick={onClick}
     style={{
@@ -351,6 +455,27 @@ function CreatorPage({
     }}
   >{t}</button>)}</div>}
 
+  {
+    /* ── THE OWNER'S OWN GROUPINGS ────────────────────────────────────
+       Built from whatever words they typed on their products, in the order
+       those products are in. Drawn only when there is more than one, because
+       a single chip filters nothing and is just a label pretending to be a
+       control. The selected one takes the shop's colour. */
+  }{categories.length > 1 && (!isOwner || tab === "Selling") ? <div style={{
+    display: "flex", gap: 8, overflowX: "auto", margin: "16px -18px 0", padding: "0 18px 2px",
+    scrollbarWidth: "none"
+  }}>{[""].concat(categories).map((c) => <button
+    key={c || "__all"}
+    onClick={() => setActiveCat(c)}
+    style={{
+      flexShrink: 0, border: "none", cursor: "pointer", fontFamily: "inherit",
+      borderRadius: theme.corners.pill, padding: "8px 13px",
+      fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+      background: activeCat === c ? theme.color : theme.surface,
+      color: activeCat === c ? "#fff" : theme.inkSoft,
+      boxShadow: theme.cards === "raised" ? T.shadowCard : "none"
+    }}
+  >{c || "All"}</button>)}</div> : null}
   {(!isOwner || tab === "Selling") && <>{
     !isOwner && items.length === 0
       ? <div style={{
@@ -361,8 +486,8 @@ function CreatorPage({
       }}>You can still pay {name} any amount.</div></div>
       : <>{isOwner ? null : <div style={{
         fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase",
-        color: T.inkSoft, margin: "18px 0 10px"
-      }}>What they sell</div>}{
+        color: theme.inkSoft, margin: `${theme.density.sectionGap}px 0 10px`
+      }}>{activeCat || "What they sell"}</div>}{
         isOwner ? <button
           onClick={() => { setSaveError(""); setDraft({ id: null, title: "", price: "", note: "", soldOut: false }); }}
           style={{
@@ -378,6 +503,7 @@ function CreatorPage({
         owner={isOwner}
         lens={lens}
         ccyCode={ccyCode}
+        theme={theme}
         onAdd={() => bump(item.id, 1)}
         onRemove={() => bump(item.id, -1)}
         onEdit={() => { setSaveError(""); setDraft({ id: item.id, title: item.title, price: String(item.price), note: item.note || "", soldOut: Boolean(item.soldOut) }); }}
@@ -546,7 +672,7 @@ function CreatorPage({
       onClick={() => onPay && onPay({
         amount: total,
         currency: itemCurrency,
-        lines: creatorBasketLines(items, basket),
+        lines: creatorBasketLines(allItems, basket),
         creator
       })}
       style={{

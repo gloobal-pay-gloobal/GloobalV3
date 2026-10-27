@@ -1613,6 +1613,34 @@ var GloobalApi = {
     return Number(result && result.written) || 0;
   },
 
+  // --- How a shop looks -------------------------------------------------
+  //
+  // Theme, colour, type, corners, cards, density, photo shape, tagline and
+  // the announcement bar. Merged server-side over what is stored, so a
+  // screen that saves one field cannot blank another.
+
+  async saveCreatorShop(symbolId, shop) {
+    const result = await gloobalApiClient.put(
+      `/api/creator/${encodeURIComponent(symbolId)}/shop`,
+      shop && typeof shop === "object" ? shop : {}
+    );
+    return (result && result.shop) || null;
+  },
+
+  // A photo, a crop position, or a removal. `focusY` alone is valid and is
+  // the cheap path: nudging the crop must not re-upload the photo.
+  async saveCreatorCover(symbolId, { photo, focusY, remove } = {}) {
+    const body = {};
+    if (remove) body.remove = true;
+    if (typeof photo === "string" && photo) body.photo = photo;
+    if (Number.isFinite(Number(focusY))) body.focusY = Number(focusY);
+    const result = await gloobalApiClient.put(
+      `/api/creator/${encodeURIComponent(symbolId)}/cover`,
+      body
+    );
+    return (result && result.cover) || null;
+  },
+
   // --- Notifications ----------------------------------------------------
   //
   // Server-held, per account, created by the payment route after a transfer

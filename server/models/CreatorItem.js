@@ -39,6 +39,18 @@ const CreatorItemSchema = new mongoose.Schema(
     // because it can carry script and this one is shown to strangers.
     photo: { type: String, default: '' },
 
+    // The owner's own grouping, in their own words — "Chai", "Cold
+    // drinks", whatever they say in the shop. Free text rather than a fixed
+    // list because a tea stall and a tailor do not share categories, and the
+    // page builds its chips from whatever distinct values exist.
+    category: { type: String, trim: true, maxlength: 40, default: '' },
+
+    // A short claim the OWNER writes: "Bestseller", "Made to order". Shown
+    // in the shop's own colour, which is how a reader can tell it apart from
+    // anything Gloobal asserts — nothing here is verified, and the UI says
+    // so where it is set.
+    badge: { type: String, trim: true, maxlength: 24, default: '' },
+
     // The creator's own claim about availability. See above for why this is
     // a switch and not a number.
     soldOut: { type: Boolean, default: false },

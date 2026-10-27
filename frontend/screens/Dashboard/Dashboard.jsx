@@ -883,6 +883,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
   const [openCreator, setOpenCreator] = useState14(null);
   const [creatorSuppliers, setCreatorSuppliers] = useState14([]);
   const [creatorPurchases, setCreatorPurchases] = useState14([]);
+  const [showShopTheme, setShowShopTheme] = useState14(false);
 
   // Debounced, and guarded by a sequence number: a slow answer for "rasoi"
   // must not land after a fast one for "rasoi.ghar" and overwrite it. Same
@@ -3799,7 +3800,27 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
-  }{openCreator && <ScreenErrorBoundary name="Creator page" onClose={() => setOpenCreator(null)}><CreatorPage
+  }{showShopTheme && <ScreenErrorBoundary name="Shop look" onClose={() => setShowShopTheme(false)}><ShopThemeEditor
+    shop={(creatorProfile && creatorProfile.shop) || null}
+    symbolId={myGloobalId}
+    ccyCode={ccyCode}
+    lens={displayLens}
+    onClose={() => setShowShopTheme(false)}
+    onSave={async (shop) => {
+      try {
+        const saved = await GloobalApi.saveCreatorShop(myGloobalId, shop);
+        if (!saved) return false;
+        // Both copies move together: the profile row the owner came from,
+        // and the page they may have open behind this. Leaving either stale
+        // shows somebody their old colour straight after they changed it.
+        setCreatorProfile((c) => (c ? { ...c, shop: saved } : c));
+        setOpenCreator((c) => (c ? { ...c, shop: saved } : c));
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }}
+  /></ScreenErrorBoundary>}{openCreator && <ScreenErrorBoundary name="Creator page" onClose={() => setOpenCreator(null)}><CreatorPage
     creator={openCreator}
     isOwner={Boolean(openCreator.symbolId) && openCreator.symbolId === myGloobalId}
     ccyCode={ccyCode}
@@ -3810,6 +3831,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     onScan={onOpenScan}
     onShare={() => setShowReceive(true)}
     onFeedback={() => showToast2("Feedback is coming next.")}
+    onEditLook={() => setShowShopTheme(true)}
     onSaveItems={async (next) => {
       try {
         const saved = await GloobalApi.saveCreatorItems(myGloobalId, next);

@@ -1,6 +1,6 @@
 // src/features/creator/CreatorSetupScreen.jsx
 import { useState as useState53, useEffect as useEffect50, useRef as useRef30 } from "react";
-import { Camera as Camera6, Check as Check9, X as X12, MapPin as MapPin5, Loader as Loader5 } from "lucide-react";
+import { Camera as Camera6, Check as Check9, X as X12, MapPin as MapPin5, Loader as Loader5, Pencil as Pencil4, QrCode as QrCode2, Share2 as Share26, Copy as Copy5, Eye as Eye3, EyeOff as EyeOff4, Store as Store3, ShieldCheck as ShieldCheck2, ChevronRight as ChevronRight9, Contact as Contact4 } from "lucide-react";
 
 // ── THE CREATOR SIDE INTRODUCES ITSELF ──────────────────────────────────
 //
@@ -576,12 +576,45 @@ function CreatorSetupScreen({
 // One editor, deliberately. A second one would be a second place for the
 // rules about what a handle may contain to live, and two copies of a rule
 // drift until one of them is wrong.
-function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage }) {
+// ── THE CREATOR'S OWN IDENTITY, AS A THING RATHER THAN A FORM ───────────
+//
+// This was a white card: an 86px mark, the handle under it, and three
+// label/value rows — Gloobal ID, Address, Who sees it. Correct, legible,
+// and indistinguishable from the eight other rows in the profile list. A
+// person's creator name is the thing their customers type to pay them,
+// and it read like a settings page.
+//
+// The founder had another tool redraw it and sent the result: the name on
+// a violet field with its mark beside it, the things you DO with a name
+// as three buttons rather than buried, and the facts below as icon rows
+// instead of a label column.
+//
+// Three things in that picture were not built, and it is worth saying
+// which and why rather than leaving somebody to wonder:
+//
+//   * A MOON in the header. That is a dark-mode switch, and this app has
+//     no dark mode to switch. A control that does nothing is worse than
+//     an absent one. (The shop page's own `dark` theme is a property of
+//     that shop, not of the app.)
+//   * A MAP in the header. There is already a floating map button, which
+//     this screen tells to stand aside; a second one would be two doors
+//     to the same room.
+//   * A GREEN DOT on the mark meaning nothing in particular. It is kept,
+//     but made to mean the one true thing available here: whether the
+//     name is live. Green once a handle exists — people can pay you at
+//     it — and grey before that.
+function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage, onShowQr, onToast }) {
   // Opening this row can be the first touch of the Creator side — the
   // other being the flip itself — so it may arrive with nothing loaded.
   useEffect50(() => {
     if (!creator && typeof onLoad === "function") onLoad();
   }, [creator]);
+
+  // The Gloobal ID starts covered, like the balance and the choices do.
+  // It is not a secret, but it is an identifier somebody can write down
+  // over your shoulder, and this screen is one people open in front of
+  // customers. Hiding costs nothing; showing is one tap.
+  const [idShown, setIdShown] = useState53(false);
 
   if (!creator) {
     return <div style={{ padding: "28px 0", textAlign: "center", fontSize: 13, color: T.inkFaint }}>
@@ -590,100 +623,192 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage 
   }
 
   const done = creatorSetupDone(creator);
-  const row = (label, value, muted) => <div style={{
-    display: "flex",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: 16,
-    padding: "13px 0",
-    borderTop: `1px solid ${T.line}`
-  }}><span style={{ fontSize: 12, color: T.inkFaint, flexShrink: 0 }}>{label}</span><span style={{
-    fontSize: 13.5,
-    fontWeight: 700,
-    color: muted ? T.inkFaint : T.ink,
-    textAlign: "right",
-    minWidth: 0,
-    lineHeight: 1.5,
-    // Any script, so no truncation and no ellipsis: a name in a script
-    // the designer did not have in mind is still that person's name.
-    overflowWrap: "anywhere"
-  }}>{value}</span></div>;
+  const handle = done ? creator.handle : "";
 
-  return <div style={{ display: "flex", flexDirection: "column", gap: 16 }}><div style={{
-    borderRadius: T.radiusLg,
-    background: T.surface,
-    boxShadow: T.shadowCard,
-    padding: "22px 18px 6px",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center"
-  }}>{
-    /* Square, not round. The round frame on Personal Details is a face;
-       this is a sign over a door. Same account, two different pictures of
-       two different things about it. */
+  const share = () => {
+    if (!handle) return;
+    const text = `Pay me on Gloobal at ${handle}`;
+    try {
+      if (navigator.share) { navigator.share({ title: handle, text }).catch(() => {}); return; }
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(handle).catch(() => {});
+        onToast && onToast("Name copied.");
+      }
+    } catch (e) {
+      // A share sheet the browser refuses is not worth a broken screen.
+    }
+  };
+
+  const copy = () => {
+    if (!handle) return;
+    try {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(handle).catch(() => {});
+        onToast && onToast("Name copied.");
+      }
+    } catch (e) {
+      // Same: the name is on screen either way.
+    }
+  };
+
+  // One shape for the three things you do with a name. The first is
+  // filled because showing the code is what happens at a counter, and
+  // the other two are for sending it to somebody who is not there.
+  const act = (key, label, Icon, onClick, primary) => <button
+    key={key}
+    onClick={onClick}
+    disabled={!done}
+    aria-label={label}
+    className="v2-tap"
+    style={{
+      flex: 1, minWidth: 0, height: 52, borderRadius: 16, cursor: done ? "pointer" : "default",
+      border: primary ? "none" : "1px solid rgba(255,255,255,0.34)",
+      background: primary ? "#FFFFFF" : "rgba(255,255,255,0.14)",
+      opacity: done ? 1 : 0.45,
+      display: "flex", alignItems: "center", justifyContent: "center"
+    }}
+  ><Icon size={19} color={primary ? T.accent : "#FFFFFF"} /></button>;
+
+  // A fact about the creator identity: an icon, the fact, and sometimes a
+  // control. Icons rather than a label column — "Gloobal ID" beside a
+  // Gloobal ID is a word spent saying what the next word already says.
+  const fact = (key, Icon, body, trailing, first) => <div
+    key={key}
+    style={{
+      display: "flex", alignItems: "center", gap: 13, padding: "13px 15px",
+      borderTop: first ? "none" : `1px solid ${T.line}`
+    }}
+  ><Icon size={18} color={T.accent} style={{ flexShrink: 0 }} /><span style={{
+    flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: T.ink, lineHeight: 1.45,
+    // Any script, so no truncation and no ellipsis: an address in a
+    // script the designer did not have in mind is still that address.
+    overflowWrap: "anywhere"
+  }}>{body}</span>{trailing}</div>;
+
+  return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>{
+    /* ── THE NAME, ON ITS OWN FIELD ───────────────────────────────────
+       The mark and the name side by side rather than stacked and
+       centred. Centred, an 86px square above a word reads as an avatar
+       with a caption; side by side it reads as a sign with a name on
+       it, which is what a creator handle is. */
   }<div style={{
-    width: 86,
-    height: 86,
-    borderRadius: 22,
-    overflow: "hidden",
-    background: T.surfaceAlt,
-    border: `1px solid ${T.line}`,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0
+    borderRadius: 24,
+    background: T.gradButton,
+    boxShadow: "0 10px 26px rgba(124,58,237,0.30)",
+    padding: "20px 18px 18px"
+  }}><div style={{ display: "flex", alignItems: "center", gap: 14 }}><span style={{
+    position: "relative", flexShrink: 0, display: "inline-flex"
+  }}><span style={{
+    width: 74, height: 74, borderRadius: 20, overflow: "hidden",
+    background: "rgba(255,255,255,0.92)",
+    display: "flex", alignItems: "center", justifyContent: "center"
   }}>{creator.logo ? <img
     src={creator.logo}
     alt=""
     style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-  /> : <Camera6 size={22} color={T.inkFaint} />}</div><div style={{
-    marginTop: 14,
-    fontSize: 19,
-    fontWeight: 800,
-    color: done ? T.ink : T.inkFaint,
-    fontFamily: T.fontDisplay,
-    textAlign: "center",
-    overflowWrap: "anywhere"
-  }}>{done ? creator.handle : "No creator name yet"}</div><div style={{
-    marginTop: 4,
-    marginBottom: 16,
-    fontSize: 12,
-    color: T.inkFaint,
-    textAlign: "center",
-    lineHeight: 1.5,
-    padding: "0 10px"
+  /> : <Camera6 size={24} color={T.inkFaint} />}</span>{
+    /* Live, or not yet.
+
+       The ring is WHITE, not the violet behind it. Matching the card was
+       the first attempt and a render killed it: the card is a gradient,
+       so a flat violet ring is the wrong violet everywhere except one
+       line of the card, and it read as a mismatched purple circle rather
+       than as a cut-out. White sits correctly on the violet AND on the
+       corner of whatever logo somebody uploaded, which is the other half
+       of the problem. */
+  }<span aria-hidden="true" style={{
+    position: "absolute", right: -3, bottom: -3, width: 16, height: 16, borderRadius: "50%",
+    background: done ? T.positive : T.inkFaint,
+    border: "3px solid #FFFFFF",
+    boxShadow: "0 1px 3px rgba(20,18,43,0.25)"
+  }} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{
+    display: "block", fontSize: 21, fontWeight: 800, color: "#FFFFFF",
+    fontFamily: T.fontDisplay, lineHeight: 1.2, overflowWrap: "anywhere"
+  }}>{done ? handle : "No creator name yet"}</span></span><button
+    onClick={onEdit}
+    aria-label={done ? "Edit your creator profile" : "Set up your creator name"}
+    className="v2-tap"
+    style={{
+      flexShrink: 0, width: 44, height: 44, borderRadius: 14, cursor: "pointer",
+      border: "1px solid rgba(255,255,255,0.34)", background: "rgba(255,255,255,0.14)",
+      display: "flex", alignItems: "center", justifyContent: "center"
+    }}
+  ><Pencil4 size={17} color="#FFFFFF" /></button></div><div style={{
+    marginTop: 14, fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.82)", lineHeight: 1.5
   }}>{done
-    ? "People can pay you at this name."
-    : "Until you pick one, people pay your creator side at your Gloobal ID."}</div><div style={{ width: "100%" }}>{row("Gloobal ID", myGloobalId || "—", !myGloobalId)}{row(
-    "Address",
-    creator.address ? creator.address : "Not set",
-    !creator.address
+    ? "People can pay you at this name"
+    : "Until you pick one, people pay your creator side at your Gloobal ID"}</div><div style={{
+    display: "flex", gap: 10, marginTop: 15
+  }}>{[
+    act("qr", "Show your code", QrCode2, onShowQr, true),
+    act("share", "Share your name", Share26, share, false),
+    act("copy", "Copy your name", Copy5, copy, false)
+  ]}</div></div>{
+    /* ── WHAT IS TRUE ABOUT IT ────────────────────────────────────────
+       Three facts, each with its own icon, in one card. */
+  }<div style={{
+    borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden"
+  }}>{fact(
+    "id",
+    Contact4,
+    idShown
+      ? (myGloobalId || "—")
+      : <span aria-label="Your Gloobal ID, hidden" style={{
+        letterSpacing: 3, fontSize: 15, color: T.inkSoft
+      }}>{"•••• •••• ••••"}</span>,
+    <button
+      onClick={() => setIdShown((v) => !v)}
+      aria-label={idShown ? "Hide your Gloobal ID" : "Show your Gloobal ID"}
+      aria-pressed={idShown}
+      className="v2-tap"
+      style={{
+        flexShrink: 0, width: 38, height: 38, borderRadius: 12, cursor: "pointer",
+        border: `1px solid ${T.line}`, background: T.surface,
+        display: "flex", alignItems: "center", justifyContent: "center"
+      }}
+    >{idShown
+      ? <EyeOff4 size={16} color={T.inkSoft} />
+      : <Eye3 size={16} color={T.inkSoft} />}</button>,
+    true
+  )}{fact(
+    "address",
+    MapPin5,
+    creator.address
+      ? creator.address
+      : <span style={{ color: T.inkFaint }}>No address set</span>,
+    null,
+    false
   )}{
     /* Stated as what happens rather than as a setting's name. "Address
        visibility: off" tells somebody what the app calls it; this tells
-       them who can see their address, which is the thing they actually
-       want to know. */
-  }{row(
-    "Who sees it",
+       them who can see their address, which is the thing they want to
+       know. */
+  }{fact(
+    "who",
+    ShieldCheck2,
     creator.address
-      ? (creator.addressPublic ? "Anybody who pays you" : "Only you")
-      : "—",
-    !creator.address
-  )}</div></div>{
+      ? (creator.addressPublic ? "Anyone who pays you" : "Only you")
+      : <span style={{ color: T.inkFaint }}>Nobody — there is no address yet</span>,
+    null,
+    false
+  )}</div>{
     /* ── THE WAY INTO YOUR OWN PAGE ──────────────────────────────────
        This panel describes the creator identity; the page is where the
-       identity does its job — the list people buy from, and the suppliers
-       you buy from. Without a door here the inventory existed on the
-       server and nowhere a creator could reach it. */
+       identity does its job — the list people buy from, and the
+       suppliers you buy from. Without a door here the inventory existed
+       on the server and nowhere a creator could reach it. */
   }{done ? <button
     onClick={onOpenPage}
     className="v2-tap"
     style={{
-      border: "none", borderRadius: T.radiusMd, padding: "14px 0",
-      background: T.surface, boxShadow: T.shadowCard, color: T.accent,
-      fontSize: 13.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", width: "100%"
+      display: "flex", alignItems: "center", gap: 13, width: "100%",
+      border: "none", borderRadius: T.radiusLg, padding: "15px 15px",
+      background: T.surface, boxShadow: T.shadowCard, cursor: "pointer",
+      fontFamily: "inherit", textAlign: "left"
     }}
-  >Your page &amp; what you sell</button> : null}<button
+  ><Store3 size={19} color={T.accent} style={{ flexShrink: 0 }} /><span style={{
+    flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, color: T.accent
+  }}>Your page and what you sell</span><ChevronRight9 size={17} color={T.accent} /></button> : <button
     onClick={onEdit}
     className="v2-tap"
     style={{
@@ -697,5 +822,5 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage 
       boxShadow: "0 8px 20px rgba(124,58,237,0.32)",
       cursor: "pointer"
     }}
-  >{done ? "Edit creator profile" : "Set up my creator name"}</button></div>;
+  >Set up my creator name</button>}</div>;
 }

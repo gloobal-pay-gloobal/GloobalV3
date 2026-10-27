@@ -4054,6 +4054,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
       setCreatorError("");
       setShowCreatorSetup(true);
     }}
+    // The code screen the Receive tile already opens — one QR screen for
+    // the account, not a second one that would have to be kept in step
+    // with it. It is the same account either way.
+    onShowQr={() => setShowReceive(true)}
+    onToast={showToast2}
     onOpenPage={async () => {
       // Read back through the same route a buyer uses, so the owner sees
       // exactly the page everybody else does — plus the Buying tab, which

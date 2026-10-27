@@ -283,6 +283,6 @@ test("the owner has a door into their own page", () => {
   // Without one the inventory existed on the server and nowhere a creator
   // could reach it — which is exactly what the founder reported.
   assert.match(readSource("frontend/features/creator/CreatorSetupScreen.jsx"),
-    /Your page &amp; what you sell/, "the creator profile panel opens the page");
+    /Your page and what you sell/, "the creator profile panel opens the page");
   assert.match(dash(), /onOpenPage=\{async \(\) => \{/, "and the dashboard wires it");
 });

@@ -612,9 +612,96 @@ test("the shop button waits until there is a shop", () => {
   // thing that row offers until a name exists.
   const src = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
   assert.match(src, /\}\{done \? <button\s*\n?\s*onClick=\{onOpenPage\}/);
-  assert.match(src, /Your page &amp; what you sell<\/button> : null\}/);
-  // And the panel still offers setup when there is none.
-  assert.match(src, /done \? "Edit creator profile" : "Set up my creator name"/);
+  assert.match(src, /Your page and what you sell<\/span>/);
+  // And the panel offers setup instead when there is none — the same
+  // branch, the other side of it.
+  assert.match(src, /Set up my creator name<\/button>\}/);
+});
+
+// ── THE IDENTITY STOPPED LOOKING LIKE A SETTINGS PAGE ───────────────────
+//
+// It was a white card: a mark, the handle under it, and three
+// label/value rows. Correct, legible, and indistinguishable from the
+// eight other rows in the profile list — for the thing a creator's
+// customers type to pay them.
+//
+// The founder had another tool redraw it and sent the result back: the
+// name on a violet field with its mark beside it, the things you DO with
+// a name as buttons, and the facts below as icon rows.
+describe("the creator's name is presented as a name", () => {
+  const panel = () => {
+    const src = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
+    // From the note ABOVE the function, which is where the three things
+    // in the mockup that were deliberately not built are written down.
+    return src.slice(src.indexOf("THE CREATOR'S OWN IDENTITY"));
+  };
+
+  test("the mark and the name sit side by side on their own field", () => {
+    const src = panel();
+    assert.match(src, /background: T\.gradButton/, "the name is back on a plain white card");
+    assert.match(src, /\{done \? handle : "No creator name yet"\}/);
+    assert.match(src, /People can pay you at this name/,
+      "the line that says what the name is FOR");
+  });
+
+  test("the three things you do with a name are on it", () => {
+    const src = panel();
+    for (const [what, label] of [
+      ["show the code", "Show your code"],
+      ["send it to somebody", "Share your name"],
+      ["copy it", "Copy your name"]
+    ]) {
+      assert.ok(src.includes(label), `no way to ${what} from the creator profile`);
+    }
+    // Disabled rather than absent before a name exists: three buttons
+    // that vanish would move the card under a thumb mid-setup.
+    assert.match(src, /disabled=\{!done\}/);
+  });
+
+  test("share falls back to the clipboard and never throws", () => {
+    // navigator.share is absent on desktop and refused outright in some
+    // embedded browsers. A share sheet the browser will not open is not
+    // worth taking the screen down over.
+    const src = panel();
+    const fn = src.slice(src.indexOf("const share ="), src.indexOf("const copy ="));
+    assert.match(fn, /navigator\.share/);
+    assert.match(fn, /navigator\.clipboard/);
+    assert.match(fn, /catch \(e\)/);
+    const cp = src.slice(src.indexOf("const copy ="), src.indexOf("const act ="));
+    assert.match(cp, /catch \(e\)/);
+  });
+
+  test("the Gloobal ID starts covered, like every other figure here", () => {
+    // Not a secret, but an identifier somebody can write down over your
+    // shoulder — and this is a screen people open in front of customers.
+    const src = panel();
+    assert.match(src, /const \[idShown, setIdShown\] = useState53\(false\)/);
+    assert.match(src, /aria-label=\{idShown \? "Hide your Gloobal ID" : "Show your Gloobal ID"\}/);
+    assert.match(src, /aria-pressed=\{idShown\}/);
+  });
+
+  test("the live dot is rung in white, not in the card's own violet", () => {
+    // A render killed the first attempt: the card is a GRADIENT, so a
+    // flat violet ring is the wrong violet everywhere except one line of
+    // it, and read as a mismatched purple circle rather than a cut-out.
+    // White also works on the corner of an uploaded logo, which is the
+    // other half of where that dot sits.
+    const src = panel();
+    const dot = src.slice(src.indexOf("Live, or not yet"), src.indexOf("Live, or not yet") + 1200);
+    assert.match(dot, /border: "3px solid #FFFFFF"/);
+    assert.doesNotMatch(dot, /border: "3px solid #7C3AED"/);
+    // And it means the one true thing available on this screen.
+    assert.match(dot, /background: done \? T\.positive : T\.inkFaint/);
+  });
+
+  test("the mockup's dark-mode switch was not built, and says why", () => {
+    // A control that does nothing is worse than an absent one: this app
+    // has no dark mode for a moon to toggle. The shop page's own `dark`
+    // is a property of that shop, not of the app.
+    const src = panel();
+    assert.match(src, /no dark mode to switch/);
+    assert.doesNotMatch(src, /<Moon\d*\b/);
+  });
 });
 
 describe("scanning a shop shows the shop", () => {

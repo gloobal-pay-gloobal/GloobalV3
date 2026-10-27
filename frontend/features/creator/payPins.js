@@ -88,10 +88,21 @@ function savePayPins(symbolId, keys) {
 // How many of the strip are visible before it has to be swiped.
 //
 // Not a slice: every pin is rendered and the row scrolls. The number is
-// what the TILE WIDTH is derived from, so roughly this many fit on a
-// phone and the next one is half-visible at the edge — which is what
-// tells somebody there is more to the right without a label saying so.
-var PAY_PINS_VISIBLE = 5;
+// what the TILE WIDTH is derived from, so this many fill a phone's width
+// and the rest are a swipe to the left.
+//
+// FOUR, not five, and the row holds exactly four rather than four and a
+// bit. It was five minus 0.4 — four and a half tiles, with the fifth cut
+// by the screen edge so the cut tile itself said "there is more". That
+// bought the hint at the cost of every tile being narrower than it needed
+// to be, and of a name under a 62px mark having about nine characters of
+// room before it clamped to two lines. `रसोई Ghar` did not fit.
+//
+// The hint was not free to lose, so it is paid for twice over and more
+// cheaply: the header already counts the pins — PINNED · 7 — and a fade
+// over the right-hand edge says the same thing without spending a tile on
+// it. Four whole tiles, bigger marks, and names that fit.
+var PAY_PINS_VISIBLE = 4;
 
 // Toggle, newest LAST.
 //

@@ -202,17 +202,38 @@ describe("as many pins as somebody wants", () => {
 describe("the strip itself", () => {
   test("every pin is rendered and the row scrolls", () => {
     // Not a slice. PAY_PINS_VISIBLE is what the TILE WIDTH is derived
-    // from, so roughly that many fit and the next one breaks the edge —
-    // which is what says "there is more" without a label.
-    assert.equal(pins.PAY_PINS_VISIBLE, 5);
+    // from, so exactly that many fill the row and the rest are a swipe.
     const at = markSrc.indexOf("function PayPinnedStrip");
     const fn = markSrc.slice(at, markSrc.length);
     assert.match(fn, /overflowX: "auto"/);
     assert.match(fn, /items\.map\(/);
     assert.doesNotMatch(fn, /\.slice\(0, PAY_PINS_VISIBLE\)/,
       "the strip renders only the visible pins, so the rest cannot be reached");
-    assert.match(fn, /PAY_PINS_VISIBLE - 0\.4/,
-      "the tile width no longer leaves a partial tile at the edge");
+  });
+
+  test("a row holds four whole tiles, not four and a half", () => {
+    // The founder's call, and the better one: dividing by 4 - 0.4 cropped
+    // a fifth tile to say "there is more" and made all four narrower to
+    // pay for it — narrow enough that `रसोई Ghar` clamped to two lines.
+    assert.equal(pins.PAY_PINS_VISIBLE, 4);
+    // Comments stripped: the note above the line explains what the 0.4
+    // used to do, and a test that reads prose would fail on the
+    // explanation of its own fix.
+    const code = strip(markSrc);
+    const line = code.split("\n").find((l) => l.includes("const tile = "));
+    assert.ok(line, "the strip no longer derives a tile width at all");
+    assert.doesNotMatch(line, /- 0\.4/, "a partial tile is back in the row");
+    assert.match(line, /\/ \$\{PAY_PINS_VISIBLE\}\)/,
+      "the tile width is no longer an exact division of the row");
+  });
+
+  test("and the header count is what says there are more", () => {
+    // Half a cropped square used to. Against a pale mark the eight pixels
+    // that remain are almost nothing, so the number carries it: "Pinned ·
+    // 6" beside four tiles is unambiguous in a way the crop never was.
+    const at = markSrc.indexOf("function PayPinnedStrip");
+    const fn = markSrc.slice(at);
+    assert.match(fn, /"· " \+ items\.length/, "the strip no longer counts its own pins");
   });
 
   test("the tiles reach the screen edge, so the cut one reads as more", () => {

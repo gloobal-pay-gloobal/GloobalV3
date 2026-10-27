@@ -167,11 +167,31 @@ function BusinessMark({ name, logo, size = 36, radius }) {
 // and putting a shortcut behind a tap defeats it.
 function PayPinnedStrip({ items, onOpen, onUnpin }) {
   if (!items || !items.length) return null;
-  // Sized so PAY_PINS_VISIBLE of them plus their gaps fill the row, with
-  // the next one breaking the edge. Percentages rather than pixels: a
-  // fixed tile width shows four on a small phone and six on a large one,
-  // and the half-tile cue only lands at one size.
-  const tile = `calc((100% - ${(PAY_PINS_VISIBLE - 1) * 10}px) / ${PAY_PINS_VISIBLE - 0.4})`;
+  // Sized so PAY_PINS_VISIBLE of them plus their gaps fill the row
+  // EXACTLY. Percentages rather than pixels, because a fixed tile width
+  // shows four on a small phone and six on a large one, and the count
+  // only reads as deliberate at one size.
+  //
+  // It used to divide by PAY_PINS_VISIBLE - 0.4, which left HALF a fifth
+  // tile showing to say "there is more" and made all four narrower to pay
+  // for it. Dividing exactly still says it, for free, and the arithmetic
+  // is worth writing down because it looks like luck and is not:
+  //
+  //     tile       = (W - 36 gutters - 30 gaps) / 4
+  //     fifth left = 18 + 4 x (tile + 10)  =  W - 8
+  //
+  // Eight pixels of the fifth tile therefore sit at the screen edge
+  // whatever the screen is — 320px or 430px, the same eight.
+  //
+  // Be honest about what those eight do: against a pale mark they are
+  // almost nothing. They are a secondary hint, and WHAT ACTUALLY SAYS
+  // THERE IS MORE IS THE COUNT IN THE HEADER — "Pinned · 6" beside four
+  // tiles is unambiguous in a way half a cropped square never was.
+  //
+  // A gradient was tried over that edge and taken straight back out: at
+  // any width worth drawing, it covered the whole eight pixels and hid
+  // the one thing it had been added to soften.
+  const tile = `calc((100% - ${(PAY_PINS_VISIBLE - 1) * 10}px) / ${PAY_PINS_VISIBLE})`;
   return <div><div style={{
     display: "flex",
     alignItems: "baseline",
@@ -190,8 +210,8 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
       overflowX: "auto",
       // The strip scrolls; the page does not scroll sideways with it.
       // Negative margin and matching padding let the tiles reach the
-      // screen edge, so the one being cut off is cut by the SCREEN and
-      // reads as "there is more" rather than as a clipped card.
+      // screen edge, so a tile scrolled past the edge is cut by the
+      // SCREEN rather than clipped mid-card inside a gutter.
       margin: "0 -18px",
       padding: "2px 18px 6px",
       scrollbarWidth: "none",
@@ -210,16 +230,18 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
     aria-label={`Pay ${b.label}`}
     className="v2-tap"
     style={{ border: "none", background: "none", padding: 0, cursor: "pointer", width: "100%", display: "flex", justifyContent: "center" }}
-  ><BusinessMark name={b.label} logo={b.logo} size={62} radius={18} /></button><span style={{
-    fontSize: 11,
+  ><BusinessMark name={b.label} logo={b.logo} size={70} radius={20} /></button><span style={{
+    fontSize: 11.5,
     fontWeight: 700,
     color: T.inkSoft,
     textAlign: "center",
     width: "100%",
     lineHeight: 1.3,
-    // The name under a 62px tile has about nine characters of room.
-    // Clipped to two lines rather than widened, because widening one
-    // tile is what breaks the count that the half-tile cue depends on.
+    // A name still clamps at two lines rather than widening its tile —
+    // widening one tile is what breaks the count the whole row is sized
+    // from. Four across rather than four-and-a-half gives it about a
+    // quarter more room, which is the difference between `रसोई Ghar`
+    // fitting on one line and not.
     display: "-webkit-box",
     WebkitLineClamp: 2,
     WebkitBoxOrient: "vertical",
@@ -251,9 +273,11 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
       position: "absolute",
       top: -2,
       right: "50%",
-      // Half the tile, less the badge's own overhang: it rides the
-      // corner rather than sitting beside it.
-      marginRight: -34,
+      // Half the MARK, plus a little, so the badge rides the corner
+      // rather than sitting beside it. Tied to the mark's size: it was
+      // -34 for a 62px mark, and left there when the mark grew to 70 the
+      // star would have drifted inside the tile's edge.
+      marginRight: -38,
       width: 20,
       height: 20,
       borderRadius: "50%",

@@ -652,7 +652,13 @@ describe("scanning a shop shows the shop", () => {
     assert.match(src, /businessMarkInitials\(scanPayee\.creator\.handle \|\| ""\)/,
       "and the generated mark where they do not, so a shop is never a gap");
     assert.match(src, /scanPayee\.creator \? creatorDisplayName\(scanPayee\.creator\) : scanPayee\.name/);
-    assert.match(src, /\{scanPayee\.creator\.handle\}<\/div> : null/, "with the address under the name");
+    // 0100 put the handle under the name here and called it "the address
+    // under the name they are known by". It was the same word twice —
+    // see "a creator's name is drawn once" below — and the card somebody
+    // reads in the half-second before paying is the worst place in the
+    // app to spend a line on nothing.
+    assert.doesNotMatch(src, /\{scanPayee\.creator\.handle\}<\/div>/,
+      "the scan card prints the brand name and then prints it again");
   });
 
   test("Pay names what the card named", () => {
@@ -669,5 +675,84 @@ describe("scanning a shop shows the shop", () => {
     const src = app();
     assert.match(src, /aria-label="Scan another code"/);
     assert.match(src, /<ScannerIcon size=\{22\} color=\{T\.inkFaint\} \/><\/button>/);
+  });
+});
+
+// ── THE NAME WAS BEING PRINTED TWICE ────────────────────────────────────
+//
+// Four surfaces drew the display name with the handle under it in accent:
+// the pinned tile, the Pay & Services hit, the supplier finder, and the
+// card you get for scanning a shop. The reasoning at each was that a shop
+// which can take money should not look like a placeholder brand which
+// cannot, and the honest difference is an address people type.
+//
+// The need was real; the means was not. creatorDisplayName is handleFirst
+// plus handleLast, and the handle is those same parts folded and joined
+// with a dot — so the two lines are the same characters every time:
+//
+//     रसोई Ghar
+//     रसोई.ghar
+//
+// A word repeated in a second colour does not prove there is an address.
+// It says the word twice, in half the room a 62px tile has.
+//
+// A guard was tried first — draw the second line only where it differs —
+// and deleted, because it could never fire: the no-handleFirst case falls
+// through creatorHandleLabel, which returns the handle. These tests pin
+// that, so nobody re-derives the guard from the same wrong premise.
+describe("a creator's name is drawn once", () => {
+  const setup = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
+  const names = new Function(`${setup.slice(
+    setup.indexOf("function creatorHandleLabel"),
+    setup.indexOf("function creatorSetupDone")
+  )}
+    return { creatorDisplayName, creatorHandleLabel };`)();
+
+  test("the display name and the handle are the same word", () => {
+    const flat = (s) => String(s).toLowerCase().replace(/[.\s]+/g, "");
+    for (const creator of [
+      { handleFirst: "रसोई", handleLast: "Ghar", handle: "रसोई.ghar" },
+      { handleFirst: "alwar", handleLast: "wali", handle: "alwar.wali" },
+      { handleFirst: "Chacha", handle: "chacha" },
+      { handleFirst: "AMAZON", handle: "amazon" },
+      // The case a guard would have been written for — and it is the same
+      // word too, which is exactly why there is no guard.
+      { handle: "chacha.tea" }
+    ]) {
+      assert.equal(
+        flat(names.creatorDisplayName(creator)), flat(creator.handle),
+        `${JSON.stringify(creator)} would have drawn its name twice`
+      );
+    }
+  });
+
+  test("no surface draws the handle under the name any more", () => {
+    for (const [what, file, gone] of [
+      ["the pinned tile", "frontend/features/creator/businessMark.jsx", /title=\{b\.handle\}>\{b\.handle\}/],
+      ["the Pay & Services hit", "frontend/screens/Dashboard/Dashboard.jsx", /\}\}>\{creatorHit\.handle\}<\/span>/],
+      ["the supplier finder", "frontend/features/creator/CreatorFinder.jsx", /\}\}>\{found\.handle\}<\/span>/],
+      ["the scan card", "frontend/App.jsx", /\}\}>\{scanPayee\.creator\.handle\}<\/div>/]
+    ]) {
+      assert.doesNotMatch(readSource(file), gone, `${what} still prints the handle under the name`);
+    }
+  });
+
+  test("each of them still draws the name itself", () => {
+    // Removing a duplicate must not remove the original. This is the
+    // failure mode of every de-duplication.
+    assert.match(readSource("frontend/features/creator/businessMark.jsx"), /title=\{b\.label\}>\{b\.label\}/);
+    assert.match(readSource("frontend/screens/Dashboard/Dashboard.jsx"), /\{creatorDisplayName\(creatorHit\)\}/);
+    assert.match(readSource("frontend/features/creator/CreatorFinder.jsx"), /\{creatorDisplayName\(found\)\}/);
+    assert.match(readSource("frontend/App.jsx"), /creatorDisplayName\(scanPayee\.creator\)/);
+  });
+
+  test("the address is still reachable where somebody needs to read it out", () => {
+    // Behind the eye on the creator's own page, beside the Gloobal ID —
+    // where the founder put it. Deleting a duplicate is not the same as
+    // deleting the information, and this is the line between the two.
+    const page = readSource("frontend/features/creator/CreatorPage.jsx");
+    assert.match(page, /detailsOpen/);
+    assert.ok(page.includes("creator.handle") || page.includes("handleLabel"),
+      "the creator page no longer shows the address anywhere");
   });
 });

@@ -154,8 +154,10 @@ function CreatorFinder({
         : found
           ? <>{
             /* The shop, drawn the way it is drawn everywhere else: their
-               mark, their name, and the handle underneath in accent — which
-               is how a real creator is told from a placeholder brand. */
+               mark and their name. What tells a real creator from a
+               placeholder brand here is the accent border and the count of
+               things on their list — not the handle repeated underneath,
+               which is the same word again. */
           }<div style={{
             display: "flex", alignItems: "center", gap: 13, background: T.surface,
             borderRadius: 17, padding: "12px 13px", boxShadow: T.shadowCard,
@@ -172,10 +174,7 @@ function CreatorFinder({
           }<span style={{ flex: 1, minWidth: 0 }}><span style={{
             display: "block", fontSize: 14, fontWeight: 700, color: T.ink,
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-          }}>{creatorDisplayName(found)}</span><span style={{
-            display: "block", fontSize: 11.5, fontWeight: 700, color: T.accent, marginTop: 2,
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-          }}>{found.handle}</span>{
+          }}>{creatorDisplayName(found)}</span>{
             Array.isArray(found.items) && found.items.length ? <span style={{
               display: "block", fontSize: 10.5, color: T.inkFaint, fontWeight: 600, marginTop: 3
             }}>{found.items.length} thing{found.items.length === 1 ? "" : "s"} on their list</span> : null

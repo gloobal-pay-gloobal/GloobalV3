@@ -3343,10 +3343,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     ><BusinessMark name={creatorHit.handle || ""} logo={creatorHit.logo} size={46} radius={14} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
       display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink,
       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-    }}>{creatorDisplayName(creatorHit)}</span><span style={{
-      display: "block", fontSize: 11, fontWeight: 600, color: T.accent, marginTop: 1,
-      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-    }}>{creatorHit.handle}</span></span><ChevronRight2 size={15} color={T.inkFaint} /></button> : null;
+    }}>{creatorDisplayName(creatorHit)}</span></span><ChevronRight2 size={15} color={T.inkFaint} /></button> : null;
 
     return <>{creatorResult}{!q && pinnedBusinesses.length > 0 && <PayPinnedStrip
       items={pinnedBusinesses}

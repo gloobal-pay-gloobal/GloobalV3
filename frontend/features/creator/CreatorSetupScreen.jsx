@@ -79,6 +79,39 @@ function creatorDisplayName(creator, fallbackGloobalId) {
   return creatorHandleLabel(creator, fallbackGloobalId);
 }
 
+// ── WHY NOTHING DRAWS THE HANDLE UNDER THE NAME ────────────────────────
+//
+// Four surfaces used to: the pinned tile, the Pay & Services hit, the
+// supplier finder, and the card you get for scanning a shop. Each carried
+// the same reasoning — that a shop which can take money should not look
+// like a placeholder brand which cannot, and the honest difference is an
+// address people type.
+//
+// The need was real. The means was not, and the founder saw it before the
+// reasoning did. Look at creatorDisplayName above: it is handleFirst plus
+// handleLast. The handle is those same two parts, NFC-folded to lower case
+// and joined with a dot. The two lines are therefore the same characters,
+// every time, for every creator who finished setup:
+//
+//     रसोई Ghar
+//     रसोई.ghar
+//
+// A word repeated in a second colour does not prove there is an address.
+// It says the word twice, in half the room a 62px tile has for a name that
+// already clamps to two lines.
+//
+// A guard was written first — show the second line only when it differs —
+// and then deleted, because it could never fire. The no-handleFirst case
+// falls through creatorHandleLabel, which RETURNS THE HANDLE, so the two
+// are equal there too. A condition that is always false is worse than no
+// condition: the next person reads it as a case that exists.
+//
+// The address has not gone anywhere. It lives behind the eye on the
+// creator's own page, beside the Gloobal ID — which is exactly where the
+// founder put it: "just show chacha tea hide chacha.tea with details
+// inside eye button". That is the one screen where somebody needs to read
+// it off and tell it to a customer.
+
 function creatorSetupDone(creator) {
   return Boolean(creator && typeof creator.handle === "string" && creator.handle.trim());
 }

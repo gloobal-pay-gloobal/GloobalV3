@@ -4616,14 +4616,21 @@ function GloobalId() {
   }{
     /* The name the server returned for this account — a QR carries no name,
        so nothing printed on a sticker can put one here. */
-  }<div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginBottom: scanPayee.creator ? 2 : 6 }}>{
+  }<div style={{
+    fontSize: 15, fontWeight: 800, color: T.ink,
+    // 6 for everybody again, now that nothing is drawn between the name
+    // and the Gloobal ID. It was tightened to 2 to make room for the
+    // handle line; left at 2 it would sit the name on top of the ID.
+    marginBottom: 6
+  }}>{
     scanPayee.creator ? creatorDisplayName(scanPayee.creator) : scanPayee.name
   }</div>{
-    /* The address they are paid at, under the name they are known by —
-       the same pairing the search result and the shop page use. */
-  }{scanPayee.creator ? <div style={{
-    fontSize: 12, fontWeight: 700, color: T.accent, marginBottom: 6
-  }}>{scanPayee.creator.handle}</div> : null}<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 20 }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button
+    /* The handle used to go here, under the name. It was the same word
+       again — `रसोई Ghar` over `रसोई.ghar` — on the card somebody reads
+       in the half-second before they pay, which is the worst screen in
+       the app to spend a line on nothing. The Gloobal ID below already
+       says this is an account money can reach. */
+  }<div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 20 }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button
     onClick={handleSendToScanned}
     className="v2-tap"
     style={{ width: "100%", border: "none", borderRadius: T.radiusMd, padding: "14px 0", background: T.gradButton, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}

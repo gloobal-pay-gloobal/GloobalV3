@@ -62,7 +62,18 @@ test("the creator row is told from a placeholder brand by what is true of it", (
   // defined. A real creator carries a handle; a placeholder carries a
   // category. The row shows what each one is.
   assert.match(src, /\{creatorDisplayName\(creatorHit\)\}/, "the row leads with the readable name");
-  assert.match(src, /\{creatorHit\.handle\}/, "and carries the handle under it");
+  // It USED to carry the handle under that name, which turned out to be
+  // the same word again — creatorDisplayName is the handle's two parts as
+  // typed. What tells the two apart is structural and still here: a real
+  // creator is their own accent-bordered card ABOVE the list, with their
+  // own mark; a placeholder brand is a plain row inside it.
+  assert.doesNotMatch(src, /\}\}>\{creatorHit\.handle\}<\/span>/,
+    "the creator row prints the brand name and then prints it again");
+  const card = src.slice(src.indexOf("const creatorResult"), src.indexOf("const creatorResult") + 1600);
+  assert.match(card, /border: `1\.5px solid \$\{T\.accent\}`/,
+    "the creator result is no longer set apart from the plain business rows");
+  assert.match(card, /<BusinessMark name=\{creatorHit\.handle \|\| ""\}/,
+    "and it carries their own mark rather than a category chip");
   assert.ok(!/verified/i.test(src.slice(src.indexOf("const creatorResult"), src.indexOf("const creatorResult") + 1600)),
     "no verified badge");
 });
@@ -254,11 +265,15 @@ test("the finder searches the way the other search does", () => {
 
 test("the finder shows who it found before anything is added", () => {
   const src = readSource("frontend/features/creator/CreatorFinder.jsx");
-  // The whole point over a prompt: you see the shop, their mark and their
-  // handle, and the button names them — so adding the wrong one takes a
-  // deliberate misreading rather than a typo.
+  // The whole point over a prompt: you see the shop before you add it —
+  // their mark, their name, how many things are on their list — and the
+  // button names them, so adding the wrong one takes a deliberate
+  // misreading rather than a typo.
   assert.match(src, /creatorDisplayName\(found\)/);
-  assert.match(src, /\{found\.handle\}/);
+  assert.doesNotMatch(src, /\}\}>\{found\.handle\}<\/span>/,
+    "the finder prints the shop's name and then prints it again");
+  assert.match(src, /things on their list/,
+    "the one line about this shop that its name does not already say");
   assert.match(src, /\$\{actionLabel\} \$\{creatorDisplayName\(found\)\}/);
   // And you cannot add yourself as your own supplier.
   assert.match(src, /const isSelf = Boolean\(found && excludeSymbolId && found\.symbolId === excludeSymbolId\)/);

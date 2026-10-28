@@ -227,48 +227,82 @@ describe("the zoom arc covers the range the old stops skipped", () => {
     }
   });
 
-  test("the handle leads the lens rather than waiting for it", () => {
-    // applyConstraints is a round trip to the camera. A handle that waits
-    // for it lags the finger dragging it, which reads as broken.
+  test("the handle goes where the thumb went, and stays", () => {
+    // ── THIS TEST USED TO PIN THE BUG ────────────────────────────────
+    //
+    // It asserted that a lens which refuses "leaves the handle where it
+    // actually is" — setZoomLevel(currentZoomOf(...)) in the refusal
+    // branch. Sound reasoning: a rail that cannot move should not
+    // pretend it did.
+    //
+    // It was also, exactly, the founder's fourth report. The handle was
+    // painted at the thumb and then pulled back one frame later, so on a
+    // device whose lens refuses the two writes cancelled out: "rail is
+    // there, nothing moves."
+    //
+    // The rail is an INSTRUCTION now, not a readout. It is obeyed —
+    // optically where the lens can, in software where it cannot — so the
+    // level is set once and never corrected downward by the hardware.
     const s = raw(SCANNER);
     const at = s.indexOf("const applyZoom");
     assert.ok(at > 0, "the zoom handler is gone");
-    const end = s.indexOf("}, [zoomRange, zoomLevel]);", at);
+    const end = s.indexOf("}, [zoomRange]);", at);
     assert.ok(end > at, "the zoom handler has no end");
     const body = s.slice(at, end);
-    // Against the awaited CALL, not the guard above it — the handler
-    // tests for applyConstraints before using it, and anchoring on the
-    // bare name compared the paint against that guard instead.
     assert.ok(
       body.indexOf("setZoomLevel(wanted)") < body.indexOf("await track.applyConstraints"),
       "the handle only moves once the lens has answered"
     );
-    assert.match(body, /if \(!accepted\) \{\s*\n[\s\S]{0,260}?setZoomLevel\(currentZoomOf\(track, zoomRange, zoomLevel\)\);/,
-      "a lens that refuses leaves the handle where it actually is");
+    assert.doesNotMatch(body, /setZoomLevel\(currentZoomOf\(/,
+      "the handle is being pulled back to the lens again");
   });
 
-  test("a resolved constraint is not second-guessed by a stale read", () => {
-    // ── THE BUG THIS PINS ────────────────────────────────────────────
+  test("a resolved constraint is not evidence that the lens moved", () => {
+    // ── THE CAUSE THE OTHER THREE FIXES SAT ON TOP OF ────────────────
     //
-    // The read-back used to happen the instant applyConstraints resolved,
-    // and was trusted outright. On Chrome for Android that read is
-    // routinely STALE — the promise settles before the lens has moved, so
-    // getSettings() still reports the OLD zoom and the handle was pulled
-    // straight back to where it started. Every drag. Which is exactly
-    // "the zoom does not work" from the only side that matters.
+    // One line of the Media Capture spec: ADVANCED CONSTRAINTS ARE
+    // BEST-EFFORT, and applyConstraints RESOLVES whether or not the
+    // camera could honour them.
     //
-    // A resolved applyConstraints is the authority on whether the
-    // constraint was ACCEPTED. getSettings() is the authority on where
-    // the lens ended up — but only once it has had a moment to get there.
+    // So `await applyConstraints({ advanced: [{ zoom }] })` came back
+    // successfully on a lens with no zoom at all. The code read that as
+    // "the lens took it", every refusal path below was dead, and the
+    // deferred read-back could not help either: it compared against
+    // getSettings().zoom, which on such a device is undefined.
+    //
+    // The deferral that 0099 added is kept — the read genuinely is stale
+    // on Chrome for Android, which is why it cannot happen in the same
+    // tick. What changed is what the answer is FOR. It used to nudge the
+    // handle; it now decides whether the lens moved at all.
     const s = raw(SCANNER);
     const at = s.indexOf("const applyZoom");
-    const body = s.slice(at, s.indexOf("}, [zoomRange, zoomLevel]);", at));
-    assert.ok(!/await track\.applyConstraints\(\{ advanced: \[\{ zoom: wanted \}\] \}\);\s*\n\s*setZoomLevel\(currentZoomOf/.test(body),
-      "the read-back must not run in the same tick as the constraint");
-    assert.match(body, /zoomSettleRef\.current = setTimeout\(/, "it is deferred");
-    // And the honesty the original argued for survives: a lens that lands
-    // somewhere genuinely different still corrects the handle.
-    assert.match(body, /if \(Math\.abs\(settled - wanted\) > \(zoomRange\.step \|\| 0\)\) setZoomLevel\(settled\);/);
+    const body = s.slice(at, s.indexOf("}, [zoomRange]);", at));
+    assert.match(body, /zoomSettleRef\.current = setTimeout\(/, "the read-back is back in the same tick");
+    assert.match(body, /ADVANCED CONSTRAINTS ARE BEST-EFFORT/,
+      "the reason a resolved promise proves nothing should stay written down");
+    // No zoom in settings at all means this lens does not zoom.
+    assert.match(body, /if \(!Number\.isFinite\(got\) \|\| got <= 0\) \{ toSoftware\(\); return; \}/);
+    // A lens sitting a long way from where it was asked to go ignored us.
+    assert.match(body, /if \(Math\.abs\(got - wanted\) > span \* 0\.1\) \{ toSoftware\(\); return; \}/);
+    // And where it did land somewhere real, the handle follows it — the
+    // honesty this file has always argued for.
+    assert.match(body, /setZoomLevel\(got\);/);
+  });
+
+  test("a lens that will not zoom is not asked twice", () => {
+    // When the camera reported no range of its own, the one on screen is
+    // ours. There is nothing to ask, and asking costs a round trip per
+    // pick of a drag on the device least able to spare it.
+    // Comments stripped: the note above this guard quotes the very call
+    // it has to come before, so a raw read finds the prose first.
+    const s = code(SCANNER);
+    const at = s.indexOf("const applyZoom");
+    const body = s.slice(at, s.indexOf("}, [zoomRange]);", at));
+    assert.match(body, /if \(zoomRange === ZOOM_SOFT_RANGE \|\| !track/);
+    assert.ok(
+      body.indexOf("zoomRange === ZOOM_SOFT_RANGE") < body.indexOf("await track.applyConstraints"),
+      "the software range still goes through the camera first"
+    );
   });
 
   test("zoom is tried in both constraint shapes before giving up", () => {
@@ -277,7 +311,7 @@ describe("the zoom arc covers the range the old stops skipped", () => {
     // lens that can zoom does nothing at all, and reports no error
     // anywhere a person can see.
     const s = raw(SCANNER);
-    const body = s.slice(s.indexOf("const applyZoom"), s.indexOf("}, [zoomRange, zoomLevel]);", s.indexOf("const applyZoom")));
+    const body = s.slice(s.indexOf("const applyZoom"), s.indexOf("}, [zoomRange]);", s.indexOf("const applyZoom")));
     assert.match(body, /applyConstraints\(\{ advanced: \[\{ zoom: wanted \}\] \}\)/);
     assert.match(body, /applyConstraints\(\{ zoom: wanted \}\)/);
   });
@@ -290,9 +324,13 @@ describe("the zoom arc covers the range the old stops skipped", () => {
     // the whole session on a camera that could zoom perfectly well.
     const s = raw(SCANNER);
     assert.match(s, /CAPABILITIES CAN ARRIVE LATE/);
-    // It may only ever ADD what was missing — a device that reported a
-    // range first time keeps it, so this cannot take a control away.
-    assert.match(s, /setZoomRange\(\(had\) => \{\s*\n\s*if \(had \|\| !lateRange\) return had;/);
+    // It may only ever IMPROVE what is there: a real range replaces the
+    // software one, since optical beats software and this is the only
+    // chance to take it — but it can never remove a control, and it will
+    // not swap the range out from under a thumb that has already zoomed.
+    assert.match(s, /if \(!lateRange\) return had;/);
+    assert.match(s, /if \(had && had !== ZOOM_SOFT_RANGE\) return had;/);
+    assert.match(s, /if \(digitalZoomRef\.current !== 1\) return had;/);
   });
 });
 

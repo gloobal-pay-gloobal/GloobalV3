@@ -377,6 +377,13 @@ var ZOOM_RAIL_INSET = 0.055;
 // report its range as 100..800 — "2" here means twice as close, on any lens.
 var ZOOM_ARC_MARKS = [1, 2, 3, 5, 10];
 
+// The range offered when the lens reports none of its own.
+//
+// Six, not ten. Past about six the crop is a handful of sensor pixels
+// blown up, and a code that will not read at 6x will not read at 10x
+// either — the rail would be offering something that cannot work.
+var ZOOM_SOFT_RANGE = { min: 1, max: 6 };
+
 function zoomArcRatio(range) {
   return range && range.min > 0 && range.max > range.min ? range.max / range.min : 0;
 }
@@ -782,11 +789,24 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
   // when a scan is failing in the dark.
   const [torchAvailable, setTorchAvailable] = useState32(false);
   const [torchOn, setTorchOn] = useState32(false);
-  // Same rule as the torch: the range comes from the lens, and a lens that
-  // cannot zoom gets no control. This is real optical zoom through
-  // applyConstraints — NOT a CSS transform on the video, which would scale
-  // the picture the decoder reads without adding a single pixel of detail
-  // and would make a distant code harder to read, not easier.
+  // ── THE RANGE, AND WHY IT NO LONGER COMES ONLY FROM THE LENS ──────────
+  //
+  // It used to: "a lens that cannot zoom gets no control", with a note
+  // saying a CSS transform would scale the picture the decoder reads
+  // without adding a pixel of detail and make a distant code HARDER to
+  // read.
+  //
+  // Half of that was wrong, and it is the half that mattered. A naive
+  // transform on a decoder reading the whole frame adds nothing, true.
+  // But this decoder crops to the framing square and draws that crop
+  // 1:1 — so cropping tighter and drawing the same number of pixels
+  // hands it MORE sensor pixels per module of the code, not fewer. The
+  // thing the note ruled out is the thing that helps.
+  //
+  // So the lens is still asked first, and still preferred where it
+  // answers. Where it does not, there is a software range instead of no
+  // control at all. A rail that cannot be dragged is not a safer
+  // product than a rail that zooms in software; it is three bug reports.
   const [zoomRange, setZoomRange] = useState32(null);
   const [zoomLevel, setZoomLevel] = useState32(null);
   const videoRef = useRef17(null);
@@ -796,6 +816,33 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
   // Holds the deferred zoom read-back, so a fast drag does not stack one
   // timer per pick and have an early one overwrite a later value.
   const zoomSettleRef = useRef17(null);
+  // ── WHEN THE LENS WILL NOT, WE DO IT OURSELVES ────────────────────────
+  //
+  // 1 means the lens is doing the zooming. Anything above means it refused
+  // and the picture is being scaled in software instead.
+  //
+  // This exists because of how the control failed three times. Each fix so
+  // far made the RAIL better at reading what the camera did — a deferred
+  // read-back, a second constraint shape, a late capability re-read — and
+  // each time the founder came back with "zoom is still not working".
+  //
+  // The fourth report was the one that said it: "rail is there, nothing
+  // moves". The handle is painted at the thumb and then, on a refusal,
+  // pulled straight back to where the lens actually is. Two writes, one
+  // frame apart, and the second undoes the first. Nothing moves — not
+  // because the drag is broken but because the control is a READOUT of
+  // the hardware, and that hardware says no.
+  //
+  // So it stops being a readout. The rail is the person's instruction and
+  // it is always obeyed: the lens takes it where it can, and where it
+  // cannot the frame is cropped and scaled up instead. Digital zoom is
+  // worse than optical and infinitely better than a control that does
+  // nothing, and on this screen it is not even much worse — the decoder
+  // already crops to the framing square, so zooming in hands it a smaller
+  // region at the same resolution, which is MORE pixels per module on the
+  // code, not fewer. A distant code genuinely scans better zoomed.
+  const [digitalZoom, setDigitalZoom] = useState32(1);
+  const digitalZoomRef = useRef17(1);
   const rafRef = useRef17(null);
   const frameRef = useRef17(0);
   const decodeCountRef = useRef17(0);
@@ -838,6 +885,9 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
     // flash stays on after the user backed out of a scanner reads as the
     // app doing something it was not asked to.
     if (zoomSettleRef.current) { clearTimeout(zoomSettleRef.current); zoomSettleRef.current = null; }
+    // Or the next camera opens already cropped, with a rail that says 1x.
+    digitalZoomRef.current = 1;
+    setDigitalZoom(1);
     const track = trackRef.current;
     trackRef.current = null;
     if (track) {
@@ -919,18 +969,37 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       let w;
       let h;
       if (wide) {
-        sx = 0;
-        sy = 0;
-        sw = vw;
-        sh = vh;
-        const scale = Math.min(1, QR_SCAN_MAX_DIM / Math.max(vw, vh));
-        w = Math.max(1, Math.round(vw * scale));
-        h = Math.max(1, Math.round(vh * scale));
+        // ── THE WIDE PASS FOLLOWS THE ZOOM TOO ────────────────────────
+        //
+        // One pass in four reads the whole frame, so that a code held
+        // outside the guide still resolves. Left at the full frame while
+        // the picture is scaled, it would resolve codes the person
+        // CANNOT SEE — they would be aimed at one stall, zoomed in, and
+        // the scanner would quietly pay a different one in the next
+        // doorway. It reads the visible region instead, which at 1x is
+        // still the whole frame.
+        const soft = Math.max(1, digitalZoomRef.current || 1);
+        sw = Math.max(1, Math.round(vw / soft));
+        sh = Math.max(1, Math.round(vh / soft));
+        sx = Math.round((vw - sw) / 2);
+        sy = Math.round((vh - sh) / 2);
+        const scale = Math.min(1, QR_SCAN_MAX_DIM / Math.max(sw, sh));
+        w = Math.max(1, Math.round(sw * scale));
+        h = Math.max(1, Math.round(sh * scale));
       } else {
         // A square centred on the frame, sized off the SHORT side — the
         // guide square is square, and sizing off the long side would read
         // past the top and bottom of what the person can see.
-        const side = Math.max(1, Math.round(Math.min(vw, vh) * QR_SCAN_ROI));
+        //
+        // DIVIDED BY THE SOFTWARE ZOOM, which is what makes that zoom a
+        // real one rather than a picture of one. At 3x the crop is a
+        // third as wide and is still drawn at the same canvas size, so
+        // the decoder gets three times the sensor pixels per module of
+        // the code. It also matches what the person can see: the video
+        // is scaled about the same centre, so the square on screen and
+        // the square being read stay the same square.
+        const soft = Math.max(1, digitalZoomRef.current || 1);
+        const side = Math.max(1, Math.round(Math.min(vw, vh) * QR_SCAN_ROI / soft));
         sx = Math.round((vw - side) / 2);
         sy = Math.round((vh - side) / 2);
         sw = side;
@@ -1035,8 +1104,12 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
         // the track rather than assumed to be the minimum, because a device
         // can hand back a stream already zoomed.
         if (!cancelled) {
-          setZoomRange(caps.zoom || null);
-          setZoomLevel(caps.zoom ? currentZoomOf(track, caps.zoom) : null);
+          // The lens's own range where it has one, the software range
+          // where it does not — so the rail exists either way and
+          // applyZoom has one set of bounds to clamp against.
+          const range = caps.zoom || ZOOM_SOFT_RANGE;
+          setZoomRange(range);
+          setZoomLevel(caps.zoom ? currentZoomOf(track, caps.zoom) : range.min);
         }
         const video = videoRef.current;
         if (video) {
@@ -1080,7 +1153,13 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
           }
           const lateRange = zoomRangeOf(late);
           setZoomRange((had) => {
-            if (had || !lateRange) return had;
+            // A real range still replaces the software one when it turns
+            // up late — optical is better and this is the only chance to
+            // take it. But only while nobody has zoomed yet, or the rail
+            // would jump under a thumb mid-drag.
+            if (!lateRange) return had;
+            if (had && had !== ZOOM_SOFT_RANGE) return had;
+            if (digitalZoomRef.current !== 1) return had;
             setZoomLevel(currentZoomOf(live, lateRange));
             return lateRange;
           });
@@ -1154,70 +1233,115 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
   // not at.
   const applyZoom = useCallback10(async (wantedRaw) => {
     const track = trackRef.current;
-    if (!track || !zoomRange || typeof track.applyConstraints !== "function") return;
+    if (!zoomRange) return;
     const wanted = Math.min(zoomRange.max, Math.max(zoomRange.min, wantedRaw));
-    // Painted where the thumb is before the lens has moved. applyConstraints
-    // is a round trip to the camera and a handle that waits for it lags the
-    // finger dragging it, which reads as a broken control rather than a slow
-    // one. The read-back below is still the authority: a lens that refuses,
-    // or that lands somewhere else, pulls the handle to where it actually is.
-    setZoomLevel(wanted);
-
-    // ── TWO SHAPES, BECAUSE ENGINES DISAGREE ABOUT WHICH ONE ZOOM TAKES
+    // ── THE HANDLE GOES WHERE THE THUMB WENT, AND STAYS THERE ──────────
     //
-    // `advanced` is what Chrome documents and what the focus constraints
-    // above use. Some engines only honour zoom as a plain constraint, and
-    // reject the advanced form outright — so a lens that can zoom does
-    // nothing at all and reports no error anywhere a person can see.
-    // Trying the second shape costs one rejected promise on the devices
-    // that took the first.
-    let accepted = false;
-    try {
-      await track.applyConstraints({ advanced: [{ zoom: wanted }] });
-      accepted = true;
-    } catch (e) {
-      try {
-        await track.applyConstraints({ zoom: wanted });
-        accepted = true;
-      } catch (e2) {
-        accepted = false;
-      }
-    }
+    // Set once, here, and never corrected downward by what the camera
+    // did. That correction is what three fixes kept missing: the handle
+    // was painted at the thumb and then pulled back, which on a device
+    // whose lens refuses is two writes one frame apart that cancel out.
+    // "Rail is there, nothing moves."
+    //
+    // The rail is an instruction now, not a readout. Below, the lens is
+    // asked to carry it out; if it will not, the picture is scaled in
+    // software instead. Either way the number the person set is the
+    // number that stands.
+    setZoomLevel(wanted);
+    const factor = zoomRange.min > 0 ? wanted / zoomRange.min : 1;
+    const toSoftware = () => {
+      digitalZoomRef.current = factor;
+      setDigitalZoom(factor);
+    };
 
-    if (!accepted) {
-      // It refused. Put the handle where the lens actually is, so a rail
-      // that cannot move does not pretend it did.
-      setZoomLevel(currentZoomOf(track, zoomRange, zoomLevel));
+    // ── THE LENS SAID NOTHING, NOT YES ────────────────────────────────
+    //
+    // This is the cause the previous three fixes were all downstream of,
+    // and it is one line of the spec:
+    //
+    //     ADVANCED CONSTRAINTS ARE BEST-EFFORT. applyConstraints RESOLVES
+    //     whether or not the camera could honour them.
+    //
+    // So `await track.applyConstraints({ advanced: [{ zoom }] })` comes
+    // back successfully on a lens with no zoom at all, and the code read
+    // that as "the lens took it". Every refusal path below it was dead,
+    // the digital fallback never ran, and the deferred read-back could
+    // not help either: it compared against `getSettings().zoom`, which on
+    // such a device is `undefined`, so the comparison quietly did nothing.
+    //
+    // A RESOLVED PROMISE IS NOT EVIDENCE. The only evidence is the lens
+    // reporting, afterwards, that it moved.
+    //
+    // The cheapest evidence comes first: if the camera never reported a
+    // zoom range of its own, the range on screen is one we invented, and
+    // there is nothing to ask. Go straight to software without spending a
+    // round trip on a question whose answer is already known.
+    if (zoomRange === ZOOM_SOFT_RANGE || !track || typeof track.applyConstraints !== "function") {
+      toSoftware();
       return;
     }
 
-    // ── WHY THE READ-BACK IS DEFERRED, NOT IMMEDIATE ──────────────────
+    // ── TWO SHAPES, BECAUSE ENGINES DISAGREE ABOUT WHICH ONE ZOOM TAKES
     //
-    // This used to read getSettings() the instant applyConstraints
-    // resolved, and trust it. On Chrome for Android that read is
-    // routinely STALE — the promise settles before the lens has moved, so
-    // getSettings() still reports the OLD zoom. The handle was then pulled
-    // straight back to where it started, every drag, which is exactly
-    // "the zoom does not work" from the only side that matters.
+    // `advanced` is what Chrome documents. Some engines only honour zoom
+    // as a plain constraint and reject the advanced form outright, so a
+    // lens that can zoom does nothing at all. Trying the second shape
+    // costs one rejected promise on the devices that took the first.
     //
-    // A RESOLVED applyConstraints is the authority on whether the
-    // constraint was accepted; getSettings() is the authority on where the
-    // lens ended up, but only once it has had a moment to get there. So
-    // the accepted value stands, and a later read corrects it ONLY if the
-    // device genuinely landed somewhere else — more than one step away,
-    // which is the smallest move the lens claims it can make.
+    // Neither resolving means anything on its own — see above. They are
+    // tried because one of them may be the one this engine listens to.
+    try {
+      await track.applyConstraints({ advanced: [{ zoom: wanted }] });
+    } catch (e) {
+      try {
+        await track.applyConstraints({ zoom: wanted });
+      } catch (e2) {
+        // Both refused outright, which at least is an honest answer.
+        toSoftware();
+        return;
+      }
+    }
+
+    // ── NOW ASK THE LENS WHERE IT IS ──────────────────────────────────
     //
-    // The honesty this file argued for is kept: a lens that lands at 2.4x
-    // when asked for 3x still ends up reading 2.4x. It just is not told
-    // it failed before it has had a chance to succeed.
+    // Deferred, because the read is routinely STALE on Chrome for
+    // Android: the promise settles before the lens has physically moved,
+    // so an immediate getSettings() reports the old zoom. That staleness
+    // is what 0099 found, and the deferral it added is kept — what
+    // changes is what the answer is used FOR. It was only ever allowed to
+    // nudge the handle; now it decides whether the lens moved at all.
+    //
+    //   * no `zoom` in settings  — this lens does not zoom. Software.
+    //   * a zoom a long way off  — it ignored us, or clamped hard.
+    //                              Software, so the picture matches the
+    //                              number the person set.
+    //   * a zoom near the target — optical worked. Nothing to scale, and
+    //                              the handle moves to where the lens
+    //                              actually landed, which is the honesty
+    //                              this file has always argued for.
     if (zoomSettleRef.current) clearTimeout(zoomSettleRef.current);
     zoomSettleRef.current = setTimeout(() => {
       const live = trackRef.current;
-      if (!live) return;
-      const settled = currentZoomOf(live, zoomRange, wanted);
-      if (Math.abs(settled - wanted) > (zoomRange.step || 0)) setZoomLevel(settled);
+      if (!live || typeof live.getSettings !== "function") return;
+      let settings = null;
+      try {
+        settings = live.getSettings() || {};
+      } catch (e) {
+        return;
+      }
+      const got = Number(settings.zoom);
+      if (!Number.isFinite(got) || got <= 0) { toSoftware(); return; }
+      // Within a tenth of the span: close enough that the lens plainly
+      // tried, far enough that a lens sitting at its minimum while asked
+      // for 5x is caught.
+      const span = Math.max(1e-6, zoomRange.max - zoomRange.min);
+      if (Math.abs(got - wanted) > span * 0.1) { toSoftware(); return; }
+      digitalZoomRef.current = 1;
+      setDigitalZoom(1);
+      setZoomLevel(got);
     }, 320);
-  }, [zoomRange, zoomLevel]);
+  }, [zoomRange]);
+
 
   // Tap the viewfinder to focus there.
   //
@@ -1324,7 +1448,20 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       playsInline
       autoPlay
       onClick={focusAt}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block", background: "#000" }}
+      style={{
+        position: "absolute", inset: 0, width: "100%", height: "100%",
+        objectFit: "cover", display: "block", background: "#000",
+        // Only ever anything other than 1 when the lens refused. Scaled
+        // about the centre, which is where the framing square is and
+        // where the decoder crops — so what grows on screen is exactly
+        // the region being read.
+        transform: digitalZoom > 1 ? `scale(${digitalZoom})` : "none",
+        transformOrigin: "center center",
+        // Not animated. A transition here would lag the rail by its own
+        // duration and reintroduce, in software, the exact complaint
+        // this whole change exists to answer.
+        transition: "none"
+      }}
     />{
       /* Framing guide. The square is no longer only decorative: the decoder
          crops to it (QR_SCAN_ROI) and reads those pixels at full sensor

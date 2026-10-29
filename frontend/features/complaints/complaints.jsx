@@ -95,6 +95,9 @@ function complaintForScreen(c, lens, ownCurrency) {
   return {
     ...c,
     amountText: c.amountText || geuLensBarMoney(Number(c.amount) || 0, c.currency || "", lens, ownCurrency),
+    // What "Send back" returns: the payer's figure, in the payer's money —
+    // not the receiver's own reading of the same payment.
+    returnAmountText: c.returnAmountText || geuLensBarMoney(Number(c.returnAmount) || 0, c.returnCurrency || c.currency || "", lens, ownCurrency),
     paidWhen: c.paidWhen || paidWhen,
     otherName: c.otherName || "GLOOBAL user"
   };
@@ -286,7 +289,7 @@ function ComplaintsScreen({ cases = [], loading = false, onOpen, onBack }) {
       style={{ flex: 1, minWidth: 0 }}
     ><span style={{ display: "flex", alignItems: "baseline", gap: 8 }}><span
       style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-    >{c.otherName}</span><span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{c.amountText}</span></span><span
+    >{c.otherName}</span><span style={{ fontSize: 13, fontWeight: 800, color: T.ink, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{c.amountText}</span></span><span
       style={{ display: "block", fontSize: 12, color: T.inkSoft, marginTop: 2 }}
     >{r.label}</span><span style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}><ComplaintStatusPill status={c.status} /><span
       style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: c.unread ? T.ink : T.inkFaint, fontWeight: c.unread ? 700 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
@@ -341,13 +344,13 @@ function ComplaintCaseScreen({ complaint, busy = "", onBack, onSend, onSendBack,
   >{label}</span></span>)}</div></div>{!isReporter && !closed && c.status !== "escalated" && <div
     data-complaint-against-banner
     style={{ marginTop: 10, borderRadius: 18, padding: 14, background: "#FFF7ED", border: "1px solid #FED7AA" }}
-  ><div style={{ fontSize: 12.5, color: "#7C2D12", fontWeight: 700, lineHeight: 1.45 }}>{`${first} says this payment was a mistake. If they're right, send it back — it goes straight to them and this case closes.`}</div><button
+  ><div style={{ fontSize: 12.5, color: "#7C2D12", fontWeight: 700, lineHeight: 1.45 }}>{`${first} says this payment was a mistake. If they're right, send it back — it goes straight to them and this case closes.`}{c.returnAmountText && c.returnAmountText !== c.amountText && <span style={{ display: "block", marginTop: 4, fontWeight: 600 }}>{`You received ${c.amountText}; sending back ${c.returnAmountText} in their money.`}</span>}</div><button
     data-complaint-send-back
     disabled={Boolean(busy)}
     onClick={onSendBack}
     className="v2-tap"
     style={{ marginTop: 10, width: "100%", minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 999, border: "none", background: T.gradButton, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}
-  ><CpSendBackIcon size={17} color="#fff" />{busy === "sendBack" ? "Sending…" : `Send back ${c.amountText}`}</button></div>}</div><div
+  ><CpSendBackIcon size={17} color="#fff" />{busy === "sendBack" ? "Sending…" : `Send back ${c.returnAmountText || c.amountText}`}</button></div>}</div><div
     ref={listRef}
     data-complaint-chat
     style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 18px 10px", display: "flex", flexDirection: "column", gap: 8 }}

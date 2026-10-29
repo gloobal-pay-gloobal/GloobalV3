@@ -205,3 +205,14 @@ test("the screens are in the build and the API has every call", () => {
   assert.match(ui, /"Something else"/);
   assert.match(ui, /needsNote = reason === "other"/);
 });
+
+test("every money figure on the complaint screens carries its GEU pair", () => {
+  assert.doesNotMatch(ui, /\bfmt\(|\bfmtMoney\(/);
+  assert.match(ui, /amountText: c\.amountText \|\| geuLensBarMoney\(Number\(c\.amount\) \|\| 0, c\.currency \|\| "", lens, ownCurrency\)/);
+  assert.match(ui, /returnAmountText: c\.returnAmountText \|\| geuLensBarMoney\(Number\(c\.returnAmount\) \|\| 0, c\.returnCurrency/);
+  // Send back returns the PAYER's figure, not the receiver's reading of it.
+  assert.match(ui, /`Send back \$\{c\.returnAmountText \|\| c\.amountText\}`/);
+  assert.match(receipt, /amountText: geuLensBarMoney\(Number\(paymentAmount\) \|\| 0, paymentCurrency \|\| "", lens, viewerCurrency\)/);
+  assert.match(dash, /complaintForScreen\(c, displayLens, ccyCode\)/);
+  assert.match(dash, /complaintForScreen\(openComplaint, displayLens, ccyCode\)/);
+});

@@ -239,9 +239,10 @@ test("extra photos are reachable, not just stored", () => {
   const src = page();
   // More than one picture of a thing is worth nothing if nobody can reach
   // the others, and a flat thumbnail can only carry a count.
-  assert.match(src, /aria-label=\{`See \$\{shots\.length\} photos of \$\{item\.title\}`\}/);
+  // Since the photo viewer: every photo opens, and the label says how many.
+  assert.match(src, /shots\.length > 1 \? `See \$\{shots\.length\} photos of \$\{item\.title\}` : `See the photo of \$\{item\.title\}`/);
   assert.match(src, /onViewPhotos=\{setPhotoView\}/);
-  assert.match(src, /\{shots\.length\}<\/span><\/button>/, "the count sits on the thumbnail");
+  assert.match(src, /\{shots\.length\}<\/span> : null\}<\/button>/, "the count sits on the thumbnail");
 });
 
 test("a supplier is drawn with their own mark where they have one", () => {

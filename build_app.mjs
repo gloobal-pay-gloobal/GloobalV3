@@ -309,6 +309,8 @@ const FRONTEND_MODULES = [
   "features/creator/creatorAddress.jsx",
   // A shop's public, anonymous reviews — opened from Feedback on the page.
   "features/creator/ShopReviews.jsx",
+  // Full-screen item photos with swipe, zoom, Download and Share.
+  "features/creator/shopPhotoViewer.jsx",
   "features/creator/CreatorPage.jsx",
   // Gloobal बाज़ार on Pay & Services: famous categories and Near me.
   "features/bazaar/bazaar.jsx",

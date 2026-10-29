@@ -150,20 +150,18 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, theme, onAdd, onR
     padding: theme.density.rowPad, marginBottom: theme.density.gap,
     opacity: item.soldOut ? 0.55 : 1, ...card
   }}>{item.photo
-    ? (shots.length > 1
-      /* More than one picture of a thing is worth nothing if nobody can
-         reach the others. The count on the corner is the only hint a flat
-         thumbnail can carry, and tapping it opens the rest. */
-      ? <button
-        onClick={() => onViewPhotos && onViewPhotos(item)}
-        aria-label={`See ${shots.length} photos of ${item.title}`}
-        style={{ border: "none", background: "none", padding: 0, cursor: "pointer", flexShrink: 0, position: "relative" }}
-      ><img src={item.photo} alt="" style={{ ...thumb, objectFit: "cover", display: "block" }} /><span style={{
-        position: "absolute", right: 4, bottom: 4, minWidth: 16, height: 16, padding: "0 4px",
-        borderRadius: 8, background: "rgba(21,19,42,0.66)", color: "#fff",
-        fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center"
-      }}>{shots.length}</span></button>
-      : <img src={item.photo} alt="" style={{ ...thumb, objectFit: "cover", flexShrink: 0 }} />)
+    /* Every photo opens on tap now — one or several — into the full-screen
+       viewer with Download and Share (shopPhotoViewer.jsx). The count on
+       the corner still says when there are more to swipe through. */
+    ? <button
+      onClick={() => onViewPhotos && onViewPhotos(item)}
+      aria-label={shots.length > 1 ? `See ${shots.length} photos of ${item.title}` : `See the photo of ${item.title}`}
+      style={{ border: "none", background: "none", padding: 0, cursor: "pointer", flexShrink: 0, position: "relative" }}
+    ><img src={item.photo} alt="" style={{ ...thumb, objectFit: "cover", display: "block" }} />{shots.length > 1 ? <span style={{
+      position: "absolute", right: 4, bottom: 4, minWidth: 16, height: 16, padding: "0 4px",
+      borderRadius: 8, background: "rgba(21,19,42,0.66)", color: "#fff",
+      fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center"
+    }}>{shots.length}</span> : null}</button>
     : <span style={{
       ...thumb, flexShrink: 0, background: paint.bg,
       display: "flex", alignItems: "center", justifyContent: "center",
@@ -276,11 +274,11 @@ function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, on
     aspectRatio: String(ratio)
   }}>{item.photo
     ? <button
-      onClick={() => shots.length > 1 && onViewPhotos && onViewPhotos(item)}
-      aria-label={shots.length > 1 ? `See ${shots.length} photos of ${item.title}` : item.title}
+      onClick={() => onViewPhotos && onViewPhotos(item)}
+      aria-label={shots.length > 1 ? `See ${shots.length} photos of ${item.title}` : `See the photo of ${item.title}`}
       style={{
         border: "none", padding: 0, width: "100%", height: "100%", display: "block", overflow: "hidden",
-        background: "none", cursor: shots.length > 1 ? "pointer" : "default",
+        background: "none", cursor: "pointer",
         borderRadius: theme.photo.radius || theme.corners.photo
       }}
     ><img src={item.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /></button>
@@ -963,41 +961,16 @@ function CreatorPage({
     onClose={() => setReviewsOpen(false)}
   /> : null}
 
-  {photoView ? (() => {
-    const shots = Array.isArray(photoView.photos) && photoView.photos.length
-      ? photoView.photos
-      : (photoView.photo ? [photoView.photo] : []);
-    const at = Math.min(photoAt, Math.max(0, shots.length - 1));
-    return <div
-      onClick={() => { setPhotoView(null); setPhotoAt(0); }}
-      style={{
-        position: "absolute", inset: 0, zIndex: 8, background: "rgba(10,8,18,0.93)",
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20
-      }}
-    ><img
-      src={shots[at]}
-      alt={photoView.title}
-      onClick={(e) => e.stopPropagation()}
-      style={{ maxWidth: "100%", maxHeight: "68%", borderRadius: 18, objectFit: "contain", display: "block" }}
-    /><div style={{
-      color: "#fff", fontSize: 14, fontWeight: 800, marginTop: 16, textAlign: "center"
-    }}>{photoView.title}</div><div
-      onClick={(e) => e.stopPropagation()}
-      style={{ display: "flex", gap: 8, marginTop: 14 }}
-    >{shots.map((src, i) => <button
-      key={i}
-      onClick={() => setPhotoAt(i)}
-      aria-label={`Photo ${i + 1} of ${shots.length}`}
-      style={{
-        width: 46, height: 46, borderRadius: 12, border: "none", padding: 0, cursor: "pointer",
-        overflow: "hidden", opacity: i === at ? 1 : 0.45,
-        boxShadow: i === at ? "0 0 0 2px #fff" : "none"
-      }}
-    ><img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /></button>)}</div>
-    <div style={{
-      color: "rgba(255,255,255,0.6)", fontSize: 11, fontWeight: 600, marginTop: 18
-    }}>Tap anywhere to close</div></div>;
-  })() : null}
+  {photoView ? <ShopPhotoViewer
+    item={photoView}
+    start={photoAt}
+    shopName={name}
+    shopSymbolId={creator && creator.symbolId}
+    ccyCode={ccyCode}
+    lens={lens}
+    onToast={onToast}
+    onClose={() => { setPhotoView(null); setPhotoAt(0); }}
+  /> : null}
   {
     /* ── THE BASKET BAR ───────────────────────────────────────────────
        Only when something is in it, and never for the owner: a creator

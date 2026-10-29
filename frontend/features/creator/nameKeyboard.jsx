@@ -772,7 +772,11 @@ function CreatorNameKeyboard({
   twoParts = true,
   firstLabel = "First name",
   lastLabel = "Last name",
-  onClose
+  onClose,
+  // Something to draw across the very top of the board — the dashboard's
+  // pay box puts its "ID · Mobile · Creator name · Paste" row here, so the
+  // row sits in the same place over every one of its three pads.
+  header = null
 }) {
   const [layoutId, setLayoutId] = useState58(() => nameKeyboardDefaultId(countryIso));
   const [shift, setShift] = useState58(false);
@@ -911,7 +915,7 @@ function CreatorNameKeyboard({
       WebkitTapHighlightColor: "transparent"
     }}
     onContextMenu={(e) => e.preventDefault()}
-  >{
+  >{header}{
     /* The name, as it stands, with the half being typed lit. Tapping the
        other half moves the board to it — which is the only way to reach
        it once the board covers the inputs. */

@@ -2158,6 +2158,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   }<QuickPayBar
     myGloobalId={myGloobalId}
     dialCode={(dialCountry && dialCountry.dialCode) || ""}
+    countryIso={(dialCountry && dialCountry.iso) || ""}
     onOpenCoverage={onOpenCoverage}
     onPayPerson={(payee) => onPayPerson && onPayPerson(payee)}
     onPayCreator={({ creator }) => onPayCreator && onPayCreator({ creator })}

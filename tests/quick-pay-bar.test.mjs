@@ -55,3 +55,23 @@ test("the globe still opens Coverage, and a paste checks straight away", () => {
   assert.match(s, /setText\(pasted\);\s*lookUp\(pasted\);/);
   assert.match(readSource("frontend/screens/Dashboard/Dashboard.jsx"), /<QuickPayBar\s+myGloobalId=\{myGloobalId\}/);
 });
+
+test("our pads, not the phone's keyboard, with one row to pick from", () => {
+  const s = bar();
+  assert.match(s, /inputMode="none"/);
+  assert.match(s, /onFocus=\{\(\) => setPadOpen\(true\)\}/);
+  assert.match(s, /var QUICK_PAY_MODES = \["id", "mobile", "name"\];/);
+  assert.match(s, /<SymbolDialPad\s+value=\{text\}/);
+  assert.match(s, /<PhoneDialPad\s+value=\{text\.replace\(\/\[\^0-9\]\/g, ""\)\}/);
+  assert.match(s, /<CreatorNameKeyboard\s+open\s+header=\{row\}/);
+  assert.match(readSource("frontend/features/creator/nameKeyboard.jsx"), />\{header\}\{/);
+});
+
+test("the twelfth symbol checks the ID, the last pad is remembered, Paste checks at once", () => {
+  const s = bar();
+  assert.match(s, /if \(Array\.from\(next\)\.length === QUICK_PAY_ID_LENGTH\) lookUp\(next\);/);
+  assert.match(s, /localStorage\.setItem\("gloobal:quickPayMode:v1", m\)/);
+  assert.match(s, /return QUICK_PAY_MODES\.indexOf\(m\) >= 0 \? m : "id";/, "the ID dial the first time");
+  assert.match(s, /pasted = String\(await navigator\.clipboard\.readText\(\) \|\| ""\)\.trim\(\);/);
+  assert.match(s, /setText\(pasted\);\s*setPadOpen\(false\);\s*lookUp\(pasted\);/);
+});

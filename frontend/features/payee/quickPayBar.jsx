@@ -18,8 +18,38 @@
 //
 // The globe on the left still opens Gloobal Coverage, which is what the
 // whole bar used to do.
-import { useState as useState67, useRef as useRef39 } from "react";
-import { ArrowRight as ArrowRight4, Loader as Loader8, X as X22, Store as Store6 } from "lucide-react";
+import { useState as useState67, useRef as useRef39, useEffect as useEffect64 } from "react";
+import { ArrowRight as ArrowRight4, Loader as Loader8, X as X22, Store as Store6, Phone as Phone4, ClipboardPaste as PasteQuick, ChevronDown as ChevronDown7 } from "lucide-react";
+
+// ── OUR OWN PADS, NOT THE PHONE'S KEYBOARD ──────────────────────────────
+//
+// "If they type, give them our dial pad, our PIN pad, and if they use a
+// creator name, our keyboard — all in one horizontal row above for users
+// to pick from." Tapping the box opens a panel with that row on top:
+//
+//   Gloobal ID   — the symbol dial the ID is made of (SymbolDialPad),
+//   Mobile       — the number pad the PIN uses (PhoneDialPad),
+//   Creator name — the Gloobal keyboard, in any alphabet,
+//   Paste        — what is copied, checked at once.
+//
+// It opens on whichever was used last (kept on this phone), and on the
+// Gloobal ID dial the first time. The phone's own keyboard never comes up:
+// every one of the three things the box takes has a pad made for it.
+var QUICK_PAY_MODES = ["id", "mobile", "name"];
+var QUICK_PAY_ID_LENGTH = 12;
+
+function quickPayModeLoad() {
+  try {
+    const m = localStorage.getItem("gloobal:quickPayMode:v1");
+    return QUICK_PAY_MODES.indexOf(m) >= 0 ? m : "id";
+  } catch (e) {
+    return "id";
+  }
+}
+
+function quickPayModeSave(m) {
+  try { localStorage.setItem("gloobal:quickPayMode:v1", m); } catch (e) { /* a convenience */ }
+}
 
 // ── WHAT WAS TYPED ──────────────────────────────────────────────────────
 // { kind: "id" | "mobile" | "name", value, side? } or null. A pay link is
@@ -46,14 +76,60 @@ function quickPayMobile(value, dialCode) {
   return value;
 }
 
-function QuickPayBar({ myGloobalId = "", dialCode = "", onOpenCoverage, onPayPerson, onPayCreator, onOpenShop }) {
+function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenCoverage, onPayPerson, onPayCreator, onOpenShop }) {
   const [text, setText] = useState67("");
+  // The pad panel, and which pad. See QUICK_PAY_MODES above.
+  const [padOpen, setPadOpen] = useState67(false);
+  const [mode, setModeState] = useState67(() => quickPayModeLoad());
+  const [nameField, setNameField] = useState67("first");
   const [busy, setBusy] = useState67(false);
   const [found, setFound] = useState67(null);
   const [error, setError] = useState67("");
   const seq = useRef39(0);
 
   const reset = () => { setFound(null); setError(""); };
+
+  const setMode = (m) => {
+    if (m === mode) return;
+    setModeState(m);
+    quickPayModeSave(m);
+    // An ID typed on the dial is not a mobile number: switching pads
+    // starts the box again rather than reading one as the other.
+    setText("");
+    setNameField("first");
+    reset();
+  };
+
+  // The pad hides the floating map button while it is up, as every other
+  // full-width board in the app does.
+  useEffect64(() => {
+    if (typeof window === "undefined" || !padOpen || mode === "name") return undefined;
+    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
+    fire(true);
+    return () => fire(false);
+  }, [padOpen, mode]);
+
+  const pasteNow = async () => {
+    let pasted = "";
+    try {
+      pasted = String(await navigator.clipboard.readText() || "").trim();
+    } catch (e) {
+      pasted = "";
+    }
+    if (!pasted) {
+      setPadOpen(false);
+      setError("Nothing to paste here — long-press the box and choose Paste.");
+      return;
+    }
+    setText(pasted);
+    setPadOpen(false);
+    lookUp(pasted);
+  };
+
+  // The two halves of a creator name, as the keyboard edits them.
+  const nameFirst = mode === "name" ? text.split(".")[0] || "" : "";
+  const nameLast = mode === "name" ? text.split(".").slice(1).join("") : "";
+  const setName = (first, last) => setText(last ? `${first}.${last}` : first);
 
   const lookUp = async (input) => {
     const what = quickPayClassify(input === undefined ? text : input);
@@ -65,6 +141,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", onOpenCoverage, onPayPer
     }
     const mine = seq.current + 1;
     seq.current = mine;
+    setPadOpen(false);
     setBusy(true);
     setError("");
     setFound(null);
@@ -223,7 +300,11 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", onOpenCoverage, onPayPer
       lookUp(pasted);
     }}
     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); lookUp(); } }}
-    placeholder="Paste ID, mobile or name"
+    // Our pads instead of the phone's keyboard. Long-press still pastes.
+    inputMode="none"
+    onFocus={() => setPadOpen(true)}
+    onClick={() => setPadOpen(true)}
+    placeholder={mode === "mobile" ? "Mobile number" : mode === "name" ? "Creator name" : "Gloobal ID, or paste anything"}
     aria-label="Pay someone by Gloobal ID, mobile number or creator name"
     autoCapitalize="none"
     autoCorrect="off"
@@ -252,5 +333,96 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", onOpenCoverage, onPayPer
       fontSize: 12, fontWeight: 700, color: T.negative, lineHeight: 1.4, background: T.surface, borderRadius: 14,
       padding: "10px 12px", boxShadow: "0 10px 26px rgba(20,18,43,0.16)", animation: "quickPayIn 0.22s ease"
     }}>{error}</div> : null
-  }{card}</div>;
+  }{card}{padOpen ? quickPayPads() : null}</div>;
+
+  // ── THE PANEL ─────────────────────────────────────────────────────────
+  function quickPayPads() {
+    const chip = (key, label, Icon, on, onTap) => <button
+      key={key}
+      type="button"
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={onTap}
+      aria-pressed={on}
+      aria-label={typeof label === "string" && label ? undefined : key}
+      style={{
+        // The three pads share the width; Paste and Hide are icons. A
+        // render had "Paste" and Hide pushed off a 390px phone.
+        flex: label ? "1 1 0" : "0 0 auto", minWidth: 0, justifyContent: "center",
+        display: "inline-flex", alignItems: "center", gap: 5, height: 36, padding: label ? "0 8px" : "0 11px",
+        borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800,
+        background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink,
+        boxShadow: on ? "0 4px 12px rgba(124,58,237,0.28)" : "0 1px 3px rgba(20,18,43,0.12)", whiteSpace: "nowrap"
+      }}
+    >{Icon}{label ? <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span> : null}</button>;
+    const row = <div role="tablist" aria-label="How to type it" style={{
+      display: "flex", alignItems: "center", gap: 7, padding: "10px 10px 9px", overflowX: "auto", scrollbarWidth: "none",
+      borderBottom: `1px solid ${T.line}`, flexShrink: 0
+    }}>{chip("id", "ID", <span aria-hidden="true" style={{ fontSize: 11, letterSpacing: -1, fontWeight: 900 }}>●■</span>, mode === "id", () => setMode("id"))}{
+      chip("mobile", "Mobile", <Phone4 size={13} />, mode === "mobile", () => setMode("mobile"))}{
+      chip("name", "Name", <span aria-hidden="true" style={{ fontSize: 12, fontWeight: 900 }}>अA</span>, mode === "name", () => setMode("name"))}{
+      chip("Paste", "", <PasteQuick size={15} />, false, pasteNow)}{mode === "name" ? null : <button
+      type="button"
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={() => setPadOpen(false)}
+      aria-label="Hide"
+      style={{
+        flexShrink: 0, width: 36, height: 36, borderRadius: "50%", border: "none", cursor: "pointer",
+        background: T.surface, boxShadow: "0 1px 3px rgba(20,18,43,0.12)", display: "flex", alignItems: "center", justifyContent: "center"
+      }}
+    ><ChevronDown7 size={18} color={T.inkSoft} /></button>}</div>;
+
+    if (mode === "name") {
+      return <CreatorNameKeyboard
+        open
+        header={row}
+        field={nameField}
+        onField={setNameField}
+        first={nameFirst}
+        last={nameLast}
+        onFirst={(v) => setName(v, nameLast)}
+        onLast={(v) => setName(nameFirst, v)}
+        countryIso={countryIso}
+        firstLabel="Creator name"
+        lastLabel="Second part"
+        onClose={() => { setPadOpen(false); if (nameFirst) lookUp(text); }}
+      />;
+    }
+
+    return <div
+      role="group"
+      aria-label={mode === "mobile" ? "Number pad" : "Gloobal ID dial"}
+      style={{
+        position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 430, background: T.bg,
+        borderTop: `1px solid ${T.line}`, boxShadow: "0 -8px 28px rgba(20,18,43,0.16)",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)", display: "flex", flexDirection: "column",
+        maxHeight: "72vh", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
+        animation: "quickPayPadIn 0.22s ease"
+      }}
+    ><style>{"@keyframes quickPayPadIn { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }"}</style>{row}<div style={{
+      flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 16px 14px", display: "flex", flexDirection: "column", alignItems: "center"
+    }}>{mode === "id"
+      ? <>{
+        /* The twelve symbols, filling as they are dialled; the twelfth
+           checks the ID without another tap. */
+      }<div style={{ width: "100%", maxWidth: 360 }}><SymbolChipRow length={QUICK_PAY_ID_LENGTH} value={text} masked={false} justify="center" /></div><div style={{ width: "100%", maxWidth: 360, marginTop: 12 }}><SymbolDialPad
+        value={text}
+        onChange={(v) => {
+          const next = Array.from(v).slice(0, QUICK_PAY_ID_LENGTH).join("");
+          setText(next);
+          if (found || error) reset();
+          if (Array.from(next).length === QUICK_PAY_ID_LENGTH) lookUp(next);
+        }}
+        length={QUICK_PAY_ID_LENGTH}
+        showLogo={false}
+      /></div></>
+      : <div style={{ width: "100%", maxWidth: 360 }}>{dialCode ? <div style={{
+        textAlign: "center", fontSize: 11.5, fontWeight: 700, color: T.inkFaint, marginBottom: 4
+      }}>{`Numbers without a code are read as ${dialCode}`}</div> : null}<PhoneDialPad
+        value={text.replace(/[^0-9]/g, "")}
+        onChange={(v) => { setText(v); if (found || error) reset(); }}
+        minLength={7}
+        maxLength={15}
+        onSubmit={() => lookUp(text)}
+      /></div>}</div></div>;
+  }
 }

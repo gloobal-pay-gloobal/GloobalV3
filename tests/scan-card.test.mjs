@@ -328,15 +328,11 @@ test("the ribbon is outside the card, below it", () => {
 
 test("it hangs the same amount off each side", () => {
   // A band exactly the card's width reads as a second card that happens
-  // to be shorter. Both ends showing is what makes it a ribbon.
-  const src = app();
-  assert.match(src, /width: "calc\(100% \+ 30px\)"/);
-  const { SCAN_BACKDROPS } = backdrop(["SCAN_BACKDROPS"]);
-  assert.ok(SCAN_BACKDROPS.length > 0);
-  // Pulled up under the card's edge, so it hangs from it rather than
-  // floating below it with a gap.
-  assert.match(src, /marginTop: -14,/);
-  // Two folds, one at each end, mirrored.
+  // to be shorter. Both ends showing is what makes it a ribbon. The
+  // ribbon lives in scanNoteStrip.jsx now, as one of eight styles.
+  const src = readSource("frontend/features/scan/scanNoteStrip.jsx");
+  assert.match(src, /width: compact \? "calc\(100% \+ 10px\)" : "calc\(100% \+ 30px\)"/);
+  assert.match(src, /marginTop: compact \? -8 : -14,/);
   assert.match(src, /clipPath: "polygon\(0 0, 100% 0, 100% 100%\)"/);
   assert.match(src, /clipPath: "polygon\(0 0, 100% 0, 0 100%\)"/);
 });
@@ -366,10 +362,15 @@ test("a fold is darker than the band it folds under", () => {
 });
 
 test("the flow stops for anybody who asked it to", () => {
-  const src = app();
-  assert.match(src, /animation: "gloobalScanRibbon 5\.5s ease-in-out infinite"/);
-  assert.match(src, /@keyframes gloobalScanRibbon \{/);
-  assert.match(src, /@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*@keyframes gloobalScanRibbon \{ 0%, 100% \{ transform: none; \} \}/);
+  // Every style that moves — the ribbon's sway, the tag's swing, the
+  // ticker's scroll — stops for prefers-reduced-motion. The ticker also
+  // stops being a ticker: its text wraps instead, because a message that
+  // only exists while moving is one some people cannot read at all.
+  const src = readSource("frontend/features/scan/scanNoteStrip.jsx");
+  assert.match(src, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(src, /\.gloobal-note-moves \{ animation: none !important; \}/);
+  assert.match(src, /\.gloobal-note-ticker-track \{ animation: none !important; white-space: normal !important;/);
+  assert.match(src, /\.gloobal-note-ticker-dup \{ display: none !important; \}/);
 });
 
 test("the card declares its own box model", () => {
@@ -416,7 +417,7 @@ test("the ribbon contrasts with the card instead of deepening it", () => {
     assert.ok(lum(ink.fold) < lum(ink.bar), `${pick.key}'s fold is not darker than its band`);
   }
   assert.equal(seen.size, SCAN_BACKDROPS.length);
-  assert.match(app(), /color: scanRibbonInk\(scanPayee\.gloobalId\)\.text/, "the ribbon's text is still white");
+  assert.match(readSource("frontend/features/scan/scanNoteStrip.jsx"), /color: ink\.text/, "the ribbon's text is still white");
 });
 
 test("a shop's card is headed Gloobal बाजार, the brand in bold", () => {
@@ -436,4 +437,50 @@ test("the map button stays off the confirm card", () => {
   const src = app();
   assert.match(src, /function ScanOverlayBlocksMap/);
   assert.match(src, /return <><ScanOverlayBlocksMap \/><div style=\{\{\s*\n\s*position: "fixed", inset: 0, zIndex: 400/);
+});
+
+
+// ── EIGHT STYLES, AND THE CREATOR PICKS ─────────────────────────────────
+//
+// "Can we have better strip option." Eight shapes; the creator chooses
+// beside the message, from previews drawn by the real strip.
+test("the server and the strip agree on the eight styles", () => {
+  const client = readSource("frontend/features/scan/scanNoteStrip.jsx");
+  const cKeys = [...client.slice(client.indexOf("var SCAN_NOTE_STYLES"), client.indexOf("];", client.indexOf("var SCAN_NOTE_STYLES"))).matchAll(/key: "(\w+)"/g)].map((m) => m[1]);
+  const server = readSource("server/server.js");
+  const sLine = server.split("\n").find((l) => l.includes("const CREATOR_SCAN_NOTE_STYLES ="));
+  const sKeys = [...sLine.matchAll(/'(\w+)'/g)].map((m) => m[1]);
+  assert.deepEqual(cKeys, sKeys, "a style the picker offers would be refused by the server, or the reverse");
+  assert.equal(cKeys.length, 8);
+  const model = readSource("server/models/User.js");
+  for (const k of cKeys) assert.ok(model.includes(`'${k}'`), `the model's enum is missing ${k}`);
+});
+
+test("an unknown style falls back to the ribbon, everywhere", () => {
+  const client = readSource("frontend/features/scan/scanNoteStrip.jsx");
+  assert.match(client, /function scanNoteStyleKey\(value\) \{[\s\S]{0,140}return "ribbon";/);
+  const server = readSource("server/server.js");
+  assert.match(server, /scanNoteStyle: CREATOR_SCAN_NOTE_STYLES\.includes\(profile\.scanNoteStyle\) \? profile\.scanNoteStyle : 'ribbon'/);
+  assert.match(server, /invalid_scan_note_style/);
+});
+
+test("the scan card hangs the message in the creator's chosen style", () => {
+  const src = app();
+  assert.match(src, /<ScanNoteStrip\s*\n\s*text=\{scanPayee\.creator\.scanNote\}/);
+  assert.match(src, /styleKey=\{scanPayee\.creator\.scanNoteStyle\}/);
+});
+
+test("the creator picks it, and the pick is saved", () => {
+  const setup = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
+  assert.match(setup, /<ScanNoteStylePicker\s*\n\s*value=\{scanNoteStyle\}/);
+  assert.match(setup, /scanNoteStyle,\n/, "the chosen style is never sent to the server");
+  // The previews are the real strip, in the account's own colour.
+  const client = readSource("frontend/features/scan/scanNoteStrip.jsx");
+  assert.match(client, /<ScanNoteStrip text=\{sample\} seed=\{seed\} styleKey=\{s\.key\} compact \/>/);
+});
+
+test("a miniature is one clipped line, never a word broken in half", () => {
+  // A render had the previews breaking mid-word: "Sunday / s".
+  const client = readSource("frontend/features/scan/scanNoteStrip.jsx");
+  assert.match(client, /whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"/);
 });

@@ -321,6 +321,9 @@ const FRONTEND_MODULES = [
   // functions over a `var` table, read by App.jsx at the very end of the
   // build — so anywhere before App.jsx is early enough.
   "features/scan/scanBackdrop.js",
+  // The creator's message strip, in eight styles. Reads scanRibbonInk and
+  // scanBackdropCss from the file above, so it comes after it.
+  "features/scan/scanNoteStrip.jsx",
   "features/creator/CreatorLedger.jsx",
   "features/creator/CreatorFinder.jsx",
   "features/creator/ShopThemeEditor.jsx",

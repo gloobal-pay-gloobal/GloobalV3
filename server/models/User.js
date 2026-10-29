@@ -315,6 +315,14 @@ const userSchema = new mongoose.Schema({
     // their thumb over Pay, and a long message would push that button
     // off a small screen.
     scanNote: { type: String, trim: true, default: '', maxlength: 120 },
+    // Which of the eight strip shapes that message hangs in. The creator
+    // picks it beside the message. The list is fixed here and in
+    // scanNoteStrip.jsx, and a test holds the two in step.
+    scanNoteStyle: {
+      type: String,
+      enum: ['ribbon', 'tag', 'ticker', 'bubble', 'slip', 'note', 'pill', 'bunting'],
+      default: 'ribbon'
+    },
 
     // When the setup screen was last dismissed without being completed.
     // Held so the Creator dashboard can keep offering it without putting

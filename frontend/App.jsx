@@ -4800,43 +4800,15 @@ function GloobalId() {
 
        Capped at 120 characters by the server, so it cannot grow into a
        notice board under somebody's thumb. */
-  }{scanPayee.creator && scanPayee.creator.scanNote ? <div style={{
-    position: "relative",
-    width: "calc(100% + 30px)",
-    // Tucked up under the card's bottom edge, so it hangs from it
-    // rather than floating below it with a gap.
-    marginTop: -14,
-    animation: "gloobalScanRibbon 5.5s ease-in-out infinite"
-  }}>{
-    /* The folds, behind the band and poking out at each end. Drawn as
-       two clipped triangles rather than as a border trick, so they keep
-       their shape at any width. */
-  }<span aria-hidden="true" style={{
-    position: "absolute", left: 0, top: 10, width: 15, height: 22,
-    background: scanRibbonInk(scanPayee.gloobalId).fold,
-    clipPath: "polygon(0 0, 100% 0, 100% 100%)"
-  }} /><span aria-hidden="true" style={{
-    position: "absolute", right: 0, top: 10, width: 15, height: 22,
-    background: scanRibbonInk(scanPayee.gloobalId).fold,
-    clipPath: "polygon(0 0, 100% 0, 0 100%)"
-  }} /><div style={{
-    position: "relative",
-    margin: "0 7px",
-    background: scanRibbonInk(scanPayee.gloobalId).bar,
-    borderRadius: 12,
-    padding: "13px 16px",
-    boxShadow: "0 8px 18px rgba(20,18,43,0.22)",
-    fontSize: 12.5, fontWeight: 700, color: scanRibbonInk(scanPayee.gloobalId).text,
-    lineHeight: 1.45, textAlign: "center", overflowWrap: "anywhere"
-  }}>{scanPayee.creator.scanNote}</div></div> : null}<style>{`
-      @keyframes gloobalScanRibbon {
-        0%, 100% { transform: translateY(0) rotate(-0.4deg); }
-        50% { transform: translateY(2px) rotate(0.4deg); }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        @keyframes gloobalScanRibbon { 0%, 100% { transform: none; } }
-      }
-    `}</style></div>}</div>}</div></>;
+  }{scanPayee.creator && scanPayee.creator.scanNote ? <ScanNoteStrip
+    text={scanPayee.creator.scanNote}
+    seed={scanPayee.gloobalId}
+    // The shape the creator picked — ribbon, tag, ticker, bubble, slip,
+    // note, pill or bunting. The colour is still the code's, not the
+    // style's; see scanNoteStrip.jsx.
+    styleKey={scanPayee.creator.scanNoteStyle}
+    speaker={creatorDisplayName(scanPayee.creator)}
+  /> : null}</div>}</div>}</div></>;
   })()}{
     /* A shared receipt link, opened on a payment in this account's own
        history. The same read-only document History shows. */

@@ -3819,6 +3819,11 @@ function creatorMinLength(part) {
 }
 
 // Returns { ok: true, handle, first, last } or { ok: false, code, message }.
+// The eight strip shapes a creator's scan message can hang in. Kept in
+// step with SCAN_NOTE_STYLES in frontend/features/scan/scanNoteStrip.jsx
+// by tests/scan-card.test.mjs.
+const CREATOR_SCAN_NOTE_STYLES = ['ribbon', 'tag', 'ticker', 'bubble', 'slip', 'note', 'pill', 'bunting'];
+
 function buildCreatorHandle(firstRaw, lastRaw) {
   const first = typeof firstRaw === 'string' ? firstRaw.trim() : '';
   const last = typeof lastRaw === 'string' ? lastRaw.trim() : '';
@@ -3930,7 +3935,8 @@ function publicCreator(user, logoDataUrl) {
     addressPublic: Boolean(profile.addressPublic),
     // Sent to everybody, unlike the address: a message written FOR the
     // person scanning is of no use if only its author can read it.
-    scanNote: profile.scanNote || ''
+    scanNote: profile.scanNote || '',
+    scanNoteStyle: CREATOR_SCAN_NOTE_STYLES.includes(profile.scanNoteStyle) ? profile.scanNoteStyle : 'ribbon'
   };
 }
 
@@ -4052,6 +4058,14 @@ app.put(
           });
         }
         set['creatorProfile.scanNote'] = body.scanNote.trim();
+      }
+      if (body.scanNoteStyle !== undefined) {
+        if (!CREATOR_SCAN_NOTE_STYLES.includes(body.scanNoteStyle)) {
+          return res.status(400).json({
+            success: false, code: 'invalid_scan_note_style', message: 'That is not a strip style.'
+          });
+        }
+        set['creatorProfile.scanNoteStyle'] = body.scanNoteStyle;
       }
       if (body.addressPublic !== undefined) {
         set['creatorProfile.addressPublic'] = Boolean(body.addressPublic);

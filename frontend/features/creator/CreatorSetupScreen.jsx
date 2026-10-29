@@ -232,6 +232,7 @@ function CreatorSetupScreen({
   // browsing a page, this one in the two seconds before money moves, and
   // the two say different things for that reason.
   const [scanNote, setScanNote] = useState53((creator && creator.scanNote) || "");
+  const [scanNoteStyle, setScanNoteStyle] = useState53((creator && creator.scanNoteStyle) || "ribbon");
   const fileRef = useRef30(null);
   // Which half Gloobal's own keyboard is typing into, "" when it is shut.
   //
@@ -533,7 +534,20 @@ function CreatorSetupScreen({
     /* Said plainly, because a creator deciding what to write needs to
        know who reads it and when. "Everybody" is the honest answer and
        it is not the same answer the address field gives. */
-  }Anybody who scans your code sees this, right under the Pay button.</div>{error && <div
+  }Anybody who scans your code sees this, right under the Pay button.</div>{
+    /* ── HOW IT HANGS ─────────────────────────────────────────────────
+       Eight shapes, each drawn by the real strip under a miniature of
+       the card a scanner gets — in this account's own colour, with the
+       message as typed — so what is tapped here is what is seen there. */
+  }<div style={{
+    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase",
+    letterSpacing: 0.4, margin: "18px 0 8px"
+  }}>How it looks</div><ScanNoteStylePicker
+    value={scanNoteStyle}
+    onChange={setScanNoteStyle}
+    text={scanNote}
+    seed={myGloobalId}
+  />{error && <div
     role="alert"
     style={{
       marginTop: 16,
@@ -553,6 +567,7 @@ function CreatorSetupScreen({
       address: address.trim(),
       addressPublic,
       scanNote: scanNote.trim(),
+      scanNoteStyle,
       logo: logo || undefined
     })}
     disabled={!canSave}

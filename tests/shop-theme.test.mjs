@@ -241,7 +241,9 @@ test("extra photos are reachable, not just stored", () => {
   // the others, and a flat thumbnail can only carry a count.
   // Since the photo viewer: every photo opens, and the label says how many.
   assert.match(src, /shots\.length > 1 \? `See \$\{shots\.length\} photos of \$\{item\.title\}` : `See the photo of \$\{item\.title\}`/);
-  assert.match(src, /onViewPhotos=\{setPhotoView\}/);
+  // Through openPhotos since owner insights: it counts the tap, then opens.
+  assert.match(src, /onViewPhotos=\{openPhotos\}/);
+  assert.match(src, /const openPhotos = \(item\) => \{[\s\S]{0,200}setPhotoView\(item\);/);
   assert.match(src, /\{shots\.length\}<\/span> : null\}<\/button>/, "the count sits on the thumbnail");
 });
 

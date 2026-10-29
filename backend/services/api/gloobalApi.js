@@ -1497,6 +1497,18 @@ var GloobalApi = {
     return Array.isArray(result && result.categories) ? result.categories : [];
   },
 
+  // Counts a view, a scan or an item tap for the shop's owner. Fire and
+  // forget: a count that does not land is never worth an error.
+  creatorEvent(symbolId, type, itemId) {
+    if (!symbolId) return;
+    gloobalApiClient.post(`/api/creator/${encodeURIComponent(symbolId)}/events`, itemId ? { type, itemId } : { type }).catch(() => {});
+  },
+
+  // The owner's own last seven days. Only the owner can read it.
+  async getCreatorInsights(symbolId) {
+    return gloobalApiClient.get(`/api/creator/${encodeURIComponent(symbolId)}/insights`);
+  },
+
   async geoReverse(lat, lng) {
     try {
       const result = await gloobalApiClient.get(`/api/geo/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`);

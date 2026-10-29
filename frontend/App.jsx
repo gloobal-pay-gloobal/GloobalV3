@@ -1409,6 +1409,8 @@ function GloobalId() {
           }
         }
         const named = creator && typeof creator.handle === "string" && creator.handle.trim();
+        // A scan of a shop's code counts for that shop's owner insights.
+        if (named) GloobalApi.creatorEvent(parsed.gloobalId, "scan");
         setScanPayee(named ? { ...result.payee, creator } : result.payee);
       } else {
         setScanError(result.error);

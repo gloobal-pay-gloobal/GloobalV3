@@ -373,6 +373,8 @@ function CreatorPage({
   // The reviews sheet, and the summary the hero shows — kept here so a
   // review posted in the sheet moves the stars on the card straight away.
   const [reviewsOpen, setReviewsOpen] = useState54(false);
+  // The owner's own "this week" numbers (ShopInsights.jsx).
+  const [insightsOpen, setInsightsOpen] = useState54(false);
   const [reviewSummary, setReviewSummary] = useState54((creator && creator.reviews) || null);
   // Recomputed on each render; the page is rarely open across a closing
   // time, and reopening it shows the new state.
@@ -427,10 +429,26 @@ function CreatorPage({
     return () => fire(false);
   }, []);
 
+  // A customer opening the page counts as one view for the owner's
+  // insights — once a day per person, never the owner (server side).
+  useEffect51(() => {
+    if (!isOwner && creator && creator.symbolId) GloobalApi.creatorEvent(creator.symbolId, "view");
+  }, [creator && creator.symbolId, isOwner]);
+
   // The shop's own typeface, fetched the first time its page is drawn.
   useEffect51(() => { ensureShopFont(theme.fontKey); }, [theme.fontKey]);
 
-  const bump = (id, by) => setBasket((prev) => {
+  const bump = (id, by) => {
+    // A tap on + is the clearest "I want this" a page gets.
+    if (by > 0 && !isOwner && creator && creator.symbolId) GloobalApi.creatorEvent(creator.symbolId, "item", id);
+    bumpBasket(id, by);
+  };
+  // Opening an item's photos is interest too, for the owner's insights.
+  const openPhotos = (item) => {
+    if (!isOwner && creator && creator.symbolId && item && item.id) GloobalApi.creatorEvent(creator.symbolId, "item", item.id);
+    setPhotoView(item);
+  };
+  const bumpBasket = (id, by) => setBasket((prev) => {
     const next = { ...prev };
     const n = (Number(next[id]) || 0) + by;
     if (n <= 0) delete next[id]; else next[id] = n;
@@ -606,7 +624,8 @@ function CreatorPage({
     // The owner's way into the look of their own shop, on the shop itself
     // rather than buried in a settings list — which is where somebody
     // standing in front of their page actually wants it.
-    { key: "look", label: "Look", Icon: Palette2, onClick: onEditLook }
+    { key: "look", label: "Look", Icon: Palette2, onClick: onEditLook },
+    { key: "insights", label: "Insights", Icon: BarChartInsights, onClick: () => setInsightsOpen(true) }
   ] : []).map(({ key, label, Icon, onClick }) => <button
     key={key}
     onClick={onClick}
@@ -853,7 +872,7 @@ function CreatorPage({
         lens={lens}
         ccyCode={ccyCode}
         theme={theme}
-        onViewPhotos={setPhotoView}
+        onViewPhotos={openPhotos}
         onAdd={() => bump(item.id, 1)}
         onRemove={() => bump(item.id, -1)}
         onEdit={() => { setSaveError(""); setDraft({ id: item.id, title: item.title, price: String(item.price), note: item.note || "", category: item.category || "", badge: item.badge || "", photos: (item.photos && item.photos.length ? item.photos : (item.photo ? [item.photo] : [])), soldOut: Boolean(item.soldOut), special: Boolean(item.special) }); }}
@@ -1061,6 +1080,12 @@ function CreatorPage({
       cursor: saving ? "default" : "pointer", opacity: saving ? 0.7 : 1
     }}
   >{saving ? "Saving\u2026" : "Save item"}</button></div></div></div>}
+
+  {insightsOpen && isOwner ? <ShopInsightsSheet
+    symbolId={creator && creator.symbolId}
+    theme={theme}
+    onClose={() => setInsightsOpen(false)}
+  /> : null}
 
   {reviewsOpen ? <ShopReviewsSheet
     creator={creator}

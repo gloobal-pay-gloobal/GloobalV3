@@ -165,6 +165,7 @@ const CreatorSupplier = require('./models/CreatorSupplier');
 const CreatorPurchase = require('./models/CreatorPurchase');
 const CreatorCover = require('./models/CreatorCover');
 const CreatorReview = require('./models/CreatorReview');
+const CreatorStat = require('./models/CreatorStat');
 const Notification = require('./models/Notification');
 // Web Push. The model holds one row per subscribed browser; the service is the
 // only thing that talks to a push service and is inert when VAPID is unset.
@@ -4158,6 +4159,107 @@ app.get('/api/geo/pin/:pin', lookupLimit, requireAuth, async (req, res) => {
     geoCacheSet(key, found);
   }
   return res.json({ success: true, ...found });
+});
+
+// ── OWNER INSIGHTS ──────────────────────────────────────────────────────
+//
+// Page views, code scans and item taps, counted per shop per day
+// (models/CreatorStat.js), shown only to the shop's owner.
+//
+// Counting is deliberately conservative: the owner's own visits are not
+// counted, and a view or a scan is counted once per person per shop per
+// day (an in-memory set, so a restart can count somebody twice — an
+// undercount is the error worth avoiding, not this one). Item taps count
+// every tap: "which thing do people look at most" is the question.
+
+var CREATOR_STAT_SEEN = new Map();
+var CREATOR_STAT_SEEN_MAX = 50000;
+
+function creatorStatDay(d) {
+  return (d || new Date()).toISOString().slice(0, 10);
+}
+
+function creatorStatOnce(key) {
+  const day = creatorStatDay();
+  if (CREATOR_STAT_SEEN.get(key) === day) return false;
+  if (CREATOR_STAT_SEEN.size >= CREATOR_STAT_SEEN_MAX) CREATOR_STAT_SEEN.clear();
+  CREATOR_STAT_SEEN.set(key, day);
+  return true;
+}
+
+// POST /api/creator/:symbolId/events  { type: 'view'|'scan'|'item', itemId? }
+app.post('/api/creator/:symbolId/events', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const type = String(body.type || '');
+    if (!['view', 'scan', 'item'].includes(type)) {
+      return res.status(400).json({ success: false, code: 'invalid_event', message: 'Unknown event.' });
+    }
+    // Your own shop does not count.
+    if (symbolId && symbolId === req.authUser.symbolId) return res.json({ success: true, counted: false });
+    const owner = symbolId ? await User.exists({ symbolId, 'creatorProfile.handle': { $type: 'string', $ne: '' } }) : null;
+    if (!owner) return res.status(404).json({ success: false, code: 'user_not_found', message: 'No shop found.' });
+    const day = creatorStatDay();
+    const inc = {};
+    if (type === 'item') {
+      const itemId = String(body.itemId || '');
+      if (!/^[a-f0-9]{24}$/.test(itemId)) return res.status(400).json({ success: false, code: 'invalid_item', message: 'Unknown item.' });
+      inc[`items.${itemId}`] = 1;
+    } else {
+      if (!creatorStatOnce(`${type}|${req.authUser._id}|${symbolId}`)) return res.json({ success: true, counted: false });
+      inc[type === 'view' ? 'views' : 'scans'] = 1;
+    }
+    await CreatorStat.updateOne({ ownerSymbolId: symbolId, day }, { $inc: inc }, { upsert: true });
+    return res.json({ success: true, counted: true });
+  } catch (error) {
+    // Counting is never worth an error the person can see.
+    return res.json({ success: true, counted: false });
+  }
+});
+
+// GET /api/creator/:symbolId/insights — the owner's last 7 days, and the
+// 7 before for comparison.
+app.get('/api/creator/:symbolId/insights', lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+  try {
+    const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+    const today = new Date();
+    const days = [];
+    for (let i = 13; i >= 0; i--) days.push(creatorStatDay(new Date(today.getTime() - i * 86400000)));
+    const rows = await CreatorStat.find({ ownerSymbolId: symbolId, day: { $in: days } }).lean();
+    const byDay = new Map(rows.map((r) => [r.day, r]));
+    const week = days.slice(7).map((d) => ({ day: d, views: (byDay.get(d) || {}).views || 0, scans: (byDay.get(d) || {}).scans || 0 }));
+    const prev = days.slice(0, 7).reduce((acc, d) => {
+      const r = byDay.get(d) || {};
+      acc.views += r.views || 0;
+      acc.scans += r.scans || 0;
+      return acc;
+    }, { views: 0, scans: 0 });
+    const taps = new Map();
+    for (const d of days.slice(7)) {
+      const items = (byDay.get(d) || {}).items || {};
+      for (const [id, n] of Object.entries(items)) taps.set(id, (taps.get(id) || 0) + (Number(n) || 0));
+    }
+    const ids = Array.from(taps.keys()).filter((id) => /^[a-f0-9]{24}$/.test(id));
+    const titles = ids.length ? await CreatorItem.find({ _id: { $in: ids }, ownerSymbolId: symbolId }).select('_id title').lean() : [];
+    const topItems = titles.map((t) => ({ id: String(t._id), title: t.title, taps: taps.get(String(t._id)) || 0 }))
+      .sort((a, b) => b.taps - a.taps).slice(0, 5);
+    // People who paid this week — this account's own payments, counted.
+    const user = await User.findOne({ symbolId }).select('_id').lean();
+    const payers = user ? await Transaction.distinct('fromUserId', {
+      toUserId: user._id, status: 'completed', createdAt: { $gte: new Date(today.getTime() - 7 * 86400000) }
+    }) : [];
+    return res.json({
+      success: true,
+      week,
+      totals: { views: week.reduce((n, d) => n + d.views, 0), scans: week.reduce((n, d) => n + d.scans, 0), payers: payers.length },
+      previous: prev,
+      topItems
+    });
+  } catch (error) {
+    console.error('Creator insights error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load your insights right now.' });
+  }
 });
 
 // ── GLOOBAL बाज़ार ────────────────────────────────────────────────────────

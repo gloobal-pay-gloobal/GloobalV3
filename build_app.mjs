@@ -318,6 +318,8 @@ const FRONTEND_MODULES = [
   "features/creator/shopPhotoViewer.jsx",
   // The A4 "Scan to pay" poster, PDF or image.
   "features/creator/shopPoster.jsx",
+  // The owner's private "this week" sheet.
+  "features/creator/ShopInsights.jsx",
   "features/creator/CreatorPage.jsx",
   // Gloobal बाज़ार on Pay & Services: famous categories and Near me.
   "features/bazaar/bazaar.jsx",

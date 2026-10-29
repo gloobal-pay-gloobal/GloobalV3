@@ -185,6 +185,7 @@ const Category = require('./models/Category');
 // has the full argument.
 const TransactionTag = require('./models/TransactionTag');
 const CategoryLink = require('./models/CategoryLink');
+const Complaint = require('./models/Complaint');
 // A picture chosen instead of an icon, for one category. Its own
 // collection for the same reason ProfilePhoto is: the category list is a
 // constant read and an image on every row would cost all of it.
@@ -8759,6 +8760,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       // Paid at the receiver's shop (their creator name) rather than at
       // them as a person. Only honoured when the receiver really has one.
       toCreator,
+      // Sending a complaint's money back. Only ever closes the case when
+      // this payment is its receiver paying its reporter — see
+      // closeComplaintByReturn. Anything else about it is ignored.
+      complaintId,
     } = req.body || {};
 
     const senderIdentifier = String(senderSymbolId || fromSymbolId || symbolId || '').trim();
@@ -9899,6 +9904,12 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       }) || [];
     } catch (notificationError) {
       console.error('Payment notification error (non-fatal):', notificationError);
+    }
+
+    // A payment that sends a complaint's money back closes that case.
+    // Never throws; the payment has already happened.
+    if (complaintId) {
+      await closeComplaintByReturn({ complaintId, transaction: completedTransaction, sender, receiver });
     }
 
     // Web Push, in its OWN try/catch on purpose. Folding it into the block
@@ -11718,6 +11729,399 @@ app.post('/api/categories/:id/links', writeLimit, requireAuth, async (req, res) 
     return res.status(500).json({ success: false, message: 'Could not send that invitation.' });
   }
 });
+
+// ─── Complaints: a wrong payment, between the two people it concerns ────
+//
+// The receipt's old Report button opened a case on the payer's phone only;
+// the person who was paid never heard about it. These routes are the case
+// both of them can see, with a chat on it, and a way out: the receiver
+// sends the money back (an ordinary payment carrying the case's id — see
+// closeComplaintByReturn), the reporter marks it solved, or after 48 hours
+// without a fix the reporter hands it to GLOOBAL support.
+//
+// No route here moves money. Every route requires a token and answers only
+// to the case's two parties.
+
+const COMPLAINT_ESCALATE_AFTER_MS = 48 * 60 * 60 * 1000;
+// How long after a payment it can still be complained about.
+const COMPLAINT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const COMPLAINT_REASON_LABELS = {
+  wrong_person: 'Sent to the wrong person',
+  wrong_amount: 'Wrong amount',
+  paid_twice: 'Paid twice',
+  not_received: "Didn't get the item or service",
+  not_me: "I didn't make this payment",
+  other: 'Something else',
+};
+const COMPLAINT_OPEN_STATUSES = ['open', 'replied', 'escalated'];
+
+function complaintRefCandidate() {
+  return `GC-${crypto.randomInt(1000, 1000000)}`;
+}
+
+// What one side of the case is shown. Never the other person's balance,
+// mobile number or anything beyond the name the payment already carried.
+function publicComplaint(doc, viewerId, txn, people) {
+  const viewer = String(viewerId);
+  const isReporter = String(doc.reporterId) === viewer;
+  const parties = (txn && txn.metadata && txn.metadata.parties) || {};
+  const reporter = people.get(String(doc.reporterId)) || null;
+  const receiver = people.get(String(doc.receiverId)) || null;
+  const receiverName = (parties.receiver && parties.receiver.creatorHandle)
+    || notificationDisplayName(parties.receiver, receiver);
+  const reporterName = notificationDisplayName(parties.sender, reporter);
+  // Each side sees the payment in their OWN currency: the payer what left
+  // their balance, the payee what arrived in theirs.
+  const meta = (txn && txn.metadata) || {};
+  const amount = isReporter ? Number(meta.debitAmount ?? txn?.amount) : Number(txn?.amount);
+  const currency = isReporter ? (meta.sourceCurrency || txn?.currency) : txn?.currency;
+  const readAt = isReporter ? doc.reporterReadAt : doc.receiverReadAt;
+  const messages = (doc.messages || []).map((m) => ({
+    id: String(m._id),
+    from: m.from ? (String(m.from) === viewer ? 'me' : 'them') : 'system',
+    text: m.text,
+    at: m.at ? new Date(m.at).toISOString() : null,
+  }));
+  const lastOther = [...(doc.messages || [])].reverse().find((m) => !m.from || String(m.from) !== viewer);
+  return {
+    id: String(doc._id),
+    ref: doc.ref,
+    txnId: doc.referenceId,
+    myRole: isReporter ? 'reporter' : 'receiver',
+    otherName: isReporter ? receiverName : reporterName,
+    otherSymbolId: isReporter ? (receiver && receiver.symbolId) || '' : (reporter && reporter.symbolId) || '',
+    otherCountryIso: isReporter
+      ? (parties.receiver && parties.receiver.countryIso) || (receiver ? accountCountryIso(receiver) : null)
+      : (parties.sender && parties.sender.countryIso) || (reporter ? accountCountryIso(reporter) : null),
+    amount: Number.isFinite(amount) ? amount : 0,
+    currency: currency || '',
+    // What sending it back costs the receiver to put right: the payer's own
+    // figure, in the payer's currency, which is the destination side of the
+    // return payment.
+    returnAmount: Number(meta.debitAmount ?? txn?.amount) || 0,
+    returnCurrency: meta.sourceCurrency || txn?.currency || '',
+    paidAt: txn && txn.createdAt ? new Date(txn.createdAt).toISOString() : null,
+    reason: doc.reason,
+    note: doc.note || '',
+    status: doc.status,
+    openedAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : null,
+    escalatedAt: doc.escalatedAt ? new Date(doc.escalatedAt).toISOString() : null,
+    closedAt: doc.closedAt ? new Date(doc.closedAt).toISOString() : null,
+    canEscalateAt: doc.createdAt ? new Date(new Date(doc.createdAt).getTime() + COMPLAINT_ESCALATE_AFTER_MS).toISOString() : null,
+    unread: Boolean(lastOther && (!readAt || new Date(lastOther.at) > new Date(readAt))),
+    messages,
+  };
+}
+
+async function decorateComplaints(docs, viewerId) {
+  const txnIds = [...new Set(docs.map((d) => String(d.transactionId)))];
+  const userIds = [...new Set(docs.flatMap((d) => [String(d.reporterId), String(d.receiverId)]))];
+  const [txns, users] = await Promise.all([
+    Transaction.find({ _id: { $in: txnIds } }).select('amount currency metadata createdAt referenceId').lean(),
+    User.find({ _id: { $in: userIds } }).select('fullName symbolId mobileNumber countryIso dialCode').lean(),
+  ]);
+  const txnById = new Map(txns.map((t) => [String(t._id), t]));
+  const people = new Map(users.map((u) => [String(u._id), u]));
+  return docs.map((d) => publicComplaint(d, viewerId, txnById.get(String(d.transactionId)), people));
+}
+
+// Tell the other side, in the inbox and on their phone. Best-effort: a
+// failed notification must never fail the action it is about.
+async function notifyComplaintParty(userId, { title, message, complaint }) {
+  try {
+    const row = await Notification.create({
+      userId,
+      type: 'system',
+      title: title.slice(0, 100),
+      message: message.slice(0, 500),
+      metadata: { complaintId: String(complaint._id), complaintRef: complaint.ref },
+    });
+    await pruneNotifications(userId);
+    if (pushService.isPushEnabled()) {
+      await pushService.sendPushToUser(
+        userId,
+        {
+          v: 1,
+          category: 'transactional',
+          type: 'complaint',
+          complaintId: String(complaint._id),
+          notificationId: String(row._id),
+          title: title.slice(0, 100),
+          body: message.slice(0, 200),
+          url: `/?complaint=${encodeURIComponent(String(complaint._id))}`,
+          tag: `gloobal-complaint-${String(complaint._id)}`,
+          timestamp: Date.now(),
+        },
+        { category: 'transactional' }
+      );
+    }
+  } catch (error) {
+    console.error('Complaint notification failed (non-fatal):', error.message);
+  }
+}
+
+function capComplaintMessages(doc) {
+  const cap = Complaint.COMPLAINT_MESSAGE_CAP;
+  if (doc.messages.length > cap) doc.messages.splice(0, doc.messages.length - cap);
+}
+
+async function loadComplaintFor(req, res) {
+  const id = String(req.params.id || '');
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(404).json({ success: false, message: 'Complaint not found.' });
+    return null;
+  }
+  const doc = await Complaint.findById(id);
+  const me = String(req.authUser._id);
+  if (!doc || (String(doc.reporterId) !== me && String(doc.receiverId) !== me)) {
+    res.status(404).json({ success: false, message: 'Complaint not found.' });
+    return null;
+  }
+  return doc;
+}
+
+// POST /api/complaints — the payer raises a case about one of their payments.
+app.post('/api/complaints', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const referenceId = String(req.body?.txnId || '').trim();
+    const reason = String(req.body?.reason || '');
+    const note = String(req.body?.note || '').trim().slice(0, 280);
+    if (!referenceId) return res.status(400).json({ success: false, message: 'Which payment is this about?' });
+    if (!Complaint.COMPLAINT_REASONS.includes(reason)) return res.status(400).json({ success: false, message: 'Pick a reason.' });
+    if (reason === 'other' && note.length < 3) return res.status(400).json({ success: false, message: 'Tell them what went wrong.' });
+
+    const txn = await Transaction.findOne({ referenceId }).lean();
+    // Only the PAYER of a real, completed payment between two people.
+    if (!txn || String(txn.fromUserId) !== String(req.authUser._id) || !txn.toUserId) {
+      return res.status(404).json({ success: false, message: 'That payment was not found on your account.' });
+    }
+    if (txn.status !== 'success' || !['send', 'qr_payment'].includes(txn.type)) {
+      return res.status(400).json({ success: false, message: 'Only completed payments can be complained about.' });
+    }
+    if (Date.now() - new Date(txn.createdAt).getTime() > COMPLAINT_WINDOW_MS) {
+      return res.status(400).json({ success: false, message: 'Complaints can be raised up to 30 days after a payment.' });
+    }
+
+    const existing = await Complaint.findOne({ transactionId: txn._id });
+    if (existing) {
+      const [shown] = await decorateComplaints([existing.toObject()], req.authUser._id);
+      return res.status(200).json({ success: true, existing: true, complaint: shown });
+    }
+
+    let doc = null;
+    for (let attempt = 0; attempt < 5 && !doc; attempt += 1) {
+      try {
+        doc = await Complaint.create({
+          ref: complaintRefCandidate(),
+          transactionId: txn._id,
+          referenceId: txn.referenceId,
+          reporterId: req.authUser._id,
+          receiverId: txn.toUserId,
+          reason,
+          note,
+          reporterReadAt: new Date(),
+          messages: [{ from: null, text: `Complaint raised · ${COMPLAINT_REASON_LABELS[reason]}` }]
+            .concat(note ? [{ from: req.authUser._id, text: note }] : []),
+        });
+      } catch (error) {
+        // A ref collision retries with a new one; a second complaint about
+        // the same payment racing this one answers with that one.
+        if (error && error.code === 11000 && /transactionId/.test(String(error.message))) {
+          const raced = await Complaint.findOne({ transactionId: txn._id });
+          const [shown] = await decorateComplaints([raced.toObject()], req.authUser._id);
+          return res.status(200).json({ success: true, existing: true, complaint: shown });
+        }
+        if (!(error && error.code === 11000)) throw error;
+      }
+    }
+    if (!doc) return res.status(503).json({ success: false, message: 'Could not raise the complaint just now. Try again.' });
+
+    recordAudit({
+      userId: req.authUser._id, action: 'complaint.raise', status: 'success',
+      message: `Complaint ${doc.ref} on ${txn.referenceId}`, req,
+      metadata: { complaintId: doc._id, transactionId: txn._id, reason },
+    });
+
+    const payerName = notificationDisplayName(txn.metadata?.parties?.sender, req.authUser);
+    await notifyComplaintParty(txn.toUserId, {
+      title: 'A payment to you was reported',
+      message: `${payerName} says their payment was a mistake: ${COMPLAINT_REASON_LABELS[reason]}. Open the case to reply.`,
+      complaint: doc,
+    });
+
+    const [shown] = await decorateComplaints([doc.toObject()], req.authUser._id);
+    return res.status(201).json({ success: true, complaint: shown });
+  } catch (error) {
+    console.error('Complaint raise error:', error);
+    return res.status(500).json({ success: false, message: 'Could not raise the complaint just now. Try again.' });
+  }
+});
+
+// GET /api/complaints — every case I am either side of.
+app.get('/api/complaints', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const me = req.authUser._id;
+    const docs = await Complaint.find({ $or: [{ reporterId: me }, { receiverId: me }] })
+      .sort({ updatedAt: -1 })
+      .limit(100)
+      .lean();
+    return res.json({ success: true, complaints: await decorateComplaints(docs, me) });
+  } catch (error) {
+    console.error('Complaints read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load your complaints.' });
+  }
+});
+
+// GET /api/complaints/:id — one case. Opening it marks it read for me.
+app.get('/api/complaints/:id', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const doc = await loadComplaintFor(req, res);
+    if (!doc) return undefined;
+    const isReporter = String(doc.reporterId) === String(req.authUser._id);
+    await Complaint.updateOne({ _id: doc._id }, { $set: { [isReporter ? 'reporterReadAt' : 'receiverReadAt']: new Date() } }, { timestamps: false });
+    doc[isReporter ? 'reporterReadAt' : 'receiverReadAt'] = new Date();
+    const [shown] = await decorateComplaints([doc.toObject()], req.authUser._id);
+    return res.json({ success: true, complaint: shown });
+  } catch (error) {
+    console.error('Complaint read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load that complaint.' });
+  }
+});
+
+// POST /api/complaints/:id/messages — say something in the case's chat.
+app.post('/api/complaints/:id/messages', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const text = String(req.body?.text || '').trim().slice(0, 500);
+    if (!text) return res.status(400).json({ success: false, message: 'Type a message first.' });
+    const doc = await loadComplaintFor(req, res);
+    if (!doc) return undefined;
+    if (!COMPLAINT_OPEN_STATUSES.includes(doc.status)) {
+      return res.status(400).json({ success: false, message: 'This case is closed.' });
+    }
+    const me = req.authUser._id;
+    const isReporter = String(doc.reporterId) === String(me);
+    doc.messages.push({ from: me, text });
+    capComplaintMessages(doc);
+    if (!isReporter && doc.status === 'open') doc.status = 'replied';
+    doc[isReporter ? 'reporterReadAt' : 'receiverReadAt'] = new Date();
+    await doc.save();
+    await notifyComplaintParty(isReporter ? doc.receiverId : doc.reporterId, {
+      title: `New message · ${doc.ref}`,
+      message: `${req.authUser.fullName || 'They'}: ${text}`,
+      complaint: doc,
+    });
+    const [shown] = await decorateComplaints([doc.toObject()], me);
+    return res.json({ success: true, complaint: shown });
+  } catch (error) {
+    console.error('Complaint message error:', error);
+    return res.status(500).json({ success: false, message: 'Could not send that message.' });
+  }
+});
+
+// POST /api/complaints/:id/solve — the person who raised it says it's fixed.
+app.post('/api/complaints/:id/solve', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const doc = await loadComplaintFor(req, res);
+    if (!doc) return undefined;
+    if (String(doc.reporterId) !== String(req.authUser._id)) {
+      return res.status(403).json({ success: false, message: 'Only the person who raised it can mark it solved.' });
+    }
+    if (!COMPLAINT_OPEN_STATUSES.includes(doc.status)) {
+      return res.status(400).json({ success: false, message: 'This case is already closed.' });
+    }
+    doc.status = 'solved';
+    doc.closedAt = new Date();
+    doc.messages.push({ from: null, text: 'Marked solved' });
+    capComplaintMessages(doc);
+    await doc.save();
+    await notifyComplaintParty(doc.receiverId, {
+      title: `Complaint solved · ${doc.ref}`,
+      message: `${req.authUser.fullName || 'They'} marked the complaint solved.`,
+      complaint: doc,
+    });
+    const [shown] = await decorateComplaints([doc.toObject()], req.authUser._id);
+    return res.json({ success: true, complaint: shown });
+  } catch (error) {
+    console.error('Complaint solve error:', error);
+    return res.status(500).json({ success: false, message: 'Could not update that complaint.' });
+  }
+});
+
+// POST /api/complaints/:id/escalate — hand it to GLOOBAL support, after 48h.
+app.post('/api/complaints/:id/escalate', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const doc = await loadComplaintFor(req, res);
+    if (!doc) return undefined;
+    if (String(doc.reporterId) !== String(req.authUser._id)) {
+      return res.status(403).json({ success: false, message: 'Only the person who raised it can ask support.' });
+    }
+    if (!['open', 'replied'].includes(doc.status)) {
+      return res.status(400).json({ success: false, message: 'This case can no longer be escalated.' });
+    }
+    if (Date.now() - new Date(doc.createdAt).getTime() < COMPLAINT_ESCALATE_AFTER_MS) {
+      return res.status(400).json({ success: false, message: 'Support can step in 48 hours after the complaint was raised.' });
+    }
+    doc.status = 'escalated';
+    doc.escalatedAt = new Date();
+    doc.messages.push({ from: null, text: 'Escalated to GLOOBAL support. Support can now read this chat.' });
+    capComplaintMessages(doc);
+    await doc.save();
+    recordAudit({
+      userId: req.authUser._id, action: 'complaint.escalate', status: 'success',
+      message: `Complaint ${doc.ref} escalated`, req,
+      metadata: { complaintId: doc._id, transactionId: doc.transactionId },
+    });
+    await notifyComplaintParty(doc.receiverId, {
+      title: `Complaint escalated · ${doc.ref}`,
+      message: 'GLOOBAL support is now looking at this complaint.',
+      complaint: doc,
+    });
+    const [shown] = await decorateComplaints([doc.toObject()], req.authUser._id);
+    return res.json({ success: true, complaint: shown });
+  } catch (error) {
+    console.error('Complaint escalate error:', error);
+    return res.status(500).json({ success: false, message: 'Could not update that complaint.' });
+  }
+});
+
+// Called by POST /api/transactions/send after a payment commits, when the
+// payment says it is sending a complaint's money back. Closes the case only
+// when the payment really is the RECEIVER paying the REPORTER back, and
+// only in full; a smaller amount is recorded in the chat and leaves it open.
+// Never throws — the money has already moved.
+async function closeComplaintByReturn({ complaintId, transaction, sender, receiver }) {
+  try {
+    if (!complaintId || !mongoose.Types.ObjectId.isValid(String(complaintId))) return null;
+    const doc = await Complaint.findById(String(complaintId));
+    if (!doc || !COMPLAINT_OPEN_STATUSES.includes(doc.status)) return null;
+    if (String(doc.receiverId) !== String(sender._id) || String(doc.reporterId) !== String(receiver._id)) return null;
+    const original = await Transaction.findById(doc.transactionId).select('amount currency metadata').lean();
+    const owed = Number(original?.metadata?.debitAmount ?? original?.amount) || 0;
+    const owedCurrency = original?.metadata?.sourceCurrency || original?.currency || '';
+    const paid = Number(transaction.amount) || 0;
+    const full = owedCurrency && String(transaction.currency).toUpperCase() === String(owedCurrency).toUpperCase()
+      ? paid >= owed * 0.99
+      : true;
+    const amountText = `${formatNotificationAmount(paid, transaction.currency)} ${transaction.currency}`;
+    doc.messages.push({ from: null, text: `${notificationDisplayName(null, sender)} sent back ${amountText}` });
+    if (full) {
+      doc.status = 'returned';
+      doc.closedAt = new Date();
+      doc.returnTransactionId = transaction._id;
+    }
+    capComplaintMessages(doc);
+    await doc.save();
+    await notifyComplaintParty(doc.reporterId, {
+      title: full ? `Money sent back · ${doc.ref}` : `Part sent back · ${doc.ref}`,
+      message: `${notificationDisplayName(null, sender)} sent back ${amountText}.`,
+      complaint: doc,
+    });
+    return doc;
+  } catch (error) {
+    console.error('Complaint return close error (non-fatal):', error);
+    return null;
+  }
+}
 
 // GET /api/category-links — every link I am either side of.
 app.get('/api/category-links', requireAuth, async (req, res) => {

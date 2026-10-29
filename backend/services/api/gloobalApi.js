@@ -1079,6 +1079,36 @@ var GloobalApi = {
     return result.link || null;
   },
 
+  // ── Complaints (a wrong payment, between the two people it concerns) ──
+  //
+  // Every call answers { complaint } / [complaints] or { error } with the
+  // server's own words, so a screen can say exactly why it was refused.
+  async raiseComplaint({ txnId, reason, note }) {
+    try {
+      const result = await gloobalApiClient.post("/api/complaints", { txnId, reason, note: note || "" });
+      return (result && result.complaint) || { error: "Couldn't raise the complaint just now. Try again." };
+    } catch (err) {
+      return { error: err && err.status > 0 && err.message ? err.message : "Couldn't raise the complaint just now. Try again." };
+    }
+  },
+  async getComplaints() {
+    const result = await gloobalApiClient.get("/api/complaints");
+    return Array.isArray(result && result.complaints) ? result.complaints : [];
+  },
+  async getComplaint(id) {
+    const result = await gloobalApiClient.get(`/api/complaints/${encodeURIComponent(id)}`);
+    return (result && result.complaint) || null;
+  },
+  async complaintAction(id, action, body) {
+    try {
+      const path = action === "message" ? "messages" : action;
+      const result = await gloobalApiClient.post(`/api/complaints/${encodeURIComponent(id)}/${path}`, body || {});
+      return (result && result.complaint) || { error: "Couldn't update the complaint just now." };
+    } catch (err) {
+      return { error: err && err.status > 0 && err.message ? err.message : "Couldn't reach GLOOBAL just now. Try again." };
+    }
+  },
+
   // GET /api/category-links — every connection I am either side of, as
   // one list. `role` says which side I am on; nothing in a row carries
   // the other person's figures.

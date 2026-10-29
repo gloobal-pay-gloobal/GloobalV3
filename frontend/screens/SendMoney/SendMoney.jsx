@@ -459,6 +459,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       id: prefillReceiver.id || "",
       name: prefillReceiver.name || "GLOOBAL User",
       creatorHandle: prefillReceiver.creatorHandle || null,
+      // Sending a complaint's money back: the server closes that case when
+      // this payment lands (closeComplaintByReturn).
+      complaintId: prefillReceiver.complaintId || null,
       // Already masked. This value originates in GET /api/users/resolve (via
       // App.jsx's handleSendToScanned), which now masks before it answers —
       // see the note where maskMobileNumber used to be defined.

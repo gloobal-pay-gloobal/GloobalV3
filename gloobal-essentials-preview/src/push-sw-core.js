@@ -134,6 +134,8 @@ export function gloobalParsePushPayload(rawText) {
     type: type,
     notificationId: notificationId,
     transactionId: transactionId,
+    // A complaint's case. The open app routes a tap straight to it.
+    complaintId: typeof parsed.complaintId === "string" && /^[a-f0-9]{24}$/i.test(parsed.complaintId.trim()) ? parsed.complaintId.trim() : null,
     title: title,
     body: body,
     icon: icon,

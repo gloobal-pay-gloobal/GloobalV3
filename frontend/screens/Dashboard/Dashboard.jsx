@@ -1328,6 +1328,95 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     }
   };
 
+  // ── COMPLAINTS ─────────────────────────────────────────────────────
+  //
+  // Both sides of every case this account is in: the ones it raised and
+  // the ones raised against it. Read on sign-in (for the profile badge),
+  // again whenever the list opens, and the open case is re-read every
+  // 12 seconds so a reply shows up without leaving the screen.
+  const [complaints, setComplaints] = useState14([]);
+  const [complaintsLoading, setComplaintsLoading] = useState14(false);
+  const [showComplaints, setShowComplaints] = useState14(false);
+  const [openComplaint, setOpenComplaint] = useState14(null);
+  const [complaintBusy, setComplaintBusy] = useState14("");
+  const loadComplaints = async () => {
+    if (!myGloobalId) return;
+    setComplaintsLoading(true);
+    try {
+      setComplaints(await GloobalApi.getComplaints());
+    } catch (e) {
+      // Offline or cold: the list keeps what it had.
+    } finally {
+      setComplaintsLoading(false);
+    }
+  };
+  const openComplaintById = async (id) => {
+    if (!id) return;
+    try {
+      const found = await GloobalApi.getComplaint(String(id));
+      if (found) {
+        setOpenComplaint(found);
+        setComplaints((list) => list.map((c) => (c.id === found.id ? found : c)));
+      } else showToast2("That complaint could not be opened.");
+    } catch (e) {
+      showToast2("That complaint could not be opened just now.");
+    }
+  };
+  const runComplaintAction = async (action, body) => {
+    if (!openComplaint || complaintBusy) return;
+    setComplaintBusy(action);
+    try {
+      const next = await GloobalApi.complaintAction(openComplaint.id, action, body);
+      if (!next || next.error) { showToast2((next && next.error) || "Couldn't update the complaint."); return; }
+      setOpenComplaint(next);
+      setComplaints((list) => [next].concat(list.filter((c) => c.id !== next.id)));
+      if (action === "solve") showToast2("Marked solved");
+      if (action === "escalate") showToast2("GLOOBAL support will look at this case");
+    } finally {
+      setComplaintBusy("");
+    }
+  };
+  // Send back: an ordinary payment to the person who raised it, for what
+  // they paid, opened in Send Money where the PIN confirms it. The case id
+  // rides along and the server closes the case when the payment lands.
+  const sendBackForComplaint = () => {
+    const c = openComplaint;
+    if (!c || !c.otherSymbolId || !onPayPerson) return;
+    setOpenComplaint(null);
+    setShowComplaints(false);
+    onPayPerson({
+      gloobalId: c.otherSymbolId,
+      name: c.otherName,
+      countryIso: c.otherCountryIso || (dialCountry && dialCountry.iso),
+      prefillAmount: c.returnAmount,
+      complaintId: c.id
+    });
+  };
+  const requestCloseComplaints = useBackClose(showComplaints, () => setShowComplaints(false));
+  const requestCloseComplaint = useBackClose(Boolean(openComplaint), () => setOpenComplaint(null));
+  useEffect12(() => { loadComplaints(); }, [myGloobalId]);
+  useEffect12(() => { if (showComplaints) loadComplaints(); }, [showComplaints]);
+  useEffect12(() => {
+    if (!openComplaint) return undefined;
+    const id = openComplaint.id;
+    const timer = setInterval(async () => {
+      try {
+        const fresh = await GloobalApi.getComplaint(id);
+        if (fresh) setOpenComplaint((cur) => (cur && cur.id === id ? fresh : cur));
+      } catch (e) {
+        // A missed poll is caught by the next one.
+      }
+    }, 12e3);
+    return () => clearInterval(timer);
+  }, [openComplaint && openComplaint.id]);
+  // The receipt's "Open chat", and anything else that names a case.
+  useEffect12(() => {
+    const onOpen = (e) => { const id = e && e.detail && e.detail.id; if (id) { loadComplaints(); openComplaintById(id); } };
+    window.addEventListener("gloobal:openComplaint", onOpen);
+    return () => window.removeEventListener("gloobal:openComplaint", onOpen);
+  }, []);
+  const complaintsNeedingMe = complaints.filter((c) => c.unread || (c.myRole === "receiver" && c.status === "open")).length;
+
   const saveCreatorProfile = async (patch) => {
     if (creatorSaving) return;
     setCreatorSaving(true);
@@ -1453,6 +1542,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     //
     // Checked FIRST and returned from, so an object can never fall
     // through the string comparisons below into the final else.
+    // A complaint, by id — a push tap or a ?complaint= link.
+    if (deepLinkTarget && typeof deepLinkTarget === "object" && deepLinkTarget.complaint) {
+      openComplaintById(deepLinkTarget.complaint);
+      onConsumeDeepLink && onConsumeDeepLink();
+      return;
+    }
     if (deepLinkTarget && typeof deepLinkTarget === "object" && deepLinkTarget.creator) {
       setOpenCreator(deepLinkTarget.creator);
       onConsumeDeepLink && onConsumeDeepLink();
@@ -1490,6 +1585,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     else if (deepLinkTarget === "security") { setActiveTab("profile"); setProfileDetail("Security"); }
     // My shop: see openMyShop.
     else if (deepLinkTarget === "myshop") openMyShop();
+    else if (deepLinkTarget === "complaints") setShowComplaints(true);
     if (onConsumeDeepLink) onConsumeDeepLink();
   }, [deepLinkTarget]);
   useEffect12(() => {
@@ -3027,7 +3123,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        because there is already an "About" row in this list and two rows
        starting with that word is a menu nobody can scan. */
   }{PROFILE_ROWS.slice(0, 1)
-    .concat(["Creator Profile"], PROFILE_ROWS.slice(1)).map((label, i) => {
+    .concat(["Creator Profile"], PROFILE_ROWS.slice(1, 4), ["Complaints & reports"], PROFILE_ROWS.slice(4)).map((label, i) => {
     const rowColor = POSITION_COLORS[i % POSITION_COLORS.length];
     return <button
       key={label}
@@ -3036,7 +3132,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       // the same sheet. The rest still open their placeholder detail view.
       onClick={() => (label === "Notifications"
         ? window.dispatchEvent(new Event("gloobal:openNotifications"))
-        : setProfileDetail(label))}
+        : label === "Complaints & reports"
+          ? setShowComplaints(true)
+          : setProfileDetail(label))}
       className="v2-row"
       style={{
         width: "100%",
@@ -3049,7 +3147,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         cursor: "pointer",
         textAlign: "left"
       }}
-    ><span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{label}</span><ChevronRightIcon /></button>;
+    ><span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{label}</span><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>{label === "Complaints & reports" && complaintsNeedingMe > 0 && <span
+      data-complaints-badge
+      style={{ minWidth: 20, height: 20, borderRadius: 10, background: T.negative, color: "#fff", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}
+    >{complaintsNeedingMe}</span>}<ChevronRightIcon /></span></button>;
   })}</div>{
     /* Referral — moved here from the overview card. Tapping
        the row opens the Referral Network screen; tapping the
@@ -4064,6 +4165,19 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         return false;
       }
     }}
+  /></ScreenErrorBoundary>}{showComplaints && <ScreenErrorBoundary name="Complaints" onClose={() => setShowComplaints(false)}><ComplaintsScreen
+    cases={complaints.map((c) => complaintForScreen(c, displayLens, ccyCode))}
+    loading={complaintsLoading && complaints.length === 0}
+    onBack={requestCloseComplaints}
+    onOpen={(c) => openComplaintById(c.id)}
+  /></ScreenErrorBoundary>}{openComplaint && <ScreenErrorBoundary name="Complaint" onClose={() => setOpenComplaint(null)}><ComplaintCaseScreen
+    complaint={complaintForScreen(openComplaint, displayLens, ccyCode)}
+    busy={complaintBusy}
+    onBack={requestCloseComplaint}
+    onSend={(text) => runComplaintAction("message", { text })}
+    onSolved={() => runComplaintAction("solve")}
+    onEscalate={() => runComplaintAction("escalate")}
+    onSendBack={sendBackForComplaint}
   /></ScreenErrorBoundary>}{openCreator && <ScreenErrorBoundary name="Creator page" onClose={() => setOpenCreator(null)}><CreatorPage
     creator={openCreator}
     isOwner={Boolean(openCreator.symbolId) && openCreator.symbolId === myGloobalId}

@@ -655,6 +655,18 @@ function mapServerTransaction(row, viewerSymbolId) {
 // so anything that fetched the transaction by reference would let whoever
 // ends up holding the link read a stranger's payment. Both people who were
 // part of it already have the row; nobody else does.
+// ?complaint=<id> — where a complaint's push notification lands when the
+// app was closed. Read once; consumed when the dashboard opens it.
+function readComplaintFromUrl() {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = new URLSearchParams(window.location.search).get("complaint");
+    return raw ? decodeURIComponent(raw).trim() : "";
+  } catch (e) {
+    return "";
+  }
+}
+
 function readSharedTxnFromUrl() {
   if (typeof window === "undefined") return "";
   try {
@@ -1005,6 +1017,8 @@ function GloobalId() {
         // person. The server checks the receiver really has a creator name
         // and records it on the payment; history and receipts read it back.
         toCreator: Boolean(receiver && receiver.creatorHandle),
+        // Set only when this payment sends a complaint's money back.
+        complaintId: (receiver && receiver.complaintId) || undefined,
         // The ID this device already minted for the payment, so the record
         // MongoDB stores is the same one the sender's receipt, complaint
         // window and location report are keyed by — and, because the
@@ -1224,7 +1238,11 @@ function GloobalId() {
       mobileNumber: payee.mobileNumber,
       currency: COUNTRY_CURRENCY[payeeCountry.iso] || "USD",
       shareRate: payee.shareRate,
-      registered: true
+      registered: true,
+      // A complaint's "Send back": the amount is already decided, and the
+      // case it closes rides along to the server.
+      prefillAmount: Number(payee.prefillAmount) > 0 ? String(Number(payee.prefillAmount).toFixed(2)) : "",
+      complaintId: payee.complaintId || null
     });
     setShowScanScreen(false);
     setScanPayee(null);
@@ -1613,7 +1631,13 @@ function GloobalId() {
   useEffect15(() => {
     const leave = () => setActiveScreen(null);
     window.addEventListener("gloobal:openShop", leave);
-    return () => window.removeEventListener("gloobal:openShop", leave);
+    // A complaint opened from a receipt (its "Open chat") lives on the
+    // dashboard, so whatever screen the receipt was over steps aside.
+    window.addEventListener("gloobal:openComplaint", leave);
+    return () => {
+      window.removeEventListener("gloobal:openShop", leave);
+      window.removeEventListener("gloobal:openComplaint", leave);
+    };
   }, []);
   // A scanned or linked payee belongs to the Send Money visit it opened.
   // However Send Money is left — its close button, the back button, a
@@ -1672,6 +1696,22 @@ function GloobalId() {
   // Dashboard.jsx. "send" and "coverage" don't go through this — they're
   // App.jsx's own activeScreen instead (see goToDashboardDestination).
   const [dashboardDeepLink, setDashboardDeepLink] = useState19(null);
+  // A complaint link (?complaint=) opens its case once the dashboard is up,
+  // then leaves the address bar so a reload doesn't open it again.
+  const complaintLinkRef = useRef29(readComplaintFromUrl());
+  useEffect15(() => {
+    if (stage !== "dashboard" || !complaintLinkRef.current) return;
+    const id = complaintLinkRef.current;
+    complaintLinkRef.current = "";
+    setDashboardDeepLink({ complaint: id });
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("complaint");
+      window.history.replaceState({}, "", url.toString());
+    } catch (e) {
+      // The case still opens.
+    }
+  }, [stage]);
   // A receipt link someone was sent. Read once here; acted on further down,
   // below the history it has to search.
   const [sharedTxnRef, setSharedTxnRef] = useState19(() => readSharedTxnFromUrl());
@@ -1825,6 +1865,13 @@ function GloobalId() {
         return;
       }
       if (data.type !== "gloobal:push-click") return;
+      // A complaint: straight to its case.
+      const complaintId = data.payload && data.payload.complaintId;
+      if (complaintId) {
+        setActiveScreen(null);
+        setDashboardDeepLink({ complaint: String(complaintId) });
+        return;
+      }
       const txnId = data.payload && data.payload.transactionId;
       if (txnId && data.payload.category !== "promotional") {
         setSharedTxnRef(String(txnId));
@@ -3014,6 +3061,7 @@ function GloobalId() {
     { key: "ghscore", section: "You", group: "post", label: "Hooman Score", locked: !everRegistered, onPress: () => goToDashboardDestination("ghscore") },
     { key: "updateId", section: "You", group: "post", label: "Update GLOOBAL ID", locked: !everRegistered, onPress: () => goToDashboardDestination("updateId") },
     { key: "referralnet", section: "You", group: "post", label: "Referral Network", locked: !everRegistered, onPress: () => goToDashboardDestination("referral") },
+    { key: "complaints", section: "You", group: "post", label: "Complaints & Reports", locked: !everRegistered, onPress: () => goToDashboardDestination("complaints") },
     { key: "security", section: "You", group: "post", label: "Security & App Lock", locked: !everRegistered, onPress: () => goToDashboardDestination("security") },
     { key: "notifications", section: "You", group: "post", label: "Notifications", locked: !everRegistered, onPress: () => goToDashboardDestination("notifications") },
     { key: "coverage", section: "GLOOBAL", group: "post", label: "GLOOBAL Coverage", locked: !everRegistered, onPress: () => goToDashboardDestination("coverage") },

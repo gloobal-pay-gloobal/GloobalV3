@@ -157,6 +157,10 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   );
   const { getLocationForViewer, getComplaintWindow, openComplaint } = useProvenanceAndDisputes();
   const [reportSubmitted, setReportSubmitted] = useState11(false);
+  const [complaintOpen, setComplaintOpen] = useState11(false);
+  const [complaintBusy, setComplaintBusy] = useState11(false);
+  const [complaintError, setComplaintError] = useState11("");
+  const [complaintRaised, setComplaintRaised] = useState11(null);
   // Which of the two quiet things under the ticket is open: "where", "report",
   // or neither. One at a time, so the foot of the receipt never grows by two
   // blocks at once.
@@ -232,6 +236,28 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // open or closed: a window that has closed is a fact worth being able to
   // read, and hiding the control would leave somebody looking for it.
   const canReport = !!complaintWindow;
+  // A payment this person SENT, that the server knows about, can carry a
+  // complaint to the person who received it. Everything else keeps the
+  // old on-device report.
+  const canComplain = isSent && receipt.kind !== "share" && Boolean(receipt.txnId);
+  const raiseComplaint = async ({ reason, note }) => {
+    if (complaintBusy) return;
+    setComplaintBusy(true);
+    setComplaintError("");
+    try {
+      const created = typeof GloobalApi !== "undefined" && GloobalApi.raiseComplaint
+        ? await GloobalApi.raiseComplaint({ txnId: receipt.txnId, reason, note })
+        : null;
+      if (!created || created.error) {
+        setComplaintError((created && created.error) || "Couldn't raise the complaint just now. Try again.");
+        return;
+      }
+      setComplaintOpen(false);
+      setComplaintRaised(created);
+    } finally {
+      setComplaintBusy(false);
+    }
+  };
   const handleReportIssue = () => {
     if (!receipt.txnId) return;
     const result = openComplaint({ txnId: receipt.txnId, raisedBy: viewerRole, reason: "Reported from receipt" });
@@ -1367,7 +1393,12 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     icon={<MapPin size={20} color={T.accent} />}
     label="Where"
     onClick={() => setDetail((d) => (d === "where" ? null : "where"))}
-  />}{canReport && <ReceiptIconAction
+  />}{canComplain && <ReceiptIconAction
+    testId="receipt-complain"
+    icon={<CpComplaintIcon size={20} color={T.negative} />}
+    label="Complain"
+    onClick={() => { setComplaintError(""); setComplaintOpen(true); }}
+  />}{!canComplain && canReport && <ReceiptIconAction
     testId="receipt-report"
     icon={reportSubmitted ? <Check size={20} color={T.positive} /> : <FlagIcon2 size={20} color={T.accent} />}
     label={reportSubmitted ? "Reported" : "Report"}
@@ -1472,5 +1503,26 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        One line, not two: the tagline that used to sit under it is on the
        screens that introduce the app, and a receipt is not the place to be
        introduced to anything. */
-  }<div style={{ marginTop: "auto", textAlign: "center", padding: "12px 0 4px" }}><div style={{ fontSize: 11.5, letterSpacing: 1.2, color: T.ink }}><HoomanMark /></div></div></div></div></div>;
+  }<div style={{ marginTop: "auto", textAlign: "center", padding: "12px 0 4px" }}><div style={{ fontSize: 11.5, letterSpacing: 1.2, color: T.ink }}><HoomanMark /></div></div></div></div>{
+    /* The complaint flow. Only the person who PAID raises one from a
+       receipt: the person who was paid sees it under Profile → Complaints &
+       reports, with the reason, and answers it there. */
+  }<ComplaintReasonSheet
+    open={complaintOpen}
+    payment={{ name: receipt.name || "", when: [receipt.date, receipt.time].filter(Boolean).join(" · "), amountText: geuLensBarMoney(Number(paymentAmount) || 0, paymentCurrency || "", lens, viewerCurrency) }}
+    busy={complaintBusy}
+    error={complaintError}
+    onClose={() => setComplaintOpen(false)}
+    onRaise={raiseComplaint}
+  /><ComplaintRaisedSheet
+    open={Boolean(complaintRaised)}
+    caseRef={complaintRaised && complaintRaised.ref}
+    payment={{ name: receipt.name || "", when: [receipt.date, receipt.time].filter(Boolean).join(" · "), amountText: geuLensBarMoney(Number(paymentAmount) || 0, paymentCurrency || "", lens, viewerCurrency) }}
+    onDone={() => setComplaintRaised(null)}
+    onOpenChat={() => {
+      const opened = complaintRaised;
+      setComplaintRaised(null);
+      if (typeof window !== "undefined" && opened) window.dispatchEvent(new CustomEvent("gloobal:openComplaint", { detail: { id: opened.id } }));
+    }}
+  /></div>;
 }

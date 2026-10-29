@@ -39,13 +39,13 @@ function LocationRequiredModal({ open, reason, busy, onRetry, onClose }) {
     },
     denied: {
       title: "Location is needed to pay",
-      body: "Gloobal confirms which country a payment is made from before it moves money — it's how a cross-border payment is checked for fraud. Location is currently blocked for Gloobal in your browser, and only your device settings can turn it back on: open your browser's site settings for this page, set Location to Allow, then come back.",
+      body: "GLOOBAL confirms which country a payment is made from before it moves money — it's how a cross-border payment is checked for fraud. Location is currently blocked for GLOOBAL in your browser, and only your device settings can turn it back on: open your browser's site settings for this page, set Location to Allow, then come back.",
       primary: "I've allowed it — try again",
       canRetry: true
     },
     unavailable: {
       title: "This device can't share location",
-      body: "Location isn't available here — either this browser has no location support, or the page isn't on a secure connection. Payments need it for the country check. Try Gloobal on your phone's browser.",
+      body: "Location isn't available here — either this browser has no location support, or the page isn't on a secure connection. Payments need it for the country check. Try GLOOBAL on your phone's browser.",
       primary: null,
       canRetry: false
     }

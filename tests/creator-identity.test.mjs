@@ -337,10 +337,10 @@ describe("names nobody gets", () => {
     assert.equal(built.code, "reserved_name", `${a} was refused for the wrong reason: ${built.message}`);
   };
 
-  test("Gloobal's own name, in any casing", () => {
+  test("GLOOBAL's own name, in any casing", () => {
     reserved("gloobal", "");
     reserved("GLOOBAL", "");
-    reserved("Gloobal", "");
+    reserved("GLOOBAL", "");
   });
 
   test("and as the head of a two-part name", () => {
@@ -525,7 +525,7 @@ describe("a creator who skipped is a real creator", () => {
     const fn = strip(setup).slice(at, strip(setup).indexOf("\n}", at));
     assert.match(fn, /return fallbackGloobalId \|\| "";/,
       "a creator with no handle falls back to a blank or an invented label");
-    assert.match(setup, /people can still pay your creator side at your Gloobal ID\./);
+    assert.match(setup, /people can still pay your creator side at your <GloobalWordmark \/> ID\./);
   });
 });
 
@@ -554,7 +554,7 @@ describe("the mark is a picture of a different thing", () => {
 });
 
 describe("it is one account, not two", () => {
-  test("the handle resolves to the same Gloobal ID", () => {
+  test("the handle resolves to the same GLOOBAL ID", () => {
     // The whole design rests on this. A handle that produced its own
     // account would be a second balance, a second ledger and a second
     // thing to keep in step.
@@ -681,7 +681,7 @@ describe("the creator's name is presented as a name", () => {
     assert.match(cp, /catch \(e\)/);
   });
 
-  test("the Gloobal ID starts covered, like every other figure here", () => {
+  test("the GLOOBAL ID starts covered, like every other figure here", () => {
     // Not a secret, but an identifier somebody can write down over your
     // shoulder — and this is a screen people open in front of customers.
     const src = panel();
@@ -745,7 +745,7 @@ describe("scanning a shop shows the shop", () => {
   test("the card leads with the mark and the brand name", () => {
     const src = app();
     // "Gloobal बाजार" now — the brand in bold, the Hindi word for market.
-    assert.match(src, /Gloobal<\/b> \{"\\u092C\\u093E\\u091C\\u093E\\u0930"\}/);
+    assert.match(src, /<GloobalWordmark \/><\/b> \{"\\u092C\\u093E\\u091C\\u093E\\u0930"\}/);
     assert.match(src, /src=\{scanPayee\.creator\.logo\}/, "their logo where they have one");
     assert.match(src, /businessMarkInitials\(scanPayee\.creator\.handle \|\| ""\)/,
       "and the generated mark where they do not, so a shop is never a gap");
@@ -783,7 +783,7 @@ describe("scanning a shop shows the shop", () => {
     // Scoped to the confirm card. "Scan again" is still the right words
     // on the RETRY button after a lookup fails — that one is a sentence
     // about what went wrong, not a control sitting beside Pay.
-    const card = src.slice(src.indexOf('{scanPayee.creator ? "Gloobal Shop" : "Gloobal ID"}'));
+    const card = src.slice(src.indexOf('{scanPayee.creator ? "GLOOBAL Shop" : "GLOOBAL ID"}'));
     assert.doesNotMatch(card.slice(0, card.indexOf("</div>}</div>}</div>;")), /Scan again/,
       "the word is back on the confirm card");
   });

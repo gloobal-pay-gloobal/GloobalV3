@@ -195,7 +195,7 @@ function SymbolIdHelpSheet({ open, onClose }) {
   return <HelpSheet
     open={open}
     onClose={onClose}
-    title="Your Gloobal ID"
+    title="Your GLOOBAL ID"
   >{
     /* The claim, once, with a mark beside it. The old sheet opened with a
        four-line subtitle explaining keyboards and countries; this says the
@@ -319,7 +319,7 @@ function ReferralHelpSheet({ open, onClose }) {
     open={open}
     onClose={onClose}
     title="How the referral network works"
-    subtitle="This step is optional. If somebody's Gloobal ID brought you to Gloobal, type it here — it records them as the person who introduced you, once, at sign-up."
+    subtitle="This step is optional. If somebody's GLOOBAL ID brought you to GLOOBAL, type it here — it records them as the person who introduced you, once, at sign-up."
   ><span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: T.inkFaint, marginBottom: 9 }}>
       An example
     </span><div
@@ -341,6 +341,6 @@ function ReferralHelpSheet({ open, onClose }) {
       border: `1px solid ${T.line}`
     }}
   ><span style={{ display: "block", fontSize: 12.5, lineHeight: 1.55, color: T.ink }}>
-      It runs the other way too. Once you are in, your own Gloobal ID is your referral ID — anyone who signs up with it joins your network, and you earn 1% of what <em>they</em> earn, on every payment they make.
+      It runs the other way too. Once you are in, your own <GloobalWordmark /> ID is your referral ID — anyone who signs up with it joins your network, and you earn 1% of what <em>they</em> earn, on every payment they make.
     </span></div><div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}><HelpStepRow n="•">Your network and its earnings live under <strong style={{ fontWeight: 800 }}>My Referral Network</strong> in your profile.</HelpStepRow><HelpStepRow n="•">No code? Tap <strong style={{ fontWeight: 800 }}>Skip for now</strong>. Nothing about your account depends on it.</HelpStepRow></div></HelpSheet>;
 }

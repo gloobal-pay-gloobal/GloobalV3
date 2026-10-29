@@ -31,6 +31,6 @@ test("the PDF is one A4 page around the JPEG", () => {
 });
 
 test("no poster without a code, and it is reached from the shop code screen", () => {
-  assert.match(src(), /onToast\("Your Gloobal ID isn't ready yet\."\);/);
+  assert.match(src(), /onToast\("Your GLOOBAL ID isn't ready yet\."\);/);
   assert.match(readSource("frontend/screens/Dashboard/Dashboard.jsx"), /\{showPoster \? <ShopPosterSheet/);
 });

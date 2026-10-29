@@ -154,10 +154,10 @@ async function shopPosterCanvas({ creator, gloobalId, qrStyle = "classic" }) {
 
   ctx.fillStyle = "#4B4762";
   ctx.font = "600 30px Inter, system-ui, sans-serif";
-  ctx.fillText("Open the Gloobal app, tap Scan, and point it here.", W / 2, 1668);
+  ctx.fillText("Open the GLOOBAL app, tap Scan, and point it here.", W / 2, 1668);
   ctx.fillStyle = "#15132A";
   ctx.font = "800 34px 'Space Grotesk', system-ui, sans-serif";
-  ctx.fillText("Gloobal बाज़ार", W / 2, 1718);
+  ctx.fillText("GLOOBAL बाज़ार", W / 2, 1718);
 
   return canvas;
 }
@@ -222,7 +222,7 @@ function ShopPosterSheet({ creator, gloobalId, qrStyle, onClose, onToast }) {
     let live = true;
     if (!buildGloobalPayUrl(gloobalId, "shop")) {
       // A poster with no code on it is a poster that cannot be paid at.
-      onToast && onToast("Your Gloobal ID isn't ready yet.");
+      onToast && onToast("Your GLOOBAL ID isn't ready yet.");
       onClose && onClose();
       return undefined;
     }
@@ -259,7 +259,7 @@ function ShopPosterSheet({ creator, gloobalId, qrStyle, onClose, onToast }) {
     const file = typeof File !== "undefined" ? new File([blob], shopPosterFileName(creator, "png"), { type: "image/png" }) : null;
     await gloobalShareLink({
       title: creatorDisplayName(creator, gloobalId),
-      message: `Pay ${creatorDisplayName(creator, gloobalId)} on Gloobal:`,
+      message: `Pay ${creatorDisplayName(creator, gloobalId)} on GLOOBAL:`,
       url: buildGloobalPayUrl(gloobalId, "shop"),
       file,
       onToast

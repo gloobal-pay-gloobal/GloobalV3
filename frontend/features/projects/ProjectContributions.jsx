@@ -217,7 +217,7 @@ function ProjectGiveSheet({ project, onClose, onContinue, tint }) {
       Give to {project.title}
     </div><div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 6, lineHeight: 1.5 }}>
       You'll pay {project.ownerSymbolId ? "the project" : "the owner"} on the
-      usual Send screen. The money reaches them straight away — Gloobal does
+      usual Send screen. The money reaches them straight away — <GloobalWordmark /> does
       not hold it and cannot return it for you.
     </div></div>{
     /* The one question. A switch rather than a checkbox: the answer
@@ -308,7 +308,7 @@ function ProjectContributionList({ projectId, enabled = true, money, tint, accen
             /* "Someone" is the withheld name, and it is not the same as a
                person who happens to have no name set — the server answers
                `anonymous` for exactly this, so the two are never confused. */
-          }{row.anonymous ? "Someone" : (row.name || "Gloobal User")}</span>{row.isMine && <span
+          }{row.anonymous ? "Someone" : (row.name || "GLOOBAL User")}</span>{row.isMine && <span
             style={{ flexShrink: 0, fontSize: 10, fontWeight: 800, color: accent, background: tint, borderRadius: 999, padding: "2px 7px" }}
           >You</span>}</span>{row.note && <span
             style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.45, overflowWrap: "anywhere" }}

@@ -32,7 +32,7 @@ const card = readSource("frontend/components/common/gloobalReceiveQrCard.jsx");
 const server = readSource("server/server.js");
 
 describe("one identity, both roles", () => {
-  test("the Creator ID is the account's own Gloobal ID", () => {
+  test("the Creator ID is the account's own GLOOBAL ID", () => {
     assert.match(app, /const creatorId = secureId;/);
   });
 
@@ -77,7 +77,7 @@ describe("one identity, both roles", () => {
   });
 });
 
-describe("every Gloobal QR is drawn by one component", () => {
+describe("every GLOOBAL QR is drawn by one component", () => {
   test("the Receive sheet is the only place a QR is rendered", () => {
     assert.match(stripComments(dash), /<GloobalReceiveQrCard\b/);
     assert.doesNotMatch(stripComments(app), /<GloobalReceiveQrCard\b|<GloobalQrSvg\b/, "App.jsx must not draw a QR of its own");
@@ -236,7 +236,7 @@ describe("the card's hallmark and the code's mark follow different rules", () =>
     const at = card.indexOf("<GH2HFlipCircle");
     assert.ok(at > 0);
     const row = card.slice(at, at + 700);
-    assert.match(row, /Your Gloobal QR/, "the hallmark is not on the title row");
+    assert.match(row, /Your <GloobalWordmark \/> QR/, "the hallmark is not on the title row");
     assert.ok(
       card.indexOf("<GH2HFlipCircle") < card.indexOf('data-testid="qr-header-action"'),
       "the hallmark is not on the opposite side from My Share"

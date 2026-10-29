@@ -33,7 +33,7 @@
 // break on them.
 
 // The shell of a notification when the payload told us nothing usable.
-var GLOOBAL_PUSH_FALLBACK_TITLE = "Gloobal";
+var GLOOBAL_PUSH_FALLBACK_TITLE = "GLOOBAL";
 var GLOOBAL_PUSH_FALLBACK_BODY = "You have a new update.";
 var GLOOBAL_PUSH_ICON = "/icons/icon-192.png";
 
@@ -50,6 +50,35 @@ var GLOOBAL_PUSH_ICON = "/icons/icon-192.png";
 // gloobalResolveClickUrl below, one field along. So the only icons that can
 // be asked for are the ones this app ships, named by index.
 var GLOOBAL_PUSH_DISC = /^\/icons\/notif\/disc-[0-7]\.png$/;
+
+// ── THE APP LOGO'S COLOUR FOR THESE TWO HOURS ─────────────────────────
+// A notification shows the app logo in the colour it wears right now —
+// one of five, changing every two hours. The worker cannot read the app's
+// storage, so the colour comes from the clock alone, by exactly the walk
+// frontend/components/common/appLogo.jsx makes (gloobalLogoIndexAt): two-
+// hour steps from 1 January 2026, each a jump of 1 to 4 round the five.
+// A test runs both and requires the same answer for the same moment.
+var GLOOBAL_LOGO_KEYS = ["indigo", "slate", "purple", "espresso", "bluegray"];
+var GLOOBAL_LOGO_SLOT = 2 * 60 * 60 * 1000;
+var GLOOBAL_LOGO_EPOCH = Math.floor(Date.UTC(2026, 0, 1) / GLOOBAL_LOGO_SLOT);
+
+function gloobalLogoSlotHash(n) {
+  var h = (n | 0) ^ 0x9e3779b9;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+export function gloobalLogoKeyAt(ms) {
+  var slot = Math.floor(Number(ms) / GLOOBAL_LOGO_SLOT);
+  var index = 2;
+  if (Number.isFinite(slot)) {
+    for (var s = GLOOBAL_LOGO_EPOCH + 1; s <= slot; s++) {
+      index = (index + 1 + (gloobalLogoSlotHash(s) % 4)) % GLOOBAL_LOGO_KEYS.length;
+    }
+  }
+  return GLOOBAL_LOGO_KEYS[index];
+}
 
 // Parses the raw text of `event.data`. Always returns an object — never
 // null, never throws — so every caller can read fields off it without a
@@ -136,10 +165,12 @@ export function gloobalResolveClickUrl(payload) {
 export function gloobalNotificationOptions(payload) {
   return {
     body: payload.body,
-    // The payment's own disc where there is one, the app icon otherwise.
-    // `badge` stays the app icon either way: a badge is drawn as a
-    // monochrome silhouette, so a colour there is thrown away.
-    icon: payload.icon || GLOOBAL_PUSH_ICON,
+    // The app logo in its colour for these two hours (see
+    // gloobalLogoKeyAt above). The payload's disc is still parsed and
+    // checked, and kept in `data`, but the tray shows the logo.
+    // `badge` stays the app icon: a badge is drawn as a monochrome
+    // silhouette, so a colour there is thrown away.
+    icon: "/icons/logo/" + gloobalLogoKeyAt(Date.now()) + "-192.png",
     badge: GLOOBAL_PUSH_ICON,
     tag: payload.tag,
     data: payload,

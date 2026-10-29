@@ -34,10 +34,10 @@
 
 // What a coin movement is called, from the holder's side.
 var COIN_RECEIPT_TITLES = {
-  coin_mint: "Gloobal Coin bought",
-  coin_redeem: "Gloobal Coin sold",
-  coin_send_out: "Gloobal Coin sent",
-  coin_send_in: "Gloobal Coin received"
+  coin_mint: "GLOOBAL Coin bought",
+  coin_redeem: "GLOOBAL Coin sold",
+  coin_send_out: "GLOOBAL Coin sent",
+  coin_send_in: "GLOOBAL Coin received"
 };
 
 // The other side of a buy or sell.
@@ -82,7 +82,7 @@ function coinReceiptFrom(row, viewer) {
   return {
     kind: "coin",
     coinType: row.type,
-    title: COIN_RECEIPT_TITLES[titleKey] || "Gloobal Coin",
+    title: COIN_RECEIPT_TITLES[titleKey] || "GLOOBAL Coin",
     // Reusing the payment receipt's own vocabulary so the modal needs no
     // third notion of direction: "received" tints green, "sent" red.
     direction: coinArrived ? "received" : "sent",

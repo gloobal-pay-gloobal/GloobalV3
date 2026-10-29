@@ -256,6 +256,10 @@ function HeartFromBharat() {
 }
 function LaunchSplash({ onFinish }) {
   const [phase, setPhase] = useState20("logo");
+  // The app logo's colour for these two hours (appLogo.jsx): the mark on
+  // the card wears it, so the first thing the app shows is the logo as it
+  // is right now.
+  const logoColor = useGloobalLogoColor();
   // Separate from `phase` on purpose. The bar has to begin travelling on the
   // FIRST paint; `phase` does not leave "logo" until the flip starts at
   // 2200ms, so driving the width from it would have started the countdown
@@ -457,9 +461,10 @@ function LaunchSplash({ onFinish }) {
     flipMs={FLIP_MS}
     symbolFontSize={26}
     symbolMaxWidth={30}
+    background={logoColor.hex}
   /><span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}><span
     style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: "rgba(255,255,255,0.66)" }}
-  >Gloobal Bank</span><span
+  ><GloobalWordmark /> Bank</span><span
     style={{ fontSize: 19, fontWeight: 800, fontFamily: T.fontDisplay, letterSpacing: -0.4, lineHeight: 1.15 }}
   >Your own currency</span>{
     /* Two words, not four.
@@ -516,7 +521,7 @@ function LaunchSplash({ onFinish }) {
     }}
   ><span
     style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkFaint }}
-  >Gloobal Energy Unit</span><span
+  ><GloobalWordmark /> Energy Unit</span><span
     style={{ fontSize: 21, fontWeight: 800, fontFamily: T.fontDisplay, color: T.ink, letterSpacing: -0.5, lineHeight: 1.15 }}
   >Local energy<span style={{ opacity: 0.35, margin: "0 7px" }}>·</span>Global use</span>{
     /* "for you" is doing real work in that sentence. It is what marks

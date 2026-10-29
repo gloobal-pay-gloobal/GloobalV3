@@ -296,7 +296,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // only thing left for it to say.
   const tabLabel = (tab) => (tab === "share"
     ? "Creator Share"
-    : receipt.kind === "coin" ? (receipt.title || "Gloobal Coin") : "Payment");
+    : receipt.kind === "coin" ? (receipt.title || "GLOOBAL Coin") : "Payment");
 
   // A Creator Share receipt gets a Creator Share tab, and it is the one it
   // opens on — but the tab shows the share, it never COMPUTES one.
@@ -376,7 +376,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // balance either way.
   const shareDestinationName = shareIsCredit && receipt.shareDestination === "assets"
     ? "My Assets"
-    : "Gloobal balance";
+    : "GLOOBAL balance";
   // Guarded rather than read straight off `receiptTab`, so a receipt opened
   // while the previous one was left on its share tab cannot land on a tab
   // this receipt does not have.
@@ -611,7 +611,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     const money = geuLensBarMoney(Number(r.amount || 0), r.currencyCode, lens, viewerCurrency);
     const who = r.name ? `${sent ? "To" : "From"}: ${r.name}${receiptCountryName ? ` (${receiptCountryName})` : ""}` : "";
     return [
-      `Gloobal receipt - ${sent ? "money sent" : "money received"}`,
+      `GLOOBAL receipt - ${sent ? "money sent" : "money received"}`,
       money,
       who,
       `${r.date || ""}${r.time ? ` \u00b7 ${r.time}` : ""}`,
@@ -627,7 +627,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     // The clipboard fallback copies the WHOLE receipt including the link,
     // rather than the bare id it used to leave behind.
     shareOrCopy(
-      { title: "Gloobal receipt", text, url: receiptShareUrl },
+      { title: "GLOOBAL receipt", text, url: receiptShareUrl },
       `${text}\n${receiptShareUrl}`,
       () => setShareFeedback("Receipt and link copied.")
     );
@@ -1055,7 +1055,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
          coin, so the line above it has to name the exchange rather than
          describe a direction that is true of the coin and false of the
          money. The receipt's own title is that name. */
-      receipt.title || "Gloobal Coin"
+      receipt.title || "GLOOBAL Coin"
     : paymentKnown ? (paymentIsSent ? "Money sent" : "Money received") : "Payment not available") : shareIsCredit ? "Creator share earned" : "You share back"}</div><div style={{ marginTop: 1 }}>{!onShareTab ? (paymentKnown ? <div
     style={{
       fontSize: heroPayment.size,
@@ -1300,7 +1300,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       fontWeight: 700,
       lineHeight: 1.35
     }}
-  ><span aria-hidden="true">⚠️</span><span>This recipient wasn't a registered Gloobal account, so nothing was actually sent — this receipt reflects a local simulation only.</span></div>}{shareFeedback && <div
+  ><span aria-hidden="true">⚠️</span><span>This recipient wasn't a registered <GloobalWordmark /> account, so nothing was actually sent — this receipt reflects a local simulation only.</span></div>}{shareFeedback && <div
     role="status"
     data-testid="receipt-share-feedback"
     style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textAlign: "center", lineHeight: 1.4 }}
@@ -1374,7 +1374,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     data-testid="receipt-id-changed"
     style={{ display: "flex", flexDirection: "column", gap: 9, padding: "12px 13px", borderRadius: 12, background: T.surface, border: `1px solid ${T.line}`, flexShrink: 0 }}
   ><p style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700, lineHeight: 1.45, margin: 0 }}
-  >{`${payAgainState.name || "Their"}${/s$/i.test(String(payAgainState.name || "")) ? "'" : "'s"} Gloobal ID has changed since this payment.`}</p><div
+  >{`${payAgainState.name || "Their"}${/s$/i.test(String(payAgainState.name || "")) ? "'" : "'s"} GLOOBAL ID has changed since this payment.`}</p><div
     style={{ display: "flex", flexDirection: "column", gap: 6 }}
   >{[["was", payAgainState.was, T.inkFaint], ["now", payAgainState.now, T.ink]].map(([label, symbols, tint]) => <div
     key={label}
@@ -1402,8 +1402,8 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     role="status"
     style={{ fontSize: 11.5, fontWeight: 700, color: T.inkSoft, textAlign: "center", lineHeight: 1.45, flexShrink: 0 }}
   >{payAgainState.status === "gone"
-    ? "That Gloobal ID has changed and we couldn't find where it went. Ask them for their current one."
-    : "Couldn't check their Gloobal ID just now. Try again in a moment."}</p>}{
+    ? "That GLOOBAL ID has changed and we couldn't find where it went. Ask them for their current one."
+    : "Couldn't check their GLOOBAL ID just now. Try again in a moment."}</p>}{
     /* What the two of them have to say, in one line under the row. */
   }{detail === "where" && myLocation && <div
     data-testid="receipt-where-line"

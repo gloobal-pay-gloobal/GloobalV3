@@ -128,7 +128,7 @@ describe("the screen says which view it is showing", () => {
     // The old footnote asserted "1 user, 1 rate" unconditionally. Left alone
     // it would have contradicted real bars sitting directly above it.
     assert.match(dash, /Real Creator Share choices across \$\{shareDistribution\.totalUsers\}/);
-    assert.match(dash, /Every rate actually set on Gloobal, counted\./);
+    assert.match(dash, /Every rate actually set on GLOOBAL, counted\./);
     assert.match(dash, /This account is the only real Creator Share choice tracked so far/);
   });
 

@@ -97,14 +97,14 @@ describe("the quarter is never printed as the whole", () => {
     // world: that a day of food, water, shelter and creativity costs a
     // quarter of what the table estimates.
     const src = strip(readSource(ESS));
-    assert.match(src, /Gloobal carries \{Math\.round\(\(Number\(baseline\.share\)/);
+    assert.match(src, /<GloobalWordmark \/> carries \{Math\.round\(\(Number\(baseline\.share\)/);
     assert.match(src, /baseline\.fullDailyTotal/,
       "the full estimate is no longer shown beside the share");
   });
 
   test("and the bars no longer call themselves a baseline", () => {
     const src = readSource(ESS);
-    assert.match(src, /share of what Gloobal carries/);
+    assert.match(src, /share of what <GloobalWordmark \/> carries/);
     assert.doesNotMatch(src, /share of your daily baseline/,
       "a quarter of an estimate is being called the baseline again");
   });

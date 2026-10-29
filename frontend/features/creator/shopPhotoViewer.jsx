@@ -189,7 +189,7 @@ function ShopPhotoViewer({ item, start = 0, shopName = "", shopSymbolId = "", cc
       // The photo where the phone can share files, else the shop's link
       // with the item named — the link always INSIDE the message so it
       // arrives tappable (components/common/shareLink.js).
-      await gloobalShareLink({ title, message: `${title} on Gloobal:`, url: link, file, onToast });
+      await gloobalShareLink({ title, message: `${title} on GLOOBAL:`, url: link, file, onToast });
     } catch (e) {
       onToast && onToast("Couldn't share this photo");
     }

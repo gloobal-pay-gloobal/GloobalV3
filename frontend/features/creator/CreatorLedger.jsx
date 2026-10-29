@@ -148,7 +148,7 @@ function CreatorLedgerScreen({
        like it lost your data. */
   }<div style={{
     fontSize: 11, fontWeight: 600, color: T.inkFaint, lineHeight: 1.5, margin: "2px 2px 10px"
-  }}>Money people paid you. Gloobal records the payment, not the basket, so
+  }}>Money people paid you. <GloobalWordmark /> records the payment, not the basket, so
   this says who and how much rather than which items.</div>{
     sold.length ? <div style={{
       borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden"

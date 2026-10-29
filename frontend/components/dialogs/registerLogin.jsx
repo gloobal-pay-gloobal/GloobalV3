@@ -244,7 +244,7 @@ function PermissionsGateScreen({ onContinue }) {
         ? "Blocked — turn on in browser settings."
         : notifyState === "unavailable"
           ? "Not available in this browser."
-          : "Get notified when you receive money, even when Gloobal is closed."
+          : "Get notified when you receive money, even when GLOOBAL is closed."
   }</span></span> : p.label}{p.required && <span
     aria-hidden="true"
     style={{ width: 9, height: 9, borderRadius: "50%", border: `2.5px solid ${TXN_OUT_COLOR}`, boxSizing: "border-box", flexShrink: 0 }}
@@ -942,7 +942,7 @@ function BiometricVerifyScreen({ onBack, onVerify, scanning, notice, onSkip, ski
       width: "100%",
       height: "100%",
       transformStyle: "preserve-3d",
-      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
+      transition: `transform ${0.5 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
       transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   >{

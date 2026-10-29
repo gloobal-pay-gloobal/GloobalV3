@@ -250,7 +250,7 @@ function InstallBanner() {
   ><Download size={17} color="#fff" /></span><div style={{ flex: 1, minWidth: 0 }}><div
     style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, letterSpacing: -0.2 }}
   >
-        Keep Gloobal on your phone
+        Keep <GloobalWordmark /> on your phone
       </div><div
     style={{ fontSize: 12, color: T.inkSoft, marginTop: 2, lineHeight: 1.4 }}
   >{elsewhere
@@ -308,14 +308,14 @@ function InstallProfileRow({ onToast }) {
   ><Download size={16} color={T.accent} /></span><div style={{ flex: 1, minWidth: 0 }}><div
     style={{ fontSize: 14, fontWeight: 800, color: T.ink }}
   >
-        Install Gloobal
+        Install <GloobalWordmark />
       </div><div style={{ fontSize: 12, color: T.inkSoft, marginTop: 1 }}>
         An icon on your home screen
       </div></div>{!ios && !elsewhere && <button
     onClick={async () => {
       if (install.canPrompt) {
         const ok = await install.promptInstall();
-        if (ok && onToast) onToast("Installing Gloobal…");
+        if (ok && onToast) onToast("Installing GLOOBAL…");
       } else if (onToast) {
         onToast("Open your browser's menu and choose Install app.");
       }

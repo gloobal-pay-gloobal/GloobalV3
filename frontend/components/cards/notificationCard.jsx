@@ -216,7 +216,7 @@ function gloobalCurrencyName(code) {
 function gloobalNotifSubline(meta) {
   const sent = (meta && meta.direction) === "sent";
   const name = meta && meta.counterpartyName;
-  if (!name) return sent ? "Your Gloobal payment went through." : "Money has landed in your Gloobal account.";
+  if (!name) return sent ? "Your GLOOBAL payment went through." : "Money has landed in your GLOOBAL account.";
   return `${sent ? "To" : "From"} ${name}`;
 }
 
@@ -563,7 +563,7 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
   // string.
   const headline = money
     ? (gloobalNotifCardAmount(meta, cardLens, cardOwnCurrency) || gloobalNotifHeadline(meta, cardLens, cardOwnCurrency))
-    : ((row && row.title) || "Gloobal");
+    : ((row && row.title) || "GLOOBAL");
   // Red out, green in — and neither for a notice about no money at all,
   // where a green sentence would read as something having arrived.
   const tint = money ? (sent ? T.negative : T.positive) : T.ink;

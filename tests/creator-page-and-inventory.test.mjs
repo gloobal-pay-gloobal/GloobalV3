@@ -205,7 +205,7 @@ test("the three corner controls are one component, so they cannot drift", () => 
   // shared circle in navButtons.jsx, so they still cannot drift.
   assert.match(src, /<NavFlagBadge\s+flag=\{creatorFlag\(creator\)\}\s+label=\{`\$\{creatorCountryName\(creator\)\}/,
     "the flag uses the shared nav badge");
-  assert.match(src, /<NavScanButton label="Scan a Gloobal code"/,
+  assert.match(src, /<NavScanButton label="Scan a GLOOBAL code"/,
     "and the scanner the shared scan button");
   assert.ok(!/width: 34, height: 34/.test(src), "no hand-rolled corner control sizes remain");
 });

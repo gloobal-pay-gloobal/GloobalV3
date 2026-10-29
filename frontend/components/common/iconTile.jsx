@@ -51,7 +51,9 @@ function IconTile({
     width: box, height: box === "100%" ? "auto" : box, aspectRatio: box === "100%" ? "1" : undefined,
     maxWidth: "100%", borderRadius: radius,
     background: background || T.surface,
-    boxShadow: selected ? `0 0 0 2.5px ${T.accent}, ${T.shadowCard}` : T.shadowCard,
+    // A tinted box is its own surface and needs no lift; a plain white
+    // one keeps the card shadow so it still reads as a box on the page.
+    boxShadow: selected ? `0 0 0 2px ${T.surface}, 0 0 0 4px ${T.accent}` : (background ? "none" : T.shadowCard),
     display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
     transition: "box-shadow 0.15s ease, transform 0.15s ease"
   }}>{children}{badge ? <span style={{ position: "absolute", top: 6, right: 6, zIndex: 2, display: "flex" }}>{badge}</span> : null}</span>{label ? <span style={{

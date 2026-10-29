@@ -57,6 +57,15 @@ test("the history row's txnId is the referenceId the push now sends", () => {
 // replays exactly what App.jsx's received-poll effect does with one response:
 // begin an attempt, then (on success) split and mark/notify.
 
+
+// The app logo's two-hour colour (appLogo.jsx), as plain functions: the
+// notification hook names the logo's picture for these two hours.
+const appLogoSource = () => {
+  const src = read("frontend/components/common/appLogo.jsx");
+  return src.slice(src.indexOf("var GLOOBAL_LOGO_COLORS = ["), src.indexOf("// The colour now, and again"));
+};
+const LOGO_ICON = /^\/icons\/logo\/(indigo|slate|purple|espresso|bluegray)-192\.png$/;
+
 function notificationsHarness() {
   const store = new Map();
   const shown = [];
@@ -119,6 +128,7 @@ function notificationsHarness() {
     lift(read("frontend/components/cards/notificationCard.jsx"), "gloobalNotifSubline"),
     lift(read("frontend/components/cards/notificationCard.jsx"), "gloobalNotifDiscIndex"),
     lift(read("frontend/components/cards/notificationCard.jsx"), "gloobalNotifDiscIcon"),
+    appLogoSource(),
   ].join("\n"), ctx);
   vm.runInContext(read("frontend/hooks/usePaymentNotifications.js"), ctx);
   const baseline = { primed: false, since: null };
@@ -445,12 +455,18 @@ describe("the notification the OS draws is the same one, open or closed", () => 
       lift(read("frontend/features/geuLens/geuLens.js"), "geuLensMoney"),
       lift(read("frontend/features/geuLens/geuLens.js"), "geuLensSameCurrency"),
       lift(read("frontend/features/geuLens/geuLens.js"), "geuLensOwnMoney"),
+      lift(read("frontend/features/geuLens/geuLens.js"), "geuLensSpokenMoney"),
+      cut(read("frontend/features/geuLens/geuLens.js"), 'var GEU_LENS_BAR = ', '\n'),
+      cut(read("frontend/features/geuLens/geuLens.js"), 'var GEU_LENS_BAR_GAP = ', '\n'),
+      lift(read("frontend/features/geuLens/geuLens.js"), "geuLensBarUnit"),
+      lift(read("frontend/features/geuLens/geuLens.js"), "geuLensBarMoney"),
       lift(read("frontend/components/common/flipIcons.jsx"), "flipSeedHash"),
       "var LOGO_FLIP_COLORS = new Array(8);",
       lift(card, "gloobalNotifHeadline"),
       lift(card, "gloobalNotifSubline"),
       lift(card, "gloobalNotifDiscIndex"),
-      lift(card, "gloobalNotifDiscIcon")
+      lift(card, "gloobalNotifDiscIcon"),
+      appLogoSource()
     ].join("\n"), ctx);
     vm.runInContext(read("frontend/hooks/usePaymentNotifications.js"), ctx);
     ctx.notifyPaymentSent({
@@ -514,7 +530,8 @@ describe("the notification the OS draws is the same one, open or closed", () => 
     // And they are the values we mean, not two matching mistakes.
     assert.equal(open.title, "\u22122,105.20\u20B9");
     assert.equal(open.body, "To Tom Whitfield");
-    assert.match(open.icon, /^\/icons\/notif\/disc-[0-7]\.png$/);
+    // The app logo in its colour for these two hours, on both paths.
+    assert.match(open.icon, LOGO_ICON);
     assert.equal(open.badge, "/icons/icon-192.png");
     assert.equal(open.timestamp, Date.parse(PAYMENT.occurredAt), "the notification is not stamped with the payment's time");
   });
@@ -542,7 +559,7 @@ describe("the notification the OS draws is the same one, open or closed", () => 
     return import("../gloobal-essentials-preview/src/push-sw-core.js").then((sw) => {
       const parsed = sw.gloobalParsePushPayload(JSON.stringify({ title: "x", body: "y", icon: null }));
       const opts = sw.gloobalNotificationOptions(parsed);
-      assert.equal(opts.icon, "/icons/icon-192.png");
+      assert.match(opts.icon, LOGO_ICON);
       assert.equal(opts.badge, "/icons/icon-192.png");
       const hook = read("frontend/hooks/usePaymentNotifications.js");
       assert.match(hook, /icon: icon \|\| GLOOBAL_NOTIF_APP_ICON,/);
@@ -551,4 +568,24 @@ describe("the notification the OS draws is the same one, open or closed", () => 
         /var GLOOBAL_NOTIF_APP_ICON = "\/icons\/icon-192\.png";/);
     });
   });
+});
+
+test("the app and the worker agree on the logo's colour, and it never repeats", async () => {
+  const sw = await import("../gloobal-essentials-preview/src/push-sw-core.js");
+  const ctx = vm.createContext({ Math, Date, Number });
+  vm.runInContext(appLogoSource(), ctx);
+  const SLOT = 2 * 60 * 60 * 1000;
+  const start = Date.UTC(2026, 0, 1);
+  let prev = null;
+  // Every slot of two years, in order (the app's walk caches forward).
+  for (let i = 0; i < 2 * 365 * 12; i++) {
+    const ms = start + i * SLOT + 1000;
+    const app = ctx.gloobalLogoColorAt(ms).key;
+    if (i % 97 === 0) assert.equal(app, sw.gloobalLogoKeyAt(ms), `slot ${i}`);
+    if (prev !== null) assert.notEqual(app, prev, `slot ${i} repeats the colour before it`);
+    prev = app;
+  }
+  // And going backwards (a clock set back) still agrees.
+  const back = start + 100 * SLOT + 5;
+  assert.equal(ctx.gloobalLogoColorAt(back).key, sw.gloobalLogoKeyAt(back));
 });

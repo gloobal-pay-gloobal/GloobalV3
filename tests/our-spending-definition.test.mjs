@@ -47,12 +47,12 @@ function ourSpendingRow() {
 }
 
 describe('Our spending says what it measures', () => {
-  test('the global reading names Gloobal on both sides', () => {
+  test('the global reading names GLOOBAL on both sides', () => {
     // "What Gloobal spends on Gloobal Hoomans" — the platform paying
     // people, which is a different quantity from Total spending above it
     // (people paying each other). Without this line the two rows read as
     // one number measured twice.
-    assert.match(ourSpendingRow(), /What Gloobal spends on Gloobal H\w*mans/);
+    assert.match(ourSpendingRow(), /What GLOOBAL spends on GLOOBAL H\w*mans/);
   });
 
   test('the per-country reading names the country on both sides', () => {
@@ -60,7 +60,7 @@ describe('Our spending says what it measures', () => {
     // what makes it a statement about one country rather than a global
     // figure with a flag beside it.
     const row = ourSpendingRow();
-    assert.match(row, /What Gloobal \$\{country\.name\} spends on H\w*mans in \$\{country\.name\}/);
+    assert.match(row, /What GLOOBAL \$\{country\.name\} spends on H\w*mans in \$\{country\.name\}/);
   });
 
   test('it follows the selected country rather than being fixed', () => {

@@ -264,7 +264,7 @@ describe("renderReceiptImage and sharing, by source", () => {
 
     test("the first thing offered is the picture and the link", () => {
       const [first] = M.receiptShareAttempts(FILE, LINK);
-      assert.deepEqual(first[0], { files: [FILE], title: "Gloobal receipt", url: LINK });
+      assert.deepEqual(first[0], { files: [FILE], title: "GLOOBAL receipt", url: LINK });
       assert.equal(first[1], "shared");
     });
 
@@ -286,7 +286,7 @@ describe("renderReceiptImage and sharing, by source", () => {
       assert.ok(rungs.length >= 3, `only ${rungs.length} attempts`);
       for (const [payload] of rungs) {
         assert.deepEqual(payload.files, [FILE], "a rung dropped the picture");
-        assert.equal(payload.title, "Gloobal receipt");
+        assert.equal(payload.title, "GLOOBAL receipt");
       }
       // Narrowing, never widening: once a field is gone it does not return.
       const carries = rungs.map(([p]) => (p.url ? 2 : p.text ? 1 : 0));

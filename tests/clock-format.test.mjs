@@ -250,13 +250,14 @@ describe("the flipping mark in a list is slow enough to sit behind money", () =>
     const at = flip.indexOf("function FlipSymbolCircle(");
     assert.ok(at > 0, "FlipSymbolCircle not found");
     const fn = flip.slice(at, flip.indexOf("\nfunction ", at + 10));
-    assert.match(fn, /\}, 3200\);/);
+    // Then slowed with every other flip (FLIP_SLOW, constants/theme.js).
+    assert.match(fn, /\}, 3200 \* FLIP_SLOW\);/);
   });
 
   test("and turns at the same speed as every other mark in the app", () => {
     const at = flip.indexOf("function FlipSymbolCircle(");
     const fn = flip.slice(at, flip.indexOf("\nfunction ", at + 10));
-    assert.match(fn, /transform 0\.9s cubic-bezier/);
+    assert.match(fn, /transform \$\{0\.9 \* FLIP_SLOW\}s cubic-bezier/);
     // The logo box's turn, for comparison — one speed, not three.
     assert.match(flip, /flipMs = 900,/);
   });
@@ -264,8 +265,9 @@ describe("the flipping mark in a list is slow enough to sit behind money", () =>
   test("a mark is still for most of its cycle", () => {
     const at = flip.indexOf("function FlipSymbolCircle(");
     const fn = flip.slice(at, flip.indexOf("\nfunction ", at + 10));
-    const every = Number(fn.match(/\}, (\d+)\);/)[1]);
-    const turn = Number(fn.match(/transform ([\d.]+)s cubic-bezier/)[1]) * 1000;
+    const SLOW = Number(readSource("frontend/constants/theme.js").match(/var FLIP_SLOW = ([\d.]+);/)[1]);
+    const every = Number(fn.match(/\}, (\d+) \* FLIP_SLOW\);/)[1]) * SLOW;
+    const turn = Number(fn.match(/transform \$\{([\d.]+) \* FLIP_SLOW\}s cubic-bezier/)[1]) * 1000 * SLOW;
     assert.ok(
       every - turn >= 2000,
       `only ${every - turn}ms of stillness between turns — a list of these still twitches`

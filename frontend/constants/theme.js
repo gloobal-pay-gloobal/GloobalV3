@@ -104,6 +104,10 @@ var POSITION_COLORS = [
   "#84CC16"
   // lime
 ];
+// How much slower every flip in the app turns and waits than it was
+// built at. The founder asked for slower flips everywhere; one number so
+// the marks keep turning in step with each other.
+var FLIP_SLOW = 1.6;
 var LOGO_FLIP_COLORS = ["#7C3AED", "#DB2777", "#2563EB", "#059669", "#EA580C", "#0891B2", "#DC2626", "#9333EA"];
 var DIAL_SYMBOLS = ["\u2212", "+", "\xD7", "=", "\u25CB", "\u25A1", "\u25CF", "\u25A0"];
 var DIAL_PAD_SYMBOLS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u2212", "+", "\xD7", "=", "\u25CB", "\u25A1", "\u25CF", "\u25A0"];

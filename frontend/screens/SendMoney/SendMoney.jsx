@@ -457,7 +457,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       iso: prefillReceiver.iso,
       flag: prefillReceiver.flag,
       id: prefillReceiver.id || "",
-      name: prefillReceiver.name || "Gloobal User",
+      name: prefillReceiver.name || "GLOOBAL User",
       // Already masked. This value originates in GET /api/users/resolve (via
       // App.jsx's handleSendToScanned), which now masks before it answers —
       // see the note where maskMobileNumber used to be defined.
@@ -700,7 +700,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         : `Not sent — ${CURRENCIES[top.currency].label} ${fmt(
             senderAmount,
             top.currency
-          )} recorded locally only, no registered Gloobal account to credit`
+          )} recorded locally only, no registered GLOOBAL account to credit`
     );
     const { receipt: receipt2, historyEntry } = buildTransactionSnapshot({
       sender: top,
@@ -982,7 +982,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       // would tell somebody their friend has no Gloobal account.
       setSearchError(
         err instanceof GloobalApiError && err.status === 404
-          ? "No Gloobal user found. Check the ID and try again."
+          ? "No GLOOBAL user found. Check the ID and try again."
           : err.message
       );
       return;
@@ -1040,7 +1040,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       // fullName just its phone number?" — the comparison this line used to
       // make locally, which stopped being possible once the number started
       // arriving masked, and which was never the client's comparison to make.
-      name: user.fullName && !user.nameIsMobile ? user.fullName : "Gloobal User",
+      name: user.fullName && !user.nameIsMobile ? user.fullName : "GLOOBAL User",
       // Already masked by the server. The fallback is the number the sender
       // typed themselves, which needs no hiding from them.
       phone: user.mobileNumber || (searchMode === "mobile" ? `${c.dialCode} ${grouped}` : ""),
@@ -1763,7 +1763,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       fontWeight: 700,
       lineHeight: 1.35
     }}
-  ><span aria-hidden="true">⚠️</span><span>Not a registered Gloobal account. This send won't reach the backend or move any real money — it stays a local simulation only.</span></div>}<div className="contact-block"><div className="contact-row"><span className="contact-text">{bottom.phone}</span><button
+  ><span aria-hidden="true">⚠️</span><span>Not a registered <GloobalWordmark /> account. This send won't reach the backend or move any real money — it stays a local simulation only.</span></div>}<div className="contact-block"><div className="contact-row"><span className="contact-text">{bottom.phone}</span><button
     className="copy-btn"
     onClick={() => showToast2("Calling \u2014 coming soon")}
     aria-label="Call"

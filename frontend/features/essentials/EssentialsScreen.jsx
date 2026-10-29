@@ -152,8 +152,8 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
   }<div
     style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.5, margin: "11px 2px 0" }}
   >{revealed
-    ? <>Gloobal carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here, which is worked out at {essentialsFigure(baseline.fullDailyTotal, 11.5)} a day. The rest is yours.</>
-    : <>Gloobal carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here. The rest is yours.</>}</div>{
+    ? <><GloobalWordmark /> carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here, which is worked out at {essentialsFigure(baseline.fullDailyTotal, 11.5)} a day. The rest is yours.</>
+    : <><GloobalWordmark /> carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here. The rest is yours.</>}</div>{
     /* The four components */
   }<div><div
     style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}
@@ -179,7 +179,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
   })}</div><div
     style={{ fontSize: 11, color: T.inkFaint, margin: "9px 2px 0", lineHeight: 1.45 }}
   >
-      Each bar is that component{"’"}s share of what Gloobal carries {"—"} not what you have spent on it.
+      Each bar is that component{"’"}s share of what <GloobalWordmark /> carries {"—"} not what you have spent on it.
     </div></div>{
     /* How the baseline is arrived at. A row rather than a footnote,
        because the caveats underneath it — placeholder data, a regional

@@ -100,7 +100,7 @@ const BUY = {
   geuRateBasis: "coin-per-fiat",
   geuRateSource: "table",
   reserveCurrency: "INR",
-  note: "Minted Gloobal Coin",
+  note: "Minted GLOOBAL Coin",
   createdAt: "2026-09-12T14:07:32.000Z"
 };
 
@@ -118,7 +118,7 @@ const SELL = {
   geuRateBasis: "fiat-per-coin",
   geuRateSource: "table",
   reserveCurrency: "INR",
-  note: "Redeemed Gloobal Coin",
+  note: "Redeemed GLOOBAL Coin",
   createdAt: "2026-09-11T09:02:10.000Z"
 };
 
@@ -145,7 +145,7 @@ describe("the three things asked for are on it", () => {
     assert.equal(M.coinReceiptFrom(BUY, VIEWER).holderName, "Aisha Rahman");
   });
 
-  test("their Gloobal ID", () => {
+  test("their GLOOBAL ID", () => {
     assert.equal(M.coinReceiptFrom(BUY, VIEWER).holderSymbolId, HOLDER_ID);
   });
 
@@ -286,12 +286,12 @@ describe("direction, and which way the money went", () => {
   });
 
   test("each kind is titled from the holder's side", () => {
-    assert.equal(M.coinReceiptFrom(BUY, VIEWER).title, "Gloobal Coin bought");
-    assert.equal(M.coinReceiptFrom(SELL, VIEWER).title, "Gloobal Coin sold");
-    assert.equal(M.coinReceiptFrom(SEND_OUT, VIEWER).title, "Gloobal Coin sent");
+    assert.equal(M.coinReceiptFrom(BUY, VIEWER).title, "GLOOBAL Coin bought");
+    assert.equal(M.coinReceiptFrom(SELL, VIEWER).title, "GLOOBAL Coin sold");
+    assert.equal(M.coinReceiptFrom(SEND_OUT, VIEWER).title, "GLOOBAL Coin sent");
     assert.equal(
       M.coinReceiptFrom({ ...SEND_OUT, direction: "in" }, VIEWER).title,
-      "Gloobal Coin received"
+      "GLOOBAL Coin received"
     );
   });
 });
@@ -442,11 +442,11 @@ describe("the receipt is not labelled as a payment", () => {
     // "Money received" on a buy is false twice over: money did not arrive,
     // it LEFT, and what arrived was coin. The hero figure below is the coin,
     // so the line above it has to name the exchange.
-    assert.match(modal(), /isCoinReceipt\s*\?[\s\S]{0,40}receipt\.title \|\| "Gloobal Coin"/);
+    assert.match(modal(), /isCoinReceipt\s*\?[\s\S]{0,40}receipt\.title \|\| "GLOOBAL Coin"/);
   });
 
   test("the tab chip does not say Payment", () => {
-    assert.match(modal(), /receipt\.kind === "coin" \? \(receipt\.title \|\| "Gloobal Coin"\) : "Payment"/);
+    assert.match(modal(), /receipt\.kind === "coin" \? \(receipt\.title \|\| "GLOOBAL Coin"\) : "Payment"/);
   });
 
   test("and there is no tab row at all on a coin receipt", () => {
@@ -576,7 +576,7 @@ describe("a coin reference is a transaction reference, in the same format as any
     assert.match(migration, /const GLOOBAL_SYMBOLS = \["−", "\+", "×", "=", "○", "□", "●", "■"\];/);
   });
 
-  test("and that resolver mints twenty Gloobal symbols", () => {
+  test("and that resolver mints twenty GLOOBAL symbols", () => {
     const src = server();
     assert.match(src, /const TRANSACTION_REFERENCE_LENGTH = 20;/);
     assert.match(
@@ -618,7 +618,7 @@ describe("a coin reference is a transaction reference, in the same format as any
   });
 });
 
-describe("a Gloobal ID on the receipt is a whole Gloobal ID", () => {
+describe("a GLOOBAL ID on the receipt is a whole GLOOBAL ID", () => {
   test("the server accepts exactly twelve symbols and nothing shorter", () => {
     // Worth pinning next to the reference tests, because the two are the
     // same kind of value and were got wrong the same way in the same
@@ -637,10 +637,10 @@ describe("a Gloobal ID on the receipt is a whole Gloobal ID", () => {
     for (const id of [HOLDER_ID, OTHER_ID]) {
       assert.equal(
         Array.from(id).length, 12,
-        `a fixture Gloobal ID is not 12 symbols: ${id}`
+        `a fixture GLOOBAL ID is not 12 symbols: ${id}`
       );
       for (const ch of id) {
-        assert.ok(ALPHABET.has(ch), `a fixture Gloobal ID uses a symbol outside the alphabet: ${ch}`);
+        assert.ok(ALPHABET.has(ch), `a fixture GLOOBAL ID uses a symbol outside the alphabet: ${ch}`);
       }
     }
   });

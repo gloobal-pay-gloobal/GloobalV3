@@ -64,7 +64,7 @@ function NavIconButton({ onClick, label, disabled, style, children }) {
 // dashboard and Send, still and black at 18px on the shop page and the scan
 // card. Same circle, same mark, same slow colour cycle — every header that
 // opens the scanner now goes through this, so they cannot drift again.
-function NavScanButton({ onClick, label = "Scan a Gloobal QR code", disabled, style }) {
+function NavScanButton({ onClick, label = "Scan a GLOOBAL QR code", disabled, style }) {
   return <NavIconButton onClick={onClick} label={label} disabled={disabled} style={style}><ScannerIcon size={NAV_GLYPH_SIZE} animated color={T.ink} /></NavIconButton>;
 }
 

@@ -1408,7 +1408,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       : state === "busy"
         ? "Another app or tab is using the camera. Close it, then try again."
         : state === "denied"
-          ? "Gloobal needs the camera to read a QR code. Allow camera access for this site in your browser settings, then come back."
+          ? "GLOOBAL needs the camera to read a QR code. Allow camera access for this site in your browser settings, then come back."
           : state === "unavailable"
             ? "This device has no camera the browser can use, or the page isn't on a secure (https) connection."
             : "Something went wrong starting the camera.";
@@ -1583,7 +1583,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       boxShadow: "0 0 0 100vmax rgba(0,0,0,0.28)",
       pointerEvents: "none"
     }}
-  /></div><canvas ref={canvasRef} style={{ display: "none" }} /><div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}><ScannerIcon size={14} animated color={T.inkFaint} />{state === "starting" ? "Starting camera…" : paused ? "Paused" : "Point at a Gloobal QR code"}</div></div>;
+  /></div><canvas ref={canvasRef} style={{ display: "none" }} /><div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}><ScannerIcon size={14} animated color={T.inkFaint} />{state === "starting" ? "Starting camera…" : paused ? "Paused" : "Point at a GLOOBAL QR code"}</div></div>;
 }
 
 

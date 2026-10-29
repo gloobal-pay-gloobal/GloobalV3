@@ -162,7 +162,7 @@ describe("Today's Collection is money collected, not share received", () => {
     // — fmtMoney became the lens, the lens became GeuFigure, and the one
     // line became two when the figure stopped fitting beside the words —
     // and every time the claim it makes was still true.
-    assert.match(assets, /Settle to Gloobal Bank/);
+    assert.match(assets, /Settle to <GloobalWordmark \/> Bank/);
     assert.match(assets, /<GeuFigure amount=\{totalAssets\}/);
   });
 });

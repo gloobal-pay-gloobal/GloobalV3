@@ -136,7 +136,10 @@ test("the card carries the hue and the page stays white", () => {
     "the confirm card is not drawn in the payee's colour");
   // And the things on it flipped with it.
   assert.match(src, /fontSize: 16, fontWeight: 800, color: "#FFFFFF"/, "the name is still dark on a dark card");
-  assert.match(src, /color: "rgba\(255,255,255,0\.82\)"/, "the card's label is still grey on colour");
+  assert.match(src, /fontSize: 19, fontWeight: 700, color: "rgba\(255,255,255,0\.92\)"/, "the card's label is still grey on colour, or small again");
+  // GH2H hallmark top left, the payee's flag top right.
+  assert.match(src, /position: "absolute", top: 18, left: 16, zIndex: 1 \}\}><GH2HFlipCircle size=\{30\} \/>/);
+  assert.match(src, /position: "absolute", top: 18, right: 16, zIndex: 1, display: "flex" \}\}><FlagEmoji flag=\{c\.flag\} shape="circle"/);
 });
 
 test("every page tint is still white to look at", () => {
@@ -187,7 +190,7 @@ test("Pay is white on the card, and its text passes on white", () => {
   }
 });
 
-test("the Gloobal ID keeps a white ground under it", () => {
+test("the GLOOBAL ID keeps a white ground under it", () => {
   // ColoredGloobalId draws every symbol in a different colour from a
   // rotating rainbow, chosen to read on the app's white surface. Half of
   // them — the blues, the deep violet — would disappear into a dark card.
@@ -220,7 +223,7 @@ test("the scan mark moved out of the card and into the corner", () => {
   // is one somebody reaches past, or hits by accident, on the screen
   // where a mistake costs money.
   const src = app();
-  const card = src.slice(src.indexOf('{scanPayee.creator ? "Gloobal Shop" : "Gloobal ID"}'));
+  const card = src.slice(src.indexOf('{scanPayee.creator ? "GLOOBAL Shop" : "GLOOBAL ID"}'));
   const cardOnly = card.slice(0, card.indexOf("</div>}</div>}</div>;"));
   assert.doesNotMatch(cardOnly, /aria-label="Scan another code"/,
     "the scan control is still inside the card");
@@ -421,14 +424,14 @@ test("the ribbon contrasts with the card instead of deepening it", () => {
   assert.match(readSource("frontend/features/scan/scanNoteStrip.jsx"), /color: ink\.text/, "the ribbon's text is still white");
 });
 
-test("a shop's card is headed Gloobal बाजार, the brand in bold", () => {
+test("a shop's card is headed GLOOBAL बाजार, the brand in bold", () => {
   const src = app();
-  assert.match(src, /<b style=\{\{ fontWeight: 900, color: "#FFFFFF" \}\}>Gloobal<\/b> \{"\\u092C\\u093E\\u091C\\u093E\\u0930"\}/,
-    "the shop label is not Gloobal + बाजार");
-  assert.doesNotMatch(src, /"Gloobal Shop" : "Gloobal ID"/, "the old upper-cased label is back");
+  assert.match(src, /<b style=\{\{ fontWeight: 900, color: "#FFFFFF" \}\}><GloobalWordmark \/><\/b> \{"\\u092C\\u093E\\u091C\\u093E\\u0930"\}/,
+    "the shop label is not GLOOBAL + बाजार");
+  assert.doesNotMatch(src, /"GLOOBAL Shop" : "GLOOBAL ID"/, "the old upper-cased label is back");
   // Devanagari has no case; an uppercase transform would shout one half
   // of a two-word name and leave the other alone.
-  const at = src.indexOf("Gloobal बाजार");
+  const at = src.indexOf("<GloobalWordmark /></b> {");
   assert.doesNotMatch(src.slice(at - 400, at), /textTransform: "uppercase"/);
 });
 

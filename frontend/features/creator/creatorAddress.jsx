@@ -79,7 +79,7 @@ async function creatorAddressLocate() {
     return { ok: true, lat: seen.latitude, lng: seen.longitude, accuracy: seen.accuracy };
   }
   if (seen && seen.status === LOCATION_STATUS.DENIED) {
-    return { ok: false, message: "Location is blocked for Gloobal. Allow it in your browser settings, or type the address." };
+    return { ok: false, message: "Location is blocked for GLOOBAL. Allow it in your browser settings, or type the address." };
   }
   if (seen && seen.status === LOCATION_STATUS.TIMEOUT) {
     return { ok: false, message: "Couldn't find your location. Step outside or near a window and try again." };

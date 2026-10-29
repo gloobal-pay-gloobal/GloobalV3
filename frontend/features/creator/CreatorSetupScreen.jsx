@@ -564,13 +564,13 @@ function CreatorSetupScreen({
   }<BazaarCategoryPicker value={category} onChange={setCategory} /><div style={{
     display: "flex", alignItems: "center", gap: 12, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.line}`
   }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>
-        Show my shop in Gloobal बाज़ार
+        Show my shop in <GloobalWordmark /> बाज़ार
       </span><span style={{ display: "block", fontSize: 11.5, lineHeight: 1.45, color: T.inkFaint, marginTop: 2 }}>{listed
     ? "People can find you by name, in your category, and in Near me if your address is public."
     : "You won't appear in search or Near me. People can still pay you by your exact name or your code."}</span></span><ProfileToggle
     on={listed}
     onToggle={() => setListed((v) => !v)}
-    label="Show my shop in Gloobal बाज़ार"
+    label="Show my shop in GLOOBAL बाज़ार"
   /></div></>)}
 
   {section("Opening hours", ClockHours, <OpenHoursEditor value={hours} onChange={setHours} />)}
@@ -687,7 +687,7 @@ function CreatorSetupScreen({
     textAlign: "center",
     margin: "16px 8px 0"
   }}>
-      Until you set this up, people can still pay your creator side at your Gloobal ID.
+      Until you set this up, people can still pay your creator side at your <GloobalWordmark /> ID.
     </p></div>{
     /* ── THE SAVE BAR ─────────────────────────────────────────────────
        Pinned under the scroll rather than at the end of it, so the one
@@ -909,7 +909,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
     const url = buildGloobalPayUrl(creator.symbolId || myGloobalId, "shop");
     gloobalShareLink({
       title: creatorDisplayName(creator),
-      message: `Pay ${creatorDisplayName(creator)} on Gloobal (${handle}):`,
+      message: `Pay ${creatorDisplayName(creator)} on GLOOBAL (${handle}):`,
       url,
       onToast
     });
@@ -1013,7 +1013,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
     marginTop: 14, fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.82)", lineHeight: 1.5
   }}>{done
     ? "People pay you at your digital address below"
-    : "Until you pick one, people pay your creator side at your Gloobal ID"}</div><div style={{
+    : "Until you pick one, people pay your creator side at your GLOOBAL ID"}</div><div style={{
     display: "flex", gap: 10, marginTop: 15
   }}>{[
     act("qr", "Show your code", QrCode2, onShowQr, true),

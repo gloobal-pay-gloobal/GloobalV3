@@ -553,7 +553,7 @@ function CreatorPage({
   }{creatorFlag(creator) ? <NavFlagBadge
     flag={creatorFlag(creator)}
     label={`${creatorCountryName(creator)} — where this creator is`}
-  /> : null}<NavScanButton label="Scan a Gloobal code" onClick={onScan} /></div>
+  /> : null}<NavScanButton label="Scan a GLOOBAL code" onClick={onScan} /></div>
 
   <div style={{
     flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",
@@ -736,7 +736,7 @@ function CreatorPage({
     boxShadow: theme.dark ? "none" : T.shadowCard, border: theme.dark ? `1px solid ${theme.line}` : "none"
   }}>{[
     ["Creator name", creator.handle || "—"],
-    ["Gloobal ID", creator.symbolId || "—"],
+    ["GLOOBAL ID", creator.symbolId || "—"],
     creator.addressPublic && (creator.address || creator.addressParts) ? ["Address", creatorAddressLines(creator.addressParts, creator.address)] : null,
     // The week, one line a day, when hours are set.
     openHoursClean(creator.hours) ? ["Hours", openHoursClean(creator.hours).days.map((d, i) => `${OPEN_HOURS_DAYS[i]}  ${d.closed ? "Closed" : (d.open === d.close ? "24 hours" : `${openHoursClock(d.open)} – ${openHoursClock(d.close)}`)}`)] : null
@@ -1213,7 +1213,7 @@ async function shareCreatorShop(creator, onToast) {
   const name = creatorDisplayName(creator);
   const tagline = creator && creator.shop && creator.shop.tagline ? ` — ${creator.shop.tagline}` : "";
   // The link inside the message, never in `url` alone — shareLink.js.
-  await gloobalShareLink({ title: name, message: `${name}${tagline} · pay on Gloobal:`, url, onToast });
+  await gloobalShareLink({ title: name, message: `${name}${tagline} · pay on GLOOBAL:`, url, onToast });
 }
 
 // "4 days ago" / "yesterday" — short enough for a supplier row, and never a

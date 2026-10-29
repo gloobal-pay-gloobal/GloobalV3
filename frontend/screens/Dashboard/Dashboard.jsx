@@ -317,7 +317,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     const interval = setInterval(() => {
       setGhLogoColor((prev) => randomLogoFlipColor(prev));
       setGhFlipped(true);
-      ghFlipTimeoutRef.current = setTimeout(() => setGhFlipped(false), 1500);
+      ghFlipTimeoutRef.current = setTimeout(() => setGhFlipped(false), 1500 * FLIP_SLOW);
     }, 1e4);
     return () => {
       clearInterval(interval);
@@ -538,7 +538,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       }));
       setTimeout(() => {
         setButtonFlips((prev) => ({ ...prev, [chosenKey]: { ...prev[chosenKey], flipped: false } }));
-      }, 1300);
+      }, 1300 * FLIP_SLOW);
     }, 15e3);
     return () => clearInterval(interval);
   }, []);
@@ -696,10 +696,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     scanning: settleAssetsBiometricScanning,
     setScanning: setSettleAssetsBiometricScanning,
     close: () => setShowSettleAssetsBiometric(false),
-    pinReason: "Confirm it's you to settle to Gloobal Bank.",
+    pinReason: "Confirm it's you to settle to GLOOBAL Bank.",
     run: () => {
       onSettleAssetsToBank(settlePendingAmount);
-      showToast2(`${geuLensBarMoney(settlePendingAmount, ccyCode, displayLens, ccyCode)} settled to Gloobal Bank`);
+      showToast2(`${geuLensBarMoney(settlePendingAmount, ccyCode, displayLens, ccyCode)} settled to GLOOBAL Bank`);
     }
   });
   const CHART_W = 320, CHART_H = 160, CHART_PAD_L = 8, CHART_PAD_R = 8, CHART_PAD_T = 16, CHART_PAD_B = 22;
@@ -744,7 +744,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   }, [myShareRate]);
   const [myShareIconFlipped, setMyShareIconFlipped] = useState14(false);
   useEffect12(() => {
-    const interval = setInterval(() => setMyShareIconFlipped((f) => !f), 2500);
+    const interval = setInterval(() => setMyShareIconFlipped((f) => !f), 2500 * FLIP_SLOW);
     return () => clearInterval(interval);
   }, []);
   const [showMyShare, setShowMyShare] = useState14(false);
@@ -1781,7 +1781,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         // Sending the display value would 404 the moment the two differ.
         await GloobalApi.changeSymbolId(currentSymbolId || myGloobalId, newIdBuffer);
       } catch (err) {
-        showToast2(err.message || "Couldn't update your Gloobal ID");
+        showToast2(err.message || "Couldn't update your GLOOBAL ID");
         return;
       }
       // Told upward so the whole app follows the account to its new ID.
@@ -1818,7 +1818,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     scanning: updateIdBiometricScanning,
     setScanning: setUpdateIdBiometricScanning,
     close: () => setShowUpdateIdBiometric(false),
-    pinReason: "Confirm it's you to change your Gloobal ID.",
+    pinReason: "Confirm it's you to change your GLOOBAL ID.",
     // Order matters here: the biometric resolves before saveNewGloobalId
     // runs, and saveNewGloobalId is what issues
     // PATCH /api/profile/change-symbol-id. A refusal means the request is
@@ -1923,7 +1923,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     if (interestBusy) return;
     if (gloobalBankInterested) return;
     if (!currentSymbolId) {
-      showToast2("Finish setting up your Gloobal ID first.");
+      showToast2("Finish setting up your GLOOBAL ID first.");
       return;
     }
     setInterestBusy(product);
@@ -2007,7 +2007,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     pinReason: "Confirm it's you to settle referral earnings.",
     run: () => {
       onSettleReferralToBank(totalReferralEarned);
-      showToast2(`${geuLensBarMoney(totalReferralEarned, ccyCode, displayLens, ccyCode)} settled to Gloobal Bank`);
+      showToast2(`${geuLensBarMoney(totalReferralEarned, ccyCode, displayLens, ccyCode)} settled to GLOOBAL Bank`);
     }
   });
   // Personal and Creator are separate books: each role only sees the
@@ -2107,9 +2107,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     setTimeout(() => setToast(null), 1800);
   };
   const handleShareReferralLink = async () => {
-    const text = `Join me on Gloobal Access \u2014 send and receive money globally. Use my link: ${referralLink}`;
+    const text = `Join me on GLOOBAL Access \u2014 send and receive money globally. Use my link: ${referralLink}`;
     await shareOrCopy(
-      { title: "Join Gloobal Access", text, url: referralLink },
+      { title: "Join GLOOBAL Access", text, url: referralLink },
       referralLink,
       () => showToast2(shareRole === "merchant" ? "Link copied \xB7 Creator" : "Link copied \xB7 Personal")
     );
@@ -2119,8 +2119,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     showToast2(shareRole === "merchant" ? "Link copied \xB7 Creator" : "Link copied \xB7 Personal");
   };
   const handleShareGloobalId = async () => {
-    const text = `Send my rent to my Gloobal ID: ${gloobalIdTag}`;
-    await shareOrCopy({ title: "My Gloobal ID", text }, gloobalIdTag, () => showToast2("Copied"));
+    const text = `Send my rent to my GLOOBAL ID: ${gloobalIdTag}`;
+    await shareOrCopy({ title: "My GLOOBAL ID", text }, gloobalIdTag, () => showToast2("Copied"));
   };
   return <div
     style={{
@@ -2155,7 +2155,14 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        Coverage. It is a real box now: paste a Gloobal ID, a pay link, a
        mobile number or a creator name, tap →, see who it is, then Pay.
        The spinning globe at its left is still the way into Coverage. */
-  }<QuickPayBar
+  }<button
+    onClick={() => setShowAboutUs(true)}
+    aria-label="About Gloobal"
+    className="v2-tap"
+    style={{ flexShrink: 0, border: "none", background: "none", padding: 0, cursor: "pointer", borderRadius: 14, boxShadow: "0 4px 12px rgba(20,18,43,0.18)" }}
+  >{
+    /* The app logo, in its colour for these two hours (appLogo.jsx). */
+  }<GloobalLogo size={46} radius={14} /></button><QuickPayBar
     myGloobalId={myGloobalId}
     dialCode={(dialCountry && dialCountry.dialCode) || ""}
     countryIso={(dialCountry && dialCountry.iso) || ""}
@@ -2525,7 +2532,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     radius={16}
     labelLines={1}
     labelColor={key === "more" ? T.inkSoft : T.ink}
-  ><span style={{ width: 34, height: 34, borderRadius: 11, background: `${BILL_ACTION_COLORS[key] || T.accent}1A`, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={17} color={BILL_ACTION_COLORS[key] || T.accent} /></span></IconTile>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, whiteSpace: "nowrap" }}>{geuLensBarMoney(todaysCollection, ccyCode, displayLens, ccyCode)}</span><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>{
+    background={`${BILL_ACTION_COLORS[key] || T.accent}24`}
+  ><Icon size={24} color={BILL_ACTION_COLORS[key] || T.accent} /></IconTile>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, whiteSpace: "nowrap" }}>{geuLensBarMoney(todaysCollection, ccyCode, displayLens, ccyCode)}</span><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>{
     /* NO SETTLE BUTTONS HERE.
        ─────────────────────────────────────────────────────────────
        This figure is Creator Share — what customers shared back
@@ -2654,9 +2662,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       label={label}
       box="100%"
       radius={22}
+      background="transparent"
       dimmed={locked}
       badge={locked ? <ServiceLock locked size={13} /> : null}
-    ><span style={{ display: "block", width: "72%", aspectRatio: "1", maxWidth: 58 }}><SyncedFlipIcon Icon={TileIcon} size={22} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}22`} radius="50%" /></span></IconTile>;
+    ><span style={{ position: "absolute", inset: 0 }}><SyncedFlipIcon Icon={TileIcon} size={30} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}26`} radius={22} /></span></IconTile>;
   })}</div></div>{
     /* One bigger box now instead of the small divider line — the
        cost figure front and center, the HOOMAN-2-HOOMAN mark
@@ -2742,7 +2751,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       background: "transparent",
       cursor: "pointer",
       transformStyle: "preserve-3d",
-      transition: "transform 0.6s cubic-bezier(.4,.15,.2,1)",
+      transition: `transform ${0.6 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
       transform: ghFlipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   >{
@@ -3322,7 +3331,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         showToast2("Autopay \u2014 coming soon");
       } }
     ].filter((a) => !q || flatten(a.label).includes(q));
-    const businesses = TOP_BUSINESSES.filter((b) => !q || flatten(b.label).includes(q));
+    // Nobody by that name: the whole list, not an empty card — the
+    // founder's rule for every name search (see BazaarSection too).
+    const businessHits = TOP_BUSINESSES.filter((b) => !q || flatten(b.label).includes(q));
+    const businesses = businessHits.length ? businessHits : TOP_BUSINESSES;
     const travelMatches = TRAVEL_ACTIONS.filter((t) => flatten(t.label).includes(q));
     // The pinned strip is NOT filtered by the search. It is a set of
     // shortcuts rather than a section of the catalogue, and watching your
@@ -3402,7 +3414,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       label={label}
       box={56}
       radius={18}
-    ><span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={16} color={T.accent} /></span></IconTile>)}</div></div>}{showTravelSection && <div><button
+      background={T.accentSoft}
+    ><Icon size={24} color={T.accent} /></IconTile>)}</div></div>}{showTravelSection && <div><button
       onClick={() => setTravelExpanded((v) => !v)}
       className="v2-tap"
       style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", border: "none", background: "none", padding: "2px 2px 8px", cursor: "pointer" }}
@@ -3416,9 +3429,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       label={label}
       box={56}
       radius={18}
-    ><span style={{ width: 36, height: 36, borderRadius: 12, background: T.positiveSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={18} color={T.positive} /></span></IconTile>)}</div>}</div>}<div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
+      background={T.positiveSoft}
+    ><Icon size={24} color={T.positive} /></IconTile>)}</div>}</div>}<div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
                       Top businesses
-                    </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{businesses.length === 0 ? <div style={{ padding: "22px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{creatorLookupBusy ? "Looking\u2026" : "No matches"}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 3 }}>{creatorLookupBusy ? "Checking that name on Gloobal." : "A creator is found by their exact name."}</div></div> : businesses.map((b, i) => {
+                    </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{businesses.length === 0 ? <div style={{ padding: "22px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{creatorLookupBusy ? "Looking\u2026" : "No matches"}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 3 }}>{creatorLookupBusy ? "Checking that name on GLOOBAL." : "A creator is found by their exact name."}</div></div> : businesses.map((b, i) => {
       const isPinned = payPins.indexOf(b.key) >= 0;
       // ── THE ROW IS NOT THE BUTTON ANY MORE ────────────────────────
       //
@@ -3593,7 +3607,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       borderRadius: "50%",
       flexShrink: 0,
       transformStyle: "preserve-3d",
-      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
+      transition: `transform ${0.5 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
       transform: myShareIconFlipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: T.gradButton, display: "flex", alignItems: "center", justifyContent: "center" }}><PieChart size={15} color="#fff" /></span><span
@@ -4432,7 +4446,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       boxShadow: totalReferralEarned > 0 ? "0 8px 20px rgba(124,58,237,0.3)" : "none"
     }}
   ><Landmark5 size={16} />
-              Settle <GeuFigure amount={totalReferralEarned} currency={ccyCode} lens={displayLens} size={13.5} /> to Gloobal Bank
+              Settle <GeuFigure amount={totalReferralEarned} currency={ccyCode} lens={displayLens} size={13.5} /> to <GloobalWordmark /> Bank
             </button>{
     /* How the network works */
   }<button
@@ -4529,7 +4543,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       textOverflow: "ellipsis",
       whiteSpace: "nowrap"
     }}
-  >{m.name || "Gloobal member"}</span><span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>{
+  >{m.name || "GLOOBAL member"}</span><span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>{
     /* Joined date and status — both already fetched from the server and
        both previously thrown away, while the row showed an em dash and
        the word "today" on every single line instead. */
@@ -5226,7 +5240,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
                 Your own rate is <strong>{myShareRate}%</strong>. You can change it any time from My Share.
               </span></div><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>
               {shareDistribution && shareDistribution.totalUsers > 0
-                ? `Every rate actually set on Gloobal, counted. ${shareDistribution.totalUsers} ${shareDistribution.totalUsers === 1 ? "account" : "accounts"} \u2014 not a projection or an example.`
+                ? `Every rate actually set on GLOOBAL, counted. ${shareDistribution.totalUsers} ${shareDistribution.totalUsers === 1 ? "account" : "accounts"} \u2014 not a projection or an example.`
                 : "This account is the only real Creator Share choice tracked so far \u2014 1 user, 1 rate, 100% in that one bucket. Not a projection or an example."}
             </div></div></div>}{
     /* Saving a new Gloobal ID — same verification, required before the

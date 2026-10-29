@@ -33,7 +33,10 @@ function LivingLogoBoxVisual({
   // a face is held, so the box is never mid-flip when the next one is due.
   flipMs = 900,
   symbolFontSize = "33vw",
-  symbolMaxWidth = 158
+  symbolMaxWidth = 158,
+  // The box's colour. The brand gradient by default; the launch splash
+  // passes the app logo's current colour (appLogo.jsx).
+  background = T.gradButton
 }) {
   const cssSize = (v) => typeof v === "number" ? `${v}px` : v;
   const renderFace = (content) => !content ? null : content.type === "logo" ? <img
@@ -52,10 +55,10 @@ function LivingLogoBoxVisual({
       // literally here AND in launchSplash.jsx's reduced-motion box — the
       // same three values in two files, which is how the moving box and
       // the still one would drift apart the first time either was touched.
-      background: T.gradButton,
+      background,
+      transition: "transform 0.6s ease, background 0.6s ease",
       boxShadow: "0 2px 0 rgba(76,29,149,0.55), 0 12px 22px rgba(76,29,149,0.38), 0 30px 58px rgba(76,29,149,0.26)",
       transform: "rotateX(10deg) rotateY(-10deg)",
-      transition: "transform 0.6s ease",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -89,7 +92,7 @@ function LivingLogoBoxVisual({
 // The full nine-face pass is now ~31s. That is fine here and nowhere near
 // fine on the splash, which is why the splash still shows one beat and
 // times itself separately.
-var LIVING_LOGO_FACE_MS = 3400;
+var LIVING_LOGO_FACE_MS = 3400 * FLIP_SLOW;
 // The mark's corner, in one place.
 //
 // A rounded square — a squircle, the shape an app icon is — everywhere the
@@ -176,7 +179,7 @@ function FlippingMenuIcon({ Icon, size = 92 }) {
       width: "100%",
       height: "100%",
       transformStyle: "preserve-3d",
-      transition: "transform 0.6s cubic-bezier(.4,.15,.2,1)",
+      transition: `transform ${0.6 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
       transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span
@@ -233,7 +236,7 @@ function SyncedFlipIcon({ Icon, size, flipInfo, frontBackground, radius = T.radi
       width: "100%",
       height: "100%",
       transformStyle: "preserve-3d",
-      transition: "transform 0.55s cubic-bezier(.4,.15,.2,1)",
+      transition: `transform ${0.55 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
       transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span
@@ -285,7 +288,7 @@ function GH2HFlipCircle({ size = 40 }) {
   const [symbolChar, setSymbolChar] = useState9(() => DIAL_SYMBOLS[Math.floor(Math.random() * DIAL_SYMBOLS.length)]);
   useEffect9(() => {
     const isSymbolStep = step % 2 === 1;
-    const duration = isSymbolStep ? 700 : 1400;
+    const duration = (isSymbolStep ? 700 : 1400) * FLIP_SLOW;
     const timer = setTimeout(() => {
       const nextIsSymbolStep = (step + 1) % 2 === 1;
       if (nextIsSymbolStep) {
@@ -306,7 +309,7 @@ function GH2HFlipCircle({ size = 40 }) {
       width: "100%",
       height: "100%",
       transformStyle: "preserve-3d",
-      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
+      transition: `transform ${0.5 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
       transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span
@@ -398,7 +401,7 @@ function FlipSymbolCircle({ size = 34, seed }) {
       // things twitching behind a column of amounts is noise rather than
       // life. At 3.2s each mark is still for most of its cycle and the
       // list settles between flips.
-    }, 3200);
+    }, 3200 * FLIP_SLOW);
     return () => clearInterval(interval);
   }, [seeded]);
   return <span style={{ display: "inline-block", perspective: 200, flexShrink: 0 }}><span
@@ -415,7 +418,7 @@ function FlipSymbolCircle({ size = 34, seed }) {
       transformStyle: "preserve-3d",
       // 0.9s, matching the logo box and the 0.00% dots — one turn speed
       // for every flipping mark in the app.
-      transition: "transform 0.9s cubic-bezier(.4,.15,.2,1), background 0.7s ease",
+      transition: `transform ${0.9 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1), background 0.7s ease`,
       transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span style={{ fontSize: size * 0.42, fontWeight: 800, color: "#fff", transform: flipped ? "rotateY(180deg)" : "none" }}>{symbol}</span></span></span>;

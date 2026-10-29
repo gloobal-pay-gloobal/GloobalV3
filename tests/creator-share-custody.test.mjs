@@ -101,7 +101,7 @@ describe("the share goes into custody, not into a balance", () => {
     assert.match(transfer, /throw new Error\('Creator Share could not be placed in custody/);
   });
 
-  test("custody is a separate account from the one Gloobal spends out of", () => {
+  test("custody is a separate account from the one GLOOBAL spends out of", () => {
     // Mixing them would add every claimed share to disbursedTotal, which is
     // the figure "Our spending" is built from — a fabricated number behind
     // an audited label.
@@ -186,9 +186,9 @@ describe("two generations of seed, told apart by what happened", () => {
     // receipt keeps saying "Gloobal balance", which is what happened to it.
     assert.match(code(SHARE_FLOW), /cashbackDestination: 'assets',/);
     const card = code("frontend/components/dialogs/ReceiptModal.jsx");
-    assert.match(card, /receipt\.shareDestination === "assets"\s*\n?\s*\? "My Assets"\s*\n?\s*: "Gloobal balance"/);
+    assert.match(card, /receipt\.shareDestination === "assets"\s*\n?\s*\? "My Assets"\s*\n?\s*: "GLOOBAL balance"/);
     // And nothing names the balance unconditionally any more.
-    assert.ok(!/label=\{shareIsCredit \? "Credited to" : "Taken from"\} value="Gloobal balance"/.test(card),
+    assert.ok(!/label=\{shareIsCredit \? "Credited to" : "Taken from"\} value="GLOOBAL balance"/.test(card),
       "the receipt is hardcoding the destination again");
   });
 });
@@ -291,7 +291,7 @@ describe("the app stops telling people the share is spendable", () => {
     // raw search would match the explanation and call it the defect. That
     // mistake has been made twice in this repo's tests already.
     const unlock = code("frontend/components/dialogs/PaymentUnlock.jsx");
-    assert.ok(!/It's in your Gloobal balance already/.test(unlock),
+    assert.ok(!/It's in your GLOOBAL balance already/.test(unlock),
       "the unlock screen still says the share is in the balance");
     // Case-insensitive: the line was resplit so that where the share went
     // comes first, which made "Planted in My Assets" the start of its own

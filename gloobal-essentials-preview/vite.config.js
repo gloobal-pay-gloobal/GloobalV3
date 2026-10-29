@@ -40,9 +40,9 @@ export default defineConfig({
       includeAssets: ["favicon.ico", "icons/apple-touch-icon.png"],
       manifest: {
         id: "/",
-        name: "Gloobal ID",
-        short_name: "Gloobal",
-        description: "Gloobal ID — international remittance, identity, and wallet.",
+        name: "GLOOBAL ID",
+        short_name: "GLOOBAL",
+        description: "GLOOBAL ID — international remittance, identity, and wallet.",
         lang: "en",
         dir: "ltr",
         theme_color: "#7C3AED",

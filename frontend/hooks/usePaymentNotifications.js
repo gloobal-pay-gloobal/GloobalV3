@@ -413,7 +413,10 @@ function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currency
     title,
     body,
     tag: `gloobal-txn-${txnId || "unknown"}`,
-    icon: gloobalNotifDiscIcon(txnId),
+    // The app logo in its colour for these two hours — the same picture
+    // the service worker shows for a push (push-sw-core.js), so a payment
+    // looks the same in the tray whether the app was open or not.
+    icon: gloobalLogoIconPath(gloobalLogoColorAt(Date.now()).key, 192),
     // When the money moved, which is what the platform prints on the
     // notification. The same instant the card's Date and time page shows
     // and the receipt prints.

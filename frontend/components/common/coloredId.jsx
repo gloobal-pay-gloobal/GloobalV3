@@ -5,7 +5,7 @@ function ColoredGloobalId({ id }) {
   useEffect4(() => {
     const interval = setInterval(() => {
       setColorOffset((o) => (o + 1) % POSITION_COLORS.length);
-    }, 2e3);
+    }, 2e3 * FLIP_SLOW);
     return () => clearInterval(interval);
   }, []);
   return <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 3 }}>{id.split("").map(
@@ -73,7 +73,7 @@ function IdSymbolDots({ id, revealed = true, size = 20, oneLine = false }) {
         return next;
       });
       if (Math.random() < 0.3) setColorOffset((o) => (o + 1) % POSITION_COLORS.length);
-    }, 550);
+    }, 550 * FLIP_SLOW);
     return () => clearInterval(interval);
   }, [chars.length]);
   return <span
@@ -100,7 +100,7 @@ function IdSymbolDots({ id, revealed = true, size = 20, oneLine = false }) {
         height: oneLine ? "100%" : dotSize,
         borderRadius: "50%",
         transformStyle: "preserve-3d",
-        transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
+        transition: `transform ${0.5 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
         transform: flipped[i] ? "rotateY(180deg)" : "rotateY(0deg)"
       }}
     ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: color, transition: "background 0.4s ease" }} /><span
@@ -131,7 +131,7 @@ function ShareRateFlipCircle({ percent, size = 20, staticMode = false }) {
     const interval = setInterval(() => {
       setFlipped((f) => !f);
       setSymbol(DIAL_SYMBOLS[Math.floor(Math.random() * DIAL_SYMBOLS.length)]);
-    }, 1800);
+    }, 1800 * FLIP_SLOW);
     return () => clearInterval(interval);
   }, [staticMode]);
   return <span style={{ display: "inline-block", perspective: 200, flexShrink: 0 }}><span
@@ -146,7 +146,7 @@ function ShareRateFlipCircle({ percent, size = 20, staticMode = false }) {
       borderRadius: "50%",
       background: T.accentSoft,
       transformStyle: "preserve-3d",
-      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
+      transition: `transform ${0.5 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
       transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>{

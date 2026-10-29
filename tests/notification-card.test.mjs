@@ -529,7 +529,8 @@ describe("the banner says what the card says", () => {
     assert.match(hook, /const body = gloobalNotifSubline\(meta\);/);
     assert.match(hook, /detail: \{ \.\.\.meta, txnId, title, body/);
     assert.match(hook, /\n\s*body,\n/);
-    assert.match(hook, /icon: gloobalNotifDiscIcon\(txnId\)/);
+    // The tray shows the app logo in its colour for these two hours.
+    assert.match(hook, /icon: gloobalLogoIconPath\(gloobalLogoColorAt\(Date\.now\(\)\)\.key, 192\)/);
     // Both entry points go through the one builder.
     assert.match(hook, /function notifyPaymentReceived[\s\S]{0,400}notifyPaymentEvent\(\{ direction: "received"/);
     assert.match(hook, /function notifyPaymentSent[\s\S]{0,400}notifyPaymentEvent\(\{ direction: "sent"/);
@@ -592,7 +593,7 @@ describe("the disc the lock screen is drawn with", () => {
     const sw = readSource(SW);
     assert.match(sw, /var GLOOBAL_PUSH_DISC = \/\^\\\/icons\\\/notif\\\/disc-\[0-7\]\\\.png\$\//);
     assert.match(sw, /GLOOBAL_PUSH_DISC\.test\(parsed\.icon\.trim\(\)\)/);
-    assert.match(sw, /icon: payload\.icon \|\| GLOOBAL_PUSH_ICON/);
+    assert.match(sw, /icon: "\/icons\/logo\/" \+ gloobalLogoKeyAt\(Date\.now\(\)\) \+ "-192\.png"/);
     // The badge is drawn as a monochrome silhouette, so a colour there is
     // thrown away.
     assert.match(sw, /badge: GLOOBAL_PUSH_ICON/);

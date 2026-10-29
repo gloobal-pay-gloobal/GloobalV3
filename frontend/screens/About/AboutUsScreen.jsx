@@ -49,7 +49,7 @@ function AboutUsScreen({ onBack, onShowToast, gloobalId }) {
   }<div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 14px 15px" }}><div style={{ textAlign: "center", fontSize: 10, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: T.inkFaint }}>This is an identity</div><div style={{ display: "flex", justifyContent: "center", margin: "12px 0 11px" }}><IdSymbolDots id={gloobalId || "++++++++++++"} revealed oneLine size={26} /></div><div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: T.inkSoft, lineHeight: 1.5 }}>
         No name, no number, no country — readable by anyone, in any language.
       </div></div><div style={{ fontSize: 13.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.6 }}>
-      We're building one Gloobal ID that moves money the way people actually move — across countries, currencies, and platforms — without the fees, forms, or borders getting in the way.
+      We're building one <GloobalWordmark /> ID that moves money the way people actually move — across countries, currencies, and platforms — without the fees, forms, or borders getting in the way.
     </div>{
     /* The tagline as four chips instead of one grey run-on line. Set as
        a single string under a logo it reads as decoration; separated,

@@ -85,9 +85,12 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
   const [busy, setBusy] = useState67(false);
   const [found, setFound] = useState67(null);
   const [error, setError] = useState67("");
+  // A name nobody has: the shops that start with it, or — when none do —
+  // the shops we have. { title, shops }.
+  const [suggest, setSuggest] = useState67(null);
   const seq = useRef39(0);
 
-  const reset = () => { setFound(null); setError(""); };
+  const reset = () => { setFound(null); setError(""); setSuggest(null); };
 
   const setMode = (m) => {
     if (m === mode) return;
@@ -136,7 +139,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     if (!what) return;
     if (what.kind === "unknown") {
       setFound(null);
-      setError("Paste a Gloobal ID, a pay link, a mobile number or a creator name.");
+      setError("Paste a GLOOBAL ID, a pay link, a mobile number or a creator name.");
       return;
     }
     const mine = seq.current + 1;
@@ -145,18 +148,39 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     setBusy(true);
     setError("");
     setFound(null);
+    setSuggest(null);
     let result = null;
     let problem = "";
+    let offer = null;
     try {
       if (what.kind === "name") {
         const creator = await GloobalApi.resolveCreatorHandle(what.value);
         if (creator) result = { kind: "creator", creator };
-        else problem = "No creator has that name. Check the spelling, or search shops in Pay & Services.";
+        else {
+          // ── NOBODY BY THAT NAME: SHOW WHAT WE HAVE ────────────────────
+          // Shops whose name starts with what was typed; when there are
+          // none, the most-paid shops in your country. Never a dead end.
+          const shown = what.value.replace(/\./g, " ").trim();
+          let shops = [];
+          let none = false;
+          try {
+            shops = await GloobalApi.bazaarSearch({ q: what.value, country: String(countryIso || "").toUpperCase() });
+            if (!shops || !shops.length) {
+              none = true;
+              shops = await GloobalApi.bazaarSearch({ q: "", country: String(countryIso || "").toUpperCase() });
+            }
+          } catch (e) {
+            shops = [];
+          }
+          shops = (shops || []).filter((x) => x && x.handle).slice(0, 5);
+          if (shops.length) offer = { title: none ? `No shop called “${shown}” yet. Here's what's on` : `No exact match for “${shown}”. Shops starting with it:`, none, shops };
+          else problem = "No creator has that name. Check the spelling, or search shops in Pay & Services.";
+        }
       } else {
         const id = what.kind === "mobile" ? quickPayMobile(what.value, dialCode) : what.value;
         const user = await GloobalApi.resolveUser(id);
         if (!user || !user.symbolId) {
-          problem = "No one on Gloobal matches that.";
+          problem = "No one on GLOOBAL matches that.";
         } else {
           // A shop's link checks the shop: same account, its creator side.
           let creator = null;
@@ -168,7 +192,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
             kind: "person",
             payee: {
               gloobalId: user.symbolId,
-              name: user.fullName && !user.nameIsMobile ? user.fullName : "Gloobal User",
+              name: user.fullName && !user.nameIsMobile ? user.fullName : "GLOOBAL User",
               mobileNumber: user.mobileNumber || "",
               countryIso: user.countryIso || null,
               shareRate: (Number(user.cashbackRate) || 0) * 100
@@ -181,7 +205,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       }
     } catch (err) {
       const notFound = err && (err.status === 404 || err.message === "No user found.");
-      problem = notFound ? "No one on Gloobal matches that." : ((err && err.message) || "Couldn't check that just now. Try again.");
+      problem = notFound ? "No one on GLOOBAL matches that." : ((err && err.message) || "Couldn't check that just now. Try again.");
     }
     if (seq.current !== mine) return;
     setBusy(false);
@@ -190,7 +214,9 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       setError("That's you.");
       return;
     }
-    if (result) setFound(result); else setError(problem);
+    if (result) setFound(result);
+    else if (offer) setSuggest(offer);
+    else setError(problem);
   };
 
   const country = (iso) => (iso && typeof COUNTRY_BY_ISO !== "undefined" ? COUNTRY_BY_ISO[String(iso).toUpperCase()] : null);
@@ -265,13 +291,14 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     // it found and the pad. zIndex -1 keeps it inside the header's own
     // stacking context: under the box, over everything below the header.
     // Tapping it puts the pad away, or clears the answer.
-    (padOpen || found || error || busy) ? <div
+    (padOpen || found || error || busy || suggest) ? <div
       data-quickpay-veil=""
       aria-hidden="true"
       onClick={() => {
         if (padOpen) { setPadOpen(false); return; }
         setFound(null);
         setError("");
+        setSuggest(null);
       }}
       style={{
         position: "fixed", inset: 0, zIndex: -1, background: T.bg,
@@ -326,7 +353,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     inputMode="none"
     onFocus={() => setPadOpen(true)}
     onClick={() => setPadOpen(true)}
-    placeholder={mode === "mobile" ? "Mobile number" : mode === "name" ? "Creator name" : "Gloobal ID, or paste anything"}
+    placeholder={mode === "mobile" ? "Mobile number" : mode === "name" ? "Creator name" : "GLOOBAL ID, or paste anything"}
     aria-label="Pay someone by Gloobal ID, mobile number or creator name"
     autoCapitalize="none"
     autoCorrect="off"
@@ -355,7 +382,32 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       fontSize: 12, fontWeight: 700, color: T.negative, lineHeight: 1.4, background: T.surface, borderRadius: 14,
       padding: "10px 12px", boxShadow: "0 10px 26px rgba(20,18,43,0.16)", animation: "quickPayIn 0.22s ease"
     }}>{error}</div> : null
-  }{card}{padOpen ? quickPayPads() : null}</div>;
+  }{suggest && !found ? <div data-quickpay-suggest="" style={{
+    position: "absolute", left: 0, right: 0, top: "calc(100% + 8px)", zIndex: 20,
+    background: T.surface, borderRadius: 18, padding: "12px 6px 6px", overflow: "hidden",
+    boxShadow: "0 14px 36px rgba(20,18,43,0.22), 0 0 0 1px rgba(20,18,43,0.04)", animation: "quickPayIn 0.22s ease"
+  }}><div role="status" style={{
+    display: "flex", alignItems: "flex-start", gap: 8, padding: "0 8px 8px", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, lineHeight: 1.4
+  }}><span style={{ flex: 1, minWidth: 0 }}>{suggest.title}{suggest.none ? <> <GloobalWordmark /></> : null}</span><button
+    onClick={reset}
+    aria-label="Close"
+    style={{
+      width: 26, height: 26, borderRadius: "50%", border: "none", background: T.surfaceAlt, cursor: "pointer", flexShrink: 0,
+      display: "flex", alignItems: "center", justifyContent: "center"
+    }}
+  ><X22 size={13} color={T.inkSoft} /></button></div>{suggest.shops.map((shop) => <button
+    key={shop.symbolId}
+    onClick={() => { setText(String(shop.handle)); lookUp(String(shop.handle)); }}
+    className="v2-row"
+    style={{
+      width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px 8px", border: "none", borderRadius: 12,
+      background: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit"
+    }}
+  ><BusinessMark name={shop.handle || ""} logo={shop.logo} size={36} radius={11} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
+    display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+  }}>{creatorDisplayName(shop)}</span><span style={{
+    display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 1
+  }}>{(typeof bazaarCategoryInfo === "function" && bazaarCategoryInfo(shop.category) || {}).label || "Shop"}</span></span><ArrowRight4 size={15} color={T.inkFaint} /></button>)}</div> : null}{card}{padOpen ? quickPayPads() : null}</div>;
 
   // ── THE PANEL ─────────────────────────────────────────────────────────
   function quickPayPads() {

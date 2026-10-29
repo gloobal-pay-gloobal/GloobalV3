@@ -111,12 +111,12 @@ function gloobalNotifSheetWhen(iso) {
 //   "signedOut"   — nothing to own a subscription yet.
 //   "ok" / ""     — already subscribed, or nothing to report. Render nothing.
 var GLOOBAL_NOTIF_ASK_MESSAGES = {
-  default: "Get told when money arrives, even when Gloobal is closed.",
+  default: "Get told when money arrives, even when GLOOBAL is closed.",
   dismissed: "Notifications weren't turned on. Tap Enable to try again. If no prompt appears, allow notifications for this site in your browser settings.",
-  denied: "Notifications are blocked for Gloobal in your browser. Turn them back on in the site settings for this page.",
-  unsupported: "This browser can't show notifications when Gloobal is closed.",
-  disabled: "Notifications are allowed on this device, but Gloobal can't send them to devices yet. Payments still appear in this list.",
-  unreachable: "Couldn't reach Gloobal to finish turning notifications on.",
+  denied: "Notifications are blocked for GLOOBAL in your browser. Turn them back on in the site settings for this page.",
+  unsupported: "This browser can't show notifications when GLOOBAL is closed.",
+  disabled: "Notifications are allowed on this device, but GLOOBAL can't send them to devices yet. Payments still appear in this list.",
+  unreachable: "Couldn't reach GLOOBAL to finish turning notifications on.",
   failed: "Couldn't turn on notifications on this device.",
   signedOut: "Sign in to turn on notifications for your account."
 };
@@ -306,7 +306,7 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, p
     style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", padding: "28px 0" }}
   >Loading…</span>}{status === "unreachable" && <span
     style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", lineHeight: 1.55, padding: "26px 18px" }}
-  >Couldn't reach Gloobal just now. Your notifications are safe on the server — close this and open it again in a moment.</span>}{status === "error" && <span
+  >Couldn't reach <GloobalWordmark /> just now. Your notifications are safe on the server — close this and open it again in a moment.</span>}{status === "error" && <span
     style={{ fontSize: 12.5, color: T.inkSoft, textAlign: "center", padding: "26px 18px" }}
   >Notifications couldn't be loaded.</span>}{status === "ready" && rows.length === 0 && <span
     style={{ fontSize: 12.5, color: T.inkFaint, textAlign: "center", lineHeight: 1.55, padding: "28px 18px" }}

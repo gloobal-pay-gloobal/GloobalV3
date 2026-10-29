@@ -89,7 +89,7 @@ function buildReceiptImageModel(receipt, { viewerName, viewerSymbolId, lens, vie
   let headline;
   if (status === "pending") headline = "Payment Pending";
   else if (status === "simulated") headline = "Not Sent · Simulated";
-  else if (isCoin) headline = r.title || "Gloobal Coin";
+  else if (isCoin) headline = r.title || "GLOOBAL Coin";
   else headline = isSent ? "Payment Successful" : "Money Received";
 
   // The hero figure is the row's own. On a Creator Share receipt the row IS
@@ -159,7 +159,7 @@ function buildReceiptImageModel(receipt, { viewerName, viewerSymbolId, lens, vie
     // every receipt, a share receipt labelled "Money received" reads as an
     // ordinary payment that happens to carry a share of exactly its own size.
     heroLabel: status === "completed"
-      ? (isShare ? "Creator Share" : isCoin ? (r.title || "Gloobal Coin") : isSent ? "Money sent" : "Money received")
+      ? (isShare ? "Creator Share" : isCoin ? (r.title || "GLOOBAL Coin") : isSent ? "Money sent" : "Money received")
       : headline,
     // The figure as the card prints it: a MINUS on money that left, nothing
     // on money that arrived.
@@ -611,7 +611,7 @@ async function renderReceiptImage(model, { scale = 2 } = {}) {
   // this file must never do.
   const panelRows = [];
   panelRows.push({ label: m.counterpartyLabel, value: m.counterpartyName || "—", flag: true });
-  if (m.counterpartyId) panelRows.push({ label: "Gloobal ID", value: m.counterpartyId, symbols: true });
+  if (m.counterpartyId) panelRows.push({ label: "GLOOBAL ID", value: m.counterpartyId, symbols: true });
   if (m.conversion) {
     panelRows.push({ label: "Sent", value: m.conversion.sentText });
     panelRows.push({ label: "Received", value: m.conversion.receivedText });
@@ -907,7 +907,7 @@ function receiptImageFilename(receipt) {
 // Nothing here opens a second share sheet. A person who wanted one share and
 // got two is the thing this replaced.
 function receiptShareAttempts(file, link) {
-  const title = "Gloobal receipt";
+  const title = "GLOOBAL receipt";
   const out = [];
   if (link) {
     out.push([{ files: [file], title, url: link }, "shared"]);

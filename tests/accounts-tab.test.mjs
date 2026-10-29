@@ -86,12 +86,13 @@ describe("the tiles say what they are and what state they are in", () => {
   const dash = () => code("frontend/screens/Dashboard/Dashboard.jsx");
   const tile = () => code("frontend/components/common/iconTile.jsx");
 
-  test("the icon is a circle in the middle of the box", () => {
+  test("the icon fills its tinted box", () => {
     // The flip faces carry the radius themselves rather than being clipped
     // by a wrapper: overflow:hidden creates a containing block that can
     // flatten preserve-3d, which would kill the flip these icons exist for.
     const src = dash();
-    assert.match(src, /radius="50%"/);
+    // The flip face fills the whole box now: a tinted box, a big icon.
+    assert.match(src, /frontBackground=\{`\$\{heroColor\}26`\} radius=\{22\}/);
     assert.match(code("frontend/components/common/flipIcons.jsx"), /radius = T\.radiusLg/);
     assert.match(code("frontend/components/common/flipIcons.jsx"), /borderRadius: radius,/);
   });

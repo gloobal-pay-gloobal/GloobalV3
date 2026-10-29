@@ -40,7 +40,7 @@ test("Share sends THIS shop's link, not the viewer's own QR", () => {
   // Through gloobalShareLink (shareLink.js) since "share is a text not
   // link": the link goes INSIDE the message, the sheet closing is not an
   // error, and without a share sheet the message is copied.
-  assert.match(src, /await gloobalShareLink\(\{ title: name, message: `\$\{name\}\$\{tagline\} · pay on Gloobal:`, url, onToast \}\);/);
+  assert.match(src, /await gloobalShareLink\(\{ title: name, message: `\$\{name\}\$\{tagline\} · pay on GLOOBAL:`, url, onToast \}\);/);
   const helper = readSource("frontend/components/common/shareLink.js");
   assert.match(helper, /error\.name === "AbortError"\) return "cancelled";/);
   assert.match(helper, /onToast\("Link copied"\)/);

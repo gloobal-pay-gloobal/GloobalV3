@@ -35,7 +35,7 @@ function GloobalWordmark({ suffix = "", withSymbols = false }) {
         setC1((prev) => randomColor(prev));
         setC2((prev) => randomColor(prev));
       }
-    }, withSymbols ? 900 : 3e3);
+    }, withSymbols ? 900 * FLIP_SLOW : 3e3);
     return () => clearInterval(interval);
   }, [withSymbols]);
   const dot = (color, symbol, flipped) => withSymbols ? <span style={{ display: "inline-block", perspective: 160, margin: "0 0.03em", verticalAlign: "-0.05em" }}><span
@@ -47,7 +47,7 @@ function GloobalWordmark({ suffix = "", withSymbols = false }) {
       height: "0.85em",
       borderRadius: "50%",
       transformStyle: "preserve-3d",
-      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
+      transition: `transform ${0.5 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
       transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: color }} /><span
@@ -104,6 +104,15 @@ function GloobalWordmark({ suffix = "", withSymbols = false }) {
   return <span aria-label={`Gloobal${suffix}`} style={{ textTransform: "uppercase", fontWeight: 800, fontFamily: T.fontWordmark, whiteSpace: "nowrap" }}>
       Gl{dot(c1, s1, flipped1)}{dot(c2, s2, flipped2)}bal{suffix}</span>;
 }
+// A line of text with the brand drawn as the wordmark. For labels that
+// are DATA as well as words on a screen — a payment method's name is
+// stored with the payment as "Gloobal Bank" — so the value stays as it
+// was and only the drawing changes.
+function gloobalText(text) {
+  const parts = String(text == null ? "" : text).split(/\b(Gloobal|GLOOBAL)\b/);
+  if (parts.length === 1) return parts[0];
+  return parts.map((p, i) => (i % 2 ? <GloobalWordmark key={i} /> : p));
+}
 function CyclingBadge({ words, intervalMs = 1400 }) {
   const [index, setIndex] = useState2(0);
   useEffect2(() => {
@@ -129,7 +138,7 @@ function HoomanMark() {
         next[i] = randomColor(prev[i]);
         return next;
       });
-    }, 900);
+    }, 900 * FLIP_SLOW);
     return () => clearInterval(interval);
   }, []);
   const dot = (i, key) => <span
@@ -189,7 +198,7 @@ function ZeroPercentMark({ size = 38, color: baseColor }) {
       // three dots something was mid-flip almost continuously and the mark
       // never settled. At 1.8s a dot is at rest for most of its cycle and
       // the movement reads as occasional rather than restless.
-    }, 1800);
+    }, 1800 * FLIP_SLOW);
     return () => clearInterval(interval);
   }, []);
   const dot = (i, key) => <span key={key} style={{ display: "inline-block", perspective: 200, margin: "0 0.04em", verticalAlign: "-0.02em" }}><span
@@ -203,7 +212,7 @@ function ZeroPercentMark({ size = 38, color: baseColor }) {
       transformStyle: "preserve-3d",
       // 0.9s, up from 0.5s. Same reasoning as the logo box: a turn that
       // fast reads as a swap rather than a rotation.
-      transition: "transform 0.9s cubic-bezier(.4,.15,.2,1)",
+      transition: `transform ${0.9 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
       transform: flipped[i] ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: colors[i] }} /><span
@@ -253,7 +262,7 @@ function SingleOMark({ before, after }) {
         else setColor((prev) => randomColor(prev));
         return next;
       });
-    }, 1500);
+    }, 1500 * FLIP_SLOW);
     return () => clearInterval(interval);
   }, []);
   return <span style={{ textTransform: "uppercase", fontWeight: 800 }}>{before}<span style={{ display: "inline-block", perspective: 200, margin: "0 0.04em", verticalAlign: "-0.1em" }}><span
@@ -265,7 +274,7 @@ function SingleOMark({ before, after }) {
       height: "0.85em",
       borderRadius: "50%",
       transformStyle: "preserve-3d",
-      transition: "transform 0.5s cubic-bezier(.4,.15,.2,1)",
+      transition: `transform ${0.5 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`,
       transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)"
     }}
   ><span style={{ position: "absolute", inset: 0, borderRadius: "50%", backfaceVisibility: "hidden", background: color }} /><span

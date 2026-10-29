@@ -135,7 +135,7 @@ describe("one mark for scanning, everywhere", () => {
       const around = s.slice(Math.max(0, at - 700), at + 700);
       assert.match(around, /NavHistoryButton/, `${name}'s scan button is not beside history`);
     }
-    assert.match(code(NAV), /function NavScanButton\(\{ onClick, label = "Scan a Gloobal QR code"/);
+    assert.match(code(NAV), /function NavScanButton\(\{ onClick, label = "Scan a GLOOBAL QR code"/);
     assert.match(code(NAV), /<ScannerIcon size=\{NAV_GLYPH_SIZE\} animated/, "the shared button uses the one mark");
   });
 });
@@ -494,8 +494,8 @@ describe("nothing on the live scanner sits on anything else", () => {
     // camera with a square on it; what is NOT obvious is that this reads
     // Gloobal codes and only Gloobal codes.
     assert.doesNotMatch(app, /\n\s*Scan QR\n/, "the old action title is back");
-    assert.match(app, /\n\s*Gloobal QR\n/);
-    assert.equal((app.match(/Point at any Gloobal code/g) || []).length, 1,
+    assert.match(app, /\n\s*<GloobalWordmark \/> QR\n/);
+    assert.equal((app.match(/Point at any <GloobalWordmark \/> code/g) || []).length, 1,
       "the instruction is printed twice, or not at all");
     // Centred on the SCREEN, not on the space left beside the back
     // button — without the spacer it sits 27px right of centre, which is

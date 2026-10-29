@@ -39,7 +39,7 @@ test("Download and Share sit at the side; Share falls back to the shop link", ()
   // Through gloobalShareLink since "share is a text not link": the photo
   // where files can be shared, the link inside the message otherwise.
   assert.match(s, /buildGloobalPayUrl\(shopSymbolId, "shop"\)/);
-  assert.match(s, /gloobalShareLink\(\{ title, message: `\$\{title\} on Gloobal:`, url: link, file, onToast \}\)/);
+  assert.match(s, /gloobalShareLink\(\{ title, message: `\$\{title\} on GLOOBAL:`, url: link, file, onToast \}\)/);
 });
 
 test("swipe, pinch and double-tap zoom, and the price is the app's", () => {

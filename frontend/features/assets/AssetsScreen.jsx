@@ -138,7 +138,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
        figure that shrinks as it grows — exactly backwards for the number
        a person is about to act on. */
   }<span style={{ display: "flex", alignItems: "center", gap: 8 }}><Landmark3 size={16} />
-    <span>Settle to Gloobal Bank</span></span><span style={{
+    <span>Settle to <GloobalWordmark /> Bank</span></span><span style={{
       display: "block", marginTop: 3, fontSize: 15, fontWeight: 800, whiteSpace: "nowrap"
     }}><GeuFigure amount={totalAssets} currency={ccyCode} lens={lens} size={15} /></span>
         </button>{

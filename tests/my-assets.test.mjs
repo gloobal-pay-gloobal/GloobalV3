@@ -277,7 +277,7 @@ describe("the settle button says where the money is going", () => {
     // as it grows is exactly backwards for the number somebody is about
     // to act on.
     const src = code();
-    assert.match(src, /<span>Settle to Gloobal Bank<\/span>/);
+    assert.match(src, /<span>Settle to <GloobalWordmark \/> Bank<\/span>/);
     assert.match(src, /flexDirection: "column"/);
     assert.ok(!/Settle <GeuFigure/.test(src), "the old one-line form is gone");
   });

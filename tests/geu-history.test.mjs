@@ -109,7 +109,7 @@ const storedMint = {
   amount: 1200,
   currency: "GEU",
   status: "success",
-  note: "Minted Gloobal Coin",
+  note: "Minted GLOOBAL Coin",
   fromUserId: ME,
   toUserId: null,
   createdAt: new Date("2026-08-14T09:30:00Z"),
@@ -128,7 +128,7 @@ const storedRedeem = {
   _id: "t2",
   referenceId: "GLB-REDEEM-1",
   type: "coin_redeem",
-  note: "Redeemed Gloobal Coin",
+  note: "Redeemed GLOOBAL Coin",
   metadata: {
     prototype: true,
     reserveCurrency: "INR",
@@ -145,7 +145,7 @@ const storedSend = {
   referenceId: "GLB-SEND-1",
   type: "coin_send",
   amount: 50,
-  note: "Sent Gloobal Coin",
+  note: "Sent GLOOBAL Coin",
   fromUserId: ME,
   toUserId: THEM,
   metadata: { prototype: true }
@@ -330,7 +330,7 @@ describe("what the mapper hands the history screen", () => {
     }
   });
 
-  test("a buy row is with the reserve, not with 'Gloobal User'", () => {
+  test("a buy row is with the reserve, not with 'GLOOBAL User'", () => {
     // A mint writes toUserId: null — the other side of it is the reserve
     // that backs the coin, which is not an account — so the server resolves
     // no counterparty and the fallback filled the gap with the placeholder
@@ -347,12 +347,12 @@ describe("what the mapper hands the history screen", () => {
     assert.equal(mapServerTransaction(projected("coin_redeem"), "GLB-ME").name, "Gloobal Reserve");
   });
 
-  test("a transfer with no name is still 'Gloobal User'", () => {
+  test("a transfer with no name is still 'GLOOBAL User'", () => {
     // Only mint and redeem get the reserve. A coin SEND has a real person on
     // the other end, so if a name is missing the truthful answer is that the
     // app does not know it — not that the transfer was with the reserve,
     // which it was not.
-    assert.equal(mapServerTransaction(projected("coin_send"), "GLB-ME").name, "Gloobal User");
+    assert.equal(mapServerTransaction(projected("coin_send"), "GLB-ME").name, "GLOOBAL User");
     const named = { ...projected("coin_send"), counterparty: { fullName: "Tom Whitfield", symbolId: "GLB-TOM" } };
     assert.equal(mapServerTransaction(named, "GLB-ME").name, "Tom Whitfield");
   });

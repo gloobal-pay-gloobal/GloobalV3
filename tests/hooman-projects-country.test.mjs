@@ -195,7 +195,7 @@ describe("the number on the card counts what the list shows", () => {
     const top = src.slice(at, at + 4200);
     const exits = (top.match(/setShowHoomanProjects\(false\)/g) || []).length;
     assert.equal(exits, 1, `the projects screen has ${exits} exits; expected exactly one`);
-    assert.match(top, /Back to Gloobal Coverage/, "the exit is not announced to a screen reader");
+    assert.match(top, /Back to GLOOBAL Coverage/, "the exit is not announced to a screen reader");
   });
 
   test("the country chip filters location, it does not navigate", () => {

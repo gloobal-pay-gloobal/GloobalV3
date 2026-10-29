@@ -359,7 +359,7 @@ function historyRowShape(type) {
 // name like any payment; if it ever arrives without one, "Gloobal User" is
 // the truthful answer there, because a person is who it was with.
 function coinPartyName(type) {
-  return type === "coin_mint" || type === "coin_redeem" ? COIN_RESERVE_NAME : "Gloobal User";
+  return type === "coin_mint" || type === "coin_redeem" ? COIN_RESERVE_NAME : "GLOOBAL User";
 }
 
 function mapServerTransaction(row, viewerSymbolId) {
@@ -976,7 +976,7 @@ function GloobalId() {
     const senderSymbolId = registeredUser && registeredUser.symbolId;
     const receiverSymbolId = receiver && (receiver.gloobalId || receiver.symbolId || receiver.id);
     if (!senderSymbolId) return { ok: true, skipped: true, reason: "not signed in against the backend" };
-    if (!receiverSymbolId) return { ok: true, skipped: true, reason: "receiver has no Gloobal ID" };
+    if (!receiverSymbolId) return { ok: true, skipped: true, reason: "receiver has no GLOOBAL ID" };
     try {
       const result = await GloobalApi.sendTransaction({
         senderSymbolId,
@@ -1163,13 +1163,13 @@ function GloobalId() {
       const notFound =
         (err instanceof GloobalApiError && err.status === 404) ||
         (!(err instanceof GloobalApiError) && err && err.message === "No user found.");
-      if (notFound) return { ok: false, error: "No Gloobal account uses this QR." };
+      if (notFound) return { ok: false, error: "No GLOOBAL account uses this QR." };
       return { ok: false, retryable: true, error: (err && err.message) || "Couldn't look this QR up. Check your connection." };
     }
-    if (!user || !user.symbolId) return { ok: false, error: "No Gloobal account uses this QR." };
+    if (!user || !user.symbolId) return { ok: false, error: "No GLOOBAL account uses this QR." };
     const myId = (registeredUser && registeredUser.symbolId) || secureId;
     if (myId && (user.symbolId === myId || gloobalId === myId)) {
-      return { ok: false, error: "This is your own Gloobal QR." };
+      return { ok: false, error: "This is your own GLOOBAL QR." };
     }
     return {
       ok: true,
@@ -1179,7 +1179,7 @@ function GloobalId() {
         // fullName is the mobile number on accounts created before the name
         // step existed; `nameIsMobile` is the server's own answer to that
         // (GET /api/users/resolve masks the number it returns).
-        name: user.fullName && !user.nameIsMobile ? user.fullName : "Gloobal User",
+        name: user.fullName && !user.nameIsMobile ? user.fullName : "GLOOBAL User",
         mobileNumber: user.mobileNumber || "",
         // The payee's OWN registered country — never inferred from the payer's.
         countryIso: user.countryIso || null,
@@ -1363,8 +1363,8 @@ function GloobalId() {
       // Never opened or followed — a QR's text is only ever parsed.
       setScanError(
         /^upi:/i.test(String(rawCode || "").trim())
-          ? "This is a UPI QR. Gloobal can't pay UPI codes."
-          : "This isn't a Gloobal QR code."
+          ? "This is a UPI QR. GLOOBAL can't pay UPI codes."
+          : "This isn't a GLOOBAL QR code."
       );
       return;
     }
@@ -2652,7 +2652,7 @@ function GloobalId() {
       // Still handled; only the address bar keeps the link.
     }
     if (!link.gloobalId) {
-      showToast("That Gloobal pay link isn't valid.");
+      showToast("That GLOOBAL pay link isn't valid.");
       return;
     }
     (async () => {
@@ -2790,7 +2790,7 @@ function GloobalId() {
       // Only a definite answer is reported. `null` means the lookup could not
       // tell — a cold start or a 5xx — and saying "no account found" over one
       // would be telling somebody their own account does not exist.
-      if (available === true) setAuthError("No account found for this Gloobal ID.");
+      if (available === true) setAuthError("No account found for this GLOOBAL ID.");
     })();
     return () => {
       cancelled = true;
@@ -2927,7 +2927,7 @@ function GloobalId() {
   // registered before but is currently signed out.
   const appMapEntries = [
     { key: "dashboard", section: "Your money", group: "post", label: "Dashboard", locked: !everRegistered, onPress: () => goToDashboardDestination(null) },
-    { key: "gbank", section: "Your money", group: "post", label: "Gloobal Bank", locked: !everRegistered, onPress: () => goToDashboardDestination("bank") },
+    { key: "gbank", section: "Your money", group: "post", label: "GLOOBAL Bank", locked: !everRegistered, onPress: () => goToDashboardDestination("bank") },
     { key: "assets", section: "Your money", group: "post", label: "My Assets", locked: !everRegistered, onPress: () => goToDashboardDestination("assets") },
     { key: "send", section: "Move money", group: "post", label: "Send Money", locked: !everRegistered, onPress: () => goToDashboardDestination("send") },
     { key: "paylater", section: "Move money", group: "post", label: "PayLater", locked: !everRegistered, onPress: () => goToDashboardDestination("paylater") },
@@ -2951,12 +2951,12 @@ function GloobalId() {
     { key: "choices", section: "Your money", group: "post", label: "My Choices", locked: !everRegistered, onPress: () => goToDashboardDestination("choices") },
     { key: "essentials", section: "Your money", group: "post", label: "My Essentials", locked: !everRegistered, onPress: () => goToDashboardDestination("essentials") },
     { key: "ghscore", section: "You", group: "post", label: "Hooman Score", locked: !everRegistered, onPress: () => goToDashboardDestination("ghscore") },
-    { key: "updateId", section: "You", group: "post", label: "Update Gloobal ID", locked: !everRegistered, onPress: () => goToDashboardDestination("updateId") },
+    { key: "updateId", section: "You", group: "post", label: "Update GLOOBAL ID", locked: !everRegistered, onPress: () => goToDashboardDestination("updateId") },
     { key: "referralnet", section: "You", group: "post", label: "Referral Network", locked: !everRegistered, onPress: () => goToDashboardDestination("referral") },
-    { key: "coverage", section: "Gloobal", group: "post", label: "Gloobal Coverage", locked: !everRegistered, onPress: () => goToDashboardDestination("coverage") },
-    { key: "aboutus", section: "Gloobal", group: "post", label: "About Us", locked: !everRegistered, onPress: () => goToDashboardDestination("aboutus") },
+    { key: "coverage", section: "GLOOBAL", group: "post", label: "GLOOBAL Coverage", locked: !everRegistered, onPress: () => goToDashboardDestination("coverage") },
+    { key: "aboutus", section: "GLOOBAL", group: "post", label: "About Us", locked: !everRegistered, onPress: () => goToDashboardDestination("aboutus") },
     { key: "phone", section: "Get started", group: "pre", label: "Mobile Number", locked: everRegistered, onPress: goToRegistrationStart },
-    { key: "secureId", section: "Get started", group: "pre", label: "Create Gloobal ID", locked: everRegistered, onPress: () => { setIsLoginAttempt(false); flipTo("secureId"); } },
+    { key: "secureId", section: "Get started", group: "pre", label: "Create GLOOBAL ID", locked: everRegistered, onPress: () => { setIsLoginAttempt(false); flipTo("secureId"); } },
     { key: "referral", section: "Get started", group: "pre", label: "Referral Code", locked: everRegistered, onPress: () => { setIsLoginAttempt(false); flipTo("referral"); } },
     { key: "login", section: "You", group: "pre", label: "Login", locked: false, onPress: goToLogin }
   ];
@@ -3003,7 +3003,7 @@ function GloobalId() {
         const { available } = await GloobalApi.checkSymbolAvailability(secureId);
         if (available === true) {
           setLoginIdResolved(false);
-          setAuthError("No account found for this Gloobal ID.");
+          setAuthError("No account found for this GLOOBAL ID.");
           return;
         }
         setLoginIdResolved(available === false);
@@ -3027,7 +3027,7 @@ function GloobalId() {
         // generates another. Showing a second, different pair on top of
         // that was redundant and made "taken" look like a bigger dead end
         // than it is.
-        setAuthError("That Gloobal ID is already taken. Try another.");
+        setAuthError("That GLOOBAL ID is already taken. Try another.");
         return;
       }
       flipTo("referral");
@@ -3056,7 +3056,7 @@ function GloobalId() {
     try {
       const exists = await GloobalApi.referralCodeExists(referralCode);
       if (exists === false) {
-        setAuthError("No Gloobal account uses that referral ID. Check it, or skip this step.");
+        setAuthError("No GLOOBAL account uses that referral ID. Check it, or skip this step.");
         return;
       }
       flipTo("profile");
@@ -3739,7 +3739,7 @@ function GloobalId() {
        flip-to-mobile button) live on the card, which starts ~74px lower. */
   }{(stage === "secureId" || stage === "referral") && <HelpCornerButton
     onClick={() => setHelpSheet(stage === "referral" ? "referral" : "symbols")}
-    label={stage === "referral" ? "How the referral network works" : "What the Gloobal ID symbols mean"}
+    label={stage === "referral" ? "How the referral network works" : "What the GLOOBAL ID symbols mean"}
   />}{
     /* Mounted only while their own stage is active, so leaving the stage
        unmounts the sheet and useBackClose's cleanup pops its history
@@ -4477,7 +4477,7 @@ function GloobalId() {
     color: scanPayee ? T.ink : "#FFFFFF",
     textShadow: scanPayee ? "none" : "0 1px 8px rgba(0,0,0,0.5)"
   }}>
-          Gloobal QR
+          <GloobalWordmark /> QR
         </span>{
     /* The back button's own width, so the title is centred on the SCREEN
        rather than on the space left over beside it. Without this it sits
@@ -4539,7 +4539,7 @@ function GloobalId() {
   ><div
     style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
   >
-      Point at any Gloobal code
+      Point at any <GloobalWordmark /> code
     </div></div>}<input
       ref={scanGalleryInputRef}
       type="file"
@@ -4692,7 +4692,7 @@ function GloobalId() {
     background: scanBackdropCss(scanPayee.gloobalId),
     boxShadow: "0 18px 44px rgba(20,18,43,0.28)",
     border: "none",
-    padding: "26px 22px", textAlign: "center",
+    padding: "26px 22px", textAlign: "center", position: "relative",
     // ── THE CARD WAS 44px WIDER THAN IT ASKED TO BE ──────────────────
     //
     // Found by measuring, while checking that the ribbon hangs the right
@@ -4705,14 +4705,24 @@ function GloobalId() {
     // depended on whether that screen had ever mounted. Declared here,
     // where it is relied on.
     boxSizing: "border-box"
-  }}><div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.82)", letterSpacing: 0.2, marginBottom: 10 }}>{
+  }}>{
+    /* ── TWO CORNERS ───────────────────────────────────────────────────
+       Top left, the GH2H hallmark the Receive QR card carries in the
+       same corner; top right, the payee's country flag in a circle. Both
+       sit in the card's padding, level with the title, so neither covers
+       the name or the mark below it. */
+  }<span style={{ position: "absolute", top: 18, left: 16, zIndex: 1 }}><GH2HFlipCircle size={30} /></span>{(() => {
+    const iso = String((scanPayee.creator && scanPayee.creator.countryIso) || scanPayee.countryIso || "").toUpperCase();
+    const c = iso && typeof COUNTRY_BY_ISO !== "undefined" ? COUNTRY_BY_ISO[iso] : null;
+    return c ? <span title={c.name} style={{ position: "absolute", top: 18, right: 16, zIndex: 1, display: "flex" }}><FlagEmoji flag={c.flag} shape="circle" size={30} border="inset 0 0 0 2px rgba(255,255,255,0.9)" /></span> : null;
+  })()}<div style={{ fontSize: 19, fontWeight: 700, color: "rgba(255,255,255,0.92)", letterSpacing: 0.2, margin: "2px 40px 14px", lineHeight: "30px" }}>{
     /* "Gloobal बाजार" for a shop — the brand in bold, the word for market
        in Devanagari, as asked. Not upper-cased: Devanagari has no case,
        and a transform that shouts one half of a two-word name and cannot
        touch the other makes the pair look like two labels. */
     scanPayee.creator
-      ? <><b style={{ fontWeight: 900, color: "#FFFFFF" }}>Gloobal</b> {"\u092C\u093E\u091C\u093E\u0930"}</>
-      : <><b style={{ fontWeight: 900, color: "#FFFFFF" }}>Gloobal</b> ID</>
+      ? <><b style={{ fontWeight: 900, color: "#FFFFFF" }}><GloobalWordmark /></b> {"\u092C\u093E\u091C\u093E\u0930"}</>
+      : <><b style={{ fontWeight: 900, color: "#FFFFFF" }}><GloobalWordmark /></b> ID</>
   }</div>{
     /* ── A SHOP IS SHOWN AS ITS SHOP ──────────────────────────────────
        Scanning a sticker on a tea stall used to give the owner's face and

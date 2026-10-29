@@ -33,7 +33,7 @@ function ProfileAvatar({ photo, name, size = 56, ring }) {
   // broken one must get its own chance to load.
   const [failedSrc, setFailedSrc] = useState38(null);
   const showPhoto = profileAvatarIsPhoto(photo) && failedSrc !== photo;
-  const displayName = typeof name === "string" && name.trim() ? name.trim() : "Gloobal user";
+  const displayName = typeof name === "string" && name.trim() ? name.trim() : "GLOOBAL user";
   const ringColor = ring ? (typeof ring === "string" ? ring : "#fff") : null;
   return <span
     data-testid="profile-avatar"

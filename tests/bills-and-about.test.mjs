@@ -45,7 +45,7 @@ describe("the bills row: icon in a box, name under it", () => {
     // Same keyed-with-a-fallback shape as APP_MAP_ICONS: a fifth entry
     // must not render an undefined colour into a template string, which
     // would produce the literal background "undefined1A".
-    assert.match(dash(), /\$\{BILL_ACTION_COLORS\[key\] \|\| T\.accent\}1A/);
+    assert.match(dash(), /\$\{BILL_ACTION_COLORS\[key\] \|\| T\.accent\}24/);
   });
 });
 

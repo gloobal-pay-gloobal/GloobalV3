@@ -369,7 +369,7 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
   ><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}><span
     style={{ fontSize: 13, fontWeight: 600, color: T.inkSoft }}
   >
-      Gloobal carries, each day
+      <GloobalWordmark /> carries, each day
     </span><button
     onClick={toggleEssentials}
     className="v2-tap"

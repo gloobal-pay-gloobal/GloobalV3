@@ -941,7 +941,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        nationality wrong. The country name repeats on purpose: naming both
        sides is what makes it a statement about one country rather than a
        global figure with a flag next to it. */
-  }<span style={{ fontSize: 11.5, color: C.inkSoft, lineHeight: 1.4 }}>{flipped ? `What Gloobal ${country.name} spends on Hoomans in ${country.name}` : "What Gloobal spends on Gloobal Hoomans"}</span></span></div>{
+  }<span style={{ fontSize: 11.5, color: C.inkSoft, lineHeight: 1.4 }}>{flipped ? `What GLOOBAL ${country.name} spends on Hoomans in ${country.name}` : "What GLOOBAL spends on GLOOBAL Hoomans"}</span></span></div>{
     /* The figure, once there is one.
        models/Disbursement.js is the record the old probe named as missing,
        and lib/disbursement.js is the only thing that writes one — debiting
@@ -996,7 +996,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        per-account: these are platform-wide totals now, the
        same on every device. Saying otherwise would have been
        the old bug surviving in prose after the code was fixed. */
-  }<div className="text-xs text-center mt-1" style={{ color: C.inkSoft }}>{flipped ? isUnlocked === null ? `${country.name} \u2014 \u2206 means we don't have that figure yet.` : isUnlocked ? `Everything ${country.name} has spent, across Gloobal. \u2206 means we don't have that figure yet.` : `${country.name} isn't active on Gloobal yet \u2014 \u2206 means no data available.` : "Total spending across every country on Gloobal. \u2206 means we don't have that figure yet."}</div></div></div>{
+  }<div className="text-xs text-center mt-1" style={{ color: C.inkSoft }}>{flipped ? isUnlocked === null ? `${country.name} \u2014 \u2206 means we don't have that figure yet.` : isUnlocked ? `Everything ${country.name} has spent, across GLOOBAL. \u2206 means we don't have that figure yet.` : `${country.name} isn't active on GLOOBAL yet \u2014 \u2206 means no data available.` : "Total spending across every country on GLOOBAL. \u2206 means we don't have that figure yet."}</div></div></div>{
     /* Totals button — just the globe and how many countries are
        unlocked (India = 1 today, grows as more unlock); total
        spending now lives in the All Countries header instead. */
@@ -1090,7 +1090,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        overlay lands on the dashboard rather than the Coverage screen
        underneath, and an iOS PWA has no system back at all, so a screen with
        no control is a screen with no exit on one of the two platforms. */
-  }<div style={{ display: "flex", alignItems: "center", gap: 10 }}><NavBackButton label="Back to Gloobal Coverage" onClick={() => setShowHoomanProjects(false)} /><div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 7, borderRadius: 999, background: T.surfaceAlt, padding: "5px 12px" }}><Search5 size={16} color={T.inkFaint} style={{ flexShrink: 0 }} /><input
+  }<div style={{ display: "flex", alignItems: "center", gap: 10 }}><NavBackButton label="Back to GLOOBAL Coverage" onClick={() => setShowHoomanProjects(false)} /><div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 7, borderRadius: 999, background: T.surfaceAlt, padding: "5px 12px" }}><Search5 size={16} color={T.inkFaint} style={{ flexShrink: 0 }} /><input
     type="text"
     value={projectQuery}
     onChange={(e) => setProjectQuery(e.target.value)}

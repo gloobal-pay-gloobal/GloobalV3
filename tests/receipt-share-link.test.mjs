@@ -38,7 +38,7 @@ describe("the share sheet gets the picture and a link", () => {
   test("it goes through shareOrCopy, so the phone's own apps are offered", () => {
     // navigator.share directly meant no clipboard fallback on desktop.
     assert.match(receipt, /shareOrCopy\(/);
-    assert.match(receipt, /\{ title: "Gloobal receipt", text, url: receiptShareUrl \}/);
+    assert.match(receipt, /\{ title: "GLOOBAL receipt", text, url: receiptShareUrl \}/);
   });
 
   // The summary used to be built inside handleShareTxnId, which was a button

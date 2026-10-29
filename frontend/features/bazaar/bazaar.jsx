@@ -20,7 +20,7 @@ import {
   UtensilsCrossed as BzFood, ShoppingBasket as BzGrocery, Cake as BzSweets, Shirt as BzFashion, Scissors as BzBeauty,
   Pill as BzHealth, Smartphone as BzElectronics, Wrench as BzRepair, Hammer as BzHome, GraduationCap as BzEducation,
   Bus as BzTravel, Palette as BzArt, PartyPopper as BzEvents, Store as BzOther,
-  LocateFixed as LocateFixed2, Loader as Loader7, Flame as BzFlame, ChevronRight as ChevronRight10,
+  LocateFixed as LocateFixed2, Loader as Loader7, Flame as BzFlame, SearchX as BzSearchOff, ChevronRight as ChevronRight10,
   History as BzRecent
 } from "lucide-react";
 
@@ -79,8 +79,8 @@ function BazaarCategoryPicker({ value, onChange }) {
       selected={on}
       // The picker sits on a white card, so an unpicked box takes the
       // page's own tint to stay visible as a box.
-      background={on ? T.accentSoft : T.bg}
-    ><Icon size={19} color={on ? T.accent : T.inkSoft} /></IconTile>;
+      background={on ? T.accent : T.accentSoft}
+    ><Icon size={22} color={on ? "#fff" : T.accent} /></IconTile>;
   })}</div>;
 }
 
@@ -160,6 +160,9 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   const [shops, setShops] = useState62(null);
   const [busy, setBusy] = useState62(false);
   const [failed, setFailed] = useState62(false);
+  // True when the search found nobody and the list below is "what we
+  // have" instead — see the effect.
+  const [fallback, setFallback] = useState62(false);
   const seq = useRef35(0);
 
   const near = nearOn && here ? { lat: here.lat, lng: here.lng, radiusKm: radius } : null;
@@ -184,9 +187,21 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     setBusy(true);
     const timer = setTimeout(async () => {
       try {
-        const list = await GloobalApi.bazaarSearch({ q: query, category, near, country, openNow });
+        let list = await GloobalApi.bazaarSearch({ q: query, category, near, country, openNow });
         if (seq.current !== mine) return;
+        // ── NOBODY BY THAT NAME: SHOW WHAT WE HAVE ──────────────────────
+        // Typing र when no shop starts with र used to end in "No shops
+        // found" and nothing to tap. The founder asked for the shops we
+        // DO have instead, under a line saying nobody matched — the same
+        // list as an empty box, with the chips still applied.
+        let none = false;
+        if (query && (list || []).filter((x) => x.symbolId !== excludeSymbolId).length === 0) {
+          const all = await GloobalApi.bazaarSearch({ q: "", category, near, country, openNow });
+          if (seq.current !== mine) return;
+          if ((all || []).length) { list = all; none = true; }
+        }
         setShops(list);
+        setFallback(none);
         setFailed(false);
       } catch (e) {
         if (seq.current !== mine) return;
@@ -210,7 +225,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     }
     if (onToast) {
       onToast(seen && seen.status === LOCATION_STATUS.DENIED
-        ? "Location is blocked for Gloobal. Allow it in your browser settings to use Near me."
+        ? "Location is blocked for GLOOBAL. Allow it in your browser settings to use Near me."
         : "Couldn't find your location. Try again near a window or outside.");
     }
   };
@@ -224,8 +239,10 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
 
   const shown = (shops || []).filter((s) => s.symbolId !== excludeSymbolId);
   const activeInfo = bazaarCategoryInfo(category);
-  const heading = query
-    ? "Shops on Gloobal"
+  const heading = fallback
+    ? "What we have on GLOOBAL"
+    : query
+      ? "Shops on GLOOBAL"
     : near ? `Most paid within ${(BAZAAR_RADII.find((r) => r.km === radius) || {}).label}`
       : activeInfo ? `Most paid in ${activeInfo.label}` : "Most paid today";
 
@@ -264,7 +281,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     }}
   ><BzRecent size={13} color={T.inkFaint} />{q.replace(/\./g, " ")}</button>)}</div></div> : null}<div style={{ display: "flex", alignItems: "baseline", gap: 6, margin: "2px 2px 10px" }}><span style={{
     fontSize: 16, color: T.ink, fontFamily: T.fontDisplay
-  }}><b style={{ fontWeight: 800 }}>Gloobal</b> <span style={{ fontWeight: 600 }}>बाज़ार</span></span></div>{
+  }}><b style={{ fontWeight: 800 }}><GloobalWordmark /></b> <span style={{ fontWeight: 600 }}>बाज़ार</span></span></div>{
     /* ── NEAR ME AND HOW FAR ──────────────────────────────────────────
        The radius chips appear only once Near me is on, so the row is one
        tap wide until somebody wants it. */
@@ -315,12 +332,9 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       radius={18}
       selected={on}
       dimmed={!(c.shops > 0 || on)}
-      background={on ? T.accent : T.surface}
+      background={on ? T.accent : T.accentSoft}
       badge={hot && !on ? <BzFlame size={12} color="#F07B2B" fill="#F7B267" /> : null}
-    ><span style={{
-      width: 34, height: 34, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center",
-      background: on ? "rgba(255,255,255,0.18)" : T.accentSoft
-    }}><Icon size={17} color={on ? "#fff" : T.accent} /></span></IconTile></div>;
+    ><Icon size={24} color={on ? "#fff" : T.accent} /></IconTile></div>;
   })}</div>
 
   <div style={{
@@ -340,6 +354,10 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       color: asMap === value ? T.accent : T.inkSoft, boxShadow: asMap === value ? "0 1px 3px rgba(20,18,43,0.12)" : "none"
     }}
   >{label}</button>)}</span> : null}</span></div>
+  {fallback ? <div data-bazaar-nomatch="" role="status" style={{
+    display: "flex", alignItems: "center", gap: 10, margin: "0 0 10px", padding: "10px 12px", borderRadius: 14,
+    background: T.accentSoft, color: T.ink
+  }}><BzSearchOff size={16} color={T.accent} style={{ flexShrink: 0 }} /><span style={{ minWidth: 0, fontSize: 12.5, fontWeight: 700, lineHeight: 1.4 }}>No shop called “{String(query).replace(/\./g, " ").trim()}” yet. Here's what's on <GloobalWordmark />.</span></div> : null}
   {near && asMap ? <BazaarMap center={here} radiusKm={radius} shops={shown} onOpen={openShop} /> : <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{
     shops === null
       ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Loading shops…</div>

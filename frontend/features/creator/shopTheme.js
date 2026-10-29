@@ -34,7 +34,7 @@ var SHOP_THEME_KEYS = ["gloobal", "street", "studio", "market", "night", "chai",
 // a starting position, not a cage.
 var SHOP_THEMES = {
   gloobal: {
-    name: "Gloobal",
+    name: "GLOOBAL",
     note: "The app's own look",
     color: "#7C3AED",
     font: "grotesk",

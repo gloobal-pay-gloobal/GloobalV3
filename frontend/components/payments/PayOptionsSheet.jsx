@@ -24,5 +24,5 @@ function PayOptionsSheet({ open, onClose, onChoose }) {
     onClick={() => onChoose(opt.label)}
     className="v2-tap"
     style={{ display: "flex", alignItems: "center", gap: 12, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "14px 16px", background: T.surface, cursor: "pointer", textAlign: "left" }}
-  ><span style={{ width: 36, height: 36, borderRadius: 11, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><opt.Icon size={17} color={T.accent} /></span><span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: T.ink }}>{opt.label}</span><ChevronRight4 size={16} color={T.inkFaint} /></button>)}</div></div>;
+  ><span style={{ width: 36, height: 36, borderRadius: 11, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><opt.Icon size={17} color={T.accent} /></span><span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: T.ink }}>{gloobalText(opt.label)}</span><ChevronRight4 size={16} color={T.inkFaint} /></button>)}</div></div>;
 }

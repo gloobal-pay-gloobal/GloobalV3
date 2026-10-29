@@ -932,7 +932,7 @@ function CreatorNameKeyboard({
        the way a phone's own keyboard offers it. */
   }<KbTap
     onTap={() => onClose && onClose()}
-    label="Hide the Gloobal keyboard"
+    label="Hide the GLOOBAL keyboard"
     pressedStyle={{ background: T.accentSoft }}
     style={{
       flexShrink: 0, height: 36, borderRadius: 999, border: "none", padding: "0 11px 0 8px",
@@ -1251,7 +1251,7 @@ function NameKeyboardLanguages({ selectedId, onPick, onClose }) {
 // already types their alphabet should keep using the keyboard they know,
 // with its own muscle memory and its own autocorrect settings. This is
 // for the far more common case of a phone that cannot.
-function NameKeyboardButton({ onOpen, active = false, label = "Gloobal keyboard" }) {
+function NameKeyboardButton({ onOpen, active = false, label = "GLOOBAL keyboard" }) {
   return <button
     type="button"
     onClick={onOpen}

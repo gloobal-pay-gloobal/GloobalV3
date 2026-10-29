@@ -136,12 +136,12 @@ function ChoiceConnectSheet({ open, category, onClose, onDone, onToast }) {
       }}
     >{busy ? "Sending…" : "Send invitation"}</button>}
   ><ChoiceFieldCard
-    label="Their Gloobal ID"
+    label="Their GLOOBAL ID"
     note="paste it"
   ><input
     value={symbolId}
     onChange={(e) => { setSymbolId(e.target.value); setError(null); }}
-    placeholder="Gloobal ID"
+    placeholder="GLOOBAL ID"
     autoFocus
     style={{
       width: "100%",

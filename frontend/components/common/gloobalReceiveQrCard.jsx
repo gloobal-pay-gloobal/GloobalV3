@@ -256,7 +256,16 @@ function gloobalQrDiscInk(hex) {
 //
 // So the mark belongs on all four, and it is written once. Two renderers,
 // same geometry, same face:
+//
+// ── OFF, BY REQUEST ──────────────────────────────────────────────────
+// The founder asked for the mark in the bottom-right corner to go: the
+// card already says GLOOBAL in its title, and the hallmark sits top left.
+// Switched off here for all four renderers at once; flip it back to true
+// and every code carries it again.
+var GLOOBAL_QR_CORNER_MARK_ON = false;
+
 function GloobalQrCornerMark({ corner, face }) {
+  if (!GLOOBAL_QR_CORNER_MARK_ON) return null;
   return (
     <g aria-hidden="true">
       {/* The white disc is painted first and full size, so the modules
@@ -290,6 +299,7 @@ function GloobalQrCornerMark({ corner, face }) {
 
 // The same mark onto a 2D context, at `scale` pixels per module.
 function gloobalQrPaintCornerMark(ctx, corner, face, scale) {
+  if (!GLOOBAL_QR_CORNER_MARK_ON) return;
   ctx.beginPath();
   ctx.arc(corner.cx * scale, corner.cy * scale, corner.r * scale, 0, Math.PI * 2);
   ctx.fillStyle = "#FFFFFF";
@@ -605,7 +615,7 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
   if (!payload) {
     return (
       <p style={{ margin: 0, textAlign: "center", fontSize: 13, color: T.inkSoft }}>
-        Your Gloobal ID isn't ready yet.
+        Your <GloobalWordmark /> ID isn't ready yet.
       </p>
     );
   }
@@ -614,7 +624,7 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
     // copyToClipboard is fire-and-forget (it falls back internally and
     // returns nothing), so the toast is shown straight away.
     copyToClipboard(gloobalId);
-    onToast?.("Gloobal ID copied");
+    onToast?.("GLOOBAL ID copied");
   };
 
   // Share first, download second — see shareAuditReport in
@@ -636,8 +646,8 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
       // it arrives tappable — see components/common/shareLink.js for why
       // `url` is never passed on its own any more.
       const file = typeof File !== "undefined" ? new File([blob], "gloobal-qr.png", { type: "image/png" }) : null;
-      const message = side === "shop" && name ? `Pay ${name} on Gloobal:` : "Pay me on Gloobal:";
-      const outcome = await gloobalShareLink({ title: "My Gloobal QR", message, url: payload, file });
+      const message = side === "shop" && name ? `Pay ${name} on GLOOBAL:` : "Pay me on GLOOBAL:";
+      const outcome = await gloobalShareLink({ title: "My GLOOBAL QR", message, url: payload, file });
       if (outcome === "shared" || outcome === "cancelled") return;
       // Neither a share sheet nor a clipboard: keep the picture instead.
       const url = URL.createObjectURL(blob);
@@ -682,7 +692,7 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
           id="gloobal-receive-qr-title"
           style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}
         >
-          Your Gloobal QR
+          Your <GloobalWordmark /> QR
         </h2>
         <div data-testid="qr-header-action" style={{ justifySelf: "end", display: "flex" }}>{headerAction}</div>
       </div>
@@ -793,7 +803,7 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
       </div>
 
       <p style={{ margin: 0, fontSize: 12.5, color: T.inkSoft, textAlign: "center" }}>
-        Scan this QR to pay into your Gloobal wallet.
+        Scan this QR to pay into your <GloobalWordmark /> wallet.
       </p>
     </section>
   );

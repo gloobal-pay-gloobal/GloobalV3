@@ -318,7 +318,8 @@ function PersonalDetailsScreen({
     style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}
   >{[
     ...(mobileNumber ? [[PdPhoneIcon, "Mobile", mobileNumber]] : []),
-    [PdGlobeIcon, "Country", <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>{dialCountry && dialCountry.flag && <FlagEmoji flag={dialCountry.flag} width={20} height={15} radius={3} />}{dialCountry && dialCountry.name}</span>],
+    // Name only: the flag is already in the header, opposite the back arrow.
+    [PdGlobeIcon, "Country", (dialCountry && dialCountry.name) || "—"],
     [PdCalendarIcon, "Joined", joinedLong]
   ].map(([Icon, label, value], i) => factRow(Icon, label, value, i === 0))}</div>{
     /* ── THE PASSPORT PAGE ─────────────────────────────────────────── */

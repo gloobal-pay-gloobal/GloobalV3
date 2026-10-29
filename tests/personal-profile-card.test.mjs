@@ -49,3 +49,8 @@ test("photo on the left, name and ID on the right, copy inside the ID box", () =
   const photo = row.indexOf("<ProfileAvatar"), name = row.indexOf("myName && myName.trim()"), id = row.indexOf("data-pd-id"), copy = row.indexOf("onClick={onCopyId}");
   assert.ok(photo > 0 && photo < name && name < id && id < copy, "order is photo, name, ID, copy");
 });
+
+test("the flag appears once — in the header, not again in the Country row", () => {
+  assert.doesNotMatch(pd, /<FlagEmoji/);
+  assert.match(pd, /\[PdGlobeIcon, "Country", \(dialCountry && dialCountry\.name\) \|\| "—"\]/);
+});

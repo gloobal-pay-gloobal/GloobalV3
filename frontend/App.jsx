@@ -2091,6 +2091,19 @@ function GloobalId() {
   // to a session that has been away goes back through the same PIN stage a
   // cold open already uses — no new lock screen, no second code path, and
   // no way for it to resolve to "unlocked" without a real verification.
+  // Remember when the app was left, on this device, whatever the lock
+  // setting: if the phone restarts the app while it is away, the restore
+  // above reads this to tell a quick trip from a cold open.
+  useEffect15(() => {
+    if (stage !== "dashboard" || typeof document === "undefined") return undefined;
+    const onHide = () => { if (document.visibilityState === "hidden") gloobalMarkAway(); };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", gloobalMarkAway);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", gloobalMarkAway);
+    };
+  }, [stage]);
   useEffect15(() => {
     if (!appLockOn || stage !== "dashboard") return undefined;
     if (typeof document === "undefined") return undefined;
@@ -2282,7 +2295,10 @@ function GloobalId() {
     const appLockOnRestore = Boolean(
       restored.user.securitySettings && restored.user.securitySettings.appLock === true
     );
-    if (restored.user.symbolId && gloobalAuthTokenLooksLive(restored.token) && !appLockOnRestore) {
+    // ...unless the phone itself restarted the app within the grace time
+    // (gloobalAwayRecently): that is a quick trip to another app, not a
+    // cold open, and App lock gives it the same grace a warm return gets.
+    if (restored.user.symbolId && gloobalAuthTokenLooksLive(restored.token) && (!appLockOnRestore || gloobalAwayRecently())) {
       setStage("dashboard");
       return;
     }

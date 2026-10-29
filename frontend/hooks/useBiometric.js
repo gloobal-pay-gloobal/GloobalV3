@@ -281,7 +281,31 @@ function gloobalSetBiometricLoginEnabled(enabled) {
 // the tab for a second or two, and a lock screen on every one of those
 // would make the app tiring enough that people would switch the setting
 // off — which protects them less than a slightly forgiving lock does.
-var GLOOBAL_APP_LOCK_GRACE_MS = 30000;
+// Five minutes, up from 30 seconds (the founder: "I use another app and
+// have to log in again even after a few seconds"). A quick trip to
+// WhatsApp, the camera or a call should never cost the PIN.
+var GLOOBAL_APP_LOCK_GRACE_MS = 5 * 60 * 1000;
+
+// ── WHEN THE PHONE RESTARTS THE APP BEHIND YOUR BACK ─────────────────────
+// Android often throws an installed app out of memory the moment another
+// app is opened, and coming back then is a fresh start, not a return — so
+// App lock used to ask for the PIN even after five seconds away. The
+// moment the app was last left is kept on this device, and a fresh start
+// within the grace time resumes exactly like a warm return does.
+var GLOOBAL_LAST_AWAY_KEY = "gloobal:lastAway:v1";
+
+function gloobalMarkAway() {
+  try { localStorage.setItem(GLOOBAL_LAST_AWAY_KEY, String(Date.now())); } catch (e) { /* a convenience */ }
+}
+
+function gloobalAwayRecently(now = Date.now()) {
+  try {
+    const at = Number(localStorage.getItem(GLOOBAL_LAST_AWAY_KEY));
+    return Number.isFinite(at) && at > 0 && now - at >= 0 && now - at < GLOOBAL_APP_LOCK_GRACE_MS;
+  } catch (e) {
+    return false;
+  }
+}
 
 async function requireBiometric(options) {
   const opts = options || {};

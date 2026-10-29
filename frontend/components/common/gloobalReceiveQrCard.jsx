@@ -632,37 +632,14 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
         onToast?.("Couldn't create the QR image");
         return;
       }
-      if (typeof File !== "undefined" && typeof navigator !== "undefined" && navigator.canShare) {
-        const file = new File([blob], "gloobal-qr.png", { type: "image/png" });
-        if (navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({ files: [file], title: "My Gloobal QR", text: payload });
-          } catch (error) {
-            if (error?.name !== "AbortError") onToast?.("Couldn't share the QR");
-          }
-          return;
-        }
-      }
-      // ── SHARE THE LINK WHEN THE PICTURE CANNOT BE SHARED ──────────
-      //
-      // canShare({ files }) is false on a lot of Android browsers and in
-      // most PWAs installed to the home screen. The code then fell
-      // straight through to a download — which inside an installed app
-      // looks like nothing happened at all. "make share functional."
-      //
-      // The link is the thing that pays; the picture is a nicer carrier
-      // for it. So where the picture cannot go through the share sheet,
-      // the link goes instead, and only if THAT is refused does the
-      // picture download.
-      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-        try {
-          await navigator.share({ title: "My Gloobal QR", text: `Pay me on Gloobal: ${payload}`, url: payload });
-          return;
-        } catch (error) {
-          if (error?.name === "AbortError") return;
-          // Refused outright — fall through to the download below.
-        }
-      }
+      // The picture and the link together, the link INSIDE the message so
+      // it arrives tappable — see components/common/shareLink.js for why
+      // `url` is never passed on its own any more.
+      const file = typeof File !== "undefined" ? new File([blob], "gloobal-qr.png", { type: "image/png" }) : null;
+      const message = side === "shop" && name ? `Pay ${name} on Gloobal:` : "Pay me on Gloobal:";
+      const outcome = await gloobalShareLink({ title: "My Gloobal QR", message, url: payload, file });
+      if (outcome === "shared" || outcome === "cancelled") return;
+      // Neither a share sheet nor a clipboard: keep the picture instead.
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;

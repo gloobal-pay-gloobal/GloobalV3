@@ -1016,22 +1016,8 @@ async function shareCreatorShop(creator, onToast) {
   if (!url) { if (onToast) onToast("This shop has no link yet."); return; }
   const name = creatorDisplayName(creator);
   const tagline = creator && creator.shop && creator.shop.tagline ? ` — ${creator.shop.tagline}` : "";
-  const text = `${name}${tagline} · pay on Gloobal`;
-  try {
-    if (typeof navigator !== "undefined" && navigator.share) {
-      await navigator.share({ title: name, text, url });
-      return;
-    }
-  } catch (e) {
-    // Closing the sheet is a choice, not a failure.
-    if (e && e.name === "AbortError") return;
-  }
-  try {
-    await navigator.clipboard.writeText(`${text}\n${url}`);
-    if (onToast) onToast("Shop link copied");
-  } catch (e) {
-    if (onToast) onToast(url);
-  }
+  // The link inside the message, never in `url` alone — shareLink.js.
+  await gloobalShareLink({ title: name, message: `${name}${tagline} · pay on Gloobal:`, url, onToast });
 }
 
 // "4 days ago" / "yesterday" — short enough for a supplier row, and never a

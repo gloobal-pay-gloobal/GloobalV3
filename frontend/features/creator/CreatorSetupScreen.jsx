@@ -842,18 +842,19 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
   const done = creatorSetupDone(creator);
   const handle = done ? creator.handle : "";
 
+  // It sent "Pay me on Gloobal at rasoi.ghar" and no address, so the
+  // person receiving it had nothing to tap. Now the shop's own link goes
+  // inside the message, on its own line, where every messenger makes it a
+  // link — the same /s/ address the shop's QR code carries.
   const share = () => {
     if (!handle) return;
-    const text = `Pay me on Gloobal at ${handle}`;
-    try {
-      if (navigator.share) { navigator.share({ title: handle, text }).catch(() => {}); return; }
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(handle).catch(() => {});
-        onToast && onToast("Name copied.");
-      }
-    } catch (e) {
-      // A share sheet the browser refuses is not worth a broken screen.
-    }
+    const url = buildGloobalPayUrl(creator.symbolId || myGloobalId, "shop");
+    gloobalShareLink({
+      title: creatorDisplayName(creator),
+      message: `Pay ${creatorDisplayName(creator)} on Gloobal (${handle}):`,
+      url,
+      onToast
+    });
   };
 
   const copy = () => {

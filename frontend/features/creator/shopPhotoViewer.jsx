@@ -181,29 +181,17 @@ function ShopPhotoViewer({ item, start = 0, shopName = "", shopSymbolId = "", cc
     setBusy("share");
     const title = item && item.title ? `${item.title} · ${shopName}` : shopName;
     const link = buildGloobalPayUrl(shopSymbolId, "shop");
-    const text = link ? `${title} on Gloobal` : title;
     try {
       const blob = await shopPhotoBlob(src);
       const file = typeof File !== "undefined"
         ? new File([blob], shopPhotoFileName(shopName, item && item.title, at, blob.type), { type: blob.type || "image/jpeg" })
         : null;
-      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title, text: link ? `${text}\n${link}` : text });
-        setBusy("");
-        return;
-      }
-      // The picture cannot go through this phone's share sheet (most
-      // installed PWAs on Android): send the shop's link instead, with the
-      // item named, rather than nothing.
-      if (navigator.share) {
-        await navigator.share(link ? { title, text, url: link } : { title, text });
-        setBusy("");
-        return;
-      }
-      await navigator.clipboard.writeText(link ? `${text}\n${link}` : text);
-      onToast && onToast("Link copied");
+      // The photo where the phone can share files, else the shop's link
+      // with the item named — the link always INSIDE the message so it
+      // arrives tappable (components/common/shareLink.js).
+      await gloobalShareLink({ title, message: `${title} on Gloobal:`, url: link, file, onToast });
     } catch (e) {
-      if (!(e && e.name === "AbortError")) onToast && onToast("Couldn't share this photo");
+      onToast && onToast("Couldn't share this photo");
     }
     setBusy("");
   };

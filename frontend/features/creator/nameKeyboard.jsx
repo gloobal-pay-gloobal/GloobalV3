@@ -57,7 +57,7 @@
 // is in, so it can say so at the first keystroke that would break the
 // rule — the same rule, the same message, several seconds earlier.
 import { useState as useState58, useEffect as useEffect54, useMemo as useMemo15, useRef as useRef33 } from "react";
-import { Delete as Delete2, ArrowUp as ArrowUp2, Check as Check11, X as X14, Keyboard, Search as Search8 } from "lucide-react";
+import { Check as Check11, X as X14, Keyboard, Search as Search8, ChevronDown as ChevronDown6, ArrowRight as ArrowRight3 } from "lucide-react";
 
 // ── THE ALPHABETS ───────────────────────────────────────────────────────
 //
@@ -626,15 +626,11 @@ function nameKeyFace(ch) {
 }
 
 function NameKey({ ch, onPress, blocked, cols = 10 }) {
-  return <button
-    type="button"
-    // onPointerDown rather than onClick: a key has to repeat quickly, and
-    // waiting for the click that follows a touch costs about 300ms on
-    // some Android browsers. preventDefault keeps focus where it is, so
-    // the box being typed into does not lose its caret to the key.
-    onPointerDown={(e) => { e.preventDefault(); onPress(ch); }}
-    aria-label={ch}
+  return <KbTap
+    onTap={() => onPress(ch)}
+    label={ch}
     disabled={blocked}
+    pressedStyle={{ background: T.accentSoft, color: T.accent, transform: "translateY(1px)", boxShadow: "none" }}
     style={{
       // Sized to the widest row on THIS board, so a twelve-key Cyrillic
       // row and a nine-key Greek one each fill the width with keys of
@@ -661,9 +657,100 @@ function NameKey({ ch, onPress, blocked, cols = 10 }) {
       // press select its text puts a selection handle over the keyboard.
       userSelect: "none",
       WebkitUserSelect: "none",
-      touchAction: "manipulation"
+      WebkitTouchCallout: "none",
+      touchAction: "manipulation",
+      transition: "background 0.08s ease, transform 0.08s ease"
     }}
-  >{nameKeyFace(ch)}</button>;
+  >{nameKeyFace(ch)}</KbTap>;
+}
+
+// ── A TAP, NOT A TOUCH ──────────────────────────────────────────────────
+//
+// Every key used to act on pointerdown. That is fast, and it is also why
+// "when I scroll it selects text": a finger that lands on a key to SCROLL
+// the board typed that key the instant it touched, and a finger resting
+// to scroll the language row switched the alphabet. So now a key acts on
+// RELEASE, and only if the finger did not travel — more than 10px of
+// movement, or the browser taking the gesture over as a scroll
+// (pointercancel), and the press is dropped.
+//
+// preventDefault on pointerdown stays: it keeps the caret in the box being
+// typed into. It does not stop a scroll — touch-action allows panning.
+//
+// `repeat` is for backspace: held, it deletes again after 420ms and then
+// every 70ms, the way a phone's does.
+var NAME_KB_SLOP = 10;
+
+function KbTap({ onTap, repeat = false, disabled = false, label, pressed: ariaPressed, style, pressedStyle, children, dataOn }) {
+  const g = useRef33(null);
+  const [down, setDown] = useState58(false);
+  // The LATEST handler, for the repeat timer. Backspace's handler closes
+  // over the text as it was when the key went down; calling that one from
+  // an interval deleted the same letter over and over — one letter gone
+  // after a long hold, which a render caught.
+  const tap = useRef33(onTap);
+  tap.current = onTap;
+  const stop = () => {
+    const cur = g.current;
+    if (cur) { clearTimeout(cur.t); clearInterval(cur.i); }
+    g.current = null;
+    setDown(false);
+  };
+  useEffect54(() => stop, []);
+  return <button
+    type="button"
+    aria-label={label}
+    aria-pressed={ariaPressed}
+    data-kb-on={dataOn}
+    disabled={disabled}
+    onPointerDown={(e) => {
+      e.preventDefault();
+      if (disabled) return;
+      const cur = { x: e.clientX, y: e.clientY, id: e.pointerId, fired: false, t: 0, i: 0 };
+      if (repeat) {
+        cur.t = setTimeout(() => {
+          cur.fired = true;
+          tap.current();
+          cur.i = setInterval(() => tap.current(), 70);
+        }, 420);
+      }
+      g.current = cur;
+      setDown(true);
+    }}
+    onPointerMove={(e) => {
+      const cur = g.current;
+      if (cur && cur.id === e.pointerId && Math.hypot(e.clientX - cur.x, e.clientY - cur.y) > NAME_KB_SLOP) stop();
+    }}
+    onPointerUp={(e) => {
+      const cur = g.current;
+      if (cur && cur.id === e.pointerId && !cur.fired) onTap();
+      stop();
+    }}
+    onPointerCancel={stop}
+    onPointerLeave={stop}
+    // A long press on a key must not open the phone's text-selection or
+    // "copy / look up" menu over the board.
+    onContextMenu={(e) => e.preventDefault()}
+    style={{ ...style, ...(down && pressedStyle ? pressedStyle : {}) }}
+  >{children}</button>;
+}
+
+// Backspace and shift, drawn rather than borrowed. Lucide's Delete is a
+// tag with a small x in it, which at 17px read as "a cross" — the founder's
+// word — rather than "delete the last letter". This is the ⌫ shape every
+// phone keyboard uses, at a size meant for a thumb.
+function KbBackspaceGlyph({ color, size = 24 }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true"><path
+    d="M9.2 5h10.3A1.5 1.5 0 0 1 21 6.5v11a1.5 1.5 0 0 1-1.5 1.5H9.2a1.5 1.5 0 0 1-1.1-.5L3 12l5.1-6.5A1.5 1.5 0 0 1 9.2 5Z"
+    stroke={color} strokeWidth="1.9" strokeLinejoin="round"
+  /><path d="m11.6 9.4 5.2 5.2m0-5.2-5.2 5.2" stroke={color} strokeWidth="1.9" strokeLinecap="round" /></svg>;
+}
+
+function KbShiftGlyph({ color, on, size = 22 }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true"><path
+    d="M12 3.6 3.6 12.3h4.6v7.1a1 1 0 0 0 1 1h5.6a1 1 0 0 0 1-1v-7.1h4.6L12 3.6Z"
+    fill={on ? color : "none"} stroke={color} strokeWidth="1.9" strokeLinejoin="round"
+  /></svg>;
 }
 
 // ── THE BOARD ───────────────────────────────────────────────────────────
@@ -784,11 +871,10 @@ function CreatorNameKeyboard({
     setValue && setValue(chars.join(""));
   };
 
-  const chipFor = (which, text, label) => <button
-    type="button"
-    onPointerDown={(e) => { e.preventDefault(); onField && onField(which); }}
-    aria-label={`Type the ${label}`}
-    aria-pressed={field === which}
+  const chipFor = (which, text, label) => <KbTap
+    onTap={() => onField && onField(which)}
+    label={`Type the ${label}`}
+    pressed={field === which}
     style={{
       flex: 1, minWidth: 0, border: "none", borderRadius: 10,
       background: field === which ? T.accentSoft : "transparent",
@@ -802,7 +888,7 @@ function CreatorNameKeyboard({
     display: "block", fontSize: 14, fontWeight: 700, marginTop: 1,
     color: text ? T.ink : T.inkFaint,
     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-  }}>{text || "—"}</span></button>;
+  }}>{text || "—"}</span></KbTap>;
 
   return <div
     role="group"
@@ -817,8 +903,14 @@ function CreatorNameKeyboard({
       borderTop: `1px solid ${T.line}`,
       boxShadow: "0 -8px 28px rgba(20,18,43,0.16)",
       paddingBottom: "env(safe-area-inset-bottom, 0px)",
-      display: "flex", flexDirection: "column"
+      display: "flex", flexDirection: "column",
+      // Nothing on the board is text to select — not the labels, not the
+      // language names, not the name shown back. A long press while
+      // scrolling used to drop selection handles over the keys.
+      userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
+      WebkitTapHighlightColor: "transparent"
     }}
+    onContextMenu={(e) => e.preventDefault()}
   >{
     /* The name, as it stands, with the half being typed lit. Tapping the
        other half moves the board to it — which is the only way to reach
@@ -828,16 +920,23 @@ function CreatorNameKeyboard({
     borderBottom: `1px solid ${T.line}`
   }}>{chipFor("first", first, firstLabel)}{twoParts ? <><span aria-hidden="true" style={{
     fontSize: 18, fontWeight: 900, color: T.accent, flexShrink: 0, padding: "0 2px"
-  }}>.</span>{chipFor("last", last, lastLabel)}</> : null}<button
-    type="button"
-    onPointerDown={(e) => { e.preventDefault(); onClose && onClose(); }}
-    aria-label="Close the Gloobal keyboard"
+  }}>.</span>{chipFor("last", last, lastLabel)}</> : null}{
+    /* ── HIDE, NOT A GREY CROSS ───────────────────────────────────────
+       It was a 32px grey ✕ in a grey circle, which reads as "cancel" or
+       "delete the name". What it does is put the board away and keep
+       everything typed — so it says that: a chevron down and the word,
+       the way a phone's own keyboard offers it. */
+  }<KbTap
+    onTap={() => onClose && onClose()}
+    label="Hide the Gloobal keyboard"
+    pressedStyle={{ background: T.accentSoft }}
     style={{
-      flexShrink: 0, width: 32, height: 32, borderRadius: "50%", border: "none",
-      background: T.surface, boxShadow: T.shadowCard, cursor: "pointer",
-      display: "flex", alignItems: "center", justifyContent: "center", marginLeft: 2
+      flexShrink: 0, height: 36, borderRadius: 999, border: "none", padding: "0 11px 0 8px",
+      background: T.surface, boxShadow: "0 1px 3px rgba(20,18,43,0.12)", cursor: "pointer",
+      display: "flex", alignItems: "center", gap: 4, marginLeft: 4,
+      fontSize: 12, fontWeight: 800, color: T.inkSoft, fontFamily: "inherit"
     }}
-  ><X14 size={14} color={T.inkFaint} /></button></div>{
+  ><ChevronDown6 size={17} color={T.inkSoft} />Hide</KbTap></div>{
     /* ── THE ALPHABET ROW ─────────────────────────────────────────────
        Seven boards, each as its own letter with the LANGUAGE under it.
        The letter alone was a row of single glyphs — অ, અ, ଅ, அ — which
@@ -856,14 +955,12 @@ function CreatorNameKeyboard({
   }}><div ref={strip} style={{
     flex: 1, minWidth: 0, display: "flex", gap: 6, overflowX: "auto",
     scrollbarWidth: "none", WebkitOverflowScrolling: "touch"
-  }}>{row.map((l) => <button
+  }}>{row.map((l) => <KbTap
     key={l.id}
-    type="button"
-    data-kb-on={l.id === layoutId ? "1" : "0"}
-    onPointerDown={(e) => { e.preventDefault(); setLayoutId(l.id); setShift(false); }}
-    aria-label={`${l.name}, written in ${l.script}`}
-    aria-pressed={l.id === layoutId}
-    title={l.name}
+    dataOn={l.id === layoutId ? "1" : "0"}
+    onTap={() => { setLayoutId(l.id); setShift(false); }}
+    label={`${l.name}, written in ${l.script}`}
+    pressed={l.id === layoutId}
     style={{
       flex: "0 0 auto", minWidth: 42, borderRadius: 10,
       border: "none",
@@ -880,10 +977,9 @@ function CreatorNameKeyboard({
     // chip widens to its own word instead, which is why the row scrolls.
     whiteSpace: "nowrap",
     opacity: l.id === layoutId ? 0.92 : 0.75
-  }}>{l.name}</span></button>)}</div><button
-    type="button"
-    onPointerDown={(e) => { e.preventDefault(); setSearching(true); }}
-    aria-label="Find another language"
+  }}>{l.name}</span></KbTap>)}</div><KbTap
+    onTap={() => setSearching(true)}
+    label="Find another language"
     style={{
       // Accent-tinted rather than the grey surface the chips sit on. A
       // render showed it reading as a disabled chip at the end of the
@@ -895,7 +991,7 @@ function CreatorNameKeyboard({
     }}
   ><Search8 size={14} color={T.accent} /><span style={{
     fontSize: 8.5, fontWeight: 800, color: T.accent, lineHeight: 1.1
-  }}>More</span></button></div>{
+  }}>More</span></KbTap></div>{
     /* ── THE KEYS ─────────────────────────────────────────────────────
        Capped at 34% of the screen and scrolled beyond that. An abugida
        board is genuinely tall, and a keyboard that grows past half the
@@ -909,16 +1005,15 @@ function CreatorNameKeyboard({
     boxShadow: "0 1px 3px rgba(20,18,43,0.10)"
   }}><span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>
     This part is already written in {locked}, and a part is written in one alphabet.
-  </span><button
-    type="button"
-    onPointerDown={(e) => { e.preventDefault(); setValue && setValue(""); }}
-    aria-label={`Clear the ${field === "last" ? lastLabel : firstLabel} and start again`}
+  </span><KbTap
+    onTap={() => setValue && setValue("")}
+    label={`Clear the ${field === "last" ? lastLabel : firstLabel} and start again`}
     style={{
       flexShrink: 0, border: "none", borderRadius: 9, background: T.accentSoft,
       color: T.accent, fontSize: 11.5, fontWeight: 800, fontFamily: "inherit",
       padding: "8px 11px", cursor: "pointer"
     }}
-  >Clear it</button></div> : null}{layout.groups.map((group, gi) => <div key={gi} style={{ marginTop: gi ? 9 : 0 }}>{
+  >Clear it</KbTap></div> : null}{layout.groups.map((group, gi) => <div key={gi} style={{ marginTop: gi ? 9 : 0 }}>{
     group.label ? <div style={{
       fontSize: 9, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase",
       color: T.inkFaint, margin: "0 2px 5px"
@@ -953,51 +1048,69 @@ function CreatorNameKeyboard({
        between the halves is drawn by the screen rather than typed. What
        is left is shift, backspace and done. */
   }<div style={{
-    display: "flex", alignItems: "center", gap: 6, padding: "6px 10px 9px"
-  }}>{layout.caps ? <button
-    type="button"
-    onPointerDown={(e) => { e.preventDefault(); setShift((s) => !s); }}
-    aria-label="Capital letter"
-    aria-pressed={shift}
+    display: "flex", alignItems: "center", gap: 6, padding: "6px 10px 10px"
+  }}>{layout.caps ? <KbTap
+    onTap={() => setShift((v) => !v)}
+    label={shift ? "Capital letter on" : "Capital letter"}
+    pressed={shift}
+    pressedStyle={{ transform: "translateY(1px)" }}
     style={{
-      flex: "0 0 52px", height: 40, borderRadius: 10, border: "none",
+      // ⇧, filled when on — the state is the shape, not a colour alone.
+      flex: "0 0 50px", height: 44, borderRadius: 12, border: "none",
       background: shift ? T.accent : T.surface,
-      boxShadow: shift ? "none" : "0 1px 2px rgba(20,18,43,0.10)",
+      boxShadow: shift ? "0 4px 10px rgba(124,58,237,0.3)" : "0 1px 2px rgba(20,18,43,0.12)",
       cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
     }}
-  ><ArrowUp2 size={16} color={shift ? "#fff" : T.inkSoft} /></button> : null}<button
-    type="button"
-    onPointerDown={(e) => { e.preventDefault(); backspace(); }}
-    aria-label="Backspace"
+  ><KbShiftGlyph color={shift ? "#fff" : T.ink} on={shift} /></KbTap> : null}<KbTap
+    onTap={backspace}
+    repeat
+    label="Delete the last letter"
     disabled={!value}
+    pressedStyle={{ background: T.accentSoft, transform: "translateY(1px)" }}
     style={{
-      // A key, not a bar. Stretched across the whole row it stopped
-      // reading as something to press — which a render showed plainly.
-      flex: "0 0 68px", height: 40, borderRadius: 10, border: "none", background: T.surface,
-      boxShadow: "0 1px 2px rgba(20,18,43,0.10)", cursor: value ? "pointer" : "default",
+      flex: "0 0 62px", height: 44, borderRadius: 12, border: "none", background: T.surface,
+      boxShadow: "0 1px 2px rgba(20,18,43,0.12)", cursor: value ? "pointer" : "default",
       opacity: value ? 1 : 0.4,
       display: "flex", alignItems: "center", justifyContent: "center"
     }}
-  ><Delete2 size={17} color={T.inkSoft} /></button>{
+  ><KbBackspaceGlyph color={T.ink} /></KbTap>{
     /* The half being typed, under the keys as well as above them. The
        chips at the top leave a thumb's field of view once the keys have
-       it, and the space the backspace was wrongly filling is exactly
-       where somebody is already looking. */
+       it, and this is exactly where somebody is already looking. */
   }<span aria-hidden="true" style={{
     flex: 1, minWidth: 0, textAlign: "center", fontSize: 15, fontWeight: 700,
     color: value ? T.ink : T.inkFaint,
     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-  }}>{value || "\u2026"}</span><button
-    type="button"
-    onPointerDown={(e) => { e.preventDefault(); onClose && onClose(); }}
-    aria-label="Done"
-    style={{
-      flex: "0 0 86px", height: 40, borderRadius: 10, border: "none",
-      background: T.gradButton, color: "#fff", cursor: "pointer",
-      fontSize: 13, fontWeight: 800, fontFamily: "inherit",
-      display: "flex", alignItems: "center", justifyContent: "center", gap: 6
-    }}
-  ><Check11 size={14} color="#fff" />Done</button></div>{
+  }}>{value || "\u2026"}</span>{
+    /* ── NEXT, THEN DONE ──────────────────────────────────────────────
+       On the first part of a two-part name the key goes FORWARD — to the
+       second part — rather than closing the board halfway through a name.
+       On the second part (or a one-part name) it is Done. */
+    twoParts && field !== "last"
+      ? <KbTap
+        onTap={() => onField && onField("last")}
+        label={`Next: ${lastLabel}`}
+        pressedStyle={{ transform: "translateY(1px)", filter: "brightness(0.95)" }}
+        style={{
+          flex: "0 0 92px", height: 44, borderRadius: 12, border: "none",
+          background: T.accentSoft, color: T.accent, cursor: "pointer",
+          fontSize: 13.5, fontWeight: 800, fontFamily: "inherit",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6
+        }}
+      >Next<ArrowRight3 size={17} color={T.accent} strokeWidth={2.4} /></KbTap>
+      : <KbTap
+        onTap={() => onClose && onClose()}
+        label="Done"
+        pressedStyle={{ transform: "translateY(1px)", filter: "brightness(0.95)" }}
+        style={{
+          flex: "0 0 92px", height: 44, borderRadius: 12, border: "none",
+          background: T.gradButton, color: "#fff", cursor: "pointer",
+          boxShadow: "0 4px 12px rgba(124,58,237,0.3)",
+          fontSize: 13.5, fontWeight: 800, fontFamily: "inherit",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6
+        }}
+      ><Check11 size={16} color="#fff" strokeWidth={2.8} />Done</KbTap>
+  }</div>{
     /* The rule, said at the moment it starts to apply rather than after
        the whole name is typed. It only appears once a half HAS an
        alphabet, so it reads as information about what you wrote rather

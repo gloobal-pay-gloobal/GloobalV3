@@ -37,9 +37,13 @@ test("the shop header's flag is the app's flag picture, filling the circle", () 
 test("Share sends THIS shop's link, not the viewer's own QR", () => {
   const src = page();
   assert.match(src, /buildGloobalPayUrl\(creator && creator\.symbolId, "shop"\)/);
-  assert.match(src, /navigator\.share\(\{ title: name, text, url \}\)/);
-  assert.match(src, /e\.name === "AbortError"\) return;/, "closing the share sheet is not an error");
-  assert.match(src, /onToast\("Shop link copied"\)/, "and without a share sheet the link is copied");
+  // Through gloobalShareLink (shareLink.js) since "share is a text not
+  // link": the link goes INSIDE the message, the sheet closing is not an
+  // error, and without a share sheet the message is copied.
+  assert.match(src, /await gloobalShareLink\(\{ title: name, message: `\$\{name\}\$\{tagline\} · pay on Gloobal:`, url, onToast \}\);/);
+  const helper = readSource("frontend/components/common/shareLink.js");
+  assert.match(helper, /error\.name === "AbortError"\) return "cancelled";/);
+  assert.match(helper, /onToast\("Link copied"\)/);
   assert.ok(!/setShowReceive\(true\)\}\s*\n\s*onFeedback/.test(readSource("frontend/screens/Dashboard/Dashboard.jsx")),
     "the shop no longer opens the owner's receive card");
 });

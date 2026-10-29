@@ -36,9 +36,10 @@ test("Download and Share sit at the side; Share falls back to the shop link", ()
   const s = viewer();
   assert.match(s, /side\("Download", DownloadPhoto, download, "download"\)\}\{side\("Share", Share27, share, "share"\)/);
   assert.match(s, /position: "absolute", right: 12, top: "50%"/);
-  assert.match(s, /navigator\.canShare\(\{ files: \[file\] \}\)/);
+  // Through gloobalShareLink since "share is a text not link": the photo
+  // where files can be shared, the link inside the message otherwise.
   assert.match(s, /buildGloobalPayUrl\(shopSymbolId, "shop"\)/);
-  assert.match(s, /e\.name === "AbortError"/);
+  assert.match(s, /gloobalShareLink\(\{ title, message: `\$\{title\} on Gloobal:`, url: link, file, onToast \}\)/);
 });
 
 test("swipe, pinch and double-tap zoom, and the price is the app's", () => {

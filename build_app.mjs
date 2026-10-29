@@ -195,6 +195,8 @@ const FRONTEND_MODULES = [
   // G_LOGO_DATA_URI; ahead of Dashboard, which will show it.
   // The animal pictures for the receive QR, and the layout rules that keep
   // each one scannable. Plain JS; ahead of the card, which draws them.
+  // Shares a link so it arrives as a link — used by every Share button.
+  "components/common/shareLink.js",
   "components/common/gloobalAnimalQr.js",
   "components/common/gloobalReceiveQrCard.jsx",
   // The four action tiles' own motion: send flies off, receive drops in,

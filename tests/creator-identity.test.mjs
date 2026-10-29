@@ -669,9 +669,14 @@ describe("the creator's name is presented as a name", () => {
     // worth taking the screen down over.
     const src = panel();
     const fn = src.slice(src.indexOf("const share ="), src.indexOf("const copy ="));
-    assert.match(fn, /navigator\.share/);
-    assert.match(fn, /navigator\.clipboard/);
-    assert.match(fn, /catch \(e\)/);
+    // Through gloobalShareLink since "share is a text not link" — it sends
+    // the shop's link inside the message, and the helper owns the
+    // share → clipboard fallback and never throws.
+    assert.match(fn, /gloobalShareLink\(/);
+    const helper = readSource("frontend/components/common/shareLink.js");
+    assert.match(helper, /nav\.share/);
+    assert.match(helper, /nav\.clipboard\.writeText\(text\)/);
+    assert.match(helper, /catch \(error\)/);
     const cp = src.slice(src.indexOf("const copy ="), src.indexOf("const act ="));
     assert.match(cp, /catch \(e\)/);
   });
@@ -1051,11 +1056,15 @@ describe("the Creator Profile's code button", () => {
     // like nothing happened. The link is the thing that pays.
     const card = readSource("frontend/components/common/gloobalReceiveQrCard.jsx");
     const fn = card.slice(card.indexOf("const handleShare"), card.indexOf("return (\n    <section"));
-    const files = fn.indexOf("navigator.canShare({ files: [file] })");
-    const text = fn.indexOf("await navigator.share({ title: \"My Gloobal QR\", text:");
+    // The picture → link order now lives in shareLink.js; the card hands
+    // it both and keeps the download for when neither can go.
+    const helper = readSource("frontend/components/common/shareLink.js");
+    const files = helper.indexOf("nav.canShare({ files: [file] })");
+    const text = helper.indexOf("await nav.share(title ? { title, text } : { text });");
+    assert.ok(files > 0 && text > files, "the helper tries the picture, then the link");
+    const call = fn.indexOf("gloobalShareLink(");
     const download = fn.indexOf("link.download = \"gloobal-qr.png\"");
-    assert.ok(files > 0 && text > files && download > text,
-      "the share order is not picture → link → download");
+    assert.ok(call > 0 && download > call, "the card downloads only after the share helper");
   });
 
   test("the map button stands aside on the Creator Profile", () => {

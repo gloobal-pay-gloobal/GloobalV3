@@ -346,6 +346,8 @@ const FRONTEND_MODULES = [
   "features/creator/CreatorLedger.jsx",
   "features/creator/CreatorFinder.jsx",
   "features/creator/ShopThemeEditor.jsx",
+  // The dashboard's paste-anybody box, with the globe into Coverage.
+  "features/payee/quickPayBar.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",
   // Giving to a Hooman Project, and the list of who has. Emitted before the

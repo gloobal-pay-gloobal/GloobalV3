@@ -4341,6 +4341,13 @@ function GloobalId() {
       });
       setActiveScreen("send");
     }}
+    // The dashboard's quick-pay box: a person it found and checked goes to
+    // Send exactly as a scanned QR does — same prefill, same confirm.
+    onPayPerson={(payee) => {
+      if (!payee || !payee.gloobalId) return;
+      setSendPrefillChoiceId(null);
+      openSendToPayee(payee);
+    }}
     onOpenBank={() => setActiveScreen("bank")}
     onOpenCoverage={() => setActiveScreen("coverage")}
     onOpenScan={() => setShowScanScreen(true)}

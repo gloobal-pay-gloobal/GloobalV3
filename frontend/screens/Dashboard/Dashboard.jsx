@@ -252,7 +252,7 @@ function BalanceError({ onRetry }) {
   >Retry</button>}</span>;
 }
 
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -2142,30 +2142,27 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
        was not the one the screen actually uses — two reload buttons, one
        screen, doing different things and drawn identically. The tab now
        carries its own title and its own reload inside its first card. */
-  }{activeTab !== "choices" && <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 10, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", background: "transparent" }}>{
+  }{activeTab !== "choices" && <div style={{ position: "relative", zIndex: 3, display: "flex", alignItems: "flex-start", gap: 10, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", background: "transparent" }}>{
     /* The Coverage search bar is the HOME header, and it was being
        rendered on every tab with `disabled` doing the explaining. On My
        Choices that reads as a search box for the categories below it,
        which is the one thing it is not. The tab gets its own title in
        the same slot instead, so the header keeps its shape and the
        embedded grid stops being a screen with no name. */
-  }<button
-    onClick={onOpenCoverage}
-    aria-label="Gloobal coverage"
-    className="v2-tap"
-    style={{
-      flex: 1,
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      border: "none",
-      background: T.surface,
-      borderRadius: T.radiusMd,
-      padding: "11px 15px",
-      boxShadow: T.shadowCard,
-      cursor: "pointer"
-    }}
-  ><Search3 size={15} color={T.inkFaint} style={{ flexShrink: 0 }} /><span style={{ flex: 1, fontSize: 13, color: T.inkFaint, fontWeight: 500, textAlign: "center" }}><GloobalWordmark suffix=" Coverage" /></span><span style={{ width: 15, flexShrink: 0 }} aria-hidden="true" /></button>{
+  }{
+    /* ── PAY ANYBODY FROM HOME ─────────────────────────────────────────
+       This was a button shaped like a search box that only opened
+       Coverage. It is a real box now: paste a Gloobal ID, a pay link, a
+       mobile number or a creator name, tap →, see who it is, then Pay.
+       The spinning globe at its left is still the way into Coverage. */
+  }<QuickPayBar
+    myGloobalId={myGloobalId}
+    dialCode={(dialCountry && dialCountry.dialCode) || ""}
+    onOpenCoverage={onOpenCoverage}
+    onPayPerson={(payee) => onPayPerson && onPayPerson(payee)}
+    onPayCreator={({ creator }) => onPayCreator && onPayCreator({ creator })}
+    onOpenShop={(creator) => setOpenCreator(creator)}
+  />{
     /* Profile flip — switches the same account between its two
        sides: user/consumer and merchant/producer. Every flow stays
        identical; only which side the data is read as changes (and

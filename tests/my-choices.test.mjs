@@ -613,7 +613,8 @@ describe("the screen is named once, and reloads once", () => {
   test("the Dashboard's header strip is not drawn on this tab", () => {
     // It contributed a Coverage search box that looked like it filtered
     // the categories below it, and a second reload button.
-    assert.match(code(DASH), /\{activeTab !== "choices" && <div style=\{\{ position: "relative", zIndex: 1, display: "flex"/,
+    // zIndex 3 since the quick-pay box's result card drops over the page.
+    assert.match(code(DASH), /\{activeTab !== "choices" && <div style=\{\{ position: "relative", zIndex: 3, display: "flex"/,
       "the Home header strip is back on the Choices tab");
   });
 

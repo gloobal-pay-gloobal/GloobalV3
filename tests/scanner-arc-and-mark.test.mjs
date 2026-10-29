@@ -437,38 +437,29 @@ describe("nothing on the live scanner sits on anything else", () => {
   });
 
   test("and it sits on the square's own right-hand edge", () => {
-    // right: -34 with the line 22 in from the host's left puts the line
-    // exactly on the square's edge, with a grabbable band on both sides
-    // of it. A 1.5px line is not something anybody can take hold of.
+    // The scale IS that edge now — the ring behind it has a gap exactly
+    // here. Centred on it: 72 wide at right:-36.
     const at = scanner.indexOf("function ZoomRail");
     const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.match(rail, /right: -34,/);
-    assert.match(rail, /width: 56,/);
-    assert.match(rail, /left: 22,/, "the rail's line is not 22 in from the host's left");
+    assert.match(rail, /right: -36,/);
+    assert.match(rail, /width: 72,/);
     assert.match(rail, /touchAction: "none"/,
       "a vertical drag will scroll the page instead of zooming");
   });
 
-  test("the reading stays on the screen at the narrowest width", () => {
-    // The pill is the one thing that sticks out PAST the host, and the
-    // host's right edge is already 34px past the square. At 390 the
-    // square is 72vw = 280.8, so its right edge is at 335.4, the host's
-    // at 369.4 — and a pill at left:30 with 9px padding ended at 393.
-    // Three pixels off the screen, which a render caught and no amount
-    // of reading the source would have.
+  test("the scale stays on the screen at the narrowest width", () => {
+    // The widest thing on it is the 34px thumb and the 34px end buttons,
+    // centred on a 72px host whose right edge is 36px past the square.
+    // At 360 the square is 72vw = 259.2, so the host spans 180+129.6-36
+    // to that plus 72 — and has to end on the screen.
     const at = scanner.indexOf("function ZoomRail");
     const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    const pill = rail.slice(rail.lastIndexOf("left: "));
-    const left = Number(pill.match(/left: (\d+)/)[1]);
-    const pad = Number(pill.match(/padding: "\d+px (\d+)px"/)[1]);
-    const font = Number(pill.match(/fontSize: (\d+)/)[1]);
-    // "10x" is the widest reading this can show. 0.62em per character is
-    // a deliberate over-estimate for a bold grotesque's digits.
-    const width = 3 * font * 0.62 + pad * 2 + 2;
-    const square = Math.min(390 * 0.72, 300);
-    const hostLeft = 390 / 2 + square / 2 + 34 - 56;
-    assert.ok(hostLeft + left + width <= 390,
-      `the reading reaches ${Math.round(hostLeft + left + width)}px on a 390px screen`);
+    assert.match(rail, /width: 34, height: 34/);
+    for (const vw of [320, 360, 390, 430]) {
+      const square = Math.min(vw * 0.72, 300);
+      const hostRight = vw / 2 + square / 2 + 36;
+      assert.ok(hostRight <= vw, `at ${vw}px the scale ends at ${hostRight}, off the screen`);
+    }
   });
 
   test("the standing hint sits under the camera, and only when there is nothing to say", () => {
@@ -549,42 +540,47 @@ describe("nothing on the live scanner sits on anything else", () => {
   });
 
   test("the zoom reads on whatever the camera is pointed at", () => {
-    // 55% white on a hedge is nothing. The arc carried a dark halo under
-    // a light track and a stroke under its labels; the rail carries the
-    // same idea as a text-shadow, because these are DOM nodes rather
-    // than SVG and paint-order does not apply to them.
+    // Everything on the scale carries either a filled ground or a dark
+    // shadow: white on a camera picture is legible against a dark room
+    // and invisible against a hedge.
     const at = scanner.indexOf("function ZoomRail");
     const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.match(rail, /boxShadow: "0 1px 3px rgba\(0,0,0,0\.8\)"/,
-      "the tick marks have nothing behind them");
-    // The reading is the only type left, and it carries a filled ground
-    // rather than a shadow — which is stronger, and is why it can be the
-    // one thing on this control that has to be read at a glance.
-    assert.match(rail, /background: "rgba\(44,16,92,0\.72\)"/,
-      "the live reading lost the ground that makes it readable on a bright picture");
+    assert.match(rail, /background: "rgba\(44,16,92,0\.7[28]\)"/,
+      "the marks and buttons lost the ground that makes them readable on a bright picture");
+    assert.match(rail, /background: "#FFFFFF", color: "#4C1D95"/, "the thumb is not a solid object");
   });
 
-  test("the round numbers are off the picture", () => {
-    // ── THEY WERE THERE AND THEN THEY WENT ────────────────────────────
+  test("the marks are numbered, and each one is a tap target", () => {
+    // ── THE NUMBERS CAME BACK, AND THIS TIME THEY DO SOMETHING ───────
     //
-    // "Don't show zoom scale numbers, just where it is currently."
+    // An earlier round took them off: "Don't show zoom scale numbers,
+    // just where it is currently." Five pieces of permanent type on the
+    // picture, four of them labelling a place the thumb was not.
     //
-    // The rail printed 1x/2x/3x/5x/10x down the inside of the frame,
-    // copied from the founder's reference. On a real camera that is five
-    // pieces of permanent type on the one part of the screen somebody is
-    // trying to look THROUGH, and four of the five label a place the
-    // thumb is not.
-    //
-    // The ticks stayed: they say where the stops are, which is what
-    // helps you aim. Only the number that is true right now is printed.
+    // Then the fifth "zoom doesn't move" report, which could not be
+    // reproduced with a real touch drag, and "replace right side camera
+    // boundary with zoom scale". A scale is numbered. And numbered marks
+    // that are BUTTONS are the one input a lost drag cannot take away:
+    // tap 3x, get 3x, whatever is eating the gesture on that phone.
     const at = scanner.indexOf("function ZoomRail");
     const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.doesNotMatch(rail, /\$\{mark\.times\}x/,
-      "the round-number labels are back on the picture");
-    assert.equal((rail.match(/marks\.map/g) || []).length, 1,
-      "the rail maps over the marks twice again, so something besides the ticks is drawn per mark");
+    assert.match(rail, /aria-label=\{`Zoom to \$\{mark\.times\}x`\}/);
+    assert.match(rail, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onPick\(zoomArcLevel\(mark\.t, range\)\); \}\}/);
+    assert.match(rail, /endButton\(1, "Zoom in one step", "\+"\)/);
+    assert.match(rail, /endButton\(-1, "Zoom out one step", "\u2212"\)/);
     assert.match(rail, /\{formatZoom\(level, range\)\}/,
-      "the live reading is gone, so the control shows no number at all");
+      "the live reading is gone from the thumb");
+  });
+
+  test("a drag works through touch events as well as pointer events", () => {
+    // If a gesture recogniser on some phone cancels pointer events, the
+    // touch events still arrive. The pointer path stands aside for touch
+    // so a device sending both does not pick twice.
+    const at = scanner.indexOf("function ZoomRail");
+    const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
+    assert.match(rail, /onTouchStart=/);
+    assert.match(rail, /onTouchMove=/);
+    assert.match(rail, /if \(e\.pointerType === "touch"\) return; \/\/ the touch handlers own it/);
   });
 
   test("the filled part of the rail ends under the handle", () => {
@@ -593,7 +589,7 @@ describe("nothing on the live scanner sits on anything else", () => {
     // the handle's position down to the bottom inset.
     const at = scanner.indexOf("function ZoomRail");
     const rail = scanner.slice(at, scanner.indexOf("\n}\n", at));
-    assert.match(rail, /top: topOf\(at\),\s*\n\s*bottom: `\$\{ZOOM_RAIL_INSET \* 100\}%`/,
+    assert.match(rail, /top: thumbPct, bottom: `\$\{ZOOM_RAIL_INSET \* 100\}%`/,
       "the rail no longer shows how far up the range you are");
   });
 });

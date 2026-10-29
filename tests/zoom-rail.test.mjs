@@ -241,3 +241,67 @@ test("a lens that really zooms is still preferred", async () => {
   assert.equal(scaleOf(r.transform), 1,
     "the picture is being scaled in software on a camera that zooms optically");
 });
+
+// ── A THUMB, NOT A MOUSE ────────────────────────────────────────────────
+//
+// The fifth report — "that 1x zoom icon doesn't move" — arrived after the
+// tests above were green. They drove a MOUSE. A phone sends touch events,
+// and a gesture recogniser can cancel pointer events on a touch screen
+// while the touch events still arrive. So these drive real touch through
+// the DevTools protocol, and the taps that cannot be swallowed at all.
+async function openScanner() {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 }, deviceScaleFactor: 2,
+    hasTouch: true, isMobile: true, permissions: ["camera"]
+  });
+  const page = await context.newPage();
+  await page.goto(origin + "/");
+  await page.waitForSelector('[role="slider"]', { timeout: 15000 });
+  await page.waitForTimeout(500);
+  const read = () => page.evaluate(() => ({
+    text: document.querySelector('[role="slider"]').getAttribute("aria-valuetext"),
+    transform: getComputedStyle(document.querySelector("video")).transform
+  }));
+  return { context, page, read };
+}
+
+test("a real touch drag moves it", async () => {
+  const { context, page, read } = await openScanner();
+  const box = await page.evaluate(() => {
+    const r = document.querySelector('[role="slider"]').getBoundingClientRect();
+    return { x: r.left + r.width / 2, t: r.top, h: r.height };
+  });
+  const cdp = await context.newCDPSession(page);
+  const y0 = box.t + box.h * 0.92;
+  const y1 = box.t + box.h * 0.2;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x, y: y0 }] });
+  for (let i = 1; i <= 12; i += 1) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: box.x, y: y0 + (y1 - y0) * i / 12 }] });
+    await page.waitForTimeout(16);
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(500);
+  const r = await read();
+  await context.close();
+  assert.notEqual(r.text, "1x", "a touch drag left the reading at 1x");
+  assert.ok(scaleOf(r.transform) > 2, `after a touch drag the picture is ${scaleOf(r.transform)}x`);
+});
+
+test("tapping a mark and the end buttons zoom without any drag", async () => {
+  const { context, page, read } = await openScanner();
+  await page.tap('[aria-label="Zoom to 3x"]');
+  await page.waitForTimeout(300);
+  const three = await read();
+  await page.tap('[aria-label="Zoom in one step"]');
+  await page.waitForTimeout(300);
+  const up = await read();
+  await page.tap('[aria-label="Zoom out one step"]');
+  await page.tap('[aria-label="Zoom out one step"]');
+  await page.waitForTimeout(300);
+  const down = await read();
+  await context.close();
+  assert.equal(three.text, "3x");
+  assert.equal(scaleOf(three.transform), 3);
+  assert.ok(scaleOf(up.transform) > 3, "+ did not zoom in");
+  assert.ok(scaleOf(down.transform) < scaleOf(up.transform), "− did not zoom out");
+});

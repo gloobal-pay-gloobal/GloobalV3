@@ -476,139 +476,155 @@ function ZoomRail({ range, level, onPick }) {
   // left on the rail to hang a text-shadow on, so the ticks carry it as a
   // box-shadow and the reading carries its own filled ground.
 
+  // ── THE SCALE, REBUILT AS A CONTROL ────────────────────────────────
+  //
+  // It was ticks on the square's right edge, a hairline, and a reading.
+  // Legible as a scale, not legible as a thing to GRAB — nothing on it
+  // looked like a handle, the hit band was invisible, and the founder's
+  // fifth report said "that 1x zoom icon doesn't move".
+  //
+  // That fifth report could not be reproduced: a real touch drag in
+  // Chromium moves it, a real mouse drag moves it, every point down the
+  // rail hit-tests to the rail. So the control is rebuilt on two
+  // principles that do not depend on finding the cause:
+  //
+  //   1. It LOOKS like a slider — a track, a round thumb, the numbers —
+  //      so a thumb knows where to land and what to do.
+  //   2. It has inputs that cannot be swallowed: + and − buttons at the
+  //      ends, and every mark is a tap target. A device where the drag
+  //      is eaten by something I cannot see still zooms by tapping.
+  //
+  // Both pointer AND touch handlers, for the same reason. If pointer
+  // events are being cancelled by a gesture recogniser on some phone, the
+  // touch events still arrive; the draggingRef gate stops a device that
+  // sends both from picking twice.
+  const thumbPct = topOf(at);
+  const press = (clientY) => {
+    draggingRef.current = true;
+    pickAt(clientY);
+  };
+  const move = (clientY) => { if (draggingRef.current) pickAt(clientY); };
+  const release = () => { draggingRef.current = false; };
+
+  const endButton = (direction, label, glyph) => <button
+    type="button"
+    aria-label={label}
+    onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+    onClick={(e) => { e.stopPropagation(); nudge(direction); }}
+    style={{
+      width: 34, height: 34, borderRadius: "50%", border: "1px solid rgba(167,139,250,0.8)",
+      background: "rgba(44,16,92,0.78)", color: "#F3E8FF", fontSize: 18, fontWeight: 800,
+      lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+      boxShadow: "0 0 14px rgba(124,58,237,0.55)", touchAction: "manipulation", pointerEvents: "auto",
+      fontFamily: "inherit", padding: 0
+    }}
+  >{glyph}</button>;
+
   return <div
+    style={{
+      position: "absolute",
+      // Centred on the square's right edge — the scale IS that edge now,
+      // which is why the ring behind it has a gap exactly here.
+      right: -36,
+      top: -22,
+      bottom: -22,
+      width: 72,
+      display: "flex", flexDirection: "column", alignItems: "center",
+      pointerEvents: "auto"
+    }}
+  >{endButton(1, "Zoom in one step", "+")}<div
     ref={hostRef}
     role="slider"
     tabIndex={0}
     aria-label="Zoom"
+    aria-orientation="vertical"
     aria-valuemin={1}
     aria-valuemax={Math.round(zoomArcRatio(range) * 10) / 10}
     aria-valuenow={Math.round((level == null ? range.min : level) / range.min * 10) / 10}
     aria-valuetext={formatZoom(level, range)}
     onPointerDown={(e) => {
-      draggingRef.current = true;
-      if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
-      pickAt(e.clientY);
+      if (e.pointerType === "touch") return; // the touch handlers own it
+      e.preventDefault();
+      if (e.currentTarget.setPointerCapture) {
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* a lost pointer is not a reason to lose the drag */ }
+      }
+      press(e.clientY);
     }}
-    onPointerMove={(e) => { if (draggingRef.current) pickAt(e.clientY); }}
+    onPointerMove={(e) => { if (e.pointerType !== "touch") move(e.clientY); }}
     onPointerUp={(e) => {
-      draggingRef.current = false;
-      if (e.currentTarget.releasePointerCapture) e.currentTarget.releasePointerCapture(e.pointerId);
+      if (e.pointerType === "touch") return;
+      release();
+      if (e.currentTarget.releasePointerCapture) {
+        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+      }
     }}
-    onPointerCancel={() => { draggingRef.current = false; }}
+    onPointerCancel={(e) => { if (e.pointerType !== "touch") release(); }}
+    onTouchStart={(e) => { const t = e.touches[0]; if (t) press(t.clientY); }}
+    onTouchMove={(e) => { const t = e.touches[0]; if (t) { e.preventDefault(); move(t.clientY); } }}
+    onTouchEnd={release}
+    onTouchCancel={release}
     onKeyDown={(e) => {
       if (e.key === "ArrowRight" || e.key === "ArrowUp") { e.preventDefault(); nudge(1); }
       if (e.key === "ArrowLeft" || e.key === "ArrowDown") { e.preventDefault(); nudge(-1); }
     }}
     style={{
-      position: "absolute",
-      // The host is 56 wide with its line 22 in from the left, so the
-      // line lands exactly on the square's edge and there is a grabbable
-      // band on both sides of it.
-      right: -34,
-      top: 0,
-      bottom: 0,
-      width: 56,
+      position: "relative",
+      flex: 1, width: "100%", margin: "6px 0",
       // touchAction none so a vertical drag zooms instead of scrolling
-      // the page underneath — on a fixed overlay there is nothing to
-      // scroll, and the browser's own panning gesture would otherwise eat
-      // the drag outright.
+      // the page underneath, and the browser's own panning gesture does
+      // not eat the drag.
       touchAction: "none",
-      pointerEvents: "auto",
-      cursor: "pointer"
+      cursor: "pointer",
+      outline: "none"
     }}
   >{
-    /* The line. It is drawn the full height of the square rather than
-       only between 1× and the maximum, because it is standing in for the
-       square's own right-hand edge — the ring behind it has a gap exactly
-       here, and a line that stopped short would leave that gap open. */
-  }<span
-    aria-hidden="true"
+    /* The track: a real one, 6px, the full working height. */
+  }<span aria-hidden="true" style={{
+    position: "absolute", left: "50%", marginLeft: -3, width: 6,
+    top: `${ZOOM_RAIL_INSET * 100}%`, bottom: `${ZOOM_RAIL_INSET * 100}%`,
+    borderRadius: 3, background: "rgba(255,255,255,0.28)",
+    boxShadow: "0 0 0 1px rgba(0,0,0,0.25), 0 0 10px rgba(124,58,237,0.45)"
+  }} />{
+    /* The filled part, bottom up to the thumb: how far up the range you
+       are without reading the number. */
+  }<span aria-hidden="true" style={{
+    position: "absolute", left: "50%", marginLeft: -3, width: 6,
+    top: thumbPct, bottom: `${ZOOM_RAIL_INSET * 100}%`,
+    borderRadius: 3, background: "linear-gradient(180deg, #E9D5FF, #7C3AED)",
+    boxShadow: "0 0 12px rgba(124,58,237,0.9)"
+  }} />{
+    /* Every mark is a TAP TARGET, not just a tick: a 28px button with the
+       number on it, which is the path that works when a drag does not. */
+  }{marks.map((mark) => <button
+    key={`mark-${mark.times}`}
+    type="button"
+    aria-label={`Zoom to ${mark.times}x`}
+    onPointerDown={(e) => { e.stopPropagation(); }}
+    onTouchStart={(e) => { e.stopPropagation(); }}
+    onClick={(e) => { e.stopPropagation(); onPick(zoomArcLevel(mark.t, range)); }}
     style={{
-      position: "absolute",
-      left: 22,
-      top: 0,
-      bottom: 0,
-      width: 1.5,
-      borderRadius: 2,
-      background: "linear-gradient(180deg, rgba(167,139,250,0.15), rgba(233,213,255,0.9) 18%, rgba(233,213,255,0.9) 82%, rgba(167,139,250,0.15))",
-      boxShadow: "0 0 8px rgba(124,58,237,0.75)"
+      position: "absolute", left: "50%", top: topOf(mark.t),
+      transform: "translate(-50%, -50%)",
+      width: 28, height: 22, border: "none", borderRadius: 11, padding: 0,
+      background: Math.abs(mark.t - at) <= 0.02 ? "#F3E8FF" : "rgba(44,16,92,0.72)",
+      color: Math.abs(mark.t - at) <= 0.02 ? "#4C1D95" : "rgba(243,232,255,0.92)",
+      fontSize: 10.5, fontWeight: 800, fontFamily: "inherit", lineHeight: 1,
+      boxShadow: "0 1px 4px rgba(0,0,0,0.6)", cursor: "pointer", touchAction: "manipulation"
     }}
-  />{
-    /* The part of the line BELOW the handle, in the accent: it says how
-       far up the range you are without having to read the number, which
-       is the thing a rail can say that three buttons could not. */
-  }<span
-    aria-hidden="true"
-    style={{
-      position: "absolute",
-      left: 21,
-      top: topOf(at),
-      bottom: `${ZOOM_RAIL_INSET * 100}%`,
-      width: 3.5,
-      borderRadius: 2,
-      background: "linear-gradient(180deg, #E9D5FF, #7C3AED)",
-      boxShadow: "0 0 10px rgba(124,58,237,0.9)"
-    }}
-  />{
-    /* Two passes rather than one with a Fragment: this file has no React
-       default import, and adding one for a wrapper that renders nothing
-       is a worse trade than mapping twice over five marks. */
-  }{marks.map((mark) => <span
-    key={`tick-${mark.times}`}
-    aria-hidden="true"
-    style={{
-      position: "absolute",
-      left: 22,
-      top: topOf(mark.t),
-      width: Math.abs(mark.t - at) <= 0.02 ? 15 : 13,
-      height: 1.5,
-      marginTop: -0.75,
-      borderRadius: 1,
-      background: Math.abs(mark.t - at) <= 0.02 ? "#E9D5FF" : "rgba(255,255,255,0.75)",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.8)"
-    }}
-  />)}{
-    /* ── THE ROUND NUMBERS CAME OFF ───────────────────────────────────
-       There was a second pass here printing "1x" "2x" "3x" "5x" "10x"
-       down the inside of the picture, right-aligned to just short of the
-       line, which is where the founder's reference put them.
-       Rendered on a real camera they were five pieces of permanent type
-       sitting on the one part of the screen somebody is trying to look
-       THROUGH — and four of the five are only ever a label for a place
-       the thumb is not. The ticks still say where the stops are, which
-       is the part that helps you aim; the reading below says where you
-       actually are, which is the part you can only get from a number.
-       So: no numbers except the one that is true right now. */
-  }{
-    /* The live reading, outside the frame. It is the only thing on this
-       control that moves while a thumb is down, and now the only type on
-       it at all, so it is the only thing that needs to be unmistakable. */
-  }<span
-    aria-hidden="true"
-    style={{
-      position: "absolute",
-      // 26, not 30, and a smaller pill than the labels. Measured rather
-      // than chosen: the host's right edge is already 34px past the
-      // square, the square is 72vw, and on a 390px phone a 50px pill at
-      // left:30 ends at x=393 — three pixels off the screen. The widest
-      // reading this can show is "10x", so 26 plus this padding lands at
-      // 383 there and stays on screen at every width the cap allows.
-      left: 26,
-      top: topOf(at),
-      transform: "translateY(-50%)",
-      padding: "3px 8px",
-      borderRadius: 999,
-      fontSize: 12,
-      fontWeight: 800,
-      whiteSpace: "nowrap",
-      color: "#F3E8FF",
-      background: "rgba(44,16,92,0.72)",
-      border: "1px solid rgba(167,139,250,0.85)",
-      backdropFilter: "blur(8px)",
-      boxShadow: "0 0 16px rgba(124,58,237,0.55)"
-    }}
-  >{formatZoom(level, range)}</span></div>;
+  >{mark.times}x</button>)}{
+    /* The thumb. Round, 30px, with the live reading inside it, so there is
+       one object that is obviously the thing to drag and it says where
+       it is. Drawn last so it sits on top of whichever mark it covers. */
+  }<span aria-hidden="true" style={{
+    position: "absolute", left: "50%", top: thumbPct,
+    transform: "translate(-50%, -50%)",
+    width: 34, height: 34, borderRadius: "50%",
+    background: "#FFFFFF", color: "#4C1D95",
+    border: "2px solid #A78BFA",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.45), 0 0 18px rgba(124,58,237,0.75)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 11, fontWeight: 900, letterSpacing: -0.2, whiteSpace: "nowrap"
+  }}>{formatZoom(level, range)}</span></div>{endButton(-1, "Zoom out one step", "−")}</div>;
 }
 
 // ── THE FRAMING SQUARE, WITH OR WITHOUT A CAMERA BEHIND IT ─────────────

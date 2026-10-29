@@ -20,7 +20,8 @@ import {
   UtensilsCrossed as BzFood, ShoppingBasket as BzGrocery, Cake as BzSweets, Shirt as BzFashion, Scissors as BzBeauty,
   Pill as BzHealth, Smartphone as BzElectronics, Wrench as BzRepair, Hammer as BzHome, GraduationCap as BzEducation,
   Bus as BzTravel, Palette as BzArt, PartyPopper as BzEvents, Store as BzOther,
-  LocateFixed as LocateFixed2, Loader as Loader7, Flame as BzFlame, ChevronRight as ChevronRight10
+  LocateFixed as LocateFixed2, Loader as Loader7, Flame as BzFlame, ChevronRight as ChevronRight10,
+  History as BzRecent
 } from "lucide-react";
 
 // The same fourteen, in the same order, as server/lib/bazaar.js. The order
@@ -84,8 +85,68 @@ function BazaarCategoryPicker({ value, onChange }) {
   })}</div>;
 }
 
+// ── RECENT ──────────────────────────────────────────────────────────────
+//
+// The last five things searched and the last five shops opened from here,
+// shown when the bar is empty so the shop somebody pays every morning is
+// one tap away. Kept on this phone only (localStorage, per account), never
+// sent anywhere: it is a convenience, not a record. Logos are not kept —
+// they are data URLs and would fill the storage — the mark is drawn from
+// the name instead.
+var BAZAAR_RECENT_MAX = 5;
+
+function bazaarRecentKey(ownerKey) {
+  return `gloobal:bazaarRecent:v1:${ownerKey || "anon"}`;
+}
+
+function bazaarRecentLoad(ownerKey) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(bazaarRecentKey(ownerKey)) || "null");
+    return {
+      queries: Array.isArray(raw && raw.queries) ? raw.queries.filter((q) => typeof q === "string").slice(0, BAZAAR_RECENT_MAX) : [],
+      shops: Array.isArray(raw && raw.shops) ? raw.shops.filter((x) => x && x.symbolId && x.handle).slice(0, BAZAAR_RECENT_MAX) : []
+    };
+  } catch (e) {
+    return { queries: [], shops: [] };
+  }
+}
+
+function bazaarRecentSave(ownerKey, recent) {
+  try {
+    localStorage.setItem(bazaarRecentKey(ownerKey), JSON.stringify(recent));
+  } catch (e) {
+    // Private mode or a full disk: recents are a convenience, not data.
+  }
+}
+
+// Most recent first, no duplicates, five at most.
+function bazaarRecentAdd(recent, { query, shop }) {
+  const out = { queries: recent.queries.slice(), shops: recent.shops.slice() };
+  const q = String(query || "").trim();
+  if (q) out.queries = [q].concat(out.queries.filter((x) => x.toLowerCase() !== q.toLowerCase())).slice(0, BAZAAR_RECENT_MAX);
+  if (shop && shop.symbolId && shop.handle) {
+    const keep = { symbolId: shop.symbolId, handle: shop.handle, handleFirst: shop.handleFirst || "", handleLast: shop.handleLast || "", category: shop.category || "" };
+    out.shops = [keep].concat(out.shops.filter((x) => x.symbolId !== shop.symbolId)).slice(0, BAZAAR_RECENT_MAX);
+  }
+  return out;
+}
+
 // ── THE SECTION ON PAY & SERVICES ───────────────────────────────────────
-function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", onOpen, onToast }) {
+function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", ownerKey = "", onOpen, onQuery, onToast }) {
+  const [recent, setRecent] = useState62(() => bazaarRecentLoad(ownerKey));
+  // Every way out of this section to a shop goes through here, so a shop
+  // opened is remembered with the search that found it.
+  const openShop = (shop) => {
+    const next = bazaarRecentAdd(recent, { query, shop });
+    setRecent(next);
+    bazaarRecentSave(ownerKey, next);
+    if (onOpen) onOpen(shop);
+  };
+  const clearRecent = () => {
+    const empty = { queries: [], shops: [] };
+    setRecent(empty);
+    bazaarRecentSave(ownerKey, empty);
+  };
   const [category, setCategory] = useState62("");
   const [nearOn, setNearOn] = useState62(false);
   const [radius, setRadius] = useState62(BAZAAR_DEFAULT_RADIUS);
@@ -166,7 +227,38 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", onOp
 
   return <section aria-label="Gloobal बाज़ार">{
     /* The name, as the scan card writes it: Gloobal in bold, बाज़ार after. */
-  }<div style={{ display: "flex", alignItems: "baseline", gap: 6, margin: "2px 2px 10px" }}><span style={{
+  }{!query && (recent.queries.length || recent.shops.length) ? <div data-bazaar-recent="" style={{ margin: "0 0 12px" }}><div style={{
+    display: "flex", alignItems: "center", justifyContent: "space-between", margin: "2px 2px 8px"
+  }}><span style={{
+    display: "inline-flex", alignItems: "center", gap: 6,
+    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4
+  }}><BzRecent size={13} color={T.inkSoft} />Recent</span><button
+    onClick={clearRecent}
+    style={{ border: "none", background: "none", padding: "2px 4px", cursor: "pointer", fontSize: 11.5, fontWeight: 700, color: T.inkFaint, fontFamily: "inherit" }}
+  >Clear</button></div><div style={{
+    display: "flex", gap: 8, overflowX: "auto", margin: "0 -18px", padding: "0 18px 2px", scrollbarWidth: "none"
+  }}>{recent.shops.map((r) => <button
+    key={`s-${r.symbolId}`}
+    onClick={() => openShop(r)}
+    aria-label={`Open ${creatorDisplayName(r)}`}
+    className="v2-tap"
+    style={{
+      flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 8, height: 40, padding: "0 12px 0 4px",
+      borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", background: T.surface, boxShadow: T.shadowCard
+    }}
+  ><BusinessMark name={r.handle || ""} logo={null} size={32} radius={16} /><span style={{
+    fontSize: 12.5, fontWeight: 700, color: T.ink, whiteSpace: "nowrap", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis"
+  }}>{creatorDisplayName(r)}</span></button>)}{recent.queries.map((q) => <button
+    key={`q-${q}`}
+    onClick={() => onQuery && onQuery(q)}
+    aria-label={`Search ${q} again`}
+    className="v2-tap"
+    style={{
+      flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, height: 40, padding: "0 13px",
+      borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit",
+      background: T.bg, boxShadow: `inset 0 0 0 1px ${T.line}`, color: T.inkSoft, fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap"
+    }}
+  ><BzRecent size={13} color={T.inkFaint} />{q.replace(/\./g, " ")}</button>)}</div></div> : null}<div style={{ display: "flex", alignItems: "baseline", gap: 6, margin: "2px 2px 10px" }}><span style={{
     fontSize: 16, color: T.ink, fontFamily: T.fontDisplay
   }}><b style={{ fontWeight: 800 }}>Gloobal</b> <span style={{ fontWeight: 600 }}>बाज़ार</span></span></div>{
     /* ── NEAR ME AND HOW FAR ──────────────────────────────────────────
@@ -239,10 +331,11 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", onOp
           }}>{near ? "Try a bigger distance. Only shops that show their address appear in Near me." : "Try fewer letters, or another category."}</div></div>
           : shown.map((s, i) => {
             const info = bazaarCategoryInfo(s.category);
-            const sub = [info ? info.label : "", near ? bazaarDistanceLabel(s.distanceM) : ""].filter(Boolean).join(" · ");
+            // Found by what it sells: say what. Otherwise its category.
+            const sub = [s.matchedItem ? `Sells ${s.matchedItem}` : (info ? info.label : ""), near ? bazaarDistanceLabel(s.distanceM) : ""].filter(Boolean).join(" · ");
             return <button
               key={s.symbolId}
-              onClick={() => onOpen && onOpen(s)}
+              onClick={() => openShop(s)}
               className="v2-row"
               style={{
                 display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",

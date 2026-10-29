@@ -41,6 +41,7 @@ const AuditLog = require('./models/AuditLog');
 const CountryCurrencyPool = require('./models/CountryCurrencyPool');
 const { getRate } = require('./lib/fxRates');
 const bazaar = require('./lib/bazaar');
+const searchKey = require('./lib/searchKey');
 const { loadCurrencyDecimals, decimalsFor } = require('./lib/currencyDecimals');
 // A coin movement, normalised. Required up here rather than down in the
 // Gloobal Coin section because THREE routes need it and the earliest of them
@@ -4177,7 +4178,43 @@ async function bazaarVolumes(userIds) {
 }
 
 // The shops a request could match, before ranking.
-async function bazaarCandidates({ q = '', category = '', near = null, needCategory = false, countryIso = '' }) {
+// ── KEYS FOR SHOPS SAVED BEFORE THERE WERE KEYS ─────────────────────────
+// Names and items get their search key when saved. Ones saved before this
+// existed are given theirs the first time anybody searches, once per
+// server start, in bulk — so "rasoi" finds रसोई Ghar from the first day
+// rather than only after its owner next edits something.
+var BAZAAR_KEYS_READY = null;
+function bazaarEnsureKeys() {
+  if (BAZAAR_KEYS_READY) return BAZAAR_KEYS_READY;
+  BAZAAR_KEYS_READY = (async () => {
+    try {
+      const users = await User.find({
+        'creatorProfile.handle': { $type: 'string', $ne: '' },
+        'creatorProfile.searchKey': { $in: [null, ''] }
+      }).select('_id creatorProfile.handleFirst creatorProfile.handleLast').limit(5000).lean();
+      if (users.length) {
+        await User.bulkWrite(users.map((u) => ({ updateOne: {
+          filter: { _id: u._id },
+          update: { $set: { 'creatorProfile.searchKey': searchKey.searchKeyOf(`${(u.creatorProfile || {}).handleFirst || ''} ${(u.creatorProfile || {}).handleLast || ''}`) } }
+        } })));
+      }
+      const items = await CreatorItem.find({ searchKey: { $in: [null, ''] } }).select('_id title category').limit(20000).lean();
+      if (items.length) {
+        await CreatorItem.bulkWrite(items.map((it) => ({ updateOne: {
+          filter: { _id: it._id },
+          update: { $set: { searchKey: searchKey.searchKeyOf(`${it.title || ''} ${it.category || ''}`) } }
+        } })));
+      }
+    } catch (error) {
+      // Search still works on names as typed; the keys are an addition.
+      console.error('Bazaar key backfill error:', error);
+      BAZAAR_KEYS_READY = null;
+    }
+  })();
+  return BAZAAR_KEYS_READY;
+}
+
+async function bazaarCandidates({ q = '', rawQ = '', category = '', near = null, needCategory = false, countryIso = '' }) {
   const match = {
     'creatorProfile.handle': { $type: 'string', $ne: '' },
     'creatorProfile.listed': { $ne: false }
@@ -4187,13 +4224,34 @@ async function bazaarCandidates({ q = '', category = '', near = null, needCatego
   // exchange-rate arithmetic would help nobody. Near me ignores it — a
   // circle on a border is a circle.
   if (countryIso && !near) match.countryIso = countryIso;
+  // What the query found among ITEMS: owner → the first matching title,
+  // so a shop found for "samosa" can say "Sells Samosa" on its row.
+  const itemHit = new Map();
   if (q) {
     const re = new RegExp(`^${bazaar.bazaarEscapeRegex(q)}`, 'i');
+    const keyRe = searchKey.searchKeyRegex(searchKey.searchKeyQuery(rawQ || q));
     match.$or = [
       { 'creatorProfile.handle': re },
       { 'creatorProfile.handleFirst': re },
       { 'creatorProfile.handleLast': re }
     ];
+    // Any spelling: "rasoi" finds रसोई, "रसोई" finds Rasoi.
+    if (keyRe) match.$or.push({ 'creatorProfile.searchKey': keyRe });
+    // Shops by what they SELL, in any spelling, and in its own script for
+    // alphabets the key does not cover.
+    const words = String(rawQ || q).trim().split(/[\s.]+/).filter(Boolean).map(bazaar.bazaarEscapeRegex);
+    const titleRe = words.length ? new RegExp(`(^|\\s)${words.join('.*')}`, 'i') : null;
+    const itemOr = [];
+    if (keyRe) itemOr.push({ searchKey: keyRe });
+    if (titleRe) itemOr.push({ title: titleRe });
+    if (itemOr.length) {
+      const items = await CreatorItem.find({ $or: itemOr }).select('ownerSymbolId title').limit(1500).lean();
+      for (const it of items) if (!itemHit.has(it.ownerSymbolId)) itemHit.set(it.ownerSymbolId, it.title);
+      if (itemHit.size) match.$or.push({ symbolId: { $in: Array.from(itemHit.keys()) } });
+    }
+    // And by category: "tailor", "pharmacy", "मिठाई".
+    const cats = bazaar.bazaarCategoriesForQuery(rawQ || q, searchKey.looseKey);
+    if (cats.length) match.$or.push({ 'creatorProfile.category': { $in: cats } });
   }
   if (category) match['creatorProfile.category'] = category;
   else if (needCategory) match['creatorProfile.category'] = { $in: bazaar.BAZAAR_CATEGORIES };
@@ -4218,7 +4276,8 @@ async function bazaarCandidates({ q = '', category = '', near = null, needCatego
       handleFirst: p.handleFirst || '',
       handleLast: p.handleLast || '',
       category: bazaar.BAZAAR_CATEGORIES.includes(p.category) ? p.category : '',
-      color: creatorShopOut(p.shop).color
+      color: creatorShopOut(p.shop).color,
+      matchedItem: itemHit.get(u.symbolId) || ''
     };
     if (near) {
       const a = p.addressParts || {};
@@ -4242,7 +4301,9 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, code: 'invalid_near', message: 'Pick a distance from the list.' });
     }
     const countryIso = /^[A-Z]{2}$/.test(String(req.query.country || '')) ? String(req.query.country) : '';
-    const rows = await bazaarCandidates({ q, category, near, countryIso });
+    if (q) await bazaarEnsureKeys();
+    const rawQ = String(req.query.q || '').trim().slice(0, 40);
+    const rows = await bazaarCandidates({ q, rawQ, category, near, countryIso });
     const volume = await bazaarVolumes(rows.map((r) => r._id));
     const top = bazaar.bazaarRank(rows, volume, { q, near });
     // Logos for the ten that are shown, not the four hundred considered.
@@ -4257,7 +4318,10 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
       category: r.category,
       color: r.color,
       logo: logoBy.get(String(r._id)) || null,
-      distanceM: near ? bazaar.bazaarRoundDistance(r.distanceM) : null
+      distanceM: near ? bazaar.bazaarRoundDistance(r.distanceM) : null,
+      // "Sells Samosa", when the shop was found by what it sells rather
+      // than by its name.
+      matchedItem: r.matchedItem || ''
       // No volume, no count of payments, nothing about money. The order
       // is the only trace the ranking leaves.
     }));
@@ -4381,6 +4445,7 @@ app.put(
         }
         set['creatorProfile.handleFirst'] = built.first;
         set['creatorProfile.handleLast'] = built.last;
+        set['creatorProfile.searchKey'] = searchKey.searchKeyOf(`${built.first} ${built.last || ''}`);
         set['creatorProfile.handle'] = built.handle;
         set['creatorProfile.completedAt'] = new Date();
         // Finishing clears the "they skipped it" mark, so the Creator
@@ -4979,7 +5044,8 @@ app.put(
           photo,
           photos,
           soldOut: Boolean(raw.soldOut),
-          order: i
+          order: i,
+          searchKey: searchKey.searchKeyOf(`${title} ${typeof raw.category === 'string' ? raw.category : ''}`)
         });
       }
 

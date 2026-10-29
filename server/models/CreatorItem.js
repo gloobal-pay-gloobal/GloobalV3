@@ -74,7 +74,11 @@ const CreatorItemSchema = new mongoose.Schema(
 
     // Display order, so a creator can put their best thing first. Dense
     // integers assigned by the client on save; ties fall back to createdAt.
-    order: { type: Number, default: 0 }
+    order: { type: Number, default: 0 },
+
+    // The title and group as loose Latin keys (lib/searchKey.js), so
+    // "samosa" finds a shop selling समोसा. Written by the server.
+    searchKey: { type: String, default: '' }
   },
   { timestamps: true }
 );

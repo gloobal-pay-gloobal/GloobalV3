@@ -319,6 +319,11 @@ const userSchema = new mongoose.Schema({
     // way; this only decides being LISTED.
     listed: { type: Boolean, default: true },
 
+    // The name as a loose Latin key (lib/searchKey.js), so "rasoi" finds
+    // रसोई Ghar and "रसोई" finds Rasoi Ghar. Written by the server on every
+    // name save, never by a client.
+    searchKey: { type: String, default: '' },
+
     // ── THE SAME ADDRESS, IN ITS PARTS ────────────────────────────────
     //
     // Shop / house number, street and area, a landmark ("Near Hanuman

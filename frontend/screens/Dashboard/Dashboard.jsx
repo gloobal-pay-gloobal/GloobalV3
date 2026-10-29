@@ -3412,6 +3412,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
       query={[String(moreQuery || "").trim(), String(moreQueryLast || "").trim()].filter(Boolean).join(".")}
       countryIso={dialCountry && dialCountry.iso}
       excludeSymbolId={creatorHit ? creatorHit.symbolId : ""}
+      ownerKey={myGloobalId}
+      onQuery={(text) => {
+        // A recent search goes back into the two boxes it came from.
+        const dot = String(text || "").indexOf(".");
+        setMoreQuery(dot > 0 ? text.slice(0, dot) : text);
+        setMoreQueryLast(dot > 0 ? text.slice(dot + 1) : "");
+      }}
       onToast={showToast2}
       onOpen={async (shop) => {
         const found = await GloobalApi.resolveCreatorHandle(shop.handle || "");

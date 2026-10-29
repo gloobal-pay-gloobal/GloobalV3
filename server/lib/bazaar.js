@@ -24,6 +24,27 @@ var BAZAAR_CATEGORIES = [
   'repair', 'home', 'education', 'travel', 'art', 'events', 'other'
 ];
 
+// Words that mean a category, so "tailor" or "pharmacy" typed in the bar
+// also brings up that category's shops. English and the commonest Hindi
+// words, as loose keys are compared (lib/searchKey.js), so चाय and "chai"
+// both reach Food & Chai.
+var BAZAAR_CATEGORY_WORDS = {
+  food: ['food', 'chai', 'tea', 'cafe', 'restaurant', 'dhaba', 'snacks', 'khana', 'खाना', 'चाय', 'nashta'],
+  grocery: ['grocery', 'kirana', 'किराना', 'ration', 'general', 'store', 'sabzi', 'सब्ज़ी', 'vegetables', 'fruits'],
+  sweets: ['sweets', 'mithai', 'मिठाई', 'bakery', 'cake', 'halwai'],
+  fashion: ['fashion', 'clothes', 'kapda', 'कपड़ा', 'tailor', 'darzi', 'दर्ज़ी', 'boutique', 'shoes', 'saree'],
+  beauty: ['beauty', 'salon', 'parlour', 'parlor', 'barber', 'nai', 'नाई', 'spa'],
+  health: ['health', 'pharmacy', 'medical', 'chemist', 'dawai', 'दवाई', 'doctor', 'clinic'],
+  electronics: ['electronics', 'mobile', 'phone', 'recharge', 'computer', 'laptop'],
+  repair: ['repair', 'mechanic', 'mistri', 'मिस्त्री', 'garage', 'service'],
+  home: ['home', 'plumber', 'electrician', 'carpenter', 'painter', 'cleaning'],
+  education: ['education', 'tuition', 'ट्यूशन', 'coaching', 'classes', 'school', 'teacher'],
+  travel: ['travel', 'taxi', 'cab', 'auto', 'transport', 'tour', 'bus'],
+  art: ['art', 'craft', 'handmade', 'painting', 'pottery'],
+  events: ['events', 'wedding', 'shaadi', 'शादी', 'decoration', 'photographer', 'dj', 'catering'],
+  other: []
+};
+
 var BAZAAR_RADII_KM = [0.5, 1, 2, 5, 10];
 var BAZAAR_RESULT_LIMIT = 10;
 // How many candidates are ranked per request. Enough for a town; the cap
@@ -124,7 +145,22 @@ function bazaarCategoryOrder(rows, volume) {
     .map((c) => ({ key: c.key, shops: c.shops }));
 }
 
+// Which categories a typed query names: every word of the query must be
+// the start of one of the category's words, compared as loose keys.
+function bazaarCategoriesForQuery(rawQ, looseKey) {
+  const words = String(rawQ || '').split(/[\s.]+/).map(looseKey).filter((w) => w.length >= 2);
+  if (!words.length) return [];
+  const out = [];
+  for (const [cat, list] of Object.entries(BAZAAR_CATEGORY_WORDS)) {
+    const keys = list.concat([cat]).map(looseKey).filter(Boolean);
+    if (words.every((w) => keys.some((k) => k.startsWith(w)))) out.push(cat);
+  }
+  return out;
+}
+
 module.exports = {
+  BAZAAR_CATEGORY_WORDS,
+  bazaarCategoriesForQuery,
   BAZAAR_CATEGORIES,
   BAZAAR_RADII_KM,
   BAZAAR_RESULT_LIMIT,

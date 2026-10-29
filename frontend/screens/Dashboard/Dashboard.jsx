@@ -891,6 +891,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
   // animal picked when it was opened, so the picture does not change
   // under the person while they are holding the phone out.
   const [shopCode, setShopCode] = useState14(null);
+  // The printable A4 poster, opened from the shop code screen.
+  const [showPoster, setShowPoster] = useState14(false);
   const requestCloseShopCode = useBackClose(Boolean(shopCode), () => setShopCode(null));
   const requestCloseCreatorLedger = useBackClose(showCreatorLedger, () => setShowCreatorLedger(false));
   // ── A NAME TYPED IN THE SEARCH BAR IS LOOKED UP ON THE SERVER ─────────
@@ -3952,7 +3954,28 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     side="shop"
     style={shopCode}
     onToast={showToast2}
-  /></div></div></ScreenErrorBoundary>}{showCreatorLedger && <ScreenErrorBoundary name="Sales & purchases" onClose={() => setShowCreatorLedger(false)}><CreatorLedgerScreen
+  /><button
+    onClick={() => setShowPoster(true)}
+    className="v2-tap"
+    style={{
+      display: "flex", alignItems: "center", gap: 12, width: "100%", maxWidth: 360, margin: "14px auto 0",
+      padding: "13px 14px", borderRadius: 16, border: "none", cursor: "pointer", textAlign: "left",
+      background: T.surface, boxShadow: T.shadowCard, fontFamily: "inherit"
+    }}
+  ><span style={{
+    width: 38, height: 38, borderRadius: 12, background: T.accentSoft, flexShrink: 0,
+    display: "flex", alignItems: "center", justifyContent: "center"
+  }}><PrinterPoster size={18} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{
+    display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink
+  }}>Poster for your counter</span><span style={{
+    display: "block", fontSize: 11.5, color: T.inkFaint, marginTop: 2
+  }}>A4 "Scan to pay" sheet in your colours — PDF or image</span></span></button>{showPoster ? <ShopPosterSheet
+    creator={creatorProfile}
+    gloobalId={gloobalIdTag}
+    qrStyle={shopCode}
+    onToast={showToast2}
+    onClose={() => setShowPoster(false)}
+  /> : null}</div></div></ScreenErrorBoundary>}{showCreatorLedger && <ScreenErrorBoundary name="Sales & purchases" onClose={() => setShowCreatorLedger(false)}><CreatorLedgerScreen
     symbolId={myGloobalId}
     handle={(creatorProfile && creatorProfile.handle) || ""}
     // The same rows the personal history reads. A merchant's incoming

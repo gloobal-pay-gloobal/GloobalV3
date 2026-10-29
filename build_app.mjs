@@ -316,6 +316,8 @@ const FRONTEND_MODULES = [
   "features/creator/ShopReviews.jsx",
   // Full-screen item photos with swipe, zoom, Download and Share.
   "features/creator/shopPhotoViewer.jsx",
+  // The A4 "Scan to pay" poster, PDF or image.
+  "features/creator/shopPoster.jsx",
   "features/creator/CreatorPage.jsx",
   // Gloobal बाज़ार on Pay & Services: famous categories and Near me.
   "features/bazaar/bazaar.jsx",

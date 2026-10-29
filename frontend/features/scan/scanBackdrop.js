@@ -74,18 +74,18 @@
 // corrected by arithmetic — which is the right way round for a contrast
 // ratio, since nobody can see 3.53:1 and know it.
 var SCAN_BACKDROPS = [
-  { key: "indigo", from: "#16205E", to: "#4A3FC0" },
-  { key: "teal", from: "#053C38", to: "#0F8174" },
-  { key: "plum", from: "#3B0C3B", to: "#92238A" },
-  { key: "ocean", from: "#052942", to: "#1479B8" },
-  { key: "moss", from: "#123114", to: "#318435" },
-  { key: "ember", from: "#4F1208", to: "#BE4E1E" },
-  { key: "slate", from: "#18222C", to: "#4A6B86" },
-  { key: "berry", from: "#450822", to: "#B01D5C" },
-  { key: "gold", from: "#3C2F04", to: "#8B7110" },
-  { key: "pine", from: "#06302A", to: "#12846D" },
-  { key: "wine", from: "#3F0A16", to: "#A01F38" },
-  { key: "cobalt", from: "#0E2470", to: "#2A62D6" }
+  { key: "indigo", from: "#16205E", to: "#4A3FC0", ribbon: "#FFC857" },
+  { key: "teal", from: "#053C38", to: "#0F8174", ribbon: "#FF8A5B" },
+  { key: "plum", from: "#3B0C3B", to: "#92238A", ribbon: "#7CE0C3" },
+  { key: "ocean", from: "#052942", to: "#1479B8", ribbon: "#FFB84D" },
+  { key: "moss", from: "#123114", to: "#318435", ribbon: "#FFD166" },
+  { key: "ember", from: "#4F1208", to: "#BE4E1E", ribbon: "#7FD1FF" },
+  { key: "slate", from: "#18222C", to: "#4A6B86", ribbon: "#FFB4A2" },
+  { key: "berry", from: "#450822", to: "#B01D5C", ribbon: "#9BE7A3" },
+  { key: "gold", from: "#3C2F04", to: "#8B7110", ribbon: "#C7B3FF" },
+  { key: "pine", from: "#06302A", to: "#12846D", ribbon: "#FFC0E0" },
+  { key: "wine", from: "#3F0A16", to: "#A01F38", ribbon: "#8FE3FF" },
+  { key: "cobalt", from: "#0E2470", to: "#2A62D6", ribbon: "#FFE066" }
 ];
 
 // The same cheap, stable hash businessMarkInk uses. Deliberately the same
@@ -150,10 +150,23 @@ function scanPageTint(seed) {
 //
 // Derived from the same entry as everything else on this screen, for the
 // same reason: three tables would be three things to keep in step.
+// ── THE RIBBON IS A DIFFERENT COLOUR FROM THE CARD, ON PURPOSE ──────────
+//
+// It was two darker shades of the card's own hue, which on a slate or a
+// pine card came out near-black: a dark band under a dark card, the
+// message in white on both. "can you make that strip of message box in
+// different colours."
+//
+// Each entry now carries a `ribbon`: a light, saturated colour that
+// CONTRASTS with the card rather than deepening it — amber under indigo,
+// coral under teal, mint under plum. The text on it is ink, not white,
+// because a light band wants dark type. The fold stays a darker shade of
+// the band itself, so it still reads as the band folded under.
 function scanRibbonInk(seed) {
   const pick = scanBackdropFor(seed);
+  const base = pick.ribbon || pick.from;
   const shade = (factor) => {
-    const n = parseInt(pick.from.slice(1), 16);
+    const n = parseInt(base.slice(1), 16);
     const part = (channel) => {
       const value = Math.round(channel * factor);
       return Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0");
@@ -163,5 +176,5 @@ function scanRibbonInk(seed) {
   // 0.82 keeps the band clearly related to the card and clearly behind
   // it; 0.55 puts the fold deep enough in shadow to read as a crease at
   // a glance rather than as a slightly different rectangle.
-  return { bar: shade(0.82), fold: shade(0.55) };
+  return { bar: base, fold: shade(0.62), text: "#1A1033" };
 }

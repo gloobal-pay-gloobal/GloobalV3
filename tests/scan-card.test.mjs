@@ -136,7 +136,7 @@ test("the card carries the hue and the page stays white", () => {
     "the confirm card is not drawn in the payee's colour");
   // And the things on it flipped with it.
   assert.match(src, /fontSize: 16, fontWeight: 800, color: "#FFFFFF"/, "the name is still dark on a dark card");
-  assert.match(src, /color: "rgba\(255,255,255,0\.72\)"/, "the card's label is still grey on colour");
+  assert.match(src, /color: "rgba\(255,255,255,0\.82\)"/, "the card's label is still grey on colour");
 });
 
 test("every page tint is still white to look at", () => {
@@ -359,7 +359,8 @@ test("a fold is darker than the band it folds under", () => {
     seen.add(pick.key);
     const ink = scanRibbonInk(id);
     assert.ok(sum(ink.fold) < sum(ink.bar), `${pick.key}'s fold is not darker than its band`);
-    assert.ok(sum(ink.bar) < sum(pick.from), `${pick.key}'s band is not darker than the card`);
+    // The band is no longer a darker shade of the card — it contrasts
+    // with it; see "the ribbon contrasts with the card" below.
   }
   assert.equal(seen.size, SCAN_BACKDROPS.length);
 });
@@ -382,4 +383,57 @@ test("the card declares its own box model", () => {
   const at = src.indexOf("THE CARD WAS 44px WIDER THAN IT ASKED TO BE");
   assert.ok(at > 0, "the note explaining the box model is gone");
   assert.match(src.slice(at, at + 900), /boxSizing: "border-box"/);
+});
+
+// ── THE RIBBON IS A DIFFERENT COLOUR, AND THE LABEL IS A NAME ──────────
+test("the ribbon contrasts with the card instead of deepening it", () => {
+  // Two darker shades of the card's hue came out near-black under a
+  // slate card. "can you make that strip of message box in different
+  // colours."
+  const { SCAN_BACKDROPS, scanRibbonInk, scanBackdropFor } = backdrop(
+    ["SCAN_BACKDROPS", "scanRibbonInk", "scanBackdropFor"]
+  );
+  const lum = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+      const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  };
+  const seen = new Set();
+  for (let i = 0; i < 400 && seen.size < SCAN_BACKDROPS.length; i += 1) {
+    const id = `G-${i * 7919}`;
+    const pick = scanBackdropFor(id);
+    if (seen.has(pick.key)) continue;
+    seen.add(pick.key);
+    assert.ok(pick.ribbon, `${pick.key} has no ribbon colour of its own`);
+    const ink = scanRibbonInk(id);
+    assert.equal(ink.bar, pick.ribbon);
+    // Light band, dark text: the band must be far lighter than the card
+    // and the ink must read on it.
+    assert.ok(lum(ink.bar) > lum(pick.to) + 0.15, `${pick.key}'s ribbon is not lighter than its card`);
+    assert.ok((lum(ink.bar) + 0.05) / (lum(ink.text) + 0.05) >= 7, `${pick.key}'s ribbon text is under 7:1`);
+    assert.ok(lum(ink.fold) < lum(ink.bar), `${pick.key}'s fold is not darker than its band`);
+  }
+  assert.equal(seen.size, SCAN_BACKDROPS.length);
+  assert.match(app(), /color: scanRibbonInk\(scanPayee\.gloobalId\)\.text/, "the ribbon's text is still white");
+});
+
+test("a shop's card is headed Gloobal बाजार, the brand in bold", () => {
+  const src = app();
+  assert.match(src, /<b style=\{\{ fontWeight: 900, color: "#FFFFFF" \}\}>Gloobal<\/b> \{"\\u092C\\u093E\\u091C\\u093E\\u0930"\}/,
+    "the shop label is not Gloobal + बाजार");
+  assert.doesNotMatch(src, /"Gloobal Shop" : "Gloobal ID"/, "the old upper-cased label is back");
+  // Devanagari has no case; an uppercase transform would shout one half
+  // of a two-word name and leave the other alone.
+  const at = src.indexOf("Gloobal बाजार");
+  assert.doesNotMatch(src.slice(at - 400, at), /textTransform: "uppercase"/);
+});
+
+test("the map button stays off the confirm card", () => {
+  // The camera fires the stand-aside event, and unmounts the moment a
+  // code resolves — so the map came straight back over the card.
+  const src = app();
+  assert.match(src, /function ScanOverlayBlocksMap/);
+  assert.match(src, /return <><ScanOverlayBlocksMap \/><div style=\{\{\s*\n\s*position: "fixed", inset: 0, zIndex: 400/);
 });

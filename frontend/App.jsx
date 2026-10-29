@@ -659,6 +659,21 @@ function readSharedTxnFromUrl() {
   }
 }
 
+// The floating map button hides itself for anything that fires this, and
+// the camera already fires it — but the camera unmounts the moment a code
+// resolves, so the map came straight back over the confirm card: the
+// founder's screenshot has it sitting on the card's top-right corner.
+// Fired for the whole overlay instead, camera and card alike.
+function ScanOverlayBlocksMap() {
+  useEffect15(() => {
+    if (typeof window === "undefined") return undefined;
+    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
+    fire(true);
+    return () => fire(false);
+  }, []);
+  return null;
+}
+
 // A Gloobal QR opened by a phone's own camera app lands here as
 // /p/<12 digits> (see backend/utils/gloobalPayLink.js). Read once on load;
 // acted on once the person is signed in. Returns null when the path is not a
@@ -4390,7 +4405,7 @@ function GloobalId() {
     // scanning — not before permission, and not once a code has resolved and
     // there is a confirm card to look at.
     const scanLive = scanCameraAccessGranted && !scanPayee;
-    return <div style={{
+    return <><ScanOverlayBlocksMap /><div style={{
       position: "fixed", inset: 0, zIndex: 400,
       // ── BLACK WHILE AIMING, LIGHT ONCE IT LANDS ─────────────────────
       //
@@ -4681,7 +4696,15 @@ function GloobalId() {
     // depended on whether that screen had ever mounted. Declared here,
     // where it is relied on.
     boxSizing: "border-box"
-  }}><div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.72)", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{scanPayee.creator ? "Gloobal Shop" : "Gloobal ID"}</div>{
+  }}><div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.82)", letterSpacing: 0.2, marginBottom: 10 }}>{
+    /* "Gloobal बाजार" for a shop — the brand in bold, the word for market
+       in Devanagari, as asked. Not upper-cased: Devanagari has no case,
+       and a transform that shouts one half of a two-word name and cannot
+       touch the other makes the pair look like two labels. */
+    scanPayee.creator
+      ? <><b style={{ fontWeight: 900, color: "#FFFFFF" }}>Gloobal</b> {"\u092C\u093E\u091C\u093E\u0930"}</>
+      : <><b style={{ fontWeight: 900, color: "#FFFFFF" }}>Gloobal</b> ID</>
+  }</div>{
     /* ── A SHOP IS SHOWN AS ITS SHOP ──────────────────────────────────
        Scanning a sticker on a tea stall used to give the owner's face and
        the owner's given name — true, and not what anybody standing in
@@ -4803,7 +4826,7 @@ function GloobalId() {
     borderRadius: 12,
     padding: "13px 16px",
     boxShadow: "0 8px 18px rgba(20,18,43,0.22)",
-    fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.94)",
+    fontSize: 12.5, fontWeight: 700, color: scanRibbonInk(scanPayee.gloobalId).text,
     lineHeight: 1.45, textAlign: "center", overflowWrap: "anywhere"
   }}>{scanPayee.creator.scanNote}</div></div> : null}<style>{`
       @keyframes gloobalScanRibbon {
@@ -4813,7 +4836,7 @@ function GloobalId() {
       @media (prefers-reduced-motion: reduce) {
         @keyframes gloobalScanRibbon { 0%, 100% { transform: none; } }
       }
-    `}</style></div>}</div>}</div>;
+    `}</style></div>}</div>}</div></>;
   })()}{
     /* A shared receipt link, opened on a payment in this account's own
        history. The same read-only document History shows. */

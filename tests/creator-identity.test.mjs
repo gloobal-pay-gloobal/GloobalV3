@@ -737,7 +737,8 @@ describe("scanning a shop shows the shop", () => {
 
   test("the card leads with the mark and the brand name", () => {
     const src = app();
-    assert.match(src, /scanPayee\.creator \? "Gloobal Shop" : "Gloobal ID"/);
+    // "Gloobal बाजार" now — the brand in bold, the Hindi word for market.
+    assert.match(src, /Gloobal<\/b> \{"\\u092C\\u093E\\u091C\\u093E\\u0930"\}/);
     assert.match(src, /src=\{scanPayee\.creator\.logo\}/, "their logo where they have one");
     assert.match(src, /businessMarkInitials\(scanPayee\.creator\.handle \|\| ""\)/,
       "and the generated mark where they do not, so a shop is never a gap");

@@ -86,8 +86,22 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
   const [picking, setPicking] = useState67(false);
   const [countrySearch, setCountrySearch] = useState67("");
   const seq = useRef39(0);
+  // Back from the country list goes back to the pad.
+  useBackClose(picking, () => { setPicking(false); setCountrySearch(""); }, { unwind: true });
 
   const reset = () => { setError(""); setSuggest(null); };
+
+  // ── PHONE BACK ────────────────────────────────────────────────────────
+  // Back closes what the box opened — the pad, the letters keyboard, the
+  // shop list or a message — instead of leaving the dashboard (0145). And
+  // when the app closes it itself, its history entry goes with it, so the
+  // next Back is not swallowed.
+  useBackClose(padOpen || nameMode || Boolean(suggest) || Boolean(error), () => {
+    setPadOpen(false);
+    setNameMode(false);
+    setSuggest(null);
+    setError("");
+  }, { unwind: true });
 
   // The pad hides the floating map button while it is up, as every other
   // full-width board in the app does.

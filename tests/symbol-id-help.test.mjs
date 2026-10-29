@@ -25,4 +25,6 @@ test("eight tiles with names, the hollow/filled line, Hear it, and three steps",
   assert.match(src, /new window\.SpeechSynthesisUtterance\(/);
   assert.match(src, /title: "Create"[\s\S]*title: "Share"[\s\S]*title: "Get paid"/);
   assert.match(src, /prefers-reduced-motion: reduce/);
+  assert.match(src, /data-read-aloud="" style=\{\{ display: "flex", flexDirection: "column" \}\}/);
+  assert.match(src, /data-id-steps="" style=\{\{\s*display: "flex", flexDirection: "column"/);
 });

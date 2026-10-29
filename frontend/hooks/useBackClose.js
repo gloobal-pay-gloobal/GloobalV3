@@ -18,7 +18,13 @@ function __installBackHandler() {
     if (top) top.fire();
   });
 }
-function useBackClose(isOpen, onClose) {
+// `options.unwind`: when the thing is closed by the app itself rather than
+// by Back (a lookup that finished, a tap outside), take its history entry
+// back off too. Without it, the entry stays behind and the person's next
+// Back press does nothing at all — which is how the dashboard's pay box
+// felt broken (0145). Opt-in, so no existing screen changes behaviour.
+function useBackClose(isOpen, onClose, options) {
+  const unwind = Boolean(options && options.unwind);
   __installBackHandler();
   const onCloseRef = useRef6(onClose);
   onCloseRef.current = onClose;
@@ -33,7 +39,15 @@ function useBackClose(isOpen, onClose) {
     }
     return () => {
       const idx = __backStack.indexOf(entry);
-      if (idx !== -1) __backStack.splice(idx, 1);
+      if (idx !== -1) {
+        __backStack.splice(idx, 1);
+        // Still in the stack means nobody pressed Back for it: the app
+        // closed it. With `unwind`, its history entry goes too.
+        if (unwind && typeof window !== "undefined") {
+          __pendingSyntheticPops += 1;
+          window.history.back();
+        }
+      }
       entryRef.current = null;
     };
   }, [isOpen]);

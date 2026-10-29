@@ -75,9 +75,27 @@ function HelpCornerButton({ onClick, label }) {
 // raw `onClose` to the button instead is the mistake this pattern exists
 // to prevent: the sheet would close while its history entry stayed on the
 // stack, and the next back gesture would silently eat a real navigation.
-function HelpSheet({ open, onClose, title, subtitle, children }) {
+function HelpSheet({ open, onClose, title, subtitle, children, fullScreen = false }) {
   const requestClose = useBackClose(open, onClose);
   if (!open) return null;
+  // ── FULL SCREEN, WITH BACK ───────────────────────────────────────────
+  // The founder (0145): the ID explainer as its own screen with a back
+  // button, not a sheet. Phone Back closes it the same way.
+  if (fullScreen) {
+    return <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      data-help-screen=""
+      style={{ position: "fixed", inset: 0, zIndex: 600, background: T.bg, display: "flex", flexDirection: "column", fontFamily: T.fontBody }}
+    ><div style={{
+      display: "flex", alignItems: "center", gap: 12, flexShrink: 0,
+      padding: "calc(16px + env(safe-area-inset-top, 0px)) 18px 10px"
+    }}><NavBackButton onClick={requestClose} /><span style={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{typeof gloobalText === "function" ? gloobalText(title) : title}</span></div><div style={{
+      flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",
+      padding: "4px 18px calc(28px + env(safe-area-inset-bottom, 0px))"
+    }}><div style={{ maxWidth: 480, margin: "0 auto" }}>{subtitle ? <div style={{ fontSize: 12.5, lineHeight: 1.5, color: T.inkSoft, marginBottom: 12 }}>{subtitle}</div> : null}{children}</div></div></div>;
+  }
   return <div
     style={{ position: "fixed", inset: 0, zIndex: 600, background: "rgba(15,12,35,0.45)", display: "flex", alignItems: "flex-end" }}
     onClick={requestClose}
@@ -205,7 +223,7 @@ function SymbolIdHelpSheet({ open, onClose }) {
     fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkSoft, margin: "18px 2px 9px"
   }}>{text}</div>;
 
-  return <HelpSheet open={open} onClose={onClose} title="Your GLOOBAL ID">{
+  return <HelpSheet open={open} onClose={onClose} title="Your GLOOBAL ID" fullScreen>{
     /* ── THE LIVE EXAMPLE ─────────────────────────────────────────────
        What one looks like, typed in front of you: twelve symbols in three
        groups of four. */
@@ -244,11 +262,19 @@ function SymbolIdHelpSheet({ open, onClose }) {
 
   {label("Read it aloud")}<div style={{
     borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, padding: "12px 12px"
-  }}><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{groups.map((g, gi) => <div key={gi} style={{ textAlign: "center", minWidth: 0 }}><div style={{
-    fontSize: 17, fontWeight: 800, fontFamily: T.fontDisplay, letterSpacing: 1
-  }}>{g.map((ch, i) => <span key={i} style={{ color: toneOfCh(ch) }}>{ch}</span>)}</div><div style={{
-    marginTop: 4, fontSize: 10.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.35
-  }}>{g.map(symbolIdWord).join(" ")}</div></div>)}</div><div style={{
+  }}><div data-read-aloud="" style={{ display: "flex", flexDirection: "column" }}>{groups.map((g, gi) => <div key={gi} style={{
+    // One group per row, top to bottom: the group number, its four
+    // symbols, then the words to say. Never squeezed into columns.
+    display: "flex", alignItems: "center", gap: 12, minWidth: 0, padding: "8px 2px",
+    borderTop: gi === 0 ? "none" : `1px solid ${T.line}`
+  }}><span style={{
+    width: 22, height: 22, borderRadius: "50%", background: T.accentSoft, color: T.accent, flexShrink: 0,
+    fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center"
+  }}>{gi + 1}</span><span style={{
+    flexShrink: 0, fontSize: 18, fontWeight: 800, fontFamily: T.fontDisplay, letterSpacing: 2, whiteSpace: "nowrap"
+  }}>{g.map((ch, i) => <span key={i} style={{ color: toneOfCh(ch) }}>{ch}</span>)}</span><span style={{
+    flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.35, overflowWrap: "anywhere"
+  }}>{g.map(symbolIdWord).join(" ")}</span></div>)}</div><div style={{
     display: "flex", alignItems: "center", gap: 10, marginTop: 11, paddingTop: 10, borderTop: `1px solid ${T.line}`
   }}><span style={{ flex: 1, fontSize: 11.5, color: T.inkFaint, fontWeight: 600, lineHeight: 1.4 }}>Left to right, in groups of four, like a phone number.</span>{canSpeak ? <button
     onClick={say}
@@ -259,15 +285,23 @@ function SymbolIdHelpSheet({ open, onClose }) {
     }}
   ><HelpSpeak size={14} />Hear it</button> : null}</div></div>
 
-  {label("What you do with it")}<div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{SYMBOL_ID_STEPS.map((step) => <div
+  {label("What you do with it")}<div data-id-steps="" style={{
+    display: "flex", flexDirection: "column", borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden"
+  }}>{SYMBOL_ID_STEPS.map((step, i) => <div
     key={step.n}
-    style={{ borderRadius: 14, background: T.surface, boxShadow: `inset 0 0 0 1px ${T.line}`, padding: "11px 9px 10px", minWidth: 0 }}
-  ><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{
-    width: 20, height: 20, borderRadius: "50%", background: T.accent, color: "#fff", fontSize: 10.5, fontWeight: 800,
+    style={{
+      display: "flex", alignItems: "center", gap: 12, padding: "11px 13px", minWidth: 0,
+      borderTop: i === 0 ? "none" : `1px solid ${T.line}`
+    }}
+  ><span style={{
+    width: 24, height: 24, borderRadius: "50%", background: T.accent, color: "#fff", fontSize: 11.5, fontWeight: 800,
     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-  }}>{step.n}</span><step.Icon size={15} color={T.accent} /></div><div style={{ marginTop: 7, fontSize: 12.5, fontWeight: 800, color: T.ink }}>{step.title}</div><div style={{
-    marginTop: 3, fontSize: 10.5, lineHeight: 1.4, color: T.inkSoft
-  }}>{step.body}</div></div>)}</div></HelpSheet>;
+  }}>{step.n}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink }}>{step.title}</span><span style={{
+    display: "block", marginTop: 2, fontSize: 11.5, lineHeight: 1.45, color: T.inkSoft
+  }}>{step.body}</span></span><span style={{
+    width: 34, height: 34, borderRadius: 11, background: T.accentSoft, flexShrink: 0,
+    display: "flex", alignItems: "center", justifyContent: "center"
+  }}><step.Icon size={16} color={T.accent} /></span></div>)}</div></HelpSheet>;
 }
 
 // ── Referral ID ──────────────────────────────────────────────────────────

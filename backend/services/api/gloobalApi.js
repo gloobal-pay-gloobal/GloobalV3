@@ -1478,15 +1478,41 @@ var GloobalApi = {
   // Gloobal बाज़ार: up to ten shops, by the start of a name, a category,
   // and/or Near me ({ lat, lng, radiusKm } — radiusKm one of 0.5/1/2/5/10).
   // Ranked on the server by recent payments; no amounts come back.
-  async bazaarSearch({ q = "", category = "", near = null, country = "", openNow = false } = {}) {
+  // Returns the shops as an array; `.fuzzy` on it says they were found by
+  // a near spelling ("smosa" → samosa) rather than the words typed.
+  async bazaarSearch({ q = "", category = "", near = null, country = "", openNow = false, sub = "", cats = [], sort = "", minRating = 0, maxPrice = 0 } = {}) {
     const p = new URLSearchParams();
     if (openNow) p.set("open", "1");
     if (country) p.set("country", country);
     if (q) p.set("q", q);
     if (category) p.set("category", category);
+    if (category && sub) p.set("sub", sub);
+    if (!category && Array.isArray(cats) && cats.length) p.set("cats", cats.join(","));
+    if (sort && sort !== "paid") p.set("sort", sort);
+    if (minRating) p.set("minRating", String(minRating));
+    if (q && maxPrice > 0) p.set("maxPrice", String(maxPrice));
     if (near) { p.set("lat", String(near.lat)); p.set("lng", String(near.lng)); p.set("radiusKm", String(near.radiusKm)); }
     const result = await gloobalApiClient.get(`/api/bazaar?${p.toString()}`);
-    return Array.isArray(result && result.shops) ? result.shops : [];
+    const shops = Array.isArray(result && result.shops) ? result.shops : [];
+    shops.fuzzy = Boolean(result && result.fuzzy);
+    return shops;
+  },
+
+  // What to offer while somebody types: shops, item names, categories.
+  async bazaarSuggest(q, country = "") {
+    const p = new URLSearchParams();
+    p.set("q", q);
+    if (country) p.set("country", country);
+    try {
+      const r = await gloobalApiClient.get(`/api/bazaar/suggest?${p.toString()}`);
+      return {
+        shops: Array.isArray(r && r.shops) ? r.shops : [],
+        items: Array.isArray(r && r.items) ? r.items : [],
+        categories: Array.isArray(r && r.categories) ? r.categories : []
+      };
+    } catch (e) {
+      return { shops: [], items: [], categories: [] };
+    }
   },
 
   async bazaarCategories(near = null, country = "") {

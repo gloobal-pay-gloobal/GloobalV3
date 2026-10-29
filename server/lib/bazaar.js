@@ -45,6 +45,69 @@ var BAZAAR_CATEGORY_WORDS = {
   other: []
 };
 
+// ── SUB-CATEGORIES ─────────────────────────────────────────────────────
+// A second, narrower step under each category (0141): Food & Chai →
+// Chai, Dhaba, Fast food… Keys only; the labels live in the app
+// (frontend/features/bazaar/bazaar.jsx, BAZAAR_SUBCATEGORY_INFO), and a
+// test keeps the two lists the same.
+var BAZAAR_SUBCATEGORIES = {
+  food: ['chai', 'dhaba', 'fastfood', 'restaurant', 'cafe', 'tiffin', 'juice'],
+  grocery: ['kirana', 'vegetables', 'fruits', 'dairy', 'meat', 'organic'],
+  sweets: ['mithai', 'bakery', 'cakes', 'namkeen', 'icecream'],
+  fashion: ['tailor', 'clothes', 'saree', 'shoes', 'jewellery', 'kids'],
+  beauty: ['salon', 'parlour', 'barber', 'spa', 'mehendi'],
+  health: ['pharmacy', 'clinic', 'dentist', 'lab', 'gym', 'yoga'],
+  electronics: ['mobile', 'phonerepair', 'computer', 'appliances', 'recharge'],
+  repair: ['mechanic', 'bike', 'car', 'plumber', 'electrician', 'carpenter'],
+  home: ['furniture', 'decor', 'hardware', 'cleaning', 'pestcontrol'],
+  education: ['tuition', 'coaching', 'music', 'dance', 'books', 'stationery'],
+  travel: ['taxi', 'auto', 'tours', 'hotel', 'tickets'],
+  art: ['handmade', 'pottery', 'painting', 'gifts', 'photography'],
+  events: ['wedding', 'decoration', 'catering', 'dj', 'tent', 'flowers'],
+  other: []
+};
+
+function bazaarSubcategoryValid(category, sub) {
+  return Boolean(sub) && Array.isArray(BAZAAR_SUBCATEGORIES[category]) && BAZAAR_SUBCATEGORIES[category].indexOf(sub) >= 0;
+}
+
+// ── HOW A LIST IS ORDERED ──────────────────────────────────────────────
+// paid (default): most paid in 24 hours; week: in 7 days ("Trending this
+// week"); rating: best average stars, then most reviews; new: newest
+// shops first; near: closest first (needs Near me).
+var BAZAAR_SORTS = ['paid', 'week', 'rating', 'new', 'near'];
+var BAZAAR_NEW_DAYS = 14;
+
+// ── TYPO-PROOF ─────────────────────────────────────────────────────────
+// Edit distance between two loose keys, stopping early once it is past
+// the limit. "smosa" against "smosa" (samosa's loose key) is 0; "smsa" 1.
+function bazaarEditDistance(a, b, limit = 3) {
+  a = String(a || ''); b = String(b || '');
+  if (Math.abs(a.length - b.length) > limit) return limit + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (cur[j] < best) best = cur[j];
+    }
+    if (best > limit) return limit + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+// Does a typed word (as a loose key) nearly match a stored word? The start
+// of the stored word is compared too, so "samos" finds "samosa". One slip
+// allowed up to four letters, two above.
+function bazaarNearlyMatches(typed, stored) {
+  if (!typed || !stored || typed.length < 3) return false;
+  const limit = typed.length <= 4 ? 1 : 2;
+  if (bazaarEditDistance(typed, stored, limit) <= limit) return true;
+  return stored.length > typed.length && bazaarEditDistance(typed, stored.slice(0, typed.length), limit) <= limit - (typed.length <= 4 ? 0 : 1);
+}
+
 var BAZAAR_RADII_KM = [0.5, 1, 2, 5, 10];
 var BAZAAR_RESULT_LIMIT = 10;
 // How many candidates are ranked per request. Enough for a town; the cap
@@ -108,19 +171,31 @@ function bazaarRoundDistance(m) {
 
 // The order. `volume` maps userId → { d1, d7 } in one comparable unit.
 // Exact handle first (somebody who typed the whole name gets that shop),
-// then 24h, then 7 days, then the name so equal shops have a stable order.
-function bazaarRank(rows, volume, { q = '', near = null } = {}) {
+// then the chosen sort (see BAZAAR_SORTS), then the name so equal shops
+// have a stable order.
+function bazaarRank(rows, volume, { q = '', near = null, sort = 'paid' } = {}) {
   const scored = rows.map((r) => {
     const v = volume.get(String(r._id)) || { d1: 0, d7: 0 };
     return { row: r, d1: v.d1, d7: v.d7, exact: Boolean(q) && String(r.handle || '').toLowerCase() === q };
   });
-  scored.sort((a, b) => (Number(b.exact) - Number(a.exact)) || (b.d1 - a.d1) || (b.d7 - a.d7)
+  const rating = (s) => (s.row.rating && s.row.rating.count ? s.row.rating.avg : 0);
+  const count = (s) => (s.row.rating ? s.row.rating.count : 0);
+  const joined = (s) => (s.row.joinedAt ? new Date(s.row.joinedAt).getTime() : 0);
+  const by = {
+    paid: (a, b) => (b.d1 - a.d1) || (b.d7 - a.d7),
+    week: (a, b) => (b.d7 - a.d7) || (b.d1 - a.d1),
+    rating: (a, b) => (rating(b) - rating(a)) || (count(b) - count(a)) || (b.d7 - a.d7),
+    new: (a, b) => (joined(b) - joined(a)) || (b.d7 - a.d7),
+    near: (a, b) => ((a.row.distanceM || 0) - (b.row.distanceM || 0)) || (b.d1 - a.d1)
+  }[BAZAAR_SORTS.indexOf(sort) >= 0 ? sort : 'paid'];
+  scored.sort((a, b) => (Number(b.exact) - Number(a.exact)) || by(a, b)
     || String(a.row.handle || '').localeCompare(String(b.row.handle || '')));
   let top = scored.slice(0, BAZAAR_RESULT_LIMIT);
   // Near me shows the top sellers in the circle, nearest first — the chosen
   // radius already says how far is acceptable, so inside it, closer wins.
-  // An exact name typed still leads.
-  if (near) {
+  // An exact name typed still leads. Only for the default order: a person
+  // who chose Top rated or New asked for that order.
+  if (near && (sort === 'paid' || !sort)) {
     top = top.slice().sort((a, b) => (Number(b.exact) - Number(a.exact)) || (a.row.distanceM - b.row.distanceM));
   }
   return top.map((s) => s.row);
@@ -159,6 +234,12 @@ function bazaarCategoriesForQuery(rawQ, looseKey) {
 }
 
 module.exports = {
+  BAZAAR_SUBCATEGORIES,
+  bazaarSubcategoryValid,
+  BAZAAR_SORTS,
+  BAZAAR_NEW_DAYS,
+  bazaarEditDistance,
+  bazaarNearlyMatches,
   BAZAAR_CATEGORY_WORDS,
   bazaarCategoriesForQuery,
   BAZAAR_CATEGORIES,

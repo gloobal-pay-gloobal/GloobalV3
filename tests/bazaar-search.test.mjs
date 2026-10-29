@@ -83,7 +83,7 @@ test("the category and the listing switch are the creator's to set", () => {
   for (const k of bz.BAZAAR_CATEGORIES) assert.match(client(), new RegExp(`key: "${k}"`), `client lacks ${k}`);
   const setup = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
   assert.match(setup, /<BazaarCategoryPicker value=\{category\} onChange=\{setCategory\} \/>/);
-  assert.match(setup, /addressParts,\s*category,\s*listed,/);
+  assert.match(setup, /addressParts,\s*category,\s*subcategory: category \? subcategory : "",\s*category2: category2 && category2 !== category \? category2 : "",\s*listed,/);
 });
 
 test("Near me asks for location through the one place that may", () => {

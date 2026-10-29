@@ -319,6 +319,20 @@ const userSchema = new mongoose.Schema({
     // way; this only decides being LISTED.
     listed: { type: Boolean, default: true },
 
+    // A second category (optional) and a sub-category of the first, from
+    // the fixed lists in server/lib/bazaar.js (0141). A sweet shop that
+    // bakes is in Sweets AND Bakery; "Food & Chai" narrows to "Chai".
+    category2: {
+      type: String,
+      enum: ['', 'food', 'grocery', 'sweets', 'fashion', 'beauty', 'health', 'electronics',
+        'repair', 'home', 'education', 'travel', 'art', 'events', 'other'],
+      default: ''
+    },
+    subcategory: { type: String, trim: true, maxlength: 24, default: '' },
+    // When the shop first set itself up — set once, never moved — for
+    // "New on GLOOBAL". completedAt moves on every save and cannot say this.
+    joinedAt: { type: Date, default: null },
+
     // The name as a loose Latin key (lib/searchKey.js), so "rasoi" finds
     // रसोई Ghar and "रसोई" finds Rasoi Ghar. Written by the server on every
     // name save, never by a client.

@@ -247,7 +247,15 @@ function CreatorSetupScreen({
   const [fontsOpen, setFontsOpen] = useState53(false);
   // What kind of shop, for Gloobal बाज़ार's categories, and whether to be
   // listed there at all. Listed is ON unless the creator turned it off.
-  const [category, setCategory] = useState53((creator && creator.category) || "");
+  const [category, setCategoryRaw] = useState53((creator && creator.category) || "");
+  // The narrower kind and an optional second category (0141).
+  const [subcategory, setSubcategory] = useState53((creator && creator.subcategory) || "");
+  const [category2, setCategory2] = useState53((creator && creator.category2) || "");
+  const setCategory = (c) => {
+    setCategoryRaw(c);
+    setSubcategory("");
+    if (c && c === category2) setCategory2("");
+  };
   const [listed, setListed] = useState53(!(creator && creator.listed === false));
   // Null until the creator turns hours on; see openHoursEditor.jsx.
   const [hours, setHours] = useState53((creator && creator.hours) || null);
@@ -563,7 +571,11 @@ function CreatorSetupScreen({
        One of fourteen, so "Food & Chai" on Pay & Services gathers every
        chai stall however each one spells chai. Optional: a shop with no
        category is still found by name and Near me. */
-  }<BazaarCategoryPicker value={category} onChange={setCategory} /><div style={{
+  }<BazaarCategoryPicker value={category} onChange={setCategory} />{category && (BAZAAR_SUBCATEGORY_INFO[category] || []).length ? <div style={{ marginTop: 12 }}><div style={{
+    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 2px 7px"
+  }}>What kind exactly</div><BazaarSubcategoryPicker category={category} value={subcategory} onChange={setSubcategory} /></div> : null}{category ? <div style={{ marginTop: 12 }}><div style={{
+    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 2px 7px"
+  }}>Also show me in <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, color: T.inkFaint }}>(optional)</span></div><BazaarAlsoPicker primary={category} value={category2} onChange={setCategory2} /></div> : null}<div style={{
     display: "flex", alignItems: "center", gap: 12, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.line}`
   }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>
         Show my shop in <GloobalWordmark /> बाज़ार
@@ -735,6 +747,8 @@ function CreatorSetupScreen({
       handleLast: last.trim(),
       addressParts,
       category,
+      subcategory: category ? subcategory : "",
+      category2: category2 && category2 !== category ? category2 : "",
       listed,
       hours,
       about: about.trim(),

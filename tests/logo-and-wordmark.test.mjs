@@ -20,7 +20,7 @@ const code = (f) => readSource(f)
 
 test("the bazaar shows what we have when nobody matches", () => {
   const s = code("frontend/features/bazaar/bazaar.jsx");
-  assert.match(s, /const all = await GloobalApi\.bazaarSearch\(\{ q: "", category, near, country, openNow \}\);/);
+  assert.match(s, /const all = await GloobalApi\.bazaarSearch\(\{ \.\.\.opts, q: "", maxPrice: 0 \}\);/);
   assert.match(s, /setFallback\(none\);/);
   assert.match(s, /No shop called “\{String\(query\)/);
 });

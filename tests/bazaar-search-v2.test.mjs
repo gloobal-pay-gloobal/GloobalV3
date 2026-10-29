@@ -43,7 +43,7 @@ test("the server keys names and items on save, and backfills the rest", () => {
   assert.match(s, /searchKey: searchKey\.searchKeyOf\(`\$\{title\} /);
   assert.match(s, /function bazaarEnsureKeys\(\)/);
   assert.match(s, /if \(q\) await bazaarEnsureKeys\(\);/);
-  assert.match(s, /match\.\$or\.push\(\{ symbolId: \{ \$in: Array\.from\(itemHit\.keys\(\)\) \} \}\);/);
+  assert.match(s, /if \(itemHit\.size\) or\.push\(\{ symbolId: \{ \$in: Array\.from\(itemHit\.keys\(\)\) \} \}\);/);
   assert.match(s, /matchedItem: r\.matchedItem \|\| ''/);
 });
 

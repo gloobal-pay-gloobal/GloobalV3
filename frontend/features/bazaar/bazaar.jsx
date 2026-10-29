@@ -21,7 +21,8 @@ import {
   Pill as BzHealth, Smartphone as BzElectronics, Wrench as BzRepair, Hammer as BzHome, GraduationCap as BzEducation,
   Bus as BzTravel, Palette as BzArt, PartyPopper as BzEvents, Store as BzOther,
   LocateFixed as LocateFixed2, Loader as Loader7, Flame as BzFlame, SearchX as BzSearchOff, ChevronRight as ChevronRight10,
-  History as BzRecent
+  History as BzRecent, Star as BzStar, ArrowUpDown as BzSort, Sparkles as BzNew, TrendingUp as BzTrending,
+  Gift as BzFestive, Search as BzSuggest
 } from "lucide-react";
 
 // The same fourteen, in the same order, as server/lib/bazaar.js. The order
@@ -42,6 +43,75 @@ var BAZAAR_CATEGORY_INFO = [
   { key: "events", label: "Events", Icon: BzEvents },
   { key: "other", label: "Other", Icon: BzOther }
 ];
+
+// ── SUB-CATEGORIES ─────────────────────────────────────────────────────
+// The second step under each category (0141). Same keys, same order as
+// server/lib/bazaar.js BAZAAR_SUBCATEGORIES — a test keeps them equal.
+var BAZAAR_SUBCATEGORY_INFO = {
+  food: [["chai", "Chai"], ["dhaba", "Dhaba"], ["fastfood", "Fast food"], ["restaurant", "Restaurant"], ["cafe", "Café"], ["tiffin", "Tiffin"], ["juice", "Juice"]],
+  grocery: [["kirana", "Kirana"], ["vegetables", "Vegetables"], ["fruits", "Fruits"], ["dairy", "Dairy"], ["meat", "Meat & fish"], ["organic", "Organic"]],
+  sweets: [["mithai", "Mithai"], ["bakery", "Bakery"], ["cakes", "Cakes"], ["namkeen", "Namkeen"], ["icecream", "Ice cream"]],
+  fashion: [["tailor", "Tailor"], ["clothes", "Clothes"], ["saree", "Saree"], ["shoes", "Shoes"], ["jewellery", "Jewellery"], ["kids", "Kids"]],
+  beauty: [["salon", "Salon"], ["parlour", "Parlour"], ["barber", "Barber"], ["spa", "Spa"], ["mehendi", "Mehendi"]],
+  health: [["pharmacy", "Pharmacy"], ["clinic", "Clinic"], ["dentist", "Dentist"], ["lab", "Lab tests"], ["gym", "Gym"], ["yoga", "Yoga"]],
+  electronics: [["mobile", "Mobiles"], ["phonerepair", "Phone repair"], ["computer", "Computers"], ["appliances", "Appliances"], ["recharge", "Recharge"]],
+  repair: [["mechanic", "Mechanic"], ["bike", "Bike"], ["car", "Car"], ["plumber", "Plumber"], ["electrician", "Electrician"], ["carpenter", "Carpenter"]],
+  home: [["furniture", "Furniture"], ["decor", "Decor"], ["hardware", "Hardware"], ["cleaning", "Cleaning"], ["pestcontrol", "Pest control"]],
+  education: [["tuition", "Tuition"], ["coaching", "Coaching"], ["music", "Music"], ["dance", "Dance"], ["books", "Books"], ["stationery", "Stationery"]],
+  travel: [["taxi", "Taxi"], ["auto", "Auto"], ["tours", "Tours"], ["hotel", "Hotel"], ["tickets", "Tickets"]],
+  art: [["handmade", "Handmade"], ["pottery", "Pottery"], ["painting", "Painting"], ["gifts", "Gifts"], ["photography", "Photography"]],
+  events: [["wedding", "Wedding"], ["decoration", "Decoration"], ["catering", "Catering"], ["dj", "DJ"], ["tent", "Tent"], ["flowers", "Flowers"]],
+  other: []
+};
+
+function bazaarSubcategoryLabel(category, sub) {
+  const hit = (BAZAAR_SUBCATEGORY_INFO[category] || []).find(([k]) => k === sub);
+  return hit ? hit[1] : "";
+}
+
+// ── FESTIVALS ──────────────────────────────────────────────────────────
+// On the days before a festival, a chip for it leads the category row and
+// shows the shops people buy for it (0141). Dates from the 2026–27 Indian
+// calendar (drikpanchang / hindu-blog / shiphub listings); Eid dates are
+// the expected ones and move with the moon. A festival shows from about a
+// week before until its day, then goes by itself.
+var BAZAAR_FESTIVALS = [
+  { key: "diwali26", label: "Diwali", from: "2026-11-01", to: "2026-11-11", cats: ["sweets", "fashion", "home", "art", "grocery"] },
+  { key: "xmas26", label: "Christmas", from: "2026-12-18", to: "2026-12-25", cats: ["sweets", "art", "fashion", "events"] },
+  { key: "newyear27", label: "New Year", from: "2026-12-28", to: "2027-01-01", cats: ["events", "food", "sweets"] },
+  { key: "sankranti27", label: "Lohri & Sankranti", from: "2027-01-08", to: "2027-01-15", cats: ["sweets", "grocery", "fashion"] },
+  { key: "shivratri27", label: "Maha Shivaratri", from: "2027-03-01", to: "2027-03-06", cats: ["grocery", "sweets"] },
+  { key: "eidfitr27", label: "Eid", from: "2027-03-03", to: "2027-03-11", cats: ["sweets", "fashion", "food", "grocery"] },
+  { key: "holi27", label: "Holi", from: "2027-03-15", to: "2027-03-22", cats: ["sweets", "grocery", "fashion", "art"] },
+  { key: "eidadha27", label: "Bakrid", from: "2027-05-10", to: "2027-05-17", cats: ["grocery", "food", "fashion"] },
+  { key: "rakhi27", label: "Raksha Bandhan", from: "2027-08-10", to: "2027-08-17", cats: ["sweets", "art", "fashion"] },
+  { key: "janmashtami27", label: "Janmashtami", from: "2027-08-20", to: "2027-08-25", cats: ["sweets", "art", "events"] },
+  { key: "ganesh27", label: "Ganesh Chaturthi", from: "2027-08-29", to: "2027-09-04", cats: ["sweets", "events", "art"] },
+  { key: "onam27", label: "Onam", from: "2027-09-06", to: "2027-09-12", cats: ["food", "fashion", "grocery"] },
+  { key: "navratri27", label: "Navratri", from: "2027-09-30", to: "2027-10-09", cats: ["fashion", "events", "sweets"] },
+  { key: "karwa27", label: "Karwa Chauth", from: "2027-10-13", to: "2027-10-18", cats: ["fashion", "beauty", "sweets"] },
+  { key: "diwali27", label: "Diwali", from: "2027-10-22", to: "2027-10-31", cats: ["sweets", "fashion", "home", "art", "grocery"] },
+  { key: "chhath27", label: "Chhath", from: "2027-11-01", to: "2027-11-04", cats: ["grocery", "sweets"] },
+  { key: "xmas27", label: "Christmas", from: "2027-12-18", to: "2027-12-25", cats: ["sweets", "art", "fashion", "events"] }
+];
+
+// The festival running today, by the phone's own date, or null.
+function bazaarFestivalNow(now = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return BAZAAR_FESTIVALS.find((f) => f.from <= today && today <= f.to) || null;
+}
+
+// The orders a list can be put in (server/lib/bazaar.js BAZAAR_SORTS).
+var BAZAAR_SORT_INFO = [
+  { key: "paid", label: "Most paid" },
+  { key: "week", label: "Trending this week" },
+  { key: "rating", label: "Top rated" },
+  { key: "new", label: "New on GLOOBAL" },
+  { key: "near", label: "Nearest" }
+];
+
+var BAZAAR_PRICE_CAPS = [50, 100, 500];
 
 var BAZAAR_RADII = [
   { km: 0.5, label: "500 m" },
@@ -84,6 +154,40 @@ function BazaarCategoryPicker({ value, onChange }) {
       background={on ? T.accent : T.accentSoft}
     ><Icon size={17} color={on ? "#fff" : T.accent} /></IconTile>;
   })}</div>;
+}
+
+// Text chips: one of a short list, or none. Used for the sub-category and
+// the optional second category on the setup screen.
+function BazaarTextChips({ options, value, onChange, label }) {
+  return <div role="radiogroup" aria-label={label} style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{options.map(([key, text]) => {
+    const on = value === key;
+    return <button
+      key={key}
+      type="button"
+      role="radio"
+      aria-checked={on}
+      onClick={() => onChange(on ? "" : key)}
+      className="v2-tap"
+      style={{
+        height: 32, padding: "0 12px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit",
+        fontSize: 12, fontWeight: 700, background: on ? T.accent : T.bg, color: on ? "#fff" : T.ink,
+        boxShadow: on ? "none" : `inset 0 0 0 1px ${T.line}`
+      }}
+    >{text}</button>;
+  })}</div>;
+}
+
+// The narrower kind under the chosen category (setup screen).
+function BazaarSubcategoryPicker({ category, value, onChange }) {
+  const opts = BAZAAR_SUBCATEGORY_INFO[category] || [];
+  if (!opts.length) return null;
+  return <BazaarTextChips options={opts} value={value} onChange={onChange} label="What kind exactly" />;
+}
+
+// A second category, optional — never the same as the first.
+function BazaarAlsoPicker({ primary, value, onChange }) {
+  const opts = BAZAAR_CATEGORY_INFO.filter((c) => c.key !== primary && c.key !== "other").map((c) => [c.key, c.label]);
+  return <BazaarTextChips options={opts} value={value} onChange={onChange} label="Also shown in" />;
 }
 
 // ── RECENT ──────────────────────────────────────────────────────────────
@@ -165,6 +269,18 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   // True when the search found nobody and the list below is "what we
   // have" instead — see the effect.
   const [fallback, setFallback] = useState62(false);
+  // ── 0141: order, rating, price, sub-category, festival, suggestions ──
+  const [sort, setSort] = useState62("paid");
+  const [sortOpen, setSortOpen] = useState62(false);
+  const [minRating, setMinRating] = useState62(0);
+  const [maxPrice, setMaxPrice] = useState62(0);
+  const [sub, setSub] = useState62("");
+  const festivalNow = bazaarFestivalNow();
+  const [festivalOn, setFestivalOn] = useState62(false);
+  const [fuzzy, setFuzzy] = useState62(false);
+  const [suggest, setSuggest] = useState62(null);
+  const [trending, setTrending] = useState62([]);
+  const [fresh, setFresh] = useState62([]);
   const seq = useRef35(0);
 
   const near = nearOn && here ? { lat: here.lat, lng: here.lng, radiusKm: radius } : null;
@@ -189,7 +305,13 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     setBusy(true);
     const timer = setTimeout(async () => {
       try {
-        let list = await GloobalApi.bazaarSearch({ q: query, category, near, country, openNow });
+        const opts = {
+          q: query, category, near, country, openNow, sub,
+          cats: festivalOn && festivalNow ? festivalNow.cats : [],
+          sort: sort === "near" && !near ? "paid" : sort, minRating, maxPrice
+        };
+        let list = await GloobalApi.bazaarSearch(opts);
+        const wasFuzzy = Boolean(list && list.fuzzy);
         if (seq.current !== mine) return;
         // ── NOBODY BY THAT NAME: SHOW WHAT WE HAVE ──────────────────────
         // Typing र when no shop starts with र used to end in "No shops
@@ -198,12 +320,13 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
         // list as an empty box, with the chips still applied.
         let none = false;
         if (query && (list || []).filter((x) => x.symbolId !== excludeSymbolId).length === 0) {
-          const all = await GloobalApi.bazaarSearch({ q: "", category, near, country, openNow });
+          const all = await GloobalApi.bazaarSearch({ ...opts, q: "", maxPrice: 0 });
           if (seq.current !== mine) return;
           if ((all || []).length) { list = all; none = true; }
         }
         setShops(list);
         setFallback(none);
+        setFuzzy(!none && wasFuzzy);
         setFailed(false);
       } catch (e) {
         if (seq.current !== mine) return;
@@ -212,7 +335,37 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       setBusy(false);
     }, query ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [query, category, nearKey, country, openNow]);
+  }, [query, category, nearKey, country, openNow, sub, sort, minRating, maxPrice, festivalOn]);
+
+  // A new category starts its sub-category afresh; an empty box drops
+  // the price cap (it only means something for an item search).
+  useEffect59(() => { setSub(""); }, [category]);
+  useEffect59(() => { if (!query) setMaxPrice(0); }, [query]);
+
+  // ── SUGGESTIONS WHILE TYPING ──────────────────────────────────────────
+  // Items, categories and shops that start with what is typed, one tap
+  // each. Debounced; a stale answer never lands on a newer query.
+  const suggestSeq = useRef35(0);
+  useEffect59(() => {
+    const q = String(query || "").trim();
+    if ([...q].length < 2) { setSuggest(null); return undefined; }
+    const mine = suggestSeq.current + 1;
+    suggestSeq.current = mine;
+    const timer = setTimeout(async () => {
+      const r = await GloobalApi.bazaarSuggest(q, country);
+      if (suggestSeq.current === mine) setSuggest(r);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query, country]);
+
+  // ── TRENDING THIS WEEK AND NEW ON GLOOBAL ─────────────────────────────
+  // Two short rows above the categories while nothing is being searched.
+  useEffect59(() => {
+    let live = true;
+    GloobalApi.bazaarSearch({ country, sort: "week" }).then((l) => { if (live) setTrending((l || []).slice(0, 8)); }).catch(() => {});
+    GloobalApi.bazaarSearch({ country, sort: "new" }).then((l) => { if (live) setFresh((l || []).slice(0, 8)); }).catch(() => {});
+    return () => { live = false; };
+  }, [country]);
 
   const toggleNear = async () => {
     if (nearOn) { setNearOn(false); return; }
@@ -241,12 +394,34 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
 
   const shown = (shops || []).filter((s) => s.symbolId !== excludeSymbolId);
   const activeInfo = bazaarCategoryInfo(category);
+  const sortLabel = (BAZAAR_SORT_INFO.find((x) => x.key === sort) || BAZAAR_SORT_INFO[0]).label;
+  const where = near ? ` within ${(BAZAAR_RADII.find((r) => r.km === radius) || {}).label}`
+    : festivalOn && festivalNow ? ` for ${festivalNow.label}`
+      : activeInfo ? ` in ${sub ? bazaarSubcategoryLabel(category, sub) : activeInfo.label}` : "";
   const heading = fallback
     ? "What we have on GLOOBAL"
     : query
       ? "Shops on GLOOBAL"
-    : near ? `Most paid within ${(BAZAAR_RADII.find((r) => r.km === radius) || {}).label}`
-      : activeInfo ? `Most paid in ${activeInfo.label}` : "Most paid today";
+      : sort === "paid" && !where ? "Most paid today" : `${sortLabel}${where}`;
+  const ccySymbol = (typeof COUNTRY_CURRENCY !== "undefined" && typeof CURRENCY_SYMBOL !== "undefined" && CURRENCY_SYMBOL[COUNTRY_CURRENCY[country]]) || "";
+  // A small row of shops, for Trending and New.
+  const strip = (title, Icon, list) => list.length ? <div style={{ margin: "10px 0 2px" }}><div style={{
+    display: "inline-flex", alignItems: "center", gap: 6, margin: "0 2px 8px",
+    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4
+  }}><Icon size={13} color={T.accent} />{title}</div><div style={{
+    display: "flex", gap: 10, overflowX: "auto", margin: "0 -18px", padding: "0 18px 4px", scrollbarWidth: "none"
+  }}>{list.map((s) => <button
+    key={`${title}-${s.symbolId}`}
+    onClick={() => openShop(s)}
+    className="v2-tap"
+    aria-label={`Open ${creatorDisplayName(s)}`}
+    style={{
+      flexShrink: 0, width: 92, display: "flex", flexDirection: "column", alignItems: "center", gap: 5,
+      border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: "inherit"
+    }}
+  ><BusinessMark name={s.handle || ""} logo={s.logo} size={52} radius={16} /><span style={{
+    maxWidth: "100%", fontSize: 11.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+  }}>{creatorDisplayName(s)}</span></button>)}</div></div> : null;
 
   return <section aria-label="Gloobal बाज़ार">{
     /* The name, as the scan card writes it: Gloobal in bold, बाज़ार after. */
@@ -300,7 +475,16 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     style={chip(openNow)}
   ><span aria-hidden="true" style={{
     width: 8, height: 8, borderRadius: "50%", background: openNow ? "#fff" : "#22A55B"
-  }} />Open now</button>{nearOn ? BAZAAR_RADII.map((r) => <button
+  }} />Open now</button><button
+    onClick={() => setMinRating((v) => (v ? 0 : 4))}
+    aria-pressed={Boolean(minRating)}
+    style={chip(Boolean(minRating))}
+  ><BzStar size={13} fill={minRating ? "#fff" : "#F5B301"} color={minRating ? "#fff" : "#F5B301"} />4 & up</button><button
+    onClick={() => setSortOpen((v) => !v)}
+    aria-expanded={sortOpen}
+    aria-label={`Sort: ${sortLabel}`}
+    style={chip(sort !== "paid")}
+  ><BzSort size={13} />{sort === "paid" ? "Sort" : sortLabel}</button>{nearOn ? BAZAAR_RADII.map((r) => <button
     key={r.km}
     onClick={() => setRadius(r.km)}
     aria-pressed={radius === r.km}
@@ -310,14 +494,72 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       color: radius === r.km ? T.accent : T.inkSoft,
       boxShadow: radius === r.km ? `inset 0 0 0 1.5px ${T.accent}` : `inset 0 0 0 1px ${T.line}`
     }}
-  >{r.label}</button>) : null}</div>{
+  >{r.label}</button>) : null}</div>{sortOpen ? <div role="radiogroup" aria-label="Sort" style={{
+    display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0 2px"
+  }}>{BAZAAR_SORT_INFO.filter((o) => o.key !== "near" || nearOn).map((o) => <button
+    key={o.key}
+    role="radio"
+    aria-checked={sort === o.key}
+    onClick={() => { setSort(o.key); setSortOpen(false); }}
+    style={{
+      height: 32, padding: "0 12px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit",
+      fontSize: 12, fontWeight: 700, background: sort === o.key ? T.accentSoft : T.surface,
+      color: sort === o.key ? T.accent : T.ink, boxShadow: sort === o.key ? `inset 0 0 0 1.5px ${T.accent}` : `inset 0 0 0 1px ${T.line}`
+    }}
+  >{o.label}</button>)}</div> : null}{
+    /* ── PRICE, FOR AN ITEM SEARCH ──────────────────────────────────── */
+    query ? <div style={{ display: "flex", gap: 6, margin: "8px 0 2px", alignItems: "center" }}><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>Price</span>{BAZAAR_PRICE_CAPS.map((cap) => <button
+      key={cap}
+      onClick={() => setMaxPrice((v) => (v === cap ? 0 : cap))}
+      aria-pressed={maxPrice === cap}
+      style={{
+        height: 30, padding: "0 11px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit",
+        fontSize: 12, fontWeight: 700, background: maxPrice === cap ? T.accent : T.surface,
+        color: maxPrice === cap ? "#fff" : T.ink, boxShadow: maxPrice === cap ? "none" : `inset 0 0 0 1px ${T.line}`
+      }}
+    >Under {ccySymbol}{cap}</button>)}</div> : null
+  }{
+    /* ── SUGGESTIONS WHILE TYPING ───────────────────────────────────── */
+    query && suggest && (suggest.items.length || suggest.categories.length || suggest.shops.length) ? <div data-bazaar-suggest="" style={{
+      margin: "10px 0 2px", background: T.surface, borderRadius: 16, boxShadow: T.shadowCard, padding: "8px 6px"
+    }}>{suggest.items.map((it) => <button
+      key={`i-${it}`}
+      onClick={() => onQuery && onQuery(it)}
+      className="v2-row"
+      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "7px 8px", border: "none", background: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
+    ><BzSuggest size={14} color={T.inkFaint} /><span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it}</span><span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkFaint }}>Item</span></button>)}{suggest.categories.map((c) => {
+      const info = bazaarCategoryInfo(c);
+      if (!info) return null;
+      const Icon = info.Icon;
+      return <button
+        key={`c-${c}`}
+        onClick={() => { setCategory(c); if (onQuery) onQuery(""); }}
+        className="v2-row"
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "7px 8px", border: "none", background: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
+      ><Icon size={14} color={T.accent} /><span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink }}>{info.label}</span><span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkFaint }}>Category</span></button>;
+    })}{suggest.shops.map((sh) => <button
+      key={`s-${sh.symbolId}`}
+      onClick={() => openShop(sh)}
+      className="v2-row"
+      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", border: "none", background: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
+    ><BusinessMark name={sh.handle || ""} logo={null} size={24} radius={8} /><span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{creatorDisplayName(sh)}</span><span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkFaint }}>Shop</span></button>)}</div> : null
+  }{
     /* ── FAMOUS CATEGORIES ────────────────────────────────────────────
        In the order the server returns: most paid in 24 hours first. The
        top three carry a flame, which says "busy right now" without a
        number. Empty categories sit at the end, dimmed, not hidden. */
   }<div style={{
     display: "flex", gap: 8, overflowX: "auto", margin: "8px -18px 0", padding: "2px 18px 6px", scrollbarWidth: "none"
-  }}>{categories.map((c, i) => {
+  }}>{festivalNow ? <div style={{ flexShrink: 0, width: 70 }}><IconTile
+    onClick={() => { setFestivalOn((v) => !v); setCategory(""); }}
+    ariaPressed={festivalOn}
+    label={festivalNow.label}
+    labelSize={11}
+    box={56}
+    radius={18}
+    selected={festivalOn}
+    background={festivalOn ? "#E0602B" : "#FDE7D9"}
+  ><BzFestive size={24} color={festivalOn ? "#fff" : "#E0602B"} /></IconTile></div> : null}{categories.map((c, i) => {
     const info = bazaarCategoryInfo(c.key);
     if (!info) return null;
     const on = category === c.key;
@@ -326,7 +568,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     // Icon in the box, name under it. The flame for the three busiest
     // categories rides on the box's corner.
     return <div key={c.key} style={{ flexShrink: 0, width: 70 }}><IconTile
-      onClick={() => setCategory(on ? "" : c.key)}
+      onClick={() => { setCategory(on ? "" : c.key); setFestivalOn(false); }}
       ariaPressed={on}
       label={info.label}
       labelSize={11}
@@ -337,7 +579,26 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       background={on ? T.accent : T.accentSoft}
       badge={hot && !on ? <BzFlame size={12} color="#F07B2B" fill="#F7B267" /> : null}
     ><Icon size={24} color={on ? "#fff" : T.accent} /></IconTile></div>;
-  })}</div>
+  })}</div>{
+    /* ── THE NARROWER KIND, ONCE A CATEGORY IS PICKED ───────────────── */
+    category && (BAZAAR_SUBCATEGORY_INFO[category] || []).length ? <div style={{
+      display: "flex", gap: 6, overflowX: "auto", margin: "4px -18px 0", padding: "2px 18px 4px", scrollbarWidth: "none"
+    }}>{[["", "All"]].concat(BAZAAR_SUBCATEGORY_INFO[category]).map(([k, label]) => <button
+      key={k || "all"}
+      onClick={() => setSub(k)}
+      aria-pressed={sub === k}
+      style={{
+        flexShrink: 0, height: 30, padding: "0 12px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit",
+        fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", background: sub === k ? T.accentSoft : T.surface,
+        color: sub === k ? T.accent : T.inkSoft, boxShadow: sub === k ? `inset 0 0 0 1.5px ${T.accent}` : `inset 0 0 0 1px ${T.line}`
+      }}
+    >{label}</button>)}</div> : null
+  }{!query && !category && !festivalOn ? <>{strip("Trending this week", BzTrending, trending)}{strip("New on GLOOBAL", BzNew, fresh)}</> : null}{
+    fuzzy ? <div role="status" style={{
+      display: "flex", alignItems: "center", gap: 8, margin: "10px 0 0", padding: "9px 12px", borderRadius: 12,
+      background: T.surface, boxShadow: `inset 0 0 0 1px ${T.line}`, fontSize: 12, fontWeight: 700, color: T.inkSoft
+    }}><BzSuggest size={14} color={T.accent} />Showing close spellings of “{String(query).replace(/\./g, " ")}”</div> : null
+  }
 
   <div style={{
     display: "flex", alignItems: "center", justifyContent: "space-between", margin: "12px 2px 8px"
@@ -372,7 +633,9 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
           : shown.map((s, i) => {
             const info = bazaarCategoryInfo(s.category);
             // Found by what it sells: say what. Otherwise its category.
-            const sub = [s.matchedItem ? `Sells ${s.matchedItem}` : (info ? info.label : ""), near ? bazaarDistanceLabel(s.distanceM) : ""].filter(Boolean).join(" · ");
+            const kind = s.subcategory ? bazaarSubcategoryLabel(s.category, s.subcategory) : (info ? info.label : "");
+            const stars = s.rating && s.rating.count ? `★ ${s.rating.avg}` : "";
+            const subLine = [s.matchedItem ? `Sells ${s.matchedItem}` : kind, stars, s.isNew ? "New" : "", near ? bazaarDistanceLabel(s.distanceM) : ""].filter(Boolean).join(" · ");
             const openLine = openHoursLabel(s.hours, new Date());
             return <button
               key={s.symbolId}
@@ -394,10 +657,10 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
             }<BusinessMark name={s.handle || ""} logo={s.logo} size={42} radius={13} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
               display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-            }}>{creatorDisplayName(s)}</span>{sub ? <span style={{
+            }}>{creatorDisplayName(s)}</span>{subLine ? <span style={{
               display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 2,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-            }}>{sub}</span> : null}{openLine.text ? <span style={{
+            }}>{subLine}</span> : null}{openLine.text ? <span style={{
               display: "block", fontSize: 11, fontWeight: 700, marginTop: 2,
               color: openLine.open ? "#178A4C" : T.inkFaint
             }}>{openLine.text}</span> : null}</span><ChevronRight10 size={15} color={T.inkFaint} /></button>;

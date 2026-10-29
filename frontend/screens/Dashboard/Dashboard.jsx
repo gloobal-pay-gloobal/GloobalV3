@@ -3303,7 +3303,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        name, and typing in both looks for `first.last`. A second box that
        only worked for creators would be dead space on a screen that is
        mostly businesses. */
-  }<span aria-hidden="true" style={{ width: 1, alignSelf: "stretch", background: T.line, flexShrink: 0 }} /><input
+  }<span aria-hidden="true" data-name-dot="" style={{
+    // A dot, not a line (the founder): the same dot a creator name is
+    // written with — rasoi.ghar — and the setup screen draws.
+    fontSize: 24, fontWeight: 900, color: T.accent, lineHeight: 1, paddingBottom: 8, flexShrink: 0,
+    opacity: moreQueryLast ? 1 : 0.35, transition: "opacity 0.18s ease"
+  }}>.</span><input
     value={moreQueryLast}
     onChange={(e) => setMoreQueryLast(e.target.value)}
     placeholder="Last name"

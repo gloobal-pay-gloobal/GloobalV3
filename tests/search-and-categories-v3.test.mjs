@@ -76,3 +76,9 @@ test("the route takes the new filters, and the setup screen saves the new fields
   assert.match(c, /strip\("Trending this week", BzTrending, trending\)/);
   assert.match(c, /data-bazaar-suggest=""/);
 });
+
+test("the two name boxes are joined by a dot, not a line", () => {
+  const d = readSource("frontend/screens/Dashboard/Dashboard.jsx");
+  assert.match(d, /data-name-dot=""/);
+  assert.doesNotMatch(d, /<span aria-hidden="true" style=\{\{ width: 1, alignSelf: "stretch", background: T\.line, flexShrink: 0 \}\} \/><input\s+value=\{moreQueryLast\}/);
+});

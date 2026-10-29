@@ -249,6 +249,8 @@ function CreatorSetupScreen({
   // listed there at all. Listed is ON unless the creator turned it off.
   const [category, setCategory] = useState53((creator && creator.category) || "");
   const [listed, setListed] = useState53(!(creator && creator.listed === false));
+  // Null until the creator turns hours on; see openHoursEditor.jsx.
+  const [hours, setHours] = useState53((creator && creator.hours) || null);
   // Every face is drawn in the person's name — the three tiles, the live
   // card and the More fonts list — so all of them are fetched up front.
   useEffect50(() => { Object.keys(SHOP_FONTS).forEach(ensureShopFont); }, []);
@@ -568,6 +570,8 @@ function CreatorSetupScreen({
     label="Show my shop in Gloobal बाज़ार"
   /></div></>)}
 
+  {section("Opening hours", ClockHours, <OpenHoursEditor value={hours} onChange={setHours} />)}
+
   {section("Address", MapPin5, <>{
     /* ── THE ADDRESS ──────────────────────────────────────────────────
        Private unless its owner says otherwise, and the switch says who
@@ -688,6 +692,7 @@ function CreatorSetupScreen({
       addressParts,
       category,
       listed,
+      hours,
       addressPublic,
       scanNote: scanNote.trim(),
       scanNoteStyle,

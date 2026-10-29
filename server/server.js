@@ -42,6 +42,7 @@ const CountryCurrencyPool = require('./models/CountryCurrencyPool');
 const { getRate } = require('./lib/fxRates');
 const bazaar = require('./lib/bazaar');
 const searchKey = require('./lib/searchKey');
+const openHours = require('./lib/openHours');
 const { loadCurrencyDecimals, decimalsFor } = require('./lib/currencyDecimals');
 // A coin movement, normalised. Required up here rather than down in the
 // Gloobal Coin section because THREE routes need it and the earliest of them
@@ -3944,6 +3945,8 @@ function publicCreator(user, logoDataUrl) {
     scanNote: profile.scanNote || '',
     category: bazaar.BAZAAR_CATEGORIES.includes(profile.category) ? profile.category : '',
     listed: profile.listed !== false,
+    // Public: opening hours are for the people coming to the shop.
+    hours: profile.hours && Array.isArray(profile.hours.days) && profile.hours.days.length === 7 ? { tz: profile.hours.tz, days: profile.hours.days } : null,
     scanNoteStyle: CREATOR_SCAN_NOTE_STYLES.includes(profile.scanNoteStyle) ? profile.scanNoteStyle : 'ribbon'
   };
 }
@@ -4214,7 +4217,7 @@ function bazaarEnsureKeys() {
   return BAZAAR_KEYS_READY;
 }
 
-async function bazaarCandidates({ q = '', rawQ = '', category = '', near = null, needCategory = false, countryIso = '' }) {
+async function bazaarCandidates({ q = '', rawQ = '', category = '', near = null, needCategory = false, countryIso = '', openNow = false }) {
   const match = {
     'creatorProfile.handle': { $type: 'string', $ne: '' },
     'creatorProfile.listed': { $ne: false }
@@ -4262,7 +4265,7 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', near = null,
     match['creatorProfile.addressParts.lng'] = { $gte: box.minLng, $lte: box.maxLng };
   }
   const users = await User.find(match)
-    .select('_id symbolId countryIso creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category creatorProfile.shop creatorProfile.addressParts.lat creatorProfile.addressParts.lng')
+    .select('_id symbolId countryIso creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category creatorProfile.shop creatorProfile.hours creatorProfile.addressParts.lat creatorProfile.addressParts.lng')
     .limit(bazaar.BAZAAR_CANDIDATE_CAP)
     .lean();
   const rows = [];
@@ -4277,8 +4280,12 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', near = null,
       handleLast: p.handleLast || '',
       category: bazaar.BAZAAR_CATEGORIES.includes(p.category) ? p.category : '',
       color: creatorShopOut(p.shop).color,
-      matchedItem: itemHit.get(u.symbolId) || ''
+      matchedItem: itemHit.get(u.symbolId) || '',
+      hours: p.hours && Array.isArray(p.hours.days) && p.hours.days.length === 7 ? { tz: p.hours.tz, days: p.hours.days } : null
     };
+    // Open now: only shops whose hours say so. A shop with no hours set
+    // is left out rather than assumed open.
+    if (openNow && !openHours.openHoursStatus(row.hours, new Date()).open) continue;
     if (near) {
       const a = p.addressParts || {};
       const d = bazaar.bazaarDistanceM(near.lat, near.lng, Number(a.lat), Number(a.lng));
@@ -4303,7 +4310,8 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
     const countryIso = /^[A-Z]{2}$/.test(String(req.query.country || '')) ? String(req.query.country) : '';
     if (q) await bazaarEnsureKeys();
     const rawQ = String(req.query.q || '').trim().slice(0, 40);
-    const rows = await bazaarCandidates({ q, rawQ, category, near, countryIso });
+    const openNow = req.query.open === '1';
+    const rows = await bazaarCandidates({ q, rawQ, category, near, countryIso, openNow });
     const volume = await bazaarVolumes(rows.map((r) => r._id));
     const top = bazaar.bazaarRank(rows, volume, { q, near });
     // Logos for the ten that are shown, not the four hundred considered.
@@ -4321,7 +4329,8 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
       distanceM: near ? bazaar.bazaarRoundDistance(r.distanceM) : null,
       // "Sells Samosa", when the shop was found by what it sells rather
       // than by its name.
-      matchedItem: r.matchedItem || ''
+      matchedItem: r.matchedItem || '',
+      hours: r.hours
       // No volume, no count of payments, nothing about money. The order
       // is the only trace the ranking leaves.
     }));
@@ -4500,6 +4509,13 @@ app.put(
       }
       if (body.listed !== undefined) {
         set['creatorProfile.listed'] = Boolean(body.listed);
+      }
+      if (body.hours !== undefined) {
+        const checked = openHours.openHoursValidate(body.hours);
+        if (!checked.ok) {
+          return res.status(400).json({ success: false, code: 'invalid_hours', message: checked.message });
+        }
+        set['creatorProfile.hours'] = checked.value;
       }
       // Sent when somebody dismisses the setup screen without finishing.
       // Never clears `completedAt` — skipping after finishing is not a way

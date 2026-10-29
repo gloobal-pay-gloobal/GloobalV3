@@ -149,6 +149,8 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   };
   const [category, setCategory] = useState62("");
   const [nearOn, setNearOn] = useState62(false);
+  // Only shops whose own hours say they are open now (server-checked).
+  const [openNow, setOpenNow] = useState62(false);
   const [radius, setRadius] = useState62(BAZAAR_DEFAULT_RADIUS);
   const [here, setHere] = useState62(null);
   const [locating, setLocating] = useState62(false);
@@ -180,7 +182,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     setBusy(true);
     const timer = setTimeout(async () => {
       try {
-        const list = await GloobalApi.bazaarSearch({ q: query, category, near, country });
+        const list = await GloobalApi.bazaarSearch({ q: query, category, near, country, openNow });
         if (seq.current !== mine) return;
         setShops(list);
         setFailed(false);
@@ -191,7 +193,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       setBusy(false);
     }, query ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [query, category, nearKey, country]);
+  }, [query, category, nearKey, country, openNow]);
 
   const toggleNear = async () => {
     if (nearOn) { setNearOn(false); return; }
@@ -271,7 +273,13 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     aria-pressed={nearOn}
     disabled={locating}
     style={chip(nearOn)}
-  >{locating ? <Loader7 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <LocateFixed2 size={14} />}{locating ? "Finding you…" : "Near me"}</button>{nearOn ? BAZAAR_RADII.map((r) => <button
+  >{locating ? <Loader7 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <LocateFixed2 size={14} />}{locating ? "Finding you…" : "Near me"}</button><button
+    onClick={() => setOpenNow((v) => !v)}
+    aria-pressed={openNow}
+    style={chip(openNow)}
+  ><span aria-hidden="true" style={{
+    width: 8, height: 8, borderRadius: "50%", background: openNow ? "#fff" : "#22A55B"
+  }} />Open now</button>{nearOn ? BAZAAR_RADII.map((r) => <button
     key={r.km}
     onClick={() => setRadius(r.km)}
     aria-pressed={radius === r.km}
@@ -333,6 +341,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
             const info = bazaarCategoryInfo(s.category);
             // Found by what it sells: say what. Otherwise its category.
             const sub = [s.matchedItem ? `Sells ${s.matchedItem}` : (info ? info.label : ""), near ? bazaarDistanceLabel(s.distanceM) : ""].filter(Boolean).join(" · ");
+            const openLine = openHoursLabel(s.hours, new Date());
             return <button
               key={s.symbolId}
               onClick={() => openShop(s)}
@@ -356,7 +365,10 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
             }}>{creatorDisplayName(s)}</span>{sub ? <span style={{
               display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 2,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-            }}>{sub}</span> : null}</span><ChevronRight10 size={15} color={T.inkFaint} /></button>;
+            }}>{sub}</span> : null}{openLine.text ? <span style={{
+              display: "block", fontSize: 11, fontWeight: 700, marginTop: 2,
+              color: openLine.open ? "#178A4C" : T.inkFaint
+            }}>{openLine.text}</span> : null}</span><ChevronRight10 size={15} color={T.inkFaint} /></button>;
           })
   }</div></section>;
 }

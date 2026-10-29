@@ -1478,8 +1478,9 @@ var GloobalApi = {
   // Gloobal बाज़ार: up to ten shops, by the start of a name, a category,
   // and/or Near me ({ lat, lng, radiusKm } — radiusKm one of 0.5/1/2/5/10).
   // Ranked on the server by recent payments; no amounts come back.
-  async bazaarSearch({ q = "", category = "", near = null, country = "" } = {}) {
+  async bazaarSearch({ q = "", category = "", near = null, country = "", openNow = false } = {}) {
     const p = new URLSearchParams();
+    if (openNow) p.set("open", "1");
     if (country) p.set("country", country);
     if (q) p.set("q", q);
     if (category) p.set("category", category);

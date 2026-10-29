@@ -374,6 +374,9 @@ function CreatorPage({
   // review posted in the sheet moves the stars on the card straight away.
   const [reviewsOpen, setReviewsOpen] = useState54(false);
   const [reviewSummary, setReviewSummary] = useState54((creator && creator.reviews) || null);
+  // Recomputed on each render; the page is rarely open across a closing
+  // time, and reopening it shows the new state.
+  const openState = openHoursLabel(creator && creator.hours, new Date());
 
   // What somebody typed in the shop's own search bar.
   const [itemQuery, setItemQuery] = useState54("");
@@ -563,6 +566,18 @@ function CreatorPage({
       fontWeight: 600, color: "rgba(255,255,255,0.8)"
     }}>· {shopReviewCountLabel(reviewSummary.count)}</span></button> : null
   }{
+    /* Open or closed, in the shop's own time zone — only when the owner
+       set hours. A green dot when open, a grey one when not: the state is
+       the dot and the word, not a colour alone. */
+    openState.text ? <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, marginLeft: shopReviewHasAverage(reviewSummary) ? 6 : 0,
+      padding: "3px 9px 3px 7px", borderRadius: 999, background: "rgba(255,255,255,0.16)",
+      fontSize: 11.5, fontWeight: 800, color: "#fff"
+    }}><span aria-hidden="true" style={{
+      width: 7, height: 7, borderRadius: "50%", background: openState.open ? "#4ADE80" : "rgba(255,255,255,0.55)",
+      boxShadow: openState.open ? "0 0 0 3px rgba(74,222,128,0.25)" : "none"
+    }} />{openState.text}</span> : null
+  }{
     /* ── A COUNT NOBODY CAN TYPE ──────────────────────────────────────
        This was a pin count, which is a tap, which its own subject can run
        up from throwaway accounts — in the position a reader takes as
@@ -609,7 +624,9 @@ function CreatorPage({
   }}>{[
     ["Creator name", creator.handle || "—"],
     ["Gloobal ID", creator.symbolId || "—"],
-    creator.addressPublic && (creator.address || creator.addressParts) ? ["Address", creatorAddressLines(creator.addressParts, creator.address)] : null
+    creator.addressPublic && (creator.address || creator.addressParts) ? ["Address", creatorAddressLines(creator.addressParts, creator.address)] : null,
+    // The week, one line a day, when hours are set.
+    openHoursClean(creator.hours) ? ["Hours", openHoursClean(creator.hours).days.map((d, i) => `${OPEN_HOURS_DAYS[i]}  ${d.closed ? "Closed" : (d.open === d.close ? "24 hours" : `${openHoursClock(d.open)} – ${openHoursClock(d.close)}`)}`)] : null
   ].filter(Boolean).filter(([, v]) => (Array.isArray(v) ? v.length : true)).map(([k, v], i) => <div
     key={k}
     style={{

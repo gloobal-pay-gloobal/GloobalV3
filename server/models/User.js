@@ -324,6 +324,17 @@ const userSchema = new mongoose.Schema({
     // name save, never by a client.
     searchKey: { type: String, default: '' },
 
+    // Opening hours: seven days, Monday first, in the shop's own time zone
+    // (lib/openHours.js). Null until the creator sets them — and then the
+    // page shows no Open/Closed line at all rather than a guess.
+    hours: {
+      type: new mongoose.Schema({
+        tz: { type: String, default: 'UTC' },
+        days: [{ _id: false, closed: Boolean, open: String, close: String }]
+      }, { _id: false }),
+      default: null
+    },
+
     // ── THE SAME ADDRESS, IN ITS PARTS ────────────────────────────────
     //
     // Shop / house number, street and area, a landmark ("Near Hanuman

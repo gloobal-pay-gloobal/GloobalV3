@@ -288,6 +288,9 @@ const FRONTEND_MODULES = [
   // Its NAME_SCRIPT_TESTS is a `var` initialiser — an IIFE run at load —
   // so order is load-bearing here rather than merely tidy.
   "features/creator/nameKeyboard.jsx",
+  // Opening hours: the shared Open/Closed logic, then its editor.
+  "features/creator/openHours.js",
+  "features/creator/openHoursEditor.jsx",
   "features/creator/CreatorSetupScreen.jsx",
   // Which businesses this account pinned. Plain functions and two `var`
   // initialisers — and PAY_PINS_VISIBLE is read by the strip in

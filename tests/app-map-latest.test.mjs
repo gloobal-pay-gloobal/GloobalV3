@@ -58,7 +58,8 @@ test("section order: signed in leads with Your money, fresh device with Get star
 });
 
 test("My shop with no name yet opens setup, not an empty store", () => {
-  const i = dash.indexOf('deepLinkTarget === "myshop"');
+  assert.match(dash, /deepLinkTarget === "myshop"\) openMyShop\(\)/);
+  const i = dash.indexOf("const openMyShop = async");
   const body = dash.slice(i, i + 700);
   assert.match(body, /if \(!handle\) \{ setShowCreatorSetup\(true\); return; \}/);
   assert.match(body, /resolveCreatorHandle/);

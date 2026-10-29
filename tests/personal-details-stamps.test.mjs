@@ -170,15 +170,15 @@ describe("the four changes asked for", () => {
   });
 
   test("the photo is a circle, and uses the app's own avatar", () => {
-    assert.match(strip(src), /borderRadius: "50%", flexShrink: 0/);
-    assert.match(strip(src), /<ProfileAvatar photo=\{profilePhoto\} name=\{myName\} size=\{98\} \/>/,
+    assert.match(strip(src), /width: 96, height: 96, borderRadius: "50%"/);
+    assert.match(strip(src), /<ProfileAvatar photo=\{profilePhoto\} name=\{myName\} size=\{90\} \/>/,
       "a second photo renderer was hand-rolled instead of reusing ProfileAvatar");
   });
 
   test("the camera badge rides the circle's edge, not a corner", () => {
     // right/bottom of 0 puts a badge inside a circle, on the face. These
     // are negative for exactly that reason.
-    assert.match(strip(src), /right: -1, bottom: -1/);
+    assert.match(strip(src), /right: -3, bottom: -3/);
   });
 
   test("the title is gone and the flag faces the back arrow", () => {

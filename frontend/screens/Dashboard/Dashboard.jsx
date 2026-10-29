@@ -1313,6 +1313,21 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     }
   };
 
+  // The person's own store, opened the way a customer sees it. No name
+  // yet means there is no store to open, so the setup screen that makes
+  // one is the honest destination. Used by the app map and the profile.
+  const openMyShop = async () => {
+    const profile = creatorProfile || await loadCreatorProfile();
+    const handle = profile && profile.handle;
+    if (!handle) { setShowCreatorSetup(true); return; }
+    try {
+      const found = await GloobalApi.resolveCreatorHandle(String(handle));
+      if (found) setOpenCreator(found); else showToast2("Your shop could not be opened just now.");
+    } catch (err) {
+      showToast2("Your shop could not be opened just now.");
+    }
+  };
+
   const saveCreatorProfile = async (patch) => {
     if (creatorSaving) return;
     setCreatorSaving(true);
@@ -1407,6 +1422,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       })
       .sort((a, b) => (b.at || Infinity) - (a.at || Infinity));
   }, [idUpdateHistory, serverIdHistory]);
+  // Personal Details shows the shop name, so it asks for it on open.
+  useEffect12(() => {
+    if (profileDetail === "Personal Details" && !creatorProfile) loadCreatorProfile();
+  }, [profileDetail]);
   const [showIdHistory, setShowIdHistory] = useState14(false);
   const requestCloseIdHistory = useBackClose(showIdHistory, () => setShowIdHistory(false));
   useEffect12(() => {
@@ -1469,22 +1488,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     else if (deepLinkTarget === "receive") setShowReceive(true);
     else if (deepLinkTarget === "creatorSetup") setShowCreatorSetup(true);
     else if (deepLinkTarget === "security") { setActiveTab("profile"); setProfileDetail("Security"); }
-    // My shop: the person's own store, opened the way a customer sees
-    // it. No name yet means there is no store to open, so the setup
-    // screen that makes one is the honest destination.
-    else if (deepLinkTarget === "myshop") {
-      (async () => {
-        const profile = creatorProfile || await loadCreatorProfile();
-        const handle = profile && profile.handle;
-        if (!handle) { setShowCreatorSetup(true); return; }
-        try {
-          const found = await GloobalApi.resolveCreatorHandle(String(handle));
-          if (found) setOpenCreator(found); else showToast2("Your shop could not be opened just now.");
-        } catch (err) {
-          showToast2("Your shop could not be opened just now.");
-        }
-      })();
-    }
+    // My shop: see openMyShop.
+    else if (deepLinkTarget === "myshop") openMyShop();
     if (onConsumeDeepLink) onConsumeDeepLink();
   }, [deepLinkTarget]);
   useEffect12(() => {
@@ -4188,6 +4193,22 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // which way the money went does not make it less of one. Paid and
     // received are the two halves of this account's own border history.
     history={roleSendHistory.concat(receivedRows)}
+    hoomanScore={ghCanGenerate
+      ? { complete: true, value: ghRawTotal, max: ghMaxTotal, tier: ghTier(ghOverallScore()) }
+      : { complete: false, answered: ghTotalAnswered, total: ghTotalQuestions }}
+    onOpenHoomanScore={() => setProfileOverlay("ghscore")}
+    shopHandle={(creatorProfile && creatorProfile.handle) || ""}
+    onOpenShop={openMyShop}
+    onCopyId={() => {
+      copyToClipboard(personalGloobalId);
+      showToast2("GLOOBAL ID copied");
+    }}
+    onShareId={() => gloobalShareLink({
+      title: "My GLOOBAL ID",
+      message: `Pay me on GLOOBAL. My GLOOBAL ID: ${personalGloobalId}`,
+      url: referralLink,
+      onToast: showToast2
+    })}
   />}{
     /* ── THE CREATOR'S OWN PAGE ───────────────────────────────────────
        The mark, the handle and the address, with one way to change all

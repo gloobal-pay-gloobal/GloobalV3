@@ -160,7 +160,7 @@ describe("3. personal details shows the mobile number", () => {
     // screen's own file when that screen was rebuilt around the stamps.
     // The property is unchanged and is asserted where it now lives.
     const pd = readSource("frontend/features/identity/PersonalDetailsScreen.jsx");
-    assert.match(pd, /\.\.\.\(mobileNumber \? \[\["Mobile", mobileNumber\]\] : \[\]\)/);
+    assert.match(pd, /\.\.\.\(mobileNumber \? \[\[PdPhoneIcon, "Mobile", mobileNumber\]\] : \[\]\)/);
     assert.doesNotMatch(dash, /\[\["Mobile", mobileNumber\]\]/,
       "the Dashboard renders its own Mobile row again, so there are two");
   });

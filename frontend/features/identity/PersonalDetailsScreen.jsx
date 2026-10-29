@@ -1,6 +1,6 @@
 // src/features/identity/PersonalDetailsScreen.jsx
 import { useState as useState52, useMemo as useMemo14 } from "react";
-import { ChevronRight as ChevronRight7, ChevronLeft as ChevronLeft5, Camera as Camera4 } from "lucide-react";
+import { ChevronRight as ChevronRight7, ChevronLeft as ChevronLeft5, Camera as Camera4, Copy as PdCopyIcon, Share2 as PdShareIcon, Phone as PdPhoneIcon, CalendarDays as PdCalendarIcon, Store as PdStoreIcon, Sparkles as PdScoreIcon, Globe2 as PdGlobeIcon, ArrowLeftRight as PdPaymentsIcon } from "lucide-react";
 
 // ── THE ACCOUNT, AS A DOCUMENT ──────────────────────────────────────────
 //
@@ -193,7 +193,13 @@ function PersonalDetailsScreen({
   accountCreatedAt,
   profilePhoto,
   onChangePhoto,
-  history
+  history,
+  hoomanScore = null,
+  onOpenHoomanScore,
+  shopHandle = "",
+  onOpenShop,
+  onCopyId,
+  onShareId
 }) {
   const [page, setPage] = useState52(0);
   const ownIso = dialCountry && dialCountry.iso;
@@ -229,74 +235,105 @@ function PersonalDetailsScreen({
     }}
   >{dir === "next" ? <ChevronRight7 size={17} color={T.ink} /> : <ChevronLeft5 size={17} color={T.ink} />}</button>;
 
-  return <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>{
+  // ── THE ID CARD ───────────────────────────────────────────────────
+  //
+  // The screen was a white card of label:value rows whose values ran off
+  // the right edge (under the map button), a Joined time to the second,
+  // and half a screen of empty beige paper under one stamp. It is now an
+  // ID card first — the face, the name, the twelve symbols and the two
+  // things a person does with them (copy, share) — then three numbers
+  // worth knowing, then the places it leads (Hooman Score, the shop),
+  // then the plain facts, then the passport page sized to its stamps.
+  const joined = accountCreatedAt instanceof Date && !Number.isNaN(accountCreatedAt.getTime()) ? accountCreatedAt : null;
+  const joinedLong = joined ? joined.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+  const paymentCount = Array.isArray(history) ? history.length : 0;
+  const stats = [
+    [PdGlobeIcon, String(crossings.length), crossings.length === 1 ? "Country" : "Countries", "#2563EB"],
+    [PdPaymentsIcon, String(paymentCount), paymentCount === 1 ? "Payment" : "Payments", "#059669"]
+  ];
+  // Icons only, asked for in those words: the two glyphs say it, and two
+  // labelled buttons made the card taller than the ID it carries.
+  const cardButton = (Icon, label, onPress, dataKey) => <button
+    onClick={onPress}
+    className="v2-tap"
+    aria-label={label}
+    title={label}
+    data-pd-action={dataKey}
+    style={{ width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.14)", cursor: "pointer", padding: 0 }}
+  ><Icon size={18} color="#fff" /></button>;
+  const linkRow = (Icon, color, title, value, onPress, dataKey) => <button
+    onClick={onPress}
+    className="v2-tap"
+    data-pd-link={dataKey}
+    style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, border: "none", background: "none", padding: "13px 16px", cursor: onPress ? "pointer" : "default", textAlign: "left", fontFamily: T.fontBody }}
+  ><span style={{ width: 40, height: 40, borderRadius: 13, background: color + "1F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={19} color={color} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>{title}</span><span style={{ display: "block", fontSize: 12, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span></span>{onPress && <ChevronRight7 size={17} color={T.inkFaint} />}</button>;
+  const factRow = (Icon, label, value, first) => <div
+    key={label}
+    style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderTop: first ? "none" : `1px solid ${T.line}` }}
+  ><Icon size={17} color={T.inkFaint} style={{ flexShrink: 0 }} /><span style={{ fontSize: 13.5, color: T.inkSoft, flexShrink: 0 }}>{label}</span><span
+    style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 800, color: T.ink, textAlign: "right", overflowWrap: "anywhere", fontVariantNumeric: "tabular-nums" }}
+  >{value}</span></div>;
+  const score = hoomanScore || null;
+  const scoreValue = !score ? "Take the check-in" : score.complete ? `${score.value} of ${score.max} · ${score.tier}` : `${score.answered} of ${score.total} answered`;
+
+  return <div data-personal-profile style={{ display: "flex", flexDirection: "column", gap: 16 }}>{
     /* The ink filter, defined once for every stamp on the page. */
   }<svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true"><defs><filter id="gloobalStampInk"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="4" result="n" /><feDisplacementMap in="SourceGraphic" in2="n" scale="1.5" xChannelSelector="R" yChannelSelector="G" /></filter></defs></svg><div
-    style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}
-  >{
-    /* Portrait, name and the ID. The flag is NOT here — it sits in the
-       screen's header, opposite the back arrow. */
-  }<div style={{ display: "flex", gap: 16, padding: "20px 18px 18px", alignItems: "center" }}><button
+    data-pd-card
+    style={{ position: "relative", borderRadius: 26, background: T.gradWallet, padding: "18px 18px 16px", color: "#fff", overflow: "hidden", boxShadow: "0 14px 34px rgba(76,29,149,0.28)" }}
+  ><span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "repeating-radial-gradient(circle at 110% -10%, rgba(255,255,255,0.07) 0 1px, transparent 1px 14px)", pointerEvents: "none" }} /><div
+    style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10, fontWeight: 800, letterSpacing: 1.3, textTransform: "uppercase", color: "rgba(255,255,255,0.75)" }}
+  ><GloobalWordmark suffix=" ID" /><span>{dialCountry && dialCountry.name}</span></div><div
+    style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", marginTop: 14 }}
+  ><button
     onClick={() => onChangePhoto && onChangePhoto()}
     className="v2-tap"
     aria-label={profilePhoto ? "Change your photo" : "Add a photo"}
-    style={{ width: 98, height: 98, borderRadius: "50%", flexShrink: 0, position: "relative", border: `1px solid ${T.accentSoft}`, background: "linear-gradient(158deg,#F3EFFB,#E6DEF7)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0, overflow: "visible" }}
-  >{
-    /* ProfileAvatar, not a second photo renderer.
-       It is what every other surface in the app draws a person with — the
-       scan card, the receipt, the profile header — and it already knows
-       the things that are easy to get wrong here: that the old
-       "logo as placeholder" value is NOT a photo, and that a src which
-       fails to decode must fall back rather than show a broken image.
-       A hand-rolled <img> here would have been a second answer to both. */
-  }<ProfileAvatar photo={profilePhoto} name={myName} size={98} />{
-    /* The badge rides the circle's EDGE. Tucked into a corner — which is
-       where it goes on a square — it lands inside a circle, on the
-       animal's face. */
-  }<span
+    style={{ width: 96, height: 96, borderRadius: "50%", position: "relative", border: "3px solid rgba(255,255,255,0.9)", background: "linear-gradient(158deg,#F3EFFB,#E6DEF7)", padding: 0, cursor: "pointer", boxShadow: "0 8px 22px rgba(0,0,0,0.25)" }}
+  ><ProfileAvatar photo={profilePhoto} name={myName} size={90} /><span
     aria-hidden="true"
-    style={{ position: "absolute", right: -1, bottom: -1, width: 28, height: 28, borderRadius: "50%", background: T.accent, border: "2.5px solid #fff", display: "flex", alignItems: "center", justifyContent: "center" }}
-  ><Camera4 size={12} color="#fff" /></span></button><div
-    style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center" }}
-  ><div
-    style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.7, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.1, overflowWrap: "anywhere" }}
+    style={{ position: "absolute", right: -3, bottom: -3, width: 30, height: 30, borderRadius: "50%", background: T.accent, border: "2.5px solid #fff", display: "flex", alignItems: "center", justifyContent: "center" }}
+  ><Camera4 size={13} color="#fff" /></span></button><div
+    style={{ fontSize: 24, fontWeight: 800, letterSpacing: -0.6, fontFamily: T.fontDisplay, lineHeight: 1.15, marginTop: 12, overflowWrap: "anywhere" }}
   >{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</div><div
-    style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: 1.2, textTransform: "uppercase", color: T.inkFaint, marginTop: 12 }}
-  ><GloobalWordmark suffix=" ID" /></div><div style={{ marginTop: 6 }}>{gloobalId ? <ColoredGloobalId id={gloobalId} /> : "—"}</div></div></div>{
-    /* Dial code is gone — it was the first three digits of the number on
-       the row above it. */
-  }{[
-    ...(mobileNumber ? [["Mobile", mobileNumber]] : []),
-    ["Country", dialCountry.name],
-    ["Joined", `${accountCreatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}, ${formatClockTime(accountCreatedAt)}`]
-  ].map(([k, v]) => <div
-    key={k}
-    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", borderTop: `1px solid ${T.line}` }}
-  ><span style={{ fontSize: 14.5, color: T.inkSoft }}>{k}</span><span
-    style={{ fontSize: 15, fontWeight: 800, color: T.ink, letterSpacing: -0.2, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-  >{v}</span></div>)}</div>{
-    /* ── THE STAMPS ────────────────────────────────────────────────── */
+    data-pd-id
+    style={{ marginTop: 12, background: "#fff", borderRadius: 14, padding: "9px 14px", fontSize: 19, fontWeight: 800, letterSpacing: 1, boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
+  >{gloobalId ? <ColoredGloobalId id={gloobalId} /> : <span style={{ color: T.inkFaint }}>—</span>}</div></div><div
+    style={{ position: "relative", display: "flex", justifyContent: "center", gap: 14, marginTop: 14 }}
+  >{cardButton(PdCopyIcon, "Copy ID", onCopyId, "copy")}{cardButton(PdShareIcon, "Share ID", onShareId, "share")}</div></div><div
+    data-pd-stats
+    style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}
+  >{stats.map(([Icon, value, label, color]) => <div
+    key={label}
+    style={{ background: T.surface, borderRadius: 18, boxShadow: T.shadowCard, padding: "13px 14px", display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}
+  ><span style={{ width: 40, height: 40, borderRadius: 13, background: color + "1F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={19} color={color} /></span><span style={{ minWidth: 0 }}><span style={{ display: "block", fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{value}</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: T.inkFaint, marginTop: 2 }}>{label}</span></span></div>)}</div><div
+    style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}
+  >{linkRow(PdScoreIcon, "#9333EA", "Hooman Score", scoreValue, onOpenHoomanScore, "score")}<div style={{ height: 1, background: T.line, marginLeft: 69 }} />{linkRow(PdStoreIcon, "#DB2777", shopHandle ? <CreatorHandleText handle={shopHandle} /> : "Your shop", shopHandle ? "Open your shop" : "Pick a shop name and start selling", onOpenShop, "shop")}</div><div
+    data-pd-facts
+    style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}
+  >{[
+    ...(mobileNumber ? [[PdPhoneIcon, "Mobile", mobileNumber]] : []),
+    [PdGlobeIcon, "Country", <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>{dialCountry && dialCountry.flag && <FlagEmoji flag={dialCountry.flag} width={20} height={15} radius={3} />}{dialCountry && dialCountry.name}</span>],
+    [PdCalendarIcon, "Joined", joinedLong]
+  ].map(([Icon, label, value], i) => factRow(Icon, label, value, i === 0))}</div>{
+    /* ── THE PASSPORT PAGE ─────────────────────────────────────────── */
   }<div><div
     style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 9, padding: "0 2px" }}
   ><span
-    style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: 1.2, textTransform: "uppercase", color: T.inkFaint }}
+    style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.1, textTransform: "uppercase", color: T.inkFaint }}
   >
       Where your money has been
     </span><span
-    style={{ fontSize: 9.5, fontWeight: 700, color: T.inkFaint, fontFamily: "ui-monospace, monospace" }}
+    style={{ fontSize: 10, fontWeight: 700, color: T.inkFaint, fontFamily: "ui-monospace, monospace" }}
   >{crossings.length === 0
     ? "NO CROSSINGS YET"
     : `${crossings.length} ${crossings.length === 1 ? "COUNTRY" : "COUNTRIES"}`}</span></div><div style={{ position: "relative" }}><div
-    style={{ position: "relative", height: identitySheetHeight(slice.length), borderRadius: T.radiusLg, background: "#F4F1E8", boxShadow: T.shadowCard, overflow: "hidden" }}
+    data-pd-passport
+    style={{ position: "relative", height: identitySheetHeight(slice.length) + (crossings.length < 3 ? 34 : 0), borderRadius: 20, background: "#F4F1E8", backgroundImage: "repeating-radial-gradient(circle at 50% 120%, rgba(120,104,70,0.07) 0 1px, transparent 1px 11px), repeating-linear-gradient(115deg, rgba(120,104,70,0.04) 0 1px, transparent 1px 9px)", boxShadow: T.shadowCard, overflow: "hidden" }}
   >{crossings.length === 0
     ? <div
       style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 34px", textAlign: "center", fontSize: 12.5, color: "#A79F8C", lineHeight: 1.6 }}
-    >{
-      /* A new account has no crossings, and blank paper is a worse empty
-         state than the space it replaced. It says what would put a mark
-         here, which is the one thing somebody looking at an empty sheet
-         wants to know. */
-    }
+    >
       Pay somebody in another country and the first mark lands here.
     </div>
     : slice.map((crossing, i) => <IdentityStamp
@@ -304,7 +341,13 @@ function PersonalDetailsScreen({
       crossing={crossing}
       slot={IDENTITY_STAMP_SLOTS[i]}
       name={identityStampCountryName(crossing.iso)}
-    />)}</div>{at > 0 && arrow("prev")}{at < pages - 1 && arrow("next")}</div>{pages > 1 && <div
+    />)}{crossings.length > 0 && crossings.length < 3 && <div
+      data-pd-passport-hint
+      style={{ position: "absolute", left: 14, right: 14, bottom: 12, textAlign: "right", fontSize: 11.5, fontWeight: 700, color: "#9C927B" }}
+    >Next stamp: pay anyone in another country</div>}{crossings.length > 0 && crossings.length === 1 && <div
+      aria-hidden="true"
+      style={{ position: "absolute", right: 20, top: 22, width: 118, height: 76, borderRadius: 6, border: "1.6px dashed rgba(156,146,123,0.55)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, letterSpacing: 1.2, color: "rgba(156,146,123,0.8)" }}
+    >NEXT STAMP</div>}</div>{at > 0 && arrow("prev")}{at < pages - 1 && arrow("next")}</div>{pages > 1 && <div
     style={{ display: "flex", gap: 5, justifyContent: "center", alignItems: "center", marginTop: 13 }}
   >{Array.from({ length: pages }).map((_, i) => <span
     key={i}

@@ -728,7 +728,7 @@ describe("scanning a shop shows the shop", () => {
   test("a failed lookup leaves the person's own card, never a blank one", () => {
     const src = app();
     const at = src.indexOf("IS THIS A SHOP OR A PERSON");
-    const block = src.slice(at, at + 1400);
+    const block = src.slice(at, at + 2600);
     assert.match(block, /catch \(e\) \{\s*\n\s*creator = null;/,
       "the extra lookup must not be able to break the card");
     assert.match(block, /setScanPayee\(named \? \{ \.\.\.result\.payee, creator \} : result\.payee\)/,
@@ -978,5 +978,42 @@ describe("sales and purchases", () => {
   test("the screen is in the build", () => {
     assert.match(readSource("build_app.mjs"), /"features\/creator\/CreatorLedger\.jsx"/,
       "a source file missing from FRONTEND_MODULES is silently not in the app");
+  });
+});
+
+
+// ── THE CODE SAYS WHICH SIDE IT IS ──────────────────────────────────────
+//
+// "when I scan a qr on personal side and when i scan a qr on creator side
+// both show creator name."
+//
+// Both Receive screens drew the same bytes, because the two sides are one
+// Gloobal ID. 0100's "show the shop if the account has a creator name"
+// was the only decision available, and it made both codes show the shop.
+// The code now carries its side, and the card believes it.
+describe("a personal code shows the person", () => {
+  test("a personal code is never looked up as a shop", () => {
+    // The person's own name and ID are what they chose to show. A lookup
+    // that could only overrule that is a lookup not worth making.
+    const src = readSource("frontend/App.jsx");
+    const at = src.indexOf("THE CODE SAYS WHICH SIDE IT IS, AND THE CARD BELIEVES IT");
+    assert.ok(at > 0, "the side rule is gone from the scan");
+    assert.match(src.slice(at, at + 1600), /if \(parsed\.side !== "person"\) \{\s*\n\s*try \{\s*\n\s*creator = await GloobalApi\.getCreatorProfile/);
+  });
+
+  test("a code with no side keeps the old behaviour", () => {
+    // Every sticker ever printed is an unmarked /p/ code. The day this
+    // ships, none of them may change what they show.
+    const link = readSource("backend/utils/gloobalPayLink.js");
+    assert.match(link, /p: "either"/);
+    assert.match(link, /GLOOBAL_PAY_LETTER_BY_SIDE\[side\] \|\| "p"/,
+      "an unspecified side has to fall back to the unmarked form");
+  });
+
+  test("a link opened from a phone's camera carries its side too", () => {
+    const src = readSource("frontend/App.jsx");
+    const fn = src.slice(src.indexOf("function readPayLinkFromUrl"), src.indexOf("function readPayLinkFromUrl") + 700);
+    assert.match(fn, /\/\^\\\/\[pus\]\(\\\/\|\$\)\//, "only /p/ links are recognised on open");
+    assert.match(fn, /readGloobalPayFromPath\(path\)/);
   });
 });

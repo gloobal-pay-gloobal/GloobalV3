@@ -68,7 +68,12 @@ describe("one identity, both roles", () => {
   test("the Receive QR is built from that same id", () => {
     assert.match(dash, /<GloobalReceiveQrCard gloobalId=\{gloobalIdTag\}/);
     assert.match(dash, /const gloobalIdTag = shareableGloobalId;/);
-    assert.match(card, /const payload = buildGloobalPayUrl\(gloobalId\);/);
+    // And with the side the Receive screen was opened on, so the personal
+    // code and the creator code are different bytes — a scanner used to
+    // get identical codes from both and could only guess which it had.
+    assert.match(card, /const payload = buildGloobalPayUrl\(gloobalId, side\);/);
+    assert.match(dash, /side=\{shareRole === "merchant" \? "shop" : "person"\}/,
+      "the Receive screen draws the same code on both sides again");
   });
 });
 

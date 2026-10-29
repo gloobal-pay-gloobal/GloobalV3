@@ -561,7 +561,12 @@ var GLOOBAL_QR_CARD_BUTTON = {
 // How long each colour holds before the badge turns over.
 var GLOOBAL_QR_DISC_CYCLE_MS = 2000;
 
-function GloobalReceiveQrCard({ gloobalId, name, onToast, headerAction = null }) {
+// `side` is which half of the account this code is FOR — "person" on the
+// personal Receive screen, "shop" on the creator one. The two used to draw
+// the same bytes, so a scanner could only guess, and guessed the shop for
+// both. Now the code says. Left unset, the unmarked form is drawn, which
+// behaves exactly as every code did before there were sides.
+function GloobalReceiveQrCard({ gloobalId, name, side, onToast, headerAction = null }) {
   const [sharing, setSharing] = useState36(false);
   // The badge's colour, turning over every two seconds.
   //
@@ -590,7 +595,7 @@ function GloobalReceiveQrCard({ gloobalId, name, onToast, headerAction = null })
     setQrStyle(next);
     gloobalAnimalQrSaveChoice(next);
   };
-  const payload = buildGloobalPayUrl(gloobalId);
+  const payload = buildGloobalPayUrl(gloobalId, side);
   const animalLayout = payload && qrStyle !== "classic" ? gloobalAnimalQrLayout(payload, qrStyle) : null;
   const animalChoice = animalLayout ? gloobalAnimalQrFind(qrStyle) : null;
 

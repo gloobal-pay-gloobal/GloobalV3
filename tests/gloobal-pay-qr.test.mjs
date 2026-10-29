@@ -141,18 +141,41 @@ describe("buildGloobalPayUrl", () => {
 });
 
 describe("parseGloobalPayPayload", () => {
-  test("round-trips every built URL", () => {
+  test("round-trips every built URL, and the side it was built with", () => {
+    // A code built without a side is the unmarked /p/ form and parses as
+    // "either" — the oldest form, and every printed sticker.
     for (const id of Object.values(IDS)) {
-      assert.deepEqual(parseGloobalPayPayload(buildGloobalPayUrl(id)), { gloobalId: id });
+      assert.deepEqual(parseGloobalPayPayload(buildGloobalPayUrl(id)), { gloobalId: id, side: "either" });
+      assert.deepEqual(parseGloobalPayPayload(buildGloobalPayUrl(id, "person")), { gloobalId: id, side: "person" });
+      assert.deepEqual(parseGloobalPayPayload(buildGloobalPayUrl(id, "shop")), { gloobalId: id, side: "shop" });
+    }
+  });
+
+  test("a side nobody asked for is never written", () => {
+    // An old caller passing nothing, or a new one passing nonsense, gets
+    // the unmarked form — a code cannot claim a side its author did not
+    // choose.
+    for (const side of [undefined, null, "", "merchant", "user", "SHOP", 42]) {
+      assert.match(buildGloobalPayUrl(IDS.a, side), /\/p\//, `side=${String(side)} produced a marked code`);
     }
   });
 
   test("accepts a bare symbol ID, a trailing slash, surrounding space and localhost", () => {
-    assert.deepEqual(parseGloobalPayPayload(IDS.c), { gloobalId: IDS.c });
-    assert.deepEqual(parseGloobalPayPayload(`  ${IDS.b}\n`), { gloobalId: IDS.b });
-    assert.deepEqual(parseGloobalPayPayload(`https://gloobalv3.netlify.app/p/${DIGITS.a}/`), { gloobalId: IDS.a });
-    assert.deepEqual(parseGloobalPayPayload(`http://localhost:5173/p/${DIGITS.a}`), { gloobalId: IDS.a });
-    assert.deepEqual(parseGloobalPayPayload(`http://127.0.0.1/p/${DIGITS.c}`), { gloobalId: IDS.c });
+    assert.deepEqual(parseGloobalPayPayload(IDS.c), { gloobalId: IDS.c, side: "either" });
+    assert.deepEqual(parseGloobalPayPayload(`  ${IDS.b}\n`), { gloobalId: IDS.b, side: "either" });
+    assert.deepEqual(parseGloobalPayPayload(`https://gloobalv3.netlify.app/p/${DIGITS.a}/`), { gloobalId: IDS.a, side: "either" });
+    assert.deepEqual(parseGloobalPayPayload(`https://gloobalv3.netlify.app/u/${DIGITS.a}/`), { gloobalId: IDS.a, side: "person" });
+    assert.deepEqual(parseGloobalPayPayload(`https://gloobalv3.netlify.app/s/${DIGITS.b}`), { gloobalId: IDS.b, side: "shop" });
+    assert.deepEqual(parseGloobalPayPayload(`http://localhost:5173/p/${DIGITS.a}`), { gloobalId: IDS.a, side: "either" });
+    assert.deepEqual(parseGloobalPayPayload(`http://127.0.0.1/s/${DIGITS.c}`), { gloobalId: IDS.c, side: "shop" });
+  });
+
+  test("only the three letters are codes", () => {
+    // /x/<digits> is not a fourth kind of code that happens to parse as
+    // something; it is not a code.
+    for (const letter of ["x", "a", "pp", "P", "S"]) {
+      assert.equal(parseGloobalPayPayload(`https://gloobalv3.netlify.app/${letter}/${DIGITS.a}`), null, `/${letter}/ parsed`);
+    }
   });
 
   test("rejects everything else, without throwing", () => {

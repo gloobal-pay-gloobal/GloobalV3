@@ -31,8 +31,14 @@ describe("the QR payload genuinely carries no currency and no amount", () => {
     // This is WHY the currency has to come from the account lookup. If a
     // currency or amount is ever added to the payload, this fails and the
     // resolution below should be revisited.
+    // `side` says which half of the account the code was shown from —
+    // the person or their shop. It is a fact about the CODE, carried so
+    // a scanner no longer has to guess, and it is not money: the claim
+    // this test makes is still that nothing on the code can set a
+    // currency or an amount.
     const parsed = parseGloobalPayPayload(buildGloobalPayUrl("++++++++++++"));
-    assert.deepEqual(Object.keys(parsed), ["gloobalId"]);
+    assert.deepEqual(Object.keys(parsed).sort(), ["gloobalId", "side"]);
+    assert.ok(!("amount" in parsed) && !("currency" in parsed));
   });
 });
 

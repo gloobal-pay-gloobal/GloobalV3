@@ -3535,6 +3535,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     label="Received history"
   /><NavCloseButton onClick={requestCloseReceive} /></div></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "18px 16px calc(30px + env(safe-area-inset-bottom, 0px))" }}><GloobalReceiveQrCard gloobalId={gloobalIdTag}
     name={myName}
+    // The side the Receive screen was opened on. "merchant" is what this
+    // file has always called the creator side of the role toggle.
+    side={shareRole === "merchant" ? "shop" : "person"}
     onToast={showToast2}
     headerAction={
       /* ── THE CIRCLE, AND WHY IT BURST ────────────────────────────────

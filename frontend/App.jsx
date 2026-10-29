@@ -667,8 +667,10 @@ function readPayLinkFromUrl() {
   if (typeof window === "undefined") return null;
   try {
     const path = window.location.pathname || "";
-    if (!/^\/p(\/|$)/.test(path)) return null;
-    return { gloobalId: readGloobalPayIdFromPath(path) };
+    // /p/, /u/ and /s/ — see gloobalPayLink.js for what the letter means.
+    if (!/^\/[pus](\/|$)/.test(path)) return null;
+    const read = readGloobalPayFromPath(path);
+    return read || { gloobalId: null };
   } catch (e) {
     return null;
   }
@@ -1369,11 +1371,27 @@ function GloobalId() {
         // One extra lookup, and only to decide what the card SAYS. A
         // failure here leaves the person's own details, which is what the
         // card showed before and is never wrong, only less specific.
+        //
+        // ── THE CODE SAYS WHICH SIDE IT IS, AND THE CARD BELIEVES IT ───
+        //
+        // That lookup used to be the whole decision: an account with a
+        // creator name was shown as its shop whichever code had been
+        // scanned — because both codes were the same bytes and there was
+        // nothing else to go on. So the personal code showed the shop too.
+        //
+        // The code now carries a side (gloobalPayLink.js). A personal
+        // code is never looked up as a shop at all: the person's own name
+        // and ID are what they chose to show, and a lookup that could
+        // only overrule them is a lookup not worth making. A shop code
+        // and an unmarked old code still look the shop up, and the old
+        // code keeps its old behaviour so no printed sticker changes.
         let creator = null;
-        try {
-          creator = await GloobalApi.getCreatorProfile(parsed.gloobalId);
-        } catch (e) {
-          creator = null;
+        if (parsed.side !== "person") {
+          try {
+            creator = await GloobalApi.getCreatorProfile(parsed.gloobalId);
+          } catch (e) {
+            creator = null;
+          }
         }
         const named = creator && typeof creator.handle === "string" && creator.handle.trim();
         setScanPayee(named ? { ...result.payee, creator } : result.payee);

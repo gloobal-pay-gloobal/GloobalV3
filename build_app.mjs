@@ -322,6 +322,7 @@ const FRONTEND_MODULES = [
   "features/creator/ShopInsights.jsx",
   "features/creator/CreatorPage.jsx",
   // Gloobal बाज़ार on Pay & Services: famous categories and Near me.
+  "features/bazaar/bazaarMap.jsx",
   "features/bazaar/bazaar.jsx",
   // Where an owner changes how their shop looks. After CreatorPage only
   // for reading order; both are function declarations.

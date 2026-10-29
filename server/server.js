@@ -4429,6 +4429,11 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', near = null,
       // The box is a square around the circle; its corners are not inside.
       if (!(d <= near.radiusKm * 1000)) continue;
       row.distanceM = d;
+      // For the map. Only shops with a PUBLIC, pinned address reach this
+      // branch, and their point is already on their own page; it is
+      // rounded to ~11 m all the same.
+      row.lat = Math.round(Number(a.lat) * 1e4) / 1e4;
+      row.lng = Math.round(Number(a.lng) * 1e4) / 1e4;
     }
     rows.push(row);
   }
@@ -4464,6 +4469,8 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
       color: r.color,
       logo: logoBy.get(String(r._id)) || null,
       distanceM: near ? bazaar.bazaarRoundDistance(r.distanceM) : null,
+      lat: near ? r.lat : null,
+      lng: near ? r.lng : null,
       // "Sells Samosa", when the shop was found by what it sells rather
       // than by its name.
       matchedItem: r.matchedItem || '',

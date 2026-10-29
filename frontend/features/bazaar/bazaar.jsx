@@ -151,6 +151,9 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   const [nearOn, setNearOn] = useState62(false);
   // Only shops whose own hours say they are open now (server-checked).
   const [openNow, setOpenNow] = useState62(false);
+  // Near me as a list or on a map (bazaarMap.jsx). Only offered with Near
+  // me on: a map needs a "here".
+  const [asMap, setAsMap] = useState62(false);
   const [radius, setRadius] = useState62(BAZAAR_DEFAULT_RADIUS);
   const [here, setHere] = useState62(null);
   const [locating, setLocating] = useState62(false);
@@ -327,8 +330,20 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     display: "flex", alignItems: "center", justifyContent: "space-between", margin: "12px 2px 8px"
   }}><span style={{
     fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4
-  }}>{heading}</span>{busy ? <Loader7 size={13} color={T.inkFaint} style={{ animation: "spin 0.9s linear infinite" }} /> : null}</div>
-  <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{
+  }}>{heading}</span><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>{busy ? <Loader7 size={13} color={T.inkFaint} style={{ animation: "spin 0.9s linear infinite" }} /> : null}{near ? <span role="tablist" aria-label="Show as" style={{
+    display: "inline-flex", padding: 3, borderRadius: 999, background: T.surfaceAlt
+  }}>{[["List", false], ["Map", true]].map(([label, value]) => <button
+    key={label}
+    role="tab"
+    aria-selected={asMap === value}
+    onClick={() => setAsMap(value)}
+    style={{
+      border: "none", borderRadius: 999, padding: "5px 12px", cursor: "pointer", fontFamily: "inherit",
+      fontSize: 11.5, fontWeight: 800, background: asMap === value ? T.surface : "transparent",
+      color: asMap === value ? T.accent : T.inkSoft, boxShadow: asMap === value ? "0 1px 3px rgba(20,18,43,0.12)" : "none"
+    }}
+  >{label}</button>)}</span> : null}</span></div>
+  {near && asMap ? <BazaarMap center={here} radiusKm={radius} shops={shown} onOpen={openShop} /> : <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{
     shops === null
       ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Loading shops…</div>
       : failed && shown.length === 0
@@ -370,5 +385,5 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
               color: openLine.open ? "#178A4C" : T.inkFaint
             }}>{openLine.text}</span> : null}</span><ChevronRight10 size={15} color={T.inkFaint} /></button>;
           })
-  }</div></section>;
+  }</div>}</section>;
 }

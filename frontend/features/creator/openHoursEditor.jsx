@@ -23,8 +23,11 @@ function OpenHoursEditor({ value, onChange }) {
     days: hours.days.map((d, j) => (j === i ? { ...d, ...patch } : d))
   });
   const status = on ? openHoursLabel(hours, new Date()) : { text: "", open: null };
+  // Flexible, not a fixed 92px: a phone set to 12-hour time draws
+  // "10:00 PM" plus a clock icon, and a render showed the fixed box
+  // cutting it to "10:00 I".
   const timeBox = {
-    width: 92, border: `1.5px solid ${T.line}`, borderRadius: 10, background: T.bg, padding: "7px 8px",
+    flex: "1 1 0", minWidth: 0, width: "auto", border: `1.5px solid ${T.line}`, borderRadius: 10, background: T.bg, padding: "7px 6px",
     fontSize: 13, fontWeight: 700, color: T.ink, fontFamily: "inherit", outline: "none", boxSizing: "border-box"
   };
 
@@ -47,7 +50,7 @@ function OpenHoursEditor({ value, onChange }) {
           display: "flex", alignItems: "center", gap: 8, padding: "7px 0",
           borderTop: i === 0 ? "none" : `1px solid ${T.line}`
         }}
-      ><span style={{ width: 38, flexShrink: 0, fontSize: 12.5, fontWeight: 800, color: d.closed ? T.inkFaint : T.ink }}>{OPEN_HOURS_DAYS[i]}</span><ProfileToggle
+      ><span style={{ width: 32, flexShrink: 0, fontSize: 12.5, fontWeight: 800, color: d.closed ? T.inkFaint : T.ink }}>{OPEN_HOURS_DAYS[i]}</span><ProfileToggle
         on={!d.closed}
         onToggle={() => setDay(i, d.closed
           ? { closed: false, open: d.open || "09:00", close: d.close || "21:00" }
@@ -55,14 +58,14 @@ function OpenHoursEditor({ value, onChange }) {
         label={`Open on ${OPEN_HOURS_DAY_NAMES[i]}`}
       />{d.closed
         ? <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: T.inkFaint, paddingLeft: 4 }}>Closed</span>
-        : <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end", minWidth: 0 }}><input
+        : <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}><input
           id={`hours-open-${i}`}
           type="time"
           value={d.open || ""}
           aria-label={`${OPEN_HOURS_DAY_NAMES[i]} opens at`}
           onChange={(e) => setDay(i, { open: e.target.value })}
           style={timeBox}
-        /><span style={{ fontSize: 12, color: T.inkFaint, fontWeight: 700 }}>to</span><input
+        /><span aria-hidden="true" style={{ fontSize: 12, color: T.inkFaint, fontWeight: 700 }}>–</span><input
           id={`hours-close-${i}`}
           type="time"
           value={d.close || ""}

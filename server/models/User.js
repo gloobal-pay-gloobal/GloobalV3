@@ -418,7 +418,7 @@ const userSchema = new mongoose.Schema({
     // Every field is optional and every reader falls back, so a profile
     // written before this existed renders as the app's own look.
     shop: {
-      theme: { type: String, enum: ['gloobal', 'street', 'studio', 'market', 'night'], default: 'gloobal' },
+      theme: { type: String, enum: ['gloobal', 'street', 'studio', 'market', 'night', 'chai', 'mithai', 'boutique', 'pharmacy', 'dhaba', 'kirana', 'minimal'], default: 'gloobal' },
       // Validated against the fixed palette on the way in AND on the way
       // out, because this string ends up inside a style attribute.
       color: { type: String, default: '' },
@@ -429,6 +429,13 @@ const userSchema = new mongoose.Schema({
       photoShape: { type: String, enum: ['rounded', 'circle', 'wide', 'tall'], default: 'rounded' },
       // Rows like a price board, or a two-column grid like a shop window.
       layout: { type: String, enum: ['list', 'grid'], default: 'list' },
+      // The Add button and badge; the name card; the cover when there is no
+      // photo, and its pattern. The first of each is how a shop looked
+      // before these existed.
+      buttons: { type: String, enum: ['filled', 'outline', 'soft'], default: 'filled' },
+      heroStyle: { type: String, enum: ['gradient', 'solid', 'glass', 'minimal'], default: 'gradient' },
+      coverStyle: { type: String, enum: ['photo', 'gradient', 'pattern'], default: 'photo' },
+      pattern: { type: String, enum: ['dots', 'stripes', 'rangoli', 'grid'], default: 'dots' },
       dark: { type: Boolean, default: false },
 
       // One line under the name: "Chai since 2015".

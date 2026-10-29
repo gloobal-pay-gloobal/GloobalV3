@@ -4795,13 +4795,17 @@ var CREATOR_SHOP_COLORS = [
   '#A3327E', '#5A4636', '#36414E', '#1F6B4B'
 ];
 var CREATOR_SHOP_ENUMS = {
-  theme: ['gloobal', 'street', 'studio', 'market', 'night'],
+  theme: ['gloobal', 'street', 'studio', 'market', 'night', 'chai', 'mithai', 'boutique', 'pharmacy', 'dhaba', 'kirana', 'minimal'],
   font: ['grotesk', 'fraunces', 'inter', 'mono', 'mukta', 'tiro', 'baloo', 'poppins', 'hind', 'rozha', 'yatra', 'kalam', 'teko'],
   corners: ['sharp', 'soft', 'round', 'leaf'],
   cards: ['raised', 'flat', 'outline', 'plain'],
   density: ['compact', 'cosy', 'roomy'],
   photoShape: ['rounded', 'circle', 'wide', 'tall'],
-  layout: ['list', 'grid']
+  layout: ['list', 'grid'],
+  buttons: ['filled', 'outline', 'soft'],
+  heroStyle: ['gradient', 'solid', 'glass', 'minimal'],
+  coverStyle: ['photo', 'gradient', 'pattern'],
+  pattern: ['dots', 'stripes', 'rangoli', 'grid']
 };
 
 function creatorShopColor(value) {
@@ -4822,6 +4826,10 @@ function creatorShopOut(shop) {
     density: pick('density'),
     photoShape: pick('photoShape'),
     layout: pick('layout'),
+    buttons: pick('buttons'),
+    heroStyle: pick('heroStyle'),
+    coverStyle: pick('coverStyle'),
+    pattern: pick('pattern'),
     dark: Boolean(s.dark),
     tagline: typeof s.tagline === 'string' ? s.tagline : '',
     announceText: typeof s.announceText === 'string' ? s.announceText : '',

@@ -281,7 +281,9 @@ test("the shop's name card keeps white text readable on every colour", () => {
 test("items are a list or a grid, the owner's pick, and the price stays the app's", () => {
   const src = theme();
   assert.match(src, /var SHOP_LAYOUTS = \{\s*list: \{ name: "List" \},\s*grid: \{ name: "Grid" \}/);
-  assert.match(src, /const layout = SHOP_LAYOUTS\[s\.layout\] \? s\.layout : "list";/,
+  // Since the ready themes: an unset layout takes the preset's, and the
+  // five original presets have none, so an old profile is still a list.
+  assert.match(src, /const layout = SHOP_LAYOUTS\[s\.layout\] \? s\.layout : \(SHOP_LAYOUTS\[base\.layout\] \? base\.layout : "list"\);/,
     "an old profile with no layout is a list");
   const pg = page();
   assert.match(pg, /const Item = theme\.layout === "grid" \? CreatorPageItemCard : CreatorPageItemRow;/);

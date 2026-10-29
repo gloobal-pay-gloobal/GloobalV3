@@ -4016,8 +4016,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     }}
     shop={(creatorProfile && creatorProfile.shop) || null}
     symbolId={myGloobalId}
+    // The shop as it stands, for the live preview: the page that is open
+    // behind the editor (which has the items), else the profile.
+    creator={(openCreator && openCreator.symbolId === myGloobalId ? openCreator : creatorProfile) || null}
     ccyCode={ccyCode}
     lens={displayLens}
+    onToast={showToast2}
     onClose={() => setShowShopTheme(false)}
     onSave={async (shop) => {
       try {

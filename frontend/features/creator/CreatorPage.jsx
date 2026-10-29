@@ -117,6 +117,43 @@ function shopItemMatches(item, query) {
   return q.split(/\s+/).every((w) => hay.indexOf(w) >= 0);
 }
 
+// ── THE NAME CARD'S FOUR STYLES ─────────────────────────────────────────
+//
+// gradient — the shop's colour, as it has been.
+// solid    — the same colour, flat.
+// glass    — frosted dark glass over the cover, which the card then sits
+//            further up into. Only with a cover behind it: on a bare page
+//            frosted glass is grey, so it falls back to gradient.
+// minimal  — no card: the name in ink on the page, chips in the shop's
+//            soft colour.
+//
+// Every colour inside the card comes from here, so the white-on-colour
+// rule for the three filled styles and ink-on-page for minimal cannot be
+// half-applied.
+function shopHeroSkin(theme, hasCover) {
+  const style = theme.heroStyle === "glass" && !hasCover ? "gradient" : theme.heroStyle;
+  if (style === "minimal") {
+    return {
+      style, bg: "transparent", shadow: "none", ink: theme.ink, inkSoft: theme.inkSoft, inkFaint: theme.inkFaint,
+      chip: theme.soft, chipStrong: theme.soft, deco: "transparent", line: theme.line, iconInk: theme.dark ? theme.color : theme.hero.from,
+      padding: "14px 2px 10px", backdrop: "none", border: "none"
+    };
+  }
+  const base = {
+    ink: "#fff", inkSoft: "rgba(255,255,255,0.86)", inkFaint: "rgba(255,255,255,0.78)",
+    chip: "rgba(255,255,255,0.16)", chipStrong: "rgba(255,255,255,0.18)", deco: "rgba(255,255,255,0.08)",
+    line: "rgba(255,255,255,0.16)", iconInk: "#fff", padding: "18px 16px 12px", backdrop: "none", border: "none"
+  };
+  if (style === "glass") {
+    return {
+      ...base, style, bg: "rgba(18,14,26,0.42)", shadow: "0 12px 30px rgba(0,0,0,0.28)", deco: "transparent",
+      backdrop: "blur(16px) saturate(1.3)", border: "1px solid rgba(255,255,255,0.22)"
+    };
+  }
+  if (style === "solid") return { ...base, style, bg: theme.hero.from, shadow: `0 10px 24px ${theme.hero.glow}` };
+  return { ...base, style: "gradient", bg: `linear-gradient(140deg, ${theme.hero.from} 0%, ${theme.hero.to} 100%)`, shadow: `0 12px 28px ${theme.hero.glow}` };
+}
+
 function CreatorMark({ creator, theme, size = 88 }) {
   const label = creator.handle || creator.handleFirst || "";
   const radius = (theme && theme.corners && theme.corners.mark) || 26;
@@ -185,7 +222,10 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, theme, onAdd, onR
        is typed. */
   }{item.badge && !item.soldOut ? <span style={{
     flexShrink: 0, fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
-    color: theme.color, background: theme.soft, borderRadius: 5, padding: "2px 5px", whiteSpace: "nowrap"
+    color: theme.color, background: theme.soft, borderRadius: 5, padding: "2px 5px", whiteSpace: "nowrap",
+    // Filled or outline when the shop chose those for its buttons; soft
+    // (the line above) otherwise.
+    ...(theme.buttons === "soft" ? {} : shopButtonStyle(theme))
   }}>{item.badge}</span> : null}{item.soldOut && <span style={{
     flexShrink: 0, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase",
     color: T.negative, background: "#FDECEC", borderRadius: 6, padding: "2px 6px", whiteSpace: "nowrap"
@@ -235,14 +275,16 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, theme, onAdd, onR
       }}>{qty}</span><button
         onClick={onAdd}
         aria-label={`One more ${item.title}`}
-        style={{ width: 28, height: 28, borderRadius: theme.corners.pill, background: theme.hero.from, border: "none", cursor: "pointer", color: "#fff" }}
+        style={{ width: 28, height: 28, borderRadius: theme.corners.pill, border: "none", cursor: "pointer", ...shopButtonStyle(theme) }}
       ><Plus7 size={14} /></button></span>
       : <button
         onClick={onAdd}
         aria-label={`Add ${item.title}`}
         style={{
-          width: 28, height: 28, borderRadius: theme.corners.pill, background: theme.soft, border: "none",
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer", color: theme.color
+          width: 28, height: 28, borderRadius: theme.corners.pill, border: "none",
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer",
+          // The shop's chosen button style — filled, outline or soft.
+          ...shopButtonStyle(theme)
         }}
       ><Plus7 size={15} /></button>)
   }</span></div>;
@@ -319,12 +361,12 @@ function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, on
       }}>{qty}</span><button
         onClick={onAdd}
         aria-label={`One more ${item.title}`}
-        style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: theme.hero.from, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+        style={{ width: 26, height: 26, borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", ...shopButtonStyle(theme), ...(theme.buttons === "outline" ? { background: "#fff" } : {}) }}
       ><Plus7 size={13} /></button></span>
       : <button
         onClick={onAdd}
         aria-label={`Add ${item.title}`}
-        style={ctl({ right: 6, bottom: 6, width: 32, height: 32, borderRadius: "50%", background: theme.hero.from, color: "#fff" })}
+        style={ctl({ right: 6, bottom: 6, width: 32, height: 32, borderRadius: "50%", ...shopButtonStyle(theme), ...(theme.buttons === "filled" ? {} : { background: "#fff" }) })}
       ><Plus7 size={16} /></button>)}</div><span style={{
     display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
     fontSize: 13, fontWeight: 700, color: theme.ink, lineHeight: 1.3, marginTop: 8, overflowWrap: "anywhere"
@@ -350,6 +392,9 @@ function CreatorPage({
   onShare,
   onFeedback,
   onToast,
+  // Drawn inside the Look editor as a preview: counts nothing, and leaves
+  // the floating map button to the screen around it.
+  preview = false,
   onSaveItems,
   onEditLook,
   onOpenSupplier,
@@ -405,6 +450,12 @@ function CreatorPage({
   const announce = shopAnnouncement(creator && creator.shop);
   const tagline = (creator && creator.shop && creator.shop.tagline) || "";
   const cover = creator && creator.cover;
+  // What is drawn across the top: the owner's photo, or the shop's colour,
+  // or a pattern in it — or nothing, for "photo" with no photo set.
+  const coverKind = theme.coverStyle === "photo"
+    ? (cover && cover.photo ? "photo" : "")
+    : theme.coverStyle;
+  const skin = shopHeroSkin(theme, Boolean(coverKind));
 
   // The owner's own groupings, in the order their products are in. Built
   // from whatever they typed rather than from a fixed list, because a tea
@@ -423,7 +474,9 @@ function CreatorPage({
   // listens for this event, which the scanner fires for the same reason.
   // Found by rendering: a tap meant for "one more chai" hit the map.
   useEffect51(() => {
-    if (typeof window === "undefined") return undefined;
+    // A preview is inside another screen; closing it must not bring the
+    // map button back over the shop page still open behind the editor.
+    if (typeof window === "undefined" || preview) return undefined;
     const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
     fire(true);
     return () => fire(false);
@@ -432,20 +485,20 @@ function CreatorPage({
   // A customer opening the page counts as one view for the owner's
   // insights — once a day per person, never the owner (server side).
   useEffect51(() => {
-    if (!isOwner && creator && creator.symbolId) GloobalApi.creatorEvent(creator.symbolId, "view");
-  }, [creator && creator.symbolId, isOwner]);
+    if (!isOwner && !preview && creator && creator.symbolId) GloobalApi.creatorEvent(creator.symbolId, "view");
+  }, [creator && creator.symbolId, isOwner, preview]);
 
   // The shop's own typeface, fetched the first time its page is drawn.
   useEffect51(() => { ensureShopFont(theme.fontKey); }, [theme.fontKey]);
 
   const bump = (id, by) => {
     // A tap on + is the clearest "I want this" a page gets.
-    if (by > 0 && !isOwner && creator && creator.symbolId) GloobalApi.creatorEvent(creator.symbolId, "item", id);
+    if (by > 0 && !isOwner && !preview && creator && creator.symbolId) GloobalApi.creatorEvent(creator.symbolId, "item", id);
     bumpBasket(id, by);
   };
   // Opening an item's photos is interest too, for the owner's insights.
   const openPhotos = (item) => {
-    if (!isOwner && creator && creator.symbolId && item && item.id) GloobalApi.creatorEvent(creator.symbolId, "item", item.id);
+    if (!isOwner && !preview && creator && creator.symbolId && item && item.id) GloobalApi.creatorEvent(creator.symbolId, "item", item.id);
     setPhotoView(item);
   };
   const bumpBasket = (id, by) => setBasket((prev) => {
@@ -457,7 +510,10 @@ function CreatorPage({
 
   return <div style={{
     position: "fixed", inset: 0, zIndex: 345, background: theme.page,
-    display: "flex", flexDirection: "column", overflow: "hidden"
+    display: "flex", flexDirection: "column", overflow: "hidden",
+    // A new look fades in rather than snapping, in the Look editor's live
+    // preview and on the page itself after saving.
+    transition: "background 0.3s ease"
   }}>{
     /* ── THE ANNOUNCEMENT BAND ────────────────────────────────────────
        Above everything, in the shop's own colour, and only when there is
@@ -508,18 +564,21 @@ function CreatorPage({
        owner's crop position honoured so a photo framed on a shopfront is
        not re-centred on the sky above it. Faded into the page at the
        bottom so the mark sits on the join rather than on a hard edge. */
-  }{cover && cover.photo ? <div style={{
-    margin: "0 -18px", height: 150, position: "relative", overflow: "hidden"
-  }}><img
+  }{coverKind ? <div data-shop-cover={coverKind} style={{
+    margin: "0 -18px", height: skin.style === "glass" ? 210 : 150, position: "relative", overflow: "hidden",
+    background: coverKind === "pattern" ? shopPatternCss(theme.pattern, theme.color, theme.dark)
+      : coverKind === "gradient" ? `linear-gradient(160deg, ${theme.hero.from} 0%, ${theme.hero.to} 70%)` : "none",
+    transition: "background 0.3s ease, height 0.3s ease"
+  }}>{coverKind === "photo" ? <img
     src={cover.photo}
     alt=""
     style={{
       width: "100%", height: "100%", objectFit: "cover",
       objectPosition: `50% ${Number(cover.focusY) || 50}%`, display: "block"
     }}
-  /><span style={{
+  /> : null}<span style={{
     position: "absolute", inset: 0,
-    background: `linear-gradient(180deg, rgba(21,19,42,0.10) 0 30%, transparent 55%, ${theme.page} 100%)`
+    background: `linear-gradient(180deg, rgba(21,19,42,${coverKind === "photo" ? "0.10" : "0"}) 0 30%, transparent 55%, ${theme.page} 100%)`
   }} /></div> : null}{
     /* ── THE SHOP'S OWN CARD ──────────────────────────────────────────
        Mark beside name on a card in the shop's colour — the same shape as
@@ -529,14 +588,16 @@ function CreatorPage({
        the photo and the shop are joined rather than stacked. */
   }<div data-shop-hero="" style={{
     position: "relative", zIndex: 2, overflow: "hidden",
-    marginTop: cover && cover.photo ? -58 : 4,
-    background: `linear-gradient(140deg, ${theme.hero.from} 0%, ${theme.hero.to} 100%)`,
+    marginTop: coverKind ? (skin.style === "glass" ? -128 : -58) : 4,
+    background: skin.bg,
     borderRadius: theme.corners.mark,
-    boxShadow: `0 12px 28px ${theme.hero.glow}`,
-    padding: "18px 16px 12px", color: "#fff"
+    boxShadow: skin.shadow, border: skin.border,
+    backdropFilter: skin.backdrop, WebkitBackdropFilter: skin.backdrop,
+    padding: skin.padding, color: skin.ink,
+    transition: "background 0.3s ease, box-shadow 0.3s ease, border-radius 0.3s ease, padding 0.3s ease"
   }}><span aria-hidden="true" style={{
     position: "absolute", right: -46, top: -56, width: 160, height: 160, borderRadius: "50%",
-    background: "rgba(255,255,255,0.08)", pointerEvents: "none"
+    background: skin.deco, pointerEvents: "none"
   }} /><div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}><span style={{
     position: "relative", display: "inline-flex", flexShrink: 0,
     padding: 3, borderRadius: theme.corners.mark, background: "rgba(255,255,255,0.92)"
@@ -558,7 +619,7 @@ function CreatorPage({
   }<Star2 size={14} color={pinned ? PAY_PIN_STAR : T.inkFaint} fill={pinned ? PAY_PIN_STAR : "none"} /></button></span><span style={{
     flex: 1, minWidth: 0
   }}><span style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{
-    minWidth: 0, fontSize: 21, lineHeight: 1.2, fontWeight: theme.font.weight, color: "#fff",
+    minWidth: 0, fontSize: 21, lineHeight: 1.2, fontWeight: theme.font.weight, color: skin.ink,
     fontFamily: theme.font.stack, overflowWrap: "anywhere"
   }}>{name}</span><button
     onClick={() => setDetailsOpen((v) => !v)}
@@ -566,12 +627,12 @@ function CreatorPage({
     aria-pressed={detailsOpen}
     style={{
       width: 26, height: 26, borderRadius: 9, border: "none", cursor: "pointer", flexShrink: 0,
-      background: detailsOpen ? "#fff" : "rgba(255,255,255,0.18)",
+      background: detailsOpen ? (skin.style === "minimal" ? theme.hero.from : "#fff") : skin.chipStrong,
       display: "flex", alignItems: "center", justifyContent: "center"
     }}
-  ><Eye2 size={13} color={detailsOpen ? theme.hero.from : "#fff"} /></button></span>{
+  ><Eye2 size={13} color={detailsOpen ? (skin.style === "minimal" ? "#fff" : theme.hero.from) : skin.iconInk} /></button></span>{
     tagline ? <span style={{
-      display: "block", fontSize: 12.5, fontWeight: 700, color: "rgba(255,255,255,0.86)", marginTop: 4
+      display: "block", fontSize: 12.5, fontWeight: 700, color: skin.style === "minimal" ? skin.iconInk : skin.inkSoft, marginTop: 4
     }}>{tagline}</span> : null
   }{
     /* The stars, once there are three reviews to average — and a tap on
@@ -581,11 +642,11 @@ function CreatorPage({
       aria-label={`Rated ${reviewSummary.average} from ${shopReviewCountLabel(reviewSummary.count)}`}
       style={{
         display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, padding: "3px 8px 3px 6px",
-        border: "none", borderRadius: 999, background: "rgba(255,255,255,0.16)", color: "#fff",
+        border: "none", borderRadius: 999, background: skin.chip, color: skin.ink,
         fontSize: 11.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer"
       }}
     ><Star2 size={12} color={PAY_PIN_STAR} fill={PAY_PIN_STAR} />{Number(reviewSummary.average).toFixed(1)}<span style={{
-      fontWeight: 600, color: "rgba(255,255,255,0.8)"
+      fontWeight: 600, color: skin.inkFaint
     }}>· {shopReviewCountLabel(reviewSummary.count)}</span></button> : null
   }{
     /* Open or closed, in the shop's own time zone — only when the owner
@@ -593,10 +654,10 @@ function CreatorPage({
        the dot and the word, not a colour alone. */
     openState.text ? <span style={{
       display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, marginLeft: shopReviewHasAverage(reviewSummary) ? 6 : 0,
-      padding: "3px 9px 3px 7px", borderRadius: 999, background: "rgba(255,255,255,0.16)",
-      fontSize: 11.5, fontWeight: 800, color: "#fff"
+      padding: "3px 9px 3px 7px", borderRadius: 999, background: skin.chip,
+      fontSize: 11.5, fontWeight: 800, color: skin.ink
     }}><span aria-hidden="true" style={{
-      width: 7, height: 7, borderRadius: "50%", background: openState.open ? "#4ADE80" : "rgba(255,255,255,0.55)",
+      width: 7, height: 7, borderRadius: "50%", background: openState.open ? (skin.style === "minimal" ? "#22A55B" : "#4ADE80") : (skin.style === "minimal" ? theme.inkFaint : "rgba(255,255,255,0.55)"),
       boxShadow: openState.open ? "0 0 0 3px rgba(74,222,128,0.25)" : "none"
     }} />{openState.text}</span> : null
   }{
@@ -607,8 +668,8 @@ function CreatorPage({
        settled. Hidden below ten, because "1 person" reads as a verdict on a
        creator who simply started last week. */
     Number(creator.repeatPayers) >= 10 ? <span style={{
-      display: "block", fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.78)", marginTop: 5
-    }}><b style={{ color: "#fff", fontWeight: 800 }}>{creator.repeatPayers}</b> people have paid them more than once</span> : null
+      display: "block", fontSize: 11, fontWeight: 600, color: skin.inkFaint, marginTop: 5
+    }}><b style={{ color: skin.ink, fontWeight: 800 }}>{creator.repeatPayers}</b> people have paid them more than once</span> : null
   }</span></div>{
     /* ── THE ICON ROW ─────────────────────────────────────────────────
        Round buttons with the word underneath, inside the card, instead of
@@ -616,7 +677,7 @@ function CreatorPage({
        and room for a fourth without the row wrapping. */
   }<div style={{
     display: "flex", justifyContent: "space-around", gap: 6, position: "relative",
-    marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.16)"
+    marginTop: 16, paddingTop: 12, borderTop: `1px solid ${skin.line}`
   }}>{[
     { key: "share", label: "Share", Icon: Share25, onClick: onShare || (() => shareCreatorShop(creator, onToast)) },
     { key: "feedback", label: isOwner ? "Feedback" : "Review", Icon: MessageSquare, onClick: onFeedback || (() => setReviewsOpen(true)) }
@@ -632,13 +693,13 @@ function CreatorPage({
     style={{
       display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
       border: "none", background: "none", cursor: "pointer", fontFamily: "inherit",
-      padding: "2px 6px", minWidth: 64, color: "#fff"
+      padding: "2px 6px", minWidth: 64, color: skin.ink
     }}
   ><span style={{
-    width: 42, height: 42, borderRadius: "50%", background: "rgba(255,255,255,0.17)",
+    width: 42, height: 42, borderRadius: "50%", background: skin.chip,
     display: "flex", alignItems: "center", justifyContent: "center"
-  }}><Icon size={18} color="#fff" /></span><span style={{
-    fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.92)", whiteSpace: "nowrap"
+  }}><Icon size={18} color={skin.iconInk} /></span><span style={{
+    fontSize: 11, fontWeight: 700, color: skin.inkSoft, whiteSpace: "nowrap"
   }}>{label}</span></button>)}</div></div>
 
   {
@@ -763,7 +824,7 @@ function CreatorPage({
         aria-label={qty ? `One more ${item.title}` : `Add ${item.title}`}
         style={{
           flexShrink: 0, minWidth: 28, height: 28, padding: "0 6px", borderRadius: 14, border: "none", cursor: "pointer",
-          background: theme.hero.from, color: "#fff", fontSize: 12, fontWeight: 800, fontFamily: "inherit",
+          ...shopButtonStyle(theme), fontSize: 12, fontWeight: 800, fontFamily: "inherit",
           display: "flex", alignItems: "center", justifyContent: "center", gap: 2
         }}
       >{qty ? qty : <Plus7 size={14} />}</button>

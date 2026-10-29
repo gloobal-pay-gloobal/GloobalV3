@@ -27,7 +27,7 @@
 // colour, a profile saved before this feature existed all resolve to
 // GLOOBAL_SHOP_THEME, which is the purple the app already is.
 
-var SHOP_THEME_KEYS = ["gloobal", "street", "studio", "market", "night"];
+var SHOP_THEME_KEYS = ["gloobal", "street", "studio", "market", "night", "chai", "mithai", "boutique", "pharmacy", "dhaba", "kirana", "minimal"];
 
 // The four presets. Each is a whole look in one tap — and every field in it
 // is separately overridable afterwards, which is the point of D: a preset is
@@ -87,8 +87,91 @@ var SHOP_THEMES = {
     density: "cosy",
     photoShape: "circle",
     dark: true
+  },
+  // ── READY THEMES FOR THE SHOPS GLOOBAL IS FOR ──────────────────────────
+  // Each sets every dial at once — including the four added with them:
+  // buttons, the name card's style, and the cover drawn when there is no
+  // photo — so one tap gives a whole, coherent look.
+  chai: {
+    name: "Chai Stall", note: "Warm, round, a rangoli cover",
+    color: "#C2663A", font: "baloo", corners: "round", cards: "raised", density: "cosy",
+    photoShape: "circle", dark: false, layout: "list", buttons: "filled", heroStyle: "gradient",
+    coverStyle: "pattern", pattern: "rangoli"
+  },
+  mithai: {
+    name: "Mithai", note: "Festive pink, sweets in a grid",
+    color: "#A3327E", font: "rozha", corners: "leaf", cards: "raised", density: "cosy",
+    photoShape: "rounded", dark: false, layout: "grid", buttons: "soft", heroStyle: "gradient",
+    coverStyle: "pattern", pattern: "dots"
+  },
+  boutique: {
+    name: "Boutique", note: "Quiet, tall photos, outlines",
+    color: "#5A4636", font: "fraunces", corners: "sharp", cards: "outline", density: "roomy",
+    photoShape: "tall", dark: false, layout: "grid", buttons: "outline", heroStyle: "minimal",
+    coverStyle: "pattern", pattern: "stripes"
+  },
+  pharmacy: {
+    name: "Pharmacy", note: "Clean, clear, easy to scan",
+    color: "#2F7A74", font: "mukta", corners: "soft", cards: "flat", density: "compact",
+    photoShape: "rounded", dark: false, layout: "list", buttons: "filled", heroStyle: "solid",
+    coverStyle: "pattern", pattern: "grid"
+  },
+  dhaba: {
+    name: "Night Dhaba", note: "Dark, warm, for late hours",
+    color: "#C2663A", font: "yatra", corners: "round", cards: "plain", density: "cosy",
+    photoShape: "circle", dark: true, layout: "list", buttons: "soft", heroStyle: "glass",
+    coverStyle: "gradient", pattern: "dots"
+  },
+  kirana: {
+    name: "Kirana", note: "Green, dense, everything listed",
+    color: "#4F7A46", font: "mukta", corners: "soft", cards: "flat", density: "compact",
+    photoShape: "rounded", dark: false, layout: "list", buttons: "filled", heroStyle: "solid",
+    coverStyle: "pattern", pattern: "dots"
+  },
+  minimal: {
+    name: "Minimal", note: "Just the name and the things",
+    color: "#36414E", font: "hind", corners: "sharp", cards: "plain", density: "roomy",
+    photoShape: "wide", dark: false, layout: "list", buttons: "outline", heroStyle: "minimal",
+    coverStyle: "photo", pattern: "dots"
   }
 };
+
+// The four style dials added with the ready themes. The first value of
+// each is what a shop saved before they existed gets, which is exactly
+// how such a shop already looked.
+var SHOP_BUTTON_STYLES = { filled: { name: "Filled" }, outline: { name: "Outline" }, soft: { name: "Soft" } };
+var SHOP_HERO_STYLES = { gradient: { name: "Gradient" }, solid: { name: "Solid" }, glass: { name: "Glass" }, minimal: { name: "Minimal" } };
+var SHOP_COVER_STYLES = { photo: { name: "Photo" }, gradient: { name: "Colour" }, pattern: { name: "Pattern" } };
+var SHOP_PATTERNS = { dots: { name: "Dots" }, stripes: { name: "Stripes" }, rangoli: { name: "Rangoli" }, grid: { name: "Grid" } };
+
+function shopStyleKey(table, value, fallback) {
+  return table[value] ? value : (table[fallback] ? fallback : Object.keys(table)[0]);
+}
+
+// A cover drawn in the shop's colour, for shops with no photo or that
+// chose one. SVG as a data URL, so it costs no request and the CSP's
+// img-src data: already allows it.
+function shopPatternCss(pattern, color, dark) {
+  const ink = encodeURIComponent(dark ? shopHexMix(color, "#FFFFFF", 0.25) : color);
+  const tiles = {
+    dots: `<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22'><circle cx='11' cy='11' r='2.4' fill='${ink}' fill-opacity='.35'/></svg>`,
+    stripes: `<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18'><path d='M-4 22L22 -4M5 23L23 5' stroke='${ink}' stroke-opacity='.22' stroke-width='3'/></svg>`,
+    grid: `<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26'><path d='M26 0H0V26' fill='none' stroke='${ink}' stroke-opacity='.25' stroke-width='1.4'/><path d='M13 9v8M9 13h8' stroke='${ink}' stroke-opacity='.3' stroke-width='1.6'/></svg>`,
+    rangoli: `<svg xmlns='http://www.w3.org/2000/svg' width='52' height='52'><g transform='translate(26 26)' fill='${ink}' fill-opacity='.3'>${[0, 45, 90, 135, 180, 225, 270, 315].map((a) => `<ellipse rx='3.2' ry='9' transform='rotate(${a}) translate(0 -10)'/>`).join("")}<circle r='3.6'/></g><circle cx='0' cy='0' r='3' fill='${ink}' fill-opacity='.25'/><circle cx='52' cy='0' r='3' fill='${ink}' fill-opacity='.25'/><circle cx='0' cy='52' r='3' fill='${ink}' fill-opacity='.25'/><circle cx='52' cy='52' r='3' fill='${ink}' fill-opacity='.25'/></svg>`
+  };
+  const tile = tiles[pattern] || tiles.dots;
+  const ground = dark ? shopHexMix("#120E0C", color, 0.3) : shopHexMix("#FFFFFF", color, 0.16);
+  return `url("data:image/svg+xml,${tile.replace(/#/g, "%23").replace(/"/g, "'")}") ${ground}`;
+}
+
+// The Add button and the badge in the shop's chosen style. The PRICE is
+// never styled by this — see SHOP_THEME_FORBIDDEN.
+function shopButtonStyle(theme) {
+  const ink = theme.dark ? theme.color : theme.hero.from;
+  if (theme.buttons === "outline") return { background: "transparent", color: ink, boxShadow: `inset 0 0 0 1.5px ${ink}` };
+  if (theme.buttons === "soft") return { background: theme.soft, color: ink, boxShadow: "none" };
+  return { background: theme.hero.from, color: "#fff", boxShadow: "none" };
+}
 
 // The twelve a shop may pick from.
 //
@@ -271,7 +354,11 @@ function resolveShopTheme(shop) {
   const density = SHOP_DENSITY[s.density] || SHOP_DENSITY[base.density];
   const photo = SHOP_PHOTO_SHAPES[s.photoShape] || SHOP_PHOTO_SHAPES[base.photoShape];
   const dark = typeof s.dark === "boolean" ? s.dark : base.dark;
-  const layout = SHOP_LAYOUTS[s.layout] ? s.layout : "list";
+  const layout = SHOP_LAYOUTS[s.layout] ? s.layout : (SHOP_LAYOUTS[base.layout] ? base.layout : "list");
+  const buttons = shopStyleKey(SHOP_BUTTON_STYLES, s.buttons, base.buttons);
+  const heroStyle = shopStyleKey(SHOP_HERO_STYLES, s.heroStyle, base.heroStyle);
+  const coverStyle = shopStyleKey(SHOP_COVER_STYLES, s.coverStyle, base.coverStyle);
+  const pattern = shopStyleKey(SHOP_PATTERNS, s.pattern, base.pattern);
 
   // A soft wash of the shop's colour, for chip and badge backgrounds. Mixed
   // against the page rather than stored, so one stored colour is enough and a
@@ -292,6 +379,10 @@ function resolveShopTheme(shop) {
     density,
     photo,
     layout,
+    buttons,
+    heroStyle,
+    coverStyle,
+    pattern,
     hero: shopHeroInk(color),
     // The page's own surfaces under this theme, washed with the shop's
     // colour: a light shop gets a pale tint of it instead of the app's

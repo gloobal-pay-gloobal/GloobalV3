@@ -26,7 +26,8 @@ test("counters, not a log of who looked", () => {
 
 test("views, scans and taps are recorded where they happen", () => {
   const page = readSource("frontend/features/creator/CreatorPage.jsx");
-  assert.match(page, /if \(!isOwner && creator && creator\.symbolId\) GloobalApi\.creatorEvent\(creator\.symbolId, "view"\);/);
+  // `!preview` since the Look editor draws the page as its live preview.
+  assert.match(page, /if \(!isOwner && !preview && creator && creator\.symbolId\) GloobalApi\.creatorEvent\(creator\.symbolId, "view"\);/);
   assert.match(page, /GloobalApi\.creatorEvent\(creator\.symbolId, "item", id\);/);
   assert.match(readSource("frontend/App.jsx"), /if \(named\) GloobalApi\.creatorEvent\(parsed\.gloobalId, "scan"\);/);
   assert.match(page, /\{ key: "insights", label: "Insights", Icon: BarChartInsights,/);

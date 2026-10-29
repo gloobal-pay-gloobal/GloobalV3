@@ -11,45 +11,34 @@
 //   - a Gloobal pay link (…/p/…, …/u/…, …/s/…), as copied from a chat,
 //   - a mobile number, with or without its country code,
 //   - a creator name (rasoi.ghar, or "rasoi ghar").
-// The → button looks it up and shows WHO it is — photo or shop logo, name,
-// flag, ID — before anything else. Pay opens the ordinary Send screen with
-// them filled in, where the amount is typed and the PIN asked; nothing is
-// paid from here.
+// The → button looks it up, and when it finds them the ordinary Send screen
+// opens straight away with them filled in, where the amount is typed and
+// the PIN asked; nothing is paid from here.
 //
 // The globe on the left still opens Gloobal Coverage, which is what the
 // whole bar used to do.
 import { useState as useState67, useRef as useRef39, useEffect as useEffect64 } from "react";
-import { ArrowRight as ArrowRight4, Loader as Loader8, X as X22, Store as Store6, Phone as Phone4, ClipboardPaste as PasteQuick, ChevronDown as ChevronDown7 } from "lucide-react";
+import { ArrowRight as ArrowRight4, Loader as Loader8, X as X22, ClipboardPaste as PasteQuick, ChevronDown as ChevronDown7, Delete as BackQuick } from "lucide-react";
 
-// ── OUR OWN PADS, NOT THE PHONE'S KEYBOARD ──────────────────────────────
+// ── ONE SMART PAD ───────────────────────────────────────────────────────
 //
-// "If they type, give them our dial pad, our PIN pad, and if they use a
-// creator name, our keyboard — all in one horizontal row above for users
-// to pick from." Tapping the box opens a panel with that row on top:
+// It was three pads behind three tabs (ID, Mobile, Name) and the founder
+// found that confusing. Now there is one pad: the digits on the left, the
+// eight ID symbols on the right in their own tint, and the box works out
+// from what was typed whether it is a mobile number or a GLOOBAL ID. The
+// letters keyboard comes up only from its own key (अA), for a creator
+// name, and goes back with "123".
 //
-//   Gloobal ID   — the symbol dial the ID is made of (SymbolDialPad),
-//   Mobile       — the number pad the PIN uses (PhoneDialPad),
-//   Creator name — the Gloobal keyboard, in any alphabet,
-//   Paste        — what is copied, checked at once.
-//
-// It opens on whichever was used last (kept on this phone), and on the
-// Gloobal ID dial the first time. The phone's own keyboard never comes up:
-// every one of the three things the box takes has a pad made for it.
-var QUICK_PAY_MODES = ["id", "mobile", "name"];
+// A number in another country: the flag chip at the top of the pad says
+// which country's code a number without one is read in — your own to
+// start with; tap it to pick another. Starting with + works too.
 var QUICK_PAY_ID_LENGTH = 12;
-
-function quickPayModeLoad() {
-  try {
-    const m = localStorage.getItem("gloobal:quickPayMode:v1");
-    return QUICK_PAY_MODES.indexOf(m) >= 0 ? m : "id";
-  } catch (e) {
-    return "id";
-  }
-}
-
-function quickPayModeSave(m) {
-  try { localStorage.setItem("gloobal:quickPayMode:v1", m); } catch (e) { /* a convenience */ }
-}
+var QUICK_PAY_PAD_ROWS = [
+  ["1", "2", "3", "\u2212", "+"],
+  ["4", "5", "6", "\xD7", "="],
+  ["7", "8", "9", "\u25CB", "\u25A1"],
+  ["name", "0", "back", "\u25CF", "\u25A0"]
+];
 
 // ── WHAT WAS TYPED ──────────────────────────────────────────────────────
 // { kind: "id" | "mobile" | "name", value, side? } or null. A pay link is
@@ -68,49 +57,46 @@ function quickPayClassify(text) {
   return { kind: "unknown", value: raw };
 }
 
-// A ten-digit number on a non-Indian account gets that account's own
-// dial code; the server already reads a bare ten digits as Indian.
+// A number with no code is read in the chip's country. India's ten digits
+// go as they are: the server already reads a bare ten digits as Indian.
 function quickPayMobile(value, dialCode) {
   if (value.startsWith("+")) return value;
-  if (/^\d{10}$/.test(value) && dialCode && dialCode !== "+91") return `${dialCode}${value}`;
-  return value;
+  const digits = value.replace(/^0+/, "");
+  if (!dialCode) return value;
+  if (dialCode === "+91" && /^\d{10}$/.test(digits)) return digits;
+  return `${dialCode}${digits}`;
 }
 
-function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenCoverage, onPayPerson, onPayCreator, onOpenShop }) {
+function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenCoverage, onPayPerson, onPayCreator }) {
   const [text, setText] = useState67("");
-  // The pad panel, and which pad. See QUICK_PAY_MODES above.
+  // The smart pad, and the letters keyboard for a creator name.
   const [padOpen, setPadOpen] = useState67(false);
-  const [mode, setModeState] = useState67(() => quickPayModeLoad());
+  const [nameMode, setNameMode] = useState67(false);
   const [nameField, setNameField] = useState67("first");
   const [busy, setBusy] = useState67(false);
-  const [found, setFound] = useState67(null);
   const [error, setError] = useState67("");
   // A name nobody has: the shops that start with it, or — when none do —
   // the shops we have. { title, shops }.
   const [suggest, setSuggest] = useState67(null);
+  // Which country a number without a code is read in.
+  const [dialCountry, setDialCountry] = useState67(() => {
+    const iso = String(countryIso || "").toUpperCase();
+    return (typeof COUNTRY_BY_ISO !== "undefined" && COUNTRY_BY_ISO[iso]) || null;
+  });
+  const [picking, setPicking] = useState67(false);
+  const [countrySearch, setCountrySearch] = useState67("");
   const seq = useRef39(0);
 
-  const reset = () => { setFound(null); setError(""); setSuggest(null); };
-
-  const setMode = (m) => {
-    if (m === mode) return;
-    setModeState(m);
-    quickPayModeSave(m);
-    // An ID typed on the dial is not a mobile number: switching pads
-    // starts the box again rather than reading one as the other.
-    setText("");
-    setNameField("first");
-    reset();
-  };
+  const reset = () => { setError(""); setSuggest(null); };
 
   // The pad hides the floating map button while it is up, as every other
   // full-width board in the app does.
   useEffect64(() => {
-    if (typeof window === "undefined" || !padOpen || mode === "name") return undefined;
+    if (typeof window === "undefined" || !padOpen || nameMode) return undefined;
     const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
     fire(true);
     return () => fire(false);
-  }, [padOpen, mode]);
+  }, [padOpen, nameMode]);
 
   const pasteNow = async () => {
     let pasted = "";
@@ -126,19 +112,31 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     }
     setText(pasted);
     setPadOpen(false);
+    setNameMode(false);
     lookUp(pasted);
   };
 
   // The two halves of a creator name, as the keyboard edits them.
-  const nameFirst = mode === "name" ? text.split(".")[0] || "" : "";
-  const nameLast = mode === "name" ? text.split(".").slice(1).join("") : "";
+  const nameFirst = nameMode ? text.split(".")[0] || "" : "";
+  const nameLast = nameMode ? text.split(".").slice(1).join("") : "";
   const setName = (first, last) => setText(last ? `${first}.${last}` : first);
+
+  const press = (key) => {
+    if (error || suggest) reset();
+    if (key === "back") { setText((t) => Array.from(t).slice(0, -1).join("")); return; }
+    if (key === "name") { setText(""); setPadOpen(false); setNameField("first"); setNameMode(true); return; }
+    const next = Array.from(text).concat(key).slice(0, 20).join("");
+    setText(next);
+    // Twelve ID symbols and nothing else: that is a whole GLOOBAL ID, so
+    // it is checked without another tap.
+    const chars = Array.from(next);
+    if (chars.length === QUICK_PAY_ID_LENGTH && chars.every((ch) => DIAL_SYMBOLS.indexOf(ch) >= 0)) lookUp(next);
+  };
 
   const lookUp = async (input) => {
     const what = quickPayClassify(input === undefined ? text : input);
     if (!what) return;
     if (what.kind === "unknown") {
-      setFound(null);
       setError("Paste a GLOOBAL ID, a pay link, a mobile number or a creator name.");
       return;
     }
@@ -147,7 +145,6 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     setPadOpen(false);
     setBusy(true);
     setError("");
-    setFound(null);
     setSuggest(null);
     let result = null;
     let problem = "";
@@ -177,7 +174,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
           else problem = "No creator has that name. Check the spelling, or search shops in Pay & Services.";
         }
       } else {
-        const id = what.kind === "mobile" ? quickPayMobile(what.value, dialCode) : what.value;
+        const id = what.kind === "mobile" ? quickPayMobile(what.value, dialCountry ? dialCountry.dialCode : dialCode) : what.value;
         const user = await GloobalApi.resolveUser(id);
         if (!user || !user.symbolId) {
           problem = "No one on GLOOBAL matches that.";
@@ -198,9 +195,6 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
               shareRate: (Number(user.cashbackRate) || 0) * 100
             }
           };
-          if (result.kind === "person") {
-            try { result.photo = await GloobalApi.getUserPhoto(user.symbolId); } catch (e) { result.photo = null; }
-          }
         }
       }
     } catch (err) {
@@ -214,69 +208,20 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       setError("That's you.");
       return;
     }
-    if (result) setFound(result);
-    else if (offer) setSuggest(offer);
+    // ── FOUND: STRAIGHT TO SEND ──────────────────────────────────────
+    // No card and no Pay button in between: the Send screen opens on the
+    // amount with them at the top — their name, photo and flag are there
+    // to confirm it's the right person before anything is paid.
+    if (result) {
+      setText("");
+      setNameMode(false);
+      if (result.kind === "creator") { if (onPayCreator) onPayCreator({ creator: result.creator }); }
+      else if (onPayPerson) onPayPerson(result.payee);
+      return;
+    }
+    if (offer) setSuggest(offer);
     else setError(problem);
   };
-
-  const country = (iso) => (iso && typeof COUNTRY_BY_ISO !== "undefined" ? COUNTRY_BY_ISO[String(iso).toUpperCase()] : null);
-  const card = found ? (() => {
-    const isShop = found.kind === "creator";
-    const name = isShop ? creatorDisplayName(found.creator) : found.payee.name;
-    const id = isShop ? found.creator.symbolId : found.payee.gloobalId;
-    const c = country(isShop ? found.creator.countryIso : found.payee.countryIso);
-    const sub = isShop ? (found.creator.handle || "") : (found.payee.mobileNumber || "");
-    // Drops OVER the dashboard rather than pushing it down: the balance
-    // card jumping 150px every time somebody checks a name is the kind of
-    // movement that makes a thumb land on the wrong thing.
-    return <div data-quickpay-result="" style={{
-      position: "absolute", left: 0, right: 0, top: "calc(100% + 8px)", zIndex: 20,
-      background: T.surface, borderRadius: 18, padding: "12px 12px 12px 14px",
-      boxShadow: "0 14px 36px rgba(20,18,43,0.22), 0 0 0 1px rgba(20,18,43,0.04)",
-      animation: "quickPayIn 0.22s ease"
-    }}><div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ position: "relative", flexShrink: 0 }}>{isShop
-      ? <BusinessMark name={found.creator.handle || ""} logo={found.creator.logo} size={48} radius={14} />
-      : (found.photo
-        ? <img src={found.photo} alt="" style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", display: "block" }} />
-        : <span style={{
-          width: 48, height: 48, borderRadius: "50%", background: T.accentSoft, color: T.accent,
-          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, fontWeight: 800
-        }}>{businessMarkInitials(name)}</span>)}{c ? <span style={{ position: "absolute", right: -4, bottom: -4 }}><FlagEmoji flag={c.flag} shape="circle" size={20} border={`inset 0 0 0 2px ${T.surface}`} /></span> : null}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{
-      display: "flex", alignItems: "center", gap: 6
-    }}><span style={{
-      fontSize: 14.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-    }}>{name}</span>{isShop ? <span style={{
-      flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, fontSize: 9.5, fontWeight: 800,
-      letterSpacing: 0.4, textTransform: "uppercase", color: T.accent, background: T.accentSoft, borderRadius: 6, padding: "2px 6px"
-    }}><Store6 size={10} />Shop</span> : null}</span><span style={{
-      display: "block", fontSize: 11.5, color: T.inkFaint, fontWeight: 600, marginTop: 2,
-      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-    }}>{[sub, c ? c.name : ""].filter(Boolean).join(" · ")}</span><span style={{ display: "block", marginTop: 4, fontSize: 12 }}><ColoredGloobalId id={id} /></span></span><button
-      onClick={reset}
-      aria-label="Clear"
-      style={{
-        width: 30, height: 30, borderRadius: "50%", border: "none", background: T.surfaceAlt, cursor: "pointer", flexShrink: 0,
-        display: "flex", alignItems: "center", justifyContent: "center", alignSelf: "flex-start"
-      }}
-    ><X22 size={14} color={T.inkSoft} /></button></div><div style={{ display: "flex", gap: 8, marginTop: 12 }}>{isShop && onOpenShop ? <button
-      onClick={() => onOpenShop(found.creator)}
-      style={{
-        flex: 1, height: 44, borderRadius: 13, border: "none", background: T.accentSoft, color: T.accent,
-        fontSize: 13.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer"
-      }}
-    >View shop</button> : null}<button
-      onClick={() => {
-        if (isShop) { if (onPayCreator) onPayCreator({ creator: found.creator }); }
-        else if (onPayPerson) onPayPerson(found.payee);
-        setFound(null);
-        setText("");
-      }}
-      style={{
-        flex: 1, height: 44, borderRadius: 13, border: "none", background: T.gradButton, color: "#fff",
-        fontSize: 14, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", boxShadow: "0 6px 16px rgba(124,58,237,0.28)"
-      }}
-    >Pay {isShop ? "" : (name.split(" ")[0] || "")}</button></div></div>;
-  })() : null;
 
   return <div style={{ flex: 1, minWidth: 0, position: "relative" }}><style>{`
     @keyframes quickPayIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
@@ -285,18 +230,16 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     @keyframes quickPayVeil { from { opacity: 0; } to { opacity: 1; } }
   `}</style>{
     // ── A PLAIN LIGHT GROUND WHILE YOU LOOK SOMEBODY UP ───────────────
-    // While the pad, the answer or an error is up, the dashboard behind
-    // it — the purple balance card most of all — is covered by the app's
-    // own light ground, so the only things on screen are the box, what
-    // it found and the pad. zIndex -1 keeps it inside the header's own
-    // stacking context: under the box, over everything below the header.
-    // Tapping it puts the pad away, or clears the answer.
-    (padOpen || found || error || busy || suggest) ? <div
+    // While the pad, an error or the shop list is up, the dashboard behind
+    // it is covered by the app's own light ground. zIndex -1 keeps it
+    // inside the header's own stacking context: under the box, over
+    // everything below the header. Tapping it puts the pad away, or
+    // clears the message.
+    (padOpen || nameMode || error || busy || suggest) ? <div
       data-quickpay-veil=""
       aria-hidden="true"
       onClick={() => {
-        if (padOpen) { setPadOpen(false); return; }
-        setFound(null);
+        if (padOpen || nameMode) { setPadOpen(false); setNameMode(false); return; }
         setError("");
         setSuggest(null);
       }}
@@ -308,7 +251,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
   }<div style={{
     display: "flex", alignItems: "center", gap: 6, background: T.surface, borderRadius: T.radiusMd,
     padding: "5px 5px 5px 5px", boxShadow: T.shadowCard,
-    border: `1.5px solid ${error ? T.negative : found ? T.positive : "transparent"}`, transition: "border-color 0.18s ease"
+    border: `1.5px solid ${error ? T.negative : padOpen || nameMode ? T.accent : "transparent"}`, transition: "border-color 0.18s ease"
   }}><button
     onClick={onOpenCoverage}
     aria-label="Gloobal coverage"
@@ -338,7 +281,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
   }} /></button><input
     id="quickpay-input"
     value={text}
-    onChange={(e) => { setText(e.target.value); if (found || error) reset(); }}
+    onChange={(e) => { setText(e.target.value); if (error || suggest) reset(); }}
     onPaste={(e) => {
       // A paste is a complete thing — check it straight away rather than
       // making somebody also find the arrow.
@@ -351,9 +294,9 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); lookUp(); } }}
     // Our pads instead of the phone's keyboard. Long-press still pastes.
     inputMode="none"
-    onFocus={() => setPadOpen(true)}
-    onClick={() => setPadOpen(true)}
-    placeholder={mode === "mobile" ? "Mobile number" : mode === "name" ? "Creator name" : "GLOOBAL ID, or paste anything"}
+    onFocus={() => { if (!nameMode) setPadOpen(true); }}
+    onClick={() => { if (!nameMode) setPadOpen(true); }}
+    placeholder={nameMode ? "Creator name" : "ID, mobile or name"}
     aria-label="Pay someone by Gloobal ID, mobile number or creator name"
     autoCapitalize="none"
     autoCorrect="off"
@@ -382,7 +325,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       fontSize: 12, fontWeight: 700, color: T.negative, lineHeight: 1.4, background: T.surface, borderRadius: 14,
       padding: "10px 12px", boxShadow: "0 10px 26px rgba(20,18,43,0.16)", animation: "quickPayIn 0.22s ease"
     }}>{error}</div> : null
-  }{suggest && !found ? <div data-quickpay-suggest="" style={{
+  }{suggest ? <div data-quickpay-suggest="" style={{
     position: "absolute", left: 0, right: 0, top: "calc(100% + 8px)", zIndex: 20,
     background: T.surface, borderRadius: 18, padding: "12px 6px 6px", overflow: "hidden",
     boxShadow: "0 14px 36px rgba(20,18,43,0.22), 0 0 0 1px rgba(20,18,43,0.04)", animation: "quickPayIn 0.22s ease"
@@ -407,96 +350,120 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
   }}>{creatorDisplayName(shop)}</span><span style={{
     display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 1
-  }}>{(typeof bazaarCategoryInfo === "function" && bazaarCategoryInfo(shop.category) || {}).label || "Shop"}</span></span><ArrowRight4 size={15} color={T.inkFaint} /></button>)}</div> : null}{card}{padOpen ? quickPayPads() : null}</div>;
-
-  // ── THE PANEL ─────────────────────────────────────────────────────────
-  function quickPayPads() {
-    const chip = (key, label, Icon, on, onTap) => <button
-      key={key}
+  }}>{(typeof bazaarCategoryInfo === "function" && bazaarCategoryInfo(shop.category) || {}).label || "Shop"}</span></span><ArrowRight4 size={15} color={T.inkFaint} /></button>)}</div> : null}{padOpen && !nameMode ? quickPaySmartPad() : null}{nameMode ? <CreatorNameKeyboard
+    open
+    header={<div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 10px 9px", borderBottom: `1px solid ${T.line}` }}><button
       type="button"
       onPointerDown={(e) => e.preventDefault()}
-      onClick={onTap}
-      aria-pressed={on}
-      aria-label={typeof label === "string" && label ? undefined : key}
-      style={{
-        // The three pads share the width; Paste and Hide are icons. A
-        // render had "Paste" and Hide pushed off a 390px phone.
-        flex: label ? "1 1 0" : "0 0 auto", minWidth: 0, justifyContent: "center",
-        display: "inline-flex", alignItems: "center", gap: 5, height: 36, padding: label ? "0 8px" : "0 11px",
-        borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800,
-        background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink,
-        boxShadow: on ? "0 4px 12px rgba(124,58,237,0.28)" : "0 1px 3px rgba(20,18,43,0.12)", whiteSpace: "nowrap"
-      }}
-    >{Icon}{label ? <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span> : null}</button>;
-    const row = <div role="tablist" aria-label="How to type it" style={{
-      display: "flex", alignItems: "center", gap: 7, padding: "10px 10px 9px", overflowX: "auto", scrollbarWidth: "none",
-      borderBottom: `1px solid ${T.line}`, flexShrink: 0
-    }}>{chip("id", "ID", <span aria-hidden="true" style={{ fontSize: 11, letterSpacing: -1, fontWeight: 900 }}>●■</span>, mode === "id", () => setMode("id"))}{
-      chip("mobile", "Mobile", <Phone4 size={13} />, mode === "mobile", () => setMode("mobile"))}{
-      chip("name", "Name", <span aria-hidden="true" style={{ fontSize: 12, fontWeight: 900 }}>अA</span>, mode === "name", () => setMode("name"))}{
-      chip("Paste", "", <PasteQuick size={15} />, false, pasteNow)}{mode === "name" ? null : <button
+      onClick={() => { setNameMode(false); setText(""); setPadOpen(true); }}
+      style={quickPayBarChip(false)}
+    ><span aria-hidden="true" style={{ fontWeight: 900 }}>123</span>Numbers &amp; ID</button><span style={{ flex: 1, fontSize: 11.5, fontWeight: 700, color: T.inkFaint, textAlign: "center" }}>Type a creator name</span><button
       type="button"
       onPointerDown={(e) => e.preventDefault()}
-      onClick={() => setPadOpen(false)}
-      aria-label="Hide"
-      style={{
-        flexShrink: 0, width: 36, height: 36, borderRadius: "50%", border: "none", cursor: "pointer",
-        background: T.surface, boxShadow: "0 1px 3px rgba(20,18,43,0.12)", display: "flex", alignItems: "center", justifyContent: "center"
-      }}
-    ><ChevronDown7 size={18} color={T.inkSoft} /></button>}</div>;
+      onClick={pasteNow}
+      aria-label="Paste"
+      style={quickPayBarChip(false)}
+    ><PasteQuick size={15} /></button></div>}
+    field={nameField}
+    onField={setNameField}
+    first={nameFirst}
+    last={nameLast}
+    onFirst={(v) => setName(v, nameLast)}
+    onLast={(v) => setName(nameFirst, v)}
+    countryIso={countryIso}
+    firstLabel="Creator name"
+    lastLabel="Second part"
+    onClose={() => { setNameMode(false); if (nameFirst) lookUp(text); }}
+  /> : null}{picking ? <div style={{ position: "fixed", inset: 0, zIndex: 520 }}><CountryPickerScreen
+    topCountries={TOP_COUNTRIES}
+    countries={ALL_COUNTRIES}
+    search={countrySearch}
+    onSearch={setCountrySearch}
+    selectedIso={dialCountry ? dialCountry.iso : ""}
+    onSelect={(c) => { setDialCountry(c); setPicking(false); setCountrySearch(""); setPadOpen(true); }}
+    onClose={() => { setPicking(false); setCountrySearch(""); }}
+  /></div> : null}</div>;
 
-    if (mode === "name") {
-      return <CreatorNameKeyboard
-        open
-        header={row}
-        field={nameField}
-        onField={setNameField}
-        first={nameFirst}
-        last={nameLast}
-        onFirst={(v) => setName(v, nameLast)}
-        onLast={(v) => setName(nameFirst, v)}
-        countryIso={countryIso}
-        firstLabel="Creator name"
-        lastLabel="Second part"
-        onClose={() => { setPadOpen(false); if (nameFirst) lookUp(text); }}
-      />;
-    }
-
+  // ── THE SMART PAD ─────────────────────────────────────────────────────
+  function quickPaySmartPad() {
+    const digitsOnly = /^\+?\d*$/.test(text);
+    const key = (k) => {
+      const isSymbol = DIAL_SYMBOLS.indexOf(k) >= 0;
+      const label = k === "back" ? <BackQuick size={20} /> : k === "name" ? <span style={{ fontSize: 15, fontWeight: 900 }}>अA</span> : k;
+      return <button
+        key={k}
+        type="button"
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => press(k)}
+        aria-label={k === "back" ? "Delete" : k === "name" ? "Type a creator name" : isSymbol ? `Symbol ${k}` : k}
+        className="v2-tap"
+        style={{
+          height: 52, borderRadius: 14, border: "none", cursor: "pointer", fontFamily: "inherit",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: isSymbol ? 22 : 22, fontWeight: isSymbol ? 800 : 700,
+          background: isSymbol ? T.accentSoft : k === "name" ? T.surfaceAlt : T.surface,
+          color: isSymbol ? T.accent : T.ink,
+          boxShadow: isSymbol || k === "name" ? "none" : "0 1px 2px rgba(20,18,43,0.12)"
+        }}
+      >{label}</button>;
+    };
     return <div
       role="group"
-      aria-label={mode === "mobile" ? "Number pad" : "Gloobal ID dial"}
+      aria-label="Number and GLOOBAL ID pad"
+      data-quickpay-pad=""
       style={{
         position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 430, background: T.bg,
         borderTop: `1px solid ${T.line}`, boxShadow: "0 -8px 28px rgba(20,18,43,0.16)",
         paddingBottom: "env(safe-area-inset-bottom, 0px)", display: "flex", flexDirection: "column",
-        maxHeight: "72vh", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
+        userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
         animation: "quickPayPadIn 0.22s ease"
       }}
-    ><style>{"@keyframes quickPayPadIn { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }"}</style>{row}<div style={{
-      flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 16px 14px", display: "flex", flexDirection: "column", alignItems: "center"
-    }}>{mode === "id"
-      ? <>{
-        /* The twelve symbols, filling as they are dialled; the twelfth
-           checks the ID without another tap. */
-      }<div style={{ width: "100%", maxWidth: 360 }}><SymbolChipRow length={QUICK_PAY_ID_LENGTH} value={text} masked={false} justify="center" /></div><div style={{ width: "100%", maxWidth: 360, marginTop: 12 }}><SymbolDialPad
-        value={text}
-        onChange={(v) => {
-          const next = Array.from(v).slice(0, QUICK_PAY_ID_LENGTH).join("");
-          setText(next);
-          if (found || error) reset();
-          if (Array.from(next).length === QUICK_PAY_ID_LENGTH) lookUp(next);
-        }}
-        length={QUICK_PAY_ID_LENGTH}
-        showLogo={false}
-      /></div></>
-      : <div style={{ width: "100%", maxWidth: 360 }}>{dialCode ? <div style={{
-        textAlign: "center", fontSize: 11.5, fontWeight: 700, color: T.inkFaint, marginBottom: 4
-      }}>{`Numbers without a code are read as ${dialCode}`}</div> : null}<PhoneDialPad
-        value={text.replace(/[^0-9]/g, "")}
-        onChange={(v) => { setText(v); if (found || error) reset(); }}
-        minLength={7}
-        maxLength={15}
-        onSubmit={() => lookUp(text)}
-      /></div>}</div></div>;
+    ><style>{"@keyframes quickPayPadIn { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }"}</style><div style={{
+      display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 8px"
+    }}><button
+      type="button"
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={() => setPicking(true)}
+      aria-label={dialCountry ? `Country code ${dialCountry.dialCode}, ${dialCountry.name}. Change` : "Pick a country code"}
+      data-quickpay-country=""
+      style={{ ...quickPayBarChip(false), gap: 6, padding: "0 10px 0 6px" }}
+    >{dialCountry ? <FlagEmoji flag={dialCountry.flag} shape="circle" size={22} /> : null}<span style={{ fontWeight: 800 }}>{dialCountry ? dialCountry.dialCode : "+ Code"}</span><ChevronDown7 size={14} color={T.inkSoft} /></button><span style={{
+      flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 700, color: T.inkFaint, lineHeight: 1.3
+    }}>{digitsOnly ? "Mobile number, or the ID's symbols" : "GLOOBAL ID: 12 symbols"}</span><button
+      type="button"
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={pasteNow}
+      aria-label="Paste"
+      style={quickPayBarChip(false)}
+    ><PasteQuick size={15} /></button><button
+      type="button"
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={() => setPadOpen(false)}
+      aria-label="Hide"
+      style={{ ...quickPayBarChip(false), width: 36, padding: 0, justifyContent: "center" }}
+    ><ChevronDown7 size={18} color={T.inkSoft} /></button></div><div style={{
+      display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr)) 10px repeat(2, minmax(0, 1fr))", gap: 8, padding: "4px 12px 10px"
+    }}>{QUICK_PAY_PAD_ROWS.map((row) => [key(row[0]), key(row[1]), key(row[2]), <span key={`gap-${row[0]}`} aria-hidden="true" />, key(row[3]), key(row[4])])}</div><div style={{
+      padding: "0 12px 12px"
+    }}><button
+      type="button"
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={() => lookUp()}
+      disabled={!text.trim()}
+      style={{
+        width: "100%", height: 50, borderRadius: 15, border: "none", cursor: text.trim() ? "pointer" : "default",
+        background: text.trim() ? T.gradButton : T.surfaceAlt, color: text.trim() ? "#fff" : T.inkFaint,
+        fontSize: 15, fontWeight: 800, fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8
+      }}
+    >Find and pay<ArrowRight4 size={17} strokeWidth={2.5} /></button></div></div>;
   }
+}
+
+function quickPayBarChip(on) {
+  return {
+    flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, height: 36, padding: "0 12px",
+    borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800,
+    background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink,
+    boxShadow: "0 1px 3px rgba(20,18,43,0.12)", whiteSpace: "nowrap"
+  };
 }

@@ -30,7 +30,9 @@ function IconTile({
   ariaChecked,
   ariaPressed,
   labelLines = 2,
-  labelSize = 12
+  labelSize = 12,
+  // With box="100%": a fixed height instead of a square, for a wide box.
+  boxHeight = null
 }) {
   return <button
     type="button"
@@ -48,7 +50,7 @@ function IconTile({
     }}
   ><span style={{
     position: "relative", flexShrink: 0,
-    width: box, height: box === "100%" ? "auto" : box, aspectRatio: box === "100%" ? "1" : undefined,
+    width: box, height: box === "100%" ? (boxHeight || "auto") : box, aspectRatio: box === "100%" && !boxHeight ? "1" : undefined,
     maxWidth: "100%", borderRadius: radius,
     background: background || T.surface,
     // A tinted box is its own surface and needs no lift; a plain white

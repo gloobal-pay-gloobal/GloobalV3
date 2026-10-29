@@ -2155,21 +2155,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        Coverage. It is a real box now: paste a Gloobal ID, a pay link, a
        mobile number or a creator name, tap →, see who it is, then Pay.
        The spinning globe at its left is still the way into Coverage. */
-  }<button
-    onClick={() => setShowAboutUs(true)}
-    aria-label="About Gloobal"
-    className="v2-tap"
-    style={{ flexShrink: 0, border: "none", background: "none", padding: 0, cursor: "pointer", borderRadius: 14, boxShadow: "0 4px 12px rgba(20,18,43,0.18)" }}
-  >{
-    /* The app logo, in its colour for these two hours (appLogo.jsx). */
-  }<GloobalLogo size={46} radius={14} /></button><QuickPayBar
+  }<QuickPayBar
     myGloobalId={myGloobalId}
     dialCode={(dialCountry && dialCountry.dialCode) || ""}
     countryIso={(dialCountry && dialCountry.iso) || ""}
     onOpenCoverage={onOpenCoverage}
     onPayPerson={(payee) => onPayPerson && onPayPerson(payee)}
     onPayCreator={({ creator }) => onPayCreator && onPayCreator({ creator })}
-    onOpenShop={(creator) => setOpenCreator(creator)}
   />{
     /* Profile flip — switches the same account between its two
        sides: user/consumer and merchant/producer. Every flow stays
@@ -2636,7 +2628,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     ><span style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 44, height: 44, borderRadius: 14, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><img src={G_LOGO_DATA_URI} alt="" style={{ width: 26, height: 26, objectFit: "contain", filter: "brightness(0) invert(1)" }} /></span><span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, letterSpacing: -0.2, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" Bank" /></span><ChevronRight4 size={17} color="rgba(255,255,255,0.8)" /></span><span style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)", lineHeight: 1.45 }}>
       Your balance, your transfers, and the account everything else here unlocks from.
     </span></button>;
-  })()}<div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10, marginTop: 16 }}>{[
+  })()}<div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, marginTop: 16 }}>{[
     { key: "gpaylater", label: "PayLater", onClick: () => setShowPayLater(true) },
     { key: "myassets", label: "My Assets", onClick: () => setShowAssets(true) },
     {
@@ -2660,12 +2652,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       onClick={onClick}
       ariaLabel={locked ? `${label} \u2014 locked` : label}
       label={label}
+      // Two to a row: a wide box, the same height as before.
       box="100%"
+      boxHeight={96}
       radius={22}
       background="transparent"
+      labelSize={13.5}
       dimmed={locked}
       badge={locked ? <ServiceLock locked size={13} /> : null}
-    ><span style={{ position: "absolute", inset: 0 }}><SyncedFlipIcon Icon={TileIcon} size={30} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}26`} radius={22} /></span></IconTile>;
+    ><span style={{ position: "absolute", inset: 0 }}><SyncedFlipIcon Icon={TileIcon} size={34} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}26`} radius={22} /></span></IconTile>;
   })}</div></div>{
     /* One bigger box now instead of the small divider line — the
        cost figure front and center, the HOOMAN-2-HOOMAN mark

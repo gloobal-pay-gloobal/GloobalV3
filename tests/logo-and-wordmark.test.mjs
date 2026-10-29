@@ -33,7 +33,7 @@ test("Top businesses never goes empty on a search", () => {
 test("the dashboard box offers shops when a name is not found", () => {
   const s = code("frontend/features/payee/quickPayBar.jsx");
   assert.match(s, /shops = await GloobalApi\.bazaarSearch\(\{ q: "", country:/);
-  assert.match(s, /else if \(offer\) setSuggest\(offer\);/);
+  assert.match(s, /if \(offer\) setSuggest\(offer\);/);
   assert.match(s, /data-quickpay-suggest=""/);
 });
 
@@ -63,10 +63,11 @@ test("the logo's icon files exist for every colour", () => {
   assert.match(src, /var GLOOBAL_LOGO_HOME_KEY = "purple";/);
 });
 
-test("the logo is used on the splash, the tab, the dashboard and notifications", () => {
+test("the logo is used on the splash, the tab and notifications", () => {
   assert.match(code("frontend/components/common/launchSplash.jsx"), /background=\{logoColor\.hex\}/);
   assert.match(code("frontend/__artifactEntry.jsx"), /<GloobalLogoFavicon \/>/);
-  assert.match(code("frontend/screens/Dashboard/Dashboard.jsx"), /<GloobalLogo size=\{46\} radius=\{14\} \/>/);
+  // Not on the dashboard any more: the founder asked for it off the top bar.
+  assert.doesNotMatch(code("frontend/screens/Dashboard/Dashboard.jsx"), /<GloobalLogo /);
 });
 
 test("the QR's bottom-right mark is off, and every flip is slower", () => {

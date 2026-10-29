@@ -119,8 +119,9 @@ describe("the tiles say what they are and what state they are in", () => {
     assert.match(tile(), /position: "absolute", top: 6, right: 6/);
   });
 
-  test("four across, as a grid", () => {
+  test("two to a row, as a grid", () => {
     const src = dash();
-    assert.match(src, /gridTemplateColumns: "repeat\(4, minmax\(0, 1fr\)\)", gap: 10, marginTop: 16/);
+    assert.match(src, /gridTemplateColumns: "repeat\(2, minmax\(0, 1fr\)\)", gap: 14, marginTop: 16/);
+    assert.match(src, /boxHeight=\{96\}/);
   });
 });

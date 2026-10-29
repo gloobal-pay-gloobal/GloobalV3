@@ -22,10 +22,10 @@ test("the floating symbols are switched off in one place", () => {
 
 test("looking somebody up covers the dashboard with the light ground", () => {
   const s = code("frontend/features/payee/quickPayBar.jsx");
-  assert.match(s, /\(padOpen \|\| found \|\| error \|\| busy \|\| suggest\) \? <div\s*data-quickpay-veil=""/);
+  assert.match(s, /\(padOpen \|\| nameMode \|\| error \|\| busy \|\| suggest\) \? <div\s*data-quickpay-veil=""/);
   assert.match(s, /position: "fixed", inset: 0, zIndex: -1, background: T\.bg,/);
   // Tapping it puts the pad away first, then clears an answer.
-  assert.match(s, /if \(padOpen\) \{ setPadOpen\(false\); return; \}\s*setFound\(null\);\s*setError\(""\);\s*setSuggest\(null\);/);
+  assert.match(s, /if \(padOpen \|\| nameMode\) \{ setPadOpen\(false\); setNameMode\(false\); return; \}\s*setError\(""\);\s*setSuggest\(null\);/);
 });
 
 test("IconTile keeps the label outside the box", () => {

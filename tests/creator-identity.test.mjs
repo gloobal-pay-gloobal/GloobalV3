@@ -382,7 +382,8 @@ describe("the second box is optional on the screen too", () => {
   test("the dot fades rather than disappearing", () => {
     // Removing it would resize both boxes under somebody's thumb the
     // moment they start typing the second half.
-    assert.match(strip(setup), /opacity: twoParts \? 1 : 0\.22/);
+    // 0.25 since the joined field (it sits on the field, not the page).
+    assert.match(strip(setup), /opacity: twoParts \? 1 : 0\.25/);
   });
 
   test("saving needs only the first part", () => {

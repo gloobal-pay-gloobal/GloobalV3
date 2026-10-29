@@ -397,6 +397,9 @@ function CreatorPage({
     return () => fire(false);
   }, []);
 
+  // The shop's own typeface, fetched the first time its page is drawn.
+  useEffect51(() => { ensureShopFont(theme.fontKey); }, [theme.fontKey]);
+
   const bump = (id, by) => setBasket((prev) => {
     const next = { ...prev };
     const n = (Number(next[id]) || 0) + by;

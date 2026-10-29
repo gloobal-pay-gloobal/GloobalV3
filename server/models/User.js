@@ -357,7 +357,7 @@ const userSchema = new mongoose.Schema({
       // Validated against the fixed palette on the way in AND on the way
       // out, because this string ends up inside a style attribute.
       color: { type: String, default: '' },
-      font: { type: String, enum: ['grotesk', 'fraunces', 'inter', 'mono'], default: 'grotesk' },
+      font: { type: String, enum: ['grotesk', 'fraunces', 'inter', 'mono', 'mukta', 'tiro', 'baloo', 'poppins', 'hind', 'rozha', 'yatra', 'kalam', 'teko'], default: 'grotesk' },
       corners: { type: String, enum: ['sharp', 'soft', 'round', 'leaf'], default: 'round' },
       cards: { type: String, enum: ['raised', 'flat', 'outline', 'plain'], default: 'raised' },
       density: { type: String, enum: ['compact', 'cosy', 'roomy'], default: 'cosy' },

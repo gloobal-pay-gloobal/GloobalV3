@@ -4196,7 +4196,7 @@ var CREATOR_SHOP_COLORS = [
 ];
 var CREATOR_SHOP_ENUMS = {
   theme: ['gloobal', 'street', 'studio', 'market', 'night'],
-  font: ['grotesk', 'fraunces', 'inter', 'mono'],
+  font: ['grotesk', 'fraunces', 'inter', 'mono', 'mukta', 'tiro', 'baloo', 'poppins', 'hind', 'rozha', 'yatra', 'kalam', 'teko'],
   corners: ['sharp', 'soft', 'round', 'leaf'],
   cards: ['raised', 'flat', 'outline', 'plain'],
   density: ['compact', 'cosy', 'roomy'],

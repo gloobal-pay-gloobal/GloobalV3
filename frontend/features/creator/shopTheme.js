@@ -104,11 +104,54 @@ var SHOP_COLORS = [
 ];
 
 var SHOP_FONTS = {
-  grotesk: { name: "Space Grotesk", note: "The app's own", stack: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", weight: 800 },
-  fraunces: { name: "Fraunces", note: "Warm, editorial", stack: "'Fraunces', Georgia, serif", weight: 800 },
-  inter: { name: "Inter", note: "Plain and clear", stack: "Inter, ui-sans-serif, system-ui, sans-serif", weight: 800 },
-  mono: { name: "DM Mono", note: "Technical", stack: "'DM Mono', ui-monospace, monospace", weight: 500 }
+  grotesk: { name: "Space Grotesk", note: "The app's own", stack: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", weight: 800, family: null },
+  fraunces: { name: "Fraunces", note: "Warm, editorial", stack: "'Fraunces', Georgia, serif", weight: 800, family: "Fraunces:wght@800" },
+  inter: { name: "Inter", note: "Plain and clear", stack: "Inter, ui-sans-serif, system-ui, sans-serif", weight: 800, family: null },
+  mono: { name: "DM Mono", note: "Technical", stack: "'DM Mono', ui-monospace, monospace", weight: 500, family: "DM+Mono:wght@500" },
+  // ── FONTS THAT CARRY BOTH SCRIPTS ──────────────────────────────────────
+  //
+  // The four above are Latin-only: a name like रसोई Ghar set in them drew
+  // its Hindi half in whatever the phone had, so the two halves of one
+  // name came out in two different typefaces. Every font below draws
+  // Devanagari AND Latin from one design, which is what the founder's
+  // "Clean / Classic / Bold" suggestions are picked from.
+  mukta: { name: "Mukta", note: "Clean", stack: "'Mukta', ui-sans-serif, system-ui, sans-serif", weight: 800, family: "Mukta:wght@800" },
+  tiro: { name: "Tiro Devanagari", note: "Classic", stack: "'Tiro Devanagari Hindi', Georgia, serif", weight: 400, family: "Tiro+Devanagari+Hindi" },
+  baloo: { name: "Baloo 2", note: "Bold", stack: "'Baloo 2', ui-sans-serif, system-ui, sans-serif", weight: 800, family: "Baloo+2:wght@800" },
+  poppins: { name: "Poppins", note: "Round and modern", stack: "'Poppins', ui-sans-serif, system-ui, sans-serif", weight: 700, family: "Poppins:wght@700" },
+  hind: { name: "Hind", note: "Plain, newsprint", stack: "'Hind', ui-sans-serif, system-ui, sans-serif", weight: 700, family: "Hind:wght@700" },
+  rozha: { name: "Rozha One", note: "Signboard serif", stack: "'Rozha One', Georgia, serif", weight: 400, family: "Rozha+One" },
+  yatra: { name: "Yatra One", note: "Festive", stack: "'Yatra One', ui-sans-serif, system-ui, sans-serif", weight: 400, family: "Yatra+One" },
+  kalam: { name: "Kalam", note: "Handwritten", stack: "'Kalam', cursive", weight: 700, family: "Kalam:wght@700" },
+  teko: { name: "Teko", note: "Tall and tight", stack: "'Teko', ui-sans-serif, system-ui, sans-serif", weight: 600, family: "Teko:wght@600" }
 };
+
+// The three suggestions shown under the name while it is being typed, in
+// the order the founder named them. Everything else is behind "More fonts".
+var SHOP_FONT_QUICK = [
+  { key: "mukta", label: "Clean" },
+  { key: "tiro", label: "Classic" },
+  { key: "baloo", label: "Bold" }
+];
+
+// Loads a shop font the first time something draws with it.
+//
+// index.html loads only the app's own two faces. Fraunces and DM Mono were
+// offered by the Look screen from the start and never loaded, so picking
+// them changed nothing visible on most phones. One <link> per family, added
+// once, with display=swap so a slow connection shows the name in the
+// fallback rather than not at all.
+function ensureShopFont(key) {
+  const f = SHOP_FONTS[key];
+  if (!f || !f.family || typeof document === "undefined") return;
+  const id = `shop-font-${key}`;
+  if (document.getElementById(id)) return;
+  const link = document.createElement("link");
+  link.id = id;
+  link.rel = "stylesheet";
+  link.href = `https://fonts.googleapis.com/css2?family=${f.family}&display=swap`;
+  document.head.appendChild(link);
+}
 
 // Corner radii, in px. "leaf" is the one asymmetric option — three rounded
 // corners and one square — which reads as a deliberate mark rather than as a
@@ -221,7 +264,8 @@ function resolveShopTheme(shop) {
   const base = shopThemeBase(key);
 
   const color = shopThemeColor(s.color, base.color);
-  const font = SHOP_FONTS[s.font] || SHOP_FONTS[base.font];
+  const fontKey = SHOP_FONTS[s.font] ? s.font : base.font;
+  const font = SHOP_FONTS[fontKey];
   const corners = SHOP_CORNERS[s.corners] || SHOP_CORNERS[base.corners];
   const cards = ["raised", "flat", "outline", "plain"].indexOf(s.cards) >= 0 ? s.cards : base.cards;
   const density = SHOP_DENSITY[s.density] || SHOP_DENSITY[base.density];
@@ -242,6 +286,7 @@ function resolveShopTheme(shop) {
     soft,
     dark,
     font,
+    fontKey,
     corners,
     cards,
     density,

@@ -1296,8 +1296,24 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     setCreatorSaving(true);
     setCreatorError("");
     try {
-      const saved = await GloobalApi.saveCreatorProfile(myGloobalId, patch);
-      if (saved) setCreatorProfile(saved);
+      // The font is part of how the SHOP looks, so it goes through the shop
+      // route (which merges over the stored look) and not the profile one —
+      // the profile route would drop it, and a rename must not be able to
+      // reset somebody's colour.
+      const { font, ...profilePatch } = patch || {};
+      const saved = await GloobalApi.saveCreatorProfile(myGloobalId, profilePatch);
+      let next = saved;
+      const hadFont = creatorProfile && creatorProfile.shop && creatorProfile.shop.font;
+      if (font && font !== hadFont) {
+        try {
+          const shop = await GloobalApi.saveCreatorShop(myGloobalId, { font });
+          if (shop && next) next = { ...next, shop };
+        } catch (e) {
+          // The name is saved; a font that did not stick is a look, not a
+          // failure worth undoing the name for. It can be picked again.
+        }
+      }
+      if (next) setCreatorProfile(next);
       setShowCreatorSetup(false);
       showToast2("Creator name saved");
     } catch (e) {

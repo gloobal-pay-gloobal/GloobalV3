@@ -16,7 +16,7 @@
 // The preview at the top is the honest version of that rule: it shows the
 // real row a customer sees, price included, so an owner can watch their
 // colour land on the chip and the Add button and NOT on the figure.
-import { useState as useState55 } from "react";
+import { useState as useState55, useEffect as useEffect57 } from "react";
 import { Check as Check10 } from "lucide-react";
 
 // The dials, in the order they are worth changing. Each is a plain list of
@@ -121,6 +121,9 @@ function ShopThemeEditor({ shop, cover, symbolId, ccyCode = "USD", lens = null, 
   const [error, setError] = useState55("");
 
   const set = (patch) => setDraft((d) => Object.assign({}, d, patch));
+  // Every sample in the Type list is drawn in its own face, so all of them
+  // are fetched when this screen opens rather than one by one as tapped.
+  useEffect57(() => { Object.keys(SHOP_FONTS).forEach(ensureShopFont); }, []);
   const theme = resolveShopTheme(draft);
 
   // Picking a theme REPLACES the dials rather than merging over them.

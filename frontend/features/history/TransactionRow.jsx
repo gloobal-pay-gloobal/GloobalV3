@@ -238,8 +238,9 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
     style={{ fontSize: 14.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >{
     /* Paid TO a shop: listed under the shop's creator name, its dot in
-       colour, so a shop payment and a personal one are told apart. */
-    t.creatorHandle && t.direction !== "received" ? <CreatorHandleText handle={t.creatorHandle} /> : t.name
+       colour, so a shop payment and a personal one are told apart. No
+       store mark here — the founder wants that on the receipt only. */
+    t.creatorHandle && t.direction !== "received" ? <CreatorHandleText handle={t.creatorHandle} icon={false} /> : t.name
   }</span>{
     /* Date and clock together — see historyRowStamp. Received AT your
        shop says so after the time. */

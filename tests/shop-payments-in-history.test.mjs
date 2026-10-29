@@ -24,7 +24,7 @@ test("the app asks for it on shop payments, and carries it to history", () => {
 });
 
 test("rows show the handle with a coloured dot; receipts offer the store", () => {
-  assert.match(readSource("frontend/features/history/TransactionRow.jsx"), /t\.creatorHandle && t\.direction !== "received" \? <CreatorHandleText handle=\{t\.creatorHandle\} \/> : t\.name/);
+  assert.match(readSource("frontend/features/history/TransactionRow.jsx"), /t\.creatorHandle && t\.direction !== "received" \? <CreatorHandleText handle=\{t\.creatorHandle\} icon=\{false\} \/> : t\.name/);
   const h = readSource("frontend/components/common/creatorHandleText.jsx");
   assert.match(h, /LOGO_FLIP_COLORS\[Math\.floor\(Math\.random\(\) \* LOGO_FLIP_COLORS\.length\)\]/);
   const r = readSource("frontend/components/dialogs/ReceiptModal.jsx");

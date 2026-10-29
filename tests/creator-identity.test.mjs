@@ -1017,3 +1017,54 @@ describe("a personal code shows the person", () => {
     assert.match(fn, /readGloobalPayFromPath\(path\)/);
   });
 });
+
+// ── THE SHOP HANDS OUT THE SHOP'S CODE ──────────────────────────────────
+describe("the Creator Profile's code button", () => {
+  const dash = () => readSource("frontend/screens/Dashboard/Dashboard.jsx");
+
+  test("opens the shop's own code, big, with a random picture", () => {
+    // "when I tap it out of creator side qrs i get one random with big
+    // size both share and copy id options". It used to open the personal
+    // Receive screen — the wrong side's code, from a profile about the
+    // creator side.
+    const src = dash();
+    assert.match(src, /onShowQr=\{\(\) => setShopCode\(gloobalAnimalQrRandom\(\)\)\}/);
+    assert.match(src, /side="shop"\s*\n\s*style=\{shopCode\}/, "the shop code is not drawn as the shop's side");
+    assert.doesNotMatch(src, /onShowQr=\{\(\) => setShowReceive\(true\)\}/);
+  });
+
+  test("a forced picture hides the picker, and a random one is never saved", () => {
+    const card = readSource("frontend/components/common/gloobalReceiveQrCard.jsx");
+    assert.match(card, /\{forcedStyle \? null : <div\s*\n\s*role="radiogroup"/);
+    const anim = readSource("frontend/components/common/gloobalAnimalQr.js");
+    const fn = anim.slice(anim.indexOf("function gloobalAnimalQrRandom"), anim.indexOf("function gloobalAnimalQrSaveChoice"));
+    assert.doesNotMatch(fn, /localStorage|SaveChoice/, "a random pick is being remembered as a choice");
+  });
+
+  test("share falls back to the link before it falls back to a download", () => {
+    // canShare({ files }) is false on a lot of Android browsers and in
+    // most installed PWAs, and a download inside an installed app looks
+    // like nothing happened. The link is the thing that pays.
+    const card = readSource("frontend/components/common/gloobalReceiveQrCard.jsx");
+    const fn = card.slice(card.indexOf("const handleShare"), card.indexOf("return (\n    <section"));
+    const files = fn.indexOf("navigator.canShare({ files: [file] })");
+    const text = fn.indexOf("await navigator.share({ title: \"My Gloobal QR\", text:");
+    const download = fn.indexOf("link.download = \"gloobal-qr.png\"");
+    assert.ok(files > 0 && text > files && download > text,
+      "the share order is not picture → link → download");
+  });
+
+  test("the map button stands aside on the Creator Profile", () => {
+    // Its default resting place is the violet card's pencil.
+    const src = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
+    const panel = src.slice(src.indexOf("function CreatorProfilePanel"));
+    assert.match(panel, /gloobal:blockingOverlay/);
+  });
+
+  test("a pasted address splits into both search boxes", () => {
+    const src = dash();
+    assert.match(src, /onPaste=\{\(e\) => \{[\s\S]{0,400}setMoreQuery\(text\.slice\(0, dot\)\);\s*\n\s*setMoreQueryLast\(text\.slice\(dot \+ 1\)\);/);
+    // Plain text with no dot, or with a space, is left to the box.
+    assert.match(src, /if \(dot <= 0 \|\| \/\\s\/\.test\(text\)\) return;/);
+  });
+});

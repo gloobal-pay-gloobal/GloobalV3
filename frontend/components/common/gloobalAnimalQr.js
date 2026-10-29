@@ -786,6 +786,16 @@ function gloobalAnimalQrLoadChoice() {
   return GLOOBAL_ANIMAL_QR_DEFAULT;
 }
 
+// One of the cast, at random. For the shop code opened from the Creator
+// Profile: "when I tap it out of creator side qrs i get one random with
+// big size". A random pick is not saved — it is a picture of the moment,
+// and the next tap gives another.
+function gloobalAnimalQrRandom() {
+  const cast = GLOOBAL_QR_ANIMALS;
+  if (!cast.length) return "classic";
+  return cast[Math.floor(Math.random() * cast.length)].key;
+}
+
 function gloobalAnimalQrSaveChoice(choice) {
   try {
     if (typeof localStorage !== "undefined") localStorage.setItem(GLOOBAL_ANIMAL_QR_STORAGE_KEY, choice);

@@ -566,7 +566,10 @@ var GLOOBAL_QR_DISC_CYCLE_MS = 2000;
 // the same bytes, so a scanner could only guess, and guessed the shop for
 // both. Now the code says. Left unset, the unmarked form is drawn, which
 // behaves exactly as every code did before there were sides.
-function GloobalReceiveQrCard({ gloobalId, name, side, onToast, headerAction = null }) {
+// `style` forces which picture is drawn and hides the picker. The shop
+// code opened from the Creator Profile passes a random animal; without it
+// the person's saved choice is used, as it always was.
+function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null, onToast, headerAction = null }) {
   const [sharing, setSharing] = useState36(false);
   // The badge's colour, turning over every two seconds.
   //
@@ -590,7 +593,7 @@ function GloobalReceiveQrCard({ gloobalId, name, side, onToast, headerAction = n
   }, []);
   // Which picture: an animal key, or "classic" for the plain code with the
   // logo badge. Remembered on this device; every choice carries the same link.
-  const [qrStyle, setQrStyle] = useState36(() => gloobalAnimalQrLoadChoice());
+  const [qrStyle, setQrStyle] = useState36(() => forcedStyle || gloobalAnimalQrLoadChoice());
   const chooseQrStyle = (next) => {
     setQrStyle(next);
     gloobalAnimalQrSaveChoice(next);
@@ -638,6 +641,26 @@ function GloobalReceiveQrCard({ gloobalId, name, side, onToast, headerAction = n
             if (error?.name !== "AbortError") onToast?.("Couldn't share the QR");
           }
           return;
+        }
+      }
+      // ── SHARE THE LINK WHEN THE PICTURE CANNOT BE SHARED ──────────
+      //
+      // canShare({ files }) is false on a lot of Android browsers and in
+      // most PWAs installed to the home screen. The code then fell
+      // straight through to a download — which inside an installed app
+      // looks like nothing happened at all. "make share functional."
+      //
+      // The link is the thing that pays; the picture is a nicer carrier
+      // for it. So where the picture cannot go through the share sheet,
+      // the link goes instead, and only if THAT is refused does the
+      // picture download.
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        try {
+          await navigator.share({ title: "My Gloobal QR", text: `Pay me on Gloobal: ${payload}`, url: payload });
+          return;
+        } catch (error) {
+          if (error?.name === "AbortError") return;
+          // Refused outright — fall through to the download below.
         }
       }
       const url = URL.createObjectURL(blob);
@@ -697,8 +720,9 @@ function GloobalReceiveQrCard({ gloobalId, name, side, onToast, headerAction = n
 
       {/* The picker: colour dots only, no words. Each dot's name is its
           accessible label (and tooltip). Scrolls sideways if it ever
-          outgrows a narrow phone. */}
-      <div
+          outgrows a narrow phone. Absent when the style was forced — a
+          random shop code is a picture of the moment, not a choice. */}
+      {forcedStyle ? null : <div
         role="radiogroup"
         aria-label="QR picture"
         data-testid="qr-style-picker"
@@ -741,7 +765,7 @@ function GloobalReceiveQrCard({ gloobalId, name, side, onToast, headerAction = n
             </button>
           );
         })}
-      </div>
+      </div>}
 
       <div style={{ width: "100%", minWidth: 0, textAlign: "center", display: "flex", flexDirection: "column", gap: 4 }}>
         {name ? (

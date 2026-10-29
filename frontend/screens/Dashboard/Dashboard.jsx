@@ -887,6 +887,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
   // Sold and bought. Layered above the profile detail it opens from, so
   // closing it returns to the creator profile rather than to the list.
   const [showCreatorLedger, setShowCreatorLedger] = useState14(false);
+  // The shop's own code, big, from the Creator Profile. Holds the random
+  // animal picked when it was opened, so the picture does not change
+  // under the person while they are holding the phone out.
+  const [shopCode, setShopCode] = useState14(null);
+  const requestCloseShopCode = useBackClose(Boolean(shopCode), () => setShopCode(null));
   const requestCloseCreatorLedger = useBackClose(showCreatorLedger, () => setShowCreatorLedger(false));
   // ── A NAME TYPED IN THE SEARCH BAR IS LOOKED UP ON THE SERVER ─────────
   //
@@ -3256,6 +3261,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
   }{showMore && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseMore} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Pay & Services</span></div><div style={{ padding: "0 18px 10px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px", boxShadow: T.shadowCard }}><Search3 size={16} color={T.inkFaint} /><input
     value={moreQuery}
     onChange={(e) => setMoreQuery(e.target.value)}
+    // A pasted `rasoi.ghar` lands in the first box whole. Split it at the
+    // dot into both boxes, which is what somebody who copied a creator's
+    // address out of a message expects to happen — and what used to
+    // happen instead was a first box holding a dot the lookup refuses.
+    onPaste={(e) => {
+      const text = String((e.clipboardData && e.clipboardData.getData("text")) || "").trim();
+      const dot = text.indexOf(".");
+      if (dot <= 0 || /\s/.test(text)) return;
+      e.preventDefault();
+      setMoreQuery(text.slice(0, dot));
+      setMoreQueryLast(text.slice(dot + 1));
+    }}
     placeholder="First name"
     aria-label="First name"
     autoCapitalize="none"
@@ -3881,7 +3898,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
-  }{showCreatorLedger && <ScreenErrorBoundary name="Sales & purchases" onClose={() => setShowCreatorLedger(false)}><CreatorLedgerScreen
+  }{shopCode && <ScreenErrorBoundary name="Your shop code" onClose={() => setShopCode(null)}><div style={{
+    position: "fixed", inset: 0, zIndex: 335, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden"
+  }}><div style={{
+    display: "flex", alignItems: "center", gap: 10,
+    padding: "calc(15px + env(safe-area-inset-top, 0px)) 16px 10px", flexShrink: 0
+  }}><NavBackButton onClick={requestCloseShopCode} /><span style={{
+    flex: 1, minWidth: 0, fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay
+  }}>Your shop code</span></div><div style={{
+    flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",
+    padding: "6px 16px calc(30px + env(safe-area-inset-bottom, 0px))"
+  }}><GloobalReceiveQrCard
+    gloobalId={gloobalIdTag}
+    name={(creatorProfile && creatorDisplayName(creatorProfile)) || myName}
+    side="shop"
+    style={shopCode}
+    onToast={showToast2}
+  /></div></div></ScreenErrorBoundary>}{showCreatorLedger && <ScreenErrorBoundary name="Sales & purchases" onClose={() => setShowCreatorLedger(false)}><CreatorLedgerScreen
     symbolId={myGloobalId}
     handle={(creatorProfile && creatorProfile.handle) || ""}
     // The same rows the personal history reads. A merchant's incoming
@@ -4089,7 +4122,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     // The code screen the Receive tile already opens — one QR screen for
     // the account, not a second one that would have to be kept in step
     // with it. It is the same account either way.
-    onShowQr={() => setShowReceive(true)}
+    // The SHOP's code — /s/ — drawn big with a random picture, not the
+    // personal Receive screen it used to open. A profile about the
+    // creator side should hand out the creator side's code.
+    onShowQr={() => setShopCode(gloobalAnimalQrRandom())}
     onOpenLedger={() => setShowCreatorLedger(true)}
     onToast={showToast2}
     onOpenPage={async () => {

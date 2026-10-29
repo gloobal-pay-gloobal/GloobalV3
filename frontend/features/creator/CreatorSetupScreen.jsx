@@ -666,6 +666,20 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
   // customers. Hiding costs nothing; showing is one tap.
   const [idShown, setIdShown] = useState53(false);
 
+  // ── THE FLOATING MAP BUTTON STANDS ASIDE ──────────────────────────────
+  //
+  // Fixed at z-index 10000, 62% down the right-hand edge — which on this
+  // screen is the violet card's pencil. The founder's screenshot has the
+  // map disc sitting half over the edit button. Same event the setup
+  // screen and the keyboard fire; a profile with four buttons on one card
+  // is not a screen that wants a fifth floating on top of them.
+  useEffect50(() => {
+    if (typeof window === "undefined") return undefined;
+    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
+    fire(true);
+    return () => fire(false);
+  }, []);
+
   if (!creator) {
     return <div style={{ padding: "28px 0", textAlign: "center", fontSize: 13, color: T.inkFaint }}>
       Loading your creator page…

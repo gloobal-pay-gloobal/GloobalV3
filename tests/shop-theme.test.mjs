@@ -150,7 +150,8 @@ test("switching a category chip cannot drop something from the basket", () => {
   // them — and the figure on the Pay button would change on its own.
   assert.match(src, /const total = creatorBasketTotal\(allItems, basket\)/);
   assert.match(src, /lines: creatorBasketLines\(allItems, basket\)/);
-  assert.match(src, /const items = activeCat/, "and the filtered list is only for drawing");
+  // Since the shop search: chip AND search filter the drawn list together.
+  assert.match(src, /const items = \(activeCat/, "and the filtered list is only for drawing");
 });
 
 test("saving the list never reads the chip-filtered view", () => {
@@ -256,7 +257,8 @@ test("a supplier is drawn with their own mark where they have one", () => {
 
 test("chips appear only when they filter something", () => {
   // One chip filters nothing and is a label pretending to be a control.
-  assert.match(page(), /categories\.length > 1 &&/);
+  // The chips now sit under the shop's search bar, inside its pinned block.
+  assert.match(page(), /categories\.length > 1 \? <div style=\{\{/);
 });
 
 test("the shop's name card keeps white text readable on every colour", () => {

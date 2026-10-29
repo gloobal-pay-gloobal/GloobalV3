@@ -25,7 +25,7 @@
 //    cost. The server enforces this; the UI simply never draws the tab for
 //    anyone else.
 import { useState as useState54, useEffect as useEffect51 } from "react";
-import { Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare, Navigation as Navigation2 } from "lucide-react";
+import { Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare, Navigation as Navigation2, Search as Search9, X as X17 } from "lucide-react";
 
 var CREATOR_PAGE_TABS = ["Selling", "Buying"];
 
@@ -96,6 +96,27 @@ function creatorBasketLines(items, basket) {
 // already uses, so a creator with no picture still looks like themselves
 // rather than like a gap. The corner radius comes from the shop's theme, so
 // a sharp-cornered shop does not have one round thing in the middle of it.
+// ── SEARCHING ONE SHOP ──────────────────────────────────────────────────
+//
+// Matches the item's name, its note, the group it is under and its badge —
+// "pan" finds Shai panner, "plate" finds whatever is sold per plate, "chai"
+// finds the Chai group. Anywhere in the word, any script, capitals ignored.
+// NFC first, so a Devanagari word typed on one keyboard matches the same
+// word typed on another that composes its vowel signs differently.
+function shopItemSearchText(item) {
+  return [item && item.title, item && item.note, item && item.category, item && item.badge]
+    .filter(Boolean).join(" ").normalize("NFC").toLowerCase();
+}
+
+function shopItemMatches(item, query) {
+  const q = String(query || "").normalize("NFC").toLowerCase().trim();
+  if (!q) return true;
+  const hay = shopItemSearchText(item);
+  // Every word typed must appear, in any order: "paneer full" finds the
+  // full plate of paneer whichever way round somebody thinks of it.
+  return q.split(/\s+/).every((w) => hay.indexOf(w) >= 0);
+}
+
 function CreatorMark({ creator, theme, size = 88 }) {
   const label = creator.handle || creator.handleFirst || "";
   const radius = (theme && theme.corners && theme.corners.mark) || 26;
@@ -356,10 +377,14 @@ function CreatorPage({
   const [reviewsOpen, setReviewsOpen] = useState54(false);
   const [reviewSummary, setReviewSummary] = useState54((creator && creator.reviews) || null);
 
+  // What somebody typed in the shop's own search bar.
+  const [itemQuery, setItemQuery] = useState54("");
+
   const allItems = Array.isArray(creator && creator.items) ? creator.items : [];
-  const items = activeCat
+  const items = (activeCat
     ? allItems.filter((i) => String(i.category || "").trim() === activeCat)
-    : allItems;
+    : allItems).filter((i) => shopItemMatches(i, itemQuery));
+  const searching = Boolean(itemQuery.trim());
   // Over ALL items, never the filtered view: switching a chip must not
   // quietly drop something already in the basket.
   const total = creatorBasketTotal(allItems, basket);
@@ -641,8 +666,46 @@ function CreatorPage({
        those products are in. Drawn only when there is more than one, because
        a single chip filters nothing and is just a label pretending to be a
        control. The selected one takes the shop's colour. */
-  }{categories.length > 1 && (!isOwner || tab === "Selling") ? <div style={{
-    display: "flex", gap: 8, overflowX: "auto", margin: "16px -18px 0", padding: "0 18px 2px",
+  }{(!isOwner || tab === "Selling") && allItems.length > 0 ? <div data-shop-search="" style={{
+    /* ── THE SHOP'S OWN SEARCH, PINNED ────────────────────────────────
+       Sticks to the top of the scroll once the cover and the card have
+       gone by, with the category chips under it, so a long menu can be
+       searched again from anywhere in it. It carries the page's own
+       ground so the items scrolling under it do not show through. */
+    position: "sticky", top: 0, zIndex: 3, background: theme.page,
+    margin: "6px -18px 0", padding: "10px 18px 6px"
+  }}><label style={{
+    display: "flex", alignItems: "center", gap: 9, height: 44, padding: "0 12px 0 14px",
+    borderRadius: theme.corners.pill, background: theme.surface,
+    boxShadow: theme.dark ? `inset 0 0 0 1px ${theme.line}` : `${T.shadowCard}, inset 0 0 0 1px ${theme.line}`
+  }}><Search9 size={16} color={theme.inkFaint} style={{ flexShrink: 0 }} /><input
+    id="shop-item-search"
+    value={itemQuery}
+    onChange={(e) => {
+      const next = e.target.value;
+      // Typing searches the WHOLE shop: a chip left on "Snacks" would make
+      // "chai" find nothing for a reason nobody can see. A chip tapped
+      // after typing still narrows the results.
+      if (next.trim() && !itemQuery.trim()) setActiveCat("");
+      setItemQuery(next);
+    }}
+    placeholder={`Search ${name}`}
+    aria-label={`Search what ${name} sells`}
+    enterKeyHint="search"
+    autoComplete="off"
+    style={{
+      flex: 1, minWidth: 0, border: "none", outline: "none", background: "none",
+      fontSize: 14, fontWeight: 600, color: theme.ink, fontFamily: "inherit"
+    }}
+  />{searching ? <button
+    onClick={() => setItemQuery("")}
+    aria-label="Clear search"
+    style={{
+      width: 26, height: 26, borderRadius: "50%", border: "none", cursor: "pointer", flexShrink: 0,
+      background: theme.soft, display: "flex", alignItems: "center", justifyContent: "center"
+    }}
+  ><X17 size={13} color={theme.ink} /></button> : null}</label>{categories.length > 1 ? <div style={{
+    display: "flex", gap: 8, overflowX: "auto", margin: "10px -18px 0", padding: "0 18px 2px",
     scrollbarWidth: "none"
   }}>{[""].concat(categories).map((c) => <button
     key={c || "__all"}
@@ -655,19 +718,22 @@ function CreatorPage({
       color: activeCat === c ? "#fff" : theme.inkSoft,
       boxShadow: theme.cards === "raised" ? T.shadowCard : "none"
     }}
-  >{c || "All"}</button>)}</div> : null}
+  >{c || "All"}</button>)}</div> : null}</div> : null}
   {(!isOwner || tab === "Selling") && <>{
-    !isOwner && items.length === 0
+    // allItems, not items: a search with no results is not an empty shop.
+    !isOwner && allItems.length === 0
       ? <div style={{
         background: theme.surface, borderRadius: 16, padding: "26px 18px", textAlign: "center",
         boxShadow: theme.dark ? "none" : T.shadowCard, marginTop: 16
       }}><div style={{ fontSize: 13.5, fontWeight: 700, color: theme.ink }}>Nothing listed yet</div><div style={{
         fontSize: 11.5, color: theme.inkFaint, marginTop: 4
       }}>You can still pay {name} any amount.</div></div>
-      : <>{isOwner ? null : <div style={{
+      : <>{isOwner || (searching && items.length === 0) ? null : <div style={{
         fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase",
         color: theme.inkSoft, margin: `${theme.density.sectionGap}px 0 10px`
-      }}>{activeCat || "What they sell"}</div>}{
+      }}>{searching
+        ? `${items.length} ${items.length === 1 ? "result" : "results"} for “${itemQuery.trim()}”`
+        : (activeCat || "What they sell")}</div>}{
         isOwner ? <button
           onClick={() => { setSaveError(""); setDraft({ id: null, title: "", price: "", note: "", category: "", badge: "", photos: [], soldOut: false }); }}
           style={{
@@ -680,6 +746,21 @@ function CreatorPage({
         /* One list of items, drawn as rows or as a two-column grid —
            whichever the owner picked under Look. Same props either way, so
            the two layouts cannot disagree about what an item is. */
+        if (searching && items.length === 0) {
+          return <div style={{
+            background: theme.surface, borderRadius: 16, padding: "24px 18px", textAlign: "center",
+            boxShadow: theme.dark ? "none" : T.shadowCard
+          }}><div style={{ fontSize: 13.5, fontWeight: 700, color: theme.ink }}>Nothing matches “{itemQuery.trim()}”</div><div style={{
+            fontSize: 11.5, color: theme.inkFaint, marginTop: 4, lineHeight: 1.45
+          }}>{activeCat ? `Only ${activeCat} is being searched.` : "Try another word, or fewer letters."}</div><button
+            onClick={() => { setItemQuery(""); setActiveCat(""); }}
+            style={{
+              marginTop: 12, border: "none", borderRadius: 999, padding: "9px 16px", cursor: "pointer",
+              background: theme.soft, color: theme.dark ? theme.color : theme.hero.from,
+              fontSize: 12.5, fontWeight: 800, fontFamily: "inherit"
+            }}
+          >Show everything</button></div>;
+        }
         const Item = theme.layout === "grid" ? CreatorPageItemCard : CreatorPageItemRow;
         const drawn = items.map((item) => <Item
         key={item.id}

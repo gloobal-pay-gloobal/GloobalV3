@@ -230,7 +230,7 @@ function SymbolIdHelpSheet({ open, onClose }) {
   }<div data-symbol-id-sample="" style={{
     borderRadius: 20, padding: "16px 14px 14px", background: T.gradButton, color: "#fff",
     boxShadow: "0 10px 24px rgba(124,58,237,0.25)"
-  }}><div style={{ fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}><span style={{ opacity: 0.85 }}>A</span><span style={{
+  }}><div style={{ fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}><span style={{ opacity: 0.85 }}>The</span><span style={{
     background: "#fff", color: T.ink, borderRadius: 6, padding: "1px 6px", fontSize: 11
   }}><GloobalWordmark /></span><span style={{ opacity: 0.85 }}>ID looks like this</span></div><div aria-label="Example ID" style={{
     display: "flex", justifyContent: "center", gap: 10, margin: "12px 0 10px"

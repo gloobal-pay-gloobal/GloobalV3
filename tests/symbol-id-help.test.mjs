@@ -27,4 +27,6 @@ test("eight tiles with names, the hollow/filled line, Hear it, and three steps",
   assert.match(src, /prefers-reduced-motion: reduce/);
   assert.match(src, /data-read-aloud="" style=\{\{ display: "flex", flexDirection: "column" \}\}/);
   assert.match(src, /data-id-steps="" style=\{\{\s*display: "flex", flexDirection: "column"/);
+  // "The GLOOBAL ID", not "A" (the founder).
+  assert.match(src, /<span style=\{\{ opacity: 0\.85 \}\}>The<\/span>/);
 });

@@ -1459,6 +1459,32 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // screen with a name on the map's own terms, so it gets an entry
     // and a way in.
     else if (deepLinkTarget === "essentials") setShowEssentials(true);
+    // ── THE NEWER DOORS ──────────────────────────────────────────────
+    //
+    // Pay & Services (with GLOOBAL बाज़ार inside), the Receive QR, the
+    // shop and its setup, and Security. Each opens exactly what its own
+    // button on the dashboard opens, so the map can never land somewhere
+    // the app itself does not go.
+    else if (deepLinkTarget === "payservices") setShowMore(true);
+    else if (deepLinkTarget === "receive") setShowReceive(true);
+    else if (deepLinkTarget === "creatorSetup") setShowCreatorSetup(true);
+    else if (deepLinkTarget === "security") { setActiveTab("profile"); setProfileDetail("Security"); }
+    // My shop: the person's own store, opened the way a customer sees
+    // it. No name yet means there is no store to open, so the setup
+    // screen that makes one is the honest destination.
+    else if (deepLinkTarget === "myshop") {
+      (async () => {
+        const profile = creatorProfile || await loadCreatorProfile();
+        const handle = profile && profile.handle;
+        if (!handle) { setShowCreatorSetup(true); return; }
+        try {
+          const found = await GloobalApi.resolveCreatorHandle(String(handle));
+          if (found) setOpenCreator(found); else showToast2("Your shop could not be opened just now.");
+        } catch (err) {
+          showToast2("Your shop could not be opened just now.");
+        }
+      })();
+    }
     if (onConsumeDeepLink) onConsumeDeepLink();
   }, [deepLinkTarget]);
   useEffect12(() => {

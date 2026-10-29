@@ -2885,6 +2885,16 @@ function GloobalId() {
       setActiveScreen("coverage");
       return;
     }
+    // Three that live in App itself rather than inside the Dashboard:
+    // the scanner, the notification list, and the GLOOBAL ID explainer.
+    if (target === "scan") {
+      setShowScanScreen(true);
+      return;
+    }
+    if (target === "notifications") {
+      setShowNotifications(true);
+      return;
+    }
     if (target === "history") {
       // Same mechanism the dashboard's own "Paid" history link already
       // uses (see the SendMoney onOpenPaidHistory callback below) — any
@@ -2937,6 +2947,8 @@ function GloobalId() {
     ? (["phone", "secureId", "referral", "login"].includes(stage) ? stage : null)
     : activeScreen === "send" ? "send"
     : activeScreen === "coverage" ? "coverage"
+    : showScanScreen ? "scan"
+    : showNotifications ? "notifications"
     : "dashboard";
   // ── ORDER MATTERS HERE ──────────────────────────────────────────────
   //
@@ -2986,15 +2998,33 @@ function GloobalId() {
     // past a check would be a hole in it.
     { key: "choices", section: "Your money", group: "post", label: "My Choices", locked: !everRegistered, onPress: () => goToDashboardDestination("choices") },
     { key: "essentials", section: "Your money", group: "post", label: "My Essentials", locked: !everRegistered, onPress: () => goToDashboardDestination("essentials") },
+    // ── NEW SINCE THE MAP WAS LAST DRAWN ───────────────────────────────
+    //
+    // Pay & Services (GLOOBAL बाज़ार lives inside it), Scan & Pay and the
+    // Receive QR are how money moves now, so they sit with Send. The shop
+    // got its own branch: a creator's store and the screen that names it.
+    // Security holds the App lock that decides how long a person stays
+    // signed in, and the GLOOBAL ID explainer is the one screen that
+    // answers "what is this ID?" — it opens without going anywhere else.
+    { key: "payservices", section: "Move money", group: "post", label: "Pay & Services", locked: !everRegistered, onPress: () => goToDashboardDestination("payservices") },
+    { key: "scan", section: "Move money", group: "post", label: "Scan & Pay", locked: !everRegistered, onPress: () => goToDashboardDestination("scan") },
+    { key: "receive", section: "Move money", group: "post", label: "Receive (My QR)", locked: !everRegistered, onPress: () => goToDashboardDestination("receive") },
+    { key: "myshop", section: "Your shop", group: "post", label: "My Shop", locked: !everRegistered, onPress: () => goToDashboardDestination("myshop") },
+    { key: "creatorSetup", section: "Your shop", group: "post", label: "Shop Setup & Name", locked: !everRegistered, onPress: () => goToDashboardDestination("creatorSetup") },
     { key: "ghscore", section: "You", group: "post", label: "Hooman Score", locked: !everRegistered, onPress: () => goToDashboardDestination("ghscore") },
     { key: "updateId", section: "You", group: "post", label: "Update GLOOBAL ID", locked: !everRegistered, onPress: () => goToDashboardDestination("updateId") },
     { key: "referralnet", section: "You", group: "post", label: "Referral Network", locked: !everRegistered, onPress: () => goToDashboardDestination("referral") },
+    { key: "security", section: "You", group: "post", label: "Security & App Lock", locked: !everRegistered, onPress: () => goToDashboardDestination("security") },
+    { key: "notifications", section: "You", group: "post", label: "Notifications", locked: !everRegistered, onPress: () => goToDashboardDestination("notifications") },
     { key: "coverage", section: "GLOOBAL", group: "post", label: "GLOOBAL Coverage", locked: !everRegistered, onPress: () => goToDashboardDestination("coverage") },
     { key: "aboutus", section: "GLOOBAL", group: "post", label: "About Us", locked: !everRegistered, onPress: () => goToDashboardDestination("aboutus") },
     { key: "phone", section: "Get started", group: "pre", label: "Mobile Number", locked: everRegistered, onPress: goToRegistrationStart },
     { key: "secureId", section: "Get started", group: "pre", label: "Create GLOOBAL ID", locked: everRegistered, onPress: () => { setIsLoginAttempt(false); flipTo("secureId"); } },
     { key: "referral", section: "Get started", group: "pre", label: "Referral Code", locked: everRegistered, onPress: () => { setIsLoginAttempt(false); flipTo("referral"); } },
-    { key: "login", section: "You", group: "pre", label: "Login", locked: false, onPress: goToLogin }
+    { key: "login", section: "You", group: "pre", label: "Login", locked: false, onPress: goToLogin },
+    // Last, for the same reason as Login: it is never locked, so it must not
+    // be the entry that decides which section leads on a fresh device.
+    { key: "idGuide", section: "You", group: "post", label: "How the GLOOBAL ID Works", locked: false, onPress: () => setHelpSheet("symbols") }
   ];
   const effectiveLoginCountry = loginMobileCountry || dialCountry;
   const [loginMinLen, loginMaxLen] = mobileDigitRange(effectiveLoginCountry.iso);
@@ -3781,7 +3811,7 @@ function GloobalId() {
        unmounts the sheet and useBackClose's cleanup pops its history
        entry — rather than leaving an open sheet, or a stranded back-stack
        entry, behind on a screen it does not belong to. */
-  }{stage === "secureId" && <SymbolIdHelpSheet open={helpSheet === "symbols"} onClose={() => setHelpSheet(null)} />}{stage === "referral" && <ReferralHelpSheet open={helpSheet === "referral"} onClose={() => setHelpSheet(null)} />}{
+  }{(stage === "secureId" || helpSheet === "symbols") && <SymbolIdHelpSheet open={helpSheet === "symbols"} onClose={() => setHelpSheet(null)} />}{stage === "referral" && <ReferralHelpSheet open={helpSheet === "referral"} onClose={() => setHelpSheet(null)} />}{
     /* "Gloobal ID" wordmark — now shown on every early registration/
        login screen: phone entry, Secure ID (creating a new one,
        logging in with an existing one, or logging in by phone), and

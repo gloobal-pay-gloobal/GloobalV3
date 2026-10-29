@@ -436,7 +436,10 @@ function mapServerTransaction(row, viewerSymbolId) {
     : "";
 
   return {
-    name: counterpartyName,
+    // A payment TO a shop is listed under the shop's creator name
+    // (rasoi.ghar), not the owner's own name — that is what was paid.
+    name: row.creatorHandle && row.direction !== "received" ? row.creatorHandle : counterpartyName,
+    personName: counterpartyName,
     // The counterparty's own Gloobal ID — the "To"/"From" identity on the
     // receipt. Never the viewer's: the server picks the opposite side by the
     // transaction's own fromUserId (counterpartyFor), and this only carries
@@ -620,6 +623,9 @@ function mapServerTransaction(row, viewerSymbolId) {
     // link, exactly as it did before these existed.
     receiptCode: row.receiptCode || "",
     shareReceiptCode: isShareLeg ? "" : row.shareReceiptCode || "",
+    // The shop's creator name when this payment was made TO a shop — the
+    // name a paid row is listed under, and the store its receipt opens.
+    creatorHandle: row.creatorHandle || null,
     memo: row.note || "",
     ledgerRecordId: null,
     // Server rows predate this device's Personal/Creator split and carry
@@ -995,6 +1001,10 @@ function GloobalId() {
         note: memo || "",
         pin: sendPin,
         payMethod: payMethodLabel || "",
+        // Paid at the receiver's SHOP (their creator name), not at them as a
+        // person. The server checks the receiver really has a creator name
+        // and records it on the payment; history and receipts read it back.
+        toCreator: Boolean(receiver && receiver.creatorHandle),
         // The ID this device already minted for the payment, so the record
         // MongoDB stores is the same one the sender's receipt, complaint
         // window and location report are keyed by — and, because the
@@ -1208,6 +1218,9 @@ function GloobalId() {
       // payment to somebody's given name reads as the wrong recipient,
       // which on a payment screen is the one doubt worth never creating.
       name: (payee.creator && creatorDisplayName(payee.creator)) || payee.name,
+      // Paid at the shop: history and the receipt name the shop by its
+      // handle and offer its store (0138).
+      creatorHandle: (payee.creator && payee.creator.handle) || null,
       mobileNumber: payee.mobileNumber,
       currency: COUNTRY_CURRENCY[payeeCountry.iso] || "USD",
       shareRate: payee.shareRate,
@@ -1595,6 +1608,13 @@ function GloobalId() {
   const [countrySearch, setCountrySearch] = useState19("");
   const [activeScreen, setActiveScreen] = useState19(null);
   const requestCloseActiveScreen = useBackClose(activeScreen !== null, () => setActiveScreen(null));
+  // A receipt's Store button: whatever screen the receipt sat on (Send,
+  // history) steps aside so the dashboard can show the shop's store.
+  useEffect15(() => {
+    const leave = () => setActiveScreen(null);
+    window.addEventListener("gloobal:openShop", leave);
+    return () => window.removeEventListener("gloobal:openShop", leave);
+  }, []);
   // A scanned or linked payee belongs to the Send Money visit it opened.
   // However Send Money is left — its close button, the back button, a
   // session expiry — the payee must not reappear on the next visit.
@@ -4334,6 +4354,7 @@ function GloobalId() {
         iso: creatorCountry.iso,
         id: creator.symbolId,
         name: creatorDisplayName(creator),
+        creatorHandle: creator.handle || null,
         mobileNumber: "",
         currency: COUNTRY_CURRENCY[creatorCountry.iso] || "USD",
         registered: true,

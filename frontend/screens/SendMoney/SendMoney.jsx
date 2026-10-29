@@ -458,6 +458,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       flag: prefillReceiver.flag,
       id: prefillReceiver.id || "",
       name: prefillReceiver.name || "GLOOBAL User",
+      creatorHandle: prefillReceiver.creatorHandle || null,
       // Already masked. This value originates in GET /api/users/resolve (via
       // App.jsx's handleSendToScanned), which now masks before it answers —
       // see the note where maskMobileNumber used to be defined.
@@ -718,6 +719,14 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       txnId: confirmedTxnId,
       recorded: confirmedRecorded
     });
+    // Paid at a shop: the row is listed under the shop's creator name and
+    // the receipt carries the way into its store.
+    if (bottom.creatorHandle) {
+      historyEntry.creatorHandle = bottom.creatorHandle;
+      historyEntry.personName = historyEntry.name;
+      historyEntry.name = bottom.creatorHandle;
+      receipt2.creatorHandle = bottom.creatorHandle;
+    }
     // Held no longer than the send it authorised.
     verifiedPinRef.current = null;
     // Overridden after buildTransactionSnapshot, the same way confirmedCashback

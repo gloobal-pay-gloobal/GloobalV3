@@ -8563,6 +8563,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       pin,
       idempotencyKey,
       payMethod,
+      // Paid at the receiver's shop (their creator name) rather than at
+      // them as a person. Only honoured when the receiver really has one.
+      toCreator,
     } = req.body || {};
 
     const senderIdentifier = String(senderSymbolId || fromSymbolId || symbolId || '').trim();
@@ -9142,6 +9145,12 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
             fullName: receiver.fullName || '',
             countryIso: accountCountryIso(receiver),
             currency: destinationCurrency,
+            // The shop's creator name as it stood when it was paid — only
+            // when the payer paid the SHOP and the receiver has one. History
+            // lists the payment under it and the receipt opens its store.
+            creatorHandle: toCreator === true && receiver.creatorProfile && receiver.creatorProfile.handle
+              ? String(receiver.creatorProfile.handle)
+              : null,
           },
         },
         // The Creator Share this payment carried, in the receiver's own
@@ -12069,6 +12078,9 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
         // derives its flag from and which this projection previously had no
         // way to supply at all.
         counterparty: counterpartyFor(transaction, isSender, counterparty),
+        // The shop this payment was made to, when it was paid at a creator
+        // name (see the send route's parties.receiver.creatorHandle).
+        creatorHandle: transaction.metadata?.parties?.receiver?.creatorHandle || null,
         // The Creator Share this payment carried. Written into metadata by
         // the send route; null on rows that predate it, which the client
         // treats as "no share" rather than inventing one.
@@ -12351,6 +12363,9 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         // counterpartyFor. Carries countryIso so this route can feed a
         // receipt too, not only a list row.
         counterparty: counterpartyFor(transaction, isSender, counterparty),
+        // The shop this payment was made to, when it was paid at a creator
+        // name (see the send route's parties.receiver.creatorHandle).
+        creatorHandle: transaction.metadata?.parties?.receiver?.creatorHandle || null,
         // The share leg's OWN reference, so a receipt rebuilt from this row
         // can name the share by its own id instead of the payment's. Null on
         // a payment whose payee shares nothing — there is no second leg, and

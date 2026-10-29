@@ -914,6 +914,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [creatorHit, setCreatorHit] = useState14(null);
   const [creatorLookupBusy, setCreatorLookupBusy] = useState14(false);
   const [openCreator, setOpenCreator] = useState14(null);
+  // A receipt's Store button (ReceiptModal → gloobal:openShop): the shop
+  // that was paid, opened on its store.
+  useEffect12(() => {
+    const open = async (e) => {
+      const handle = e && e.detail && e.detail.handle;
+      if (!handle) return;
+      try {
+        const found = await GloobalApi.resolveCreatorHandle(String(handle));
+        if (found) setOpenCreator(found);
+        else showToast2("That shop could not be found just now.");
+      } catch (err) {
+        showToast2("That shop could not be found just now.");
+      }
+    };
+    window.addEventListener("gloobal:openShop", open);
+    return () => window.removeEventListener("gloobal:openShop", open);
+  }, []);
   const [creatorSuppliers, setCreatorSuppliers] = useState14([]);
   const [creatorPurchases, setCreatorPurchases] = useState14([]);
   const [showShopTheme, setShowShopTheme] = useState14(false);

@@ -236,11 +236,16 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
     }}
   ><span style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}><span
     style={{ fontSize: 14.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-  >{t.name}</span>{
-    /* Date and clock together — see historyRowStamp. */
+  >{
+    /* Paid TO a shop: listed under the shop's creator name, its dot in
+       colour, so a shop payment and a personal one are told apart. */
+    t.creatorHandle && t.direction !== "received" ? <CreatorHandleText handle={t.creatorHandle} /> : t.name
+  }</span>{
+    /* Date and clock together — see historyRowStamp. Received AT your
+       shop says so after the time. */
   }<span
     style={{ fontSize: 11, fontWeight: 600, color: T.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-  >{stamp}</span></span>{
+  >{stamp}{t.creatorHandle && t.direction === "received" ? <> · at <CreatorHandleText handle={t.creatorHandle} icon={false} /></> : null}</span></span>{
     /* The right-hand column. Never shrinks and never wraps: a truncated
        amount is a wrong amount. minWidth keeps the figures aligned as a
        column even when the names beside them differ in length. */

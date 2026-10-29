@@ -186,6 +186,8 @@ const FRONTEND_MODULES = [
   "components/common/appLogo.jsx",
   // Crop a photo before it uploads: one host, any picker can ask.
   "components/common/photoCropper.jsx",
+  // A shop's creator name with its dot in colour (history, receipts).
+  "components/common/creatorHandleText.jsx",
   "components/cards/geuLensToggle.jsx",
   "components/cards/notificationCard.jsx",
   // The same card, slid over the app when a payment arrives while it is

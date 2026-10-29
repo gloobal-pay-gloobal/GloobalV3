@@ -8,7 +8,8 @@ import {
   Eye,
   MapPin,
   Flag as FlagIcon2,
-  RefreshCw as RefreshCw7
+  RefreshCw as RefreshCw7,
+  Store as StoreReceipt
 } from "lucide-react";
 
 
@@ -1329,7 +1330,22 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
         setAuditBusy(false);
       }
     }}
-  /><ReceiptIconAction
+  />{
+    /* ── THE SHOP'S STORE ─────────────────────────────────────────────
+       On a payment made to a shop (paid at its creator name), one tap into
+       that shop's store — its items and prices. Not on personal payments,
+       and not on the Creator Share tab. App closes whatever screen the
+       receipt sits on and the dashboard opens the store (gloobal:openShop). */
+  }{receipt && receipt.creatorHandle && !onShareTab ? <ReceiptIconAction
+    testId="receipt-open-store"
+    ariaLabel={`Open the store of ${receipt.creatorHandle}`}
+    icon={<StoreReceipt size={20} color={T.accent} />}
+    label="Store"
+    onClick={() => {
+      window.dispatchEvent(new CustomEvent("gloobal:openShop", { detail: { handle: receipt.creatorHandle } }));
+      if (onClose) onClose();
+    }}
+  /> : null}<ReceiptIconAction
     testId="receipt-share-image"
     ariaLabel="Share receipt image"
     icon={<Share2 size={20} color={T.accent} />}

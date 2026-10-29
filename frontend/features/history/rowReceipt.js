@@ -88,7 +88,12 @@ function receiptForRow(t, direction, ctx) {
     ? findSharePaymentSource(t, c.sendHistory || [], c.receiveHistory || [])
     : null;
 
-  return buildHistoryReceipt(t, direction, c.dialCountry, c.ccy, source);
+  const receipt = buildHistoryReceipt(t, direction, c.dialCountry, c.ccy, source);
+  // Paid at a shop: the receipt offers the way into its store (0138).
+  if (receipt && t.creatorHandle && direction !== "received" && t.kind !== "share") {
+    return Object.assign({}, receipt, { creatorHandle: t.creatorHandle });
+  }
+  return receipt;
 }
 
 // The account holder, as the four fields a coin receipt needs.

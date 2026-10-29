@@ -184,6 +184,8 @@ const FRONTEND_MODULES = [
   "components/common/iconTile.jsx",
   // The app logo in its five colours, and the two-hour turn between them.
   "components/common/appLogo.jsx",
+  // Crop a photo before it uploads: one host, any picker can ask.
+  "components/common/photoCropper.jsx",
   "components/cards/geuLensToggle.jsx",
   "components/cards/notificationCard.jsx",
   // The same card, slid over the app when a payment arrives while it is

@@ -337,7 +337,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // the floor, so a photo that never reached the server still looked
     // saved: the picture was on screen and nothing ever said otherwise.
     reader.onload = async () => {
-      const outcome = await onChangeProfilePhoto(await fitProfilePhotoForUpload(reader.result));
+      // Cropped first: a circle for a face, a square for a shop's logo.
+      const cropped = await requestPhotoCrop(reader.result, shareRole === "user" ? "circle" : "square");
+      if (!cropped) return;
+      const outcome = await onChangeProfilePhoto(await fitProfilePhotoForUpload(cropped));
       if (!outcome || outcome.ok) return showToast2("Photo updated");
       if (outcome.reason === "unprepared") {
         return showToast2("That picture couldn't be prepared — try another one");

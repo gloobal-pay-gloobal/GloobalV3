@@ -69,7 +69,7 @@ function GloobalArtifactRoot() {
   // The registration flow lives inside GloobalId, so the boundary goes
   // here: a throw in any stage now shows a message instead of a blank
   // page, and the real error still reaches the console.
-  return <><GloobalLogoFavicon />{showSplash && <LaunchSplash onFinish={() => setShowSplash(false)} />}<LedgerProvider key={accountKey}><ScreenErrorBoundary name="Gloobal ID"><GloobalId /></ScreenErrorBoundary></LedgerProvider></>;
+  return <><GloobalLogoFavicon /><PhotoCropHost />{showSplash && <LaunchSplash onFinish={() => setShowSplash(false)} />}<LedgerProvider key={accountKey}><ScreenErrorBoundary name="Gloobal ID"><GloobalId /></ScreenErrorBoundary></LedgerProvider></>;
 }
 export {
   GloobalArtifactRoot as default

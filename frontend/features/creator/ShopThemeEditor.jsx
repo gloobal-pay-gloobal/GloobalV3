@@ -270,12 +270,12 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
       aria-pressed={on}
       className="v2-tap"
       style={{
-        flex: "1 1 0", minWidth: 72, background: T.surface, borderRadius: 14, padding: "10px 6px 9px", border: "none",
+        flex: "1 1 0", minWidth: 60, background: T.surface, borderRadius: 12, padding: "7px 4px 6px", border: "none",
         cursor: "pointer", fontFamily: "inherit", boxShadow: ring(on), transition: "box-shadow 0.15s ease",
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 7
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 4
       }}
     >{render ? render(key, on) : null}<span style={{
-      fontSize: 11, fontWeight: 700, color: on ? T.accent : T.ink
+      fontSize: 10.5, fontWeight: 700, color: on ? T.accent : T.ink
     }}>{shopOptionLabel(field, key)}</span></button>;
   })}</div>;
 
@@ -284,7 +284,9 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
 
   // ── THE TABS ────────────────────────────────────────────────────────────
   const tabs = {
-    theme: <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{SHOP_THEME_KEYS.map((key) => {
+    // Three to a row with a shorter swatch: two big cards to a row made
+    // twelve themes six screens of scrolling (founder: "icons oversized").
+    theme: <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{SHOP_THEME_KEYS.map((key) => {
       const t = SHOP_THEMES[key];
       const look = resolveShopTheme({ theme: key });
       const on = draft.theme === key;
@@ -297,27 +299,28 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
         className="v2-tap"
         style={{
           textAlign: "left", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, overflow: "hidden",
-          background: look.dark ? "#1E1814" : T.surface, borderRadius: 16, boxShadow: ring(on), transition: "box-shadow 0.15s ease"
+          background: look.dark ? "#1E1814" : T.surface, borderRadius: 13, boxShadow: ring(on), transition: "box-shadow 0.15s ease"
         }}
       ><span style={{
-        display: "flex", alignItems: "flex-end", height: 58, padding: "0 10px 8px", background: ground, position: "relative"
+        display: "flex", alignItems: "flex-end", height: 40, padding: "0 7px 6px", background: ground, position: "relative"
       }}><span style={{
-        fontSize: 17, lineHeight: 1, fontFamily: look.font.stack, fontWeight: look.font.weight,
+        fontSize: 14, lineHeight: 1, fontFamily: look.font.stack, fontWeight: look.font.weight,
         color: t.coverStyle === "pattern" ? look.hero.from : "#fff"
       }}>Aa</span><span style={{
-        marginLeft: "auto", width: 22, height: 22, ...shopButtonStyle(look), ...(look.buttons !== "filled" ? { background: "#fff" } : {}),
-        borderRadius: look.corners.pill, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800
+        marginLeft: "auto", width: 17, height: 17, ...shopButtonStyle(look), ...(look.buttons !== "filled" ? { background: "#fff" } : {}),
+        borderRadius: look.corners.pill, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800
       }}>+</span>{on ? <span style={{
-        position: "absolute", top: 7, right: 7, width: 18, height: 18, borderRadius: "50%", background: T.accent,
+        position: "absolute", top: 5, right: 5, width: 15, height: 15, borderRadius: "50%", background: T.accent,
         display: "flex", alignItems: "center", justifyContent: "center"
-      }}><Check10 size={11} color="#fff" strokeWidth={3} /></span> : null}</span><span style={{ display: "block", padding: "8px 10px 10px" }}><span style={{
-        display: "block", fontSize: 13, fontWeight: 800, color: look.dark ? "#F3EBE1" : T.ink, fontFamily: look.font.stack
+      }}><Check10 size={9} color="#fff" strokeWidth={3} /></span> : null}</span><span style={{ display: "block", padding: "6px 7px 7px" }}><span style={{
+        display: "block", fontSize: 11.5, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: look.dark ? "#F3EBE1" : T.ink, fontFamily: look.font.stack
       }}>{t.name}</span><span style={{
-        display: "block", fontSize: 10.5, color: look.dark ? "#C3B5A5" : T.inkFaint, marginTop: 3, fontWeight: 600, lineHeight: 1.35
+        display: "block", fontSize: 9.5, color: look.dark ? "#C3B5A5" : T.inkFaint, marginTop: 2, fontWeight: 600, lineHeight: 1.3,
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
       }}>{t.note}</span></span></button>;
     })}</div>,
 
-    colour: <>{row("Shop colour", <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>{SHOP_COLORS.map((c) => {
+    colour: <>{row("Shop colour", <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 8 }}>{SHOP_COLORS.map((c) => {
       const on = theme.color.toUpperCase() === c.toUpperCase();
       return <button
         key={c}
@@ -327,10 +330,10 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
         style={{
           aspectRatio: "1", borderRadius: "50%", background: c, border: "none", cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: on ? `0 0 0 3px ${T.bg}, 0 0 0 5.5px ${c}` : "0 2px 6px rgba(20,18,43,0.15)",
+          boxShadow: on ? `0 0 0 2.5px ${T.bg}, 0 0 0 4.5px ${c}` : "0 2px 6px rgba(20,18,43,0.15)",
           transform: on ? "scale(1.05)" : "none", transition: "transform 0.15s ease, box-shadow 0.15s ease"
         }}
-      >{on ? <Check10 size={16} color="#fff" strokeWidth={3} /> : null}</button>;
+      >{on ? <Check10 size={13} color="#fff" strokeWidth={3} /> : null}</button>;
     })}</div>)}<div style={{
       display: "flex", alignItems: "center", gap: 12, background: T.surface, borderRadius: 15, padding: "12px 14px", boxShadow: T.shadowCard
     }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>Dark page</span><span style={{
@@ -353,15 +356,15 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
         aria-pressed={on}
         className="v2-tap"
         style={{
-          display: "flex", alignItems: "center", gap: 12, textAlign: "left", background: T.surface, borderRadius: 15,
-          padding: "11px 14px", border: "none", cursor: "pointer", fontFamily: "inherit", boxShadow: ring(on)
+          display: "flex", alignItems: "center", gap: 10, textAlign: "left", background: T.surface, borderRadius: 13,
+          padding: "8px 12px", border: "none", cursor: "pointer", fontFamily: "inherit", boxShadow: ring(on)
         }}
       ><span style={{ flex: 1, minWidth: 0 }}><span style={{
-        display: "block", fontSize: 19, lineHeight: 1.3, color: T.ink, fontFamily: f.stack, fontWeight: f.weight,
+        display: "block", fontSize: 16, lineHeight: 1.3, color: T.ink, fontFamily: f.stack, fontWeight: f.weight,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
       }}>{name}</span><span style={{
         display: "block", fontSize: 10.5, color: T.inkFaint, fontWeight: 600, marginTop: 2
-      }}>{f.name} · {quick ? quick.label : f.note}</span></span>{on ? <Check10 size={16} color={T.accent} /> : null}</button>;
+      }}>{f.name} · {quick ? quick.label : f.note}</span></span>{on ? <Check10 size={14} color={T.accent} /> : null}</button>;
     })}</div>,
 
     layout: <>{SHOP_EDIT_SECTIONS.map((sec) => <div key={sec.field}>{row(sec.label, chips(sec.field, sec.options, (key, on) => {
@@ -370,28 +373,28 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
       const c = on ? T.accent : T.inkFaint;
       if (sec.field === "layout") {
         return key === "grid"
-          ? <span style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 3, width: 30 }}>{[0, 1, 2, 3].map((i) => <span key={i} style={{ height: 11, borderRadius: 3, background: c, opacity: 0.6 }} />)}</span>
-          : <span style={{ display: "flex", flexDirection: "column", gap: 3, width: 30 }}>{[0, 1, 2].map((i) => <span key={i} style={{ height: 6, borderRadius: 3, background: c, opacity: 0.6 }} />)}</span>;
+          ? <span style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2, width: 20 }}>{[0, 1, 2, 3].map((i) => <span key={i} style={{ height: 7, borderRadius: 2, background: c, opacity: 0.6 }} />)}</span>
+          : <span style={{ display: "flex", flexDirection: "column", gap: 2, width: 20 }}>{[0, 1, 2].map((i) => <span key={i} style={{ height: 4, borderRadius: 2, background: c, opacity: 0.6 }} />)}</span>;
       }
       if (sec.field === "buttons") {
         return <span style={{
-          width: 26, height: 26, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800,
+          width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800,
           ...shopButtonStyle({ ...theme, buttons: key })
         }}>+</span>;
       }
-      if (sec.field === "corners") return <span style={{ width: 28, height: 20, border: `2px solid ${c}`, borderRadius: (SHOP_CORNERS[key] || {}).card }} />;
+      if (sec.field === "corners") return <span style={{ width: 22, height: 15, border: `2px solid ${c}`, borderRadius: String((SHOP_CORNERS[key] || {}).card || "0").replace(/(\d+)px/g, (m, n) => `${Math.round(Number(n) * 0.45)}px`) }} />;
       if (sec.field === "photoShape") {
         const shp = SHOP_PHOTO_SHAPES[key] || {};
-        const h = 22;
+        const h = 15;
         return <span style={{ width: Math.round(h * (shp.ratio || 1)), height: h, background: c, opacity: 0.55, borderRadius: shp.radius || 5 }} />;
       }
       if (sec.field === "cards") {
         const st = shopCardStyle({ ...theme, cards: key, corners: SHOP_CORNERS.soft });
-        return <span style={{ width: 34, height: 20, ...st, borderRadius: 6, boxShadow: key === "raised" ? "0 2px 6px rgba(20,18,43,0.18)" : st.boxShadow }} />;
+        return <span style={{ width: 26, height: 15, ...st, borderRadius: 5, boxShadow: key === "raised" ? "0 2px 6px rgba(20,18,43,0.18)" : st.boxShadow }} />;
       }
       if (sec.field === "density") {
-        const gap = { compact: 2, cosy: 4, roomy: 6 }[key];
-        return <span style={{ display: "flex", flexDirection: "column", gap, width: 28 }}>{[0, 1, 2].map((i) => <span key={i} style={{ height: 4, borderRadius: 2, background: c, opacity: 0.6 }} />)}</span>;
+        const gap = { compact: 1, cosy: 3, roomy: 5 }[key];
+        return <span style={{ display: "flex", flexDirection: "column", gap, width: 20 }}>{[0, 1, 2].map((i) => <span key={i} style={{ height: 3, borderRadius: 2, background: c, opacity: 0.6 }} />)}</span>;
       }
       return null;
     }))}</div>)}</>,
@@ -404,23 +407,23 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
       onMove={(focusY) => { if (onSaveCover) onSaveCover({ focusY }); }}
       onRemove={async () => { if (onSaveCover) await onSaveCover({ remove: true }); }}
     />)}{row("Across the top", chips("coverStyle", ["photo", "gradient", "pattern"], (key) => <span style={{
-      width: 44, height: 24, borderRadius: 6, overflow: "hidden",
+      width: 32, height: 18, borderRadius: 5, overflow: "hidden",
       background: key === "pattern" ? shopPatternCss(theme.pattern, theme.color, theme.dark)
         : key === "gradient" ? `linear-gradient(140deg, ${theme.hero.from}, ${theme.hero.to})`
           : (cover && cover.photo ? `center / cover url("${cover.photo}")` : T.surfaceAlt)
     }} />), <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, color: T.inkFaint }}>{draft.coverStyle === "photo" && !(cover && cover.photo) ? "Add a photo above" : ""}</span>)}{
       theme.coverStyle === "pattern" ? row("Pattern", chips("pattern", Object.keys(SHOP_PATTERNS), (key) => <span style={{
-        width: 44, height: 28, borderRadius: 7, background: shopPatternCss(key, theme.color, theme.dark)
+        width: 32, height: 20, borderRadius: 5, background: shopPatternCss(key, theme.color, theme.dark)
       }} />)) : null
     }{row("Name card", chips("heroStyle", Object.keys(SHOP_HERO_STYLES), (key) => <span style={{
-      width: 44, height: 26, borderRadius: 7, position: "relative", overflow: "hidden",
+      width: 32, height: 19, borderRadius: 5, position: "relative", overflow: "hidden",
       background: key === "glass" ? (theme.coverStyle === "pattern" ? shopPatternCss(theme.pattern, theme.color, theme.dark) : `linear-gradient(140deg, ${theme.hero.from}, ${theme.hero.to})`) : "transparent",
       boxShadow: key === "minimal" ? `inset 0 0 0 1.5px ${T.line}` : "none"
     }}><span style={{
-      position: "absolute", inset: key === "glass" ? 5 : 0, borderRadius: key === "glass" ? 5 : 7,
+      position: "absolute", inset: key === "glass" ? 4 : 0, borderRadius: key === "glass" ? 4 : 5,
       background: key === "gradient" ? `linear-gradient(140deg, ${theme.hero.from}, ${theme.hero.to})` : key === "solid" ? theme.hero.from
         : key === "glass" ? "rgba(18,14,26,0.45)" : "transparent"
-    }} /><span style={{ position: "absolute", left: key === "glass" ? 10 : 6, top: key === "glass" ? 10 : 9, width: 18, height: 4, borderRadius: 2, background: key === "minimal" ? T.ink : "#fff" }} /></span>), <span style={{
+    }} /><span style={{ position: "absolute", left: key === "glass" ? 8 : 5, top: key === "glass" ? 8 : 7, width: 13, height: 3, borderRadius: 2, background: key === "minimal" ? T.ink : "#fff" }} /></span>), <span style={{
       textTransform: "none", letterSpacing: 0, fontWeight: 600, color: T.inkFaint
     }}>{theme.heroStyle === "glass" && !(theme.coverStyle !== "photo" || (cover && cover.photo)) ? "Glass needs a cover" : ""}</span>)}</>,
 

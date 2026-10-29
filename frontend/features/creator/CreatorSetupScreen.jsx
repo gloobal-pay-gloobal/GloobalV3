@@ -310,10 +310,12 @@ function CreatorSetupScreen({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async () => {
-      // The same resizer the profile photo uses, so a 4MB camera shot
-      // becomes something the 200 KB cap will take rather than a refusal
-      // the person cannot act on.
-      setLogo(await fitProfilePhotoForUpload(reader.result));
+      // Cropped to a square first (photoCropper.jsx); Cancel keeps the old
+      // logo. Then the same resizer the profile photo uses, so a 4MB
+      // camera shot becomes something the 200 KB cap will take.
+      const cropped = await requestPhotoCrop(reader.result, "square");
+      if (!cropped) return;
+      setLogo(await fitProfilePhotoForUpload(cropped));
     };
     reader.readAsDataURL(file);
   };
@@ -337,9 +339,9 @@ function CreatorSetupScreen({
     background: T.surface, borderRadius: 22, padding: "16px 16px 18px", marginTop: 14,
     boxShadow: "0 1px 2px rgba(21,19,42,0.04), 0 6px 18px rgba(21,19,42,0.05)"
   }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>{Icon ? <span style={{
-    width: 26, height: 26, borderRadius: 9, background: T.accentSoft,
+    width: 22, height: 22, borderRadius: 7, background: T.accentSoft,
     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-  }}><Icon size={14} color={T.accent} /></span> : null}<span style={{
+  }}><Icon size={12} color={T.accent} /></span> : null}<span style={{
     flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay
   }}>{title}</span>{aside || null}</div>{children}</section>;
 
@@ -362,19 +364,19 @@ function CreatorSetupScreen({
       aria-label={`${label} font, ${f.name}`}
       className="v2-tap"
       style={{
-        flex: 1, minWidth: 0, border: "none", cursor: "pointer", borderRadius: 16, padding: "12px 6px 10px",
+        flex: 1, minWidth: 0, border: "none", cursor: "pointer", borderRadius: 13, padding: "8px 6px 7px",
         background: on ? T.accentSoft : T.bg,
         boxShadow: on ? `inset 0 0 0 2px ${T.accent}` : `inset 0 0 0 1px ${T.line}`,
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 6, position: "relative"
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 3, position: "relative"
       }}
     >{on ? <span aria-hidden="true" style={{
-      position: "absolute", top: 6, right: 6, width: 16, height: 16, borderRadius: "50%", background: T.accent,
+      position: "absolute", top: 5, right: 5, width: 14, height: 14, borderRadius: "50%", background: T.accent,
       display: "flex", alignItems: "center", justifyContent: "center"
-    }}><Check9 size={10} color="#fff" strokeWidth={3} /></span> : null}<span style={{
+    }}><Check9 size={9} color="#fff" strokeWidth={3} /></span> : null}<span style={{
       maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-      fontSize: 18, lineHeight: 1.35, color: T.ink, fontFamily: f.stack, fontWeight: f.weight
+      fontSize: 15, lineHeight: 1.35, color: T.ink, fontFamily: f.stack, fontWeight: f.weight
     }}>{enough ? first.trim() : "रसोई"}</span><span style={{
-      fontSize: 11, fontWeight: 700, color: on ? T.accent : T.inkSoft
+      fontSize: 10.5, fontWeight: 700, color: on ? T.accent : T.inkSoft
     }}>{label}</span></button>;
   };
 

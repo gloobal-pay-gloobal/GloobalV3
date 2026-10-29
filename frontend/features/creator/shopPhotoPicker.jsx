@@ -26,7 +26,9 @@ import { ImagePlus, X as X13 } from "lucide-react";
 // `onPicked` is handed a data URL already small enough to send. A failure to
 // read or decode calls `onError` with a sentence rather than throwing, so a
 // picker inside a sheet cannot take the sheet down with it.
-function ShopPhotoPicker({ id, onPicked, onError, disabled, children }) {
+// `crop` ("square" | "wide" | "circle") opens the cropper first
+// (photoCropper.jsx); Cancel there picks nothing.
+function ShopPhotoPicker({ id, onPicked, onError, disabled, children, crop = "" }) {
   const input = useRef31(null);
   const [busy, setBusy] = useState56(false);
 
@@ -48,9 +50,18 @@ function ShopPhotoPicker({ id, onPicked, onError, disabled, children }) {
         setBusy(false);
         return;
       }
+      let chosen = raw;
+      if (crop && typeof requestPhotoCrop === "function") {
+        chosen = await requestPhotoCrop(raw, crop);
+        if (!chosen) {
+          setBusy(false);
+          if (input.current) input.current.value = "";
+          return;
+        }
+      }
       const fitted = typeof fitProfilePhotoForUpload === "function"
-        ? await fitProfilePhotoForUpload(raw)
-        : raw;
+        ? await fitProfilePhotoForUpload(chosen)
+        : chosen;
       if (onPicked) await onPicked(fitted);
     } catch (e) {
       if (onError) onError("Could not read that photo.");
@@ -101,7 +112,7 @@ function ShopCoverPicker({ cover, onPick, onMove, onRemove, onError, accent }) {
       alt=""
       style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: `50% ${y}%`, display: "block" }}
     />
-    : <ShopPhotoPicker id="shop-cover-input" onPicked={onPick} onError={onError}>{(busy) => <span style={{
+    : <ShopPhotoPicker id="shop-cover-input" crop="wide" onPicked={onPick} onError={onError}>{(busy) => <span style={{
       height: 150, display: "flex", flexDirection: "column", alignItems: "center",
       justifyContent: "center", gap: 8, color: T.inkFaint
     }}><span style={{
@@ -190,6 +201,7 @@ function ShopItemPhotos({ photos, onChange, onError, accent }) {
   ><X13 size={10} /></button></span>)}{
     full ? null : <span style={{ width: 74, height: 74, flexShrink: 0 }}><ShopPhotoPicker
       id={`shop-item-photo-${list.length}`}
+      crop="square"
       onError={onError}
       onPicked={(photo) => onChange(list.concat([photo]).slice(0, SHOP_ITEM_PHOTOS_MAX))}
     >{(busy) => <span style={{

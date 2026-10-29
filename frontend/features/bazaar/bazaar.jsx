@@ -65,7 +65,9 @@ function bazaarDistanceLabel(m) {
 // ── THE CATEGORY PICKER, FOR SETUP ──────────────────────────────────────
 // One tap from the fourteen; tapping the chosen one again clears it.
 function BazaarCategoryPicker({ value, onChange }) {
-  return <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{BAZAAR_CATEGORY_INFO.map(({ key, label, Icon }) => {
+  // Four to a row with smaller boxes: three big tiles to a row made the
+  // list of fourteen the tallest thing on the setup screen.
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6 }}>{BAZAAR_CATEGORY_INFO.map(({ key, label, Icon }) => {
     const on = value === key;
     // Icon in the box, name under it — the same tile as everywhere else.
     return <IconTile
@@ -73,14 +75,14 @@ function BazaarCategoryPicker({ value, onChange }) {
       onClick={() => onChange(on ? "" : key)}
       ariaPressed={on}
       label={label}
-      labelSize={11}
-      box={48}
-      radius={15}
+      labelSize={10}
+      box={38}
+      radius={12}
       selected={on}
       // The picker sits on a white card, so an unpicked box takes the
       // page's own tint to stay visible as a box.
       background={on ? T.accent : T.accentSoft}
-    ><Icon size={22} color={on ? "#fff" : T.accent} /></IconTile>;
+    ><Icon size={17} color={on ? "#fff" : T.accent} /></IconTile>;
   })}</div>;
 }
 

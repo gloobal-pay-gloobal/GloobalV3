@@ -421,7 +421,8 @@ describe("the address belongs to whoever typed it", () => {
   test("the switch says who sees it, not what it is called", () => {
     // "Address visibility: off" tells somebody what the app calls the
     // setting. This tells them what happens.
-    assert.match(setup, /Anybody who opens your creator page will see this address\./);
+    // Now also says the map pin goes with it, since Directions does.
+    assert.match(setup, /Anybody who opens your creator page sees this address and gets Directions to your pin\./);
     assert.match(setup, /Only you can see this\. Nobody paying you will\./);
   });
 });

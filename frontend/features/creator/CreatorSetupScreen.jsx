@@ -226,7 +226,9 @@ function CreatorSetupScreen({
   const [first, setFirst] = useState53((creator && creator.handleFirst) || "");
   const [last, setLast] = useState53((creator && creator.handleLast) || "");
   const [logo, setLogo] = useState53((creator && creator.logo) || null);
-  const [address, setAddress] = useState53((creator && creator.address) || "");
+  // The address as its parts — see creatorAddress.jsx. An address saved as
+  // one line before the parts existed opens with that line kept.
+  const [addressParts, setAddressParts] = useState53(() => creatorAddressInitial(creator));
   const [addressPublic, setAddressPublic] = useState53(Boolean(creator && creator.addressPublic));
   // A line for whoever scans the code, and nowhere else. Deliberately
   // separate from the shop's announcement band: that one is read while
@@ -551,23 +553,17 @@ function CreatorSetupScreen({
        will see it rather than naming a setting. The app cannot tell a
        shop's address from the kitchen somebody cooks in, and the cost of
        guessing wrong falls entirely on the person who typed it. */
-  }<textarea
-    value={address}
-    onChange={(e) => setAddress(e.target.value.slice(0, 400))}
-    placeholder="Where you trade from. Optional."
-    aria-label="Your creator address"
-    rows={3}
-    style={fieldBox}
-  /><div style={{
+  }<CreatorAddressFields value={addressParts} onChange={setAddressParts} countryIso={countryIso} /><div style={{
     display: "flex",
     alignItems: "center",
     gap: 12,
-    marginTop: 12,
-    padding: "2px 2px 0"
+    marginTop: 14,
+    paddingTop: 12,
+    borderTop: `1px solid ${T.line}`
   }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>
         Show this to people who pay me
       </span><span style={{ display: "block", fontSize: 11.5, lineHeight: 1.45, color: T.inkFaint, marginTop: 2 }}>{addressPublic
-    ? "Anybody who opens your creator page will see this address."
+    ? "Anybody who opens your creator page sees this address and gets Directions to your pin."
     : "Only you can see this. Nobody paying you will."}</span></span><ProfileToggle
     on={addressPublic}
     onToggle={() => setAddressPublic((v) => !v)}
@@ -668,7 +664,7 @@ function CreatorSetupScreen({
     onClick={() => onSave({
       handleFirst: first.trim(),
       handleLast: last.trim(),
-      address: address.trim(),
+      addressParts,
       addressPublic,
       scanNote: scanNote.trim(),
       scanNoteStyle,

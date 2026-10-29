@@ -1471,6 +1471,30 @@ var GloobalApi = {
   // network failure answers "don't know" rather than throwing, because
   // this runs on every keystroke and a dead connection must not make the
   // box turn red.
+  // A GPS point, as address parts (line1, area, city, state, pin). Through
+  // our own server, which caches and identifies itself to OpenStreetMap —
+  // the app's CSP does not let the phone call the lookup directly. Returns
+  // null when nothing could be read, so the screen says "type it in".
+  async geoReverse(lat, lng) {
+    try {
+      const result = await gloobalApiClient.get(`/api/geo/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`);
+      return (result && result.parts) || null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  // An Indian PIN, as { city, state, areas }. null for an unknown PIN or a
+  // failed lookup — the boxes stay as typed either way.
+  async geoPin(pin) {
+    try {
+      const result = await gloobalApiClient.get(`/api/geo/pin/${encodeURIComponent(pin)}`);
+      return result && result.city !== undefined ? result : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
   async creatorHandleAvailable(first, last) {
     try {
       const result = await gloobalApiClient.get(

@@ -302,6 +302,28 @@ const userSchema = new mongoose.Schema({
     // will see it.
     addressPublic: { type: Boolean, default: false },
 
+    // ── THE SAME ADDRESS, IN ITS PARTS ────────────────────────────────
+    //
+    // Shop / house number, street and area, a landmark ("Near Hanuman
+    // Mandir"), PIN, city, state, and the point on the map the creator
+    // detected or confirmed. `address` above is still written — composed
+    // from these by the server — so every reader that only knows the one
+    // string keeps working, and an address saved before the parts existed
+    // stays exactly as it was typed.
+    //
+    // The point follows `addressPublic` like the text does: nobody but the
+    // owner receives lat/lng unless the address is public.
+    addressParts: {
+      line1: { type: String, trim: true, maxlength: 120, default: '' },
+      area: { type: String, trim: true, maxlength: 120, default: '' },
+      landmark: { type: String, trim: true, maxlength: 100, default: '' },
+      pin: { type: String, trim: true, maxlength: 10, default: '' },
+      city: { type: String, trim: true, maxlength: 60, default: '' },
+      state: { type: String, trim: true, maxlength: 60, default: '' },
+      lat: { type: Number, min: -90, max: 90, default: null },
+      lng: { type: Number, min: -180, max: 180, default: null }
+    },
+
     // ── A LINE FOR WHOEVER SCANS YOUR CODE ────────────────────────────
     //
     // Shown under the Pay button on the card a payer gets from scanning,

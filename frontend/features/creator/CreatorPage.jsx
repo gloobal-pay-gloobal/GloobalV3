@@ -25,7 +25,7 @@
 //    cost. The server enforces this; the UI simply never draws the tab for
 //    anyone else.
 import { useState as useState54, useEffect as useEffect51 } from "react";
-import { Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare } from "lucide-react";
+import { Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare, Navigation as Navigation2 } from "lucide-react";
 
 var CREATOR_PAGE_TABS = ["Selling", "Buying"];
 
@@ -586,8 +586,8 @@ function CreatorPage({
   }}>{[
     ["Creator name", creator.handle || "—"],
     ["Gloobal ID", creator.symbolId || "—"],
-    creator.addressPublic && creator.address ? ["Address", creator.address] : null
-  ].filter(Boolean).map(([k, v], i) => <div
+    creator.addressPublic && (creator.address || creator.addressParts) ? ["Address", creatorAddressLines(creator.addressParts, creator.address)] : null
+  ].filter(Boolean).filter(([, v]) => (Array.isArray(v) ? v.length : true)).map(([k, v], i) => <div
     key={k}
     style={{
       display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0",
@@ -595,7 +595,23 @@ function CreatorPage({
     }}
   ><span style={{ fontSize: 11.5, fontWeight: 600, color: theme.inkFaint }}>{k}</span><span style={{
     fontSize: 12, fontWeight: 700, color: theme.ink, textAlign: "right", overflowWrap: "anywhere"
-  }}>{v}</span></div>)}</div>}
+  }}>{Array.isArray(v) ? v.map((line, j) => <span key={j} style={{
+    display: "block", fontWeight: j === 0 ? 700 : 600, color: j === 0 ? theme.ink : theme.inkSoft
+  }}>{line}</span>) : v}</span></div>)}{
+    /* Directions, when the owner pinned the shop AND made the address
+       public — the server sends the point under the same rule as the
+       text, so this cannot show for a private address. */
+    creator.addressPublic && creatorAddressHasPoint(creator.addressParts) ? <a
+      href={creatorAddressDirectionsUrl(creator.addressParts)}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 8, margin: "4px 0 10px",
+        padding: "11px 0", borderRadius: 13, background: theme.hero.from, color: "#fff",
+        fontSize: 13, fontWeight: 800, textDecoration: "none"
+      }}
+    ><Navigation2 size={15} color="#fff" />Directions</a> : null
+  }</div>}
 
   {
     /* ── ONE SLIM SWITCH, NOT TWO SLABS ───────────────────────────────

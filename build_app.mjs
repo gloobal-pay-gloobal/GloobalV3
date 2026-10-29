@@ -304,6 +304,9 @@ const FRONTEND_MODULES = [
   // The screen behind a creator's name: their list, the basket, and the
   // owner's second tab. After businessMark.jsx, whose ink and initials it
   // uses to draw a creator who has uploaded no logo.
+  // A creator's address in parts, with GPS detect and PIN lookup. Before
+  // CreatorPage (Directions) and CreatorSetupScreen (the fields).
+  "features/creator/creatorAddress.jsx",
   // A shop's public, anonymous reviews — opened from Feedback on the page.
   "features/creator/ShopReviews.jsx",
   "features/creator/CreatorPage.jsx",

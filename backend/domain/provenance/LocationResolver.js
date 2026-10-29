@@ -67,7 +67,11 @@ function resolveLocationLabel(observation) {
 // capability, or no answer in time — is represented explicitly rather
 // than collapsed into "no location". Nothing here ever invents a
 // coordinate: a failure of any kind produces a status, not a guess.
-function captureBrowserGeo({ timeoutMs = 4000 } = {}) {
+// `highAccuracy` asks for GPS rather than a network fix. Only the creator
+// address uses it: placing a shop on the right side of a road needs metres,
+// and the person is standing there waiting for it, whereas a payment's
+// provenance needs only the city and must not hold up a payment.
+function captureBrowserGeo({ timeoutMs = 4000, highAccuracy = false } = {}) {
   return new Promise((resolve) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       resolve(new LocationObservation({ status: LOCATION_STATUS.UNAVAILABLE }));
@@ -88,7 +92,7 @@ function captureBrowserGeo({ timeoutMs = 4000 } = {}) {
         observedAt: /* @__PURE__ */ new Date()
       })),
       (err) => done(new LocationObservation({ status: err && err.code === 1 ? LOCATION_STATUS.DENIED : err && err.code === 3 ? LOCATION_STATUS.TIMEOUT : LOCATION_STATUS.UNAVAILABLE })),
-      { timeout: timeoutMs, maximumAge: 0 }
+      { timeout: timeoutMs, maximumAge: 0, enableHighAccuracy: Boolean(highAccuracy) }
     );
     setTimeout(() => done(new LocationObservation({ status: LOCATION_STATUS.TIMEOUT })), timeoutMs + 250);
   });

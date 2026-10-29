@@ -3933,6 +3933,9 @@ function publicCreator(user, logoDataUrl) {
     // profile with no `shop` block renders as the app's own look.
     shop: creatorShopOut(profile.shop),
     address: profile.addressPublic ? (profile.address || '') : '',
+    // The parts, and with them the map point, under exactly the same rule
+    // as the text: public or nothing.
+    addressParts: profile.addressPublic ? creatorAddressPartsOut(profile.addressParts) : null,
     addressPublic: Boolean(profile.addressPublic),
     // Sent to everybody, unlike the address: a message written FOR the
     // person scanning is of no use if only its author can read it.
@@ -3940,6 +3943,180 @@ function publicCreator(user, logoDataUrl) {
     scanNoteStyle: CREATOR_SCAN_NOTE_STYLES.includes(profile.scanNoteStyle) ? profile.scanNoteStyle : 'ribbon'
   };
 }
+
+// ── A CREATOR'S ADDRESS, IN PARTS ───────────────────────────────────────
+
+var CREATOR_ADDRESS_LIMITS = { line1: 120, area: 120, landmark: 100, pin: 10, city: 60, state: 60 };
+
+function creatorAddressPartsOut(raw) {
+  const p = (raw && typeof raw === 'object') ? raw : {};
+  const out = {};
+  for (const k of Object.keys(CREATOR_ADDRESS_LIMITS)) out[k] = typeof p[k] === 'string' ? p[k] : '';
+  const lat = Number(p.lat);
+  const lng = Number(p.lng);
+  const has = p.lat != null && p.lng != null && Number.isFinite(lat) && Number.isFinite(lng);
+  out.lat = has ? lat : null;
+  out.lng = has ? lng : null;
+  return out;
+}
+
+// Validated field by field. Any script is fine in the text — an address in
+// Hindi is still an address — but each part has a length, a PIN is letters,
+// digits, spaces and dashes (so a UK or Canadian postcode fits too), and a
+// map point is a real latitude/longitude pair or nothing at all.
+function creatorAddressPartsIn(raw) {
+  if (!raw || typeof raw !== 'object') return { ok: false, code: 'invalid_address', message: 'That address could not be read.' };
+  const value = {};
+  for (const [k, max] of Object.entries(CREATOR_ADDRESS_LIMITS)) {
+    const v = raw[k] == null ? '' : raw[k];
+    if (typeof v !== 'string') return { ok: false, code: 'invalid_address', message: 'That address could not be read.' };
+    const t = v.trim().replace(/\s+/g, ' ');
+    if (t.length > max) return { ok: false, code: 'invalid_address', message: 'Part of that address is too long.' };
+    value[k] = t;
+  }
+  if (value.pin && !/^[A-Za-z0-9][A-Za-z0-9 -]{1,9}$/.test(value.pin)) {
+    return { ok: false, code: 'invalid_pin', message: 'That PIN code does not look right.' };
+  }
+  const hasPoint = raw.lat != null && raw.lng != null;
+  if (hasPoint) {
+    const lat = Number(raw.lat);
+    const lng = Number(raw.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return { ok: false, code: 'invalid_location', message: 'That map point is not a real place.' };
+    }
+    // Six decimals is about 11cm. More is noise, and noise is still a
+    // more precise picture of where somebody stands than anyone needs.
+    value.lat = Math.round(lat * 1e6) / 1e6;
+    value.lng = Math.round(lng * 1e6) / 1e6;
+  } else {
+    value.lat = null;
+    value.lng = null;
+  }
+  return { ok: true, value };
+}
+
+// "C-482, Surya Nagar, Near Hanuman Mandir, Alwar, Rajasthan 301001".
+function creatorAddressCompose(p) {
+  const tail = [p.state, p.pin].filter(Boolean).join(' ');
+  return [p.line1, p.area, p.landmark ? `Near ${p.landmark}` : '', p.city, tail]
+    .filter(Boolean).join(', ').slice(0, 400);
+}
+
+// ── FINDING AN ADDRESS: GPS → ADDRESS, AND PIN → CITY ───────────────────
+//
+// Both go through this server rather than from the phone straight to the
+// lookup service. The site's Content-Security-Policy only lets the app talk
+// to its own API, which is the right policy; OpenStreetMap's Nominatim
+// asks every caller to identify itself and stay under one request a second;
+// and caching here means a PIN looked up by a thousand shops in one town is
+// fetched once. Neither lookup is stored against anybody's account — they
+// answer, and the person decides what to keep.
+var GEO_USER_AGENT = 'GloobalPay/1.0 (+https://gloobalv3.netlify.app)';
+var GEO_CACHE = new Map();
+var GEO_CACHE_MAX = 2000;
+var GEO_TIMEOUT_MS = 6000;
+
+function geoCacheGet(key) {
+  const hit = GEO_CACHE.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > 24 * 3600 * 1000) { GEO_CACHE.delete(key); return null; }
+  return hit.value;
+}
+
+function geoCacheSet(key, value) {
+  if (GEO_CACHE.size >= GEO_CACHE_MAX) GEO_CACHE.delete(GEO_CACHE.keys().next().value);
+  GEO_CACHE.set(key, { at: Date.now(), value });
+}
+
+async function geoFetchJson(url) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), GEO_TIMEOUT_MS);
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': GEO_USER_AGENT, Accept: 'application/json' }, signal: ctrl.signal });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (error) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Nominatim's address block, folded into our six parts.
+function geoPartsFromNominatim(a) {
+  const x = (a && typeof a === 'object') ? a : {};
+  // The road is the STREET, not the shop: it goes with the area, and the
+  // first box gets only a house number when the map has one. A render put
+  // "Kala Kuan Road" in "Shop / house no.", which is where the creator then
+  // has to type their shop number over it.
+  const line1 = String(x.house_number || '');
+  const area = [x.road, x.neighbourhood || x.quarter, x.suburb || x.city_district].filter(Boolean)
+    .filter((v, i, all) => all.indexOf(v) === i).join(', ');
+  return {
+    line1: line1.slice(0, 120),
+    area: area.slice(0, 120),
+    city: String(x.city || x.town || x.village || x.municipality || x.state_district || x.county || '').slice(0, 60),
+    state: String(x.state || '').slice(0, 60),
+    pin: String(x.postcode || '').replace(/[^A-Za-z0-9 -]/g, '').slice(0, 10),
+    countryIso: String(x.country_code || '').toUpperCase()
+  };
+}
+
+// GET /api/geo/reverse?lat=..&lng=..&lang=hi — a point, as address parts.
+app.get('/api/geo/reverse', lookupLimit, requireAuth, async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return res.status(400).json({ success: false, code: 'invalid_location', message: 'That is not a real place.' });
+  }
+  const lang = /^[a-z]{2}$/.test(String(req.query.lang || '')) ? String(req.query.lang) : 'en';
+  // Rounded to ~11m for the cache key and the request: the street does not
+  // change within that, and the exact point never leaves this server.
+  const rl = Math.round(lat * 1e4) / 1e4;
+  const rn = Math.round(lng * 1e4) / 1e4;
+  const key = `rev:${rl},${rn}:${lang}`;
+  let parts = geoCacheGet(key);
+  if (!parts) {
+    const data = await geoFetchJson(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${rl}&lon=${rn}&accept-language=${lang}`);
+    if (!data || !data.address) {
+      return res.status(502).json({ success: false, code: 'geo_unavailable', message: 'Could not read an address for this spot. You can type it in.' });
+    }
+    parts = geoPartsFromNominatim(data.address);
+    geoCacheSet(key, parts);
+  }
+  return res.json({ success: true, parts });
+});
+
+// GET /api/geo/pin/301001 — an Indian PIN, as its city, state and areas.
+app.get('/api/geo/pin/:pin', lookupLimit, requireAuth, async (req, res) => {
+  const pin = String(req.params.pin || '').trim();
+  if (!/^[1-9][0-9]{5}$/.test(pin)) {
+    return res.status(400).json({ success: false, code: 'invalid_pin', message: 'An Indian PIN code is six digits.' });
+  }
+  const key = `pin:${pin}`;
+  let found = geoCacheGet(key);
+  if (!found) {
+    const data = await geoFetchJson(`https://api.postalpincode.in/pincode/${pin}`);
+    const row = Array.isArray(data) ? data[0] : null;
+    if (!row) {
+      return res.status(502).json({ success: false, code: 'geo_unavailable', message: 'Could not look that PIN up right now.' });
+    }
+    const offices = Array.isArray(row.PostOffice) ? row.PostOffice : [];
+    if (row.Status !== 'Success' || !offices.length) {
+      return res.status(404).json({ success: false, code: 'pin_not_found', message: 'No place uses that PIN code.' });
+    }
+    found = {
+      pin,
+      city: String(offices[0].District || '').slice(0, 60),
+      state: String(offices[0].State || '').slice(0, 60),
+      // The post offices under this PIN, which are the area names people
+      // actually say ("Surya Nagar", "Scheme No 2") — offered as picks.
+      areas: offices.map((o) => String(o.Name || '')).filter(Boolean).slice(0, 12)
+    };
+    geoCacheSet(key, found);
+  }
+  return res.json({ success: true, ...found });
+});
 
 // GET /api/creator/handle-available?first=…&last=… — live, as somebody types.
 //
@@ -3988,6 +4165,7 @@ app.get('/api/creator/:symbolId/profile', lookupLimit, requireAuth, async (req, 
     if (isOwner) {
       const profile = user.creatorProfile || {};
       out.address = profile.address || '';
+      out.addressParts = creatorAddressPartsOut(profile.addressParts);
       out.setupSkippedAt = profile.setupSkippedAt || null;
       out.completedAt = profile.completedAt || null;
     }
@@ -4053,6 +4231,18 @@ app.put(
           });
         }
         set['creatorProfile.address'] = body.address.trim();
+      }
+      // The address in its parts. When these arrive, `address` is composed
+      // from them here — one place decides how the lines join, so the shop
+      // page, the profile card and anything older that reads `address`
+      // all say the same thing.
+      if (body.addressParts !== undefined) {
+        const parts = creatorAddressPartsIn(body.addressParts);
+        if (!parts.ok) {
+          return res.status(400).json({ success: false, code: parts.code, message: parts.message });
+        }
+        set['creatorProfile.addressParts'] = parts.value;
+        set['creatorProfile.address'] = creatorAddressCompose(parts.value);
       }
       if (body.scanNote !== undefined) {
         if (typeof body.scanNote !== 'string' || body.scanNote.length > 120) {
@@ -4124,6 +4314,7 @@ app.put(
       const logo = await CreatorLogo.findOne({ userId }).select('dataUrl').lean();
       const out = publicCreator(fresh, logo?.dataUrl);
       out.address = (fresh.creatorProfile || {}).address || '';
+      out.addressParts = creatorAddressPartsOut((fresh.creatorProfile || {}).addressParts);
       out.setupSkippedAt = (fresh.creatorProfile || {}).setupSkippedAt || null;
       out.completedAt = (fresh.creatorProfile || {}).completedAt || null;
       return res.json({ success: true, creator: out });

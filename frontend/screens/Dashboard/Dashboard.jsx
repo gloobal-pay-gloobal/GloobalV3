@@ -3401,7 +3401,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
       items={pinnedBusinesses}
       onOpen={openBusiness}
       onUnpin={togglePin}
-    />}{quickPay.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
+    />}{
+      /* ── GLOOBAL बाज़ार ──────────────────────────────────────────────
+         Real shops, by the start of their name, by category and Near me,
+         ranked by what they were paid today. The exact-name hit above
+         still comes first and is left out of this list so it is not
+         shown twice — and it is the way to a shop that chose not to be
+         listed, which this list respects. */
+    }<BazaarSection
+      query={[String(moreQuery || "").trim(), String(moreQueryLast || "").trim()].filter(Boolean).join(".")}
+      countryIso={dialCountry && dialCountry.iso}
+      excludeSymbolId={creatorHit ? creatorHit.symbolId : ""}
+      onToast={showToast2}
+      onOpen={async (shop) => {
+        const found = await GloobalApi.resolveCreatorHandle(shop.handle || "");
+        if (found) setOpenCreator(found); else showToast2("Could not open that shop just now.");
+      }}
+    />{quickPay.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
                         Quick pay
                       </div><div style={{ display: "flex", gap: 10 }}>{quickPay.map(({ key, label, Icon, onClick }) => <button
       key={key}

@@ -302,6 +302,23 @@ const userSchema = new mongoose.Schema({
     // will see it.
     addressPublic: { type: Boolean, default: false },
 
+    // What kind of shop this is, from a fixed list (server/lib/bazaar.js).
+    // A list rather than free text so "most famous categories" groups
+    // shops that are the same thing — "Chai", "Tea" and "चाय" are one
+    // category, not three.
+    category: {
+      type: String,
+      enum: ['', 'food', 'grocery', 'sweets', 'fashion', 'beauty', 'health', 'electronics',
+        'repair', 'home', 'education', 'travel', 'art', 'events', 'other'],
+      default: ''
+    },
+
+    // Whether this shop appears in Gloobal बाज़ार search, its categories
+    // and Near me. ON by default — a creator name exists to be found — with
+    // a switch to leave. Paying by exact name or by scanning works either
+    // way; this only decides being LISTED.
+    listed: { type: Boolean, default: true },
+
     // ── THE SAME ADDRESS, IN ITS PARTS ────────────────────────────────
     //
     // Shop / house number, street and area, a landmark ("Near Hanuman
@@ -412,5 +429,10 @@ const userSchema = new mongoose.Schema({
 // that question is answered by scanning symbolIdHistory — so it needs an
 // index, or every registration becomes a collection scan.
 userSchema.index({ 'symbolIdHistory.symbolId': 1 });
+// Gloobal बाज़ार: Near me filters on the pinned point before computing exact
+// distances, and categories group on the category. Sparse-ish by nature —
+// most accounts are not creators — so both stay small.
+userSchema.index({ 'creatorProfile.addressParts.lat': 1, 'creatorProfile.addressParts.lng': 1 });
+userSchema.index({ 'creatorProfile.category': 1 });
 
 module.exports = mongoose.model('User', userSchema);

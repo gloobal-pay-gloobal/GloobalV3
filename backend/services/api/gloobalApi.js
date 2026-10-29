@@ -1475,6 +1475,27 @@ var GloobalApi = {
   // our own server, which caches and identifies itself to OpenStreetMap —
   // the app's CSP does not let the phone call the lookup directly. Returns
   // null when nothing could be read, so the screen says "type it in".
+  // Gloobal बाज़ार: up to ten shops, by the start of a name, a category,
+  // and/or Near me ({ lat, lng, radiusKm } — radiusKm one of 0.5/1/2/5/10).
+  // Ranked on the server by recent payments; no amounts come back.
+  async bazaarSearch({ q = "", category = "", near = null, country = "" } = {}) {
+    const p = new URLSearchParams();
+    if (country) p.set("country", country);
+    if (q) p.set("q", q);
+    if (category) p.set("category", category);
+    if (near) { p.set("lat", String(near.lat)); p.set("lng", String(near.lng)); p.set("radiusKm", String(near.radiusKm)); }
+    const result = await gloobalApiClient.get(`/api/bazaar?${p.toString()}`);
+    return Array.isArray(result && result.shops) ? result.shops : [];
+  },
+
+  async bazaarCategories(near = null, country = "") {
+    const p = new URLSearchParams();
+    if (country) p.set("country", country);
+    if (near) { p.set("lat", String(near.lat)); p.set("lng", String(near.lng)); p.set("radiusKm", String(near.radiusKm)); }
+    const result = await gloobalApiClient.get(`/api/bazaar/categories?${p.toString()}`);
+    return Array.isArray(result && result.categories) ? result.categories : [];
+  },
+
   async geoReverse(lat, lng) {
     try {
       const result = await gloobalApiClient.get(`/api/geo/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`);

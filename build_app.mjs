@@ -310,6 +310,8 @@ const FRONTEND_MODULES = [
   // A shop's public, anonymous reviews — opened from Feedback on the page.
   "features/creator/ShopReviews.jsx",
   "features/creator/CreatorPage.jsx",
+  // Gloobal बाज़ार on Pay & Services: famous categories and Near me.
+  "features/bazaar/bazaar.jsx",
   // Where an owner changes how their shop looks. After CreatorPage only
   // for reading order; both are function declarations.
   // One picker for the three pictures a shop has — cover, mark, product —

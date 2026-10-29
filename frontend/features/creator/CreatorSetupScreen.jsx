@@ -245,6 +245,10 @@ function CreatorSetupScreen({
     return SHOP_FONTS[saved] && saved !== "grotesk" ? saved : "mukta";
   });
   const [fontsOpen, setFontsOpen] = useState53(false);
+  // What kind of shop, for Gloobal बाज़ार's categories, and whether to be
+  // listed there at all. Listed is ON unless the creator turned it off.
+  const [category, setCategory] = useState53((creator && creator.category) || "");
+  const [listed, setListed] = useState53(!(creator && creator.listed === false));
   // Every face is drawn in the person's name — the three tiles, the live
   // card and the More fonts list — so all of them are fetched up front.
   useEffect50(() => { Object.keys(SHOP_FONTS).forEach(ensureShopFont); }, []);
@@ -547,6 +551,23 @@ function CreatorSetupScreen({
     display: "block", fontSize: 11, fontWeight: 600, color: moreName ? T.accent : T.inkFaint, marginTop: 1
   }}>{moreName ? `Using ${moreName}` : `${Object.keys(SHOP_FONTS).length - SHOP_FONT_QUICK.length} more, each in your name`}</span></span><ChevronRight9 size={16} color={T.inkFaint} /></button></>)}
 
+  {section("What you sell", Store3, <>{
+    /* ── THE SHOP'S CATEGORY ──────────────────────────────────────────
+       One of fourteen, so "Food & Chai" on Pay & Services gathers every
+       chai stall however each one spells chai. Optional: a shop with no
+       category is still found by name and Near me. */
+  }<BazaarCategoryPicker value={category} onChange={setCategory} /><div style={{
+    display: "flex", alignItems: "center", gap: 12, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.line}`
+  }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>
+        Show my shop in Gloobal बाज़ार
+      </span><span style={{ display: "block", fontSize: 11.5, lineHeight: 1.45, color: T.inkFaint, marginTop: 2 }}>{listed
+    ? "People can find you by name, in your category, and in Near me if your address is public."
+    : "You won't appear in search or Near me. People can still pay you by your exact name or your code."}</span></span><ProfileToggle
+    on={listed}
+    onToggle={() => setListed((v) => !v)}
+    label="Show my shop in Gloobal बाज़ार"
+  /></div></>)}
+
   {section("Address", MapPin5, <>{
     /* ── THE ADDRESS ──────────────────────────────────────────────────
        Private unless its owner says otherwise, and the switch says who
@@ -665,6 +686,8 @@ function CreatorSetupScreen({
       handleFirst: first.trim(),
       handleLast: last.trim(),
       addressParts,
+      category,
+      listed,
       addressPublic,
       scanNote: scanNote.trim(),
       scanNoteStyle,

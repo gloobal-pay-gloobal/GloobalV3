@@ -40,6 +40,7 @@ const Country = require('./models/Country');
 const AuditLog = require('./models/AuditLog');
 const CountryCurrencyPool = require('./models/CountryCurrencyPool');
 const { getRate } = require('./lib/fxRates');
+const bazaar = require('./lib/bazaar');
 const { loadCurrencyDecimals, decimalsFor } = require('./lib/currencyDecimals');
 // A coin movement, normalised. Required up here rather than down in the
 // Gloobal Coin section because THREE routes need it and the earliest of them
@@ -3940,6 +3941,8 @@ function publicCreator(user, logoDataUrl) {
     // Sent to everybody, unlike the address: a message written FOR the
     // person scanning is of no use if only its author can read it.
     scanNote: profile.scanNote || '',
+    category: bazaar.BAZAAR_CATEGORIES.includes(profile.category) ? profile.category : '',
+    listed: profile.listed !== false,
     scanNoteStyle: CREATOR_SCAN_NOTE_STYLES.includes(profile.scanNoteStyle) ? profile.scanNoteStyle : 'ribbon'
   };
 }
@@ -4118,6 +4121,167 @@ app.get('/api/geo/pin/:pin', lookupLimit, requireAuth, async (req, res) => {
   return res.json({ success: true, ...found });
 });
 
+// ── GLOOBAL बाज़ार ────────────────────────────────────────────────────────
+//
+// Search by the start of a name in any script, by category, and Near me
+// within a chosen radius — ranked by what each shop was paid in the last
+// 24 hours, 7 days as the tiebreak. The rules and the arithmetic are in
+// lib/bazaar.js; this is the querying.
+
+var BAZAAR_USD_RATE_CACHE = new Map();
+
+// 1 unit of `currency` in USD, cached for an hour. Only used to put shops
+// paid in different currencies on one scale for ORDERING; a currency whose
+// rate cannot be had counts as zero volume rather than as a guess, so the
+// shop still appears, just not ranked above anyone on an invented number.
+async function bazaarUsdRate(currency) {
+  const cur = String(currency || '').toUpperCase();
+  if (!cur) return 0;
+  if (cur === 'USD') return 1;
+  const hit = BAZAAR_USD_RATE_CACHE.get(cur);
+  if (hit && Date.now() - hit.at < 3600 * 1000) return hit.rate;
+  try {
+    const { rate } = await getRate(cur, 'USD');
+    const r = Number(rate) > 0 ? Number(rate) : 0;
+    BAZAAR_USD_RATE_CACHE.set(cur, { at: Date.now(), rate: r });
+    return r;
+  } catch (error) {
+    return 0;
+  }
+}
+
+// What each of these shops was paid, 24h and 7d, in USD. Never sent out.
+async function bazaarVolumes(userIds) {
+  const volume = new Map();
+  if (!userIds.length) return volume;
+  const now = Date.now();
+  const since7 = new Date(now - 7 * 86400000);
+  const since1 = new Date(now - 86400000);
+  const rows = await Transaction.aggregate([
+    { $match: { toUserId: { $in: userIds }, status: 'completed', type: 'send', createdAt: { $gte: since7 } } },
+    { $group: {
+      _id: { to: '$toUserId', currency: '$currency' },
+      d7: { $sum: '$amount' },
+      d1: { $sum: { $cond: [{ $gte: ['$createdAt', since1] }, '$amount', 0] } }
+    } }
+  ]);
+  for (const r of rows) {
+    const rate = await bazaarUsdRate(r._id.currency);
+    const key = String(r._id.to);
+    const v = volume.get(key) || { d1: 0, d7: 0 };
+    v.d1 += (Number(r.d1) || 0) * rate;
+    v.d7 += (Number(r.d7) || 0) * rate;
+    volume.set(key, v);
+  }
+  return volume;
+}
+
+// The shops a request could match, before ranking.
+async function bazaarCandidates({ q = '', category = '', near = null, needCategory = false, countryIso = '' }) {
+  const match = {
+    'creatorProfile.handle': { $type: 'string', $ne: '' },
+    'creatorProfile.listed': { $ne: false }
+  };
+  // Without Near me, a list is the searcher's own country: "most famous"
+  // means famous where you are, and a rupee shop topping a dollar list on
+  // exchange-rate arithmetic would help nobody. Near me ignores it — a
+  // circle on a border is a circle.
+  if (countryIso && !near) match.countryIso = countryIso;
+  if (q) {
+    const re = new RegExp(`^${bazaar.bazaarEscapeRegex(q)}`, 'i');
+    match.$or = [
+      { 'creatorProfile.handle': re },
+      { 'creatorProfile.handleFirst': re },
+      { 'creatorProfile.handleLast': re }
+    ];
+  }
+  if (category) match['creatorProfile.category'] = category;
+  else if (needCategory) match['creatorProfile.category'] = { $in: bazaar.BAZAAR_CATEGORIES };
+  if (near) {
+    const box = bazaar.bazaarBoundingBox(near.lat, near.lng, near.radiusKm);
+    match['creatorProfile.addressPublic'] = true;
+    match['creatorProfile.addressParts.lat'] = { $gte: box.minLat, $lte: box.maxLat };
+    match['creatorProfile.addressParts.lng'] = { $gte: box.minLng, $lte: box.maxLng };
+  }
+  const users = await User.find(match)
+    .select('_id symbolId countryIso creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category creatorProfile.shop creatorProfile.addressParts.lat creatorProfile.addressParts.lng')
+    .limit(bazaar.BAZAAR_CANDIDATE_CAP)
+    .lean();
+  const rows = [];
+  for (const u of users) {
+    const p = u.creatorProfile || {};
+    const row = {
+      _id: u._id,
+      symbolId: u.symbolId,
+      countryIso: u.countryIso || '',
+      handle: p.handle,
+      handleFirst: p.handleFirst || '',
+      handleLast: p.handleLast || '',
+      category: bazaar.BAZAAR_CATEGORIES.includes(p.category) ? p.category : '',
+      color: creatorShopOut(p.shop).color
+    };
+    if (near) {
+      const a = p.addressParts || {};
+      const d = bazaar.bazaarDistanceM(near.lat, near.lng, Number(a.lat), Number(a.lng));
+      // The box is a square around the circle; its corners are not inside.
+      if (!(d <= near.radiusKm * 1000)) continue;
+      row.distanceM = d;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+// GET /api/bazaar?q=ras&category=food&lat=..&lng=..&radiusKm=2
+app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const q = bazaar.bazaarQuery(req.query.q);
+    const category = bazaar.BAZAAR_CATEGORIES.includes(req.query.category) ? req.query.category : '';
+    const near = bazaar.bazaarNear(req.query);
+    if ((req.query.lat !== undefined || req.query.radiusKm !== undefined) && !near) {
+      return res.status(400).json({ success: false, code: 'invalid_near', message: 'Pick a distance from the list.' });
+    }
+    const countryIso = /^[A-Z]{2}$/.test(String(req.query.country || '')) ? String(req.query.country) : '';
+    const rows = await bazaarCandidates({ q, category, near, countryIso });
+    const volume = await bazaarVolumes(rows.map((r) => r._id));
+    const top = bazaar.bazaarRank(rows, volume, { q, near });
+    // Logos for the ten that are shown, not the four hundred considered.
+    const logos = await CreatorLogo.find({ userId: { $in: top.map((r) => r._id) } }).select('userId dataUrl').lean();
+    const logoBy = new Map(logos.map((l) => [String(l.userId), l.dataUrl]));
+    const shops = top.map((r) => ({
+      symbolId: r.symbolId,
+      countryIso: r.countryIso,
+      handle: r.handle,
+      handleFirst: r.handleFirst,
+      handleLast: r.handleLast,
+      category: r.category,
+      color: r.color,
+      logo: logoBy.get(String(r._id)) || null,
+      distanceM: near ? bazaar.bazaarRoundDistance(r.distanceM) : null
+      // No volume, no count of payments, nothing about money. The order
+      // is the only trace the ranking leaves.
+    }));
+    return res.json({ success: true, shops });
+  } catch (error) {
+    console.error('Bazaar search error:', error);
+    return res.status(500).json({ success: false, message: 'Could not search right now.' });
+  }
+});
+
+// GET /api/bazaar/categories?lat=..&lng=..&radiusKm=2
+app.get('/api/bazaar/categories', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const near = bazaar.bazaarNear(req.query);
+    const countryIso = /^[A-Z]{2}$/.test(String(req.query.country || '')) ? String(req.query.country) : '';
+    const rows = await bazaarCandidates({ near, needCategory: true, countryIso });
+    const volume = await bazaarVolumes(rows.map((r) => r._id));
+    return res.json({ success: true, categories: bazaar.bazaarCategoryOrder(rows, volume) });
+  } catch (error) {
+    console.error('Bazaar categories error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load categories right now.' });
+  }
+});
+
 // GET /api/creator/handle-available?first=…&last=… — live, as somebody types.
 //
 // Deliberately NOT a reservation: answering "free" here does not hold the
@@ -4262,6 +4426,15 @@ app.put(
       }
       if (body.addressPublic !== undefined) {
         set['creatorProfile.addressPublic'] = Boolean(body.addressPublic);
+      }
+      if (body.category !== undefined) {
+        if (body.category !== '' && !bazaar.BAZAAR_CATEGORIES.includes(body.category)) {
+          return res.status(400).json({ success: false, code: 'invalid_category', message: 'That is not a category.' });
+        }
+        set['creatorProfile.category'] = body.category;
+      }
+      if (body.listed !== undefined) {
+        set['creatorProfile.listed'] = Boolean(body.listed);
       }
       // Sent when somebody dismisses the setup screen without finishing.
       // Never clears `completedAt` — skipping after finishing is not a way

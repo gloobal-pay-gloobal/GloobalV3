@@ -330,6 +330,7 @@ function CreatorPage({
   onScan,
   onShare,
   onFeedback,
+  onToast,
   onSaveItems,
   onEditLook,
   onOpenSupplier,
@@ -350,6 +351,10 @@ function CreatorPage({
   // The item whose photos are being looked at, and which one is showing.
   const [photoView, setPhotoView] = useState54(null);
   const [photoAt, setPhotoAt] = useState54(0);
+  // The reviews sheet, and the summary the hero shows — kept here so a
+  // review posted in the sheet moves the stars on the card straight away.
+  const [reviewsOpen, setReviewsOpen] = useState54(false);
+  const [reviewSummary, setReviewSummary] = useState54((creator && creator.reviews) || null);
 
   const allItems = Array.isArray(creator && creator.items) ? creator.items : [];
   const items = activeCat
@@ -438,17 +443,10 @@ function CreatorPage({
        than read off a `flag` field — publicCreator never sent one, so the
        conditional that looked for it silently rendered nothing and the
        flag was simply missing from the shipped screen. */
-  }{creatorFlag(creator) ? <NavIconButton
+  }{creatorFlag(creator) ? <NavFlagBadge
+    flag={creatorFlag(creator)}
     label={`${creatorCountryName(creator)} — where this creator is`}
-    onClick={undefined}
-  ><span style={{ fontSize: 17, lineHeight: 1 }}>{creatorFlag(creator)}</span></NavIconButton> : null}<NavIconButton
-    label="Scan a Gloobal code"
-    onClick={onScan}
-  >{
-    /* The app's OWN scan mark — three solid blocks in the arrangement a
-       QR's finder patterns take — not a camera glyph and not a redraw.
-       See components/common/icons.jsx. */
-  }<ScannerIcon size={NAV_GLYPH_SIZE} color={T.ink} /></NavIconButton></div>
+  /> : null}<NavScanButton label="Scan a Gloobal code" onClick={onScan} /></div>
 
   <div style={{
     flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",
@@ -525,6 +523,20 @@ function CreatorPage({
       display: "block", fontSize: 12.5, fontWeight: 700, color: "rgba(255,255,255,0.86)", marginTop: 4
     }}>{tagline}</span> : null
   }{
+    /* The stars, once there are three reviews to average — and a tap on
+       them opens the reviews, which is where anybody would look next. */
+    shopReviewHasAverage(reviewSummary) ? <button
+      onClick={() => setReviewsOpen(true)}
+      aria-label={`Rated ${reviewSummary.average} from ${shopReviewCountLabel(reviewSummary.count)}`}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, padding: "3px 8px 3px 6px",
+        border: "none", borderRadius: 999, background: "rgba(255,255,255,0.16)", color: "#fff",
+        fontSize: 11.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer"
+      }}
+    ><Star2 size={12} color={PAY_PIN_STAR} fill={PAY_PIN_STAR} />{Number(reviewSummary.average).toFixed(1)}<span style={{
+      fontWeight: 600, color: "rgba(255,255,255,0.8)"
+    }}>· {shopReviewCountLabel(reviewSummary.count)}</span></button> : null
+  }{
     /* ── A COUNT NOBODY CAN TYPE ──────────────────────────────────────
        This was a pin count, which is a tap, which its own subject can run
        up from throwaway accounts — in the position a reader takes as
@@ -543,8 +555,8 @@ function CreatorPage({
     display: "flex", justifyContent: "space-around", gap: 6, position: "relative",
     marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.16)"
   }}>{[
-    { key: "share", label: "Share", Icon: Share25, onClick: onShare },
-    { key: "feedback", label: isOwner ? "Feedback" : "Send a note", Icon: MessageSquare, onClick: onFeedback }
+    { key: "share", label: "Share", Icon: Share25, onClick: onShare || (() => shareCreatorShop(creator, onToast)) },
+    { key: "feedback", label: isOwner ? "Feedback" : "Review", Icon: MessageSquare, onClick: onFeedback || (() => setReviewsOpen(true)) }
   ].concat(isOwner && onEditLook ? [
     // The owner's way into the look of their own shop, on the shop itself
     // rather than buried in a settings list — which is where somebody
@@ -842,6 +854,15 @@ function CreatorPage({
     }}
   >{saving ? "Saving\u2026" : "Save item"}</button></div></div></div>}
 
+  {reviewsOpen ? <ShopReviewsSheet
+    creator={creator}
+    theme={theme}
+    name={name}
+    onToast={onToast}
+    onSummary={setReviewSummary}
+    onClose={() => setReviewsOpen(false)}
+  /> : null}
+
   {photoView ? (() => {
     const shots = Array.isArray(photoView.photos) && photoView.photos.length
       ? photoView.photos
@@ -908,6 +929,36 @@ function CreatorPage({
       }}
     >Pay</button></div>
   }</div>;
+}
+
+// ── SHARE THE SHOP ──────────────────────────────────────────────────────
+//
+// Share used to open the owner's OWN receive QR — on somebody else's shop
+// too, which shared the wrong person. It now shares this shop: its name,
+// its tagline, and the /s/ link, which opens this shop's pay card on any
+// phone. The phone's own share sheet where there is one (WhatsApp,
+// Instagram, Messages…); otherwise the link is copied and the page says so.
+async function shareCreatorShop(creator, onToast) {
+  const url = buildGloobalPayUrl(creator && creator.symbolId, "shop");
+  if (!url) { if (onToast) onToast("This shop has no link yet."); return; }
+  const name = creatorDisplayName(creator);
+  const tagline = creator && creator.shop && creator.shop.tagline ? ` — ${creator.shop.tagline}` : "";
+  const text = `${name}${tagline} · pay on Gloobal`;
+  try {
+    if (typeof navigator !== "undefined" && navigator.share) {
+      await navigator.share({ title: name, text, url });
+      return;
+    }
+  } catch (e) {
+    // Closing the sheet is a choice, not a failure.
+    if (e && e.name === "AbortError") return;
+  }
+  try {
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    if (onToast) onToast("Shop link copied");
+  } catch (e) {
+    if (onToast) onToast(url);
+  }
 }
 
 // "4 days ago" / "yesterday" — short enough for a supplier row, and never a

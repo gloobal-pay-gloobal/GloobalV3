@@ -200,12 +200,13 @@ test("the three corner controls are one component, so they cannot drift", () => 
   // what "logo icon and name are not aligned" was looking at. Sharing
   // NavIconButton makes alignment structural rather than a number somebody
   // has to keep matching by hand.
-  assert.match(src, /<NavIconButton\s+label=\{`\$\{creatorCountryName\(creator\)\}/,
-    "the flag uses the shared nav button");
-  assert.match(src, /<NavIconButton\s+label="Scan a Gloobal code"/,
-    "so does the scanner");
-  assert.match(src, /<ScannerIcon size=\{NAV_GLYPH_SIZE\}/,
-    "and it carries the app's own scan mark at the shared glyph size");
+  // Since: the flag is NavFlagBadge (the app's flag picture filling the
+  // same 40px circle) and the scanner is NavScanButton — both built on the
+  // shared circle in navButtons.jsx, so they still cannot drift.
+  assert.match(src, /<NavFlagBadge\s+flag=\{creatorFlag\(creator\)\}\s+label=\{`\$\{creatorCountryName\(creator\)\}/,
+    "the flag uses the shared nav badge");
+  assert.match(src, /<NavScanButton label="Scan a Gloobal code"/,
+    "and the scanner the shared scan button");
   assert.ok(!/width: 34, height: 34/.test(src), "no hand-rolled corner control sizes remain");
 });
 

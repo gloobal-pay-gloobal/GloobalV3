@@ -161,6 +161,7 @@ const CreatorItem = require('./models/CreatorItem');
 const CreatorSupplier = require('./models/CreatorSupplier');
 const CreatorPurchase = require('./models/CreatorPurchase');
 const CreatorCover = require('./models/CreatorCover');
+const CreatorReview = require('./models/CreatorReview');
 const Notification = require('./models/Notification');
 // Web Push. The model holds one row per subscribed browser; the service is the
 // only thing that talks to a push service and is inert when VAPID is unset.
@@ -3990,13 +3991,15 @@ app.get('/api/creator/:symbolId/profile', lookupLimit, requireAuth, async (req, 
       out.setupSkippedAt = profile.setupSkippedAt || null;
       out.completedAt = profile.completedAt || null;
     }
-    const [items, repeatPayers, cover] = await Promise.all([
+    const [items, repeatPayers, cover, reviews] = await Promise.all([
       creatorItemsFor(user.symbolId),
       creatorRepeatPayers(user._id),
-      CreatorCover.findOne({ userId: user._id }).select('dataUrl focusY').lean()
+      CreatorCover.findOne({ userId: user._id }).select('dataUrl focusY').lean(),
+      creatorReviewSummary(user._id)
     ]);
     out.items = items;
     out.repeatPayers = repeatPayers;
+    out.reviews = reviews;
     out.cover = cover ? { photo: cover.dataUrl, focusY: cover.focusY } : null;
     res.set('Cache-Control', 'private, max-age=60');
     return res.json({ success: true, creator: out, isOwner });
@@ -4162,14 +4165,16 @@ app.get('/api/creator/resolve/:handle', lookupLimit, requireAuth, async (req, re
     // the mark, the name, the repeat-payer count and the price list at
     // once; three round trips would show it assembling itself in pieces on
     // a phone connection.
-    const [items, repeatPayers, cover] = await Promise.all([
+    const [items, repeatPayers, cover, reviews] = await Promise.all([
       creatorItemsFor(user.symbolId),
       creatorRepeatPayers(user._id),
-      CreatorCover.findOne({ userId: user._id }).select('dataUrl focusY').lean()
+      CreatorCover.findOne({ userId: user._id }).select('dataUrl focusY').lean(),
+      creatorReviewSummary(user._id)
     ]);
     const creator = publicCreator(user, logo?.dataUrl);
     creator.items = items;
     creator.repeatPayers = repeatPayers;
+    creator.reviews = reviews;
     creator.cover = cover ? { photo: cover.dataUrl, focusY: cover.focusY } : null;
     return res.json({ success: true, creator });
   } catch (error) {
@@ -4351,6 +4356,146 @@ async function creatorRepeatPayers(userId) {
     return 0;
   }
 }
+
+// ── REVIEWS ─────────────────────────────────────────────────────────────
+//
+// Public stars and a line of text, anonymous to every reader, and only from
+// people who have paid the shop. See models/CreatorReview.js for why those
+// three rules are the ones that make the other choices safe.
+
+var CREATOR_REVIEW_TEXT_MAX = 280;
+
+async function creatorReviewSummary(userId) {
+  try {
+    const rows = await CreatorReview.aggregate([
+      { $match: { creatorUserId: new mongoose.Types.ObjectId(String(userId)) } },
+      { $group: { _id: '$stars', n: { $sum: 1 } } }
+    ]);
+    const byStars = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let count = 0;
+    let sum = 0;
+    for (const r of rows) {
+      const k = Number(r._id);
+      if (k >= 1 && k <= 5) { byStars[k] = r.n; count += r.n; sum += k * r.n; }
+    }
+    return { count, average: count ? Math.round((sum / count) * 10) / 10 : 0, byStars };
+  } catch (error) {
+    // Like the repeat-payer count: decoration on a page whose job is
+    // payment. A failed aggregation must not take the page down.
+    console.error('Creator review summary error:', error);
+    return { count: 0, average: 0, byStars: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } };
+  }
+}
+
+async function creatorReviewHasPaid(authorId, shopUserId) {
+  const found = await Transaction.exists({ fromUserId: authorId, toUserId: shopUserId, status: 'completed' });
+  return Boolean(found);
+}
+
+// What a reader sees. No author, ever — `mine` is the only trace, and it
+// is computed against the reader, so it tells nobody anything about anyone
+// else.
+function publicCreatorReview(row, readerId) {
+  return {
+    id: String(row._id),
+    stars: row.stars,
+    text: row.text || '',
+    at: row.updatedAt || row.createdAt,
+    mine: String(row.authorUserId) === String(readerId)
+  };
+}
+
+async function creatorReviewsPayload(creator, reader) {
+  const isOwner = String(creator._id) === String(reader._id);
+  const [summary, rows, mineRow, paid] = await Promise.all([
+    creatorReviewSummary(creator._id),
+    CreatorReview.find({ creatorUserId: creator._id }).sort({ updatedAt: -1 }).limit(60).lean(),
+    isOwner ? null : CreatorReview.findOne({ creatorUserId: creator._id, authorUserId: reader._id }).lean(),
+    isOwner ? false : creatorReviewHasPaid(reader._id, creator._id)
+  ]);
+  return {
+    summary,
+    reviews: rows.map((r) => publicCreatorReview(r, reader._id)),
+    mine: mineRow ? publicCreatorReview(mineRow, reader._id) : null,
+    isOwner,
+    // Why the form is or is not offered, so the client says the right
+    // sentence rather than guessing.
+    canReview: !isOwner && paid,
+    reason: isOwner ? 'own_shop' : (paid ? '' : 'not_a_customer')
+  };
+}
+
+// GET /api/creator/:symbolId/reviews — anybody signed in may read them.
+app.get('/api/creator/:symbolId/reviews', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+    const creator = symbolId ? await User.findOne({ symbolId }).select('_id').lean() : null;
+    if (!creator) return res.status(404).json({ success: false, code: 'user_not_found', message: 'No shop found.' });
+    const payload = await creatorReviewsPayload(creator, req.authUser);
+    return res.json({ success: true, ...payload });
+  } catch (error) {
+    console.error('Creator reviews read error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load reviews right now.' });
+  }
+});
+
+// PUT /api/creator/:symbolId/reviews — write or replace YOUR review.
+//
+// PUT, not POST: there is one review per person per shop, and sending it
+// again replaces it. The unique index is what makes that true under a
+// double tap, not the findOne.
+app.put('/api/creator/:symbolId/reviews', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+    const creator = symbolId ? await User.findOne({ symbolId }).select('_id').lean() : null;
+    if (!creator) return res.status(404).json({ success: false, code: 'user_not_found', message: 'No shop found.' });
+    if (String(creator._id) === String(req.authUser._id)) {
+      return res.status(403).json({ success: false, code: 'own_shop', message: 'You cannot review your own shop.' });
+    }
+    if (!(await creatorReviewHasPaid(req.authUser._id, creator._id))) {
+      return res.status(403).json({
+        success: false, code: 'not_a_customer',
+        message: 'Reviews come from people who have paid this shop. Pay once, then you can rate it.'
+      });
+    }
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const stars = Number(body.stars);
+    if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
+      return res.status(400).json({ success: false, code: 'invalid_stars', message: 'Pick from 1 to 5 stars.' });
+    }
+    const text = typeof body.text === 'string' ? body.text.trim() : '';
+    if (text.length > CREATOR_REVIEW_TEXT_MAX) {
+      return res.status(400).json({ success: false, code: 'invalid_review_text', message: `Keep it under ${CREATOR_REVIEW_TEXT_MAX} characters.` });
+    }
+    await CreatorReview.updateOne(
+      { creatorUserId: creator._id, authorUserId: req.authUser._id },
+      { $set: { stars, text } },
+      { upsert: true, runValidators: true }
+    );
+    const payload = await creatorReviewsPayload(creator, req.authUser);
+    return res.json({ success: true, ...payload });
+  } catch (error) {
+    console.error('Creator review write error:', error);
+    return res.status(500).json({ success: false, message: 'Could not save your review right now.' });
+  }
+});
+
+// DELETE /api/creator/:symbolId/reviews/mine — take your own review down.
+// Only ever your own: there is no route by which an owner removes a
+// review, because an owner who could would keep only the good ones.
+app.delete('/api/creator/:symbolId/reviews/mine', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
+    const creator = symbolId ? await User.findOne({ symbolId }).select('_id').lean() : null;
+    if (!creator) return res.status(404).json({ success: false, code: 'user_not_found', message: 'No shop found.' });
+    await CreatorReview.deleteOne({ creatorUserId: creator._id, authorUserId: req.authUser._id });
+    const payload = await creatorReviewsPayload(creator, req.authUser);
+    return res.json({ success: true, ...payload });
+  } catch (error) {
+    console.error('Creator review delete error:', error);
+    return res.status(500).json({ success: false, message: 'Could not remove your review right now.' });
+  }
+});
 
 var CREATOR_ITEMS_MAX = 60;
 

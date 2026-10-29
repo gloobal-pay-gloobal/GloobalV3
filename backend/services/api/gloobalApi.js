@@ -1619,6 +1619,22 @@ var GloobalApi = {
   // the announcement bar. Merged server-side over what is stored, so a
   // screen that saves one field cannot blank another.
 
+  // A shop's public reviews: the summary, the newest sixty, your own if
+  // you wrote one, and whether you may write one (only people who have
+  // paid the shop can). Anonymous to every reader, the owner included.
+  async getCreatorReviews(symbolId) {
+    return gloobalApiClient.get(`/api/creator/${encodeURIComponent(symbolId)}/reviews`);
+  },
+
+  // Writes or replaces YOUR review of this shop — one per person.
+  async saveCreatorReview(symbolId, { stars, text }) {
+    return gloobalApiClient.put(`/api/creator/${encodeURIComponent(symbolId)}/reviews`, { stars, text });
+  },
+
+  async deleteMyCreatorReview(symbolId) {
+    return gloobalApiClient.delete(`/api/creator/${encodeURIComponent(symbolId)}/reviews/mine`);
+  },
+
   async saveCreatorShop(symbolId, shop) {
     const result = await gloobalApiClient.put(
       `/api/creator/${encodeURIComponent(symbolId)}/shop`,

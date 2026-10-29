@@ -1583,7 +1583,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       boxShadow: "0 0 0 100vmax rgba(0,0,0,0.28)",
       pointerEvents: "none"
     }}
-  /></div><canvas ref={canvasRef} style={{ display: "none" }} /><div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}><ScannerIcon size={14} color={T.inkFaint} />{state === "starting" ? "Starting camera…" : paused ? "Paused" : "Point at a Gloobal QR code"}</div></div>;
+  /></div><canvas ref={canvasRef} style={{ display: "none" }} /><div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}><ScannerIcon size={14} animated color={T.inkFaint} />{state === "starting" ? "Starting camera…" : paused ? "Paused" : "Point at a Gloobal QR code"}</div></div>;
 }
 
 

@@ -1523,7 +1523,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
        this screen is about to type twelve symbols they are reading off
        another phone; the code on that phone says the same thing and
        cannot be mistyped. */
-  }{onOpenScan && <NavIconButton onClick={onOpenScan} label="Scan a Gloobal QR code"><ScannerIcon size={17} animated color={T.ink} /></NavIconButton>}<NavHistoryButton onClick={onOpenPaidHistory} label="Paid history" /></div></div>{searchStage !== "closed" && <>{bottomOpen && <>{
+  }{onOpenScan && <NavScanButton onClick={onOpenScan} />}<NavHistoryButton onClick={onOpenPaidHistory} label="Paid history" /></div></div>{searchStage !== "closed" && <>{bottomOpen && <>{
     /* RECEIVER CARD — now shown first/up top: their name/ID and
        the editable amount (in their currency) are what matters
        while searching and typing. Hosts the active search dial

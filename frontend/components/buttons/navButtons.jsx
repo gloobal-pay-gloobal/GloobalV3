@@ -57,6 +57,27 @@ function NavIconButton({ onClick, label, disabled, style, children }) {
   >{children}</button>;
 }
 
+// ── THE ONE SCAN BUTTON ─────────────────────────────────────────────────
+//
+// "I want one common scanner icon everywhere." The mark was already one
+// component, but each header drew it its own way: animated at 17px on the
+// dashboard and Send, still and black at 18px on the shop page and the scan
+// card. Same circle, same mark, same slow colour cycle — every header that
+// opens the scanner now goes through this, so they cannot drift again.
+function NavScanButton({ onClick, label = "Scan a Gloobal QR code", disabled, style }) {
+  return <NavIconButton onClick={onClick} label={label} disabled={disabled} style={style}><ScannerIcon size={NAV_GLYPH_SIZE} animated color={T.ink} /></NavIconButton>;
+}
+
+// A country in a header: the app's real flag picture (FlagEmoji, the one
+// every country row uses) filling the same 40px circle as the buttons
+// beside it, rather than an emoji floating inside a white disc.
+function NavFlagBadge({ flag, label }) {
+  return <span role="img" aria-label={label} style={{
+    width: NAV_BUTTON_SIZE, height: NAV_BUTTON_SIZE, flexShrink: 0, borderRadius: "50%",
+    boxShadow: T.shadowCard, display: "inline-flex"
+  }}><FlagEmoji flag={flag} shape="circle" size={NAV_BUTTON_SIZE} border={`inset 0 0 0 2px ${T.surface}`} /></span>;
+}
+
 // Go back. `label` is overridable only because a couple of screens describe
 // where back goes ("Back to Send Money"), which is better for a screen
 // reader than a bare "Back" repeated on every screen.

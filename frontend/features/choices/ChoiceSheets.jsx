@@ -331,7 +331,7 @@ function ChoicesAddSheet({ open, onClose, onRoute }) {
       color: T.accent,
       flexShrink: 0
     }}
-  >{glyph === "scan" ? <ScannerIcon size={19} animated /> : glyph}</span><span style={{ minWidth: 0 }}><span
+  >{glyph === "scan" ? <ScannerIcon size={NAV_GLYPH_SIZE} animated /> : glyph}</span><span style={{ minWidth: 0 }}><span
     style={{ display: "block", fontSize: 15, fontWeight: 800, color: T.ink }}
   >{label}</span><span style={{ display: "block", fontSize: 12.5, color: T.inkSoft, marginTop: 2 }}>
             {caption}

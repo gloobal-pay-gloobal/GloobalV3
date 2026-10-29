@@ -285,7 +285,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
     onClick={onOpenScanAndPay}
     className="v2-tap"
     style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%", border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "13px 0", background: T.surfaceAlt, color: T.ink, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
-  ><ScannerIcon size={17} animated />
+  ><ScannerIcon size={NAV_GLYPH_SIZE} animated />
       Scan &amp; Pay
     </button></div>}</div><HelpSheet
     open={howOpen}

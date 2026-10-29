@@ -771,7 +771,8 @@ describe("scanning a shop shows the shop", () => {
     // MARK and not the word "Scan again".
     const src = app();
     assert.match(src, /label="Scan another code"/);
-    assert.match(src, /<ScannerIcon size=\{NAV_GLYPH_SIZE\}/);
+    // Through NavScanButton now, which draws the mark at NAV_GLYPH_SIZE.
+    assert.match(src, /<NavScanButton\s+onClick=\{\(\) => setScanPayee\(null\)\}/);
     // Scoped to the confirm card. "Scan again" is still the right words
     // on the RETRY button after a lookup fails — that one is a sentence
     // about what went wrong, not a control sitting beside Pay.

@@ -3535,13 +3535,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
        two people open it at once and one of them needs to be scanning
        instead. Without this that person backs out to the dashboard to
        find the scanner, having already found a QR screen. */
-  }{onOpenScan && <NavIconButton
+  }{onOpenScan && <NavScanButton
     onClick={() => {
       requestCloseReceive();
       onOpenScan();
     }}
-    label="Scan a Gloobal QR code"
-  ><ScannerIcon size={17} animated color={T.ink} /></NavIconButton>}<NavHistoryButton
+  />}<NavHistoryButton
     onClick={() => {
       requestCloseReceive();
       setActiveTab("profile");
@@ -3981,8 +3980,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onOp
     onTogglePin={() => togglePin(openCreator.symbolId, openCreator)}
     onClose={() => setOpenCreator(null)}
     onScan={onOpenScan}
-    onShare={() => setShowReceive(true)}
-    onFeedback={() => showToast2("Feedback is coming next.")}
+    onToast={showToast2}
     onEditLook={() => setShowShopTheme(true)}
     onSaveItems={async (next) => {
       try {

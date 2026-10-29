@@ -4493,10 +4493,10 @@ function GloobalId() {
       setDashboardDeepLink({ creator });
     }}
     label={`See what ${creatorDisplayName(scanPayee.creator)} sells`}
-  ><Store4 size={NAV_GLYPH_SIZE} color={T.ink} /></NavIconButton> : null}<NavIconButton
+  ><Store4 size={NAV_GLYPH_SIZE} color={T.ink} /></NavIconButton> : null}<NavScanButton
     onClick={() => setScanPayee(null)}
     label="Scan another code"
-  ><ScannerIcon size={NAV_GLYPH_SIZE} color={T.ink} /></NavIconButton></div> : <span aria-hidden="true" style={{ width: 42, flexShrink: 0 }} />}</div>{
+  /></div> : <span aria-hidden="true" style={{ width: 42, flexShrink: 0 }} />}</div>{
     /* ── AND THE WORDS WENT BACK UNDER THE CAMERA ────────────────────────
        They were under it once, moved above the frame, and have now moved
        back. The history is worth keeping because the reason changed.

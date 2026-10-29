@@ -224,7 +224,8 @@ test("the scan mark moved out of the card and into the corner", () => {
   const cardOnly = card.slice(0, card.indexOf("</div>}</div>}</div>;"));
   assert.doesNotMatch(cardOnly, /aria-label="Scan another code"/,
     "the scan control is still inside the card");
-  assert.match(src, /label="Scan another code"\s*\n\s*><ScannerIcon size=\{NAV_GLYPH_SIZE\}/,
+  // Through NavScanButton since "one common scanner icon everywhere".
+  assert.match(src, /<NavScanButton\s+onClick=\{\(\) => setScanPayee\(null\)\}\s+label="Scan another code"/,
     "the corner scan control is missing or not drawn at the nav glyph size");
 });
 

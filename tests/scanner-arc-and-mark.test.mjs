@@ -35,6 +35,7 @@ const ICONS = "frontend/components/common/icons.jsx";
 const APP = "frontend/App.jsx";
 const SEND = "frontend/screens/SendMoney/SendMoney.jsx";
 const DASH = "frontend/screens/Dashboard/Dashboard.jsx";
+const NAV = "frontend/components/buttons/navButtons.jsx";
 
 // Comments stripped, for the assertions where a comment could be mistaken
 // for the thing itself.
@@ -127,12 +128,15 @@ describe("one mark for scanning, everywhere", () => {
   test("it is offered beside history on both Send and Receive", () => {
     for (const [file, name] of [[SEND, "Send"], [DASH, "Receive"]]) {
       const s = code(file);
-      const at = s.indexOf('label="Scan a Gloobal QR code"');
+      // Both now go through NavScanButton (navButtons.jsx), which carries
+      // the label and the mark, so the button is found by its component.
+      const at = s.indexOf("<NavScanButton");
       assert.ok(at > 0, `${name} has no scan button`);
       const around = s.slice(Math.max(0, at - 700), at + 700);
       assert.match(around, /NavHistoryButton/, `${name}'s scan button is not beside history`);
-      assert.match(around, /<ScannerIcon/, `${name}'s scan button uses a different mark`);
     }
+    assert.match(code(NAV), /function NavScanButton\(\{ onClick, label = "Scan a Gloobal QR code"/);
+    assert.match(code(NAV), /<ScannerIcon size=\{NAV_GLYPH_SIZE\} animated/, "the shared button uses the one mark");
   });
 });
 

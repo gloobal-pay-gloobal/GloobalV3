@@ -304,6 +304,8 @@ const FRONTEND_MODULES = [
   // The screen behind a creator's name: their list, the basket, and the
   // owner's second tab. After businessMark.jsx, whose ink and initials it
   // uses to draw a creator who has uploaded no logo.
+  // A shop's public, anonymous reviews — opened from Feedback on the page.
+  "features/creator/ShopReviews.jsx",
   "features/creator/CreatorPage.jsx",
   // Where an owner changes how their shop looks. After CreatorPage only
   // for reading order; both are function declarations.

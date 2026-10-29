@@ -123,7 +123,9 @@ test("a badge is the owner's claim and is drawn in the owner's colour", () => {
 test("a dark theme moves the page, not the money", () => {
   const src = theme();
   const fn = src.slice(src.indexOf("function resolveShopTheme"), src.indexOf("function shopCardStyle"));
-  assert.match(fn, /page: dark \? "#17120F" : T\.bg/);
+  // The page is washed with the shop's own colour ("Shop's own colour"),
+  // dark or light — it used to be a fixed #17120F / T.bg.
+  assert.match(fn, /page: dark \? shopHexMix\("#120E0C", color, 0\.09\) : shopHexMix\("#FFFFFF", color, 0\.07\)/);
   assert.match(fn, /ink: dark \? "#F3EBE1" : T\.ink/);
   // The one surface that must stay readable on either ground.
   assert.ok(!/payButton|cartTotal/.test(fn), "resolveShopTheme produces nothing for money surfaces");
@@ -255,4 +257,43 @@ test("a supplier is drawn with their own mark where they have one", () => {
 test("chips appear only when they filter something", () => {
   // One chip filters nothing and is a label pretending to be a control.
   assert.match(page(), /categories\.length > 1 &&/);
+});
+
+test("the shop's name card keeps white text readable on every colour", () => {
+  // The Night preset's gold is not in the palette and white on it fails.
+  // shopHeroInk darkens until white reads at 4.5:1, and every surface that
+  // puts white on the shop's colour goes through it.
+  const src = theme();
+  const fn = src.slice(src.indexOf("function shopHeroInk"));
+  assert.match(fn.slice(0, 400), /\(1\.05 \/ \(shopLuminance\(from\) \+ 0\.05\)\) < 4\.5/);
+  const pg = page();
+  assert.match(pg, /linear-gradient\(140deg, \$\{theme\.hero\.from\} 0%, \$\{theme\.hero\.to\} 100%\)/,
+    "the card is painted from the checked colour");
+  assert.ok(!/background: theme\.color, border: "none", cursor: "pointer", color: "#fff"/.test(pg),
+    "no white-on-raw-colour button is left on the page");
+});
+
+test("items are a list or a grid, the owner's pick, and the price stays the app's", () => {
+  const src = theme();
+  assert.match(src, /var SHOP_LAYOUTS = \{\s*list: \{ name: "List" \},\s*grid: \{ name: "Grid" \}/);
+  assert.match(src, /const layout = SHOP_LAYOUTS\[s\.layout\] \? s\.layout : "list";/,
+    "an old profile with no layout is a list");
+  const pg = page();
+  assert.match(pg, /const Item = theme\.layout === "grid" \? CreatorPageItemCard : CreatorPageItemRow;/);
+  const card = pg.slice(pg.indexOf("function CreatorPageItemCard"), pg.indexOf("function CreatorPage({"));
+  const figures = card.match(/<GeuFigure[^>]*\/>/g) || [];
+  assert.equal(figures.length, 1, "the grid card draws one price");
+  assert.ok(!/theme\./.test(figures[0]), "and no theme value reaches it");
+  assert.match(editor(), /\{ field: "layout", label: "Items", options: \["list", "grid"\]/, "picked under Look");
+  const srv = server();
+  assert.match(srv, /layout: \['list', 'grid'\]/, "the server knows the two values");
+  assert.match(srv, /layout: pick\('layout'\),/, "and sends one back");
+  assert.match(readSource("server/models/User.js"), /layout: \{ type: String, enum: \['list', 'grid'\], default: 'list' \}/);
+});
+
+test("the shop's actions are one icon row and Selling/Buying is one switch", () => {
+  const pg = page();
+  assert.match(pg, /THE ICON ROW/);
+  assert.match(pg, /role="tablist" aria-label="Your shop"/);
+  assert.match(pg, /role="tab"\s+aria-selected=\{tab === t\}/);
 });

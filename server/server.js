@@ -4195,7 +4195,8 @@ var CREATOR_SHOP_ENUMS = {
   corners: ['sharp', 'soft', 'round', 'leaf'],
   cards: ['raised', 'flat', 'outline', 'plain'],
   density: ['compact', 'cosy', 'roomy'],
-  photoShape: ['rounded', 'circle', 'wide', 'tall']
+  photoShape: ['rounded', 'circle', 'wide', 'tall'],
+  layout: ['list', 'grid']
 };
 
 function creatorShopColor(value) {
@@ -4215,6 +4216,7 @@ function creatorShopOut(shop) {
     cards: pick('cards'),
     density: pick('density'),
     photoShape: pick('photoShape'),
+    layout: pick('layout'),
     dark: Boolean(s.dark),
     tagline: typeof s.tagline === 'string' ? s.tagline : '',
     announceText: typeof s.announceText === 'string' ? s.announceText : '',

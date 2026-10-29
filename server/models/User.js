@@ -362,6 +362,8 @@ const userSchema = new mongoose.Schema({
       cards: { type: String, enum: ['raised', 'flat', 'outline', 'plain'], default: 'raised' },
       density: { type: String, enum: ['compact', 'cosy', 'roomy'], default: 'cosy' },
       photoShape: { type: String, enum: ['rounded', 'circle', 'wide', 'tall'], default: 'rounded' },
+      // Rows like a price board, or a two-column grid like a shop window.
+      layout: { type: String, enum: ['list', 'grid'], default: 'list' },
       dark: { type: Boolean, default: false },
 
       // One line under the name: "Chai since 2015".

@@ -127,6 +127,14 @@ var SHOP_DENSITY = {
   roomy: { name: "Roomy", rowPad: "15px 16px", gap: 13, thumb: 60, sectionGap: 24 }
 };
 
+// How the things a shop sells are laid out. The owner picks under Look:
+// a list reads like a price board, a grid like a shop window. List is the
+// default because it is what every shop already had.
+var SHOP_LAYOUTS = {
+  list: { name: "List" },
+  grid: { name: "Grid" }
+};
+
 var SHOP_PHOTO_SHAPES = {
   rounded: { name: "Rounded", ratio: 1, radius: null },
   circle: { name: "Circle", ratio: 1, radius: "50%" },
@@ -147,6 +155,45 @@ var SHOP_THEME_SURFACES = [
 
 // And the ones it must never reach, for the same reason.
 var SHOP_THEME_FORBIDDEN = ["price", "geuPair", "cartTotal", "payButton"];
+
+// ── THE SHOP'S COLOUR, AS A PAGE ────────────────────────────────────────
+//
+// "Shop's own colour": the page takes the colour the owner picked rather
+// than the app's lavender, so two shops side by side feel like two places.
+// Three small pieces of arithmetic, all on #RRGGBB strings that have
+// already been through the palette check above.
+
+function shopHexMix(hex, toward, amount) {
+  const a = parseInt(hex.slice(1), 16);
+  const b = parseInt(toward.slice(1), 16);
+  const ch = (shift) => {
+    const x = (a >> shift) & 255;
+    const y = (b >> shift) & 255;
+    return Math.round(x + (y - x) * amount).toString(16).padStart(2, "0");
+  };
+  return `#${ch(16)}${ch(8)}${ch(0)}`.toUpperCase();
+}
+
+function shopLuminance(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const lin = (v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+}
+
+// The card behind the shop's name carries WHITE text, so its colour is
+// darkened until white reads on it at 4.5:1. Every palette colour already
+// passes; the Night preset's gold does not, and without this its name sat
+// white-on-mustard.
+function shopHeroInk(color) {
+  let from = color;
+  for (let i = 0; i < 12 && (1.05 / (shopLuminance(from) + 0.05)) < 4.5; i++) {
+    from = shopHexMix(from, "#000000", 0.08);
+  }
+  return { from, to: shopHexMix(from, "#000000", 0.3), glow: `${from}55` };
+}
 
 function shopThemeBase(key) {
   return SHOP_THEMES[key] || SHOP_THEMES.gloobal;
@@ -180,6 +227,7 @@ function resolveShopTheme(shop) {
   const density = SHOP_DENSITY[s.density] || SHOP_DENSITY[base.density];
   const photo = SHOP_PHOTO_SHAPES[s.photoShape] || SHOP_PHOTO_SHAPES[base.photoShape];
   const dark = typeof s.dark === "boolean" ? s.dark : base.dark;
+  const layout = SHOP_LAYOUTS[s.layout] ? s.layout : "list";
 
   // A soft wash of the shop's colour, for chip and badge backgrounds. Mixed
   // against the page rather than stored, so one stored colour is enough and a
@@ -198,15 +246,18 @@ function resolveShopTheme(shop) {
     cards,
     density,
     photo,
-    // The page's own surfaces under this theme. A dark shop is the only
-    // thing that moves these; everything else inherits the app's palette so
-    // a themed shop still sits inside Gloobal rather than replacing it.
-    page: dark ? "#17120F" : T.bg,
-    surface: dark ? "#241D18" : T.surface,
+    layout,
+    hero: shopHeroInk(color),
+    // The page's own surfaces under this theme, washed with the shop's
+    // colour: a light shop gets a pale tint of it instead of the app's
+    // lavender, a dark shop a near-black leaning toward it. Cards stay
+    // white on a light page so prices sit on the same ground everywhere.
+    page: dark ? shopHexMix("#120E0C", color, 0.09) : shopHexMix("#FFFFFF", color, 0.07),
+    surface: dark ? shopHexMix("#221B17", color, 0.08) : T.surface,
     ink: dark ? "#F3EBE1" : T.ink,
     inkSoft: dark ? "#C3B5A5" : T.inkSoft,
     inkFaint: dark ? "#9A8B7B" : T.inkFaint,
-    line: dark ? "#352B23" : T.line
+    line: dark ? shopHexMix("#2E2620", color, 0.16) : shopHexMix("#EAE6F7", color, 0.18)
   };
 }
 

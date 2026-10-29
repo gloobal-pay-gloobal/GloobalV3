@@ -23,6 +23,9 @@ import { Check as Check10 } from "lucide-react";
 // {key, label} so the same row renderer draws all of them and a new option
 // is one line here rather than a new block of JSX.
 var SHOP_EDIT_SECTIONS = [
+  // First, because it changes the page more than any other dial: the
+  // items as rows or as a two-column grid.
+  { field: "layout", label: "Items", options: ["list", "grid"], table: "SHOP_LAYOUTS" },
   { field: "corners", label: "Corners", options: ["sharp", "soft", "round", "leaf"], table: "SHOP_CORNERS" },
   { field: "cards", label: "Cards", options: ["raised", "flat", "outline", "plain"], table: null },
   { field: "density", label: "Density", options: ["compact", "cosy", "roomy"], table: "SHOP_DENSITY" },
@@ -35,6 +38,7 @@ function shopOptionLabel(field, key) {
   if (field === "cards") return SHOP_CARD_LABELS[key] || key;
   if (field === "corners") return (SHOP_CORNERS[key] || {}).name || key;
   if (field === "density") return (SHOP_DENSITY[key] || {}).name || key;
+  if (field === "layout") return (SHOP_LAYOUTS[key] || {}).name || key;
   if (field === "photoShape") return (SHOP_PHOTO_SHAPES[key] || {}).name || key;
   return key;
 }
@@ -57,25 +61,34 @@ function ShopThemePreview({ shop, lens, ccyCode }) {
     background: announce.color, color: "#fff", padding: "6px 12px",
     fontSize: 9.5, fontWeight: 800, textAlign: "center", letterSpacing: 0.3
   }}>{announce.text}</div> : null}<div style={{ padding: 13 }}><div style={{
-    display: "flex", alignItems: "center", gap: 10, marginBottom: 11
+    display: "flex", alignItems: "center", gap: 10, marginBottom: 11, padding: "11px 12px",
+    borderRadius: theme.corners.mark, color: "#fff",
+    background: `linear-gradient(140deg, ${theme.hero.from} 0%, ${theme.hero.to} 100%)`
   }}><span style={{
-    width: 40, height: 40, borderRadius: theme.corners.mark, flexShrink: 0,
-    background: theme.key === "gloobal" ? paint.bg : theme.soft,
-    color: theme.key === "gloobal" ? paint.fg : theme.color,
+    width: 38, height: 38, borderRadius: theme.corners.mark, flexShrink: 0,
+    background: "rgba(255,255,255,0.92)", color: theme.hero.from,
     display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: 14, fontWeight: 800, fontFamily: theme.font.stack
+    fontSize: 13, fontWeight: 800, fontFamily: theme.font.stack
   }}>रस</span><span style={{ minWidth: 0 }}><span style={{
     display: "block", fontSize: 14, fontWeight: theme.font.weight,
-    color: theme.ink, fontFamily: theme.font.stack
+    color: "#fff", fontFamily: theme.font.stack
   }}>रसोई ghar</span>{(shop && shop.tagline) ? <span style={{
-    display: "block", fontSize: 10, fontWeight: 700, color: theme.color, marginTop: 2
+    display: "block", fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.85)", marginTop: 2
   }}>{shop.tagline}</span> : null}</span></div><div style={{
     display: "flex", gap: 6, marginBottom: 11
   }}>{["All", "Chai"].map((c, i) => <span key={c} style={{
     borderRadius: theme.corners.pill, padding: "5px 10px", fontSize: 10, fontWeight: 700,
-    background: i === 0 ? theme.color : theme.surface,
+    background: i === 0 ? theme.hero.from : theme.surface,
     color: i === 0 ? "#fff" : theme.inkFaint
-  }}>{c}</span>)}</div><div style={{
+  }}>{c}</span>)}</div>{theme.layout === "grid" ? <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>{["Masala chai", "Samosa"].map((t, i) => <div key={t} style={{
+    ...card, padding: 6, color: theme.ink
+  }}><span style={{
+    display: "flex", alignItems: "center", justifyContent: "center", width: "100%", aspectRatio: "1.3",
+    borderRadius: theme.photo.radius === "50%" ? theme.corners.photo : (theme.photo.radius || theme.corners.photo),
+    background: businessMarkInk(t).bg, color: businessMarkInk(t).fg, fontSize: 13, fontWeight: 800
+  }}>{businessMarkInitials(t)}</span><span style={{
+    display: "block", fontSize: 11, fontWeight: 700, marginTop: 5
+  }}>{t}</span><span style={{ display: "block", marginTop: 2 }}><GeuFigure amount={i === 0 ? 20 : 15} currency={ccyCode} lens={lens} size={10.5} /></span></div>)}</div> : <div style={{
     display: "flex", alignItems: "center", gap: 10, padding: theme.density.rowPad, ...card
   }}><span style={{
     ...thumb, flexShrink: 0, background: paint.bg, display: "flex",
@@ -89,10 +102,10 @@ function ShopThemePreview({ shop, lens, ccyCode }) {
     /* The price, drawn by the app and not by the theme — which is the thing
        this preview exists to let somebody check. */
   }<GeuFigure amount={20} currency={ccyCode} lens={lens} size={11.5} /></span></span><span style={{
-    width: 26, height: 26, borderRadius: theme.corners.pill, background: theme.color,
+    width: 26, height: 26, borderRadius: theme.corners.pill, background: theme.hero.from,
     color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
     fontSize: 15, fontWeight: 800, flexShrink: 0
-  }}>+</span></div></div></div>;
+  }}>+</span></div>}</div></div>;
 }
 
 function ShopThemeEditor({ shop, cover, symbolId, ccyCode = "USD", lens = null, onClose, onSave, onSaveCover }) {
@@ -101,7 +114,7 @@ function ShopThemeEditor({ shop, cover, symbolId, ccyCode = "USD", lens = null, 
   // half-applied look.
   const [draft, setDraft] = useState55(() => Object.assign({
     theme: "gloobal", color: "", font: "grotesk", corners: "round", cards: "raised",
-    density: "cosy", photoShape: "rounded", tagline: "", announceText: "",
+    density: "cosy", photoShape: "rounded", layout: "list", tagline: "", announceText: "",
     announceColor: "", announceOn: true
   }, shop && typeof shop === "object" ? shop : {}));
   const [saving, setSaving] = useState55(false);
@@ -158,7 +171,7 @@ function ShopThemeEditor({ shop, cover, symbolId, ccyCode = "USD", lens = null, 
   }}><div style={{ marginBottom: 6 }}><ShopThemePreview shop={draft} lens={lens} ccyCode={ccyCode} /></div>
   <div style={{
     fontSize: 11, color: T.inkFaint, fontWeight: 600, margin: "9px 2px 18px", lineHeight: 1.5
-  }}>Your colour lands on the chip, the badge and the Add button. The price keeps the app's own look in every shop, so people can read a figure the same way everywhere.</div>
+  }}>Your colour washes the page and fills your name card, the chips and the Add button. The price keeps the app's own look in every shop, so people can read a figure the same way everywhere.</div>
 
   {row("Cover photo", <ShopCoverPicker
     cover={cover}

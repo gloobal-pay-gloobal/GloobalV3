@@ -216,7 +216,7 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, theme, onAdd, onR
       }}>{qty}</span><button
         onClick={onAdd}
         aria-label={`One more ${item.title}`}
-        style={{ width: 28, height: 28, borderRadius: theme.corners.pill, background: theme.color, border: "none", cursor: "pointer", color: "#fff" }}
+        style={{ width: 28, height: 28, borderRadius: theme.corners.pill, background: theme.hero.from, border: "none", cursor: "pointer", color: "#fff" }}
       ><Plus7 size={14} /></button></span>
       : <button
         onClick={onAdd}
@@ -227,6 +227,95 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, theme, onAdd, onR
         }}
       ><Plus7 size={15} /></button>)
   }</span></div>;
+}
+
+// ── THE GRID CARD ───────────────────────────────────────────────────────
+//
+// The other half of "creator chooses": the same item as a shop-window
+// card, two to a row. Every rule the row follows holds here too — the
+// price is GeuFigure and nothing else, the badge is in the owner's colour,
+// the owner gets a pencil where a customer gets +. The controls sit ON the
+// photo's corner because a 150px card has no room for a stepper beside a
+// price, and a stepper squeezed under it wraps on long figures.
+function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, onRemove, onEdit, onViewPhotos }) {
+  const paint = businessMarkInk(item.title);
+  const shots = Array.isArray(item.photos) && item.photos.length ? item.photos : (item.photo ? [item.photo] : []);
+  const card = shopCardStyle(theme);
+  const round = theme.photo.radius === "50%";
+  const ratio = round ? 1 : (theme.photo.ratio || 1);
+  const ctl = (extra) => ({
+    position: "absolute", border: "none", cursor: "pointer", display: "flex",
+    alignItems: "center", justifyContent: "center", boxShadow: "0 3px 10px rgba(0,0,0,0.22)", ...extra
+  });
+  return <div style={{
+    ...card, padding: 8, minWidth: 0, display: "flex", flexDirection: "column",
+    opacity: item.soldOut ? 0.6 : 1
+  }}><div style={{
+    position: "relative", width: round ? "78%" : "100%", alignSelf: "center",
+    aspectRatio: String(ratio)
+  }}>{item.photo
+    ? <button
+      onClick={() => shots.length > 1 && onViewPhotos && onViewPhotos(item)}
+      aria-label={shots.length > 1 ? `See ${shots.length} photos of ${item.title}` : item.title}
+      style={{
+        border: "none", padding: 0, width: "100%", height: "100%", display: "block", overflow: "hidden",
+        background: "none", cursor: shots.length > 1 ? "pointer" : "default",
+        borderRadius: theme.photo.radius || theme.corners.photo
+      }}
+    ><img src={item.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /></button>
+    : <span style={{
+      width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+      borderRadius: theme.photo.radius || theme.corners.photo, background: paint.bg,
+      fontSize: 22, fontWeight: 800, color: paint.fg
+    }}>{businessMarkInitials(item.title)}</span>}{
+    shots.length > 1 ? <span style={{
+      position: "absolute", left: 6, bottom: 6, minWidth: 18, height: 18, padding: "0 5px",
+      borderRadius: 9, background: "rgba(21,19,42,0.66)", color: "#fff",
+      fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center"
+    }}>{shots.length}</span> : null
+  }{item.soldOut
+    ? <span style={{
+      position: "absolute", left: 6, top: 6, fontSize: 9, fontWeight: 800, letterSpacing: 0.5,
+      textTransform: "uppercase", color: T.negative, background: "#FDECEC", borderRadius: 6, padding: "3px 6px"
+    }}>Sold out</span>
+    : item.badge ? <span style={{
+      position: "absolute", left: 6, top: 6, maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis",
+      whiteSpace: "nowrap", fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
+      color: "#fff", background: theme.hero.from, borderRadius: 6, padding: "3px 6px"
+    }}>{item.badge}</span> : null}{owner
+    ? <button
+      onClick={onEdit}
+      aria-label={`Edit ${item.title}`}
+      style={ctl({ right: 6, top: 6, width: 30, height: 30, borderRadius: "50%", background: T.surface })}
+    ><Pencil3 size={13} color={theme.hero.from} /></button>
+    : item.soldOut ? null : (qty > 0
+      ? <span style={ctl({
+        right: 6, bottom: 6, height: 32, borderRadius: 16, background: T.surface, gap: 4, padding: "0 3px", cursor: "default"
+      })}><button
+        onClick={onRemove}
+        aria-label={`One fewer ${item.title}`}
+        style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: theme.soft, color: theme.hero.from, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+      ><Minus2 size={13} /></button><span style={{
+        fontSize: 13, fontWeight: 800, color: T.ink, minWidth: 14, textAlign: "center"
+      }}>{qty}</span><button
+        onClick={onAdd}
+        aria-label={`One more ${item.title}`}
+        style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: theme.hero.from, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+      ><Plus7 size={13} /></button></span>
+      : <button
+        onClick={onAdd}
+        aria-label={`Add ${item.title}`}
+        style={ctl({ right: 6, bottom: 6, width: 32, height: 32, borderRadius: "50%", background: theme.hero.from, color: "#fff" })}
+      ><Plus7 size={16} /></button>)}</div><span style={{
+    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+    fontSize: 13, fontWeight: 700, color: theme.ink, lineHeight: 1.3, marginTop: 8, overflowWrap: "anywhere"
+  }}>{item.title}</span>{item.note ? <span style={{
+    display: "block", fontSize: 10.5, color: theme.inkFaint, marginTop: 2,
+    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+  }}>{item.note}</span> : null}<span style={{ display: "block", marginTop: "auto", paddingTop: 6, color: theme.ink }}>{
+    /* The price is the app's, in every shop and every layout — see the
+       row above and SHOP_THEME_FORBIDDEN. */
+  }<GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} size={12.5} /></span></div>;
 }
 
 function CreatorPage({
@@ -371,7 +460,7 @@ function CreatorPage({
        not re-centred on the sky above it. Faded into the page at the
        bottom so the mark sits on the join rather than on a hard edge. */
   }{cover && cover.photo ? <div style={{
-    margin: "0 -18px", height: 168, position: "relative", overflow: "hidden"
+    margin: "0 -18px", height: 150, position: "relative", overflow: "hidden"
   }}><img
     src={cover.photo}
     alt=""
@@ -381,11 +470,28 @@ function CreatorPage({
     }}
   /><span style={{
     position: "absolute", inset: 0,
-    background: `linear-gradient(180deg, rgba(21,19,42,0.18) 0 24%, transparent 52%, ${theme.page} 100%)`
-  }} /></div> : null}<div style={{
-    display: "flex", flexDirection: "column", alignItems: "center",
-    marginTop: cover && cover.photo ? -42 : 0, position: "relative", zIndex: 2
-  }}><span style={{ position: "relative", display: "inline-flex" }}><CreatorMark creator={creator} theme={theme} />{
+    background: `linear-gradient(180deg, rgba(21,19,42,0.10) 0 30%, transparent 55%, ${theme.page} 100%)`
+  }} /></div> : null}{
+    /* ── THE SHOP'S OWN CARD ──────────────────────────────────────────
+       Mark beside name on a card in the shop's colour — the same shape as
+       the owner's profile card, so the page and the profile read as one
+       thing. Its colour is the owner's pick, darkened only as far as white
+       text needs (shopHeroInk), and it overlaps the cover's lower edge so
+       the photo and the shop are joined rather than stacked. */
+  }<div data-shop-hero="" style={{
+    position: "relative", zIndex: 2, overflow: "hidden",
+    marginTop: cover && cover.photo ? -58 : 4,
+    background: `linear-gradient(140deg, ${theme.hero.from} 0%, ${theme.hero.to} 100%)`,
+    borderRadius: theme.corners.mark,
+    boxShadow: `0 12px 28px ${theme.hero.glow}`,
+    padding: "18px 16px 12px", color: "#fff"
+  }}><span aria-hidden="true" style={{
+    position: "absolute", right: -46, top: -56, width: 160, height: 160, borderRadius: "50%",
+    background: "rgba(255,255,255,0.08)", pointerEvents: "none"
+  }} /><div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}><span style={{
+    position: "relative", display: "inline-flex", flexShrink: 0,
+    padding: 3, borderRadius: theme.corners.mark, background: "rgba(255,255,255,0.92)"
+  }}><CreatorMark creator={creator} theme={theme} size={66} />{
     /* The pin sits on the mark's corner, the way a star sits on a thing you
        keep rather than on a row of controls beside it. */
   }<button
@@ -393,63 +499,75 @@ function CreatorPage({
     aria-label={pinned ? `Unpin ${name}` : `Pin ${name}`}
     aria-pressed={Boolean(pinned)}
     style={{
-      position: "absolute", top: -5, right: -5, width: 26, height: 26, borderRadius: "50%",
-      background: T.surface, border: "none", boxShadow: T.shadowCard, cursor: "pointer",
+      position: "absolute", top: -8, right: -8, width: 26, height: 26, borderRadius: "50%",
+      background: T.surface, border: "none", boxShadow: "0 2px 8px rgba(0,0,0,0.22)", cursor: "pointer",
       display: "flex", alignItems: "center", justifyContent: "center"
     }}
   >{
     /* The gold was written out here and again on the strip and again on
        the rows. One constant now, so the three cannot drift. */
-  }<Star2 size={14} color={pinned ? PAY_PIN_STAR : T.inkFaint} fill={pinned ? PAY_PIN_STAR : "none"} /></button></span>
-
-  <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 11 }}><span style={{
-    fontSize: 19, fontWeight: theme.font.weight, color: theme.ink, fontFamily: theme.font.stack
+  }<Star2 size={14} color={pinned ? PAY_PIN_STAR : T.inkFaint} fill={pinned ? PAY_PIN_STAR : "none"} /></button></span><span style={{
+    flex: 1, minWidth: 0
+  }}><span style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{
+    minWidth: 0, fontSize: 21, lineHeight: 1.2, fontWeight: theme.font.weight, color: "#fff",
+    fontFamily: theme.font.stack, overflowWrap: "anywhere"
   }}>{name}</span><button
     onClick={() => setDetailsOpen((v) => !v)}
     aria-label={detailsOpen ? "Hide creator details" : "Show creator details"}
+    aria-pressed={detailsOpen}
     style={{
-      width: 22, height: 22, borderRadius: 7, border: "none", cursor: "pointer",
-      background: detailsOpen ? T.accentSoft : T.surfaceAlt,
+      width: 26, height: 26, borderRadius: 9, border: "none", cursor: "pointer", flexShrink: 0,
+      background: detailsOpen ? "#fff" : "rgba(255,255,255,0.18)",
       display: "flex", alignItems: "center", justifyContent: "center"
     }}
-  ><Eye2 size={12} color={detailsOpen ? T.accent : T.inkSoft} /></button></div>
-
-  {
+  ><Eye2 size={13} color={detailsOpen ? theme.hero.from : "#fff"} /></button></span>{
+    tagline ? <span style={{
+      display: "block", fontSize: 12.5, fontWeight: 700, color: "rgba(255,255,255,0.86)", marginTop: 4
+    }}>{tagline}</span> : null
+  }{
     /* ── A COUNT NOBODY CAN TYPE ──────────────────────────────────────
        This was a pin count, which is a tap, which its own subject can run
        up from throwaway accounts — in the position a reader takes as
        reputation. Repeat payers is a by-product of payments that already
        settled. Hidden below ten, because "1 person" reads as a verdict on a
        creator who simply started last week. */
-    tagline ? <div style={{
-      fontSize: 11.5, fontWeight: 700, color: theme.color, marginTop: 4, textAlign: "center"
-    }}>{tagline}</div> : null
-  }{
-    Number(creator.repeatPayers) >= 10 ? <div style={{
-      fontSize: 11.5, fontWeight: 600, color: T.inkFaint, marginTop: 7
-    }}><span style={{ color: T.positive, fontWeight: 800 }}>{creator.repeatPayers}</span> people have paid them more than once</div> : null
-  }
-
-  <div style={{ display: "flex", gap: 9, marginTop: 13 }}>{[
-    { key: "share", label: "Share", Icon: Share25, onClick: onShare, on: false },
-    { key: "feedback", label: isOwner ? "Feedback" : "Send a note", Icon: MessageSquare, onClick: onFeedback, on: false }
+    Number(creator.repeatPayers) >= 10 ? <span style={{
+      display: "block", fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.78)", marginTop: 5
+    }}><b style={{ color: "#fff", fontWeight: 800 }}>{creator.repeatPayers}</b> people have paid them more than once</span> : null
+  }</span></div>{
+    /* ── THE ICON ROW ─────────────────────────────────────────────────
+       Round buttons with the word underneath, inside the card, instead of
+       three white pills floating on the page. One shape for every action,
+       and room for a fourth without the row wrapping. */
+  }<div style={{
+    display: "flex", justifyContent: "space-around", gap: 6, position: "relative",
+    marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.16)"
+  }}>{[
+    { key: "share", label: "Share", Icon: Share25, onClick: onShare },
+    { key: "feedback", label: isOwner ? "Feedback" : "Send a note", Icon: MessageSquare, onClick: onFeedback }
   ].concat(isOwner && onEditLook ? [
     // The owner's way into the look of their own shop, on the shop itself
     // rather than buried in a settings list — which is where somebody
     // standing in front of their page actually wants it.
-    { key: "look", label: "Look", Icon: Palette2, onClick: onEditLook, on: false }
-  ] : []).map(({ key, label, Icon, onClick, on }) => <button
+    { key: "look", label: "Look", Icon: Palette2, onClick: onEditLook }
+  ] : []).map(({ key, label, Icon, onClick }) => <button
     key={key}
     onClick={onClick}
     style={{
-      display: "flex", alignItems: "center", gap: 6, border: "none", cursor: "pointer",
-      background: on ? T.accentSoft : T.surface, color: on ? T.accent : T.inkSoft,
-      borderRadius: 12, padding: "8px 14px", fontSize: 11.5, fontWeight: 700, boxShadow: T.shadowCard
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+      border: "none", background: "none", cursor: "pointer", fontFamily: "inherit",
+      padding: "2px 6px", minWidth: 64, color: "#fff"
     }}
-  ><Icon size={13} />{label}</button>)}</div></div>
+  ><span style={{
+    width: 42, height: 42, borderRadius: "50%", background: "rgba(255,255,255,0.17)",
+    display: "flex", alignItems: "center", justifyContent: "center"
+  }}><Icon size={18} color="#fff" /></span><span style={{
+    fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.92)", whiteSpace: "nowrap"
+  }}>{label}</span></button>)}</div></div>
 
   {detailsOpen && <div style={{
-    background: T.surface, borderRadius: 16, padding: "4px 14px", marginTop: 13, boxShadow: T.shadowCard
+    background: theme.surface, borderRadius: 16, padding: "4px 14px", marginTop: 12,
+    boxShadow: theme.dark ? "none" : T.shadowCard, border: theme.dark ? `1px solid ${theme.line}` : "none"
   }}>{[
     ["Creator name", creator.handle || "—"],
     ["Gloobal ID", creator.symbolId || "—"],
@@ -458,23 +576,33 @@ function CreatorPage({
     key={k}
     style={{
       display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 0",
-      borderTop: i === 0 ? "none" : `1px solid ${T.line}`
+      borderTop: i === 0 ? "none" : `1px solid ${theme.line}`
     }}
-  ><span style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint }}>{k}</span><span style={{
-    fontSize: 12, fontWeight: 700, color: T.ink, textAlign: "right", overflowWrap: "anywhere"
+  ><span style={{ fontSize: 11.5, fontWeight: 600, color: theme.inkFaint }}>{k}</span><span style={{
+    fontSize: 12, fontWeight: 700, color: theme.ink, textAlign: "right", overflowWrap: "anywhere"
   }}>{v}</span></div>)}</div>}
 
-  {isOwner && <div style={{ display: "flex", gap: 7, margin: "16px 0 12px" }}>{CREATOR_PAGE_TABS.map((t) => <button
-    key={t}
-    onClick={() => setTab(t)}
-    style={{
-      flex: 1, borderRadius: 12, padding: 9, border: "none", cursor: "pointer",
-      fontSize: 12, fontWeight: 800, fontFamily: "inherit",
-      background: tab === t ? T.accent : T.surface,
-      color: tab === t ? "#fff" : T.inkSoft,
-      boxShadow: T.shadowCard
-    }}
-  >{t}</button>)}</div>}
+  {
+    /* ── ONE SLIM SWITCH, NOT TWO SLABS ───────────────────────────────
+       Selling and Buying are two views of one page, so they are one
+       control: a track with the chosen side filled in the shop's colour. */
+    isOwner && <div role="tablist" aria-label="Your shop" style={{
+      display: "flex", gap: 4, margin: "16px 0 12px", padding: 4,
+      borderRadius: theme.corners.pill, background: theme.dark ? theme.surface : shopHexMix("#FFFFFF", theme.color, 0.13)
+    }}>{CREATOR_PAGE_TABS.map((t) => <button
+      key={t}
+      role="tab"
+      aria-selected={tab === t}
+      onClick={() => setTab(t)}
+      style={{
+        flex: 1, borderRadius: theme.corners.pill, padding: "8px 0", border: "none", cursor: "pointer",
+        fontSize: 12.5, fontWeight: 800, fontFamily: "inherit",
+        background: tab === t ? theme.hero.from : "transparent",
+        color: tab === t ? "#fff" : theme.inkSoft,
+        transition: "background .18s ease, color .18s ease"
+      }}
+    >{t}</button>)}</div>
+  }
 
   {
     /* ── THE OWNER'S OWN GROUPINGS ────────────────────────────────────
@@ -492,7 +620,7 @@ function CreatorPage({
       flexShrink: 0, border: "none", cursor: "pointer", fontFamily: "inherit",
       borderRadius: theme.corners.pill, padding: "8px 13px",
       fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
-      background: activeCat === c ? theme.color : theme.surface,
+      background: activeCat === c ? theme.hero.from : theme.surface,
       color: activeCat === c ? "#fff" : theme.inkSoft,
       boxShadow: theme.cards === "raised" ? T.shadowCard : "none"
     }}
@@ -500,10 +628,10 @@ function CreatorPage({
   {(!isOwner || tab === "Selling") && <>{
     !isOwner && items.length === 0
       ? <div style={{
-        background: T.surface, borderRadius: 16, padding: "26px 18px", textAlign: "center",
-        boxShadow: T.shadowCard, marginTop: 16
-      }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Nothing listed yet</div><div style={{
-        fontSize: 11.5, color: T.inkFaint, marginTop: 4
+        background: theme.surface, borderRadius: 16, padding: "26px 18px", textAlign: "center",
+        boxShadow: theme.dark ? "none" : T.shadowCard, marginTop: 16
+      }}><div style={{ fontSize: 13.5, fontWeight: 700, color: theme.ink }}>Nothing listed yet</div><div style={{
+        fontSize: 11.5, color: theme.inkFaint, marginTop: 4
       }}>You can still pay {name} any amount.</div></div>
       : <>{isOwner ? null : <div style={{
         fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase",
@@ -513,11 +641,16 @@ function CreatorPage({
           onClick={() => { setSaveError(""); setDraft({ id: null, title: "", price: "", note: "", category: "", badge: "", photos: [], soldOut: false }); }}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%",
-            border: `1.6px dashed ${T.line}`, background: "none", borderRadius: 16, padding: 16,
-            color: T.accent, fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", marginBottom: 9
+            border: `1.6px dashed ${theme.dark ? theme.line : shopHexMix("#FFFFFF", theme.color, 0.45)}`, background: theme.dark ? "none" : "rgba(255,255,255,0.55)", borderRadius: theme.corners.card, padding: 16,
+            color: theme.dark ? theme.color : theme.hero.from, fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", marginBottom: 9
           }}
         ><Plus7 size={15} />Add something you sell</button> : null
-      }{items.map((item) => <CreatorPageItemRow
+      }{(() => {
+        /* One list of items, drawn as rows or as a two-column grid —
+           whichever the owner picked under Look. Same props either way, so
+           the two layouts cannot disagree about what an item is. */
+        const Item = theme.layout === "grid" ? CreatorPageItemCard : CreatorPageItemRow;
+        const drawn = items.map((item) => <Item
         key={item.id}
         item={item}
         qty={Number(basket[item.id]) || 0}
@@ -529,15 +662,19 @@ function CreatorPage({
         onAdd={() => bump(item.id, 1)}
         onRemove={() => bump(item.id, -1)}
         onEdit={() => { setSaveError(""); setDraft({ id: item.id, title: item.title, price: String(item.price), note: item.note || "", category: item.category || "", badge: item.badge || "", photos: (item.photos && item.photos.length ? item.photos : (item.photo ? [item.photo] : [])), soldOut: Boolean(item.soldOut) }); }}
-      />)}</>
+      />);
+        return theme.layout === "grid"
+          ? <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{drawn}</div>
+          : drawn;
+      })()}</>
   }</>}
 
   {isOwner && tab === "Buying" && <><button
     onClick={onAddSupplier}
     style={{
       display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%",
-      border: `1.6px dashed ${T.line}`, background: "none", borderRadius: 16, padding: 16,
-      color: T.accent, fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", marginBottom: 9
+      border: `1.6px dashed ${theme.dark ? theme.line : shopHexMix("#FFFFFF", theme.color, 0.45)}`, background: theme.dark ? "none" : "rgba(255,255,255,0.55)", borderRadius: theme.corners.card, padding: 16,
+      color: theme.dark ? theme.color : theme.hero.from, fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", marginBottom: 9
     }}
   ><Plus7 size={15} />Add a supplier by their name</button>{
     suppliers.map((s) => {
@@ -547,8 +684,8 @@ function CreatorPage({
         onClick={() => onOpenSupplier && onOpenSupplier(s)}
         style={{
           display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
-          background: T.surface, borderRadius: 16, padding: "11px 13px", marginBottom: 9,
-          border: "none", boxShadow: T.shadowCard, cursor: "pointer", fontFamily: "inherit"
+          background: theme.surface, borderRadius: 16, padding: "11px 13px", marginBottom: 9,
+          border: "none", boxShadow: theme.dark ? "none" : T.shadowCard, cursor: "pointer", fontFamily: "inherit"
         }}
       >{s.logo
         ? <img src={s.logo} alt="" style={{
@@ -561,25 +698,25 @@ function CreatorPage({
         }}>{businessMarkInitials(s.handle || s.symbolId)}</span>}<span style={{ flex: 1, minWidth: 0 }}><span style={{
         display: "block", fontSize: 13, fontWeight: 700, color: T.ink
       }}>{s.handle || s.symbolId}</span><span style={{
-        display: "block", fontSize: 11, color: T.inkFaint, marginTop: 2
-      }}>{s.lastOrderAt ? `last order ${creatorWhen(s.lastOrderAt)}` : "no orders yet"}</span></span><ChevronRight8 size={15} color={T.inkFaint} /></button>;
+        display: "block", fontSize: 11, color: theme.inkFaint, marginTop: 2
+      }}>{s.lastOrderAt ? `last order ${creatorWhen(s.lastOrderAt)}` : "no orders yet"}</span></span><ChevronRight8 size={15} color={theme.inkFaint} /></button>;
     })
   }{purchases.length > 0 && <><div style={{
     fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase",
-    color: T.inkSoft, margin: "18px 0 10px"
+    color: theme.inkSoft, margin: "18px 0 10px"
   }}>What I bought</div><div style={{
-    background: T.surface, borderRadius: 16, padding: "4px 14px", boxShadow: T.shadowCard
+    background: theme.surface, borderRadius: 16, padding: "4px 14px", boxShadow: theme.dark ? "none" : T.shadowCard
   }}>{purchases.map((p, i) => <div
     key={p.id}
     style={{
-      display: "flex", justifyContent: "space-between", gap: 10, padding: "11px 0",
-      borderTop: i === 0 ? "none" : `1px solid ${T.line}`
+      display: "flex", justifyContent: "space-between", gap: 10, padding: "11px 0", color: theme.ink,
+      borderTop: i === 0 ? "none" : `1px solid ${theme.line}`
     }}
   ><span style={{ minWidth: 0 }}><span style={{
-    display: "block", fontSize: 12.5, fontWeight: 700, color: T.ink,
+    display: "block", fontSize: 12.5, fontWeight: 700, color: theme.ink,
     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
   }}>{p.title}{p.quantity > 1 ? ` × ${p.quantity}` : ""}</span><span style={{
-    display: "block", fontSize: 10.5, color: T.inkFaint, marginTop: 2
+    display: "block", fontSize: 10.5, color: theme.inkFaint, marginTop: 2
   }}>{p.supplierHandle || p.supplierSymbolId} · {creatorWhen(p.paidAt)}</span></span><GeuFigure
     amount={p.amount}
     currency={p.currency}

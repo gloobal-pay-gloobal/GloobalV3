@@ -93,6 +93,20 @@ async function gloobalApiWithWakeRetry(attempt, options) {
   return { ok: false, error: lastError };
 }
 
+// Replaces photos the server already holds with references to them.
+function creatorItemsWithRefs(items, current) {
+  const known = new Map();
+  for (const row of Array.isArray(current) ? current : []) {
+    if (!row || !row.id) continue;
+    const list = Array.isArray(row.photos) && row.photos.length ? row.photos : (row.photo ? [row.photo] : []);
+    list.forEach((p, n) => { if (typeof p === "string" && p && !known.has(p)) known.set(p, `ref:${row.id}:${n}`); });
+  }
+  return items.map((it) => {
+    const list = Array.isArray(it.photos) ? it.photos : (it.photo ? [it.photo] : []);
+    return { ...it, photos: list.map((p) => (typeof p === "string" && known.has(p) ? known.get(p) : p)) };
+  });
+}
+
 var GloobalApi = {
   baseUrl: GLOOBAL_API_BASE,
   isUnreachable: gloobalApiIsUnreachable,
@@ -1675,10 +1689,14 @@ var GloobalApi = {
   // The whole list in one request. The client already holds every item to
   // draw them, and reordering is the common edit — one call that states the
   // final shape cannot leave the order half-applied.
-  async saveCreatorItems(symbolId, items) {
+  // `current` is the list as last read from the server. Any photo in
+  // `items` that is byte-for-byte one of those is sent as "ref:<id>:<n>"
+  // rather than uploaded again, so a save carries only what is new — see
+  // the route for why that matters on a phone.
+  async saveCreatorItems(symbolId, items, current) {
     const result = await gloobalApiClient.put(
       `/api/creator/${encodeURIComponent(symbolId)}/items`,
-      { items: Array.isArray(items) ? items : [] }
+      { items: creatorItemsWithRefs(Array.isArray(items) ? items : [], current) }
     );
     return Array.isArray(result && result.items) ? result.items : [];
   },

@@ -374,9 +374,17 @@ const PROFILE_PHOTO_UPLOAD_PATH = /^\/api\/profile\/[^/]+\/photo\/?$/i;
 // path on this API still gets 64 KB, which is what stops an unauthenticated
 // caller making the process allocate megabytes.
 const PROJECT_ATTACHMENT_PATH = /^\/api\/projects\/[^/]+\/attachment\/?$/i;
+// PUT /api/creator/:symbolId/items carries a shop's pictures — up to four
+// per thing, each under 200 KB — and declares its own parser for the same
+// reason. It did not, and that is the founder's "could not save" on every
+// item with a photo: a single picture is three times this cap, so the
+// global parser refused the body here before the route ever saw it
+// (PayloadTooLargeError at this line, in the Render logs).
+const CREATOR_ITEMS_PATH = /^\/api\/creator\/[^/]+\/items\/?$/i;
 const globalJsonParser = express.json({ limit: '64kb' });
 app.use((req, res, next) => {
   if (req.method === 'PUT' && PROFILE_PHOTO_UPLOAD_PATH.test(req.path)) return next();
+  if (req.method === 'PUT' && CREATOR_ITEMS_PATH.test(req.path)) return next();
   // POST only: the GET on the same path returns the bytes and carries no
   // body, so it has nothing to parse and no reason to skip anything.
   if (req.method === 'POST' && PROJECT_ATTACHMENT_PATH.test(req.path)) return next();
@@ -5382,11 +5390,43 @@ app.get('/api/creator/:symbolId/items', lookupLimit, requireAuth, async (req, re
 // whole list to draw it and reordering is the common edit. One request that
 // states the final shape cannot leave the order half-applied the way a
 // sequence of per-item PATCHes can when the third one fails.
+//
+// ── PICTURES ALREADY ON THE SERVER ARE NOT SENT AGAIN ──────────────────
+//
+// Because the list is replaced whole, every save used to carry every
+// picture of every thing — at four 200 KB photos a thing, a list of
+// fifteen is 12 MB on a phone connection to change one price. A photo the
+// server already holds is sent as a reference instead:
+//
+//     "ref:<item id>:<index>"
+//
+// naming the stored row and which of its pictures. The route resolves the
+// reference against the owner's CURRENT rows before replacing them, so a
+// body is ordinarily a few KB plus whatever pictures are actually new.
+// The parser's 3 MB is therefore room for the new pictures of one save
+// (four, at most, each under 200 KB before base64), not for the list.
+const creatorItemsJsonParser = express.json({ limit: '3mb' });
+const parseCreatorItemsBody = (req, res, next) => {
+  creatorItemsJsonParser(req, res, (error) => {
+    if (!error) return next();
+    if (error.type === 'entity.too.large') {
+      return res.status(413).json({
+        success: false,
+        code: 'items_too_large',
+        message: 'Those photos are too large to send together. Save this item with fewer new photos.',
+      });
+    }
+    return res.status(400).json({ success: false, code: 'invalid_items', message: 'That list could not be read.' });
+  });
+};
+const CREATOR_ITEM_PHOTO_REF = /^ref:([a-f0-9]{24}):([0-3])$/i;
+
 app.put(
   '/api/creator/:symbolId/items',
   writeLimit,
   requireAuth,
   requireSelf('symbolId'),
+  parseCreatorItemsBody,
   async (req, res) => {
     try {
       const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
@@ -5416,6 +5456,17 @@ app.put(
         return res.status(400).json({ success: false, message: 'Prices are not supported for this country yet.' });
       }
 
+      // The pictures this shop already holds, for the references above.
+      const existing = await CreatorItem.find({ ownerSymbolId: symbolId }).select('_id photo photos').lean();
+      const storedPhoto = (ref) => {
+        const m = CREATOR_ITEM_PHOTO_REF.exec(ref);
+        if (!m) return null;
+        const row = existing.find((r) => String(r._id) === m[1].toLowerCase());
+        if (!row) return null;
+        const list = Array.isArray(row.photos) && row.photos.length ? row.photos : (row.photo ? [row.photo] : []);
+        return list[Number(m[2])] || null;
+      };
+
       const clean = [];
       // Three specials at most; past the third, the flag is dropped rather
       // than the save refused — the list itself is still good.
@@ -5441,6 +5492,18 @@ app.put(
         for (const candidate of sent) {
           if (typeof candidate !== 'string' || !candidate) continue;
           if (photos.length >= CREATOR_ITEM_PHOTOS_MAX) break;
+          // A picture the server already holds, named rather than re-sent.
+          // One that names nothing — a row removed from another phone —
+          // is a real disagreement about what the shop holds, and is
+          // refused rather than silently dropped.
+          if (candidate.startsWith('ref:')) {
+            const kept = storedPhoto(candidate);
+            if (!kept) {
+              return res.status(409).json({ success: false, code: 'photo_ref_stale', message: `"${title}": one of its photos has changed elsewhere. Reload your shop and try again.` });
+            }
+            photos.push(kept);
+            continue;
+          }
           // Same validator as a profile photo: JPEG or PNG data URLs only,
           // magic bytes checked, 200 KB cap, SVG refused because it can
           // carry script and these are shown to strangers.

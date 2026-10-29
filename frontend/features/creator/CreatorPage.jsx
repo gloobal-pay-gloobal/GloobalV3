@@ -1098,7 +1098,7 @@ function CreatorPage({
       }));
       const ok = onSaveItems ? await onSaveItems(next) : false;
       setSaving(false);
-      if (ok) setDraft(null); else setSaveError("Could not save that just now.");
+      if (ok === true) setDraft(null); else setSaveError(typeof ok === "string" ? ok : "Could not save that just now.");
     }}
     disabled={saving}
     style={{
@@ -1132,7 +1132,7 @@ function CreatorPage({
         : allItems.map((i) => ({ title: i.title, price: i.price, note: i.note, photos: i.photos || (i.photo ? [i.photo] : []), category: i.category, badge: i.badge, soldOut: i.soldOut, special: Boolean(i.special) })).concat([row]);
       const ok = onSaveItems ? await onSaveItems(next) : false;
       setSaving(false);
-      if (ok) setDraft(null); else setSaveError("Could not save that just now.");
+      if (ok === true) setDraft(null); else setSaveError(typeof ok === "string" ? ok : "Could not save that just now.");
     }}
     disabled={saving}
     style={{

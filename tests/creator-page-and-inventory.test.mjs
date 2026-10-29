@@ -155,9 +155,9 @@ test("an item photo is validated like every other picture in this codebase", () 
   // Several per item now, and EVERY one of them through the validator —
   // not just the first. A list where only the cover is checked is a list
   // with an unchecked upload behind it.
-  assert.match(srv.slice(at, at + 4400), /validateProfilePhoto\(candidate\)/,
+  assert.match(srv.slice(at, at + 6400), /validateProfilePhoto\(candidate\)/,
     "item photos go through the same validator — JPEG/PNG only, magic bytes, 200KB, no SVG");
-  assert.match(srv.slice(at, at + 4400), /for \(const candidate of sent\)/,
+  assert.match(srv.slice(at, at + 6400), /for \(const candidate of sent\)/,
     "the validator runs over every photo sent, not only the cover");
 });
 

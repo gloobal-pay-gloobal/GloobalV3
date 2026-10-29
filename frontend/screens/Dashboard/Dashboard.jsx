@@ -4191,11 +4191,17 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onEditLook={() => setShowShopTheme(true)}
     onSaveItems={async (next) => {
       try {
-        const saved = await GloobalApi.saveCreatorItems(myGloobalId, next);
+        // The list as the page is showing it, which is the server's own
+        // last answer — the photos in it are the ones a save may reference.
+        const current = (openCreator && openCreator.items) || [];
+        const saved = await GloobalApi.saveCreatorItems(myGloobalId, next, current);
         setOpenCreator((c) => (c ? { ...c, items: saved } : c));
         return true;
       } catch (e) {
-        return false;
+        // The server's own sentence when it gave one ("Chai": needs a
+        // price; too large; changed elsewhere), so the screen says why
+        // rather than only that.
+        return (e && e.body && typeof e.body.message === "string" && e.body.message) ? e.body.message : false;
       }
     }}
     onAddSupplier={() => setShowSupplierFinder(true)}

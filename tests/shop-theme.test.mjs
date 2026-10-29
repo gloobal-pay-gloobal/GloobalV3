@@ -209,7 +209,7 @@ test("an item may carry several photos, cover first", () => {
   const srv = server();
   const at = srv.indexOf("EVERY PICTURE OF THIS THING");
   assert.ok(at > 0, "the item route takes a list of photos");
-  const block = srv.slice(at, at + 1800);
+  const block = srv.slice(at, at + 2600);
   // A client may send the new shape or the old one. Both are accepted and
   // kept in step here, so nothing downstream decides which is
   // authoritative: photo IS photos[0], always.

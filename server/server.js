@@ -3947,8 +3947,43 @@ function publicCreator(user, logoDataUrl) {
     listed: profile.listed !== false,
     // Public: opening hours are for the people coming to the shop.
     hours: profile.hours && Array.isArray(profile.hours.days) && profile.hours.days.length === 7 ? { tz: profile.hours.tz, days: profile.hours.days } : null,
+    about: profile.about || '',
+    contacts: creatorContactsOut(profile.contacts),
     scanNoteStyle: CREATOR_SCAN_NOTE_STYLES.includes(profile.scanNoteStyle) ? profile.scanNoteStyle : 'ribbon'
   };
+}
+
+// ── HOW TO REACH A SHOP ─────────────────────────────────────────────────
+//
+// WhatsApp and phone are a + and 7–15 digits (spaces and dashes typed are
+// dropped); Instagram is the handle without the @. Each is optional. These
+// become links on the shop page (wa.me/…, tel:…, instagram.com/…), so the
+// shape is checked here — a value that reaches an href must be exactly the
+// thing it claims to be.
+function creatorContactsOut(raw) {
+  const c = raw && typeof raw === 'object' ? raw : {};
+  return {
+    whatsapp: typeof c.whatsapp === 'string' ? c.whatsapp : '',
+    phone: typeof c.phone === 'string' ? c.phone : '',
+    instagram: typeof c.instagram === 'string' ? c.instagram : ''
+  };
+}
+
+function creatorContactsIn(raw) {
+  if (!raw || typeof raw !== 'object') return { ok: false, message: 'Those contact details could not be read.' };
+  const num = (v, what) => {
+    const t = String(v == null ? '' : v).replace(/[\s()-]/g, '');
+    if (!t) return { ok: true, value: '' };
+    if (!/^\+?[0-9]{7,15}$/.test(t)) return { ok: false, message: `That ${what} number does not look right.` };
+    return { ok: true, value: t };
+  };
+  const wa = num(raw.whatsapp, 'WhatsApp');
+  if (!wa.ok) return wa;
+  const ph = num(raw.phone, 'phone');
+  if (!ph.ok) return ph;
+  const ig = String(raw.instagram == null ? '' : raw.instagram).trim().replace(/^@/, '');
+  if (ig && !/^[A-Za-z0-9._]{1,30}$/.test(ig)) return { ok: false, message: 'That Instagram name does not look right.' };
+  return { ok: true, value: { whatsapp: wa.value, phone: ph.value, instagram: ig } };
 }
 
 // ── A CREATOR'S ADDRESS, IN PARTS ───────────────────────────────────────
@@ -4510,6 +4545,17 @@ app.put(
       if (body.listed !== undefined) {
         set['creatorProfile.listed'] = Boolean(body.listed);
       }
+      if (body.about !== undefined) {
+        if (typeof body.about !== 'string' || body.about.length > 280) {
+          return res.status(400).json({ success: false, code: 'invalid_about', message: 'Keep the About line under 280 characters.' });
+        }
+        set['creatorProfile.about'] = body.about.trim();
+      }
+      if (body.contacts !== undefined) {
+        const checked = creatorContactsIn(body.contacts);
+        if (!checked.ok) return res.status(400).json({ success: false, code: 'invalid_contact', message: checked.message });
+        set['creatorProfile.contacts'] = checked.value;
+      }
       if (body.hours !== undefined) {
         const checked = openHours.openHoursValidate(body.hours);
         if (!checked.ok) {
@@ -4961,6 +5007,7 @@ function publicCreatorItem(row) {
     photo: row.photo || '',
     photos: Array.isArray(row.photos) && row.photos.length ? row.photos : (row.photo ? [row.photo] : []),
     soldOut: Boolean(row.soldOut),
+    special: Boolean(row.special),
     order: Number(row.order) || 0
   };
 }
@@ -5018,6 +5065,9 @@ app.put(
       const currency = String(owner.currency || 'USD').toUpperCase();
 
       const clean = [];
+      // Three specials at most; past the third, the flag is dropped rather
+      // than the save refused — the list itself is still good.
+      let specials = 0;
       for (let i = 0; i < incoming.length; i += 1) {
         const raw = incoming[i] || {};
         const title = typeof raw.title === 'string' ? raw.title.trim() : '';
@@ -5060,6 +5110,7 @@ app.put(
           photo,
           photos,
           soldOut: Boolean(raw.soldOut),
+          special: Boolean(raw.special) && (specials += 1) <= 3,
           order: i,
           searchKey: searchKey.searchKeyOf(`${title} ${typeof raw.category === 'string' ? raw.category : ''}`)
         });

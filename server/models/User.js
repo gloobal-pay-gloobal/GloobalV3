@@ -324,6 +324,16 @@ const userSchema = new mongoose.Schema({
     // name save, never by a client.
     searchKey: { type: String, default: '' },
 
+    // A few lines about the shop, and how to reach it. All optional, all
+    // public — they are on the page for the people coming to the shop,
+    // and the setup screen says so where they are typed.
+    about: { type: String, trim: true, maxlength: 280, default: '' },
+    contacts: {
+      whatsapp: { type: String, default: '' },
+      phone: { type: String, default: '' },
+      instagram: { type: String, default: '' }
+    },
+
     // Opening hours: seven days, Monday first, in the shop's own time zone
     // (lib/openHours.js). Null until the creator sets them — and then the
     // page shows no Open/Closed line at all rather than a guess.

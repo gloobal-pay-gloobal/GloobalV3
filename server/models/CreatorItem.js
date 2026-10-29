@@ -78,7 +78,11 @@ const CreatorItemSchema = new mongoose.Schema(
 
     // The title and group as loose Latin keys (lib/searchKey.js), so
     // "samosa" finds a shop selling समोसा. Written by the server.
-    searchKey: { type: String, default: '' }
+    searchKey: { type: String, default: '' },
+
+    // One of up to three "Today's specials" shown in a row above the
+    // menu. The cap is enforced by the items route, not here.
+    special: { type: Boolean, default: false }
   },
   { timestamps: true }
 );

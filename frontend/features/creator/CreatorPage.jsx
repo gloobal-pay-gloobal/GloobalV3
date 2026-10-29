@@ -25,7 +25,7 @@
 //    cost. The server enforces this; the UI simply never draws the tab for
 //    anyone else.
 import { useState as useState54, useEffect as useEffect51 } from "react";
-import { Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare, Navigation as Navigation2, Search as Search9, X as X17 } from "lucide-react";
+import { Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare, Navigation as Navigation2, Search as Search9, X as X17, MessageCircle as MessageCircle2, Phone as Phone3, AtSign as AtSign2, Sparkles as Sparkles2 } from "lucide-react";
 
 var CREATOR_PAGE_TABS = ["Selling", "Buying"];
 
@@ -377,6 +377,10 @@ function CreatorPage({
   // Recomputed on each render; the page is rarely open across a closing
   // time, and reopening it shows the new state.
   const openState = openHoursLabel(creator && creator.hours, new Date());
+  const contacts = (creator && creator.contacts) || {};
+  const hasContacts = Boolean(contacts.whatsapp || contacts.phone || contacts.instagram);
+  // Today's specials, in menu order, three at most.
+  const specials = (Array.isArray(creator && creator.items) ? creator.items : []).filter((i) => i.special).slice(0, 3);
 
   // What somebody typed in the shop's own search bar.
   const [itemQuery, setItemQuery] = useState54("");
@@ -618,6 +622,35 @@ function CreatorPage({
     fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.92)", whiteSpace: "nowrap"
   }}>{label}</span></button>)}</div></div>
 
+  {
+    /* ── ABOUT, AND HOW TO REACH THEM ─────────────────────────────────
+       Only what the owner filled in: a short About, and a button per
+       contact — WhatsApp, Call, Instagram. Each is a real link, built
+       from a value the server checked the shape of. */
+    (creator.about || hasContacts) ? <div data-shop-about="" style={{
+      background: theme.surface, borderRadius: 18, padding: "13px 14px", marginTop: 12,
+      boxShadow: theme.dark ? "none" : T.shadowCard, border: theme.dark ? `1px solid ${theme.line}` : "none"
+    }}>{creator.about ? <div style={{
+      fontSize: 13, lineHeight: 1.5, color: theme.ink, overflowWrap: "anywhere"
+    }}>{creator.about}</div> : null}{hasContacts ? <div style={{
+      display: "flex", gap: 8, marginTop: creator.about ? 11 : 0, flexWrap: "wrap"
+    }}>{[
+      contacts.whatsapp ? { key: "wa", label: "WhatsApp", Icon: MessageCircle2, href: `https://wa.me/${contacts.whatsapp.replace(/^\+/, "")}` } : null,
+      contacts.phone ? { key: "call", label: "Call", Icon: Phone3, href: `tel:${contacts.phone}` } : null,
+      contacts.instagram ? { key: "ig", label: "Instagram", Icon: AtSign2, href: `https://instagram.com/${contacts.instagram}` } : null
+    ].filter(Boolean).map(({ key, label, Icon, href }) => <a
+      key={key}
+      href={href}
+      target={key === "call" ? undefined : "_blank"}
+      rel="noopener noreferrer"
+      style={{
+        flex: "1 1 0", minWidth: 92, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
+        height: 40, borderRadius: theme.corners.pill, textDecoration: "none",
+        background: theme.soft, color: theme.dark ? theme.color : theme.hero.from, fontSize: 12.5, fontWeight: 800
+      }}
+    ><Icon size={15} />{label}</a>)}</div> : null}</div> : null
+  }
+
   {detailsOpen && <div style={{
     background: theme.surface, borderRadius: 16, padding: "4px 14px", marginTop: 12,
     boxShadow: theme.dark ? "none" : T.shadowCard, border: theme.dark ? `1px solid ${theme.line}` : "none"
@@ -681,7 +714,42 @@ function CreatorPage({
        those products are in. Drawn only when there is more than one, because
        a single chip filters nothing and is just a label pretending to be a
        control. The selected one takes the shop's colour. */
-  }{(!isOwner || tab === "Selling") && allItems.length > 0 ? <div data-shop-search="" style={{
+  }{(!isOwner || tab === "Selling") && specials.length > 0 && !searching ? <div data-shop-specials="" style={{ marginTop: 16 }}><div style={{
+    display: "flex", alignItems: "center", gap: 6, margin: "0 2px 9px",
+    fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: theme.dark ? theme.color : theme.hero.from
+  }}><Sparkles2 size={13} />Today's specials</div><div style={{
+    display: "flex", gap: 10, overflowX: "auto", margin: "0 -18px", padding: "0 18px 4px", scrollbarWidth: "none"
+  }}>{specials.map((item) => {
+    const qty = Number(basket[item.id]) || 0;
+    return <div key={item.id} style={{
+      flex: "0 0 148px", borderRadius: theme.corners.card, overflow: "hidden", position: "relative",
+      background: theme.surface, boxShadow: theme.dark ? "none" : T.shadowCard,
+      border: `1.5px solid ${theme.dark ? theme.line : shopHexMix("#FFFFFF", theme.color, 0.35)}`,
+      opacity: item.soldOut ? 0.6 : 1
+    }}><button
+      onClick={() => item.photo && setPhotoView(item)}
+      aria-label={item.photo ? `See the photo of ${item.title}` : item.title}
+      style={{ display: "block", width: "100%", height: 96, border: "none", padding: 0, cursor: item.photo ? "pointer" : "default", background: businessMarkInk(item.title).bg }}
+    >{item.photo
+      ? <img src={item.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      : <span style={{ fontSize: 22, fontWeight: 800, color: businessMarkInk(item.title).fg }}>{businessMarkInitials(item.title)}</span>}</button><div style={{
+      padding: "8px 10px 10px"
+    }}><div style={{
+      fontSize: 12.5, fontWeight: 700, color: theme.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+    }}>{item.title}</div><div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginTop: 4, color: theme.ink
+    }}><GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} size={11.5} />{
+      isOwner || item.soldOut ? null : <button
+        onClick={() => bump(item.id, 1)}
+        aria-label={qty ? `One more ${item.title}` : `Add ${item.title}`}
+        style={{
+          flexShrink: 0, minWidth: 28, height: 28, padding: "0 6px", borderRadius: 14, border: "none", cursor: "pointer",
+          background: theme.hero.from, color: "#fff", fontSize: 12, fontWeight: 800, fontFamily: "inherit",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 2
+        }}
+      >{qty ? qty : <Plus7 size={14} />}</button>
+    }</div></div></div>;
+  })}</div></div> : null}{(!isOwner || tab === "Selling") && allItems.length > 0 ? <div data-shop-search="" style={{
     /* ── THE SHOP'S OWN SEARCH, PINNED ────────────────────────────────
        Sticks to the top of the scroll once the cover and the card have
        gone by, with the category chips under it, so a long menu can be
@@ -750,7 +818,7 @@ function CreatorPage({
         ? `${items.length} ${items.length === 1 ? "result" : "results"} for “${itemQuery.trim()}”`
         : (activeCat || "What they sell")}</div>}{
         isOwner ? <button
-          onClick={() => { setSaveError(""); setDraft({ id: null, title: "", price: "", note: "", category: "", badge: "", photos: [], soldOut: false }); }}
+          onClick={() => { setSaveError(""); setDraft({ id: null, title: "", price: "", note: "", category: "", badge: "", photos: [], soldOut: false, special: false }); }}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%",
             border: `1.6px dashed ${theme.dark ? theme.line : shopHexMix("#FFFFFF", theme.color, 0.45)}`, background: theme.dark ? "none" : "rgba(255,255,255,0.55)", borderRadius: theme.corners.card, padding: 16,
@@ -788,7 +856,7 @@ function CreatorPage({
         onViewPhotos={setPhotoView}
         onAdd={() => bump(item.id, 1)}
         onRemove={() => bump(item.id, -1)}
-        onEdit={() => { setSaveError(""); setDraft({ id: item.id, title: item.title, price: String(item.price), note: item.note || "", category: item.category || "", badge: item.badge || "", photos: (item.photos && item.photos.length ? item.photos : (item.photo ? [item.photo] : [])), soldOut: Boolean(item.soldOut) }); }}
+        onEdit={() => { setSaveError(""); setDraft({ id: item.id, title: item.title, price: String(item.price), note: item.note || "", category: item.category || "", badge: item.badge || "", photos: (item.photos && item.photos.length ? item.photos : (item.photo ? [item.photo] : [])), soldOut: Boolean(item.soldOut), special: Boolean(item.special) }); }}
       />);
         return theme.layout === "grid"
           ? <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{drawn}</div>
@@ -898,7 +966,11 @@ function CreatorPage({
       width: "100%", border: "none", outline: "none", background: "none", marginTop: 4,
       fontSize: 14, fontWeight: 700, color: T.ink, fontFamily: "inherit"
     }}
-  /></div>)}<button
+  /></div>)}{
+    /* The row is a div, not a button: the switch inside it IS a button,
+       and a button inside a button is invalid — and the tap on the switch
+       also reached the row, flipping Sold out twice, i.e. not at all. */
+  }<div
     onClick={() => setDraft((d) => ({ ...d, soldOut: !d.soldOut }))}
     style={{
       display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
@@ -907,9 +979,29 @@ function CreatorPage({
     }}
   ><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Sold out</span><ProfileToggle
     on={draft.soldOut}
-    onToggle={() => setDraft((d) => ({ ...d, soldOut: !d.soldOut }))}
+    onToggle={(e) => { if (e) e.stopPropagation(); setDraft((d) => ({ ...d, soldOut: !d.soldOut })); }}
     label="Sold out"
-  /></button>{saveError && <div style={{
+  /></div>{(() => {
+    /* ── TODAY'S SPECIAL ──────────────────────────────────────────────
+       Up to three, shown in a row above the menu. The fourth switch is
+       greyed with the reason beside it rather than silently refused. */
+    const others = allItems.filter((i) => i.special && i.id !== draft.id).length;
+    const full = others >= 3 && !draft.special;
+    return <div
+      onClick={() => { if (!full) setDraft((d) => ({ ...d, special: !d.special })); }}
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", textAlign: "left",
+        background: T.surface, borderRadius: 15, padding: "13px 14px", marginBottom: 10, opacity: full ? 0.6 : 1,
+        border: "none", boxShadow: T.shadowCard, cursor: full ? "default" : "pointer", fontFamily: "inherit"
+      }}
+    ><span><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>Today's special</span><span style={{
+      display: "block", fontSize: 11, color: T.inkFaint, fontWeight: 600, marginTop: 2
+    }}>{full ? "Three already — turn one off first." : "Shown in a row above your menu. Up to 3."}</span></span><ProfileToggle
+      on={Boolean(draft.special)}
+      onToggle={(e) => { if (e) e.stopPropagation(); if (!full) setDraft((d) => ({ ...d, special: !d.special })); }}
+      label="Today's special"
+    /></div>;
+  })()}{saveError && <div style={{
     fontSize: 11.5, fontWeight: 700, color: T.negative, margin: "2px 2px 10px"
   }}>{saveError}</div>}<div style={{ display: "flex", gap: 10 }}>{draft.id && <button
     onClick={async () => {
@@ -922,7 +1014,7 @@ function CreatorPage({
       // it is sent. The chip filters what is DRAWN and nothing else.
       const next = allItems.filter((i) => i.id !== draft.id).map((i) => ({
         title: i.title, price: i.price, note: i.note, photos: i.photos || (i.photo ? [i.photo] : []),
-        category: i.category, badge: i.badge, soldOut: i.soldOut
+        category: i.category, badge: i.badge, soldOut: i.soldOut, special: Boolean(i.special)
       }));
       const ok = onSaveItems ? await onSaveItems(next) : false;
       setSaving(false);
@@ -950,13 +1042,14 @@ function CreatorPage({
         // The cover is photos[0]; the server keeps the two in step so
         // nothing downstream has to decide which is authoritative.
         photos: Array.isArray(draft.photos) ? draft.photos : [],
-        soldOut: Boolean(draft.soldOut)
+        soldOut: Boolean(draft.soldOut),
+        special: Boolean(draft.special)
       };
       const next = draft.id
         ? allItems.map((i) => (i.id === draft.id
           ? { ...row }
-          : { title: i.title, price: i.price, note: i.note, photos: i.photos || (i.photo ? [i.photo] : []), category: i.category, badge: i.badge, soldOut: i.soldOut }))
-        : allItems.map((i) => ({ title: i.title, price: i.price, note: i.note, photos: i.photos || (i.photo ? [i.photo] : []), category: i.category, badge: i.badge, soldOut: i.soldOut })).concat([row]);
+          : { title: i.title, price: i.price, note: i.note, photos: i.photos || (i.photo ? [i.photo] : []), category: i.category, badge: i.badge, soldOut: i.soldOut, special: Boolean(i.special) }))
+        : allItems.map((i) => ({ title: i.title, price: i.price, note: i.note, photos: i.photos || (i.photo ? [i.photo] : []), category: i.category, badge: i.badge, soldOut: i.soldOut, special: Boolean(i.special) })).concat([row]);
       const ok = onSaveItems ? await onSaveItems(next) : false;
       setSaving(false);
       if (ok) setDraft(null); else setSaveError("Could not save that just now.");

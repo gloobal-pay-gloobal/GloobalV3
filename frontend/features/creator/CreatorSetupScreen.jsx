@@ -251,6 +251,9 @@ function CreatorSetupScreen({
   const [listed, setListed] = useState53(!(creator && creator.listed === false));
   // Null until the creator turns hours on; see openHoursEditor.jsx.
   const [hours, setHours] = useState53((creator && creator.hours) || null);
+  // A few lines about the shop, and how to reach it. All optional.
+  const [about, setAbout] = useState53((creator && creator.about) || "");
+  const [contacts, setContacts] = useState53(() => Object.assign({ whatsapp: "", phone: "", instagram: "" }, (creator && creator.contacts) || {}));
   // Every face is drawn in the person's name — the three tiles, the live
   // card and the More fonts list — so all of them are fetched up front.
   useEffect50(() => { Object.keys(SHOP_FONTS).forEach(ensureShopFont); }, []);
@@ -572,6 +575,35 @@ function CreatorSetupScreen({
 
   {section("Opening hours", ClockHours, <OpenHoursEditor value={hours} onChange={setHours} />)}
 
+  {section("About & contact", Contact4, <>{
+    /* ── ABOUT AND CONTACT ────────────────────────────────────────────
+       All optional and all PUBLIC — said under the boxes, because a phone
+       number typed here is shown to everybody who opens the page. Each
+       filled one becomes a button there: WhatsApp, Call, Instagram. */
+  }<textarea
+    id="creator-about"
+    value={about}
+    onChange={(e) => setAbout(e.target.value.slice(0, 280))}
+    placeholder="Fresh chai and snacks since 2015. Orders for parties too."
+    aria-label="About your shop"
+    rows={3}
+    style={fieldBox}
+  /><div style={{ textAlign: "right", fontSize: 10.5, color: T.inkFaint, fontWeight: 700, margin: "4px 2px 10px" }}>{about.length}/280</div>{[
+    { key: "whatsapp", label: "WhatsApp number", placeholder: "+91 98765 43210", mode: "tel" },
+    { key: "phone", label: "Phone to call", placeholder: "+91 98765 43210", mode: "tel" },
+    { key: "instagram", label: "Instagram", placeholder: "rasoi.ghar", mode: "text" }
+  ].map(({ key, label, placeholder, mode }) => <label key={key} style={{ display: "block", marginBottom: 9 }}><span style={{
+    display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: T.inkFaint, margin: "0 2px 5px"
+  }}>{label}</span><input
+    id={`creator-contact-${key}`}
+    value={contacts[key] || ""}
+    inputMode={mode === "tel" ? "tel" : "text"}
+    autoComplete="off"
+    placeholder={placeholder}
+    onChange={(e) => setContacts((c) => ({ ...c, [key]: key === "instagram" ? e.target.value.replace(/^@/, "").slice(0, 30) : e.target.value.slice(0, 20) }))}
+    style={{ ...fieldBox, padding: "11px 12px" }}
+  /></label>)}<div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45, margin: "2px 2px 0" }}>Anybody who opens your shop page sees these as buttons. Leave any empty to hide it.</div></>)}
+
   {section("Address", MapPin5, <>{
     /* ── THE ADDRESS ──────────────────────────────────────────────────
        Private unless its owner says otherwise, and the switch says who
@@ -693,6 +725,8 @@ function CreatorSetupScreen({
       category,
       listed,
       hours,
+      about: about.trim(),
+      contacts,
       addressPublic,
       scanNote: scanNote.trim(),
       scanNoteStyle,

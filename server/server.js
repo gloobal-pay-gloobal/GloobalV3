@@ -41,6 +41,7 @@ const AuditLog = require('./models/AuditLog');
 const CountryCurrencyPool = require('./models/CountryCurrencyPool');
 const { getRate } = require('./lib/fxRates');
 const bazaar = require('./lib/bazaar');
+const reservedBrands = require('./lib/reservedBrands');
 const searchKey = require('./lib/searchKey');
 const openHours = require('./lib/openHours');
 const { loadCurrencyDecimals, decimalsFor } = require('./lib/currencyDecimals');
@@ -3771,10 +3772,19 @@ function creatorScriptsIn(value) {
   return found;
 }
 
+// ── ANY MIX, EXCEPT LOOKALIKES ──────────────────────────────────────────
+// The founder asked for र and R together in one word, so a part may now
+// mix alphabets — रR, Rघर, अmazon. What stays refused is the mix the rule
+// above was written against: Latin with Cyrillic, Greek or Armenian, whose
+// letters are drawn identically (а/a, ο/o, օ/o). A character no listed
+// script claims still fails closed when anything else is beside it.
+const CREATOR_SCRIPT_LOOKALIKES = ['Latin', 'Cyrillic', 'Greek', 'Armenian'];
+
 function creatorScriptsAgree(found) {
   if (found.size <= 1) return true;
   const all = Array.from(found);
-  return CREATOR_SCRIPT_SETS.some((set) => all.every((s) => set.indexOf(s) >= 0));
+  if (all.some((s) => s.startsWith('Unknown:'))) return false;
+  return all.filter((s) => CREATOR_SCRIPT_LOOKALIKES.indexOf(s) >= 0).length <= 1;
 }
 
 
@@ -3870,7 +3880,7 @@ function buildCreatorHandle(firstRaw, lastRaw) {
       return {
         ok: false,
         code: 'mixed_scripts',
-        message: 'Each part has to be written in one alphabet.'
+        message: "English letters can't be mixed with Russian, Greek or Armenian ones in one part. They look the same."
       };
     }
   }
@@ -3903,6 +3913,29 @@ function buildCreatorHandle(firstRaw, lastRaw) {
   }
 
   return { ok: true, handle, first, last: last || '', single: !tail };
+}
+
+// ── BIG BRANDS ───────────────────────────────────────────────────────────
+// Netflix, Amazon, Tata, Jio and the rest (lib/reservedBrands.js), as
+// EITHER part — netflix, netflix.india and india.netflix — and in a Hindi
+// spelling. Only for TAKING a name (the availability check and the save):
+// looking a name up must still find a shop that held it before the list,
+// and that shop keeps it when it saves its profile again.
+function creatorBrandRefusal(built, currentHandle) {
+  if (!built || !built.ok) return null;
+  if (currentHandle && built.handle === currentHandle) return null;
+  const parts = built.handle.split('.');
+  for (const part of parts) {
+    const brand = reservedBrands.reservedBrandFor(part);
+    if (brand) {
+      return {
+        ok: false,
+        code: 'reserved_brand',
+        message: `"${part}" is kept for the brand ${brand.charAt(0).toUpperCase()}${brand.slice(1)}. If this is your brand, write to GLOOBAL to claim it.`
+      };
+    }
+  }
+  return null;
 }
 
 // Is this handle free? Free means no OTHER account holds it.
@@ -4513,6 +4546,10 @@ app.get('/api/creator/handle-available', lookupLimit, requireAuth, async (req, r
     if (!built.ok) {
       return res.json({ success: true, available: false, code: built.code, message: built.message });
     }
+    const brandNo = creatorBrandRefusal(built, ((req.authUser && req.authUser.creatorProfile) || {}).handle);
+    if (brandNo) {
+      return res.json({ success: true, available: false, code: brandNo.code, message: brandNo.message });
+    }
     const taken = await creatorHandleTaken(built.handle, req.authUser._id);
     return res.json({
       success: true,
@@ -4590,6 +4627,10 @@ app.put(
         const built = buildCreatorHandle(body.handleFirst, body.handleLast);
         if (!built.ok) {
           return res.status(400).json({ success: false, code: built.code, message: built.message });
+        }
+        const brandNo = creatorBrandRefusal(built, ((req.authUser && req.authUser.creatorProfile) || {}).handle);
+        if (brandNo) {
+          return res.status(400).json({ success: false, code: brandNo.code, message: brandNo.message });
         }
         if (await creatorHandleTaken(built.handle, userId)) {
           return res.status(409).json({

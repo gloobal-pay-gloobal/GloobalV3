@@ -578,6 +578,9 @@ function nameScriptsIn(value) {
 // Han, so those pairs are one alphabet for this rule. Same sets as the
 // server's CREATOR_SCRIPT_SETS.
 var NAME_SCRIPT_SETS = [["Han", "Hiragana", "Katakana"], ["Han", "Hangul"]];
+// Alphabets whose letters are drawn the same: never two of these in one
+// part. Same list as the server's CREATOR_SCRIPT_LOOKALIKES.
+var NAME_SCRIPT_LOOKALIKES = ["Latin", "Cyrillic", "Greek", "Armenian"];
 
 function nameScriptsAgree(scripts) {
   // DE-DUPLICATED FIRST, and a render is why this comment exists. The
@@ -592,7 +595,13 @@ function nameScriptsAgree(scripts) {
     if (s && list.indexOf(s) < 0) list.push(s);
   }
   if (list.length <= 1) return true;
-  return NAME_SCRIPT_SETS.some((set) => list.every((s) => set.indexOf(s) >= 0));
+  // ── ANY MIX, EXCEPT LOOKALIKES ────────────────────────────────────────
+  // The founder asked for र and R in one word, so alphabets may mix now —
+  // रR, Rघर, अmazon. What stays refused is the one mix used for fake
+  // names: Latin with Cyrillic, Greek or Armenian, whose letters are drawn
+  // the same (а/a, ο/o, օ/o). Same rule as the server's
+  // creatorScriptsAgree.
+  return list.filter((s) => NAME_SCRIPT_LOOKALIKES.indexOf(s) >= 0).length <= 1;
 }
 
 // Would adding this character to this text break the one-alphabet rule?
@@ -1008,7 +1017,7 @@ function CreatorNameKeyboard({
     background: T.surface, borderRadius: 12, padding: "10px 11px",
     boxShadow: "0 1px 3px rgba(20,18,43,0.10)"
   }}><span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>
-    This part is already written in {locked}, and a part is written in one alphabet.
+    This part is in {locked}. {locked} and these letters look alike, so they can't be mixed in one part.
   </span><KbTap
     onTap={() => setValue && setValue("")}
     label={`Clear the ${field === "last" ? lastLabel : firstLabel} and start again`}
@@ -1119,10 +1128,7 @@ function CreatorNameKeyboard({
        the whole name is typed. It only appears once a half HAS an
        alphabet, so it reads as information about what you wrote rather
        than a warning about what you might. */
-  }{locked && !conflict ? <div style={{
-    fontSize: 10, fontWeight: 600, color: T.inkFaint, textAlign: "center",
-    padding: "0 14px 8px", lineHeight: 1.45
-  }}>This part is in {locked}. Each part of a name is written in one alphabet — clear it to switch.</div> : null}{
+  }{
     searching ? <NameKeyboardLanguages
       selectedId={layoutId}
       onPick={(id) => { setLayoutId(id); setShift(false); setSearching(false); }}

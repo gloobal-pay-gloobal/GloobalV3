@@ -175,12 +175,14 @@ test("one alphabet named twice is still one alphabet", () => {
   assert.equal(fn(["Devanagari", "Devanagari"]), true);
   assert.equal(fn(["Latin"]), true);
   assert.equal(fn([]), true);
-  assert.equal(fn(["Latin", "Devanagari"]), false);
-  // Japanese and Korean write two or three scripts together, same as the
-  // server's CREATOR_SCRIPT_SETS says.
+  // र and R in one word, as the founder asked (0136): any mix is fine...
+  assert.equal(fn(["Latin", "Devanagari"]), true);
   assert.equal(fn(["Han", "Hiragana"]), true);
-  assert.equal(fn(["Han", "Hangul"]), true);
-  assert.equal(fn(["Hiragana", "Hangul"]), false);
+  assert.equal(fn(["Hiragana", "Hangul"]), true);
+  // ...except letters that look the same, which is how fake names are made.
+  assert.equal(fn(["Latin", "Cyrillic"]), false);
+  assert.equal(fn(["Latin", "Greek"]), false);
+  assert.equal(fn(["Devanagari", "Latin", "Cyrillic"]), false);
 });
 
 // ── THE RULE THE BOARD ENFORCES IS THE SERVER'S RULE ────────────────────
@@ -200,6 +202,10 @@ test("the client's script sets are the server's script sets", () => {
     lift(server, "const CREATOR_SCRIPT_SETS = [", "CREATOR_SCRIPT_SETS"),
     "the board and the server disagree about which alphabets may be written together, " +
     "so one of them will accept a name the other refuses"
+  );  assert.deepEqual(
+    lift(client, "var NAME_SCRIPT_LOOKALIKES = [", "NAME_SCRIPT_LOOKALIKES"),
+    lift(server, "const CREATOR_SCRIPT_LOOKALIKES = [", "CREATOR_SCRIPT_LOOKALIKES"),
+    "the board and the server disagree about which alphabets look alike"
   );
 });
 

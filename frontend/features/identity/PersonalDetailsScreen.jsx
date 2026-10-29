@@ -259,8 +259,8 @@ function PersonalDetailsScreen({
     aria-label={label}
     title={label}
     data-pd-action={dataKey}
-    style={{ width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.14)", cursor: "pointer", padding: 0 }}
-  ><Icon size={18} color="#fff" /></button>;
+    style={{ width: 38, height: 38, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.14)", cursor: "pointer", padding: 0 }}
+  ><Icon size={16} color="#fff" /></button>;
   const linkRow = (Icon, color, title, value, onPress, dataKey) => <button
     onClick={onPress}
     className="v2-tap"
@@ -284,23 +284,29 @@ function PersonalDetailsScreen({
   ><span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "repeating-radial-gradient(circle at 110% -10%, rgba(255,255,255,0.07) 0 1px, transparent 1px 14px)", pointerEvents: "none" }} /><div
     style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10, fontWeight: 800, letterSpacing: 1.3, textTransform: "uppercase", color: "rgba(255,255,255,0.75)" }}
   ><GloobalWordmark suffix=" ID" /><span>{dialCountry && dialCountry.name}</span></div><div
-    style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", marginTop: 14 }}
-  ><button
+    data-pd-row
+    style={{ position: "relative", display: "flex", alignItems: "center", gap: 14, marginTop: 14 }}
+  >{
+    /* Photo on the left, name and ID on the right — asked for in those
+       words. The ID sits on white because its symbols are coloured. */
+  }<button
     onClick={() => onChangePhoto && onChangePhoto()}
     className="v2-tap"
     aria-label={profilePhoto ? "Change your photo" : "Add a photo"}
-    style={{ width: 96, height: 96, borderRadius: "50%", position: "relative", border: "3px solid rgba(255,255,255,0.9)", background: "linear-gradient(158deg,#F3EFFB,#E6DEF7)", padding: 0, cursor: "pointer", boxShadow: "0 8px 22px rgba(0,0,0,0.25)" }}
-  ><ProfileAvatar photo={profilePhoto} name={myName} size={90} /><span
+    style={{ width: 88, height: 88, borderRadius: "50%", flexShrink: 0, position: "relative", border: "3px solid rgba(255,255,255,0.9)", background: "linear-gradient(158deg,#F3EFFB,#E6DEF7)", padding: 0, cursor: "pointer", boxShadow: "0 8px 22px rgba(0,0,0,0.25)" }}
+  ><ProfileAvatar photo={profilePhoto} name={myName} size={82} /><span
     aria-hidden="true"
-    style={{ position: "absolute", right: -3, bottom: -3, width: 30, height: 30, borderRadius: "50%", background: T.accent, border: "2.5px solid #fff", display: "flex", alignItems: "center", justifyContent: "center" }}
-  ><Camera4 size={13} color="#fff" /></span></button><div
-    style={{ fontSize: 24, fontWeight: 800, letterSpacing: -0.6, fontFamily: T.fontDisplay, lineHeight: 1.15, marginTop: 12, overflowWrap: "anywhere" }}
+    style={{ position: "absolute", right: -3, bottom: -3, width: 28, height: 28, borderRadius: "50%", background: T.accent, border: "2.5px solid #fff", display: "flex", alignItems: "center", justifyContent: "center" }}
+  ><Camera4 size={12} color="#fff" /></span></button><div
+    style={{ flex: 1, minWidth: 0 }}
+  ><div
+    style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5, fontFamily: T.fontDisplay, lineHeight: 1.15, overflowWrap: "anywhere" }}
   >{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</div><div
     data-pd-id
-    style={{ marginTop: 12, background: "#fff", borderRadius: 14, padding: "9px 14px", fontSize: 19, fontWeight: 800, letterSpacing: 1, boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
-  >{gloobalId ? <ColoredGloobalId id={gloobalId} /> : <span style={{ color: T.inkFaint }}>—</span>}</div></div><div
-    style={{ position: "relative", display: "flex", justifyContent: "center", gap: 14, marginTop: 14 }}
-  >{cardButton(PdCopyIcon, "Copy ID", onCopyId, "copy")}{cardButton(PdShareIcon, "Share ID", onShareId, "share")}</div></div><div
+    style={{ display: "inline-block", maxWidth: "100%", marginTop: 9, background: "#fff", borderRadius: 12, padding: "7px 10px", fontSize: 15, fontWeight: 800, lineHeight: 1.2, boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
+  >{gloobalId ? <ColoredGloobalId id={gloobalId} /> : <span style={{ color: T.inkFaint }}>—</span>}</div><div
+    style={{ display: "flex", gap: 10, marginTop: 10 }}
+  >{cardButton(PdCopyIcon, "Copy ID", onCopyId, "copy")}{cardButton(PdShareIcon, "Share ID", onShareId, "share")}</div></div></div></div><div
     data-pd-stats
     style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}
   >{stats.map(([Icon, value, label, color]) => <div

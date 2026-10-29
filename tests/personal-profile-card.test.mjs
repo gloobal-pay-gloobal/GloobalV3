@@ -39,3 +39,10 @@ test("the dashboard wires score, shop, copy and share", () => {
 test("one or two stamps get a hint instead of empty paper", () => {
   assert.match(pd, /crossings\.length > 0 && crossings\.length < 3 && <div\s+data-pd-passport-hint/);
 });
+
+test("photo on the left, name and ID on the right, icons under the ID", () => {
+  const row = pd.slice(pd.indexOf("data-pd-row"));
+  assert.match(row.slice(0, 200), /display: "flex", alignItems: "center", gap: 14/);
+  const photo = row.indexOf("<ProfileAvatar"), name = row.indexOf("myName && myName.trim()"), id = row.indexOf("data-pd-id"), copy = row.indexOf('cardButton(PdCopyIcon');
+  assert.ok(photo > 0 && photo < name && name < id && id < copy, "order is photo, name, ID, icons");
+});

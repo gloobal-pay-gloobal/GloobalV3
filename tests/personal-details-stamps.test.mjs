@@ -170,8 +170,8 @@ describe("the four changes asked for", () => {
   });
 
   test("the photo is a circle, and uses the app's own avatar", () => {
-    assert.match(strip(src), /width: 96, height: 96, borderRadius: "50%"/);
-    assert.match(strip(src), /<ProfileAvatar photo=\{profilePhoto\} name=\{myName\} size=\{90\} \/>/,
+    assert.match(strip(src), /width: 88, height: 88, borderRadius: "50%", flexShrink: 0/);
+    assert.match(strip(src), /<ProfileAvatar photo=\{profilePhoto\} name=\{myName\} size=\{82\} \/>/,
       "a second photo renderer was hand-rolled instead of reusing ProfileAvatar");
   });
 

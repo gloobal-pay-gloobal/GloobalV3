@@ -138,10 +138,12 @@ test("the public list route is public and the write route is not", () => {
 test("a price's currency comes from the account, never from the request", () => {
   const srv = server();
   const at = srv.indexOf("app.put(\n  '/api/creator/:symbolId/items'");
-  const block = srv.slice(at, at + 2600);
-  assert.match(block, /const owner = await User\.findOne\(\{ symbolId \}\)\.select\('_id currency'\)/,
+  const block = srv.slice(at, at + 3400);
+  // From the account's COUNTRY. This used to read owner.currency, a field
+  // the User model does not have, so every list was stamped USD (0143).
+  assert.match(block, /const owner = await User\.findOne\(\{ symbolId \}\)\.select\('_id countryIso mobileNumber'\)/,
     "the currency is read from the account");
-  assert.match(block, /const currency = String\(owner\.currency \|\| 'USD'\)\.toUpperCase\(\);/);
+  assert.match(block, /const currency = await resolveOwnCurrency\(owner\);/);
   // A price is a claim about money; the client does not get to say which.
   assert.ok(!/raw\.currency|body\.currency/.test(block),
     "the request must not be able to name the currency a price is in");
@@ -153,9 +155,9 @@ test("an item photo is validated like every other picture in this codebase", () 
   // Several per item now, and EVERY one of them through the validator —
   // not just the first. A list where only the cover is checked is a list
   // with an unchecked upload behind it.
-  assert.match(srv.slice(at, at + 3200), /validateProfilePhoto\(candidate\)/,
+  assert.match(srv.slice(at, at + 4400), /validateProfilePhoto\(candidate\)/,
     "item photos go through the same validator — JPEG/PNG only, magic bytes, 200KB, no SVG");
-  assert.match(srv.slice(at, at + 3200), /for \(const candidate of sent\)/,
+  assert.match(srv.slice(at, at + 4400), /for \(const candidate of sent\)/,
     "the validator runs over every photo sent, not only the cover");
 });
 
@@ -164,7 +166,7 @@ test("the repeat-payer count cannot be typed", () => {
   const fn = srv.slice(srv.indexOf("async function creatorRepeatPayers"));
   // It replaced a pin count, which is a tap, which its own subject can run
   // up from throwaway accounts — shown where a reader takes it as standing.
-  assert.match(fn.slice(0, 900), /status: 'completed'/, "only settled payments count");
+  assert.match(fn.slice(0, 900), /status: 'success'/, "only settled payments count");
   assert.match(fn.slice(0, 900), /\$gte: 2/, "a payer counts once they have come back");
   assert.match(fn.slice(0, 900), /\$group: \{ _id: '\$fromUserId'/, "distinct people, not total payments");
   // And it is decoration on a page whose job is payment.

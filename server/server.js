@@ -4282,7 +4282,7 @@ app.get('/api/creator/:symbolId/insights', lookupLimit, requireAuth, requireSelf
     // People who paid this week — this account's own payments, counted.
     const user = await User.findOne({ symbolId }).select('_id').lean();
     const payers = user ? await Transaction.distinct('fromUserId', {
-      toUserId: user._id, status: 'completed', createdAt: { $gte: new Date(today.getTime() - 7 * 86400000) }
+      toUserId: user._id, status: 'success', createdAt: { $gte: new Date(today.getTime() - 7 * 86400000) }
     }) : [];
     return res.json({
       success: true,
@@ -4334,7 +4334,9 @@ async function bazaarVolumes(userIds) {
   const since7 = new Date(now - 7 * 86400000);
   const since1 = new Date(now - 86400000);
   const rows = await Transaction.aggregate([
-    { $match: { toUserId: { $in: userIds }, status: 'completed', type: 'send', createdAt: { $gte: since7 } } },
+    // 'success', the status the send route writes. This said 'completed',
+    // which no Transaction ever has, so every shop ranked at zero (0143).
+    { $match: { toUserId: { $in: userIds }, status: 'success', type: 'send', createdAt: { $gte: since7 } } },
     { $group: {
       _id: { to: '$toUserId', currency: '$currency' },
       d7: { $sum: '$amount' },
@@ -5157,7 +5159,7 @@ app.put(
 async function creatorRepeatPayers(userId) {
   try {
     const rows = await Transaction.aggregate([
-      { $match: { toUserId: new mongoose.Types.ObjectId(String(userId)), status: 'completed' } },
+      { $match: { toUserId: new mongoose.Types.ObjectId(String(userId)), status: 'success' } },
       { $group: { _id: '$fromUserId', n: { $sum: 1 } } },
       { $match: { n: { $gte: 2 } } },
       { $count: 'people' }
@@ -5203,7 +5205,10 @@ async function creatorReviewSummary(userId) {
 }
 
 async function creatorReviewHasPaid(authorId, shopUserId) {
-  const found = await Transaction.exists({ fromUserId: authorId, toUserId: shopUserId, status: 'completed' });
+  // 'success' is what the send route writes (Transaction's status enum has
+  // no 'completed'), so asking for 'completed' meant no payer could ever
+  // leave a review.
+  const found = await Transaction.exists({ fromUserId: authorId, toUserId: shopUserId, status: 'success' });
   return Boolean(found);
 }
 
@@ -5339,6 +5344,20 @@ function publicCreatorItem(row) {
 async function creatorItemsFor(symbolId) {
   const rows = await CreatorItem.find({ ownerSymbolId: symbolId })
     .sort({ order: 1, createdAt: 1 }).limit(CREATOR_ITEMS_MAX).lean();
+  // ── THE LISTS SAVED IN DOLLARS BY MISTAKE ─────────────────────────────
+  // Until 0143 every list was stamped USD whatever the shop's country (see
+  // the PUT below). A non-US shop whose rows say USD is that bug, not a
+  // choice: the numbers were typed in the shop's own money. They are
+  // re-stamped in the shop's currency here, once, and saved, so the fix
+  // reaches lists nobody edits again.
+  if (rows.some((r) => r.currency === 'USD')) {
+    const owner = await User.findOne({ symbolId }).select('countryIso mobileNumber').lean();
+    const own = owner ? await resolveOwnCurrency(owner) : null;
+    if (own && own !== 'USD') {
+      await CreatorItem.updateMany({ ownerSymbolId: symbolId, currency: 'USD' }, { $set: { currency: own } });
+      for (const r of rows) if (r.currency === 'USD') r.currency = own;
+    }
+  }
   return rows.map(publicCreatorItem);
 }
 
@@ -5384,9 +5403,17 @@ app.put(
       // The currency is the ACCOUNT'S, read from the server rather than
       // taken from the body. A price is a claim about money, and the client
       // does not get to say which money.
-      const owner = await User.findOne({ symbolId }).select('_id currency').lean();
+      //
+      // From the account's COUNTRY (resolveOwnCurrency), the same source a
+      // payment's currency comes from. This read `owner.currency` — a field
+      // the User model does not have — so every list was saved in USD and an
+      // Indian shop's ₹50 chai showed as $50 (the founder's report, 0143).
+      const owner = await User.findOne({ symbolId }).select('_id countryIso mobileNumber').lean();
       if (!owner) return res.status(404).json({ success: false, code: 'user_not_found', message: 'No account found.' });
-      const currency = String(owner.currency || 'USD').toUpperCase();
+      const currency = await resolveOwnCurrency(owner);
+      if (!currency) {
+        return res.status(400).json({ success: false, message: 'Prices are not supported for this country yet.' });
+      }
 
       const clean = [];
       // Three specials at most; past the third, the flag is dropped rather

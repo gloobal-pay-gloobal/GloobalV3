@@ -53,7 +53,8 @@ test("a review needs a real payment, one per person, never your own shop", () =>
   const put = srv.slice(srv.indexOf("app.put('/api/creator/:symbolId/reviews'"));
   assert.match(put.slice(0, 2400), /code: 'own_shop'/);
   assert.match(put.slice(0, 2400), /creatorReviewHasPaid\(req\.authUser\._id, creator\._id\)/);
-  assert.match(srv, /Transaction\.exists\(\{ fromUserId: authorId, toUserId: shopUserId, status: 'completed' \}\)/);
+  // 'success': the status a payment is written with ('completed' never is).
+  assert.match(srv, /Transaction\.exists\(\{ fromUserId: authorId, toUserId: shopUserId, status: 'success' \}\)/);
   assert.match(put.slice(0, 2400), /\{ upsert: true, runValidators: true \}/, "writing again replaces yours");
   assert.match(readSource("server/models/CreatorReview.js"),
     /index\(\{ creatorUserId: 1, authorUserId: 1 \}, \{ unique: true \}\)/);

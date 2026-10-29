@@ -12,11 +12,14 @@ import { readSource } from "./harness.mjs";
 const pd = readSource("frontend/features/identity/PersonalDetailsScreen.jsx");
 const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
 
-test("copy and share are icon-only buttons with accessible names", () => {
-  assert.match(pd, /cardButton\(PdCopyIcon, "Copy ID", onCopyId, "copy"\)/);
-  assert.match(pd, /cardButton\(PdShareIcon, "Share ID", onShareId, "share"\)/);
-  assert.match(pd, /aria-label=\{label\}/);
-  assert.doesNotMatch(pd, /<Icon size=\{15\} color="#fff" \/>\{label\}/, "labels are back on the buttons");
+test("copy only — inside the ID box, on its right; share is gone", () => {
+  const box = pd.slice(pd.indexOf("data-pd-id"), pd.indexOf("data-pd-stats"));
+  assert.match(box, /onClick=\{onCopyId\}/);
+  assert.match(box, /aria-label="Copy ID"/);
+  assert.ok(box.indexOf("ColoredGloobalId") < box.indexOf("onCopyId"), "copy sits after the ID");
+  assert.match(box.slice(0, 260), /width: "100%"/);
+  assert.doesNotMatch(pd, /Share ID|onShareId|PdShareIcon/);
+  assert.doesNotMatch(dash, /onShareId=/);
 });
 
 test("no Member since tile — Joined is the one place the date lives", () => {
@@ -30,7 +33,7 @@ test("long values wrap instead of running under the map button", () => {
 });
 
 test("the dashboard wires score, shop, copy and share", () => {
-  for (const prop of ["hoomanScore=", "onOpenHoomanScore=", "shopHandle=", "onOpenShop={openMyShop}", "onCopyId=", "onShareId="]) {
+  for (const prop of ["hoomanScore=", "onOpenHoomanScore=", "shopHandle=", "onOpenShop={openMyShop}", "onCopyId="]) {
     assert.ok(dash.includes(prop), prop);
   }
   assert.match(dash, /profileDetail === "Personal Details" && !creatorProfile\) loadCreatorProfile\(\)/);
@@ -40,9 +43,9 @@ test("one or two stamps get a hint instead of empty paper", () => {
   assert.match(pd, /crossings\.length > 0 && crossings\.length < 3 && <div\s+data-pd-passport-hint/);
 });
 
-test("photo on the left, name and ID on the right, icons under the ID", () => {
+test("photo on the left, name and ID on the right, copy inside the ID box", () => {
   const row = pd.slice(pd.indexOf("data-pd-row"));
   assert.match(row.slice(0, 200), /display: "flex", alignItems: "center", gap: 14/);
-  const photo = row.indexOf("<ProfileAvatar"), name = row.indexOf("myName && myName.trim()"), id = row.indexOf("data-pd-id"), copy = row.indexOf('cardButton(PdCopyIcon');
-  assert.ok(photo > 0 && photo < name && name < id && id < copy, "order is photo, name, ID, icons");
+  const photo = row.indexOf("<ProfileAvatar"), name = row.indexOf("myName && myName.trim()"), id = row.indexOf("data-pd-id"), copy = row.indexOf("onClick={onCopyId}");
+  assert.ok(photo > 0 && photo < name && name < id && id < copy, "order is photo, name, ID, copy");
 });

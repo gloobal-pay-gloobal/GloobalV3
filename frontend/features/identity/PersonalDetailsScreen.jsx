@@ -1,6 +1,6 @@
 // src/features/identity/PersonalDetailsScreen.jsx
 import { useState as useState52, useMemo as useMemo14 } from "react";
-import { ChevronRight as ChevronRight7, ChevronLeft as ChevronLeft5, Camera as Camera4, Copy as PdCopyIcon, Share2 as PdShareIcon, Phone as PdPhoneIcon, CalendarDays as PdCalendarIcon, Store as PdStoreIcon, Sparkles as PdScoreIcon, Globe2 as PdGlobeIcon, ArrowLeftRight as PdPaymentsIcon } from "lucide-react";
+import { ChevronRight as ChevronRight7, ChevronLeft as ChevronLeft5, Camera as Camera4, Copy as PdCopyIcon, Phone as PdPhoneIcon, CalendarDays as PdCalendarIcon, Store as PdStoreIcon, Sparkles as PdScoreIcon, Globe2 as PdGlobeIcon, ArrowLeftRight as PdPaymentsIcon } from "lucide-react";
 
 // ── THE ACCOUNT, AS A DOCUMENT ──────────────────────────────────────────
 //
@@ -198,8 +198,7 @@ function PersonalDetailsScreen({
   onOpenHoomanScore,
   shopHandle = "",
   onOpenShop,
-  onCopyId,
-  onShareId
+  onCopyId
 }) {
   const [page, setPage] = useState52(0);
   const ownIso = dialCountry && dialCountry.iso;
@@ -251,16 +250,6 @@ function PersonalDetailsScreen({
     [PdGlobeIcon, String(crossings.length), crossings.length === 1 ? "Country" : "Countries", "#2563EB"],
     [PdPaymentsIcon, String(paymentCount), paymentCount === 1 ? "Payment" : "Payments", "#059669"]
   ];
-  // Icons only, asked for in those words: the two glyphs say it, and two
-  // labelled buttons made the card taller than the ID it carries.
-  const cardButton = (Icon, label, onPress, dataKey) => <button
-    onClick={onPress}
-    className="v2-tap"
-    aria-label={label}
-    title={label}
-    data-pd-action={dataKey}
-    style={{ width: 38, height: 38, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.14)", cursor: "pointer", padding: 0 }}
-  ><Icon size={16} color="#fff" /></button>;
   const linkRow = (Icon, color, title, value, onPress, dataKey) => <button
     onClick={onPress}
     className="v2-tap"
@@ -293,8 +282,8 @@ function PersonalDetailsScreen({
     onClick={() => onChangePhoto && onChangePhoto()}
     className="v2-tap"
     aria-label={profilePhoto ? "Change your photo" : "Add a photo"}
-    style={{ width: 88, height: 88, borderRadius: "50%", flexShrink: 0, position: "relative", border: "3px solid rgba(255,255,255,0.9)", background: "linear-gradient(158deg,#F3EFFB,#E6DEF7)", padding: 0, cursor: "pointer", boxShadow: "0 8px 22px rgba(0,0,0,0.25)" }}
-  ><ProfileAvatar photo={profilePhoto} name={myName} size={82} /><span
+    style={{ width: 80, height: 80, borderRadius: "50%", flexShrink: 0, position: "relative", border: "3px solid rgba(255,255,255,0.9)", background: "linear-gradient(158deg,#F3EFFB,#E6DEF7)", padding: 0, cursor: "pointer", boxShadow: "0 8px 22px rgba(0,0,0,0.25)" }}
+  ><ProfileAvatar photo={profilePhoto} name={myName} size={74} /><span
     aria-hidden="true"
     style={{ position: "absolute", right: -3, bottom: -3, width: 28, height: 28, borderRadius: "50%", background: T.accent, border: "2.5px solid #fff", display: "flex", alignItems: "center", justifyContent: "center" }}
   ><Camera4 size={12} color="#fff" /></span></button><div
@@ -303,10 +292,20 @@ function PersonalDetailsScreen({
     style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5, fontFamily: T.fontDisplay, lineHeight: 1.15, overflowWrap: "anywhere" }}
   >{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</div><div
     data-pd-id
-    style={{ display: "inline-block", maxWidth: "100%", marginTop: 9, background: "#fff", borderRadius: 12, padding: "7px 10px", fontSize: 15, fontWeight: 800, lineHeight: 1.2, boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
-  >{gloobalId ? <ColoredGloobalId id={gloobalId} /> : <span style={{ color: T.inkFaint }}>—</span>}</div><div
-    style={{ display: "flex", gap: 10, marginTop: 10 }}
-  >{cardButton(PdCopyIcon, "Copy ID", onCopyId, "copy")}{cardButton(PdShareIcon, "Share ID", onShareId, "share")}</div></div></div></div><div
+    style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", boxSizing: "border-box", marginTop: 10, background: "#fff", borderRadius: 12, padding: "5px 5px 5px 10px", boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
+  ><span
+    style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, lineHeight: 1.2 }}
+  >{gloobalId ? <ColoredGloobalId id={gloobalId} /> : <span style={{ color: T.inkFaint }}>—</span>}</span>{
+    /* Copy sits in the ID's own box, on the right of it — one box, one
+       action, nothing for the eye to line up. */
+  }<button
+    onClick={onCopyId}
+    className="v2-tap"
+    aria-label="Copy ID"
+    title="Copy ID"
+    data-pd-action="copy"
+    style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 9, border: "none", background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
+  ><PdCopyIcon size={15} color={T.accent} /></button></div></div></div></div><div
     data-pd-stats
     style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}
   >{stats.map(([Icon, value, label, color]) => <div

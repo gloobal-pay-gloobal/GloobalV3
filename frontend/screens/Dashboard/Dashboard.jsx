@@ -4203,12 +4203,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       copyToClipboard(personalGloobalId);
       showToast2("GLOOBAL ID copied");
     }}
-    onShareId={() => gloobalShareLink({
-      title: "My GLOOBAL ID",
-      message: `Pay me on GLOOBAL. My GLOOBAL ID: ${personalGloobalId}`,
-      url: referralLink,
-      onToast: showToast2
-    })}
   />}{
     /* ── THE CREATOR'S OWN PAGE ───────────────────────────────────────
        The mark, the handle and the address, with one way to change all

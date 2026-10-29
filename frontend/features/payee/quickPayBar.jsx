@@ -256,7 +256,29 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     @keyframes quickPayIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
     @keyframes quickPayGlobe { from { transform: translateX(0); } to { transform: translateX(-50%); } }
     @media (prefers-reduced-motion: reduce) { .quickpay-globe-spin { animation: none !important; } }
-  `}</style><div style={{
+    @keyframes quickPayVeil { from { opacity: 0; } to { opacity: 1; } }
+  `}</style>{
+    // ── A PLAIN LIGHT GROUND WHILE YOU LOOK SOMEBODY UP ───────────────
+    // While the pad, the answer or an error is up, the dashboard behind
+    // it — the purple balance card most of all — is covered by the app's
+    // own light ground, so the only things on screen are the box, what
+    // it found and the pad. zIndex -1 keeps it inside the header's own
+    // stacking context: under the box, over everything below the header.
+    // Tapping it puts the pad away, or clears the answer.
+    (padOpen || found || error || busy) ? <div
+      data-quickpay-veil=""
+      aria-hidden="true"
+      onClick={() => {
+        if (padOpen) { setPadOpen(false); return; }
+        setFound(null);
+        setError("");
+      }}
+      style={{
+        position: "fixed", inset: 0, zIndex: -1, background: T.bg,
+        animation: "quickPayVeil 0.18s ease"
+      }}
+    /> : null
+  }<div style={{
     display: "flex", alignItems: "center", gap: 6, background: T.surface, borderRadius: T.radiusMd,
     padding: "5px 5px 5px 5px", boxShadow: T.shadowCard,
     border: `1.5px solid ${error ? T.negative : found ? T.positive : "transparent"}`, transition: "border-color 0.18s ease"

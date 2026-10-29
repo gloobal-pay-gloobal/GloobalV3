@@ -84,56 +84,42 @@ describe("Gloobal Bank is not a peer of the other tiles", () => {
 
 describe("the tiles say what they are and what state they are in", () => {
   const dash = () => code("frontend/screens/Dashboard/Dashboard.jsx");
+  const tile = () => code("frontend/components/common/iconTile.jsx");
 
-  test("the icon is a circle in the middle of the tile", () => {
+  test("the icon is a circle in the middle of the box", () => {
     // The flip faces carry the radius themselves rather than being clipped
     // by a wrapper: overflow:hidden creates a containing block that can
     // flatten preserve-3d, which would kill the flip these icons exist for.
     const src = dash();
     assert.match(src, /radius="50%"/);
-    assert.match(src, /width: 64, height: 64, flexShrink: 0/);
     assert.match(code("frontend/components/common/flipIcons.jsx"), /radius = T\.radiusLg/);
     assert.match(code("frontend/components/common/flipIcons.jsx"), /borderRadius: radius,/);
   });
 
-  test("the label is inside the tile, centred under the circle", () => {
-    // It used to sit outside and below, which left a coloured square with
-    // nothing in it and put each name closer to the tile on the next row
-    // than to its own.
-    assert.match(dash(), /marginTop: 12, fontSize: 12\.5, fontWeight: 800, color: T\.ink, textAlign: "center"/);
+  test("icon inside the box, name outside it (the founder's rule, everywhere)", () => {
+    const src = dash();
+    const at = src.indexOf('{ key: "gpaylater", label: "PayLater"');
+    const block = src.slice(at, src.indexOf("})}</div></div>", at));
+    assert.match(block, /return <IconTile/);
+    assert.match(block, /label=\{label\}/);
+    // The label is a sibling of the box in IconTile, not a child of it.
+    assert.match(tile(), /<\/span>\{label \? <span/);
   });
 
   test("the padlock is drawn only when something is locked", () => {
-    // It used to be drawn in both states, CLOSED in both, with red or
-    // green as the only difference — so the shape said "locked" on the
-    // three services that were open, and colour alone carried the truth.
-    // ServiceLock opens when unlocked now, but an open padlock on every
-    // available tile is six badges saying nothing.
     const src = dash();
-    assert.match(src, /\{locked && <span style=\{\{ position: "absolute", top: 10, right: 10/);
-    assert.match(src, /<ServiceLock locked size=\{14\} \/>/);
-    assert.ok(
-      !/<ServiceLock locked=\{locked\}/.test(src),
-      "the badge is drawn in both states again"
-    );
+    assert.match(src, /badge=\{locked \? <ServiceLock locked size=\{13\} \/> : null\}/);
+    assert.ok(!/<ServiceLock locked=\{locked\}/.test(src), "the badge is drawn in both states again");
   });
 
   test("no tile is taller than another", () => {
-    // The badge is absolutely positioned, so a locked tile cannot grow and
-    // break the row — which is what a "Locked" pill in the flow did until
-    // its height had to be reserved on every tile.
-    const src = dash();
-    assert.ok(!/minHeight: 17/.test(src), "a reserved-height badge slot is still here");
-    assert.match(src, /position: "absolute", top: 10, right: 10/);
+    // The badge is absolutely positioned on the box's corner, so a locked
+    // tile cannot grow and break the row.
+    assert.match(tile(), /position: "absolute", top: 6, right: 6/);
   });
 
-  test("the tiles set box-sizing, or the two-up row does not form", () => {
-    // calc(50% - 6px) with a 12px gap comes to exactly 100% only under
-    // border-box, and this app has no global reset. The About screen's
-    // grid failed this way first.
+  test("four across, as a grid", () => {
     const src = dash();
-    const at = src.indexOf('width: "calc(50% - 6px)"');
-    assert.ok(at > 0, "the tile width is gone");
-    assert.match(src.slice(at, at + 80), /boxSizing: "border-box"/);
+    assert.match(src, /gridTemplateColumns: "repeat\(4, minmax\(0, 1fr\)\)", gap: 10, marginTop: 16/);
   });
 });

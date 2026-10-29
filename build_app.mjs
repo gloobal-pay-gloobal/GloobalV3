@@ -180,6 +180,8 @@ const FRONTEND_MODULES = [
   // figure through it.
   "features/geuLens/GeuFigure.jsx",
   "components/cards/misc.jsx",
+  // One tile everywhere: the icon in the box, the name under it.
+  "components/common/iconTile.jsx",
   "components/cards/geuLensToggle.jsx",
   "components/cards/notificationCard.jsx",
   // The same card, slid over the app when a payment arrives while it is

@@ -40,7 +40,15 @@ import { useMemo } from "react";
 // the screen. Each of those roots is `position:fixed` WITH a zIndex, so it
 // opens a stacking context: -1 lands below every child and still above the
 // root's own painted background, rather than disappearing behind it.
+// ── OFF, BY REQUEST ────────────────────────────────────────────────
+// The founder asked for nothing extra behind any screen: no floating
+// currency symbols, numbers or shapes. The field is switched off here,
+// in one place, rather than taken out of the twelve screens that mount
+// it — flip this back to true and every screen has it again.
+var APP_SYMBOL_BG_ON = false;
+
 function AppSymbolBg({ zIndex = 0 }) {
+  if (!APP_SYMBOL_BG_ON) return null;
   return <><style>{`
     /* THE KEYFRAMES LIVE HERE, with the component that uses them.
        ─────────────────────────────────────────────────────────────

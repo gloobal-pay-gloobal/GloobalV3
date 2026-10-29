@@ -17,14 +17,14 @@ const code = (f) => readSource(f)
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/^\s*\/\/.*$/gm, "");
 
-describe("the bills row is one card, not four", () => {
+describe("the bills row: icon in a box, name under it", () => {
   const dash = () => code("frontend/screens/Dashboard/Dashboard.jsx");
 
-  test("the four tiles share a surface, divided by hairlines", () => {
-    // Four cards each with their own shadow read as four separate
-    // decisions; one card with dividers reads as one group of four.
+  test("each bill is an IconTile, one row", () => {
+    // It was one card with the names inside it. The founder's rule since
+    // 0133: the icon lives in its box, the name sits outside, underneath.
     assert.match(dash(), /Bills &amp; recharges/);
-    assert.match(dash(), /borderLeft: i === 0 \? "none" : `1px solid \$\{T\.line\}`/);
+    assert.match(dash(), /BILL_ACTIONS\.map\(\(\{ key, label, Icon \}\) => <IconTile/);
   });
 
   test("each category has its own colour, keyed by key", () => {

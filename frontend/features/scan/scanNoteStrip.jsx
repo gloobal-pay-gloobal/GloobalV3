@@ -198,25 +198,23 @@ function ScanNoteStylePicker({ value, onChange, text, seed }) {
     display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8
   }}>{SCAN_NOTE_STYLES.map((s) => {
     const on = scanNoteStyleKey(value) === s.key;
-    return <button
+    // The miniature sits in the box; its name sits under it.
+    return <IconTile
       key={s.key}
-      type="button"
       role="radio"
-      aria-checked={on}
-      aria-label={s.label}
+      ariaChecked={on}
+      ariaLabel={s.label}
+      label={s.label}
+      labelSize={11}
+      labelLines={1}
+      box="100%"
+      radius={16}
+      selected={on}
       onClick={() => onChange && onChange(s.key)}
-      style={{
-        border: `2px solid ${on ? T.accent : T.line}`, borderRadius: 14, background: T.surface,
-        padding: "8px 4px 6px", cursor: "pointer", fontFamily: "inherit", overflow: "hidden",
-        display: "flex", flexDirection: "column", alignItems: "center", minHeight: 108
-      }}
-    ><span aria-hidden="true" style={{
-      width: "78%", height: 26, borderRadius: 8, background: scanBackdropCss(seed), flexShrink: 0
+    ><span style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: 6, pointerEvents: "none" }}><span aria-hidden="true" style={{
+      width: "84%", height: 20, borderRadius: 7, background: scanBackdropCss(seed), flexShrink: 0
     }} /><span style={{
-      width: "78%", display: "flex", flexDirection: "column", alignItems: "center", pointerEvents: "none"
-    }}><ScanNoteStrip text={sample} seed={seed} styleKey={s.key} compact /></span><span style={{
-      marginTop: "auto", paddingTop: 6, fontSize: 9.5, fontWeight: 800,
-      color: on ? T.accent : T.inkFaint, textAlign: "center", lineHeight: 1.2
-    }}>{s.label}</span></button>;
+      width: "84%", display: "flex", flexDirection: "column", alignItems: "center"
+    }}><ScanNoteStrip text={sample} seed={seed} styleKey={s.key} compact /></span></span></IconTile>;
   })}</div>;
 }

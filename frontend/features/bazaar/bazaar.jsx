@@ -67,21 +67,20 @@ function bazaarDistanceLabel(m) {
 function BazaarCategoryPicker({ value, onChange }) {
   return <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{BAZAAR_CATEGORY_INFO.map(({ key, label, Icon }) => {
     const on = value === key;
-    return <button
+    // Icon in the box, name under it — the same tile as everywhere else.
+    return <IconTile
       key={key}
       onClick={() => onChange(on ? "" : key)}
-      aria-pressed={on}
-      className="v2-tap"
-      style={{
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0,
-        padding: "11px 4px 9px", borderRadius: 14, border: "none", cursor: "pointer", fontFamily: "inherit",
-        background: on ? T.accentSoft : T.bg,
-        boxShadow: on ? `inset 0 0 0 2px ${T.accent}` : `inset 0 0 0 1px ${T.line}`
-      }}
-    ><Icon size={18} color={on ? T.accent : T.inkSoft} /><span style={{
-      fontSize: 10.5, fontWeight: 700, lineHeight: 1.25, textAlign: "center",
-      color: on ? T.accent : T.ink
-    }}>{label}</span></button>;
+      ariaPressed={on}
+      label={label}
+      labelSize={11}
+      box={48}
+      radius={15}
+      selected={on}
+      // The picker sits on a white card, so an unpicked box takes the
+      // page's own tint to stay visible as a box.
+      background={on ? T.accentSoft : T.bg}
+    ><Icon size={19} color={on ? T.accent : T.inkSoft} /></IconTile>;
   })}</div>;
 }
 
@@ -305,25 +304,23 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     const on = category === c.key;
     const hot = i < 3 && c.shops > 0;
     const Icon = info.Icon;
-    return <button
-      key={c.key}
+    // Icon in the box, name under it. The flame for the three busiest
+    // categories rides on the box's corner.
+    return <div key={c.key} style={{ flexShrink: 0, width: 70 }}><IconTile
       onClick={() => setCategory(on ? "" : c.key)}
-      aria-pressed={on}
-      className="v2-tap"
-      style={{
-        flexShrink: 0, width: 76, display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-        padding: "10px 4px 8px", borderRadius: 16, border: "none", cursor: "pointer", fontFamily: "inherit",
-        position: "relative", opacity: c.shops > 0 || on ? 1 : 0.5,
-        background: on ? T.accent : T.surface,
-        boxShadow: on ? "0 6px 16px rgba(124,58,237,0.28)" : T.shadowCard
-      }}
-    >{hot && !on ? <span aria-hidden="true" style={{ position: "absolute", top: 5, right: 6 }}><BzFlame size={12} color="#F07B2B" fill="#F7B267" /></span> : null}<span style={{
+      ariaPressed={on}
+      label={info.label}
+      labelSize={11}
+      box={56}
+      radius={18}
+      selected={on}
+      dimmed={!(c.shops > 0 || on)}
+      background={on ? T.accent : T.surface}
+      badge={hot && !on ? <BzFlame size={12} color="#F07B2B" fill="#F7B267" /> : null}
+    ><span style={{
       width: 34, height: 34, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center",
       background: on ? "rgba(255,255,255,0.18)" : T.accentSoft
-    }}><Icon size={17} color={on ? "#fff" : T.accent} /></span><span style={{
-      fontSize: 10.5, fontWeight: 700, lineHeight: 1.2, textAlign: "center", color: on ? "#fff" : T.ink,
-      display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", minHeight: 25
-    }}>{info.label}</span></button>;
+    }}><Icon size={17} color={on ? "#fff" : T.accent} /></span></IconTile></div>;
   })}</div>
 
   <div style={{

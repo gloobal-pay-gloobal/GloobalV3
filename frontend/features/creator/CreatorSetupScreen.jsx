@@ -702,22 +702,32 @@ function CreatorSetupScreen({
        offering it without putting the whole screen back in the way. */
   }{kbField ? null : <div style={{
     flexShrink: 0, display: "flex", alignItems: "center", gap: 10,
-    padding: "12px 16px calc(14px + env(safe-area-inset-bottom, 0px))",
-    background: T.surface, borderTop: `1px solid ${T.line}`
-  }}><button
+    padding: "10px 16px calc(12px + env(safe-area-inset-bottom, 0px))",
+    background: T.surface, boxShadow: "0 -6px 20px rgba(20,18,43,0.06)"
+  }}>{
+    /* One line, always. A render on a 390px phone had "Save my creator
+       name" folding onto two lines beside "Set this up later"; the
+       buttons now say "Later" and "Save my name", keep the long wording
+       for screen readers, and never wrap. */
+  }<button
     onClick={onSkip}
+    aria-label="Set this up later"
     className="v2-tap"
     style={{
+      flexShrink: 0,
+      height: 50,
+      padding: "0 18px",
       border: "none",
-      background: "none",
-      padding: "12px 10px",
-      fontSize: 13,
-      fontWeight: 700,
+      borderRadius: 999,
+      background: T.surfaceAlt,
+      fontSize: 14,
+      fontWeight: 800,
       color: T.inkSoft,
       cursor: "pointer",
-      flexShrink: 0
+      fontFamily: "inherit",
+      whiteSpace: "nowrap"
     }}
-  >Set this up later</button><button
+  >Later</button><button
     onClick={() => onSave({
       handleFirst: first.trim(),
       handleLast: last.trim(),
@@ -734,20 +744,29 @@ function CreatorSetupScreen({
       logo: logo || undefined
     })}
     disabled={!canSave}
+    aria-label="Save my creator name"
     className="v2-tap"
     style={{
       flex: 1,
+      minWidth: 0,
+      height: 50,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
       border: "none",
       borderRadius: 999,
-      padding: "15px 18px",
+      padding: "0 18px",
       background: canSave ? T.gradButton : T.surfaceAlt,
       color: canSave ? "#fff" : T.inkFaint,
       fontSize: 15,
       fontWeight: 800,
+      fontFamily: "inherit",
+      whiteSpace: "nowrap",
       cursor: canSave ? "pointer" : "default",
       boxShadow: canSave ? "0 8px 20px rgba(124,58,237,0.28)" : "none"
     }}
-  >{saving ? "Saving…" : "Save my creator name"}</button></div>}{
+  >{saving ? <Loader5 size={17} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check9 size={18} strokeWidth={2.8} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{saving ? "Saving…" : "Save my name"}</span></button></div>}{
     /* ── MORE FONTS ───────────────────────────────────────────────────
        Every face, each drawn in the person's own name, the same way the
        three suggestions are. Tapping one picks it and closes the sheet. */

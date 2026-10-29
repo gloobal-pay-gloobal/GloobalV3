@@ -56,5 +56,9 @@ test("Save stays on screen, and steps aside for Gloobal's keyboard", () => {
   const s = setup();
   assert.match(s, /THE SAVE BAR/);
   assert.match(s, /\{kbField \? null : <div style=\{\{\s*flexShrink: 0/);
-  assert.match(s, />Set this up later<\/button><button/);
+  assert.match(s, /aria-label="Set this up later"/);
+  assert.match(s, />Later<\/button><button/);
+  assert.match(s, /aria-label="Save my creator name"/);
+  // One line on a phone: neither button may wrap.
+  assert.equal((s.match(/whiteSpace: "nowrap"/g) || []).length >= 2, true);
 });

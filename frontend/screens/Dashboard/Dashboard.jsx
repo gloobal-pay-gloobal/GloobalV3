@@ -2507,7 +2507,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         boxShadow: `0 0 0 2px ${T.surface}`,
         zIndex: 2
       }}
-    />}</button></div>;
+    />}</button><span style={{ marginTop: 8, fontSize: 13, fontWeight: 700, color: T.ink, textAlign: "center" }}>{label}</span></div>;
   })}</div>{
     /* Bills row (personal) vs Today's Collection (creator) — these
        are mutually exclusive: a creator checking their dashboard
@@ -2517,34 +2517,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        screen still reads clean; "More" is the door to everything
        else the business/network offers, without listing it all
        here. */
-  }{shareRole === "user" ? <div><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint, marginBottom: 9 }}>Bills &amp; recharges</div><div style={{ display: "flex", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "13px 4px" }}>{BILL_ACTIONS.map(({ key, label, Icon }, i) => <button
+  }{shareRole === "user" ? <div><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint, marginBottom: 9 }}>Bills &amp; recharges</div><div style={{ display: "grid", gridTemplateColumns: `repeat(${BILL_ACTIONS.length}, minmax(0, 1fr))`, gap: 8 }}>{BILL_ACTIONS.map(({ key, label, Icon }) => <IconTile
     key={key}
     onClick={() => key === "recharge" ? setShowRecharge(true) : key === "electricity" ? setShowElectricity(true) : key === "rent" ? setShowRentChoice(true) : key === "more" ? setShowMore(true) : showToast2(`${label} \u2014 coming soon`)}
-    aria-label={label}
-    className="v2-tap"
-    style={{
-      flex: 1,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 8,
-      padding: "4px 0",
-      border: "none",
-      borderLeft: i === 0 ? "none" : `1px solid ${T.line}`,
-      background: "none",
-      cursor: "pointer"
-    }}
-  ><span
-    style={{
-      width: 34,
-      height: 34,
-      borderRadius: 11,
-      background: `${BILL_ACTION_COLORS[key] || T.accent}1A`,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }}
-  ><Icon size={16} color={BILL_ACTION_COLORS[key] || T.accent} /></span><span style={{ fontSize: 11.5, fontWeight: 700, color: key === "more" ? T.inkSoft : T.ink, whiteSpace: "nowrap" }}>{label}</span></button>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, whiteSpace: "nowrap" }}>{geuLensBarMoney(todaysCollection, ccyCode, displayLens, ccyCode)}</span><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>{
+    label={label}
+    box={52}
+    radius={16}
+    labelLines={1}
+    labelColor={key === "more" ? T.inkSoft : T.ink}
+  ><span style={{ width: 34, height: 34, borderRadius: 11, background: `${BILL_ACTION_COLORS[key] || T.accent}1A`, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={17} color={BILL_ACTION_COLORS[key] || T.accent} /></span></IconTile>)}</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's Collection</span><span style={{ fontSize: 10.5, fontWeight: 600, color: T.inkFaint }}>{todaysDateLabel}</span></div><span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, whiteSpace: "nowrap" }}>{geuLensBarMoney(todaysCollection, ccyCode, displayLens, ccyCode)}</span><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>{
     /* NO SETTLE BUTTONS HERE.
        ─────────────────────────────────────────────────────────────
        This figure is Creator Share — what customers shared back
@@ -2647,7 +2628,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     ><span style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 44, height: 44, borderRadius: 14, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><img src={G_LOGO_DATA_URI} alt="" style={{ width: 26, height: 26, objectFit: "contain", filter: "brightness(0) invert(1)" }} /></span><span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, letterSpacing: -0.2, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" Bank" /></span><ChevronRight4 size={17} color="rgba(255,255,255,0.8)" /></span><span style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)", lineHeight: 1.45 }}>
       Your balance, your transfers, and the account everything else here unlocks from.
     </span></button>;
-  })()}<div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 12 }}>{[
+  })()}<div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10, marginTop: 16 }}>{[
     { key: "gpaylater", label: "PayLater", onClick: () => setShowPayLater(true) },
     { key: "myassets", label: "My Assets", onClick: () => setShowAssets(true) },
     {
@@ -2663,30 +2644,19 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     const locked = capabilities[key]?.locked ?? false;
     const heroColor = { gpaylater: paylaterHeroColor, myassets: assetsHeroColor, myessentials: essentialsHeroColor, aboutus: aboutHeroColor }[key];
     const TileIcon = ({ size }) => key === "gpaylater" ? <CreditCard3 size={size} color={heroColor} /> : key === "myessentials" ? <EssHome size={size} color={heroColor} /> : key === "aboutus" ? <Info size={size} color={heroColor} /> : <TrendingUp2 size={size} color={heroColor} />;
-    return <button
+    // ── ICON IN THE BOX, NAME UNDER IT ───────────────────────────
+    // Four across, like a phone's home row: the box holds the icon and
+    // the padlock badge; the name sits outside, underneath (IconTile).
+    return <IconTile
       key={key}
       onClick={onClick}
-      aria-label={locked ? `${label} \u2014 locked` : label}
-      className="v2-tap"
-      style={{ position: "relative", width: "calc(50% - 6px)", boxSizing: "border-box", border: "none", cursor: "pointer", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 12px 16px", display: "flex", flexDirection: "column", alignItems: "center", opacity: locked ? 0.72 : 1 }}
-    >{
-    /* The padlock is a corner badge again, and it is drawn ONLY when the
-       thing is locked.
-       It used to be drawn in both states, closed in both, with red or
-       green as the only difference — so the shape said "locked" on the
-       three services that were open, and colour alone (red against green,
-       the pair a large minority cannot separate) carried the truth.
-       ServiceLock is a star now — hollow and red while a service has no
-       live API, solid and green once it has — but a green star on every
-       available tile is six badges saying nothing. Absent is the quieter
-       way to say "nothing in the way here", so this tab still draws the
-       badge only on what is not ready. */
-  }{locked && <span style={{ position: "absolute", top: 10, right: 10, zIndex: 1, display: "flex" }}><ServiceLock locked size={14} /></span>}{
-    /* A circle, centred, with the icon in it — and the name centred
-       underneath. The label used to sit outside the tile entirely, which
-       left a coloured square with nothing in it and put each name closer
-       to the tile on the next row than to its own. */
-  }<span style={{ display: "block", width: 64, height: 64, flexShrink: 0 }}><SyncedFlipIcon Icon={TileIcon} size={26} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}22`} radius="50%" /></span><span style={{ marginTop: 12, fontSize: 12.5, fontWeight: 800, color: T.ink, textAlign: "center", lineHeight: 1.25 }}>{displayLabel || label}</span></button>;
+      ariaLabel={locked ? `${label} \u2014 locked` : label}
+      label={label}
+      box="100%"
+      radius={22}
+      dimmed={locked}
+      badge={locked ? <ServiceLock locked size={13} /> : null}
+    ><span style={{ display: "block", width: "72%", aspectRatio: "1", maxWidth: 58 }}><SyncedFlipIcon Icon={TileIcon} size={22} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}22`} radius="50%" /></span></IconTile>;
   })}</div></div>{
     /* One bigger box now instead of the small divider line — the
        cost figure front and center, the HOOMAN-2-HOOMAN mark
@@ -3426,33 +3396,27 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       }}
     />{quickPay.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
                         Quick pay
-                      </div><div style={{ display: "flex", gap: 10 }}>{quickPay.map(({ key, label, Icon, onClick }) => <button
+                      </div><div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(3, quickPay.length)}, minmax(0, 1fr))`, gap: 10 }}>{quickPay.map(({ key, label, Icon, onClick }) => <IconTile
       key={key}
       onClick={onClick}
-      aria-label={label}
-      className="v2-tap"
-      style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 4px", border: `1px solid ${T.line}`, background: T.surface, borderRadius: 16, cursor: "pointer", boxShadow: T.shadowCard }}
-    >{
-      /* Same 32px/T.accentSoft/T.accent icon treatment as the
-         Dashboard's own Bills row, so Recharge/Electricity/Rent
-         look identical wherever they appear — this used to render
-         each with its own hero color in a larger 38px box here,
-         while the Dashboard used one shared accent style. */
-    }<span style={{ width: 32, height: 32, borderRadius: 10, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={15} color={T.accent} /></span><span style={{ fontSize: 11, fontWeight: 700, color: T.ink }}>{label}</span></button>)}</div></div>}{showTravelSection && <div><button
+      label={label}
+      box={56}
+      radius={18}
+    ><span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={16} color={T.accent} /></span></IconTile>)}</div></div>}{showTravelSection && <div><button
       onClick={() => setTravelExpanded((v) => !v)}
       className="v2-tap"
       style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", border: "none", background: "none", padding: "2px 2px 8px", cursor: "pointer" }}
-    ><span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4 }}>Travel</span>{travelExpanded || q ? <ChevronUp size={15} color={T.inkFaint} /> : <ChevronDown size={15} color={T.inkFaint} />}</button>{(travelExpanded || q) && <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>{(q ? travelMatches : TRAVEL_ACTIONS).map(({ key, label, Icon, chip, cashbackRate }) => <button
+    ><span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4 }}>Travel</span>{travelExpanded || q ? <ChevronUp size={15} color={T.inkFaint} /> : <ChevronDown size={15} color={T.inkFaint} />}</button>{(travelExpanded || q) && <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>{(q ? travelMatches : TRAVEL_ACTIONS).map(({ key, label, Icon, chip, cashbackRate }) => <IconTile
       key={key}
       onClick={() => {
         requestCloseMore();
         setPayTarget({ key, label, chip, Icon, cashbackRate });
         setPayAmount("25.00");
       }}
-      aria-label={label}
-      className="v2-tap"
-      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 4px", border: `1px solid ${T.line}`, background: T.surface, borderRadius: 16, cursor: "pointer", boxShadow: T.shadowCard }}
-    ><span style={{ width: 38, height: 38, borderRadius: 12, background: T.positiveSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={18} color={T.positive} /></span><span style={{ fontSize: 11, fontWeight: 700, color: T.ink, textAlign: "center" }}>{label}</span></button>)}</div>}</div>}<div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
+      label={label}
+      box={56}
+      radius={18}
+    ><span style={{ width: 36, height: 36, borderRadius: 12, background: T.positiveSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={18} color={T.positive} /></span></IconTile>)}</div>}</div>}<div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
                       Top businesses
                     </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{businesses.length === 0 ? <div style={{ padding: "22px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{creatorLookupBusy ? "Looking\u2026" : "No matches"}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 3 }}>{creatorLookupBusy ? "Checking that name on Gloobal." : "A creator is found by their exact name."}</div></div> : businesses.map((b, i) => {
       const isPinned = payPins.indexOf(b.key) >= 0;

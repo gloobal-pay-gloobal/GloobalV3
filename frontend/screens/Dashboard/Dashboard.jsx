@@ -2815,15 +2815,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       onClick={onClick}
       ariaLabel={locked ? `${label} \u2014 locked` : label}
       label={label}
-      // Two to a row: a wide box, the same height as before.
+      // Two to a row, each box a true square with softly rounded
+      // corners — the shape the four tiles share with a phone's home
+      // screen, instead of the wide rectangles they had become.
       box="100%"
-      boxHeight={96}
-      radius={22}
+      radius={30}
       background="transparent"
       labelSize={13.5}
       dimmed={locked}
       badge={locked ? <ServiceLock locked size={13} /> : null}
-    ><span style={{ position: "absolute", inset: 0 }}><SyncedFlipIcon Icon={TileIcon} size={34} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}26`} radius={22} /></span></IconTile>;
+    ><span style={{ position: "absolute", inset: 0 }}><SyncedFlipIcon Icon={TileIcon} size={40} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}26`} radius={30} /></span></IconTile>;
   })}</div></div>{
     /* One bigger box now instead of the small divider line — the
        cost figure front and center, the HOOMAN-2-HOOMAN mark

@@ -2174,6 +2174,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   );
   // The pay box's "Recent": the last five different people or shops paid
   // from this side of the account, newest first, one tile each.
+  // True while the pay box's pad, name keyboard or a result is up; the
+  // profile-flip button steps aside then.
+  const [quickPaySearching, setQuickPaySearching] = useState14(false);
   const quickPayRecent = useMemo5(() => {
     const seen = new Set();
     const out = [];
@@ -2325,12 +2328,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onPayCreator={({ creator }) => onPayCreator && onPayCreator({ creator })}
     recent={quickPayRecent}
     favourites={Object.values(pinnedCreators || {}).filter((c) => c && c.handle)}
+    onActiveChange={setQuickPaySearching}
   />{
     /* Profile flip — switches the same account between its two
        sides: user/consumer and merchant/producer. Every flow stays
        identical; only which side the data is read as changes (and
-       share links already carry the active side via shareRole). */
-  }<button
+       share links already carry the active side via shareRole).
+       Hidden while the pay box is searching, so the box has the whole
+       row. */
+  }{!quickPaySearching && <button
     onClick={async () => {
       const next = shareRole === "user" ? "merchant" : "user";
       setShareRole(next);
@@ -2374,7 +2380,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       boxShadow: shareRole === "merchant" ? "0 6px 16px rgba(124,58,237,0.3)" : T.shadowCard,
       flexShrink: 0
     }}
-  ><RefreshCw3 size={17} color={shareRole === "merchant" ? "#fff" : T.accent} /></button></div>}<PullToRefresh
+  ><RefreshCw3 size={17} color={shareRole === "merchant" ? "#fff" : T.accent} /></button>}</div>}<PullToRefresh
     onRefresh={onRefreshAccount}
     // Only the Home tab. Pulling down inside History or Assets would refresh
     // an account view the person is not looking at, and those tabs have

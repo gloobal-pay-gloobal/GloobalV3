@@ -30,13 +30,19 @@ import { ArrowRight as ArrowRight4, Loader as Loader8, X as X22, ClipboardPaste 
 //   flag       which country a mobile number without a code is read in.
 //              Your own to start with; tap it for the list. The code
 //              itself is not printed — the flag says it.
-//   GLOOBAL ID the round symbol dial, the same one the ID is typed on at
-//              sign-in. Twelve symbols check themselves.
-//   Mobile     a plain number pad. Its bottom-left key (अA) still opens the
+//   toggle     one switch: GLOOBAL ID (the wordmark, its two Os in colour)
+//              on one side, a phone icon on the other. Tap it to swap
+//              between the round symbol dial and the phone's number pad.
+//              The number pad is a dialler: digits with their letters,
+//              hold 0 for +, and its bottom-left key (अA) still opens the
 //              letters keyboard for a creator name.
 //
 // Above the pad, while it is up: the last five people you paid and your
-// favourite shops (the ones pinned in Pay & Services), one tap each.
+// favourite shops (the ones pinned in Pay & Services), one tap each, with
+// their photo or their shop's logo.
+//
+// There is one way to look somebody up: Find and pay, under the pad. The
+// box above it no longer has an arrow of its own doing the same thing.
 var QUICK_PAY_ID_LENGTH = 12;
 var QUICK_PAY_MOBILE_ROWS = [
   ["1", "2", "3"],
@@ -44,6 +50,9 @@ var QUICK_PAY_MOBILE_ROWS = [
   ["7", "8", "9"],
   ["name", "0", "back"]
 ];
+// The letters a phone prints under each digit, so the pad reads as a
+// dialler at a glance. 0 carries the + it types when held.
+var QUICK_PAY_KEY_LETTERS = { "2": "ABC", "3": "DEF", "4": "GHI", "5": "JKL", "6": "MNO", "7": "PQRS", "8": "TUV", "9": "WXYZ", "0": "+" };
 
 // ── WHAT WAS TYPED ──────────────────────────────────────────────────────
 // { kind: "id" | "mobile" | "name", value, side? } or null. A pay link is
@@ -72,7 +81,7 @@ function quickPayMobile(value, dialCode) {
   return `${dialCode}${digits}`;
 }
 
-function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenCoverage, onPayPerson, onPayCreator, recent = [], favourites = [] }) {
+function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenCoverage, onPayPerson, onPayCreator, recent = [], favourites = [], onActiveChange }) {
   const [text, setText] = useState67("");
   // Which pad is up: the round GLOOBAL ID dial or the mobile number pad.
   const [padKind, setPadKind] = useState67("id");
@@ -93,10 +102,22 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
   const [picking, setPicking] = useState67(false);
   const [countrySearch, setCountrySearch] = useState67("");
   const seq = useRef39(0);
+  // Holding 0 types +; the click that ends the hold must not also type 0.
+  const plusHold = useRef39({ timer: null, fired: false });
   // Back from the country list goes back to the pad.
   useBackClose(picking, () => { setPicking(false); setCountrySearch(""); }, { unwind: true });
 
   const reset = () => { setError(""); setSuggest(null); };
+
+  // ── WHILE YOU SEARCH, THE BOX HAS THE WHOLE ROW ───────────────────────
+  // The dashboard hides the profile-flip button beside the box while the
+  // pad, the name keyboard, a message or the shop list is up, so the box
+  // runs edge to edge.
+  const active = padOpen || nameMode || Boolean(error) || Boolean(suggest) || busy;
+  useEffect64(() => {
+    if (onActiveChange) onActiveChange(active);
+  }, [active]);
+  useEffect64(() => () => { if (onActiveChange) onActiveChange(false); }, []);
 
   // ── PHONE BACK ────────────────────────────────────────────────────────
   // Back closes what the box opened — the pad, the letters keyboard, the
@@ -287,7 +308,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     /> : null
   }<div style={{
     display: "flex", alignItems: "center", gap: 6, background: T.surface, borderRadius: T.radiusMd,
-    padding: "5px 5px 5px 5px", boxShadow: T.shadowCard,
+    padding: "5px 8px 5px 5px", minHeight: 46, boxSizing: "border-box", boxShadow: T.shadowCard,
     border: `1.5px solid ${error ? T.negative : padOpen || nameMode ? T.accent : "transparent"}`, transition: "border-color 0.18s ease"
   }}><button
     onClick={onOpenCoverage}
@@ -347,16 +368,11 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     onClick={() => { setText(""); reset(); }}
     aria-label="Clear"
     style={{ width: 26, height: 26, border: "none", background: "none", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-  ><X22 size={14} color={T.inkFaint} /></button> : null}<button
-    onClick={() => lookUp()}
-    disabled={!text.trim() || busy}
-    aria-label="Check who this is"
-    style={{
-      width: 36, height: 36, borderRadius: "50%", border: "none", flexShrink: 0, cursor: text.trim() ? "pointer" : "default",
-      background: text.trim() ? T.gradButton : T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center",
-      boxShadow: text.trim() ? "0 4px 10px rgba(124,58,237,0.3)" : "none", transition: "background 0.18s ease"
-    }}
-  >{busy ? <Loader8 size={16} color="#fff" style={{ animation: "spin 0.9s linear infinite" }} /> : <ArrowRight4 size={17} color={text.trim() ? "#fff" : T.inkFaint} strokeWidth={2.5} />}</button></div>{
+  ><X22 size={14} color={T.inkFaint} /></button> : null}{busy ? <span
+    role="status"
+    aria-label="Looking them up"
+    style={{ width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+  ><Loader8 size={17} color={T.accent} style={{ animation: "spin 0.9s linear infinite" }} /></span> : null}</div>{
     error ? <div role="alert" style={{
       position: "absolute", left: 0, right: 0, top: "calc(100% + 8px)", zIndex: 20,
       fontSize: 12, fontWeight: 700, color: T.negative, lineHeight: 1.4, background: T.surface, borderRadius: 14,
@@ -447,7 +463,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     }}>{label}</span></button>;
     return <div data-quickpay-shortcuts="" style={{
       position: "absolute", left: 0, right: 0, top: "100%", zIndex: 10, padding: "4px 2px 0", animation: "quickPayIn 0.22s ease"
-    }}>{row("Recent", people, (p) => tile(p.key, String(p.name || "").split(/\s+/)[0] || p.name, <span style={{ position: "relative", display: "inline-block" }}>{p.photo ? <ProfileAvatar photo={p.photo} name={p.name} size={48} /> : quickPayInitials(p.name, p.key)}{p.flag ? <span style={{
+    }}>{row("Recent", people, (p) => tile(p.key, String(p.name || "").split(/\s+/)[0] || p.name, <span style={{ position: "relative", display: "inline-block" }}><QuickPayFace person={p} />{p.flag ? <span style={{
       position: "absolute", right: -2, bottom: -2, width: 20, height: 20, borderRadius: "50%", background: T.surface,
       display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.18)"
     }}><FlagEmoji flag={p.flag} size={14} shape="circle" border="none" /></span> : null}</span>, () => {
@@ -455,7 +471,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       if (!target) return;
       setText(target);
       lookUp(target);
-    }))}{row("Favourites", shops, (c) => tile(c.key, c.label || c.handle, <BusinessMark name={c.handle || c.label || ""} logo={c.logo} size={48} radius={16} />, () => {
+    }))}{row("Favourites", shops, (c) => tile(c.key, c.label || c.handle, <QuickPayShopFace symbolId={c.key} name={c.handle || c.label || ""} logo={c.logo} />, () => {
       if (!c.handle) return;
       setText(c.handle);
       lookUp(c.handle);
@@ -464,33 +480,81 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
 
   // ── THE PAD ───────────────────────────────────────────────────────────
   function quickPaySmartPad() {
-    const option = (on) => ({
-      flex: 1, height: 40, borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit",
-      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
-      fontSize: 13.5, fontWeight: 800,
-      background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink,
-      boxShadow: on ? "0 4px 12px rgba(124,58,237,0.28)" : "0 1px 3px rgba(20,18,43,0.12)",
-      transition: "background 0.15s ease, color 0.15s ease"
-    });
+    const mobile = padKind === "mobile";
+    const holdStart = () => {
+      const h = plusHold.current;
+      h.fired = false;
+      clearTimeout(h.timer);
+      h.timer = setTimeout(() => {
+        h.fired = true;
+        if (!text) press("+");
+        if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(12);
+      }, 450);
+    };
+    const holdEnd = () => clearTimeout(plusHold.current.timer);
     const key = (k) => {
-      const label = k === "back" ? <BackQuick size={20} /> : k === "name" ? <span style={{ fontSize: 15, fontWeight: 900 }}>अA</span> : k;
+      const plain = k === "name" || k === "back";
+      const letters = QUICK_PAY_KEY_LETTERS[k] || "";
+      const label = k === "back" ? <BackQuick size={22} /> : k === "name" ? <span style={{ fontSize: 15, fontWeight: 900 }}>अA</span> : <span style={{
+        display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1
+      }}><span style={{ fontSize: 26, fontWeight: 600, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}>{k}</span><span style={{
+        fontSize: 9.5, fontWeight: 700, letterSpacing: 1.6, color: T.inkFaint, marginTop: 3, minHeight: 10
+      }}>{letters}</span></span>;
       return <button
         key={k}
         type="button"
-        onPointerDown={(e) => e.preventDefault()}
-        onClick={() => press(k)}
-        aria-label={k === "back" ? "Delete" : k === "name" ? "Type a creator name" : k}
+        onPointerDown={(e) => { e.preventDefault(); if (k === "0") holdStart(); }}
+        onPointerUp={k === "0" ? holdEnd : undefined}
+        onPointerLeave={k === "0" ? holdEnd : undefined}
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={() => {
+          if (k === "0" && plusHold.current.fired) { plusHold.current.fired = false; return; }
+          if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(6);
+          press(k);
+        }}
+        aria-label={k === "back" ? "Delete" : k === "name" ? "Type a creator name" : k === "0" ? "0, hold for plus" : k}
         className="v2-tap"
         style={{
-          height: 54, borderRadius: 14, border: "none", cursor: "pointer", fontFamily: "inherit",
+          height: 58, borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit",
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 23, fontWeight: 700,
-          background: k === "name" || k === "back" ? "transparent" : T.surface,
+          background: plain ? "transparent" : T.surface,
           color: T.ink,
-          boxShadow: k === "name" || k === "back" ? "none" : "0 1px 2px rgba(20,18,43,0.10)"
+          boxShadow: plain ? "none" : "0 1px 2px rgba(20,18,43,0.08), 0 0 0 1px rgba(20,18,43,0.04)"
         }}
       >{label}</button>;
     };
+    // ── THE TOGGLE ───────────────────────────────────────────────────────
+    // One switch, two sides: the GLOOBAL ID wordmark, and a phone. A white
+    // thumb slides under whichever is on. Tapping anywhere on it swaps.
+    const toggle = <button
+      type="button"
+      role="switch"
+      aria-checked={mobile}
+      aria-label={mobile ? "Mobile number pad. Switch to GLOOBAL ID" : "GLOOBAL ID dial. Switch to mobile number"}
+      data-quickpay-toggle=""
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={() => switchPad(mobile ? "id" : "mobile")}
+      className="v2-tap"
+      style={{
+        position: "relative", flex: 1, minWidth: 0, height: 44, borderRadius: 999, border: "none", padding: 4,
+        cursor: "pointer", fontFamily: "inherit", background: T.surfaceSunk || T.surfaceAlt,
+        boxShadow: "inset 0 1px 3px rgba(20,18,43,0.10)",
+        display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)", alignItems: "center"
+      }}
+    ><span aria-hidden="true" style={{
+      position: "absolute", top: 4, bottom: 4, borderRadius: 999, background: T.surface,
+      boxShadow: "0 2px 8px rgba(20,18,43,0.16)",
+      left: mobile ? "calc(66.666% + 1px)" : 4,
+      width: mobile ? "calc(33.333% - 5px)" : "calc(66.666% - 5px)",
+      transition: "left 0.25s cubic-bezier(.3,.7,.2,1), width 0.25s cubic-bezier(.3,.7,.2,1)"
+    }} /><span style={{
+      position: "relative", display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: 14.5, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", letterSpacing: 0.2,
+      opacity: mobile ? 0.45 : 1, transition: "opacity 0.2s ease"
+    }}><GloobalWordmark suffix=" ID" /></span><span style={{
+      position: "relative", display: "flex", alignItems: "center", justifyContent: "center",
+      color: mobile ? T.accent : T.inkFaint, transition: "color 0.2s ease"
+    }}><MobileQuick size={19} strokeWidth={2.3} /></span></button>;
     return <div
       role="group"
       aria-label={padKind === "id" ? "GLOOBAL ID dial" : "Mobile number pad"}
@@ -512,25 +576,13 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       data-quickpay-country=""
       className="v2-tap"
       style={{
-        width: 40, height: 40, flexShrink: 0, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer",
+        width: 44, height: 44, flexShrink: 0, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer",
         background: T.surface, boxShadow: "0 1px 3px rgba(20,18,43,0.12)", display: "flex", alignItems: "center", justifyContent: "center"
       }}
-    >{dialCountry ? <FlagEmoji flag={dialCountry.flag} shape="circle" size={28} border="none" /> : <ChevronDown7 size={16} color={T.inkSoft} />}</button><button
-      type="button"
-      onPointerDown={(e) => e.preventDefault()}
-      onClick={() => switchPad("id")}
-      aria-pressed={padKind === "id"}
-      style={option(padKind === "id")}
-    >GLOOBAL ID</button><button
-      type="button"
-      onPointerDown={(e) => e.preventDefault()}
-      onClick={() => switchPad("mobile")}
-      aria-pressed={padKind === "mobile"}
-      style={option(padKind === "mobile")}
-    ><MobileQuick size={16} />Mobile</button></div>{padKind === "id" ? <div style={{
+    >{dialCountry ? <FlagEmoji flag={dialCountry.flag} shape="circle" size={30} border="none" /> : <ChevronDown7 size={16} color={T.inkSoft} />}</button>{toggle}</div>{padKind === "id" ? <div style={{
       display: "flex", justifyContent: "center", padding: "2px 12px 6px"
     }}><SymbolDialPad value={text} onChange={dialChange} length={QUICK_PAY_ID_LENGTH} showLogo={false} soundWhileTyping /></div> : <div style={{
-      display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, padding: "4px 12px 10px"
+      display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "10px 14px", padding: "6px 20px 12px"
     }}>{QUICK_PAY_MOBILE_ROWS.map((row) => row.map(key))}</div>}<div style={{
       padding: "0 12px 12px"
     }}><button
@@ -545,6 +597,43 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       }}
     >Find and pay<ArrowRight4 size={17} strokeWidth={2.5} /></button></div></div>;
   }
+}
+
+// ── FACES ON THE SHORTCUTS ──────────────────────────────────────────────
+// A person: their photo, read through the same per-session cache the
+// receipt and the scan card use; their initials until it arrives or if
+// they have none. Somebody paid as a shop: the shop's logo.
+function QuickPayFace({ person }) {
+  const isShop = Boolean(person && person.handle);
+  const { photo } = useCounterpartyPhoto(isShop ? "" : (person && person.gloobalId) || "");
+  if (isShop) return <QuickPayShopFace symbolId={person.gloobalId} name={person.handle} logo={person.logo} />;
+  if (photo) return <ProfileAvatar photo={photo} name={person.name} size={48} />;
+  return quickPayInitials(person && person.name, person && person.key);
+}
+
+// symbolId → logo | null | Promise. One read per shop per session.
+var QUICK_PAY_LOGOS = new Map();
+function quickPayLoadLogo(symbolId) {
+  if (!symbolId) return Promise.resolve(null);
+  if (QUICK_PAY_LOGOS.has(symbolId)) return Promise.resolve(QUICK_PAY_LOGOS.get(symbolId));
+  const pending = GloobalApi.getCreatorProfile(symbolId)
+    .then((c) => {
+      const logo = c && typeof c.logo === "string" && c.logo.startsWith("data:image/") ? c.logo : null;
+      QUICK_PAY_LOGOS.set(symbolId, logo);
+      return logo;
+    }, () => { QUICK_PAY_LOGOS.delete(symbolId); return null; });
+  QUICK_PAY_LOGOS.set(symbolId, pending);
+  return pending;
+}
+function QuickPayShopFace({ symbolId, name, logo }) {
+  const known = QUICK_PAY_LOGOS.get(symbolId);
+  const [fresh, setFresh] = useState67(known && typeof known.then !== "function" ? known : null);
+  useEffect64(() => {
+    let alive = true;
+    quickPayLoadLogo(symbolId).then((l) => { if (alive && l) setFresh(l); });
+    return () => { alive = false; };
+  }, [symbolId]);
+  return <BusinessMark name={name || ""} logo={fresh || logo || null} size={48} radius={16} />;
 }
 
 // A person with no photo: their initials on a tint picked from their ID, so

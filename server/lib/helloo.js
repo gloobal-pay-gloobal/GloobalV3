@@ -35,6 +35,15 @@
 //   POST /api/helloo/asks/:id              { action: allow | decline }
 //   GET  /api/helloo/earnings?month=       what people paid to reach you, by person
 //
+// Calls (voice and video, phone to phone over WebRTC):
+//   POST /api/helloo/calls                 { to, video } → ring them
+//   GET  /api/helloo/calls                 your call log, newest first
+//   GET  /api/helloo/calls/active          a call ringing for you right now
+//   POST /api/helloo/calls/:id/answer | decline | end
+// The handshake (offer, answer, network candidates) travels over the live
+// socket as { type: "signal", callId, data }. Unanswered calls are marked
+// missed after 45 s. When a call is over it is posted into the chat.
+//
 // Only people you allow reach you free (the founder's choice). Writing to
 // somebody first allows them, so a reply to you is never charged. A paid
 // message carries the reference of a real GLOOBAL transfer, made with the
@@ -57,7 +66,10 @@ const HellooPresence = require('../models/HellooPresence');
 const HellooReach = require('../models/HellooReach');
 const HellooAsk = require('../models/HellooAsk');
 
+const HellooCall = require('../models/HellooCall');
+
 const REACH_MAX = 7;
+const RING_MS = 45 * 1000;
 const REACH_PAYMENT_FRESH_MS = 60 * 60 * 1000;
 const ASKS_PER_DAY = 10;
 
@@ -79,6 +91,13 @@ const pairKeyOf = (a, b) => [String(a), String(b)].sort().join(':');
 
 function previewOf(message) {
   if (message.deletedAt) return 'This message was deleted';
+  if (message.kind === 'call') {
+    const what = message.call?.video ? 'Video call' : 'Voice call';
+    if (message.call?.status === 'missed') return `Missed ${what.toLowerCase()}`;
+    if (message.call?.status === 'declined' || message.call?.status === 'cancelled') return `${what} · not answered`;
+    const s = Math.max(0, Math.round(message.call?.seconds || 0));
+    return `${what} · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
   if (message.kind === 'photo') return message.text ? `Photo · ${String(message.text).replace(/\s+/g, ' ').trim().slice(0, 140)}` : 'Photo';
   if (message.kind === 'voice') return `Voice note · ${Math.max(1, Math.round(message.voice?.seconds || 0))}s`;
   if (message.kind === 'payment') return 'Payment on GLOOBAL';
@@ -174,6 +193,7 @@ function createHelloo(deps) {
     }
     if (m.paid?.referenceId) out.paid = { amount: m.paid.amount, currency: m.paid.currency };
     if (m.kind === 'text') out.text = m.text;
+    if (m.kind === 'call') out.call = { id: m.call?.id ? String(m.call.id) : '', video: Boolean(m.call?.video), status: m.call?.status || '', seconds: m.call?.seconds || 0 };
     if (m.kind === 'photo') {
       out.text = m.text || '';
       out.photo = { width: m.photo?.width || 0, height: m.photo?.height || 0, mime: m.photo?.mime || '' };
@@ -208,7 +228,8 @@ function createHelloo(deps) {
 
   async function unreadFor(conversation, meId) {
     const mine = stateOf(conversation, meId);
-    const filter = Object.assign(visibleFilter(conversation, meId), { from: { $ne: meId }, deletedAt: null });
+    // A call you were part of is not an unread message.
+    const filter = Object.assign(visibleFilter(conversation, meId), { from: { $ne: meId }, deletedAt: null, kind: { $ne: 'call' } });
     const after = [mine.at, mine.clearedAt].filter(Boolean).sort((a, b) => b - a)[0];
     if (after) filter.createdAt = { $gt: after };
     return HellooMessage.countDocuments(filter);
@@ -365,6 +386,92 @@ function createHelloo(deps) {
     const blocks = await blockState(userId, other);
     if (blocks.iBlocked || blocks.theyBlocked) return;
     emit(other, { type: 'typing', chatId: String(chatId), by: String(userId) });
+  }
+
+  // ── Call helpers ─────────────────────────────────────────────────────
+  function iceServers() {
+    const list = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+    const turn = String(process.env.HELLOO_TURN_URLS || '').split(',').map((u) => u.trim()).filter(Boolean);
+    if (turn.length) list.push({ urls: turn, username: process.env.HELLOO_TURN_USERNAME || '', credential: process.env.HELLOO_TURN_CREDENTIAL || '' });
+    return list;
+  }
+
+  function callOut(call, viewerId, people) {
+    const outgoing = sameId(call.callerId, viewerId);
+    const otherId = outgoing ? call.calleeId : call.callerId;
+    return {
+      id: String(call._id),
+      chatId: call.conversationId ? String(call.conversationId) : '',
+      direction: outgoing ? 'out' : 'in',
+      video: Boolean(call.video),
+      status: call.status,
+      at: call.createdAt,
+      answeredAt: call.answeredAt || null,
+      seconds: call.seconds || 0,
+      person: people.get(String(otherId)) || { accountId: String(otherId), name: '', gloobalId: '' },
+    };
+  }
+
+  // Close a call once: set its final status, post it into the chat, and
+  // tell both people. Safe to call twice — the second is a no-op.
+  async function finishCall(callId, status, byId) {
+    const now = new Date();
+    const before = await HellooCall.findOne({ _id: callId, status: { $in: ['ringing', 'answered'] } }).lean();
+    if (!before) {
+      const final = await HellooCall.findById(callId).lean();
+      return final ? { id: String(final._id), status: final.status, seconds: final.seconds } : null;
+    }
+    const seconds = before.answeredAt ? Math.max(0, Math.round((now - new Date(before.answeredAt)) / 1000)) : 0;
+    const done = await HellooCall.findOneAndUpdate(
+      { _id: callId, status: before.status },
+      { $set: { status, endedAt: now, seconds, endedBy: byId || null } },
+      { returnDocument: 'after', lean: true }
+    );
+    if (!done) return null;
+    const people = await cardsFor([done.callerId, done.calleeId]);
+    if (done.conversationId) {
+      try {
+        const message = (await HellooMessage.create({
+          conversationId: done.conversationId, from: done.callerId, kind: 'call', clientId: `call-${String(done._id)}`,
+          call: { id: done._id, video: done.video, status: done.status, seconds },
+        })).toObject();
+        await HellooConversation.updateOne({ _id: done.conversationId }, { $set: { lastMessageAt: message.createdAt, last: { from: done.callerId, kind: 'call', preview: previewOf(message) } } });
+        const out = messageOut(message);
+        emit(done.callerId, { type: 'message', message: out });
+        emit(done.calleeId, { type: 'message', message: out });
+      } catch (error) {
+        if (error?.code !== 11000) console.error('Helloo call message failed (non-fatal):', error.message);
+      }
+    }
+    emit(done.callerId, { type: 'call-update', call: callOut(done, done.callerId, people) });
+    emit(done.calleeId, { type: 'call-update', call: callOut(done, done.calleeId, people) });
+    if (status === 'missed' && pushService.isPushEnabled() && !sockets.has(String(done.calleeId))) {
+      const caller = people.get(String(done.callerId));
+      pushService.sendPushToUser(done.calleeId, {
+        v: 1, app: 'helloo', category: 'transactional', type: 'helloo_missed_call', callId: String(done._id),
+        title: caller ? caller.name : 'Helloo', body: done.video ? 'Missed video call' : 'Missed voice call',
+        url: '/?calls=1', tag: `helloo-call-${String(done._id)}`, timestamp: Date.now(),
+      }, { category: 'transactional', app: 'helloo' }).catch(() => {});
+    }
+    return callOut(done, byId || done.callerId, people);
+  }
+
+  // The handshake between two phones: passed to the other person's sockets
+  // only while the call is live, only by one of its two people.
+  const liveCalls = new Map(); // callId -> { a, b, at }
+  async function relaySignal(userId, callId, data) {
+    if (!oid(callId) || !data || typeof data !== 'object') return;
+    let entry = liveCalls.get(callId);
+    if (!entry || Date.now() - entry.at > 60 * 1000) {
+      const call = await HellooCall.findById(callId).select('callerId calleeId status').lean();
+      if (!call || !['ringing', 'answered'].includes(call.status)) { liveCalls.delete(callId); return; }
+      entry = { a: String(call.callerId), b: String(call.calleeId), at: Date.now() };
+      liveCalls.set(callId, entry);
+      if (liveCalls.size > 2000) liveCalls.delete(liveCalls.keys().next().value);
+    }
+    const me = String(userId);
+    if (me !== entry.a && me !== entry.b) return;
+    emit(me === entry.a ? entry.b : entry.a, { type: 'signal', callId: String(callId), data });
   }
 
   async function notifyNewMessage(conversation, message, sender) {
@@ -1086,6 +1193,114 @@ function createHelloo(deps) {
       }
     });
 
+    // ── Calls ─────────────────────────────────────────────────────────
+    app.post('/api/helloo/calls', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        let other = oid(req.body?.to) ? await User.findById(req.body.to).select(CARD_FIELDS).lean() : null;
+        if (!other && req.body?.to) other = (await resolveUser(String(req.body.to)))?.user || null;
+        if (!other) return res.status(404).json({ success: false, code: 'person_not_found', message: 'Nobody on GLOOBAL has that ID.' });
+        if (sameId(other._id, me)) return res.status(400).json({ success: false, code: 'person_is_you', message: 'That is your own GLOOBAL ID.' });
+        const blocks = await blockState(me, other._id);
+        if (blocks.iBlocked) return res.status(403).json({ success: false, code: 'you_blocked', message: 'You blocked this person. Unblock them to call.' });
+        if (blocks.theyBlocked) return res.status(403).json({ success: false, code: 'blocked_by_them', message: 'This person is not taking calls from you.' });
+        const rule = await reachRule(other._id, me);
+        if (!rule.free) {
+          return res.status(403).json({ success: false, code: 'call_needs_allow', rule, message: 'They take calls only from people they have allowed. Message them first, or ask.' });
+        }
+        // One live call per person: a second ring to someone already on a
+        // call is "busy", which reads as a missed call for them.
+        const busy = await HellooCall.exists({
+          status: { $in: ['ringing', 'answered'] },
+          $or: [{ callerId: other._id }, { calleeId: other._id }],
+          createdAt: { $gt: new Date(Date.now() - 4 * 3600e3) },
+        });
+        const conversation = await openChat(me, other._id);
+        const call = await HellooCall.create({ callerId: me, calleeId: other._id, conversationId: conversation._id, video: Boolean(req.body?.video) });
+        const people = await cardsFor([me, other._id]);
+        const out = callOut(call.toObject(), me, people);
+        if (busy) {
+          await finishCall(call._id, 'missed', null);
+          return res.status(409).json({ success: false, code: 'busy', message: `${other.fullName || 'They'} is on another call.` });
+        }
+        const forCallee = callOut(call.toObject(), other._id, people);
+        emit(other._id, { type: 'call-incoming', call: forCallee });
+        if (pushService.isPushEnabled()) {
+          pushService.sendPushToUser(other._id, {
+            v: 1, app: 'helloo', category: 'transactional', type: 'helloo_call', callId: String(call._id),
+            title: req.authUser.fullName || 'Helloo',
+            body: call.video ? 'Incoming video call' : 'Incoming voice call',
+            url: `/?call=${String(call._id)}`, tag: `helloo-call-${String(call._id)}`, timestamp: Date.now(), requireInteraction: true,
+          }, { category: 'transactional', app: 'helloo' }).catch(() => {});
+        }
+        const timer = setTimeout(() => { finishCall(call._id, 'missed', null).catch(() => {}); }, RING_MS);
+        timer.unref?.();
+        return res.status(201).json({ success: true, call: out, iceServers: iceServers() });
+      } catch (error) {
+        console.error('Helloo call error:', error);
+        return res.status(500).json({ success: false, message: 'Could not start that call right now.' });
+      }
+    });
+
+    app.get('/api/helloo/calls', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const rows = await HellooCall.find({ $or: [{ callerId: me }, { calleeId: me }] }).sort({ createdAt: -1 }).limit(100).lean();
+        const people = await cardsFor(rows.flatMap((r) => [r.callerId, r.calleeId]));
+        return res.json({ success: true, calls: rows.map((r) => callOut(r, me, people)) });
+      } catch (error) {
+        console.error('Helloo call log error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load your calls right now.' });
+      }
+    });
+
+    app.get('/api/helloo/calls/active', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const row = await HellooCall.findOne({ calleeId: me, status: 'ringing', createdAt: { $gt: new Date(Date.now() - RING_MS) } }).sort({ createdAt: -1 }).lean();
+        if (!row) return res.json({ success: true, call: null });
+        const people = await cardsFor([row.callerId, row.calleeId]);
+        return res.json({ success: true, call: callOut(row, me, people), iceServers: iceServers() });
+      } catch (error) {
+        console.error('Helloo active call error:', error);
+        return res.status(500).json({ success: false, message: 'Could not check that right now.' });
+      }
+    });
+
+    app.post('/api/helloo/calls/:id/:action', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const id = oid(req.params.id);
+        const action = String(req.params.action);
+        const call = id ? await HellooCall.findById(id).lean() : null;
+        if (!call || !(sameId(call.callerId, me) || sameId(call.calleeId, me))) return res.status(404).json({ success: false, message: 'That call is not here.' });
+        const isCallee = sameId(call.calleeId, me);
+        if (action === 'answer') {
+          if (!isCallee) return res.status(400).json({ success: false, message: 'Only the person called can answer.' });
+          const done = await HellooCall.findOneAndUpdate({ _id: id, status: 'ringing' }, { $set: { status: 'answered', answeredAt: new Date() } }, { returnDocument: 'after', lean: true });
+          if (!done) return res.status(409).json({ success: false, code: 'call_over', message: 'That call has ended.' });
+          const people = await cardsFor([call.callerId, call.calleeId]);
+          emit(call.callerId, { type: 'call-update', call: callOut(done, call.callerId, people) });
+          emit(call.calleeId, { type: 'call-update', call: callOut(done, call.calleeId, people) });
+          return res.json({ success: true, call: callOut(done, me, people), iceServers: iceServers() });
+        }
+        if (action === 'decline') {
+          if (!isCallee) return res.status(400).json({ success: false, message: 'Only the person called can decline.' });
+          const done = await finishCall(id, 'declined', me);
+          return res.json({ success: true, call: done });
+        }
+        if (action === 'end') {
+          const status = call.status === 'answered' ? 'ended' : call.status === 'ringing' ? (isCallee ? 'declined' : 'cancelled') : call.status;
+          const done = await finishCall(id, status, me);
+          return res.json({ success: true, call: done });
+        }
+        return res.status(400).json({ success: false, message: 'Unknown call action.' });
+      } catch (error) {
+        console.error('Helloo call action error:', error);
+        return res.status(500).json({ success: false, message: 'Could not do that right now.' });
+      }
+    });
+
     app.get('/api/helloo/blocked', hellooRead, requireAuth, async (req, res) => {
       try {
         const rows = await HellooBlock.find({ userId: req.authUser._id }).sort({ createdAt: -1 }).limit(500).lean();
@@ -1107,7 +1322,7 @@ function createHelloo(deps) {
   // A socket that has not authenticated within 10 s is closed.
   function attachLive(httpServer) {
     const { WebSocketServer } = require('ws');
-    const wss = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 });
+    const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
     httpServer.on('upgrade', (req, socket, head) => {
       const path = String(req.url || '').split('?')[0];
@@ -1134,6 +1349,10 @@ function createHelloo(deps) {
           if (now - (ws.lastTyping || 0) < 1000) return;
           ws.lastTyping = now;
           relayTyping(userId, String(frame.chatId || '')).catch(() => {});
+          return;
+        }
+        if (frame?.type === 'signal' && userId) {
+          relaySignal(userId, String(frame.callId || ''), frame.data).catch(() => {});
           return;
         }
         if (frame?.type !== 'auth' || userId) return;

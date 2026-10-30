@@ -19,7 +19,7 @@ const hellooMessageSchema = new mongoose.Schema(
   {
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooConversation', required: true },
     from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo'], required: true },
+    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'call'], required: true },
     clientId: { type: String, required: true, maxlength: 80 },
     text: { type: String, default: '', maxlength: 4000 },
     voice: {
@@ -55,6 +55,13 @@ const hellooMessageSchema = new mongoose.Schema(
       referenceId: { type: String, default: '' },
       amount: { type: Number, default: 0 },
       currency: { type: String, default: '' },
+    },
+    // A call between the two, shown in the chat when it is over.
+    call: {
+      id: { type: mongoose.Schema.Types.ObjectId, default: null },
+      video: { type: Boolean, default: false },
+      status: { type: String, default: '' },
+      seconds: { type: Number, default: 0 },
     },
     payment: {
       referenceId: { type: String, default: '' },

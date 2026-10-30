@@ -54,6 +54,7 @@ const HellooBlock = require(join(BACKEND, "models/HellooBlock"));
 const HellooPresence = require(join(BACKEND, "models/HellooPresence"));
 const HellooReach = require(join(BACKEND, "models/HellooReach"));
 const HellooAsk = require(join(BACKEND, "models/HellooAsk"));
+const HellooCall = require(join(BACKEND, "models/HellooCall"));
 
 const BASE = `http://127.0.0.1:${process.env.PORT}`;
 const SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
@@ -103,7 +104,7 @@ async function registerAccount(account) {
 
 async function setUp() {
   await mongoose.connection.db.dropDatabase();
-  await Promise.all([User.init(), PushSubscription.init(), HellooConversation.init(), HellooMessage.init(), HellooVoice.init(), HellooBlock.init(), HellooPresence.init(), HellooReach.init(), HellooAsk.init()]);
+  await Promise.all([User.init(), PushSubscription.init(), HellooConversation.init(), HellooMessage.init(), HellooVoice.init(), HellooBlock.init(), HellooPresence.init(), HellooReach.init(), HellooAsk.init(), HellooCall.init()]);
   // A fresh database builds creatorProfile.handle's sparse unique index over
   // the `null` every new account stores, so the second registration would
   // collide with the first. That is a property of a brand-new database, not
@@ -482,6 +483,58 @@ async function run() {
   const declined = await call("POST", `/api/helloo/asks/${inbox2.body.asks[0].id}`, { token: tokens.B, body: { action: "decline" } });
   const turned = await call("GET", "/api/helloo/reach", { token: tokens.B });
   check("B declines C's request; turned away counts it", declineAsk.status === 201 && declined.body?.status === "declined" && turned.body?.month?.turnedAway === 1, j(turned.body?.month));
+
+  console.log("\n19. calls: ring, answer, signal, end; missed; declined; log");
+  // A and C allow each other (A wrote to C long ago; make sure)
+  await call("POST", "/api/helloo/reach/allow", { token: tokens.C, body: { accountId: userIds.A, allowed: true } });
+  await call("POST", "/api/helloo/reach/allow", { token: tokens.A, body: { accountId: userIds.C, allowed: true } });
+  const sA = await openSocket("A");
+  const sC = await openSocket("C");
+  const ring = await call("POST", "/api/helloo/calls", { token: tokens.A, body: { to: userIds.C, video: false } });
+  check("A rings C: 201, ringing, with ICE servers", ring.status === 201 && ring.body.call?.status === "ringing" && ring.body.call.direction === "out" && Array.isArray(ring.body.iceServers), j(ring.body));
+  const callId = ring.body?.call?.id;
+  await sleep(300);
+  check("C's socket gets call-incoming from A", sC.events.some((e) => e.type === "call-incoming" && e.call.id === callId && e.call.person.accountId === userIds.A && e.call.direction === "in"), j(sC.events.map((e) => e.type)));
+  const active = await call("GET", "/api/helloo/calls/active", { token: tokens.C });
+  check("GET calls/active shows it to C", active.body?.call?.id === callId);
+  const notB = await call("POST", `/api/helloo/calls/${callId}/answer`, { token: tokens.B });
+  check("B cannot answer A→C (404)", notB.status === 404);
+  const callerAnswer = await call("POST", `/api/helloo/calls/${callId}/answer`, { token: tokens.A });
+  check("the caller cannot answer their own call (400)", callerAnswer.status === 400);
+  const answered = await call("POST", `/api/helloo/calls/${callId}/answer`, { token: tokens.C });
+  check("C answers", answered.status === 200 && answered.body.call.status === "answered", j(answered.body));
+  await sleep(200);
+  check("A hears call-update answered", sA.events.some((e) => e.type === "call-update" && e.call.id === callId && e.call.status === "answered"));
+  sC.events.length = 0;
+  sA.ws.send(JSON.stringify({ type: "signal", callId, data: { sdp: "offer-from-A" } }));
+  await sleep(300);
+  check("A's signal reaches C", sC.events.some((e) => e.type === "signal" && e.callId === callId && e.data.sdp === "offer-from-A"), j(sC.events));
+  const sB = await openSocket("B");
+  sA.events.length = 0;
+  sB.ws.send(JSON.stringify({ type: "signal", callId, data: { sdp: "sneaky" } }));
+  await sleep(300);
+  check("B's signal into A–C's call goes nowhere", !sA.events.some((e) => e.type === "signal") && !sC.events.some((e) => e.data?.sdp === "sneaky"));
+  await sleep(1100);
+  const ended = await call("POST", `/api/helloo/calls/${callId}/end`, { token: tokens.A });
+  check("A ends: status ended, seconds counted", ended.status === 200 && ended.body.call.status === "ended" && ended.body.call.seconds >= 1, j(ended.body));
+  await sleep(300);
+  check("C hears call-update ended", sC.events.some((e) => e.type === "call-update" && e.call.status === "ended"));
+  check("the call appears in the chat as a message", sC.events.some((e) => e.type === "message" && e.message.kind === "call" && e.message.call.status === "ended"));
+  const endTwice = await call("POST", `/api/helloo/calls/${callId}/end`, { token: tokens.C });
+  check("ending it again changes nothing", endTwice.status === 200 && endTwice.body.call.status === "ended");
+  const ring2 = await call("POST", "/api/helloo/calls", { token: tokens.A, body: { to: userIds.C, video: true } });
+  const declinedCall = await call("POST", `/api/helloo/calls/${ring2.body.call.id}/decline`, { token: tokens.C });
+  check("C declines a video call", declinedCall.body?.call?.status === "declined", j(declinedCall.body));
+  const ring3 = await call("POST", "/api/helloo/calls", { token: tokens.A, body: { to: userIds.C } });
+  const cancelled = await call("POST", `/api/helloo/calls/${ring3.body.call.id}/end`, { token: tokens.A });
+  check("A hanging up while ringing is cancelled", cancelled.body?.call?.status === "cancelled");
+  const log = await call("GET", "/api/helloo/calls", { token: tokens.C });
+  check("C's log: 3 calls, newest first, all from A (in)", log.body?.calls?.length === 3 && log.body.calls.every((c) => c.direction === "in" && c.person.accountId === userIds.A) && log.body.calls[0].status === "cancelled", j(log.body?.calls?.map((c) => c.status)));
+  await call("POST", "/api/helloo/reach/allow", { token: tokens.B, body: { accountId: userIds.A, allowed: false } });
+  await call("PUT", "/api/helloo/reach", { token: tokens.B, body: { people: { price: 2, closed: false } } });
+  const needsAllow = await call("POST", "/api/helloo/calls", { token: tokens.A, body: { to: userIds.B } });
+  check("A cannot call B, who charges and has not allowed A (403 call_needs_allow)", needsAllow.status === 403 && needsAllow.body?.code === "call_needs_allow", j(needsAllow.body));
+  sA.ws.close(); sC.ws.close(); sB.ws.close();
 
 }
 

@@ -293,18 +293,6 @@ function scannerControlStyle(lit) {
 
 // The zoom label.
 //
-// Shown as a multiple of the lens's own minimum, not as its raw value: a
-// device reporting 100..800 means 1x..8x, and "100" on a button means
-// nothing to anybody. One decimal only when it needs one, so the common
-// case reads 1x / 2x / 4x rather than 1.0x.
-function formatZoom(level, range) {
-  if (!range) return "";
-  const base = range.min > 0 ? range.min : 1;
-  const times = (level == null ? range.min : level) / base;
-  const rounded = Math.round(times * 10) / 10;
-  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}x`;
-}
-
 // Where the lens actually is, clamped to what it said it could do.
 //
 // getSettings() is the authority; `fallback` is only used when the device
@@ -323,309 +311,25 @@ function currentZoomOf(track, range, fallback) {
   return Math.min(range.max, Math.max(range.min, value));
 }
 
-// ── THE ZOOM ARC ────────────────────────────────────────────────────────
+// ── ZOOM IS A PINCH ─────────────────────────────────────────────────────
 //
-// This was three stops — minimum, middle, maximum — cycled by tapping a
-// round button, and the reasoning written here was that a slider needs a
-// drag and a drag on a live viewfinder moves the phone. That argument was
-// sound and the result was still wrong, because "middle" is an arithmetic
-// midpoint of whatever the lens reports. On the founder's phone that is a
-// 1×–5.5×–10× button: three taps, and nothing between 1 and 5.5, which
-// is where every QR code on a counter or a poster actually lives.
+// There was a rail here: a scale down the square's right-hand edge with
+// 1× 2× 3× 5× 10× marks and the reading beside it. The founder: "instead
+// of zoom scale and number, zoom with fingers like we do photos". So the
+// rail, its marks and its number are gone, and two fingers on the camera
+// zoom it, the way a photo zooms. On a laptop a trackpad pinch (which the
+// browser reports as ctrl + wheel) does the same.
 //
-// So it is an arc, which is what he asked for. A bowed track above the
-// control row, where a thumb already sweeps, with the whole of the lens's
-// range along it and marks at the round numbers. Drag for anything, tap a
-// mark for exactly 1× or 2×.
-//
-// LOGARITHMIC, not linear. A linear 1–10 track spends half its length
-// between 5.5× and 10×, which is the half nobody scans in; doubling is
-// what the eye reads as "one step more", so equal distances along the arc
-// double the magnification. 1× and 10× sit at the ends either way, and
-// the useful middle gets the room.
-//
-// ── AND THEN IT STOPPED BEING AN ARC ───────────────────────────────────
-//
-// The arc was a bowed track floating in the band between the framing
-// square and the control row. Everything above about the SCALE survived
-// this change — logarithmic, marks at the round numbers, snapping in
-// pixels. What did not survive is where it sat.
-//
-// The founder's reference puts the zoom on the frame's own right-hand
-// line: the rail IS that edge of the square, the round numbers read down
-// the inside of the picture, and the current reading sits just outside
-// it. That is better than an arc for a reason worth writing down — the
-// arc was a second object in a band of its own, competing with the
-// instruction line and the control row for the only empty strip on the
-// screen, while the rail is drawn ON something already there and costs
-// no vertical room at all.
-//
-// It also means the zoom cannot collide with anything, which is the
-// fault that produced the arc's last two commits.
-//
-// 1× is at the BOTTOM and the maximum at the top, because a rail is read
-// as a level and a level fills upwards.
-var ZOOM_ARC_SNAP_PX = 10;
-
-// The rail's own geometry, in the square's percentage space rather than
-// pixels: the framing square is min(72vw, 300px), so it is a different
-// size on every phone and the rail has to be the same fraction of it.
-var ZOOM_RAIL_INSET = 0.055;
-
-// The round numbers worth landing on exactly. Expressed as multiples of the
-// lens's own minimum rather than as absolute values, because a device may
-// report its range as 100..800 — "2" here means twice as close, on any lens.
-var ZOOM_ARC_MARKS = [1, 2, 3, 5, 10];
+// What the rail learned is kept: applyZoom still asks the lens first and
+// crops in software where the lens refuses, so a pinch always visibly
+// does something.
 
 // The range offered when the lens reports none of its own.
 //
 // Six, not ten. Past about six the crop is a handful of sensor pixels
 // blown up, and a code that will not read at 6x will not read at 10x
-// either — the rail would be offering something that cannot work.
+// either.
 var ZOOM_SOFT_RANGE = { min: 1, max: 6 };
-
-function zoomArcRatio(range) {
-  return range && range.min > 0 && range.max > range.min ? range.max / range.min : 0;
-}
-
-// Where a zoom level sits along the track, 0 at the bottom (1×) and 1 at
-// the top. Clamped, so a lens reporting a level outside its own stated
-// range cannot push the handle off the rail.
-function zoomArcPosition(value, range) {
-  const ratio = zoomArcRatio(range);
-  if (!ratio) return 0;
-  const level = Math.min(range.max, Math.max(range.min, value == null ? range.min : value));
-  return Math.log(level / range.min) / Math.log(ratio);
-}
-
-// And back the other way.
-function zoomArcLevel(t, range) {
-  const ratio = zoomArcRatio(range);
-  if (!ratio) return range ? range.min : 0;
-  return range.min * Math.pow(ratio, Math.min(1, Math.max(0, t)));
-}
-
-// The marks this lens can actually reach, with where each one sits.
-function zoomArcMarks(range) {
-  const ratio = zoomArcRatio(range);
-  if (!ratio) return [];
-  return ZOOM_ARC_MARKS
-    .filter((times) => times <= ratio + 1e-6)
-    .map((times) => ({ times, t: Math.log(times) / Math.log(ratio) }));
-}
-
-// ── THE RAIL ───────────────────────────────────────────────────────────
-//
-// It renders INSIDE the framing square (QrFrameGuide passes it through as
-// `rail`), positioned against the square's right-hand edge, so it is the
-// same fraction of the picture on every phone with no media query and no
-// measurement.
-//
-// Three columns, right to left: the round-number labels inside the
-// picture, the rail line itself ON the square's edge, the ticks stepping
-// outward, and the live reading in a pill clear of the frame. The host
-// box straddles the edge so there is a thumb's width of target on both
-// sides of the line — a 1.5px line is not something anybody can grab.
-function ZoomRail({ range, level, onPick }) {
-  const hostRef = useRef17(null);
-  const draggingRef = useRef17(false);
-  const marks = zoomArcMarks(range);
-  const at = zoomArcPosition(level, range);
-
-  // A thumb's y, turned into a zoom level, snapping to a mark it lands
-  // near. Snapping is in PIXELS rather than in zoom units: ten pixels is
-  // ten pixels wherever it falls, where a tolerance in zoom units would
-  // be generous at the wide end and unreachable at the long one.
-  //
-  // The rail is read bottom-up, so t is 1 − the fraction down the box.
-  const pickAt = (clientY) => {
-    const host = hostRef.current;
-    if (!host || !range) return;
-    const box = host.getBoundingClientRect();
-    const span = box.height;
-    if (!(span > 0)) return;
-    let t = Math.min(1, Math.max(0, 1 - (clientY - box.top) / span));
-    for (const mark of marks) {
-      if (Math.abs(mark.t - t) * span <= ZOOM_ARC_SNAP_PX) {
-        t = mark.t;
-        break;
-      }
-    }
-    onPick(zoomArcLevel(t, range));
-  };
-
-  const nudge = (direction) => {
-    // One mark at a time on a keyboard, which is the only input here that
-    // cannot aim: landing between two round numbers by arrow key is not
-    // something anybody wants.
-    if (!marks.length) return;
-    const order = direction > 0 ? marks : marks.slice().reverse();
-    const next = order.find((mark) => (direction > 0 ? mark.t > at + 1e-6 : mark.t < at - 1e-6));
-    if (next) onPick(zoomArcLevel(next.t, range));
-  };
-
-  if (!range || !zoomArcRatio(range)) return null;
-
-  // Fraction-of-the-square down from the top, for a given t.
-  const topOf = (t) => `${(ZOOM_RAIL_INSET + (1 - t) * (1 - ZOOM_RAIL_INSET * 2)) * 100}%`;
-
-  // Everything on the rail carries a dark halo. White on a camera picture
-  // is legible against a dark room and invisible against a hedge; this is
-  // the same trick the title on this screen already uses, and it is the
-  // one lesson the arc's own history is worth keeping. There is no type
-  // left on the rail to hang a text-shadow on, so the ticks carry it as a
-  // box-shadow and the reading carries its own filled ground.
-
-  // ── THE SCALE, REBUILT AS A CONTROL ────────────────────────────────
-  //
-  // It was ticks on the square's right edge, a hairline, and a reading.
-  // Legible as a scale, not legible as a thing to GRAB — nothing on it
-  // looked like a handle, the hit band was invisible, and the founder's
-  // fifth report said "that 1x zoom icon doesn't move".
-  //
-  // That fifth report could not be reproduced: a real touch drag in
-  // Chromium moves it, a real mouse drag moves it, every point down the
-  // rail hit-tests to the rail. So the control is rebuilt on two
-  // principles that do not depend on finding the cause:
-  //
-  //   1. It LOOKS like a slider — a track, a round thumb, the numbers —
-  //      so a thumb knows where to land and what to do.
-  //   2. It has inputs that cannot be swallowed: + and − buttons at the
-  //      ends, and every mark is a tap target. A device where the drag
-  //      is eaten by something I cannot see still zooms by tapping.
-  //
-  // Both pointer AND touch handlers, for the same reason. If pointer
-  // events are being cancelled by a gesture recogniser on some phone, the
-  // touch events still arrive; the draggingRef gate stops a device that
-  // sends both from picking twice.
-  const thumbPct = topOf(at);
-  const press = (clientY) => {
-    draggingRef.current = true;
-    pickAt(clientY);
-  };
-  const move = (clientY) => { if (draggingRef.current) pickAt(clientY); };
-  const release = () => { draggingRef.current = false; };
-
-  const endButton = (direction, label, glyph) => <button
-    type="button"
-    aria-label={label}
-    onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
-    onClick={(e) => { e.stopPropagation(); nudge(direction); }}
-    style={{
-      width: 34, height: 34, borderRadius: "50%", border: "1px solid rgba(167,139,250,0.8)",
-      background: "rgba(44,16,92,0.78)", color: "#F3E8FF", fontSize: 18, fontWeight: 800,
-      lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-      boxShadow: "0 0 14px rgba(124,58,237,0.55)", touchAction: "manipulation", pointerEvents: "auto",
-      fontFamily: "inherit", padding: 0
-    }}
-  >{glyph}</button>;
-
-  return <div
-    style={{
-      position: "absolute",
-      // Centred on the square's right edge — the scale IS that edge now,
-      // which is why the ring behind it has a gap exactly here.
-      right: -36,
-      top: -22,
-      bottom: -22,
-      width: 72,
-      display: "flex", flexDirection: "column", alignItems: "center",
-      pointerEvents: "auto"
-    }}
-  >{endButton(1, "Zoom in one step", "+")}<div
-    ref={hostRef}
-    role="slider"
-    tabIndex={0}
-    aria-label="Zoom"
-    aria-orientation="vertical"
-    aria-valuemin={1}
-    aria-valuemax={Math.round(zoomArcRatio(range) * 10) / 10}
-    aria-valuenow={Math.round((level == null ? range.min : level) / range.min * 10) / 10}
-    aria-valuetext={formatZoom(level, range)}
-    onPointerDown={(e) => {
-      if (e.pointerType === "touch") return; // the touch handlers own it
-      e.preventDefault();
-      if (e.currentTarget.setPointerCapture) {
-        try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* a lost pointer is not a reason to lose the drag */ }
-      }
-      press(e.clientY);
-    }}
-    onPointerMove={(e) => { if (e.pointerType !== "touch") move(e.clientY); }}
-    onPointerUp={(e) => {
-      if (e.pointerType === "touch") return;
-      release();
-      if (e.currentTarget.releasePointerCapture) {
-        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
-      }
-    }}
-    onPointerCancel={(e) => { if (e.pointerType !== "touch") release(); }}
-    onTouchStart={(e) => { const t = e.touches[0]; if (t) press(t.clientY); }}
-    onTouchMove={(e) => { const t = e.touches[0]; if (t) { e.preventDefault(); move(t.clientY); } }}
-    onTouchEnd={release}
-    onTouchCancel={release}
-    onKeyDown={(e) => {
-      if (e.key === "ArrowRight" || e.key === "ArrowUp") { e.preventDefault(); nudge(1); }
-      if (e.key === "ArrowLeft" || e.key === "ArrowDown") { e.preventDefault(); nudge(-1); }
-    }}
-    style={{
-      position: "relative",
-      flex: 1, width: "100%", margin: "6px 0",
-      // touchAction none so a vertical drag zooms instead of scrolling
-      // the page underneath, and the browser's own panning gesture does
-      // not eat the drag.
-      touchAction: "none",
-      cursor: "pointer",
-      outline: "none"
-    }}
-  >{
-    /* The track: a real one, 6px, the full working height. */
-  }<span aria-hidden="true" style={{
-    position: "absolute", left: "50%", marginLeft: -3, width: 6,
-    top: `${ZOOM_RAIL_INSET * 100}%`, bottom: `${ZOOM_RAIL_INSET * 100}%`,
-    borderRadius: 3, background: "rgba(255,255,255,0.28)",
-    boxShadow: "0 0 0 1px rgba(0,0,0,0.25), 0 0 10px rgba(124,58,237,0.45)"
-  }} />{
-    /* The filled part, bottom up to the thumb: how far up the range you
-       are without reading the number. */
-  }<span aria-hidden="true" style={{
-    position: "absolute", left: "50%", marginLeft: -3, width: 6,
-    top: thumbPct, bottom: `${ZOOM_RAIL_INSET * 100}%`,
-    borderRadius: 3, background: "linear-gradient(180deg, #E9D5FF, #7C3AED)",
-    boxShadow: "0 0 12px rgba(124,58,237,0.9)"
-  }} />{
-    /* Every mark is a TAP TARGET, not just a tick: a 28px button with the
-       number on it, which is the path that works when a drag does not. */
-  }{marks.map((mark) => <button
-    key={`mark-${mark.times}`}
-    type="button"
-    aria-label={`Zoom to ${mark.times}x`}
-    onPointerDown={(e) => { e.stopPropagation(); }}
-    onTouchStart={(e) => { e.stopPropagation(); }}
-    onClick={(e) => { e.stopPropagation(); onPick(zoomArcLevel(mark.t, range)); }}
-    style={{
-      position: "absolute", left: "50%", top: topOf(mark.t),
-      transform: "translate(-50%, -50%)",
-      width: 28, height: 22, border: "none", borderRadius: 11, padding: 0,
-      background: Math.abs(mark.t - at) <= 0.02 ? "#F3E8FF" : "rgba(44,16,92,0.72)",
-      color: Math.abs(mark.t - at) <= 0.02 ? "#4C1D95" : "rgba(243,232,255,0.92)",
-      fontSize: 10.5, fontWeight: 800, fontFamily: "inherit", lineHeight: 1,
-      boxShadow: "0 1px 4px rgba(0,0,0,0.6)", cursor: "pointer", touchAction: "manipulation"
-    }}
-  >{mark.times}x</button>)}{
-    /* The thumb. Round, 30px, with the live reading inside it, so there is
-       one object that is obviously the thing to drag and it says where
-       it is. Drawn last so it sits on top of whichever mark it covers. */
-  }<span aria-hidden="true" style={{
-    position: "absolute", left: "50%", top: thumbPct,
-    transform: "translate(-50%, -50%)",
-    width: 34, height: 34, borderRadius: "50%",
-    background: "#FFFFFF", color: "#4C1D95",
-    border: "2px solid #A78BFA",
-    boxShadow: "0 2px 10px rgba(0,0,0,0.45), 0 0 18px rgba(124,58,237,0.75)",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: 11, fontWeight: 900, letterSpacing: -0.2, whiteSpace: "nowrap"
-  }}>{formatZoom(level, range)}</span></div>{endButton(-1, "Zoom out one step", "−")}</div>;
-}
 
 // ── THE FRAMING SQUARE, WITH OR WITHOUT A CAMERA BEHIND IT ─────────────
 //
@@ -1358,6 +1062,79 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
     }, 320);
   }, [zoomRange]);
 
+  // ── PINCH TO ZOOM ─────────────────────────────────────────────────────
+  //
+  // Listened for on the document, not the video: the scan screen draws its
+  // own column of words and buttons over the whole camera, so the video
+  // never sees a finger. Two fingers anywhere on the screen while the
+  // camera runs are a pinch; one finger is left alone, so every button
+  // still taps. The ratio of the fingers' spread to where it started,
+  // times the zoom at the start, is the new zoom — the same feel as
+  // pinching a photo. Applied at most every 50 ms, with the last one
+  // always landing, so a fast pinch does not queue a constraint per frame.
+  const zoomLevelRef = useRef17(null);
+  zoomLevelRef.current = zoomLevel;
+  const zoomRangeRef = useRef17(null);
+  zoomRangeRef.current = zoomRange;
+  const applyZoomRef = useRef17(applyZoom);
+  applyZoomRef.current = applyZoom;
+  useEffect22(() => {
+    if (!fullScreen || state !== "running" || typeof document === "undefined") return undefined;
+    let pinch = null;
+    let timer = null;
+    const spread = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) || 1;
+    const startLevel = () => {
+      const range = zoomRangeRef.current;
+      return zoomLevelRef.current != null ? zoomLevelRef.current : range ? range.min : 1;
+    };
+    const send = (wanted) => {
+      if (!pinch) return;
+      pinch.wanted = wanted;
+      const now = Date.now();
+      if (now - pinch.sentAt >= 50) {
+        pinch.sentAt = now;
+        applyZoomRef.current(wanted);
+      } else if (!timer) {
+        timer = setTimeout(() => { timer = null; if (pinch) { pinch.sentAt = Date.now(); applyZoomRef.current(pinch.wanted); } }, 50);
+      }
+    };
+    const onStart = (e) => {
+      if (e.touches.length !== 2 || !zoomRangeRef.current) return;
+      pinch = { spread: spread(e.touches), level: startLevel(), sentAt: 0, wanted: null };
+      e.preventDefault();
+    };
+    const onMove = (e) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      send(pinch.level * (spread(e.touches) / pinch.spread));
+    };
+    const onEnd = (e) => {
+      if (!pinch || e.touches.length >= 2) return;
+      if (pinch.wanted != null) applyZoomRef.current(pinch.wanted);
+      pinch = null;
+    };
+    // A trackpad pinch on a laptop arrives as ctrl + wheel.
+    const onWheel = (e) => {
+      if (!e.ctrlKey || !zoomRangeRef.current) return;
+      e.preventDefault();
+      applyZoomRef.current(startLevel() * Math.exp(-e.deltaY * 0.01));
+    };
+    const opts = { passive: false };
+    document.addEventListener("touchstart", onStart, opts);
+    document.addEventListener("touchmove", onMove, opts);
+    document.addEventListener("touchend", onEnd);
+    document.addEventListener("touchcancel", onEnd);
+    window.addEventListener("wheel", onWheel, opts);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("touchstart", onStart, opts);
+      document.removeEventListener("touchmove", onMove, opts);
+      document.removeEventListener("touchend", onEnd);
+      document.removeEventListener("touchcancel", onEnd);
+      window.removeEventListener("wheel", onWheel, opts);
+    };
+  }, [fullScreen, state]);
+
 
   // Tap the viewfinder to focus there.
   //
@@ -1489,17 +1266,9 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
          four positioned panels: it can never leave a seam, and it resizes
          with the square for free. */
     }<QrFrameGuide
-      // The zoom goes INSIDE the guide so it can be positioned against
-      // the square's own right-hand edge. It used to be a sibling of it,
-      // anchored to the bottom of the screen and sized in viewport units
-      // — which is how a control meant to sit beside the square ended up
-      // needing a comment explaining which gap it had to fit between.
-      // Drawn only when the lens reports a zoom range, the same rule the
-      // torch and the picker follow: a dead control is worse than no
-      // control, and most of all mid-scan.
-      rail={zoomRange && !quiet
-        ? <ZoomRail range={zoomRange} level={zoomLevel} onPick={applyZoom} />
-        : null}
+      // No zoom control drawn: zoom is a two-finger pinch (see the
+      // pinch effect above).
+      rail={null}
       // The sweep means "looking". While paused it must stop, or the
       // screen claims to be scanning when it is not.
       hunting={state === "running" && !paused}

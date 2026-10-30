@@ -54,7 +54,11 @@ function SymbolChipRow({ length, value, masked, boxSize = 21, justify = "flex-st
     }}
   >{chars[i] ? masked ? "\u2022" : chars[i] : ""}</span>)}</div></div>;
 }
-function SymbolDialPad({ value, onChange, length, showLogo = true }) {
+// `soundWhileTyping`: the sound (ear) button stays hidden until the first
+// symbol is in, and goes again when the box is cleared — the pay pad wants
+// nothing but the dial until somebody starts dialling. Everywhere else it
+// is always shown, as before.
+function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyping = false }) {
   // Same symbol set as DIAL_SYMBOLS (the module-level constant Secure
   // ID/general ID generation actually use) — this used to be its own
   // separate, independently-hardcoded copy, which is exactly how it
@@ -307,7 +311,7 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
       boxShadow: i < value.length ? "0 2px 6px rgba(124,58,237,0.35)" : "none",
       transition: "background 0.15s ease, box-shadow 0.15s ease"
     }}
-  />)}</div><button
+  />)}</div>{(!soundWhileTyping || value.length > 0) && <button
     type="button"
     onClick={() => {
       const next = !soundOn;
@@ -351,7 +355,7 @@ function SymbolDialPad({ value, onChange, length, showLogo = true }) {
     }}
   >{soundOn
     ? <DialSoundOnIcon size={16} strokeWidth={2.2} />
-    : <DialSoundOffIcon size={16} strokeWidth={2.2} />}</button></div>{
+    : <DialSoundOffIcon size={16} strokeWidth={2.2} />}</button>}</div>{
     /* The housing is a literal two-sided coin: one face is the dial pad,
        the other is the brand mark. Whenever the dial has sat idle for a
        random stretch of time, it's the whole white circle that flips

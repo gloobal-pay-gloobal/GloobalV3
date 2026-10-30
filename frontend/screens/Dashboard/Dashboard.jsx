@@ -2172,6 +2172,20 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     () => sortTransactionsNewestFirst(sendHistory.filter((t) => (t.role || "user") === shareRole)),
     [sendHistory, shareRole]
   );
+  // The pay box's "Recent": the last five different people or shops paid
+  // from this side of the account, newest first, one tile each.
+  const quickPayRecent = useMemo5(() => {
+    const seen = new Set();
+    const out = [];
+    for (const t of roleSendHistory) {
+      const id = t && t.id;
+      if (!id || id === myGloobalId || seen.has(id) || t.direction === "received") continue;
+      seen.add(id);
+      out.push({ key: id, gloobalId: id, name: t.personName || t.name || id, handle: t.creatorHandle || "", flag: t.flag || "" });
+      if (out.length === 5) break;
+    }
+    return out;
+  }, [roleSendHistory, myGloobalId]);
   // `ccyCode` is passed because the chart is LABELLED in it: every bar and
   // both week totals are printed with this one symbol, so a row in another
   // currency has to be left out rather than added in as though it were this
@@ -2309,6 +2323,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onOpenCoverage={onOpenCoverage}
     onPayPerson={(payee) => onPayPerson && onPayPerson(payee)}
     onPayCreator={({ creator }) => onPayCreator && onPayCreator({ creator })}
+    recent={quickPayRecent}
+    favourites={Object.values(pinnedCreators || {}).filter((c) => c && c.handle)}
   />{
     /* Profile flip — switches the same account between its two
        sides: user/consumer and merchant/producer. Every flow stays

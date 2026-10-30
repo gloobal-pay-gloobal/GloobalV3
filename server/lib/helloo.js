@@ -25,6 +25,22 @@
 //   POST /api/helloo/block                 { accountId, blocked }
 //   GET  /api/helloo/blocked               the people you have blocked
 //
+// Pay to reach (your attention, your price):
+//   GET  /api/helloo/reach                 your prices, allowed people, earnings
+//   PUT  /api/helloo/reach                 { people, business: { price 0–7, closed } }
+//   POST /api/helloo/reach/allow           { accountId, allowed }
+//   GET  /api/helloo/people/:id/reach      what YOU pay to message them, if anything
+//   POST /api/helloo/asks                  { to, text, kind } — a free request
+//   GET  /api/helloo/asks                  requests waiting for you
+//   POST /api/helloo/asks/:id              { action: allow | decline }
+//   GET  /api/helloo/earnings?month=       what people paid to reach you, by person
+//
+// Only people you allow reach you free (the founder's choice). Writing to
+// somebody first allows them, so a reply to you is never charged. A paid
+// message carries the reference of a real GLOOBAL transfer, made with the
+// sender's PIN, of at least your price, to you, marked payMethod
+// "helloo-reach", used for nothing else.
+//
 // Over the live socket: typing ("typing…" for 5 s) and presence (online /
 // last seen) for the people you chat with.
 //
@@ -38,6 +54,12 @@ const HellooMessage = require('../models/HellooMessage');
 const HellooVoice = require('../models/HellooVoice');
 const HellooBlock = require('../models/HellooBlock');
 const HellooPresence = require('../models/HellooPresence');
+const HellooReach = require('../models/HellooReach');
+const HellooAsk = require('../models/HellooAsk');
+
+const REACH_MAX = 7;
+const REACH_PAYMENT_FRESH_MS = 60 * 60 * 1000;
+const ASKS_PER_DAY = 10;
 
 const VOICE_MAX_BYTES = 600 * 1024;
 const VOICE_MAX_SECONDS = 120;
@@ -70,6 +92,7 @@ function createHelloo(deps) {
     ProfilePhoto,
     pushService,
     accountCountryIso,
+    localCurrencyFor,
     resolveUser,
     authenticatedUserFromToken,
     rateLimit,
@@ -149,6 +172,7 @@ function createHelloo(deps) {
     if (m.replyTo?.id) {
       out.replyTo = { id: String(m.replyTo.id), from: String(m.replyTo.from || ''), kind: m.replyTo.kind || 'text', preview: m.replyTo.preview || '' };
     }
+    if (m.paid?.referenceId) out.paid = { amount: m.paid.amount, currency: m.paid.currency };
     if (m.kind === 'text') out.text = m.text;
     if (m.kind === 'photo') {
       out.text = m.text || '';
@@ -164,6 +188,8 @@ function createHelloo(deps) {
         destCurrency: m.payment?.destCurrency || '',
         note: m.payment?.note || '',
         to: m.payment?.toUserId ? String(m.payment.toUserId) : '',
+        purpose: m.payment?.purpose || '',
+        percent: m.payment?.percent || 0,
       };
     }
     return out;
@@ -247,6 +273,52 @@ function createHelloo(deps) {
       if (error?.code === 11000) return HellooConversation.findOne({ pairKey }).lean();
       throw error;
     }
+  }
+
+  // ── Pay to reach ──────────────────────────────────────────────────────
+  async function currencyOf(userOrId) {
+    const user = userOrId && userOrId.symbolId ? userOrId : await User.findById(userOrId).select('countryIso symbolId').lean();
+    return (user && (await localCurrencyFor(accountCountryIso(user)))) || 'INR';
+  }
+
+  const groupOut = (g) => ({ price: Math.max(0, Math.min(REACH_MAX, Math.round(Number(g?.price) || 0))), closed: Boolean(g?.closed) });
+
+  // What `senderId` must do to message `receiverId`: free, pay a price, or
+  // only ask. Payments (money sent in the chat) are never charged.
+  async function reachRule(receiverId, senderId) {
+    const reach = await HellooReach.findOne({ userId: receiverId }).lean();
+    if (!reach || (reach.allowed || []).some((a) => sameId(a, senderId))) return { free: true };
+    const sender = await User.findById(senderId).select('creatorProfile.handle').lean();
+    const kind = sender?.creatorProfile?.handle ? 'business' : 'people';
+    const group = groupOut(reach[kind]);
+    if (group.closed) return { free: false, closed: true, kind, price: 0, currency: await currencyOf(receiverId) };
+    if (group.price <= 0) return { free: true };
+    return { free: false, closed: false, kind, price: group.price, currency: await currencyOf(receiverId) };
+  }
+
+  async function allow(ownerId, otherId, on = true) {
+    await HellooReach.updateOne(
+      { userId: ownerId },
+      on ? { $addToSet: { allowed: otherId }, $setOnInsert: { userId: ownerId } } : { $pull: { allowed: otherId } },
+      { upsert: on }
+    );
+  }
+
+  // A reach payment: a real, recent, unused GLOOBAL transfer from the
+  // sender to the receiver, marked for Helloo, of at least the price, in
+  // the receiver's currency.
+  async function checkReachPayment(referenceId, senderId, receiverId, rule) {
+    const txn = referenceId ? await Transaction.findOne({ referenceId: String(referenceId) }).lean() : null;
+    if (!txn || txn.status !== 'success' || !sameId(txn.fromUserId, senderId) || !sameId(txn.toUserId, receiverId)) return null;
+    const meta = txn.metadata || {};
+    if (meta.payMethod !== 'helloo-reach') return null;
+    if (Date.now() - new Date(txn.createdAt).getTime() > REACH_PAYMENT_FRESH_MS) return null;
+    const amount = Number(meta.destinationAmount ?? txn.amount) || 0;
+    const currency = String(meta.destinationCurrency || txn.currency || '').toUpperCase();
+    if (currency !== rule.currency || amount + 1e-9 < rule.price) return null;
+    const used = await HellooMessage.exists({ $or: [{ 'paid.referenceId': txn.referenceId }, { 'payment.referenceId': txn.referenceId }] });
+    if (used) return null;
+    return { referenceId: txn.referenceId, amount, currency };
   }
 
   async function presenceOf(userId) {
@@ -503,6 +575,21 @@ function createHelloo(deps) {
         const doc = { conversationId: conversation._id, from: me._id, kind, clientId };
         let audio = null;
 
+        // Your price, their choice. Money sent in the chat is never charged.
+        if (kind !== 'payment') {
+          const rule = await reachRule(otherId, me._id);
+          if (!rule.free) {
+            if (rule.closed) {
+              return res.status(403).json({ success: false, code: 'reach_closed', rule, message: 'This person only takes requests. Ask first, free.' });
+            }
+            const paid = await checkReachPayment(body.reachRef, me._id, otherId, rule);
+            if (!paid) {
+              return res.status(402).json({ success: false, code: 'reach_payment_required', rule, message: 'This person charges to be reached. Agree to their price to send.' });
+            }
+            doc.paid = paid;
+          }
+        }
+
         // A reply quotes a message from this same chat, copied now.
         if (body.replyToId) {
           const quoted = oid(body.replyToId) ? await HellooMessage.findOne({ _id: oid(body.replyToId), conversationId: conversation._id }).lean() : null;
@@ -546,7 +633,15 @@ function createHelloo(deps) {
             });
           }
           const meta = txn.metadata || {};
+          if (meta.payMethod === 'helloo-reach') {
+            return res.status(400).json({ success: false, code: 'payment_not_found', message: 'That payment was made to reach them, not sent in the chat.' });
+          }
+          if (await HellooMessage.exists({ 'paid.referenceId': referenceId })) {
+            return res.status(400).json({ success: false, code: 'payment_not_found', message: 'That payment is already in the chat.' });
+          }
           doc.payment = {
+            purpose: meta.payMethod === 'helloo-giveback' ? 'giveback' : '',
+            percent: meta.payMethod === 'helloo-giveback' ? Math.max(0, Math.min(100, Math.round(Number(body.percent) || 0))) : 0,
             referenceId,
             amount: meta.sourceAmount || txn.amount,
             currency: meta.sourceCurrency || txn.currency,
@@ -596,6 +691,9 @@ function createHelloo(deps) {
           },
           { arrayFilters: [{ 'mine.userId': me._id }] }
         );
+
+        // You wrote to them, so their reply to you is free.
+        allow(me._id, otherId).catch(() => {});
 
         res.status(201).json({ success: true, message: messageOut(message) });
         notifyNewMessage(conversation, message, me).catch((error) => console.error('Helloo notify error:', error));
@@ -761,6 +859,230 @@ function createHelloo(deps) {
       } catch (error) {
         console.error('Helloo block error:', error);
         return res.status(500).json({ success: false, message: 'Could not change that right now.' });
+      }
+    });
+
+    // ── Pay to reach ──────────────────────────────────────────────────
+    async function earningsFor(meId, from, to) {
+      const chats = await HellooConversation.find({ members: meId }).select('_id members').lean();
+      const ids = chats.map((c) => c._id);
+      if (!ids.length) return { total: 0, gaveBack: 0, rows: [] };
+      const range = { $gte: from, $lt: to };
+      const [paid, back] = await Promise.all([
+        HellooMessage.aggregate([
+          { $match: { conversationId: { $in: ids }, from: { $ne: meId }, 'paid.referenceId': { $gt: '' }, createdAt: range } },
+          { $group: { _id: '$from', amount: { $sum: '$paid.amount' }, messages: { $sum: 1 }, last: { $max: '$createdAt' } } },
+        ]),
+        HellooMessage.aggregate([
+          { $match: { conversationId: { $in: ids }, from: meId, kind: 'payment', 'payment.purpose': 'giveback', createdAt: range } },
+          { $group: { _id: '$payment.toUserId', amount: { $sum: '$payment.amount' } } },
+        ]),
+      ]);
+      const backBy = new Map(back.map((b) => [String(b._id), b.amount]));
+      const people = await cardsFor(paid.map((p) => p._id));
+      const rows = paid
+        .map((p) => ({ person: people.get(String(p._id)), amount: p.amount, messages: p.messages, gaveBack: backBy.get(String(p._id)) || 0, last: p.last }))
+        .filter((r) => r.person)
+        .sort((a, b) => b.amount - a.amount);
+      const total = rows.reduce((n, r) => n + r.amount, 0);
+      const gaveBack = back.reduce((n, b) => n + b.amount, 0);
+      return { total, gaveBack, rows };
+    }
+
+    const monthRange = (month) => {
+      const m = /^(\d{4})-(\d{2})$/.exec(String(month || ''));
+      const now = new Date();
+      const y = m ? Number(m[1]) : now.getUTCFullYear();
+      const mo = m ? Number(m[2]) - 1 : now.getUTCMonth();
+      return [new Date(Date.UTC(y, mo, 1)), new Date(Date.UTC(y, mo + 1, 1))];
+    };
+
+    app.get('/api/helloo/reach', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const reach = (await HellooReach.findOne({ userId: me }).lean()) || {};
+        const allowedIds = (reach.allowed || []).slice(-300);
+        const people = await cardsFor(allowedIds);
+        const [from, to] = monthRange();
+        const earned = await earningsFor(me, from, to);
+        const turnedAway = await HellooAsk.countDocuments({ to: me, status: 'declined', answeredAt: { $gte: from, $lt: to } });
+        return res.json({
+          success: true,
+          currency: await currencyOf(req.authUser),
+          people: groupOut(reach.people),
+          business: groupOut(reach.business),
+          allowed: allowedIds.map((id) => people.get(String(id))).filter(Boolean).reverse(),
+          month: { earned: earned.total, gaveBack: earned.gaveBack, payers: earned.rows.length, turnedAway },
+        });
+      } catch (error) {
+        console.error('Helloo reach error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load your prices right now.' });
+      }
+    });
+
+    app.put('/api/helloo/reach', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const set = {};
+        for (const key of ['people', 'business']) {
+          const g = req.body?.[key];
+          if (!g || typeof g !== 'object') continue;
+          if (g.price !== undefined) {
+            const price = Number(g.price);
+            if (!Number.isInteger(price) || price < 0 || price > REACH_MAX) {
+              return res.status(400).json({ success: false, message: `A price is a whole number from 0 to ${REACH_MAX}.` });
+            }
+            set[`${key}.price`] = price;
+          }
+          if (typeof g.closed === 'boolean') set[`${key}.closed`] = g.closed;
+        }
+        if (!Object.keys(set).length) return res.status(400).json({ success: false, message: 'Nothing to change.' });
+        const reach = await HellooReach.findOneAndUpdate(
+          { userId: req.authUser._id },
+          { $set: set, $setOnInsert: { userId: req.authUser._id } },
+          { upsert: true, returnDocument: 'after', lean: true }
+        );
+        return res.json({ success: true, people: groupOut(reach.people), business: groupOut(reach.business) });
+      } catch (error) {
+        console.error('Helloo reach save error:', error);
+        return res.status(500).json({ success: false, message: 'Could not save your prices right now.' });
+      }
+    });
+
+    app.post('/api/helloo/reach/allow', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const other = oid(req.body?.accountId);
+        if (!other || sameId(other, req.authUser._id)) return res.status(400).json({ success: false, message: 'Pick somebody.' });
+        const on = req.body?.allowed !== false;
+        await allow(req.authUser._id, other, on);
+        return res.json({ success: true, allowed: on });
+      } catch (error) {
+        console.error('Helloo allow error:', error);
+        return res.status(500).json({ success: false, message: 'Could not change that right now.' });
+      }
+    });
+
+    app.get('/api/helloo/people/:id/reach', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const other = oid(req.params.id);
+        if (!other || !(await User.exists({ _id: other }))) return res.status(404).json({ success: false, message: 'Nobody on GLOOBAL has that account.' });
+        const rule = await reachRule(other, req.authUser._id);
+        const asked = await HellooAsk.findOne({ from: req.authUser._id, to: other, status: 'pending' }).select('_id createdAt').lean();
+        return res.json({ success: true, rule, askPending: Boolean(asked) });
+      } catch (error) {
+        console.error('Helloo reach card error:', error);
+        return res.status(500).json({ success: false, message: 'Could not check that right now.' });
+      }
+    });
+
+    app.post('/api/helloo/asks', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const other = oid(req.body?.to);
+        const text = String(req.body?.text || '').trim();
+        const kind = req.body?.kind === 'call' ? 'call' : 'message';
+        if (!other || sameId(other, me)) return res.status(400).json({ success: false, message: 'Pick somebody to ask.' });
+        if (text.length < 3 || text.length > 120) return res.status(400).json({ success: false, message: 'Say who you are in 3 to 120 characters.' });
+        const blocks = await blockState(me, other);
+        if (blocks.iBlocked || blocks.theyBlocked) return res.status(403).json({ success: false, code: 'blocked_by_them', message: 'This person is not taking messages from you.' });
+        if ((await reachRule(other, me)).free) return res.status(400).json({ success: false, code: 'not_needed', message: 'They already let you message them free.' });
+        const today = await HellooAsk.countDocuments({ from: me, createdAt: { $gt: new Date(Date.now() - 24 * 3600e3) } });
+        if (today >= ASKS_PER_DAY) return res.status(429).json({ success: false, message: `You can send ${ASKS_PER_DAY} requests a day. Try again tomorrow.` });
+        let ask;
+        try {
+          ask = await HellooAsk.create({ from: me, to: other, kind, text });
+        } catch (error) {
+          if (error?.code === 11000) return res.status(409).json({ success: false, code: 'ask_pending', message: 'Your request is already waiting for them.' });
+          throw error;
+        }
+        const people = await cardsFor([me]);
+        const out = { id: String(ask._id), person: people.get(String(me)), kind, text, at: ask.createdAt };
+        const live = emit(other, { type: 'ask', ask: out });
+        if (!live && pushService.isPushEnabled()) {
+          pushService.sendPushToUser(other, {
+            v: 1, app: 'helloo', category: 'transactional', type: 'helloo_ask',
+            title: `${req.authUser.fullName || 'Someone'} asks to ${kind === 'call' ? 'call' : 'message'} you`,
+            body: text, url: '/?requests=1', tag: `helloo-ask-${String(ask._id)}`, timestamp: Date.now(),
+          }, { category: 'transactional', app: 'helloo' }).catch(() => {});
+        }
+        return res.status(201).json({ success: true, ask: { id: String(ask._id), status: 'pending' } });
+      } catch (error) {
+        console.error('Helloo ask error:', error);
+        return res.status(500).json({ success: false, message: 'Could not send that request right now.' });
+      }
+    });
+
+    app.get('/api/helloo/asks', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const rows = await HellooAsk.find({ to: req.authUser._id, status: 'pending' }).sort({ createdAt: -1 }).limit(100).lean();
+        const people = await cardsFor(rows.map((r) => r.from));
+        return res.json({
+          success: true,
+          asks: rows.filter((r) => people.get(String(r.from))).map((r) => ({ id: String(r._id), person: people.get(String(r.from)), kind: r.kind, text: r.text, at: r.createdAt })),
+        });
+      } catch (error) {
+        console.error('Helloo asks error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load your requests right now.' });
+      }
+    });
+
+    // Allow: they reach you free from now on, and their line arrives as the
+    // first message in your chat. Decline: they are told nothing beyond
+    // "not now" and can pay your price instead.
+    app.post('/api/helloo/asks/:id', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const id = oid(req.params.id);
+        const ask = id ? await HellooAsk.findOne({ _id: id, to: me, status: 'pending' }).lean() : null;
+        if (!ask) return res.status(404).json({ success: false, message: 'That request is not waiting any more.' });
+        const action = req.body?.action === 'allow' ? 'allow' : 'decline';
+        await HellooAsk.updateOne({ _id: id }, { $set: { status: action === 'allow' ? 'allowed' : 'declined', answeredAt: new Date() } });
+        if (action === 'decline') {
+          emit(ask.from, { type: 'ask-answer', to: String(me), allowed: false });
+          return res.json({ success: true, status: 'declined' });
+        }
+        await allow(me, ask.from);
+        const conversation = await openChat(me, ask.from);
+        const message = (await HellooMessage.create({
+          conversationId: conversation._id, from: ask.from, kind: 'text', clientId: `ask-${String(ask._id)}`, text: ask.text,
+        })).toObject();
+        await HellooConversation.updateOne(
+          { _id: conversation._id },
+          { $set: { lastMessageAt: message.createdAt, last: { from: ask.from, kind: 'text', preview: previewOf(message) }, 'reads.$[mine].at': message.createdAt } },
+          { arrayFilters: [{ 'mine.userId': me }] }
+        );
+        const out = messageOut(message);
+        emit(me, { type: 'message', message: out });
+        emit(ask.from, { type: 'message', message: out });
+        emit(ask.from, { type: 'ask-answer', to: String(me), allowed: true, chatId: String(conversation._id) });
+        if (!sockets.has(String(ask.from)) && pushService.isPushEnabled()) {
+          pushService.sendPushToUser(ask.from, {
+            v: 1, app: 'helloo', category: 'transactional', type: 'helloo_message', chatId: String(conversation._id),
+            title: req.authUser.fullName || 'Helloo', body: 'Said yes to your request. You can message them free now.',
+            url: `/?chat=${String(conversation._id)}`, tag: `helloo-chat-${String(conversation._id)}`, timestamp: Date.now(),
+          }, { category: 'transactional', app: 'helloo' }).catch(() => {});
+        }
+        return res.json({ success: true, status: 'allowed', chatId: String(conversation._id) });
+      } catch (error) {
+        console.error('Helloo ask answer error:', error);
+        return res.status(500).json({ success: false, message: 'Could not answer that request right now.' });
+      }
+    });
+
+    app.get('/api/helloo/earnings', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const [from, to] = monthRange(req.query.month);
+        const earned = await earningsFor(req.authUser._id, from, to);
+        return res.json({
+          success: true,
+          currency: await currencyOf(req.authUser),
+          month: `${from.getUTCFullYear()}-${String(from.getUTCMonth() + 1).padStart(2, '0')}`,
+          total: earned.total,
+          gaveBack: earned.gaveBack,
+          rows: earned.rows,
+        });
+      } catch (error) {
+        console.error('Helloo earnings error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load that right now.' });
       }
     });
 

@@ -1242,6 +1242,7 @@ const helloo = createHelloo({
   ProfilePhoto,
   pushService,
   accountCountryIso,
+  localCurrencyFor,
   resolveUser: (identifier) => resolveTransactionUserByIdentifier(identifier),
   authenticatedUserFromToken: (token) => authenticatedUser({ headers: { authorization: `Bearer ${token}` } }),
   rateLimit,

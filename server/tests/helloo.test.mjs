@@ -52,6 +52,8 @@ const HellooMessage = require(join(BACKEND, "models/HellooMessage"));
 const HellooVoice = require(join(BACKEND, "models/HellooVoice"));
 const HellooBlock = require(join(BACKEND, "models/HellooBlock"));
 const HellooPresence = require(join(BACKEND, "models/HellooPresence"));
+const HellooReach = require(join(BACKEND, "models/HellooReach"));
+const HellooAsk = require(join(BACKEND, "models/HellooAsk"));
 
 const BASE = `http://127.0.0.1:${process.env.PORT}`;
 const SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
@@ -101,7 +103,7 @@ async function registerAccount(account) {
 
 async function setUp() {
   await mongoose.connection.db.dropDatabase();
-  await Promise.all([User.init(), PushSubscription.init(), HellooConversation.init(), HellooMessage.init(), HellooVoice.init(), HellooBlock.init(), HellooPresence.init()]);
+  await Promise.all([User.init(), PushSubscription.init(), HellooConversation.init(), HellooMessage.init(), HellooVoice.init(), HellooBlock.init(), HellooPresence.init(), HellooReach.init(), HellooAsk.init()]);
   // A fresh database builds creatorProfile.handle's sparse unique index over
   // the `null` every new account stores, so the second registration would
   // collide with the first. That is a property of a brand-new database, not
@@ -398,6 +400,88 @@ async function run() {
   const again2 = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.A, body: { clientId: "a-unblocked", kind: "text", text: "hello again" } });
   check("after C unblocks, A can write again", unblock.body?.blocked === false && again2.status === 201);
   sockA2.ws.close();
+
+  console.log("\n17. pay to reach: prices, the card, paying per message");
+  const payReach = (from, to, amount) => call("POST", "/api/transactions/send", {
+    token: tokens[from],
+    body: { senderSymbolId: byKey[from].id, receiverSymbolId: byKey[to].id, pin: PIN, amountBasis: "destination", destinationAmount: amount, amount, note: "Helloo message", payMethod: "helloo-reach", idempotencyKey: `r-${from}-${to}-${Math.random()}` },
+  });
+  const noRow = await call("GET", "/api/helloo/reach", { token: tokens.B });
+  check("with nothing set, prices are free and open", noRow.body?.people?.price === 0 && noRow.body.people.closed === false && noRow.body.currency === "INR", j(noRow.body));
+  const badPrice = await call("PUT", "/api/helloo/reach", { token: tokens.B, body: { people: { price: 9 } } });
+  check("a price above 7 is refused", badPrice.status === 400);
+  const setPrice = await call("PUT", "/api/helloo/reach", { token: tokens.B, body: { people: { price: 2 }, business: { price: 5, closed: true } } });
+  check("B charges people ₹2 and closes to businesses", setPrice.body?.people?.price === 2 && setPrice.body.business.closed === true, j(setPrice.body));
+  const cardBC = await call("GET", `/api/helloo/people/${userIds.B}/reach`, { token: tokens.C });
+  check("C sees B's price card: ₹2 per message", cardBC.body?.rule?.free === false && cardBC.body.rule.price === 2 && cardBC.body.rule.currency === "INR" && cardBC.body.rule.kind === "people", j(cardBC.body));
+  const chatCB = (await call("POST", "/api/helloo/chats", { token: tokens.C, body: { with: userIds.B } })).body.chat.id;
+  const unpaid = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-1", kind: "text", text: "Hi Bala" } });
+  check("C cannot send to B without paying (402)", unpaid.status === 402 && unpaid.body?.code === "reach_payment_required" && unpaid.body.rule?.price === 2, j(unpaid.body));
+  const normalPay = await pay("C", "B", 2, "not for reach");
+  const wrongKind = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-2", kind: "text", text: "Hi", reachRef: normalPay.body?.transaction?.referenceId } });
+  check("an ordinary payment does not count as a reach payment", wrongKind.status === 402);
+  const tooSmall = await payReach("C", "B", 1);
+  const small = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-3", kind: "text", text: "Hi", reachRef: tooSmall.body?.transaction?.referenceId } });
+  check("₹1 does not pay a ₹2 price", small.status === 402);
+  const reachPaid = await payReach("C", "B", 2);
+  const ref1 = reachPaid.body?.transaction?.referenceId;
+  check("C pays B ₹2 for a message on GLOOBAL", reachPaid.status < 300 && Boolean(ref1), `status=${reachPaid.status} ${j(reachPaid.body?.message)}`);
+  const paidMsg = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-4", kind: "text", text: "Hi Bala, I'm Chandra", reachRef: ref1 } });
+  check("with it, C's message goes, marked paid ₹2", paidMsg.status === 201 && paidMsg.body.message.paid?.amount === 2 && paidMsg.body.message.paid.currency === "INR", j(paidMsg.body));
+  const reuse = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-5", kind: "text", text: "again", reachRef: ref1 } });
+  check("the same payment cannot pay for a second message", reuse.status === 402);
+  const asPayment = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-6", kind: "payment", referenceId: ref1 } });
+  check("nor be posted as a payment bubble", asPayment.status === 400);
+  const moneyFree = await pay("C", "B", 50, "for the book");
+  const moneyMsg = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-7", kind: "payment", referenceId: moneyFree.body?.transaction?.referenceId } });
+  check("sending B money in the chat is never charged", moneyMsg.status === 201);
+
+  console.log("\n18. replies are free, Allow, and asks");
+  const reply = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.B, body: { clientId: "bc-1", kind: "text", text: "Hello Chandra" } });
+  check("B replies (C charges nothing)", reply.status === 201);
+  const cardAfter = await call("GET", `/api/helloo/people/${userIds.B}/reach`, { token: tokens.C });
+  check("B wrote to C, so C now reaches B free", cardAfter.body?.rule?.free === true, j(cardAfter.body));
+  const freeNow = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-8", kind: "text", text: "Thanks!" } });
+  check("and C's next message goes without paying", freeNow.status === 201 && !freeNow.body.message.paid);
+  const earnings = await call("GET", "/api/helloo/earnings", { token: tokens.B });
+  const fromC = (earnings.body?.rows || []).find((r) => r.person.accountId === userIds.C);
+  check("B's earnings show ₹2 from C for 1 message", earnings.body?.total === 2 && fromC?.amount === 2 && fromC.messages === 1, j(earnings.body));
+  const giveBack = await call("POST", "/api/transactions/send", { token: tokens.B, body: { senderSymbolId: byKey.B.id, receiverSymbolId: byKey.C.id, pin: PIN, amount: 1, note: "Helloo give back", payMethod: "helloo-giveback", idempotencyKey: `gb-${Math.random()}` } });
+  const gbMsg = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.B, body: { clientId: "bc-gb", kind: "payment", referenceId: giveBack.body?.transaction?.referenceId, percent: 50 } });
+  check("B gives back 50% and it shows as a give-back", gbMsg.status === 201 && gbMsg.body.message.payment?.purpose === "giveback" && gbMsg.body.message.payment.percent === 50, j(gbMsg.body?.message?.payment));
+  const reachB = await call("GET", "/api/helloo/reach", { token: tokens.B });
+  check("Who can reach me: earned 2, gave back 1, 1 payer", reachB.body?.month?.earned === 2 && reachB.body.month.gaveBack === 1 && reachB.body.month.payers === 1, j(reachB.body?.month));
+  check("and C is on B's allowed list (B wrote to C)", (await call("GET", "/api/helloo/reach", { token: tokens.C })).body?.allowed?.some((p) => p.accountId === userIds.B));
+  // A is a stranger to B now: B charges people ₹2
+  await call("POST", "/api/helloo/reach/allow", { token: tokens.B, body: { accountId: userIds.A, allowed: false } });
+  const cardAB = await call("GET", `/api/helloo/people/${userIds.B}/reach`, { token: tokens.A });
+  check("A (not allowed) is charged by B", cardAB.body?.rule?.free === false, j(cardAB.body));
+  const ask = await call("POST", "/api/helloo/asks", { token: tokens.A, body: { to: userIds.B, text: "Asha here, about the flat" } });
+  check("A asks B instead, free", ask.status === 201, j(ask.body));
+  const askTwice = await call("POST", "/api/helloo/asks", { token: tokens.A, body: { to: userIds.B, text: "Asha again" } });
+  check("one open request at a time (409)", askTwice.status === 409);
+  const inbox = await call("GET", "/api/helloo/asks", { token: tokens.B });
+  check("B's requests show A's line", inbox.body?.asks?.length === 1 && inbox.body.asks[0].text === "Asha here, about the flat" && inbox.body.asks[0].person.accountId === userIds.A, j(inbox.body));
+  const pending = await call("GET", `/api/helloo/people/${userIds.B}/reach`, { token: tokens.A });
+  check("A sees the request is pending", pending.body?.askPending === true);
+  const allowAsk = await call("POST", `/api/helloo/asks/${inbox.body.asks[0].id}`, { token: tokens.B, body: { action: "allow" } });
+  check("B allows: a chat opens with A's line as the first message", allowAsk.status === 200 && Boolean(allowAsk.body.chatId), j(allowAsk.body));
+  const firstLine = await call("GET", `/api/helloo/chats/${allowAsk.body.chatId}/messages`, { token: tokens.B });
+  check("the line is there, from A", firstLine.body?.messages?.some((m) => m.text === "Asha here, about the flat" && m.from === userIds.A));
+  const freeA = await call("GET", `/api/helloo/people/${userIds.B}/reach`, { token: tokens.A });
+  check("and A now reaches B free", freeA.body?.rule?.free === true);
+  // businesses closed: make C a business
+  await User.updateOne({ _id: userIds.C }, { $set: { "creatorProfile.handle": "chandra.store" } });
+  await call("POST", "/api/helloo/reach/allow", { token: tokens.B, body: { accountId: userIds.C, allowed: false } });
+  const closedCard = await call("GET", `/api/helloo/people/${userIds.B}/reach`, { token: tokens.C });
+  check("as a business, C finds B closed to businesses", closedCard.body?.rule?.closed === true && closedCard.body.rule.kind === "business", j(closedCard.body));
+  const closedSend = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-closed", kind: "text", text: "Sale!" } });
+  check("and cannot message B at all (403 reach_closed)", closedSend.status === 403 && closedSend.body?.code === "reach_closed");
+  const declineAsk = await call("POST", "/api/helloo/asks", { token: tokens.C, body: { to: userIds.B, text: "Shop offer for you" } });
+  const inbox2 = await call("GET", "/api/helloo/asks", { token: tokens.B });
+  const declined = await call("POST", `/api/helloo/asks/${inbox2.body.asks[0].id}`, { token: tokens.B, body: { action: "decline" } });
+  const turned = await call("GET", "/api/helloo/reach", { token: tokens.B });
+  check("B declines C's request; turned away counts it", declineAsk.status === 201 && declined.body?.status === "declined" && turned.body?.month?.turnedAway === 1, j(turned.body?.month));
 
 }
 

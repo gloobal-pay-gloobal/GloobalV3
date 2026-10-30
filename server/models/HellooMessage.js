@@ -48,6 +48,14 @@ const hellooMessageSchema = new mongoose.Schema(
     // "Delete for everyone": the content is wiped and both people see
     // "This message was deleted".
     deletedAt: { type: Date, default: null },
+    // Paid to reach: the GLOOBAL transfer (payMethod "helloo-reach") the
+    // sender made to the receiver for this one message, in the receiver's
+    // currency. Checked against the real Transaction before it is stored.
+    paid: {
+      referenceId: { type: String, default: '' },
+      amount: { type: Number, default: 0 },
+      currency: { type: String, default: '' },
+    },
     payment: {
       referenceId: { type: String, default: '' },
       amount: { type: Number, default: 0 },
@@ -57,6 +65,10 @@ const hellooMessageSchema = new mongoose.Schema(
       destCurrency: { type: String, default: '' },
       note: { type: String, default: '' },
       toUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      // "giveback": the receiver returning part of what a sender paid to
+      // reach them (payMethod "helloo-giveback"); "" for an ordinary payment.
+      purpose: { type: String, default: '' },
+      percent: { type: Number, default: 0 },
     },
   },
   { timestamps: true }
@@ -68,6 +80,12 @@ hellooMessageSchema.index({ conversationId: 1, from: 1, clientId: 1 }, { unique:
 hellooMessageSchema.index(
   { conversationId: 1, 'payment.referenceId': 1 },
   { unique: true, partialFilterExpression: { kind: 'payment' } }
+);
+
+// A reach payment pays for one message only.
+hellooMessageSchema.index(
+  { 'paid.referenceId': 1 },
+  { unique: true, partialFilterExpression: { 'paid.referenceId': { $type: 'string', $gt: '' } } }
 );
 
 module.exports = mongoose.model('HellooMessage', hellooMessageSchema);

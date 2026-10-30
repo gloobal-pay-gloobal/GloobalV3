@@ -536,6 +536,12 @@ async function run() {
   check("A cannot call B, who charges and has not allowed A (403 call_needs_allow)", needsAllow.status === 403 && needsAllow.body?.code === "call_needs_allow", j(needsAllow.body));
   sA.ws.close(); sC.ws.close(); sB.ws.close();
 
+  console.log("\n20. together");
+  const tog = await call("GET", `/api/helloo/people/${userIds.C}/together`, { token: tokens.A });
+  check("A–C together: 1 call connected with seconds, 2 not answered, messages both ways, money A→C 40", tog.status === 200 && tog.body.calls.connected === 1 && tog.body.calls.seconds >= 1 && tog.body.calls.missed === 2 && tog.body.messages.fromMe >= 3 && tog.body.messages.fromThem >= 1 && tog.body.money.toThem.amount === 40 && Boolean(tog.body.since), j(tog.body));
+  const togNone = await call("GET", `/api/helloo/people/${userIds.A}/together`, { token: tokens.B });
+  check("B–A together: zeros, not an error", togNone.status === 200 && togNone.body.calls.connected === 0 && togNone.body.messages.fromMe === 0, j(togNone.body));
+
 }
 
 run()

@@ -22,6 +22,7 @@
 //   GET  /api/helloo/voice/:messageId      one voice note's audio (or a photo)
 //   GET  /api/helloo/media/:messageId      the same, by its general name
 //   GET  /api/helloo/people/:id/presence   online now, or when last seen
+//   GET  /api/helloo/people/:id/together   time on calls, calls, messages, money between you
 //   POST /api/helloo/block                 { accountId, blocked }
 //   GET  /api/helloo/blocked               the people you have blocked
 //
@@ -1298,6 +1299,53 @@ function createHelloo(deps) {
       } catch (error) {
         console.error('Helloo call action error:', error);
         return res.status(500).json({ success: false, message: 'Could not do that right now.' });
+      }
+    });
+
+    // What the two of you have done together: time on calls, calls that
+    // connected, messages each way, money each way, since when.
+    app.get('/api/helloo/people/:id/together', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const other = oid(req.params.id);
+        if (!other) return res.status(404).json({ success: false, message: 'Not here.' });
+        const conversation = await HellooConversation.findOne({ pairKey: pairKeyOf(me, other) }).lean();
+        const [calls, msgs, money] = await Promise.all([
+          HellooCall.aggregate([
+            { $match: { $or: [{ callerId: me, calleeId: other }, { callerId: other, calleeId: me }] } },
+            { $group: { _id: '$status', n: { $sum: 1 }, seconds: { $sum: '$seconds' }, video: { $sum: { $cond: ['$video', 1, 0] } }, first: { $min: '$createdAt' }, last: { $max: '$createdAt' } } },
+          ]),
+          conversation
+            ? HellooMessage.aggregate([
+              { $match: { conversationId: conversation._id, deletedAt: null, kind: { $in: ['text', 'voice', 'photo'] } } },
+              { $group: { _id: '$from', n: { $sum: 1 }, first: { $min: '$createdAt' }, last: { $max: '$createdAt' } } },
+            ])
+            : [],
+          Transaction.aggregate([
+            { $match: { status: 'success', $or: [{ fromUserId: me, toUserId: other }, { fromUserId: other, toUserId: me }] } },
+            { $group: { _id: '$fromUserId', n: { $sum: 1 }, amount: { $sum: { $ifNull: ['$metadata.destinationAmount', '$amount'] } }, currency: { $last: { $ifNull: ['$metadata.destinationCurrency', '$currency'] } }, first: { $min: '$createdAt' } } },
+          ]),
+        ]);
+        const ended = calls.find((c) => c._id === 'ended') || { n: 0, seconds: 0, video: 0 };
+        const missed = calls.filter((c) => ['missed', 'declined', 'cancelled'].includes(c._id)).reduce((n, c) => n + c.n, 0);
+        const mine = msgs.find((m) => sameId(m._id, me)) || { n: 0 };
+        const theirs = msgs.find((m) => sameId(m._id, other)) || { n: 0 };
+        const paidByMe = money.find((m) => sameId(m._id, me)) || { n: 0, amount: 0, currency: '' };
+        const paidByThem = money.find((m) => sameId(m._id, other)) || { n: 0, amount: 0, currency: '' };
+        const firsts = [...calls.map((c) => c.first), ...msgs.map((m) => m.first), ...money.map((m) => m.first)].filter(Boolean).sort((a, b) => a - b);
+        const lasts = [...calls.map((c) => c.last), ...msgs.map((m) => m.last)].filter(Boolean).sort((a, b) => b - a);
+        return res.json({
+          success: true,
+          since: firsts[0] || null,
+          lastAt: lasts[0] || null,
+          calls: { connected: ended.n, seconds: ended.seconds, video: ended.video, missed },
+          messages: { fromMe: mine.n, fromThem: theirs.n },
+          money: { toThem: { n: paidByMe.n, amount: paidByMe.amount, currency: paidByMe.currency }, toMe: { n: paidByThem.n, amount: paidByThem.amount, currency: paidByThem.currency } },
+          allowed: Boolean(await HellooReach.exists({ userId: me, allowed: other })),
+        });
+      } catch (error) {
+        console.error('Helloo together error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load that right now.' });
       }
     });
 

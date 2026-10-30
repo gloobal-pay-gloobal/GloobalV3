@@ -9,7 +9,8 @@ const mongoose = require('mongoose');
 //
 // The newest message is copied onto the conversation (`last`) so the chat list
 // is one query, not one per row. `reads` holds, per member, the time up to
-// which they have read; unread counts are derived from it.
+// which they have read (unread counts are derived from it) and that member's
+// own mute / pin / clear settings.
 const hellooConversationSchema = new mongoose.Schema(
   {
     pairKey: { type: String, required: true, unique: true },
@@ -25,6 +26,12 @@ const hellooConversationSchema = new mongoose.Schema(
         _id: false,
         userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
         at: { type: Date, default: null },
+        // This member's own settings for the chat. Nobody else sees them.
+        muted: { type: Boolean, default: false },
+        pinned: { type: Boolean, default: false },
+        // "Clear chat" / "Delete chat": messages up to here are gone for this
+        // member only. A deleted chat comes back when a new message arrives.
+        clearedAt: { type: Date, default: null },
       },
     ],
   },

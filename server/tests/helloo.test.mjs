@@ -50,6 +50,8 @@ const PushSubscription = require(join(BACKEND, "models/PushSubscription"));
 const HellooConversation = require(join(BACKEND, "models/HellooConversation"));
 const HellooMessage = require(join(BACKEND, "models/HellooMessage"));
 const HellooVoice = require(join(BACKEND, "models/HellooVoice"));
+const HellooBlock = require(join(BACKEND, "models/HellooBlock"));
+const HellooPresence = require(join(BACKEND, "models/HellooPresence"));
 
 const BASE = `http://127.0.0.1:${process.env.PORT}`;
 const SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
@@ -99,7 +101,7 @@ async function registerAccount(account) {
 
 async function setUp() {
   await mongoose.connection.db.dropDatabase();
-  await Promise.all([User.init(), PushSubscription.init(), HellooConversation.init(), HellooMessage.init(), HellooVoice.init()]);
+  await Promise.all([User.init(), PushSubscription.init(), HellooConversation.init(), HellooMessage.init(), HellooVoice.init(), HellooBlock.init(), HellooPresence.init()]);
   // A fresh database builds creatorProfile.handle's sparse unique index over
   // the `null` every new account stores, so the second registration would
   // collide with the first. That is a property of a brand-new database, not
@@ -306,6 +308,97 @@ async function run() {
   check("a socket from another website is refused", refused === "refused", refused);
 
   sockA.ws.close();
+
+  console.log("\n13. replies, photos and deleting");
+  const quoted = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.C, body: { clientId: "c-r1", kind: "text", text: "Yes, I'm here", replyToId: sent.body.message.id } });
+  check("C replies quoting A's first message", quoted.status === 201 && quoted.body.message.replyTo?.id === sent.body.message.id && quoted.body.message.replyTo.preview === "Hello Chandra", j(quoted.body.message?.replyTo));
+  const img = Buffer.alloc(2048, 3).toString("base64");
+  const photo = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.A, body: { clientId: "ph-1", kind: "photo", mime: "image/jpeg", image: img, width: 800, height: 600, text: "The shop" } });
+  check("A sends a photo with a caption", photo.status === 201 && photo.body.message.photo?.width === 800 && photo.body.message.text === "The shop", j(photo.body));
+  const photoBack = await call("GET", `/api/helloo/media/${photo.body?.message?.id}`, { token: tokens.C });
+  check("C fetches the photo's bytes", photoBack.status === 200 && photoBack.body.audio === img && photoBack.body.mime === "image/jpeg");
+  const notImage = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.A, body: { clientId: "ph-2", kind: "photo", mime: "image/gif", image: img } });
+  check("a GIF is refused (400)", notImage.status === 400);
+  const notMine = await call("POST", `/api/helloo/messages/${photo.body.message.id}/delete`, { token: tokens.C, body: { everyone: true } });
+  check("C cannot delete A's photo for everyone (403)", notMine.status === 403 && notMine.body?.code === "not_yours");
+  const keepPay = await call("POST", `/api/helloo/messages/${made.body.message.id}/delete`, { token: tokens.A, body: { everyone: true } });
+  check("a payment cannot be deleted for everyone", keepPay.status === 400 && keepPay.body?.code === "payment_kept");
+  const gone = await call("POST", `/api/helloo/messages/${photo.body.message.id}/delete`, { token: tokens.A, body: { everyone: true } });
+  check("A deletes the photo for everyone", gone.status === 200 && gone.body.message.kind === "deleted");
+  check("its bytes are gone too", (await HellooVoice.countDocuments({ messageId: photo.body.message.id })) === 0);
+  const afterDelete = await call("GET", `/api/helloo/chats/${chatId}/messages?limit=50`, { token: tokens.C });
+  const tomb = afterDelete.body.messages.find((m) => m.id === photo.body.message.id);
+  check("C sees 'deleted' in its place, with no caption", tomb?.kind === "deleted" && !tomb.text, j(tomb));
+  const mediaGone = await call("GET", `/api/helloo/media/${photo.body.message.id}`, { token: tokens.C });
+  check("and the photo no longer loads (404)", mediaGone.status === 404);
+  const forMe = await call("POST", `/api/helloo/messages/${sent.body.message.id}/delete`, { token: tokens.C, body: { everyone: false } });
+  check("C deletes A's first message for herself", forMe.status === 200 && forMe.body.hidden === true);
+  const cView = await call("GET", `/api/helloo/chats/${chatId}/messages?limit=50`, { token: tokens.C });
+  const aView = await call("GET", `/api/helloo/chats/${chatId}/messages?limit=50`, { token: tokens.A });
+  check("it is gone for C", !cView.body.messages.some((m) => m.id === sent.body.message.id));
+  check("and still there for A", aView.body.messages.some((m) => m.id === sent.body.message.id));
+
+  console.log("\n14. mute, pin and clear are each person's own");
+  const pin = await call("POST", `/api/helloo/chats/${chatId}/prefs`, { token: tokens.C, body: { pinned: true, muted: true } });
+  check("C pins and mutes the chat", pin.status === 200 && pin.body.pinned === true && pin.body.muted === true);
+  const listPinned = await call("GET", "/api/helloo/chats", { token: tokens.C });
+  check("C's list says pinned and muted", listPinned.body.chats[0]?.pinned === true && listPinned.body.chats[0]?.muted === true);
+  const listA3 = await call("GET", "/api/helloo/chats", { token: tokens.A });
+  check("A's list does not", listA3.body.chats[0]?.pinned === false && listA3.body.chats[0]?.muted === false);
+  pushes = [];
+  await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.A, body: { clientId: "a-muted", kind: "text", text: "quiet one" } });
+  await sleep(400);
+  check("a message into a chat C muted pushes nothing", pushes.length === 0, j(pushes.map((p) => p.endpoint)));
+  const cleared = await call("POST", `/api/helloo/chats/${chatId}/clear`, { token: tokens.C });
+  check("C clears the chat", cleared.status === 200);
+  const cAfterClear = await call("GET", `/api/helloo/chats/${chatId}/messages?limit=50`, { token: tokens.C });
+  check("C now sees no messages", cAfterClear.body.messages.length === 0, String(cAfterClear.body.messages.length));
+  const listCleared = await call("GET", "/api/helloo/chats", { token: tokens.C });
+  check("and the chat has left C's list", !listCleared.body.chats.some((c) => c.id === chatId));
+  const aStill = await call("GET", `/api/helloo/chats/${chatId}/messages?limit=50`, { token: tokens.A });
+  check("A still has every message", aStill.body.messages.length >= 5, String(aStill.body.messages.length));
+  await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.A, body: { clientId: "a-back", kind: "text", text: "back again" } });
+  const listBack = await call("GET", "/api/helloo/chats", { token: tokens.C });
+  const back = listBack.body.chats.find((c) => c.id === chatId);
+  check("a new message brings the chat back to C's list, with 1 unread", back && back.unread === 1, j(back && { unread: back.unread }));
+
+  console.log("\n15. typing and presence");
+  const sockC2 = await openSocket("C");
+  const sockA2 = await openSocket("A");
+  await sleep(300);
+  check("C hears A come online", sockC2.events.some((e) => e.type === "presence" && e.accountId === userIds.A && e.online === true), j(sockC2.events));
+  sockA2.ws.send(JSON.stringify({ type: "typing", chatId }));
+  await sleep(400);
+  check("C sees A typing", sockC2.events.some((e) => e.type === "typing" && e.chatId === chatId && e.by === userIds.A), j(sockC2.events.map((e) => e.type)));
+  const presOnline = await call("GET", `/api/helloo/people/${userIds.A}/presence`, { token: tokens.C });
+  check("A shows online to C", presOnline.body?.online === true, j(presOnline.body));
+  sockA2.events.length = 0;
+  sockC2.ws.close();
+  await sleep(500);
+  check("A hears C go offline, with a last-seen time", sockA2.events.some((e) => e.type === "presence" && e.accountId === userIds.C && e.online === false && e.lastSeenAt), j(sockA2.events));
+  const presOff = await call("GET", `/api/helloo/people/${userIds.C}/presence`, { token: tokens.A });
+  check("C's last seen is stored", presOff.body?.online === false && Boolean(presOff.body.lastSeenAt), j(presOff.body));
+  const presStranger = await call("GET", `/api/helloo/people/${userIds.C}/presence`, { token: tokens.B });
+  check("B, who has no chat with C, learns nothing", presStranger.body?.online === false && presStranger.body.lastSeenAt === null, j(presStranger.body));
+
+  console.log("\n16. blocking");
+  const block = await call("POST", "/api/helloo/block", { token: tokens.C, body: { accountId: userIds.A, blocked: true } });
+  check("C blocks A", block.status === 200 && block.body.blocked === true);
+  const blockedList = await call("GET", "/api/helloo/blocked", { token: tokens.C });
+  check("A is on C's blocked list", blockedList.body?.people?.some((p) => p.accountId === userIds.A));
+  const refusedMsg = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.A, body: { clientId: "a-blocked", kind: "text", text: "hello?" } });
+  check("A can no longer message C (403 blocked_by_them)", refusedMsg.status === 403 && refusedMsg.body?.code === "blocked_by_them", j(refusedMsg.body));
+  const cantOpen = await call("POST", "/api/helloo/chats", { token: tokens.A, body: { with: byKey.C.id } });
+  check("nor open the chat again", cantOpen.status === 403);
+  const selfBlocked = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.C, body: { clientId: "c-blocked", kind: "text", text: "hi" } });
+  check("C is told to unblock before writing to A", selfBlocked.status === 403 && selfBlocked.body?.code === "you_blocked");
+  const hiddenPresence = await call("GET", `/api/helloo/people/${userIds.C}/presence`, { token: tokens.A });
+  check("A no longer sees C's last seen", hiddenPresence.body?.lastSeenAt === null);
+  const unblock = await call("POST", "/api/helloo/block", { token: tokens.C, body: { accountId: userIds.A, blocked: false } });
+  const again2 = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.A, body: { clientId: "a-unblocked", kind: "text", text: "hello again" } });
+  check("after C unblocks, A can write again", unblock.body?.blocked === false && again2.status === 201);
+  sockA2.ws.close();
+
 }
 
 run()

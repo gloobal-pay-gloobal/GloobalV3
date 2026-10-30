@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 //   text     — `text`
 //   voice    — `voice` (seconds, mime); the audio itself is in HellooVoice so
 //              listing a thread never pulls audio bytes
+//   photo    — `photo` (size, type); the picture is in HellooVoice too
 //   payment  — `payment` (what the payer sent, and what arrived), copied from a real GLOOBAL Transaction the sender
 //              made to the other member. The server looks the transaction up
 //              by referenceId and refuses anything that is not a successful
@@ -18,7 +19,7 @@ const hellooMessageSchema = new mongoose.Schema(
   {
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooConversation', required: true },
     from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    kind: { type: String, enum: ['text', 'voice', 'payment'], required: true },
+    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo'], required: true },
     clientId: { type: String, required: true, maxlength: 80 },
     text: { type: String, default: '', maxlength: 4000 },
     voice: {
@@ -26,6 +27,27 @@ const hellooMessageSchema = new mongoose.Schema(
       mime: { type: String, default: '' },
       bytes: { type: Number, default: 0 },
     },
+    // A photo: the picture itself is in HellooVoice (the chat's media store),
+    // `text` holds an optional caption.
+    photo: {
+      width: { type: Number, default: 0 },
+      height: { type: Number, default: 0 },
+      mime: { type: String, default: '' },
+      bytes: { type: Number, default: 0 },
+    },
+    // The message this one answers, copied at the time so the quote still
+    // reads if the original is deleted later.
+    replyTo: {
+      id: { type: mongoose.Schema.Types.ObjectId, default: null },
+      from: { type: mongoose.Schema.Types.ObjectId, default: null },
+      kind: { type: String, default: '' },
+      preview: { type: String, default: '' },
+    },
+    // "Delete for me": hidden from these members only.
+    hiddenFor: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    // "Delete for everyone": the content is wiped and both people see
+    // "This message was deleted".
+    deletedAt: { type: Date, default: null },
     payment: {
       referenceId: { type: String, default: '' },
       amount: { type: Number, default: 0 },

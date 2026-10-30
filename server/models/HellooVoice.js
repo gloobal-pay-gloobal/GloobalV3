@@ -1,8 +1,9 @@
 const mongoose = require('mongoose');
 
-// The audio of a Helloo voice note, kept apart from HellooMessage so a thread
-// can be listed without dragging audio along. Capped by the route (2 minutes,
-// 600 KB), which keeps every document far below Mongo's 16 MB limit.
+// The media of a Helloo message — a voice note's audio or a photo — kept
+// apart from HellooMessage so a thread can be listed without dragging bytes
+// along. Capped by the route (600 KB), far below Mongo's 16 MB limit. The
+// model keeps its first name so the collection already in use is reused.
 const hellooVoiceSchema = new mongoose.Schema(
   {
     messageId: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooMessage', required: true, unique: true },

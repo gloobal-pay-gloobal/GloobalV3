@@ -16,7 +16,17 @@
 //   GET  /api/helloo/chats/:id/messages    a page of messages, newest last
 //   POST /api/helloo/chats/:id/messages    send text, a voice note or a payment
 //   POST /api/helloo/chats/:id/read        mark everything up to now as read
-//   GET  /api/helloo/voice/:messageId      one voice note's audio
+//   POST /api/helloo/chats/:id/prefs       { muted?, pinned? } — your own settings
+//   POST /api/helloo/chats/:id/clear       clear (or delete) the chat for you only
+//   POST /api/helloo/messages/:id/delete   { everyone } — for you, or for both
+//   GET  /api/helloo/voice/:messageId      one voice note's audio (or a photo)
+//   GET  /api/helloo/media/:messageId      the same, by its general name
+//   GET  /api/helloo/people/:id/presence   online now, or when last seen
+//   POST /api/helloo/block                 { accountId, blocked }
+//   GET  /api/helloo/blocked               the people you have blocked
+//
+// Over the live socket: typing ("typing…" for 5 s) and presence (online /
+// last seen) for the people you chat with.
 //
 // Live delivery is a WebSocket at /api/helloo/live (attachHellooLive below).
 // When the other person has no socket open they get a Web Push, sent only to
@@ -26,10 +36,17 @@ const mongoose = require('mongoose');
 const HellooConversation = require('../models/HellooConversation');
 const HellooMessage = require('../models/HellooMessage');
 const HellooVoice = require('../models/HellooVoice');
+const HellooBlock = require('../models/HellooBlock');
+const HellooPresence = require('../models/HellooPresence');
 
 const VOICE_MAX_BYTES = 600 * 1024;
 const VOICE_MAX_SECONDS = 120;
 const VOICE_MIMES = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/aac'];
+const PHOTO_MAX_BYTES = 600 * 1024;
+const PHOTO_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+// "Delete for everyone" is offered for two days, as people expect from
+// other chat apps; after that a message is part of the record.
+const DELETE_FOR_EVERYONE_MS = 48 * 3600 * 1000;
 const TEXT_MAX = 4000;
 const PAGE_MAX = 100;
 const VOICE_PATH = /^\/api\/helloo\/chats\/[^/]+\/messages\/?$/i;
@@ -39,6 +56,8 @@ const sameId = (a, b) => String(a) === String(b);
 const pairKeyOf = (a, b) => [String(a), String(b)].sort().join(':');
 
 function previewOf(message) {
+  if (message.deletedAt) return 'This message was deleted';
+  if (message.kind === 'photo') return message.text ? `Photo · ${String(message.text).replace(/\s+/g, ' ').trim().slice(0, 140)}` : 'Photo';
   if (message.kind === 'voice') return `Voice note · ${Math.max(1, Math.round(message.voice?.seconds || 0))}s`;
   if (message.kind === 'payment') return 'Payment on GLOOBAL';
   return String(message.text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
@@ -122,7 +141,19 @@ function createHelloo(deps) {
       clientId: m.clientId,
       at: m.createdAt,
     };
+    if (m.deletedAt) {
+      out.kind = 'deleted';
+      out.deletedAt = m.deletedAt;
+      return out;
+    }
+    if (m.replyTo?.id) {
+      out.replyTo = { id: String(m.replyTo.id), from: String(m.replyTo.from || ''), kind: m.replyTo.kind || 'text', preview: m.replyTo.preview || '' };
+    }
     if (m.kind === 'text') out.text = m.text;
+    if (m.kind === 'photo') {
+      out.text = m.text || '';
+      out.photo = { width: m.photo?.width || 0, height: m.photo?.height || 0, mime: m.photo?.mime || '' };
+    }
     if (m.kind === 'voice') out.voice = { seconds: m.voice?.seconds || 0, mime: m.voice?.mime || '' };
     if (m.kind === 'payment') {
       out.payment = {
@@ -138,24 +169,50 @@ function createHelloo(deps) {
     return out;
   }
 
+  const stateOf = (conversation, userId) => (conversation.reads || []).find((r) => sameId(r.userId, userId)) || {};
+
+  // What this member can see of the chat: nothing from before they cleared
+  // it, and nothing they deleted for themselves.
+  function visibleFilter(conversation, meId) {
+    const filter = { conversationId: conversation._id, hiddenFor: { $ne: meId } };
+    const cleared = stateOf(conversation, meId).clearedAt;
+    if (cleared) filter.createdAt = { $gt: cleared };
+    return filter;
+  }
+
   async function unreadFor(conversation, meId) {
-    const mine = (conversation.reads || []).find((r) => sameId(r.userId, meId));
-    const filter = { conversationId: conversation._id, from: { $ne: meId } };
-    if (mine?.at) filter.createdAt = { $gt: mine.at };
+    const mine = stateOf(conversation, meId);
+    const filter = Object.assign(visibleFilter(conversation, meId), { from: { $ne: meId }, deletedAt: null });
+    const after = [mine.at, mine.clearedAt].filter(Boolean).sort((a, b) => b - a)[0];
+    if (after) filter.createdAt = { $gt: after };
     return HellooMessage.countDocuments(filter);
+  }
+
+  async function blockState(meId, otherId) {
+    const rows = await HellooBlock.find({
+      $or: [{ userId: meId, blockedId: otherId }, { userId: otherId, blockedId: meId }],
+    }).lean();
+    return {
+      iBlocked: rows.some((r) => sameId(r.userId, meId)),
+      theyBlocked: rows.some((r) => sameId(r.userId, otherId)),
+    };
   }
 
   function chatOut(conversation, meId, people, unread) {
     const otherId = (conversation.members || []).find((m) => !sameId(m, meId)) || meId;
     const other = (conversation.reads || []).find((r) => sameId(r.userId, otherId));
+    const mine = stateOf(conversation, meId);
     return {
       id: String(conversation._id),
+      muted: Boolean(mine.muted),
+      pinned: Boolean(mine.pinned),
       person: people.get(String(otherId)) || { accountId: String(otherId), name: '', gloobalId: '' },
       lastAt: conversation.lastMessageAt || conversation.createdAt,
       last: conversation.last?.kind
         ? { from: String(conversation.last.from), kind: conversation.last.kind, preview: conversation.last.preview }
         : null,
       unread: unread || 0,
+      online: sockets.has(String(otherId)),
       // When the other person last read this chat, so the app can draw blue ticks.
       theyReadAt: other?.at || null,
     };
@@ -192,6 +249,52 @@ function createHelloo(deps) {
     }
   }
 
+  async function presenceOf(userId) {
+    if (sockets.has(String(userId))) return { online: true, lastSeenAt: null };
+    const row = await HellooPresence.findOne({ userId }).lean();
+    return { online: false, lastSeenAt: row?.lastSeenAt || null };
+  }
+
+  // Tell the people somebody chats with that they came online or left —
+  // only those who are online right now (everyone else asks when they open
+  // the chat), and never across a block.
+  async function announcePresence(userId, online, lastSeenAt) {
+    try {
+      const chats = await HellooConversation.find({ members: userId }).select('members').limit(300).lean();
+      const others = chats.map((c) => c.members.find((m) => !sameId(m, userId))).filter((m) => m && sockets.has(String(m)));
+      if (!others.length) return;
+      const blocks = await HellooBlock.find({ $or: [{ userId, blockedId: { $in: others } }, { userId: { $in: others }, blockedId: userId }] }).lean();
+      const cut = new Set(blocks.map((b) => String(sameId(b.userId, userId) ? b.blockedId : b.userId)));
+      for (const other of others) {
+        if (!cut.has(String(other))) emit(other, { type: 'presence', accountId: String(userId), online, lastSeenAt: lastSeenAt || null });
+      }
+    } catch (error) {
+      console.error('Helloo presence announce failed (non-fatal):', error.message);
+    }
+  }
+
+  // "typing…": relayed to the other member if the sender belongs to the
+  // chat and neither has blocked the other. Membership is remembered for a
+  // few minutes so a burst of keystrokes is not a burst of queries.
+  const memberCache = new Map(); // chatId -> { members, at }
+  async function relayTyping(userId, chatId) {
+    if (!oid(chatId)) return;
+    let entry = memberCache.get(chatId);
+    if (!entry || Date.now() - entry.at > 5 * 60 * 1000) {
+      const c = await HellooConversation.findById(chatId).select('members').lean();
+      if (!c) return;
+      entry = { members: c.members.map(String), at: Date.now() };
+      memberCache.set(chatId, entry);
+      if (memberCache.size > 5000) memberCache.delete(memberCache.keys().next().value);
+    }
+    if (!entry.members.includes(String(userId))) return;
+    const other = entry.members.find((m) => m !== String(userId));
+    if (!other || !sockets.has(other)) return;
+    const blocks = await blockState(userId, other);
+    if (blocks.iBlocked || blocks.theyBlocked) return;
+    emit(other, { type: 'typing', chatId: String(chatId), by: String(userId) });
+  }
+
   async function notifyNewMessage(conversation, message, sender) {
     const otherId = conversation.members.find((m) => !sameId(m, sender._id));
     if (!otherId) return;
@@ -199,6 +302,7 @@ function createHelloo(deps) {
     emit(sender._id, { type: 'message', message: out });
     const live = emit(otherId, { type: 'message', message: out });
     if (live > 0 || !pushService.isPushEnabled()) return;
+    if (stateOf(conversation, otherId).muted) return;
     try {
       await pushService.sendPushToUser(
         otherId,
@@ -315,10 +419,14 @@ function createHelloo(deps) {
     app.get('/api/helloo/chats', hellooRead, requireAuth, async (req, res) => {
       try {
         const me = req.authUser._id;
-        const conversations = await HellooConversation.find({ members: me, lastMessageAt: { $ne: null } })
+        const conversations = (await HellooConversation.find({ members: me, lastMessageAt: { $ne: null } })
           .sort({ lastMessageAt: -1 })
           .limit(200)
-          .lean();
+          .lean())
+          // A chat you deleted stays gone until somebody writes in it again.
+          .filter((c) => { const cleared = stateOf(c, me).clearedAt; return !cleared || c.lastMessageAt > cleared; })
+          // Pinned chats first, each group newest first.
+          .sort((a, b) => Number(Boolean(stateOf(b, me).pinned)) - Number(Boolean(stateOf(a, me).pinned)));
         const people = await cardsFor(conversations.flatMap((c) => c.members));
         const unread = await Promise.all(conversations.map((c) => unreadFor(c, me)));
         return res.json({ success: true, chats: conversations.map((c, i) => chatOut(c, me, people, unread[i])) });
@@ -336,6 +444,9 @@ function createHelloo(deps) {
         if (!other && withId) other = (await resolveUser(withId))?.user || null;
         if (!other) return res.status(404).json({ success: false, code: 'person_not_found', message: 'Nobody on GLOOBAL has that ID.' });
         if (sameId(other._id, me)) return res.status(400).json({ success: false, code: 'person_is_you', message: 'That is your own GLOOBAL ID.' });
+        if ((await blockState(me, other._id)).theyBlocked) {
+          return res.status(403).json({ success: false, code: 'blocked_by_them', message: 'This person is not taking messages from you.' });
+        }
         const conversation = await openChat(me, other._id);
         const people = await cardsFor(conversation.members);
         return res.json({ success: true, chat: chatOut(conversation, me, people, await unreadFor(conversation, me)) });
@@ -350,9 +461,9 @@ function createHelloo(deps) {
         const conversation = await memberChat(req, res);
         if (!conversation) return undefined;
         const limit = Math.min(PAGE_MAX, Math.max(1, Number(req.query.limit) || 50));
-        const filter = { conversationId: conversation._id };
+        const filter = visibleFilter(conversation, req.authUser._id);
         const before = req.query.before ? new Date(String(req.query.before)) : null;
-        if (before && !Number.isNaN(before.getTime())) filter.createdAt = { $lt: before };
+        if (before && !Number.isNaN(before.getTime())) filter.createdAt = Object.assign({}, filter.createdAt, { $lt: before });
         const rows = await HellooMessage.find(filter).sort({ createdAt: -1, _id: -1 }).limit(limit).lean();
         const people = await cardsFor(conversation.members);
         return res.json({
@@ -385,8 +496,18 @@ function createHelloo(deps) {
         const existing = await HellooMessage.findOne({ conversationId: conversation._id, from: me._id, clientId }).lean();
         if (existing) return res.json({ success: true, message: messageOut(existing), duplicate: true });
 
+        const blocks = await blockState(me._id, otherId);
+        if (blocks.iBlocked) return res.status(403).json({ success: false, code: 'you_blocked', message: 'You blocked this person. Unblock them to send a message.' });
+        if (blocks.theyBlocked) return res.status(403).json({ success: false, code: 'blocked_by_them', message: 'This person is not taking messages from you.' });
+
         const doc = { conversationId: conversation._id, from: me._id, kind, clientId };
         let audio = null;
+
+        // A reply quotes a message from this same chat, copied now.
+        if (body.replyToId) {
+          const quoted = oid(body.replyToId) ? await HellooMessage.findOne({ _id: oid(body.replyToId), conversationId: conversation._id }).lean() : null;
+          if (quoted && !quoted.deletedAt) doc.replyTo = { id: quoted._id, from: quoted.from, kind: quoted.kind, preview: previewOf(quoted).slice(0, 120) };
+        }
 
         if (kind === 'text') {
           const text = String(body.text || '').trim();
@@ -404,6 +525,16 @@ function createHelloo(deps) {
           if (audio.length === 0) return res.status(400).json({ success: false, message: 'The voice note is empty.' });
           if (audio.length > VOICE_MAX_BYTES) return res.status(413).json({ success: false, message: 'That voice note is too long to send.' });
           doc.voice = { seconds: Math.round(seconds * 10) / 10, mime, bytes: audio.length };
+        } else if (kind === 'photo') {
+          const mime = String(body.mime || '').split(';')[0].trim().toLowerCase();
+          if (!PHOTO_MIMES.includes(mime)) return res.status(400).json({ success: false, message: 'Send a JPEG, PNG or WebP photo.' });
+          audio = Buffer.from(String(body.image || ''), 'base64');
+          if (audio.length === 0) return res.status(400).json({ success: false, message: 'The photo is empty.' });
+          if (audio.length > PHOTO_MAX_BYTES) return res.status(413).json({ success: false, message: 'That photo is too big to send.' });
+          const caption = String(body.text || '').trim();
+          if (caption.length > TEXT_MAX) return res.status(400).json({ success: false, message: `A caption can be up to ${TEXT_MAX} characters.` });
+          doc.text = caption;
+          doc.photo = { width: Math.max(0, Math.round(Number(body.width) || 0)), height: Math.max(0, Math.round(Number(body.height) || 0)), mime, bytes: audio.length };
         } else if (kind === 'payment') {
           const referenceId = String(body.referenceId || '').trim();
           const txn = referenceId ? await Transaction.findOne({ referenceId }).lean() : null;
@@ -446,7 +577,7 @@ function createHelloo(deps) {
 
         if (audio) {
           try {
-            await HellooVoice.create({ messageId: message._id, conversationId: conversation._id, mime: doc.voice.mime, data: audio });
+            await HellooVoice.create({ messageId: message._id, conversationId: conversation._id, mime: (doc.voice && doc.voice.mime) || doc.photo.mime, data: audio });
           } catch (error) {
             await HellooMessage.deleteOne({ _id: message._id });
             throw error;
@@ -495,13 +626,14 @@ function createHelloo(deps) {
       }
     });
 
-    app.get('/api/helloo/voice/:messageId', hellooRead, requireAuth, async (req, res) => {
+    app.get(['/api/helloo/voice/:messageId', '/api/helloo/media/:messageId'], hellooRead, requireAuth, async (req, res) => {
       try {
         const id = oid(req.params.messageId);
-        const message = id ? await HellooMessage.findById(id).select('conversationId kind').lean() : null;
+        const message = id ? await HellooMessage.findById(id).select('conversationId kind deletedAt hiddenFor').lean() : null;
         const conversation = message ? await HellooConversation.findById(message.conversationId).select('members').lean() : null;
-        if (!message || message.kind !== 'voice' || !conversation || !conversation.members.some((m) => sameId(m, req.authUser._id))) {
-          return res.status(404).json({ success: false, message: 'That voice note is not here.' });
+        const seen = message && !message.deletedAt && !(message.hiddenFor || []).some((u) => sameId(u, req.authUser._id));
+        if (!message || !seen || !['voice', 'photo'].includes(message.kind) || !conversation || !conversation.members.some((m) => sameId(m, req.authUser._id))) {
+          return res.status(404).json({ success: false, message: 'That is not here any more.' });
         }
         const voice = await HellooVoice.findOne({ messageId: id }).lean();
         if (!voice) return res.status(404).json({ success: false, message: 'That voice note is not here.' });
@@ -510,6 +642,136 @@ function createHelloo(deps) {
       } catch (error) {
         console.error('Helloo voice error:', error);
         return res.status(500).json({ success: false, message: 'Could not load that voice note right now.' });
+      }
+    });
+
+    // Your own settings for one chat: mute (no notifications from it) and
+    // pin (kept at the top of your list). The other person never sees them.
+    app.post('/api/helloo/chats/:id/prefs', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const conversation = await memberChat(req, res);
+        if (!conversation) return undefined;
+        const set = {};
+        if (typeof req.body?.muted === 'boolean') set['reads.$[mine].muted'] = req.body.muted;
+        if (typeof req.body?.pinned === 'boolean') set['reads.$[mine].pinned'] = req.body.pinned;
+        if (!Object.keys(set).length) return res.status(400).json({ success: false, message: 'Nothing to change.' });
+        await HellooConversation.updateOne({ _id: conversation._id }, { $set: set }, { arrayFilters: [{ 'mine.userId': req.authUser._id }] });
+        const mine = stateOf(conversation, req.authUser._id);
+        return res.json({
+          success: true,
+          muted: typeof req.body.muted === 'boolean' ? req.body.muted : Boolean(mine.muted),
+          pinned: typeof req.body.pinned === 'boolean' ? req.body.pinned : Boolean(mine.pinned),
+        });
+      } catch (error) {
+        console.error('Helloo prefs error:', error);
+        return res.status(500).json({ success: false, message: 'Could not change that right now.' });
+      }
+    });
+
+    // Clear chat / Delete chat: everything up to now disappears for you,
+    // and stays for the other person. The chat leaves your list until a new
+    // message arrives in it.
+    app.post('/api/helloo/chats/:id/clear', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const conversation = await memberChat(req, res);
+        if (!conversation) return undefined;
+        const at = new Date();
+        await HellooConversation.updateOne(
+          { _id: conversation._id },
+          { $set: { 'reads.$[mine].clearedAt': at, 'reads.$[mine].at': at } },
+          { arrayFilters: [{ 'mine.userId': req.authUser._id }] }
+        );
+        return res.json({ success: true, clearedAt: at });
+      } catch (error) {
+        console.error('Helloo clear error:', error);
+        return res.status(500).json({ success: false, message: 'Could not clear that chat right now.' });
+      }
+    });
+
+    // Delete a message: for you (anyone, any message), or for everyone (only
+    // your own, within two days, and never a payment — the money moved, and
+    // the receipt is the record of it).
+    app.post('/api/helloo/messages/:id/delete', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const id = oid(req.params.id);
+        const message = id ? await HellooMessage.findById(id).lean() : null;
+        const conversation = message ? await HellooConversation.findById(message.conversationId).lean() : null;
+        if (!message || !conversation || !conversation.members.some((m) => sameId(m, me))) {
+          return res.status(404).json({ success: false, message: 'That message is not here.' });
+        }
+        if (req.body?.everyone) {
+          if (!sameId(message.from, me)) return res.status(403).json({ success: false, code: 'not_yours', message: 'Only the person who sent it can delete it for everyone.' });
+          if (message.kind === 'payment') return res.status(400).json({ success: false, code: 'payment_kept', message: 'A payment stays in the chat. You can delete it for yourself.' });
+          if (Date.now() - new Date(message.createdAt).getTime() > DELETE_FOR_EVERYONE_MS) {
+            return res.status(400).json({ success: false, code: 'too_old', message: 'Messages older than two days can only be deleted for you.' });
+          }
+          if (!message.deletedAt) {
+            await HellooMessage.updateOne(
+              { _id: id },
+              { $set: { deletedAt: new Date(), text: '', 'voice.seconds': 0, replyTo: { id: null, from: null, kind: '', preview: '' } } }
+            );
+            await HellooVoice.deleteOne({ messageId: id });
+            if (conversation.lastMessageAt && new Date(conversation.lastMessageAt).getTime() === new Date(message.createdAt).getTime()) {
+              await HellooConversation.updateOne({ _id: conversation._id }, { $set: { last: { from: message.from, kind: 'deleted', preview: 'This message was deleted' } } });
+            }
+          }
+          const out = messageOut(Object.assign({}, message, { deletedAt: new Date() }));
+          for (const member of conversation.members) emit(member, { type: 'update', message: out });
+          return res.json({ success: true, message: out });
+        }
+        await HellooMessage.updateOne({ _id: id }, { $addToSet: { hiddenFor: me } });
+        emit(me, { type: 'hidden', chatId: String(conversation._id), id: String(id) });
+        return res.json({ success: true, hidden: true });
+      } catch (error) {
+        console.error('Helloo delete error:', error);
+        return res.status(500).json({ success: false, message: 'Could not delete that right now.' });
+      }
+    });
+
+    // Online now, or when last seen — only for somebody you have a chat
+    // with, and never across a block in either direction.
+    app.get('/api/helloo/people/:id/presence', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const other = oid(req.params.id);
+        if (!other) return res.status(404).json({ success: false, message: 'Not here.' });
+        const shared = await HellooConversation.exists({ pairKey: pairKeyOf(me, other) });
+        const blocks = shared ? await blockState(me, other) : { iBlocked: true };
+        if (!shared || blocks.iBlocked || blocks.theyBlocked) return res.json({ success: true, online: false, lastSeenAt: null });
+        return res.json({ success: true, ...(await presenceOf(other)) });
+      } catch (error) {
+        console.error('Helloo presence error:', error);
+        return res.status(500).json({ success: false, message: 'Could not check that right now.' });
+      }
+    });
+
+    app.post('/api/helloo/block', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const other = oid(req.body?.accountId);
+        if (!other || sameId(other, me)) return res.status(400).json({ success: false, message: 'Pick somebody to block.' });
+        if (!(await User.exists({ _id: other }))) return res.status(404).json({ success: false, message: 'Nobody on GLOOBAL has that account.' });
+        if (req.body?.blocked === false) {
+          await HellooBlock.deleteOne({ userId: me, blockedId: other });
+          return res.json({ success: true, blocked: false });
+        }
+        await HellooBlock.updateOne({ userId: me, blockedId: other }, { $setOnInsert: { userId: me, blockedId: other } }, { upsert: true });
+        return res.json({ success: true, blocked: true });
+      } catch (error) {
+        console.error('Helloo block error:', error);
+        return res.status(500).json({ success: false, message: 'Could not change that right now.' });
+      }
+    });
+
+    app.get('/api/helloo/blocked', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const rows = await HellooBlock.find({ userId: req.authUser._id }).sort({ createdAt: -1 }).limit(500).lean();
+        const people = await cardsFor(rows.map((r) => r.blockedId));
+        return res.json({ success: true, people: rows.map((r) => people.get(String(r.blockedId))).filter(Boolean) });
+      } catch (error) {
+        console.error('Helloo blocked list error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load that right now.' });
       }
     });
   }
@@ -544,20 +806,38 @@ function createHelloo(deps) {
         let frame;
         try { frame = JSON.parse(String(raw)); } catch { return; }
         if (frame?.type === 'ping') { ws.send('{"type":"pong"}'); return; }
+        if (frame?.type === 'typing' && userId) {
+          // At most one relay per second per socket.
+          const now = Date.now();
+          if (now - (ws.lastTyping || 0) < 1000) return;
+          ws.lastTyping = now;
+          relayTyping(userId, String(frame.chatId || '')).catch(() => {});
+          return;
+        }
         if (frame?.type !== 'auth' || userId) return;
         const user = await authenticatedUserFromToken(String(frame.token || '')).catch(() => null);
         if (!user) { ws.close(4401, 'auth_token_invalid'); return; }
         userId = String(user._id);
         clearTimeout(authTimer);
-        if (!sockets.has(userId)) sockets.set(userId, new Set());
+        const firstSocket = !sockets.has(userId);
+        if (firstSocket) sockets.set(userId, new Set());
         sockets.get(userId).add(ws);
         ws.send(JSON.stringify({ type: 'ready', accountId: userId }));
+        if (firstSocket) announcePresence(userId, true, null);
       });
       ws.on('close', () => {
         clearTimeout(authTimer);
         if (!userId) return;
         const set = sockets.get(userId);
-        if (set) { set.delete(ws); if (set.size === 0) sockets.delete(userId); }
+        if (set) {
+          set.delete(ws);
+          if (set.size === 0) {
+            sockets.delete(userId);
+            const at = new Date();
+            HellooPresence.updateOne({ userId }, { $set: { lastSeenAt: at } }, { upsert: true }).catch(() => {});
+            announcePresence(userId, false, at);
+          }
+        }
       });
       ws.on('error', () => {});
     });

@@ -33,8 +33,7 @@ import { ArrowRight as ArrowRight4, Loader as Loader8, X as X22, ClipboardPaste 
 //   toggle     one switch: GLOOBAL ID (the wordmark, its two Os in colour)
 //              on one side, a phone icon on the other. Tap it to swap
 //              between the round symbol dial and the phone's number pad.
-//              The number pad is a dialler: digits with their letters,
-//              hold 0 for +, and its bottom-left key (अA) still opens the
+//              The number pad is a dialler: plain digits, hold 0 for +, and its bottom-left key (अA) still opens the
 //              letters keyboard for a creator name.
 //
 // Above the pad, while it is up: the last five people you paid and your
@@ -50,9 +49,9 @@ var QUICK_PAY_MOBILE_ROWS = [
   ["7", "8", "9"],
   ["name", "0", "back"]
 ];
-// The letters a phone prints under each digit, so the pad reads as a
-// dialler at a glance. 0 carries the + it types when held.
-var QUICK_PAY_KEY_LETTERS = { "2": "ABC", "3": "DEF", "4": "GHI", "5": "JKL", "6": "MNO", "7": "PQRS", "8": "TUV", "9": "WXYZ", "0": "+" };
+// Digits only, no letters under them. 0 carries a small + because holding
+// it types one.
+var QUICK_PAY_KEY_LETTERS = { "0": "+" };
 
 // ── WHAT WAS TYPED ──────────────────────────────────────────────────────
 // { kind: "id" | "mobile" | "name", value, side? } or null. A pay link is
@@ -497,9 +496,9 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       const letters = QUICK_PAY_KEY_LETTERS[k] || "";
       const label = k === "back" ? <BackQuick size={22} /> : k === "name" ? <span style={{ fontSize: 15, fontWeight: 900 }}>अA</span> : <span style={{
         display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1
-      }}><span style={{ fontSize: 26, fontWeight: 600, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}>{k}</span><span style={{
-        fontSize: 9.5, fontWeight: 700, letterSpacing: 1.6, color: T.inkFaint, marginTop: 3, minHeight: 10
-      }}>{letters}</span></span>;
+      }}><span style={{ fontSize: 26, fontWeight: 600, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}>{k}</span>{letters && <span style={{
+        fontSize: 10, fontWeight: 700, color: T.inkFaint, marginTop: 2
+      }}>{letters}</span>}</span>;
       return <button
         key={k}
         type="button"

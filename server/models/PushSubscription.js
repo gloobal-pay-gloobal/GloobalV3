@@ -33,6 +33,16 @@ const pushSubscriptionSchema = new mongoose.Schema(
     // Opt-in, never opt-out: a row created without an explicit choice is not
     // consenting to marketing. sendPushToUser only reads this for
     // category 'promotional'; a payment notification ignores it entirely.
+    // The app the subscription came from: Gloobal (payments, the default for
+    // every row written before this field existed) or Helloo (messages).
+    // Each app's service worker only understands its own notifications, so
+    // a push is sent to one app's devices, never both.
+    app: {
+      type: String,
+      enum: ['gloobal', 'helloo'],
+      default: 'gloobal',
+    },
+
     promotionalOptIn: {
       type: Boolean,
       default: false,

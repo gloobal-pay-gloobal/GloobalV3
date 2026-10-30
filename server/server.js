@@ -172,6 +172,7 @@ const Notification = require('./models/Notification');
 // only thing that talks to a push service and is inert when VAPID is unset.
 const PushSubscription = require('./models/PushSubscription');
 const pushService = require('./services/pushService');
+const { createHelloo, HELLOO_VOICE_PATH } = require('./lib/helloo');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
 // My Choices — the labels an account puts on its own payments. The model
@@ -388,6 +389,9 @@ app.use((req, res, next) => {
   // POST only: the GET on the same path returns the bytes and carries no
   // body, so it has nothing to parse and no reason to skip anything.
   if (req.method === 'POST' && PROJECT_ATTACHMENT_PATH.test(req.path)) return next();
+  // A Helloo message can be a voice note; that route reads its own body
+  // with a larger cap (lib/helloo.js) and checks the audio itself.
+  if (req.method === 'POST' && HELLOO_VOICE_PATH.test(req.path)) return next();
   return globalJsonParser(req, res, next);
 });
 
@@ -429,6 +433,15 @@ const ALLOWED_ORIGINS = String(
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+// Helloo (the calls-and-messages app) is its own Netlify site and signs in
+// against this API with the same token. Added on top of whatever
+// ALLOWED_ORIGINS says, so turning Helloo on needs no change to Render's
+// environment; HELLOO_ORIGIN overrides the address if the site ever moves.
+for (const origin of String(process.env.HELLOO_ORIGIN || 'https://gloobalhelloo.netlify.app').split(',')) {
+  const clean = origin.trim();
+  if (clean && !ALLOWED_ORIGINS.includes(clean)) ALLOWED_ORIGINS.push(clean);
+}
 
 app.use(
   cors({
@@ -1219,6 +1232,23 @@ const registerLimit = rateLimit({ name: 'register', max: 8, windowMs: WINDOW_MS 
 const lookupLimit = rateLimit({ name: 'lookup', max: 90, windowMs: WINDOW_MS });
 // Everything a signed-in app does in the ordinary course of being used.
 const writeLimit = rateLimit({ name: 'write', max: 150, windowMs: WINDOW_MS });
+
+// Helloo's routes — chats, contacts, voice notes — and its live socket.
+// See lib/helloo.js. Mounted here, after the limiters and requireAuth exist
+// and before any route that could shadow /api/helloo/...
+const helloo = createHelloo({
+  User,
+  Transaction,
+  ProfilePhoto,
+  pushService,
+  accountCountryIso,
+  resolveUser: (identifier) => resolveTransactionUserByIdentifier(identifier),
+  authenticatedUserFromToken: (token) => authenticatedUser({ headers: { authorization: `Bearer ${token}` } }),
+  rateLimit,
+  windowMs: WINDOW_MS,
+  allowedOrigins: ALLOWED_ORIGINS,
+});
+helloo.mount(app, requireAuth);
 
 app.post('/api/otp/send', otpLimit, async (req, res) => {
   try {
@@ -10911,6 +10941,11 @@ app.post('/api/push/subscribe', writeLimit, requireAuth, async (req, res) => {
         // A browser that has just handed us a fresh subscription is reachable
         // again, whatever the old row's failure history said.
         failureCount: 0,
+        // Which app this device subscribed from. Gloobal's payment pushes go
+        // to Gloobal subscriptions and Helloo's message pushes to Helloo
+        // ones (pushService.sendPushToUser), so neither app's service worker
+        // is handed the other's notifications.
+        app: req.body?.app === 'helloo' ? 'helloo' : 'gloobal',
       },
     };
 
@@ -13240,6 +13275,9 @@ app.get('/api/coin/:symbolId/history', lookupLimit, requireAuth, requireSelf('sy
 // is where the long answer lives.
 
 
-app.listen(PORT, () => {
+const httpServer = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+// Helloo's live channel shares this port: Render exposes one, and a
+// WebSocket upgrade is just another request on it.
+helloo.attachLive(httpServer);

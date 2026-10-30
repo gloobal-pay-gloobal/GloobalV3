@@ -205,8 +205,11 @@ function pushHost(endpoint) {
 // anything else (the default, 'transactional') reaches all of them, because a
 // payment notification is not marketing and is not opt-out.
 //
+// `app: 'helloo'` sends to the devices that subscribed from Helloo; without
+// it, only Gloobal's devices are addressed.
+//
 // Never throws: every caller is post-commit best-effort code.
-async function sendPushToUser(userId, payload, { category } = {}) {
+async function sendPushToUser(userId, payload, { category, app } = {}) {
   const result = emptyResult();
   if (!userId) return result;
 
@@ -221,6 +224,10 @@ async function sendPushToUser(userId, payload, { category } = {}) {
   try {
     const filter = { userId };
     if (promotional) filter.promotionalOptIn = true;
+    // Helloo's message pushes go to devices that subscribed from Helloo;
+    // everything else (payments, complaints, broadcasts) to Gloobal's, which
+    // includes every row from before `app` existed (no field = Gloobal).
+    filter.app = app === 'helloo' ? 'helloo' : { $ne: 'helloo' };
     subs = await PushSubscription.find(filter).lean();
   } catch (error) {
     console.error('Web Push could not load subscriptions:', error.message);

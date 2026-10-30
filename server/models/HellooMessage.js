@@ -1,0 +1,51 @@
+const mongoose = require('mongoose');
+
+// One message in a Helloo chat.
+//
+//   text     — `text`
+//   voice    — `voice` (seconds, mime); the audio itself is in HellooVoice so
+//              listing a thread never pulls audio bytes
+//   payment  — `payment` (what the payer sent, and what arrived), copied from a real GLOOBAL Transaction the sender
+//              made to the other member. The server looks the transaction up
+//              by referenceId and refuses anything that is not a successful
+//              payment between these two people, so a payment bubble is never
+//              something a client merely claimed.
+//
+// `clientId` makes a send idempotent: the app retries with the same id after a
+// timeout or a cold start, and the second arrival returns the first message
+// instead of posting it twice.
+const hellooMessageSchema = new mongoose.Schema(
+  {
+    conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooConversation', required: true },
+    from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    kind: { type: String, enum: ['text', 'voice', 'payment'], required: true },
+    clientId: { type: String, required: true, maxlength: 80 },
+    text: { type: String, default: '', maxlength: 4000 },
+    voice: {
+      seconds: { type: Number, default: 0 },
+      mime: { type: String, default: '' },
+      bytes: { type: Number, default: 0 },
+    },
+    payment: {
+      referenceId: { type: String, default: '' },
+      amount: { type: Number, default: 0 },
+      currency: { type: String, default: '' },
+      // What the other side received, when it crossed a currency.
+      destAmount: { type: Number, default: 0 },
+      destCurrency: { type: String, default: '' },
+      note: { type: String, default: '' },
+      toUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    },
+  },
+  { timestamps: true }
+);
+
+hellooMessageSchema.index({ conversationId: 1, createdAt: -1 });
+hellooMessageSchema.index({ conversationId: 1, from: 1, clientId: 1 }, { unique: true });
+// A payment can be posted into a chat once.
+hellooMessageSchema.index(
+  { conversationId: 1, 'payment.referenceId': 1 },
+  { unique: true, partialFilterExpression: { kind: 'payment' } }
+);
+
+module.exports = mongoose.model('HellooMessage', hellooMessageSchema);

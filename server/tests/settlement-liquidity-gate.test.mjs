@@ -252,12 +252,14 @@ async function run() {
   const refused = await send(PAYER, PAYEE, 800000, "The reported payment");
   check("it is refused with 503, not accepted and not a 500",
     refused.status === 503, `status=${refused.status}`);
-  check("the message names the corridor's OWN counterpart currency",
-    /IN\/INR settling with USD/.test(refused.body?.message || ""), refused.body?.message);
+  check("the message names the country being paid into",
+    /India/.test(refused.body?.message || "") && refused.body?.code === "corridor_limit", refused.body?.message);
+  check("and the most that can be sent now, in the payer's currency, below what was asked",
+    Number(refused.body?.maxSend) >= 0 && refused.body?.sendCurrency === "USD" && /You can send up to|paused/.test(refused.body?.message || ""), JSON.stringify({ maxSend: refused.body?.maxSend }));
   check("it does not tell the payer to try again later, which would not help",
     !/try again later/i.test(refused.body?.message || ""), refused.body?.message);
   check("it says nothing left the payer's balance",
-    /Nothing has left your balance/i.test(refused.body?.message || ""));
+    /Nothing left your balance/i.test(refused.body?.message || ""));
   check("and it does not print the corridor's balance to the payer",
     !/17546|17,546/.test(refused.body?.message || ""), refused.body?.message);
 

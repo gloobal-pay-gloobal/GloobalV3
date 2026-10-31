@@ -1020,6 +1020,9 @@ function GloobalId() {
         // person. The server checks the receiver really has a creator name
         // and records it on the payment; history and receipts read it back.
         toCreator: Boolean(receiver && receiver.creatorHandle),
+        // Sent while on the Creator side. The server refuses it until this
+        // account's creator name is saved — a shop pays under its name.
+        fromCreator: activeShareRole === "merchant",
         // Set only when this payment sends a complaint's money back.
         complaintId: (receiver && receiver.complaintId) || undefined,
         // The ID this device already minted for the payment, so the record

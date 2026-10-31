@@ -60,6 +60,9 @@ const Settlement = require('../models/Settlement');
 // the raw countryIso here instead would settle a payment in a currency the
 // sender's own screen never showed them — see accountCountry.js's header.
 const { accountCountryIso } = require('./accountCountry');
+// Each country's local PayLater pool, lent to its corridor pools when they
+// run short. See its header.
+const paylaterPool = require('./paylaterPool');
 
 // Thrown when the destination country's pool cannot fund the release.
 //
@@ -94,6 +97,10 @@ class InsufficientPoolLiquidityError extends Error {
     this.counterCurrency = counterCurrency;
     this.requested = requested;
     this.available = available;
+    // The most that CAN be paid into this country right now, in its own
+    // currency — the corridor pool plus what the PayLater pool can lend.
+    // Set by the engine; server.js converts it to the payer's currency.
+    this.maxAvailable = null;
   }
 }
 
@@ -365,32 +372,47 @@ async function settleCrossBorderPayment({
   // corridor drained to exactly zero by real settlement, which is open and
   // merely empty. Together they identify precisely the rows that hold
   // nothing AND were never given anything.
-  if (
-    !destinationPool.seededAt &&
-    destinationPool.totalBalance === 0 &&
-    destinationPool.availableBalance === 0 &&
-    (destinationPool.reservedBalance || 0) === 0
-  ) {
-    throw new UnseededCorridorPoolError({
-      countryIso: destinationCountry.iso,
-      currency: destinationCurrency,
-      counterCurrency: senderCurrency,
-      requested: destinationAmount,
-    });
-  }
-
-  // The hard-liquidity gate. Checked against the destination pool's own
-  // available balance before anything moves, and checked on the GROSS
-  // release rather than the net-of-cashback figure — the stricter, more
-  // realistic test, and the one server.js's own comment describes.
+  // ── THE LOCAL PAYLATER POOL TOPS UP A SHORT CORRIDOR ────────────────
+  //
+  // A corridor pool short of this release borrows the difference from its
+  // country's PayLater pool — the total of that country's users' My Assets,
+  // refilled daily by the Creator Share on essentials (lib/paylaterPool.js).
+  // Only when even that cannot cover it is the payment refused, and then
+  // the refusal carries the most that could be paid in, so the payer is
+  // told a figure instead of "try a smaller amount".
   if (destinationPool.availableBalance < destinationAmount) {
-    throw new InsufficientPoolLiquidityError({
-      countryIso: destinationCountry.iso,
-      currency: destinationCurrency,
-      counterCurrency: senderCurrency,
-      requested: destinationAmount,
-      available: destinationPool.availableBalance,
-    });
+    const shortfall = roundMinor(destinationAmount - destinationPool.availableBalance, destinationCurrency);
+    const { headroom } = await paylaterPool.paylaterHeadroom(destinationCountry.iso, destinationCurrency, session);
+    if (shortfall <= headroom) {
+      await paylaterPool.borrowIntoPool({ pool: destinationPool, amount: shortfall, transactionId: transaction && transaction._id, session });
+      destinationPool.availableBalance = roundMinor(destinationPool.availableBalance + Math.ceil(shortfall * 100) / 100, destinationCurrency);
+    } else {
+      const unseeded =
+        !destinationPool.seededAt &&
+        destinationPool.totalBalance === 0 &&
+        destinationPool.availableBalance === 0 &&
+        (destinationPool.reservedBalance || 0) === 0;
+      // A pool that was never given its opening float, in a country whose
+      // PayLater pool has nothing to lend either, is a closed corridor —
+      // the more specific diagnosis, kept from before.
+      if (unseeded && headroom === 0) {
+        throw new UnseededCorridorPoolError({
+          countryIso: destinationCountry.iso,
+          currency: destinationCurrency,
+          counterCurrency: senderCurrency,
+          requested: destinationAmount,
+        });
+      }
+      const refusal = new InsufficientPoolLiquidityError({
+        countryIso: destinationCountry.iso,
+        currency: destinationCurrency,
+        counterCurrency: senderCurrency,
+        requested: destinationAmount,
+        available: destinationPool.availableBalance,
+      });
+      refusal.maxAvailable = roundMinor(Math.max(0, destinationPool.availableBalance) + headroom, destinationCurrency);
+      throw refusal;
+    }
   }
 
   // Both pool writes and the Settlement row go through the caller's session,
@@ -458,11 +480,20 @@ async function settleCrossBorderPayment({
     });
   }
 
-  const creditedSourcePool = await CountryCurrencyPool.findByIdAndUpdate(
+  let creditedSourcePool = await CountryCurrencyPool.findByIdAndUpdate(
     sourcePool._id,
     { $inc: { availableBalance: sourceNet, totalBalance: sourceNet } },
     { new: true, ...sessionOpt }
   );
+
+  // Money in the sender's currency has just come into the sender's country.
+  // If that country's PayLater pool lent to a corridor earlier (somebody
+  // abroad paid somebody here), this inflow repays it — the two directions
+  // netting against each other, which is what keeps the borrowing small.
+  const repaid = await paylaterPool.repayFromInflow({ pool: creditedSourcePool, amount: sourceNet, session });
+  if (repaid > 0) {
+    creditedSourcePool = await CountryCurrencyPool.findById(creditedSourcePool._id, null, sessionOpt);
+  }
 
   const [settlement] = await Settlement.create(
     [{

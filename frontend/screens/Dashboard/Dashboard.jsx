@@ -1360,6 +1360,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     }
   };
 
+  // ── NO CREATOR NAME, NO CREATOR-SIDE PAYMENTS ──────────────────────
+  //
+  // A shop takes and sends money under its creator name, and the server
+  // now refuses both until one is saved (creator_not_ready /
+  // creator_name_required). So on the Creator side, Send, Scan, Receive
+  // and the pay box ask for the name first instead of letting somebody get
+  // as far as the PIN and be refused there.
+  const [creatorNameGate, setCreatorNameGate] = useState14(false);
+  const requestCloseCreatorNameGate = useBackClose(creatorNameGate, () => setCreatorNameGate(false));
+  const whenCreatorReady = (fn) => (...args) => {
+    if (shareRole === "merchant" && !creatorSetupDone(creatorProfile)) {
+      if (!creatorProfile) loadCreatorProfile();
+      setCreatorNameGate(true);
+      return undefined;
+    }
+    return fn ? fn(...args) : undefined;
+  };
   // The person's own store, opened the way a customer sees it. No name
   // yet means there is no store to open, so the setup screen that makes
   // one is the honest destination. Used by the app map and the profile.
@@ -2405,8 +2422,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     dialCode={(dialCountry && dialCountry.dialCode) || ""}
     countryIso={(dialCountry && dialCountry.iso) || ""}
     onOpenCoverage={onOpenCoverage}
-    onPayPerson={(payee) => onPayPerson && onPayPerson(payee)}
-    onPayCreator={({ creator }) => onPayCreator && onPayCreator({ creator })}
+    onPayPerson={whenCreatorReady((payee) => onPayPerson && onPayPerson(payee))}
+    onPayCreator={whenCreatorReady(({ creator }) => onPayCreator && onPayCreator({ creator }))}
     recent={quickPayRecent}
     favourites={Object.values(pinnedCreators || {}).filter((c) => c && c.handle)}
     onActiveChange={setQuickPaySearching}
@@ -2724,7 +2741,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        note in actionTileMotion.jsx about the day @keyframes finDrift lived
        in App.jsx and a background rendered eighteen invisible particles. */
   }<ActionTileMotionStyle />{DASHBOARD_ACTIONS.map(({ key, label, Icon }) => {
-    const onClick = key === "send" ? onOpenSend : key === "bank" ? onOpenBank : key === "receive" ? () => setShowReceive(true) : key === "scan" ? onOpenScan : void 0;
+    const onClick = key === "send" ? whenCreatorReady(onOpenSend) : key === "bank" ? onOpenBank : key === "receive" ? whenCreatorReady(() => setShowReceive(true)) : key === "scan" ? whenCreatorReady(onOpenScan) : void 0;
     const actionColor = { send: sendActionColor, bank: bankActionColor, scan: scanActionColor, receive: receiveActionColor }[key];
     return <div key={key} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}><button
       onClick={onClick}
@@ -4178,7 +4195,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   />}{
     /* Settling assets to Gloobal Bank — same mandatory Face ID +
        fingerprint screen used for PIN-follow-up everywhere else. */
-  }{showBankNeeds && <BankNeedsAccountSheet
+  }{creatorNameGate && <div style={{ position: "fixed", inset: 0, zIndex: 315, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}><div onClick={requestCloseCreatorNameGate} style={{ position: "absolute", inset: 0, background: "rgba(10,8,25,.5)" }} /><div
+    role="dialog"
+    aria-modal="true"
+    aria-label="Save your creator name first"
+    data-testid="creator-name-gate"
+    style={{ position: "relative", borderRadius: "28px 28px 0 0", background: T.bg, padding: "10px 18px calc(20px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column", boxShadow: "0 -14px 40px rgba(0,0,0,.25)" }}
+  ><span style={{ width: 40, height: 5, borderRadius: 99, background: T.line, margin: "0 auto 16px" }} /><span style={{ width: 52, height: 52, borderRadius: 14, background: T.gradButton, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><Store2 size={24} /></span><div style={{ fontSize: 21, fontWeight: 700, fontFamily: T.fontDisplay, marginTop: 14, color: T.ink }}>Save your creator name first</div><div style={{ fontSize: 13, fontWeight: 500, color: T.inkSoft, marginTop: 8, lineHeight: 1.5 }}>Your shop sends and takes payments under its creator name. Save it once and this side is ready.</div><button
+    type="button"
+    data-testid="creator-name-gate-save"
+    onClick={() => {
+      setCreatorNameGate(false);
+      setCreatorError("");
+      setShowCreatorSetup(true);
+    }}
+    className="v2-tap"
+    style={{ marginTop: 18, height: 50, borderRadius: 16, border: "none", background: T.gradButton, color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", boxShadow: `0 10px 24px rgba(${T.accentRgb},.28)` }}
+  >Save my creator name</button><button type="button" onClick={requestCloseCreatorNameGate} style={{ border: "none", background: "none", color: T.inkSoft, fontSize: 13, fontWeight: 700, marginTop: 12, cursor: "pointer", fontFamily: "inherit" }}>Not now</button></div></div>}{showBankNeeds && <BankNeedsAccountSheet
     bank={bankAccount}
     amountText={totalAssets > 0 ? `${ccy}${Number(totalAssets).toFixed(2)}` : ""}
     onClose={requestCloseBankNeeds}

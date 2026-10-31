@@ -1033,6 +1033,18 @@ var GloobalApi = {
   // GET /api/assets/settlements/:symbolId — every settlement, newest first:
   // { id, amount, principal, interest, currency, seedCount, spent, from,
   // to, at }. Null on a failed read, [] on none.
+  // GET /api/corridor/limit — the most that can be sent to this person right
+  // now when they are in another country: their country's PayLater pool is
+  // what a cross-border payment is paid out of (server/lib/paylaterPool.js).
+  // Null when it could not be asked; { crossBorder: false } at home.
+  async getCorridorLimit(fromSymbolId, toIdentifier) {
+    try {
+      return await gloobalApiClient.get(`/api/corridor/limit?from=${encodeURIComponent(fromSymbolId)}&to=${encodeURIComponent(toIdentifier)}`);
+    } catch (e) {
+      return null;
+    }
+  },
+
   // --- GLOOBAL Bank: opening the account (server/lib/bank.js) ------------
   //
   // The account number is the GLOOBAL ID, so none of these hands one back

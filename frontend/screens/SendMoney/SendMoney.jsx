@@ -1093,7 +1093,23 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   // How much Essentials actually carried of the payment in flight. Read
   // by the receipt; cleared whenever a new payment starts.
   const essentialsAppliedRef = useRef11(0);
+  // ── THE MOST THAT CAN GO TO THEIR COUNTRY RIGHT NOW ─────────────────
+  //
+  // A cross-border payment is paid out of the receiver's country's PayLater
+  // pool (server/lib/paylaterPool.js), so there is a ceiling, and it is
+  // shown here, under the amount, before the PIN — instead of a refusal
+  // screen after it. Asked again whenever the receiver changes.
+  const [corridorLimit, setCorridorLimit] = useState15(null);
+  useEffect13(() => {
+    setCorridorLimit(null);
+    if (searchStage !== "found" || !top.id || !bottom.id || top.currency === bottom.currency || bottom.registered === false) return undefined;
+    let live = true;
+    GloobalApi.getCorridorLimit(top.id, bottom.id).then((r) => { if (live && r && r.crossBorder) setCorridorLimit(r); });
+    return () => { live = false; };
+  }, [searchStage, top.id, bottom.id, top.currency, bottom.currency]);
+  const overCorridorLimit = Boolean(corridorLimit && receiverAmount > (Number(corridorLimit.maxReceive) || 0) + 0.005);
   function handleSend() {
+    if (overCorridorLimit) return;
     // A payment of nothing is not a payment. Stopped before the pay-method
     // sheet and PIN, so nobody is asked to authorise it; completePayment and
     // the server both refuse it again, so this is not the only guard.
@@ -2175,10 +2191,18 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     ccyCode={top.currency}
     onPay={(category) => { if (category) setChoiceId(category.id); setChoicesOpen(false); }}
     onScan={(category) => { if (category) setChoiceId(category.id); setChoicesOpen(false); }}
-  />}{searchStage === "found" && <button
+  />}{searchStage === "found" && corridorLimit && (() => {
+    const maxParts = geuLensBarParts(Number(corridorLimit.maxSend) || 0, top.currency, lens, top.currency);
+    const paused = !(Number(corridorLimit.maxSend) > 0);
+    return <div data-testid="send-corridor-limit" role={overCorridorLimit ? "alert" : void 0} style={{ marginTop: topOpen ? 0 : 18, marginBottom: -10, borderRadius: 14, padding: "10px 12px", fontSize: 12.5, fontWeight: 700, lineHeight: 1.45, background: overCorridorLimit || paused ? T.negativeSoft : T.surfaceAlt, color: overCorridorLimit || paused ? T.negative : T.inkSoft }}>{paused
+      ? `Payments to ${corridorLimit.countryName} are paused right now.`
+      : <>{overCorridorLimit ? "Too large to send to " : "You can send up to "}{overCorridorLimit ? `${corridorLimit.countryName} right now. You can send up to ` : ""}<span style={{ whiteSpace: "nowrap", color: overCorridorLimit ? T.negative : T.ink }}>{maxParts.lead}{maxParts.trail && <span style={{ fontSize: geuLensTrailSize(12.5) }}> {maxParts.trail}</span>}</span>{overCorridorLimit ? "." : ` to ${corridorLimit.countryName} right now.`}</>}</div>;
+  })()}{searchStage === "found" && <button
     className="send-btn"
     onClick={handleSend}
-    style={{ padding: "14px 18px", marginTop: topOpen ? 0 : 24 }}
+    disabled={overCorridorLimit || undefined}
+    data-testid="send-pay"
+    style={{ padding: "14px 18px", marginTop: topOpen ? 0 : 24, opacity: overCorridorLimit ? 0.5 : 1, cursor: overCorridorLimit ? "default" : "pointer" }}
   >{(() => {
     // The verb and the figure. No icon — it said nothing the word "Pay"
     // does not — and no category: that is named under the amount box,

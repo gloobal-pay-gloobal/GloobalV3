@@ -230,7 +230,7 @@ test("an unseeded destination pool is refused as a closed corridor, not a shorta
   assert.equal(res.status, 503, "a closed corridor is a 503");
   assert.match(
     res.body.message,
-    /corridor is not open yet/,
+    /aren't open yet/,
     "names the corridor as closed rather than temporarily short"
   );
   assert.doesNotMatch(res.body.message, /try again later/, "does not tell the payer to wait for something that cannot happen");
@@ -267,7 +267,8 @@ test("a seeded-but-short pool reports the released currency, never undefined", a
   const res = await sendInr(5000);
 
   assert.equal(res.status, 503);
-  assert.match(res.body.message, /US\/USD/, "names the country AND its real currency");
+  assert.equal(res.body.countryIso, "US", "names the country");
+  assert.equal(res.body.receiveCurrency, "USD", "and its real currency");
   assert.doesNotMatch(res.body.message, /undefined/, 'the "US/undefined" regression');
   // This used to assert /try again later/. That was wrong, and a read-only
   // pass over production is what showed it: a corridor drained by real
@@ -279,9 +280,14 @@ test("a seeded-but-short pool reports the released currency, never undefined", a
   // corridor fully and offers the one thing that can actually work.
   assert.doesNotMatch(res.body.message, /try again later/,
     "a drained corridor does not refill by waiting");
-  assert.match(res.body.message, /settling with INR/,
-    "names WHICH of the country's corridors is short");
-  assert.match(res.body.message, /smaller payment/i, "offers the action that exists");
+  // The message now names the country and the most that CAN be sent, in
+  // the payer's currency — or says payments there are paused when even the
+  // local PayLater pool has nothing to lend (lib/paylaterPool.js).
+  assert.match(res.body.message, /United States/,
+    "names the country being paid into");
+  assert.equal(res.body.code, "corridor_limit", "a limit refusal says so in a code the app can read");
+  assert.ok(Number.isFinite(res.body.maxSend), "carries the most that can be sent now");
+  assert.match(res.body.message, /You can send up to|paused right now/, "offers the action that exists");
 
   const sender = await User.findOne({ symbolId: IN_USER }).lean();
   assert.equal(sender.balance, 500000, "sender was not debited");
@@ -307,7 +313,8 @@ test("a pool drained to exactly zero reads as exhausted, not as never opened", a
   // must not be reported as one that was never opened. What changed is the
   // advice — see the note in the test above.
   assert.doesNotMatch(res.body.message, /not open yet/, "must NOT be misreported as never opened");
-  assert.match(res.body.message, /US\/USD settling with INR/);
+  assert.equal(res.body.code, "corridor_limit", "an emptied corridor is a limit, not a closed corridor");
+  assert.equal(res.body.countryIso, "US");
   assert.doesNotMatch(res.body.message, /undefined/);
   assert.doesNotMatch(res.body.message, /try again later/);
 });
@@ -468,7 +475,7 @@ test("the closed-corridor refusal is generic across currencies", async () => {
 
     const res = await sendInr(5000);
     assert.equal(res.status, 503, `${iso}: expected a closed-corridor refusal, got ${res.status} ${JSON.stringify(res.body?.message)}`);
-    assert.match(res.body.message, /corridor is not open yet/, `${iso}: same diagnosis as US`);
+    assert.match(res.body.message, /aren't open yet/, `${iso}: same diagnosis as US`);
     assert.doesNotMatch(res.body.message, /undefined/, `${iso}: no "undefined" in the message`);
     assert.equal(res.body.corridor.currency, ccy, `${iso}: names its own currency`);
 

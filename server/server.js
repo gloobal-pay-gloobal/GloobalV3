@@ -8201,6 +8201,52 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
 // GLOOBAL Bank — opening the account. See lib/bank.js. Mounted here, after
 // the PIN helpers it shares with /api/login exist, and before settle, which
 // now needs an open account to settle into.
+// Each country's local PayLater pool — the limit on what can be paid INTO
+// that country from abroad, and what a short corridor borrows from.
+const paylaterPool = require('./lib/paylaterPool');
+paylaterPool.configurePaylaterPool({ computeSeed });
+const regionNames = (() => { try { return new Intl.DisplayNames(['en'], { type: 'region' }); } catch (e) { return null; } })();
+const countryNameOf = (iso) => { try { return (regionNames && regionNames.of(String(iso || '').toUpperCase())) || String(iso || ''); } catch (e) { return String(iso || ''); } };
+const money2 = (n) => (Math.floor((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// GET /api/corridor/limit?from=<your ID>&to=<their ID, mobile or link>
+//
+// The most you can send to this person right now, in YOUR currency, and
+// what they would receive in theirs. Same-country payments have no corridor
+// and answer { crossBorder: false }. Read by the send screen before the PIN,
+// so a payment that cannot settle is never typed in the first place.
+app.get('/api/corridor/limit', lookupLimit, requireAuth, requireSelf('from'), async (req, res) => {
+  try {
+    const sender = await User.findOne({ symbolId: String(req.query.from || '').trim() });
+    const resolved = await resolveTransactionUserByIdentifier(String(req.query.to || '').trim());
+    const receiver = resolved && resolved.user;
+    if (!sender || !receiver) return res.status(404).json({ message: 'Account not found.' });
+    const [senderCountry, receiverCountry] = await Promise.all([
+      resolveCountry(accountCountryIso(sender)),
+      resolveCountry(accountCountryIso(receiver)),
+    ]);
+    if (!senderCountry || !receiverCountry) return res.status(400).json({ message: 'Payments are not supported for this country yet.' });
+    const sendCurrency = senderCountry.localCurrency;
+    const receiveCurrency = receiverCountry.localCurrency;
+    if (sendCurrency === receiveCurrency) return res.json({ crossBorder: false });
+    const { rate } = await getRate(receiveCurrency, sendCurrency);
+    const limit = await paylaterPool.maxIntoCountry({ countryIso: receiverCountry.iso, currency: receiveCurrency, counterCurrency: sendCurrency });
+    return res.json({
+      crossBorder: true,
+      countryIso: receiverCountry.iso,
+      countryName: countryNameOf(receiverCountry.iso),
+      sendCurrency,
+      receiveCurrency,
+      maxReceive: limit.max,
+      maxSend: Math.floor(limit.max * rate * 100) / 100,
+      rate,
+    });
+  } catch (error) {
+    console.error('Corridor limit error:', error);
+    return res.status(500).json({ message: 'Could not work out the limit just now.' });
+  }
+});
+
 const gloobalBank = require('./lib/bank').createBank({
   User, Pin, requireAuth, requireSelf, writeLimit, lookupLimit, credentialLimit,
   pin: { beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
@@ -9306,6 +9352,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       // Paid at the receiver's shop (their creator name) rather than at
       // them as a person. Only honoured when the receiver really has one.
       toCreator,
+      // Sent from the payer's Creator side. A shop pays and is paid under
+      // its creator name, so with no name saved it can do neither.
+      fromCreator,
       // Sending a complaint's money back. Only ever closes the case when
       // this payment is its receiver paying its reporter — see
       // closeComplaintByReturn. Anything else about it is ignored.
@@ -9424,6 +9473,28 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       return res.status(400).json({
         success: false,
         message: 'Self-transfer is not allowed.',
+      });
+    }
+
+    // ── A CREATOR SIDE WITH NO SAVED NAME TAKES AND SENDS NOTHING ─────────
+    //
+    // A shop is paid at its creator name, and that name is what history,
+    // receipts and the payer's screen show. Until it is saved there is no
+    // shop to pay — paying "the shop" used to fall through silently to the
+    // person, which put shop money in a personal history.
+    const hasCreatorName = (u) => Boolean(u && u.creatorProfile && typeof u.creatorProfile.handle === 'string' && u.creatorProfile.handle.trim());
+    if (toCreator === true && !hasCreatorName(receiver)) {
+      return res.status(409).json({
+        success: false,
+        code: 'creator_not_ready',
+        message: "This shop hasn't saved its creator name yet, so it can't take payments. Nothing left your balance.",
+      });
+    }
+    if (fromCreator === true && !hasCreatorName(sender)) {
+      return res.status(409).json({
+        success: false,
+        code: 'creator_name_required',
+        message: 'Save your creator name first. Your Creator side sends and takes payments once it has one.',
       });
     }
 
@@ -10284,7 +10355,9 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         });
         return res.status(503).json({
           success: false,
-          message: `The ${transferError.counterCurrency} to ${transferError.currency} corridor is not open yet, so this payment cannot be settled. Nothing has left your balance. Please contact support — retrying will not help.`,
+          code: 'corridor_closed',
+          message: `Payments to ${countryNameOf(transferError.countryIso)} aren't open yet. Nothing left your balance.`,
+          maxSend: 0,
           corridor: { countryIso: transferError.countryIso, currency: transferError.currency, counterCurrency: transferError.counterCurrency },
         });
       }
@@ -10344,15 +10417,25 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         // actually do: send less. The figures stay in the audit row rather
         // than on the payer's screen — how much liquidity a corridor holds is
         // the network's business, not the counterparty's.
-        const shortCorridor = transferError.counterCurrency
-          ? `${transferError.countryIso}/${transferError.currency} settling with ${transferError.counterCurrency}`
-          : `${transferError.countryIso}/${transferError.currency}`;
+        // The most that can be paid into the receiver's country right now:
+        // its corridor pool plus what its local PayLater pool can still lend
+        // (lib/paylaterPool.js). Said in the payer's own currency, so the
+        // message ends in a number they can act on.
+        const intoName = countryNameOf(transferError.countryIso);
+        const maxReceive = Math.max(0, Number(transferError.maxAvailable) || 0);
+        const maxSend = Math.floor(maxReceive * (Number(fxRate) || 0) * 100) / 100;
         return res.status(503).json({
           success: false,
-          message:
-            `This payment corridor (${shortCorridor}) does not have enough settlement liquidity ` +
-            'for a payment this size. Nothing has left your balance. A smaller payment may still ' +
-            'go through; a payment this size needs the corridor to be topped up first.',
+          code: 'corridor_limit',
+          message: maxSend > 0
+            ? `Too large to send to ${intoName} right now. Nothing left your balance. You can send up to ${money2(maxSend)} ${senderCurrency}.`
+            : `Payments to ${intoName} are paused right now. Nothing left your balance.`,
+          countryIso: transferError.countryIso,
+          countryName: intoName,
+          sendCurrency: senderCurrency,
+          receiveCurrency: transferError.currency,
+          maxSend,
+          maxReceive,
         });
       }
 

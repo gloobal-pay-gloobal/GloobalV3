@@ -10,7 +10,8 @@ import {
   ArrowUpRight as ArrowUpRight5,
   Store as Store4,
   Eye as EyeScan,
-  EyeOff as EyeOffScan
+  EyeOff as EyeOffScan,
+  BadgeCheck as BadgeCheckReferrer
 } from "lucide-react";
 
 
@@ -1598,6 +1599,24 @@ function GloobalId() {
     url.searchParams.delete("ref");
     window.history.replaceState(null, "", url.pathname + url.search + url.hash);
   }, []);
+  // ── AN INVITE LINK ON THE APP'S OWN DOMAIN ─────────────────────────────
+  // gloobalv3.netlify.app/r/<code>. Invite links used to point at the API
+  // server, which on Render's free tier can take 30–50 seconds to wake —
+  // a friend's first sight of GLOOBAL was a blank page. The app now opens
+  // at once and turns the short code into the inviter's ID itself.
+  useEffect15(() => {
+    if (typeof window === "undefined") return undefined;
+    const match = /^\/r\/([^/?#]+)/.exec(window.location.pathname || "");
+    if (!match) return undefined;
+    let alive = true;
+    const code = decodeURIComponent(match[1]);
+    window.history.replaceState(null, "", "/" + window.location.search + window.location.hash);
+    GloobalApi.resolveReferralCode(code).then((symbolId) => { if (alive && symbolId) setReferralCode(symbolId); });
+    return () => { alive = false; };
+  }, []);
+  // The name behind a fully dialled referral ID, read once the number's
+  // OTP has passed: { id, status: "checking" | "found" | "none" | "unknown", name }.
+  const [referrerPreview, setReferrerPreview] = useState19(null);
   const [pin, setPin] = useState19("");
   const [otp, setOtp] = useState19("123456");
   const [dialCountry, setDialCountry] = useState19(() => TOP_COUNTRIES.find((c) => c.iso === "IN") || TOP_COUNTRIES[0]);
@@ -3190,6 +3209,18 @@ function GloobalId() {
   // The referral code is only carried here; it is submitted as part of
   // registration at the PIN step. Skipping leaves it empty, which the
   // backend accepts.
+  useEffect15(() => {
+    if (stage !== "referral" || referralCode.length !== REFERRAL_LENGTH) { setReferrerPreview(null); return undefined; }
+    let alive = true;
+    setReferrerPreview({ id: referralCode, status: "checking", name: "" });
+    GloobalApi.previewReferrer(fullMobileNumber, referralCode).then((r) => {
+      if (!alive) return;
+      if (!r) setReferrerPreview({ id: referralCode, status: "unknown", name: "" });
+      else if (r.exists === false) setReferrerPreview({ id: referralCode, status: "none", name: "" });
+      else setReferrerPreview({ id: referralCode, status: "found", name: String(r.name || "").trim() });
+    });
+    return () => { alive = false; };
+  }, [stage, referralCode]);
   const handleSubmitReferral = async () => {
     if (referralCode.length !== REFERRAL_LENGTH || authBusy) return;
     // Check the code belongs to somebody before carrying it forward.
@@ -4299,7 +4330,7 @@ function GloobalId() {
        now sits on the card's boundary (top-right corner)
        instead of inline here — same spot the Secure ID eye
        uses in ID mode. */
-  }<div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "9px 13px" }}><span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, letterSpacing: loginMobileRevealed ? 0 : 2, color: loginMobileBuffer ? T.ink : T.inkFaint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{loginMobileBuffer ? loginMobileRevealed ? loginMobileBuffer.replace(/(\d{3})(?=\d)/g, "$1 ") : loginMobileBuffer.replace(/\d/g, "\u2022").replace(/(.{3})(?=.)/g, "$1 ") : "Mobile number"}</span></div></div>}{stage === "referral" && <SymbolChipRow length={REFERRAL_LENGTH} value={referralCode} masked={!referralRevealed} />}{stage === "otp" && <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, width: "100%" }}><span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600, textAlign: "center" }}>
+  }<div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "9px 13px" }}><span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, letterSpacing: loginMobileRevealed ? 0 : 2, color: loginMobileBuffer ? T.ink : T.inkFaint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{loginMobileBuffer ? loginMobileRevealed ? loginMobileBuffer.replace(/(\d{3})(?=\d)/g, "$1 ") : loginMobileBuffer.replace(/\d/g, "\u2022").replace(/(.{3})(?=.)/g, "$1 ") : "Mobile number"}</span></div></div>}{stage === "referral" && <SymbolChipRow length={REFERRAL_LENGTH} value={referralCode} masked={!referralRevealed} />}{stage === "referral" && referrerPreview && referrerPreview.status !== "unknown" ? <div data-testid="referrer-preview" role="status" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 10, fontSize: 13, fontWeight: 800, color: referrerPreview.status === "none" ? T.negative : referrerPreview.status === "found" ? T.ink : T.inkFaint }}>{referrerPreview.status === "found" ? <><span style={{ fontWeight: 600, color: T.inkSoft }}>Invited by</span><span style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{referrerPreview.name || "a GLOOBAL member"}</span><BadgeCheckReferrer size={16} color={T.positive} /></> : referrerPreview.status === "none" ? "No GLOOBAL account uses that ID" : "Checking…"}</div> : null}{stage === "otp" && <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, width: "100%" }}><span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600, textAlign: "center" }}>
                     Enter the code sent to {dialCountry.dialCode} {phoneNumber}</span><SymbolChipRow length={OTP_LENGTH2} value={otp} masked={!otpRevealed} boxSize={34} justify="center" /></div>}</div>{
     /* Symbol dial pad — same compact grid-button pattern as
        PhoneDialPad, sized down so the card, dial, and button all
@@ -4514,6 +4545,7 @@ function GloobalId() {
     // answered once — Dashboard falls back to the long link for that window,
     // which is exactly what it did before this existed.
     referralCode={(registeredUser && registeredUser.referralCode) || ""}
+    invitedBy={(registeredUser && registeredUser.referredByName) || ""}
     securitySettings={securitySettings}
     onUpdateSecuritySettings={handleUpdateSecuritySettings}
     onChangePin={handleChangePin}

@@ -11,6 +11,11 @@ const Pin = require('./models/Pin');
 const Transaction = require('./models/Transaction');
 const LedgerEntry = require('./models/LedgerEntry');
 const Referral = require('./models/Referral');
+const ReferralEarning = require('./models/ReferralEarning');
+// Three levels deep: 1% of a Creator Share to whoever invited the payer,
+// 0.5% to whoever invited them, 0.25% one further up. Paid by Gloobal; the
+// payer's own share is never touched. See models/ReferralEarning.js.
+const REFERRAL_LEVEL_RATES = [0.01, 0.005, 0.0025];
 const Interest = require('./models/Interest');
 const Product = require('./models/Product');
 const ProductService = require('./models/ProductService');
@@ -771,6 +776,11 @@ const publicUserPayload = async (user) => {
       appLock: user.securitySettings?.appLock === true,
     },
     referredBy: user.referredBy || null,
+    // The inviter's display name, so the app can say "Invited by Priya"
+    // rather than print twelve symbols. Name only — no contact details.
+    referredByName: user.referredBy
+      ? ((await User.findOne({ symbolId: user.referredBy }).select('fullName').lean())?.fullName || '')
+      : '',
     referralCount: user.referralCount || 0,
     // The short handle the invite link uses in place of this account's
     // Gloobal ID. Carried on every response that already carries a user, so
@@ -2206,6 +2216,7 @@ app.post('/api/register-symbol', registerLimit, async (req, res) => {
             status: 'completed'
           });
           referralApplied = true;
+          await notifyReferralJoin(referrerUser, newUser);
         } catch (referralError) {
           console.warn('Referral save skipped:', referralError.message);
           referralWarning = 'Your referral code could not be recorded, but your Gloobal ID was created.';
@@ -2897,6 +2908,206 @@ app.post('/api/interest', writeLimit, requireAuth, requireSelf('symbolId'), asyn
   }
 });
 
+// ─── Referral rewards ────────────────────────────────────────────────────────
+//
+// Called once a payer's Creator Share has been planted. Walks the payer's
+// referralChain (nearest first, at most three) and writes one held
+// ReferralEarning per level. Converted into each earner's own currency at
+// today's rate; a level whose figure rounds to nothing in that currency is
+// skipped rather than written as a zero.
+async function creditReferralChain({ payer, seed, transaction }) {
+  const chain = Array.isArray(payer.referralChain) ? payer.referralChain.slice(0, REFERRAL_LEVEL_RATES.length) : [];
+  if (chain.length === 0) return [];
+  const share = Number(seed.cashback) || 0;
+  if (share <= 0) return [];
+  const shareCurrency = String(seed.currency || '').toUpperCase();
+  const people = await User.find({ symbolId: { $in: chain } }).select('_id symbolId countryIso mobileNumber referralChain').lean();
+  const bySymbol = new Map(people.map((u) => [u.symbolId, u]));
+  const written = [];
+  for (let i = 0; i < chain.length; i += 1) {
+    const earner = bySymbol.get(chain[i]);
+    if (!earner || String(earner._id) === String(payer._id)) continue;
+    // The earner's own invitee on the path down to the payer.
+    const via = i === 0 ? payer : bySymbol.get(chain[i - 1]);
+    if (!via) continue;
+    const currency = await resolveOwnCurrency(earner);
+    if (!currency) continue;
+    let fx = 1;
+    if (currency !== shareCurrency) {
+      try {
+        ({ rate: fx } = await getRate(shareCurrency, currency));
+      } catch (e) {
+        console.warn(`Referral reward skipped — no ${shareCurrency}->${currency} rate:`, e.message);
+        continue;
+      }
+    }
+    const rate = REFERRAL_LEVEL_RATES[i];
+    const amount = toMinorUnit(share * rate * fx, currency);
+    if (!(amount > 0)) continue;
+    try {
+      const row = await ReferralEarning.create({
+        earnerId: earner._id,
+        earnerSymbolId: earner.symbolId,
+        fromUserId: payer._id,
+        viaUserId: via._id,
+        level: i + 1,
+        rate,
+        shareAmount: share,
+        shareCurrency,
+        amount,
+        currency,
+        transactionId: transaction._id,
+        seedId: seed._id,
+      });
+      written.push(row);
+    } catch (e) {
+      if (e?.code !== 11000) throw e; // already credited for this payment
+    }
+  }
+  return written;
+}
+
+// "Priya joined GLOOBAL with your ID" — in the inbox and on the phone.
+// Best-effort: a failed alert must never fail somebody's registration.
+async function notifyReferralJoin(referrer, joined) {
+  try {
+    const name = String(joined.fullName || '').trim() || 'Someone';
+    const title = `${name.split(/\s+/)[0]} joined GLOOBAL with your ID`;
+    const message = `${name} is now in your referral network. You earn when they get a Creator Share.`;
+    const row = await Notification.create({
+      userId: referrer._id,
+      type: 'referral',
+      title: title.slice(0, 100),
+      message: message.slice(0, 500),
+      metadata: { referredSymbolId: joined.symbolId },
+    });
+    await pruneNotifications(referrer._id);
+    if (pushService.isPushEnabled()) {
+      await pushService.sendPushToUser(
+        referrer._id,
+        {
+          v: 1,
+          category: 'transactional',
+          type: 'referral',
+          notificationId: String(row._id),
+          title: title.slice(0, 100),
+          body: message.slice(0, 200),
+          url: '/?open=referral',
+          tag: `gloobal-referral-${joined.symbolId}`,
+          timestamp: Date.now(),
+        },
+        { category: 'transactional', app: 'gloobal' }
+      );
+    }
+  } catch (error) {
+    console.error('Referral join alert error (non-fatal):', error);
+  }
+}
+
+// The Gloobal IDs in somebody's network at levels 2 and 3, from the stored
+// chains — one query each.
+async function referralNetworkCounts(symbolId) {
+  const [l2, l3] = await Promise.all([
+    User.countDocuments({ 'referralChain.1': symbolId }),
+    User.countDocuments({ 'referralChain.2': symbolId }),
+  ]);
+  return { level2: l2, level3: l3 };
+}
+
+// POST /api/referrals/settle — pay every held referral reward into the
+// balance as one disbursement, and close those rows. All or nothing.
+app.post('/api/referrals/settle', writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+  try {
+    const cleanSymbolId = String(req.body?.symbolId || '').trim();
+    const user = cleanSymbolId ? await User.findOne({ symbolId: cleanSymbolId }) : null;
+    if (!user) return res.status(404).json({ message: 'Secure ID not found.' });
+    const currency = await resolveOwnCurrency(user);
+    const countryIso = accountCountryIso(user);
+    if (!currency || !countryIso) {
+      return res.status(409).json({ message: 'Your account country or currency could not be resolved, so nothing can be settled yet.' });
+    }
+    let outcome;
+    try {
+      outcome = await withAtomicSession(async (session) => {
+        const rows = await ReferralEarning.find({ earnerId: user._id, settledAt: null, currency }).session(session);
+        const sum = toMinorUnit(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0), currency);
+        if (rows.length === 0 || !(sum > 0)) return { empty: true };
+        const ref = `RS-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+        const ids = rows.map((r) => r._id);
+        const closed = await ReferralEarning.updateMany(
+          { _id: { $in: ids }, settledAt: null },
+          { $set: { settledAt: new Date(), settlementRef: ref } },
+          { session }
+        );
+        if (closed.modifiedCount !== ids.length) {
+          const err = new Error('Referral earnings changed while settling.');
+          err.code = 'race';
+          throw err;
+        }
+        const result = await recordDisbursement({
+          user,
+          amount: sum,
+          currency,
+          countryIso,
+          reason: 'referral_reward',
+          idempotencyKey: `referral_settle:${user._id}:${ref}`,
+          metadata: { settlementRef: ref, rows: ids.length },
+          session,
+        });
+        return { amount: result.amount, count: ids.length, balanceAfter: result.balanceAfter, ref };
+      });
+    } catch (error) {
+      if (error?.code === 'not_atomic') return res.status(503).json({ message: 'Settling is not available right now. Nothing was moved.' });
+      if (error?.code === 'race') return res.status(409).json({ message: 'Your earnings changed while settling. Try again.' });
+      throw error;
+    }
+    if (outcome.empty) return res.status(409).json({ code: 'nothing_to_settle', message: 'There are no referral earnings to settle yet.' });
+    return res.status(200).json({ success: true, amount: outcome.amount, count: outcome.count, currency, newBalance: outcome.balanceAfter, ref: outcome.ref });
+  } catch (error) {
+    console.error('Referral settle error:', error);
+    return res.status(500).json({ message: 'Server error while settling. Nothing was moved.' });
+  }
+});
+
+// GET /api/referrals/code/:code — a short invite code, turned into the
+// inviter's Gloobal ID so the sign-up referral step can be pre-filled.
+// Says exactly what /r/:code already says by redirecting, as JSON, for an
+// invite link opened on the app's own domain.
+app.get('/api/referrals/code/:code', lookupLimit, async (req, res) => {
+  try {
+    const raw = safeDecodeSymbolId(req.params.code).trim();
+    const code = raw.toUpperCase();
+    const user = REFERRAL_CODE_PATTERN.test(code)
+      ? await User.findOne({ referralCode: code }).select('symbolId').lean()
+      : (raw ? await User.findOne({ symbolId: raw }).select('symbolId').lean() : null);
+    if (!user) return res.status(404).json({ message: 'That invite link is invalid or expired.' });
+    return res.json({ success: true, symbolId: user.symbolId });
+  } catch (error) {
+    console.error('Referral code lookup error:', error);
+    return res.status(500).json({ message: 'Could not read that invite link.' });
+  }
+});
+
+// POST /api/referrals/preview — during sign-up, the name behind a referral
+// Gloobal ID, so the person can see whom they are crediting before they
+// do. Only for a mobile number that has just passed its registration OTP:
+// without that, this would be an open "ID → name" lookup for anybody.
+app.post('/api/referrals/preview', lookupLimit, async (req, res) => {
+  try {
+    const mobile = normalizeMobileNumber(String(req.body?.mobileNumber || ''));
+    const symbolId = String(req.body?.symbolId || '').trim();
+    if (!mobile || !symbolId) return res.status(400).json({ message: 'A mobile number and a Gloobal ID are required.' });
+    const otp = await findVerifiedRegistrationOtp(mobile);
+    if (!otp) return res.status(403).json({ message: 'Verify your number first.' });
+    const user = await User.findOne({ symbolId }).select('fullName countryIso mobileNumber').lean();
+    if (!user) return res.status(404).json({ exists: false, message: 'No GLOOBAL account uses that ID.' });
+    return res.json({ exists: true, name: String(user.fullName || '').trim(), countryIso: accountCountryIso(user) });
+  } catch (error) {
+    console.error('Referral preview error:', error);
+    return res.status(500).json({ message: 'Could not check that ID right now.' });
+  }
+});
+
 // Everyone who registered using this Gloobal ID as their referral code.
 // The response carries Gloobal IDs and join dates only — never mobile
 // numbers, emails, or internal ObjectIds, since a referrer is not entitled
@@ -2947,14 +3158,60 @@ app.get('/api/referrals/:symbolId', lookupLimit, requireAuth, requireSelf('symbo
       referredUsers.map((user) => [user.symbolId, user.fullName || ''])
     );
 
+    // ── WHAT EACH PERSON HAS BROUGHT IN ───────────────────────────────
+    // Every reward this account has earned, summed per direct invitee
+    // (viaUserId — level 2 and 3 money is counted under the invitee whose
+    // network it came through), with today's part and the part still held.
+    const referredIdsBySymbol = new Map(referredUsers.map((u) => [u.symbolId, String(u._id)]));
+    const earnings = await ReferralEarning.find({ earnerId: referrer._id }).select('viaUserId level amount currency settledAt createdAt').lean();
+    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+    const perVia = new Map();
+    const byLevel = { 1: 0, 2: 0, 3: 0 };
+    let total = 0; let held = 0; let today = 0;
+    for (const e of earnings) {
+      const key = String(e.viaUserId);
+      const row = perVia.get(key) || { earned: 0, today: 0, held: 0 };
+      row.earned += e.amount;
+      if (new Date(e.createdAt) >= startOfDay) { row.today += e.amount; today += e.amount; }
+      if (!e.settledAt) { row.held += e.amount; held += e.amount; }
+      perVia.set(key, row);
+      total += e.amount;
+      byLevel[e.level] = (byLevel[e.level] || 0) + e.amount;
+    }
+    const currency = (await resolveOwnCurrency(referrer)) || (earnings[0] && earnings[0].currency) || null;
+    // Active = has paid somebody on GLOOBAL at least once since joining.
+    const referredObjectIds = referredUsers.map((u) => u._id);
+    const payers = referredObjectIds.length
+      ? await Transaction.distinct('fromUserId', { fromUserId: { $in: referredObjectIds }, status: 'success', type: 'send' })
+      : [];
+    const activeIds = new Set(payers.map(String));
+    const counts = await referralNetworkCounts(referrer.symbolId);
+    const round = (v) => (currency ? toMinorUnit(v, currency) : Math.round(v * 100) / 100);
+
     return res.status(200).json({
-      referrals: referrals.map((referral) => ({
-        referredSymbolId: referral.referredSymbolId,
-        referredName: nameBySymbolId.get(referral.referredSymbolId) || '',
-        createdAt: referral.createdAt,
-        status: referral.status
-      })),
-      total: referrals.length
+      referrals: referrals.map((referral) => {
+        const id = referredIdsBySymbol.get(referral.referredSymbolId);
+        const money = (id && perVia.get(id)) || { earned: 0, today: 0, held: 0 };
+        return {
+          referredSymbolId: referral.referredSymbolId,
+          referredName: nameBySymbolId.get(referral.referredSymbolId) || '',
+          createdAt: referral.createdAt,
+          status: id && activeIds.has(id) ? 'active' : 'joined',
+          earned: round(money.earned),
+          earnedToday: round(money.today),
+          held: round(money.held),
+        };
+      }),
+      total: referrals.length,
+      network: { level1: referrals.length, level2: counts.level2, level3: counts.level3 },
+      earnings: {
+        currency,
+        total: round(total),
+        today: round(today),
+        held: round(held),
+        byLevel: { 1: round(byLevel[1]), 2: round(byLevel[2]), 3: round(byLevel[3]) },
+        rates: REFERRAL_LEVEL_RATES,
+      },
     });
   } catch (error) {
     console.error('Referral list error:', error);
@@ -10241,6 +10498,16 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         });
       } catch (seedError) {
         console.error('Seed planting error (non-fatal):', seedError);
+      }
+    }
+
+    // The payer's referral network earns its slice of this share — held
+    // until each earner settles it. Best-effort, like the seed itself.
+    if (plantedSeed) {
+      try {
+        await creditReferralChain({ payer: sender, seed: plantedSeed, transaction: completedTransaction });
+      } catch (referralError) {
+        console.error('Referral reward error (non-fatal):', referralError);
       }
     }
 

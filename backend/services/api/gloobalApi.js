@@ -892,6 +892,46 @@ var GloobalApi = {
     return Array.isArray(result.referrals) ? result.referrals : [];
   },
 
+  // The whole referral picture: the people (with what each has brought in),
+  // how big the network is three levels deep, and the earnings totals —
+  // { referrals, network: { level1, level2, level3 }, earnings: { currency,
+  // total, today, held, byLevel, rates } }.
+  async getReferralNetwork(symbolId) {
+    const result = await gloobalApiClient.get(`/api/referrals/${encodeURIComponent(symbolId)}`);
+    return {
+      referrals: Array.isArray(result && result.referrals) ? result.referrals : [],
+      network: (result && result.network) || { level1: 0, level2: 0, level3: 0 },
+      earnings: (result && result.earnings) || null
+    };
+  },
+
+  // POST /api/referrals/settle — pays every held referral reward into the
+  // balance. Throws with the server's sentence on a refusal.
+  async settleReferrals(symbolId) {
+    return gloobalApiClient.post("/api/referrals/settle", { symbolId });
+  },
+
+  // A short invite code (from a /r/<code> link) → the inviter's Gloobal ID.
+  async resolveReferralCode(code) {
+    try {
+      const result = await gloobalApiClient.get(`/api/referrals/code/${encodeURIComponent(code)}`, { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS });
+      return (result && result.symbolId) || null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  // During sign-up, once the number's OTP has passed: the name behind a
+  // referral Gloobal ID. { exists, name } or null when it cannot tell.
+  async previewReferrer(mobileNumber, symbolId) {
+    try {
+      return await gloobalApiClient.post("/api/referrals/preview", { mobileNumber, symbolId }, { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS });
+    } catch (err) {
+      if (err && err.status === 404) return { exists: false, name: "" };
+      return null;
+    }
+  },
+
   // --- My Assets and PayLater -------------------------------------------
   //
   // Both of these routes have existed on the backend the whole time and

@@ -65,7 +65,9 @@ const disbursementSchema = new mongoose.Schema(
     // out of its own pocket.
     reason: {
       type: String,
-      enum: ['seed_interest'],
+      // `referral_reward` is a referral network's slice of a Creator Share
+      // (see ReferralEarning), paid when its earner settles it.
+      enum: ['seed_interest', 'referral_reward'],
       required: true,
       index: true,
     },

@@ -252,7 +252,7 @@ function BalanceError({ onRetry }) {
   >Retry</button>}</span>;
 }
 
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "" }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -1852,9 +1852,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // for the moment between the app mounting and the first server response,
   // and stays empty if that response never comes. A link that is long still
   // works; a link built from an empty string does not.
+  // On the app's own domain now (App.jsx reads /r/<code> on load), not the
+  // API server's: a sleeping Render instance made a friend wait 30–50
+  // seconds on a blank page before they ever saw GLOOBAL.
+  const referralLinkBase = typeof GLOOBAL_PAY_ORIGIN !== "undefined" ? GLOOBAL_PAY_ORIGIN : GLOOBAL_API_BASE;
   const referralLink = referralCode
-    ? `${GLOOBAL_API_BASE}/r/${encodeURIComponent(referralCode)}`
-    : `${GLOOBAL_API_BASE}/r/${encodeURIComponent(personalGloobalId)}`;
+    ? `${referralLinkBase}/r/${encodeURIComponent(referralCode)}`
+    : `${referralLinkBase}/r/${encodeURIComponent(personalGloobalId)}`;
   // The rate this account actually offers, read back from the server.
   //
   // Without this the sheet opened at its hardcoded 1% every time, so someone
@@ -2006,14 +2010,29 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // — it settles what is actually attributable, which is currently
   // nothing.
   const [referralNetwork, setReferralNetwork] = useState14(() => generateReferralNetwork());
+  // Three levels deep and what they have earned you, from the server.
+  // { network: { level1, level2, level3 }, earnings: { total, today, held,
+  // byLevel, rates } } or null until read.
+  const [referralSummary, setReferralSummary] = useState14(null);
+  const [referralReload, setReferralReload] = useState14(0);
+  // The floating map button sat over the referral screen's figures; hide it
+  // there, as every other full-screen page does.
+  useEffect12(() => {
+    if (typeof window === "undefined" || profileOverlay !== "referral") return undefined;
+    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
+    fire(true);
+    return () => fire(false);
+  }, [profileOverlay]);
   useEffect12(() => {
     const symbolId = currentSymbolId;
     if (!symbolId) return;
     let cancelled = false;
     (async () => {
       try {
-        const referrals = await GloobalApi.getReferrals(symbolId);
+        const whole = await GloobalApi.getReferralNetwork(symbolId);
+        const referrals = whole.referrals;
         if (cancelled || !Array.isArray(referrals)) return;
+        setReferralSummary({ network: whole.network, earnings: whole.earnings });
         setReferralNetwork(
           referrals.map((r) => ({
             // The server now returns a display name alongside the ID (see
@@ -2026,9 +2045,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
             name: r.referredName || "",
             symbolId: r.referredSymbolId || "",
             joinedAt: r.createdAt || null,
-            status: r.status === "completed" ? "Active" : "Pending",
-            earned: 0,
-            earnedToday: 0
+            // Active = has paid somebody on GLOOBAL since joining; Joined =
+            // signed up, not used it yet.
+            status: r.status === "active" ? "Active" : "Joined",
+            earned: Number(r.earned) || 0,
+            earnedToday: Number(r.earnedToday) || 0,
+            held: Number(r.held) || 0
           }))
         );
       } catch (e) {
@@ -2039,7 +2061,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     return () => {
       cancelled = true;
     };
-  }, [currentSymbolId]);
+  }, [currentSymbolId, referralReload]);
   // "I am IN", made real. Both flags used to be plain useState(false): the
   // button lit up, the next reload forgot it, and nothing was ever sent
   // anywhere. The counter beside them was worse — `interested ? 1 : 0` out
@@ -2164,7 +2186,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     if (fromServer) return fromServer.services;
     return deriveProductServices(capabilityKey, capabilities);
   };
-  const totalReferralEarned = referralNetwork.reduce((sum, m) => sum + m.earned, 0);
+  // What a settle would pay right now: the server's held total, never a sum
+  // of rows computed here.
+  const totalReferralEarned = referralSummary && referralSummary.earnings ? Number(referralSummary.earnings.held) || 0 : 0;
+  const referralAllTime = referralSummary && referralSummary.earnings ? Number(referralSummary.earnings.total) || 0 : 0;
   const [showSettleReferralBiometric, setShowSettleReferralBiometric] = useState14(false);
   const [settleReferralBiometricScanning, setSettleReferralBiometricScanning] = useState14(false);
   const handleSettleReferralBiometricVerify = () => runBiometricGate({
@@ -2172,9 +2197,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     setScanning: setSettleReferralBiometricScanning,
     close: () => setShowSettleReferralBiometric(false),
     pinReason: "Confirm it's you to settle referral earnings.",
-    run: () => {
-      onSettleReferralToBank(totalReferralEarned);
-      showToast2(`${geuLensBarMoney(totalReferralEarned, ccyCode, displayLens, ccyCode)} settled to GLOOBAL Bank`);
+    // Real now: the server pays the held rewards into the balance and
+    // closes them. It used to move a figure inside this browser only —
+    // a figure that was always zero.
+    run: async () => {
+      try {
+        const result = await GloobalApi.settleReferrals(currentSymbolId);
+        showToast2(`${geuLensBarMoney(Number(result && result.amount) || 0, ccyCode, displayLens, ccyCode)} settled to GLOOBAL Bank`);
+        setReferralReload((n) => n + 1);
+        if (onRefreshAccount) onRefreshAccount();
+      } catch (err) {
+        showToast2((err && err.message) || "Couldn't settle just now. Nothing was moved.");
+      }
     }
   });
   // Personal and Creator are separate books: each role only sees the
@@ -3212,7 +3246,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       cursor: "pointer",
       textAlign: "left"
     }}
-  ><span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>My Referral Network</span><span
+  ><span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}><span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>My Referral Network</span>{invitedBy ? <span style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint, marginTop: 2 }}>Invited by {invitedBy}</span> : null}</span><span
     role="button"
     tabIndex={0}
     onClick={(e) => {
@@ -4618,7 +4652,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   >{toast}</div>}</div>}{profileOverlay === "referral" && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}><SendMoneyAmbientBg /></div><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileOverlay} /></div><div style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* Earnings summary */
   }<div style={{ position: "relative", background: T.gradWallet, borderRadius: T.radiusLg, padding: "22px 22px 52px", display: "flex", flexDirection: "column", gap: 4, boxShadow: T.shadowRaised }}><span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: 0.3, textTransform: "uppercase" }}>
-                By <SingleOMark before="N" after="W" /></span><span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, whiteSpace: "nowrap" }}>{geuLensBarMoney(referralNetwork.reduce((sum, m) => sum + m.earned, 0), ccyCode, displayLens, ccyCode)}</span><div style={{ display: "flex", gap: 18, marginTop: 10 }}><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Invited</div></div><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.filter((m) => m.status === "Active").length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Active</div></div></div><button
+                By <SingleOMark before="N" after="W" /></span><span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, whiteSpace: "nowrap" }}>{geuLensBarMoney(referralAllTime, ccyCode, displayLens, ccyCode)}</span>{invitedBy ? <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>You were invited by {invitedBy}</span> : null}<div style={{ display: "flex", flexWrap: "wrap", gap: "10px 18px", marginTop: 10 }}><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Invited</div></div><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.filter((m) => m.status === "Active").length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Active</div></div>{[["level2", "Level 2"], ["level3", "Level 3"]].map(([k, label]) => <div key={k}><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{(referralSummary && referralSummary.network && referralSummary.network[k]) || 0}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>{label}</div></div>)}</div><button
     onClick={() => setProfileOverlay("share")}
     aria-label="Share your referral link"
     className="v2-tap"
@@ -4644,15 +4678,21 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        genuinely real, pulled from this account's own actual
        asset seeds (chip "CS" — see handleSendMoneyComplete). */
   }{(() => {
-    const totalReferralSharing = referralNetwork.reduce((sum, m) => sum + m.earned, 0);
-    const totalCreatorShareEarned = assetSeeds.filter((s) => s.chip === "CS").reduce((sum, s) => sum + s.amountPaid * s.cashbackRate, 0);
-    const combined = totalReferralSharing + totalCreatorShareEarned;
-    const referralPct = combined > 0 ? Math.round(totalReferralSharing / combined * 100) : 0;
-    return <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 16px" }}><div style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>
-                    Referral sharing vs. Creator Share
-                  </div><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Referral sharing</span><span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}><GeuFigure amount={totalReferralSharing} currency={ccyCode} lens={displayLens} size={13} /></span></div><span style={{ display: "block", height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden", marginBottom: 14 }}><span style={{ display: "block", width: `${referralPct}%`, height: "100%", borderRadius: 999, background: T.accent, transition: "width 0.3s ease" }} /></span><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Our own Creator Share</span><span style={{ fontSize: 13, fontWeight: 800, color: T.positive }}><GeuFigure amount={totalCreatorShareEarned} currency={ccyCode} lens={displayLens} size={13} /></span></div><span style={{ display: "block", height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden" }}><span style={{ display: "block", width: `${100 - referralPct}%`, height: "100%", borderRadius: 999, background: T.positive, transition: "width 0.3s ease" }} /></span><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", marginTop: 14, lineHeight: 1.4 }}>
-                    Creator Share is real, from this account's own payments. Referral sharing is still a seeded example — there are no real referred accounts yet to read this from.
-                  </div></div>;
+    // ── THREE LEVELS ─────────────────────────────────────────────────────
+    // Who you earn from and at what rate, with what each level has paid.
+    // This card used to compare referral sharing with Creator Share and
+    // call the referral half "a seeded example" — referrals earned nothing
+    // at all then. They do now, and this says how.
+    const rates = (referralSummary && referralSummary.earnings && referralSummary.earnings.rates) || [0.01, 0.005, 0.0025];
+    const byLevel = (referralSummary && referralSummary.earnings && referralSummary.earnings.byLevel) || {};
+    const net = (referralSummary && referralSummary.network) || {};
+    const levels = [
+      [1, "People you invited", net.level1 != null ? net.level1 : referralNetwork.length],
+      [2, "People they invited", net.level2 || 0],
+      [3, "One level further", net.level3 || 0]
+    ];
+    const tint = ["#7C3AED", "#2563EB", "#059669"];
+    return <div data-testid="referral-levels" style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 16px 6px", flexShrink: 0 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>You earn from three levels</div>{levels.map(([lvl, label, count], i) => <div key={lvl} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}><span style={{ width: 34, height: 34, borderRadius: 11, flexShrink: 0, background: `${tint[i]}1A`, color: tint[i], display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, fontFamily: T.fontDisplay }}>{lvl}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>{label}</span><span style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 1 }}>{`${count} ${count === 1 ? "person" : "people"} · ${(rates[i] * 100).toLocaleString("en", { maximumFractionDigits: 2 })}% of their Creator Share`}</span></span><span style={{ flexShrink: 0, fontSize: 13, fontWeight: 800, color: Number(byLevel[lvl]) > 0 ? T.positive : T.inkFaint, whiteSpace: "nowrap" }}><GeuFigure amount={Number(byLevel[lvl]) || 0} currency={ccyCode} lens={displayLens} size={13} /></span></div>)}</div>;
   })()}{
     /* Settle — moves the real referral total into the real
        Gloobal Bank balance, gated behind verification. Disabled
@@ -4789,7 +4829,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        and still for a pending one. aria-label carries the word for a
        screen reader, which is the one reader a coloured dot fails. */
   }<span
-    aria-label={m.status === "Active" ? "Active" : "Pending"}
+    aria-label={m.status === "Active" ? "Active — has paid on GLOOBAL" : "Joined — has not paid yet"}
     role="img"
     className={m.status === "Active" ? "referral-live-dot" : undefined}
     style={{
@@ -5529,7 +5569,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       justifyContent: "center",
       cursor: "pointer"
     }}
-  ><X3 size={16} color={T.inkFaint} /></button><FlipSymbolCircle size={44} /><div style={{ textAlign: "center" }}><div style={{ fontSize: 15.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{selectedMember.name}</div><div style={{ fontSize: 11.5, fontWeight: 600, color: selectedMember.status === "Active" ? T.positive : T.inkFaint, marginTop: 2 }}>{selectedMember.status}</div></div>{(() => {
+  ><X3 size={16} color={T.inkFaint} /></button><FlipSymbolCircle size={44} /><div style={{ textAlign: "center" }}><div style={{ fontSize: 15.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{selectedMember.name || "GLOOBAL member"}</div><div style={{ fontSize: 11.5, fontWeight: 600, color: selectedMember.status === "Active" ? T.positive : T.inkFaint, marginTop: 2 }}>{selectedMember.status}</div></div>{(() => {
     const total = selectedMember.earned;
     const today = selectedMember.earnedToday;
     const rawPct = total > 0 ? Math.min(100, today / total * 100) : 0;
@@ -5613,9 +5653,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
               </span></div><div style={{ display: "flex", flexDirection: "column", gap: 16 }}><div style={{ display: "flex", gap: 12 }}><div style={{ width: 34, height: 34, borderRadius: 10, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Share22 size={16} color={T.accent} /></div><div><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Share your link</div><div style={{ fontSize: 12, color: T.inkFaint, lineHeight: 1.4, marginTop: 2 }}>
                     Your <GloobalWordmark suffix=" ID" /> doubles as your invite link. Send it to friends and family.
                   </div></div></div><div style={{ display: "flex", gap: 12 }}><div style={{ width: 34, height: 34, borderRadius: 10, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Users23 size={16} color={T.accent} /></div><div><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>They join your network</div><div style={{ fontSize: 12, color: T.inkFaint, lineHeight: 1.4, marginTop: 2 }}>
-                    Once they sign up and become active, they show up in your network list.
-                  </div></div></div><div style={{ display: "flex", gap: 12 }}><div style={{ width: 34, height: 34, borderRadius: 10, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Gift size={16} color={T.accent} /></div><div><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>You earn together</div><div style={{ fontSize: 12, color: T.inkFaint, lineHeight: 1.4, marginTop: 2 }}>
-                    Every time they send money, a share of the fee is added straight to your balance — tracked today and all-time for each person.
+                    When they sign up with your ID they show up here, and you get a notification. The dot turns green once they pay.
+                  </div></div></div><div style={{ display: "flex", gap: 12 }}><div style={{ width: 34, height: 34, borderRadius: 10, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Gift size={16} color={T.accent} /></div><div><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>You earn three levels deep</div><div style={{ fontSize: 12, color: T.inkFaint, lineHeight: 1.4, marginTop: 2 }}>
+                    When someone you invited earns a Creator Share, GLOOBAL gives you 1% of it — 0.5% from the people they invite, and 0.25% one level further. Nothing is taken from them. Settle it to your bank whenever you like.
                   </div></div></div></div><button
     onClick={requestCloseHowItWorks}
     className="v2-tap"

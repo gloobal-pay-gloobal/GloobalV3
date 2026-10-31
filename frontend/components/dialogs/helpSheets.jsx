@@ -323,7 +323,7 @@ function ReferralHelpSheet({ open, onClose }) {
       background: T.surface,
       border: `1px solid ${T.line}`
     }}
-  ><HelpStepRow n="1">You pay Jio <strong style={{ fontWeight: 800 }}>₹1,000</strong> for a recharge.</HelpStepRow><HelpStepRow n="2">Jio's Creator Share is 2%, so <strong style={{ fontWeight: 800 }}>₹20</strong> comes straight back to you and is planted in My Assets.</HelpStepRow><HelpStepRow n="3">The person whose ID you entered here earns <strong style={{ fontWeight: 800 }}>1% of your ₹20 — that is ₹0.20</strong>.</HelpStepRow><HelpStepRow n="4" emphasis>Your ₹20 is not reduced. Their share is a percentage of what you <em>earn</em>, never a cut of what you pay.</HelpStepRow></div><div
+  ><HelpStepRow n="1">You pay Jio <strong style={{ fontWeight: 800 }}>₹1,000</strong> for a recharge.</HelpStepRow><HelpStepRow n="2">Jio's Creator Share is 2%, so <strong style={{ fontWeight: 800 }}>₹20</strong> comes straight back to you and is planted in My Assets.</HelpStepRow><HelpStepRow n="3">GLOOBAL gives the person whose ID you entered here <strong style={{ fontWeight: 800 }}>1% of your ₹20 — ₹0.20</strong>, the person who invited them 0.5%, and one more 0.25%. Your ₹20 stays yours.</HelpStepRow><HelpStepRow n="4" emphasis>Your ₹20 is not reduced. Their share is a percentage of what you <em>earn</em>, never a cut of what you pay.</HelpStepRow></div><div
     style={{
       marginTop: 12,
       padding: "12px 13px",
@@ -332,6 +332,6 @@ function ReferralHelpSheet({ open, onClose }) {
       border: `1px solid ${T.line}`
     }}
   ><span style={{ display: "block", fontSize: 12.5, lineHeight: 1.55, color: T.ink }}>
-      It runs the other way too. Once you are in, your own <GloobalWordmark /> ID is your referral ID — anyone who signs up with it joins your network, and you earn 1% of what <em>they</em> earn, on every payment they make.
+      It runs the other way too. Once you are in, your own <GloobalWordmark /> ID is your referral ID — anyone who signs up with it joins your network, and you earn 1% of every Creator Share <em>they</em> get — plus 0.5% from the people they invite, and 0.25% one level further.
     </span></div><div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}><HelpStepRow n="•">Your network and its earnings live under <strong style={{ fontWeight: 800 }}>My Referral Network</strong> in your profile.</HelpStepRow><HelpStepRow n="•">No code? Tap <strong style={{ fontWeight: 800 }}>Skip for now</strong>. Nothing about your account depends on it.</HelpStepRow></div></HelpSheet>;
 }

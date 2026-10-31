@@ -1,7 +1,7 @@
 // src/features/assets/AssetsScreen.jsx
 import React2, { useState as useState10, useEffect as useEffect53, Fragment } from "react";
-import { ArrowLeft, ArrowRight, ChevronRight, TrendingUp, Sprout, Landmark as Landmark3 } from "lucide-react";
-function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater, onViewDetail, onRequestSettle }) {
+import { ArrowLeft, ArrowRight, ChevronRight, TrendingUp, Sprout, Landmark as Landmark3, History as HistorySettle, RotateCcw as RestartSettle, CreditCard as CardSettle, Check as CheckSettle, Loader as LoaderSettle } from "lucide-react";
+function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater, onViewDetail, onRequestSettle, symbolId = "", historyRefresh = 0 }) {
   // Every figure on this screen is the account's own money in the account's
   // own currency, so the lens applies to all of them or none. Read from the
   // shared store the balance card's toggle writes.
@@ -25,6 +25,12 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
     return () => fire(false);
   }, []);
   const [assetsExpanded, setAssetsExpanded] = useState10(false);
+  // Settle asks first (a short sheet that says what settling does), and
+  // the history of settlements is one tap away in the top-right corner.
+  const [confirmOpen, setConfirmOpen] = useState10(false);
+  const [historyOpen, setHistoryOpen] = useState10(false);
+  useBackClose(confirmOpen, () => setConfirmOpen(false));
+  useBackClose(historyOpen, () => setHistoryOpen(false));
   const totalAssets = assetRows.reduce((s, r) => s + r.value, 0);
   // This number used to sit on the wallet card under the heading "Future
   // assets" — totalSpending relabelled, drawn at the same size, weight and
@@ -85,7 +91,14 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
   // this card has one figure on it and no competition for the width.
   const assetsTotalSize = geuLensRowFontSize(assetsTotalText, 30, 284, 14);
   const assetsTotalParts = geuLensBarParts(totalAssets, ccyCode, lens, ccyCode);
-  return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onClose} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>My Assets</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}>{
+  return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onClose} /><span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>My Assets</span><button
+    type="button"
+    onClick={() => setHistoryOpen(true)}
+    aria-label="Settlement history"
+    data-testid="assets-settlement-history"
+    className="v2-tap"
+    style={{ width: 44, height: 44, borderRadius: "50%", border: "none", background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+  ><HistorySettle size={19} color={T.accent} /></button></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}>{
     /* The whole chain, in one card: what is here now, how much of the
        spending that is, and where it lands.
 
@@ -109,7 +122,8 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
        Gloobal Bank balance, gated behind verification. Disabled at
        zero, since there's genuinely nothing to settle then. */
   }<button
-    onClick={onRequestSettle}
+    onClick={() => setConfirmOpen(true)}
+    data-testid="assets-settle"
     disabled={totalAssets <= 0}
     className="v2-tap"
     style={{
@@ -137,10 +151,8 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
        Two lines rather than a smaller font, because the alternative is a
        figure that shrinks as it grows — exactly backwards for the number
        a person is about to act on. */
-  }<span style={{ display: "flex", alignItems: "center", gap: 8 }}><Landmark3 size={16} />
-    <span>Settle to <GloobalWordmark /> Bank</span></span><span style={{
-      display: "block", marginTop: 3, fontSize: 15, fontWeight: 800, whiteSpace: "nowrap"
-    }}><GeuFigure amount={totalAssets} currency={ccyCode} lens={lens} size={15} /></span>
+  }<span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14.5, padding: "3px 0" }}><Landmark3 size={17} />
+    <span>Settle to <GloobalWordmark /> Bank</span></span>
         </button>{
     /* One row per seed, each carrying its own chain end to end:
        what was paid, what it is worth today, and what it grows back
@@ -219,6 +231,96 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
     className="v2-tap"
     style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, border: "none", borderTop: `1px solid ${T.line}`, background: "none", padding: "12px 2px 0", cursor: "pointer", textAlign: "left" }}
   ><span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>
-            This <GeuFigure amount={totalAssets} currency={ccyCode} lens={lens} size={11.5} /> is also your PayLater limit
-          </span><ChevronRight size={14} color={T.inkFaint} style={{ flexShrink: 0 }} /></button></div></div>;
+            Your assets are also your PayLater limit
+          </span><ChevronRight size={14} color={T.inkFaint} style={{ flexShrink: 0 }} /></button></div>{confirmOpen && <AssetsSettleSheet
+    symbolId={symbolId}
+    ccyCode={ccyCode}
+    lens={lens}
+    localTotal={totalAssets}
+    seedCount={assetRows.length}
+    onCancel={() => setConfirmOpen(false)}
+    onConfirm={() => { setConfirmOpen(false); if (onRequestSettle) onRequestSettle(); }}
+  />}{historyOpen && <AssetsSettlementHistory
+    symbolId={symbolId}
+    ccyCode={ccyCode}
+    lens={lens}
+    refreshKey={historyRefresh}
+    onClose={() => setHistoryOpen(false)}
+  />}</div>;
+}
+
+// ── BEFORE SETTLING: WHAT HAPPENS ──────────────────────────────────────────
+//
+// "Don't settle directly. Ask, and tell them what happens after." Three
+// short facts and one tick, then the usual Face ID / PIN gate. The figure
+// is the server's — what the settle route will actually pay — so the sheet
+// and the payout cannot disagree; the screen's own total is shown only
+// while that is being read.
+function AssetsSettleSheet({ symbolId, ccyCode, lens, localTotal, seedCount, onCancel, onConfirm }) {
+  const [server, setServer] = useState10(null);
+  const [dues, setDues] = useState10(0);
+  const [agreed, setAgreed] = useState10(false);
+  useEffect53(() => {
+    let alive = true;
+    if (!symbolId || typeof GloobalApi === "undefined") return undefined;
+    Promise.all([GloobalApi.getAssets(symbolId), GloobalApi.getPaylater(symbolId)]).then(([a, p]) => {
+      if (!alive) return;
+      if (a) setServer(a);
+      if (p) setDues(Number(p.pendingDues) || 0);
+    });
+    return () => { alive = false; };
+  }, [symbolId]);
+  const amount = server ? server.totalClaimable : localTotal;
+  const count = server ? server.seeds.length : seedCount;
+  const point = (Icon, color, title, text) => <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}><span style={{ width: 36, height: 36, borderRadius: 12, flexShrink: 0, background: `${color}1A`, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={17} color={color} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink }}>{title}</span><span style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 2, lineHeight: 1.45 }}>{text}</span></span></div>;
+  return <div role="dialog" aria-modal="true" aria-label="Settle to GLOOBAL Bank" style={{ position: "fixed", inset: 0, zIndex: 320, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}><div onClick={onCancel} style={{ position: "absolute", inset: 0, background: "rgba(20,18,43,0.45)" }} /><div data-testid="assets-settle-sheet" style={{ position: "relative", background: T.bg, borderRadius: "26px 26px 0 0", padding: "10px 18px calc(18px + env(safe-area-inset-bottom, 0px))", boxShadow: "0 -12px 40px rgba(20,18,43,0.25)", maxHeight: "92vh", overflowY: "auto" }}><div style={{ width: 40, height: 4, borderRadius: 99, background: T.line, margin: "0 auto 14px" }} /><div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Settle to <GloobalWordmark /> Bank?</div><div style={{ marginTop: 12, borderRadius: 18, background: T.gradButton, color: "#fff", padding: "14px 16px" }}><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>You receive</div><div style={{ fontSize: 24, fontWeight: 800, fontFamily: T.fontDisplay, marginTop: 2, whiteSpace: "nowrap" }}>{server ? <GeuFigure amount={amount} currency={ccyCode} lens={lens} size={24} /> : <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 15 }}><LoaderSettle size={16} style={{ animation: "spin 0.9s linear infinite" }} />Checking…</span>}</div><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.8)", marginTop: 2 }}>{`from ${count} ${count === 1 ? "seed" : "seeds"}`}</div></div><div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 16 }}>{point(Landmark3, T.accent, "It moves into your bank balance", "Spend it or send it like any other money.")}{point(RestartSettle, "#EA580C", "My Assets starts again from zero", "These seeds and the spending they grew from close. Your next payment plants the first new one.")}{point(CardSettle, "#0E7490", "PayLater starts from zero too", dues > 0 ? <>Your limit is your assets. You still owe <GeuFigure amount={dues} currency={ccyCode} lens={lens} size={12} />.</> : "Your limit is your assets, so it grows back as you spend.")}</div><button
+    type="button"
+    onClick={() => setAgreed((v) => !v)}
+    role="checkbox"
+    aria-checked={agreed}
+    data-testid="assets-settle-agree"
+    className="v2-tap"
+    style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, marginTop: 18, padding: "12px 14px", borderRadius: 14, border: `1.5px solid ${agreed ? T.accent : T.line}`, background: T.surface, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
+  ><span style={{ width: 22, height: 22, borderRadius: 7, flexShrink: 0, border: agreed ? "none" : `2px solid ${T.line}`, background: agreed ? T.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>{agreed ? <CheckSettle size={15} color="#fff" strokeWidth={3} /> : null}</span><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, lineHeight: 1.4 }}>I understand My Assets starts again from zero</span></button><div style={{ display: "flex", gap: 10, marginTop: 14 }}><button
+    type="button"
+    onClick={onCancel}
+    className="v2-tap"
+    style={{ flex: 1, minHeight: 50, borderRadius: 999, border: `1px solid ${T.line}`, background: T.surface, color: T.inkSoft, fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+  >Not now</button><button
+    type="button"
+    onClick={onConfirm}
+    disabled={!agreed || !server || count === 0}
+    data-testid="assets-settle-confirm"
+    className="v2-tap"
+    style={{ flex: 1.4, minHeight: 50, borderRadius: 999, border: "none", background: agreed && server ? T.gradButton : T.surfaceAlt, color: agreed && server ? "#fff" : T.inkFaint, fontSize: 14, fontWeight: 800, cursor: agreed && server ? "pointer" : "default", fontFamily: "inherit" }}
+  >Settle now</button></div></div></div>;
+}
+
+// ── SETTLEMENT HISTORY ─────────────────────────────────────────────────────
+// Every settle, newest first: when, how much, and the spending it came from.
+function AssetsSettlementHistory({ symbolId, ccyCode, lens, refreshKey, onClose }) {
+  const [rows, setRows] = useState10(undefined);
+  useEffect53(() => {
+    let alive = true;
+    if (!symbolId || typeof GloobalApi === "undefined") { setRows(null); return undefined; }
+    GloobalApi.getAssetSettlements(symbolId).then((list) => { if (alive) setRows(list); });
+    return () => { alive = false; };
+  }, [symbolId, refreshKey]);
+  const day = (d) => { const t = d ? new Date(d) : null; return t && !Number.isNaN(t.getTime()) ? t.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""; };
+  const short = (d) => { const t = d ? new Date(d) : null; return t && !Number.isNaN(t.getTime()) ? t.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""; };
+  const total = Array.isArray(rows) ? rows.reduce((s, r) => s + (Number(r.amount) || 0), 0) : 0;
+  return <div data-testid="assets-history-screen" style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onClose} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Settlements</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}>{rows === undefined ? <div style={{ display: "flex", justifyContent: "center", padding: 30 }}><LoaderSettle size={20} color={T.accent} style={{ animation: "spin 0.9s linear infinite" }} /></div> : rows === null ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "20px 16px", textAlign: "center", fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>Couldn't read your settlements just now. Try again in a moment.</div> : rows.length === 0 ? <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "24px 16px", textAlign: "center" }}><div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>No settlements yet</div><div style={{ fontSize: 12, color: T.inkSoft, marginTop: 4, lineHeight: 1.45 }}>Each time you settle My Assets to your bank, it is listed here.</div></div> : <><div style={{ borderRadius: T.radiusLg, background: T.gradButton, color: "#fff", padding: "16px 18px" }}><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>Settled to your bank, all time</div><div style={{ fontSize: 22, fontWeight: 800, fontFamily: T.fontDisplay, marginTop: 2, whiteSpace: "nowrap" }}><GeuFigure amount={total} currency={ccyCode} lens={lens} size={22} /></div><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.8)", marginTop: 2 }}>{`${rows.length} ${rows.length === 1 ? "settlement" : "settlements"}`}</div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{rows.map((r, i) => <div key={r.id} data-testid="assets-history-row" style={{ display: "flex", gap: 12, padding: "14px 16px", borderTop: i ? `1px solid ${T.line}` : "none" }}><span style={{ width: 38, height: 38, borderRadius: 12, flexShrink: 0, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><Landmark3 size={18} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "flex", alignItems: "baseline", gap: 8 }}><span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", overflow: "hidden" }}><GeuFigure amount={r.amount} currency={ccyCode} lens={lens} size={14} /></span><span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: T.inkFaint }}>{day(r.at)}</span></span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkSoft, marginTop: 3, lineHeight: 1.45 }}>{`${r.seedCount} ${r.seedCount === 1 ? "seed" : "seeds"}`}{r.from ? ` · ${short(r.from)}${r.to && short(r.to) !== short(r.from) ? ` – ${short(r.to)}` : ""}` : ""}</span><span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: T.inkFaint, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden" }}>from <GeuFigure amount={r.spent} currency={ccyCode} lens={lens} size={11} /> spent</span></span></div>)}</div></>}</div></div>;
+}
+
+// ── AFTER SETTLING ─────────────────────────────────────────────────────────
+// One short message: what came in, and that My Assets starts again.
+function AssetsSettledCard({ done, ccyCode, lens, onClose }) {
+  useBackClose(true, onClose);
+  return <div role="dialog" aria-modal="true" aria-label="Settled" data-testid="assets-settled" style={{ position: "fixed", inset: 0, zIndex: 330, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}><div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(20,18,43,0.45)" }} /><div style={{ position: "relative", width: "100%", maxWidth: 360, background: T.surface, borderRadius: 26, padding: "24px 20px 18px", textAlign: "center", boxShadow: "0 20px 50px rgba(20,18,43,0.3)" }}><span style={{ width: 58, height: 58, borderRadius: "50%", margin: "0 auto", background: T.positive, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 20px rgba(5,150,105,0.35)" }}><CheckSettle size={30} color="#fff" strokeWidth={3} /></span><div style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft, marginTop: 14 }}>Settled to <GloobalWordmark /> Bank</div><div style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 4, whiteSpace: "nowrap" }}><GeuFigure amount={done.amount} currency={ccyCode} lens={lens} size={26} /></div><div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, marginTop: 10, lineHeight: 1.5 }}>My Assets starts fresh. Your next payment plants the first new seed.</div><button
+    type="button"
+    onClick={onClose}
+    data-testid="assets-settled-done"
+    className="v2-tap"
+    style={{ width: "100%", minHeight: 50, marginTop: 18, borderRadius: 999, border: "none", background: T.gradButton, color: "#fff", fontSize: 14.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+  >Done</button></div></div>;
 }

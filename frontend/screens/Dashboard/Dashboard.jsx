@@ -695,14 +695,34 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // before opening the prompt, so one biometric flow serves both
   // instead of duplicating it.
   const [settlePendingAmount, setSettlePendingAmount] = useState14(0);
+  // The short message after a settle: what came in, and that My Assets
+  // starts again. { amount, seedCount, at } or null.
+  const [settleDone, setSettleDone] = useState14(null);
+  // ── SETTLING IS REAL NOW ───────────────────────────────────────────────
+  // It used to move money only inside this browser's own ledger: the bank
+  // figure went up, My Assets emptied, and the next reload brought every
+  // seed back from the server with nothing paid. The server now pays out
+  // what the seeds hold, closes them and records the settlement; this side
+  // only clears its local copy and re-reads the account once the server
+  // has said yes.
   const handleSettleAssetsBiometricVerify = () => runBiometricGate({
     scanning: settleAssetsBiometricScanning,
     setScanning: setSettleAssetsBiometricScanning,
     close: () => setShowSettleAssetsBiometric(false),
     pinReason: "Confirm it's you to settle to GLOOBAL Bank.",
-    run: () => {
+    run: async () => {
+      let result = null;
+      try {
+        result = await GloobalApi.settleAssets(myGloobalId);
+      } catch (err) {
+        showToast2((err && err.message) || "Couldn't settle just now. Nothing was moved.");
+        return;
+      }
+      const settled = result && result.settlement;
+      if (!settled) { showToast2("Couldn't settle just now. Nothing was moved."); return; }
       onSettleAssetsToBank(settlePendingAmount);
-      showToast2(`${geuLensBarMoney(settlePendingAmount, ccyCode, displayLens, ccyCode)} settled to GLOOBAL Bank`);
+      if (onRefreshAccount) onRefreshAccount();
+      setSettleDone({ amount: settled.amount, seedCount: settled.seedCount, at: Date.now() });
     }
   });
   const CHART_W = 320, CHART_H = 160, CHART_PAD_L = 8, CHART_PAD_R = 8, CHART_PAD_T = 16, CHART_PAD_B = 22;
@@ -4031,10 +4051,17 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       setShowPayLater(true);
     }}
     onViewDetail={setAssetDetailKey}
+    symbolId={myGloobalId}
+    historyRefresh={settleDone ? settleDone.at : 0}
     onRequestSettle={() => {
       setSettlePendingAmount(totalAssets);
       setShowSettleAssetsBiometric(true);
     }}
+  />}{settleDone && <AssetsSettledCard
+    done={settleDone}
+    ccyCode={ccyCode}
+    lens={displayLens}
+    onClose={() => setSettleDone(null)}
   />}{showEssentials && <EssentialsScreen
     onClose={requestCloseEssentials}
     dialCountry={dialCountry}

@@ -15,6 +15,11 @@ const Interest = require('./models/Interest');
 const Product = require('./models/Product');
 const ProductService = require('./models/ProductService');
 const AssetSeed = require('./models/AssetSeed');
+const AssetSettlement = require('./models/AssetSettlement');
+// Seeds still in My Assets. A settled seed (see AssetSettlement) is closed:
+// `settledAt: null` matches both an explicit null and a seed written before
+// the field existed.
+const OPEN_SEED = { settledAt: null };
 // Where a Creator Share waits between being earned and being claimed, and
 // the account lib/disbursement.js pays Gloobal's own money out of. Two
 // purposes, one model — see its header for why holding a user's money and
@@ -7517,7 +7522,7 @@ app.get('/api/assets/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId
     // opened by. Two fields selected and nothing else: this route answers
     // about seeds, and pulling whole transactions through it would make a
     // list of twelve seeds a list of twelve payments as well.
-    const rawSeeds = await AssetSeed.find({ userId: user._id })
+    const rawSeeds = await AssetSeed.find({ userId: user._id, ...OPEN_SEED })
       .sort({ plantedAt: -1 })
       .populate('transactionId', 'referenceId');
     if (rawSeeds.length === 0) {
@@ -7774,7 +7779,7 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
     let payout;
     try {
       payout = await withAtomicSession(async (session) => {
-        const rawSeeds = await AssetSeed.find({ userId: user._id }).session(session);
+        const rawSeeds = await AssetSeed.find({ userId: user._id, ...OPEN_SEED }).session(session);
         // Kept apart all the way through, because they are funded by two
         // different accounts and summing them early is how the principal
         // would end up being paid out of the expense account.
@@ -7925,6 +7930,180 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
   }
 });
 
+// POST /api/assets/settle — "Settle to GLOOBAL Bank" from My Assets.
+//
+// Pays out everything the open seeds hold, the same two movements as
+// claim-interest (principal out of custody, interest as a disbursement),
+// and then CLOSES those seeds and records the settlement — all in one
+// transaction. Afterwards My Assets is empty and starts again from zero;
+// the PayLater limit, which is the assets total, starts from zero with it.
+//
+// A seed with nothing left to pay (an old-generation seed whose interest
+// was claimed) is still closed: settling is "start again", not "take what
+// is due and leave the rest growing".
+app.post('/api/assets/settle', writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+  try {
+    const cleanSymbolId = String(req.body?.symbolId || '').trim();
+    if (!cleanSymbolId) return res.status(400).json({ message: 'Secure ID is required.' });
+    const user = await User.findOne({ symbolId: cleanSymbolId });
+    if (!user) return res.status(404).json({ message: 'Secure ID not found.' });
+
+    const currency = await resolveOwnCurrency(user);
+    if (!currency) {
+      return res.status(409).json({ message: 'Your account currency could not be resolved, so nothing can be settled yet.' });
+    }
+    const countryIso = accountCountryIso(user);
+    if (!countryIso) {
+      return res.status(409).json({ message: 'Your account country could not be resolved, so nothing can be settled yet.' });
+    }
+
+    let outcome;
+    try {
+      outcome = await withAtomicSession(async (session) => {
+        const rawSeeds = await AssetSeed.find({ userId: user._id, ...OPEN_SEED }).session(session);
+        if (rawSeeds.length === 0) return { empty: true };
+
+        const now = new Date();
+        const settlementId = new mongoose.Types.ObjectId();
+        let totalInterest = 0;
+        let totalPrincipal = 0;
+        let spent = 0;
+        let from = null;
+        let to = null;
+        const seedIds = [];
+
+        for (const seed of rawSeeds) {
+          const { interestAvailable, principalAvailable } = computeSeed(seed);
+          const priorInterest = Number(seed.interestClaimed) || 0;
+          const priorPrincipal = Number(seed.principalClaimed) || 0;
+          // The same compare-and-swap as claim-interest, plus the close:
+          // a seed another request touched in between is left for later.
+          const updated = await AssetSeed.findOneAndUpdate(
+            { _id: seed._id, interestClaimed: priorInterest, principalClaimed: priorPrincipal, ...OPEN_SEED },
+            {
+              $set: {
+                interestClaimed: priorInterest + interestAvailable,
+                principalClaimed: priorPrincipal + principalAvailable,
+                lastClaimedAt: now,
+                settledAt: now,
+                settlementId,
+              },
+            },
+            { returnDocument: 'after', session }
+          );
+          if (!updated) continue;
+          totalInterest += interestAvailable;
+          totalPrincipal += principalAvailable;
+          spent += Number(seed.amountPaid) || 0;
+          const planted = seed.plantedAt ? new Date(seed.plantedAt) : null;
+          if (planted && (!from || planted < from)) from = planted;
+          if (planted && (!to || planted > to)) to = planted;
+          seedIds.push(seed._id);
+        }
+        if (seedIds.length === 0) return { empty: true };
+
+        let balanceAfter = null;
+        let principalPaid = 0;
+        let interestPaid = 0;
+        if (toMinorUnit(totalPrincipal, currency) > 0) {
+          const release = await releaseFromCustody({
+            user,
+            amount: totalPrincipal,
+            currency,
+            reason: 'creator_share_principal',
+            metadata: { seedIds: seedIds.map(String), settlementId: String(settlementId) },
+            session,
+          });
+          principalPaid = release.amount;
+          balanceAfter = release.balanceAfter;
+        }
+        if (toMinorUnit(totalInterest, currency) > 0) {
+          const result = await recordDisbursement({
+            user,
+            amount: totalInterest,
+            currency,
+            countryIso,
+            reason: 'seed_interest',
+            idempotencyKey: `seed_settle:${user._id}:${String(settlementId)}`,
+            metadata: { seedIds: seedIds.map(String), settlementId: String(settlementId) },
+            session,
+          });
+          interestPaid = result.amount;
+          balanceAfter = result.balanceAfter;
+        }
+        const amount = toMinorUnit(principalPaid + interestPaid, currency);
+        const [row] = await AssetSettlement.create([{
+          _id: settlementId,
+          userId: user._id,
+          symbolId: user.symbolId,
+          amount,
+          principal: principalPaid,
+          interest: interestPaid,
+          currency,
+          seedCount: seedIds.length,
+          spent: toMinorUnit(spent, currency),
+          from,
+          to,
+          seedIds,
+          balanceAfter,
+        }], { session });
+        return { row };
+      });
+    } catch (error) {
+      if (error?.code === 'not_atomic') {
+        return res.status(503).json({ message: 'Settling is not available right now. Nothing was moved.' });
+      }
+      if (error?.name === 'CustodyError' && error.code === 'custody_short') {
+        console.error('Settle refused — custody short of a held Creator Share:', error.message);
+        return res.status(409).json({ message: 'Your Creator Share cannot be released right now. Nothing was moved.' });
+      }
+      throw error;
+    }
+
+    if (outcome.empty) {
+      return res.status(409).json({ code: 'nothing_to_settle', message: 'There is nothing in My Assets to settle.' });
+    }
+    const fresh = await User.findById(user._id).select('balance').lean();
+    return res.status(200).json({
+      success: true,
+      settlement: assetSettlementOut(outcome.row),
+      newBalance: fresh ? toMinorUnit(Number(fresh.balance) || 0, currency) : outcome.row.balanceAfter,
+    });
+  } catch (error) {
+    console.error('Settle assets error:', error);
+    return res.status(500).json({ message: 'Server error while settling. Nothing was moved.' });
+  }
+});
+
+function assetSettlementOut(row) {
+  return {
+    id: String(row._id),
+    amount: Number(row.amount) || 0,
+    principal: Number(row.principal) || 0,
+    interest: Number(row.interest) || 0,
+    currency: row.currency,
+    seedCount: Number(row.seedCount) || 0,
+    spent: Number(row.spent) || 0,
+    from: row.from || null,
+    to: row.to || null,
+    at: row.createdAt || null,
+  };
+}
+
+// GET /api/assets/settlements/:symbolId — every settlement, newest first.
+app.get('/api/assets/settlements/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+  try {
+    const cleanSymbolId = String(req.params.symbolId || '').trim();
+    const user = cleanSymbolId ? await User.findOne({ symbolId: cleanSymbolId }).select('_id').lean() : null;
+    if (!user) return res.status(404).json({ message: 'Secure ID not found.' });
+    const rows = await AssetSettlement.find({ userId: user._id }).sort({ createdAt: -1 }).limit(200).lean();
+    return res.status(200).json({ success: true, settlements: rows.map(assetSettlementOut) });
+  } catch (error) {
+    console.error('Settlement history error:', error);
+    return res.status(500).json({ message: 'Server error while reading settlements.' });
+  }
+});
+
 // GET /api/assets/paylater/:symbolId — PayLater limit is always the live
 // total of the user's assets, and the activity list is built from records
 // that actually exist: payments the account chose to put on PayLater
@@ -7947,7 +8126,7 @@ app.get('/api/assets/paylater/:symbolId', lookupLimit, requireAuth, requireSelf(
     // opened by. Two fields selected and nothing else: this route answers
     // about seeds, and pulling whole transactions through it would make a
     // list of twelve seeds a list of twelve payments as well.
-    const rawSeeds = await AssetSeed.find({ userId: user._id })
+    const rawSeeds = await AssetSeed.find({ userId: user._id, ...OPEN_SEED })
       .sort({ plantedAt: -1 })
       .populate('transactionId', 'referenceId');
     const seeds = rawSeeds.map(computeSeed);

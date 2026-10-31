@@ -978,6 +978,30 @@ var GloobalApi = {
     }
   },
 
+  // POST /api/assets/settle — "Settle to GLOOBAL Bank": pays out what the
+  // open seeds hold, closes them, and records the settlement. My Assets
+  // starts again from zero. Throws with the server's own sentence on a
+  // refusal so the screen can show it; nothing moves on a failure.
+  async settleAssets(symbolId) {
+    const result = await gloobalApiClient.post("/api/assets/settle", { symbolId });
+    return {
+      settlement: (result && result.settlement) || null,
+      newBalance: result && Number.isFinite(Number(result.newBalance)) ? Number(result.newBalance) : null
+    };
+  },
+
+  // GET /api/assets/settlements/:symbolId — every settlement, newest first:
+  // { id, amount, principal, interest, currency, seedCount, spent, from,
+  // to, at }. Null on a failed read, [] on none.
+  async getAssetSettlements(symbolId) {
+    try {
+      const result = await gloobalApiClient.get(`/api/assets/settlements/${encodeURIComponent(symbolId)}`);
+      return Array.isArray(result && result.settlements) ? result.settlements : [];
+    } catch (e) {
+      return null;
+    }
+  },
+
   // --- Transactions -----------------------------------------------------
 
   // POST /api/transactions/send — PIN-verified server-side. The whole

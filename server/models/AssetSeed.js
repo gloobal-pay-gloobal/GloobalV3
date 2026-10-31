@@ -66,6 +66,12 @@ const AssetSeedSchema = new mongoose.Schema({
   // field existed; every seed created from now on carries it, and the
   // unique index below guarantees a given payment can only ever plant one.
   transactionId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction', default: null },
+  // Closed by a "Settle to GLOOBAL Bank" (see AssetSettlement). A closed
+  // seed has paid out everything it held, no longer shows in My Assets,
+  // no longer counts towards PayLater and no longer grows. Null (or absent,
+  // which is every seed before settling existed) means open.
+  settledAt:       { type: Date, default: null },
+  settlementId:    { type: mongoose.Schema.Types.ObjectId, ref: 'AssetSettlement', default: null },
 }, { timestamps: true });
 
 AssetSeedSchema.index({ userId: 1 });

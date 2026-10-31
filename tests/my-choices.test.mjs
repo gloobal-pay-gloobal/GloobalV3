@@ -417,8 +417,11 @@ describe("a heart decides what the Send strip offers", () => {
     const src = code(STORE);
     assert.match(src, /var CHOICES_STRIP_COUNT = 4;/);
     const send = code(SEND);
-    assert.match(send, /choicesOfKind\(choicesState, "expense"\)\.slice\(0, CHOICES_STRIP_COUNT\)/,
+    // Still that one list — reordered only so the side that is paying
+    // leads (founder, 31 Oct), then cut to the strip's four.
+    assert.match(send, /const all = choicesOfKind\(choicesState, "expense"\);/,
       "the Send strip no longer takes its categories from the shared sort");
+    assert.match(send, /return mine\.concat\(other\)\.slice\(0, CHOICES_STRIP_COUNT\);/);
   });
 
   test("an archived category is never offered, however favourited", () => {
@@ -1658,7 +1661,10 @@ describe("a category belongs to a book", () => {
     // would hide half their favourites behind a toggle on a screen
     // they are not on.
     assert.match(grid, /choicesOfKind\(state, kind, side\)/, "the grid shows both books at once");
-    assert.match(code(SEND), /choicesOfKind\(choicesState, "expense"\)\.slice\(0, CHOICES_STRIP_COUNT\)/,
+    // Both books, with the paying side first (founder, 31 Oct): from the
+    // Creator side the shop's choices lead, from Personal the personal
+    // ones — and the other book still follows rather than disappearing.
+    assert.match(code(SEND), /choicesOfKind\(choicesState, "expense"\);[\s\S]{0,200}=== payingSide\);[\s\S]{0,120}!== payingSide\);[\s\S]{0,60}mine\.concat\(other\)/,
       "the Send strip now hides half of somebody's favourites");
     assert.match(store, /const book = side === "creator" \|\| side === "personal" \? side : null;/);
     assert.match(store, /&& \(!book \|\| \(row\.side \|\| "personal"\) === book\)/);

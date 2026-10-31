@@ -5113,6 +5113,9 @@ function GloobalId() {
     sender={{ ...dialCountry, phoneNumber, fullName: documentedName, symbolId: secureId, mobileNumber: (registeredUser && registeredUser.mobileNumber) || fullMobileNumber }}
     prefillReceiver={sendPrefillReceiver}
     prefillChoiceId={sendPrefillChoiceId}
+    // Which side is paying, so the choices strip leads with that side's
+    // own choices (the other side's still follow, and All has every one).
+    payingSide={activeShareRole === "merchant" ? "creator" : "personal"}
     history={sendMoneyHistory}
     // Tapping a row in Send Money's Recent list opens that payment's
     // receipt. A BUILDER rather than a handler: Send Money owns the modal

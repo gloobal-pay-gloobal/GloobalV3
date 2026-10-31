@@ -212,27 +212,24 @@ describe("a character each, not one character four times", () => {
   });
 });
 
-describe("the chosen category shows its face", () => {
-  test("the 'for' line draws the glyph, not just the name", () => {
-    // It printed "for hosting" in plain text while every tile beside it
-    // drew a photograph or an emoji on a coloured chip — so the one
-    // category actually attached to the payment was the only one on the
-    // screen with nothing to recognise it by.
+describe("the 'for' line names the chosen category, once", () => {
+  test("the name only: the strip right below already shows its picture", () => {
+    // It used to draw the choice's photo or emoji again in front of the
+    // name, right above the same photo with a tick on it in the strip —
+    // the same thing twice (founder, 31 Oct). The name alone now.
     const body = strip(send);
     const at = body.indexOf("{pickedChoice && <div");
     assert.ok(at > 0, "the 'for <choice>' line is gone");
-    const line = body.slice(at, at + 1600);
-    assert.match(line, /<ChoiceGlyph category=\{pickedChoice\}/,
-      "the chosen choice is still named without being shown");
+    const line = body.slice(at, body.indexOf("</button></div>}", at));
+    assert.doesNotMatch(line, /<ChoiceGlyph/, "the 'for' line draws the choice's picture a second time");
+    assert.match(line, /pickedChoice\.name/);
   });
 
-  test("and blurs it with the rest when the names are hidden", () => {
-    // The same treatment the chips get. Removing it instead would leave
-    // the line as the one place the mask does not reach.
+  test("and the name is still masked with the rest when names are hidden", () => {
     const body = strip(send);
     const at = body.indexOf("{pickedChoice && <div");
-    const line = body.slice(at, at + 1600);
-    assert.match(line, /filter: choiceNamesHidden \? "blur\(/,
-      "the chosen choice's icon stays sharp while its name is masked");
+    const line = body.slice(at, body.indexOf("</button></div>}", at));
+    assert.match(line, /choiceNamesHidden \? <ChoiceNameMask/,
+      "the chosen choice's name stays readable while the others are masked");
   });
 });

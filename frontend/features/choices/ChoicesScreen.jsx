@@ -274,7 +274,7 @@ function ChoiceGridTile({ category, ccyCode, onOpen, onPay }) {
   >{category.name}</div></div>;
 }
 
-function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded, onToast }) {
+function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded, onToast, initialSide = "personal" }) {
   // Invitations waiting on this account, and the sheet that answers one.
   // They belong on the grid rather than on a screen of their own: an
   // invitation is a category somebody is offering, and the grid is where
@@ -293,7 +293,9 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded, onT
   // is looking, not something about them, and a person who opens the
   // app expects to land on their own spending rather than wherever
   // they last happened to be.
-  const [side, setSide] = useState44("personal");
+  // Opens on the side that is paying when reached from Send ("All"), so a
+  // Creator payment lands on the shop's choices; Personal everywhere else.
+  const [side, setSide] = useState44(initialSide === "creator" ? "creator" : "personal");
 
   const categories = useMemo13(() => choicesOfKind(state, kind, side), [state, kind, side]);
   const shown = useMemo13(() => {

@@ -141,7 +141,7 @@ function EssentialsPayIcon({ size, color }) {
   return <Sprout2 size={size} color={color} />;
 }
 
-function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoiceId = null, history = [], onOpenPaidHistory, onOpenScan, onSendComplete, onExecuteTransaction, onRemoteSend, onBuildRowReceipt, onDrawEssentials, essentialsDailyLimit = 0 }) {
+function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoiceId = null, payingSide = "personal", history = [], onOpenPaidHistory, onOpenScan, onSendComplete, onExecuteTransaction, onRemoteSend, onBuildRowReceipt, onDrawEssentials, essentialsDailyLimit = 0 }) {
   // The account's CURRENT Gloobal ID — the same source the Dashboard reads,
   // so a rename made this session shows here too.
   const liveSenderId = useCurrentSymbolId(sender && sender.symbolId);
@@ -350,10 +350,18 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   // puts favourites first, so the heart on a tile is also what decides
   // what appears here — one rule rather than a separate pinned list that
   // could disagree with the grid.
-  const sendChoices = useMemo6(
-    () => choicesOfKind(choicesState, "expense").slice(0, CHOICES_STRIP_COUNT),
-    [choicesState]
-  );
+  //
+  // Both books are still offered, as before — but the side that is PAYING
+  // comes first. Paying from the Creator side, the shop's own choices
+  // (Stock, Rent of the stall) lead; from Personal, the personal ones do.
+  // Within each side the usual order holds: favourites, then the person's
+  // own order. Stable, so nothing else about the order changes.
+  const sendChoices = useMemo6(() => {
+    const all = choicesOfKind(choicesState, "expense");
+    const mine = all.filter((row) => (row.side || "personal") === payingSide);
+    const other = all.filter((row) => (row.side || "personal") !== payingSide);
+    return mine.concat(other).slice(0, CHOICES_STRIP_COUNT);
+  }, [choicesState, payingSide]);
   // DECLARED AFTER choiceId and choicesState, not beside them. It reads
   // both, and a const that reads a const declared below it is a temporal
   // dead zone error at render — the one that has bitten this bundle three
@@ -1887,33 +1895,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   ><span style={{ fontWeight: 600, flexShrink: 0 }}>
       for
     </span>{
-    /* THE CHOICE'S OWN FACE, which this line never showed.
-       It said "for hosting" in plain text while the strip below drew
-       every category as a photograph or an emoji on a coloured chip —
-       so the one category actually attached to the payment was the only
-       one on the screen with nothing to recognise it by. Worse when the
-       chosen one is not among the four chips in view, which is exactly
-       when this line is the only thing naming it.
-
-       Blurred, not removed, when the names are hidden — the same
-       treatment the chips get, for the same reason: shape and colour
-       are enough to recognise your own, and nothing in a 20px smear
-       identifies anybody to somebody reading across a counter. */
+    /* Name only. The strip just below already shows the chosen choice's
+       photo with a tick on it, so a second copy of the same picture here
+       was the same thing twice (founder, 31 Oct). */
   }<span
-    aria-hidden="true"
-    style={{
-      width: 22,
-      height: 22,
-      borderRadius: 7,
-      flexShrink: 0,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
-      filter: choiceNamesHidden ? "blur(3.5px)" : "none",
-      transition: "filter 0.18s ease"
-    }}
-  ><ChoiceGlyph category={pickedChoice} size={14} /></span><span
     style={{ fontWeight: 800, color: T.ink, minWidth: 0, overflowWrap: "anywhere", lineHeight: 1.35 }}
   >{
     /* HIDDEN, NOT REMOVED. The line still says a choice is attached —
@@ -2185,6 +2170,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
        its own "Pay for X", which on this screen means "file what I am
        already sending under X". */
   }{choicesOpen && <ChoicesScreen
+    initialSide={payingSide}
     onClose={() => setChoicesOpen(false)}
     onToast={setToast}
     history={history}

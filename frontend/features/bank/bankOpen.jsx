@@ -188,8 +188,28 @@ function useBankDigitKeys(active, onDigit, onDelete) {
 
 // ── THE FLOW ────────────────────────────────────────────────────────────
 function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, initialBank, after = "bank", onClose, onOpened, onFinish, onToast }) {
-  const india = String(dialCountry?.iso || "IN").toUpperCase() === "IN";
   const [bank, setBank] = useStateBank(initialBank || null);
+  // Which ways to prove identity apply comes from the SERVER, for the
+  // account's registered country (lib/kycCountries.js) — not from the
+  // phone's dial code. A UAE account never sees Aadhaar, whatever +code the
+  // phone was set up with.
+  const kyc = bank && bank.kyc ? bank.kyc : null;
+  const country = String((kyc && kyc.country) || dialCountry?.iso || "").toUpperCase();
+  const india = country === "IN";
+  const countryName = dialCountry && String(dialCountry.iso || "").toUpperCase() === country ? dialCountry.name : "";
+  const [kycLoadFailed, setKycLoadFailed] = useStateBank(false);
+  const loadKyc = () => {
+    setKycLoadFailed(false);
+    GloobalApi.getBank(symbolId).then((b) => { if (b) setBank((cur) => ({ ...(cur || {}), ...b })); else setKycLoadFailed(true); });
+  };
+  useEffectBank(() => { if (!kyc) loadKyc(); }, []);
+  // The app-map button floats at z-index 10000 and sat on top of this
+  // flow's own buttons. Hidden while the flow is up — it is a form with a
+  // PIN at the end, not a screen to jump away from mid-way.
+  useEffectBank(() => {
+    window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: true } }));
+    return () => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: false } }));
+  }, []);
   const [screen, setScreen] = useStateBank(() => bankResumeScreen(initialBank));
   const [busy, setBusy] = useStateBank(false);
   const [error, setError] = useStateBank("");
@@ -204,13 +224,15 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
     occupation: d0.occupation || "",
     income: d0.income || ""
   }));
-  const [aadhaar, setAadhaar] = useStateBank("");
-  const [showAadhaar, setShowAadhaar] = useStateBank(true);
-  const [pan, setPan] = useStateBank("");
-  const [passportNumber, setPassportNumber] = useStateBank("");
-  const [passportExpiry, setPassportExpiry] = useStateBank("");
+  const [methodKey, setMethodKey] = useStateBank("");
+  const [idValues, setIdValues] = useStateBank({});
+  const [revealed, setRevealed] = useStateBank({});
+  const liveMethods = kyc ? kyc.methods.filter((m) => m.status === "live") : [];
+  const soonMethods = kyc ? kyc.methods.filter((m) => m.status !== "live") : [];
+  const activeMethod = liveMethods.find((m) => m.key === methodKey) || liveMethods[0] || null;
   const [otp, setOtp] = useStateBank("");
   const [sentTo, setSentTo] = useStateBank("");
+  const [otpTo, setOtpTo] = useStateBank("");
   const [resendIn, setResendIn] = useStateBank(0);
   const [nominees, setNominees] = useStateBank(() => {
     const list = (initialBank && initialBank.nominees) || [];
@@ -265,13 +287,12 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
   const submitId = async () => {
     setBusy(true); setError(""); setFieldError({});
     try {
-      const payload = india
-        ? { method: "aadhaar", aadhaar: aadhaar.replace(/\s/g, ""), pan: pan.trim() }
-        : { method: "passport", passportNumber: passportNumber.trim(), passportExpiry };
-      const r = await GloobalApi.submitBankId(symbolId, payload);
+      if (!activeMethod) return;
+      const r = await GloobalApi.submitBankId(symbolId, { method: activeMethod.key, values: idValues });
       if (r && r.bank) setBank(r.bank);
-      if (india) {
+      if (r && r.otpSent) {
         setSentTo((r && r.sentTo) || "");
+        setOtpTo((r && r.otpTo) || "");
         setOtp("");
         setResendIn(30);
         go("otp");
@@ -372,7 +393,7 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
   const showSteps = stepIndex !== undefined;
   const canExit = showSteps;
   const back = () => {
-    const prev = { about: "welcome", id: "about", otp: "id", selfie: india ? "id" : "id", nominee: "selfie", review: "nominee", pin: "review" }[screen];
+    const prev = { about: "welcome", id: "about", otp: "id", selfie: "id", nominee: "selfie", review: "nominee", pin: "review" }[screen];
     if (screen === "welcome" || screen === "done" || !prev) { onClose(bank); return; }
     go(prev);
   };
@@ -389,7 +410,7 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
         [<CoinsBk size={19} />, "Settle My Assets into it", "Your accumulated assets move here when you choose"],
         [<ShieldBk size={19} />, "Locked by your PIN", "Nobody opens it but you"]
       ].map(([icon, title, sub], i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "center" }}><BankIconBox size={38}>{icon}</BankIconBox><span style={{ minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink }}>{title}</span><span style={{ display: "block", fontSize: 12, fontWeight: 500, color: T.inkSoft, marginTop: 1 }}>{sub}</span></span></div>)}</div>
-      <div style={{ marginTop: 16, borderRadius: 14, background: T.surfaceAlt, padding: "11px 12px" }}><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint }}>Keep ready</div><div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>{(india ? ["Aadhaar", "PAN", "Your face for a selfie"] : ["Passport", "Your face for a selfie"]).map((t) => <span key={t} style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 99, background: T.surface, color: T.ink }}>{t}</span>)}</div></div>
+      <div style={{ marginTop: 16, borderRadius: 14, background: T.surfaceAlt, padding: "11px 12px" }}><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint }}>Keep ready</div><div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>{[...((kyc && kyc.keepReady) || []), "Your face for a selfie"].map((t) => <span key={t} style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 99, background: T.surface, color: T.ink }}>{t}</span>)}</div></div>
     </>;
     foot = <BankCta testId="bank-start" onClick={() => go("about")}>Start</BankCta>;
   }
@@ -408,7 +429,7 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
         <BankField id="bank-line2" label="Area or landmark (optional)" value={details.address.line2} onChange={(v) => setA("line2", v)} autoComplete="address-line2" maxLength={120} />
         <div style={{ display: "flex", gap: 10 }}>
           <div style={{ flex: 1.4, minWidth: 0 }}><BankField id="bank-city" label="City" value={details.address.city} onChange={(v) => setA("city", v)} autoComplete="address-level2" maxLength={60} /></div>
-          <div style={{ flex: 1, minWidth: 0 }}><BankField id="bank-postcode" label={india ? "PIN code" : "Postcode"} value={details.address.postcode} onChange={(v) => setA("postcode", v)} inputMode={india ? "numeric" : "text"} autoComplete="postal-code" maxLength={12} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}><BankField id="bank-postcode" label={(kyc && kyc.postcodeLabel) || "Postcode"} value={details.address.postcode} onChange={(v) => setA("postcode", v)} inputMode={india ? "numeric" : "text"} autoComplete="postal-code" maxLength={12} /></div>
         </div>
         <div><BankLabel>What do you do?</BankLabel><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{BANK_OCCUPATIONS.map(([k, l]) => <BankChip key={k} on={details.occupation === k} onClick={() => set("occupation", k)}>{l}</BankChip>)}</div></div>
         <div><BankLabel>Yearly income{india ? " (₹)" : ""}</BankLabel><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{(india ? BANK_INCOMES : BANK_INCOMES_INTL).map(([k, l]) => <BankChip key={k} on={details.income === k} onClick={() => set("income", k)}>{l}</BankChip>)}</div></div>
@@ -419,32 +440,53 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
   }
 
   if (screen === "id") {
-    body = india ? <>
-      <BankH1 sub="Banks must check who opens an account. Gloobal never keeps your full Aadhaar number.">Prove it's you</BankH1>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <BankField id="bank-aadhaar" label="Aadhaar number" value={aadhaar} secure={!showAadhaar} onChange={(v) => setAadhaar(v.replace(/\D/g, "").slice(0, 12).replace(/(\d{4})(?=\d)/g, "$1 "))} inputMode="numeric" autoComplete="off" maxLength={14} mono placeholder="1234 5678 9012" error={fieldError.aadhaar} right={<button type="button" onClick={() => setShowAadhaar((s) => !s)} aria-label={showAadhaar ? "Hide Aadhaar" : "Show Aadhaar"} style={{ border: "none", background: "none", cursor: "pointer", color: T.inkFaint, display: "flex", padding: 4 }}>{showAadhaar ? <EyeOffBk size={17} /> : <EyeBk size={17} />}</button>} />
-        <BankField id="bank-pan" label="PAN" value={pan} onChange={(v) => setPan(v.replace(/[^A-Z0-9]/g, "").slice(0, 10))} upper mono maxLength={10} placeholder="ABCPK1234L" error={fieldError.pan} right={/^[A-Z]{3}P[A-Z]\d{4}[A-Z]$/.test(pan) ? <CheckBk size={15} color={T.positive} strokeWidth={3} /> : null} />
-        <div style={{ display: "flex", gap: 10, alignItems: "center", borderRadius: 14, padding: "11px 12px", background: T.surface, boxShadow: `inset 0 0 0 1px ${T.line}`, opacity: 0.7 }}><BankIconBox size={34}><FileBk size={16} /></BankIconBox><span style={{ flex: 1 }}><span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>DigiLocker</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkSoft }}>Aadhaar and PAN in one go</span></span><span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.5, padding: "3px 8px", borderRadius: 99, background: T.surfaceAlt, color: T.inkSoft }}>COMING SOON</span></div>
-        <BankError>{error}</BankError>
-      </div>
-    </> : <>
-      <BankH1 sub={`Living in ${dialCountry?.name || "your country"}, you open with your passport.`}>Your passport</BankH1>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, borderRadius: 13, padding: "10px 12px", background: T.surfaceAlt }}><PlaneBk size={16} color={T.inkSoft} /><span style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{dialCountry?.name}</span></div>
-        <BankField id="bank-passport" label="Passport number" value={passportNumber} onChange={(v) => setPassportNumber(v.replace(/[^A-Z0-9]/g, "").slice(0, 9))} upper mono maxLength={9} placeholder="Z1234567" error={fieldError.passportNumber} />
-        <BankField id="bank-passport-expiry" label="Expiry date" type="date" value={passportExpiry} onChange={setPassportExpiry} error={fieldError.passportExpiry} />
-        <BankError>{error}</BankError>
-      </div>
-    </>;
-    const ready = india ? aadhaar.replace(/\D/g, "").length === 12 && pan.length === 10 : passportNumber.length >= 6 && Boolean(passportExpiry);
-    foot = <BankCta testId="bank-id-continue" busy={busy} disabled={!ready} onClick={submitId}>{india ? "Send code to Aadhaar mobile" : "Check passport"}</BankCta>;
+    if (!kyc) {
+      body = <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: T.inkSoft, fontSize: 13, fontWeight: 600 }}>{kycLoadFailed ? <><span>Couldn't load the ID options for your country.</span><BankCta ghost onClick={loadKyc}>Try again</BankCta></> : <LoaderBk size={22} style={{ animation: "bankSpin 1s linear infinite", color: T.accent }} />}</div>;
+      foot = null;
+    } else {
+      const sub = kyc.country === "IN"
+        ? "Banks must check who opens an account. GLOOBAL never keeps your full ID numbers."
+        : "Banks must check who opens an account. These are the ways used where your account is registered.";
+      body = <>
+        <BankH1 sub={sub}>Prove it's you</BankH1>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {liveMethods.length > 1 && <div role="radiogroup" aria-label="How to prove it's you" style={{ display: "flex", flexDirection: "column", gap: 8 }}>{liveMethods.map((m) => {
+            const on = m.key === activeMethod?.key;
+            return <button key={m.key} type="button" role="radio" aria-checked={on} data-testid={`bank-method-${m.key}`} onClick={() => { setMethodKey(m.key); setFieldError({}); setError(""); }} style={{ display: "flex", alignItems: "center", gap: 11, textAlign: "left", padding: 12, borderRadius: 16, border: "none", cursor: "pointer", fontFamily: "inherit", background: T.surface, boxShadow: on ? `0 0 0 2px ${T.accent}` : `inset 0 0 0 1px ${T.line}` }}><BankIconBox solid={on} size={36}>{m.key === "passport" ? <PlaneBk size={17} /> : <FileBk size={17} />}</BankIconBox><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink }}>{m.label}</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkSoft, marginTop: 1 }}>{m.sub}</span></span><span style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: on ? T.accent : "transparent", boxShadow: on ? "none" : `inset 0 0 0 1.5px ${T.inkFaint}` }}>{on && <CheckBk size={12} color={bankOnAccent()} strokeWidth={3.2} />}</span></button>;
+          })}</div>}
+          {activeMethod && activeMethod.fields.map((f) => {
+            const raw = idValues[f.key] || "";
+            const shown = f.maxDigits && f.group ? raw.replace(new RegExp(`(\\d{${f.group}})(?=\\d)`, "g"), "$1 ") : raw;
+            const onChange = (v) => {
+              let next = v;
+              if (f.type === "date") next = v;
+              else if (f.maxDigits) next = v.replace(/\D/g, "").slice(0, f.maxDigits);
+              else if (f.upper) next = v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, f.maxLength || 20);
+              setIdValues((x) => ({ ...x, [f.key]: next }));
+            };
+            const eye = f.secure ? <button type="button" onClick={() => setRevealed((x) => ({ ...x, [f.key]: !x[f.key] }))} aria-label={revealed[f.key] ? `Hide ${f.label}` : `Show ${f.label}`} style={{ border: "none", background: "none", cursor: "pointer", color: T.inkFaint, display: "flex", padding: 4 }}>{revealed[f.key] ? <EyeOffBk size={17} /> : <EyeBk size={17} />}</button> : null;
+            return <BankField key={f.key} id={`bank-kyc-${f.key}`} label={f.label} type={f.type === "date" ? "date" : "text"} inputMode={f.inputMode} value={shown} onChange={onChange} placeholder={f.placeholder} mono={f.type !== "date"} upper={f.upper} secure={f.secure && !revealed[f.key]} autoComplete="off" error={fieldError[f.key]} right={eye} />;
+          })}
+          {activeMethod && activeMethod.provider && <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.45, padding: "0 2px" }}><ShieldBk size={14} style={{ flexShrink: 0, marginTop: 1 }} /><span>Checked now for format only. Once connected, checked with {activeMethod.provider}.</span></div>}
+          {soonMethods.length > 0 && <div style={{ marginTop: 4 }}><BankLabel>More ways, coming soon</BankLabel><div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{soonMethods.map((m) => <div key={m.key} data-testid={`bank-soon-${m.key}`} style={{ display: "flex", gap: 10, alignItems: "center", borderRadius: 14, padding: "10px 12px", background: T.surface, boxShadow: `inset 0 0 0 1px ${T.line}`, opacity: 0.72 }}><BankIconBox size={32}><FileBk size={15} /></BankIconBox><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>{m.label}</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkSoft }}>{m.sub}</span></span><span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, padding: "3px 8px", borderRadius: 99, background: T.surfaceAlt, color: T.inkSoft, whiteSpace: "nowrap" }}>SOON</span></div>)}</div></div>}
+          <BankError>{error}</BankError>
+        </div>
+      </>;
+      const ready = Boolean(activeMethod) && activeMethod.fields.every((f) => {
+        const v = idValues[f.key] || "";
+        if (!v) return false;
+        if (f.maxDigits && f.group) return v.length === f.maxDigits;
+        return true;
+      });
+      foot = <BankCta testId="bank-id-continue" busy={busy} disabled={!ready} onClick={submitId}>{activeMethod?.verify === "otp" ? "Send me a code" : `Check my ${activeMethod?.label || "ID"}`}</BankCta>;
+    }
   }
 
   if (screen === "otp") {
     body = <>
-      <BankH1 sub={<>Sent to the mobile linked to your Aadhaar{sentTo ? <> <b style={{ color: T.ink }}>{sentTo}</b></> : ""}.</>}>Enter the 6-digit code</BankH1>
+      <BankH1 sub={<>Sent to {otpTo || "your registered mobile"}{sentTo ? <> <b style={{ color: T.ink }}>{sentTo}</b></> : ""}.</>}>Enter the 6-digit code</BankH1>
       <div style={{ display: "flex", gap: 8, justifyContent: "center", margin: "6px 0 14px" }}>{Array.from({ length: 6 }, (_, i) => <span key={i} style={{ width: 44, height: 54, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 23, fontWeight: 700, fontFamily: T.fontDisplay, background: T.surface, color: T.ink, boxShadow: i === otp.length ? `0 0 0 2px ${T.accent}` : `inset 0 0 0 1px ${T.line}` }}>{otp[i] || ""}</span>)}</div>
-      <div style={{ textAlign: "center", fontSize: 12.5, fontWeight: 600, color: T.inkSoft }}>{resendIn > 0 ? <>Resend in <b style={{ color: T.ink, fontVariantNumeric: "tabular-nums" }}>0:{String(resendIn).padStart(2, "0")}</b></> : <button type="button" onClick={() => (aadhaar ? submitId() : go("id"))} style={{ border: "none", background: "none", color: T.accent, fontWeight: 800, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>Send a new code</button>}</div>
+      <div style={{ textAlign: "center", fontSize: 12.5, fontWeight: 600, color: T.inkSoft }}>{resendIn > 0 ? <>Resend in <b style={{ color: T.ink, fontVariantNumeric: "tabular-nums" }}>0:{String(resendIn).padStart(2, "0")}</b></> : <button type="button" onClick={() => (Object.keys(idValues).length ? submitId() : go("id"))} style={{ border: "none", background: "none", color: T.accent, fontWeight: 800, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>Send a new code</button>}</div>
       <div style={{ marginTop: 12 }}><BankError>{error}</BankError></div>
     </>;
     foot = busy ? <div style={{ display: "flex", justifyContent: "center", padding: 14, color: T.accent }}><LoaderBk size={22} style={{ animation: "bankSpin 1s linear infinite" }} /></div> : <BankKeypad onDigit={typeOtp} onDelete={deleteOtp} />;
@@ -489,7 +531,7 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
     const rel = (k) => (BANK_RELATIONS.find(([x]) => x === k) || [])[1] || "";
     const rows = [
       [<BookUserBk size={16} />, "About you", [b.details?.fullName, occ, b.details?.address?.city].filter(Boolean).join(" · "), "about"],
-      [<FileBk size={16} />, "Your ID", id.method === "passport" ? `Passport ••${id.passportLast4}` : `Aadhaar ••${id.aadhaarLast4} · PAN ${id.panMasked}`, "id"],
+      [<FileBk size={16} />, "Your ID", id.summary || id.methodLabel || "Checked", "id"],
       [<ScanFaceBk size={16} />, "Selfie", b.selfie?.skipped ? "Skipped in test mode" : "Taken on this phone", "selfie"],
       [<UsersBk size={16} />, "Nominee", b.nomineeSkipped || noms.length === 0 ? "None yet — add one later" : noms.map((n) => `${n.name} · ${rel(n.relation)} · ${n.sharePct}%`).join(", "), "nominee"]
     ];
@@ -498,7 +540,7 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
       <BankH1>Check and agree</BankH1>
       <div style={{ borderRadius: 18, background: T.surface, boxShadow: T.shadowCard, padding: "2px 14px" }}>{rows.map(([icon, title, sub, target], i) => <button key={title} type="button" onClick={() => { setEditing(true); go(target); }} style={{ width: "100%", display: "flex", gap: 11, alignItems: "center", padding: "11px 0", border: "none", borderBottom: i < rows.length - 1 ? `1px solid ${T.lineSoft}` : "none", background: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}><BankIconBox size={34}>{icon}</BankIconBox><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 800, color: T.ink }}>{title}<CheckBk size={13} color={T.positive} strokeWidth={3} /></span><span style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</span></span><PencilBk size={14} color={T.inkFaint} /></button>)}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 16 }}>
-        {tick("taxResidentOnly", india ? "I pay tax in India only." : `I pay tax in ${dialCountry?.name || "my country"} only.`)}
+        {tick("taxResidentOnly", countryName ? `I pay tax in ${countryName} only.` : "I pay tax only in the country where this account is registered.")}
         {tick("notPep", "I'm not a politically exposed person, or related to one.")}
         {tick("terms", <>I agree to the <GloobalWordmark suffix=" Bank" /> account terms and privacy notice.</>)}
       </div>
@@ -520,7 +562,7 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
   }
 
   if (screen === "opening") {
-    const items = [india ? "ID checked" : "Passport checked", "Selfie saved", "Safety checks", <>Linking your <GloobalWordmark suffix=" ID" /></>];
+    const items = [`${(bank && bank.identity && bank.identity.methodLabel) || "ID"} checked`, "Selfie saved", "Safety checks", <>Linking your <GloobalWordmark suffix=" ID" /></>];
     body = <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 30 }}>
       <div style={{ position: "relative", width: 120, height: 120 }}>
         <svg width="120" height="120" style={{ position: "absolute", inset: 0, animation: "bankSpin 1.4s linear infinite" }}><circle cx="60" cy="60" r="54" fill="none" stroke={T.surfaceSunk} strokeWidth="7" /><circle cx="60" cy="60" r="54" fill="none" stroke={T.accent} strokeWidth="7" strokeLinecap="round" strokeDasharray="339" strokeDashoffset="230" /></svg>

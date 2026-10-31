@@ -33,7 +33,8 @@ const SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
 const symbolId = (seed) => Number(seed).toString(8).padStart(12, "0").slice(-12).split("").map((d) => SYMBOLS[Number(d)]).join("");
 const PIN = "135791";
 const A = { id: symbolId(81), mobile: "+919000000981", name: "Asha Opener" };
-const B = { id: symbolId(82), mobile: "+919000000982", name: "Bala Second" };
+const B = { id: symbolId(82), mobile: "+971500000982", name: "Bala Dubai", country: "AE" };
+const C = { id: symbolId(83), mobile: "+919000000983", name: "Chitra Third" };
 const tokens = {};
 const call = async (method, path, { body, token } = {}) => {
   const headers = {};
@@ -57,7 +58,7 @@ const AADHAAR_2 = aadhaarFrom("98765432109");
 async function register(a, key) {
   await call("POST", "/api/otp/send", { body: { mobileNumber: a.mobile, purpose: "registration" } });
   await call("POST", "/api/otp/verify", { body: { mobileNumber: a.mobile, otp: "123456", purpose: "registration" } });
-  const r = await call("POST", "/api/register-symbol", { body: { fullName: a.name, mobileNumber: a.mobile, symbolId: a.id, countryIso: "IN" } });
+  const r = await call("POST", "/api/register-symbol", { body: { fullName: a.name, mobileNumber: a.mobile, symbolId: a.id, countryIso: a.country || "IN" } });
   tokens[key] = r.body?.token;
   if (!tokens[key]) throw new Error(`register ${key}: ${j(r.body)}`);
   await call("POST", "/api/pin/set", { body: { symbolId: a.id, pin: PIN }, token: tokens[key] });
@@ -70,9 +71,10 @@ async function main() {
   await mongoose.connection.db.dropDatabase();
   await sleep(1000);
   await Promise.all(mongoose.modelNames().map((n) => mongoose.model(n).init().catch(() => {})));
-  await Country.create([{ iso: "IN", name: "India", dialCode: "+91", localCurrency: "INR" }]);
+  await Country.create([{ iso: "IN", name: "India", dialCode: "+91", localCurrency: "INR" }, { iso: "AE", name: "United Arab Emirates", dialCode: "+971", localCurrency: "AED" }]);
   await register(A, "A");
   await register(B, "B");
+  await register(C, "C");
 
   console.log("\n0. The checks themselves");
   check("a Verhoeff-valid Aadhaar passes", Boolean(validAadhaar(AADHAAR_1)), AADHAAR_1);
@@ -99,8 +101,9 @@ async function main() {
   r = await call("POST", "/api/bank/id", { token: tokens.A, body: { symbolId: A.id, method: "aadhaar", aadhaar: AADHAAR_1, pan: "ABCPK1234L" } });
   check("a good pair sends a code, and the code is not in the response", r.status === 200 && r.body?.otpSent === true && !j(r.body).includes("123456"), j(r.body));
   const stored = await BankAccount.findOne({}).lean();
-  check("the Aadhaar number is not stored, only its last four", !j(stored).includes(AADHAAR_1) && stored.identity.aadhaarLast4 === AADHAAR_1.slice(-4), stored.identity.aadhaarLast4);
-  check("the PAN is not stored in full", !j(stored).includes("ABCPK1234L") && stored.identity.panMasked === "ABC•••234L", stored.identity.panMasked);
+  check("the Aadhaar number is not stored, only its last four", !j(stored).includes(AADHAAR_1) && stored.identity.docs[0].shown === "••" + AADHAAR_1.slice(-4), JSON.stringify(stored.identity.docs[0]));
+  check("the country it was proved for is recorded", stored.identity.country === "IN" && stored.identity.method === "aadhaar_pan", stored.identity.country);
+  check("the PAN is not stored in full", !j(stored).includes("ABCPK1234L") && stored.identity.docs[1].shown === "ABC•••234L", JSON.stringify(stored.identity.docs[1]));
   r = await call("POST", "/api/bank/selfie", { token: tokens.A, body: { symbolId: A.id } });
   check("no selfie before the ID is checked", r.status === 409, j(r.body));
   r = await call("POST", "/api/bank/id/verify", { token: tokens.A, body: { symbolId: A.id, otp: "000000" } });
@@ -133,19 +136,46 @@ async function main() {
   check("settle now gets past the gate (nothing to settle yet)", r.status === 409 && r.body?.code === "nothing_to_settle", j(r.body));
 
   console.log("\n6. One ID, one account");
-  r = await call("POST", "/api/bank/id", { token: tokens.B, body: { symbolId: B.id, method: "aadhaar", aadhaar: AADHAAR_1, pan: "ZZZPZ9999Z" } });
+  r = await call("POST", "/api/bank/id", { token: tokens.C, body: { symbolId: C.id, method: "aadhaar_pan", values: { aadhaar: AADHAAR_1, pan: "ZZZPZ9999Z" } } });
   check("another person cannot use the same Aadhaar", r.status === 409 && r.body?.field === "aadhaar", j(r.body));
-  r = await call("POST", "/api/bank/id", { token: tokens.B, body: { symbolId: B.id, method: "aadhaar", aadhaar: AADHAAR_2, pan: "ABCPK1234L" } });
+  r = await call("POST", "/api/bank/id", { token: tokens.C, body: { symbolId: C.id, method: "aadhaar_pan", values: { aadhaar: AADHAAR_2, pan: "ABCPK1234L" } } });
   check("or the same PAN", r.status === 409 && r.body?.field === "pan", j(r.body));
-  r = await call("PUT", "/api/bank/draft", { token: tokens.B, body: { symbolId: B.id, details: { ...goodDetails, dob: "2015-01-01" } } });
-  r = await call("POST", "/api/bank/id", { token: tokens.B, body: { symbolId: B.id, method: "passport", passportNumber: "Z1234567", passportExpiry: "2020-01-01" } });
+
+  console.log("\n7. Each country its own ways — never India's outside India");
+  r = await call("GET", `/api/bank/${enc(A.id)}`, { token: tokens.A });
+  check("an India account is offered Aadhaar and PAN, not a passport", j(r.body?.bank?.kyc?.methods?.map((m) => m.key)) === j(["aadhaar_pan", "digilocker", "ckyc"]), j(r.body?.bank?.kyc?.methods?.map((m) => m.key)));
+  r = await call("GET", `/api/bank/${enc(B.id)}`, { token: tokens.B });
+  const keysB = r.body?.bank?.kyc?.methods?.map((m) => m.key) || [];
+  check("a UAE account is offered Emirates ID, UAE PASS and passport", j(keysB) === j(["emirates_id", "uae_pass", "passport"]), j(keysB));
+  check("and nothing Indian at all", !/aadhaar|\bpan\b|digilocker|ckyc|uidai/i.test(j(r.body?.bank?.kyc)), "");
+  check("its keep-ready line is its own", r.body?.bank?.kyc?.country === "AE" && j(r.body.bank.kyc.keepReady) === j(["Emirates ID"]), j(r.body?.bank?.kyc?.keepReady));
+  r = await call("POST", "/api/bank/id", { token: tokens.B, body: { symbolId: B.id, method: "aadhaar_pan", values: { aadhaar: AADHAAR_2, pan: "ZZZPZ9999Z" } } });
+  check("a UAE account cannot submit an Aadhaar, whatever the phone sends", r.status === 409 && r.body?.code === "method_not_for_country", j(r.body));
+  r = await call("POST", "/api/bank/id", { token: tokens.B, body: { symbolId: B.id, aadhaar: AADHAAR_2, pan: "ZZZPZ9999Z" } });
+  check("not even in the first version's flat shape", r.status === 409 && r.body?.code === "method_not_for_country", j(r.body));
+  r = await call("POST", "/api/bank/id", { token: tokens.B, body: { symbolId: B.id, method: "uae_pass", values: {} } });
+  check("a coming-soon method is refused", r.status === 409 && r.body?.code === "method_not_live", j(r.body));
+  r = await call("POST", "/api/bank/id", { token: tokens.C, body: { symbolId: C.id, method: "passport", values: { passportNumber: "Z1234567", passportExpiry: "2034-01-01" } } });
+  check("an India account cannot swap in a passport", r.status === 409 && r.body?.code === "method_not_for_country", j(r.body));
+  await call("PUT", "/api/bank/draft", { token: tokens.B, body: { symbolId: B.id, details: { ...goodDetails, dob: "2015-01-01" } } });
+  r = await call("POST", "/api/bank/id", { token: tokens.B, body: { symbolId: B.id, method: "emirates_id", values: { emiratesId: "123-1990-1234567-1", emiratesIdExpiry: "2030-01-01" } } });
+  check("an Emirates ID must start with 784", r.status === 400 && r.body?.field === "emiratesId", j(r.body));
+  r = await call("POST", "/api/bank/id", { token: tokens.B, body: { symbolId: B.id, method: "passport", values: { passportNumber: "Z1234567", passportExpiry: "2020-01-01" } } });
   check("an expired passport is refused", r.status === 400 && r.body?.field === "passportExpiry", j(r.body));
-  r = await call("POST", "/api/bank/id", { token: tokens.B, body: { symbolId: B.id, method: "passport", passportNumber: "Z1234567", passportExpiry: "2034-01-01" } });
-  check("a valid passport verifies without a code", r.status === 200 && r.body?.bank?.identity?.verified === true, j(r.body?.bank?.identity));
+  r = await call("POST", "/api/bank/id", { token: tokens.B, body: { symbolId: B.id, method: "emirates_id", values: { emiratesId: "784-1990-1234567-1", emiratesIdExpiry: "2030-01-01" } } });
+  check("a valid Emirates ID verifies without a code", r.status === 200 && r.body?.bank?.identity?.verified === true && r.body.bank.identity.summary === "Emirates ID ••5671", j(r.body?.bank?.identity));
   await call("POST", "/api/bank/selfie", { token: tokens.B, body: { symbolId: B.id } });
   await call("PUT", "/api/bank/draft", { token: tokens.B, body: { symbolId: B.id, nomineeSkipped: true } });
   r = await call("POST", "/api/bank/open", { token: tokens.B, body: { symbolId: B.id, pin: PIN, declarations: { taxResidentOnly: true, notPep: true, terms: true } } });
   check("under 18 cannot open", r.status === 409 && r.body?.step === 0 && /18/.test(r.body.message), j(r.body));
+  await call("PUT", "/api/bank/draft", { token: tokens.B, body: { symbolId: B.id, details: { dob: "1990-02-02" } } });
+  const User = require(join(BACKEND, "models/User"));
+  await User.updateOne({ symbolId: B.id }, { $set: { countryIso: "IN" } });
+  r = await call("POST", "/api/bank/open", { token: tokens.B, body: { symbolId: B.id, pin: PIN, declarations: { taxResidentOnly: true, notPep: true, terms: true } } });
+  check("an ID proved for the UAE does not open an account that is now in India", r.status === 409 && r.body?.step === 1, j(r.body));
+  await User.updateOne({ symbolId: B.id }, { $set: { countryIso: "AE" } });
+  r = await call("POST", "/api/bank/open", { token: tokens.B, body: { symbolId: B.id, pin: PIN, declarations: { taxResidentOnly: true, notPep: true, terms: true } } });
+  check("back in the UAE, it opens", r.status === 200 && r.body?.bank?.status === "open", j(r.body?.message || r.body?.bank?.status));
 
   console.log(failures ? `\n${failures} FAILED` : "\nALL PASSED");
   await mongoose.disconnect();

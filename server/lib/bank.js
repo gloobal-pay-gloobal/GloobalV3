@@ -7,21 +7,23 @@
 //
 //   GET  /api/bank/:symbolId      the account, or the application so far
 //   PUT  /api/bank/draft          { symbolId, step?, details?, nominees?, nomineeSkipped? }
-//   POST /api/bank/id             { symbolId, method: 'aadhaar', aadhaar, pan }
-//                                 { symbolId, method: 'passport', passportNumber, passportExpiry }
-//   POST /api/bank/id/verify      { symbolId, otp }            (Aadhaar only)
+//   POST /api/bank/id             { symbolId, method, values: { field: value } }
+//                                 method and fields come from lib/kycCountries.js
+//                                 for the ACCOUNT's country — e.g. aadhaar_pan in
+//                                 India, emirates_id in the UAE, passport anywhere
+//   POST /api/bank/id/verify      { symbolId, otp }            (methods with a code)
 //   POST /api/bank/selfie         { symbolId, skipped? }
 //   POST /api/bank/open           { symbolId, pin, declarations: { taxResidentOnly, notPep, terms } }
 //
 // ── WHAT THE CHECKS ARE, AND WHAT THEY ARE NOT ────────────────────────────
 //
-// There is no licensed eKYC provider behind this yet. So:
-//   - an Aadhaar number is checked for shape and its Verhoeff check digit,
-//     and the code is the server's fixed prototype OTP (PROTOTYPE_OTP), the
-//     same arrangement registration uses — never returned in a response;
-//   - a PAN is checked for shape, and that it is an individual's (4th 'P');
-//   - a passport number for shape, and that it has not expired;
-//   - the selfie is taken on the phone and never uploaded.
+// There is no licensed eKYC provider behind this yet. So each country's
+// numbers are checked for shape and, where there is one, their check digit
+// (Verhoeff for Aadhaar, the two CPF digits in Brazil — see kycCountries.js,
+// which also names the local service each check will call once connected).
+// Aadhaar's code is the server's fixed prototype OTP (PROTOTYPE_OTP), the
+// same arrangement registration uses — never returned in a response. The
+// selfie is taken on the phone and never uploaded.
 // Every account opened this way carries kycMode: 'prototype', so the day a
 // provider is connected these can be found and asked to verify again.
 //
@@ -39,36 +41,11 @@ const OCCUPATIONS = ['salaried', 'self_employed', 'business', 'student', 'homema
 const INCOMES = ['lt_1', '1_5', '5_10', '10_25', 'gt_25'];
 const RELATIONS = ['spouse', 'parent', 'child', 'sibling', 'other'];
 
-// ── Verhoeff, for the Aadhaar check digit ──────────────────────────────────
-const V_D = [
-  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 0, 6, 7, 8, 9, 5], [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
-  [3, 4, 0, 1, 2, 8, 9, 5, 6, 7], [4, 0, 1, 2, 3, 9, 5, 6, 7, 8], [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
-  [6, 5, 9, 8, 7, 1, 0, 4, 3, 2], [7, 6, 5, 9, 8, 2, 1, 0, 4, 3], [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
-  [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
-];
-const V_P = [
-  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 5, 7, 6, 2, 8, 3, 0, 9, 4], [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
-  [8, 9, 1, 6, 0, 4, 3, 5, 2, 7], [9, 4, 5, 3, 1, 2, 6, 8, 7, 0], [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
-  [2, 7, 9, 3, 8, 0, 6, 4, 1, 5], [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
-];
-function verhoeffValid(digits) {
-  let c = 0;
-  const arr = String(digits).split('').reverse().map(Number);
-  for (let i = 0; i < arr.length; i++) c = V_D[c][V_P[i % 8][arr[i]]];
-  return c === 0;
-}
-function validAadhaar(raw) {
-  const d = String(raw || '').replace(/\s+/g, '');
-  return /^[2-9]\d{11}$/.test(d) && verhoeffValid(d) ? d : null;
-}
-function validPan(raw) {
-  const p = String(raw || '').replace(/\s+/g, '').toUpperCase();
-  return /^[A-Z]{3}P[A-Z]\d{4}[A-Z]$/.test(p) ? p : null;
-}
-function validPassport(raw) {
-  const p = String(raw || '').replace(/\s+/g, '').toUpperCase();
-  return /^[A-Z0-9]{6,9}$/.test(p) ? p : null;
-}
+// Which ways of proving identity a country uses, and their checks.
+const { publicKyc, checkSubmission, verhoeffValid, VALIDATORS } = require('./kycCountries');
+const validAadhaar = VALIDATORS.aadhaar;
+const validPan = VALIDATORS.pan;
+
 function isoDate(raw) {
   const s = String(raw || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
@@ -152,10 +129,35 @@ function maskPan(pan) {
   return `${pan.slice(0, 3)}•••${pan.slice(6)}`;
 }
 
+function identityOut(id) {
+  const docs = Array.isArray(id.docs) ? id.docs : [];
+  // Accounts started before the country table kept Aadhaar/PAN/passport in
+  // their own fields; read those too, so a half-finished application still
+  // shows what was entered.
+  const legacy = [];
+  if (!docs.length && id.aadhaarLast4) legacy.push({ label: 'Aadhaar', shown: `\u2022\u2022${id.aadhaarLast4}` });
+  if (!docs.length && id.panMasked) legacy.push({ label: 'PAN', shown: id.panMasked });
+  if (!docs.length && id.passportLast4) legacy.push({ label: 'Passport', shown: `\u2022\u2022${id.passportLast4}` });
+  const shown = docs.length ? docs.map((d) => ({ label: d.label, shown: d.shown })) : legacy;
+  return {
+    method: id.method === 'aadhaar' ? 'aadhaar_pan' : id.method || '',
+    methodLabel: id.methodLabel || '',
+    country: id.country || '',
+    docs: shown,
+    summary: shown.map((d) => `${d.label} ${d.shown}`).join(' \u00b7 '),
+    otpPending: Boolean(id.otpHash && !id.verifiedAt),
+    verified: Boolean(id.verifiedAt),
+  };
+}
+
 function publicBank(doc, user) {
   const base = {
     accountNumber: user.symbolId,
     nameOnAccount: (doc && doc.details && doc.details.fullName) || user.fullName || '',
+    // The ways to prove identity for THIS account's country. The phone
+    // draws the ID step from this and nothing else, so a +91 dial code on a
+    // UAE account can never put an Aadhaar box on the screen.
+    kyc: publicKyc(user.countryIso),
   };
   if (!doc) return { status: 'none', step: 0, ...base };
   const id = doc.identity || {};
@@ -166,14 +168,7 @@ function publicBank(doc, user) {
     openedAt: doc.openedAt || null,
     kycMode: doc.kycMode,
     details: doc.details || {},
-    identity: {
-      method: id.method || '',
-      aadhaarLast4: id.aadhaarLast4 || '',
-      panMasked: id.panMasked || '',
-      passportLast4: id.passportLast4 || '',
-      otpPending: Boolean(id.otpHash && !id.verifiedAt),
-      verified: Boolean(id.verifiedAt),
-    },
+    identity: identityOut(id),
     selfie: { taken: Boolean(doc.selfie && doc.selfie.takenAt), skipped: Boolean(doc.selfie && doc.selfie.skipped) },
     nominees: (doc.nominees || []).map((n) => ({ name: n.name, relation: n.relation, dob: n.dob, sharePct: n.sharePct, mobile: n.mobile })),
     nomineeSkipped: Boolean(doc.nomineeSkipped),
@@ -259,59 +254,69 @@ function createBank({ User, Pin, requireAuth, requireSelf, writeLimit, lookupLim
         const doc = await draftFor(user);
         if (refuseIfOpen(doc, res)) return;
         const body = req.body || {};
-        const method = body.method === 'passport' ? 'passport' : 'aadhaar';
+        const country = String(user.countryIso || '').toUpperCase();
+
+        // { method, values } — or the first version's flat shape.
+        let methodKey = clip(body.method, 40);
+        let raw = body.values && typeof body.values === 'object' ? body.values : null;
+        if (!raw) {
+          raw = { aadhaar: body.aadhaar, pan: body.pan, passportNumber: body.passportNumber, passportExpiry: body.passportExpiry };
+        }
+        if (methodKey === 'aadhaar') methodKey = 'aadhaar_pan';
+
+        // The account's country decides. An Aadhaar from a UAE account is
+        // refused here whatever the phone showed.
+        const checked = checkSubmission(country, methodKey, raw);
+        if (checked.error) {
+          return res.status(checked.field ? 400 : 409).json({ field: checked.field || undefined, code: checked.code || 'invalid', message: checked.error });
+        }
+        const { method, values } = checked;
+
+        // What is kept: last four (or a mask) and a keyed hash, per number.
+        const docs = [];
+        let expiry = '';
+        for (const f of method.fields) {
+          const v = values[f.key];
+          if (f.type === 'date') { expiry = v; continue; }
+          // The first version's hash inputs, kept so the one-ID-one-account
+          // rule still sees accounts opened before this table existed.
+          const hash = f.key === 'aadhaar' ? idHash('aadhaar', v)
+            : f.key === 'pan' ? idHash('pan', v)
+              : f.key === 'passportNumber' ? idHash('passport', `${country}:${v}`)
+                : idHash(`${country}:${f.key}`, v);
+          const shown = f.store === 'masked' && f.key === 'pan' ? maskPan(v) : `\u2022\u2022${v.slice(-4)}`;
+          docs.push({ key: f.key, label: f.label.replace(/ number$/, ''), shown, hash });
+        }
         const others = { userId: { $ne: user._id }, status: 'open' };
-
-        if (method === 'aadhaar') {
-          const aadhaar = validAadhaar(body.aadhaar);
-          if (!aadhaar) return res.status(400).json({ field: 'aadhaar', message: 'That Aadhaar number is not valid. Check all 12 digits.' });
-          const pan = validPan(body.pan);
-          if (!pan) return res.status(400).json({ field: 'pan', message: 'That PAN is not valid. It looks like ABCPK1234L.' });
-          const aHash = idHash('aadhaar', aadhaar);
-          const pHash = idHash('pan', pan);
-          if (await BankAccount.exists({ ...others, 'identity.aadhaarHash': aHash })) {
-            return res.status(409).json({ field: 'aadhaar', message: 'This Aadhaar already has a GLOOBAL Bank account.' });
+        const LEGACY = { aadhaar: 'identity.aadhaarHash', pan: 'identity.panHash', passportNumber: 'identity.passportHash' };
+        for (const d of docs) {
+          const or = [{ 'identity.docs.hash': d.hash }];
+          if (LEGACY[d.key]) or.push({ [LEGACY[d.key]]: d.hash });
+          if (await BankAccount.exists({ ...others, $or: or })) {
+            return res.status(409).json({ field: d.key, code: 'id_in_use', message: `This ${d.label} already has a GLOOBAL Bank account.` });
           }
-          if (await BankAccount.exists({ ...others, 'identity.panHash': pHash })) {
-            return res.status(409).json({ field: 'pan', message: 'This PAN already has a GLOOBAL Bank account.' });
-          }
-          const prototypeOtp = process.env.PROTOTYPE_OTP || '123456';
-          doc.identity = {
-            method: 'aadhaar',
-            aadhaarLast4: aadhaar.slice(-4),
-            aadhaarHash: aHash,
-            panMasked: maskPan(pan),
-            panHash: pHash,
-            passportLast4: '',
-            passportHash: '',
-            passportExpiry: '',
-            otpHash: await bcrypt.hash(prototypeOtp, 10),
-            otpExpiresAt: new Date(Date.now() + OTP_TTL_MS),
-            otpAttempts: 0,
-            verifiedAt: null,
-          };
-          doc.step = Math.max(doc.step || 0, 1);
-          await doc.save();
-          // The code is NOT in the response — see /api/otp/send for why.
-          return res.json({ otpSent: true, sentTo: maskedMobile(user), expiresInSeconds: OTP_TTL_MS / 1000, bank: publicBank(doc.toObject(), user) });
         }
 
-        const passport = validPassport(body.passportNumber);
-        if (!passport) return res.status(400).json({ field: 'passportNumber', message: 'That passport number is not valid.' });
-        const expiry = isoDate(body.passportExpiry);
-        if (!expiry) return res.status(400).json({ field: 'passportExpiry', message: 'Enter the expiry date on your passport.' });
-        if (new Date(`${expiry}T23:59:59Z`) < new Date()) return res.status(400).json({ field: 'passportExpiry', message: 'This passport has expired.' });
-        const ppHash = idHash('passport', `${user.countryIso || ''}:${passport}`);
-        if (await BankAccount.exists({ ...others, 'identity.passportHash': ppHash })) {
-          return res.status(409).json({ field: 'passportNumber', message: 'This passport already has a GLOOBAL Bank account.' });
-        }
+        const otp = method.verify === 'otp';
+        const prototypeOtp = process.env.PROTOTYPE_OTP || '123456';
         doc.identity = {
-          method: 'passport', aadhaarLast4: '', aadhaarHash: '', panMasked: '', panHash: '',
-          passportLast4: passport.slice(-4), passportHash: ppHash, passportExpiry: expiry,
-          otpHash: '', otpExpiresAt: null, otpAttempts: 0, verifiedAt: new Date(),
+          method: method.key,
+          methodLabel: method.label,
+          country,
+          docs,
+          expiry,
+          aadhaarLast4: '', aadhaarHash: '', panMasked: '', panHash: '', passportLast4: '', passportHash: '', passportExpiry: '',
+          otpHash: otp ? await bcrypt.hash(prototypeOtp, 10) : '',
+          otpExpiresAt: otp ? new Date(Date.now() + OTP_TTL_MS) : null,
+          otpAttempts: 0,
+          verifiedAt: otp ? null : new Date(),
         };
-        doc.step = Math.max(doc.step || 0, 2);
+        doc.step = Math.max(doc.step || 0, otp ? 1 : 2);
         await doc.save();
+        if (otp) {
+          // The code is NOT in the response — see /api/otp/send for why.
+          return res.json({ otpSent: true, sentTo: maskedMobile(user), otpTo: method.otpTo, expiresInSeconds: OTP_TTL_MS / 1000, bank: publicBank(doc.toObject(), user) });
+        }
         return res.json({ verified: true, bank: publicBank(doc.toObject(), user) });
       } catch (error) {
         console.error('Bank ID error:', error);
@@ -409,8 +414,18 @@ function createBank({ User, Pin, requireAuth, requireSelf, writeLimit, lookupLim
         // opened with the same ID while this one was filling in the form.
         const others = { userId: { $ne: user._id }, status: 'open' };
         const id = doc.identity;
-        for (const [field, hash] of [['identity.aadhaarHash', id.aadhaarHash], ['identity.panHash', id.panHash], ['identity.passportHash', id.passportHash]]) {
-          if (hash && (await BankAccount.exists({ ...others, [field]: hash }))) {
+        // An ID proved for one country does not open an account registered
+        // in another.
+        if (id.country && id.country !== String(user.countryIso || '').toUpperCase()) {
+          return res.status(409).json({ code: 'incomplete', step: 1, message: 'Your account country has changed. Prove your identity again for the new country.' });
+        }
+        const hashes = [
+          ...(id.docs || []).map((d) => ({ 'identity.docs.hash': d.hash })),
+          ...[['identity.aadhaarHash', id.aadhaarHash], ['identity.panHash', id.panHash], ['identity.passportHash', id.passportHash]]
+            .filter(([, h]) => h).map(([f, h]) => ({ $or: [{ [f]: h }, { 'identity.docs.hash': h }] })),
+        ];
+        for (const q of hashes) {
+          if (await BankAccount.exists({ ...others, ...q })) {
             return res.status(409).json({ code: 'id_in_use', step: 1, message: 'This ID already has a GLOOBAL Bank account.' });
           }
         }

@@ -61,7 +61,19 @@ const bankAccountSchema = new mongoose.Schema(
     },
 
     identity: {
-      method: { type: String, enum: ['', 'aadhaar', 'passport'], default: '' },
+      // A method key from lib/kycCountries.js (aadhaar_pan, emirates_id,
+      // passport…), checked there against the account's country.
+      method: { type: String, default: '' },
+      methodLabel: { type: String, default: '' },
+      country: { type: String, default: '' },
+      // One entry per number given: what may be shown back (last four, or a
+      // masked PAN) and a keyed hash. Never the number itself.
+      docs: {
+        type: [new mongoose.Schema({ key: String, label: String, shown: String, hash: { type: String, index: true } }, { _id: false })],
+        default: [],
+      },
+      expiry: { type: String, default: '' }, // YYYY-MM-DD, for documents that have one
+      // The first version's fields, before the country table. Still read.
       aadhaarLast4: { type: String, default: '' },
       aadhaarHash: { type: String, default: '', index: true },
       panMasked: { type: String, default: '' },

@@ -223,6 +223,14 @@ const userSchema = new mongoose.Schema({
     default: null
   },
 
+  // When this account's PIN was last reset, newest first, at most three.
+  // /api/pin/reset allows three resets in any 24 hours (the fourth is
+  // refused until the oldest of the three is a day old).
+  pinResetTimes: {
+    type: [Date],
+    default: []
+  },
+
   // The Security screen's two switches, stored.
   //
   // They were component-local React state read at exactly one place — the

@@ -1761,9 +1761,12 @@ function GloobalId() {
     window.addEventListener("gloobal:payAgainCreator", onPayAgainCreator);
     return () => window.removeEventListener("gloobal:payAgainCreator", onPayAgainCreator);
   }, []);
-  const [showDiagnostics, setShowDiagnostics] = useState19(() => typeof window !== "undefined" && window.location.hash === "#diagnostics");
+  // The diagnostics screen is a developer tool: it opens on a local build
+  // only, never on the live site (audit F-34).
+  const diagnosticsAllowed = typeof window !== "undefined" && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+  const [showDiagnostics, setShowDiagnostics] = useState19(() => diagnosticsAllowed && window.location.hash === "#diagnostics");
   useEffect15(() => {
-    const onHashChange = () => setShowDiagnostics(window.location.hash === "#diagnostics");
+    const onHashChange = () => setShowDiagnostics(diagnosticsAllowed && window.location.hash === "#diagnostics");
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);

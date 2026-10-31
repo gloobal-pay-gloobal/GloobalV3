@@ -106,8 +106,13 @@ async function run() {
   const victim = await register(1, "+919000000101");
   const attacker = await register(2, "+919000000102");
   check("registration returns a session token", Boolean(victim.token));
-  check("a PIN can be set with that token",
-    (await call("POST", "/api/pin/set", { body: { symbolId: victim.id, pin: "246813" }, token: victim.token })).status === 200);
+  // register() already set the first PIN with this token. A second pin/set
+  // with only the token must now be refused: replacing a PIN needs the
+  // current one (/api/pin/change) or a reset code (audit F-07, patch 0176).
+  check("the first PIN was set with that token",
+    Boolean(await Pin.exists({ userId: (await User.findOne({ symbolId: victim.id }))._id })));
+  check("a second pin/set with only the token is refused",
+    (await call("POST", "/api/pin/set", { body: { symbolId: victim.id, pin: "246813" }, token: victim.token })).status === 409);
 
   const loggedIn = await call("POST", "/api/login", { body: { symbolId: victim.id, pin: "246813" } });
   check("login succeeds and returns a token", loggedIn.status === 200 && Boolean(loggedIn.body?.token), `status=${loggedIn.status}`);

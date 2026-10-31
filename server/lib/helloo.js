@@ -105,6 +105,15 @@ function previewOf(message) {
   return String(message.text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
 }
 
+// Which picture format a buffer really is, by its opening bytes; '' if none.
+function photoKindOf(buf) {
+  if (!buf || buf.length < 12) return '';
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+  if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  return '';
+}
+
 function createHelloo(deps) {
   const {
     User,
@@ -726,6 +735,9 @@ function createHelloo(deps) {
           audio = Buffer.from(String(body.image || ''), 'base64');
           if (audio.length === 0) return res.status(400).json({ success: false, message: 'The photo is empty.' });
           if (audio.length > PHOTO_MAX_BYTES) return res.status(413).json({ success: false, message: 'That photo is too big to send.' });
+          // The bytes must be the picture they claim to be, not just labelled
+          // as one (audit F-29). Checked by each format's opening bytes.
+          if (photoKindOf(audio) !== mime) return res.status(400).json({ success: false, message: 'Send a JPEG, PNG or WebP photo.' });
           const caption = String(body.text || '').trim();
           if (caption.length > TEXT_MAX) return res.status(400).json({ success: false, message: `A caption can be up to ${TEXT_MAX} characters.` });
           doc.text = caption;
@@ -1407,6 +1419,10 @@ function createHelloo(deps) {
         const user = await authenticatedUserFromToken(String(frame.token || '')).catch(() => null);
         if (!user) { ws.close(4401, 'auth_token_invalid'); return; }
         userId = String(user._id);
+        // Kept so the heartbeat can re-check it: a socket must not outlive a
+        // sign-out or PIN change (audit F-22).
+        ws.authToken = String(frame.token || '');
+        ws.lastAuthCheck = Date.now();
         clearTimeout(authTimer);
         const firstSocket = !sockets.has(userId);
         if (firstSocket) sockets.set(userId, new Set());
@@ -1434,8 +1450,18 @@ function createHelloo(deps) {
     // Render's proxy drops a socket that is silent for a while; a ping every
     // 25 s keeps it open, and a socket that missed one is gone.
     const beat = setInterval(() => {
+      const now = Date.now();
       for (const ws of wss.clients) {
         if (!ws.isAlive) { ws.terminate(); continue; }
+        // Once a minute, the token this socket signed in with is checked
+        // again. A revoked or expired token closes the socket with the same
+        // code the app already treats as "sign in again".
+        if (ws.authToken && now - (ws.lastAuthCheck || 0) >= 60000) {
+          ws.lastAuthCheck = now;
+          authenticatedUserFromToken(ws.authToken)
+            .then((user) => { if (!user) ws.close(4401, 'auth_token_invalid'); })
+            .catch(() => {});
+        }
         ws.isAlive = false;
         try { ws.ping(); } catch { /* closing */ }
       }

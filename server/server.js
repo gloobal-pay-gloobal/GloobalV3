@@ -436,9 +436,14 @@ app.use((req, res, next) => {
 // with room for it.
 const AUTH_TOKEN_REFRESH_HEADER = 'X-Gloobal-Token';
 
+// Localhost is only a default away from production (audit F-26): on Render,
+// with no ALLOWED_ORIGINS set, only the live site is allowed.
+const RUNNING_IN_PRODUCTION = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 const ALLOWED_ORIGINS = String(
   process.env.ALLOWED_ORIGINS ||
-    'https://gloobalv3.netlify.app,http://localhost:5173,http://127.0.0.1:5173'
+    (RUNNING_IN_PRODUCTION
+      ? 'https://gloobalv3.netlify.app'
+      : 'https://gloobalv3.netlify.app,http://localhost:5173,http://127.0.0.1:5173')
 )
   .split(',')
   .map((origin) => origin.trim())
@@ -1078,10 +1083,15 @@ const maybeRefreshAuthToken = (req, res, user) => {
 //
 // Comparison is by document id, not by symbolId string, so a rename mid-session
 // cannot lock somebody out of their own data.
+//
+// EVERY place a named field appears is checked, not just the first one found.
+// Taking the first (params ?? body ?? query) let a caller put their own ID in
+// the query string and someone else's in the body, which the handler then read
+// (audit F-02).
 const requireSelf = (...sources) => async (req, res, next) => {
   const candidates = sources
-    .map((source) => req.params?.[source] ?? req.body?.[source] ?? req.query?.[source])
-    .map((value) => (value === undefined || value === null ? '' : String(value).trim()))
+    .flatMap((source) => [req.params?.[source], req.body?.[source], req.query?.[source]])
+    .map((value) => (value === undefined || value === null || typeof value === 'object' ? '' : String(value).trim()))
     .filter(Boolean);
 
   if (candidates.length === 0) {
@@ -1166,19 +1176,49 @@ const sweepExpiredRateBuckets = (now = Date.now()) => {
   return rateBuckets.size;
 };
 
-// Trusting an arbitrary X-Forwarded-For would let a caller rotate their own
-// limit key by lying, so only the first hop — the one Render itself sets — is
-// read, and it is not trusted for anything but bucketing.
+// Which address a limit is counted against.
+//
+// The FIRST X-Forwarded-For entry is whatever the caller wrote, so keying on it
+// let anyone reset every limit by changing one header (audit F-06). Proxies
+// APPEND to the header, so only the entries added by our own proxies — counted
+// from the RIGHT — can be trusted. TRUST_PROXY_HOPS says how many proxies sit
+// in front of the server: the client is the entry that many places from the
+// right. Render's own count is not documented; 3 is what Render users report
+// for Express apps (community.render.com, "What number of proxies sit in front
+// of an express app deployed on Render?"). Set TRUST_PROXY_HOPS on Render to
+// override it; 0 means "no proxy, use the socket address".
+//
+// Credential limits are ALSO counted per account (see accountLimit below), so
+// even a wrong hop count cannot open unlimited guessing on one account.
+const TRUST_PROXY_HOPS = (() => {
+  const raw = process.env.TRUST_PROXY_HOPS;
+  if (raw !== undefined && raw !== '' && Number.isInteger(Number(raw)) && Number(raw) >= 0) return Number(raw);
+  return process.env.RENDER === 'true' ? 3 : 0;
+})();
+
 const clientKey = (req) => {
-  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return forwarded || req.socket?.remoteAddress || 'unknown';
+  const socketAddress = req.socket?.remoteAddress || 'unknown';
+  if (TRUST_PROXY_HOPS === 0) return socketAddress;
+  const chain = String(req.headers['x-forwarded-for'] || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  // The socket peer is the last proxy, so it counts as one hop already.
+  const index = chain.length - (TRUST_PROXY_HOPS - 1);
+  if (index >= 1 && index <= chain.length) return chain[index - 1];
+  // Shorter chain than expected: take the left-most entry our proxies could
+  // have written, never one further left than the caller could forge.
+  return chain[0] || socketAddress;
 };
 
 setInterval(() => sweepExpiredRateBuckets(), 60 * 1000).unref();
 
-const rateLimit = ({ name, max, windowMs, keyOf }) => (req, res, next) => {
+const rateLimit = ({ name, max, windowMs, keyOf, perAccount = false }) => (req, res, next) => {
   const scope = keyOf ? keyOf(req) : '';
-  const key = `${name}:${clientKey(req)}:${scope}`;
+  // A per-account limit with no account named in the request has nothing to
+  // count; the per-address limit on the same route still applies.
+  if (perAccount && !scope) return next();
+  const key = perAccount ? `${name}:${scope}` : `${name}:${clientKey(req)}:${scope}`;
   const now = Date.now();
   const bucket = rateBuckets.get(key);
 
@@ -1248,6 +1288,19 @@ const lookupLimit = rateLimit({ name: 'lookup', max: 90, windowMs: WINDOW_MS });
 // Everything a signed-in app does in the ordinary course of being used.
 const writeLimit = rateLimit({ name: 'write', max: 150, windowMs: WINDOW_MS });
 
+// Per ACCOUNT, whatever address the requests come from (audit F-06). Keyed on
+// the mobile number or GLOOBAL ID the request names. Generous for a person,
+// tight for anyone cycling addresses at one account.
+const accountOf = (req) => {
+  const body = req.body || {};
+  const mobile = typeof body.mobileNumber === 'string' ? normalizeMobileNumber(body.mobileNumber) : '';
+  if (mobile) return `m:${mobile}`;
+  const id = [body.symbolId, body.identifier].find((value) => typeof value === 'string' && value.trim());
+  return id ? `i:${id.trim().toLowerCase()}` : '';
+};
+const otpAccountLimit = rateLimit({ name: 'otp-account', max: 10, windowMs: WINDOW_MS, keyOf: accountOf, perAccount: true });
+const credentialAccountLimit = rateLimit({ name: 'credential-account', max: 20, windowMs: WINDOW_MS, keyOf: accountOf, perAccount: true });
+
 // Helloo's routes — chats, contacts, voice notes — and its live socket.
 // See lib/helloo.js. Mounted here, after the limiters and requireAuth exist
 // and before any route that could shadow /api/helloo/...
@@ -1266,7 +1319,7 @@ const helloo = createHelloo({
 });
 helloo.mount(app, requireAuth);
 
-app.post('/api/otp/send', otpLimit, async (req, res) => {
+app.post('/api/otp/send', otpLimit, otpAccountLimit, async (req, res) => {
   try {
     const { mobileNumber, purpose } = req.body;
     const cleanMobileNumber = normalizeMobileNumber(mobileNumber);
@@ -1352,7 +1405,7 @@ app.post('/api/otp/send', otpLimit, async (req, res) => {
   }
 });
 
-app.post('/api/otp/verify', otpLimit, async (req, res) => {
+app.post('/api/otp/verify', otpLimit, otpAccountLimit, async (req, res) => {
   try {
     const { mobileNumber, otp, purpose } = req.body;
     const cleanMobileNumber = normalizeMobileNumber(mobileNumber);
@@ -1466,15 +1519,71 @@ const pinLockRemainingMs = (pinRecord) => {
   return remaining > 0 ? remaining : 0;
 };
 
-// Opens a fresh attempt run if the previous lockout has elapsed.
+// PIN checks for one account run ONE AT A TIME (audit F-05).
 //
-// Called before the bcrypt compare on every PIN-checking route. Mutates the
-// in-memory record only — the reset is persisted by whichever of the two
-// outcomes below follows, so a read that leads nowhere writes nothing.
-const beginPinAttempt = (pinRecord) => {
-  if (pinRecord.lockedUntil && pinLockRemainingMs(pinRecord) === 0) {
-    pinRecord.lockedUntil = null;
-    pinRecord.failedAttempts = 0;
+// The lockout used to be read before the compare and written after it, so
+// 20 parallel wrong guesses all read "0 failures" and all got compared. Now
+// each check waits for the previous check on the same account to finish,
+// then reads the lock fresh from the database. Parallel guesses therefore
+// meet the lock after the fifth wrong one, exactly as sequential ones do,
+// while parallel CORRECT PINs (many payments at once) all still go through,
+// just one bcrypt at a time.
+//
+// The queue is per process; the counting itself is atomic in the database,
+// so with more than one server the lock still holds, only a little later.
+// A check that never reports back (an exception between begin and
+// success/failure) frees its place after PIN_QUEUE_HOLD_MS.
+const PIN_QUEUE_HOLD_MS = 10 * 1000;
+const pinQueues = new Map();
+
+const releasePinTurn = (pinRecord) => {
+  const release = pinRecord && pinRecord.$locals && pinRecord.$locals.releasePinTurn;
+  if (release) {
+    pinRecord.$locals.releasePinTurn = null;
+    release();
+  }
+};
+
+// Callers keep their shape:
+//     await beginPinAttempt(pinRecord);
+//     if (pinLockRemainingMs(pinRecord) > 0) -> 423
+const beginPinAttempt = async (pinRecord) => {
+  const key = String(pinRecord.userId || pinRecord._id);
+  const previous = pinQueues.get(key) || Promise.resolve();
+  let free;
+  const mine = new Promise((resolve) => { free = resolve; });
+  const tail = previous.then(() => mine);
+  pinQueues.set(key, tail);
+
+  await Promise.race([previous, new Promise((resolve) => setTimeout(resolve, PIN_QUEUE_HOLD_MS).unref())]);
+
+  const timer = setTimeout(() => free(), PIN_QUEUE_HOLD_MS);
+  timer.unref();
+  pinRecord.$locals = pinRecord.$locals || {};
+  pinRecord.$locals.releasePinTurn = () => {
+    clearTimeout(timer);
+    free();
+    if (pinQueues.get(key) === tail) pinQueues.delete(key);
+  };
+
+  // An elapsed lock ends that attempt run.
+  const now = new Date();
+  await Pin.updateOne(
+    { _id: pinRecord._id, lockedUntil: { $ne: null, $lte: now } },
+    { $set: { lockedUntil: null, failedAttempts: 0 } }
+  );
+
+  // Read fresh: an earlier check in the queue may have just locked it, or
+  // the PIN may have just been changed.
+  const fresh = await Pin.findById(pinRecord._id).select('pinHash failedAttempts lockedUntil').lean();
+  if (fresh) {
+    pinRecord.$locals.pinFresh = fresh;
+    if (fresh.pinHash && fresh.pinHash !== pinRecord.pinHash) pinRecord.pinHash = fresh.pinHash;
+    if (fresh.lockedUntil && new Date(fresh.lockedUntil).getTime() > Date.now()) {
+      pinRecord.lockedUntil = fresh.lockedUntil;
+      // Refused without a compare, so this check is over.
+      releasePinTurn(pinRecord);
+    }
   }
   return pinRecord;
 };
@@ -1497,42 +1606,70 @@ const pinLockoutResponse = (pinRecord) => {
   };
 };
 
-// Records one wrong PIN and locks the account if that was the fifth in this
-// run. Persists, and returns what the caller should tell the person.
+// Records one wrong PIN, atomically, and locks the account if that was the
+// fifth in this run. Returns what the caller should tell the person.
 const registerPinFailure = async (pinRecord) => {
-  pinRecord.failedAttempts = (pinRecord.failedAttempts || 0) + 1;
+  try {
+    const doc = await Pin.findOneAndUpdate(
+      { _id: pinRecord._id },
+      { $inc: { failedAttempts: 1 } },
+      { returnDocument: 'after' }
+    ).lean();
+    const count = doc ? doc.failedAttempts : PIN_MAX_ATTEMPTS;
+    const lockedNow = count >= PIN_MAX_ATTEMPTS;
+    if (lockedNow) {
+      const lockedUntil = new Date(Date.now() + PIN_LOCKOUT_MS);
+      await Pin.updateOne({ _id: pinRecord._id, lockedUntil: null }, { $set: { lockedUntil } });
+      pinRecord.lockedUntil = lockedUntil;
+    }
 
-  const lockedNow = pinRecord.failedAttempts >= PIN_MAX_ATTEMPTS;
-  if (lockedNow) {
-    pinRecord.lockedUntil = new Date(Date.now() + PIN_LOCKOUT_MS);
+    const attemptsRemaining = Math.max(0, PIN_MAX_ATTEMPTS - count);
+
+    return {
+      lockedNow,
+      attemptsRemaining,
+      retryAfterSeconds: lockedNow ? Math.ceil(PIN_LOCKOUT_MS / 1000) : 0,
+      // The count is stated because a silent "Invalid PIN." five times over is
+      // how somebody walks into a lockout without ever being warned.
+      message: lockedNow
+        ? `Invalid PIN. That was ${PIN_MAX_ATTEMPTS} incorrect attempts, so this account is ` +
+          `locked for ${Math.round(PIN_LOCKOUT_MS / 60000)} minutes.`
+        : `Invalid PIN. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} left ` +
+          `before this account is locked for ${Math.round(PIN_LOCKOUT_MS / 60000)} minutes.`,
+    };
+  } finally {
+    releasePinTurn(pinRecord);
   }
-
-  await pinRecord.save();
-
-  const attemptsRemaining = Math.max(0, PIN_MAX_ATTEMPTS - pinRecord.failedAttempts);
-
-  return {
-    lockedNow,
-    attemptsRemaining,
-    retryAfterSeconds: lockedNow ? Math.ceil(PIN_LOCKOUT_MS / 1000) : 0,
-    // The count is stated because a silent "Invalid PIN." five times over is
-    // how somebody walks into a lockout without ever being warned.
-    message: lockedNow
-      ? `Invalid PIN. That was ${PIN_MAX_ATTEMPTS} incorrect attempts, so this account is ` +
-        `locked for ${Math.round(PIN_LOCKOUT_MS / 60000)} minutes.`
-      : `Invalid PIN. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} left ` +
-        `before this account is locked for ${Math.round(PIN_LOCKOUT_MS / 60000)} minutes.`,
-  };
 };
 
-// Clears the attempt run after a correct PIN.
+// Clears the attempt run after a correct PIN, in one database step.
 const registerPinSuccess = async (pinRecord) => {
-  pinRecord.failedAttempts = 0;
-  pinRecord.lockedUntil = null;
-  pinRecord.lastVerifiedAt = new Date();
-  await pinRecord.save();
+  try {
+    await Pin.updateOne(
+      { _id: pinRecord._id },
+      { $set: { failedAttempts: 0, lockedUntil: null, lastVerifiedAt: new Date() } }
+    );
+  } finally {
+    releasePinTurn(pinRecord);
+  }
 };
 
+// For actions that change who an account is (its GLOOBAL ID): a session token
+// alone is not enough, the person must have just confirmed it's them with
+// their PIN or their device in the last few minutes (audit F-30). The app's
+// biometric gate already does exactly that before these actions; this makes
+// the server insist on it too.
+const RECENT_CHECK_MS = 5 * 60 * 1000;
+const requireRecentCheck = async (req, res, next) => {
+  const record = await Pin.findOne({ userId: req.authUser._id }).select('lastVerifiedAt').lean();
+  const at = record && record.lastVerifiedAt ? new Date(record.lastVerifiedAt).getTime() : 0;
+  if (at && Date.now() - at <= RECENT_CHECK_MS) return next();
+  return res.status(403).json({
+    success: false,
+    code: 'recent_check_required',
+    message: "Confirm it's you with your PIN or fingerprint, then try again."
+  });
+};
 
 // Sets or replaces an account's PIN.
 //
@@ -1552,7 +1689,7 @@ const registerPinSuccess = async (pinRecord) => {
 //
 // Changing a PIN you have forgotten is /api/pin/reset, which has required a
 // verified pin_reset OTP all along.
-app.post('/api/pin/set', credentialLimit, async (req, res) => {
+app.post('/api/pin/set', credentialLimit, credentialAccountLimit, async (req, res) => {
   try {
     const { symbolId, pin } = req.body;
     const cleanSymbolId = String(symbolId || '').trim();
@@ -1590,6 +1727,18 @@ app.post('/api/pin/set', credentialLimit, async (req, res) => {
     if (!isSelf && !registrationOtp) {
       return res.status(403).json({
         message: 'Verify your mobile number, or sign in, before setting a PIN.'
+      });
+    }
+
+    // This route sets the FIRST PIN only. Replacing an existing PIN needs the
+    // current one (/api/pin/change) or a PIN-reset code (/api/pin/reset), both
+    // of which sign out the other devices. A session token alone used to be
+    // enough to overwrite it, leaving every other session working (audit F-07).
+    const existingPin = await Pin.exists({ userId: user._id });
+    if (existingPin) {
+      return res.status(409).json({
+        code: 'pin_exists',
+        message: 'This account already has a PIN. Log in with it, or use Forgot PIN to set a new one.'
       });
     }
 
@@ -1636,7 +1785,7 @@ app.post('/api/pin/set', credentialLimit, async (req, res) => {
   }
 });
 
-app.post('/api/pin/verify', credentialLimit, async (req, res) => {
+app.post('/api/pin/verify', credentialLimit, credentialAccountLimit, async (req, res) => {
   try {
     const { symbolId, pin } = req.body;
     const cleanSymbolId = String(symbolId || '').trim();
@@ -1671,7 +1820,7 @@ app.post('/api/pin/verify', credentialLimit, async (req, res) => {
       });
     }
 
-    beginPinAttempt(pinRecord);
+    await beginPinAttempt(pinRecord);
 
     if (pinLockRemainingMs(pinRecord) > 0) {
       const locked = pinLockoutResponse(pinRecord);
@@ -1780,7 +1929,7 @@ app.post(
         return res.status(404).json({ success: false, message: 'PIN is not set for this account.' });
       }
 
-      beginPinAttempt(pinRecord);
+      await beginPinAttempt(pinRecord);
 
       if (pinLockRemainingMs(pinRecord) > 0) {
         const locked = pinLockoutResponse(pinRecord);
@@ -1916,7 +2065,7 @@ app.patch(
   }
 );
 
-app.post('/api/pin/reset', credentialLimit, async (req, res) => {
+app.post('/api/pin/reset', credentialLimit, credentialAccountLimit, async (req, res) => {
   try {
     const { symbolId, mobileNumber, pin, newPin } = req.body;
     const cleanSymbolId = String(symbolId || '').trim();
@@ -1956,6 +2105,28 @@ app.post('/api/pin/reset', credentialLimit, async (req, res) => {
     if (!verifiedPinResetOtp) {
       return res.status(403).json({
         message: 'Please verify OTP before resetting PIN.'
+      });
+    }
+
+    // At most PIN_RESETS_PER_DAY resets in any 24 hours, counted in one
+    // database step so parallel resets cannot all slip through. While the
+    // one-time code is a fixed test value this is what stops a stranger who
+    // knows the number from resetting the PIN over and over.
+    const resetNow = new Date();
+    const dayAgo = new Date(resetNow.getTime() - 24 * 60 * 60 * 1000);
+    const lastAllowed = `pinResetTimes.${PIN_RESETS_PER_DAY - 1}`;
+    const reservedReset = await User.updateOne(
+      { _id: user._id, $or: [{ [lastAllowed]: { $exists: false } }, { [lastAllowed]: { $lte: dayAgo } }] },
+      { $push: { pinResetTimes: { $each: [resetNow], $position: 0, $slice: PIN_RESETS_PER_DAY } } }
+    );
+    if (!reservedReset.modifiedCount) {
+      recordAudit({
+        userId: user._id, action: 'pin.reset.blocked', status: 'blocked',
+        message: 'Daily PIN reset limit reached', req, metadata: { symbolId: user.symbolId },
+      });
+      return res.status(429).json({
+        code: 'pin_reset_limit',
+        message: `This PIN has been reset ${PIN_RESETS_PER_DAY} times in the last 24 hours. Try again tomorrow.`
       });
     }
 
@@ -2005,6 +2176,10 @@ app.post('/api/pin/reset', credentialLimit, async (req, res) => {
       message: 'PIN reset; other sessions revoked', req,
       metadata: { symbolId: user.symbolId },
     });
+
+    // Tell the owner, on every device that gets this account's
+    // notifications. If it was not them, this is how they find out.
+    notifyPinReset(user).catch(() => {});
 
     return res.status(200).json({
       message: 'PIN reset successfully.',
@@ -2285,7 +2460,7 @@ app.post('/api/register-symbol', registerLimit, async (req, res) => {
 // Gloobal ID, which is an unauthenticated oracle mapping phone numbers to
 // accounts. The PIN is the credential either way, so the resolution happens
 // here, behind it, and that lookup can go back to being a signed-in operation.
-app.post('/api/login', credentialLimit, async (req, res) => {
+app.post('/api/login', credentialLimit, credentialAccountLimit, async (req, res) => {
   try {
     const { secureId, symbolId, identifier, mobileNumber, pin } = req.body;
     const loginIdentifier = String(
@@ -2322,7 +2497,7 @@ app.post('/api/login', credentialLimit, async (req, res) => {
       });
     }
 
-    beginPinAttempt(pinRecord);
+    await beginPinAttempt(pinRecord);
 
     if (pinLockRemainingMs(pinRecord) > 0) {
       const locked = pinLockoutResponse(pinRecord);
@@ -2967,6 +3142,46 @@ async function creditReferralChain({ payer, seed, transaction }) {
   return written;
 }
 
+const PIN_RESETS_PER_DAY = 3;
+
+// "Your PIN was reset" — in the inbox and as a push to every device that
+// receives this account's notifications. Best-effort: never fails the reset.
+async function notifyPinReset(user) {
+  try {
+    const when = new Date().toUTCString().replace(' GMT', ' UTC');
+    const title = 'Your GLOOBAL PIN was reset';
+    const message = `Your PIN was reset on ${when}, and your other devices were signed out. ` +
+      "If this wasn't you, reset your PIN again now and contact GLOOBAL support.";
+    const row = await Notification.create({
+      userId: user._id,
+      type: 'security',
+      title,
+      message: message.slice(0, 500),
+      metadata: { event: 'pin_reset' },
+    });
+    await pruneNotifications(user._id);
+    if (pushService.isPushEnabled()) {
+      await pushService.sendPushToUser(
+        user._id,
+        {
+          v: 1,
+          category: 'transactional',
+          type: 'security',
+          notificationId: String(row._id),
+          title,
+          body: message.slice(0, 200),
+          url: '/',
+          tag: `gloobal-pin-reset-${Date.now()}`,
+          timestamp: Date.now(),
+        },
+        { category: 'transactional', app: 'gloobal' }
+      );
+    }
+  } catch (error) {
+    console.error('PIN reset alert error (non-fatal):', error);
+  }
+}
+
 // "Priya joined GLOOBAL with your ID" — in the inbox and on the phone.
 // Best-effort: a failed alert must never fail somebody's registration.
 async function notifyReferralJoin(referrer, joined) {
@@ -3313,7 +3528,7 @@ const SYMBOL_ID_REFERENCE_FIELDS = [
   { model: User, field: 'referredBy' }
 ];
 
-app.patch('/api/profile/change-symbol-id', writeLimit, requireAuth, requireSelf('currentSymbolId'), async (req, res) => {
+app.patch('/api/profile/change-symbol-id', writeLimit, requireAuth, requireSelf('currentSymbolId'), requireRecentCheck, async (req, res) => {
   try {
     const currentSymbolId = String(req.body.currentSymbolId || '').trim();
     const newSymbolId = String(req.body.newSymbolId || '').trim();
@@ -4765,7 +4980,11 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], s
     if (keyRe) or.push({ 'creatorProfile.searchKey': keyRe });
     // Shops by what they SELL, in any spelling, and in its own script for
     // alphabets the key does not cover.
-    const words = String(rawQ || q).trim().split(/[\s.]+/).filter(Boolean).map(bazaar.bazaarEscapeRegex);
+    // At most four words of at most 40 characters each: every extra word is
+    // another ".*" the database has to backtrack through on every title
+    // (audit F-28), and nobody searches a shop with a sentence.
+    const words = String(rawQ || q).trim().slice(0, 120).split(/[\s.]+/).filter(Boolean).slice(0, 4)
+      .map((word) => bazaar.bazaarEscapeRegex(word.slice(0, 40)));
     const titleRe = words.length ? new RegExp(`(^|\\s)${words.join('.*')}`, 'i') : null;
     const itemOr = [];
     if (keyRe) itemOr.push({ searchKey: keyRe });
@@ -6201,7 +6420,7 @@ app.post('/api/passkey/register/options', writeLimit, requireAuth, requireSelf('
     console.error('Passkey registration options error:', error);
 
     return res.status(500).json({
-      message: `Could not create passkey registration options: ${error.message}`
+      message: 'Could not create passkey registration options. Try again.'
     });
   }
 });
@@ -6292,7 +6511,7 @@ app.post('/api/passkey/register/verify', writeLimit, requireAuth, requireSelf('s
 
     return res.status(500).json({
       verified: false,
-      message: `Could not verify device authentication setup: ${error.message}`
+      message: 'Could not verify device authentication setup. Try again.'
     });
   }
 });
@@ -6344,7 +6563,7 @@ app.post('/api/passkey/auth/options', credentialLimit, async (req, res) => {
     console.error('Passkey authentication options error:', error);
 
     return res.status(500).json({
-      message: `Could not create device authentication options: ${error.message}`
+      message: 'Could not create device authentication options. Try again.'
     });
   }
 });
@@ -6417,6 +6636,9 @@ app.post('/api/passkey/auth/verify', credentialLimit, async (req, res) => {
     user.passkeys = passkeys;
     // The challenge was already cleared by consumeWebAuthnChallenge above.
     await user.save();
+    // A fresh device check counts as "just confirmed it's you" for the
+    // actions that ask for one (see requireRecentCheck).
+    await Pin.updateOne({ userId: user._id }, { $set: { lastVerifiedAt: new Date() } });
 
     return res.status(200).json({
       verified: true,
@@ -6433,7 +6655,7 @@ app.post('/api/passkey/auth/verify', credentialLimit, async (req, res) => {
 
     return res.status(500).json({
       verified: false,
-      message: `Could not verify device authentication: ${error.message}`
+      message: 'Could not verify device authentication. Try again.'
     });
   }
 });
@@ -9298,7 +9520,7 @@ app.get('/api/projects/:id/contributions', lookupLimit, async (req, res) => {
   }
 });
 
-app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderSymbolId', 'fromSymbolId'), async (req, res) => {
+app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderSymbolId', 'fromSymbolId', 'symbolId'), async (req, res) => {
   try {
     const {
       senderSymbolId,
@@ -9462,6 +9684,14 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       });
     }
 
+    // The payer is always the signed-in account, whatever the request names.
+    if (String(sender._id) !== String(req.authUser._id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'That account is not yours.',
+      });
+    }
+
     if (!receiver) {
       return res.status(404).json({
         success: false,
@@ -9507,7 +9737,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       });
     }
 
-    beginPinAttempt(pinRecord);
+    await beginPinAttempt(pinRecord);
 
     if (pinLockRemainingMs(pinRecord) > 0) {
       const locked = pinLockoutResponse(pinRecord);

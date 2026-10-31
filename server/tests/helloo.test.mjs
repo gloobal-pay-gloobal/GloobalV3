@@ -315,13 +315,19 @@ async function run() {
   console.log("\n13. replies, photos and deleting");
   const quoted = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.C, body: { clientId: "c-r1", kind: "text", text: "Yes, I'm here", replyToId: sent.body.message.id } });
   check("C replies quoting A's first message", quoted.status === 201 && quoted.body.message.replyTo?.id === sent.body.message.id && quoted.body.message.replyTo.preview === "Hello Chandra", j(quoted.body.message?.replyTo));
-  const img = Buffer.alloc(2048, 3).toString("base64");
+  // A photo must really be the format it is labelled as (audit F-29), so the
+  // test bytes start with a JPEG's opening marker.
+  const jpegBytes = Buffer.alloc(2048, 3);
+  jpegBytes[0] = 0xff; jpegBytes[1] = 0xd8; jpegBytes[2] = 0xff; jpegBytes[3] = 0xe0;
+  const img = jpegBytes.toString("base64");
   const photo = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.A, body: { clientId: "ph-1", kind: "photo", mime: "image/jpeg", image: img, width: 800, height: 600, text: "The shop" } });
   check("A sends a photo with a caption", photo.status === 201 && photo.body.message.photo?.width === 800 && photo.body.message.text === "The shop", j(photo.body));
   const photoBack = await call("GET", `/api/helloo/media/${photo.body?.message?.id}`, { token: tokens.C });
   check("C fetches the photo's bytes", photoBack.status === 200 && photoBack.body.audio === img && photoBack.body.mime === "image/jpeg");
   const notImage = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.A, body: { clientId: "ph-2", kind: "photo", mime: "image/gif", image: img } });
   check("a GIF is refused (400)", notImage.status === 400);
+  const fakeJpeg = await call("POST", `/api/helloo/chats/${chatId}/messages`, { token: tokens.A, body: { clientId: "ph-3", kind: "photo", mime: "image/jpeg", image: Buffer.alloc(2048, 3).toString("base64") } });
+  check("bytes that are not a JPEG, labelled as one, are refused (400)", fakeJpeg.status === 400);
   const notMine = await call("POST", `/api/helloo/messages/${photo.body.message.id}/delete`, { token: tokens.C, body: { everyone: true } });
   check("C cannot delete A's photo for everyone (403)", notMine.status === 403 && notMine.body?.code === "not_yours");
   const keepPay = await call("POST", `/api/helloo/messages/${made.body.message.id}/delete`, { token: tokens.A, body: { everyone: true } });

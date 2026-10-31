@@ -397,7 +397,7 @@ function createBank({ User, Pin, requireAuth, requireSelf, writeLimit, lookupLim
         if (!/^\d{4,6}$/.test(cleanPin)) return res.status(400).json({ code: 'pin', message: 'Enter your PIN.' });
         const pinRecord = await Pin.findOne({ userId: user._id });
         if (!pinRecord) return res.status(409).json({ code: 'pin', message: 'Set a PIN for your account first.' });
-        pin.beginPinAttempt(pinRecord);
+        await pin.beginPinAttempt(pinRecord);
         if (pin.pinLockRemainingMs(pinRecord) > 0) {
           const locked = pin.pinLockoutResponse(pinRecord);
           res.set('Retry-After', String(locked.retryAfterSeconds));

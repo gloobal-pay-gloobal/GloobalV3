@@ -1033,6 +1033,38 @@ var GloobalApi = {
   // GET /api/assets/settlements/:symbolId — every settlement, newest first:
   // { id, amount, principal, interest, currency, seedCount, spent, from,
   // to, at }. Null on a failed read, [] on none.
+  // --- GLOOBAL Bank: opening the account (server/lib/bank.js) ------------
+  //
+  // The account number is the GLOOBAL ID, so none of these hands one back
+  // that is anything else. `getBank` answers null when the server could not
+  // be asked — a different thing from status "none", which is a real answer.
+  async getBank(symbolId) {
+    try {
+      const result = await gloobalApiClient.get(`/api/bank/${encodeURIComponent(symbolId)}`);
+      return (result && result.bank) || null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async saveBankDraft(symbolId, patch) {
+    const result = await gloobalApiClient.put("/api/bank/draft", { symbolId, ...patch });
+    return (result && result.bank) || null;
+  },
+  async submitBankId(symbolId, payload) {
+    return gloobalApiClient.post("/api/bank/id", { symbolId, ...payload });
+  },
+  async verifyBankOtp(symbolId, otp) {
+    return gloobalApiClient.post("/api/bank/id/verify", { symbolId, otp });
+  },
+  async saveBankSelfie(symbolId, skipped = false) {
+    const result = await gloobalApiClient.post("/api/bank/selfie", { symbolId, skipped });
+    return (result && result.bank) || null;
+  },
+  async openBank(symbolId, pin, declarations) {
+    const result = await gloobalApiClient.post("/api/bank/open", { symbolId, pin, declarations });
+    return (result && result.bank) || null;
+  },
+
   async getAssetSettlements(symbolId) {
     try {
       const result = await gloobalApiClient.get(`/api/assets/settlements/${encodeURIComponent(symbolId)}`);

@@ -244,6 +244,7 @@ const FRONTEND_MODULES = [
   "components/dialogs/NotificationsSheet.jsx",
   "features/assets/AssetsScreen.jsx",
   "features/essentials/EssentialsScreen.jsx",
+  "features/bank/bankOpen.jsx",
   "features/history/TransactionRow.jsx",
   "features/history/historyUtils.js",
   // The one newest-first rule every transaction list sorts by. Function

@@ -448,7 +448,27 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // state rather than inferred from showGloobalBankInfo's current
   // value, since that flag flips back to false when the sheet closes
   // — this one is "has it EVER been opened", set once and never unset.
-  const [hasOpenedGloobalBank, setHasOpenedGloobalBank] = useState14(false);
+  //
+  // That bit is now the real thing: an OPEN GLOOBAL Bank account, read from
+  // the server (GET /api/bank/:symbolId). Merely looking at the Bank screen
+  // used to unlock Essentials, and only until the next reload.
+  const [bankAccount, setBankAccount] = useState14(null);
+  // { after: "bank" | "settle" | "essentials" } while the opening flow is up.
+  const [bankFlow, setBankFlow] = useState14(null);
+  const requestCloseBankFlow = useBackClose(Boolean(bankFlow), () => setBankFlow(null));
+  const [showBankNeeds, setShowBankNeeds] = useState14(false);
+  const requestCloseBankNeeds = useBackClose(showBankNeeds, () => setShowBankNeeds(false));
+  // Bumped to ask My Assets to open its settle sheet — after an account has
+  // just been opened from the Settle button, that is where the person was.
+  const [assetsSettleRequest, setAssetsSettleRequest] = useState14(0);
+  useEffect12(() => {
+    if (!myGloobalId) return undefined;
+    let live = true;
+    GloobalApi.getBank(myGloobalId).then((b) => { if (live && b) setBankAccount(b); });
+    return () => { live = false; };
+  }, [myGloobalId]);
+  const hasOpenedGloobalBank = bankAccount?.status === "open";
+  const openBankFlow = (after = "bank") => setBankFlow({ after });
   const capabilities = useMemo5(() => deriveCapabilityStates({ hasOpenedGloobalBank }), [hasOpenedGloobalBank]);
   // Both product screens fetch their own catalogue on open rather than on
   // mount: the rows are only ever looked at here, and this backend sleeps,
@@ -457,7 +477,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // called from a tap, long after it exists.
   const openGloobalBankInfo = () => {
     loadProduct("bank");
-    setHasOpenedGloobalBank(true);
     setShowGloobalBankInfo(true);
   };
   const [gloobalBankInterested, setGloobalBankInterested] = useState14(false);
@@ -717,6 +736,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       try {
         result = await GloobalApi.settleAssets(myGloobalId);
       } catch (err) {
+        // The account was closed, or never finished, on another device.
+        if (err && err.body && err.body.code === "bank_not_open") {
+          GloobalApi.getBank(myGloobalId).then((x) => x && setBankAccount(x));
+          setShowBankNeeds(true);
+          return;
+        }
         showToast2((err && err.message) || "Couldn't settle just now. Nothing was moved.");
         return;
       }
@@ -2859,14 +2884,28 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        app's own logo. */
   }{(() => {
     const bankLocked = capabilities.gbank?.locked ?? false;
-    return <button
+    const bankStatus = bankAccount?.status || null;
+    // A div, not a button: the card opens the Bank screen, and until the
+    // account exists it also carries its own Open button — and a button
+    // inside a button is not something a browser will keep.
+    return <div
+      role="button"
+      tabIndex={0}
       onClick={openGloobalBankInfo}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGloobalBankInfo(); } }}
       aria-label={bankLocked ? "Gloobal Bank \u2014 locked" : "Gloobal Bank"}
+      data-testid="accounts-bank-card"
       className="v2-tap"
-      style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", borderRadius: T.radiusLg, background: T.gradButton, boxShadow: `0 14px 30px rgba(${T.accentDeepRgb},0.28)`, padding: "18px 18px 17px", color: "#fff" }}
-    ><span style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 44, height: 44, borderRadius: 14, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><img src={G_LOGO_DATA_URI} alt="" style={{ width: 26, height: 26, objectFit: "contain", filter: "brightness(0) invert(1)" }} /></span><span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, letterSpacing: -0.2, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" Bank" /></span><ChevronRight4 size={17} color="rgba(255,255,255,0.8)" /></span><span style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)", lineHeight: 1.45 }}>
-      Your balance, your transfers, and the account everything else here unlocks from.
-    </span></button>;
+      style={{ width: "100%", boxSizing: "border-box", textAlign: "left", cursor: "pointer", borderRadius: T.radiusLg, background: T.gradButton, boxShadow: `0 14px 30px rgba(${T.accentDeepRgb},0.28)`, padding: "18px 18px 17px", color: "#fff" }}
+    ><span style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 44, height: 44, borderRadius: 14, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><img src={G_LOGO_DATA_URI} alt="" style={{ width: 26, height: 26, objectFit: "contain", filter: "brightness(0) invert(1)" }} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 16, fontWeight: 800, letterSpacing: -0.2, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" Bank" /></span>{bankStatus && bankStatus !== "open" && <span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.78)", marginTop: 2 }}>{bankStatus === "draft" ? "Opening — not finished yet" : "Not opened yet"}</span>}</span><ChevronRight4 size={17} color="rgba(255,255,255,0.8)" /></span><span style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)", lineHeight: 1.45 }}>
+      {bankStatus && bankStatus !== "open" ? "Your GLOOBAL ID becomes your account number, and My Assets settle into it." : "Your balance, your transfers, and the account everything else here unlocks from."}
+    </span>{bankStatus && bankStatus !== "open" && <span style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}><button
+      type="button"
+      data-testid="accounts-bank-open"
+      onClick={(e) => { e.stopPropagation(); openBankFlow("bank"); }}
+      className="v2-tap"
+      style={{ flex: 1, height: 44, borderRadius: 14, border: "none", cursor: "pointer", background: "#fff", color: T.dark ? "#15132A" : T.accentDeep, fontSize: 14, fontWeight: 800, fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+    >{bankStatus === "draft" ? `Continue \u2014 step ${Math.min(6, (Number(bankAccount.step) || 0) + 1)} of 6` : "Open account"}<ChevronRight4 size={16} color={T.dark ? "#15132A" : T.accentDeep} /></button>{bankStatus !== "draft" && <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.85)", whiteSpace: "nowrap" }}>5 min</span>}</span>}</div>;
   })()}<div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, marginTop: 16 }}>{[
     { key: "gpaylater", label: "PayLater", onClick: () => setShowPayLater(true) },
     { key: "myassets", label: "My Assets", onClick: () => setShowAssets(true) },
@@ -4071,6 +4110,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       copyToClipboard(personalGloobalId);
       showToast2("Copied");
     }}
+    bankAccount={bankAccount}
+    onOpenBankFlow={() => openBankFlow("bank")}
+    onToast={showToast2}
   /></ScreenErrorBoundary>}{
     /* Real interest data, counted server-side. Both numbers used to be
        written into the JSX — `interested ? 100 : 0`% and
@@ -4103,6 +4145,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onViewDetail={setAssetDetailKey}
     symbolId={myGloobalId}
     historyRefresh={settleDone ? settleDone.at : 0}
+    // Settling moves My Assets INTO the GLOOBAL Bank account, so with no
+    // account the Settle button asks to open one first (BankNeedsAccountSheet).
+    bankOpen={bankAccount ? bankAccount.status === "open" : true}
+    onNeedBank={() => setShowBankNeeds(true)}
+    settleRequest={assetsSettleRequest}
     onRequestSettle={() => {
       setSettlePendingAmount(totalAssets);
       setShowSettleAssetsBiometric(true);
@@ -4120,9 +4167,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onToggleIHaveEnough={onToggleEssentialsIHaveEnough}
     bankUnlocked={!capabilities.myessentials.locked}
     onUnlockGloobalBank={() => {
-      requestCloseEssentials();
-      setPendingReopenEssentials(true);
-      openGloobalBankInfo();
+      // Unlocking is opening the account now, not glancing at the Bank
+      // screen; the flow's last screen offers the way back here.
+      openBankFlow("essentials");
     }}
     onOpenScanAndPay={() => {
       requestCloseEssentials();
@@ -4131,6 +4178,43 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   />}{
     /* Settling assets to Gloobal Bank — same mandatory Face ID +
        fingerprint screen used for PIN-follow-up everywhere else. */
+  }{showBankNeeds && <BankNeedsAccountSheet
+    bank={bankAccount}
+    amountText={totalAssets > 0 ? `${ccy}${Number(totalAssets).toFixed(2)}` : ""}
+    onClose={requestCloseBankNeeds}
+    onOpen={() => {
+      setShowBankNeeds(false);
+      openBankFlow("settle");
+    }}
+  />}{bankFlow && <ScreenErrorBoundary name="Open Gloobal Bank" onClose={requestCloseBankFlow}><BankOpenFlow
+    symbolId={myGloobalId}
+    myName={myName}
+    mobileNumber={mobileNumber}
+    dialCountry={dialCountry}
+    initialBank={bankAccount}
+    after={bankFlow.after}
+    onToast={showToast2}
+    onOpened={(b) => setBankAccount(b)}
+    onClose={(b) => {
+      if (b) setBankAccount(b);
+      else if (myGloobalId) GloobalApi.getBank(myGloobalId).then((x) => x && setBankAccount(x));
+      requestCloseBankFlow();
+    }}
+    onFinish={(after) => {
+      requestCloseBankFlow();
+      if (after === "settle") {
+        setShowAssets(true);
+        setAssetsSettleRequest((n) => n + 1);
+      } else if (after === "essentials") {
+        setShowEssentials(true);
+      } else {
+        openGloobalBankInfo();
+      }
+    }}
+  /></ScreenErrorBoundary>}{
+    /* The GLOOBAL Bank account flow and its "needs an account" sheet sit
+       above My Assets and My Essentials, which is where they are opened
+       from. */
   }{showSettleAssetsBiometric && <BiometricVerifyScreen
     onBack={() => setShowSettleAssetsBiometric(false)}
     onVerify={handleSettleAssetsBiometricVerify}

@@ -8198,12 +8198,28 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
 // A seed with nothing left to pay (an old-generation seed whose interest
 // was claimed) is still closed: settling is "start again", not "take what
 // is due and leave the rest growing".
+// GLOOBAL Bank — opening the account. See lib/bank.js. Mounted here, after
+// the PIN helpers it shares with /api/login exist, and before settle, which
+// now needs an open account to settle into.
+const gloobalBank = require('./lib/bank').createBank({
+  User, Pin, requireAuth, requireSelf, writeLimit, lookupLimit, credentialLimit,
+  pin: { beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
+});
+gloobalBank.mount(app);
+
 app.post('/api/assets/settle', writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const cleanSymbolId = String(req.body?.symbolId || '').trim();
     if (!cleanSymbolId) return res.status(400).json({ message: 'Secure ID is required.' });
     const user = await User.findOne({ symbolId: cleanSymbolId });
     if (!user) return res.status(404).json({ message: 'Secure ID not found.' });
+
+    // Settling moves My Assets INTO the GLOOBAL Bank account, so there has
+    // to be one. The app asks to open it first; this is the same rule for
+    // anybody calling the route directly.
+    if (!(await gloobalBank.isOpen(user._id))) {
+      return res.status(409).json({ code: 'bank_not_open', message: 'Open your GLOOBAL Bank account first, then settle into it.' });
+    }
 
     const currency = await resolveOwnCurrency(user);
     if (!currency) {

@@ -58,7 +58,12 @@ function GloobalBankScreen({
   gloobalId = "",
   countryFlag = "",
   countryName = "",
-  onCopyId
+  onCopyId,
+  // The account itself — opened or not — from GET /api/bank (see
+  // features/bank/bankOpen.jsx). Null while it is being asked for.
+  bankAccount = null,
+  onOpenBankFlow,
+  onToast
 }) {
   const rows = Array.isArray(recentTransactions) ? recentTransactions : [];
   return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><ProductScreenHeader
@@ -131,7 +136,7 @@ function GloobalBankScreen({
     aria-label="Copy Gloobal ID"
     className="v2-tap"
     style={{ width: 30, height: 30, borderRadius: 9, border: "none", flexShrink: 0, background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><BankCopy size={14} color="#fff" /></button>}</div>}</div><ProductServicesCard services={services} />{
+  ><BankCopy size={14} color="#fff" /></button>}</div>}</div><BankAccountPanel bank={bankAccount} gloobalId={gloobalId} onOpen={onOpenBankFlow} onToast={onToast} /><ProductServicesCard services={services} />{
     /* Recent transactions — the same five rows the Home tab's activity
        list draws, merged across both directions rather than split by a
        tab, because this screen is about the account rather than about

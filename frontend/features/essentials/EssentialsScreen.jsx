@@ -221,7 +221,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
       </span></span></div><div
     style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5 }}
   >
-      Your {dialCountry.name} baseline is worked out already {"—"} opening the account is what shows you the figures. It never removes eligibility or restricts future use.
+      Your {dialCountry.name} baseline is worked out already {"—"} opening the account is what shows you the figures. About 5 minutes, with your ID. It never removes eligibility or restricts future use.
     </div><button
     onClick={onUnlockGloobalBank}
     className="v2-tap"
@@ -242,7 +242,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
       cursor: "pointer"
     }}
   ><Lock8 size={16} />
-      Open <GloobalWordmark suffix=" Bank" />
+      Start opening <GloobalWordmark suffix=" Bank" />
     </button></div>}{revealed && <div
     style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 16px", display: "flex", flexDirection: "column", gap: 13 }}
   ><div style={{ display: "flex", alignItems: "flex-start", gap: 13 }}><span

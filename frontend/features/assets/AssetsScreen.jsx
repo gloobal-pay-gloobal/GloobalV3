@@ -1,7 +1,7 @@
 // src/features/assets/AssetsScreen.jsx
 import React2, { useState as useState10, useEffect as useEffect53, Fragment } from "react";
 import { ArrowLeft, ArrowRight, ChevronRight, TrendingUp, Sprout, Landmark as Landmark3, History as HistorySettle, RotateCcw as RestartSettle, CreditCard as CardSettle, Check as CheckSettle, Loader as LoaderSettle } from "lucide-react";
-function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater, onViewDetail, onRequestSettle, symbolId = "", historyRefresh = 0 }) {
+function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater, onViewDetail, onRequestSettle, symbolId = "", historyRefresh = 0, bankOpen = true, onNeedBank, settleRequest = 0 }) {
   // Every figure on this screen is the account's own money in the account's
   // own currency, so the lens applies to all of them or none. Read from the
   // shared store the balance card's toggle writes.
@@ -30,6 +30,11 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
   const [confirmOpen, setConfirmOpen] = useState10(false);
   const [historyOpen, setHistoryOpen] = useState10(false);
   useBackClose(confirmOpen, () => setConfirmOpen(false));
+  // Asked for from outside: the account to settle into has just been
+  // opened from this screen's own Settle button, so carry on from there.
+  useEffect53(() => {
+    if (settleRequest > 0 && bankOpen) setConfirmOpen(true);
+  }, [settleRequest]);
   useBackClose(historyOpen, () => setHistoryOpen(false));
   const totalAssets = assetRows.reduce((s, r) => s + r.value, 0);
   // This number used to sit on the wallet card under the heading "Future
@@ -122,7 +127,7 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
        Gloobal Bank balance, gated behind verification. Disabled at
        zero, since there's genuinely nothing to settle then. */
   }<button
-    onClick={() => setConfirmOpen(true)}
+    onClick={() => (bankOpen || !onNeedBank ? setConfirmOpen(true) : onNeedBank())}
     data-testid="assets-settle"
     disabled={totalAssets <= 0}
     className="v2-tap"

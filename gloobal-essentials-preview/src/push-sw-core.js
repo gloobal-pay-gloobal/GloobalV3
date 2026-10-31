@@ -199,7 +199,20 @@ export function installGloobalPushHandlers(swSelf) {
       payload.title,
       gloobalNotificationOptions(payload)
     );
-    if (event && typeof event.waitUntil === "function") event.waitUntil(show);
+    // A payment push also tells any open copy of the app, so it can read
+    // the confirmed payment straight away (and play the Creator payment
+    // sound) instead of waiting for its next poll. Only a hint: the page
+    // reads the payment from the server, never from this message.
+    var tell = payload && payload.transactionId && swSelf.clients && typeof swSelf.clients.matchAll === "function"
+      ? swSelf.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (clientList) {
+        (clientList || []).forEach(function (client) {
+          if (client && typeof client.postMessage === "function") {
+            client.postMessage({ type: "gloobal:push-arrived", transactionId: String(payload.transactionId) });
+          }
+        });
+      }).catch(function () {})
+      : null;
+    if (event && typeof event.waitUntil === "function") event.waitUntil(tell ? Promise.all([show, tell]) : show);
   });
 
   swSelf.addEventListener("notificationclick", function (event) {

@@ -1953,6 +1953,13 @@ function GloobalId() {
         gloobalPushSyncOnStart().then((r) => setPushState(r && r.ok ? "ok" : (r && r.reason) || ""));
         return;
       }
+      // A payment push arrived while the app is open: read the received
+      // list now rather than at the next 30-second poll, so the creator
+      // chime plays within a second or two of the payment.
+      if (data.type === "gloobal:push-arrived") {
+        setReceivedPollToken((n) => n + 1);
+        return;
+      }
       if (data.type !== "gloobal:push-click") return;
       // A complaint: straight to its case.
       const complaintId = data.payload && data.payload.complaintId;
@@ -2151,6 +2158,13 @@ function GloobalId() {
   useEffect15(() => {
     gloobalSetBiometricLoginEnabled(biometricLoginOn);
   }, [biometricLoginOn]);
+
+  // Creator payments: chime and spoken amount (features/creator/
+  // paymentChime.js). On unless the account switched it off.
+  const paymentSoundOn = securitySettings ? securitySettings.paymentSound !== false : true;
+  useEffect15(() => {
+    gloobalSetPaymentSoundEnabled(paymentSoundOn);
+  }, [paymentSoundOn]);
 
   // Writes a Security switch to the account and adopts whatever the server
   // says the account now holds. Returns a boolean so the switch can roll
@@ -2912,6 +2926,13 @@ function GloobalId() {
             from: entry.name,
             occurredAt: entry.occurredAt || null
           });
+          // A confirmed payment to this account's CREATOR side (paid at its
+          // creator name): the counter soundbox. The amount the customer
+          // paid, which is what a shopkeeper checks against the bill.
+          const confirmed = !entry.status || entry.status === "completed" || entry.status === "success";
+          if (entry.creatorHandle && confirmed && entry.type !== "share") {
+            gloobalPlayPaymentChime({ txnId: entry.txnId, amount: got.amount, currency: got.currency });
+          }
         });
       } catch (e) {
         /* read-only; the dashboard works without it */

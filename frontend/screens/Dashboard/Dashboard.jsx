@@ -1688,6 +1688,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     : securitySettings
       ? securitySettings.appLock === true
       : false;
+  const paymentSoundOn = securityPending && "paymentSound" in securityPending
+    ? securityPending.paymentSound
+    : securitySettings
+      ? securitySettings.paymentSound !== false
+      : true;
   const flipSecurity = async (key, next) => {
     if (!onUpdateSecuritySettings) return;
     setSecurityPending((prev) => Object.assign({}, prev, { [key]: next }));
@@ -4565,6 +4570,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // creator side should hand out the creator side's code.
     onShowQr={() => setShopCode(gloobalAnimalQrRandom())}
     onOpenLedger={() => setShowCreatorLedger(true)}
+    paymentSoundOn={paymentSoundOn}
+    onTogglePaymentSound={() => flipSecurity("paymentSound", !paymentSoundOn)}
     onToast={showToast2}
     onOpenPage={async () => {
       // Read back through the same route a buyer uses, so the owner sees

@@ -779,6 +779,9 @@ const publicUserPayload = async (user) => {
     securitySettings: {
       biometricLogin: user.securitySettings?.biometricLogin !== false,
       appLock: user.securitySettings?.appLock === true,
+      // Creator payments: a chime and the amount spoken aloud. On unless
+      // switched off.
+      paymentSound: user.securitySettings?.paymentSound !== false,
     },
     referredBy: user.referredBy || null,
     // The inviter's display name, so the app can say "Invited by Priya"
@@ -2039,6 +2042,13 @@ app.patch(
           return res.status(400).json({ success: false, message: 'appLock must be true or false.' });
         }
         update['securitySettings.appLock'] = req.body.appLock;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'paymentSound')) {
+        if (typeof req.body.paymentSound !== 'boolean') {
+          return res.status(400).json({ success: false, message: 'paymentSound must be true or false.' });
+        }
+        update['securitySettings.paymentSound'] = req.body.paymentSound;
       }
 
       if (Object.keys(update).length === 0) {

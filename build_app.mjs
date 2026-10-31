@@ -162,6 +162,7 @@ const FRONTEND_MODULES = [
   // the per-transaction dedupe, and the sending. Needs G_LOGO_DATA_URI from
   // data/mockData.js, already emitted above.
   "hooks/usePaymentNotifications.js",
+  "features/creator/paymentChime.js",
   // Web Push: the same notifications, but to a device whose app is closed.
   // Directly after usePaymentNotifications because it reuses that file's
   // permission state (the once-only ask, `Notification.permission`) rather

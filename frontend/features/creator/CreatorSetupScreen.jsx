@@ -1,6 +1,6 @@
 // src/features/creator/CreatorSetupScreen.jsx
 import { useState as useState53, useEffect as useEffect50, useRef as useRef30 } from "react";
-import { Camera as Camera6, Check as Check9, X as X12, MapPin as MapPin5, Loader as Loader5, Pencil as Pencil4, QrCode as QrCode2, Share2 as Share26, Copy as Copy5, Eye as Eye3, EyeOff as EyeOff4, Store as Store3, ShieldCheck as ShieldCheck2, ChevronRight as ChevronRight9, Contact as Contact4, ArrowLeftRight } from "lucide-react";
+import { Camera as Camera6, Check as Check9, X as X12, MapPin as MapPin5, Loader as Loader5, Pencil as Pencil4, QrCode as QrCode2, Share2 as Share26, Copy as Copy5, Eye as Eye3, EyeOff as EyeOff4, Store as Store3, ShieldCheck as ShieldCheck2, ChevronRight as ChevronRight9, Contact as Contact4, ArrowLeftRight, Volume2 as VolumeOn1, VolumeX as VolumeOff1 } from "lucide-react";
 
 // ── THE CREATOR SIDE INTRODUCES ITSELF ──────────────────────────────────
 //
@@ -880,7 +880,7 @@ function CreatorSetupScreen({
 //     but made to mean the one true thing available here: whether the
 //     name is live. Green once a handle exists — people can pay you at
 //     it — and grey before that.
-function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage, onShowQr, onOpenLedger, onToast }) {
+function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage, onShowQr, onOpenLedger, onToast, paymentSoundOn = true, onTogglePaymentSound }) {
   // Opening this row can be the first touch of the Creator side — the
   // other being the flip itself — so it may arrive with nothing loaded.
   useEffect50(() => {
@@ -1093,7 +1093,27 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
     flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink
   }}>Sales &amp; purchases</span><ChevronRight9
     size={17} color={T.inkFaint} style={{ flexShrink: 0 }}
-  /></button> : null}{fact(
+  /></button> : null}{
+    /* The counter soundbox: a chime and the amount spoken when a payment
+       to this creator name is confirmed. A fact about how the shop works,
+       so it sits with the other facts rather than in Security. */
+  }{typeof onTogglePaymentSound === "function" ? fact(
+    "sound",
+    paymentSoundOn ? VolumeOn1 : VolumeOff1,
+    <span><span style={{ display: "block", fontWeight: 700 }}>Payment sound</span><span style={{
+      display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 2
+    }}>A chime and the amount, spoken when a payment is confirmed</span></span>,
+    <ProfileToggle on={paymentSoundOn} onToggle={() => {
+      // The tap that turns it on is also the one that unlocks sound,
+      // so play a sample: the person hears what customers will trigger.
+      if (!paymentSoundOn && typeof gloobalPlayChimeTone === "function") {
+        gloobalChimeUnlock();
+        gloobalPlayChimeTone();
+      }
+      onTogglePaymentSound();
+    }} label="Payment sound" />,
+    !done
+  ) : null}{fact(
     "id",
     Contact4,
     idShown

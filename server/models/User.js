@@ -246,7 +246,10 @@ const userSchema = new mongoose.Schema({
     biometricLogin: { type: Boolean, default: true },
     // Whether the app should demand a credential when it is opened, rather
     // than restoring straight to the dashboard.
-    appLock: { type: Boolean, default: false }
+    appLock: { type: Boolean, default: false },
+    // Creator payments: a chime and the amount spoken aloud when a payment
+    // to the creator side is confirmed, like a shop counter's soundbox.
+    paymentSound: { type: Boolean, default: true }
   },
 
   // ── THE CREATOR SIDE OF THE SAME ACCOUNT ─────────────────────────────

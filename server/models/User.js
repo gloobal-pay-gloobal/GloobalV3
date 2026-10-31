@@ -282,11 +282,17 @@ const userSchema = new mongoose.Schema({
     // cannot be changed yet, so there is nothing to release; the day an
     // edit route exists it needs a history array like symbolIdHistory and
     // this comment is the reason.
+    // Unique among the handles that EXIST. This was `{ unique: true,
+    // sparse: true }`, and a sparse index only skips documents where the
+    // field is missing — every account stores `null` here by default, so
+    // the second account ever registered on a database where the index had
+    // been built was refused with E11000 on `{ handle: null }`. A partial
+    // index on strings is the rule actually meant: two shops can never share
+    // a name, and any number of people can have none. (Index declared below.)
     handle: {
       type: String,
       trim: true,
-      default: null,
-      index: { unique: true, sparse: true }
+      default: null
     },
 
     // Free text, in any script. Not parsed, not geocoded, not validated —
@@ -481,5 +487,9 @@ userSchema.index({ 'symbolIdHistory.symbolId': 1 });
 // most accounts are not creators — so both stay small.
 userSchema.index({ 'creatorProfile.addressParts.lat': 1, 'creatorProfile.addressParts.lng': 1 });
 userSchema.index({ 'creatorProfile.category': 1 });
+userSchema.index(
+  { 'creatorProfile.handle': 1 },
+  { name: 'creatorProfile.handle_unique_named', unique: true, partialFilterExpression: { 'creatorProfile.handle': { $type: 'string' } } }
+);
 
 module.exports = mongoose.model('User', userSchema);

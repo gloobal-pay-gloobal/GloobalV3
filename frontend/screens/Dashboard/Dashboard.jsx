@@ -2360,6 +2360,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [roleFlipping, setRoleFlipping] = useState14(false);
   const toggleShareRole = () => {
     setRoleFlipping(true);
+    // Heard on the tap itself: rising to Creator, falling to Personal.
+    gloobalPlayRoleSwitchSound(shareRole === "user" ? "merchant" : "user");
     setTimeout(() => {
       setShareRole((r) => r === "user" ? "merchant" : "user");
       setRoleFlipping(false);
@@ -2442,6 +2444,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   }{!quickPaySearching && <button
     onClick={async () => {
       const next = shareRole === "user" ? "merchant" : "user";
+      // Heard on the tap itself: rising to Creator, falling to Personal.
+      gloobalPlayRoleSwitchSound(next);
       setShareRole(next);
       // No toast: the flip card (App.jsx, SideFlipCard) names the side
       // now, in that side's own ink, and the app behind it has changed

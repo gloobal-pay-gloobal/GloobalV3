@@ -17,7 +17,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = readFileSync(join(ROOT, "frontend/features/creator/paymentChime.js"), "utf8");
 
 function load({ language = "en-IN", withVoice = true, withAudio = true } = {}) {
-  const log = { notes: [], spoken: [], listeners: {} };
+  const log = { notes: [], slides: [], spoken: [], listeners: {} };
   class FakeParam {
     setValueAtTime() {}
     exponentialRampToValueAtTime() {}
@@ -29,8 +29,11 @@ function load({ language = "en-IN", withVoice = true, withAudio = true } = {}) {
     createOscillator() {
       const osc = {
         type: "", connect() {}, stop() {},
-        frequency: { setValueAtTime: (f) => { osc.f = f; } },
-        start: () => log.notes.push(osc.f),
+        frequency: {
+          setValueAtTime: (f) => { osc.f = f; },
+          exponentialRampToValueAtTime: (f) => { osc.to = f; },
+        },
+        start: () => { log.notes.push(osc.f); if (osc.to) log.slides.push([osc.f, osc.to]); },
       };
       return osc;
     }
@@ -54,7 +57,7 @@ function load({ language = "en-IN", withVoice = true, withAudio = true } = {}) {
   const factory = new Function(
     "window", "navigator", "SpeechSynthesisUtterance", "setTimeout",
     `${SOURCE}
-     return { gloobalSetPaymentSoundEnabled, gloobalPlayPaymentChime, gloobalChimeSentence, gloobalMarkChimePlayed, gloobalChimeUnlock };`
+     return { gloobalSetPaymentSoundEnabled, gloobalPlayPaymentChime, gloobalChimeSentence, gloobalMarkChimePlayed, gloobalChimeUnlock, gloobalPlayRoleSwitchSound };`
   );
   // setTimeout shortened so the 650 ms chime wait does not slow the test.
   const fast = (fn, ms) => setTimeout(fn, Math.min(ms, 5));
@@ -139,7 +142,7 @@ test("App.jsx plays it only for confirmed payments to the creator name, read fro
 
 test("the Creator profile has the switch, saved to the account", () => {
   const panel = readFileSync(join(ROOT, "frontend/features/creator/CreatorSetupScreen.jsx"), "utf8");
-  assert.match(panel, /label="Payment sound"/);
+  assert.match(panel, /label="Sounds"/);
   const dash = readFileSync(join(ROOT, "frontend/screens/Dashboard/Dashboard.jsx"), "utf8");
   assert.match(dash, /flipSecurity\("paymentSound", !paymentSoundOn\)/);
   const build = readFileSync(join(ROOT, "build_app.mjs"), "utf8");
@@ -149,4 +152,28 @@ test("the Creator profile has the switch, saved to the account", () => {
 test("a payment push nudges the open app to read the payment now", () => {
   const sw = readFileSync(join(ROOT, "gloobal-essentials-preview/src/push-sw-core.js"), "utf8");
   assert.match(sw, /type: "gloobal:push-arrived"/);
+});
+
+test("switching to Creator plays two notes that rise; back to Personal, two that fall", () => {
+  const { api, log } = load();
+  assert.equal(api.gloobalPlayRoleSwitchSound("merchant"), true);
+  const up = log.slides.splice(0);
+  assert.equal(up.length, 2);
+  assert.ok(up[1][1] > up[0][1] && up.every(([a, b]) => b > a), JSON.stringify(up));
+  api.gloobalPlayRoleSwitchSound("user");
+  const down = log.slides.splice(0);
+  assert.ok(down[1][1] < down[0][1] && down.every(([a, b]) => b < a), JSON.stringify(down));
+  assert.equal(log.spoken.length, 0, "the switch makes a sound, it does not speak");
+});
+
+test("the same Sounds switch silences the side switch too", () => {
+  const { api, log } = load();
+  api.gloobalSetPaymentSoundEnabled(false);
+  assert.equal(api.gloobalPlayRoleSwitchSound("merchant"), false);
+  assert.equal(log.notes.length, 0);
+});
+
+test("both flip controls on the dashboard play it on the tap", () => {
+  const dash = readFileSync(join(ROOT, "frontend/screens/Dashboard/Dashboard.jsx"), "utf8");
+  assert.equal((dash.match(/gloobalPlayRoleSwitchSound\(/g) || []).length, 2);
 });

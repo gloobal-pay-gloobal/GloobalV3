@@ -205,3 +205,50 @@ function gloobalPlayPaymentChime(payment) {
 function gloobalMarkChimePlayed(txnId) {
   if (txnId) gloobalChimePlayed.add(String(txnId));
 }
+
+// ── THE SIDE SWITCH ────────────────────────────────────────────────────
+//
+// A short sound when the account flips between its Personal and Creator
+// sides, so the switch is heard as well as seen. Two quick notes that RISE
+// going to Creator (opening the shop) and FALL going back to Personal,
+// with a soft pitch slide on each so it reads as a turn rather than a
+// beep. Quieter and shorter than the payment chime, so the two are never
+// confused at a counter.
+//
+// Follows the same "Sounds" switch as the payment chime. Always played
+// from the tap itself, so the browser's sound rules are already met.
+function gloobalPlayRoleSwitchSound(side) {
+  if (!gloobalChimeEnabled) return false;
+  var ctx = gloobalChimeAudioContext();
+  if (!ctx) return false;
+  var toCreator = side === "merchant" || side === "creator";
+  var play = function () {
+    try {
+      var now = ctx.currentTime + 0.01;
+      var notes = toCreator ? [[659.3, 784.0], [987.8, 1318.5]] : [[987.8, 880.0], [659.3, 523.3]];
+      notes.forEach(function (pair, i) {
+        var at = now + i * 0.085;
+        var out = ctx.createGain();
+        out.gain.setValueAtTime(0.0001, at);
+        out.gain.exponentialRampToValueAtTime(0.12, at + 0.008);
+        out.gain.exponentialRampToValueAtTime(0.0001, at + 0.22);
+        out.connect(ctx.destination);
+        var osc = ctx.createOscillator();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(pair[0], at);
+        osc.frequency.exponentialRampToValueAtTime(pair[1], at + 0.07);
+        osc.connect(out);
+        osc.start(at);
+        osc.stop(at + 0.26);
+      });
+    } catch (e) {
+      /* a missing sound never blocks the switch */
+    }
+  };
+  if (ctx.state === "suspended" && typeof ctx.resume === "function") {
+    ctx.resume().then(play, function () {});
+  } else {
+    play();
+  }
+  return true;
+}

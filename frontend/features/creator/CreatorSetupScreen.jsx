@@ -1100,9 +1100,9 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
   }{typeof onTogglePaymentSound === "function" ? fact(
     "sound",
     paymentSoundOn ? VolumeOn1 : VolumeOff1,
-    <span><span style={{ display: "block", fontWeight: 700 }}>Payment sound</span><span style={{
+    <span><span style={{ display: "block", fontWeight: 700 }}>Sounds</span><span style={{
       display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 2
-    }}>A chime and the amount, spoken when a payment is confirmed</span></span>,
+    }}>Payment chime with the amount spoken, and the Personal / Creator switch</span></span>,
     <ProfileToggle on={paymentSoundOn} onToggle={() => {
       // The tap that turns it on is also the one that unlocks sound,
       // so play a sample: the person hears what customers will trigger.
@@ -1111,7 +1111,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
         gloobalPlayChimeTone();
       }
       onTogglePaymentSound();
-    }} label="Payment sound" />,
+    }} label="Sounds" />,
     !done
   ) : null}{fact(
     "id",

@@ -508,6 +508,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [bankActionColor, setBankActionColor] = useState14(() => randomLogoFlipColor());
   const [scanActionColor, setScanActionColor] = useState14(() => randomLogoFlipColor());
   const [receiveActionColor, setReceiveActionColor] = useState14(() => randomLogoFlipColor());
+  const [shopOrbColor, setShopOrbColor] = useState14(() => randomLogoFlipColor());
   useEffect12(() => {
     const interval = setInterval(() => {
       setBankHeroColor((prev) => randomLogoFlipColor(prev));
@@ -520,6 +521,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       setBankActionColor((prev) => randomLogoFlipColor(prev));
       setScanActionColor((prev) => randomLogoFlipColor(prev));
       setReceiveActionColor((prev) => randomLogoFlipColor(prev));
+      setShopOrbColor((prev) => randomLogoFlipColor(prev));
     }, 3e3);
     return () => clearInterval(interval);
   }, []);
@@ -2683,7 +2685,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       boxShadow: T.shadowFloat,
       whiteSpace: "nowrap"
     }}
-  ><div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6, opacity: 0.7, textTransform: "uppercase" }}><GloobalWordmark suffix=" ID" /></div><div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.3, marginTop: 1, fontFamily: T.fontDisplay }}>{gloobalIdTag}</div></div>}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, justifyItems: "center" }}>{
+  ><div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.6, opacity: 0.7, textTransform: "uppercase" }}><GloobalWordmark suffix=" ID" /></div><div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.3, marginTop: 1, fontFamily: T.fontDisplay }}>{gloobalIdTag}</div></div>}</div><div style={{ position: "relative", display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12, justifyItems: "center" }}>{
+    /* ── THE SHOP, IN THE MIDDLE OF THE FOUR ──────────────────────────
+       Creator side only: a small round button at the centre of Send /
+       Add Bank / Scanner / Receive that opens your own shop, the way a
+       customer sees it. Just the mark, no word, and its colour drifts
+       slowly through the app's flip colours like every other living mark
+       on this screen. The Personal side has no shop button — one more
+       thing that says which side you are on. */
+  }{shareRole === "merchant" && <MyShopOrb color={shopOrbColor} onClick={openMyShop} />}{
     /* The four tiles' keyframes, rendered once for the group rather than
        once per tile. They live with the component that uses them — see the
        note in actionTileMotion.jsx about the day @keyframes finDrift lived
@@ -5678,3 +5688,22 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
 }
 var Dashboard_default = DashboardScreen;
 
+// The round shop button between the four action tiles (Creator side).
+// `color` drifts every three seconds with the tiles' own colours; the
+// ring of paper around it (box-shadow in T.bg) lifts it off the tiles.
+function MyShopOrb({ color, onClick }) {
+  return <button
+    type="button"
+    onClick={onClick}
+    aria-label="Open my shop"
+    data-testid="my-shop-orb"
+    className="v2-tap"
+    style={{
+      position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 4,
+      width: 54, height: 54, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer",
+      background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+      boxShadow: `0 0 0 5px ${T.bg}, 0 10px 24px rgba(0,0,0,0.22)`,
+      transition: "background 0.9s ease, transform 0.15s ease"
+    }}
+  ><Store2 size={24} color="#fff" strokeWidth={2.1} /></button>;
+}

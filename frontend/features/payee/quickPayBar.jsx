@@ -312,30 +312,20 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
   }}><button
     onClick={onOpenCoverage}
     aria-label="Gloobal coverage"
+    data-testid="coverage-globe"
     className="v2-tap"
     style={{
       width: 36, height: 36, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer", flexShrink: 0,
-      overflow: "hidden", position: "relative", background: "#1B3B6F",
-      boxShadow: "inset -4px -3px 8px rgba(5,10,30,0.55), inset 3px 2px 6px rgba(255,255,255,0.3), 0 2px 6px rgba(20,30,80,0.25)"
+      background: "none", display: "flex", alignItems: "center", justifyContent: "center",
+      boxShadow: `0 2px 6px rgba(${T.accentDeepRgb},0.25)`
     }}
   >{
     /* ── THE GLOBE ────────────────────────────────────────────────────
-       The same Earth the Coverage screen opens on, at 36px, drifting west
-       to east once every twelve seconds — slow enough to read as a globe
-       and not a loading spinner. Still for reduced motion. */
-  }<span className="quickpay-globe-spin" aria-hidden="true" style={{
-    position: "absolute", top: 0, left: 0, height: "100%", width: "200%", display: "flex",
-    animation: "quickPayGlobe 12s linear infinite"
-  }}>{[0, 1].map((i) => <img
-    key={i}
-    src="https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg"
-    alt=""
-    draggable={false}
-    style={{ width: "50%", height: "100%", objectFit: "cover", display: "block" }}
-  />)}</span><span aria-hidden="true" style={{
-    position: "absolute", inset: 0, borderRadius: "50%",
-    background: "radial-gradient(circle at 32% 28%, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0) 40%), radial-gradient(circle at 70% 78%, rgba(3,10,30,0.55) 0%, rgba(3,10,30,0) 60%)"
-  }} /></button><input
+       Drawn, not photographed: six globes in the side's own ink that
+       turn over from one to the next (components/common/globeIcons.jsx).
+       It was a three.js Earth texture fetched from GitHub on every load,
+       which at 36px was a blurred marble that ignored the theme. */
+  }<GloobalGlobeFlip size={36} /></button><input
     id="quickpay-input"
     value={text}
     onChange={(e) => { setText(e.target.value); if (error || suggest) reset(); }}

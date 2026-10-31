@@ -125,6 +125,7 @@ const FRONTEND_MODULES = [
   "components/cards/flags.jsx",
   "components/common/backgrounds.jsx",
   "components/common/brand.jsx",
+  "components/common/globeIcons.jsx",
   "components/common/coloredId.jsx",
   "components/common/icons.jsx",
   "components/common/balanceMask.jsx",

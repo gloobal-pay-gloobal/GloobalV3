@@ -370,7 +370,7 @@ function ProfileSetupScreen({ onBack, onSubmit, photo, onChangePhoto, docType, o
       fontSize: 14,
       fontWeight: 800,
       background: canSubmit ? T.gradButton : T.gradButtonDisabled,
-      boxShadow: canSubmit ? "0 8px 20px rgba(124,58,237,0.32)" : "none",
+      boxShadow: canSubmit ? `0 8px 20px rgba(${T.accentRgb},0.32)` : "none",
       cursor: canSubmit ? "pointer" : "not-allowed",
       opacity: canSubmit ? 1 : 0.7,
       marginTop: 22

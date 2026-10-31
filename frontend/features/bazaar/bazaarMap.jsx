@@ -101,7 +101,7 @@ function BazaarMap({ center, radiusKm, shops = [], onOpen }) {
     style={{ position: "absolute", left: t.x, top: t.y, width: BAZAAR_MAP_TILE, height: BAZAAR_MAP_TILE, userSelect: "none", pointerEvents: "none" }}
   />)}<svg width={width} height={H} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} aria-hidden="true"><circle
     cx={width / 2} cy={H / 2} r={radiusPx}
-    fill="rgba(124,58,237,0.08)" stroke={T.accent} strokeWidth="2" strokeDasharray="6 5"
+    fill={`rgba(${T.accentRgb},0.08)`} stroke={T.accent} strokeWidth="2" strokeDasharray="6 5"
   /><circle cx={width / 2} cy={H / 2} r="13" fill="rgba(37,99,235,0.18)" /><circle cx={width / 2} cy={H / 2} r="6.5" fill="#2563EB" stroke="#fff" strokeWidth="2.5" /></svg>{
     pins.map((p) => {
       const on = p.shop.symbolId === picked;
@@ -117,7 +117,7 @@ function BazaarMap({ center, radiusKm, shops = [], onOpen }) {
         }}
       ><span style={{
         borderRadius: 12, padding: 2, background: on ? T.accent : "#fff",
-        boxShadow: "0 3px 10px rgba(20,18,43,0.28)"
+        boxShadow: `0 3px 10px rgba(${T.inkRgb},0.28)`
       }}><BusinessMark name={p.shop.handle || ""} logo={p.shop.logo} size={on ? 38 : 30} radius={10} /></span><span style={{
         width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent",
         borderTop: `7px solid ${on ? T.accent : "#fff"}`, marginTop: -1
@@ -127,8 +127,8 @@ function BazaarMap({ center, radiusKm, shops = [], onOpen }) {
     onClick={(e) => { e.stopPropagation(); if (onOpen) onOpen(pickedPin.shop); }}
     style={{
       position: "absolute", left: 10, right: 10, bottom: 26, zIndex: 4, display: "flex", alignItems: "center", gap: 10,
-      padding: "9px 12px", borderRadius: 14, border: "none", background: "#fff", cursor: "pointer", textAlign: "left",
-      boxShadow: "0 8px 22px rgba(20,18,43,0.25)", fontFamily: "inherit"
+      padding: "9px 12px", borderRadius: 14, border: "none", background: T.surface, cursor: "pointer", textAlign: "left",
+      boxShadow: `0 8px 22px rgba(${T.inkRgb},0.25)`, fontFamily: "inherit"
     }}
   ><BusinessMark name={pickedPin.shop.handle || ""} logo={pickedPin.shop.logo} size={38} radius={11} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
     display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"

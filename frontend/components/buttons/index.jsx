@@ -10,7 +10,7 @@ function CircularInButton({ onClick, disabled, size = 40 }) {
       borderRadius: "50%",
       border: "none",
       background: disabled ? T.gradButtonDisabled : T.gradButton,
-      boxShadow: disabled ? "none" : "0 8px 18px rgba(124,58,237,0.32)",
+      boxShadow: disabled ? "none" : `0 8px 18px rgba(${T.accentRgb},0.32)`,
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -43,7 +43,7 @@ function SubmitButton({ onClick, disabled, label = "Submit" }) {
       color: "#fff",
       cursor: disabled ? "default" : "pointer",
       background: disabled ? T.gradButtonDisabled : T.gradButton,
-      boxShadow: disabled ? "none" : "0 8px 20px rgba(124,58,237,0.32)",
+      boxShadow: disabled ? "none" : `0 8px 20px rgba(${T.accentRgb},0.32)`,
       transition: "box-shadow 0.15s ease, background 0.15s ease, transform 0.1s ease"
     }}
   >{label}</button>;

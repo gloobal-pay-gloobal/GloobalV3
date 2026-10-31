@@ -409,7 +409,7 @@ function receiptImageDrawSymbols(ctx, text, x, baseline, maxWidth, { size = 17, 
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   chars.forEach((ch, i) => {
-    ctx.fillStyle = colored && ch !== "…" ? palette[i % palette.length] : (color || "#15132A");
+    ctx.fillStyle = colored && ch !== "…" ? palette[i % palette.length] : (color || T.ink);
     ctx.fillText(ch, cx, baseline);
     cx += widths[i];
   });
@@ -431,12 +431,12 @@ async function receiptImageWaitForFonts() {
 async function renderReceiptImage(model, { scale = 2 } = {}) {
   const m = model || buildReceiptImageModel({});
   const theme = typeof T !== "undefined" ? T : {};
-  const INK = theme.ink || "#15132A";
-  const INK_SOFT = theme.inkSoft || "#6B6580";
-  const INK_FAINT = theme.inkFaint || "#9C96AF";
-  const LINE = theme.line || "#EAE6F7";
-  const SURFACE_ALT = theme.surfaceAlt || "#F3F1FA";
-  const ACCENT = theme.accent || "#7C3AED";
+  const INK = theme.ink || T.ink;
+  const INK_SOFT = theme.inkSoft || T.inkSoft;
+  const INK_FAINT = theme.inkFaint || T.inkFaint;
+  const LINE = theme.line || T.line;
+  const SURFACE_ALT = theme.surfaceAlt || T.surfaceAlt;
+  const ACCENT = theme.accent || T.accent;
   const POSITIVE = theme.positive || "#0FA372";
   const POSITIVE_SOFT = theme.positiveSoft || "#E3F8EE";
 
@@ -786,7 +786,7 @@ async function renderReceiptImage(model, { scale = 2 } = {}) {
     ctx.lineTo(PANEL_X + PANEL_W - 16, footerTop);
     ctx.stroke();
     ctx.restore();
-    ctx.fillStyle = cardGradient || (theme.bg || "#F6F5FC");
+    ctx.fillStyle = cardGradient || (theme.bg || T.bg);
     [PANEL_X, PANEL_X + PANEL_W].forEach((nx) => {
       ctx.beginPath();
       ctx.arc(nx, footerTop, 9, 0, Math.PI * 2);
@@ -812,19 +812,19 @@ async function renderReceiptImage(model, { scale = 2 } = {}) {
   ctx.setTransform(s, 0, 0, s, 0, 0);
 
   // Page.
-  ctx.fillStyle = theme.bg || "#F6F5FC";
+  ctx.fillStyle = theme.bg || T.bg;
   ctx.fillRect(0, 0, W, H);
 
   // The card, gradient all the way down.
   ctx.save();
-  ctx.shadowColor = "rgba(76,29,149,0.22)";
+  ctx.shadowColor = `rgba(${T.accentDeepRgb},0.22)`;
   ctx.shadowBlur = 26;
   ctx.shadowOffsetY = 10;
   receiptImageRoundRect(ctx, CX, CARD_TOP, CW, cardBottom - CARD_TOP, 28);
   cardGradient = ctx.createLinearGradient(CX, CARD_TOP, CX + CW, cardBottom);
   cardGradient.addColorStop(0, "#1E1B4B");
   cardGradient.addColorStop(0.38, "#3E2E8E");
-  cardGradient.addColorStop(0.74, "#7C3AED");
+  cardGradient.addColorStop(0.74, T.accent);
   cardGradient.addColorStop(1, "#C026D3");
   ctx.fillStyle = cardGradient;
   ctx.fill();

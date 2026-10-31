@@ -220,7 +220,7 @@ var GLOOBAL_QR_DISC_MAX_LUM = 80;
 
 function gloobalQrDiscInk(hex) {
   const raw = String(hex || "").replace("#", "");
-  if (raw.length !== 6) return "#4C1D95";
+  if (raw.length !== 6) return T.accentDeep;
   let r = parseInt(raw.slice(0, 2), 16);
   let g = parseInt(raw.slice(2, 4), 16);
   let b = parseInt(raw.slice(4, 6), 16);
@@ -374,7 +374,7 @@ function GloobalQrSvg({ value, logo = true, discColor, markStep = 0 }) {
             cx={box.cx}
             cy={box.cy}
             r={box.disc}
-            fill={gloobalQrDiscInk(discColor || (typeof T !== "undefined" ? T.accent : "#7C3AED"))}
+            fill={gloobalQrDiscInk(discColor || (typeof T !== "undefined" ? T.accent : T.accent))}
             style={{ transition: "fill 0.55s ease" }}
           />
           <image
@@ -503,7 +503,7 @@ function gloobalQrToPngBlob(value, { moduleScale = 12, discColor, markStep = 0, 
       ctx.fill();
       ctx.beginPath();
       ctx.arc(cx, cx, box.disc * scale, 0, Math.PI * 2);
-      ctx.fillStyle = gloobalQrDiscInk(discColor || (typeof T !== "undefined" ? T.accent : "#7C3AED"));
+      ctx.fillStyle = gloobalQrDiscInk(discColor || (typeof T !== "undefined" ? T.accent : T.accent));
       ctx.fill();
 
       // The fourth corner, showing the letter it was on at the moment Share
@@ -668,7 +668,7 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
     <section
       aria-labelledby="gloobal-receive-qr-title"
       style={{
-        background: "#FFFFFF",
+        background: T.surface,
         borderRadius: T.radiusXl,
         border: `1px solid ${T.line}`,
         boxShadow: T.shadowCard,
@@ -697,7 +697,7 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
         <div data-testid="qr-header-action" style={{ justifySelf: "end", display: "flex" }}>{headerAction}</div>
       </div>
 
-      <div style={{ width: "min(300px, 100%)", aspectRatio: "1 / 1", background: "#FFFFFF" }}>
+      <div style={{ width: "min(300px, 100%)", aspectRatio: "1 / 1", background: T.surface }}>
         {animalLayout ? (
           <GloobalAnimalQrSvg layout={animalLayout} label={animalChoice && animalChoice.label} markStep={markStep} />
         ) : (
@@ -736,7 +736,7 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
                 alignItems: "center",
                 justifyContent: "center",
                 border: selected ? `2px solid ${opt.color ? gloobalAnimalQrInk(opt.color) : T.ink}` : "2px solid transparent",
-                background: "#FFFFFF",
+                background: T.surface,
                 cursor: "pointer"
               }}
             >
@@ -779,7 +779,7 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
           type="button"
           onClick={handleCopy}
           aria-label="Copy Gloobal ID"
-          style={{ ...GLOOBAL_QR_CARD_BUTTON, background: "#FFFFFF", color: T.ink, border: `1px solid ${T.line}` }}
+          style={{ ...GLOOBAL_QR_CARD_BUTTON, background: T.surface, color: T.ink, border: `1px solid ${T.line}` }}
         >
           <Copy4 size={16} aria-hidden="true" />
           Copy ID

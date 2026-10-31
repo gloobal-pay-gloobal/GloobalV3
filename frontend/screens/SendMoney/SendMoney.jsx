@@ -1146,7 +1146,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         .app-shell {
           max-width: 430px;
           margin: 0 auto;
-          background: radial-gradient(120% 60% at 50% -10%, #F8F7FC 0%, #F1F0F7 55%, #ECEAF4 100%);
+          background: ${T.bg};
           min-height: 100vh;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           padding: 24px 18px 40px;
@@ -1164,7 +1164,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
           width: 44px;
           height: 44px;
           border-radius: 15px;
-          background: #f4f2fb;
+          background: ${T.surfaceAlt};
           border: none;
           display: flex;
           align-items: center;
@@ -1172,48 +1172,48 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
           color: #4633C7;
           cursor: pointer;
           transition: transform 0.12s ease, background 0.15s ease, box-shadow 0.15s ease;
-          box-shadow: 0 1px 2px rgba(20,18,43,0.04);
+          box-shadow: 0 1px 2px rgba(${T.inkRgb},0.04);
         }
-        .icon-btn:hover { background: #ece6fb; }
-        .icon-btn:active { transform: scale(0.92); background: #e0d8f7; }
+        .icon-btn:hover { background: ${T.accentSoft}; }
+        .icon-btn:active { transform: scale(0.92); background: ${T.accentSoft}; }
         .icon-btn.circle {
           border-radius: 50%;
-          background: #fff;
-          border: 1.6px solid #7c3aed;
-          color: #7c3aed;
+          background: ${T.surface};
+          border: 1.6px solid ${T.accent};
+          color: ${T.accent};
           width: 40px;
           height: 40px;
-          box-shadow: 0 2px 8px rgba(124,58,237,0.14);
+          box-shadow: 0 2px 8px rgba(${T.accentRgb},0.14);
         }
         .icon-btn:focus-visible, .collapse-btn:focus-visible, .copy-btn:focus-visible,
         .currency-select:focus-visible, .swap-btn:focus-visible, .send-btn:focus-visible {
-          outline: 2px solid #7c3aed; outline-offset: 2px;
+          outline: 2px solid ${T.accent}; outline-offset: 2px;
         }
-        .title { font-size: 21px; font-weight: 700; color: #14122B; letter-spacing: -0.01em; }
+        .title { font-size: 21px; font-weight: 700; color: ${T.ink}; letter-spacing: -0.01em; }
 
         .search-bar {
           display: flex;
           align-items: center;
-          background: #fff;
+          background: ${T.surface};
           border-radius: 999px;
           padding: 13px 14px 13px 16px;
           gap: 12px;
           margin-bottom: 18px;
-          border: 1px solid #ECECF3;
-          box-shadow: 0 2px 10px rgba(20,18,43,0.04);
+          border: 1px solid ${T.line};
+          box-shadow: 0 2px 10px rgba(${T.inkRgb},0.04);
           transition: box-shadow 0.15s ease, border-color 0.15s ease;
           cursor: pointer;
         }
-        .search-bar:hover { border-color: #E1DCF2; }
-        .search-bar:focus-visible { border-color: #d8d2ee; box-shadow: 0 2px 14px rgba(124,58,237,0.12); }
-        .search-bar-active { border-color: #d8d2ee; box-shadow: 0 2px 14px rgba(124,58,237,0.1); }
-        .search-bar > svg:first-child { color: #7c3aed; flex-shrink: 0; }
+        .search-bar:hover { border-color: ${T.line}; }
+        .search-bar:focus-visible { border-color: ${T.line}; box-shadow: 0 2px 14px rgba(${T.accentRgb},0.12); }
+        .search-bar-active { border-color: ${T.line}; box-shadow: 0 2px 14px rgba(${T.accentRgb},0.1); }
+        .search-bar > svg:first-child { color: ${T.accent}; flex-shrink: 0; }
         .search-bar-text {
           flex: 1;
           min-width: 0;
           font-size: 13px;
           font-weight: 600;
-          color: #14122B;
+          color: ${T.ink};
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -1223,15 +1223,15 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         .search-mode-toggle {
           flex-shrink: 0;
           width: 32px; height: 32px; border-radius: 50%;
-          background: #f4f2fb; border: none; color: #7c3aed;
+          background: ${T.surfaceAlt}; border: none; color: ${T.accent};
           display: flex; align-items: center; justify-content: center;
           cursor: pointer; transition: transform 0.15s ease, background 0.15s ease;
         }
-        .search-mode-toggle:hover { background: #ece6fb; }
+        .search-mode-toggle:hover { background: ${T.accentSoft}; }
         .search-mode-toggle:active { transform: scale(0.88) rotate(180deg); }
 
         .dial-entry { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 4px; }
-        .dial-entry-label { font-size: 13px; font-weight: 700; color: #6B6580; margin: 0 0 14px; text-align: center; }
+        .dial-entry-label { font-size: 13px; font-weight: 700; color: ${T.inkSoft}; margin: 0 0 14px; text-align: center; }
 
         .flag-chip-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
         .flag-chip {
@@ -1240,8 +1240,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
           justify-content: center;
           flex-shrink: 0;
           border-radius: 12px;
-          background: #fff;
-          box-shadow: inset 0 0 0 1px rgba(20,18,43,0.08), 0 1px 3px rgba(20,18,43,0.08);
+          background: ${T.surface};
+          box-shadow: inset 0 0 0 1px rgba(${T.inkRgb},0.08), 0 1px 3px rgba(${T.inkRgb},0.08);
           overflow: hidden;
         }
         .flag-chip.lg { width: 52px; height: 40px; font-size: 22px; border-radius: 13px; }
@@ -1251,18 +1251,18 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
           position: absolute; bottom: -5px; right: -6px;
           width: 20px; height: 20px; border-radius: 50%;
           display: flex; align-items: center; justify-content: center;
-          color: #fff; border: 2px solid #fff;
-          box-shadow: 0 2px 6px rgba(20,18,43,0.18);
+          color: #fff; border: 2px solid ${T.surface};
+          box-shadow: 0 2px 6px rgba(${T.inkRgb},0.18);
         }
-        .flag-badge.send { background: #7c3aed; }
-        .flag-badge.receive { background: #16A34A; }
+        .flag-badge.send { background: ${T.accent}; }
+        .flag-badge.receive { background: ${T.positive}; }
 
         .card {
-          background: #fff;
+          background: ${T.surface};
           border-radius: 28px;
           padding: 20px;
-          box-shadow: 0 1px 2px rgba(20,18,43,0.03), 0 10px 30px -12px rgba(20,18,43,0.10);
-          border: 1px solid rgba(20,18,43,0.03);
+          box-shadow: 0 1px 2px rgba(${T.inkRgb},0.03), 0 10px 30px -12px rgba(${T.inkRgb},0.10);
+          border: 1px solid rgba(${T.inkRgb},0.03);
           position: relative;
         }
         .card-header {
@@ -1275,48 +1275,48 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         .card-name {
           font-size: 14.5px;
           font-weight: 700;
-          color: #14122B;
+          color: ${T.ink};
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
         .collapse-btn {
-          background: #F7F6FB;
+          background: ${T.surfaceAlt};
           border: none;
-          color: #7c3aed;
+          color: ${T.accent};
           cursor: pointer;
           display: flex;
           padding: 7px;
           border-radius: 10px;
           transition: transform 0.15s ease, background 0.15s ease;
         }
-        .collapse-btn:hover { background: #f4f2fb; }
+        .collapse-btn:hover { background: ${T.surfaceAlt}; }
         .collapse-btn:active { transform: scale(0.85); }
 
         .contact-block { overflow: hidden; transition: max-height 0.25s ease; }
         .contact-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 2px; }
         .contact-icon {
           width: 36px; height: 36px; border-radius: 11px;
-          background: #f4f2fb; color: #7c3aed;
+          background: ${T.surfaceAlt}; color: ${T.accent};
           display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-          box-shadow: inset 0 0 0 1px rgba(124,58,237,0.06);
+          box-shadow: inset 0 0 0 1px rgba(${T.accentRgb},0.06);
         }
-        .contact-icon.green { background: #E1F5E7; color: #16A34A; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.08); }
+        .contact-icon.green { background: ${T.positiveSoft}; color: ${T.positive}; box-shadow: inset 0 0 0 1px rgba(22,163,74,0.08); }
         .contact-text {
-          flex: 1; font-size: 15px; font-weight: 600; color: #14122B;
+          flex: 1; font-size: 15px; font-weight: 600; color: ${T.ink};
           letter-spacing: 0.01em; font-variant-numeric: tabular-nums;
         }
         .copy-btn {
-          background: transparent; border: none; color: #C2C0D4; cursor: pointer;
+          background: transparent; border: none; color: ${T.inkFaint}; cursor: pointer;
           display: flex; padding: 7px; border-radius: 9px;
           transition: color 0.15s ease, transform 0.15s ease, background 0.15s ease;
         }
-        .copy-btn:hover { background: #F7F6FB; color: #8B899E; }
+        .copy-btn:hover { background: ${T.surfaceAlt}; color: ${T.inkFaint}; }
         .copy-btn:active { transform: scale(0.85); }
-        .copy-btn.copied { color: #16A34A; }
-        .copy-btn.copied:hover { background: #E9FBF0; color: #16A34A; }
+        .copy-btn.copied { color: ${T.positive}; }
+        .copy-btn.copied:hover { background: ${T.positiveSoft}; color: ${T.positive}; }
 
-        .divider { height: 1px; background: #EFEFF5; margin: 6px 0 14px; }
+        .divider { height: 1px; background: ${T.line}; margin: 6px 0 14px; }
 
         .rate-row {
           display: flex; align-items: center; justify-content: space-between;
@@ -1324,10 +1324,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         }
         .rate-left {
           display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600;
-          color: #14122B; font-variant-numeric: tabular-nums;
+          color: ${T.ink}; font-variant-numeric: tabular-nums;
         }
         .live-dot {
-          width: 7px; height: 7px; border-radius: 50%; background: #22C55E; flex-shrink: 0;
+          width: 7px; height: 7px; border-radius: 50%; background: ${T.positive}; flex-shrink: 0;
           box-shadow: 0 0 0 3px rgba(34,197,94,0.15);
           animation: live-pulse 2s ease-in-out infinite;
         }
@@ -1335,27 +1335,27 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
           0%, 100% { box-shadow: 0 0 0 3px rgba(34,197,94,0.15); }
           50% { box-shadow: 0 0 0 5px rgba(34,197,94,0.22); }
         }
-        .live-text { display: flex; align-items: center; gap: 4px; color: #16A34A; font-size: 14px; font-weight: 700; }
+        .live-text { display: flex; align-items: center; gap: 4px; color: ${T.positive}; font-size: 14px; font-weight: 700; }
         .live-pill {
-          display: flex; align-items: center; gap: 4px; background: #DCFCE7; color: #16A34A;
+          display: flex; align-items: center; gap: 4px; background: ${T.positiveSoft}; color: ${T.positive};
           font-size: 12.5px; font-weight: 700; padding: 5px 11px; border-radius: 999px; flex-shrink: 0;
         }
 
         .amount-box { border-radius: 20px; padding: 16px 18px; transition: box-shadow 0.15s ease; }
-        .amount-box.indigo { background: linear-gradient(155deg, #EFEDFC, #E7E4FB); box-shadow: inset 0 0 0 1px rgba(124,58,237,0.06); }
-        .amount-box.indigo:has(.amount-input:focus) { box-shadow: inset 0 0 0 1.5px rgba(124,58,237,0.35); }
-        .amount-box.green { background: linear-gradient(155deg, #EEF9F1, #E5F6EA); box-shadow: inset 0 0 0 1px rgba(22,163,74,0.06); }
+        .amount-box.indigo { background: linear-gradient(155deg, ${T.accentSoft}, ${T.accentSoft}); box-shadow: inset 0 0 0 1px rgba(${T.accentRgb},0.06); }
+        .amount-box.indigo:has(.amount-input:focus) { box-shadow: inset 0 0 0 1.5px rgba(${T.accentRgb},0.35); }
+        .amount-box.green { background: linear-gradient(155deg, ${T.positiveSoft}, ${T.positiveSoft}); box-shadow: inset 0 0 0 1px rgba(22,163,74,0.06); }
 
         .amount-input {
           border: none; background: transparent; font-size: 27px; font-weight: 800;
-          color: #14122B; width: 100%; outline: none; padding: 0; font-family: inherit;
+          color: ${T.ink}; width: 100%; outline: none; padding: 0; font-family: inherit;
           letter-spacing: -0.01em; font-variant-numeric: tabular-nums;
         }
-        .amount-input::placeholder { color: #B9B6D6; }
+        .amount-input::placeholder { color: ${T.inkFaint}; }
 
         .amount-top-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
         .amount-display {
-          font-size: 24px; font-weight: 800; color: #16A34A;
+          font-size: 24px; font-weight: 800; color: ${T.positive};
           letter-spacing: -0.01em; font-variant-numeric: tabular-nums;
         }
 
@@ -1363,11 +1363,11 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
           display: flex; align-items: center; justify-content: center; margin-top: 8px;
           width: 30px; height: 30px;
           background: rgba(255,255,255,0.65); border: none; cursor: pointer;
-          color: #14122B; padding: 0;
+          color: ${T.ink}; padding: 0;
           border-radius: 50%; transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
-          box-shadow: 0 1px 2px rgba(20,18,43,0.05);
+          box-shadow: 0 1px 2px rgba(${T.inkRgb},0.05);
         }
-        .currency-select:hover { background: rgba(255,255,255,0.95); box-shadow: 0 2px 6px rgba(20,18,43,0.1); }
+        .currency-select:hover { background: rgba(255,255,255,0.95); box-shadow: 0 2px 6px rgba(${T.inkRgb},0.1); }
         .currency-select:active { transform: scale(0.9); }
 
         .bottom-meta-row { display: flex; align-items: center; justify-content: flex-start; margin-top: 12px; }
@@ -1375,23 +1375,23 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         .dropdown-overlay { position: fixed; inset: 0; z-index: 40; }
         .dropdown-menu {
           position: absolute; z-index: 50; top: calc(100% + 8px); left: 0;
-          background: #fff; border-radius: 18px; box-shadow: 0 16px 40px -8px rgba(20,18,43,0.22);
-          padding: 7px; min-width: 148px; border: 1px solid rgba(20,18,43,0.05);
+          background: ${T.surface}; border-radius: 18px; box-shadow: 0 16px 40px -8px rgba(${T.inkRgb},0.22);
+          padding: 7px; min-width: 148px; border: 1px solid rgba(${T.inkRgb},0.05);
           max-height: 300px; overflow-y: auto;
         }
         .dropdown-item {
           display: flex; align-items: center; gap: 10px; padding: 9px 10px;
-          border-radius: 11px; cursor: pointer; font-size: 14.5px; font-weight: 600; color: #14122B;
+          border-radius: 11px; cursor: pointer; font-size: 14.5px; font-weight: 600; color: ${T.ink};
           background: transparent; border: none; width: 100%; text-align: left;
           transition: background 0.12s ease;
         }
-        .dropdown-item:hover { background: #F3F2F8; }
-        .dropdown-item.active { color: #7c3aed; background: #f4f2fb; }
+        .dropdown-item:hover { background: ${T.surfaceAlt}; }
+        .dropdown-item.active { color: ${T.accent}; background: ${T.surfaceAlt}; }
 
         .country-menu {
           position: absolute; z-index: 50; top: calc(100% + 10px); left: 0;
-          background: #fff; border-radius: 16px; box-shadow: 0 16px 40px -8px rgba(20,18,43,0.22);
-          padding: 6px; border: 1px solid rgba(20,18,43,0.05);
+          background: ${T.surface}; border-radius: 16px; box-shadow: 0 16px 40px -8px rgba(${T.inkRgb},0.22);
+          padding: 6px; border: 1px solid rgba(${T.inkRgb},0.05);
           display: flex; flex-direction: column;
           /* Wide enough for the longest country name beside its dial
              code, and capped so it cannot run off a narrow phone. Scrolls
@@ -1407,58 +1407,58 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
           background: transparent; cursor: pointer; text-align: left;
           transition: background 0.12s ease;
         }
-        .country-row:hover { background: #F3F2F8; }
-        .country-row.active { background: #F4F2FB; }
+        .country-row:hover { background: ${T.surfaceAlt}; }
+        .country-row.active { background: ${T.surfaceAlt}; }
         .country-flag {
           width: 26px; height: 20px; border-radius: 4px; overflow: hidden;
-          flex-shrink: 0; box-shadow: 0 0 0 1px rgba(20,18,43,0.08);
+          flex-shrink: 0; box-shadow: 0 0 0 1px rgba(${T.inkRgb},0.08);
         }
         .country-name {
-          flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: #14122B;
+          flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: ${T.ink};
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
-        .country-row.active .country-name { color: #7c3aed; font-weight: 800; }
+        .country-row.active .country-name { color: ${T.accent}; font-weight: 800; }
         .country-live {
-          width: 6px; height: 6px; border-radius: 50%; background: #22C55E; flex-shrink: 0;
+          width: 6px; height: 6px; border-radius: 50%; background: ${T.positive}; flex-shrink: 0;
         }
         .country-soon {
-          font-size: 10px; font-weight: 700; color: #9C96AF; flex-shrink: 0;
+          font-size: 10px; font-weight: 700; color: ${T.inkFaint}; flex-shrink: 0;
           white-space: nowrap; letter-spacing: 0.2px;
         }
         .country-code {
-          font-size: 12.5px; font-weight: 700; color: #6B6580; flex-shrink: 0;
+          font-size: 12.5px; font-weight: 700; color: ${T.inkSoft}; flex-shrink: 0;
           font-variant-numeric: tabular-nums; min-width: 42px; text-align: right;
         }
         .country-empty {
-          padding: 16px 12px; font-size: 12.5px; color: #9C96AF;
+          padding: 16px 12px; font-size: 12.5px; color: ${T.inkFaint};
           font-weight: 600; line-height: 1.5; text-align: center;
         }
 
         .swap-wrap { display: flex; justify-content: center; margin: -22px 0; position: relative; z-index: 6; }
         .swap-btn {
           width: 46px; height: 46px; border-radius: 50%;
-          background: linear-gradient(180deg, #ffffff, #fbfaff);
-          border: 1px solid #ECECF3; box-shadow: 0 6px 18px -4px rgba(124,58,237,0.22), 0 1px 2px rgba(20,18,43,0.06);
-          display: flex; align-items: center; justify-content: center; color: #7c3aed;
+          background: linear-gradient(180deg, #ffffff, ${T.surfaceAlt});
+          border: 1px solid ${T.line}; box-shadow: 0 6px 18px -4px rgba(${T.accentRgb},0.22), 0 1px 2px rgba(${T.inkRgb},0.06);
+          display: flex; align-items: center; justify-content: center; color: ${T.accent};
           cursor: pointer; transition: transform 0.25s cubic-bezier(.34,1.56,.64,1), box-shadow 0.15s ease;
         }
-        .swap-btn:hover { box-shadow: 0 8px 22px -4px rgba(124,58,237,0.3), 0 1px 2px rgba(20,18,43,0.06); }
+        .swap-btn:hover { box-shadow: 0 8px 22px -4px rgba(${T.accentRgb},0.3), 0 1px 2px rgba(${T.inkRgb},0.06); }
         .swap-btn:active { transform: scale(0.88) rotate(180deg); }
 
         .send-btn {
           width: 100%; margin-top: 22px; border: none; border-radius: 999px; padding: 18px;
           font-size: 16.5px; font-weight: 700; color: #fff; letter-spacing: 0.01em;
-          background: linear-gradient(100deg, #3b6ef5, #7b5bf0, #7c3aed);
+          background: linear-gradient(100deg, #3b6ef5, #7b5bf0, ${T.accent});
           display: flex; align-items: center; justify-content: center; gap: 10px;
-          cursor: pointer; box-shadow: 0 12px 28px -6px rgba(124,58,237,0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+          cursor: pointer; box-shadow: 0 12px 28px -6px rgba(${T.accentRgb},0.4), inset 0 1px 0 rgba(255,255,255,0.15);
           transition: transform 0.12s ease, box-shadow 0.15s ease;
         }
-        .send-btn:hover { box-shadow: 0 14px 32px -6px rgba(124,58,237,0.46), inset 0 1px 0 rgba(255,255,255,0.15); }
+        .send-btn:hover { box-shadow: 0 14px 32px -6px rgba(${T.accentRgb},0.46), inset 0 1px 0 rgba(255,255,255,0.15); }
         .send-btn:active { transform: scale(0.98); }
 
         .toast {
           position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-          background: #14122B; color: #fff; padding: 12px 18px; border-radius: 14px;
+          background: ${T.ink}; color: #fff; padding: 12px 18px; border-radius: 14px;
           font-size: 13.5px; font-weight: 600; max-width: 90%; text-align: left;
           box-shadow: 0 10px 30px rgba(0,0,0,0.25); z-index: 100;
           animation: toast-in 0.2s ease;
@@ -1466,35 +1466,35 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         }
         .toast-icon {
           width: 20px; height: 20px; border-radius: 50%; background: rgba(34,197,94,0.18);
-          color: #4ADE80; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+          color: ${T.positive}; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
         }
         @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
         .pin-overlay {
-          position: fixed; inset: 0; background: rgba(20,18,43,0.55);
+          position: fixed; inset: 0; background: rgba(${T.inkRgb},0.55);
           display: flex; align-items: flex-end; justify-content: center;
           z-index: 200; animation: overlay-in 0.2s ease;
         }
         @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
         .pin-modal {
-          width: 100%; max-width: 430px; background: #fff;
+          width: 100%; max-width: 430px; background: ${T.surface};
           border-radius: 28px 28px 0 0; padding: 28px 24px 36px;
           position: relative; animation: sheet-up 0.28s cubic-bezier(.32,.72,0,1);
         }
         @keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .pin-close {
           position: absolute; top: 16px; right: 16px; width: 34px; height: 34px;
-          border-radius: 50%; background: #F7F6FB; border: none; color: #8B899E;
+          border-radius: 50%; background: ${T.surfaceAlt}; border: none; color: ${T.inkFaint};
           display: flex; align-items: center; justify-content: center; cursor: pointer;
           transition: background 0.15s ease;
         }
-        .pin-close:hover { background: #EFEDF6; }
+        .pin-close:hover { background: ${T.surfaceAlt}; }
         .pin-lock-icon {
-          width: 52px; height: 52px; border-radius: 16px; background: #f4f2fb; color: #7c3aed;
+          width: 52px; height: 52px; border-radius: 16px; background: ${T.surfaceAlt}; color: ${T.accent};
           display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;
         }
-        .pin-title { text-align: center; font-size: 18px; font-weight: 700; color: #14122B; margin: 0 0 6px; }
-        .pin-sub { text-align: center; font-size: 13.5px; color: #8B899E; margin: 0 0 28px; font-weight: 500; line-height: 1.4; }
+        .pin-title { text-align: center; font-size: 18px; font-weight: 700; color: ${T.ink}; margin: 0 0 6px; }
+        .pin-sub { text-align: center; font-size: 13.5px; color: ${T.inkFaint}; margin: 0 0 28px; font-weight: 500; line-height: 1.4; }
         .pin-dots { display: flex; justify-content: center; gap: 18px; margin-bottom: 32px; }
         .pin-dots.shake { animation: pin-shake 0.4s ease; }
         @keyframes pin-shake {
@@ -1504,18 +1504,18 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
           60% { transform: translateX(-6px); }
           80% { transform: translateX(6px); }
         }
-        .pin-dot { width: 14px; height: 14px; border-radius: 50%; background: #E4E1F0; transition: background 0.15s ease, transform 0.15s ease; }
-        .pin-dot.filled { background: #7c3aed; transform: scale(1.1); }
-        .pin-dot.filled.error { background: #EF4444; }
+        .pin-dot { width: 14px; height: 14px; border-radius: 50%; background: ${T.line}; transition: background 0.15s ease, transform 0.15s ease; }
+        .pin-dot.filled { background: ${T.accent}; transform: scale(1.1); }
+        .pin-dot.filled.error { background: ${T.negative}; }
         .pin-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; max-width: 280px; margin: 0 auto; }
         .pin-key {
-          aspect-ratio: 1; border-radius: 50%; border: none; background: #F7F6FB;
-          font-size: 22px; font-weight: 600; color: #14122B; font-variant-numeric: tabular-nums;
+          aspect-ratio: 1; border-radius: 50%; border: none; background: ${T.surfaceAlt};
+          font-size: 22px; font-weight: 600; color: ${T.ink}; font-variant-numeric: tabular-nums;
           display: flex; align-items: center; justify-content: center; cursor: pointer;
           transition: background 0.12s ease, transform 0.1s ease;
         }
-        .pin-key:hover { background: #f4f2fb; }
-        .pin-key:active { transform: scale(0.9); background: #ece6fb; }
+        .pin-key:hover { background: ${T.surfaceAlt}; }
+        .pin-key:active { transform: scale(0.9); background: ${T.accentSoft}; }
         .pin-key.empty { background: transparent; cursor: default; }
         .pin-key.empty:hover, .pin-key.empty:active { background: transparent; transform: none; }
 
@@ -1549,7 +1549,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       top: -11,
       left: "50%",
       transform: "translateX(-50%)",
-      background: "#fff",
+      background: T.surface,
       padding: 3,
       borderRadius: "50%",
       zIndex: 1
@@ -1581,15 +1581,15 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       height: 40,
       padding: "0 10px",
       borderRadius: 999,
-      border: "1px solid rgba(20,18,43,0.06)",
-      background: "#fff",
-      color: "#7c3aed",
+      border: `1px solid rgba(${T.inkRgb},0.06)`,
+      background: T.surface,
+      color: "${T.accent}",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       gap: 6,
       cursor: "pointer",
-      boxShadow: "0 4px 14px rgba(20,18,43,0.12)",
+      boxShadow: `0 4px 14px rgba(${T.inkRgb},0.12)`,
       zIndex: 3
     }}
   ><RefreshCw4 size={18} style={{ transform: searchMode === "mobile" ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)" }} /><span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.3 }}>{searchMode === "id" ? "ID" : "TEL"}</span></button>}<div className="card-header"><div className="card-header-left" style={{ position: "relative", flex: searchStage === "dialing" ? 1 : void 0 }}>{searchStage === "dialing" ? <div style={{ position: "relative", flexShrink: 0 }}><button
@@ -1606,7 +1606,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       position: "absolute",
       top: -6,
       left: -8,
-      background: "#14122B",
+      background: T.ink,
       color: "#fff",
       fontSize: 9.5,
       fontWeight: 800,
@@ -1614,7 +1614,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       padding: "2px 5px",
       borderRadius: 999,
       border: "2px solid #fff",
-      boxShadow: "0 2px 6px rgba(20,18,43,0.18)",
+      boxShadow: `0 2px 6px rgba(${T.inkRgb},0.18)`,
       pointerEvents: "none",
       whiteSpace: "nowrap"
     }}
@@ -1622,7 +1622,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     /* "Gloobal ID" label, aligned with the flag on the header
        row — the chip row + dial pad below already echo what's
        typed, so this is just the field label, not an input. */
-  }{searchStage === "dialing" && searchMode === "id" && <span style={{ fontSize: 14.5, fontWeight: 700, color: "#14122B" }}><GloobalWordmark suffix=" ID" /></span>}{
+  }{searchStage === "dialing" && searchMode === "id" && <span style={{ fontSize: 14.5, fontWeight: 700, color: T.ink }}><GloobalWordmark suffix=" ID" /></span>}{
     /* Country field beside the flag while dialing in mobile
        mode — a real typeable search, same country/code
        matching every other country picker in the app uses,
@@ -1635,11 +1635,11 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       display: "flex",
       alignItems: "center",
       gap: 9,
-      background: "#fff",
+      background: T.surface,
       border: "1px solid #ECECF3",
       borderRadius: 999,
       padding: "9px 13px",
-      boxShadow: "0 2px 10px rgba(20,18,43,0.04)"
+      boxShadow: `0 2px 10px rgba(${T.inkRgb},0.04)`
     }}
   ><input
     value={searchCountryQuery}
@@ -1658,9 +1658,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       background: "none",
       fontSize: 13,
       fontWeight: 600,
-      color: "#14122B"
+      color: T.ink
     }}
-  /><ChevronDown2 size={14} style={{ color: "#9C96AF", flexShrink: 0 }} /></div>}{countryDropdownOpen && <><div className="dropdown-overlay" onClick={() => setCountryDropdownOpen(false)} />{
+  /><ChevronDown2 size={14} style={{ color: T.inkFaint, flexShrink: 0 }} /></div>}{countryDropdownOpen && <><div className="dropdown-overlay" onClick={() => setCountryDropdownOpen(false)} />{
     /* ── A LIST, NOT A WALL OF FLAGS ──────────────────────────────────
 
        This was a six-column grid of 194 unlabelled flags, 33 rows deep,
@@ -1727,7 +1727,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
             </div><div className="card" style={{ padding: "6px 18px 10px" }}>{recentSentTransactions.map((t, i) => <TransactionRow
     key={t.txnId || `${t.name}-${t.date}-${i}`}
     t={t}
-    color={TXN_OUT_COLOR}
+    color={T.txnOut}
     sign="&#8722;"
     // The ACCOUNT's currency, as the fallback only.
     //
@@ -1977,7 +1977,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     style={{
       fontSize: 34,
       fontWeight: 800,
-      color: "#14122B",
+      color: T.ink,
       letterSpacing: "-0.01em",
       fontVariantNumeric: "tabular-nums"
     }}
@@ -2232,7 +2232,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       gap: 12,
       width: "100%",
       border: "1px solid #ECECF3",
-      background: "#fff",
+      background: T.surface,
       borderRadius: 16,
       padding: "12px 14px",
       cursor: disabled ? "default" : "pointer",
@@ -2252,7 +2252,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       overflow: "hidden",
       transition: "background 0.4s ease"
     }}
-  >{key === "gbank" ? <img src={G_LOGO_DATA_URI} alt="" style={{ width: 32, height: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }} /> : key === "gessentials" ? <EssentialsPayIcon size={19} color="#2E7A4F" /> : key === "gpaylater" ? <CreditCard4 size={19} color="#7C3AED" /> : key === "gcoin" ? <Coins3 size={19} color="#7C3AED" /> : <Landmark6 size={19} color="#7C3AED" />}</span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14, fontWeight: 700, color: "#14122B" }}>{displayLabel || label}</span>{note && <span style={{ fontSize: 11.5, color: "#8A84A0" }}>{note}</span>}</span><ChevronRight4 size={17} color="#B9B3CC" style={{ flexShrink: 0 }} /></button>)}</div></div></div>}{pinOpen && <div className="pin-overlay" role="dialog" aria-modal="true" aria-label="Enter OTP to confirm transfer"><div className="pin-modal"><button className="pin-close" onClick={requestClosePin} aria-label="Cancel"><X4 size={18} /></button><div className="pin-lock-icon"><Lock5 size={22} /></div><h3 className="pin-title">Enter OTP</h3>{
+  >{key === "gbank" ? <img src={G_LOGO_DATA_URI} alt="" style={{ width: 32, height: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }} /> : key === "gessentials" ? <EssentialsPayIcon size={19} color="#2E7A4F" /> : key === "gpaylater" ? <CreditCard4 size={19} color={T.accent} /> : key === "gcoin" ? <Coins3 size={19} color={T.accent} /> : <Landmark6 size={19} color={T.accent} />}</span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{displayLabel || label}</span>{note && <span style={{ fontSize: 11.5, color: "#8A84A0" }}>{note}</span>}</span><ChevronRight4 size={17} color="#B9B3CC" style={{ flexShrink: 0 }} /></button>)}</div></div></div>}{pinOpen && <div className="pin-overlay" role="dialog" aria-modal="true" aria-label="Enter OTP to confirm transfer"><div className="pin-modal"><button className="pin-close" onClick={requestClosePin} aria-label="Cancel"><X4 size={18} /></button><div className="pin-lock-icon"><Lock5 size={22} /></div><h3 className="pin-title">Enter OTP</h3>{
     /* Just the amount now, in a box — same "card holding the
        thing being verified" concept as registration's OTP
        screen (which shows the phone number in its own card),

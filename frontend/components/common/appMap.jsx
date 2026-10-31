@@ -281,7 +281,7 @@ var APP_MAP_ICONS = {
 // A colour per branch, drawn from the dial pad's own palette so the map is
 // coloured out of the same set as everything else in the app rather than
 // from a second palette invented here.
-var APP_MAP_BRANCH_COLORS = [T.accent, TXN_OUT_COLOR, T.accent2, T.positive, T.inkFaint];
+var APP_MAP_BRANCH_COLORS = [T.accent, T.txnOut, T.accent2, T.positive, T.inkFaint];
 
 // One destination. A chip rather than a row, because a branch holds four of
 // them and four full-width rows per branch is the flat list this replaced.
@@ -308,7 +308,7 @@ function AppMapChip({ entry, color, current, onPress }) {
       textAlign: "left",
       background: current ? color : T.surface,
       border: `1px solid ${current ? color : T.line}`,
-      boxShadow: current ? `0 4px 14px ${color}44` : "0 2px 8px rgba(76,29,149,0.05)",
+      boxShadow: current ? `0 4px 14px ${color}44` : `0 2px 8px rgba(${T.accentDeepRgb},0.05)`,
       color: current ? "#fff" : T.ink,
       opacity: entry.locked ? 0.6 : 1
     }}
@@ -485,7 +485,7 @@ function AppMapOverlay({ entries, currentKey, query, onQueryChange, onClose, onL
        hub at all, because a map is the one screen a person consults
        precisely because they are unsure. */
   }{here && <div
-    style={{ display: "flex", alignItems: "center", gap: 12, background: T.gradWallet, borderRadius: 20, padding: "15px 17px", boxShadow: "0 12px 30px rgba(76,29,149,0.26)" }}
+    style={{ display: "flex", alignItems: "center", gap: 12, background: T.gradWallet, borderRadius: 20, padding: "15px 17px", boxShadow: `0 12px 30px rgba(${T.accentDeepRgb},0.26)` }}
   ><span
     style={{ width: 40, height: 40, borderRadius: 13, background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
   ><HereIcon size={20} color="#fff" /></span><span style={{ flex: 1, minWidth: 0 }}><span

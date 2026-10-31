@@ -62,8 +62,8 @@ function ScanSendButton({ onClick, overVideo = false }) {
       fontWeight: 800,
       cursor: "pointer",
       boxShadow: overVideo
-        ? "0 10px 34px rgba(124,58,237,0.55), inset 0 1px 0 rgba(255,255,255,0.3)"
-        : "0 8px 20px rgba(124,58,237,0.28)"
+        ? `0 10px 34px rgba(${T.accentRgb},0.55), inset 0 1px 0 rgba(255,255,255,0.3)`
+        : `0 8px 20px rgba(${T.accentRgb},0.28)`
     }}
   ><ArrowUpRight5 size={17} />Send</button>;
 }
@@ -1579,6 +1579,32 @@ function GloobalId() {
   // toggle and all of its UI) up to this level, so history rows written
   // here record which role the payment was made as.
   const [activeShareRole, setActiveShareRole] = useState19("user");
+  // ── THE THEME, AND THE SIDE ───────────────────────────────────────────
+  // Five themes (constants/theme.js), each a pair: one palette for the
+  // Personal side, another for the Creator side. The pair is chosen under
+  // Profile → Appearance and remembered on this phone; the side is
+  // whichever the flip button last chose. Applied HERE, at the top of the
+  // render, so every screen below reads the right `T` in this same pass —
+  // no screen knows about themes, it only ever reads T.
+  const [themeKey, setThemeKey] = useState19(readGloobalThemePref);
+  const themeSide = activeShareRole === "merchant" ? "creator" : "personal";
+  applyGloobalTheme(themeKey, themeSide);
+  useEffect15(() => { paintGloobalThemeChrome(); }, [themeKey, themeSide]);
+  const pickTheme = (key) => {
+    if (!GLOOBAL_THEMES[key]) return;
+    saveGloobalThemePref(key);
+    setThemeKey(key);
+  };
+  // The flip moment: a card slides across naming the side just arrived
+  // on, in its own ink. Not on first mount — only on a real switch.
+  const [sideFlip, setSideFlip] = useState19(null);
+  const sideFlipSeen = useRef13(null);
+  useEffect15(() => {
+    if (sideFlipSeen.current === null) { sideFlipSeen.current = activeShareRole; return; }
+    if (sideFlipSeen.current === activeShareRole) return;
+    sideFlipSeen.current = activeShareRole;
+    setSideFlip({ side: activeShareRole === "merchant" ? "creator" : "personal", at: Date.now() });
+  }, [activeShareRole]);
   const [suggestedRegId] = useState19(() => genSuggestedId(12));
   // Which explain-this-screen sheet is open: null, "symbols", or
   // "referral". One piece of state rather than two booleans, because the
@@ -3838,11 +3864,11 @@ function GloobalId() {
       inset: 0,
       width: "100%",
       height: "100%",
-      background: "#ffffff",
+      background: T.surface,
       overflow: "hidden",
       fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
     }}
-  >{particlesRef.current.map((p) => <div
+  >{sideFlip && <SideFlipCard key={sideFlip.at} side={sideFlip.side} onDone={() => setSideFlip(null)} />}{particlesRef.current.map((p) => <div
     key={p.id}
     ref={(el) => {
       if (el) elsRef.current[p.id] = el;
@@ -3879,7 +3905,7 @@ function GloobalId() {
       width: 176,
       height: 176,
       borderRadius: "50%",
-      background: "#fff",
+      background: T.surface,
       border: "none",
       padding: 0,
       cursor: "pointer",
@@ -4325,7 +4351,7 @@ function GloobalId() {
     onClick={() => setShowLoginPicker(true)}
     aria-label={`Country: ${effectiveLoginCountry.name}. Tap to change`}
     style={{ flexShrink: 0, width: 46, height: 40, borderRadius: 13, border: `1px solid ${T.line}`, background: T.surface, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
-  ><FlagEmoji flag={effectiveLoginCountry.flag} width={38} height={32} radius={6} dropShadow="drop-shadow(0 4px 10px rgba(76,29,149,0.18))" /></button>{
+  ><FlagEmoji flag={effectiveLoginCountry.flag} width={38} height={32} radius={6} dropShadow={`drop-shadow(0 4px 10px rgba(${T.accentDeepRgb},0.18))`} /></button>{
     /* Masked by default, revealed with the eye toggle that
        now sits on the card's boundary (top-right corner)
        instead of inline here — same spot the Secure ID eye
@@ -4564,6 +4590,8 @@ function GloobalId() {
     essentialsIHaveEnough={essentialsIHaveEnough}
     onToggleEssentialsIHaveEnough={handleToggleEssentialsIHaveEnough}
     onShareRoleChange={setActiveShareRole}
+    themeKey={themeKey}
+    onPickTheme={pickTheme}
     onGloobalIdChange={handleGloobalIdChanged}
   />}{
     /* Scan to pay. The camera reads a Gloobal QR (a static pay link), the
@@ -4756,7 +4784,7 @@ function GloobalId() {
         fontSize: 14,
         fontWeight: 800,
         cursor: "pointer",
-        boxShadow: "0 8px 20px rgba(124,58,237,0.35)"
+        boxShadow: `0 8px 20px rgba(${T.accentRgb},0.35)`
       }}
     >
                   Allow Access
@@ -4857,7 +4885,7 @@ function GloobalId() {
     width: "100%", borderRadius: T.radiusXl,
     // The payee's own hue, derived from the code that was scanned.
     background: scanBackdropCss(scanPayee.gloobalId),
-    boxShadow: "0 18px 44px rgba(20,18,43,0.28)",
+    boxShadow: `0 18px 44px rgba(${T.inkRgb},0.28)`,
     border: "none",
     padding: "26px 22px", textAlign: "center", position: "relative",
     // ── THE CARD WAS 44px WIDER THAN IT ASKED TO BE ──────────────────
@@ -4973,7 +5001,7 @@ function GloobalId() {
     // instead of on the colour, which also gives the one piece of data
     // on this card a frame of its own.
     display: "inline-flex", maxWidth: "100%",
-    background: "#FFFFFF", borderRadius: 999,
+    background: T.surface, borderRadius: 999,
     padding: "7px 14px", marginBottom: 18,
     fontSize: 13, color: T.inkSoft
   }}><ColoredGloobalId id={scanPayee.gloobalId} /></div></>;
@@ -4986,7 +5014,7 @@ function GloobalId() {
       // most important control on the screen; white is the hue's own
       // highest contrast and reads as the primary action on all twelve.
       width: "100%", border: "none", borderRadius: T.radiusMd, padding: "15px 0",
-      background: "#FFFFFF", color: scanBackdropFor(scanPayee.gloobalId).from,
+      background: T.surface, color: scanBackdropFor(scanPayee.gloobalId).from,
       fontSize: 15, fontWeight: 800, cursor: "pointer",
       boxShadow: "0 4px 14px rgba(0,0,0,0.18)"
     }}
@@ -5195,7 +5223,7 @@ function GloobalId() {
         }
         @keyframes signalWave {
           0%, 100% { transform: scale(0.6); opacity: 0.3; box-shadow: none; }
-          50% { transform: scale(1.35); opacity: 1; box-shadow: 0 0 6px 2px rgba(124,58,237,0.55); }
+          50% { transform: scale(1.35); opacity: 1; box-shadow: 0 0 6px 2px rgba(${T.accentRgb},0.55); }
         }
         button:focus-visible {
           outline: 2px solid #3b6ef5;
@@ -5207,8 +5235,8 @@ function GloobalId() {
         .v2-tap { transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease; }
         .v2-tap:active { transform: scale(0.94); }
         .v2-row { transition: background 0.15s ease; }
-        .v2-row:hover { background: rgba(124,58,237,0.05); }
-        .v2-row:active { background: rgba(124,58,237,0.09); }
+        .v2-row:hover { background: rgba(${T.accentRgb},0.05); }
+        .v2-row:active { background: rgba(${T.accentRgb},0.09); }
         @keyframes successPop {
           0% { transform: scale(0.5); opacity: 0; }
           60% { transform: scale(1.08); opacity: 1; }
@@ -5244,10 +5272,10 @@ function GloobalId() {
            corners stroke in currentColor and the code blocks fill in it —
            so the two halves cannot drift out of step. */
         @keyframes scanMarkCycle {
-          0%, 26%   { color: #7C3AED; }
+          0%, 26%   { color: ${T.accent}; }
           33%, 59%  { color: #1781CC; }
           66%, 92%  { color: #1C8F74; }
-          100%      { color: #7C3AED; }
+          100%      { color: ${T.accent}; }
         }
         .scan-mark-cycle { animation: scanMarkCycle 9s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
@@ -5265,7 +5293,7 @@ function GloobalId() {
       bottom: "calc(28px + env(safe-area-inset-bottom, 0px))",
       left: "50%",
       transform: "translateX(-50%)",
-      background: "#15132A",
+      background: T.ink,
       color: "#fff",
       fontSize: 13.5,
       fontWeight: 600,

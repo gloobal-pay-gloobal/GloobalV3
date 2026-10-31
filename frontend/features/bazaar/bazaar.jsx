@@ -389,7 +389,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px",
     borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
     whiteSpace: "nowrap", background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink,
-    boxShadow: on ? "0 4px 12px rgba(124,58,237,0.25)" : `inset 0 0 0 1px ${T.line}`
+    boxShadow: on ? `0 4px 12px rgba(${T.accentRgb},0.25)` : `inset 0 0 0 1px ${T.line}`
   });
 
   const shown = (shops || []).filter((s) => s.symbolId !== excludeSymbolId);
@@ -614,7 +614,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     style={{
       border: "none", borderRadius: 999, padding: "5px 12px", cursor: "pointer", fontFamily: "inherit",
       fontSize: 11.5, fontWeight: 800, background: asMap === value ? T.surface : "transparent",
-      color: asMap === value ? T.accent : T.inkSoft, boxShadow: asMap === value ? "0 1px 3px rgba(20,18,43,0.12)" : "none"
+      color: asMap === value ? T.accent : T.inkSoft, boxShadow: asMap === value ? `0 1px 3px rgba(${T.inkRgb},0.12)` : "none"
     }}
   >{label}</button>)}</span> : null}</span></div>
   {fallback ? <div data-bazaar-nomatch="" role="status" style={{

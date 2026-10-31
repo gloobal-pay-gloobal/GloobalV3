@@ -119,7 +119,7 @@ function CreatorLedgerScreen({
       flex: 1, minWidth: 0, border: "none", borderRadius: 14, padding: "11px 0",
       background: tab === key ? T.gradButton : T.surface,
       color: tab === key ? "#fff" : T.inkSoft,
-      boxShadow: tab === key ? "0 6px 16px rgba(124,58,237,0.26)" : T.shadowCard,
+      boxShadow: tab === key ? `0 6px 16px rgba(${T.accentRgb},0.26)` : T.shadowCard,
       fontSize: 13.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer"
     }}
   >{label}</button>;

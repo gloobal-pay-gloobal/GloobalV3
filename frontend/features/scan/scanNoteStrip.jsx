@@ -83,11 +83,11 @@ function ScanNoteStrip({ text, seed, styleKey = "ribbon", speaker = "", compact 
 
   if (style === "tag") {
     return <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginTop: compact ? -2 : -4 }}>{css}<span aria-hidden="true" style={{
-      width: 2, height: compact ? 12 : 22, background: "#9C96AF"
+      width: 2, height: compact ? 12 : 22, background: T.inkFaint
     }} /><div className="gloobal-note-moves" style={{
       position: "relative", background: ink.bar, borderRadius: "6px 6px 14px 14px",
       padding: compact ? "9px 6px 6px" : "15px 16px 12px", maxWidth: compact ? "100%" : 230, boxSizing: "border-box",
-      boxShadow: "0 6px 14px rgba(20,18,43,0.18)", transformOrigin: "top center",
+      boxShadow: `0 6px 14px rgba(${T.inkRgb},0.18)`, transformOrigin: "top center",
       animation: "gloobalNoteSwing 4s ease-in-out infinite", ...msg
     }}><span aria-hidden="true" style={{
       position: "absolute", top: compact ? 3 : 5, left: "50%", marginLeft: -4, width: 8, height: 8,
@@ -103,7 +103,7 @@ function ScanNoteStrip({ text, seed, styleKey = "ribbon", speaker = "", compact 
     return <div style={{
       width: "100%", marginTop: compact ? 6 : 12, borderRadius: 999, background: "#1A1033",
       overflow: "hidden", padding: compact ? "5px 0" : "10px 0",
-      boxShadow: "0 6px 14px rgba(20,18,43,0.22)"
+      boxShadow: `0 6px 14px rgba(${T.inkRgb},0.22)`
     }}>{css}<div className="gloobal-note-ticker-track" style={{
       display: "inline-flex", whiteSpace: "nowrap",
       animation: `gloobalNoteTicker ${secs}s linear infinite`
@@ -116,7 +116,7 @@ function ScanNoteStrip({ text, seed, styleKey = "ribbon", speaker = "", compact 
     return <div style={{
       position: "relative", marginTop: compact ? 9 : 16, background: ink.bar, borderRadius: compact ? 10 : 16,
       padding: compact ? "6px 6px" : "11px 15px", maxWidth: compact ? "100%" : 280, boxSizing: "border-box",
-      boxShadow: "0 6px 14px rgba(20,18,43,0.18)"
+      boxShadow: `0 6px 14px rgba(${T.inkRgb},0.18)`
     }}>{css}<span aria-hidden="true" style={{
       position: "absolute", top: compact ? -6 : -9, left: "50%", marginLeft: compact ? -6 : -9,
       borderLeft: `${compact ? 6 : 9}px solid transparent`, borderRight: `${compact ? 6 : 9}px solid transparent`,
@@ -133,7 +133,7 @@ function ScanNoteStrip({ text, seed, styleKey = "ribbon", speaker = "", compact 
     return <div style={{
       width: compact ? "88%" : "86%", marginTop: compact ? -3 : -6,
       background: "#FFF7E0", padding: compact ? "7px 8px 10px" : "12px 14px 18px",
-      boxShadow: "0 6px 14px rgba(20,18,43,0.15)",
+      boxShadow: `0 6px 14px rgba(${T.inkRgb},0.15)`,
       WebkitMask: `conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / ${tooth}px 100%`,
       mask: `conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / ${tooth}px 100%`
     }}>{css}<div style={{ ...msg, color: "#1A1033", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{text}</div></div>;
@@ -143,7 +143,7 @@ function ScanNoteStrip({ text, seed, styleKey = "ribbon", speaker = "", compact 
     return <div className="gloobal-note-moves" style={{
       position: "relative", marginTop: compact ? 8 : 16, background: "#FFE66D",
       padding: compact ? "8px 6px" : "15px 17px", maxWidth: compact ? "100%" : 240, boxSizing: "border-box",
-      transform: "rotate(2.5deg)", boxShadow: "0 8px 16px rgba(20,18,43,0.18)"
+      transform: "rotate(2.5deg)", boxShadow: `0 8px 16px rgba(${T.inkRgb},0.18)`
     }}>{css}<span aria-hidden="true" style={{
       position: "absolute", top: compact ? -5 : -8, left: "50%", marginLeft: compact ? -16 : -26,
       width: compact ? 32 : 52, height: compact ? 10 : 16, background: "rgba(255,255,255,0.65)",
@@ -154,8 +154,8 @@ function ScanNoteStrip({ text, seed, styleKey = "ribbon", speaker = "", compact 
   if (style === "pill") {
     return <div style={{
       display: "flex", alignItems: "center", gap: compact ? 4 : 9, marginTop: compact ? 8 : 16,
-      background: "#FFFFFF", borderRadius: 999, padding: compact ? "4px 7px 4px 4px" : "9px 16px 9px 9px",
-      boxShadow: `0 0 0 2px ${ink.bar}, 0 8px 18px rgba(20,18,43,0.16)`, maxWidth: "100%",
+      background: T.surface, borderRadius: 999, padding: compact ? "4px 7px 4px 4px" : "9px 16px 9px 9px",
+      boxShadow: `0 0 0 2px ${ink.bar}, 0 8px 18px rgba(${T.inkRgb},0.16)`, maxWidth: "100%",
       width: compact ? "100%" : undefined, boxSizing: "border-box"
     }}>{css}<span aria-hidden="true" style={{
       width: compact ? 14 : 24, height: compact ? 14 : 24, borderRadius: "50%", background: ink.bar, flexShrink: 0,
@@ -186,7 +186,7 @@ function ScanNoteStrip({ text, seed, styleKey = "ribbon", speaker = "", compact 
     background: ink.fold, clipPath: "polygon(0 0, 100% 0, 0 100%)"
   }} /><div style={{
     position: "relative", margin: compact ? "0 3px" : "0 7px", background: ink.bar, borderRadius: compact ? 8 : 12,
-    padding: compact ? "7px 9px" : "13px 16px", boxShadow: "0 8px 18px rgba(20,18,43,0.22)", ...msg
+    padding: compact ? "7px 9px" : "13px 16px", boxShadow: `0 8px 18px rgba(${T.inkRgb},0.22)`, ...msg
   }}>{text}</div></div>;
 }
 

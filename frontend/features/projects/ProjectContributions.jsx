@@ -313,7 +313,7 @@ function ProjectContributionList({ projectId, enabled = true, money, tint, accen
           >You</span>}</span>{row.note && <span
             style={{ fontSize: 12, color: T.inkSoft, lineHeight: 1.45, overflowWrap: "anywhere" }}
           >{row.note}</span>}<span style={{ fontSize: 11, color: T.inkFaint }}>{contributionWhen(row.paidAt)}</span></span><span
-            style={{ flexShrink: 0, fontSize: 13.5, fontWeight: 800, color: TXN_IN_COLOR, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}
+            style={{ flexShrink: 0, fontSize: 13.5, fontWeight: 800, color: T.txnIn, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums" }}
           >{money(row.amount, row.currency)}</span></div>)}{feed.nextCursor && <button
             onClick={feed.loadMore}
             className="v2-tap"

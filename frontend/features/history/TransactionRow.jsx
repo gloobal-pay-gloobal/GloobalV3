@@ -262,7 +262,7 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
       fontSize: amountSize,
       fontWeight: 800,
       whiteSpace: "nowrap",
-      // Green in, red out — TXN_IN_COLOR / TXN_OUT_COLOR in
+      // Green in, red out — T.txnIn / T.txnOut in
       // constants/theme.js. The caller passes the colour so this row does
       // not need to know which list it is in.
       color

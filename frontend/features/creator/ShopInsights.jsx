@@ -47,7 +47,7 @@ function ShopInsightsSheet({ symbolId, theme, onClose }) {
   }}>{delta.text}</div> : null}</div>;
 
   return <div style={{
-    position: "absolute", inset: 0, zIndex: 7, background: "rgba(21,19,42,0.38)", display: "flex", alignItems: "flex-end"
+    position: "absolute", inset: 0, zIndex: 7, background: `rgba(${T.inkRgb},0.38)`, display: "flex", alignItems: "flex-end"
   }} onClick={onClose}><div
     role="dialog"
     aria-label="Your shop this week"

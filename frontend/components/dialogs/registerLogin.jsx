@@ -247,7 +247,7 @@ function PermissionsGateScreen({ onContinue }) {
           : "Get notified when you receive money, even when GLOOBAL is closed."
   }</span></span> : p.label}{p.required && <span
     aria-hidden="true"
-    style={{ width: 9, height: 9, borderRadius: "50%", border: `2.5px solid ${TXN_OUT_COLOR}`, boxSizing: "border-box", flexShrink: 0 }}
+    style={{ width: 9, height: 9, borderRadius: "50%", border: `2.5px solid ${T.txnOut}`, boxSizing: "border-box", flexShrink: 0 }}
   />}</span>{
     /* Dotted, not solid: a dashed run reads as "…and then, later", which
        is exactly the relationship — the capability is asked for AT that
@@ -318,7 +318,7 @@ function PermissionsGateScreen({ onContinue }) {
       flexShrink: 0
     }}
   ><span
-    style={{ width: 9, height: 9, borderRadius: "50%", border: `2.5px solid ${TXN_OUT_COLOR}`, boxSizing: "border-box", flexShrink: 0 }}
+    style={{ width: 9, height: 9, borderRadius: "50%", border: `2.5px solid ${T.txnOut}`, boxSizing: "border-box", flexShrink: 0 }}
   /><span style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.45 }}>
       Required to send money. The rest are optional.
     </span></div></div><div style={{ position: "relative", zIndex: 1, padding: "0 20px calc(20px + env(safe-area-inset-bottom, 0px))", flexShrink: 0 }}>{
@@ -365,7 +365,7 @@ function PhoneConnector({ country, phoneNumber, onOpenPicker, onOpenDial, dialOp
     width={46}
     height={40}
     radius={8}
-    dropShadow="drop-shadow(0 4px 10px rgba(76,29,149,0.22))"
+    dropShadow={`drop-shadow(0 4px 10px rgba(${T.accentDeepRgb},0.22))`}
   /><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke={T.accent} strokeWidth="3"><path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" /></svg></button>{
     /* Phone-number entry — the dial code is fixed to the chosen country
        (shown via the flag, not spelled out here); only the national
@@ -568,7 +568,7 @@ function CountryPickerScreen({ topCountries, countries, search, onSearch, onSele
       cursor: "pointer",
       borderRadius: T.radiusMd
     }}
-  ><FlagEmoji flag={c.flag} size={30} radius={9} dropShadow="drop-shadow(0 1px 3px rgba(76,29,149,0.12))" /><span style={{ flex: 1, fontSize: 14, color: T.ink, fontWeight: 600 }}>{c.name}</span><span style={{ fontSize: 13, color: T.inkFaint, fontWeight: 600 }}>{c.dialCode}</span></button>)}</div>}</div></div>;
+  ><FlagEmoji flag={c.flag} size={30} radius={9} dropShadow={`drop-shadow(0 1px 3px rgba(${T.accentDeepRgb},0.12))`} /><span style={{ flex: 1, fontSize: 14, color: T.ink, fontWeight: 600 }}>{c.name}</span><span style={{ fontSize: 13, color: T.inkFaint, fontWeight: 600 }}>{c.dialCode}</span></button>)}</div>}</div></div>;
 }
 function PinScreen({ value, length, onChange, onSubmit, onBack, revealed, onToggleReveal, busy }) {
   const complete = value.length === length;
@@ -1016,7 +1016,7 @@ function BiometricVerifyScreen({ onBack, onVerify, scanning, notice, onSkip, ski
       fontSize: 14,
       fontWeight: 800,
       background: T.gradButton,
-      boxShadow: "0 8px 20px rgba(124,58,237,0.32)",
+      boxShadow: `0 8px 20px rgba(${T.accentRgb},0.32)`,
       cursor: scanning ? "default" : "pointer",
       opacity: scanning ? 0.7 : 1
     }}

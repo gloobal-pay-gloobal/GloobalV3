@@ -216,8 +216,8 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
        header already decides which list is on screen, so a figure for the
        other direction answers a question nobody asked here. */
     const active = historyTab === "sending"
-      ? { label: "Paid", sign: "\u2212", value: periodPaidTotal, color: TXN_OUT_COLOR }
-      : { label: "Received", sign: "+", value: periodReceivedTotal, color: TXN_IN_COLOR };
+      ? { label: "Paid", sign: "\u2212", value: periodPaidTotal, color: T.txnOut }
+      : { label: "Received", sign: "+", value: periodReceivedTotal, color: T.txnIn };
     // geuLensBarMoney with ccyCode on BOTH sides, deliberately: this figure
     // is a sum of the viewer's own rows in the viewer's own currency, so the
     // own-currency question an individual row has to ask is already answered
@@ -345,8 +345,8 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
     }}
     className="history-pager"
   >{[
-    { key: "receiving", rows: periodReceiveHistory, sign: "+", color: TXN_IN_COLOR, chip: TXN_IN_SOFT },
-    { key: "sending", rows: periodSendHistory, sign: "\u2212", color: TXN_OUT_COLOR, chip: TXN_OUT_SOFT }
+    { key: "receiving", rows: periodReceiveHistory, sign: "+", color: T.txnIn, chip: T.txnInSoft },
+    { key: "sending", rows: periodSendHistory, sign: "\u2212", color: T.txnOut, chip: T.txnOutSoft }
   ].map((col) => {
     const filteredRows = historyMethodFilter === "all" ? col.rows : col.rows.filter((t) => t.method === historyMethodFilter);
     // One page at a time. `remaining` is what the expander offers, and it

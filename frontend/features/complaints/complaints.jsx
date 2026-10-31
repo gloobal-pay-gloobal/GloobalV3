@@ -60,7 +60,7 @@ var COMPLAINT_STATUS_INFO = {
   replied: { label: "In chat", color: "#2563EB", soft: "#DBEAFE" },
   returned: { label: "Money sent back", color: "#0FA372", soft: "#E3F8EE" },
   solved: { label: "Solved", color: "#0FA372", soft: "#E3F8EE" },
-  escalated: { label: "With GLOOBAL support", color: "#7C3AED", soft: "#F1ECFC" }
+  escalated: { label: "With GLOOBAL support", color: T.accent, soft: T.accentSoft }
 };
 
 function complaintStatusInfo(status) {
@@ -125,7 +125,7 @@ function ComplaintPaymentLine({ payment, dark }) {
   >{payment.name}</span><span
     style={{ display: "block", fontSize: 11.5, color: dark ? "rgba(255,255,255,0.7)" : T.inkSoft, marginTop: 2 }}
   >{payment.when}</span></span><span
-    style={{ fontSize: 16, fontWeight: 800, color: dark ? "#fff" : TXN_OUT_COLOR, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+    style={{ fontSize: 16, fontWeight: 800, color: dark ? "#fff" : T.txnOut, fontFamily: T.fontDisplay, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
   >{payment.amountText}</span></div>;
 }
 

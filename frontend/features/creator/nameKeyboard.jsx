@@ -650,7 +650,7 @@ function NameKey({ ch, onPress, blocked, cols = 10 }) {
       border: "none",
       borderRadius: 9,
       background: blocked ? "transparent" : T.surface,
-      boxShadow: blocked ? "none" : "0 1px 2px rgba(20,18,43,0.10)",
+      boxShadow: blocked ? "none" : `0 1px 2px rgba(${T.inkRgb},0.10)`,
       color: blocked ? T.inkFaint : T.ink,
       opacity: blocked ? 0.3 : 1,
       fontSize: 18,
@@ -914,7 +914,7 @@ function CreatorNameKeyboard({
       zIndex: 430,
       background: T.bgSoft || T.bg,
       borderTop: `1px solid ${T.line}`,
-      boxShadow: "0 -8px 28px rgba(20,18,43,0.16)",
+      boxShadow: `0 -8px 28px rgba(${T.inkRgb},0.16)`,
       paddingBottom: "env(safe-area-inset-bottom, 0px)",
       display: "flex", flexDirection: "column",
       // Nothing on the board is text to select — not the labels, not the
@@ -945,7 +945,7 @@ function CreatorNameKeyboard({
     pressedStyle={{ background: T.accentSoft }}
     style={{
       flexShrink: 0, height: 36, borderRadius: 999, border: "none", padding: "0 11px 0 8px",
-      background: T.surface, boxShadow: "0 1px 3px rgba(20,18,43,0.12)", cursor: "pointer",
+      background: T.surface, boxShadow: `0 1px 3px rgba(${T.inkRgb},0.12)`, cursor: "pointer",
       display: "flex", alignItems: "center", gap: 4, marginLeft: 4,
       fontSize: 12, fontWeight: 800, color: T.inkSoft, fontFamily: "inherit"
     }}
@@ -979,7 +979,7 @@ function CreatorNameKeyboard({
       border: "none",
       background: l.id === layoutId ? T.accent : T.surface,
       color: l.id === layoutId ? "#fff" : T.inkSoft,
-      boxShadow: l.id === layoutId ? "none" : "0 1px 2px rgba(20,18,43,0.08)",
+      boxShadow: l.id === layoutId ? "none" : `0 1px 2px rgba(${T.inkRgb},0.08)`,
       fontFamily: "inherit", cursor: "pointer",
       padding: "5px 9px 4px",
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1
@@ -1015,7 +1015,7 @@ function CreatorNameKeyboard({
   }}>{conflict ? <div style={{
     display: "flex", alignItems: "center", gap: 10, marginBottom: 9,
     background: T.surface, borderRadius: 12, padding: "10px 11px",
-    boxShadow: "0 1px 3px rgba(20,18,43,0.10)"
+    boxShadow: `0 1px 3px rgba(${T.inkRgb},0.10)`
   }}><span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45 }}>
     This part is in {locked}. {locked} and these letters look alike, so they can't be mixed in one part.
   </span><KbTap
@@ -1071,7 +1071,7 @@ function CreatorNameKeyboard({
       // ⇧, filled when on — the state is the shape, not a colour alone.
       flex: "0 0 50px", height: 44, borderRadius: 12, border: "none",
       background: shift ? T.accent : T.surface,
-      boxShadow: shift ? "0 4px 10px rgba(124,58,237,0.3)" : "0 1px 2px rgba(20,18,43,0.12)",
+      boxShadow: shift ? `0 4px 10px rgba(${T.accentRgb},0.3)` : `0 1px 2px rgba(${T.inkRgb},0.12)`,
       cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
     }}
   ><KbShiftGlyph color={shift ? "#fff" : T.ink} on={shift} /></KbTap> : null}<KbTap
@@ -1082,7 +1082,7 @@ function CreatorNameKeyboard({
     pressedStyle={{ background: T.accentSoft, transform: "translateY(1px)" }}
     style={{
       flex: "0 0 62px", height: 44, borderRadius: 12, border: "none", background: T.surface,
-      boxShadow: "0 1px 2px rgba(20,18,43,0.12)", cursor: value ? "pointer" : "default",
+      boxShadow: `0 1px 2px rgba(${T.inkRgb},0.12)`, cursor: value ? "pointer" : "default",
       opacity: value ? 1 : 0.4,
       display: "flex", alignItems: "center", justifyContent: "center"
     }}
@@ -1118,7 +1118,7 @@ function CreatorNameKeyboard({
         style={{
           flex: "0 0 92px", height: 44, borderRadius: 12, border: "none",
           background: T.gradButton, color: "#fff", cursor: "pointer",
-          boxShadow: "0 4px 12px rgba(124,58,237,0.3)",
+          boxShadow: `0 4px 12px rgba(${T.accentRgb},0.3)`,
           fontSize: 13.5, fontWeight: 800, fontFamily: "inherit",
           display: "flex", alignItems: "center", justifyContent: "center", gap: 6
         }}

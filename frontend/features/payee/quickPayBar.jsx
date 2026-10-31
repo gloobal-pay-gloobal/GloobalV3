@@ -375,12 +375,12 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     error ? <div role="alert" style={{
       position: "absolute", left: 0, right: 0, top: "calc(100% + 8px)", zIndex: 20,
       fontSize: 12, fontWeight: 700, color: T.negative, lineHeight: 1.4, background: T.surface, borderRadius: 14,
-      padding: "10px 12px", boxShadow: "0 10px 26px rgba(20,18,43,0.16)", animation: "quickPayIn 0.22s ease"
+      padding: "10px 12px", boxShadow: `0 10px 26px rgba(${T.inkRgb},0.16)`, animation: "quickPayIn 0.22s ease"
     }}>{error}</div> : null
   }{suggest ? <div data-quickpay-suggest="" style={{
     position: "absolute", left: 0, right: 0, top: "calc(100% + 8px)", zIndex: 20,
     background: T.surface, borderRadius: 18, padding: "12px 6px 6px", overflow: "hidden",
-    boxShadow: "0 14px 36px rgba(20,18,43,0.22), 0 0 0 1px rgba(20,18,43,0.04)", animation: "quickPayIn 0.22s ease"
+    boxShadow: `0 14px 36px rgba(${T.inkRgb},0.22), 0 0 0 1px rgba(${T.inkRgb},0.04)`, animation: "quickPayIn 0.22s ease"
   }}><div role="status" style={{
     display: "flex", alignItems: "flex-start", gap: 8, padding: "0 8px 8px", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, lineHeight: 1.4
   }}><span style={{ flex: 1, minWidth: 0 }}>{suggest.title}{suggest.none ? <> <GloobalWordmark /></> : null}</span><button
@@ -518,7 +518,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
           display: "flex", alignItems: "center", justifyContent: "center",
           background: plain ? "transparent" : T.surface,
           color: T.ink,
-          boxShadow: plain ? "none" : "0 1px 2px rgba(20,18,43,0.08), 0 0 0 1px rgba(20,18,43,0.04)"
+          boxShadow: plain ? "none" : `0 1px 2px rgba(${T.inkRgb},0.08), 0 0 0 1px rgba(${T.inkRgb},0.04)`
         }}
       >{label}</button>;
     };
@@ -537,12 +537,12 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       style={{
         position: "relative", flex: 1, minWidth: 0, height: 44, borderRadius: 999, border: "none", padding: 4,
         cursor: "pointer", fontFamily: "inherit", background: T.surfaceSunk || T.surfaceAlt,
-        boxShadow: "inset 0 1px 3px rgba(20,18,43,0.10)",
+        boxShadow: `inset 0 1px 3px rgba(${T.inkRgb},0.10)`,
         display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)", alignItems: "center"
       }}
     ><span aria-hidden="true" style={{
       position: "absolute", top: 4, bottom: 4, borderRadius: 999, background: T.surface,
-      boxShadow: "0 2px 8px rgba(20,18,43,0.16)",
+      boxShadow: `0 2px 8px rgba(${T.inkRgb},0.16)`,
       left: mobile ? "calc(66.666% + 1px)" : 4,
       width: mobile ? "calc(33.333% - 5px)" : "calc(66.666% - 5px)",
       transition: "left 0.25s cubic-bezier(.3,.7,.2,1), width 0.25s cubic-bezier(.3,.7,.2,1)"
@@ -560,7 +560,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       data-quickpay-pad=""
       style={{
         position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 430, background: T.bg,
-        borderTop: `1px solid ${T.line}`, boxShadow: "0 -8px 28px rgba(20,18,43,0.16)",
+        borderTop: `1px solid ${T.line}`, boxShadow: `0 -8px 28px rgba(${T.inkRgb},0.16)`,
         paddingBottom: "env(safe-area-inset-bottom, 0px)", display: "flex", flexDirection: "column",
         userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none",
         animation: "quickPayPadIn 0.22s ease"
@@ -576,7 +576,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       className="v2-tap"
       style={{
         width: 44, height: 44, flexShrink: 0, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer",
-        background: T.surface, boxShadow: "0 1px 3px rgba(20,18,43,0.12)", display: "flex", alignItems: "center", justifyContent: "center"
+        background: T.surface, boxShadow: `0 1px 3px rgba(${T.inkRgb},0.12)`, display: "flex", alignItems: "center", justifyContent: "center"
       }}
     >{dialCountry ? <FlagEmoji flag={dialCountry.flag} shape="circle" size={30} border="none" /> : <ChevronDown7 size={16} color={T.inkSoft} />}</button>{toggle}</div>{padKind === "id" ? <div style={{
       display: "flex", justifyContent: "center", padding: "2px 12px 6px"
@@ -637,7 +637,7 @@ function QuickPayShopFace({ symbolId, name, logo }) {
 
 // A person with no photo: their initials on a tint picked from their ID, so
 // the same person is the same colour every time.
-var QUICK_PAY_TINTS = ["#7C3AED", "#2563EB", "#059669", "#EA580C", "#DB2777", "#0E7490"];
+var QUICK_PAY_TINTS = [T.accent, "#2563EB", "#059669", "#EA580C", "#DB2777", "#0E7490"];
 function quickPayInitials(name, key) {
   let h = 7;
   for (const ch of String(key || name || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -654,6 +654,6 @@ function quickPayBarChip(on) {
     flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5, height: 36, padding: "0 12px",
     borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800,
     background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink,
-    boxShadow: "0 1px 3px rgba(20,18,43,0.12)", whiteSpace: "nowrap"
+    boxShadow: `0 1px 3px rgba(${T.inkRgb},0.12)`, whiteSpace: "nowrap"
   };
 }

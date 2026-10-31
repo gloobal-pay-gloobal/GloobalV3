@@ -273,7 +273,7 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
       borderRadius: "50%",
       border: `1px solid ${T.line}`,
       background: T.surface,
-      boxShadow: "0 1px 4px rgba(20,18,43,0.14)",
+      boxShadow: `0 1px 4px rgba(${T.inkRgb},0.14)`,
       padding: 0,
       cursor: "pointer",
       display: "flex",

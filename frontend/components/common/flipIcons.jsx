@@ -57,7 +57,7 @@ function LivingLogoBoxVisual({
       // the still one would drift apart the first time either was touched.
       background,
       transition: "transform 0.6s ease, background 0.6s ease",
-      boxShadow: "0 2px 0 rgba(76,29,149,0.55), 0 12px 22px rgba(76,29,149,0.38), 0 30px 58px rgba(76,29,149,0.26)",
+      boxShadow: `0 2px 0 rgba(${T.accentDeepRgb},0.55), 0 12px 22px rgba(${T.accentDeepRgb},0.38), 0 30px 58px rgba(${T.accentDeepRgb},0.26)`,
       transform: "rotateX(10deg) rotateY(-10deg)",
       display: "flex",
       alignItems: "center",

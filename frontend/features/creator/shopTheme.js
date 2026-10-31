@@ -36,7 +36,7 @@ var SHOP_THEMES = {
   gloobal: {
     name: "GLOOBAL",
     note: "The app's own look",
-    color: "#7C3AED",
+    color: T.accent,
     font: "grotesk",
     corners: "round",
     cards: "raised",
@@ -393,7 +393,7 @@ function resolveShopTheme(shop) {
     ink: dark ? "#F3EBE1" : T.ink,
     inkSoft: dark ? "#C3B5A5" : T.inkSoft,
     inkFaint: dark ? "#9A8B7B" : T.inkFaint,
-    line: dark ? shopHexMix("#2E2620", color, 0.16) : shopHexMix("#EAE6F7", color, 0.18)
+    line: dark ? shopHexMix("#2E2620", color, 0.16) : shopHexMix(T.line, color, 0.18)
   };
 }
 

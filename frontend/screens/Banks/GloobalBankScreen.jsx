@@ -185,7 +185,7 @@ function GloobalBankScreen({
     return <TransactionRow
       key={t.key}
       t={t}
-      color={received ? TXN_IN_COLOR : TXN_OUT_COLOR}
+      color={received ? T.txnIn : T.txnOut}
       sign={received ? "+" : "−"}
       ccyCode={ccyCode}
       isFirst={i === 0}

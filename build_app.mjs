@@ -369,6 +369,7 @@ const FRONTEND_MODULES = [
   "screens/DevTools/DisputeCasesSection.jsx",
   "components/common/qrScanner.jsx",
   "components/common/appMap.jsx",
+  "components/common/themeSwitch.jsx",
   "App.jsx",
   "components/common/launchSplash.jsx",
   "__artifactEntry.jsx",

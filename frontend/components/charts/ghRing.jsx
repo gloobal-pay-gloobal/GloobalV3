@@ -15,7 +15,7 @@ function GHSegmentedRing({ size, thickness, segments, gapDeg, children }) {
     stops.push(`${T.bg} ${angle}deg ${angle + gapDeg}deg`);
     angle += gapDeg;
   });
-  return <div style={{ position: "relative", width: size, height: size, flexShrink: 0, transition: "transform 0.3s ease" }}><div style={{ width: size, height: size, borderRadius: "50%", background: `conic-gradient(${stops.join(",")})`, boxShadow: "0 0 0 1px rgba(21,19,42,0.07)" }} /><div
+  return <div style={{ position: "relative", width: size, height: size, flexShrink: 0, transition: "transform 0.3s ease" }}><div style={{ width: size, height: size, borderRadius: "50%", background: `conic-gradient(${stops.join(",")})`, boxShadow: `0 0 0 1px rgba(${T.inkRgb},0.07)` }} /><div
     style={{
       position: "absolute",
       inset: thickness,
@@ -25,7 +25,7 @@ function GHSegmentedRing({ size, thickness, segments, gapDeg, children }) {
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      boxShadow: "inset 0 0 0 1px rgba(21,19,42,0.04)"
+      boxShadow: `inset 0 0 0 1px rgba(${T.inkRgb},0.04)`
     }}
   >{children}</div></div>;
 }
@@ -77,7 +77,7 @@ function GHColorWheel({ size, hue, sat, onChange }) {
       touchAction: "none",
       cursor: "pointer",
       background: "radial-gradient(circle, #fff 0%, rgba(255,255,255,0) 100%), conic-gradient(from 90deg, #FF0000 0deg, #FFFF00 60deg, #00FF00 120deg, #00FFFF 180deg, #0000FF 240deg, #FF00FF 300deg, #FF0000 360deg)",
-      boxShadow: "inset 0 0 0 1px rgba(21,19,42,0.08)"
+      boxShadow: `inset 0 0 0 1px rgba(${T.inkRgb},0.08)`
     }}
   ><div
     style={{

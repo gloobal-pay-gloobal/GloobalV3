@@ -229,13 +229,13 @@ function SymbolIdHelpSheet({ open, onClose }) {
        groups of four. */
   }<div data-symbol-id-sample="" style={{
     borderRadius: 20, padding: "16px 14px 14px", background: T.gradButton, color: "#fff",
-    boxShadow: "0 10px 24px rgba(124,58,237,0.25)"
+    boxShadow: `0 10px 24px rgba(${T.accentRgb},0.25)`
   }}><div style={{ fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}><span style={{ opacity: 0.85 }}>The</span><span style={{
-    background: "#fff", color: T.ink, borderRadius: 6, padding: "1px 6px", fontSize: 11
+    background: T.surface, color: T.ink, borderRadius: 6, padding: "1px 6px", fontSize: 11
   }}><GloobalWordmark /></span><span style={{ opacity: 0.85 }}>ID looks like this</span></div><div aria-label="Example ID" style={{
     display: "flex", justifyContent: "center", gap: 10, margin: "12px 0 10px"
   }}>{groups.map((g, gi) => <span key={gi} style={{
-    display: "flex", gap: 3, padding: "8px 8px", borderRadius: 12, background: "#fff"
+    display: "flex", gap: 3, padding: "8px 8px", borderRadius: 12, background: T.surface
   }}>{g.map((ch, i) => {
     const at = gi * 4 + i;
     return <span key={i} style={{

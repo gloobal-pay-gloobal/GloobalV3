@@ -142,7 +142,7 @@ function LookLivePreview({ creator, ccyCode, lens, height }) {
     onClickCapture={(e) => { e.preventDefault(); e.stopPropagation(); }}
     style={{
       position: "relative", height, borderRadius: 22, overflow: "hidden",
-      boxShadow: "0 10px 30px rgba(20,18,43,0.18), inset 0 0 0 1px rgba(20,18,43,0.06)", background: T.bg
+      boxShadow: `0 10px 30px rgba(${T.inkRgb},0.18), inset 0 0 0 1px rgba(${T.inkRgb},0.06)`, background: T.bg
     }}
   ><div style={{
     position: "absolute", left: 0, top: 0, width: LOOK_PREVIEW_PHONE_W, height: height / scale,
@@ -307,7 +307,7 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
         fontSize: 14, lineHeight: 1, fontFamily: look.font.stack, fontWeight: look.font.weight,
         color: t.coverStyle === "pattern" ? look.hero.from : "#fff"
       }}>Aa</span><span style={{
-        marginLeft: "auto", width: 17, height: 17, ...shopButtonStyle(look), ...(look.buttons !== "filled" ? { background: "#fff" } : {}),
+        marginLeft: "auto", width: 17, height: 17, ...shopButtonStyle(look), ...(look.buttons !== "filled" ? { background: T.surface } : {}),
         borderRadius: look.corners.pill, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800
       }}>+</span>{on ? <span style={{
         position: "absolute", top: 5, right: 5, width: 15, height: 15, borderRadius: "50%", background: T.accent,
@@ -330,7 +330,7 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
         style={{
           aspectRatio: "1", borderRadius: "50%", background: c, border: "none", cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: on ? `0 0 0 2.5px ${T.bg}, 0 0 0 4.5px ${c}` : "0 2px 6px rgba(20,18,43,0.15)",
+          boxShadow: on ? `0 0 0 2.5px ${T.bg}, 0 0 0 4.5px ${c}` : `0 2px 6px rgba(${T.inkRgb},0.15)`,
           transform: on ? "scale(1.05)" : "none", transition: "transform 0.15s ease, box-shadow 0.15s ease"
         }}
       >{on ? <Check10 size={13} color="#fff" strokeWidth={3} /> : null}</button>;
@@ -390,7 +390,7 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
       }
       if (sec.field === "cards") {
         const st = shopCardStyle({ ...theme, cards: key, corners: SHOP_CORNERS.soft });
-        return <span style={{ width: 26, height: 15, ...st, borderRadius: 5, boxShadow: key === "raised" ? "0 2px 6px rgba(20,18,43,0.18)" : st.boxShadow }} />;
+        return <span style={{ width: 26, height: 15, ...st, borderRadius: 5, boxShadow: key === "raised" ? `0 2px 6px rgba(${T.inkRgb},0.18)` : st.boxShadow }} />;
       }
       if (sec.field === "density") {
         const gap = { compact: 1, cosy: 3, roomy: 5 }[key];
@@ -537,7 +537,7 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
       flex: 1, height: 46, borderRadius: 14, border: "none", fontFamily: "inherit", fontSize: 14, fontWeight: 800,
       background: dirty ? T.gradButton : T.surfaceAlt, color: dirty ? "#fff" : T.inkFaint,
       cursor: saving || !dirty ? "default" : "pointer", opacity: saving ? 0.7 : 1,
-      boxShadow: dirty ? "0 8px 20px rgba(124,58,237,0.28)" : "none"
+      boxShadow: dirty ? `0 8px 20px rgba(${T.accentRgb},0.28)` : "none"
     }}
   >{saving ? "Saving…" : dirty ? "Save look" : "No changes"}</button></div>
 
@@ -546,7 +546,7 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
        Three answers, not a yes/no: save them, throw them away, or go back
        — said in an app sheet, not the browser's confirm(). */
     leaving ? <div onClick={() => setLeaving(false)} style={{
-      position: "absolute", inset: 0, zIndex: 30, background: "rgba(21,19,42,0.4)", display: "flex", alignItems: "flex-end"
+      position: "absolute", inset: 0, zIndex: 30, background: `rgba(${T.inkRgb},0.4)`, display: "flex", alignItems: "flex-end"
     }}><div role="dialog" aria-label="Unsaved changes" onClick={(e) => e.stopPropagation()} style={{
       width: "100%", background: T.bg, borderRadius: "24px 24px 0 0", padding: "18px 18px calc(18px + env(safe-area-inset-bottom, 0px))"
     }}><div style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>You have unsaved changes</div><div style={{
@@ -575,12 +575,12 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
     /><div style={{
       position: "fixed", left: 12, right: 12, bottom: "calc(14px + env(safe-area-inset-bottom, 0px))", zIndex: 400,
       display: "flex", alignItems: "center", gap: 10, padding: "10px 10px 10px 16px", borderRadius: 18,
-      background: "rgba(21,19,42,0.92)", color: "#fff", boxShadow: "0 10px 30px rgba(0,0,0,0.3)"
+      background: `rgba(${T.inkRgb},0.92)`, color: "#fff", boxShadow: "0 10px 30px rgba(0,0,0,0.3)"
     }}><span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700 }}>Preview — not saved yet</span><button
       onClick={() => setFullPage(false)}
       style={{
         display: "inline-flex", alignItems: "center", gap: 6, height: 38, padding: "0 14px", borderRadius: 12, border: "none",
-        background: "#fff", color: T.ink, fontSize: 12.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer"
+        background: T.surface, color: T.ink, fontSize: 12.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer"
       }}
     ><X21 size={14} />Back to editing</button></div></div> : null
   }</div>;

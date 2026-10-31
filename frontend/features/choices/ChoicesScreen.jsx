@@ -481,7 +481,7 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded, onT
     ? (kind === "income" ? "Total energy created by your work" : "Total energy your work used")
     : (kind === "income" ? "Total energy created" : "Total energy used")}</div><div
     style={{ marginTop: 3 }}
-  ><ChoiceMoney amount={headline} code={ccyCode} size={30} fit color={kind === "income" ? TXN_IN_COLOR : T.ink} /></div>{
+  ><ChoiceMoney amount={headline} code={ccyCode} size={30} fit color={kind === "income" ? T.txnIn : T.ink} /></div>{
     /* Underlined text tabs rather than a filled pill. The pill read as
        the primary action on a screen whose primary action is the grid
        underneath it. */

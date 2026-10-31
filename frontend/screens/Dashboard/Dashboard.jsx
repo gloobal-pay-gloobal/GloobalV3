@@ -252,7 +252,7 @@ function BalanceError({ onRetry }) {
   >Retry</button>}</span>;
 }
 
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "" }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "", themeKey = "day", onPickTheme }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -2394,7 +2394,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onClick={async () => {
       const next = shareRole === "user" ? "merchant" : "user";
       setShareRole(next);
-      showToast2(next === "merchant" ? "Switched to Creator profile" : "Switched to Personal profile");
+      // No toast: the flip card (App.jsx, SideFlipCard) names the side
+      // now, in that side's own ink, and the app behind it has changed
+      // colour. Two announcements of one switch is one too many.
       if (next !== "merchant") return;
       // ── THE FIRST FLIP ASKS FOR A NAME ────────────────────────────
       //
@@ -2431,7 +2433,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      boxShadow: shareRole === "merchant" ? "0 6px 16px rgba(124,58,237,0.3)" : T.shadowCard,
+      boxShadow: shareRole === "merchant" ? `0 6px 16px rgba(${T.accentRgb},0.3)` : T.shadowCard,
       flexShrink: 0
     }}
   ><RefreshCw3 size={17} color={shareRole === "merchant" ? "#fff" : T.accent} /></button>}</div>}<PullToRefresh
@@ -2519,7 +2521,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        instead of the card itself being overflow:hidden — that
        was clipping the edge-straddling flag/name badges below,
        cutting them in half. */
-  }<div style={{ position: "absolute", inset: 0, borderRadius: T.radiusXl, overflow: "hidden", pointerEvents: "none" }}><div
+  }<div style={{ position: "absolute", inset: 0, borderRadius: T.radiusXl, overflow: "hidden", pointerEvents: "none" }}>{
+    /* The side's own weave: a fine diagonal texture on the Creator
+       side, a soft light on the Personal side (T.cardTexture). One more
+       thing that says which side this is before a word is read. */
+  }<div aria-hidden="true" data-card-texture={T.side} style={{ position: "absolute", inset: 0, background: T.cardTexture }} /><div
     style={{
       position: "absolute",
       top: -60,
@@ -2707,7 +2713,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     ><SyncedFlipIcon Icon={Icon} size={44} flipInfo={buttonFlips[key]} frontBackground={`${actionColor}22`} {...(actionTileIconMotion(key) ? { iconClassName: actionTileIconMotion(key).className, iconStyle: actionTileIconMotion(key).style } : {})} /><ActionTileSweep tileKey={key} color={actionColor} />{(key === "send" || key === "receive") && <span style={{ position: "absolute", top: 6, right: 6, zIndex: 2 }}><GH2HFlipCircle size={22} /></span>}{
       /* Direction dot, tucked under the GH2H mark: red on Send, green on
          Receive. Same two colours as every amount in the app (see
-         TXN_IN_COLOR / TXN_OUT_COLOR), so the tile you tap and the figure
+         T.txnIn / T.txnOut), so the tile you tap and the figure
          that lands in your history agree on what "out" and "in" look like
          before you have read a single word.
          `right: 12` centres a 10px dot under the 22px mark above it: the
@@ -2725,7 +2731,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         width: 10,
         height: 10,
         borderRadius: "50%",
-        background: key === "send" ? TXN_OUT_COLOR : TXN_IN_COLOR,
+        background: key === "send" ? T.txnOut : T.txnIn,
         boxShadow: `0 0 0 2px ${T.surface}`,
         zIndex: 2
       }}
@@ -2804,7 +2810,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     }{rows.map((t, i) => <TransactionRow
       key={t.txnId || `${t.name}-${t.date}-${i}`}
       t={t}
-      color={recentActivityTab === "receiving" ? TXN_IN_COLOR : TXN_OUT_COLOR}
+      color={recentActivityTab === "receiving" ? T.txnIn : T.txnOut}
       sign={recentActivityTab === "receiving" ? "+" : "\u2212"}
       ccy={ccy}
       ccyCode={ccyCode}
@@ -2847,7 +2853,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       onClick={openGloobalBankInfo}
       aria-label={bankLocked ? "Gloobal Bank \u2014 locked" : "Gloobal Bank"}
       className="v2-tap"
-      style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", borderRadius: T.radiusLg, background: T.gradButton, boxShadow: "0 14px 30px rgba(76,29,149,0.28)", padding: "18px 18px 17px", color: "#fff" }}
+      style={{ width: "100%", textAlign: "left", border: "none", cursor: "pointer", borderRadius: T.radiusLg, background: T.gradButton, boxShadow: `0 14px 30px rgba(${T.accentDeepRgb},0.28)`, padding: "18px 18px 17px", color: "#fff" }}
     ><span style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 44, height: 44, borderRadius: 14, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><img src={G_LOGO_DATA_URI} alt="" style={{ width: 26, height: 26, objectFit: "contain", filter: "brightness(0) invert(1)" }} /></span><span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 800, letterSpacing: -0.2, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" Bank" /></span><ChevronRight4 size={17} color="rgba(255,255,255,0.8)" /></span><span style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)", lineHeight: 1.45 }}>
       Your balance, your transfers, and the account everything else here unlocks from.
     </span></button>;
@@ -2992,7 +2998,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       inset: 0,
       borderRadius: "50%",
       backfaceVisibility: "hidden",
-      boxShadow: "0 6px 18px rgba(76,29,149,0.22)",
+      boxShadow: `0 6px 18px rgba(${T.accentDeepRgb},0.22)`,
       // The photo is cropped to the circle by this, not by the img.
       overflow: "hidden",
       display: "flex",
@@ -3029,7 +3035,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       backfaceVisibility: "hidden",
       transform: "rotateY(180deg)",
       background: ghLogoColor,
-      boxShadow: "0 6px 18px rgba(76,29,149,0.22)",
+      boxShadow: `0 6px 18px rgba(${T.accentDeepRgb},0.22)`,
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -3232,7 +3238,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     /* Referral — moved here from the overview card. Tapping
        the row opens the Referral Network screen; tapping the
        share icon on the right opens Share directly instead. */
-  }<div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}><button
+  }<AppearanceRow current={themeKey} onOpen={() => setProfileOverlay("appearance")} /><div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}><button
     onClick={() => setProfileOverlay("referral")}
     className="v2-row"
     style={{
@@ -3600,7 +3606,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       style={{
         display: "flex", alignItems: "center", gap: 13, width: "100%", textAlign: "left",
         background: T.surface, borderRadius: 17, padding: "11px 13px", marginBottom: 14,
-        border: `1.5px solid ${T.accent}`, boxShadow: "0 4px 14px rgba(124,58,237,0.16)",
+        border: `1.5px solid ${T.accent}`, boxShadow: `0 4px 14px rgba(${T.accentRgb},0.16)`,
         cursor: "pointer", fontFamily: "inherit"
       }}
     ><BusinessMark name={creatorHit.handle || ""} logo={creatorHit.logo} size={46} radius={14} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
@@ -3730,7 +3736,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       setPayTargetOptionsOpen(true);
     }}
     className="v2-tap"
-    style={{ width: "100%", border: "none", borderRadius: T.radiusMd, padding: "15px 0", color: "#fff", fontSize: 14, fontWeight: 800, background: T.gradButton, boxShadow: "0 8px 20px rgba(124,58,237,0.32)", cursor: "pointer" }}
+    style={{ width: "100%", border: "none", borderRadius: T.radiusMd, padding: "15px 0", color: "#fff", fontSize: 14, fontWeight: 800, background: T.gradButton, boxShadow: `0 8px 20px rgba(${T.accentRgb},0.32)`, cursor: "pointer" }}
   >
               Pay
             </button></div></div>}<PayOptionsSheet
@@ -3871,7 +3877,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
             </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden", padding: "6px 16px 10px" }}>{receivedRows.slice(0, 5).map((t, i) => <TransactionRow
     key={t.txnId || `${t.name}-${t.date}-${i}`}
     t={t}
-    color={TXN_IN_COLOR}
+    color={T.txnIn}
     sign="+"
     ccy={ccy}
     ccyCode={ccyCode}
@@ -3941,7 +3947,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onClick={() => setShowMyShareBiometric(true)}
     disabled={myShareSaving}
     className="v2-tap"
-    style={{ width: "100%", border: "none", borderRadius: T.radiusMd, padding: "16px 0", color: "#fff", fontSize: 14.5, fontWeight: 800, background: T.gradButton, boxShadow: "0 8px 20px rgba(124,58,237,0.32)", cursor: myShareSaving ? "default" : "pointer", opacity: myShareSaving ? 0.65 : 1 }}
+    style={{ width: "100%", border: "none", borderRadius: T.radiusMd, padding: "16px 0", color: "#fff", fontSize: 14.5, fontWeight: 800, background: T.gradButton, boxShadow: `0 8px 20px rgba(${T.accentRgb},0.32)`, cursor: myShareSaving ? "default" : "pointer", opacity: myShareSaving ? 0.65 : 1 }}
   >{myShareSaving ? "Saving…" : "Update"}</button></div></div>}{
     /* Applying a newly-chosen My Share rate — same mandatory Face ID +
        fingerprint screen used for PIN-follow-up everywhere else. */
@@ -4459,7 +4465,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       onOpenBank();
     }}
     className="v2-tap"
-    style={{ border: "none", borderRadius: T.radiusMd, padding: "14px 0", color: "#fff", fontSize: 13.5, fontWeight: 800, background: T.gradButton, boxShadow: "0 8px 20px rgba(124,58,237,0.32)", cursor: "pointer" }}
+    style={{ border: "none", borderRadius: T.radiusMd, padding: "14px 0", color: "#fff", fontSize: 13.5, fontWeight: 800, background: T.gradButton, boxShadow: `0 8px 20px rgba(${T.accentRgb},0.32)`, cursor: "pointer" }}
   >
                   Open Add Bank
                 </button></div>}{profileDetail === "History" && <TransactionHistoryScreen
@@ -4538,7 +4544,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       borderRadius: 999,
       fontSize: 12.5,
       fontWeight: 700,
-      boxShadow: "0 10px 24px rgba(20,18,43,0.3)",
+      boxShadow: `0 10px 24px rgba(${T.inkRgb},0.3)`,
       whiteSpace: "nowrap"
     }}
   >{toast}</div>}</div>}{profileOverlay === "share" && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}><SendMoneyAmbientBg /></div><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}><NavBackButton onClick={requestCloseProfileOverlay} style={{ flexShrink: 0  }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Share your <GloobalWordmark suffix=" ID" /></span></div>{
@@ -4575,7 +4581,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       boxShadow: T.shadowCard,
       padding: 22
     }}
-  ><div style={{ position: "absolute", top: 22, left: 22 }}><FlagEmoji flag={dialCountry.flag} width={60} height={44} radius={9} dropShadow="drop-shadow(0 4px 10px rgba(76,29,149,0.20))" /></div><span
+  ><div style={{ position: "absolute", top: 22, left: 22 }}><FlagEmoji flag={dialCountry.flag} width={60} height={44} radius={9} dropShadow={`drop-shadow(0 4px 10px rgba(${T.accentDeepRgb},0.20))`} /></div><span
     style={{
       position: "absolute",
       top: 22,
@@ -4588,7 +4594,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       alignItems: "center",
       justifyContent: "center",
       background: profilePhoto === G_LOGO_DATA_URI ? ghLogoColor : "none",
-      boxShadow: "0 4px 10px rgba(76,29,149,0.16)",
+      boxShadow: `0 4px 10px rgba(${T.accentDeepRgb},0.16)`,
       flexShrink: 0
     }}
   ><img
@@ -4649,7 +4655,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       whiteSpace: "nowrap",
       boxShadow: T.shadowFloat
     }}
-  >{toast}</div>}</div>}{profileOverlay === "referral" && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}><SendMoneyAmbientBg /></div><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileOverlay} /></div><div style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
+  >{toast}</div>}</div>}{profileOverlay === "appearance" && <AppearanceScreen current={themeKey} onPick={(key) => { if (onPickTheme) onPickTheme(key); }} onBack={requestCloseProfileOverlay} />}{profileOverlay === "referral" && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden" }}><SendMoneyAmbientBg /></div><div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseProfileOverlay} /></div><div style={{ position: "relative", zIndex: 1, flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
     /* Earnings summary */
   }<div style={{ position: "relative", background: T.gradWallet, borderRadius: T.radiusLg, padding: "22px 22px 52px", display: "flex", flexDirection: "column", gap: 4, boxShadow: T.shadowRaised }}><span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.7)", letterSpacing: 0.3, textTransform: "uppercase" }}>
                 By <SingleOMark before="N" after="W" /></span><span style={{ fontSize: 30, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, whiteSpace: "nowrap" }}>{geuLensBarMoney(referralAllTime, ccyCode, displayLens, ccyCode)}</span>{invitedBy ? <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>You were invited by {invitedBy}</span> : null}<div style={{ display: "flex", flexWrap: "wrap", gap: "10px 18px", marginTop: 10 }}><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Invited</div></div><div><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{referralNetwork.filter((m) => m.status === "Active").length}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>Active</div></div>{[["level2", "Level 2"], ["level3", "Level 3"]].map(([k, label]) => <div key={k}><div style={{ fontSize: 17, fontWeight: 800, color: "#fff" }}>{(referralSummary && referralSummary.network && referralSummary.network[k]) || 0}</div><div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>{label}</div></div>)}</div><button
@@ -4691,7 +4697,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       [2, "People they invited", net.level2 || 0],
       [3, "One level further", net.level3 || 0]
     ];
-    const tint = ["#7C3AED", "#2563EB", "#059669"];
+    const tint = [T.accent, "#2563EB", "#059669"];
     return <div data-testid="referral-levels" style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 16px 6px", flexShrink: 0 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft, marginBottom: 6 }}>You earn from three levels</div>{levels.map(([lvl, label, count], i) => <div key={lvl} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}><span style={{ width: 34, height: 34, borderRadius: 11, flexShrink: 0, background: `${tint[i]}1A`, color: tint[i], display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, fontFamily: T.fontDisplay }}>{lvl}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>{label}</span><span style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 1 }}>{`${count} ${count === 1 ? "person" : "people"} · ${(rates[i] * 100).toLocaleString("en", { maximumFractionDigits: 2 })}% of their Creator Share`}</span></span><span style={{ flexShrink: 0, fontSize: 13, fontWeight: 800, color: Number(byLevel[lvl]) > 0 ? T.positive : T.inkFaint, whiteSpace: "nowrap" }}><GeuFigure amount={Number(byLevel[lvl]) || 0} currency={ccyCode} lens={displayLens} size={13} /></span></div>)}</div>;
   })()}{
     /* Settle — moves the real referral total into the real
@@ -4714,7 +4720,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       fontSize: 13.5,
       fontWeight: 800,
       cursor: totalReferralEarned > 0 ? "pointer" : "not-allowed",
-      boxShadow: totalReferralEarned > 0 ? "0 8px 20px rgba(124,58,237,0.3)" : "none"
+      boxShadow: totalReferralEarned > 0 ? `0 8px 20px rgba(${T.accentRgb},0.3)` : "none"
     }}
   ><Landmark5 size={16} />
               Settle <GeuFigure amount={totalReferralEarned} currency={ccyCode} lens={displayLens} size={13.5} /> to <GloobalWordmark /> Bank
@@ -4723,7 +4729,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   }<button
     onClick={() => setShowHowItWorks(true)}
     className="v2-tap"
-    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: "none", background: T.gradButton, borderRadius: T.radiusMd, padding: "14px 0", color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer", boxShadow: "0 8px 20px rgba(124,58,237,0.32)" }}
+    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: "none", background: T.gradButton, borderRadius: T.radiusMd, padding: "14px 0", color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer", boxShadow: `0 8px 20px rgba(${T.accentRgb},0.32)` }}
   ><Info size={16} color="#fff" />
               How your network works
             </button>{
@@ -4921,7 +4927,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       height: "100%",
       borderRadius: "50%",
       background: "radial-gradient(circle, #fff 0%, rgba(255,255,255,0) 100%), conic-gradient(from 90deg, #FF0000 0deg, #FFFF00 60deg, #00FF00 120deg, #00FFFF 180deg, #0000FF 240deg, #FF00FF 300deg, #FF0000 360deg)",
-      boxShadow: "inset 0 0 0 1px rgba(21,19,42,0.1)"
+      boxShadow: `inset 0 0 0 1px rgba(${T.inkRgb},0.1)`
     }}
   /></button>}</div>}{
     /* Scrollable content */
@@ -5187,7 +5193,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         position: "absolute",
         inset: 0,
         zIndex: 60,
-        background: "rgba(20,18,43,0.38)",
+        background: `rgba(${T.inkRgb},0.38)`,
         opacity: open ? 1 : 0,
         pointerEvents: open ? "auto" : "none",
         transition: "opacity 0.25s ease"
@@ -5659,7 +5665,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
                   </div></div></div></div><button
     onClick={requestCloseHowItWorks}
     className="v2-tap"
-    style={{ border: "none", background: T.gradButton, borderRadius: T.radiusMd, padding: "13px 0", color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer", boxShadow: "0 8px 20px rgba(124,58,237,0.32)" }}
+    style={{ border: "none", background: T.gradButton, borderRadius: T.radiusMd, padding: "13px 0", color: "#fff", fontSize: 13.5, fontWeight: 800, cursor: "pointer", boxShadow: `0 8px 20px rgba(${T.accentRgb},0.32)` }}
   >
               Got it
             </button></div></div>}{

@@ -196,7 +196,7 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, theme, onAdd, onR
       style={{ border: "none", background: "none", padding: 0, cursor: "pointer", flexShrink: 0, position: "relative" }}
     ><img src={item.photo} alt="" style={{ ...thumb, objectFit: "cover", display: "block" }} />{shots.length > 1 ? <span style={{
       position: "absolute", right: 4, bottom: 4, minWidth: 16, height: 16, padding: "0 4px",
-      borderRadius: 8, background: "rgba(21,19,42,0.66)", color: "#fff",
+      borderRadius: 8, background: `rgba(${T.inkRgb},0.66)`, color: "#fff",
       fontSize: 9, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center"
     }}>{shots.length}</span> : null}</button>
     : <span style={{
@@ -331,7 +331,7 @@ function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, on
     }}>{businessMarkInitials(item.title)}</span>}{
     shots.length > 1 ? <span style={{
       position: "absolute", left: 6, bottom: 6, minWidth: 18, height: 18, padding: "0 5px",
-      borderRadius: 9, background: "rgba(21,19,42,0.66)", color: "#fff",
+      borderRadius: 9, background: `rgba(${T.inkRgb},0.66)`, color: "#fff",
       fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center"
     }}>{shots.length}</span> : null
   }{item.soldOut
@@ -361,12 +361,12 @@ function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, on
       }}>{qty}</span><button
         onClick={onAdd}
         aria-label={`One more ${item.title}`}
-        style={{ width: 26, height: 26, borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", ...shopButtonStyle(theme), ...(theme.buttons === "outline" ? { background: "#fff" } : {}) }}
+        style={{ width: 26, height: 26, borderRadius: "50%", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", ...shopButtonStyle(theme), ...(theme.buttons === "outline" ? { background: T.surface } : {}) }}
       ><Plus7 size={13} /></button></span>
       : <button
         onClick={onAdd}
         aria-label={`Add ${item.title}`}
-        style={ctl({ right: 6, bottom: 6, width: 32, height: 32, borderRadius: "50%", ...shopButtonStyle(theme), ...(theme.buttons === "filled" ? {} : { background: "#fff" }) })}
+        style={ctl({ right: 6, bottom: 6, width: 32, height: 32, borderRadius: "50%", ...shopButtonStyle(theme), ...(theme.buttons === "filled" ? {} : { background: T.surface }) })}
       ><Plus7 size={16} /></button>)}</div><span style={{
     display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
     fontSize: 13, fontWeight: 700, color: theme.ink, lineHeight: 1.3, marginTop: 8, overflowWrap: "anywhere"
@@ -578,7 +578,7 @@ function CreatorPage({
     }}
   /> : null}<span style={{
     position: "absolute", inset: 0,
-    background: `linear-gradient(180deg, rgba(21,19,42,${coverKind === "photo" ? "0.10" : "0"}) 0 30%, transparent 55%, ${theme.page} 100%)`
+    background: `linear-gradient(180deg, rgba(${T.inkRgb},${coverKind === "photo" ? "0.10" : "0"}) 0 30%, transparent 55%, ${theme.page} 100%)`
   }} /></div> : null}{
     /* ── THE SHOP'S OWN CARD ──────────────────────────────────────────
        Mark beside name on a card in the shop's colour — the same shape as
@@ -1002,7 +1002,7 @@ function CreatorPage({
   </div>
 
   {draft && <div style={{
-    position: "absolute", inset: 0, zIndex: 5, background: "rgba(21,19,42,0.35)",
+    position: "absolute", inset: 0, zIndex: 5, background: `rgba(${T.inkRgb},0.35)`,
     display: "flex", alignItems: "flex-end"
   }} onClick={() => setDraft(null)}><div
     onClick={(e) => e.stopPropagation()}

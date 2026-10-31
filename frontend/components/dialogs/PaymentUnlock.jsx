@@ -36,7 +36,7 @@ var PAYMENT_UNLOCK_CLEAR_AT = 0.5;
 var PAYMENT_UNLOCK_FOIL_SYMBOLS = ["−", "+", "×", "=", "○", "□", "●", "■"];
 // The two heads the card wears, and they are the receipt's own: violet while
 // the share is still a question, green once it is money.
-var PAYMENT_UNLOCK_HEAD_OUT = "linear-gradient(135deg,#312E81 0%,#4F46E5 55%,#7C3AED 100%)";
+var PAYMENT_UNLOCK_HEAD_OUT = `linear-gradient(135deg,#312E81 0%,#4F46E5 55%,${T.accent} 100%)`;
 var PAYMENT_UNLOCK_HEAD_IN = "linear-gradient(135deg,#064E3B 0%,#047857 55%,#0FA372 100%)";
 
 // ── THE FIGURE, AT TWO SIZES ────────────────────────────────────────────
@@ -152,7 +152,7 @@ function paymentUnlockPaintFoil(ctx, w, h, random = Math.random) {
   const g = ctx.createLinearGradient(0, 0, w, h);
   g.addColorStop(0, "#312E81");
   g.addColorStop(0.55, "#4F46E5");
-  g.addColorStop(1, "#7C3AED");
+  g.addColorStop(1, T.accent);
   ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);

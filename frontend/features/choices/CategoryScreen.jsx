@@ -479,14 +479,14 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
     code={row.currency || code}
     size={15}
     fit
-    color={row.direction === "received" ? TXN_IN_COLOR : TXN_OUT_COLOR}
+    color={row.direction === "received" ? T.txnIn : T.txnOut}
     sign={row.direction === "received" ? "+" : "−"}
   /></div>)}</div>)}</div>{
     /* The button says the category's own name, verbatim — "Pay for Baby
        care", not "Pay for Baby". choicesPayLabel is the only place that
        sentence is built. */
   }<div
-    style={{ flexShrink: 0, background: T.surface, padding: "12px 16px calc(14px + env(safe-area-inset-bottom, 0px))", boxShadow: "0 -4px 16px rgba(21,19,42,0.07)" }}
+    style={{ flexShrink: 0, background: T.surface, padding: "12px 16px calc(14px + env(safe-area-inset-bottom, 0px))", boxShadow: `0 -4px 16px rgba(${T.inkRgb},0.07)` }}
   ><button
     onClick={() => onPay && onPay(category, null)}
     className="v2-tap"

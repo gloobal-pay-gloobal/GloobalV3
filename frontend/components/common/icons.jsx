@@ -64,15 +64,15 @@ function SendIcon({ size = 20 }) {
   return <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M22 2L11 13" strokeLinecap="round" strokeLinejoin="round" /><path d="M22 2l-7 20-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function HomeTabIcon({ active }) {
-  const c = active ? "#7c3aed" : "#9a94ad";
+  const c = active ? T.accent : T.inkFaint;
   return <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke={c} strokeWidth="2"><path d="M4 11.5L12 4l8 7.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M6 10v9a1 1 0 001 1h4v-6h2v6h4a1 1 0 001-1v-9" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function ProfileTabIcon({ active }) {
-  const c = active ? "#7c3aed" : "#9a94ad";
+  const c = active ? T.accent : T.inkFaint;
   return <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke={c} strokeWidth="2"><circle cx="12" cy="8" r="4" /><path d="M4 20c1.6-3.8 5-5.5 8-5.5s6.4 1.7 8 5.5" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function AccountsTabIcon({ active }) {
-  const c = active ? "#7c3aed" : "#9a94ad";
+  const c = active ? T.accent : T.inkFaint;
   return <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke={c} strokeWidth="2"><rect x="3" y="6" width="18" height="13" rx="2.5" /><path d="M3 10.5h18" strokeLinecap="round" /><path d="M7 15h4" strokeLinecap="round" /></svg>;
 }
 // My Choices. A luggage tag rather than a folder or a pie slice: the
@@ -80,14 +80,14 @@ function AccountsTabIcon({ active }) {
 // divide a total up. Drawn in the same 24-box, 2-weight, two-colour idiom
 // as the three tabs beside it so the row reads as one set.
 function ChoicesTabIcon({ active }) {
-  const c = active ? "#7c3aed" : "#9a94ad";
+  const c = active ? T.accent : T.inkFaint;
   return <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke={c} strokeWidth="2"><path d="M12.6 3.5H19a1.5 1.5 0 011.5 1.5v6.4a2 2 0 01-.6 1.4l-7 7a2 2 0 01-2.8 0l-5.9-5.9a2 2 0 010-2.8l7-7a2 2 0 011.4-.6z" strokeLinecap="round" strokeLinejoin="round" /><circle cx="16" cy="8" r="1.6" /></svg>;
 }
 function LogoutIcon() {
-  return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#e14848" strokeWidth="2"><path d="M9 21H5a1 1 0 01-1-1V4a1 1 0 011-1h4" strokeLinecap="round" strokeLinejoin="round" /><path d="M16 17l5-5-5-5M21 12H9" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke={T.negative} strokeWidth="2"><path d="M9 21H5a1 1 0 01-1-1V4a1 1 0 011-1h4" strokeLinecap="round" strokeLinejoin="round" /><path d="M16 17l5-5-5-5M21 12H9" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function ChevronRightIcon() {
-  return <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#c3bfe0" strokeWidth="2.4"><path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke={T.inkFaint} strokeWidth="2.4"><path d="M9 6l6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function MaskEyeIcon({ open, color }) {
   return open ? <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke={color} strokeWidth="2.2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" strokeLinecap="round" strokeLinejoin="round" /><circle cx="12" cy="12" r="3" /></svg> : <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke={color} strokeWidth="2.2"><path

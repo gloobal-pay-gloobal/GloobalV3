@@ -53,8 +53,8 @@ function ProfileAvatar({ photo, name, size = 56, ring }) {
       boxSizing: "border-box",
       background: showPhoto ? T.surface : T.gradWallet || T.accent,
       boxShadow: ringColor
-        ? `0 0 0 2px ${ringColor}, 0 4px 10px rgba(76,29,149,0.16)`
-        : "0 4px 10px rgba(76,29,149,0.16)"
+        ? `0 0 0 2px ${ringColor}, 0 4px 10px rgba(${T.accentDeepRgb},0.16)`
+        : `0 4px 10px rgba(${T.accentDeepRgb},0.16)`
     }}
   >{showPhoto
     ? <img

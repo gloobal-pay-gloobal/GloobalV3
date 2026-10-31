@@ -345,7 +345,7 @@ function CreatorSetupScreen({
   // three things to fill in rather than one long form.
   const section = (title, Icon, children, aside) => <section style={{
     background: T.surface, borderRadius: 22, padding: "16px 16px 18px", marginTop: 14,
-    boxShadow: "0 1px 2px rgba(21,19,42,0.04), 0 6px 18px rgba(21,19,42,0.05)"
+    boxShadow: `0 1px 2px rgba(${T.inkRgb},0.04), 0 6px 18px rgba(${T.inkRgb},0.05)`
   }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>{Icon ? <span style={{
     width: 22, height: 22, borderRadius: 7, background: T.accentSoft,
     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
@@ -456,7 +456,7 @@ function CreatorSetupScreen({
     aria-hidden="true"
     style={{
       position: "absolute", right: -7, bottom: -7, width: 26, height: 26, borderRadius: "50%",
-      background: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+      background: T.surface, boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
       display: "flex", alignItems: "center", justifyContent: "center"
     }}
   ><Camera6 size={12} color={look.hero.from} /></span></button><input
@@ -717,7 +717,7 @@ function CreatorSetupScreen({
   }{kbField ? null : <div style={{
     flexShrink: 0, display: "flex", alignItems: "center", gap: 10,
     padding: "10px 16px calc(12px + env(safe-area-inset-bottom, 0px))",
-    background: T.surface, boxShadow: "0 -6px 20px rgba(20,18,43,0.06)"
+    background: T.surface, boxShadow: `0 -6px 20px rgba(${T.inkRgb},0.06)`
   }}>{
     /* One line, always. A render on a 390px phone had "Save my creator
        name" folding onto two lines beside "Set this up later"; the
@@ -780,7 +780,7 @@ function CreatorSetupScreen({
       fontFamily: "inherit",
       whiteSpace: "nowrap",
       cursor: canSave ? "pointer" : "default",
-      boxShadow: canSave ? "0 8px 20px rgba(124,58,237,0.28)" : "none"
+      boxShadow: canSave ? `0 8px 20px rgba(${T.accentRgb},0.28)` : "none"
     }}
   >{saving ? <Loader5 size={17} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check9 size={18} strokeWidth={2.8} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{saving ? "Saving…" : "Save my name"}</span></button></div>}{
     /* ── MORE FONTS ───────────────────────────────────────────────────
@@ -789,7 +789,7 @@ function CreatorSetupScreen({
   }{fontsOpen ? <div
     onClick={() => setFontsOpen(false)}
     style={{
-      position: "absolute", inset: 0, zIndex: 5, background: "rgba(21,19,42,0.38)",
+      position: "absolute", inset: 0, zIndex: 5, background: `rgba(${T.inkRgb},0.38)`,
       display: "flex", alignItems: "flex-end"
     }}
   ><div
@@ -986,7 +986,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
   }<div style={{
     borderRadius: 24,
     background: T.gradButton,
-    boxShadow: "0 10px 26px rgba(124,58,237,0.30)",
+    boxShadow: `0 10px 26px rgba(${T.accentRgb},0.30)`,
     padding: "20px 18px 18px"
   }}><div style={{ display: "flex", alignItems: "center", gap: 14 }}><span style={{
     position: "relative", flexShrink: 0, display: "inline-flex"
@@ -1012,7 +1012,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
     position: "absolute", right: -3, bottom: -3, width: 16, height: 16, borderRadius: "50%",
     background: done ? T.positive : T.inkFaint,
     border: "3px solid #FFFFFF",
-    boxShadow: "0 1px 3px rgba(20,18,43,0.25)"
+    boxShadow: `0 1px 3px rgba(${T.inkRgb},0.25)`
   }} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{
     display: "block", fontSize: 21, fontWeight: 800, color: "#FFFFFF",
     fontFamily: T.fontDisplay, lineHeight: 1.2, overflowWrap: "anywhere"
@@ -1159,7 +1159,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
       fontSize: 13.5,
       fontWeight: 800,
       background: T.gradButton,
-      boxShadow: "0 8px 20px rgba(124,58,237,0.32)",
+      boxShadow: `0 8px 20px rgba(${T.accentRgb},0.32)`,
       cursor: "pointer"
     }}
   >Set up my creator name</button>}</div>;

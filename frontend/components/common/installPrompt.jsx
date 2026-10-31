@@ -238,7 +238,7 @@ function InstallBanner() {
       position: "relative",
       borderRadius: T.radiusLg,
       background: T.accentSoft,
-      border: "1px solid rgba(124,58,237,0.16)",
+      border: `1px solid rgba(${T.accentRgb},0.16)`,
       padding: "14px 15px",
       display: "flex",
       flexDirection: "column",
@@ -259,7 +259,7 @@ function InstallBanner() {
     onClick={install.dismiss}
     aria-label="Not now"
     className="v2-tap"
-    style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(124,58,237,0.10)", color: T.accent, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 0 }}
+    style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: `rgba(${T.accentRgb},0.10)`, color: T.accent, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 0 }}
   ><X11 size={14} /></button></div>{ios ? <InstallIosSteps /> : elsewhere ? null : <button
     onClick={async () => {
       if (busy) return;

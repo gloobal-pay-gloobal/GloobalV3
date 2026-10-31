@@ -304,7 +304,7 @@ function ShopPhotoViewer({ item, start = 0, shopName = "", shopSymbolId = "", cc
     minWidth: 0, color: "#fff", fontSize: 15, fontWeight: 800,
     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
   }}>{item.title}</span>{item.price != null ? <span style={{
-    flexShrink: 0, background: "#fff", borderRadius: 999, padding: "4px 10px"
+    flexShrink: 0, background: T.surface, borderRadius: 999, padding: "4px 10px"
   }}><GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} size={12} /></span> : null}</div>{
     shots.length > 1 ? <div style={{ display: "flex", gap: 8, overflowX: "auto", maxWidth: "100%", padding: "2px" }}>{shots.map((src, i) => <button
       key={i}

@@ -21,7 +21,7 @@ import {
 // Creator Share credited — is green. The figure sits on the gradient in
 // white rather than in T.negative/T.positive, so the direction is carried by
 // the whole head of the document instead of by the colour of six characters.
-var RECEIPT_HERO_OUT = "linear-gradient(135deg,#312E81 0%,#4F46E5 55%,#7C3AED 100%)";
+var RECEIPT_HERO_OUT = `linear-gradient(135deg,#312E81 0%,#4F46E5 55%,${T.accent} 100%)`;
 var RECEIPT_HERO_IN = "linear-gradient(135deg,#064E3B 0%,#047857 55%,#0FA372 100%)";
 
 // The perforation between the head and the rows.
@@ -110,7 +110,7 @@ function ReceiptIconAction({ icon, label, onClick, solid, disabled, testId, busy
     boxSizing: "border-box",
     border: solid ? "none" : `1px solid ${T.line}`,
     background: solid ? T.gradButton : T.surface,
-    boxShadow: solid ? "0 8px 20px -10px rgba(76,29,149,0.8)" : T.shadowCard
+    boxShadow: solid ? `0 8px 20px -10px rgba(${T.accentDeepRgb},0.8)` : T.shadowCard
   }}>{icon}</span><span style={{
     maxWidth: "100%",
     fontSize: 11,
@@ -1080,7 +1080,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        toggle: a lone tab is not a toggle, it is a button that does nothing.
        Everything else gets Payment and — when the payment really carried a
        share — Creator Share. */
-  }{showReceiptTabs ? <div style={{ display: "flex", flex: 1, gap: 4, padding: 3, borderRadius: 999, background: T.surfaceAlt, boxShadow: "inset 0 1px 2px rgba(76,29,149,0.06)" }}><ReceiptTabButton
+  }{showReceiptTabs ? <div style={{ display: "flex", flex: 1, gap: 4, padding: 3, borderRadius: 999, background: T.surfaceAlt, boxShadow: `inset 0 1px 2px rgba(${T.accentDeepRgb},0.06)` }}><ReceiptTabButton
     label={tabLabel(leadingTab)}
     active={leadingTab === "share" ? onShareTab : !onShareTab}
     onSelect={() => setReceiptTab(leadingTab)}
@@ -1579,7 +1579,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       alignItems: "center",
       justifyContent: "center",
       gap: 8,
-      boxShadow: "0 12px 26px -16px rgba(76,29,149,0.9)"
+      boxShadow: `0 12px 26px -16px rgba(${T.accentDeepRgb},0.9)`
     }}
   ><Eye size={17} aria-hidden="true" />Reveal my share</button>}{
     /* What the document is signed with.

@@ -428,7 +428,7 @@ function LaunchSplash({ onFinish }) {
       background: T.gradWallet,
       color: "#fff",
       padding: "18px 20px 34px",
-      boxShadow: "0 18px 40px rgba(76,29,149,0.28)",
+      boxShadow: `0 18px 40px rgba(${T.accentDeepRgb},0.28)`,
       transform: "rotate(-3.5deg)",
       animation: "splashCardIn 640ms cubic-bezier(.2,.7,.3,1) both",
       display: "flex",
@@ -512,7 +512,7 @@ function LaunchSplash({ onFinish }) {
       background: T.surface,
       border: `1px solid ${T.line}`,
       padding: "18px 20px",
-      boxShadow: "0 16px 34px rgba(76,29,149,0.16)",
+      boxShadow: `0 16px 34px rgba(${T.accentDeepRgb},0.16)`,
       transform: "rotate(2.5deg)",
       animation: "splashCardIn 640ms cubic-bezier(.2,.7,.3,1) 130ms both",
       display: "flex",
@@ -547,7 +547,7 @@ function LaunchSplash({ onFinish }) {
     }}
   ><GloobalTaglineCard accentColor={T.accent} /></div></div>{
     /* The promise, and the countdown.
-       Pay red, receive green — TXN_OUT_COLOR and TXN_IN_COLOR, the exact
+       Pay red, receive green — T.txnOut and T.txnIn, the exact
        two colours every amount in the app is printed in. Money leaving is
        red and money arriving is green on every history row and every
        receipt, so the first screen a person sees teaches the colour code
@@ -574,7 +574,7 @@ function LaunchSplash({ onFinish }) {
     }}
   ><div style={{ textAlign: "center", lineHeight: 1.35 }}><div
     style={{ fontSize: 26, fontWeight: 800, fontFamily: T.fontDisplay, letterSpacing: -0.3 }}
-  ><span style={{ color: TXN_OUT_COLOR }}>Pay</span><span style={{ color: T.ink }}> and </span><span style={{ color: TXN_IN_COLOR }}>receive</span></div><div
+  ><span style={{ color: T.txnOut }}>Pay</span><span style={{ color: T.ink }}> and </span><span style={{ color: T.txnIn }}>receive</span></div><div
     style={{ fontSize: 15.5, fontWeight: 700, color: T.inkSoft, marginTop: 6 }}
   >anywhere on Earth</div></div><div
     style={{ width: 104, height: 3, borderRadius: 999, background: T.surfaceSunk, overflow: "hidden" }}

@@ -840,7 +840,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        once a country is picked below it flips to that country's
        flag at the full size of this same smooth-edged rectangle.
        Tapping the big flag flips back. */
-  }<div className="mt-1 px-5"><div ref={heroRef} className="relative rounded-3xl overflow-hidden" style={{ height: 200, background: "#FFFFFF", border: `1px solid ${C.line}` }}>{flipped ? <button
+  }<div className="mt-1 px-5"><div ref={heroRef} className="relative rounded-3xl overflow-hidden" style={{ height: 200, background: T.surface, border: `1px solid ${C.line}` }}>{flipped ? <button
     onClick={() => setFlipped(false)}
     aria-label={`${country.name} \u2014 tap to go back to the flag wall`}
     className="coverage-detail-overlay absolute inset-0"
@@ -855,7 +855,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   }<div
     aria-hidden="true"
     className="absolute inset-0 pointer-events-none"
-    style={{ background: "radial-gradient(60% 60% at 50% 40%, rgba(124,58,237,0.08) 0%, rgba(124,58,237,0) 70%)" }}
+    style={{ background: `radial-gradient(60% 60% at 50% 40%, rgba(${T.accentRgb},0.08) 0%, rgba(${T.accentRgb},0) 70%)` }}
   /><FlagFlowBox key={country.code} opacityBoost={2.4} onlyFlag={country.flag} varied />{
     /* One constant anchor at the center — the country's flag
        held still in a circle, sized at 30% of the box,
@@ -867,7 +867,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   }<div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 2 }}><FlagSignShape sign="circle" flag={country.flag} box={Math.round(heroW * 0.3)} /></div></button> : <><div
     aria-hidden="true"
     className="absolute inset-0 pointer-events-none"
-    style={{ background: "radial-gradient(60% 60% at 50% 40%, rgba(124,58,237,0.08) 0%, rgba(124,58,237,0) 70%)" }}
+    style={{ background: `radial-gradient(60% 60% at 50% 40%, rgba(${T.accentRgb},0.08) 0%, rgba(${T.accentRgb},0) 70%)` }}
   />{
     /* Dense flow, and now the one and only country list — no
        separate flag grid below anymore. Each flowing flag is
@@ -899,7 +899,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   }<button
     onClick={() => setShowSpendingBreakdown(true)}
     className="flex items-center justify-between rounded-2xl px-4 py-4"
-    style={{ background: "#FFFFFF", border: `1px solid ${C.line}`, cursor: "pointer", width: "100%", textAlign: "left" }}
+    style={{ background: T.surface, border: `1px solid ${C.line}`, cursor: "pointer", width: "100%", textAlign: "left" }}
   ><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><TrendingUp3 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Total spending</span></div>{displaySpend != null ? <span className="flex items-center gap-2"><FlipSymbolCircle size={20} />{
     /* The unit, restored. This figure used to render as a bare
        "8.1K" — the currency symbol was computed and then
@@ -924,7 +924,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        across accounts (see BACKEND_CONTRACT.md). */
   }<div
     className="flex items-center justify-between rounded-2xl px-4 py-4"
-    style={{ background: "#FFFFFF", border: `1px solid ${C.line}`, width: "100%", gap: 12 }}
+    style={{ background: T.surface, border: `1px solid ${C.line}`, width: "100%", gap: 12 }}
   ><div className="flex items-center gap-3" style={{ minWidth: 0 }}><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft, flexShrink: 0 }}><Activity size={16} style={{ color: C.accent }} /></div><span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span className="text-sm font-semibold" style={{ color: C.ink }}>Our spending</span>{
     /* What the number MEANS, said on the row rather than left to be
        inferred from two words. It is the one line on this screen that
@@ -965,10 +965,10 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   }<button
     onClick={() => setShowHoomanProjects(true)}
     className="flex items-center justify-between rounded-2xl px-4 py-4"
-    style={{ background: "#FFFFFF", border: `1px solid ${C.line}`, cursor: "pointer", width: "100%", textAlign: "left" }}
+    style={{ background: T.surface, border: `1px solid ${C.line}`, cursor: "pointer", width: "100%", textAlign: "left" }}
   ><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><Building22 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>
                   H<SingleOMark before="" after="" /><SingleOMark before="" after="" />man Projects
-                </span></div><ChevronRight5 size={16} style={{ color: C.inkSoft }} /></button><div className="flex items-center justify-between rounded-2xl px-4 py-4" style={{ background: "#FFFFFF", border: `1px solid ${C.line}` }}><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><Zap5 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Transactions / day</span></div>{
+                </span></div><ChevronRight5 size={16} style={{ color: C.inkSoft }} /></button><div className="flex items-center justify-between rounded-2xl px-4 py-4" style={{ background: T.surface, border: `1px solid ${C.line}` }}><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><Zap5 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Transactions / day</span></div>{
     /* Server-counted, over the current UTC calendar day.
        This used to be "/ hour", counted here in the browser by
        re-parsing each row's DISPLAY strings — `new Date("Sep 5"
@@ -980,7 +980,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        is now platform-wide and comes from the same aggregation
        as everything else on this screen; the UTC convention is
        the server's and is named in its response. */
-  }<span className="mono font-bold text-base" style={{ color: C.accent }}>{coverage ? flipped ? countryStatus ? countryStatus.transactionsToday ?? 0 : 0 : coverage.transactionsPerDay : <span style={{ color: deltaColor, transition: "color 0.4s ease" }} aria-label="No data">∆</span>}</span></div><div className="flex items-center justify-between rounded-2xl px-4 py-4" style={{ background: "#FFFFFF", border: `1px solid ${C.line}` }}><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><Users24 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Total users</span></div><span className="mono font-bold text-base" style={{ color: C.accent }}>{displayUserCount}</span></div>{
+  }<span className="mono font-bold text-base" style={{ color: C.accent }}>{coverage ? flipped ? countryStatus ? countryStatus.transactionsToday ?? 0 : 0 : coverage.transactionsPerDay : <span style={{ color: deltaColor, transition: "color 0.4s ease" }} aria-label="No data">∆</span>}</span></div><div className="flex items-center justify-between rounded-2xl px-4 py-4" style={{ background: T.surface, border: `1px solid ${C.line}` }}><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><Users24 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Total users</span></div><span className="mono font-bold text-base" style={{ color: C.accent }}>{displayUserCount}</span></div>{
     /* Creator Share — same My Share overview reached from the
        Receive screen elsewhere in the app, just a second
        entry point into it from here. */
@@ -988,7 +988,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     onClick={onOpenMyShare}
     aria-label="Creator Share — My Share overview"
     className="flex items-center justify-between rounded-2xl px-4 py-4"
-    style={{ background: "#FFFFFF", border: `1px solid ${C.line}`, cursor: "pointer", width: "100%", textAlign: "left" }}
+    style={{ background: T.surface, border: `1px solid ${C.line}`, cursor: "pointer", width: "100%", textAlign: "left" }}
   ><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><PieChart2 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Creator Share</span></div><ChevronRight5 size={17} style={{ color: C.inkSoft }} /></button>}{
     /* The caption had to change with the number. It said
        "from YOUR Send Money history", which was an accurate
@@ -1004,7 +1004,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     onClick={() => setShowAllCountries(true)}
     aria-label={`See all countries \u2014 ${unlockedCount} unlocked`}
     className="w-full flex items-center justify-center gap-4 rounded-2xl px-4 py-3.5"
-    style={{ background: C.surface, border: `1px solid ${C.line}`, boxShadow: "0 2px 10px rgba(20,18,43,0.05)", cursor: "pointer" }}
+    style={{ background: C.surface, border: `1px solid ${C.line}`, boxShadow: `0 2px 10px rgba(${T.inkRgb},0.05)`, cursor: "pointer" }}
   ><span className="flex items-center gap-1.5"><Globe23 size={14} style={{ color: C.accent }} /><span className="mono text-[12.5px] font-semibold" style={{ color: C.ink }}>{unlockedCount}</span></span><ChevronRight5 size={15} style={{ color: C.inkFaint }} /></button></div>{
     /* The whole country list — every country, live and coming soon,
        opened from the totals button. Tapping a row selects it and

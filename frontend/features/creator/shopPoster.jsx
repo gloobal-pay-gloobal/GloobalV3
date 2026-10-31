@@ -127,7 +127,7 @@ async function shopPosterCanvas({ creator, gloobalId, qrStyle = "classic" }) {
   const qx = (W - qrSize) / 2;
   const qy = 650;
   ctx.save();
-  ctx.shadowColor = "rgba(20,18,43,0.16)";
+  ctx.shadowColor = `rgba(${T.inkRgb},0.16)`;
   ctx.shadowBlur = 40;
   ctx.shadowOffsetY = 12;
   shopPosterRoundRect(ctx, qx - 40, qy - 40, qrSize + 80, qrSize + 80, 48);
@@ -155,7 +155,7 @@ async function shopPosterCanvas({ creator, gloobalId, qrStyle = "classic" }) {
   ctx.fillStyle = "#4B4762";
   ctx.font = "600 30px Inter, system-ui, sans-serif";
   ctx.fillText("Open the GLOOBAL app, tap Scan, and point it here.", W / 2, 1668);
-  ctx.fillStyle = "#15132A";
+  ctx.fillStyle = T.ink;
   ctx.font = "800 34px 'Space Grotesk', system-ui, sans-serif";
   ctx.fillText("GLOOBAL बाज़ार", W / 2, 1718);
 
@@ -275,7 +275,7 @@ function ShopPosterSheet({ creator, gloobalId, qrStyle, onClose, onToast }) {
       display: "flex", alignItems: "center", justifyContent: "center", gap: 7, fontFamily: "inherit",
       fontSize: 13, fontWeight: 800, opacity: !canvas || (busy && busy !== key) ? 0.55 : 1,
       background: primary ? T.gradButton : T.surface, color: primary ? "#fff" : T.ink,
-      boxShadow: primary ? "0 8px 20px rgba(124,58,237,0.28)" : T.shadowCard
+      boxShadow: primary ? `0 8px 20px rgba(${T.accentRgb},0.28)` : T.shadowCard
     }}
   ><Icon size={16} />{busy === key ? "…" : label}</button>;
 
@@ -288,7 +288,7 @@ function ShopPosterSheet({ creator, gloobalId, qrStyle, onClose, onToast }) {
   }}>Poster for your counter</span></div><div style={{
     flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 18px 16px", display: "flex", flexDirection: "column", alignItems: "center"
   }}>{preview
-    ? <img src={preview} alt="Your poster" style={{ width: "100%", maxWidth: 360, borderRadius: 10, boxShadow: "0 12px 32px rgba(20,18,43,0.18)", display: "block" }} />
+    ? <img src={preview} alt="Your poster" style={{ width: "100%", maxWidth: 360, borderRadius: 10, boxShadow: `0 12px 32px rgba(${T.inkRgb},0.18)`, display: "block" }} />
     : <div style={{ width: "100%", maxWidth: 360, aspectRatio: "210 / 297", borderRadius: 10, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", color: T.inkFaint, fontSize: 13 }}>Drawing your poster…</div>}<p style={{
     fontSize: 12, color: T.inkSoft, lineHeight: 1.5, textAlign: "center", maxWidth: 340, margin: "14px 0 0"
   }}>A4, in your shop's colour and font. Print it at any print shop and put it where people pay — the code scans from about a metre away.</p></div><div style={{

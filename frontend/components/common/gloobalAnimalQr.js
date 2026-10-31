@@ -146,7 +146,7 @@ var GLOOBAL_QR_ANIMALS = [
   {
     key: "rabbit",
     label: "Rabbit",
-    color: "#7C3AED",
+    color: T.accent,
     x: 11,
     y: 6,
     rows: [

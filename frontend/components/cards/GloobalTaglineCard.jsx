@@ -60,7 +60,7 @@ function GloobalIamInButton({ interested, busy, onClick }) {
       color: interested ? T.positive : "#fff",
       fontSize: 14,
       fontWeight: 800,
-      boxShadow: interested ? "none" : "0 10px 24px rgba(124,58,237,0.3)",
+      boxShadow: interested ? "none" : `0 10px 24px rgba(${T.accentRgb},0.3)`,
       display: "flex",
       alignItems: "center",
       justifyContent: "center",

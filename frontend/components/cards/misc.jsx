@@ -58,8 +58,8 @@ function ProfileToggle({ on, onToggle, label }) {
       width: 20,
       height: 20,
       borderRadius: "50%",
-      background: "#fff",
-      boxShadow: "0 1px 4px rgba(20,18,43,0.25)",
+      background: T.surface,
+      boxShadow: `0 1px 4px rgba(${T.inkRgb},0.25)`,
       transition: "left 0.18s ease"
     }}
   /></button>;

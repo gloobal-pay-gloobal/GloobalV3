@@ -5,7 +5,7 @@ import { Utensils as EssUtensils, Droplet as EssDroplet, Home as EssHome, Sparkl
 var ESSENTIALS_COMPONENT_META = [
   { key: "food", label: "Food", icon: EssUtensils, color: "#F59E0B" },
   { key: "water", label: "Water", icon: EssDroplet, color: "#3B82F6" },
-  { key: "shelter", label: "Shelter", icon: EssHome, color: "#7C3AED" },
+  { key: "shelter", label: "Shelter", icon: EssHome, color: T.accent },
   { key: "creativity", label: "Creativity", icon: EssSparkles, color: "#EC4899" }
 ];
 

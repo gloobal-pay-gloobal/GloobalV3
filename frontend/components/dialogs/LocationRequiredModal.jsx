@@ -94,7 +94,7 @@ function LocationRequiredModal({ open, reason, busy, onRetry, onClose }) {
       color: "#fff",
       cursor: busy ? "default" : "pointer",
       background: busy ? T.gradButtonDisabled : T.gradButton,
-      boxShadow: busy ? "none" : "0 8px 20px rgba(124,58,237,0.32)"
+      boxShadow: busy ? "none" : `0 8px 20px rgba(${T.accentRgb},0.32)`
     }}
   >{busy ? "Checking…" : copy.primary}</button>}<button
     onClick={requestClose}

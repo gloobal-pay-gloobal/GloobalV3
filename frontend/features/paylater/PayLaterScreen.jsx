@@ -51,7 +51,7 @@ function PayLaterScreen({ onClose, ccy, ccyCode = "USD", paylaterAvailable, payl
       fontWeight: 800,
       color: "#fff",
       background: T.gradButton,
-      boxShadow: "0 6px 16px rgba(124,58,237,0.3)",
+      boxShadow: `0 6px 16px rgba(${T.accentRgb},0.3)`,
       cursor: "pointer",
       flexShrink: 0
     }}
@@ -75,7 +75,7 @@ function PayLaterScreen({ onClose, ccy, ccyCode = "USD", paylaterAvailable, payl
       borderRadius: 999,
       fontSize: 12.5,
       fontWeight: 700,
-      boxShadow: "0 10px 24px rgba(20,18,43,0.3)",
+      boxShadow: `0 10px 24px rgba(${T.inkRgb},0.3)`,
       whiteSpace: "nowrap"
     }}
   >{toast}</div>}</div>;

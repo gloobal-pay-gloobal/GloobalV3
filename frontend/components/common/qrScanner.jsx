@@ -280,7 +280,7 @@ function scannerControlStyle(lit) {
     borderRadius: "50%",
     border: lit ? "none" : "1px solid rgba(167,139,250,0.55)",
     background: lit ? "#FFFFFF" : "rgba(10,6,24,0.45)",
-    boxShadow: lit ? "0 6px 18px rgba(0,0,0,0.4)" : "0 0 18px rgba(124,58,237,0.28)",
+    boxShadow: lit ? "0 6px 18px rgba(0,0,0,0.4)" : `0 0 18px rgba(${T.accentRgb},0.28)`,
     backdropFilter: "blur(10px)",
     display: "flex",
     alignItems: "center",
@@ -1319,7 +1319,7 @@ function QrCameraScanner({ onDetected, active = true, paused = false, fullScreen
       aria-pressed={torchOn}
       className="v2-tap"
       style={{ ...scannerControlStyle(torchOn), pointerEvents: "auto" }}
-    >{torchOn ? <FlashlightOff1 size={22} color="#14122B" /> : <Flashlight1 size={22} color="#FFFFFF" />}</button>}</div>}<canvas ref={canvasRef} style={{ display: "none" }} /></>;
+    >{torchOn ? <FlashlightOff1 size={22} color={T.ink} /> : <Flashlight1 size={22} color="#FFFFFF" />}</button>}</div>}<canvas ref={canvasRef} style={{ display: "none" }} /></>;
   }
 
   return <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><div

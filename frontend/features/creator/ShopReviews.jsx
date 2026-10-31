@@ -114,7 +114,7 @@ function ShopReviewsSheet({ creator, theme, name, onClose, onSummary, onToast })
   const card = { background: T.surface, borderRadius: 18, padding: "14px 15px", boxShadow: T.shadowCard, marginBottom: 12 };
 
   return <div style={{
-    position: "absolute", inset: 0, zIndex: 6, background: "rgba(21,19,42,0.38)",
+    position: "absolute", inset: 0, zIndex: 6, background: `rgba(${T.inkRgb},0.38)`,
     display: "flex", alignItems: "flex-end"
   }} onClick={onClose}><div
     role="dialog"

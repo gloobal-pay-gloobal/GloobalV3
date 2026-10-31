@@ -128,7 +128,7 @@ function ShopCoverPicker({ cover, onPick, onMove, onRemove, onError, accent }) {
     aria-label="Remove the cover photo"
     style={{
       position: "absolute", top: 9, right: 9, width: 28, height: 28, borderRadius: "50%",
-      background: "rgba(21,19,42,0.6)", border: "none", cursor: "pointer", color: "#fff",
+      background: `rgba(${T.inkRgb},0.6)`, border: "none", cursor: "pointer", color: "#fff",
       display: "flex", alignItems: "center", justifyContent: "center"
     }}
   ><X13 size={13} /></button> : null}</div>
@@ -179,14 +179,14 @@ function ShopItemPhotos({ photos, onChange, onError, accent }) {
     alt=""
     style={{ width: 74, height: 74, borderRadius: 16, objectFit: "cover", display: "block" }}
   />{i === 0 ? <span style={{
-    position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(21,19,42,0.62)",
+    position: "absolute", left: 0, right: 0, bottom: 0, background: `rgba(${T.inkRgb},0.62)`,
     color: "#fff", fontSize: 8, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase",
     textAlign: "center", padding: "3px 0", borderRadius: "0 0 16px 16px"
   }}>Cover</span> : <button
     onClick={() => onChange([src].concat(list.filter((_, k) => k !== i)))}
     aria-label="Make this the cover"
     style={{
-      position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(21,19,42,0.62)",
+      position: "absolute", left: 0, right: 0, bottom: 0, background: `rgba(${T.inkRgb},0.62)`,
       color: "#fff", fontSize: 8, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase",
       textAlign: "center", padding: "3px 0", borderRadius: "0 0 16px 16px", border: "none", cursor: "pointer"
     }}
@@ -195,7 +195,7 @@ function ShopItemPhotos({ photos, onChange, onError, accent }) {
     aria-label="Remove this photo"
     style={{
       position: "absolute", top: 4, right: 4, width: 19, height: 19, borderRadius: "50%",
-      background: "rgba(21,19,42,0.66)", border: "none", cursor: "pointer", color: "#fff",
+      background: `rgba(${T.inkRgb},0.66)`, border: "none", cursor: "pointer", color: "#fff",
       display: "flex", alignItems: "center", justifyContent: "center"
     }}
   ><X13 size={10} /></button></span>)}{

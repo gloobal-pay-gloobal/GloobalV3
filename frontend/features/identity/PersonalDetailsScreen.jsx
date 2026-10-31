@@ -224,7 +224,7 @@ function PersonalDetailsScreen({
       borderRadius: "50%",
       border: "none",
       background: T.surface,
-      boxShadow: "0 4px 14px rgba(30,20,70,0.18)",
+      boxShadow: `0 4px 14px rgba(${T.inkRgb},0.18)`,
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -269,7 +269,7 @@ function PersonalDetailsScreen({
     /* The ink filter, defined once for every stamp on the page. */
   }<svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true"><defs><filter id="gloobalStampInk"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="4" result="n" /><feDisplacementMap in="SourceGraphic" in2="n" scale="1.5" xChannelSelector="R" yChannelSelector="G" /></filter></defs></svg><div
     data-pd-card
-    style={{ position: "relative", borderRadius: 26, background: T.gradWallet, padding: "18px 18px 16px", color: "#fff", overflow: "hidden", boxShadow: "0 14px 34px rgba(76,29,149,0.28)" }}
+    style={{ position: "relative", borderRadius: 26, background: T.gradWallet, padding: "18px 18px 16px", color: "#fff", overflow: "hidden", boxShadow: `0 14px 34px rgba(${T.accentDeepRgb},0.28)` }}
   ><span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "repeating-radial-gradient(circle at 110% -10%, rgba(255,255,255,0.07) 0 1px, transparent 1px 14px)", pointerEvents: "none" }} /><div
     style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10, fontWeight: 800, letterSpacing: 1.3, textTransform: "uppercase", color: "rgba(255,255,255,0.75)" }}
   ><GloobalWordmark suffix=" ID" /><span>{dialCountry && dialCountry.name}</span></div><div
@@ -292,7 +292,7 @@ function PersonalDetailsScreen({
     style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5, fontFamily: T.fontDisplay, lineHeight: 1.15, overflowWrap: "anywhere" }}
   >{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</div><div
     data-pd-id
-    style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", boxSizing: "border-box", marginTop: 10, background: "#fff", borderRadius: 12, padding: "5px 5px 5px 10px", boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
+    style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", boxSizing: "border-box", marginTop: 10, background: T.surface, borderRadius: 12, padding: "5px 5px 5px 10px", boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
   ><span
     style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, lineHeight: 1.2 }}
   >{gloobalId ? <ColoredGloobalId id={gloobalId} /> : <span style={{ color: T.inkFaint }}>—</span>}</span>{
@@ -358,7 +358,7 @@ function PersonalDetailsScreen({
   >{Array.from({ length: pages }).map((_, i) => <span
     key={i}
     aria-hidden="true"
-    style={{ width: i === at ? 18 : 6, height: 6, borderRadius: 3, background: i === at ? T.accent : "rgba(124,58,237,0.22)", transition: "width 0.2s ease" }}
+    style={{ width: i === at ? 18 : 6, height: 6, borderRadius: 3, background: i === at ? T.accent : `rgba(${T.accentRgb},0.22)`, transition: "width 0.2s ease" }}
   />)}</div>}</div></div>;
 }
 

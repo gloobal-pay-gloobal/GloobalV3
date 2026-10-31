@@ -283,8 +283,8 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
   const isBackShowing = showLogo && logoFlips % 2 === 1;
   return <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, width: "100%", maxWidth: "min(340px, 90vw)", marginLeft: "auto", marginRight: "auto" }}><style>{`
         @keyframes symbolDialShine {
-          0%, 100% { box-shadow: 0 12px 26px rgba(76,29,149,0.16), inset 0 1px 0 rgba(255,255,255,0.8), 0 0 0 2px rgba(124,58,237,0.14); }
-          50% { box-shadow: 0 12px 26px rgba(76,29,149,0.2), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 2px rgba(124,58,237,0.55), 0 0 22px 5px rgba(124,58,237,0.35); }
+          0%, 100% { box-shadow: 0 12px 26px rgba(${T.accentDeepRgb},0.16), inset 0 1px 0 rgba(255,255,255,0.8), 0 0 0 2px rgba(${T.accentRgb},0.14); }
+          50% { box-shadow: 0 12px 26px rgba(${T.accentDeepRgb},0.2), inset 0 1px 0 rgba(255,255,255,0.9), 0 0 0 2px rgba(${T.accentRgb},0.55), 0 0 22px 5px rgba(${T.accentRgb},0.35); }
         }
         .symbol-dial-face { animation: symbolDialShine 3.6s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) {
@@ -308,7 +308,7 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
       boxSizing: "border-box",
       background: i < value.length ? T.accent : "transparent",
       border: "1.5px solid " + (i < value.length ? T.accent : T.line),
-      boxShadow: i < value.length ? "0 2px 6px rgba(124,58,237,0.35)" : "none",
+      boxShadow: i < value.length ? `0 2px 6px rgba(${T.accentRgb},0.35)` : "none",
       transition: "background 0.15s ease, box-shadow 0.15s ease"
     }}
   />)}</div>{(!soundWhileTyping || value.length > 0) && <button
@@ -348,8 +348,8 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
       // and never a red "error" state, because silence is a choice rather
       // than a fault.
       background: soundOn ? T.accentSoft : T.surface,
-      border: `1px solid ${soundOn ? "rgba(124,58,237,0.32)" : T.line}`,
-      boxShadow: soundOn ? "0 2px 8px rgba(124,58,237,0.18)" : "none",
+      border: `1px solid ${soundOn ? `rgba(${T.accentRgb},0.32)` : T.line}`,
+      boxShadow: soundOn ? `0 2px 8px rgba(${T.accentRgb},0.18)` : "none",
       color: soundOn ? T.accent : T.inkFaint,
       transition: "background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease"
     }}
@@ -402,7 +402,7 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
       alignItems: "center",
       justifyContent: "center",
       background: "linear-gradient(160deg, #ffffff 0%, #f5f3fc 100%)",
-      border: "1px solid rgba(124,58,237,0.16)",
+      border: `1px solid rgba(${T.accentRgb},0.16)`,
       backfaceVisibility: "hidden",
       WebkitBackfaceVisibility: "hidden",
       pointerEvents: isBackShowing ? "none" : "auto"
@@ -426,7 +426,7 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
         margin: -buttonSize / 2,
         transform: `rotate(${angle}deg) translate(0, -${radius}px) rotate(${-angle}deg)`,
         borderRadius: "50%",
-        border: "1px solid rgba(124,58,237,0.18)",
+        border: `1px solid rgba(${T.accentRgb},0.18)`,
         background: "linear-gradient(160deg, #ffffff 0%, #f2effb 100%)",
         color: symbolColors[i] || T.ink,
         fontSize: Math.round(21 * DIAL_SCALE),
@@ -435,7 +435,7 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
         alignItems: "center",
         justifyContent: "center",
         cursor: "pointer",
-        boxShadow: "0 6px 12px rgba(76,29,149,0.16), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -3px 5px rgba(124,58,237,0.08)",
+        boxShadow: `0 6px 12px rgba(${T.accentDeepRgb},0.16), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -3px 5px rgba(${T.accentRgb},0.08)`,
         transition: dragRef.current ? "box-shadow 0.15s ease, color 0.4s ease" : "transform 0.1s ease, box-shadow 0.15s ease, color 0.4s ease"
       }}
     >{k}</button>;
@@ -661,13 +661,13 @@ function PhoneDialPad({ value, onChange, minLength = 0, maxLength, onSubmit, mas
           justifyContent: "center",
           cursor: canSubmit ? "pointer" : "not-allowed",
           opacity: (canSubmit || busy || done) ? 1 : 0.6,
-          boxShadow: (canSubmit || busy || done) ? "0 8px 18px rgba(124,58,237,0.32)" : "none",
+          boxShadow: (canSubmit || busy || done) ? `0 8px 18px rgba(${T.accentRgb},0.32)` : "none",
           transition: "opacity 0.15s ease, box-shadow 0.15s ease, background 0.2s ease"
         }}
       >{busy
         ? <span className="dial-in-wait" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>{[0, 1, 2].map((d) => <span
           key={d}
-          style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff", animationDelay: `${d * 160}ms` }}
+          style={{ width: 5, height: 5, borderRadius: "50%", background: T.surface, animationDelay: `${d * 160}ms` }}
         />)}</span>
         : done
           ? <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth="3"><path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" /></svg>

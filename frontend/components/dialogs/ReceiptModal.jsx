@@ -71,6 +71,13 @@ function ReceiptSectionLabel({ children, stamp, stampColor }) {
 // one-word label, because the row has to hold three of them across a phone
 // and "Audit report (PDF)" spelled out took a full-width button of its own.
 function ReceiptIconAction({ icon, label, onClick, solid, disabled, testId, busy, ariaLabel }) {
+  // ── ICON IN THE BOX, NAME UNDER IT ─────────────────────────────────────
+  // The same shape as every other icon tile in the app (IconTile): a
+  // square box with soft corners holds only the icon, and the name sits
+  // outside, underneath. The box is square at any width — up to 56px —
+  // so five or six actions share the row on a 320px phone without the
+  // names pushing the boxes out of shape; a long name wraps to a second
+  // line under its own box instead of widening it.
   return <button
     onClick={onClick}
     disabled={disabled}
@@ -84,19 +91,39 @@ function ReceiptIconAction({ icon, label, onClick, solid, disabled, testId, busy
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      gap: 4,
-      padding: "10px 4px",
-      borderRadius: 18,
-      border: solid ? "none" : `1px solid ${T.line}`,
-      background: solid ? T.gradButton : T.surface,
-      color: solid ? "#fff" : T.inkSoft,
-      fontSize: 10.5,
-      fontWeight: 800,
+      gap: 6,
+      padding: 0,
+      border: "none",
+      background: "none",
+      fontFamily: "inherit",
       cursor: disabled ? "default" : "pointer",
-      opacity: disabled ? 0.55 : 1,
-      boxShadow: solid ? "0 8px 20px -14px rgba(76,29,149,0.9)" : T.shadowCard
+      opacity: disabled ? 0.55 : 1
     }}
-  >{icon}<span>{label}</span></button>;
+  ><span style={{
+    width: "100%",
+    maxWidth: 56,
+    aspectRatio: "1",
+    borderRadius: 18,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxSizing: "border-box",
+    border: solid ? "none" : `1px solid ${T.line}`,
+    background: solid ? T.gradButton : T.surface,
+    boxShadow: solid ? "0 8px 20px -10px rgba(76,29,149,0.8)" : T.shadowCard
+  }}>{icon}</span><span style={{
+    maxWidth: "100%",
+    fontSize: 11,
+    fontWeight: 800,
+    lineHeight: 1.2,
+    textAlign: "center",
+    color: solid ? T.accent : T.inkSoft,
+    overflowWrap: "anywhere",
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden"
+  }}>{label}</span></button>;
 }
 
 // One segment of the Payment / Creator Share toggle.
@@ -851,8 +878,23 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       setTimeout(() => window.dispatchEvent(new CustomEvent("gloobal:payAgain", { detail: payAgainDetail(gloobalId, resolved) })), 0);
     }
   };
+  // ── PAY A SHOP AGAIN ───────────────────────────────────────────────────
+  // A shop is paid at its creator name, and a name, a number and even the
+  // GLOOBAL ID behind it can all change after the receipt was written. So
+  // Pay again on a shop's receipt reads the shop as it is NOW — its current
+  // name, its public number (or the masked account number) and its current
+  // ID — shows that card, and pays the shop through the same Send screen a
+  // shop page uses once the payer agrees.
+  const isCreatorReceipt = Boolean(receipt && receipt.creatorHandle) && !onShareTab;
+  const openSendToCreatorAgain = (creator) => {
+    (onDone || onClose)();
+    if (typeof window !== "undefined") {
+      setTimeout(() => window.dispatchEvent(new CustomEvent("gloobal:payAgainCreator", { detail: { creator } })), 0);
+    }
+  };
   const handlePayAgain = async () => {
     if (!canPayAgain || (payAgainState && payAgainState.status === "checking")) return;
+    if (payAgainState && payAgainState.status === "creator") { setPayAgainState(null); return; }
     setPayAgainState({ status: "checking" });
     try {
       const answer = await GloobalApi.resolveCurrentPayee({
@@ -863,6 +905,27 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       if (!now) {
         setPayAgainState({ status: "gone" });
         return;
+      }
+      if (isCreatorReceipt) {
+        let creator = null;
+        try { creator = await GloobalApi.getCreatorProfile(now); } catch (e) { creator = null; }
+        if (!creator || !creator.handle) {
+          try { creator = await GloobalApi.resolveCreatorHandle(String(receipt.creatorHandle)); } catch (e) { creator = null; }
+        }
+        if (creator && creator.handle) {
+          const contacts = creator.shop && creator.shop.contacts ? creator.shop.contacts : (creator.contacts || {});
+          setPayAgainState({
+            status: "creator",
+            creator,
+            now: creator.symbolId || now,
+            was: receipt.id,
+            oldHandle: String(receipt.creatorHandle || ""),
+            number: contacts.phone || contacts.whatsapp || (answer.user && answer.user.mobileNumber) || ""
+          });
+          return;
+        }
+        // No shop under that account any more: pay the person behind it,
+        // through the ordinary check below.
       }
       if (!answer.changed && now === receipt.id) {
         setPayAgainState(null);
@@ -1341,7 +1404,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     /* Audit, Share, Pay again — three icons rather than three sentences.
        There is no Done: back is the only way out of a document, and a second
        control that does the same thing is a decision nobody asked to make. */
-  }<div style={{ display: "flex", gap: 7, flexShrink: 0 }}><ReceiptIconAction
+  }<div data-receipt-actions="" style={{ display: "flex", alignItems: "flex-start", gap: 8, flexShrink: 0 }}><ReceiptIconAction
     testId="receipt-audit-report"
     icon={<FileText size={20} color={T.accent} />}
     label={auditBusy ? "Preparing…" : "Audit"}
@@ -1417,7 +1480,27 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
        Nothing is drawn while the ID is still theirs — the payment screen is
        already opening, and a panel that flashed "still correct" would make
        the common case feel like an interruption. */
-  }{payAgainState && payAgainState.status === "changed" && <div
+  }{payAgainState && payAgainState.status === "creator" && (() => {
+    const c = payAgainState.creator;
+    const name = creatorDisplayName(c, payAgainState.now);
+    const nameChanged = payAgainState.oldHandle && c.handle && payAgainState.oldHandle !== c.handle;
+    const idChanged = payAgainState.was && payAgainState.now && payAgainState.was !== payAgainState.now;
+    const row = (label, value, testId) => <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 0", borderTop: `1px solid ${T.line}` }}><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, flexShrink: 0 }}>{label}</span><span data-testid={testId} style={{ minWidth: 0, fontSize: 13, fontWeight: 800, color: T.ink, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span></div>;
+    return <div
+      data-testid="receipt-pay-again-creator"
+      style={{ display: "flex", flexDirection: "column", padding: "12px 14px", borderRadius: 18, background: T.surface, boxShadow: T.shadowCard, flexShrink: 0 }}
+    ><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", color: T.inkFaint, marginBottom: 8 }}>Checked just now</div><div style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 10 }}><BusinessMark name={c.handle || name} logo={c.logo} size={46} radius={14} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 15, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: T.fontDisplay }}>{name}</span><span style={{ display: "block", fontSize: 12, fontWeight: 700, color: T.accent, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><CreatorHandleText handle={c.handle} /></span></span></div>{row("Number", payAgainState.number || "Not shared", "receipt-creator-number")}{row(<GloobalWordmark suffix=" ID" />, <ColoredGloobalId id={payAgainState.now} />, "receipt-creator-id")}{(nameChanged || idChanged) && <p style={{ margin: "8px 0 0", fontSize: 11.5, fontWeight: 700, color: "#B45309", lineHeight: 1.45 }}>{nameChanged && idChanged ? "Their name and GLOOBAL ID have changed since this payment." : nameChanged ? `Their name has changed since this payment (was ${payAgainState.oldHandle}).` : "Their GLOOBAL ID has changed since this payment."}</p>}<div style={{ display: "flex", gap: 8, marginTop: 10 }}><button
+      data-testid="receipt-creator-cancel"
+      onClick={() => setPayAgainState(null)}
+      className="v2-tap"
+      style={{ flex: 1, minHeight: 42, borderRadius: 999, border: `1px solid ${T.line}`, background: T.surface, color: T.inkSoft, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+    >Cancel</button><button
+      data-testid="receipt-creator-go"
+      onClick={() => { setPayAgainState(null); openSendToCreatorAgain(c); }}
+      className="v2-tap"
+      style={{ flex: 1.4, minWidth: 0, minHeight: 42, borderRadius: 999, border: "none", background: T.gradButton, color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 12px" }}
+    >{`Pay ${name}`}</button></div></div>;
+  })()  }{payAgainState && payAgainState.status === "changed" && <div
     data-testid="receipt-id-changed"
     style={{ display: "flex", flexDirection: "column", gap: 9, padding: "12px 13px", borderRadius: 12, background: T.surface, border: `1px solid ${T.line}`, flexShrink: 0 }}
   ><p style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 700, lineHeight: 1.45, margin: 0 }}

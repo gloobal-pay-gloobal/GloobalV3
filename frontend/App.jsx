@@ -8,7 +8,9 @@ import {
   Fingerprint as Fingerprint2,
   ImageIcon,
   ArrowUpRight as ArrowUpRight5,
-  Store as Store4
+  Store as Store4,
+  Eye as EyeScan,
+  EyeOff as EyeOffScan
 } from "lucide-react";
 
 
@@ -1135,6 +1137,11 @@ function GloobalId() {
   // it names an account and nothing else — no amount, no name, no session —
   // so the only thing to do with one is confirm who it is and open Send Money.
   const [scanPayee, setScanPayee] = useState19(null);
+  // A shop's scan card shows its name; the eye beside the name reveals the
+  // account details behind it — the GLOOBAL ID and the shop's number.
+  // Hidden again for every new scan.
+  const [scanDetailsShown, setScanDetailsShown] = useState19(false);
+  useEffect15(() => { setScanDetailsShown(false); }, [scanPayee]);
   const [scanError, setScanError] = useState19(null);
   // Set after a lookup failed. The camera stays paused until the person taps
   // the button, because unpausing resets the scanner's dedupe and the same
@@ -1675,6 +1682,37 @@ function GloobalId() {
     window.addEventListener("gloobal:payAgain", onPayAgain);
     return () => window.removeEventListener("gloobal:payAgain", onPayAgain);
   }, [dialCountry]);
+  // A creator on the Send screen, from their own page or from Pay again on
+  // a shop's receipt (which has already read the shop as it is now).
+  const openSendToCreator = (creator, amount) => {
+    if (!creator) return;
+    const iso = String(creator.countryIso || "").toUpperCase();
+    const creatorCountry = COUNTRY_BY_ISO[iso] || dialCountry;
+    setSendPrefillChoiceId(null);
+    setSendPrefillReceiver({
+      country: creatorCountry.name,
+      flag: creatorCountry.flag,
+      iso: creatorCountry.iso,
+      id: creator.symbolId,
+      name: creatorDisplayName(creator),
+      creatorHandle: creator.handle || null,
+      mobileNumber: "",
+      currency: COUNTRY_CURRENCY[creatorCountry.iso] || "USD",
+      registered: true,
+      prefillAmount: Number(amount) > 0 ? String(Number(amount).toFixed(2)) : ""
+    });
+    setActiveScreen("send");
+  };
+  const openSendToCreatorRef = useRef13(openSendToCreator);
+  openSendToCreatorRef.current = openSendToCreator;
+  useEffect15(() => {
+    const onPayAgainCreator = (event) => {
+      const creator = event && event.detail && event.detail.creator;
+      if (creator && creator.symbolId) openSendToCreatorRef.current(creator);
+    };
+    window.addEventListener("gloobal:payAgainCreator", onPayAgainCreator);
+    return () => window.removeEventListener("gloobal:payAgainCreator", onPayAgainCreator);
+  }, []);
   const [showDiagnostics, setShowDiagnostics] = useState19(() => typeof window !== "undefined" && window.location.hash === "#diagnostics");
   useEffect15(() => {
     const onHashChange = () => setShowDiagnostics(window.location.hash === "#diagnostics");
@@ -4437,25 +4475,7 @@ function GloobalId() {
     // The amount is carried as a prefill rather than paid outright,
     // because the founder's rule for this button is that the payer still
     // sees the figure on the Send screen and confirms it there.
-    onPayCreator={({ creator, amount }) => {
-      if (!creator) return;
-      const iso = String(creator.countryIso || "").toUpperCase();
-      const creatorCountry = COUNTRY_BY_ISO[iso] || dialCountry;
-      setSendPrefillChoiceId(null);
-      setSendPrefillReceiver({
-        country: creatorCountry.name,
-        flag: creatorCountry.flag,
-        iso: creatorCountry.iso,
-        id: creator.symbolId,
-        name: creatorDisplayName(creator),
-        creatorHandle: creator.handle || null,
-        mobileNumber: "",
-        currency: COUNTRY_CURRENCY[creatorCountry.iso] || "USD",
-        registered: true,
-        prefillAmount: Number(amount) > 0 ? String(Number(amount).toFixed(2)) : ""
-      });
-      setActiveScreen("send");
-    }}
+    onPayCreator={({ creator, amount }) => openSendToCreator(creator, amount)}
     // The dashboard's quick-pay box: a person it found and checked goes to
     // Send exactly as a scanned QR does — same prefill, same confirm.
     onPayPerson={(payee) => {
@@ -4872,16 +4892,46 @@ function GloobalId() {
     // 6 for everybody again, now that nothing is drawn between the name
     // and the Gloobal ID. It was tightened to 2 to make room for the
     // handle line; left at 2 it would sit the name on top of the ID.
-    marginBottom: 10
-  }}>{
+    marginBottom: 10,
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 8
+  }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{
     scanPayee.creator ? creatorDisplayName(scanPayee.creator) : scanPayee.name
+  }</span>{
+    /* ── THE EYE ─────────────────────────────────────────────────────
+       On a shop's card the name is what you pay; the account behind it
+       — the GLOOBAL ID and the shop's number — is one tap away rather
+       than always on show. */
+    scanPayee.creator ? <button
+      type="button"
+      data-testid="scan-reveal-details"
+      onClick={() => setScanDetailsShown((v) => !v)}
+      aria-pressed={scanDetailsShown}
+      aria-label={scanDetailsShown ? "Hide the shop's details" : "Show the shop's details"}
+      className="v2-tap"
+      style={{
+        width: 32, height: 32, flexShrink: 0, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer",
+        background: scanDetailsShown ? "#FFFFFF" : "rgba(255,255,255,0.18)",
+        color: scanDetailsShown ? scanBackdropFor(scanPayee.gloobalId).from : "#FFFFFF",
+        display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.2s ease"
+      }}
+    >{scanDetailsShown ? <EyeOffScan size={16} /> : <EyeScan size={16} />}</button> : null
   }</div>{
     /* The handle used to go here, under the name. It was the same word
        again — `रसोई Ghar` over `रसोई.ghar` — on the card somebody reads
        in the half-second before they pay, which is the worst screen in
        the app to spend a line on nothing. The Gloobal ID below already
        says this is an account money can reach. */
-  }<div style={{
+  }{(() => {
+    // A person's card always shows the ID. A shop's shows it, with the
+    // shop's number, only when the eye beside the name is open.
+    if (scanPayee.creator && !scanDetailsShown) return <div style={{ height: 8 }} />;
+    const contacts = (scanPayee.creator && ((scanPayee.creator.shop && scanPayee.creator.shop.contacts) || scanPayee.creator.contacts)) || {};
+    const number = scanPayee.creator ? (contacts.phone || contacts.whatsapp || scanPayee.mobileNumber || "") : "";
+    return <>{number ? <div data-testid="scan-shop-number" style={{
+      display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%",
+      background: "rgba(255,255,255,0.18)", color: "#FFFFFF", borderRadius: 999,
+      padding: "6px 14px", marginBottom: 8, fontSize: 13, fontWeight: 800, letterSpacing: 0.3
+    }}>{number}</div> : null}{number ? <br /> : null}<div style={{
     // ── THE ID KEEPS ITS OWN WHITE GROUND ────────────────────────────
     //
     // ColoredGloobalId draws every symbol in a different colour from a
@@ -4894,7 +4944,8 @@ function GloobalId() {
     background: "#FFFFFF", borderRadius: 999,
     padding: "7px 14px", marginBottom: 18,
     fontSize: 13, color: T.inkSoft
-  }}><ColoredGloobalId id={scanPayee.gloobalId} /></div><button
+  }}><ColoredGloobalId id={scanPayee.gloobalId} /></div></>;
+  })()}<button
     onClick={handleSendToScanned}
     className="v2-tap"
     style={{

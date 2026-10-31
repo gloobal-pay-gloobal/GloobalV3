@@ -1,87 +1,208 @@
 // src/components/common/globeIcons.jsx
 //
-// THE COVERAGE GLOBE, DRAWN — A SET THAT FLIPS.
+// THE COVERAGE GLOBE, DRAWN — A SET THAT TURNS.
 //
 // The button that opens Gloobal Coverage used to be a photograph of the
 // Earth (a three.js texture fetched from GitHub on every load) sliding
-// inside a circle. A photo on a phone at 36px is a blurred blue marble,
-// it needs the network before it shows anything, and it ignores the
-// theme. These are drawn: six globes, each a different way of saying
-// "the whole world", all in the active side's own ink, and the button
-// turns over from one to the next every few seconds the way the other
-// living marks in the app do.
+// inside a circle: a blurred blue marble at 36px that needed the network
+// before it showed anything and ignored the theme.
 //
-//   grid      meridians and parallels, the classic wireframe
-//   dots      the world as a field of dots, densest at the middle
-//   orbit     a globe with a ring around it, money going round
-//   pins      a globe with three points lit — people in three places
-//   arcs      two arcs leaving one point and landing on others — a payment
-//   gloobal   the globe with GLOOBAL's own two dots for poles
+// These are drawn, and drawn as a real sphere: every point — coastlines,
+// grid lines, cities, arcs — is a latitude and longitude projected onto a
+// tilted globe each frame (orthographic projection), so the world turns
+// with the far side hidden and the near side brightest, the way a globe
+// does, not a flat map sliding behind a window. Six faces, in the active
+// side's own ink, and the button turns from one to the next.
 //
-// Every globe is one SVG on a 24-unit box, stroke-only so it reads at
-// any size and in any colour; the turning grid inside each one is a CSS
-// animation on the meridians, so the globe spins in place between flips.
+//   earth     the continents, solid
+//   dots      the continents as a field of dots
+//   wire      meridians and parallels, the far ones faint
+//   orbit     the dotted world with a satellite going round it
+//   network   cities lit and a payment arcing between them
+//   gloobal   the grid with GLOOBAL's own red and blue dots for poles
 import { useState as useStateGlobe, useEffect as useEffectGlobe } from "react";
 
-var GLOBE_KINDS = ["grid", "dots", "orbit", "pins", "arcs", "gloobal"];
+var GLOBE_KINDS = ["earth", "dots", "wire", "orbit", "network", "gloobal"];
 
-// The meridians of a turning globe: ellipses whose width breathes from
-// full to zero, offset in phase, so the sphere seems to rotate.
-function GlobeMeridians({ stroke, sw, spin = true, count = 3 }) {
-  return <g>{Array.from({ length: count }, (_, i) => <ellipse
-    key={i}
-    cx="12"
-    cy="12"
-    rx="9"
-    ry="9"
-    fill="none"
-    stroke={stroke}
-    strokeWidth={sw}
-    style={spin ? { transformOrigin: "12px 12px", animation: `gloobalGlobeTurn ${9 * FLIP_SLOW}s linear ${(-i * 9 * FLIP_SLOW) / count}s infinite` } : { transformOrigin: "12px 12px", transform: `scaleX(${[0.32, 0.72, 1][i % 3]})` }}
-  />)}</g>;
-}
-
-function GloobalGlobeGlyph({ kind = "grid", size = 24, color = "#fff", accent = "#FDE68A", spin = true }) {
-  const sw = 1.6;
-  const ring = <circle cx="12" cy="12" r="9" fill="none" stroke={color} strokeWidth={sw} />;
-  let body = null;
-  if (kind === "grid") {
-    body = <>{ring}<GlobeMeridians stroke={color} sw={sw * 0.8} spin={spin} /><path d="M3 12h18M4.6 7.5h14.8M4.6 16.5h14.8" stroke={color} strokeWidth={sw * 0.8} fill="none" strokeLinecap="round" /></>;
-  } else if (kind === "dots") {
-    const pts = [];
-    for (let y = -8; y <= 8; y += 2.6) {
-      const half = Math.sqrt(Math.max(0, 81 - y * y));
-      for (let x = -half + 1.3; x <= half - 1; x += 2.6) pts.push([12 + x, 12 + y, 0.55 + 0.45 * (1 - Math.abs(x) / 9)]);
+// ── THE WORLD, COARSELY ──────────────────────────────────────────────────
+// Land by latitude band: [latitude, [[fromLon, toLon], …]]. Seven and a
+// half degrees a band — rough, but at the size this is drawn a coastline
+// is a handful of pixels and the shapes are still unmistakably the world.
+var GLOBE_LAND_BANDS = [
+  [79, [[-120, -75], [-70, -20], [15, 25], [95, 105]]],
+  [71, [[-165, -140], [-130, -60], [-55, -20], [15, 30], [40, 180]]],
+  [64, [[-165, -140], [-140, -95], [-80, -60], [-50, -40], [-22, -14], [8, 30], [30, 180]]],
+  [56, [[-132, -95], [-78, -60], [-6, 0], [5, 40], [40, 140], [155, 165]]],
+  [49, [[-125, -55], [-5, 40], [40, 140]]],
+  [41, [[-124, -72], [-9, 30], [26, 130], [139, 143]]],
+  [34, [[-118, -78], [-8, 35], [35, 60], [60, 120], [130, 140]]],
+  [26, [[-110, -97], [-82, -80], [-15, 35], [35, 57], [68, 90], [90, 120]]],
+  [19, [[-105, -88], [-85, -75], [-17, 40], [42, 55], [73, 86], [95, 110]]],
+  [11, [[-86, -77], [-15, 45], [76, 80], [98, 108], [120, 125]]],
+  [4, [[-78, -50], [-8, 45], [95, 140]]],
+  [-4, [[-80, -35], [10, 40], [105, 140], [140, 150]]],
+  [-11, [[-77, -37], [13, 40], [130, 142]]],
+  [-19, [[-70, -40], [13, 36], [44, 50], [120, 146]]],
+  [-26, [[-70, -48], [15, 33], [114, 153]]],
+  [-34, [[-72, -55], [18, 26], [116, 150]]],
+  [-41, [[-73, -63], [145, 148], [172, 176]]],
+  [-49, [[-75, -67], [167, 170]]],
+  [-56, [[-70, -66]]],
+  [-64, [[-65, -58]]],
+  [-71, [[-180, 180]]],
+  [-78, [[-180, 180]]]
+];
+// The bands as points, a few degrees apart along each band — computed
+// once, shared by every globe on the page.
+var GLOBE_LAND_POINTS = (function buildLand() {
+  const pts = [];
+  for (const [lat, ranges] of GLOBE_LAND_BANDS) {
+    // Fewer points near the poles, where a degree of longitude is short.
+    const step = 7.5 / Math.max(0.35, Math.cos((lat * Math.PI) / 180));
+    for (const [a, b] of ranges) {
+      for (let lon = a + step / 2; lon <= b; lon += step) pts.push([lat, lon]);
+      if (b - a < step) pts.push([lat, (a + b) / 2]);
     }
-    body = <>{ring}{pts.map(([x, y, r], i) => <circle key={i} cx={x} cy={y} r={r} fill={color} />)}</>;
-  } else if (kind === "orbit") {
-    body = <>{ring}<GlobeMeridians stroke={color} sw={sw * 0.7} spin={spin} count={2} /><path d="M3 12h18" stroke={color} strokeWidth={sw * 0.7} /><ellipse cx="12" cy="12" rx="11.2" ry="3.6" fill="none" stroke={accent} strokeWidth={sw} transform="rotate(-22 12 12)" /><circle cx="21.6" cy="7.6" r="1.6" fill={accent} /></>;
-  } else if (kind === "pins") {
-    body = <>{ring}<GlobeMeridians stroke={color} sw={sw * 0.7} spin={spin} count={2} /><path d="M3 12h18M4.6 7.5h14.8M4.6 16.5h14.8" stroke={color} strokeWidth={sw * 0.6} fill="none" opacity="0.7" />{[[8, 8.4], [15.6, 10.6], [10.4, 15.6]].map(([x, y], i) => <g key={i}><circle cx={x} cy={y} r="2.6" fill={accent} opacity="0.35" /><circle cx={x} cy={y} r="1.5" fill={accent} /></g>)}</>;
-  } else if (kind === "arcs") {
-    body = <>{ring}<GlobeMeridians stroke={color} sw={sw * 0.6} spin={spin} count={2} /><path d="M3 12h18" stroke={color} strokeWidth={sw * 0.6} opacity="0.7" /><path d="M7 15.5C8 9 13 6 17 8.2M7 15.5C10 12 14 13.5 16.2 16.4" stroke={accent} strokeWidth={sw} fill="none" strokeLinecap="round" strokeDasharray="2.2 1.6" style={spin ? { animation: `gloobalGlobeDash ${2.4 * FLIP_SLOW}s linear infinite` } : undefined} /><circle cx="7" cy="15.5" r="1.4" fill={accent} /><circle cx="17" cy="8.2" r="1.15" fill={color} /><circle cx="16.2" cy="16.4" r="1.15" fill={color} /></>;
-  } else {
-    body = <>{ring}<GlobeMeridians stroke={color} sw={sw * 0.75} spin={spin} /><path d="M3 12h18" stroke={color} strokeWidth={sw * 0.75} /><circle cx="12" cy="3" r="2.1" fill="#EF4444" stroke={color} strokeWidth="0.8" /><circle cx="12" cy="21" r="2.1" fill="#3B82F6" stroke={color} strokeWidth="0.8" /></>;
   }
-  return <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block", overflow: "visible" }}>{body}</svg>;
+  return pts;
+})();
+// For the solid Earth: the same land, with every band doubled half a band
+// either side, so the overlapping discs close up into coastlines instead
+// of reading as rows.
+var GLOBE_LAND_SOLID = (function buildSolid() {
+  const pts = [];
+  for (const [lat, ranges] of GLOBE_LAND_BANDS) {
+    for (const dl of [-2.5, 0, 2.5]) {
+      const la = lat + dl;
+      const step = 4 / Math.max(0.35, Math.cos((la * Math.PI) / 180));
+      for (const [a, b] of ranges) for (let lon = a + step / 2; lon <= b; lon += step) pts.push([la, lon]);
+    }
+  }
+  return pts;
+})();
+var GLOBE_CITIES = [[28.6, 77.2], [51.5, -0.1], [40.7, -74.0], [1.35, 103.8], [-33.9, 151.2], [-23.5, -46.6], [25.2, 55.3]];
+
+var GLOBE_TILT = (20 * Math.PI) / 180;
+// Latitude/longitude → the 24-unit box, for a globe of radius 9 centred at
+// 12,12 turned `rot` degrees and tilted toward the viewer. `z` > 0 is the
+// near side.
+function globeProject(lat, lon, rot, radius = 9) {
+  const phi = (lat * Math.PI) / 180;
+  const lam = ((lon + rot) * Math.PI) / 180;
+  const x0 = Math.cos(phi) * Math.sin(lam);
+  const y0 = Math.sin(phi);
+  const z0 = Math.cos(phi) * Math.cos(lam);
+  const y = y0 * Math.cos(GLOBE_TILT) - z0 * Math.sin(GLOBE_TILT);
+  const z = y0 * Math.sin(GLOBE_TILT) + z0 * Math.cos(GLOBE_TILT);
+  return { x: 12 + radius * x0, y: 12 - radius * y, z };
+}
+// A line of points on the sphere as SVG path segments, split into the
+// near part and the far part so the far one can be drawn faint.
+function globeLinePaths(points, rot) {
+  let near = "", far = "", prevSide = null;
+  for (const [lat, lon] of points) {
+    const p = globeProject(lat, lon, rot);
+    const side = p.z >= 0 ? "near" : "far";
+    const cmd = side === prevSide ? "L" : "M";
+    const seg = `${cmd}${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+    if (side === "near") near += seg; else far += seg;
+    prevSide = side;
+  }
+  return { near, far };
+}
+var GLOBE_MERIDIANS = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((lon) => Array.from({ length: 37 }, (_, i) => [-90 + i * 5, lon]));
+var GLOBE_PARALLELS = [-60, -30, 0, 30, 60].map((lat) => Array.from({ length: 73 }, (_, i) => [lat, -180 + i * 5]));
+// A great-circle arc between two cities, lifted off the surface toward its
+// middle so it reads as a flight path rather than a line on the ground.
+function globeArc(a, b, rot, lift = 1.18) {
+  const toV = ([lat, lon]) => { const f = (lat * Math.PI) / 180, l = (lon * Math.PI) / 180; return [Math.cos(f) * Math.cos(l), Math.cos(f) * Math.sin(l), Math.sin(f)]; };
+  const va = toV(a), vb = toV(b);
+  const dot = Math.max(-1, Math.min(1, va[0] * vb[0] + va[1] * vb[1] + va[2] * vb[2]));
+  const om = Math.acos(dot) || 1e-6;
+  let d = "", visible = 0;
+  for (let i = 0; i <= 24; i += 1) {
+    const t = i / 24;
+    const s1 = Math.sin((1 - t) * om) / Math.sin(om), s2 = Math.sin(t * om) / Math.sin(om);
+    const v = [va[0] * s1 + vb[0] * s2, va[1] * s1 + vb[1] * s2, va[2] * s1 + vb[2] * s2];
+    const lat = (Math.asin(v[2]) * 180) / Math.PI, lon = (Math.atan2(v[1], v[0]) * 180) / Math.PI;
+    const r = 9 * (1 + (lift - 1) * Math.sin(Math.PI * t));
+    const p = globeProject(lat, lon, rot, r);
+    if (p.z > -0.15) visible += 1;
+    d += `${i ? "L" : "M"}${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+  }
+  return visible > 12 ? d : "";
 }
 
-// The keyframes, once per page.
-function GloobalGlobeStyle() {
-  return <style>{`
-    @keyframes gloobalGlobeTurn { 0% { transform: scaleX(1); } 25% { transform: scaleX(0.02); } 50% { transform: scaleX(1); } 75% { transform: scaleX(0.02); } 100% { transform: scaleX(1); } }
-    @keyframes gloobalGlobeDash { to { stroke-dashoffset: -7.6; } }
-    @media (prefers-reduced-motion: reduce) { .gloobal-globe * { animation: none !important; } }
-  `}</style>;
+function GloobalGlobeGlyph({ kind = "earth", size = 24, color = "#fff", accent = "#FDE68A", rot = 0, t = 0 }) {
+  const id = `gg-${kind}-${size}`;
+  const disc = <circle cx="12" cy="12" r="9" fill="none" stroke={color} strokeOpacity="0.55" strokeWidth="0.9" />;
+  let body = null;
+  const land = (radius, fn) => GLOBE_LAND_POINTS.map(([lat, lon], i) => { const p = globeProject(lat, lon, rot); return p.z > 0.02 ? fn(p, i, radius) : null; });
+  if (kind === "earth") {
+    // Overlapping discs close up into solid land; nearer is brighter.
+    body = <>{GLOBE_LAND_SOLID.map(([lat, lon], i) => { const p = globeProject(lat, lon, rot); return p.z > 0.02 ? <circle key={i} cx={p.x} cy={p.y} r={0.62 * (0.55 + 0.45 * p.z)} fill={color} fillOpacity={0.5 + 0.5 * p.z} /> : null; })}{disc}</>;
+  } else if (kind === "dots") {
+    body = <>{land(0.5, (p, i) => <circle key={i} cx={p.x} cy={p.y} r={0.52 * (0.5 + 0.5 * p.z)} fill={color} fillOpacity={0.45 + 0.55 * p.z} />)}{disc}</>;
+  } else if (kind === "wire" || kind === "gloobal") {
+    const lines = GLOBE_MERIDIANS.filter((_, i) => kind === "wire" || i % 2 === 0).concat(GLOBE_PARALLELS).map((pts) => globeLinePaths(pts, rot));
+    body = <>{lines.map((l, i) => <g key={i}><path d={l.far} stroke={color} strokeOpacity="0.18" strokeWidth="0.55" fill="none" /><path d={l.near} stroke={color} strokeOpacity="0.9" strokeWidth="0.75" fill="none" strokeLinecap="round" /></g>)}{disc}{kind === "gloobal" ? (() => {
+      const n = globeProject(90, 0, rot), s = globeProject(-90, 0, rot);
+      const eq = globeLinePaths(GLOBE_PARALLELS[2], rot);
+      return <><path d={eq.near} stroke={accent} strokeWidth="1.3" fill="none" strokeLinecap="round" /><circle cx={n.x} cy={n.y} r="2" fill="#EF4444" stroke={color} strokeWidth="0.7" opacity={n.z > 0 ? 1 : 0.5} /><circle cx={s.x} cy={s.y} r="2" fill="#3B82F6" stroke={color} strokeWidth="0.7" opacity={s.z > 0 ? 1 : 0.5} /></>;
+    })() : null}</>;
+  } else if (kind === "orbit") {
+    // The satellite runs round a tilted ring; behind the globe it dims.
+    const a = (t * 360 * 0.35) * Math.PI / 180;
+    const sx = 12 + 11.4 * Math.cos(a), syRaw = 3.4 * Math.sin(a);
+    const rotRing = -22 * Math.PI / 180;
+    const px = 12 + (sx - 12) * Math.cos(rotRing) - syRaw * Math.sin(rotRing);
+    const py = 12 + (sx - 12) * Math.sin(rotRing) + syRaw * Math.cos(rotRing);
+    const behind = Math.sin(a) < 0 && Math.hypot(px - 12, py - 12) < 9;
+    body = <>{land(0.5, (p, i) => <circle key={i} cx={p.x} cy={p.y} r={0.48 * (0.5 + 0.5 * p.z)} fill={color} fillOpacity={0.4 + 0.5 * p.z} />)}{disc}<ellipse cx="12" cy="12" rx="11.4" ry="3.4" fill="none" stroke={accent} strokeWidth="1" strokeOpacity="0.9" transform="rotate(-22 12 12)" /><circle cx={px} cy={py} r="1.5" fill={accent} opacity={behind ? 0.25 : 1} /></>;
+  } else {
+    // network: cities lit, and one payment at a time arcing between two.
+    const pairs = [[0, 1], [0, 3], [2, 1], [0, 6], [3, 4], [5, 2]];
+    const k = Math.floor(t / 2.2) % pairs.length;
+    const phase = (t % 2.2) / 2.2;
+    body = <>{land(0.42, (p, i) => <circle key={i} cx={p.x} cy={p.y} r={0.42 * (0.5 + 0.5 * p.z)} fill={color} fillOpacity={0.3 + 0.35 * p.z} />)}{disc}{GLOBE_CITIES.map(([lat, lon], i) => { const p = globeProject(lat, lon, rot); return p.z > 0 ? <g key={`c${i}`}><circle cx={p.x} cy={p.y} r="1.9" fill={accent} opacity="0.3" /><circle cx={p.x} cy={p.y} r="1" fill={accent} /></g> : null; })}{pairs.map(([a, b], i) => { const d = globeArc(GLOBE_CITIES[a], GLOBE_CITIES[b], rot); return d ? <path key={`a${i}`} d={d} fill="none" stroke={accent} strokeWidth={i === k ? 1.4 : 0.7} strokeOpacity={i === k ? 1 : 0.4} strokeLinecap="round" pathLength="1" strokeDasharray={i === k ? `${Math.min(1, phase * 1.6)} 1` : undefined} /> : null; })}</>;
+  }
+  return <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" style={{ display: "block", overflow: "visible" }}><defs><clipPath id={id}><circle cx="12" cy="12" r="11.9" /></clipPath></defs><g clipPath={kind === "orbit" ? undefined : `url(#${id})`}>{body}</g></svg>;
 }
 
-// The button's face: a disc in the side's own gradient, a globe on it, and
-// a turn to the next globe every few seconds. `kinds` picks which globes
-// are in the set; `interval` is the wait between turns, already slowed by
-// FLIP_SLOW like every other flip in the app.
-// The accent (orbit ring, pins, arcs) is pale gold on cool inks; on an
-// ink that is itself gold, saffron or coral, gold would vanish, so it
-// turns white there.
+// One clock for every globe on the page: the turn of the world (degrees)
+// and seconds elapsed, ~15 frames a second — smooth at this size and a
+// fraction of a percent of a phone's time. Still under reduced motion.
+var GLOBE_CLOCK = { rot: -10, t: 0, listeners: new Set(), timer: null };
+function useGlobeClock(enabled) {
+  const [, tick] = useStateGlobe(0);
+  useEffectGlobe(() => {
+    if (!enabled) return undefined;
+    const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return undefined;
+    const fn = () => tick((n) => n + 1);
+    GLOBE_CLOCK.listeners.add(fn);
+    if (!GLOBE_CLOCK.timer) {
+      const started = Date.now() - GLOBE_CLOCK.t * 1000;
+      GLOBE_CLOCK.timer = setInterval(() => {
+        GLOBE_CLOCK.t = (Date.now() - started) / 1000;
+        // The world swings between the Americas and Asia and back, with
+        // Africa and Europe in the middle — never the empty Pacific, which
+        // at this size is a blank disc. One swing each way per ~40 seconds.
+        GLOBE_CLOCK.rot = -(10 + 95 * Math.sin((2 * Math.PI * GLOBE_CLOCK.t) / (25 * FLIP_SLOW)));
+        GLOBE_CLOCK.listeners.forEach((l) => l());
+      }, 66);
+    }
+    return () => {
+      GLOBE_CLOCK.listeners.delete(fn);
+      if (!GLOBE_CLOCK.listeners.size && GLOBE_CLOCK.timer) { clearInterval(GLOBE_CLOCK.timer); GLOBE_CLOCK.timer = null; }
+    };
+  }, [enabled]);
+  return GLOBE_CLOCK;
+}
+
+// The accent (ring, satellite, cities, arcs, equator) is pale gold on cool
+// inks; on an ink that is itself gold, saffron or coral, gold would vanish,
+// so it turns white there.
 function gloobalGlobeAccentFor(hex) {
   const h = String(hex || "").replace("#", "");
   if (h.length !== 6) return "#FDE68A";
@@ -92,26 +213,30 @@ function gloobalGlobeAccentFor(hex) {
   hue = (hue * 60 + 360) % 360;
   return hue < 60 || hue > 340 ? "#FFFFFF" : "#FDE68A";
 }
-function GloobalGlobeFlip({ size = 36, kinds = GLOBE_KINDS, interval = 4200, background, color = "#fff", accent, spin = true, start = 0 }) {
+
+// The button's face: a lit sphere in the side's own colour with a globe on
+// it, turning, and turning over to the next globe every few seconds.
+function GloobalGlobeFlip({ size = 36, kinds = GLOBE_KINDS, interval = 4200, background, color = "#fff", accent, spin = true, start = 0, rot: fixedRot }) {
   const ringAccent = accent || gloobalGlobeAccentFor(T.accent);
+  const clock = useGlobeClock(spin);
   const [index, setIndex] = useStateGlobe(start % kinds.length);
   const [turning, setTurning] = useStateGlobe(false);
   useEffectGlobe(() => {
     if (!spin || kinds.length < 2) return undefined;
     let swap = null;
-    const t = setInterval(() => {
+    const timer = setInterval(() => {
       setTurning(true);
       swap = setTimeout(() => { setIndex((i) => (i + 1) % kinds.length); setTurning(false); }, 260 * FLIP_SLOW);
     }, interval * FLIP_SLOW);
-    return () => { clearInterval(t); clearTimeout(swap); };
+    return () => { clearInterval(timer); clearTimeout(swap); };
   }, [spin, kinds.length, interval]);
+  const rot = fixedRot != null ? fixedRot : clock.rot;
   return <span className="gloobal-globe" aria-hidden="true" style={{
     width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center",
-    background: background || T.gradButton, position: "relative", overflow: "hidden",
-    boxShadow: "inset -3px -3px 7px rgba(0,0,0,0.25), inset 2px 2px 5px rgba(255,255,255,0.25)"
-  }}><GloobalGlobeStyle /><span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 30% 26%, rgba(255,255,255,0.32), rgba(255,255,255,0) 46%)" }} /><span style={{
+    background: background || T.gradButton, position: "relative", overflow: "hidden"
+  }}><span aria-hidden="true" style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "radial-gradient(circle at 34% 30%, rgba(255,255,255,0.30), rgba(255,255,255,0) 42%), radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 58%, rgba(0,0,0,0.28) 100%)" }} /><span style={{
     position: "relative", display: "flex",
     transform: turning ? "rotateY(90deg) scale(0.86)" : "rotateY(0deg) scale(1)",
     transition: `transform ${0.26 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`
-  }}><GloobalGlobeGlyph kind={kinds[index]} size={Math.round(size * 0.68)} color={color} accent={ringAccent} spin={spin} /></span></span>;
+  }}><GloobalGlobeGlyph kind={kinds[index]} size={Math.round(size * 0.86)} color={color} accent={ringAccent} rot={rot} t={clock.t} /></span></span>;
 }

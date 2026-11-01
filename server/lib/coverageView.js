@@ -213,9 +213,24 @@ async function computeBooks({ now = new Date() } = {}) {
     r.does.balances += Number.isFinite(Number(u.balance)) ? Number(u.balance) : OPENING;
   }
   const seed = CountryCurrencyPool.DEFAULT_POOL_SEED_BALANCE || 5000000;
-  for (const p of await CountryCurrencyPool.find({}, 'localCurrency totalBalance seededAt').lean()) {
+  // A pool's opening float counts only if the pool was actually OPENED.
+  //
+  // This used to add 5,000,000 to "should be here" for every pool row,
+  // and some rows were never given a float: corridors inserted before
+  // loadOrCreate seeded anything sit at 0/0/0 with no seededAt (see
+  // scripts/repair-unseeded-pools.mjs — IN<->US, IN<->BD and IN<->IL on
+  // the live database). Each of those put a full float into "should" and
+  // nothing into "is here", so the screen reported millions "missing" that
+  // never existed. A corridor that was never opened is closed, not short.
+  //
+  // Opened means: stamped seededAt, or (a row older than the stamp) holding
+  // any balance at all. A legacy row at exactly 0/0/0 was never opened.
+  const unopened = [];
+  for (const p of await CountryCurrencyPool.find({}, 'countryIso localCurrency counterCurrency totalBalance availableBalance reservedBalance seededAt').lean()) {
     const r = row(String(p.localCurrency || '').toUpperCase());
-    r.should.pools += seed;
+    const held = (Number(p.totalBalance) || 0) !== 0 || (Number(p.availableBalance) || 0) !== 0 || (Number(p.reservedBalance) || 0) !== 0;
+    if (p.seededAt || held) r.should.pools += seed;
+    else unopened.push({ countryIso: p.countryIso, currency: String(p.localCurrency || '').toUpperCase(), counterCurrency: p.counterCurrency });
     r.does.pools += Number(p.totalBalance) || 0;
   }
   for (const g of await Disbursement.aggregate([{ $group: { _id: { $toUpper: '$currency' }, t: { $sum: '$amount' } } }])) row(g._id).should.payouts += g.t;
@@ -235,7 +250,7 @@ async function computeBooks({ now = new Date() } = {}) {
     for (const k of Object.keys(r.does)) r.does[k] = round2(r.does[k]);
     return { ...r, shouldExist: round2(shouldExist), doesExist: round2(doesExist), difference, ok: Math.abs(difference) < BOOKS_TOLERANCE };
   }).sort((a, b) => b.accounts - a.accounts || a.currency.localeCompare(b.currency));
-  return { checkedAt: now, testMoney: true, currencies, ok: currencies.every((c) => c.ok) };
+  return { checkedAt: now, testMoney: true, currencies, unopened, ok: currencies.every((c) => c.ok) };
 }
 
 // Today's check, stored once per UTC day and refreshed when older than 6 h.
@@ -261,7 +276,7 @@ async function booksIn(books, target, rateTo) {
     for (const k of Object.keys(parts)) parts[k] += (c.does[k] || 0) * rate;
   }
   for (const k of Object.keys(parts)) parts[k] = round2(parts[k]);
-  return { ok: Boolean(books.ok), checkedAt: books.checkedAt, should: round2(should), does: round2(does), difference: round2(does - should), parts, unconvertible: missing, currencies: (books.currencies || []).length, testMoney: true };
+  return { ok: Boolean(books.ok), checkedAt: books.checkedAt, should: round2(should), does: round2(does), difference: round2(does - should), parts, unconvertible: missing, currencies: (books.currencies || []).length, unopened: (books.unopened || []).length, testMoney: true };
 }
 
 // ── The public view ───────────────────────────────────────────────────────

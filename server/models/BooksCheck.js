@@ -29,6 +29,10 @@ const BooksCheckSchema = new mongoose.Schema({
   // Every balance is test money until a bank partner is connected.
   testMoney: { type: Boolean, default: true },
   currencies: { type: [CurrencyRowSchema], default: [] },
+  // Corridor pools that exist as rows but were never given an opening
+  // float (closed corridors). Listed so the check can say they were left
+  // out of "should be here" rather than counted as money gone missing.
+  unopened: { type: [new mongoose.Schema({ countryIso: String, currency: String, counterCurrency: String }, { _id: false })], default: [] },
 });
 
 module.exports = mongoose.model('BooksCheck', BooksCheckSchema);

@@ -154,6 +154,16 @@ async function run() {
   const inr = forced.currencies.find((x) => x.currency === "INR");
   check("money that appears from nowhere is caught", inr && !inr.ok && Math.abs(inr.difference - 777) < 0.05, JSON.stringify(inr && inr.difference));
   await User.updateOne({ symbolId: c.id }, { $inc: { balance: -777 } });
+  // A corridor row that was never given its opening float (0/0/0, no
+  // seededAt — the legacy rows repair-unseeded-pools.mjs exists for) is a
+  // closed corridor, not 5,000,000 gone missing (0193).
+  const Pool = require(join(BACKEND, "models/CountryCurrencyPool"));
+  await Pool.create({ countryIso: "BD", counterCurrency: "INR", localCurrency: "BDT", availableBalance: 0, reservedBalance: 0, totalBalance: 0, seededAt: null });
+  const withUnopened = await require(join(BACKEND, "lib/coverageView")).booksToday({ force: true });
+  const bdt = withUnopened.currencies.find((x) => x.currency === "BDT");
+  check("a never-opened corridor is not counted as missing money", withUnopened.ok === true && bdt && bdt.ok && bdt.shouldExist === 0, JSON.stringify(bdt));
+  check("and it is named as unopened", Array.isArray(withUnopened.unopened) && withUnopened.unopened.some((u) => u.countryIso === "BD" && u.currency === "BDT"), JSON.stringify(withUnopened.unopened));
+  await Pool.deleteOne({ countryIso: "BD", counterCurrency: "INR" });
   await require(join(BACKEND, "lib/coverageView")).booksToday({ force: true });
   const hist = (await call("GET", "/api/coverage/books")).body;
   check("the books history is public", hist.success && hist.history.length === 1 && hist.history[0].ok === true, JSON.stringify(hist).slice(0, 160));

@@ -70,57 +70,71 @@ function gloobalPalette(p) {
 }
 
 // The five themes. Each is { key, name, tagline, personal, creator }.
+//
+// `family` is the theme's own small set of colours (four or five, all
+// hex). The tiles, the flip faces and the profile rows used to pick from
+// one shared rainbow whatever the theme, so Ocean showed pink and violet
+// tiles, Ink showed pastels and Day's shop side mixed mint with gold. They
+// pick from the active palette's family now (randomLogoFlipColor and gloobalFamilyColor in backend/utils/color.js), so every
+// colour on a screen belongs to the theme it is in. Ink's family is greys:
+// on Ink, money (green in, red out) is the only colour left.
 var GLOOBAL_THEMES = {
   day: {
     key: "day", name: "Day", tagline: "White paper. Violet for your own money, amber-gold for the shop.",
     personal: gloobalPalette({ side: "personal",
-      bg: "#F6F5FC", surface: "#FFFFFF", surfaceAlt: "#F3F1FA", surfaceSunk: "#EEEBF9",
+      bg: "#F5F4FB", surface: "#FFFFFF", surfaceAlt: "#F3F1FA", surfaceSunk: "#EEEBF9",
       ink: "#15132A", inkSoft: "#6B6580", inkFaint: "#9C96AF", line: "#EAE6F7",
-      accent: "#7C3AED", accentDeep: "#4C1D95", accent2: "#3B6EF5", accentSoft: "#F1ECFC",
-      gradPrimary: "linear-gradient(135deg,#4338CA 0%,#7C3AED 55%,#C026D3 100%)",
-      gradWallet: "linear-gradient(150deg,#1E1B4B 0%,#3E2E8E 42%,#7C3AED 80%,#C026D3 100%)",
-      gradButton: "linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%)" }),
+      accent: "#6D3AE8", accentDeep: "#3B1F9E", accent2: "#3B6EF5", accentSoft: "#F0EBFE",
+      gradPrimary: "linear-gradient(135deg,#3B2BB8 0%,#6D3AE8 60%,#8F6BFF 100%)",
+      gradWallet: "linear-gradient(150deg,#1E1760 0%,#3B2BB8 42%,#6D3AE8 78%,#9C7BFF 100%)",
+      gradButton: "linear-gradient(135deg,#5B34E0 0%,#7A4DF2 100%)",
+      family: ["#6D3AE8", "#3B6EF5", "#0891B2", "#A855F7", "#DB2777"]}),
     creator: gloobalPalette({ side: "creator",
-      bg: "#FBF8F0", surface: "#FFFFFF", surfaceAlt: "#F7F1E4", surfaceSunk: "#F1E9D8",
-      ink: "#1F1A12", inkSoft: "#746A58", inkFaint: "#A69C88", line: "#F0E8D6",
-      accent: "#C98A08", accentDeep: "#6B4A0B", accent2: "#D7541A", accentSoft: "#FBF1D9",
-      gradPrimary: "linear-gradient(135deg,#8A5F0C 0%,#C98A08 55%,#F0B429 100%)",
-      gradWallet: "linear-gradient(150deg,#2A1F08 0%,#6B4A0B 40%,#C98A08 78%,#F0B429 100%)",
-      gradButton: "linear-gradient(135deg,#B8780A 0%,#E0A020 100%)" })
+      bg: "#FCF8F1", surface: "#FFFFFF", surfaceAlt: "#F7F1E4", surfaceSunk: "#F1E9D8",
+      ink: "#22180C", inkSoft: "#746A58", inkFaint: "#A69C88", line: "#F0E8D6",
+      accent: "#D98A00", accentDeep: "#7A4300", accent2: "#D7541A", accentSoft: "#FDF1DA",
+      gradPrimary: "linear-gradient(135deg,#9A5200 0%,#D98A00 55%,#F4B53A 100%)",
+      gradWallet: "linear-gradient(150deg,#4A1F00 0%,#8F4A00 40%,#D98A00 78%,#F6BE3B 100%)",
+      gradButton: "linear-gradient(135deg,#C97800 0%,#EFA820 100%)",
+      family: ["#D98A00", "#E4572E", "#0F9D8A", "#C2410C", "#B7791F"]})
   },
   night: {
     key: "night", name: "Night", tagline: "Dark for OLED and late hours. Violet for you, stage-light gold for the shop.",
     personal: gloobalPalette({ side: "personal", dark: true,
-      bg: "#0D0B1C", surface: "#171431", surfaceAlt: "#1F1B3D", surfaceSunk: "#120F28",
-      ink: "#F4F2FF", inkSoft: "#B4ADD0", inkFaint: "#7C76A0", line: "#262245",
+      bg: "#0B0A17", surface: "#16142B", surfaceAlt: "#1E1B38", surfaceSunk: "#100E22",
+      ink: "#F4F2FF", inkSoft: "#B4ADD0", inkFaint: "#7C76A0", line: "#2A2648",
       accent: "#A78BFA", accentDeep: "#6D5BF5", accent2: "#60A5FA", accentSoft: "#2A2350",
-      gradPrimary: "linear-gradient(135deg,#4C3BB8 0%,#8B5CF6 55%,#D946EF 100%)",
-      gradWallet: "linear-gradient(150deg,#2B2466 0%,#4C3BB8 45%,#8B5CF6 80%,#D946EF 100%)",
-      gradButton: "linear-gradient(135deg,#6D5BF5 0%,#A855F7 100%)" }),
+      gradPrimary: "linear-gradient(135deg,#3A2A9A 0%,#6D4CF0 60%,#9F7BFF 100%)",
+      gradWallet: "linear-gradient(150deg,#1B1550 0%,#3A2A9A 45%,#6D4CF0 80%,#9F7BFF 100%)",
+      gradButton: "linear-gradient(135deg,#6D4CF0 0%,#9F7BFF 100%)",
+      family: ["#A78BFA", "#60A5FA", "#22D3EE", "#F472B6", "#818CF8"]}),
     creator: gloobalPalette({ side: "creator", dark: true,
-      bg: "#14100A", surface: "#211A10", surfaceAlt: "#2B2214", surfaceSunk: "#1A1409",
-      ink: "#FBF5E8", inkSoft: "#CDB996", inkFaint: "#8E7F63", line: "#352B1B",
-      accent: "#F2B33D", accentDeep: "#C98A08", accent2: "#FB7185", accentSoft: "#3A2C10",
-      gradPrimary: "linear-gradient(135deg,#8A5F0C 0%,#D99A1E 55%,#F6C453 100%)",
-      gradWallet: "linear-gradient(150deg,#3A2A08 0%,#8A5F0C 45%,#D99A1E 80%,#F6C453 100%)",
-      gradButton: "linear-gradient(135deg,#C98A08 0%,#F2B33D 100%)" })
+      bg: "#110D07", surface: "#1D170E", surfaceAlt: "#272012", surfaceSunk: "#1A1409",
+      ink: "#FBF5E8", inkSoft: "#CDB996", inkFaint: "#8E7F63", line: "#3A2F1C",
+      accent: "#F5B83D", accentDeep: "#C98A08", accent2: "#FB7185", accentSoft: "#3A2C10",
+      gradPrimary: "linear-gradient(135deg,#7A4E08 0%,#C98A12 55%,#F5C451 100%)",
+      gradWallet: "linear-gradient(150deg,#3A2405 0%,#7A4E08 45%,#C98A12 80%,#F5C451 100%)",
+      gradButton: "linear-gradient(135deg,#C98A08 0%,#F2B33D 100%)",
+      family: ["#F5B83D", "#FB923C", "#F87171", "#2DD4BF", "#FBBF24"]})
   },
   tiranga: {
     key: "tiranga", name: "Tiranga", tagline: "Cream paper. Saffron for you, chakra blue for the shop — the flag's two inks.",
     personal: gloobalPalette({ side: "personal",
       bg: "#FBF6EE", surface: "#FFFFFF", surfaceAlt: "#F6EEE0", surfaceSunk: "#F0E6D4",
       ink: "#241B12", inkSoft: "#7A6A58", inkFaint: "#A89883", line: "#EFE4D2",
-      accent: "#E2661E", accentDeep: "#9A3E12", accent2: "#0E8A5F", accentSoft: "#FDEBDD",
-      gradPrimary: "linear-gradient(135deg,#9A3E12 0%,#E2661E 55%,#F4A340 100%)",
-      gradWallet: "linear-gradient(150deg,#3B1D0F 0%,#9A3E12 45%,#E2661E 82%,#F4A340 100%)",
-      gradButton: "linear-gradient(135deg,#D7541A 0%,#F08A2E 100%)" }),
+      accent: "#E8701E", accentDeep: "#9A3E12", accent2: "#0E8A5F", accentSoft: "#FDEBDD",
+      gradPrimary: "linear-gradient(135deg,#B8480F 0%,#E8701E 60%,#F6A54A 100%)",
+      gradWallet: "linear-gradient(150deg,#6B2A0A 0%,#B8480F 45%,#E8701E 80%,#F6A54A 100%)",
+      gradButton: "linear-gradient(135deg,#D7541A 0%,#F08A2E 100%)",
+      family: ["#E8701E", "#138A5E", "#1F4FA3", "#F59E0B", "#0E7490"]}),
     creator: gloobalPalette({ side: "creator",
       bg: "#F1F5FA", surface: "#FFFFFF", surfaceAlt: "#E8EEF6", surfaceSunk: "#DFE7F1",
       ink: "#121C2E", inkSoft: "#5A6680", inkFaint: "#8C97AE", line: "#DEE5F0",
       accent: "#1F4FA3", accentDeep: "#15336F", accent2: "#E2661E", accentSoft: "#E3EBF9",
       gradPrimary: "linear-gradient(135deg,#15336F 0%,#1F4FA3 55%,#3C7BE0 100%)",
       gradWallet: "linear-gradient(150deg,#0B1A3A 0%,#15336F 45%,#1F4FA3 82%,#3C7BE0 100%)",
-      gradButton: "linear-gradient(135deg,#1B3F85 0%,#2E63C4 100%)" })
+      gradButton: "linear-gradient(135deg,#1B3F85 0%,#2E63C4 100%)",
+      family: ["#1F4FA3", "#138A5E", "#E8701E", "#3C7BE0", "#0E7490"]})
   },
   ocean: {
     key: "ocean", name: "Ocean", tagline: "Sea-glass paper. Deep teal for your own money, coral for the shop.",
@@ -130,31 +144,35 @@ var GLOOBAL_THEMES = {
       accent: "#0E7C86", accentDeep: "#0B4F5C", accent2: "#2563EB", accentSoft: "#DDF1F3",
       gradPrimary: "linear-gradient(135deg,#0B4F5C 0%,#0E7C86 55%,#2BB5B8 100%)",
       gradWallet: "linear-gradient(150deg,#062A33 0%,#0B4F5C 42%,#0E7C86 80%,#2BB5B8 100%)",
-      gradButton: "linear-gradient(135deg,#0B6670 0%,#15A0A8 100%)" }),
+      gradButton: "linear-gradient(135deg,#0B6670 0%,#15A0A8 100%)",
+      family: ["#0E7C86", "#2563EB", "#0EA5E9", "#14B8A6", "#6366F1"]}),
     creator: gloobalPalette({ side: "creator",
       bg: "#FCF4EE", surface: "#FFFFFF", surfaceAlt: "#F8EBE1", surfaceSunk: "#F3E2D5",
       ink: "#2A1A12", inkSoft: "#7C6558", inkFaint: "#AD988C", line: "#F0E0D4",
       accent: "#E8553F", accentDeep: "#9A2E1C", accent2: "#0E7C86", accentSoft: "#FDE6E0",
       gradPrimary: "linear-gradient(135deg,#9A2E1C 0%,#E8553F 55%,#F7925E 100%)",
       gradWallet: "linear-gradient(150deg,#3D140C 0%,#9A2E1C 42%,#E8553F 80%,#F7925E 100%)",
-      gradButton: "linear-gradient(135deg,#D1432F 0%,#F07A4A 100%)" })
+      gradButton: "linear-gradient(135deg,#D1432F 0%,#F07A4A 100%)",
+      family: ["#E8553F", "#F59E0B", "#0E7C86", "#EC4899", "#F97316"]})
   },
   ink: {
     key: "ink", name: "Ink", tagline: "No colour but money's. Black on white for you; the page turns over for the shop.",
     personal: gloobalPalette({ side: "personal",
-      bg: "#FFFFFF", surface: "#F6F6F6", surfaceAlt: "#EEEEEE", surfaceSunk: "#E6E6E6",
-      ink: "#111111", inkSoft: "#5C5C5C", inkFaint: "#9A9A9A", line: "#E4E4E4",
+      bg: "#F4F4F3", surface: "#FFFFFF", surfaceAlt: "#EDEDEC", surfaceSunk: "#E6E6E6",
+      ink: "#111111", inkSoft: "#5C5C5C", inkFaint: "#9A9A9A", line: "#E3E3E1",
       accent: "#111111", accentDeep: "#000000", accent2: "#444444", accentSoft: "#EAEAEA",
       gradPrimary: "linear-gradient(135deg,#000000 0%,#1A1A1A 55%,#333333 100%)",
       gradWallet: "linear-gradient(150deg,#000000 0%,#1A1A1A 55%,#333333 100%)",
-      gradButton: "linear-gradient(135deg,#000000 0%,#2A2A2A 100%)" }),
+      gradButton: "linear-gradient(135deg,#000000 0%,#2A2A2A 100%)",
+      family: ["#111111", "#3F3F46", "#57534E", "#27272A"]}),
     creator: gloobalPalette({ side: "creator", dark: true,
       bg: "#0A0A0A", surface: "#171717", surfaceAlt: "#222222", surfaceSunk: "#111111",
       ink: "#F5F5F5", inkSoft: "#B3B3B3", inkFaint: "#7A7A7A", line: "#2A2A2A",
       accent: "#F5F5F5", accentDeep: "#BDBDBD", accent2: "#D4D4D4", accentSoft: "#262626",
       gradPrimary: "linear-gradient(135deg,#2E2E2E 0%,#4A4A4A 55%,#6A6A6A 100%)",
       gradWallet: "linear-gradient(150deg,#262626 0%,#3A3A3A 55%,#5C5C5C 100%)",
-      gradButton: "linear-gradient(135deg,#3A3A3A 0%,#5A5A5A 100%)" })
+      gradButton: "linear-gradient(135deg,#3A3A3A 0%,#5A5A5A 100%)",
+      family: ["#F5F5F5", "#D4D4D4", "#A3A3A3", "#E7E5E4"]})
   }
 };
 var GLOOBAL_THEME_ORDER = ["day", "night", "tiranga", "ocean", "ink"];

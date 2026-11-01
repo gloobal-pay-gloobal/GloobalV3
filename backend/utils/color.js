@@ -36,11 +36,26 @@ function hexToHsv(hex) {
   if (h < 0) h += 360;
   return { h, s: max === 0 ? 0 : d / max };
 }
+// The active theme's colour family (see GLOOBAL_THEMES in
+// constants/theme.js), or the shared list when no palette carries one.
+function gloobalFamily() {
+  const fam = typeof GLOOBAL_PALETTE_ACTIVE !== "undefined" && GLOOBAL_PALETTE_ACTIVE && GLOOBAL_PALETTE_ACTIVE.family;
+  return Array.isArray(fam) && fam.length ? fam : LOGO_FLIP_COLORS;
+}
+// The i-th colour of the family, wrapping. For lists that colour by position.
+function gloobalFamilyColor(i) {
+  const fam = gloobalFamily();
+  return fam[((i % fam.length) + fam.length) % fam.length];
+}
+// A random colour from the active theme's family, other than `exclude`.
+// Tiles call this every few seconds, so after a theme or side change they
+// move into the new family within one tick.
 function randomLogoFlipColor(exclude) {
-  let color = LOGO_FLIP_COLORS[Math.floor(Math.random() * LOGO_FLIP_COLORS.length)];
-  if (exclude && LOGO_FLIP_COLORS.length > 1) {
+  const fam = gloobalFamily();
+  let color = fam[Math.floor(Math.random() * fam.length)];
+  if (exclude && fam.length > 1) {
     while (color === exclude) {
-      color = LOGO_FLIP_COLORS[Math.floor(Math.random() * LOGO_FLIP_COLORS.length)];
+      color = fam[Math.floor(Math.random() * fam.length)];
     }
   }
   return color;

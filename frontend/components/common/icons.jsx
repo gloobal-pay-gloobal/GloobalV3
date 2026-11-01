@@ -36,7 +36,7 @@ function EyeIcon({ open }) {
 // switched OFF under prefers-reduced-motion there — the blanket
 // "animation-duration: 0.001ms" that rule applies would otherwise turn a
 // slow colour cycle into a strobe, which is worse than the animation.
-function ScannerIcon({ size = 20, animated = false, color = "#7c3aed" }) {
+function ScannerIcon({ size = 20, animated = false, color = T.accent }) {
   return <svg
     viewBox="0 0 24 24"
     width={size}
@@ -55,13 +55,13 @@ function ScannerIcon({ size = 20, animated = false, color = "#7c3aed" }) {
   /><g fill="currentColor"><rect x="7.2" y="7.2" width="4" height="4" rx="0.9" /><rect x="12.8" y="7.2" width="4" height="4" rx="0.9" /><rect x="7.2" y="12.8" width="4" height="4" rx="0.9" /><rect x="12.8" y="12.8" width="1.8" height="1.8" rx="0.5" /><rect x="15" y="15" width="1.8" height="1.8" rx="0.5" /></g></svg>;
 }
 function AddBankIcon({ size = 20 }) {
-  return <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M3 10l9-6 9 6M4 10v8M20 10v8M9 10v8M15 10v8M2 19h20" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={T.accent} strokeWidth="2"><path d="M3 10l9-6 9 6M4 10v8M20 10v8M9 10v8M15 10v8M2 19h20" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function ReceiveIcon({ size = 20 }) {
-  return <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M12 4v13M7 12l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" /><path d="M5 20h14" strokeLinecap="round" /></svg>;
+  return <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={T.accent} strokeWidth="2"><path d="M12 4v13M7 12l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" /><path d="M5 20h14" strokeLinecap="round" /></svg>;
 }
 function SendIcon({ size = 20 }) {
-  return <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M22 2L11 13" strokeLinecap="round" strokeLinejoin="round" /><path d="M22 2l-7 20-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={T.accent} strokeWidth="2"><path d="M22 2L11 13" strokeLinecap="round" strokeLinejoin="round" /><path d="M22 2l-7 20-4-9-9-4 20-7z" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 function HomeTabIcon({ active }) {
   const c = active ? T.accent : T.inkFaint;

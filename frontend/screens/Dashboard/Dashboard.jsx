@@ -550,7 +550,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   }, []);
   const FLIP_BUTTON_KEYS = ["send", "bank", "scan", "receive", "gbank", "gpaylater", "myassets", "myessentials", "aboutus"];
   const [buttonFlips, setButtonFlips] = useState14(
-    () => Object.fromEntries(FLIP_BUTTON_KEYS.map((k) => [k, { flipped: false, content: "symbol", symbol: DIAL_SYMBOLS[0], color: LOGO_FLIP_COLORS[0] }]))
+    () => Object.fromEntries(FLIP_BUTTON_KEYS.map((k) => [k, { flipped: false, content: "symbol", symbol: DIAL_SYMBOLS[0], color: gloobalFamilyColor(0) }]))
   );
   useEffect12(() => {
     const interval = setInterval(() => {
@@ -561,7 +561,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
           flipped: true,
           content: Math.random() < 0.5 ? "symbol" : "logo",
           symbol: DIAL_SYMBOLS[Math.floor(Math.random() * DIAL_SYMBOLS.length)],
-          color: LOGO_FLIP_COLORS[Math.floor(Math.random() * LOGO_FLIP_COLORS.length)]
+          color: randomLogoFlipColor()
         }
       }));
       setTimeout(() => {
@@ -3371,7 +3371,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        starting with that word is a menu nobody can scan. */
   }{PROFILE_ROWS.slice(0, 1)
     .concat(["Creator Profile"], PROFILE_ROWS.slice(1, 4), ["Complaints & reports"], PROFILE_ROWS.slice(4)).map((label, i) => {
-    const rowColor = POSITION_COLORS[i % POSITION_COLORS.length];
+    // The theme's own family, very faint: one soft tint per row instead of
+    // the eight-colour stripe the shared list drew in every theme.
+    const rowColor = gloobalFamilyColor(i);
     return <button
       key={label}
       // "Notifications" is the one row with a real screen behind it — the
@@ -3390,7 +3392,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         justifyContent: "space-between",
         padding: "15px 18px",
         border: "none",
-        background: `${rowColor}14`,
+        background: `${rowColor}0D`,
         cursor: "pointer",
         textAlign: "left"
       }}

@@ -124,7 +124,9 @@ describe("the painted background is gone", () => {
     // on every post-login screen it became a second symbol layer, and on
     // registration it fought the flags.
     const theme = code("frontend/constants/theme.js");
-    assert.match(theme, /bg: "#F6F5FC",/);
+    // Any flat hex will do; 0187 moved Day's from #F6F5FC to #F5F4FB.
+    const day = theme.slice(theme.indexOf("day: {"), theme.indexOf("night: {"));
+    assert.match(day, /bg: "#[0-9A-F]{6}",/i);
     assert.ok(!/BG_FIELD_URI/.test(theme), "the painted field is still in the token");
   });
 

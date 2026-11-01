@@ -18,7 +18,7 @@
 // The globe on the left still opens Gloobal Coverage, which is what the
 // whole bar used to do.
 import { useState as useState67, useRef as useRef39, useEffect as useEffect64 } from "react";
-import { ArrowRight as ArrowRight4, Loader as Loader8, X as X22, ClipboardPaste as PasteQuick, ChevronDown as ChevronDown7, Delete as BackQuick, Smartphone as MobileQuick } from "lucide-react";
+import { ArrowRight as ArrowRight4, Loader as Loader8, X as X22, ClipboardPaste as PasteQuick, ChevronDown as ChevronDown7, ChevronRight as ChevronRightQuick, Delete as BackQuick, Smartphone as MobileQuick } from "lucide-react";
 
 // ── ONE ROW, THREE CHOICES ──────────────────────────────────────────────
 //
@@ -116,6 +116,10 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
   const [nameMode, setNameMode] = useState67(false);
   const [nameField, setNameField] = useState67("first");
   const [busy, setBusy] = useState67(false);
+  // Which shortcut row is unfolded under the box: "" (both folded, the
+  // default), "recent" or "favourites". Only one at a time (0191).
+  const [shortcutOpen, setShortcutOpen] = useState67("");
+  useEffect64(() => { if (!padOpen) setShortcutOpen(""); }, [padOpen]);
   const [error, setError] = useState67("");
   // A name nobody has: the shops that start with it, or — when none do —
   // the shops we have. { title, shops }.
@@ -420,7 +424,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
   }}>{creatorDisplayName(shop)}</span><span style={{
     display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 1
-  }}>{(typeof bazaarCategoryInfo === "function" && bazaarCategoryInfo(shop.category) || {}).label || "Shop"}</span></span><ArrowRight4 size={15} color={T.inkFaint} /></button>)}</div> : null}{padOpen && !nameMode && !error && !suggest && !busy ? quickPayShortcuts() : null}{padOpen && !nameMode ? quickPaySmartPad() : null}{nameMode ? <CreatorNameKeyboard
+  }}>{(typeof bazaarCategoryInfo === "function" && bazaarCategoryInfo(shop.category) || {}).label || "Shop"}</span></span><ArrowRight4 size={15} color={T.inkFaint} /></button>)}</div> : null}{padOpen && !nameMode && !error && !suggest && !busy && !text.trim() ? quickPayShortcuts() : null}{padOpen && !nameMode ? quickPaySmartPad() : null}{nameMode ? <CreatorNameKeyboard
     open
     header={<div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 10px 9px", borderBottom: `1px solid ${T.line}` }}><button
       type="button"
@@ -462,9 +466,34 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
     const people = (recent || []).slice(0, 5);
     const shops = (favourites || []).slice(0, 5);
     if (!people.length && !shops.length) return null;
-    const row = (title, items, draw) => items.length ? <div style={{ marginTop: 14 }}><div style={{
-      fontSize: 11, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: T.inkFaint, padding: "0 4px 8px"
-    }}>{title}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6 }}>{items.map(draw)}</div></div> : null;
+    // FOLDED BY DEFAULT, with an arrow (0191). Two rows of five faces sat
+    // open under the box the moment it was tapped, and stayed there behind
+    // whatever was being typed, so the box, the faces and the pad all fought
+    // for the same middle of the screen. Now each is one slim line with an
+    // arrow on its right; a tap unfolds that row (and folds the other), and
+    // the moment anything is typed both go away.
+    const row = (id, title, items, draw) => {
+      if (!items.length) return null;
+      const open = shortcutOpen === id;
+      return <div data-quickpay-row={id} data-open={open ? "true" : "false"} style={{ background: T.surface, borderRadius: 16, boxShadow: T.shadowCard, overflow: "hidden" }}><button
+        type="button"
+        data-testid={`quickpay-toggle-${id}`}
+        aria-expanded={open}
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => setShortcutOpen(open ? "" : id)}
+        className="v2-tap"
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", background: "none",
+          cursor: "pointer", fontFamily: "inherit", textAlign: "left"
+        }}
+      ><span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 800, color: T.ink }}>{title}</span><span style={{
+        fontSize: 12, fontWeight: 700, color: T.inkFaint
+      }}>{items.length}</span><ChevronRightQuick size={17} strokeWidth={2.6} color={T.inkSoft} style={{
+        transform: open ? "rotate(90deg)" : "none", transition: "transform 0.2s ease"
+      }} /></button>{open ? <div style={{
+        display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6, padding: "0 8px 10px", animation: "quickPayIn 0.2s ease"
+      }}>{items.map(draw)}</div> : null}</div>;
+    };
     const tile = (key, label, face, onClick) => <button
       key={key}
       type="button"
@@ -479,8 +508,9 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       maxWidth: "100%", fontSize: 11.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
     }}>{label}</span></button>;
     return <div data-quickpay-shortcuts="" style={{
-      position: "absolute", left: 0, right: 0, top: "100%", zIndex: 10, padding: "4px 2px 0", animation: "quickPayIn 0.22s ease"
-    }}>{row("Recent", people, (p) => tile(p.key, String(p.name || "").split(/\s+/)[0] || p.name, <span style={{ position: "relative", display: "inline-block" }}><QuickPayFace person={p} />{p.flag ? <span style={{
+      position: "absolute", left: 0, right: 0, top: "100%", zIndex: 10, paddingTop: 12, animation: "quickPayIn 0.22s ease",
+      display: "flex", flexDirection: "column", gap: 8
+    }}>{row("recent", "Recent", people, (p) => tile(p.key, String(p.name || "").split(/\s+/)[0] || p.name, <span style={{ position: "relative", display: "inline-block" }}><QuickPayFace person={p} />{p.flag ? <span style={{
       position: "absolute", right: -2, bottom: -2, width: 20, height: 20, borderRadius: "50%", background: T.surface,
       display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.18)"
     }}><FlagEmoji flag={p.flag} size={14} shape="circle" border="none" /></span> : null}</span>, () => {
@@ -488,7 +518,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       if (!target) return;
       setText(target);
       lookUp(target);
-    }))}{row("Favourites", shops, (c) => tile(c.key, c.label || c.handle, <QuickPayShopFace symbolId={c.key} name={c.handle || c.label || ""} logo={c.logo} />, () => {
+    }))}{row("favourites", "Favourites", shops, (c) => tile(c.key, c.label || c.handle, <QuickPayShopFace symbolId={c.key} name={c.handle || c.label || ""} logo={c.logo} />, () => {
       if (!c.handle) return;
       setText(c.handle);
       lookUp(c.handle);

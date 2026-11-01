@@ -68,6 +68,8 @@ function GloobalBankScreen({
   onToast
 }) {
   const rows = Array.isArray(recentTransactions) ? recentTransactions : [];
+  const bankOpen = Boolean(bankAccount && bankAccount.status === "open");
+  const accountNumber = (bankOpen && bankAccount.accountNumber) || gloobalId;
   return <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><ProductScreenHeader
     title={<OneBankMark />}
     onBack={onBack}
@@ -130,15 +132,31 @@ function GloobalBankScreen({
        twelve-colour palette, which is right on a light surface and
        illegible on this one. */
   }{gloobalId && <div
-    style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, marginTop: 12, paddingTop: 11, borderTop: "1px solid rgba(255,255,255,0.18)" }}
+    data-testid="bank-card-account"
+    style={{ position: "relative", marginTop: 12, paddingTop: 11, borderTop: "1px solid rgba(255,255,255,0.18)" }}
+  ><span
+    style={{ display: "block", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "rgba(255,255,255,0.62)" }}
+  >{bankOpen ? "Account number \u00B7 GLOOBAL ID" : "GLOOBAL ID"}</span><div
+    style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 6 }}
   >{countryFlag && <FlagEmoji flag={countryFlag} width={22} height={17} radius={4} />}<span
-    style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 800, letterSpacing: 1.4, color: "rgba(255,255,255,0.94)", fontFamily: T.fontDisplay, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-  >{gloobalId}</span>{onCopyId && <button
+    style={{ flex: 1, minWidth: 0, overflow: "hidden" }}
+  >{
+    /* ONE eye for the whole card (0191). The account number used to be
+       printed here AND again in an "Account number" panel underneath, each
+       with its own eye and its own copy button, so the screen had two eyes
+       that did different things and two copies that did the same thing.
+       It is now said once, here, and the balance eye above shows or hides
+       both: the balance and the first eight symbols together. */
+  }<BankIdSymbols id={accountNumber} white masked={!balanceVisible} size={13} /></span>{onCopyId && <button
     onClick={onCopyId}
-    aria-label="Copy Gloobal ID"
+    aria-label="Copy account number"
+    data-testid="bank-card-copy"
     className="v2-tap"
     style={{ width: 30, height: 30, borderRadius: 9, border: "none", flexShrink: 0, background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><BankCopy size={14} color="#fff" /></button>}</div>}</div><BankAccountPanel bank={bankAccount} gloobalId={gloobalId} onOpen={onOpenBankFlow} onToast={onToast} onMoney={onOpenMoney} /><ProductServicesCard services={services} />{
+  ><BankCopy size={14} color="#fff" /></button>}</div>{bankOpen && bankAccount.nameOnAccount ? <span
+    data-testid="bank-card-name"
+    style={{ display: "block", marginTop: 9, fontSize: 12, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: "rgba(255,255,255,0.86)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+  >{bankAccount.nameOnAccount}</span> : null}</div>}</div><BankAccountPanel bank={bankAccount} gloobalId={gloobalId} onOpen={onOpenBankFlow} onToast={onToast} onMoney={onOpenMoney} numberOnCard /><ProductServicesCard services={services} />{
     /* Recent transactions — the same five rows the Home tab's activity
        list draws, merged across both directions rather than split by a
        tab, because this screen is about the account rather than about

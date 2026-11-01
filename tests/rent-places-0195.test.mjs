@@ -93,7 +93,7 @@ describe("the side switch", () => {
     assert.match(t, /data-testid="side-flip-veil"/);
     assert.match(t, /backdropFilter: "blur\(10px\)"/);
   });
-  test("the Creator card says GLOOBAL बाज़ार", () => {
-    assert.match(t, /\{creator \? "GLOOBAL बाज़ार" : "Your money"\}/);
+  test("the Creator card says GLOOBAL बाज़ार, with the OO in colour", () => {
+    assert.match(t, /data-testid="side-flip-bazaar"[^>]*><GloobalWordmark \/><span[^>]*>बाज़ार<\/span>/);
   });
 });

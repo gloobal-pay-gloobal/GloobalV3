@@ -37,84 +37,45 @@ const code = (p) =>
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
-// The "Our spending" row, isolated, so a match cannot be satisfied by
-// something elsewhere in a thousand-line screen.
-function ourSpendingRow() {
-  const src = code(SCREEN);
-  const at = src.indexOf('Our spending');
-  assert.ok(at > 0, 'the Our spending row is gone');
-  return src.slice(at - 600, at + 1200);
-}
+// Coverage v2 (0186) replaced the "Our spending" row with a line on the
+// "Where every ₹100 goes" screen: "GLOOBAL paid out on top". It is the same
+// quantity — what the platform itself pays people (interest, referral
+// rewards) — and the same two dangers apply: borrowing the figure of money
+// people paid each other, and inventing one where no record exists.
+const DASH = 'frontend/features/coverage/CoverageDashboard.jsx';
+const VIEW = 'server/lib/coverageView.js';
 
-describe('Our spending says what it measures', () => {
-  test('the global reading names GLOOBAL on both sides', () => {
-    // "What Gloobal spends on Gloobal Hoomans" — the platform paying
-    // people, which is a different quantity from Total spending above it
-    // (people paying each other). Without this line the two rows read as
-    // one number measured twice.
-    assert.match(ourSpendingRow(), /What GLOOBAL spends on GLOOBAL H\w*mans/);
+describe('GLOOBAL paid out on top says what it measures', () => {
+  test('the line is named for what GLOOBAL pays, apart from the split', () => {
+    const src = code(DASH);
+    assert.match(src, /GLOOBAL paid out on top/);
+    // It is shown beside the split, never inside the bands that add up to 100.
+    assert.match(src, /paid out on top" v=\{money\(view\.split\.payoutsOnTop\)\}/);
   });
 
-  test('the per-country reading names the country on both sides', () => {
-    // "What Gloobal India spends on Hoomans in India." Naming both sides is
-    // what makes it a statement about one country rather than a global
-    // figure with a flag beside it.
-    const row = ourSpendingRow();
-    assert.match(row, /What GLOOBAL \$\{country\.name\} spends on H\w*mans in \$\{country\.name\}/);
-  });
-
-  test('it follows the selected country rather than being fixed', () => {
-    assert.match(ourSpendingRow(), /flipped \?/);
-  });
-
-  test('no demonym is invented for any country', () => {
-    // countries.js carries no demonym, and adding 194 of them to fill a
-    // subtitle would be 194 chances to get someone's nationality wrong.
-    // "Hoomans in India", never "Indian Hoomans".
-    const row = ourSpendingRow();
-    assert.ok(
-      !/\$\{country\.demonym\}|\bdemonym\b|\bnationality\b/.test(row),
-      'a demonym crept into the subtitle'
-    );
+  test('the screen says it never comes out of a payment', () => {
+    assert.match(code(DASH), /never comes out of a/);
   });
 });
 
-describe('the figure appears only when a disbursement exists', () => {
-  // This file used to hold the ∆ in place, because there was no record type
-  // for a platform-funded payout and any number would have been invented.
-  // models/Disbursement.js is now that record, so the job changed: the ∆
-  // still has to survive the EMPTY case, and the figure that replaces it has
-  // to come from disbursements rather than from the row above it.
-
-  test('a figure is shown only when the server says it is available', () => {
-    const src = code(SCREEN);
-    // `available` rather than `total != null`: once the record type exists, a
-    // genuine zero is a real answer — Gloobal has paid nothing — and it must
-    // not be confused with "the server could not say".
-    assert.match(src, /ourSpending\.available/, 'the screen does not check availability');
-    assert.match(src, /ourSpendingShown != null \?/, 'the figure does not branch on being present');
+describe('the figure comes from disbursements, never from payments', () => {
+  test('payoutsOnTop is summed from Disbursement rows', () => {
+    const v = code(VIEW);
+    assert.match(v, /payoutGroups = await Disbursement\.aggregate/);
+    assert.match(v, /payoutsOnTop: round2\(payouts\)/);
   });
 
-  test('∆ survives the empty case', () => {
-    // The load-bearing assertion. If this fails, check what replaced the ∆
-    // and where that figure came from before assuming the test is stale.
-    assert.match(ourSpendingRow(), /aria-label="No data">∆/);
+  test('it does not borrow the money people paid each other', () => {
+    // The temptation this figure has always had: a real number (money
+    // moved) sits right next to it.
+    const v = code(VIEW);
+    assert.ok(!/payoutsOnTop: round2\(cur\.money\)/.test(v), 'paid out on top is borrowing money moved');
+    assert.ok(!/payouts \+= [^;]*cur\.money/.test(v), 'paid out on top adds payments in');
   });
 
-  test('it does not borrow Total spending’s figure', () => {
-    // The temptation this row has always had: a real number sits directly
-    // above it, and repeating it would make the screen look complete while
-    // asserting something false — that money Hoomans paid each other was
-    // money Gloobal spent on them.
-    const row = ourSpendingRow();
-    assert.ok(!/displaySpend/.test(row), 'Our spending is borrowing Total spending’s figure');
-    assert.match(row, /fmtCompact\(ourSpendingShown\)/, 'it formats something other than its own figure');
-  });
-
-  test('a country’s figure comes from that country, not the global total', () => {
-    const src = code(SCREEN);
-    assert.match(src, /ourSpending\.byCountry\[country\.code\]/);
-    assert.match(src, /flipped \? ourSpendingHere : ourSpendingTotal/);
+  test('the split that adds up to 100 holds no payout', () => {
+    // gloobal and fees are zero by rule: no fees, nothing kept.
+    assert.match(code(VIEW), /gloobal: 0, fees: 0, per100/);
   });
 
   test('the server funds every payout from an account, in one transaction', () => {

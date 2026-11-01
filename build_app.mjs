@@ -368,6 +368,9 @@ const FRONTEND_MODULES = [
   // Coverage screen, which renders all three of its exports. Nothing in it
   // moves money — see server/models/Contribution.js for why that matters.
   "features/projects/ProjectContributions.jsx",
+  "features/coverage/worldDots.js",
+  "features/coverage/coverageCharts.jsx",
+  "features/coverage/CoverageDashboard.jsx",
   "screens/Coverage/GloobalCoverageScreen.jsx",
   "adapters/diagnostics/useDiagnostics.js",
   "screens/DevTools/DiagnosticsScreen.jsx",

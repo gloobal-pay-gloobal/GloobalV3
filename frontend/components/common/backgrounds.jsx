@@ -22,8 +22,10 @@
 //
 //   - the splash keeps its own SplashSymbolField. Same symbols, its own
 //     choreography, and it paints before any of this is mounted.
-//   - the Coverage screen keeps FlagFlowBox. It is a screen ABOUT countries
-//     and the flags are its content, not its decoration — you tap them.
+//   - the Coverage screen has no symbol field. It is a screen ABOUT
+//     countries, and its countries are its content, not its decoration —
+//     you tap them. Until 0186 that content was FlagFlowBox; it is now the
+//     dot-matrix world map (CoverageDotMap), where you tap a country.
 import { useMemo } from "react";
 
 // The one post-login background.

@@ -204,11 +204,13 @@ describe("the number on the card counts what the list shows", () => {
     // do the job its position implies: every figure on the card it sits in is
     // scoped to one country, and this is what changes the country.
     //
-    // It opens the existing All countries picker — a real list of 194 with a
-    // search box — rather than a second country UI built for this screen.
+    // It opens Hooman Projects' own country picker. (The Coverage screen's
+    // "All countries" list it once opened is gone since 0186; this used to
+    // pass on that screen's button, not on this chip.)
     const src = code(SCREEN);
-    assert.match(src, /aria-label=\{`Showing \$\{country\.name\}\. Change country`\}/);
-    assert.match(src, /onClick=\{\(\) => setShowAllCountries\(true\)\}/);
+    const at = src.indexOf("aria-label={`Showing ${country.name}. Change country`}");
+    assert.ok(at > 0, "the chip lost its label");
+    assert.match(src.slice(at - 200, at), /onClick=\{\(\) => setShowHoomanCountryPicker\(true\)\}/);
   });
 
   test("the country picker opens ABOVE the projects screen", () => {
@@ -216,7 +218,10 @@ describe("the number on the card counts what the list shows", () => {
     // would have rendered the picker underneath the screen that asked for it
     // — a tap that appears to do nothing.
     const src = code(SCREEN);
-    assert.match(src, /\{showAllCountries && <div style=\{\{ position: "fixed", inset: 0, zIndex: 360/);
+    const at = src.indexOf("{showHoomanCountryPicker && (");
+    assert.ok(at > 0, "the projects country picker is gone");
+    const z = Number((src.slice(at, at + 1500).match(/zIndex: (\d+)/) || [])[1]);
+    assert.ok(z > 340, `the picker sits at z-index ${z}, under the projects screen (340)`);
   });
 
   test("add-project is reachable without scrolling the list", () => {

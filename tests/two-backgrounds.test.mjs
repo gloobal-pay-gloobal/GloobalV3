@@ -101,15 +101,19 @@ describe("the two exceptions survive", () => {
     );
   });
 
-  test("Coverage keeps its flags, and they are still tappable", () => {
+  test("Coverage keeps its countries as content, and they are still tappable", () => {
+    // 0186 replaced the drifting flags with a dot-matrix world map; the
+    // exception is the same — no symbol field, countries you can tap.
     const cov = code("frontend/screens/Coverage/GloobalCoverageScreen.jsx");
-    assert.match(cov, /<FlagFlowBox/);
-    assert.match(cov, /onPick=\{selectCountry\}/);
+    assert.ok(!/SymbolField|FinSymbol|AppBackground/.test(cov), "Coverage picked up the symbol field");
+    assert.match(cov, /<CoverageDashboard/);
+    const dash = code("frontend/features/coverage/CoverageDashboard.jsx");
+    assert.match(dash, /<CoverageDotMap[^>]*onPick=\{\(iso\) => \{ setCountryIso\(iso\); setScreen\("country"\); \}\}/);
   });
 
   test("the reason for both is written down", () => {
     // A rule with two exceptions and no note is a rule someone "fixes".
-    assert.match(src(BG), /the Coverage screen keeps FlagFlowBox/);
+    assert.match(src(BG), /the Coverage screen has no symbol field/);
     assert.match(src(BG), /the splash keeps its own SplashSymbolField/);
   });
 });

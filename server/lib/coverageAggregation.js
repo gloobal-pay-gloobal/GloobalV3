@@ -621,4 +621,8 @@ module.exports = {
   SPENDING_TRANSACTION_TYPES,
   SPENDING_TRANSACTION_STATUS,
   REFERENCE_CURRENCY,
+  // Shared with lib/coverageView.js (0186) so the period view converts
+  // exactly the way the all-time figures do.
+  makeRateResolver,
+  convertGroup,
 };

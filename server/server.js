@@ -2705,6 +2705,88 @@ app.get('/api/coverage', lookupLimit, async (req, res) => {
   }
 });
 
+// ── GLOOBAL Coverage, made transparent (0186) ─────────────────────────────
+//
+// GET /api/coverage/view?period=today|7d|30d|all&currency=INR&tz=Asia/Kolkata
+//   The figures for a period against the one before, the chart series, the
+//   countries, when people pay, where every 100 goes, what stands out, and
+//   the trust checks (books, data, rates). Aggregates only; public.
+// GET /api/coverage/me?period=   (signed in) — My impact, this account only.
+// GET /api/coverage/books        — the last 7 books checks.
+// GET /api/open-data/:file.csv   — daily | split | books | projects; public,
+//   totals only, small groups merged.
+// GET /open-data                 — a plain page listing those files.
+const coverageView = require('./lib/coverageView');
+
+app.get('/api/coverage/view', lookupLimit, async (req, res) => {
+  try {
+    const view = await coverageView.buildCoverageView({
+      period: String(req.query.period || '7d'),
+      currency: String(req.query.currency || ''),
+      tz: String(req.query.tz || ''),
+    });
+    return res.json(view);
+  } catch (error) {
+    console.error('coverage view error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load GLOOBAL Coverage just now.' });
+  }
+});
+
+app.get('/api/coverage/me', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const impact = await coverageView.buildMyImpact({ user: req.authUser, period: String(req.query.period || '30d'), tz: String(req.query.tz || '') });
+    return res.json(impact);
+  } catch (error) {
+    console.error('my impact error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load your impact just now.' });
+  }
+});
+
+app.get('/api/coverage/books', lookupLimit, async (req, res) => {
+  try {
+    await coverageView.booksToday();
+    return res.json({ success: true, testMoney: true, history: await coverageView.booksHistory(7) });
+  } catch (error) {
+    console.error('books check error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load the books check just now.' });
+  }
+});
+
+const OPEN_DATA_FILES = ['daily', 'split', 'books', 'projects'];
+const openDataCache = new Map();
+app.get('/api/open-data/:file', lookupLimit, async (req, res) => {
+  try {
+    const name = String(req.params.file || '').replace(/\.csv$/i, '');
+    if (!OPEN_DATA_FILES.includes(name)) return res.status(404).json({ success: false, message: 'No such file.' });
+    const currency = /^[A-Z]{3}$/.test(String(req.query.currency || '').toUpperCase()) ? String(req.query.currency).toUpperCase() : 'INR';
+    const key = `${name}|${currency}`;
+    const hit = openDataCache.get(key);
+    let csv = hit && Date.now() - hit.at < 10 * 60000 ? hit.csv : null;
+    if (!csv) {
+      csv = await coverageView.openDataCsv(name, { currency });
+      openDataCache.set(key, { at: Date.now(), csv });
+    }
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="gloobal-${name}.csv"`);
+    res.set('Cache-Control', 'public, max-age=600');
+    return res.send(csv);
+  } catch (error) {
+    console.error('open data error:', error);
+    return res.status(500).json({ success: false, message: 'Could not build that file just now.' });
+  }
+});
+
+app.get('/open-data', lookupLimit, (req, res) => {
+  const rows = [
+    ['daily', 'Daily totals by country', 'Money moved and payments per day and country. Countries with fewer than 5 payments that day are merged into OTHER.'],
+    ['split', 'Where every 100 goes', 'Per month: paid, reached the person paid, Creator Share, GLOOBAL kept (0), fees (0).'],
+    ['books', 'Books check', 'Per day and currency: money that should exist, money that does, and the gap. Test money until a bank partner is connected.'],
+    ['projects', 'Hooman Projects', 'Every published project with its goal, raised and backers.'],
+  ];
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  return res.send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GLOOBAL open data</title><style>body{font-family:system-ui,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#1C1830;background:#F4F2FB;line-height:1.5}a{color:#5B34E6;font-weight:700}li{margin:14px 0}small{color:#5F5A78}</style></head><body><h1>GLOOBAL open data</h1><p>The public totals behind GLOOBAL Coverage, as spreadsheets anyone can open. Totals only: never a person, an ID or a shop's takings.</p><ul>${rows.map(([f, t, d]) => `<li><a href="/api/open-data/${f}.csv">${t}</a><br><small>${d}</small></li>`).join('')}</ul><p><small>All balances are test money until a bank partner is connected.</small></p></body></html>`);
+});
+
 app.get('/api/stats', async (req, res) => {
   try {
     const [totalUsers, byCountry] = await Promise.all([

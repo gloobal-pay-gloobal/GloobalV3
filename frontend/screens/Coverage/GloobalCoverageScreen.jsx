@@ -167,29 +167,11 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   });
   const [countryQuery, setCountryQuery] = useState16("");
   const [flipped, setFlipped] = useState16(false);
-  const ambientFlags = useAmbientFlags();
   const filteredCoverage = useMemo8(() => {
     if (!countryQuery.trim()) return COVERAGE_ALL_COUNTRIES;
     return COVERAGE_ALL_COUNTRIES.filter((c) => countryMatches(c, countryQuery));
   }, [countryQuery]);
-  // The first 20 live countries, in the order the coverage table lists
-  // them. That order was previously produced by sorting on `baseUsers` —
-  // an invented per-country user count that no longer exists (see
-  // backend/data/coverage.js). This is the same kind of curated ordering
-  // without pretending it was derived from data nobody has.
-  const top20 = useMemo8(() => {
-    return COVERAGE_COUNTRIES.slice(0, 20).map((c) => COVERAGE_ALL_COUNTRIES.find((x) => x.code === c.code)).filter(Boolean);
-  }, []);
-  const [showAllCountries, setShowAllCountries] = useState16(false);
-  const [allCountriesQuery, setAllCountriesQuery] = useState16("");
   const heroRef = useRef12(null);
-  const [heroW, setHeroW] = useState16(350);
-  useEffect14(() => {
-    const measure = () => setHeroW(heroRef.current?.offsetWidth || 350);
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
   useEffect14(() => {
     if (filteredCoverage.length && !filteredCoverage.some((c) => c.code === selected)) {
       setSelected(filteredCoverage[0].code);
@@ -805,30 +787,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       `}</style>{
     /* Ambient background: slow-drifting, low-opacity flags — purely
        decorative, never intercepts taps, sits behind everything else. */
-  }<div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 0 }}>{ambientFlags.map((f, i) => <span
-    key={i}
-    className="ambient-flag"
-    style={{
-      position: "absolute",
-      top: `${f.top}%`,
-      left: `${f.left}%`,
-      fontSize: f.size,
-      lineHeight: 1,
-      filter: "grayscale(20%)",
-      willChange: "transform, opacity",
-      animation: `ambientDrift ${f.duration}s ease-in-out ${f.delay}s infinite`,
-      "--dx": `${f.dx}px`,
-      "--dy": `${f.dy}px`
-    }}
-  >{
-    /* Was `{f.flag}` printed as text. An emoji flag renders as a flag on
-       Apple platforms and as the country's two LETTERS on Windows and most
-       Android builds, which have no flag glyphs — so this decorative drift
-       of flags was a decorative drift of the letters "IN GB KE" for a good
-       share of the people using the app. FlagEmoji draws the real image and
-       keeps the emoji as its own fallback, and it is the one component every
-       other flag in the app already goes through. */
-  }<FlagEmoji flag={f.flag} width={f.size} height={Math.round(f.size * 0.68)} radius={2} background="transparent" /></span>)}</div><div className="relative w-full" style={{ background: "transparent", minHeight: "100%", zIndex: 1 }}>{
+  }<div className="relative w-full" style={{ background: "transparent", minHeight: "100%", zIndex: 1 }}>{
     /* Header — plain title now, search bar removed. */
   }<div className="flex items-center gap-2.5 px-5 pt-6 pb-4"><button
     aria-label="Go back"
@@ -836,210 +795,19 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
     style={{ background: C.accentDeep, color: "#fff" }}
   ><ChevronLeft3 size={18} /></button><span className="display font-bold text-lg" style={{ color: C.ink }}><GloobalWordmark suffix=" Coverage" withSymbols /></span></div>{
-    /* Hero box — 3 flowing flags (the default country) by default;
-       once a country is picked below it flips to that country's
-       flag at the full size of this same smooth-edged rectangle.
-       Tapping the big flag flips back. */
-  }<div className="mt-1 px-5"><div ref={heroRef} className="relative rounded-3xl overflow-hidden" style={{ height: 200, background: T.surface, border: `1px solid ${C.line}` }}>{flipped ? <button
-    onClick={() => setFlipped(false)}
-    aria-label={`${country.name} \u2014 tap to go back to the flag wall`}
-    className="coverage-detail-overlay absolute inset-0"
-    style={{ border: "none", padding: 0, background: "none", cursor: "pointer" }}
-  >{
-    /* Same flow concept as the idle wall, but every particle
-       is this one country's flag — still masked into the
-       +, −, ×, =, ○, ▢ symbol shapes — drifting at varied
-       speeds (slower overall, some lazy, some quick). The
-       key remounts the flow per country so it reseeds
-       instantly with the right flag. */
-  }<div
-    aria-hidden="true"
-    className="absolute inset-0 pointer-events-none"
-    style={{ background: `radial-gradient(60% 60% at 50% 40%, rgba(${T.accentRgb},0.08) 0%, rgba(${T.accentRgb},0) 70%)` }}
-  /><FlagFlowBox key={country.code} opacityBoost={2.4} onlyFlag={country.flag} varied />{
-    /* One constant anchor at the center — the country's flag
-       held still in a circle, sized at 30% of the box,
-       while the rest of the flow drifts on around it. No
-       outer filter wrapper here anymore — FlagSignShape's
-       circle mode already applies its own safe box-shadow
-       internally, and wrapping it in another filter is what
-       let a sliver of the flag bleed past the circle edge. */
-  }<div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 2 }}><FlagSignShape sign="circle" flag={country.flag} box={Math.round(heroW * 0.3)} /></div></button> : <><div
-    aria-hidden="true"
-    className="absolute inset-0 pointer-events-none"
-    style={{ background: `radial-gradient(60% 60% at 50% 40%, rgba(${T.accentRgb},0.08) 0%, rgba(${T.accentRgb},0) 70%)` }}
-  />{
-    /* Dense flow, and now the one and only country list — no
-       separate flag grid below anymore. Each flowing flag is
-       a real country (India included, same as everyone
-       else), tappable to select it and flip this box — no
-       lock badges here, per request. */
-  }<FlagFlowBox
-    opacityBoost={2.4}
-    count={18}
-    countries={countryQuery.trim() ? filteredCoverage : top20}
-    onPick={selectCountry}
-  /></>}</div></div>{
-    /* Data panel — directly below the hero box, always showing
-       something now instead of leaving that space empty until a
-       country's picked. Idle: "Gloobal" with the real aggregate
-       spend across every country. Once a flag's tapped: that
-       country's own name and figures, same three rows either way. */
-  }<div className="px-5 mt-4"><div className="flex items-center justify-between"><span className="display font-bold text-lg" style={{ color: C.ink }}>{flipped ? country.name : <GloobalWordmark withSymbols />}</span>{flipped && isUnlocked !== null && <span style={{ color: isUnlocked ? C.positive : C.negative }} aria-label={isUnlocked ? "Unlocked" : "Locked"}>{isUnlocked ? <Unlock2 size={14} /> : <Lock6 size={14} />}</span>}</div><div className="w-full mt-3 flex flex-col gap-3">{
-    /* Total spending sits above Our spending on the global
-       view — global figure is the sum across every country,
-       real from this account's Send Money history; per-country
-       it's that country's own figure. Tapping opens the full
-       country-by-country breakdown. The currency symbol on the
-       right is replaced by the flip-symbol circle — the number
-       itself stays real and visible, just the sign is swapped
-       for the flip icon. Our spending (below) is a genuinely
-       different, currently-unavailable number — see its own
-       comment. */
-  }<button
-    onClick={() => setShowSpendingBreakdown(true)}
-    className="flex items-center justify-between rounded-2xl px-4 py-4"
-    style={{ background: T.surface, border: `1px solid ${C.line}`, cursor: "pointer", width: "100%", textAlign: "left" }}
-  ><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><TrendingUp3 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Total spending</span></div>{displaySpend != null ? <span className="flex items-center gap-2"><FlipSymbolCircle size={20} />{
-    /* The unit, restored. This figure used to render as a bare
-       "8.1K" — the currency symbol was computed and then
-       replaced by the flip circle at this exact spot, so a
-       rupee total and a dollar total appeared side by side as
-       two unlabelled numbers three orders of magnitude apart,
-       which is most of what made them look inconsistent.
-       fmtMoney is not used because the compact form is what
-       fits here; the suffix is the same one it appends, so the
-       amount-first-currency-after rule still holds. */
-  }<span className="mono font-bold text-base" style={{ color: C.accent }}>{fmtCompact(displaySpend)}{spendSuffix}</span></span> : <span className="font-bold text-lg" style={{ color: deltaColor, transition: "color 0.4s ease" }} aria-label={coverageLoading ? "Loading" : "No data"}>∆</span>}</button>{
-    /* "Our spending" is meant to mean collective spend across
-       every Gloobal user, not just this account — a genuinely
-       different number from "Total spending" above. There is
-       no cross-account data source anywhere in this app (this
-       prototype only has one real user), so it honestly shows
-       ∆ rather than quietly repeating Total spending's number
-       as if it meant something collective. Same rule already
-       applied to Hooman Projects below — real data or ∆, never
-       a borrowed number standing in for a different one. This
-       becomes real the moment a backend can aggregate spend
-       across accounts (see BACKEND_CONTRACT.md). */
-  }<div
-    className="flex items-center justify-between rounded-2xl px-4 py-4"
-    style={{ background: T.surface, border: `1px solid ${C.line}`, width: "100%", gap: 12 }}
-  ><div className="flex items-center gap-3" style={{ minWidth: 0 }}><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft, flexShrink: 0 }}><Activity size={16} style={{ color: C.accent }} /></div><span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}><span className="text-sm font-semibold" style={{ color: C.ink }}>Our spending</span>{
-    /* What the number MEANS, said on the row rather than left to be
-       inferred from two words. It is the one line on this screen that
-       distinguishes the two spending figures: Total spending above is
-       Hoomans paying each other, this is Gloobal paying Hoomans. Without
-       it they read as the same quantity measured twice, which is most of
-       why the ∆ below looks like a bug rather than an honest gap.
-
-       It follows the selected country, because "Gloobal" means something
-       different once a flag is tapped — the local entity, spending on the
-       people who are there. Phrased "Hoomans in India" rather than "Indian
-       Hoomans" because countries.js carries no demonym, and inventing 194
-       of them to fill a subtitle would be 194 chances to get someone's
-       nationality wrong. The country name repeats on purpose: naming both
-       sides is what makes it a statement about one country rather than a
-       global figure with a flag next to it. */
-  }<span style={{ fontSize: 11.5, color: C.inkSoft, lineHeight: 1.4 }}>{flipped ? `What GLOOBAL ${country.name} spends on Hoomans in ${country.name}` : "What GLOOBAL spends on GLOOBAL Hoomans"}</span></span></div>{
-    /* The figure, once there is one.
-       models/Disbursement.js is the record the old probe named as missing,
-       and lib/disbursement.js is the only thing that writes one — debiting
-       PlatformAccount in the same transaction that credits the person, so
-       a payout is a movement rather than an appearance.
-       ∆ until the first payout exists. That ∆ now means "nothing has been
-       paid yet" rather than "this cannot be known", and the server says
-       which in ourSpending.reason. The historical AssetSeed interest totals
-       are deliberately NOT folded in: they carry no date and no recorded
-       country, so counting them would mean guessing both. */
-  }{ourSpendingShown != null ? <span className="mono font-bold text-base" style={{ color: C.accent, flexShrink: 0 }}>{fmtCompact(ourSpendingShown)}{spendSuffix}</span> : <span className="font-bold text-lg" style={{ color: deltaColor, transition: "color 0.4s ease", flexShrink: 0 }} aria-label="No data">∆</span>}</div>{
-    /* Hooman Projects — genuinely no data source anywhere in
-       this app, even reduced to "just this one account," so
-       every category honestly stays ∆ rather than showing 0 as
-       if that were a real count of something that doesn't
-       exist yet. Transactions/hour below is real — computed from
-       this account's actual send history, filtered to the flipped
-       country when one's selected. Total users is the platform-wide
-       figure from GET /api/profile/count, falling back to what can
-       be counted locally when the server has no answer. */
-  }<button
-    onClick={() => setShowHoomanProjects(true)}
-    className="flex items-center justify-between rounded-2xl px-4 py-4"
-    style={{ background: T.surface, border: `1px solid ${C.line}`, cursor: "pointer", width: "100%", textAlign: "left" }}
-  ><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><Building22 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>
-                  H<SingleOMark before="" after="" /><SingleOMark before="" after="" />man Projects
-                </span></div><ChevronRight5 size={16} style={{ color: C.inkSoft }} /></button><div className="flex items-center justify-between rounded-2xl px-4 py-4" style={{ background: T.surface, border: `1px solid ${C.line}` }}><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><Zap5 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Transactions / day</span></div>{
-    /* Server-counted, over the current UTC calendar day.
-       This used to be "/ hour", counted here in the browser by
-       re-parsing each row's DISPLAY strings — `new Date("Sep 5"
-       + the current year + "14:33:07")` — because the real
-       createdAt was thrown away when the row was mapped. It
-       stamped the present year onto every payment, so anything
-       from a previous year was silently mis-dated, and it could
-       only ever see this account's own last 100 rows. The count
-       is now platform-wide and comes from the same aggregation
-       as everything else on this screen; the UTC convention is
-       the server's and is named in its response. */
-  }<span className="mono font-bold text-base" style={{ color: C.accent }}>{coverage ? flipped ? countryStatus ? countryStatus.transactionsToday ?? 0 : 0 : coverage.transactionsPerDay : <span style={{ color: deltaColor, transition: "color 0.4s ease" }} aria-label="No data">∆</span>}</span></div><div className="flex items-center justify-between rounded-2xl px-4 py-4" style={{ background: T.surface, border: `1px solid ${C.line}` }}><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><Users24 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Total users</span></div><span className="mono font-bold text-base" style={{ color: C.accent }}>{displayUserCount}</span></div>{
-    /* Creator Share — same My Share overview reached from the
-       Receive screen elsewhere in the app, just a second
-       entry point into it from here. */
-  }{onOpenMyShare && <button
-    onClick={onOpenMyShare}
-    aria-label="Creator Share — My Share overview"
-    className="flex items-center justify-between rounded-2xl px-4 py-4"
-    style={{ background: T.surface, border: `1px solid ${C.line}`, cursor: "pointer", width: "100%", textAlign: "left" }}
-  ><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: C.accentSoft }}><PieChart2 size={16} style={{ color: C.accent }} /></div><span className="text-sm font-semibold" style={{ color: C.ink }}>Creator Share</span></div><ChevronRight5 size={17} style={{ color: C.inkSoft }} /></button>}{
-    /* The caption had to change with the number. It said
-       "from YOUR Send Money history", which was an accurate
-       description of a figure that should never have been
-       per-account: these are platform-wide totals now, the
-       same on every device. Saying otherwise would have been
-       the old bug surviving in prose after the code was fixed. */
-  }<div className="text-xs text-center mt-1" style={{ color: C.inkSoft }}>{flipped ? isUnlocked === null ? `${country.name} \u2014 \u2206 means we don't have that figure yet.` : isUnlocked ? `Everything ${country.name} has spent, across GLOOBAL. \u2206 means we don't have that figure yet.` : `${country.name} isn't active on GLOOBAL yet \u2014 \u2206 means no data available.` : "Total spending across every country on GLOOBAL. \u2206 means we don't have that figure yet."}</div></div></div>{
-    /* Totals button — just the globe and how many countries are
-       unlocked (India = 1 today, grows as more unlock); total
-       spending now lives in the All Countries header instead. */
-  }<div className="mt-5 px-5 pb-8"><button
-    onClick={() => setShowAllCountries(true)}
-    aria-label={`See all countries \u2014 ${unlockedCount} unlocked`}
-    className="w-full flex items-center justify-center gap-4 rounded-2xl px-4 py-3.5"
-    style={{ background: C.surface, border: `1px solid ${C.line}`, boxShadow: `0 2px 10px rgba(${T.inkRgb},0.05)`, cursor: "pointer" }}
-  ><span className="flex items-center gap-1.5"><Globe23 size={14} style={{ color: C.accent }} /><span className="mono text-[12.5px] font-semibold" style={{ color: C.ink }}>{unlockedCount}</span></span><ChevronRight5 size={15} style={{ color: C.inkFaint }} /></button></div>{
-    /* The whole country list — every country, live and coming soon,
-       opened from the totals button. Tapping a row selects it and
-       flips into its detail. */
-  }{showAllCountries && <div style={{ position: "fixed", inset: 0, zIndex: 360, background: C.surface, display: "flex", flexDirection: "column" }}><div className="flex items-center gap-2.5 px-5 pb-3" style={{ paddingTop: "calc(20px + env(safe-area-inset-top, 0px))", flexShrink: 0 }}><NavBackButton onClick={() => {
-      setShowAllCountries(false);
-      setAllCountriesQuery("");
-    }} /><div className="display font-bold text-base" style={{ color: C.ink }}>All countries</div></div><div className="px-5 pb-3" style={{ flexShrink: 0 }}><div
-    className="flex items-center gap-2 rounded-2xl px-4 py-2.5"
-    style={{ background: C.bgSoft, border: `1px solid ${C.line}` }}
-  ><Search5 size={15} style={{ color: C.inkFaint, flexShrink: 0 }} /><input
-    value={allCountriesQuery}
-    onChange={(e) => setAllCountriesQuery(e.target.value)}
-    placeholder="Search countries"
-    aria-label="Search all countries"
-    className="flex-1 min-w-0 bg-transparent outline-none text-sm"
-    style={{ color: C.ink }}
-  />{allCountriesQuery && <button onClick={() => setAllCountriesQuery("")} aria-label="Clear search" className="flex-shrink-0"><X5 size={14} style={{ color: C.inkFaint }} /></button>}</div></div><div className="flex-1 overflow-y-auto px-5 pb-8" style={{ WebkitOverflowScrolling: "touch" }}>{COVERAGE_ALL_COUNTRIES.filter((c) => countryMatches(c, allCountriesQuery)).map((c, i) => {
-    // Second of the three hardcoded `=== "IN"` tests that used to decide
-    // this. Every row in this list wore a padlock except India's, forever,
-    // whatever the data said.
-    const rowStatus = coverageByIso[c.code] || null;
-    const rowUnlocked = rowStatus ? rowStatus.active : null;
-    return <button
-      key={c.code}
-      onClick={() => {
-        setShowAllCountries(false);
-        setAllCountriesQuery("");
-        selectCountry(c.code);
-      }}
-      aria-label={`${c.name}${rowUnlocked === null ? "" : rowUnlocked ? ", unlocked" : ", locked"}`}
-      className="w-full flex items-center gap-3 py-2.5 text-left"
-      style={{ border: "none", borderTop: i === 0 ? "none" : `1px solid ${C.line}`, background: "none", cursor: "pointer" }}
-    ><div className="relative rounded-lg overflow-hidden flex-shrink-0" style={{ width: 40, height: 29, border: `1px solid ${C.line}`, opacity: rowUnlocked ? 1 : 0.55 }}><CoverageFlag code={c.code} width={40} height={29} /></div><span className="flex-1 min-w-0 text-[13.5px] font-semibold truncate" style={{ color: C.ink }}>{c.name}</span>{rowUnlocked !== null && <span className="flex-shrink-0" style={{ color: rowUnlocked ? C.positive : C.negative }} aria-label={rowUnlocked ? "Unlocked" : "Locked"}>{rowUnlocked ? <Unlock2 size={14} /> : <Lock6 size={14} />}</span>}</button>;
-  })}</div></div>}</div>{
+    /* ── THE DASHBOARD (0186) ──────────────────────────────────────────
+       The flag wall, the five single-number rows and the country list
+       that used to be here are now one live dashboard: a map, a period
+       switch, each figure against the period before, the trust checks,
+       every 100 as a flow, countries, My impact and open data. See
+       features/coverage/CoverageDashboard.jsx. Hooman Projects and
+       Creator Share open from it exactly as they did. */
+  }<CoverageDashboard
+    currency={coverageCurrency}
+    signedIn={Boolean(isFullyRegistered)}
+    onOpenProjects={() => setShowHoomanProjects(true)}
+    onOpenMyShare={onOpenMyShare || null}
+  /></div>{
     /* Hooman Projects — eight categories of real stored records, scoped to
        the country this screen is currently showing.
 
@@ -1125,8 +893,8 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        country belongs on the card those numbers sit in rather than somewhere
        else on the screen.
 
-       It opens the existing All countries picker, which is a real list of
-       194 with a search box, not a second country UI built for this screen. */
+       It opens Hooman Projects' own country picker (showHoomanCountryPicker):
+       every country on earth, the account's own pinned at the top. */
   }<button
     onClick={() => setShowHoomanCountryPicker(true)}
     className="v2-tap"

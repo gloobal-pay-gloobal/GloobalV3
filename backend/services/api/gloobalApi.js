@@ -601,6 +601,50 @@ var GloobalApi = {
   // deploy without this route). The screen renders ∆ for that, which is the
   // same thing it already does for a figure it does not have — an honest
   // "no data" rather than a fabricated 0 or a stale client-side guess.
+  // ── GLOOBAL Coverage, made transparent (0186) ─────────────────────────
+  // The figures for a period against the one before, the chart, countries,
+  // when people pay, where every 100 goes, what stands out, and the trust
+  // checks. Null when the server does not answer, never a made-up zero.
+  async getCoverageView(period = "7d", currency = "INR", tz = "") {
+    try {
+      const p = new URLSearchParams({ period, currency: String(currency || "INR").toUpperCase() });
+      if (tz) p.set("tz", tz);
+      const result = await gloobalApiClient.get(`/api/coverage/view?${p.toString()}`, { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS });
+      return result && result.success ? result : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  // My impact: this account's own figures, signed in only.
+  async getMyImpact(period = "30d", tz = "") {
+    try {
+      const p = new URLSearchParams({ period });
+      if (tz) p.set("tz", tz);
+      const result = await gloobalApiClient.get(`/api/coverage/me?${p.toString()}`);
+      return result && result.success ? result : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  async getBooksHistory() {
+    try {
+      const result = await gloobalApiClient.get("/api/coverage/books");
+      return result && result.success ? result.history || [] : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  // Public file links: open in the browser, no token needed.
+  openDataUrl(file, currency = "INR") {
+    return gloobalApiUrl(`/api/open-data/${file}.csv?currency=${encodeURIComponent(String(currency || "INR").toUpperCase())}`);
+  },
+  openDataPageUrl() {
+    return gloobalApiUrl("/open-data");
+  },
+
   async getCoverage(currency) {
     try {
       const query = /^[A-Za-z]{3}$/.test(String(currency || ""))

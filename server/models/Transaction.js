@@ -124,6 +124,13 @@ const transactionSchema = new mongoose.Schema(
       maxlength: 200,
     },
 
+    // The payer's one-tap thank-you for a Creator Share (0189): heart,
+    // star, thumbs or coffee. Moves no money; the payee is notified once.
+    thanks: {
+      kind: { type: String, enum: ['heart', 'star', 'thumbs', 'coffee'], default: undefined },
+      at: { type: Date, default: undefined },
+    },
+
     referenceId: {
       type: String,
       required: true,

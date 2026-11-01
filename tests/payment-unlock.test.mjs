@@ -321,9 +321,12 @@ describe("the questions", () => {
   });
 
   test("the answer never changes the share, and the card says so", () => {
-    assert.match(SRC, /it's yours whatever you do/);
+    assert.match(SRC, /It's yours whatever you do/);
     // Skip turns the card the same way an answer does — see the button.
-    assert.match(SRC, /picked === null && turnTo\("coupon"\)/);
+    // Since 0189 it goes through toCoupon, which skips the scratch card for
+    // somebody who ticked "Always skip" and is otherwise the coupon.
+    assert.match(SRC, /picked === null && toCoupon\(\)/);
+    assert.match(SRC, /const toCoupon = \(\) => turnTo\(skipScratch \? "share" : "coupon"\);/);
   });
 
   test("the coupon is offered by the screen that paid, never by History", () => {

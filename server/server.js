@@ -8371,6 +8371,56 @@ app.post('/api/assets/plant-seed', writeLimit, requireAuth, requireSelf('symbolI
 // (interestClaimed must still match what was just read) so two concurrent
 // claims can't both pay out the same growth — a seed that loses the race
 // this round simply claims nothing and is picked up cleanly next time.
+// ── A THANK-YOU FOR A CREATOR SHARE (0189) ─────────────────────────────────
+//
+// The payer taps one of four reactions on the screen after paying, and the
+// person they paid gets a notification. One reaction per payment: a second
+// tap changes it, it does not stack, and only the first one notifies. Only
+// the payer of that payment can send it, and it moves no money.
+const THANKS_KINDS = { heart: 'a heart', star: 'a star', thumbs: 'a thumbs-up', coffee: 'a coffee' };
+app.post('/api/transactions/:referenceId/thanks', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const kind = String(req.body?.kind || '').trim();
+    if (!THANKS_KINDS[kind]) return res.status(400).json({ message: 'Choose one of the four reactions.' });
+    const me = req.authUser;
+    const reference = String(req.params.referenceId || '').trim();
+    const payment = await Transaction.findOne({ referenceId: reference, fromUserId: me._id, status: 'success' });
+    if (!payment) return res.status(404).json({ message: 'That payment was not found on your account.' });
+    const first = !payment.thanks || !payment.thanks.kind;
+    payment.thanks = { kind, at: new Date() };
+    await payment.save();
+    if (first && payment.toUserId) {
+      try {
+        const name = String(me.fullName || '').trim().split(/\s+/)[0] || 'Someone';
+        const title = `${name} sent you ${THANKS_KINDS[kind]}`;
+        const message = 'A thank-you for the Creator Share on their payment to you.';
+        const row = await Notification.create({
+          userId: payment.toUserId,
+          type: 'payment',
+          title: title.slice(0, 100),
+          message,
+          // Not metadata.transactionId: that key is unique across
+          // notifications (one per payment), and the payment already has one.
+          metadata: { thanksFor: reference, kind },
+        });
+        await pruneNotifications(payment.toUserId);
+        if (pushService.isPushEnabled()) {
+          await pushService.sendPushToUser(payment.toUserId, {
+            v: 1, category: 'transactional', type: 'payment', notificationId: String(row._id),
+            title: title.slice(0, 100), body: message, url: '/', tag: `gloobal-thanks-${reference}`, timestamp: Date.now(),
+          }, { category: 'transactional', app: 'gloobal' });
+        }
+      } catch (error) {
+        console.error('Thanks notification error (non-fatal):', error);
+      }
+    }
+    return res.status(200).json({ ok: true, kind });
+  } catch (error) {
+    console.error('Thanks error:', error);
+    return res.status(500).json({ message: 'Could not send that just now.' });
+  }
+});
+
 app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const cleanSymbolId = String(req.body?.symbolId || '').trim();
@@ -8396,6 +8446,17 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
     // are fixed together because they are the same fix: the payout is now a
     // movement between two accounts, and a movement either happens or does
     // not.
+    // One payment's share only, when the screen after paying asks for it.
+    let onlyPaymentId = null;
+    const onlyReference = String(req.body?.referenceId || '').trim();
+    if (onlyReference) {
+      const payment = await Transaction.findOne({ referenceId: onlyReference, fromUserId: user._id }, '_id').lean();
+      if (!payment) {
+        return res.status(404).json({ message: 'That payment was not found on your account.' });
+      }
+      onlyPaymentId = payment._id;
+    }
+
     const claimCurrency = await resolveOwnCurrency(user);
     if (!claimCurrency) {
       // Never guess a currency for a payout. Defaulting would pay a Japanese
@@ -8417,7 +8478,13 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
     let payout;
     try {
       payout = await withAtomicSession(async (session) => {
-        const rawSeeds = await AssetSeed.find({ userId: user._id, ...OPEN_SEED }).session(session);
+        // "Add to balance" on the screen after a payment (0189) claims only
+        // THAT payment's share: the request names the payment, and only the
+        // seed planted for it — on this user's own payment — is taken. With
+        // no payment named, every open seed is claimed, as before.
+        const seedFilter = { userId: user._id, ...OPEN_SEED };
+        if (onlyPaymentId) seedFilter.transactionId = onlyPaymentId;
+        const rawSeeds = await AssetSeed.find(seedFilter).session(session);
         // Kept apart all the way through, because they are funded by two
         // different accounts and summing them early is how the principal
         // would end up being paid out of the expense account.
@@ -8491,7 +8558,12 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
         // would make every retry look like a new payout.
         let interestPaid = 0;
 
-        if (totalInterest > 0) {
+        // Below a paisa (or cent) there is nothing to pay. A share claimed
+        // minutes after it was planted has earned a few millionths, which
+        // recordDisbursement rightly refuses as zero — and that refusal used
+        // to fail the whole claim, principal and all (found by 0189's "Add
+        // to balance", which claims a share seconds after the payment).
+        if (totalInterest > 0 && toMinorUnit(totalInterest, claimCurrency) > 0) {
           const idempotencyKey = `seed_interest:${user._id}:${claimedSeedIds.slice().sort().join(',')}`;
           const result = await recordDisbursement({
             user,

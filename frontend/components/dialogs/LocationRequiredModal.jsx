@@ -30,24 +30,33 @@ function LocationRequiredModal({ open, reason, busy, onRetry, onClose }) {
   const requestClose = useBackClose(open, onClose || (() => {}));
   if (!open) return null;
 
+  // Short on purpose (0189). The denied case used to be one eight-line
+  // paragraph; it is one line now and the three taps, drawn the same way the
+  // Send screen draws them (PayLocationSteps), since that is where most
+  // people will have seen them first.
   const COPY = {
     timeout: {
-      title: "Couldn't find your location",
-      body: "Your phone didn't get a fix in time — this is common indoors, in a lift, or on a moving train. Step near a window and try again.",
+      title: "We couldn't find your location",
+      body: "This happens indoors or on a train. Move near a window and try again.",
       primary: "Try again",
-      canRetry: true
+      canRetry: true,
+      steps: false
     },
     denied: {
-      title: "Location is needed to pay",
-      body: "GLOOBAL confirms which country a payment is made from before it moves money — it's how a cross-border payment is checked for fraud. Location is currently blocked for GLOOBAL in your browser, and only your device settings can turn it back on: open your browser's site settings for this page, set Location to Allow, then come back.",
-      primary: "I've allowed it — try again",
-      canRetry: true
+      title: "Turn on location to pay",
+      // Nothing in this app can undo a browser block, so it says where the
+      // switch is: the browser's own site settings on this device.
+      body: "Your browser blocked it, so only your browser (or your device settings) can turn it back on:",
+      primary: "Check again",
+      canRetry: true,
+      steps: true
     },
     unavailable: {
-      title: "This device can't share location",
-      body: "Location isn't available here — either this browser has no location support, or the page isn't on a secure connection. Payments need it for the country check. Try GLOOBAL on your phone's browser.",
+      title: "This browser can't share location",
+      body: "Payments need it. Open GLOOBAL in your phone's browser instead.",
       primary: null,
-      canRetry: false
+      canRetry: false,
+      steps: false
     }
   };
   const copy = COPY[reason] || COPY.unavailable;
@@ -81,7 +90,7 @@ function LocationRequiredModal({ open, reason, busy, onRetry, onClose }) {
       alignSelf: "center",
       marginBottom: 14
     }}
-  ><MapPinLocationGate size={21} color={T.negative} /></div><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, textAlign: "center" }}>{copy.title}</span><span style={{ fontSize: 12.5, lineHeight: 1.55, color: T.inkSoft, textAlign: "center", marginTop: 8 }}>{copy.body}</span><div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 18 }}>{copy.canRetry && <button
+  ><MapPinLocationGate size={21} color={T.negative} /></div><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, textAlign: "center" }}>{copy.title}</span><span style={{ fontSize: 13, lineHeight: 1.5, color: T.inkSoft, textAlign: copy.steps ? "left" : "center", marginTop: 8 }}>{copy.body}</span>{copy.steps ? <PayLocationSteps /> : null}<div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 18 }}>{copy.canRetry && <button
     onClick={onRetry}
     disabled={busy}
     className="v2-tap"
@@ -109,6 +118,6 @@ function LocationRequiredModal({ open, reason, busy, onRetry, onClose }) {
       padding: "8px 0"
     }}
   >
-      Cancel this payment
+      Not now
     </button></div></div></div>;
 }

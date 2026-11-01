@@ -1,6 +1,6 @@
 // src/components/dialogs/PaymentUnlock.jsx
 import { useState as useState39, useEffect as useEffect32, useRef as useRef23 } from "react";
-import { Check as CheckUnlock } from "lucide-react";
+import { Check as CheckUnlock, Heart as HeartUnlock, Star as StarUnlock, ThumbsUp as ThumbsUnlock, Coffee as CoffeeUnlock, Sprout as SproutUnlock } from "lucide-react";
 // ── Reveal my share: one question, a coupon, and the share ────────────────
 //
 // Opened from the RECEIPT, by the button under it, and only on a payment that
@@ -147,38 +147,55 @@ function paymentUnlockPick({ knowledge, random = Math.random }) {
   return { kind, cat, item, text };
 }
 
-// The foil. A different pattern each payment — thrown confetti, a stamp
-// sheet of the Gloobal symbols, or a few oversized shapes — in the brand
-// palette over the wallet's indigo.
+// The foil (0189): silver, like a real scratch card, with the GLOOBAL
+// symbols pressed into it. It used to be the wallet's indigo with coloured
+// confetti, which on a phone read as a broken image once scratched — white
+// holes punched in a dark card. Silver scratches away to a white card, which
+// is what everyone expects one to do.
 function paymentUnlockPaintFoil(ctx, w, h, random = Math.random) {
   const g = ctx.createLinearGradient(0, 0, w, h);
-  g.addColorStop(0, "#312E81");
-  g.addColorStop(0.55, "#4F46E5");
-  g.addColorStop(1, T.accent);
+  g.addColorStop(0, "#B3C0C5");
+  g.addColorStop(0.34, "#EEF2F3");
+  g.addColorStop(0.62, "#A9B7BC");
+  g.addColorStop(1, "#E1E8EA");
   ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
-  const palette = typeof LOGO_FLIP_COLORS !== "undefined" ? LOGO_FLIP_COLORS : ["#DB2777", "#2563EB", "#059669", "#EA580C"];
-  const colour = () => palette[Math.floor(random() * palette.length)];
-  const style = Math.floor(random() * 3);
-  const glyph = (x, y, size, alpha) => {
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = colour();
-    ctx.font = `800 ${size}px system-ui, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(PAYMENT_UNLOCK_FOIL_SYMBOLS[Math.floor(random() * PAYMENT_UNLOCK_FOIL_SYMBOLS.length)], x, y);
-  };
-  if (style === 0) {
-    for (let i = 0; i < 46; i++) glyph(random() * w, random() * h, 10 + random() * 22, 0.55 + random() * 0.4);
-  } else if (style === 1) {
-    const step = Math.max(34, Math.round(w / 7));
-    for (let y = step / 2; y < h; y += step) for (let x = step / 2; x < w; x += step) glyph(x, y, step * 0.42, 0.8);
-  } else {
-    for (let i = 0; i < 6; i++) glyph(random() * w, random() * h, 60 + random() * 80, 0.35);
+  // A soft light in one corner, so it reads as metal rather than grey.
+  const shine = ctx.createRadialGradient(w * 0.15, 0, 0, w * 0.15, 0, w * 0.5);
+  shine.addColorStop(0, "rgba(255,255,255,0.9)");
+  shine.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = shine;
+  ctx.fillRect(0, 0, w, h);
+  // The symbols, embossed: a light edge under a darker face.
+  const step = Math.max(34, Math.round(w / 8));
+  ctx.font = `800 ${Math.round(step * 0.5)}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  let n = Math.floor(random() * PAYMENT_UNLOCK_FOIL_SYMBOLS.length);
+  for (let y = step / 2; y < h; y += step) {
+    for (let x = step / 2; x < w; x += step) {
+      const symbol = PAYMENT_UNLOCK_FOIL_SYMBOLS[n++ % PAYMENT_UNLOCK_FOIL_SYMBOLS.length];
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillText(symbol, x, y + 1.5);
+      ctx.fillStyle = "rgba(86,104,110,0.42)";
+      ctx.fillText(symbol, x, y);
+    }
   }
-  ctx.globalAlpha = 1;
 }
+
+// "Always skip": remembered on this phone, so somebody who never wants to
+// scratch is not asked to again. The share is the same either way.
+var PAYMENT_UNLOCK_SKIP_KEY = "gloobal.shareReveal.skipScratch.v1";
+function paymentUnlockSkipScratch() {
+  try { return typeof window !== "undefined" && window.localStorage.getItem(PAYMENT_UNLOCK_SKIP_KEY) === "1"; } catch (e) { return false; }
+}
+function paymentUnlockSetSkipScratch(on) {
+  try { if (typeof window !== "undefined") window.localStorage.setItem(PAYMENT_UNLOCK_SKIP_KEY, on ? "1" : "0"); } catch (e) { /* private mode */ }
+}
+// The four ways to say thanks, and what the server calls them.
+var PAYMENT_UNLOCK_THANKS = [["heart", HeartUnlock, "#E11D48", "Heart"], ["star", StarUnlock, "#F59E0B", "Star"], ["thumbs", ThumbsUnlock, "#0E7C86", "Thumbs up"], ["coffee", CoffeeUnlock, "#8B5E34", "Coffee"]];
 
 // The card, turning.
 //
@@ -224,6 +241,11 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
   // card re-renders while the rain is running.
   const [headline] = useState39(() => paymentUnlockNextHeadline());
   const [turning, setTurning] = useState39(false);
+  // "Always skip" on the scratch card (0189).
+  const [skipScratch, setSkipScratch] = useState39(() => paymentUnlockSkipScratch());
+  // Keep growing (nothing to do: it already is) or add to balance now.
+  const [keep, setKeep] = useState39("grow"); // "grow" | "adding" | "added"
+  const [thanked, setThanked] = useState39(null);
   const canvasRef = useRef23(null);
   const wrapRef = useRef23(null);
   const lastPoint = useRef23(null);
@@ -316,6 +338,9 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
     paymentUnlockPaintFoil(ctx, w, h);
   }, [face]);
 
+  // Answering or skipping the question leads to the coupon — or, for
+  // somebody who ticked "Always skip", straight to the share.
+  const toCoupon = () => turnTo(skipScratch ? "share" : "coupon");
   const turnTo = (next) => {
     setTurning(true);
     after(PAYMENT_UNLOCK_TURN_MS, () => {
@@ -371,11 +396,11 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
       setVerdict(result && typeof result.correct === "boolean"
         ? { correct: result.correct, rightChoice: result.rightChoice }
         : { correct: null, unchecked: true });
-      after(PAYMENT_UNLOCK_VERDICT_MS, () => turnTo("coupon"));
+      after(PAYMENT_UNLOCK_VERDICT_MS, toCoupon);
       return;
     }
     if (consented && transactionId) save(payload);
-    after(PAYMENT_UNLOCK_VERDICT_MS, () => turnTo("coupon"));
+    after(PAYMENT_UNLOCK_VERDICT_MS, toCoupon);
   };
 
   // "Save to my Hooman Score" for someone who has not agreed yet: the same
@@ -625,7 +650,7 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
                   point and nothing else: the share was earned by paying. */}
               <button
                 type="button"
-                onClick={() => picked === null && turnTo("coupon")}
+                onClick={() => picked === null && toCoupon()}
                 style={{ width: "100%", border: "none", borderTop: `1px solid ${T.line}`, background: "transparent", color: T.inkFaint, fontSize: 13, fontWeight: 800, padding: "13px 0", cursor: "pointer" }}
               >
                 Skip
@@ -671,25 +696,32 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
                 />
                 {!revealed && !scratching ? (
                   <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(15,12,40,0.45)", color: "#FFFFFF", borderRadius: 999, padding: "8px 14px", fontSize: 12, fontWeight: 800, letterSpacing: 1.2 }}>
-                      SCRATCH HERE
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.86)", color: "#24323A", borderRadius: 10, padding: "8px 12px", fontSize: 13, fontWeight: 800, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}>
+                      Scratch to see what comes back to you
                     </span>
                   </div>
                 ) : null}
               </div>
               <div style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, textAlign: "center", padding: "0 16px 6px" }}>
-                Use your finger — it's yours whatever you do
+                It's yours whatever you do
               </div>
               {/* Nobody is made to scratch. Some people will not want to, and a
-                  coupon that can only be opened one way is a toll. */}
-              <button
-                type="button"
-                onClick={reveal}
-                data-testid="unlock-reveal"
-                style={{ width: "100%", border: "none", borderTop: `1px solid ${T.line}`, background: "transparent", color: T.accent, fontSize: 13, fontWeight: 800, padding: "13px 0", cursor: "pointer" }}
-              >
-                Just show me
-              </button>
+                  coupon that can only be opened one way is a toll. "Always
+                  skip" remembers that, on this phone. */}
+              <div style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${T.line}` }}>
+                <button
+                  type="button"
+                  onClick={reveal}
+                  data-testid="unlock-reveal"
+                  style={{ flex: 1, border: "none", background: "transparent", color: T.accent, fontSize: 13.5, fontWeight: 800, padding: "13px 0", cursor: "pointer" }}
+                >
+                  Just show me
+                </button>
+                <label data-testid="unlock-always-skip" style={{ display: "flex", alignItems: "center", gap: 7, padding: "0 16px", fontSize: 12.5, fontWeight: 700, color: T.inkSoft, cursor: "pointer" }}>
+                  <input type="checkbox" checked={skipScratch} onChange={(e) => { setSkipScratch(e.target.checked); paymentUnlockSetSkipScratch(e.target.checked); }} style={{ width: 17, height: 17, accentColor: T.accent }} />
+                  Always skip
+                </label>
+              </div>
             </>
           ) : (
             <>
@@ -725,21 +757,82 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
                   <span style={{ display: "block", color: T.inkFaint, marginTop: 3 }}>{`${payeeName} shares part of every payment back.`}</span>
                 </div>
               </div>
-              <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", gap: 9 }}>
+              {shareParts ? (
+                <div style={{ padding: "12px 16px 0", display: "flex", flexDirection: "column", gap: 10 }}>
+                  {/* What it becomes if they leave it: one month at the rate My
+                      Assets really pays (ASSET_GROWTH_RATE_MONTHLY), never a
+                      guess. */}
+                  <div data-testid="unlock-grows" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: "#0B7A57" }}>
+                    <SproutUnlock size={15} strokeWidth={2.4} aria-hidden="true" />
+                    {`About ${geuLensBarMoney(share * (1 + (typeof ASSET_GROWTH_RATE_MONTHLY === "number" ? ASSET_GROWTH_RATE_MONTHLY : 0.01)), shareCurrency, lens, viewerCurrency)} in a month if you leave it`}
+                  </div>
+                  <div role="radiogroup" aria-label="What to do with it" data-testid="unlock-keep" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {[["grow", "Keep it growing"], ["add", keep === "added" ? "Added ✓" : keep === "adding" ? "Adding…" : "Add to balance"]].map(([k, label]) => {
+                      const on = k === "grow" ? keep === "grow" : keep !== "grow";
+                      return <button
+                        key={k}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        data-testid={`unlock-keep-${k}`}
+                        disabled={keep === "adding" || keep === "added"}
+                        onClick={async () => {
+                          if (k === "grow" || keep !== "grow") return;
+                          const me = typeof gloobalCurrentSymbolId === "function" ? gloobalCurrentSymbolId() : null;
+                          if (!me || !transactionId) { onToast?.("Sign in to move it to your balance"); return; }
+                          setKeep("adding");
+                          try {
+                            const out = await GloobalApi.claimPaymentShare(me, transactionId);
+                            setKeep("added");
+                            onToast?.(out.claimed > 0 ? `${geuLensBarMoney(out.claimed, out.currency || shareCurrency, lens, viewerCurrency)} added to your balance` : "Nothing to add yet");
+                            if (typeof window !== "undefined") window.dispatchEvent(new Event("gloobal:balanceChanged"));
+                          } catch (error) {
+                            setKeep("grow");
+                            onToast?.((error && error.message) || "Couldn't add it just now");
+                          }
+                        }}
+                        style={{ minHeight: 44, borderRadius: 14, border: "none", fontSize: 13, fontWeight: 800, cursor: "pointer", background: on ? T.positive : T.surfaceAlt, color: on ? "#fff" : T.inkSoft }}
+                      >{label}</button>;
+                    })}
+                  </div>
+                  {transactionId && signedIn ? (
+                    <div data-testid="unlock-thanks" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "2px 2px" }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>{thanked ? `Thanks sent to ${payeeName}` : `Say thanks to ${payeeName}`}</span>
+                      <span style={{ display: "flex", gap: 6 }}>
+                        {PAYMENT_UNLOCK_THANKS.map(([kind, Icon, colour, label]) => <button
+                          key={kind}
+                          type="button"
+                          aria-label={label}
+                          aria-pressed={thanked === kind}
+                          data-testid={`unlock-thanks-${kind}`}
+                          onClick={async () => {
+                            const before = thanked;
+                            setThanked(kind);
+                            try { await GloobalApi.sendPaymentThanks(transactionId, kind); } catch (error) { setThanked(before); onToast?.("Couldn't send that just now"); }
+                          }}
+                          style={{ width: 36, height: 36, borderRadius: "50%", border: "none", cursor: "pointer", display: "grid", placeItems: "center", background: thanked === kind ? `${colour}22` : T.surfaceAlt, boxShadow: thanked === kind ? `0 0 0 2px ${colour}` : "none" }}
+                        ><Icon size={17} color={colour} strokeWidth={2.3} fill={thanked === kind ? colour : "none"} /></button>)}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              <div style={{ padding: "12px 16px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  data-testid="unlock-done"
+                  style={{ minHeight: 50, borderRadius: 16, border: "none", background: `linear-gradient(135deg,#047857 0%,${T.positive} 100%)`, color: "#fff", fontSize: 14.5, fontWeight: 800, cursor: "pointer" }}
+                >
+                  Done
+                </button>
                 <button
                   type="button"
                   onClick={onViewShareReceipt}
                   data-testid="unlock-view-share-receipt"
-                  style={{ minHeight: 50, borderRadius: 16, border: "none", background: `linear-gradient(135deg,#047857 0%,${T.positive} 100%)`, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}
+                  style={{ border: "none", background: "transparent", color: T.accent, fontSize: 12.5, fontWeight: 800, padding: "8px 0", cursor: "pointer" }}
                 >
                   View Creator Share receipt
-                </button>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  style={{ minHeight: 46, borderRadius: 14, border: `1px solid ${T.line}`, background: T.surface, color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer" }}
-                >
-                  Back to the payment receipt
                 </button>
               </div>
             </>

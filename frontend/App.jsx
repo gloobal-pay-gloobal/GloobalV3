@@ -2495,6 +2495,13 @@ function GloobalId() {
   // remote send, because that send changed the server's number and the
   // local ledger has only applied its own view of the same event.
   const [refreshBalanceToken, setRefreshBalanceToken] = useState19(0);
+  // Money moved by a screen that does not hold the balance itself — "Add to
+  // balance" on the Creator Share card (0189) — asks for a fresh read.
+  useEffect15(() => {
+    const onBalanceChanged = () => setRefreshBalanceToken((n) => n + 1);
+    window.addEventListener("gloobal:balanceChanged", onBalanceChanged);
+    return () => window.removeEventListener("gloobal:balanceChanged", onBalanceChanged);
+  }, []);
   // Whether the figure on screen has actually been confirmed against the
   // server, rather than being whatever the local ledger happens to hold.
   // The local ledger always has *a* number, so on its own it can never say

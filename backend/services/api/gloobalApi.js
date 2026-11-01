@@ -1074,6 +1074,25 @@ var GloobalApi = {
     };
   },
 
+  // POST /api/assets/claim-interest with a payment named — "Add to balance"
+  // on the screen after paying (0189). Releases only that payment's Creator
+  // Share (and anything it has earned) into the balance. Throws with the
+  // server's own sentence on a refusal; nothing moves on a failure.
+  async claimPaymentShare(symbolId, referenceId) {
+    const result = await gloobalApiClient.post("/api/assets/claim-interest", { symbolId, referenceId });
+    return {
+      claimed: Number(result && result.claimed) || 0,
+      newBalance: result && Number.isFinite(Number(result.newBalance)) ? Number(result.newBalance) : null,
+      currency: (result && result.currency) || null
+    };
+  },
+
+  // POST /api/transactions/:referenceId/thanks — a one-tap thank-you to the
+  // person paid (0189): "heart" | "star" | "thumbs" | "coffee". Moves no money.
+  async sendPaymentThanks(referenceId, kind) {
+    return gloobalApiClient.post(`/api/transactions/${encodeURIComponent(referenceId)}/thanks`, { kind });
+  },
+
   // GET /api/assets/settlements/:symbolId — every settlement, newest first:
   // { id, amount, principal, interest, currency, seedCount, spent, from,
   // to, at }. Null on a failed read, [] on none.

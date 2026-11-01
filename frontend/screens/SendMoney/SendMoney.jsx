@@ -251,6 +251,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   const [pastReceipt, setPastReceipt] = useState15(null);
   const requestClosePastReceipt = useBackClose(!!pastReceipt, () => setPastReceipt(null));
   const [searchStage, setSearchStage] = useState15(() => prefillReceiver ? "found" : "dialing");
+  // Location, worked out while the amount is still on screen (0189), so a
+  // payment never fails at the end for want of it. The gate inside the
+  // payment is unchanged and still decides; this only asks it earlier.
+  const payLocation = usePaymentLocationStatus(searchStage === "found");
   // Recipient lookup against GET /api/users/resolve. searchError carries
   // the inline "no such user" message; searchBusy blocks a second lookup
   // and disables Search while one is in flight.
@@ -1554,7 +1558,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
        cards together through name → Gloobal ID → mobile number →
        country name. Replaces the old per-card flip button that used
        to sit on the found receiver card's own corner. */
-  }<div className="header"><NavBackButton onClick={onClose} /><div style={{ display: "flex", alignItems: "center", gap: 10 }}><NavIconButton onClick={openContactPicker} label="Choose from contacts"><ContactIcon size={17} color={T.ink} /></NavIconButton>{
+  }<div className="header"><NavBackButton onClick={onClose} /><div style={{ display: "flex", alignItems: "center", gap: 10 }}>{searchStage === "found" ? <PayLocationChip state={payLocation.state} /> : null}<NavIconButton onClick={openContactPicker} label="Choose from contacts"><ContactIcon size={17} color={T.ink} /></NavIconButton>{
     /* Scan, beside history, where the founder asked for it. Somebody on
        this screen is about to type twelve symbols they are reading off
        another phone; the code on that phone says the same thing and
@@ -2183,7 +2187,11 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     return <div data-testid="send-corridor-limit" role={overCorridorLimit ? "alert" : void 0} style={{ marginTop: topOpen ? 0 : 18, marginBottom: -10, borderRadius: 14, padding: "10px 12px", fontSize: 12.5, fontWeight: 700, lineHeight: 1.45, background: overCorridorLimit || paused ? T.negativeSoft : T.surfaceAlt, color: overCorridorLimit || paused ? T.negative : T.inkSoft }}>{paused
       ? `Payments to ${corridorLimit.countryName} are paused right now.`
       : <>{overCorridorLimit ? "Too large to send to " : "You can send up to "}{overCorridorLimit ? `${corridorLimit.countryName} right now. You can send up to ` : ""}<span style={{ whiteSpace: "nowrap", color: overCorridorLimit ? T.negative : T.ink }}>{maxParts.lead}{maxParts.trail && <span style={{ fontSize: geuLensTrailSize(12.5) }}> {maxParts.trail}</span>}</span>{overCorridorLimit ? "." : ` to ${corridorLimit.countryName} right now.`}</>}</div>;
-  })()}{searchStage === "found" && <button
+  })()}{searchStage === "found" && payLocationNeedsAction(payLocation.state) && <PayLocationNotice
+    state={payLocation.state}
+    busy={payLocation.busy}
+    onTurnOn={payLocation.request}
+  />}{searchStage === "found" && !payLocationNeedsAction(payLocation.state) && <button
     className="send-btn"
     onClick={handleSend}
     disabled={overCorridorLimit || undefined}
@@ -2335,7 +2343,16 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       ? null
       : geuLensBarParts(receiverAmount, bottom.currency, lens, top.currency)}
     flag={bottom.flag}
+    recipientId={bottom.registered === false ? "" : bottom.id || ""}
     reason={failureReason}
+    // When the gate stopped it for location, the button turns location on
+    // and goes back to the amount, rather than "Try again" doing nothing.
+    locationProblem={Boolean(failureReason) && /location/i.test(failureReason)}
+    onFixLocation={async () => {
+      setFailureReason(null);
+      setTransactionStatus("idle");
+      await payLocation.request();
+    }}
     onRetry={() => {
       // Straight back to the amount screen rather than re-posting from
       // here. Both failure paths returned before anything moved, and the

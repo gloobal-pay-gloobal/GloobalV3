@@ -78,24 +78,33 @@ describe("it renders the state that was already being tracked", () => {
 });
 
 describe("nothing on the screen is invented", () => {
-  test("the stages are three, and the third never ticks here", () => {
-    // There IS a checklist now, and the rule that kept one off the screen is
-    // what makes it safe: nothing on it advances on a clock, and no row claims
-    // to have happened until it has.
-    //
-    //   verified — already true when this screen opens (PIN, then biometric)
-    //   sending  — true for as long as this screen is up; it IS the request
-    //   settling — grey, and never ticked here: the moment the server
-    //              answers, this screen is gone and the receipt is the tick
+  test("it says one true thing while waiting, and lists no stages", () => {
+    // 0189 took the three-row checklist out: the founder asked for the
+    // screen to say less. What is left is the one sentence that is true for
+    // as long as this screen is up — keep it open — and nothing that could
+    // tick on a clock.
     const s = code(SCREEN);
-    assert.match(s, /<ProcessingStage state="done">Verified/);
-    assert.match(s, /<ProcessingStage state="now">/);
-    assert.match(s, /<ProcessingStage state="next" last>Settling/);
-    assert.ok(!/state="done">Settling/.test(s), "the third row is ticking on a screen that cannot know");
-    // And the specific shape this must never become.
-    for (const staged of ["Confirming", "Step 1", "step:"]) {
+    assert.match(s, /Keep this open &middot; a few seconds/);
+    assert.ok(!/ProcessingStage/.test(s), "a stage list came back");
+    for (const staged of ["Confirming", "Step 1", "step:", "Settling"]) {
       assert.ok(!s.includes(staged), `a fabricated stage appeared: ${staged}`);
     }
+  });
+
+  test("a failure says the money is safe before it says why", () => {
+    const s = code(SCREEN);
+    const safe = s.indexOf("Your money is safe");
+    const why = s.indexOf('reason || "The payment could not be completed."');
+    assert.ok(safe > 0 && why > safe, "the reassurance does not come first");
+    assert.match(s, /Nothing left your account\./);
+  });
+
+  test("the person paid is shown by their photo, with their flag in the corner", () => {
+    const s = code(SCREEN);
+    assert.match(s, /useCounterpartyPhoto\(recipientId \|\| ""\)/);
+    assert.match(s, /<ProfileAvatar photo=\{photo\}/);
+    assert.match(s, /data-testid="processing-flag"/);
+    assert.match(s, /position: "absolute", top: 2, right: 0/, "the flag is not in the top-right corner");
   });
 
   test("a stage's state comes from the payment, never from a clock", () => {
@@ -211,8 +220,12 @@ describe("the figure on screen is the one leaving the balance", () => {
     const s = code(SCREEN);
     assert.match(s, /geuLensTrailSize\(PROCESSING_AMOUNT_SIZE\)/,
       "the unit is set at the same size as the figure");
-    assert.match(s, /\{"\u2212"\}\{amount\.lead\}/,
-      "the sign and the figure are not drawn together");
+    // 0189: no minus. While it sends nothing has left yet, and on a failure
+    // nothing left at all — the minus is what made a failed payment look
+    // like lost money. The receipt carries it once the money has gone.
+    assert.match(s, /\}\{amount\.lead\}\{amount\.trail/,
+      "the figure and its unit are not drawn together");
+    assert.doesNotMatch(s, /\{"\u2212"\}\{amount\.lead\}/, "the minus is back on a payment that has not left");
     assert.doesNotMatch(s, /fmtMoney/, "the dialog formats money of its own again");
   });
 

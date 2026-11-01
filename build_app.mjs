@@ -158,6 +158,8 @@ const FRONTEND_MODULES = [
   // LocationObservation/captureBrowserGeo (already emitted from
   // BACKEND_MODULES) and is consulted by App.jsx's payment handlers.
   "hooks/usePaymentLocation.js",
+  // The same check, read on the Send screen before Pay is pressed (0189).
+  "hooks/usePaymentLocationStatus.js",
   // Payment notifications: the ask (after the first payment, never before),
   // the per-transaction dedupe, and the sending. Needs G_LOGO_DATA_URI from
   // data/mockData.js, already emitted above.
@@ -239,6 +241,8 @@ const FRONTEND_MODULES = [
   // rendered from App.jsx (below).
   "components/dialogs/helpSheets.jsx",
   // The blocking screen shown when a payment stops for want of a location.
+  // The location note on the Send screen and the steps it shares with the modal.
+  "components/dialogs/payLocation.jsx",
   "components/dialogs/LocationRequiredModal.jsx",
   // The in-app notification list, read from the server. Rendered from the
   // Dashboard (below).

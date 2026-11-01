@@ -1,6 +1,6 @@
 // src/components/dialogs/PaymentProcessing.jsx
 import { useState as useState35, useEffect as useEffect25 } from "react";
-import { Check as CheckProcessing } from "lucide-react";
+import { ShieldCheck as ShieldProcessing } from "lucide-react";
 //
 // The screen between "verified" and the receipt.
 //
@@ -18,27 +18,11 @@ import { Check as CheckProcessing } from "lucide-react";
 //
 // ── Everything on this screen is true ────────────────────────────────────
 //
-// There are three stages listed now, and the rule that kept them off the
-// screen before is the reason they are safe to draw: NOTHING here advances on
-// a timer, and no stage claims to have happened until it has.
-//
-//   1. Verified it's you — already true when this screen opens. The PIN, and
-//      the fingerprint after it, were taken before the POST was made.
-//   2. Sending — true for exactly as long as this screen is up, because this
-//      screen IS the request being in flight.
-//   3. Settling — drawn grey, and it never ticks here. It cannot: the moment
-//      the server answers, this screen is gone and the receipt is on top.
-//      The receipt is the tick.
-//
-// So the list says what is known and stops. A third row that filled in after
-// a couple of seconds would be the defect this codebase already names, in the
-// comment about a biometric prompt that "was a 700ms setTimeout that always
-// succeeded".
-//
-// The slow-line below is the same rule applied to reassurance. It appears
-// only once the call really has been running longer than a payment usually
-// takes, and what it then says — that the server may be waking up — is the
-// actual most likely cause on this deployment.
+// NOTHING here advances on a timer. The screen is up exactly as long as the
+// request is in flight; the receipt is what says it arrived. The one timer is
+// the slow-line below, which appears only once the call really has been
+// running longer than a payment usually takes, and names the actual most
+// likely cause on this deployment (the server waking up).
 var PROCESSING_SLOW_AFTER_MS = 6000;
 
 // ── The hero ────────────────────────────────────────────────────────────
@@ -120,123 +104,30 @@ function ProcessingRing({ tone, spinning }) {
   /> : null}</svg>;
 }
 
-// The recipient, ringed. On a failure the same disc keeps the flag and takes
-// a badge, rather than being replaced by a bare cross — who the payment was
-// for is still the most useful thing on the screen, and swapping it out for
-// an error glyph throws that away at the exact moment somebody is deciding
-// whether to try again.
-function PaymentHero({ flag, failed }) {
-  const inner = PROCESSING_HERO - 26;
+// The recipient, ringed: their PHOTO (0189), with their country's flag
+// small in the top-right corner. On a failure the photo goes grey and takes
+// a red badge bottom-right, rather than being replaced by a bare cross —
+// who the payment was for is still the most useful thing on the screen.
+function PaymentHero({ flag, failed, photo, name }) {
+  const inner = PROCESSING_HERO - 22;
+  const badge = Math.round(PROCESSING_HERO * 0.3);
   return <div
-    style={{
-      position: "relative",
-      width: PROCESSING_HERO,
-      height: PROCESSING_HERO,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      flexShrink: 0
-    }}
+    style={{ position: "relative", width: PROCESSING_HERO, height: PROCESSING_HERO, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
   ><ProcessingRing tone={failed ? T.negative : T.accent} spinning={!failed} /><div
-    style={{
-      width: inner,
-      height: inner,
-      borderRadius: "50%",
-      background: T.surface,
-      boxShadow: T.shadowCard,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden"
-    }}
-  >{flag
-    ? <FlagEmoji flag={flag} shape="circle" size={inner - 18} fit="cover" />
-    : <div style={{
-        width: inner - 18,
-        height: inner - 18,
-        borderRadius: "50%",
-        background: T.accentSoft
-      }} />}</div>{failed ? <div
+    data-testid="processing-photo"
+    style={{ borderRadius: "50%", overflow: "hidden", filter: failed ? "grayscale(0.7) opacity(0.85)" : "none", lineHeight: 0 }}
+  ><ProfileAvatar photo={photo} name={name} size={inner} /></div>{flag ? <div
+    data-testid="processing-flag"
+    aria-hidden="true"
+    style={{ position: "absolute", top: 2, right: 0, width: badge, height: badge, borderRadius: "50%", overflow: "hidden", boxShadow: `0 0 0 3px ${T.surface}, 0 3px 8px rgba(0,0,0,0.18)`, background: T.surface, lineHeight: 0 }}
+  ><FlagEmoji flag={flag} shape="circle" size={badge} fit="cover" /></div> : null}{failed ? <div
     aria-hidden="true"
     style={{
-      position: "absolute",
-      right: -1,
-      bottom: 3,
-      width: 32,
-      height: 32,
-      borderRadius: "50%",
-      background: T.negative,
-      border: `3px solid ${T.surface}`,
-      color: "#fff",
-      fontSize: 15,
-      fontWeight: 800,
-      lineHeight: 1,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
+      position: "absolute", right: 2, bottom: 6, width: 32, height: 32, borderRadius: "50%",
+      background: T.negative, border: `3px solid ${T.surface}`, color: "#fff", fontSize: 15, fontWeight: 800,
+      lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center"
     }}
   >&#215;</div> : null}</div>;
-}
-
-// One stage of the payment, as a row.
-//
-// `state` is "done" | "now" | "next", and it comes from the payment's own
-// status — never from a clock. See the note at the top of this file for why
-// the third row is always "next" while this screen is up.
-// The three rows were three separate lines with a gap between them, which
-// is how you set a caption, not how you draw a sequence. A rail joins them
-// now: each dot carries the segment down to the next one, and the segment
-// is green where that step is behind us and grey where it is not. The list
-// then says where the payment has got to at a glance, before any of the
-// words are read — and it does it with the same three facts, not new ones.
-var PROCESSING_STAGE_DOT = 22;
-var PROCESSING_STAGE_STEP = 40;
-
-function ProcessingStage({ state, last, children }) {
-  const done = state === "done";
-  const now = state === "now";
-  return <div
-    style={{
-      display: "flex",
-      alignItems: "flex-start",
-      gap: 12,
-      fontSize: 13,
-      fontWeight: 700,
-      color: done || now ? T.ink : T.inkFaint,
-      // The row is as tall as one step of the rail, so the segment below
-      // the dot has somewhere to go. The last row is only its own dot —
-      // nothing hangs off the bottom of the list.
-      minHeight: last ? PROCESSING_STAGE_DOT : PROCESSING_STAGE_STEP
-    }}
-  ><span
-    style={{ position: "relative", flexShrink: 0, width: PROCESSING_STAGE_DOT, height: PROCESSING_STAGE_DOT }}
-  ><span
-    aria-hidden="true"
-    data-gp-breathe={now ? "" : void 0}
-    style={{
-      width: PROCESSING_STAGE_DOT,
-      height: PROCESSING_STAGE_DOT,
-      borderRadius: "50%",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      background: done ? T.positive : now ? T.accent : T.surfaceSunk,
-      boxShadow: now ? `0 0 0 4px ${T.accentSoft}` : "none",
-      animation: now ? "gp-breathe 1.6s ease-in-out infinite" : "none"
-    }}
-  >{done ? <CheckProcessing size={13} color="#fff" strokeWidth={3} /> : null}</span>{!last ? <span
-    aria-hidden="true"
-    style={{
-      position: "absolute",
-      top: PROCESSING_STAGE_DOT + 3,
-      left: "50%",
-      marginLeft: -1,
-      width: 2,
-      height: PROCESSING_STAGE_STEP - PROCESSING_STAGE_DOT - 6,
-      borderRadius: 1,
-      background: done ? T.positive : T.line
-    }}
-  /> : null}</span><span style={{ paddingTop: 2.5, overflowWrap: "anywhere" }}>{children}</span></div>;
 }
 
 // status  — "processing" | "failed". Anything else renders nothing.
@@ -244,18 +135,35 @@ function ProcessingStage({ state, last, children }) {
 //           already more specific than anything this component could write
 //           ("That amount is too small to convert into the recipient's
 //           currency", "Insufficient balance", "Account locked").
+//
+// ── SIMPLE (0189) ────────────────────────────────────────────────────────
+//
+// The founder asked for this screen to say less. It now says three things:
+// who (their photo, their flag in the corner), how much, and "keep this
+// open". The three-row stage list is gone — it was honest, and it was also
+// three more lines to read while waiting for one thing.
+//
+// On a failure it leads with the only thing anybody needs to know first:
+// the money did not leave. The amount is shown WITHOUT a minus and in grey;
+// the old screen showed "−250.00₹" in large type, which read as money gone.
+// When the reason was location, the button turns it on rather than sending
+// the person back to start again.
 function PaymentProcessing({
   status,
   recipientName,
+  recipientId,
   amount,
   receives,
   flag,
   reason,
+  locationProblem,
+  onFixLocation,
   onRetry,
   onClose
 }) {
   const [slow, setSlow] = useState35(false);
   const blocking = status === "processing" || status === "failed";
+  const { photo } = useCounterpartyPhoto(recipientId || "");
 
   useEffect25(() => {
     if (status !== "processing") {
@@ -273,11 +181,6 @@ function PaymentProcessing({
   // a payment in flight. Reachable is right for a navigation aid and wrong
   // here: the one thing it does is jump to another screen, and doing that
   // mid-payment abandons a POST that is already on the wire.
-  //
-  // A window event rather than a prop because the launcher is mounted in
-  // App.jsx and this component is mounted five levels down inside SendMoney;
-  // threading a boolean up through that is a lot of plumbing for one boolean,
-  // and the app already uses exactly this channel for `gloobal:sessionExpired`.
   useEffect25(() => {
     if (!blocking || typeof window === "undefined") return void 0;
     const fire = (active) => window.dispatchEvent(
@@ -299,10 +202,6 @@ function PaymentProcessing({
       position: "fixed",
       inset: 0,
       zIndex: 620,
-      // A wash rather than flat white. The old screen was one plain field with
-      // four things floating in the middle of it and no sense of where the
-      // page began; this puts a soft ground under the hero and lets the lower
-      // half fall to plain surface, so the content sits on something.
       background: `radial-gradient(118% 62% at 50% 38%, ${T.accentSoft} 0%, ${T.bg} 52%, ${T.surface} 100%)`,
       display: "flex",
       alignItems: "stretch",
@@ -325,202 +224,87 @@ function PaymentProcessing({
       maxWidth: 430,
       display: "flex",
       flexDirection: "column",
-      padding: "0 28px calc(24px + env(safe-area-inset-bottom, 0px))"
+      padding: "0 24px calc(24px + env(safe-area-inset-bottom, 0px))"
     }}
   ><div
-    style={{
-      flex: 1,
-      minHeight: 0,
-      display: "flex",
-      flexDirection: "column",
-      justifyContent: "center",
-      gap: 14
-    }}
-  >{
-    /* A card, not a page.
-       Everything the screen says sits in one white box in the middle of the
-       wash, which gives the payment an edge and a shadow to stand on —
-       before this, four things floated down the centre of an open field with
-       nothing to say where the page began or ended. The stage list below the
-       rule is part of the same object rather than a second card, because it
-       is describing the payment the card is about. */
-  }<div
+    style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 14 }}
+  ><div
     data-testid="processing-card"
-    style={{
-      background: T.surface,
-      borderRadius: T.radiusXl,
-      boxShadow: T.shadowRaised,
-      overflow: "hidden"
-    }}
+    style={{ background: T.surface, borderRadius: T.radiusXl, boxShadow: T.shadowRaised, overflow: "hidden" }}
   ><div
+    style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18, textAlign: "center", padding: "32px 22px 26px" }}
+  ><PaymentHero flag={flag} failed={failed} photo={photo} name={recipientName} /><div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}><div
+    style={{ fontSize: 13.5, fontWeight: 700, color: failed ? T.negative : T.inkSoft }}
+  >{failed ? "Not sent" : recipientName ? `Sending to ${recipientName}` : "Sending"}</div>{amount && amount.lead ? <div
     style={{
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 22,
-      textAlign: "center",
-      padding: "34px 22px 28px"
-    }}
-  ><PaymentHero flag={flag} failed={failed} />{
-    /* Who and how much, carried through from the screen behind. A person
-       waiting thirty seconds on a payment wants to see the payment, not a
-       spinner on an empty field — and if the wrong figure is on this screen,
-       this is the last moment it can be caught.
-
-       The eyebrow carries the STATE and the line under it carries the NAME,
-       rather than both being crushed into one "Paying Chdg" at 13px. A name
-       is a proper noun and deserves to be set like one. */
-  }<div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}><div
-    style={{
-      fontSize: 11.5,
-      fontWeight: 800,
-      letterSpacing: 1.4,
-      textTransform: "uppercase",
-      color: failed ? T.negative : T.inkFaint
-    }}
-  >{failed ? "Payment not completed" : "Paying"}</div>{recipientName ? <div
-    style={{
-      fontSize: 17,
-      fontWeight: 800,
-      color: T.ink,
-      fontFamily: T.fontDisplay,
-      letterSpacing: -0.2,
-      maxWidth: 300,
-      overflowWrap: "anywhere"
-    }}
-  >{recipientName}</div> : null}{amount && amount.lead ? <div
-    style={{
-      marginTop: PROCESSING_AMOUNT_GAP,
       fontSize: PROCESSING_AMOUNT_SIZE,
       fontWeight: 800,
-      color: failed ? T.inkSoft : T.ink,
+      color: failed ? T.inkFaint : T.ink,
       fontFamily: T.fontDisplay,
       letterSpacing: -1.2,
       lineHeight: 1.05,
-      // Digits in a column, so the figure does not shimmer if it ever
-      // re-renders and so it reads as money rather than as text.
       fontVariantNumeric: "tabular-nums"
     }}
   >{
-    /* The minus belongs to the screen, not to the caller: this dialog only
-       ever shows money on its way OUT. A payment coming in has no "please
-       wait" — it arrives. */
-  }{"−"}{amount.lead}{amount.trail ? <span
+    /* No minus, sending or failed. While it is sending nothing has left yet,
+       and when it fails nothing left at all — a minus here was the reason a
+       failed payment looked like lost money. The receipt carries the minus
+       once the money has really gone. */
+  }{amount.lead}{amount.trail ? <span
     style={{ fontSize: geuLensTrailSize(PROCESSING_AMOUNT_SIZE), fontWeight: 800, letterSpacing: 0, opacity: 0.72 }}
-  >{` ${amount.trail}`}</span> : null}</div> : null}{
-    /* THE OTHER HALF OF A CROSS-BORDER PAYMENT.
-       The figure above is what leaves this balance. It is not what arrives:
-       send ₹302.14 to Japan and ¥500 lands there, and only the first of
-       those two numbers was on the screen. The person waiting is usually
-       waiting on the second one — it is the number they quoted, and the
-       one the receipt will be checked against.
-
-       Passed as null when both sides are in the same currency, because
-       then it is the same number said twice. */
+  >{` ${amount.trail}`}</span> : null}</div> : null}{failed && recipientName ? <div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkFaint }}>{`to ${recipientName}`}</div> : null}{
+    /* THE OTHER HALF OF A CROSS-BORDER PAYMENT. The figure above is what
+       leaves this balance; this is what arrives. Null when both sides are
+       in the same currency, because then it is the same number twice. */
   }{receives && receives.lead ? <div
-    style={{
-      marginTop: 7,
-      fontSize: 12,
-      fontWeight: 700,
-      color: T.inkSoft,
-      maxWidth: 290,
-      lineHeight: 1.4
-    }}
-  >{recipientName ? `${recipientName} receives ` : "They receive "}<span
+    style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: T.inkSoft, maxWidth: 290, lineHeight: 1.4 }}
+  >{recipientName ? `${recipientName} gets ` : "They get "}<span
     style={{ color: failed ? T.inkSoft : T.ink, fontVariantNumeric: "tabular-nums" }}
   >{receives.lead}</span>{receives.trail ? <span
     style={{ color: T.inkFaint }}
   >{` ${receives.trail}`}</span> : null}</div> : null}</div>{
     failed
-      ? <p style={{
-          margin: 0,
-          fontSize: 13.5,
-          color: T.ink,
-          lineHeight: 1.5,
-          maxWidth: 320,
-          background: T.negativeSoft,
-          border: `1px solid rgba(226,63,69,0.16)`,
-          borderRadius: T.radiusMd,
-          padding: "12px 16px",
-          textAlign: "left"
+      ? <div data-testid="processing-safe" style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", textAlign: "left" }}><div style={{
+          display: "flex", gap: 10, alignItems: "flex-start", background: T.positiveSoft, borderRadius: T.radiusMd, padding: "12px 14px"
+        }}><ShieldProcessing size={20} color={T.positive} strokeWidth={2.4} style={{ flexShrink: 0, marginTop: 1 }} /><div><div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Your money is safe</div><div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, marginTop: 2, lineHeight: 1.4 }}>Nothing left your account.</div></div></div><p style={{
+          margin: 0, fontSize: 13, color: T.inkSoft, lineHeight: 1.5, padding: "0 4px"
         }}>{
-          /* The server's own words, in a card rather than as loose grey text.
-             It knows why; this component does not. */
+          /* The server's own words. It knows why; this component does not. */
           reason || "The payment could not be completed."
-        }</p>
+        }</p></div>
       : <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "9px 16px",
-            borderRadius: 999,
-            // On the card's own white now, so the pill takes the page's soft
-            // ground rather than white-on-white with a hairline holding it up.
-            background: T.bg,
-            fontSize: 12.5,
-            fontWeight: 700,
-            color: T.inkSoft
-          }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "9px 16px", borderRadius: 999, background: T.bg, fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}
         ><span
           data-gp-breathe
           aria-hidden="true"
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: T.accent,
-            animation: "gp-breathe 1.6s ease-in-out infinite"
-          }}
-        />Don&#39;t close this screen</div>
+          style={{ width: 6, height: 6, borderRadius: "50%", background: T.accent, animation: "gp-breathe 1.6s ease-in-out infinite" }}
+        />Keep this open &middot; a few seconds</div>
   }{!failed && slow ? <p
     data-gp-rise
-    style={{
-      margin: 0,
-      fontSize: 12,
-      color: T.inkFaint,
-      lineHeight: 1.5,
-      maxWidth: 290,
-      animation: "gp-rise 0.3s ease"
-    }}
+    style={{ margin: 0, fontSize: 12, color: T.inkFaint, lineHeight: 1.5, maxWidth: 290, animation: "gp-rise 0.3s ease" }}
   >{
-    /* Shown only once the call really has outrun a normal payment, and it
-       names the actual most likely cause on this deployment rather than
-       apologising in general terms: the API sleeps on Render's free plan and
-       a cold start is measured in tens of seconds. */
-  }Taking longer than usual. The server may be waking up &mdash; your payment is still going through.</p> : null}</div>{
-    /* The stages, under a rule inside the same card.
-       Read the note at the top of this file before changing any of these
-       three: the first is true before the screen opens, the second is true
-       for as long as the screen is up, and the third is deliberately never
-       ticked here — the receipt is what says it settled. Nothing on this list
-       is driven by a timer. */
-  }{!failed ? <div
-    data-testid="processing-stages"
-    style={{
-      borderTop: `1px solid ${T.line}`,
-      padding: "20px 24px 22px",
-      display: "flex",
-      flexDirection: "column",
-      gap: 0,
-      textAlign: "left"
-    }}
-  ><ProcessingStage state="done">Verified it&#39;s you</ProcessingStage><ProcessingStage state="now">{recipientName ? `Sending to ${recipientName}` : "Sending your payment"}</ProcessingStage><ProcessingStage state="next" last>Settling into their account</ProcessingStage></div> : null}</div>{
+    /* Shown only once the call really has outrun a normal payment: the API
+       sleeps on Render's free plan and a cold start is tens of seconds. */
+  }Taking longer than usual. The server may be waking up &mdash; your payment is still going through.</p> : null}</div></div>{
     failed ? <div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}>{
       /* Try again is offered because the server never posted this payment —
-         both failure paths return before anything moved, and one of them
-         clears the applied-request id precisely so the same request can be
-         sent again. A retry here re-runs the payment, it does not repeat
-         one. */
+         both failure paths return before anything moved. A retry here goes
+         back to the amount; it does not repeat a payment. When the reason
+         was location, the same button turns location on first. */
     }<button
-    onClick={onRetry}
+    onClick={locationProblem && onFixLocation ? onFixLocation : onRetry}
+    data-testid="processing-retry"
     className="v2-tap"
     style={{
-      width: "100%", padding: "14px 0", borderRadius: 16, border: "none",
-      background: T.gradButton, color: "#fff", fontSize: 14, fontWeight: 800,
+      width: "100%", padding: "15px 0", borderRadius: 18, border: "none",
+      background: T.gradButton, color: "#fff", fontSize: 14.5, fontWeight: 800,
       cursor: "pointer", boxShadow: T.shadowRaised
     }}
-  >Try again</button><button
+  >{locationProblem && onFixLocation ? "Turn on location" : "Try again"}</button>{locationProblem && onFixLocation ? <button
+    onClick={onRetry}
+    className="v2-tap"
+    style={{ width: "100%", padding: "4px 0", border: "none", background: "transparent", color: T.inkFaint, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+  >Try again</button> : null}<button
     onClick={onClose}
     className="v2-tap"
     style={{

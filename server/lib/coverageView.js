@@ -484,6 +484,133 @@ const csvCell = (v) => {
 };
 const toCsv = (head, rows) => [head.join(',')].concat(rows.map((r) => r.map(csvCell).join(','))).join('\n') + '\n';
 
+// ── Our numbers (0197) ───────────────────────────────────────────────────
+//
+// The totals behind GLOOBAL Coverage, as one in-app view — replacing the
+// four CSV downloads. Signed in only; the screen draws it in the app's own
+// design and nothing here is offered as a file.
+//
+//   summary   all money paid, split (people and shops / Creator Share /
+//             GLOOBAL kept 0 / fees 0), payments, people, countries, this
+//             month, per payment, and today's books check
+//   weeks     the last 12 weeks (Monday to Sunday in the viewer's zone),
+//             per country, with countries under OPEN_DATA_MIN_GROUP
+//             payments that week added together as "other", and a total
+//   months    each month: paid, to people and shops, Creator Share,
+//             payments; and a total
+//   books     the last 30 daily checks, converted, with each currency
+//   projects  published Hooman Projects: goal, raised, people who helped
+//
+// Same conversion as the rest of Coverage (convertGroup), same privacy
+// floor as the CSVs had, but by week so countries show by name.
+function mondayOf(dayKey) {
+  const d = new Date(`${dayKey}T12:00:00Z`);
+  const dow = (d.getUTCDay() + 6) % 7;
+  return new Date(d.getTime() - dow * 86400000).toISOString().slice(0, 10);
+}
+
+async function buildOpenNumbers({ currency, tz, now = new Date() } = {}) {
+  const target = /^[A-Z]{3}$/.test(String(currency || '').toUpperCase()) ? String(currency).toUpperCase() : REFERENCE_CURRENCY;
+  const zone = cleanTz(tz);
+  const rateTo = makeRateResolver(target);
+  const accountCountries = await resolveAccountCountries();
+  const isoOf = (g) => {
+    const snap = String(g._id.snapshotIso || '').trim().toUpperCase();
+    return /^[A-Z]{2}$/.test(snap) ? snap : (accountCountries.get(String(g._id.partyId)) || DEFAULT_COUNTRY_ISO);
+  };
+  const unconvertible = new Set();
+
+  // Every payment, by day in the viewer's zone. One pass serves the
+  // summary, the weeks and the months.
+  const groups = await windowGroups({ from: null, to: null, bucket: 'day', tz: zone });
+  let paid = 0; let share = 0; let payments = 0;
+  const countries = new Set(); const payers = new Set();
+  const weeks = {}; const months = {};
+  const thisMonthKey = ymd(now, zone).slice(0, 7);
+  const weekFloor = mondayOf(ymd(new Date(now.getTime() - 11 * 7 * 86400000), zone));
+  for (const g of groups) {
+    const iso = isoOf(g);
+    const day = g._id.bucket; const mk = day.slice(0, 7); const wk = mondayOf(day);
+    payments += g.transactions; countries.add(iso); payers.add(String(g._id.partyId));
+    const m = months[mk] || (months[mk] = { month: mk, paid: 0, share: 0, payments: 0 });
+    m.payments += g.transactions;
+    const w = wk >= weekFloor ? (weeks[wk] || (weeks[wk] = { from: wk, byCountry: {} })) : null;
+    const wc = w ? (w.byCountry[iso] || (w.byCountry[iso] = { iso, money: 0, payments: 0 })) : null;
+    if (wc) wc.payments += g.transactions;
+    const conv = await convertGroup(g, target, rateTo);
+    if (conv.value === null) { unconvertible.add(conv.currency); continue; }
+    const sh = g.sourceTotal > 0 ? (Number(g.shareTotal) || 0) * (conv.value / g.sourceTotal) : 0;
+    paid += conv.value; share += sh;
+    m.paid += conv.value; m.share += sh;
+    if (wc) wc.money += conv.value;
+  }
+
+  // Weeks: newest first, the last 12 even when empty, small countries merged.
+  const weekRows = [];
+  for (let i = 0; i < 12; i += 1) {
+    const from = mondayOf(ymd(new Date(now.getTime() - i * 7 * 86400000), zone));
+    const to = new Date(new Date(`${from}T12:00:00Z`).getTime() + 6 * 86400000).toISOString().slice(0, 10);
+    const w = weeks[from] || { byCountry: {} };
+    const rows = Object.values(w.byCountry);
+    const shown = rows.filter((c) => c.payments >= OPEN_DATA_MIN_GROUP).sort((a, b) => b.money - a.money || b.payments - a.payments)
+      .map((c) => ({ iso: c.iso, money: round2(c.money), payments: c.payments }));
+    const small = rows.filter((c) => c.payments < OPEN_DATA_MIN_GROUP);
+    const other = small.length ? { countries: small.length, money: round2(small.reduce((a, c) => a + c.money, 0)), payments: small.reduce((a, c) => a + c.payments, 0) } : null;
+    weekRows.push({
+      from, to, current: i === 0, countries: shown, other,
+      total: { money: round2(rows.reduce((a, c) => a + c.money, 0)), payments: rows.reduce((a, c) => a + c.payments, 0) },
+    });
+  }
+  while (weekRows.length > 1 && weekRows[weekRows.length - 1].total.payments === 0) weekRows.pop();
+
+  const monthRows = Object.values(months).sort((a, b) => b.month.localeCompare(a.month))
+    .map((m) => ({ month: m.month, paid: round2(m.paid), toPeople: round2(m.paid - m.share), creatorShare: round2(m.share), gloobalKept: 0, fees: 0, payments: m.payments }));
+
+  // Books: today's, then the last 30 days, each converted.
+  const today = await booksToday({ now });
+  const todayIn = await booksIn(today, target, rateTo);
+  const docs = await BooksCheck.find({}).sort({ day: -1 }).limit(30).lean();
+  const bookRows = [];
+  for (const d of docs) {
+    const v = await booksIn(d, target, rateTo);
+    bookRows.push({
+      day: d.day, checkedAt: d.checkedAt, ok: Boolean(d.ok), should: v.should, is: v.does, difference: v.difference,
+      currencies: (d.currencies || []).map((c) => ({ currency: c.currency, should: round2(c.shouldExist), is: round2(c.doesExist), difference: round2(c.difference), ok: Boolean(c.ok) })),
+    });
+  }
+
+  // Projects.
+  const projects = await Project.find({ status: 'published' }, 'title category countryIso goalMinor goalCurrency createdAt').sort({ createdAt: -1 }).lean();
+  const sums = await Contribution.aggregate([{ $group: { _id: '$projectId', raised: { $sum: '$amount' }, backers: { $addToSet: '$backerId' } } }]);
+  const by = new Map(sums.map((x) => [String(x._id), x]));
+  const projectRows = projects.map((pr) => {
+    const x = by.get(String(pr._id));
+    return { title: pr.title, category: pr.category, countryIso: pr.countryIso || null, currency: pr.goalCurrency || null, goal: pr.goalMinor != null ? round2(pr.goalMinor / 100) : null, raised: x ? round2(x.raised) : 0, helped: x ? x.backers.length : 0, createdAt: pr.createdAt };
+  });
+
+  const thisMonth = months[thisMonthKey] ? months[thisMonthKey].paid : 0;
+  return {
+    success: true,
+    currency: target,
+    tz: zone,
+    madeAt: now.toISOString(),
+    summary: {
+      paid: round2(paid), payments, people: accountCountries.size, payers: payers.size, countries: countries.size,
+      thisMonth: round2(thisMonth), perPayment: payments ? round2(paid / payments) : 0,
+      split: { toPeople: round2(paid - share), creatorShare: round2(share), gloobalKept: 0, fees: 0 },
+      books: { ok: todayIn.ok, checkedAt: todayIn.checkedAt, difference: todayIn.difference, currencies: todayIn.currencies, unopened: todayIn.unopened || 0 },
+    },
+    weeks: weekRows,
+    months: monthRows,
+    monthsTotal: { paid: round2(paid), toPeople: round2(paid - share), creatorShare: round2(share), payments },
+    books: bookRows,
+    projects: projectRows,
+    minGroup: OPEN_DATA_MIN_GROUP,
+    unconvertible: [...unconvertible],
+    testMoney: true,
+  };
+}
+
 async function openDataCsv(name, { currency } = {}) {
   const target = /^[A-Z]{3}$/.test(String(currency || '').toUpperCase()) ? String(currency).toUpperCase() : REFERENCE_CURRENCY;
   const rateTo = makeRateResolver(target);
@@ -559,5 +686,6 @@ module.exports = {
   buildCoverageView,
   buildMyImpact,
   openDataCsv,
+  buildOpenNumbers,
   _clearViewCache: () => viewCache.clear(),
 };

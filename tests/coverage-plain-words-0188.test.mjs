@@ -49,7 +49,7 @@ describe("Coverage speaks plain words", () => {
 
 describe("the questions a person asks are the headings", () => {
   const src = read(DASH);
-  for (const h of ["Can you trust these numbers?", "Does the money add up?", "Money over time", "Where every", "Download our numbers", "What we noticed", "How we count"]) {
+  for (const h of ["Can you trust these numbers?", "Does the money add up?", "Money over time", "Where every", "Our numbers", "What we noticed", "How we count"]) {
     test(h, () => assert.ok(src.includes(h), `missing "${h}"`));
   }
   test("the Creator Share is explained as money that comes back to the payer", () => {
@@ -58,17 +58,15 @@ describe("the questions a person asks are the headings", () => {
   });
 });
 
-describe("the public page and the files speak the same words", () => {
-  test("the open-data page", () => {
+describe("our numbers speak the same words (0197: in the app, no files)", () => {
+  test("the downloads and the public page are retired", () => {
     const page = read("server/server.js");
-    const at = page.indexOf("app.get('/open-data'");
-    const block = page.slice(at, at + 2600);
-    for (const w of ["Books check", "backers", "Money moved", "takings", "merged"]) assert.ok(!block.includes(w), `the public page still says "${w}"`);
-    assert.match(block, /Does the money add up\?/);
+    assert.match(page, /app\.get\('\/api\/open-data\/:file', lookupLimit, openDataGone\);/);
+    assert.match(page, /app\.get\('\/open-data', lookupLimit, openDataGone\);/);
   });
-  test("the spreadsheet columns", () => {
-    const v = read("server/lib/coverageView.js");
-    for (const w of ["'reached_payee'", "'should_exist'", "'does_exist'", "'backers'", "money_moved_"]) assert.ok(!v.includes(w), `a column is still called ${w}`);
-    assert.match(v, /'should_be_here', 'is_here', 'difference', 'adds_up'/);
+  test("the in-app view uses the plain words", () => {
+    const v = read("frontend/features/coverage/OurNumbers.jsx").replace(/^\s*\/\/.*$/gm, "");
+    for (const w of ["Books check", "backers", "Money moved", "takings", "merged", "date_utc", "money_paid_"]) assert.ok(!v.includes(w), `our numbers still say "${w}"`);
+    for (const w of ["Does the money add up?", "Should be here", "Is here", "To people and shops", "Back to payers · Creator Share", "How to read this"]) assert.ok(v.includes(w), `missing "${w}"`);
   });
 });

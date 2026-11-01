@@ -638,11 +638,17 @@ var GloobalApi = {
   },
 
   // Public file links: open in the browser, no token needed.
-  openDataUrl(file, currency = "INR") {
-    return gloobalApiUrl(`/api/open-data/${file}.csv?currency=${encodeURIComponent(String(currency || "INR").toUpperCase())}`);
-  },
-  openDataPageUrl() {
-    return gloobalApiUrl("/open-data");
+  // Our numbers (0197): the totals behind Coverage, in the app only.
+  // Signed in. null when it could not be read.
+  async getOurNumbers(currency = "INR", tz = "") {
+    try {
+      const p = new URLSearchParams({ currency: String(currency || "INR").toUpperCase() });
+      if (tz) p.set("tz", tz);
+      const result = await gloobalApiClient.get(`/api/coverage/numbers?${p.toString()}`, { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS });
+      return result && result.success ? result : null;
+    } catch (e) {
+      return null;
+    }
   },
 
   async getCoverage(currency) {

@@ -2786,40 +2786,35 @@ app.get('/api/coverage/books', lookupLimit, async (req, res) => {
   }
 });
 
-const OPEN_DATA_FILES = ['daily', 'split', 'books', 'projects'];
-const openDataCache = new Map();
-app.get('/api/open-data/:file', lookupLimit, async (req, res) => {
+// ── Our numbers (0197) ───────────────────────────────────────────────────
+// The totals behind Coverage, viewed in the app only. The four CSV
+// downloads and the public /open-data page are retired at the founder's
+// request ("don't give them a download option, keep it in view only"):
+// both now answer 410 and point at the app. `viewer` is the masked ID the
+// screen writes faintly across itself.
+const numbersCache = new Map();
+app.get('/api/coverage/numbers', lookupLimit, requireAuth, async (req, res) => {
   try {
-    const name = String(req.params.file || '').replace(/\.csv$/i, '');
-    if (!OPEN_DATA_FILES.includes(name)) return res.status(404).json({ success: false, message: 'No such file.' });
     const currency = /^[A-Z]{3}$/.test(String(req.query.currency || '').toUpperCase()) ? String(req.query.currency).toUpperCase() : 'INR';
-    const key = `${name}|${currency}`;
-    const hit = openDataCache.get(key);
-    let csv = hit && Date.now() - hit.at < 10 * 60000 ? hit.csv : null;
-    if (!csv) {
-      csv = await coverageView.openDataCsv(name, { currency });
-      openDataCache.set(key, { at: Date.now(), csv });
+    const tz = String(req.query.tz || '').slice(0, 64);
+    const key = `${currency}|${tz}`;
+    const hit = numbersCache.get(key);
+    let view = hit && Date.now() - hit.at < 5 * 60000 ? hit.view : null;
+    if (!view) {
+      view = await coverageView.buildOpenNumbers({ currency, tz });
+      numbersCache.set(key, { at: Date.now(), view });
     }
-    res.set('Content-Type', 'text/csv; charset=utf-8');
-    res.set('Content-Disposition', `attachment; filename="gloobal-${name}.csv"`);
-    res.set('Cache-Control', 'public, max-age=600');
-    return res.send(csv);
+    const id = String(req.authUser.symbolId || '');
+    return res.json({ ...view, viewer: id.length >= 4 ? `${id.slice(0, 2)}••••••${id.slice(-2)}` : '' });
   } catch (error) {
-    console.error('open data error:', error);
-    return res.status(500).json({ success: false, message: 'Could not build that file just now.' });
+    console.error('our numbers error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load our numbers just now.' });
   }
 });
 
-app.get('/open-data', lookupLimit, (req, res) => {
-  const rows = [
-    ['daily', 'Money paid each day', 'For each day and country: how much money was paid and how many payments. If a country had fewer than 5 payments on a day, it is added to OTHER so no one can be picked out.'],
-    ['split', 'Where the money went', 'For each month: how much was paid, how much went to the person or shop, how much came back to the payer as Creator Share, what GLOOBAL kept (0) and fees (0).'],
-    ['books', 'Does the money add up?', 'For each day and currency: the money that should be in GLOOBAL, the money that is, and any difference.'],
-    ['projects', 'Hooman Projects', 'Every published project: its goal, the money raised so far and how many people helped.'],
-  ];
-  res.set('Content-Type', 'text/html; charset=utf-8');
-  return res.send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GLOOBAL's numbers</title><style>body{font-family:system-ui,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#1C1830;background:#F4F2FB;line-height:1.5}a{color:#5B34E6;font-weight:700}li{margin:14px 0}small{color:#5F5A78}</style></head><body><h1>GLOOBAL's numbers</h1><p>The totals behind GLOOBAL Coverage, as spreadsheet files that open in Excel or Google Sheets. Totals only: no names, no IDs, nothing about one shop.</p><ul>${rows.map(([f, t, d]) => `<li><a href="/api/open-data/${f}.csv">${t}</a><br><small>${d}</small></li>`).join('')}</ul><p><small>This is test money: balances are not real money until a bank partner is connected.</small></p></body></html>`);
-});
+const openDataGone = (req, res) => res.status(410).json({ success: false, code: 'open_data_retired', message: 'Our numbers are now inside the GLOOBAL app: Coverage → Our numbers.' });
+app.get('/api/open-data/:file', lookupLimit, openDataGone);
+app.get('/open-data', lookupLimit, openDataGone);
 
 app.get('/api/stats', async (req, res) => {
   try {

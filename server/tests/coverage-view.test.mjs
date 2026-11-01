@@ -175,17 +175,24 @@ async function run() {
   check("My impact counts my own payments", me.paid === 300 && me.payments === 2 && me.payees === 1, JSON.stringify(me));
   check("My impact adds up to what I paid", Math.abs(me.split.reached + me.split.creatorShare + me.split.projects + me.split.gloobal + me.split.fees - me.paid) < 0.02);
 
-  // Open data: totals only, small groups merged.
-  const res = await fetch(`${BASE}/api/open-data/daily.csv`, { headers: { "X-Forwarded-For": currentIp } });
-  const csv = await res.text();
-  check("open data is a CSV anyone can download", res.status === 200 && /text\/csv/.test(res.headers.get("content-type") || ""), res.headers.get("content-type"));
-  const lines = csv.trim().split("\n").slice(1);
-  check("a day with fewer than 5 payments is merged into OTHER", lines.length > 0 && lines.every((l) => l.split(",")[1] === "OTHER"), csv);
-  check("open data names nobody", !/Asha|Bala|Chai/.test(csv));
-  const missing = await fetch(`${BASE}/api/open-data/users.csv`, { headers: { "X-Forwarded-For": currentIp } });
-  check("only the four published files exist", missing.status === 404, String(missing.status));
+  // Our numbers (0197): in the app only, signed in; the CSVs are retired.
+  const anonNumbers = await call("GET", "/api/coverage/numbers?currency=INR");
+  check("our numbers need sign-in", anonNumbers.status === 401, String(anonNumbers.status));
+  const nums = (await call("GET", "/api/coverage/numbers?currency=INR&tz=Asia/Kolkata", { token: a.token })).body;
+  check("our numbers answer", nums && nums.success === true, JSON.stringify(nums).slice(0, 160));
+  check("the summary is every payment", nums.summary.paid === 350 && nums.summary.payments === 3, JSON.stringify(nums.summary));
+  check("GLOOBAL keeps nothing and charges nothing, said plainly", nums.summary.split.gloobalKept === 0 && nums.summary.split.fees === 0);
+  check("the split adds up to what was paid", Math.abs(nums.summary.split.toPeople + nums.summary.split.creatorShare - nums.summary.paid) < 0.02);
+  check("the weeks are newest first and add up", nums.weeks.length >= 1 && nums.weeks[0].current === true && nums.weeks.reduce((x, w) => x + w.total.money, 0) === 350, JSON.stringify(nums.weeks.map((w) => [w.from, w.total])));
+  check("a country with fewer than 5 payments a week is not named", nums.weeks.every((w) => w.countries.every((c) => c.payments >= 5)) && nums.weeks.some((w) => w.other && w.other.countries === 1), JSON.stringify(nums.weeks[0]));
+  check("the months add up to the total", nums.months.reduce((x, m) => x + m.paid, 0) === nums.monthsTotal.paid);
+  check("the books are there, converted", nums.books.length >= 1 && typeof nums.books[0].difference === "number");
+  check("the viewer is named for the watermark, masked", typeof nums.viewer === "string" && nums.viewer.includes("••••••") && !nums.viewer.includes(a.id));
+  check("our numbers name nobody", !/Asha|Bala|Chai/.test(JSON.stringify({ ...nums, viewer: "" })));
+  const gone = await fetch(`${BASE}/api/open-data/daily.csv`, { headers: { "X-Forwarded-For": currentIp } });
+  check("the CSV downloads are retired", gone.status === 410, String(gone.status));
   const page = await fetch(`${BASE}/open-data`, { headers: { "X-Forwarded-For": currentIp } });
-  check("the open data page lists the files", page.status === 200 && /daily\.csv/.test(await page.text()));
+  check("and so is the public page", page.status === 410, String(page.status));
 
   console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);
 }

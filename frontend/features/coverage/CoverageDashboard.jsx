@@ -228,7 +228,7 @@ function CoverageDashboard({ currency = "INR", signedIn = false, onOpenProjects,
     {per100 ? <CoverageCard onClick={() => setScreen("split")} label="Where your money goes" style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}><CoverageDonut parts={splitParts.filter((p) => p.value > 0)} size={54} thickness={9} /><span style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 13.5, color: T.ink }}>{`Where every ${coverageMoney(100, cur, { whole: true })} goes`}</b><span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}>{`${full(per100.reached)} to the person or shop · ${full(per100.creatorShare)} back to the payer · no fees`}</span></span><CovChevron size={16} color={T.inkFaint} /></CoverageCard> : null}
     {signedIn ? <CoverageCard onClick={() => setScreen("impact")} label="My impact" style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "grid", placeItems: "center", flexShrink: 0 }}><CovSpark size={17} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 13.5, color: T.ink }}>My impact</b><span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}>{impact ? `${coverageMoney(impact.paid, impact.currency)} paid · ${impact.projects.length} project${impact.projects.length === 1 ? "" : "s"} helped · only you see this` : "Only you see this"}</span></span><CovChevron size={16} color={T.inkFaint} /></CoverageCard> : null}
     {links}
-    <button onClick={() => setScreen("open")} style={{ border: "none", background: "none", padding: "4px 0", cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: T.accent, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}><CovSheet size={15} />Download our numbers and check them yourself</button>
+    {signedIn ? <button onClick={() => setScreen("open")} data-testid="coverage-our-numbers" style={{ border: "none", background: "none", padding: "4px 0", cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: T.accent, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}><CovSheet size={15} />See our numbers and check them yourself</button> : null}
   </div>;
 
   // ── ANALYSE ──
@@ -273,7 +273,7 @@ function CoverageDashboard({ currency = "INR", signedIn = false, onOpenProjects,
       [CovRates, ratesAge != null && ratesAge <= t.rates.maxAgeHours ? "#0F8A4F" : "#B45309", "Currency rates up to date", ratesAge == null ? "No rates yet" : `Last updated at ${coverageClock(t.rates.newestFetchedAt).slice(0, 5)} · we refresh them every ${t.rates.maxAgeHours} hours`, ratesAge != null && ratesAge <= t.rates.maxAgeHours ? "ok" : "wait", ratesAge == null ? "—" : `${ratesAge} h ago`],
       [CovTest, T.inkSoft, "This is test money", "Balances are not real money until a bank partner is connected", "info", "Info"]
     ].map(([Icon, col, title, sub, tone, pill], n) => <div key={title} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderTop: n ? `1px solid ${T.line}` : "none" }}><Icon size={18} color={col} /><span style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 13.5, color: T.ink }}>{title}</b><span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}>{sub}</span></span><CoveragePill tone={tone}>{pill}</CoveragePill></div>)}</CoverageCard>
-    <CoverageCard onClick={() => setScreen("open")} label="Download our numbers" style={{ padding: "11px 14px", display: "flex", alignItems: "center", gap: 10 }}><CovSheet size={18} color={T.accent} /><span style={{ flex: 1 }}><b style={{ display: "block", fontSize: 13, color: T.ink }}>Download our numbers</b><span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}>4 files · totals only · anyone can open them</span></span><CovDownload size={18} color={T.accent} /></CoverageCard>
+    {signedIn ? <CoverageCard onClick={() => setScreen("open")} label="Our numbers" style={{ padding: "11px 14px", display: "flex", alignItems: "center", gap: 10 }}><CovSheet size={18} color={T.accent} /><span style={{ flex: 1 }}><b style={{ display: "block", fontSize: 13, color: T.ink }}>Our numbers</b><span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}>Weeks, months, every day's check · totals only</span></span><CovChevron size={18} color={T.accent} /></CoverageCard> : null}
   </CoverageSubScreen> : null;
 
   // ── COUNTRIES ──
@@ -327,14 +327,10 @@ function CoverageDashboard({ currency = "INR", signedIn = false, onOpenProjects,
     </>}
   </CoverageSubScreen> : null;
 
-  // ── OPEN DATA ──
-  const files = [["daily", "Money paid each day", "Per country: money paid and number of payments"], ["split", "Where the money went", "Month by month: to people and shops, Creator Share, fees"], ["books", "Does the money add up?", "Every day's check, and any difference"], ["projects", "Hooman Projects", "Each project's goal, money raised and how many helped"]];
-  const open = screen === "open" ? <CoverageSubScreen title="Download our numbers" onBack={() => setScreen("")}>
-    <CoverageCard style={{ padding: 14 }}><b style={{ display: "block", fontSize: 15, color: T.ink }}>Check our numbers yourself</b><span style={{ fontSize: 12.5, color: T.inkFaint, fontWeight: 600 }}>The totals behind this screen, as spreadsheet files that open in Excel or Google Sheets.</span></CoverageCard>
-    <CoverageCard>{files.map(([f, title, sub], i) => <a key={f} href={GloobalApi.openDataUrl(f, cur)} target="_blank" rel="noopener noreferrer" download={`gloobal-${f}.csv`} data-testid={`open-data-${f}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderTop: i ? `1px solid ${T.line}` : "none", textDecoration: "none" }}><CovSheet size={20} color={T.accent} /><span style={{ flex: 1 }}><b style={{ display: "block", fontSize: 13.5, color: T.ink }}>{title}</b><span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}>{sub}</span></span><CovDownload size={18} color={T.accent} /></a>)}</CoverageCard>
-    <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "12px 14px", borderRadius: 16, background: T.surfaceAlt }}><CovShield size={18} color="#0F8A4F" /><span style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600, lineHeight: 1.45 }}>Totals only. No names, no IDs, nothing about one shop. If a country had fewer than 5 payments on a day, we add it to "OTHER" so no one can be picked out.</span></div>
-    <a href={GloobalApi.openDataPageUrl()} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5, fontWeight: 800, color: T.accent, textAlign: "center", textDecoration: "none" }}>Open the same files without an account</a>
-  </CoverageSubScreen> : null;
+  // ── OUR NUMBERS (0197) ──
+  // The totals behind this screen, in the app only — the CSV downloads are
+  // gone. See features/coverage/OurNumbers.jsx.
+  const open = screen === "open" && signedIn ? <OurNumbersScreen currency={cur} onBack={() => setScreen("")} /> : null;
 
   return <>{home}{analyse}{split}{trust}{countries}{country}{impactScreen}{open}</>;
 }

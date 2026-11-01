@@ -9,6 +9,7 @@ import {
   Check as Check2,
   ChevronUp,
   ChevronDown,
+  Bus as Bus3,
   ArrowUpDown,
   Zap as Zap3,
   Lock as Lock4,
@@ -886,6 +887,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [showElectricity, setShowElectricity] = useState14(false);
   const requestCloseElectricity = useBackClose(showElectricity, () => setShowElectricity(false));
   const [showMore, setShowMore] = useState14(false);
+  // 0184: the filter sheet behind Pay & Services' corner button, how many
+  // filters are on (lights the button), the folded brand list, and this
+  // phone's record of which pins get used when (smart order).
+  const [bzFilterOpen, setBzFilterOpen] = useState14(false);
+  const [bzActive, setBzActive] = useState14(0);
+  const [brandsOpen, setBrandsOpen] = useState14(false);
+  const [payUses, setPayUses] = useState14(() => loadPayUses(myGloobalId));
+  // The app's floating map button covered a shop's name on Pay & Services
+  // (founder's screenshot). The screen has its own List / Map now, so the
+  // button steps aside while it is open — the same counted signal payments
+  // use, so this can never unhide it over something else.
+  useEffect12(() => {
+    if (!showMore || typeof window === "undefined") return undefined;
+    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
+    fire(true);
+    return () => fire(false);
+  }, [showMore]);
   // ── PINNED BUSINESSES ─────────────────────────────────────────────────
   //
   // Which businesses this account has put at the top of Pay & Services.
@@ -924,7 +942,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     setShowMore(false);
     setMoreQuery("");
     setTravelExpanded(false);
+    setBzFilterOpen(false);
+    setBzActive(0);
   });
+  // The phone's Back closes the filter sheet before the screen under it.
+  const requestCloseBzFilter = useBackClose(bzFilterOpen, () => setBzFilterOpen(false));
   const [moreQuery, setMoreQuery] = useState14("");
   // The second half of the Pay & Services search. Two boxes, the same
   // shape as a creator's `first.last` name — see the comment at the
@@ -3590,7 +3612,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        10 businesses. Full-screen like Add Bank / Coverage rather than
        a bottom sheet, since the list can run long once search is in
        play. */
-  }{showMore && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseMore} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Pay & Services</span></div><div style={{ padding: "0 18px 10px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px", boxShadow: T.shadowCard }}><Search3 size={16} color={T.inkFaint} /><input
+  }{showMore && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseMore} /><span style={{ flex: 1, fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Pay & Services</span><BazaarFilterButton count={bzActive} onClick={() => setBzFilterOpen(true)} /></div><div style={{ padding: "0 18px 10px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px", boxShadow: T.shadowCard }}><Search3 size={16} color={T.inkFaint} /><input
     value={moreQuery}
     onChange={(e) => setMoreQuery(e.target.value)}
     // A pasted `rasoi.ghar` lands in the first box whole. Split it at the
@@ -3686,6 +3708,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // One way into a business, used by the row and by the pinned tile,
     // so the two cannot start behaving differently.
     const openBusiness = async (b) => {
+      if (b && b.key) setPayUses(recordPayUse(myGloobalId, b.key));
       // A pinned creator opens their page. A business opens the pay sheet.
       // Same strip, two different things behind it, and the tile knows
       // which it is because the card said so when it was cached.
@@ -3721,60 +3744,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
     }}>{creatorDisplayName(creatorHit)}</span></span><ChevronRight2 size={15} color={T.inkFaint} /></button> : null;
 
-    return <>{creatorResult}{!q && pinnedBusinesses.length > 0 && <PayPinnedStrip
-      items={pinnedBusinesses}
-      onOpen={openBusiness}
-      onUnpin={togglePin}
-    />}{
-      /* ── GLOOBAL बाज़ार ──────────────────────────────────────────────
-         Real shops, by the start of their name, by category and Near me,
-         ranked by what they were paid today. The exact-name hit above
-         still comes first and is left out of this list so it is not
-         shown twice — and it is the way to a shop that chose not to be
-         listed, which this list respects. */
-    }<BazaarSection
-      query={[String(moreQuery || "").trim(), String(moreQueryLast || "").trim()].filter(Boolean).join(".")}
-      countryIso={dialCountry && dialCountry.iso}
-      excludeSymbolId={creatorHit ? creatorHit.symbolId : ""}
-      ownerKey={myGloobalId}
-      onQuery={(text) => {
-        // A recent search goes back into the two boxes it came from.
-        const dot = String(text || "").indexOf(".");
-        setMoreQuery(dot > 0 ? text.slice(0, dot) : text);
-        setMoreQueryLast(dot > 0 ? text.slice(dot + 1) : "");
-      }}
-      onToast={showToast2}
-      onOpen={async (shop) => {
-        const found = await GloobalApi.resolveCreatorHandle(shop.handle || "");
-        if (found) setOpenCreator(found); else showToast2("Could not open that shop just now.");
-      }}
-    />{quickPay.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
-                        Quick pay
-                      </div><div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(3, quickPay.length)}, minmax(0, 1fr))`, gap: 10 }}>{quickPay.map(({ key, label, Icon, onClick }) => <IconTile
-      key={key}
-      onClick={onClick}
-      label={label}
-      box={56}
-      radius={18}
-      background={T.accentSoft}
-    ><Icon size={24} color={T.accent} /></IconTile>)}</div></div>}{showTravelSection && <div><button
-      onClick={() => setTravelExpanded((v) => !v)}
-      className="v2-tap"
-      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", border: "none", background: "none", padding: "2px 2px 8px", cursor: "pointer" }}
-    ><span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4 }}>Travel</span>{travelExpanded || q ? <ChevronUp size={15} color={T.inkFaint} /> : <ChevronDown size={15} color={T.inkFaint} />}</button>{(travelExpanded || q) && <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>{(q ? travelMatches : TRAVEL_ACTIONS).map(({ key, label, Icon, chip, cashbackRate }) => <IconTile
-      key={key}
-      onClick={() => {
-        requestCloseMore();
-        setPayTarget({ key, label, chip, Icon, cashbackRate });
-        setPayAmount("25.00");
-      }}
-      label={label}
-      box={56}
-      radius={18}
-      background={T.positiveSoft}
-    ><Icon size={24} color={T.positive} /></IconTile>)}</div>}</div>}<div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>
-                      Top businesses
-                    </div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{businesses.length === 0 ? <div style={{ padding: "22px 18px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{creatorLookupBusy ? "Looking\u2026" : "No matches"}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 3 }}>{creatorLookupBusy ? "Checking that name on GLOOBAL." : "A creator is found by their exact name."}</div></div> : businesses.map((b, i) => {
+    // ── 0184: ONE JOB FIRST ─────────────────────────────────────────────
+    //
+    // Pay again (four, smart-ordered), one row of bills and travel, then
+    // the बाज़ार list. Narrowing — a name typed or a filter on — clears the
+    // shortcuts away so the list has the room; they come back with ✕.
+    const narrowing = Boolean(q) || bzActive > 0;
+    const billsRow = quickPay.slice(0, 3).concat(TRAVEL_ACTIONS.length && (!q || travelMatches.length) ? [{
+      key: "travel", label: "Travel", Icon: Bus3, onClick: () => setTravelExpanded((v) => !v), pressed: travelExpanded || Boolean(q)
+    }] : []).concat(quickPay.slice(3));
+    const hour = new Date().getHours();
+    const pinNote = payUses.length ? (hour < 12 ? "this morning" : hour < 17 ? "this afternoon" : hour < 21 ? "this evening" : "tonight") : "";
+    const businessRow = (b, i) => {
       const isPinned = payPins.indexOf(b.key) >= 0;
       // ── THE ROW IS NOT THE BUTTON ANY MORE ────────────────────────
       //
@@ -3799,7 +3780,77 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       onToggle={() => togglePin(b.key)}
       label={b.label}
     /><span style={{ paddingRight: 15, display: "flex", alignItems: "center", flexShrink: 0 }}><ChevronRightIcon /></span></div>;
-    })}</div></div></>;
+    };
+    return <>{creatorResult}{!narrowing && pinnedBusinesses.length > 0 && <PayPinnedStrip
+      items={smartPinOrder(pinnedBusinesses, payUses)}
+      note={pinNote}
+      onOpen={openBusiness}
+      onUnpin={togglePin}
+    />}{(!narrowing || (q && billsRow.length > 0)) && billsRow.length > 0 && <div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>Bills & travel</div><div data-testid="pay-bills-row" style={{
+      display: "grid", gridTemplateColumns: `repeat(${Math.max(4, billsRow.length)}, minmax(0, 1fr))`, gap: 6,
+      background: T.surface, borderRadius: T.radiusLg, boxShadow: T.shadowCard, padding: "12px 6px"
+    }}>{billsRow.map(({ key, label, Icon, onClick, pressed }) => <IconTile
+      key={key}
+      onClick={onClick}
+      ariaPressed={pressed}
+      label={label}
+      labelSize={11}
+      box={46}
+      radius={15}
+      selected={Boolean(pressed)}
+      background={pressed ? T.accent : T.accentSoft}
+    ><Icon size={21} color={pressed ? "#fff" : T.accent} /></IconTile>)}</div>{(travelExpanded || q) && travelMatches.length + (q ? 0 : TRAVEL_ACTIONS.length) > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 12 }}>{(q ? travelMatches : TRAVEL_ACTIONS).map(({ key, label, Icon, chip, cashbackRate }) => <IconTile
+      key={key}
+      onClick={() => {
+        requestCloseMore();
+        setPayTarget({ key, label, chip, Icon, cashbackRate });
+        setPayAmount("25.00");
+      }}
+      label={label}
+      box={52}
+      radius={17}
+      background={T.positiveSoft}
+    ><Icon size={22} color={T.positive} /></IconTile>)}</div>}</div>}{
+      /* ── GLOOBAL बाज़ार ──────────────────────────────────────────────
+         Real shops, one line each; a tap opens the shop's own page, which
+         is where its detail lives. The exact-name hit above still comes
+         first and is left out of this list so it is not shown twice. */
+    }<BazaarSection
+      query={[String(moreQuery || "").trim(), String(moreQueryLast || "").trim()].filter(Boolean).join(".")}
+      countryIso={dialCountry && dialCountry.iso}
+      excludeSymbolId={creatorHit ? creatorHit.symbolId : ""}
+      ownerKey={myGloobalId}
+      filterOpen={bzFilterOpen}
+      onFilterClose={requestCloseBzFilter}
+      onActiveChange={setBzActive}
+      onQuery={(text) => {
+        // A recent search goes back into the two boxes it came from.
+        const dot = String(text || "").indexOf(".");
+        setMoreQuery(dot > 0 ? text.slice(0, dot) : text);
+        setMoreQueryLast(dot > 0 ? text.slice(dot + 1) : "");
+      }}
+      onToast={showToast2}
+      onOpen={async (shop) => {
+        const found = await GloobalApi.resolveCreatorHandle(shop.handle || "");
+        if (found) { setPayUses(recordPayUse(myGloobalId, found.symbolId)); setOpenCreator(found); } else showToast2("Could not open that shop just now.");
+      }}
+    />{
+      /* ── ONLINE BRANDS ─────────────────────────────────────────────────
+         The fixed list of big brands. Shown when a typed name matches one;
+         otherwise folded into one line at the end, so it is reachable
+         without taking the first screen. Pinned brands are in Pay again. */
+      q ? (businessHits.length > 0 ? <div><div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}>Online brands</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{businessHits.map(businessRow)}</div></div> : !creatorHit && <div style={{ textAlign: "center", fontSize: 11.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.45 }}>{
+          // Offline is not "no such creator": say how a name is found
+          // rather than claiming nobody has it.
+          creatorLookupBusy ? "Checking that name on GLOOBAL\u2026" : "A creator is found by their exact name."
+        }</div>)
+        : !bzActive && <div><button
+          onClick={() => setBrandsOpen((v) => !v)}
+          aria-expanded={brandsOpen}
+          className="v2-tap"
+          style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", border: "none", background: "none", padding: "2px 2px 8px", cursor: "pointer", fontFamily: "inherit" }}
+        ><span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4 }}>Online brands <span style={{ color: T.inkFaint }}>{"\u00B7 " + TOP_BUSINESSES.length}</span></span>{brandsOpen ? <ChevronUp size={15} color={T.inkFaint} /> : <ChevronDown size={15} color={T.inkFaint} />}</button>{brandsOpen && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{TOP_BUSINESSES.map(businessRow)}</div>}</div>
+    }</>;
   })()}</div><CreatorNameKeyboard
     open={Boolean(moreKbField)}
     field={moreKbField || "first"}

@@ -1197,6 +1197,26 @@ function CreatorPage({
         padding: "13px 24px", fontSize: 14, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", flexShrink: 0
       }}
     >Pay</button></div>
+  }{
+    /* ── PAY, ALWAYS IN REACH (0184) ──────────────────────────────────
+       Pay & Services now leads here, and the page holds the detail, so
+       the page must never stand between somebody and paying. With
+       nothing in the basket, a Pay bar for any amount sits fixed at the
+       bottom; it hands over to Send with the receiver filled in and the
+       amount left for the payer, the same as the basket does. */
+    count === 0 && !isOwner && creator && creator.symbolId && <div style={{
+      flexShrink: 0, background: theme.page, borderTop: `1px solid ${T.line}`,
+      padding: "12px 18px calc(16px + env(safe-area-inset-bottom, 0px))"
+    }}><button
+      data-testid="creator-pay-any"
+      onClick={() => onPay && onPay({ amount: 0, currency: ccyCode, lines: [], creator })}
+      className="v2-tap"
+      style={{
+        width: "100%", height: 52, background: T.gradButton, color: "#fff", border: "none", borderRadius: 16,
+        fontSize: 15, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", boxShadow: `0 8px 18px rgba(${T.accentRgb},0.28)`,
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 16px"
+      }}
+    >Pay {name}</button></div>
   }</div>;
 }
 

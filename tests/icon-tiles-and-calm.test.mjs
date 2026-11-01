@@ -39,11 +39,12 @@ test("IconTile keeps the label outside the box", () => {
 test("every icon tile uses it", () => {
   const dash = code("frontend/screens/Dashboard/Dashboard.jsx");
   assert.ok((dash.match(/<IconTile/g) || []).length >= 4, "Accounts, Bills, Quick pay and Travel");
-  assert.match(dash, /quickPay\.map\(\(\{ key, label, Icon, onClick \}\) => <IconTile/);
+  // 0184: bills and travel are one row of tiles.
+  assert.match(dash, /billsRow\.map\(\(\{ key, label, Icon, onClick, pressed \}\) => <IconTile/);
   assert.match(dash, /TRAVEL_ACTIONS\)\.map\(\(\{ key, label, Icon, chip, cashbackRate \}\) => <IconTile/);
   // Home's four big tiles keep their flip boxes and gain a name underneath.
   assert.match(dash, /<\/button><span style=\{\{ marginTop: 8, fontSize: 13, fontWeight: 700, color: T\.ink, textAlign: "center" \}\}>\{label\}<\/span><\/div>;/);
   const bz = code("frontend/features/bazaar/bazaar.jsx");
-  assert.equal((bz.match(/<IconTile/g) || []).length, 3, "category row, its festival tile, and the category picker");
+  assert.equal((bz.match(/<IconTile/g) || []).length, 4, "the filter sheet's categories, its festival tile and its All tile, and the category picker");
   assert.match(code("frontend/features/scan/scanNoteStrip.jsx"), /role="radio"\s*ariaChecked=\{on\}/);
 });

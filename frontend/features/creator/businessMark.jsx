@@ -34,6 +34,7 @@
 // the overwhelming majority of entries in a directory of small traders
 // will always look like, because most of them have no logo at all.
 
+import { useState as useState75 } from "react";
 import { Star as Star4 } from "lucide-react";
 
 // ── THE PIN CONTROL ─────────────────────────────────────────────────────
@@ -176,8 +177,19 @@ function BusinessMark({ name, logo, size = 36, radius }) {
 // the point of choosing; a sideways scroll means the fifth exists only
 // for somebody who already knows to look for it. Rows cost height, and
 // height on a screen that scrolls down anyway is the cheap axis.
-function PayPinnedStrip({ items, onOpen, onUnpin }) {
+//
+// ── 0184: ONE ROW UNTIL ASKED ───────────────────────────────────────────
+//
+// Pay & Services now leads with one job, paying someone, so the strip
+// takes one row: up to four pins, or three and a "+N" tile when there are
+// more. The tile opens the rest IN PLACE, in the same rows of four — every
+// pin is still one tap from the screen, and none is hidden behind a page.
+// Which ones lead is the smart order (payPins.js smartPinOrder).
+function PayPinnedStrip({ items, onOpen, onUnpin, title = "Pay again", note = "" }) {
+  const [allOpen, setAllOpen] = useState75(false);
   if (!items || !items.length) return null;
+  const folded = !allOpen && items.length > PAY_PINS_VISIBLE;
+  const shown = folded ? items.slice(0, PAY_PINS_VISIBLE - 1) : items;
   // Sized so PAY_PINS_VISIBLE of them plus their gaps fill the row
   // EXACTLY, which is now what wraps the fifth onto a row of its own.
   //
@@ -196,7 +208,7 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
     color: T.inkSoft,
     textTransform: "uppercase",
     letterSpacing: 0.4
-  }}>Pinned</span><span style={{ fontSize: 11, fontWeight: 700, color: T.inkFaint }}>{"· " + items.length}</span></div><div
+  }}>{title}</span><span style={{ fontSize: 11, fontWeight: 700, color: T.inkFaint }}>{note ? `· ${note}` : "· " + items.length}</span></div><div
     style={{
       display: "flex",
       flexWrap: "wrap",
@@ -212,7 +224,7 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
       // to scroll — which also means no scroll position to lose and no
       // half-tile resting state for a render to catch.
     }}
-  >{items.map((b) => <div
+  >{shown.map((b) => <div
     key={b.key}
     style={{ flex: `0 0 ${tile}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, position: "relative" }}
   ><button
@@ -280,5 +292,19 @@ function PayPinnedStrip({ items, onOpen, onUnpin }) {
       alignItems: "center",
       justifyContent: "center"
     }}
-  ><Star4 size={11} color={PAY_PIN_STAR} fill={PAY_PIN_STAR} /></button></div>)}</div></div>;
+  ><Star4 size={11} color={PAY_PIN_STAR} fill={PAY_PIN_STAR} /></button></div>)}{items.length > PAY_PINS_VISIBLE ? <div
+    style={{ flex: `0 0 ${tile}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}
+  ><button
+    onClick={() => setAllOpen((v) => !v)}
+    aria-expanded={allOpen}
+    aria-label={allOpen ? "Show fewer pins" : `Show all ${items.length} pins`}
+    data-testid="pay-pins-more"
+    className="v2-tap"
+    style={{
+      width: 70, height: 70, borderRadius: 20, border: `1.5px dashed ${T.line}`, background: T.surface,
+      cursor: "pointer", fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, color: T.inkSoft
+    }}
+  >{allOpen ? "−" : `+${items.length - shown.length}`}</button><span style={{
+    fontSize: 11.5, fontWeight: 700, color: T.inkSoft
+  }}>{allOpen ? "Less" : "More"}</span></div> : null}</div></div>;
 }

@@ -73,7 +73,10 @@ test("the route takes the new filters, and the setup screen saves the new fields
   assert.match(setup, /<BazaarAlsoPicker primary=\{category\} value=\{category2\} onChange=\{setCategory2\} \/>/);
   const c = client();
   assert.match(c, /Under \{ccySymbol\}\{cap\}/);
-  assert.match(c, /strip\("Trending this week", BzTrending, trending\)/);
+  // 0184: Trending and New are sort orders in the filter sheet now.
+  assert.match(c, /\{ key: "week", label: "Trending this week" \}/);
+  assert.match(c, /\{ key: "new", label: "New on GLOOBAL" \}/);
+  assert.match(c, /BAZAAR_SORT_INFO\.filter\(\(o\) => o\.key !== "near" \|\| \(nearOn && here\)\)\.map/);
   assert.match(c, /data-bazaar-suggest=""/);
 });
 

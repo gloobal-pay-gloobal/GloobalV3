@@ -206,3 +206,64 @@ function payPinnedTiles(all, keys, creatorCards) {
   }
   return out;
 }
+
+// ── SMART ORDER (0184) ──────────────────────────────────────────────────
+//
+// "Pay again orders itself": the chai shop paid at 8 am leads in the
+// morning, the shop paid most often leads otherwise. Worked out on THIS
+// phone from when each pin was used — nothing is sent anywhere. Only the
+// ORDER changes; the pins themselves are still the ones their owner chose.
+//
+// A use is opening a pin or a shop to pay it. Kept as [key, time] pairs,
+// newest last, 300 at most, 90 days at most.
+var GLOOBAL_PAY_USE_PREFIX = "gloobal.payUse.v1.";
+var PAY_USE_MAX = 300;
+var PAY_USE_DAYS = 90;
+
+function payUseKey(symbolId) {
+  return GLOOBAL_PAY_USE_PREFIX + String(symbolId || "anon");
+}
+
+function loadPayUses(symbolId) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(payUseKey(symbolId)) || "[]");
+    return Array.isArray(raw) ? raw.filter((u) => Array.isArray(u) && typeof u[0] === "string" && Number.isFinite(u[1])) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function recordPayUse(symbolId, key, now = Date.now()) {
+  if (!key) return [];
+  const cutoff = now - PAY_USE_DAYS * 86400000;
+  const next = loadPayUses(symbolId).filter((u) => u[1] >= cutoff).concat([[String(key), now]]).slice(-PAY_USE_MAX);
+  try { localStorage.setItem(payUseKey(symbolId), JSON.stringify(next)); } catch (e) { /* a convenience, not data */ }
+  return next;
+}
+
+// Minutes between two times of day, the short way round midnight.
+function payUseClockGap(a, b) {
+  const da = new Date(a), db = new Date(b);
+  const ma = da.getHours() * 60 + da.getMinutes();
+  const mb = db.getHours() * 60 + db.getMinutes();
+  const d = Math.abs(ma - mb);
+  return Math.min(d, 1440 - d);
+}
+
+// Each use scores 1, or 3 when it happened within 90 minutes of this time
+// of day; uses fade over the 90 days. Ties keep pin order, so with no
+// history the strip is exactly the order things were pinned in.
+function smartPinOrder(tiles, uses, now = Date.now()) {
+  const list = Array.isArray(tiles) ? tiles : [];
+  const score = Object.create(null);
+  for (const [key, at] of uses || []) {
+    const age = Math.max(0, (now - at) / 86400000);
+    if (age > PAY_USE_DAYS) continue;
+    const near = payUseClockGap(at, now) <= 90 ? 3 : 1;
+    score[key] = (score[key] || 0) + near * (1 - age / (PAY_USE_DAYS * 1.5));
+  }
+  return list
+    .map((t, i) => ({ t, i, s: score[t.key] || 0 }))
+    .sort((a, b) => (b.s - a.s) || (a.i - b.i))
+    .map((x) => x.t);
+}

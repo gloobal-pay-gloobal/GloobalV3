@@ -89,6 +89,9 @@ test("the category and the listing switch are the creator's to set", () => {
 test("Near me asks for location through the one place that may", () => {
   assert.match(client(), /captureBrowserGeo\(\{ timeoutMs: 12000, highAccuracy: true \}\)/);
   assert.ok(!/geolocation\.getCurrentPosition/.test(client()));
-  // Rank numbers only on a ranking; Near me is nearest-first.
-  assert.match(client(), /near \? null : <span style=\{\{\s*width: 22/);
+  // 0184: rows are one line and carry no rank number at all, so Near me
+  // (nearest first) can never show a "1" that reads as a top seller.
+  assert.ok(!/width: 22, flexShrink: 0, fontSize: 12, fontWeight: 800/.test(client()));
+  // And a distance is asked for only when one is picked in the sheet.
+  assert.match(client(), /const pickRadius = async \(km\) =>[\s\S]{0,260}await toggleNear\(\)/);
 });

@@ -206,7 +206,10 @@ describe("the strip itself", () => {
     // the rest wrap onto the next one. Every pin is on screen.
     const at = markSrc.indexOf("function PayPinnedStrip");
     const fn = markSrc.slice(at, markSrc.length);
-    assert.match(fn, /items\.map\(/);
+    // 0184: one row until asked — the shown slice, plus a More tile that
+    // opens every pin in place.
+    assert.match(fn, /shown\.map\(/);
+    assert.match(fn, /data-testid="pay-pins-more"/);
     assert.doesNotMatch(fn, /\.slice\(0, PAY_PINS_VISIBLE\)/,
       "the strip renders only the first few pins, so the rest cannot be reached");
   });
@@ -285,7 +288,9 @@ describe("the strip itself", () => {
   test("the strip hides while searching rather than filtering", () => {
     // It is a set of shortcuts, not a section of the catalogue.
     // Watching your own pins disappear as you type reads as losing them.
-    assert.match(dash, /\{!q && pinnedBusinesses\.length > 0 && <PayPinnedStrip/);
+    // 0184: hidden while narrowing (a name typed or a filter on).
+    assert.match(dash, /const narrowing = Boolean\(q\) \|\| bzActive > 0;/);
+    assert.match(dash, /\{!narrowing && pinnedBusinesses\.length > 0 && <PayPinnedStrip/);
   });
 
   test("the row is not one button any more", () => {

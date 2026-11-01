@@ -45,5 +45,8 @@ test("the server sends points only with Near me, rounded", () => {
   const s = readSource("server/server.js");
   assert.match(s, /row\.lat = Math\.round\(Number\(a\.lat\) \* 1e4\) \/ 1e4;/);
   assert.match(s, /lat: near \? r\.lat : null,/);
-  assert.match(readSource("frontend/features/bazaar/bazaar.jsx"), /\{near && asMap \? <BazaarMap center=\{here\}/);
+  const bz = readSource("frontend/features/bazaar/bazaar.jsx");
+  // 0184: List / Map sits beside the name; the map still needs a "here".
+  assert.match(bz, /const mapOn = Boolean\(near && asMap\);/);
+  assert.match(bz, /\{mapOn \? <BazaarMap center=\{here\}/);
 });

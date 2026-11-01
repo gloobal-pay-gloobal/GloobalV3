@@ -1391,6 +1391,34 @@ var GloobalApi = {
   // The Creator Share overview (0194): what people are sharing with each
   // other, and — signed in — this account's own part. null when it could
   // not be read.
+  // ── Rent places (0195) ─────────────────────────────────────────────
+  // A place I live (I pay rent there) or a place I am creating (rent comes
+  // to me there). Server: lib/rent.js. Each answers null/[] on failure only
+  // where a screen can sensibly show "couldn't load"; writes throw so the
+  // screen can say why.
+  async getRentPlaces() {
+    const result = await gloobalApiClient.get("/api/rent/places");
+    return Array.isArray(result && result.places) ? result.places : [];
+  },
+  async getRentPlace(id) {
+    const result = await gloobalApiClient.get(`/api/rent/places/${encodeURIComponent(id)}`);
+    return result && result.place ? { place: result.place, history: Array.isArray(result.history) ? result.history : [] } : null;
+  },
+  async addRentPlace(body) {
+    const result = await gloobalApiClient.post("/api/rent/places", body);
+    return result && result.place;
+  },
+  async updateRentPlace(id, body) {
+    const result = await gloobalApiClient.patch(`/api/rent/places/${encodeURIComponent(id)}`, body);
+    return result && result.place;
+  },
+  async removeRentPlace(id) {
+    return gloobalApiClient.delete(`/api/rent/places/${encodeURIComponent(id)}`);
+  },
+  async remindRentPlace(id) {
+    return gloobalApiClient.post(`/api/rent/places/${encodeURIComponent(id)}/remind`, {});
+  },
+
   async getCreatorShareOverview() {
     try {
       const result = await gloobalApiClient.get("/api/creator-share/overview");

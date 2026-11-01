@@ -4143,54 +4143,19 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onVerify={handleMyShareBiometricVerify}
     scanning={myShareBiometricScanning}
   />}{
-    /* RENT — tapping the Bills row's Rent action opens this choice
-       first: Send Rent reuses the exact same flow as the main Send
-       action (onOpenSend → SendMoneyScreen); Accept Rent opens the QR
-       + Gloobal ID sheet below instead, since collecting rent is a
-       receiving action, not a sending one. */
-  }{showRentChoice && <div style={{ position: "fixed", inset: 0, zIndex: 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px calc(30px + env(safe-area-inset-bottom, 0px))" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Rent</span><button
-    onClick={requestCloseRentChoice}
-    aria-label="Close"
-    style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><X3 size={15} color={T.inkSoft} /></button></div><p style={{ fontSize: 12.5, color: T.inkSoft, margin: "0 0 16px" }}>Paying rent, or collecting it?</p><div style={{ display: "flex", gap: 12 }}><button
-    onClick={() => {
-      requestCloseRentChoice();
-      onOpenSend();
-    }}
-    aria-label="Send Rent"
-    className="v2-tap"
-    style={{
-      flex: 1,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 10,
-      padding: "20px 14px",
-      border: `1px solid ${T.line}`,
-      background: T.surfaceAlt,
-      borderRadius: T.radiusLg,
-      cursor: "pointer"
-    }}
-  ><span style={{ width: 42, height: 42, borderRadius: 14, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><ArrowUpDown size={15} color={T.accent} /></span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Send Rent</span><span style={{ fontSize: 10.5, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>Pay your landlord</span></button><button
-    onClick={() => {
-      requestCloseRentChoice();
-      setShowReceive(true);
-    }}
-    aria-label="Accept Rent"
-    className="v2-tap"
-    style={{
-      flex: 1,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 10,
-      padding: "20px 14px",
-      border: `1px solid ${T.line}`,
-      background: T.surfaceAlt,
-      borderRadius: T.radiusLg,
-      cursor: "pointer"
-    }}
-  ><span style={{ width: 42, height: 42, borderRadius: 14, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center" }}><ArrowDown size={19} color={T.accent} /></span><span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Accept Rent</span><span style={{ fontSize: 10.5, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>Collect from a tenant</span></button></div></div></div>}{
+    /* RENT — tapping the Bills row's Rent action opens the Rent screen
+       (features/rent/RentScreen.jsx, 0195): saved places, the next rent,
+       and "Add a place" — a place I live or a place I'm creating. Paying
+       once without saving still opens Send; getting rent still opens the
+       QR + GLOOBAL ID sheet. */
+  }{showRentChoice && <RentScreen
+    myGloobalId={myGloobalId}
+    onClose={requestCloseRentChoice}
+    onSendOnce={() => { requestCloseRentChoice(); onOpenSend(); }}
+    onGetRent={() => { requestCloseRentChoice(); setShowReceive(true); }}
+    onPayPerson={(payee) => { requestCloseRentChoice(); if (onPayPerson) onPayPerson(payee); }}
+    onToast={showToast2}
+  />}{
     /* Profile settings sheet — one overlay for all the basic options.
        Prototype-stage functionality: toggles toggle, selections select,
        Linked Banks jumps to the real Add Bank screen. */

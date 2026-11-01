@@ -2717,6 +2717,24 @@ app.get('/api/coverage', lookupLimit, async (req, res) => {
 //   totals only, small groups merged.
 // GET /open-data                 — a plain page listing those files.
 const coverageView = require('./lib/coverageView');
+// Rent places and the one that pays by itself (0195). `rent` is read by
+// the send route above (readRentMandate), so it is required once, here.
+const rent = require('./lib/rent');
+// The PIN, checked the way the send route checks it: lockout and all.
+async function verifyPinForUser(user, pin) {
+  const cleanPin = String(pin || '').trim();
+  if (!isValidPinFormat(cleanPin)) return { verified: false, status: 400, message: 'Enter your PIN to let this place pay by itself.' };
+  const pinRecord = await Pin.findOne({ userId: user._id });
+  if (!pinRecord) return { verified: false, status: 404, message: 'PIN is not set for this account.' };
+  await beginPinAttempt(pinRecord);
+  if (pinLockRemainingMs(pinRecord) > 0) { const locked = pinLockoutResponse(pinRecord); return { verified: false, status: locked.status, message: locked.message }; }
+  const ok = await bcrypt.compare(cleanPin, pinRecord.pinHash);
+  if (!ok) { const failure = await registerPinFailure(pinRecord); return { verified: false, status: 401, message: failure.message }; }
+  await registerPinSuccess(pinRecord);
+  return { verified: true };
+}
+rent.registerRentRoutes(app, { requireAuth, writeLimit, lookupLimit, verifyPin: verifyPinForUser });
+
 
 app.get('/api/coverage/view', lookupLimit, async (req, res) => {
   try {
@@ -9855,7 +9873,23 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       // this payment is its receiver paying its reporter — see
       // closeComplaintByReturn. Anything else about it is ignored.
       complaintId,
+      // Rent for a saved place (lib/rent.js, 0195): stamps the payment so
+      // the place's page and "paid this month" count it. `rentAuto` marks
+      // the ones sent by the auto-settle job.
+      rentPlaceId,
+      rentAuto,
     } = req.body || {};
+    const cleanRentPlaceId = mongoose.isValidObjectId(rentPlaceId) ? String(rentPlaceId) : '';
+    // A standing instruction in place of the PIN — only ever from the
+    // auto-settle job, over loopback, for a place whose owner approved
+    // paying by itself with their PIN. Checked against sender, payee and
+    // amount once those are resolved below.
+    let rentMandate = null;
+    try {
+      rentMandate = await rent.readRentMandate(req);
+    } catch (mandateError) {
+      return res.status(403).json({ success: false, message: `Rent could not be sent by itself: ${mandateError.message}.` });
+    }
 
     const senderIdentifier = String(senderSymbolId || fromSymbolId || symbolId || '').trim();
     const receiverIdentifier = String(receiverSymbolId || toSymbolId || to || '').trim();
@@ -9931,14 +9965,14 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // already authenticated by requireAuth/requireSelf, so their own currency
     // is not a secret being handed to a stranger.
 
-    if (!cleanPin) {
+    if (!rentMandate && !cleanPin) {
       return res.status(400).json({
         success: false,
         message: 'PIN is required before sending transaction.',
       });
     }
 
-    if (!isValidPinFormat(cleanPin)) {
+    if (!rentMandate && !isValidPinFormat(cleanPin)) {
       return res.status(400).json({
         success: false,
         message: 'PIN must be 4 to 6 digits.',
@@ -10002,54 +10036,62 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       });
     }
 
-    const pinRecord = await Pin.findOne({ userId: sender._id });
+    if (rentMandate) {
+      // The standing instruction must be for exactly this payment.
+      const amountForMandate = Number(hasSourceAmount ? sourceAmount : amount);
+      if (!rent.mandateCovers(rentMandate, { senderId: sender._id, receiverSymbolId: receiver.symbolId, amount: amountForMandate })) {
+        return res.status(403).json({ success: false, message: 'Rent could not be sent by itself: the instruction does not match this payment.' });
+      }
+    } else {
+      const pinRecord = await Pin.findOne({ userId: sender._id });
 
-    if (!pinRecord) {
-      return res.status(404).json({
-        success: false,
-        message: 'PIN is not set for this Secure ID.',
-      });
+      if (!pinRecord) {
+        return res.status(404).json({
+          success: false,
+          message: 'PIN is not set for this Secure ID.',
+        });
+      }
+
+      await beginPinAttempt(pinRecord);
+
+      if (pinLockRemainingMs(pinRecord) > 0) {
+        const locked = pinLockoutResponse(pinRecord);
+        recordAudit({
+          userId: sender._id, action: 'transaction.send.blocked', status: 'blocked',
+          message: 'PIN locked out', req, metadata: { symbolId: sender.symbolId },
+        });
+        res.set('Retry-After', String(locked.retryAfterSeconds));
+        return res.status(locked.status).json({
+          success: false,
+          message: locked.message,
+          retryAfterSeconds: locked.retryAfterSeconds,
+          lockedUntil: locked.lockedUntil,
+        });
+      }
+
+      const isPinMatch = await bcrypt.compare(cleanPin, pinRecord.pinHash);
+
+      if (!isPinMatch) {
+        const failure = await registerPinFailure(pinRecord);
+
+        recordAudit({
+          userId: sender._id, action: 'transaction.send.pin_invalid', status: 'failed',
+          message: `Invalid PIN (attempt ${pinRecord.failedAttempts}/${PIN_MAX_ATTEMPTS})`, req,
+          metadata: { symbolId: sender.symbolId, lockedOut: failure.lockedNow },
+        });
+
+        if (failure.lockedNow) res.set('Retry-After', String(failure.retryAfterSeconds));
+
+        return res.status(401).json({
+          success: false,
+          message: failure.message,
+          attemptsRemaining: failure.attemptsRemaining,
+          lockedUntil: pinRecord.lockedUntil,
+        });
+      }
+
+      await registerPinSuccess(pinRecord);
     }
-
-    await beginPinAttempt(pinRecord);
-
-    if (pinLockRemainingMs(pinRecord) > 0) {
-      const locked = pinLockoutResponse(pinRecord);
-      recordAudit({
-        userId: sender._id, action: 'transaction.send.blocked', status: 'blocked',
-        message: 'PIN locked out', req, metadata: { symbolId: sender.symbolId },
-      });
-      res.set('Retry-After', String(locked.retryAfterSeconds));
-      return res.status(locked.status).json({
-        success: false,
-        message: locked.message,
-        retryAfterSeconds: locked.retryAfterSeconds,
-        lockedUntil: locked.lockedUntil,
-      });
-    }
-
-    const isPinMatch = await bcrypt.compare(cleanPin, pinRecord.pinHash);
-
-    if (!isPinMatch) {
-      const failure = await registerPinFailure(pinRecord);
-
-      recordAudit({
-        userId: sender._id, action: 'transaction.send.pin_invalid', status: 'failed',
-        message: `Invalid PIN (attempt ${pinRecord.failedAttempts}/${PIN_MAX_ATTEMPTS})`, req,
-        metadata: { symbolId: sender.symbolId, lockedOut: failure.lockedNow },
-      });
-
-      if (failure.lockedNow) res.set('Retry-After', String(failure.retryAfterSeconds));
-
-      return res.status(401).json({
-        success: false,
-        message: failure.message,
-        attemptsRemaining: failure.attemptsRemaining,
-        lockedUntil: pinRecord.lockedUntil,
-      });
-    }
-
-    await registerPinSuccess(pinRecord);
 
 
     // Checked after the PIN, not before it: the answer reveals roughly what
@@ -10402,6 +10444,8 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       metadata: {
         prototype: true,
         idempotencyKey: cleanIdempotencyKey || null,
+        rentPlaceId: cleanRentPlaceId || null,
+        rentAuto: Boolean(rentMandate),
         senderMatchedBy: senderResolved.matchedBy,
         receiverMatchedBy: receiverResolved.matchedBy,
         senderInput: senderIdentifier,
@@ -14331,6 +14375,9 @@ app.get('/api/coin/:symbolId/history', lookupLimit, requireAuth, requireSelf('sy
 const httpServer = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+// Rent that pays by itself: once an hour, through the send route.
+rent.configureRent({ AUTH_TOKEN_SECRET, PORT, issueAuthToken });
+rent.startRentAutoSettle();
 // Helloo's live channel shares this port: Render exposes one, and a
 // WebSocket upgrade is just another request on it.
 helloo.attachLive(httpServer);

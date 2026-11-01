@@ -21,14 +21,24 @@ function SideFlipCard({ side, onDone }) {
     const t = setTimeout(() => onDone && onDone(), 1150);
     return () => clearTimeout(t);
   }, []);
-  return <div aria-live="polite" role="status" style={{ position: "fixed", inset: 0, zIndex: 9000, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center" }}><style>{`
+  // The screen behind the card is veiled while it shows (0195): the card
+  // used to land on top of the page's own rows ("Pers…", "Crea…" peeking
+  // out either side), and the eye read both at once. A blurred wash in the
+  // new side's own ground leaves the card the only thing to read, and
+  // fades out with it so the page comes back already in its new colours.
+  return <div aria-live="polite" role="status" style={{ position: "fixed", inset: 0, zIndex: 10050, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center" }}><style>{`
     @keyframes gloobalSideFlipIn { 0% { transform: translateX(${creator ? "110%" : "-110%"}) rotate(${creator ? "6deg" : "-6deg"}); opacity: 0; } 35% { transform: none; opacity: 1; } 80% { transform: none; opacity: 1; } 100% { transform: translateY(-10px) scale(0.96); opacity: 0; } }
-    @media (prefers-reduced-motion: reduce) { .gloobal-side-flip { animation-duration: 0.5s !important; } }
-  `}</style><div className="gloobal-side-flip" style={{
+    @keyframes gloobalSideFlipVeil { 0% { opacity: 0; } 22% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .gloobal-side-flip, .gloobal-side-veil { animation-duration: 0.5s !important; } }
+  `}</style><div className="gloobal-side-veil" data-testid="side-flip-veil" aria-hidden="true" style={{
+    position: "absolute", inset: 0, background: hexToRgba(p.bg || "#FFFFFF", 0.82),
+    backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+    animation: "gloobalSideFlipVeil 1.1s ease both"
+  }} /><div className="gloobal-side-flip" style={{
     width: 230, borderRadius: 26, padding: "22px 18px 20px", background: p.gradWallet, color: "#fff",
     boxShadow: "0 30px 70px rgba(0,0,0,0.35)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
     animation: "gloobalSideFlipIn 1.1s cubic-bezier(.2,.8,.2,1) both", position: "relative", overflow: "hidden"
-  }}><span aria-hidden="true" style={{ position: "absolute", inset: 0, background: p.cardTexture, pointerEvents: "none" }} /><span style={{ width: 54, height: 54, borderRadius: "50%", background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>{creator ? <StoreTheme size={26} /> : <UserTheme size={26} />}</span><span style={{ fontSize: 15, fontWeight: 800, letterSpacing: 2, textTransform: "uppercase", position: "relative", fontFamily: T.fontDisplay }}>{creator ? "Creator" : "Personal"}</span><span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85, position: "relative" }}>{creator ? "Your shop" : "Your money"}</span></div></div>;
+  }}><span aria-hidden="true" style={{ position: "absolute", inset: 0, background: p.cardTexture, pointerEvents: "none" }} /><span style={{ width: 54, height: 54, borderRadius: "50%", background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>{creator ? <StoreTheme size={26} /> : <UserTheme size={26} />}</span><span style={{ fontSize: 15, fontWeight: 800, letterSpacing: 2, textTransform: "uppercase", position: "relative", fontFamily: T.fontDisplay }}>{creator ? "Creator" : "Personal"}</span><span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85, position: "relative" }}>{creator ? "GLOOBAL बाज़ार" : "Your money"}</span></div></div>;
 }
 
 // One theme, as the pair of little cards it is.

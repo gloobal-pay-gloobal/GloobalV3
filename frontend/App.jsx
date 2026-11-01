@@ -1025,6 +1025,8 @@ function GloobalId() {
         fromCreator: activeShareRole === "merchant",
         // Set only when this payment sends a complaint's money back.
         complaintId: (receiver && receiver.complaintId) || undefined,
+        // Rent for a saved place (0195): the place's page counts it.
+        rentPlaceId: (receiver && receiver.rentPlaceId) || undefined,
         // The ID this device already minted for the payment, so the record
         // MongoDB stores is the same one the sender's receipt, complaint
         // window and location report are keyed by — and, because the
@@ -1253,7 +1255,8 @@ function GloobalId() {
       // A complaint's "Send back": the amount is already decided, and the
       // case it closes rides along to the server.
       prefillAmount: Number(payee.prefillAmount) > 0 ? String(Number(payee.prefillAmount).toFixed(2)) : "",
-      complaintId: payee.complaintId || null
+      complaintId: payee.complaintId || null,
+      rentPlaceId: payee.rentPlaceId || null
     });
     setShowScanScreen(false);
     setScanPayee(null);

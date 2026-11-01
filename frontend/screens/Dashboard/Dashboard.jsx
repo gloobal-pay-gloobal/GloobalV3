@@ -473,6 +473,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   }, [myGloobalId]);
   const hasOpenedGloobalBank = bankAccount?.status === "open";
   const openBankFlow = (after = "bank") => setBankFlow({ after });
+  const openBankFromTile = () => {
+    const status = bankAccount?.status || null;
+    if (status && status !== "open") openBankFlow("bank");
+    else openGloobalBankInfo();
+  };
   const capabilities = useMemo5(() => deriveCapabilityStates({ hasOpenedGloobalBank }), [hasOpenedGloobalBank]);
   // Both product screens fetch their own catalogue on open rather than on
   // mount: the rows are only ever looked at here, and this backend sleeps,
@@ -2839,7 +2844,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        note in actionTileMotion.jsx about the day @keyframes finDrift lived
        in App.jsx and a background rendered eighteen invisible particles. */
   }<ActionTileMotionStyle />{DASHBOARD_ACTIONS.map(({ key, label, Icon }) => {
-    const onClick = key === "send" ? whenCreatorReady(onOpenSend) : key === "bank" ? onOpenBank : key === "receive" ? whenCreatorReady(() => setShowReceive(true)) : key === "scan" ? whenCreatorReady(onOpenScan) : void 0;
+    // ADD BANK OPENS THE REAL BANK (0190). This tile used to open
+    // AddBankScreen — a list of other banks, every one "Locked until live
+    // APIs connect" — while the GLOOBAL Bank work (open an account, add
+    // money, send to your bank, transfers) lived only behind the Accounts
+    // tab, so the tile on the Home screen never showed any of it. Now it
+    // goes to the same place: the account if it is open, the six-step
+    // opening if it is not (or is half done). While the server has not
+    // answered yet, the account screen is the safe first stop — it shows
+    // the opening card itself when there is no account.
+    const onClick = key === "send" ? whenCreatorReady(onOpenSend) : key === "bank" ? openBankFromTile : key === "receive" ? whenCreatorReady(() => setShowReceive(true)) : key === "scan" ? whenCreatorReady(onOpenScan) : void 0;
     const actionColor = { send: sendActionColor, bank: bankActionColor, scan: scanActionColor, receive: receiveActionColor }[key];
     return <div key={key} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}><button
       onClick={onClick}

@@ -1389,6 +1389,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // screen. Anything reading this has to tell those two apart, which is
   // why creatorSetupDone() takes the object rather than a boolean.
   const [creatorProfile, setCreatorProfile] = useState14(null);
+  // 0185: the creator side's one-time "what do you make" card.
+  const [otherWordsDraft, setOtherWordsDraft] = useState14("");
+  const [otherWordsSaving, setOtherWordsSaving] = useState14(false);
   const [showCreatorSetup, setShowCreatorSetup] = useState14(false);
   const [creatorSaving, setCreatorSaving] = useState14(false);
   const [creatorError, setCreatorError] = useState14("");
@@ -2591,6 +2594,38 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        lesson the install banner's own first draft taught: anything
        wearing the wallet's gradient directly above the wallet card runs
        into it. */
+  }{
+    /* ── CREATORS ALREADY IN OTHER (0185) ─────────────────────────────
+       Picked Other before it asked for words, so search cannot find them
+       by what they make. One card, until filled; it never blocks taking
+       payments, and it goes away by itself once saved. */
+    shareRole === "merchant" && creatorProfile && creatorSetupDone(creatorProfile) && creatorProfile.category === "other" && !creatorProfile.otherWords && <div data-testid="other-words-card" style={{
+      border: `1px solid ${T.line}`, background: T.accentSoft, borderRadius: T.radiusLg, padding: "14px 15px",
+      display: "flex", flexDirection: "column", gap: 10
+    }}><span><span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink }}>Tell people what you make</span><span style={{
+      display: "block", fontSize: 11.5, lineHeight: 1.45, color: T.inkSoft, marginTop: 2
+    }}>You're listed as Other, so searches can't find you by what you make yet. Two words fix that.</span></span><BazaarOtherWordsBox value={otherWordsDraft} onChange={setOtherWordsDraft} /><button
+      onClick={async () => {
+        if (otherWordsSaving || !otherWordsDraft.trim() || bazaarOtherWordsProblem(otherWordsDraft)) return;
+        setOtherWordsSaving(true);
+        try {
+          const saved = await GloobalApi.saveCreatorProfile(myGloobalId, { otherWords: otherWordsDraft.trim() });
+          if (saved) setCreatorProfile(saved);
+          showToast2("Saved \u00B7 people can find you by these words");
+        } catch (e) {
+          showToast2((e && e.message) || "Could not save that right now.");
+        } finally {
+          setOtherWordsSaving(false);
+        }
+      }}
+      disabled={otherWordsSaving || !otherWordsDraft.trim() || Boolean(bazaarOtherWordsProblem(otherWordsDraft))}
+      className="v2-tap"
+      style={{
+        height: 44, border: "none", borderRadius: 14, fontFamily: "inherit", fontSize: 14, fontWeight: 800, cursor: "pointer",
+        background: otherWordsDraft.trim() && !bazaarOtherWordsProblem(otherWordsDraft) ? T.gradButton : T.surfaceAlt,
+        color: otherWordsDraft.trim() && !bazaarOtherWordsProblem(otherWordsDraft) ? "#fff" : T.inkFaint
+      }}
+    >{otherWordsSaving ? "Saving\u2026" : "Save"}</button></div>
   }{shareRole === "merchant" && creatorProfile && !creatorSetupDone(creatorProfile) && <button
     onClick={() => {
       setCreatorError("");

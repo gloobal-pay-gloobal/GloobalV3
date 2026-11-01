@@ -1671,8 +1671,10 @@ var GloobalApi = {
   // Ranked on the server by recent payments; no amounts come back.
   // Returns the shops as an array; `.fuzzy` on it says they were found by
   // a near spelling ("smosa" → samosa) rather than the words typed.
-  async bazaarSearch({ q = "", category = "", near = null, country = "", openNow = false, sub = "", cats = [], sort = "", minRating = 0, maxPrice = 0 } = {}) {
+  async bazaarSearch({ q = "", category = "", near = null, country = "", openNow = false, sub = "", cats = [], sort = "", minRating = 0, maxPrice = 0, word = "" } = {}) {
     const p = new URLSearchParams();
+    // A shared word from creators' own two words (0186).
+    if (word) p.set("word", word);
     if (openNow) p.set("open", "1");
     if (country) p.set("country", country);
     if (q) p.set("q", q);
@@ -1703,6 +1705,20 @@ var GloobalApi = {
       };
     } catch (e) {
       return { shops: [], items: [], categories: [] };
+    }
+  },
+
+  // The words three or more Other creators share near the searcher (0186).
+  // Never an error worth showing: no words means no "Made near you" row.
+  async bazaarWords(near = null, country = "") {
+    const p = new URLSearchParams();
+    if (country) p.set("country", country);
+    if (near) { p.set("lat", String(near.lat)); p.set("lng", String(near.lng)); p.set("radiusKm", String(near.radiusKm)); }
+    try {
+      const result = await gloobalApiClient.get(`/api/bazaar/words?${p.toString()}`);
+      return Array.isArray(result && result.words) ? result.words.filter((w) => w && w.key && w.word) : [];
+    } catch (e) {
+      return [];
     }
   },
 

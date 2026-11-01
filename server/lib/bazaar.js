@@ -233,7 +233,116 @@ function bazaarCategoriesForQuery(rawQ, looseKey) {
   return out;
 }
 
+// ── OTHER, IN TWO WORDS (0185) ───────────────────────────────────────────
+//
+// "What do you make, in 2 words?" — asked when a creator picks Other. The
+// box is for WHAT THEY MAKE, so it refuses what would turn it into an
+// advert or a contact line: numbers, links, @names, and rude words.
+// One or two words, each at least two letters, any script. Joining marks
+// (- ' &) are allowed inside a word: "hand-made", "Maa's", "Arts & Crafts"
+// counts & as a joiner, not a word.
+var BAZAAR_OTHER_WORDS_MAX = 40;
+
+// Kept short on purpose: a starting list in English and Hindi (Latin and
+// Devanagari), compared as loose keys so spellings fold together. It only
+// has to stop the obvious; anything it misses can be reported like any
+// shop name.
+var BAZAAR_RUDE_WORDS = [
+  'fuck', 'shit', 'bitch', 'bastard', 'asshole', 'cunt', 'slut', 'whore', 'dick',
+  'chutiya', 'chutia', 'madarchod', 'behenchod', 'bhenchod', 'bhosdi', 'bhosdike', 'gandu', 'randi', 'lauda', 'lund', 'harami',
+  'चूतिया', 'मादरचोद', 'बहनचोद', 'भोसड़ी', 'गांडू', 'रंडी', 'लौड़ा', 'हरामी'
+];
+
+// Roots that are rude wherever they sit inside a word.
+var BAZAAR_RUDE_ROOTS = ['fuck', 'chutiy', 'bhosd', 'madarch', 'behench', 'bhench'];
+var BAZAAR_JOINERS = new Set(['&', 'and', 'n', 'of', 'ka', 'ki', 'ke', 'da', 'di', 'de', 'का', 'की', 'के', 'और', 'दा', 'दी', 'दे']);
+
+function bazaarOtherWordsCheck(raw, looseKey) {
+  if (raw == null) return { ok: true, value: '' };
+  if (typeof raw !== 'string') return { ok: false, code: 'invalid_other_words', message: 'Write what you make in one or two words.' };
+  const text = raw.normalize('NFC').trim().replace(/\s+/g, ' ');
+  if (!text) return { ok: true, value: '' };
+  if (text.length > BAZAAR_OTHER_WORDS_MAX) return { ok: false, code: 'other_words_long', message: 'Keep it to two short words.' };
+  if (/\p{N}/u.test(text) || /@|:\/\/|www\.|\.(com|in|net|org|io|co)\b|\//i.test(text)) {
+    return { ok: false, code: 'other_words_contact', message: 'Words about what you make, please. Numbers and links go on your page.' };
+  }
+  if (/[^\p{L}\p{M} '\-&]/u.test(text)) return { ok: false, code: 'invalid_other_words', message: 'Use letters only, like "Handmade candles".' };
+  // Little joining words do not count toward the two: "घर का अचार" and
+  // "Bread & butter" are two words about what is made.
+  const words = text.split(' ').filter((w) => !BAZAAR_JOINERS.has(w.toLowerCase()));
+  if (words.length > 2) return { ok: false, code: 'other_words_many', message: 'Two words at most, like "Handmade candles".' };
+  if (!words.length || words.some((w) => (w.match(/[\p{L}]/gu) || []).length < 2)) return { ok: false, code: 'other_words_short', message: 'Each word needs at least two letters.' };
+  if (typeof looseKey === 'function') {
+    // Short rude words must be the whole word ("dick" yes, "Dickens"
+    // no); long ones also catch what is built on them.
+    const bad = BAZAAR_RUDE_WORDS.map(looseKey).filter((k) => k && k.length >= 3);
+    const keys = text.split(/[\s\-'&]+/).map(looseKey).filter(Boolean);
+    const anywhere = BAZAAR_RUDE_ROOTS.map(looseKey).filter(Boolean);
+    if (keys.some((k) => bad.some((b) => (b.length >= 6 ? k.startsWith(b) : k === b)) || anywhere.some((r) => k.includes(r)))) {
+      return { ok: false, code: 'other_words_rude', message: 'Please choose different words.' };
+    }
+  }
+  return { ok: true, value: text };
+}
+
+// ── SHARED WORDS BECOME FILTERS (0186) ───────────────────────────────────
+//
+// From creators' own two words, the ones three or more creators share in
+// the same place. Words are compared as loose keys (any spelling, any
+// script the key covers) with a plural s folded, so "candle", "Candles"
+// and "candles" are one word. One creator's words never make a filter on
+// their own; below three they are still found by search.
+var BAZAAR_WORD_MIN_CREATORS = 3;
+var BAZAAR_WORDS_LIMIT = 12;
+
+function bazaarWordGroupKey(key) {
+  const k = String(key || '');
+  return k.length > 3 && k.endsWith('s') ? k.slice(0, -1) : k;
+}
+
+// rows: [{ otherWords }] — one per creator. Returns the shared words,
+// most creators first, each with the spelling most of them used.
+function bazaarSharedWords(rows, looseKey, min = BAZAAR_WORD_MIN_CREATORS) {
+  const groups = new Map();
+  for (const r of rows || []) {
+    const text = String((r && r.otherWords) || '');
+    const seen = new Set();
+    for (const token of text.split(/[\s.,/·|&()+'-]+/u).filter(Boolean)) {
+      if (BAZAAR_JOINERS.has(token.toLowerCase())) continue;
+      const g = bazaarWordGroupKey(looseKey(token));
+      if (!g || g.length < 3 || seen.has(g)) continue;
+      seen.add(g);
+      const entry = groups.get(g) || { key: g, creators: 0, spellings: new Map() };
+      entry.creators += 1;
+      const label = token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+      entry.spellings.set(label, (entry.spellings.get(label) || 0) + 1);
+      groups.set(g, entry);
+    }
+  }
+  return Array.from(groups.values())
+    .filter((e) => e.creators >= min)
+    .map((e) => {
+      const best = Array.from(e.spellings.entries()).sort((a, b) => (b[1] - a[1]) || (a[0].length - b[0].length))[0][0];
+      return { key: e.key, word: best, creators: e.creators };
+    })
+    .sort((a, b) => (b.creators - a.creators) || a.word.localeCompare(b.word))
+    .slice(0, BAZAAR_WORDS_LIMIT);
+}
+
+// A shared word as a filter: creators whose word KEY starts with it.
+function bazaarWordQuery(raw) {
+  const k = String(raw || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 30);
+  return k.length >= 3 ? k : '';
+}
+
 module.exports = {
+  BAZAAR_WORD_MIN_CREATORS,
+  bazaarWordGroupKey,
+  bazaarSharedWords,
+  bazaarWordQuery,
+  BAZAAR_OTHER_WORDS_MAX,
+  BAZAAR_RUDE_WORDS,
+  bazaarOtherWordsCheck,
   BAZAAR_SUBCATEGORIES,
   bazaarSubcategoryValid,
   BAZAAR_SORTS,

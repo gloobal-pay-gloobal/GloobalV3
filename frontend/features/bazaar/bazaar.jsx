@@ -70,6 +70,55 @@ function bazaarSubcategoryLabel(category, sub) {
   return hit ? hit[1] : "";
 }
 
+// ── OTHER, IN TWO WORDS (0185) ─────────────────────────────────────────
+// The same rules the server applies (server/lib/bazaar.js
+// bazaarOtherWordsCheck), so the box can say what is wrong while it is
+// typed. The server still decides, and also refuses rude words.
+var BAZAAR_OTHER_JOINERS = ["&", "and", "n", "of", "ka", "ki", "ke", "da", "di", "de", "का", "की", "के", "और", "दा", "दी", "दे"];
+
+function bazaarOtherWordsProblem(raw) {
+  const text = String(raw || "").normalize("NFC").trim().replace(/\s+/g, " ");
+  if (!text) return "";
+  if (text.length > 40) return "Keep it to two short words.";
+  if (/\p{N}/u.test(text) || /@|:\/\/|www\.|\.(com|in|net|org|io|co)\b|\//i.test(text)) return "Words about what you make, please. Numbers and links go on your page.";
+  if (/[^\p{L}\p{M} '\-&]/u.test(text)) return "Use letters only, like \u201cHandmade candles\u201d.";
+  const words = text.split(" ").filter((w) => BAZAAR_OTHER_JOINERS.indexOf(w.toLowerCase()) < 0);
+  if (words.length > 2) return "Two words at most, like \u201cHandmade candles\u201d.";
+  if (!words.length || words.some((w) => (w.match(/\p{L}/gu) || []).length < 2)) return "Each word needs at least two letters.";
+  return "";
+}
+
+// How many words count toward the two, for the "1/2" beside the box.
+function bazaarOtherWordsCount(raw) {
+  const text = String(raw || "").trim().replace(/\s+/g, " ");
+  return text ? text.split(" ").filter((w) => BAZAAR_OTHER_JOINERS.indexOf(w.toLowerCase()) < 0).length : 0;
+}
+
+// The box itself: setup screen and the creator side's one-time card.
+function BazaarOtherWordsBox({ value, onChange, autoFocus = false }) {
+  const problem = bazaarOtherWordsProblem(value);
+  const n = bazaarOtherWordsCount(value);
+  const good = Boolean(String(value || "").trim()) && !problem;
+  return <div data-testid="other-words"><label htmlFor="creator-other-words" style={{
+    display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink, margin: "0 2px 8px"
+  }}>What do you make, in 2 words?</label><div style={{
+    display: "flex", alignItems: "center", gap: 8, background: T.surface, borderRadius: 14, padding: "0 14px",
+    boxShadow: problem ? "inset 0 0 0 1.5px #B42318" : `inset 0 0 0 1.5px ${good ? T.accent : T.line}`
+  }}><input
+    id="creator-other-words"
+    value={value}
+    onChange={(e) => onChange(e.target.value.slice(0, 40))}
+    autoFocus={autoFocus}
+    placeholder="Handmade candles"
+    autoCapitalize="words"
+    autoComplete="off"
+    style={{ flex: 1, minWidth: 0, height: 48, border: "none", outline: "none", background: "none", fontSize: 16, fontWeight: 700, color: T.ink, fontFamily: "inherit" }}
+  /><span style={{ fontSize: 12, fontWeight: 800, color: problem ? "#B42318" : good ? T.positive : T.inkFaint, fontVariantNumeric: "tabular-nums" }}>{Math.min(n, 9)}/2</span></div><div role={problem ? "alert" : undefined} style={{
+    fontSize: 11.5, fontWeight: problem ? 700 : 600, lineHeight: 1.45, color: problem ? "#B42318" : T.inkFaint, margin: "6px 2px 0"
+  }}>{problem || "Any language. Shown under your name and used by search \u2014 e.g. Resin art \u00B7 \u0918\u0930 \u0915\u093E \u0905\u091A\u093E\u0930 \u00B7 Phone covers"}</div></div>;
+}
+
+
 // ── FESTIVALS ──────────────────────────────────────────────────────────
 // On the days before a festival, a chip for it leads the category row and
 // shows the shops people buy for it (0141). Dates from the 2026–27 Indian
@@ -275,6 +324,9 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   const [minRating, setMinRating] = useState62(0);
   const [maxPrice, setMaxPrice] = useState62(0);
   const [sub, setSub] = useState62("");
+  // 0186: a shared word under Other, and the words on offer here.
+  const [word, setWord] = useState62(null);
+  const [words, setWords] = useState62([]);
   const festivalNow = bazaarFestivalNow();
   const [festivalOn, setFestivalOn] = useState62(false);
   const [fuzzy, setFuzzy] = useState62(false);
@@ -304,7 +356,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     const timer = setTimeout(async () => {
       try {
         const opts = {
-          q: query, category, near, country, openNow, sub,
+          q: query, category, near, country, openNow, sub, word: category === "other" && word ? word.key : "",
           cats: festivalOn && festivalNow ? festivalNow.cats : [],
           sort: sort === "near" && !near ? "paid" : sort, minRating, maxPrice
         };
@@ -333,7 +385,17 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       setBusy(false);
     }, query ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [query, category, nearKey, country, openNow, sub, sort, minRating, maxPrice, festivalOn]);
+  }, [query, category, nearKey, country, openNow, sub, sort, minRating, maxPrice, festivalOn, word ? word.key : ""]);
+
+  // ── MADE NEAR YOU (0186) ──────────────────────────────────────────────
+  // The words three or more Other creators share where the searcher is.
+  // Fetched only once Other is picked, and again when the circle moves.
+  useEffect59(() => {
+    if (category !== "other") { setWord(null); return undefined; }
+    let live = true;
+    GloobalApi.bazaarWords(near, country).then((list) => { if (live) setWords(list); });
+    return () => { live = false; };
+  }, [category, nearKey, country]);
 
   // A new category starts its sub-category afresh; an empty box drops
   // the price cap (it only means something for an item search).
@@ -401,6 +463,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   const active = [];
   if (festivalOn && festivalNow) active.push({ key: "fest", label: festivalNow.label, clear: () => setFestivalOn(false) });
   if (activeInfo) active.push({ key: "cat", label: sub ? bazaarSubcategoryLabel(category, sub) : activeInfo.label, clear: () => { setCategory(""); setSub(""); } });
+  if (category === "other" && word) active.push({ key: "word", label: word.word, clear: () => setWord(null) });
   if (nearOn && here) active.push({ key: "near", label: radiusLabel, clear: () => { setNearOn(false); setAsMap(false); if (sort === "near") setSort("paid"); } });
   if (openNow) active.push({ key: "open", label: "Open now", clear: () => setOpenNow(false) });
   if (minRating) active.push({ key: "rating", label: "4★ & up", clear: () => setMinRating(0) });
@@ -409,7 +472,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   const activeCount = active.length;
   useEffect59(() => { if (onActiveChange) onActiveChange(activeCount); }, [activeCount]);
   const resetAll = () => {
-    setCategory(""); setSub(""); setFestivalOn(false); setNearOn(false); setAsMap(false);
+    setCategory(""); setSub(""); setWord(null); setFestivalOn(false); setNearOn(false); setAsMap(false);
     setOpenNow(false); setMinRating(0); setSort("paid"); setMaxPrice(0);
   };
   // A distance is the one filter that needs the phone's location, so it is
@@ -645,6 +708,21 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
         aria-pressed={sub === k}
         style={pill(sub === k)}
       >{label}</button>)}</div> : null
+    }{
+      category === "other" && words.length ? <div data-testid="bazaar-words" style={{ marginTop: 14 }}><div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "baseline", margin: "0 2px 8px", gap: 10
+      }}><span style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.8 }}>Made near you</span><span style={{
+        fontSize: 11, fontWeight: 600, color: T.inkFaint
+      }}>from creators' own words</span></div><div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{words.map((w) => {
+        const on = Boolean(word && word.key === w.key);
+        return <button
+          key={w.key}
+          onClick={() => setWord(on ? null : w)}
+          aria-pressed={on}
+          aria-label={`${w.word}, ${w.creators} creators`}
+          style={pill(on)}
+        >{w.word}<span style={{ opacity: 0.6, fontWeight: 800 }}>{w.creators}</span></button>;
+      })}</div></div> : null
     }</div><div>{sheetLabel("How far")}<div role="radiogroup" aria-label="How far" style={{
       display: "grid", gridTemplateColumns: `repeat(${BAZAAR_RADII.length + 1}, minmax(0, 1fr))`, gap: 4, padding: 4, borderRadius: 14, background: T.surface,
       boxShadow: `inset 0 0 0 1px ${T.line}`

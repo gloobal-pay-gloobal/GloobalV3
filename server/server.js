@@ -4507,6 +4507,8 @@ function publicCreator(user, logoDataUrl) {
     category: bazaar.BAZAAR_CATEGORIES.includes(profile.category) ? profile.category : '',
     category2: bazaar.BAZAAR_CATEGORIES.includes(profile.category2) ? profile.category2 : '',
     subcategory: bazaar.bazaarSubcategoryValid(profile.category, profile.subcategory) ? profile.subcategory : '',
+    // Public: it is the line customers see under the name (0185).
+    otherWords: profile.category === 'other' ? (profile.otherWords || '') : '',
     listed: profile.listed !== false,
     // Public: opening hours are for the people coming to the shop.
     hours: profile.hours && Array.isArray(profile.hours.days) && profile.hours.days.length === 7 ? { tz: profile.hours.tz, days: profile.hours.days } : null,
@@ -4960,7 +4962,7 @@ async function bazaarRatings(userIds) {
   return new Map(rows.map((r) => [String(r._id), { avg: Math.round(r.avg * 10) / 10, count: r.count }]));
 }
 
-async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], sub = '', near = null, needCategory = false, countryIso = '', openNow = false, maxPrice = 0, newOnly = false, fuzzyOwners = null }) {
+async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], sub = '', near = null, needCategory = false, countryIso = '', openNow = false, maxPrice = 0, newOnly = false, fuzzyOwners = null, word = '' }) {
   const match = {
     'creatorProfile.handle': { $type: 'string', $ne: '' },
     'creatorProfile.listed': { $ne: false }
@@ -4988,6 +4990,9 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], s
     ];
     // Any spelling: "rasoi" finds रसोई, "रसोई" finds Rasoi.
     if (keyRe) or.push({ 'creatorProfile.searchKey': keyRe });
+    // And by what an Other creator said they make, in any spelling (0185):
+    // "achar" finds घर का अचार.
+    if (keyRe) or.push({ 'creatorProfile.otherWordsKey': keyRe });
     // Shops by what they SELL, in any spelling, and in its own script for
     // alphabets the key does not cover.
     // At most four words of at most 40 characters each: every extra word is
@@ -5023,6 +5028,10 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], s
     match['creatorProfile.category'] = { $in: bazaar.BAZAAR_CATEGORIES };
   }
   if (category && sub) match['creatorProfile.subcategory'] = sub;
+  if (word) {
+    match['creatorProfile.category'] = 'other';
+    match['creatorProfile.otherWordsKey'] = new RegExp(`(^| )${bazaar.bazaarEscapeRegex(word)}`);
+  }
   if (newOnly) match['creatorProfile.joinedAt'] = { $gte: new Date(Date.now() - bazaar.BAZAAR_NEW_DAYS * 86400000) };
   if (near) {
     const box = bazaar.bazaarBoundingBox(near.lat, near.lng, near.radiusKm);
@@ -5032,7 +5041,7 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], s
   }
   if (and.length) match.$and = and;
   const users = await User.find(match)
-    .select('_id symbolId countryIso creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category creatorProfile.category2 creatorProfile.subcategory creatorProfile.joinedAt creatorProfile.shop creatorProfile.hours creatorProfile.addressParts.lat creatorProfile.addressParts.lng')
+    .select('_id symbolId countryIso creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category creatorProfile.category2 creatorProfile.subcategory creatorProfile.otherWords creatorProfile.joinedAt creatorProfile.shop creatorProfile.hours creatorProfile.addressParts.lat creatorProfile.addressParts.lng')
     .limit(bazaar.BAZAAR_CANDIDATE_CAP)
     .lean();
   const rows = [];
@@ -5048,6 +5057,7 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], s
       category: bazaar.BAZAAR_CATEGORIES.includes(p.category) ? p.category : '',
       category2: bazaar.BAZAAR_CATEGORIES.includes(p.category2) ? p.category2 : '',
       subcategory: bazaar.bazaarSubcategoryValid(p.category, p.subcategory) ? p.subcategory : '',
+      otherWords: p.category === 'other' ? (p.otherWords || '') : '',
       joinedAt: p.joinedAt || null,
       color: creatorShopOut(p.shop).color,
       matchedItem: itemHit.get(u.symbolId) || '',
@@ -5095,7 +5105,9 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
     if (q) await bazaarEnsureKeys();
     const rawQ = String(req.query.q || '').trim().slice(0, 40);
     const openNow = req.query.open === '1';
-    const base = { q, rawQ, category, cats, sub, near, countryIso, openNow, maxPrice: priceCap, newOnly: sort === 'new' };
+    // A shared word from creators' own two words (0186), as a filter.
+    const word = bazaar.bazaarWordQuery(req.query.word);
+    const base = { q, rawQ, category: word ? '' : category, cats, sub, near, countryIso, openNow, maxPrice: priceCap, newOnly: sort === 'new', word };
     let rows = await bazaarCandidates(base);
     // Typo-proof: nobody spelled like that, so try near spellings.
     let fuzzy = false;
@@ -5125,6 +5137,7 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
       category: r.category,
       category2: r.category2,
       subcategory: r.subcategory,
+      otherWords: r.otherWords || '',
       isNew: Boolean(r.joinedAt && Date.now() - new Date(r.joinedAt).getTime() < bazaar.BAZAAR_NEW_DAYS * 86400000),
       rating: shownRatings.get(String(r._id)) || null,
       color: r.color,
@@ -5195,6 +5208,37 @@ app.get('/api/bazaar/suggest', lookupLimit, requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Bazaar suggest error:', error);
     return res.status(500).json({ success: false, message: 'Could not suggest right now.' });
+  }
+});
+
+// GET /api/bazaar/words?country=IN[&lat=..&lng=..&radiusKm=2]
+//
+// The words three or more creators share, from what Other creators said
+// they make (0186). Counted where the searcher is: their country, or the
+// circle when Near me is on. Only counts of creators ever leave here.
+app.get('/api/bazaar/words', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const near = bazaar.bazaarNear(req.query);
+    const countryIso = /^[A-Z]{2}$/.test(String(req.query.country || '')) ? String(req.query.country) : '';
+    const match = {
+      'creatorProfile.handle': { $type: 'string', $ne: '' },
+      'creatorProfile.listed': { $ne: false },
+      'creatorProfile.category': 'other',
+      'creatorProfile.otherWords': { $type: 'string', $ne: '' }
+    };
+    if (countryIso && !near) match.countryIso = countryIso;
+    if (near) {
+      const box = bazaar.bazaarBoundingBox(near.lat, near.lng, near.radiusKm);
+      match['creatorProfile.addressPublic'] = true;
+      match['creatorProfile.addressParts.lat'] = { $gte: box.minLat, $lte: box.maxLat };
+      match['creatorProfile.addressParts.lng'] = { $gte: box.minLng, $lte: box.maxLng };
+    }
+    const users = await User.find(match).select('creatorProfile.otherWords').limit(3000).lean();
+    const words = bazaar.bazaarSharedWords(users.map((u) => ({ otherWords: (u.creatorProfile || {}).otherWords })), searchKey.looseKey);
+    return res.json({ success: true, words });
+  } catch (error) {
+    console.error('bazaar words error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load that just now.' });
   }
 });
 
@@ -5386,6 +5430,29 @@ app.put(
           return res.status(400).json({ success: false, code: 'invalid_subcategory', message: 'That is not part of the category.' });
         }
         set['creatorProfile.subcategory'] = String(body.subcategory || '');
+      }
+      // ── OTHER, IN TWO WORDS (0185) ─────────────────────────────────────
+      // Required to choose Other: a shop that is only "Other" cannot be
+      // found by what it makes. Creators already in Other keep saving
+      // everything else; their creator side asks them once.
+      {
+        const nextCat = body.category !== undefined ? body.category : ((req.authUser.creatorProfile || {}).category || '');
+        if (body.otherWords !== undefined) {
+          const checked = bazaar.bazaarOtherWordsCheck(body.otherWords, searchKey.looseKey);
+          if (!checked.ok) return res.status(400).json({ success: false, code: checked.code, message: checked.message });
+          const keep = nextCat === 'other' ? checked.value : '';
+          set['creatorProfile.otherWords'] = keep;
+          set['creatorProfile.otherWordsKey'] = keep ? searchKey.searchKeyOf(keep) : '';
+        } else if (body.category !== undefined && body.category !== 'other') {
+          set['creatorProfile.otherWords'] = '';
+          set['creatorProfile.otherWordsKey'] = '';
+        }
+        const hadWords = Boolean(((req.authUser.creatorProfile || {}).otherWords || '').trim());
+        const willHave = body.otherWords !== undefined ? Boolean(set['creatorProfile.otherWords']) : hadWords;
+        const choosingOther = body.category === 'other' && ((req.authUser.creatorProfile || {}).category || '') !== 'other';
+        if (choosingOther && !willHave) {
+          return res.status(400).json({ success: false, code: 'other_words_required', message: 'Say what you make in one or two words.' });
+        }
       }
       // When the shop first set itself up, for "New on GLOOBAL". Once.
       if (!((req.authUser.creatorProfile || {}).joinedAt) && (body.category !== undefined || wantsHandle)) {

@@ -251,6 +251,8 @@ function CreatorSetupScreen({
   // The narrower kind and an optional second category (0141).
   const [subcategory, setSubcategory] = useState53((creator && creator.subcategory) || "");
   const [category2, setCategory2] = useState53((creator && creator.category2) || "");
+  // 0185: picking Other asks what they make, in two words.
+  const [otherWords, setOtherWords] = useState53((creator && creator.otherWords) || "");
   const setCategory = (c) => {
     setCategoryRaw(c);
     setSubcategory("");
@@ -310,7 +312,11 @@ function CreatorSetupScreen({
   const tone = refused ? "bad" : availability.status === "free" ? "good" : null;
   // Save is allowed while the answer is unknown — a dead connection is
   // not a reason to refuse, and the server will decide anyway.
+  // Other needs its two words: a shop that is only "Other" cannot be
+  // found by what it makes. The server holds the same rule.
+  const otherReady = category !== "other" || (Boolean(otherWords.trim()) && !bazaarOtherWordsProblem(otherWords));
   const canSave = enough && !saving && !refused;
+  const canSaveAll = canSave && otherReady;
 
   const pickLogo = (e) => {
     const file = e.target.files && e.target.files[0];
@@ -571,7 +577,7 @@ function CreatorSetupScreen({
        One of fourteen, so "Food & Chai" on Pay & Services gathers every
        chai stall however each one spells chai. Optional: a shop with no
        category is still found by name and Near me. */
-  }<BazaarCategoryPicker value={category} onChange={setCategory} />{category && (BAZAAR_SUBCATEGORY_INFO[category] || []).length ? <div style={{ marginTop: 12 }}><div style={{
+  }<BazaarCategoryPicker value={category} onChange={setCategory} />{category === "other" ? <div style={{ marginTop: 14 }}><BazaarOtherWordsBox value={otherWords} onChange={setOtherWords} /></div> : null}{category && (BAZAAR_SUBCATEGORY_INFO[category] || []).length ? <div style={{ marginTop: 12 }}><div style={{
     fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 2px 7px"
   }}>What kind exactly</div><BazaarSubcategoryPicker category={category} value={subcategory} onChange={setSubcategory} /></div> : null}{category ? <div style={{ marginTop: 12 }}><div style={{
     fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 2px 7px"
@@ -750,6 +756,7 @@ function CreatorSetupScreen({
       subcategory: category ? subcategory : "",
       category2: category2 && category2 !== category ? category2 : "",
       listed,
+      ...(category === "other" ? { otherWords: otherWords.trim() } : {}),
       hours,
       about: about.trim(),
       contacts,
@@ -759,7 +766,7 @@ function CreatorSetupScreen({
       font,
       logo: logo || undefined
     })}
-    disabled={!canSave}
+    disabled={!canSaveAll}
     aria-label="Save my creator name"
     className="v2-tap"
     style={{
@@ -773,14 +780,14 @@ function CreatorSetupScreen({
       border: "none",
       borderRadius: 999,
       padding: "0 18px",
-      background: canSave ? T.gradButton : T.surfaceAlt,
-      color: canSave ? "#fff" : T.inkFaint,
+      background: canSaveAll ? T.gradButton : T.surfaceAlt,
+      color: canSaveAll ? "#fff" : T.inkFaint,
       fontSize: 15,
       fontWeight: 800,
       fontFamily: "inherit",
       whiteSpace: "nowrap",
-      cursor: canSave ? "pointer" : "default",
-      boxShadow: canSave ? `0 8px 20px rgba(${T.accentRgb},0.28)` : "none"
+      cursor: canSaveAll ? "pointer" : "default",
+      boxShadow: canSaveAll ? `0 8px 20px rgba(${T.accentRgb},0.28)` : "none"
     }}
   >{saving ? <Loader5 size={17} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check9 size={18} strokeWidth={2.8} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{saving ? "Saving…" : "Save my name"}</span></button></div>}{
     /* ── MORE FONTS ───────────────────────────────────────────────────

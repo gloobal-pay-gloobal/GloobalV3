@@ -346,6 +346,15 @@ const userSchema = new mongoose.Schema({
       default: ''
     },
     subcategory: { type: String, trim: true, maxlength: 24, default: '' },
+    // ── OTHER, IN THEIR OWN WORDS (0185) ─────────────────────────────────
+    // A creator who picks Other says what they make in one or two words,
+    // in any language: "Handmade candles", "घर का अचार". Shown as the one
+    // line under their name on Pay & Services and matched by search; when
+    // three or more creators share a word it becomes a filter (0186).
+    // otherWordsKey is the loose Latin key of the words (lib/searchKey.js),
+    // written by the server only.
+    otherWords: { type: String, trim: true, maxlength: 40, default: '' },
+    otherWordsKey: { type: String, default: '' },
     // When the shop first set itself up — set once, never moved — for
     // "New on GLOOBAL". completedAt moves on every save and cannot say this.
     joinedAt: { type: Date, default: null },

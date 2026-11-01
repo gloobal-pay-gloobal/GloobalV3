@@ -2036,7 +2036,9 @@ var GloobalApi = {
 
   // GET /api/hooman → { consented, score }.
   async getHoomanScore() {
-    const result = await gloobalApiClient.get("/api/hooman");
+    // The phone's own date, so "days in a row" counts from the person's today.
+    const day = typeof ghTodayKey === "function" ? ghTodayKey() : "";
+    const result = await gloobalApiClient.get(`/api/hooman${day ? `?day=${encodeURIComponent(day)}` : ""}`);
     return { consented: Boolean(result && result.consented), score: (result && result.score) || null };
   },
 

@@ -1068,12 +1068,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [ghWheelHue, setGhWheelHue] = useState14(0);
   const [ghWheelSat, setGhWheelSat] = useState14(0);
   const requestCloseGhScore = useBackClose(profileOverlay === "ghscore", () => {
-    if (ghScreen === "question") setGhScreen("items");
-    else if (ghScreen === "items") {
+    // Every inner screen of the reworked flow (check-in, done, one pillar)
+    // goes back to the overview; the overview closes.
+    if (ghScreen !== "categories") {
       setGhScreen("categories");
       setGhActiveCategory(null);
     } else requestCloseProfileOverlay();
   });
+  // From the server's score: days in a row, the support card, and whether
+  // this week's attention sum is due. Null while answers stay on the phone.
+  const [ghExtras, setGhExtras] = useState14(null);
   const catColor = (catKey) => ghCategoryColors[catKey] || GH_DEFAULT_COLORS[catKey];
   const catSoft = (catKey, alpha = 0.14) => hexToRgba(catColor(catKey), alpha);
   const ghSelectedColorCat = GH_CATEGORIES.find((c) => c.key === ghColorPickerCat);
@@ -1175,7 +1179,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // `confirmed` names the local answer this response settles, by its `at`
   // stamp — so an answer re-tapped while the first save was in flight is
   // kept rather than overwritten by the older reply.
-  const ghApplyServerScore = (score, confirmed) => setGhAnswers((prev) => {
+  const ghApplyServerScore = (score, confirmed) => {
+    if (score) setGhExtras({ streak: score.streak || 0, support: Boolean(score.support), attentionDue: Boolean(score.attentionDue) });
+    ghMergeServerAnswers(score, confirmed);
+  };
+  const ghMergeServerAnswers = (score, confirmed) => setGhAnswers((prev) => {
     const next = ghAnswersFromScore(score);
     for (const [qId, ans] of Object.entries(prev)) {
       if (!ans || ans.saved !== false) continue;
@@ -1207,7 +1215,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         setHoomanConsented(false);
         setHoomanConsentAsk((list) => [...list, { body, at }]);
       } else if (status === 409) {
-        showToast2("Finance answers lock after your first response");
+        showToast2("Already answered this month — it's asked again next month");
         ghLoadSaved();
       } else if (status === 401) {
         /* signed out — httpClient already handles the redirect */
@@ -1256,6 +1264,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     try {
       await GloobalApi.deleteHoomanData();
       setGhAnswers({});
+      setGhExtras(null);
       setGhNotes({});
       setHoomanConsented(false);
       setHoomanSessionOnly(false);
@@ -1282,6 +1291,26 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       return;
     }
     setGhScreen(Object.keys(nextAnswers).length === ghTotalQuestions ? "complete" : "items");
+  };
+  // Five faces (0180). The phone scores it the way the server will, so an
+  // answer kept on this phone and a saved one read the same.
+  const ghAnswerFace = (catKey, itemKey, face) => {
+    const qId = `${catKey}.${itemKey}`;
+    const at = Date.now();
+    const day = ghTodayKey();
+    const body = { pillar: catKey, item: itemKey, kind: "scale", value: String(face), day, source: "score" };
+    setGhAnswers((prev) => ({ ...prev, [qId]: { type: "scale", value: String(face), points: HOOMAN_FACE_POINTS[face] || 10, day, saved: false, at, body } }));
+    ghPersist(body, at);
+  };
+  // The weekly attention sum: saved on its own, never a pillar answer.
+  const ghAnswerAttention = (a, b, value) => {
+    if (!hoomanSignedIn() || hoomanConsented !== true) return;
+    const body = { pillar: "self", item: "education", kind: "math", a, b, value: String(value), day: ghTodayKey(), source: "score" };
+    GloobalApi.saveHoomanAnswer(body).then(({ score }) => {
+      if (score) setGhExtras({ streak: score.streak || 0, support: Boolean(score.support), attentionDue: Boolean(score.attentionDue) });
+    }).catch(() => {
+      /* an attention sum that did not save is simply asked again next week */
+    });
   };
   const ghContinueAfterAnswer = () => {
     setGhNoteOpen(false);
@@ -3041,7 +3070,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        seconds, tap opens the Edit ID / GH Score menu. */
   }<span style={{ position: "absolute", top: 14, right: 14, zIndex: 1 }}><div style={{ width: GH_HERO_CIRCLE_SIZE, height: GH_HERO_CIRCLE_SIZE, flexShrink: 0, perspective: 600 }}><button
     onClick={() => setShowGhCircleMenu((v) => !v)}
-    aria-label={`Hooman Score, ${ghRawTotal} of ${ghMaxTotal} \u2014 tap for options`}
+    aria-label={ghOverallScore() === null ? "Hooman Score, no score yet \u2014 tap for options" : `Hooman Score, ${ghOverallScore()} out of 100 \u2014 tap for options`}
     style={{
       position: "relative",
       width: "100%",
@@ -4539,8 +4568,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // which way the money went does not make it less of one. Paid and
     // received are the two halves of this account's own border history.
     history={roleSendHistory.concat(receivedRows)}
-    hoomanScore={ghCanGenerate
-      ? { complete: true, value: ghRawTotal, max: ghMaxTotal, tier: ghTier(ghOverallScore()) }
+    hoomanScore={ghOverallScore() !== null
+      ? { complete: true, value: ghOverallScore(), max: 100, tier: hoomanWordsFor(ghOverallScore()) }
       : { complete: false, answered: ghTotalAnswered, total: ghTotalQuestions }}
     onOpenHoomanScore={() => setProfileOverlay("ghscore")}
     shopHandle={(creatorProfile && creatorProfile.handle) || ""}
@@ -5033,285 +5062,27 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        after its first answer. Each pillar's colour is customisable via
        the header's colour-wheel icon. */
   }{profileOverlay === "ghscore" && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><style>{GH_STYLE}</style>{
-    /* Header */
-  }{ghScreen !== "complete" && <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
-      if (ghScreen === "question") setGhScreen("items");
-      else if (ghScreen === "items") {
-        setGhScreen("categories");
-        setGhActiveCategory(null);
-      } else requestCloseGhScore();
-    }} style={{ flexShrink: 0  }} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, minWidth: 0 }}>Hooman Score</span>{ghScreen === "categories" && <button
-    onClick={() => setGhShowColorSheet(true)}
-    aria-label="Change colours"
-    className="v2-tap"
-    style={{
-      marginLeft: "auto",
-      width: 40,
-      height: 40,
-      borderRadius: "50%",
-      flexShrink: 0,
-      border: "none",
-      padding: 3,
-      background: T.surface,
-      boxShadow: T.shadowCard,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer"
-    }}
-  ><span
-    style={{
-      width: "100%",
-      height: "100%",
-      borderRadius: "50%",
-      background: "radial-gradient(circle, #fff 0%, rgba(255,255,255,0) 100%), conic-gradient(from 90deg, #FF0000 0deg, #FFFF00 60deg, #00FF00 120deg, #00FFFF 180deg, #0000FF 240deg, #FF00FF 300deg, #FF0000 360deg)",
-      boxShadow: `inset 0 0 0 1px rgba(${T.inkRgb},0.1)`
-    }}
-  /></button>}</div>}{
-    /* Scrollable content */
-  }<div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}>{
-    /* ---------- Overview: ring + pillar list ---------- */
-  }{ghScreen === "categories" && <><div style={{ position: "relative", background: T.surface, borderRadius: T.radiusXl, padding: "30px 14px", boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>{GH_FLOAT_NUMS.map((n, i) => <span
-    key={i}
-    className={n.anim}
-    style={{
-      position: "absolute",
-      top: n.top,
-      left: n.left,
-      right: n.right,
-      fontSize: n.size,
-      fontWeight: 800,
-      color: n.color,
-      fontFamily: T.fontDisplay,
-      userSelect: "none",
-      "--r": `${n.rotate}deg`,
-      animationDuration: n.dur,
-      animationDelay: n.delay
-    }}
-  >{n.text}</span>)}</div><div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}><GHSegmentedRing size={196} thickness={17} gapDeg={4} segments={ghRingSegments}><div key={ghCanGenerate ? "done" : "pending"} className={ghCanGenerate ? "gh-score-reveal" : ""} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span style={{ fontSize: 42, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1 }}>{ghCanGenerate ? ghRawTotal : 0}</span><span style={{ fontSize: 11, fontWeight: 700, color: T.inkFaint, marginTop: 3 }}>out of {ghMaxTotal}</span>{ghCanGenerate && <span style={{ fontSize: 13, fontWeight: 800, color: T.positive, marginTop: 4 }}>{ghTier(ghOverallScore())}</span>}</div></GHSegmentedRing><span style={{ fontSize: 12, fontWeight: 700, color: ghCanGenerate ? T.positive : T.inkFaint }}>{ghCanGenerate ? "All check-ins complete" : `${ghTotalAnswered}/${ghTotalQuestions} answered`}</span></div></div>{
-    /* Pillar list — icon, name, progress, score, answered count */
-  }<div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{GH_CATEGORIES.map((cat, i) => {
-    const Icon = cat.icon;
-    const score = ghCategoryScore(cat.key);
-    const color = catColor(cat.key);
-    const answeredCount = cat.items.filter((it) => ghAnswers[`${cat.key}.${it.key}`]).length;
-    return <button
-      key={cat.key}
-      onClick={() => ghOpenCategory(cat.key)}
-      className="v2-row"
-      style={{
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        gap: 14,
-        padding: "14px 16px",
-        border: "none",
-        borderTop: i === 0 ? "none" : `1px solid ${T.line}`,
-        background: "none",
-        cursor: "pointer",
-        textAlign: "left"
-      }}
-    ><span style={{ width: 38, height: 38, borderRadius: 12, flexShrink: 0, background: hexToRgba(color, 0.14), display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={17} color={color} /></span><span style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>{cat.label}</div><div style={{ height: 5, borderRadius: 999, background: T.surfaceAlt, marginTop: 7, overflow: "hidden" }}><div style={{ height: "100%", width: `${score || 0}%`, borderRadius: 999, background: color, transition: "width 0.4s ease" }} /></div></span><span style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: 13.5, fontWeight: 800, color: score === null ? T.inkFaint : color }}>{score === null ? "\u2014" : score}</div><div style={{ fontSize: 10, fontWeight: 700, color: T.inkFaint, marginTop: 1 }}>{answeredCount}/{cat.items.length}</div></span></button>;
-  })}</div>{
-    /* Where the answers are kept, and the way to delete them. Quiet on
-       purpose — it is a setting, not a call to action. */
-  }{hoomanSignedIn() && <div data-testid="hooman-saving" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "2px 4px" }}><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>{hoomanConsented ? "Saved to your account \xB7 only you can see it" : "Answers stay on this phone for now"}</span>{hoomanConsented ? <button
-    onClick={() => setHoomanDeleteAsk(true)}
-    className="v2-tap"
-    style={{ border: "none", background: "none", padding: "6px 0", fontSize: 11.5, fontWeight: 800, color: T.negative, cursor: "pointer" }}
-  >Delete my answers</button> : <button
-    onClick={ghAskToSave}
-    className="v2-tap"
-    style={{ border: "none", background: "none", padding: "6px 0", fontSize: 11.5, fontWeight: 800, color: T.accent, cursor: "pointer" }}
-  >Save to my account</button>}</div>}</>}{
-    /* ---------- The check-ins for one pillar ---------- */
-  }{ghScreen === "items" && ghActiveCategory && (() => {
-    const cat = GH_CATEGORIES.find((c) => c.key === ghActiveCategory);
-    const Icon = cat.icon;
-    const score = ghCategoryScore(cat.key);
-    const color = catColor(cat.key);
-    return <><div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 42, height: 42, borderRadius: 13, background: catSoft(cat.key), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={19} color={color} /></span><div style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1, minWidth: 0 }}>{cat.label}</div><div style={{ fontSize: 19, fontWeight: 800, color: score === null ? T.inkFaint : color }}>{score === null ? "\u2014" : score}</div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{cat.items.map((item, i) => {
-      const ItemIcon = item.icon;
-      const ans = ghAnswers[`${cat.key}.${item.key}`];
-      const locked = ghIsLocked(cat.key, item.key);
-      let statusText;
-      if (locked) {
-        statusText = ans.type === "yesno" ? `Locked \u2014 ${ans.value === "yes" ? "Yes" : "No"}` : `Locked \u2014 ${ans.value}`;
-      } else if (!ans) {
-        statusText = "Not answered yet";
-      } else if (ans.type === "yesno") {
-        statusText = `${ans.value === "yes" ? "Yes" : "No"}${ans.day === ghTodayKey() ? " \xB7 today" : " \xB7 tap to refresh"}`;
-      } else if (ans.type === "knowledge") {
-        // Answered after a payment: a quiz question, not a typed sum.
-        statusText = `Quiz \u2014 ${ans.correct ? "right" : "not quite"}${ans.day === ghTodayKey() ? " \xB7 today" : " \xB7 tap to refresh"}`;
-      } else {
-        statusText = `${ans.value} (${ans.correct ? "correct" : "not quite"})${ans.day === ghTodayKey() ? " \xB7 today" : " \xB7 tap to refresh"}`;
-      }
-      return <button
-        key={item.key}
-        onClick={() => ghOpenQuestion(cat.key, item)}
-        className="v2-row"
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          gap: 14,
-          padding: "14px 16px",
-          border: "none",
-          borderTop: i === 0 ? "none" : `1px solid ${T.line}`,
-          background: "none",
-          cursor: locked ? "default" : "pointer",
-          textAlign: "left",
-          opacity: locked ? 0.72 : 1
-        }}
-      ><span style={{ width: 34, height: 34, borderRadius: 11, flexShrink: 0, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center" }}><ItemIcon size={15} color={T.inkSoft} /></span><span style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{item.label}</div><div style={{ fontSize: 11, color: T.inkFaint, marginTop: 1 }}>{statusText}</div></span>{locked ? <Lock4 size={15} color={T.inkFaint} /> : ans ? <Check2 size={16} color={T.positive} /> : <ChevronRightIcon />}</button>;
-    })}</div></>;
-  })()}{
-    /* ---------- One question ---------- */
-  }{ghScreen === "question" && ghActiveCategory && ghActiveItem && (() => {
-    const cat = GH_CATEGORIES.find((c) => c.key === ghActiveCategory);
-    const item = cat.items.find((it) => it.key === ghActiveItem);
-    const color = catColor(cat.key);
-    const nums = item.type === "math" ? ghMathNumsFor(cat.key, item) : null;
-    return <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 6 }}><span style={{ width: 48, height: 48, borderRadius: 15, background: catSoft(cat.key), display: "flex", alignItems: "center", justifyContent: "center" }}>{React3.createElement(item.icon, { size: 21, color })}</span><div style={{ fontSize: 18.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.3 }}>{item.type === "math" && nums ? item.question.replace("{a}", nums.a).replace("{b}", nums.b) : ghQuestionText(cat.key, item)}</div>{item.type === "yesno" && !ghNoteOpen && <div style={{ display: "flex", gap: 10 }}><button
-      onClick={() => ghAnswerYesNo(cat.key, item.key, "yes")}
-      className="v2-tap"
-      style={{ flex: 1, padding: "15px 0", borderRadius: T.radiusMd, border: "none", background: color, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", boxShadow: `0 8px 20px ${hexToRgba(color, 0.3)}` }}
-    >
-                        Yes
-                      </button><button
-      onClick={() => ghAnswerYesNo(cat.key, item.key, "no")}
-      className="v2-tap"
-      style={{ flex: 1, padding: "15px 0", borderRadius: T.radiusMd, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 14, fontWeight: 800, cursor: "pointer" }}
-    >
-                        No
-                      </button></div>}{item.type === "math" && <><input
-      type="number"
-      inputMode="numeric"
-      value={ghMathInput}
-      onChange={(e) => setGhMathInput(e.target.value)}
-      placeholder="Your answer"
-      style={{
-        width: "100%",
-        padding: "13px 16px",
-        borderRadius: T.radiusMd,
-        border: `1px solid ${T.line}`,
-        background: T.surface,
-        fontSize: 16,
-        fontWeight: 700,
-        color: T.ink,
-        boxSizing: "border-box"
-      }}
-    /><div style={{ display: "flex", gap: 10 }}><button
-      onClick={() => ghSubmitMath(cat.key, item.key)}
-      disabled={ghMathInput === ""}
-      className="v2-tap"
-      style={{
-        flex: 1,
-        padding: "15px 0",
-        borderRadius: T.radiusMd,
-        border: "none",
-        background: ghMathInput === "" ? T.surfaceAlt : color,
-        color: ghMathInput === "" ? T.inkFaint : "#fff",
-        fontSize: 14,
-        fontWeight: 800,
-        cursor: ghMathInput === "" ? "default" : "pointer"
-      }}
-    >
-                          Submit
-                        </button>{!ghNoteOpen && <button
-      onClick={() => setGhNoteOpen(true)}
-      aria-label="Write a note instead"
-      className="v2-tap"
-      style={{ flex: 1, padding: "15px 0", borderRadius: T.radiusMd, border: `1px solid ${T.line}`, background: T.surfaceAlt, color: T.inkSoft, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-    ><Pencil size={16} /></button>}</div></>}{
-      /* Note box — auto-opens after answering "No" (which
-         naturally invites a bit more context), or via
-         math's Edit button. For yes/no, Submit saves the
-         note and moves on in one tap; Continue is there
-         too, for when there's nothing to add. Math's Submit
-         stays note-only, since its own answer box handles
-         moving on separately. */
-    }{ghNoteOpen && <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}><textarea
-      value={ghNoteInput}
-      onChange={(e) => {
-        const words = e.target.value.trim() ? e.target.value.trim().split(/\s+/) : [];
-        if (words.length <= 50) setGhNoteInput(e.target.value);
-      }}
-      placeholder="Say more, if you'd like (optional, up to 50 words)"
-      rows={3}
-      autoFocus
-      style={{
-        width: "100%",
-        padding: "12px 14px",
-        borderRadius: T.radiusMd,
-        border: `1px solid ${T.line}`,
-        background: T.surface,
-        fontSize: 13.5,
-        fontWeight: 500,
-        color: T.ink,
-        fontFamily: "inherit",
-        boxSizing: "border-box",
-        resize: "vertical"
-      }}
-    />{ghNoteInput.trim() && <button
-      onClick={() => {
-        ghSubmitNote(cat.key, item.key);
-        if (item.type === "yesno") ghContinueAfterAnswer();
-      }}
-      className="v2-tap"
-      style={{
-        padding: "12px 0",
-        borderRadius: T.radiusMd,
-        border: "none",
-        background: color,
-        color: "#fff",
-        fontSize: 13,
-        fontWeight: 800,
-        cursor: "pointer"
-      }}
-    >
-                        Submit
-                      </button>}{item.type === "yesno" && <button
-      onClick={ghContinueAfterAnswer}
-      className="v2-tap"
-      style={{
-        padding: "12px 0",
-        borderRadius: T.radiusMd,
-        border: `1px solid ${T.line}`,
-        background: "none",
-        color: T.inkSoft,
-        fontSize: 13,
-        fontWeight: 700,
-        cursor: "pointer"
-      }}
-    >
-                        Continue
-                      </button>}</div>}</div>;
-  })()}{
-    /* ---------- Complete: shown once, right after the last check-in ---------- */
-  }{ghScreen === "complete" && <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 22, padding: "12px 4px 24px", textAlign: "center" }}><span style={{ fontSize: 12, fontWeight: 800, color: T.accent, letterSpacing: 0.4, textTransform: "uppercase" }}>
-                  All check-ins complete
-                </span><GHSegmentedRing size={208} thickness={18} gapDeg={4} segments={ghRingSegments}><div className="gh-score-reveal" style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span style={{ fontSize: 46, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1 }}>{ghRawTotal}</span><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, marginTop: 3 }}>out of {ghMaxTotal}</span><span style={{ fontSize: 14, fontWeight: 800, color: T.positive, marginTop: 5 }}>{ghTier(ghOverallScore())}</span></div></GHSegmentedRing><p style={{ fontSize: 13, color: T.inkSoft, margin: 0, maxWidth: 280 }}>
-                  Your Hooman Score is ready. You can revisit any pillar any time — Self, Community, and Environment refresh daily.
-                </p><button
-    onClick={() => setGhScreen("categories")}
-    className="v2-tap"
-    style={{
-      width: "100%",
-      border: "none",
-      borderRadius: T.radiusMd,
-      padding: "16px 0",
-      cursor: "pointer",
-      background: T.accent,
-      color: "#fff",
-      fontSize: 14,
-      fontWeight: 800,
-      boxShadow: `0 10px 24px ${hexToRgba(T.accent, 0.3)}`
-    }}
-  >
-                  View My Pillars
-                </button></div>}</div>{
+    /* The reworked flow (0180): overview, daily check-in, done, one
+       pillar. See features/hooman/HoomanScoreFlow.jsx. The consent and
+       delete sheet and the colour popover below are unchanged. */
+  }<HoomanScoreFlow
+    screen={ghScreen}
+    setScreen={setGhScreen}
+    activePillar={ghActiveCategory}
+    setActivePillar={setGhActiveCategory}
+    answers={ghAnswers}
+    extras={ghExtras}
+    catColor={catColor}
+    countryIso={dialCountry && dialCountry.iso}
+    signedIn={hoomanSignedIn()}
+    consented={hoomanConsented}
+    onAnswer={ghAnswerFace}
+    onAttention={ghAnswerAttention}
+    onAskToSave={ghAskToSave}
+    onAskDelete={() => setHoomanDeleteAsk(true)}
+    onOpenColors={() => setGhShowColorSheet(true)}
+    onClose={requestCloseGhScore}
+  />{
     /* ---------- Hooman Score: consent, and delete ----------
        One bottom sheet, two uses. Consent is asked once, the first time an
        answer would be saved; "Not now" keeps answers on this phone for the

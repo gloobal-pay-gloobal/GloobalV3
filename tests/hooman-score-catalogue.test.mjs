@@ -32,7 +32,7 @@ const loadAppCatalogue = () => {
 
 const shape = (catalogue) => catalogue.map((pillar) => ({
   key: pillar.key,
-  locks: Boolean(pillar.locksAfterAnswer),
+  monthly: Boolean(pillar.monthly),
   items: pillar.items.map((item) => `${item.key}:${item.type}`)
 }));
 
@@ -40,8 +40,17 @@ test("the app and the server list the same check-ins, in the same pillars, with 
   assert.deepEqual(shape(loadAppCatalogue()), shape(HOOMAN_CATALOGUE));
 });
 
-test("Finance is the only pillar that locks, on both sides", () => {
-  const locking = (catalogue) => catalogue.filter((p) => p.locksAfterAnswer).map((p) => p.key);
-  assert.deepEqual(locking(loadAppCatalogue()), ["finance"]);
-  assert.deepEqual(locking(HOOMAN_CATALOGUE), ["finance"]);
+test("Finance is the only pillar asked monthly, on both sides", () => {
+  const monthly = (catalogue) => catalogue.filter((p) => p.monthly).map((p) => p.key);
+  assert.deepEqual(monthly(loadAppCatalogue()), ["finance"]);
+  assert.deepEqual(monthly(HOOMAN_CATALOGUE), ["finance"]);
+});
+
+test("every check-in has a face question, and a yes/no wording for after a payment", () => {
+  for (const pillar of loadAppCatalogue()) {
+    for (const item of pillar.items) {
+      assert.ok(Array.isArray(item.faces) && item.faces.length >= 1, `${pillar.key}.${item.key} has no face question`);
+      assert.ok(Array.isArray(item.questions) && item.questions.length >= 1, `${pillar.key}.${item.key} has no yes/no wording`);
+    }
+  }
 });

@@ -127,7 +127,11 @@ async function run() {
   const cheat = await call("POST", "/api/hooman/answers", { body: yes("food", { value: "no", points: 25 }), token: alice.token });
   check("a 'no' sent with points: 25 is stored as 10", cheat.status === 200 && cheat.body?.answer?.points === 10, cheat.text.slice(0, 160));
   const sum = await call("POST", "/api/hooman/answers", { body: { pillar: "self", item: "education", kind: "math", a: 34, b: 35, value: 69, day: "2026-09-21" }, token: alice.token });
-  check("a right sum is worth 25", sum.body?.answer?.points === 25 && sum.body?.answer?.correct === true);
+  // Since 0180 a sum is an attention check: checked, but worth nothing to a pillar.
+  check("a right sum is checked, and filed as an attention check", sum.body?.answer?.points === 0 && sum.body?.answer?.correct === true);
+  check("it does not count toward Education", sum.body?.score?.items?.["self.education"] === undefined);
+  const face = await call("POST", "/api/hooman/answers", { body: { pillar: "self", item: "sleep", kind: "scale", value: "4", day: "2026-09-21" }, token: alice.token });
+  check("a face is worth its points (4 → 21)", face.body?.answer?.points === 21, face.text.slice(0, 160));
   const three = await call("POST", "/api/hooman/answers", { body: { pillar: "self", item: "education", kind: "math", a: 34, b: 35, c: 36, value: 105, day: "2026-09-22" }, token: alice.token });
   check("a three-number sum is checked too", three.body?.answer?.correct === true, three.text.slice(0, 160));
   const q = await call("GET", "/api/hooman/question", { token: alice.token });
@@ -162,11 +166,13 @@ async function run() {
   check("both payments averaged into the check-in (17.5)", now.body?.score?.items?.["self.mental"]?.points === 17.5,
     JSON.stringify(now.body?.score?.items?.["self.mental"]));
 
-  console.log("\n4. Finance locks after the first answer");
-  const first = await call("POST", "/api/hooman/answers", { body: { pillar: "finance", item: "savings", kind: "yesno", value: "no" }, token: alice.token });
-  const second = await call("POST", "/api/hooman/answers", { body: { pillar: "finance", item: "savings", kind: "yesno", value: "yes" }, token: alice.token });
-  check("the first Finance answer is taken", first.status === 200);
-  check("a second is refused (409)", second.status === 409 && second.body?.code === "hooman_answer_locked", `status=${second.status}`);
+  console.log("\n4. Finance is asked once a month");
+  const first = await call("POST", "/api/hooman/answers", { body: { pillar: "finance", item: "savings", kind: "scale", value: "2", day: "2026-09-03" }, token: alice.token });
+  const second = await call("POST", "/api/hooman/answers", { body: { pillar: "finance", item: "savings", kind: "scale", value: "5", day: "2026-09-20" }, token: alice.token });
+  check("the first Finance answer this month is taken", first.status === 200);
+  check("a second in the same month is refused (409)", second.status === 409 && second.body?.code === "hooman_answered_this_month", `status=${second.status}`);
+  const nextMonth = await call("POST", "/api/hooman/answers", { body: { pillar: "finance", item: "savings", kind: "scale", value: "5", day: "2026-10-02" }, token: alice.token });
+  check("next month it can be answered again", nextMonth.status === 200, `status=${nextMonth.status}`);
 
   console.log("\n5. one person's answers are theirs alone");
   const bobsView = await call("GET", "/api/hooman", { token: bob.token });

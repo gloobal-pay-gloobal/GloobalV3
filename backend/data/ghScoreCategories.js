@@ -36,6 +36,10 @@ var GH_STYLE = `
 .gh-float-a { animation-name: ghFloatA; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
 .gh-float-b { animation-name: ghFloatB; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
 `;
+// Every check-in is answered with five faces (0180). `faces` is how the
+// daily check-in asks it, rotating by day; `questions` is the yes/no wording
+// still used for the one-tap question after a payment. Finance is asked once
+// a month (`monthly`), so it is never asked after a payment.
 var GH_CATEGORIES = [
   {
     key: "self",
@@ -45,11 +49,11 @@ var GH_CATEGORIES = [
     color: "#7C3AED",
     dailyRotation: true,
     items: [
-      { key: "health", label: "Health", icon: Heart, type: "yesno", questions: ["Are you healthy?", "Are you feeling good in your body today?", "Are you taking care of your health today?"] },
-      { key: "education", label: "Education", icon: BookOpen, type: "math", question: "Quick check \u2014 what's {a} + {b}?" },
-      { key: "food", label: "Food", icon: UtensilsCrossed, type: "yesno", questions: ["Are you eating what you love?", "Did you enjoy your last meal?", "Are you eating well today?"] },
-      { key: "mental", label: "Mentally", icon: Brain, type: "yesno", questions: ["Are you okay?", "Is your headspace in a good place today?", "Are you feeling mentally well today?"] },
-      { key: "sleep", label: "Sleep", icon: Moon, type: "yesno", questions: ["Did you get enough sleep last night?", "Are you sleeping well these days?", "Did you wake up feeling rested?"] }
+      { key: "health", label: "Health", icon: Heart, type: "scale", faces: ["How good do you feel in your body today?", "How healthy are you feeling these days?"], questions: ["Are you healthy?", "Are you feeling good in your body today?", "Are you taking care of your health today?"] },
+      { key: "education", label: "Learning", icon: BookOpen, type: "scale", faces: ["How much did you learn something new this week?", "How curious have you been this week?"], questions: ["Did you learn something new this week?"] },
+      { key: "food", label: "Food", icon: UtensilsCrossed, type: "scale", faces: ["How much did you enjoy your last meal?", "How well are you eating today?"], questions: ["Are you eating what you love?", "Did you enjoy your last meal?", "Are you eating well today?"] },
+      { key: "mental", label: "Feeling", icon: Brain, type: "scale", faces: ["How are you feeling today?", "How is your headspace today?"], questions: ["Are you okay?", "Is your headspace in a good place today?", "Are you feeling mentally well today?"] },
+      { key: "sleep", label: "Sleep", icon: Moon, type: "scale", faces: ["How well did you sleep last night?", "How rested did you feel when you woke up?"], questions: ["Did you get enough sleep last night?", "Are you sleeping well these days?", "Did you wake up feeling rested?"] }
     ]
   },
   {
@@ -60,11 +64,11 @@ var GH_CATEGORIES = [
     color: "#F97316",
     dailyRotation: true,
     items: [
-      { key: "belonging", label: "Belonging", icon: Users22, type: "yesno", questions: ["Do you feel you belong where you live?", "Do you feel at home in your community?", "Do you feel accepted where you live?"] },
-      { key: "support", label: "Support", icon: Handshake, type: "yesno", questions: ["Do you help others around you?", "Did you help someone today?", "Do you support the people around you?"] },
-      { key: "trust", label: "Trust", icon: Shield, type: "yesno", questions: ["Do you trust the people around you?", "Do you feel safe trusting your neighbors?", "Do you generally trust the people you deal with?"] },
-      { key: "voice", label: "Voice", icon: BookOpen, type: "math", question: "Quick check \u2014 what's {a} + {b}?" },
-      { key: "family", label: "Family", icon: Home2, type: "yesno", questions: ["Do you feel connected to your family?", "Have you connected with family recently?", "Do you feel close to your family?"] }
+      { key: "belonging", label: "Belonging", icon: Users22, type: "scale", faces: ["How much do you feel you belong where you live?", "How at home do you feel in your community?"], questions: ["Do you feel you belong where you live?", "Do you feel at home in your community?", "Do you feel accepted where you live?"] },
+      { key: "support", label: "Support", icon: Handshake, type: "scale", faces: ["How much did you help someone today?", "How much do you support the people around you?"], questions: ["Do you help others around you?", "Did you help someone today?", "Do you support the people around you?"] },
+      { key: "trust", label: "Trust", icon: Shield, type: "scale", faces: ["How much do you trust the people around you?", "How safe do you feel trusting your neighbours?"], questions: ["Do you trust the people around you?", "Do you feel safe trusting your neighbors?", "Do you generally trust the people you deal with?"] },
+      { key: "voice", label: "Voice", icon: BookOpen, type: "scale", faces: ["How much did you speak up about something that matters to you?", "How heard do you feel where you live?"], questions: ["Did you speak up about something that matters to you?"] },
+      { key: "family", label: "Family", icon: Home2, type: "scale", faces: ["How connected do you feel to your family?", "How close do you feel to your family today?"], questions: ["Do you feel connected to your family?", "Have you connected with family recently?", "Do you feel close to your family?"] }
     ]
   },
   {
@@ -75,11 +79,11 @@ var GH_CATEGORIES = [
     color: "#14B8A6",
     dailyRotation: true,
     items: [
-      { key: "recycling", label: "Recycling", icon: RefreshCw2, type: "yesno", questions: ["Do you recycle regularly?", "Did you recycle today?", "Do you make an effort to recycle?"] },
-      { key: "energy", label: "Energy", icon: Zap2, type: "yesno", questions: ["Do you try to save energy at home?", "Did you save energy today?", "Are you mindful about energy use?"] },
-      { key: "nature", label: "Nature", icon: Leaf, type: "yesno", questions: ["Do you spend time in nature?", "Did you spend time outdoors today?", "Do you make time for nature regularly?"] },
-      { key: "awareness", label: "Awareness", icon: BookOpen, type: "math", question: "Quick check \u2014 what's {a} + {b}?" },
-      { key: "water", label: "Water", icon: Droplet, type: "yesno", questions: ["Do you try to conserve water?", "Did you try to save water today?", "Are you mindful about how much water you use?"] }
+      { key: "recycling", label: "Recycling", icon: RefreshCw2, type: "scale", faces: ["How much did you recycle this week?", "How careful were you with waste today?"], questions: ["Do you recycle regularly?", "Did you recycle today?", "Do you make an effort to recycle?"] },
+      { key: "energy", label: "Energy", icon: Zap2, type: "scale", faces: ["How careful were you with energy today?", "How mindful are you about the power you use?"], questions: ["Do you try to save energy at home?", "Did you save energy today?", "Are you mindful about energy use?"] },
+      { key: "nature", label: "Nature", icon: Leaf, type: "scale", faces: ["How much time did you spend outdoors this week?", "How connected to nature do you feel?"], questions: ["Do you spend time in nature?", "Did you spend time outdoors today?", "Do you make time for nature regularly?"] },
+      { key: "awareness", label: "Awareness", icon: BookOpen, type: "scale", faces: ["How much do you think about your impact on the planet?", "How much did you notice about nature around you this week?"], questions: ["Do you think about your impact on the planet?"] },
+      { key: "water", label: "Water", icon: Droplet, type: "scale", faces: ["How careful were you with water today?", "How mindful are you about the water you use?"], questions: ["Do you try to conserve water?", "Did you try to save water today?", "Are you mindful about how much water you use?"] }
     ]
   },
   {
@@ -88,13 +92,13 @@ var GH_CATEGORIES = [
     blurb: "Money habits & financial health",
     icon: Wallet,
     color: "#EC4899",
-    locksAfterAnswer: true,
+    monthly: true,
     items: [
-      { key: "savings", label: "Savings", icon: Wallet, type: "yesno", question: "Do you save money regularly?" },
-      { key: "budgeting", label: "Budgeting", icon: BookOpen, type: "math", question: "Quick check \u2014 what's {a} + {b}?" },
-      { key: "debt", label: "Debt", icon: Shield, type: "yesno", question: "Do you feel in control of your debts?" },
-      { key: "security", label: "Security", icon: CreditCard2, type: "yesno", question: "Do you feel financially secure?" },
-      { key: "insurance", label: "Insurance", icon: ShieldCheck, type: "yesno", question: "Do you have insurance coverage for emergencies?" }
+      { key: "savings", label: "Savings", icon: Wallet, type: "scale", faces: ["How well did you save money this month?"], questions: ["Do you save money regularly?"] },
+      { key: "budgeting", label: "Budgeting", icon: BookOpen, type: "scale", faces: ["How well did you stick to your budget this month?"], questions: ["Did you stick to your budget this month?"] },
+      { key: "debt", label: "Debt", icon: Shield, type: "scale", faces: ["How in control of your debts do you feel?"], questions: ["Do you feel in control of your debts?"] },
+      { key: "security", label: "Security", icon: CreditCard2, type: "scale", faces: ["How financially secure do you feel?"], questions: ["Do you feel financially secure?"] },
+      { key: "insurance", label: "Insurance", icon: ShieldCheck, type: "scale", faces: ["How covered are you for an emergency?"], questions: ["Do you have insurance coverage for emergencies?"] }
     ]
   }
 ];

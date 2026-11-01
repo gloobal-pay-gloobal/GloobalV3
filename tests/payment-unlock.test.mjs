@@ -288,10 +288,13 @@ describe("the questions", () => {
      ${grab("paymentUnlockSum")}
      return { paymentUnlockCheckins, paymentUnlockSum };`
   );
+  // Since 0180 every check-in is answered with faces on the score screen;
+  // after a payment it is asked with its one-tap yes/no wording
+  // (`questions`). Finance is monthly and stays on the score screen.
   const cats = [
-    { key: "self", items: [{ key: "health", type: "yesno" }, { key: "education", type: "math" }, { key: "mental", type: "yesno" }] },
-    { key: "finance", locksAfterAnswer: true, items: [{ key: "savings", type: "yesno" }] },
-    { key: "environment", items: [{ key: "water", type: "yesno" }] }
+    { key: "self", items: [{ key: "health", type: "scale", questions: ["Are you healthy?"] }, { key: "education", type: "scale", questions: ["Did you learn something new this week?"] }, { key: "mental", type: "scale", questions: ["Are you okay?"] }, { key: "noYesNo", type: "scale" }] },
+    { key: "finance", monthly: true, items: [{ key: "savings", type: "scale", questions: ["Do you save money regularly?"] }] },
+    { key: "environment", items: [{ key: "water", type: "scale", questions: ["Do you try to conserve water?"] }] }
   ];
   const { paymentUnlockCheckins, paymentUnlockSum } = lib(cats);
 

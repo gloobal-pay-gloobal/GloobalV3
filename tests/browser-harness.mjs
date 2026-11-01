@@ -639,7 +639,7 @@ export async function installApi(context, options = {}) {
       if (!caller) return json(401, { success: false, message: "Authentication required.", code: "auth_required" });
       const method = request.method();
       const mine = state.hooman[caller.symbolId] || (state.hooman[caller.symbolId] = { consented: false, answers: [] });
-      const scoreOf = () => HOOMAN.computeHoomanScore(mine.answers);
+      const scoreOf = (today) => HOOMAN.computeHoomanScore(mine.answers, { today: today || url.searchParams.get("day") || null });
       if (pathname === "/api/hooman" && method === "GET") {
         return json(200, { success: true, consented: mine.consented, score: scoreOf() });
       }
@@ -669,8 +669,9 @@ export async function installApi(context, options = {}) {
         if (record.source === "payment" && !state.ledger.some((row) => row.referenceId === record.transactionId && row.sender && row.sender.symbolId === caller.symbolId)) {
           return json(400, { success: false, code: "hooman_bad_transaction", message: "That payment was not found on your account." });
         }
-        if (HOOMAN.pillarLocks(record.pillar) && mine.answers.some((a) => a.pillar === record.pillar && a.item === record.item)) {
-          return json(409, { success: false, code: "hooman_answer_locked", message: "Finance answers lock after your first response." });
+        // Finance is asked once a month (server.js: hooman_answered_this_month).
+        if (HOOMAN.pillarIsMonthly(record.pillar) && mine.answers.some((a) => a.pillar === record.pillar && a.item === record.item && String(a.day).slice(0, 7) === String(record.day).slice(0, 7))) {
+          return json(409, { success: false, code: "hooman_answered_this_month", message: "You have answered this one this month." });
         }
         const now = new Date().toISOString();
         if (record.source === "score") {
@@ -680,7 +681,7 @@ export async function installApi(context, options = {}) {
         } else if (!mine.answers.some((a) => a.source === "payment" && a.transactionId === record.transactionId)) {
           mine.answers.push({ ...record, createdAt: now });
         }
-        return json(200, { success: true, answer: { points: record.points, correct: record.correct, rightChoice: evaluated.rightChoice }, score: scoreOf() });
+        return json(200, { success: true, answer: { points: record.points, correct: record.correct, rightChoice: evaluated.rightChoice }, score: scoreOf(record.day) });
       }
       return json(404, { success: false, message: "Not found." });
     }

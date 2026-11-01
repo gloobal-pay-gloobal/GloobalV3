@@ -104,9 +104,11 @@ function paymentUnlockCheckins() {
   const out = [];
   if (typeof GH_CATEGORIES === "undefined") return out;
   for (const cat of GH_CATEGORIES) {
-    if (cat.locksAfterAnswer) continue;
+    // Finance is asked monthly, on the score screen only.
+    if (cat.locksAfterAnswer || cat.monthly) continue;
     for (const item of cat.items) {
-      if (item.type !== "yesno") continue;
+      // The one-tap Yes/No wording; every check-in carries one.
+      if (!Array.isArray(item.questions) || !item.questions.length) continue;
       if (PAYMENT_UNLOCK_SKIP_ITEMS.includes(`${cat.key}.${item.key}`)) continue;
       out.push({ cat, item });
     }

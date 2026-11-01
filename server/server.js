@@ -212,8 +212,8 @@ const {
   CATEGORY_NAME_MAX_LENGTH,
 } = require('./lib/categoryValidation');
 const {
-  HOOMAN_WINDOW_DAYS,
-  pillarLocks: hoomanPillarLocks,
+  HOOMAN_FINANCE_DAYS,
+  pillarIsMonthly: hoomanPillarIsMonthly,
   publicQuestion: hoomanPublicQuestion,
   evaluateHoomanAnswer,
   computeHoomanScore,
@@ -13289,10 +13289,11 @@ app.delete('/api/transactions/:referenceId/tag', writeLimit, requireAuth, async 
 // The score never affects money. No payment route reads anything here.
 
 const hoomanAnswersFor = (userId, now = new Date()) => {
-  const cutoff = new Date(now.getTime() - HOOMAN_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  // The window, plus Finance answers of any age: those lock after the first
-  // answer, so the first one counts for good.
-  return HoomanAnswer.find({ userId, $or: [{ createdAt: { $gte: cutoff } }, { pillar: 'finance' }] })
+  // Two months: Finance (asked monthly) counts its latest answer that long,
+  // and the days-in-a-row count can look back that far. Every other rule
+  // applies its own, shorter window inside computeHoomanScore.
+  const cutoff = new Date(now.getTime() - HOOMAN_FINANCE_DAYS * 24 * 60 * 60 * 1000);
+  return HoomanAnswer.find({ userId, createdAt: { $gte: cutoff } })
     .sort({ createdAt: -1 })
     .limit(5000)
     .lean();
@@ -13305,7 +13306,7 @@ app.get('/api/hooman', lookupLimit, requireAuth, async (req, res) => {
   try {
     const userId = req.authUser._id;
     const [consented, answers] = await Promise.all([hoomanHasConsent(userId), hoomanAnswersFor(userId)]);
-    return res.json({ success: true, consented, score: computeHoomanScore(answers) });
+    return res.json({ success: true, consented, score: computeHoomanScore(answers, { today: String(req.query.day || '') }) });
   } catch (error) {
     console.error('Hooman score error:', error);
     return res.status(500).json({ success: false, message: 'Could not load your Hooman Score right now.' });
@@ -13370,12 +13371,14 @@ app.post('/api/hooman/answers', writeLimit, requireAuth, async (req, res) => {
       });
     }
 
-    if (hoomanPillarLocks(record.pillar)
-      && await HoomanAnswer.exists({ userId, pillar: record.pillar, item: record.item })) {
+    // Finance is asked once a month: a second answer to the same check-in in
+    // the same calendar month is refused (the first stands).
+    if (hoomanPillarIsMonthly(record.pillar)
+      && await HoomanAnswer.exists({ userId, pillar: record.pillar, item: record.item, day: { $regex: `^${record.day.slice(0, 7)}-` } })) {
       return res.status(409).json({
         success: false,
-        code: 'hooman_answer_locked',
-        message: 'Finance answers lock after your first response.',
+        code: 'hooman_answered_this_month',
+        message: 'You have answered this one this month. It is asked again next month.',
       });
     }
 
@@ -13404,7 +13407,7 @@ app.post('/api/hooman/answers', writeLimit, requireAuth, async (req, res) => {
     return res.json({
       success: true,
       answer: { points: record.points, correct: record.correct, rightChoice: evaluated.rightChoice },
-      score: computeHoomanScore(await hoomanAnswersFor(userId)),
+      score: computeHoomanScore(await hoomanAnswersFor(userId), { today: record.day }),
     });
   } catch (error) {
     console.error('Hooman answer error:', error);

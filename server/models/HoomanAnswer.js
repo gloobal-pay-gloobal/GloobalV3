@@ -12,9 +12,9 @@ const hoomanAnswerSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
-    pillar: { type: String, required: true, enum: ['self', 'community', 'environment', 'finance'] },
+    pillar: { type: String, required: true, enum: ['self', 'community', 'environment', 'finance', 'attention'] },
     item: { type: String, required: true, maxlength: 32 },
-    kind: { type: String, required: true, enum: ['yesno', 'math', 'knowledge'] },
+    kind: { type: String, required: true, enum: ['yesno', 'scale', 'math', 'knowledge'] },
 
     // "yes"/"no", the number typed for a sum, or the index of the option
     // picked for a knowledge question.
@@ -23,7 +23,8 @@ const hoomanAnswerSchema = new mongoose.Schema(
     // which has no right answer.
     correct: { type: Boolean, default: null },
     // Always computed by the server — 25 for a good answer, 10 otherwise.
-    points: { type: Number, required: true, enum: [10, 25] },
+    // Faces are 10/14/18/21/25; yes/no and quiz are 10/25; an attention sum is 0.
+    points: { type: Number, required: true, enum: [0, 10, 14, 18, 21, 25] },
 
     // The person's own local date when they answered (YYYY-MM-DD). The daily
     // questions rotate on it. createdAt, not this, decides the score window.

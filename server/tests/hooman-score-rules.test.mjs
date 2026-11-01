@@ -30,18 +30,25 @@ describe("what an answer is worth — decided by the server", () => {
     assert.equal(ok({ pillar: "self", item: "health", kind: "yesno", value: "no" }).points, 10);
   });
 
-  test("a sum is checked, not taken on trust", () => {
+  test("five faces are worth 10, 14, 18, 21 and 25 — never zero", () => {
+    const pts = [1, 2, 3, 4, 5].map((face) => ok({ pillar: "self", item: "sleep", kind: "scale", value: String(face) }).points);
+    assert.deepEqual(pts, [10, 14, 18, 21, 25]);
+    assert.equal(ok({ pillar: "self", item: "sleep", kind: "scale", value: 4 }).value, "4", "a number face is stored as text");
+  });
+
+  test("a sum is an attention check: checked, filed on its own, worth nothing to a pillar", () => {
     const right = ok({ pillar: "self", item: "education", kind: "math", a: 34, b: 35, value: 69 });
     const wrong = ok({ pillar: "self", item: "education", kind: "math", a: 34, b: 35, value: 70 });
-    assert.deepEqual([right.correct, right.points], [true, 25]);
-    assert.deepEqual([wrong.correct, wrong.points], [false, 10]);
+    assert.deepEqual([right.pillar, right.item, right.correct, right.points], ["attention", "sum", true, 0]);
+    assert.deepEqual([wrong.correct, wrong.points], [false, 0]);
+    // From any check-in it was asked beside, even one that no longer has sums.
+    assert.equal(ok({ pillar: "finance", item: "budgeting", kind: "math", a: 1, b: 2, value: 3 }).pillar, "attention");
   });
 
   test("a three-number sum (after a payment) is checked as well", () => {
     const right = ok({ pillar: "self", item: "education", kind: "math", a: 34, b: 35, c: 36, value: 105 });
     const wrong = ok({ pillar: "self", item: "education", kind: "math", a: 34, b: 35, c: 36, value: 107 });
-    assert.deepEqual([right.correct, right.points], [true, 25]);
-    assert.deepEqual([wrong.correct, wrong.points], [false, 10]);
+    assert.deepEqual([right.correct, wrong.correct], [true, false]);
     assert.equal(refused({ pillar: "self", item: "education", kind: "math", a: 1, b: 2, c: "x", value: 3 }).code, "hooman_bad_answer");
   });
 
@@ -78,7 +85,10 @@ describe("what is refused", () => {
   const cases = [
     [{ pillar: "self", item: "nope", kind: "yesno", value: "yes" }, "hooman_unknown_checkin"],
     [{ pillar: "nope", item: "health", kind: "yesno", value: "yes" }, "hooman_unknown_checkin"],
-    [{ pillar: "self", item: "health", kind: "math", a: 1, b: 2, value: 3 }, "hooman_wrong_kind"],
+    [{ pillar: "self", item: "health", kind: "knowledge", questionId: "cap-au", choice: 1 }, "hooman_wrong_kind"],
+    [{ pillar: "self", item: "health", kind: "scale", value: "6" }, "hooman_bad_answer"],
+    [{ pillar: "self", item: "health", kind: "scale", value: "0" }, "hooman_bad_answer"],
+    [{ pillar: "self", item: "health", kind: "scale", value: "happy" }, "hooman_bad_answer"],
     // Knowledge questions count toward Education only.
     [{ pillar: "community", item: "voice", kind: "knowledge", questionId: "cap-au", choice: 1 }, "hooman_wrong_kind"],
     [{ pillar: "self", item: "health", kind: "yesno", value: "maybe" }, "hooman_bad_answer"],
@@ -143,10 +153,14 @@ describe("the score", () => {
     assert.equal(gone.overall, null);
   });
 
-  test("a Finance answer locks: the first one counts, however old", () => {
-    const s = H.computeHoomanScore([no("finance", "savings", daysAgo(200)), yes("finance", "savings", daysAgo(1))], { now: NOW });
-    assert.equal(s.items["finance.savings"].points, 10, "a later answer replaced the locked one");
+  test("Finance counts its LATEST answer for two months (it is asked monthly now)", () => {
+    const s = H.computeHoomanScore([no("finance", "savings", daysAgo(40)), yes("finance", "savings", daysAgo(1))], { now: NOW });
+    assert.equal(s.items["finance.savings"].points, 25, "the newer monthly answer should count");
     assert.equal(s.items["finance.savings"].count, 1);
+    const old = H.computeHoomanScore([yes("finance", "savings", daysAgo(63))], { now: NOW });
+    assert.equal(old.items["finance.savings"], undefined, "a Finance answer older than two months still counted");
+    assert.equal(H.pillarIsMonthly("finance"), true);
+    assert.equal(H.pillarIsMonthly("self"), false);
   });
 
   test("the latest answer is what the screen shows as the current one", () => {
@@ -183,5 +197,51 @@ describe("the question bank", () => {
 
   test("the continents question is not in it — the answer depends on which school you went to", () => {
     assert.equal(BANK.questions.find((q) => q.id === "geo-continents"), undefined);
+  });
+});
+
+describe("0180: words, days in a row, attention, support", () => {
+  const face = (pillar, item, value, when = NOW, day) => saved(ok({ pillar, item, kind: "scale", value: String(value), day: day || when.toISOString().slice(0, 10) }), when);
+  const sum = (correct, when = NOW, day) => saved(ok({ pillar: "self", item: "education", kind: "math", a: 3, b: 4, value: correct ? 7 : 8, day: day || when.toISOString().slice(0, 10) }), when);
+
+  test("the score comes with gentle words, never a grade", () => {
+    assert.equal(H.hoomanWords(null), null);
+    assert.equal(H.hoomanWords(85), "Doing well");
+    assert.equal(H.hoomanWords(70), "Doing well");
+    assert.equal(H.hoomanWords(55), "Steady");
+    assert.equal(H.hoomanWords(30), "Could be easier");
+    assert.equal(H.computeHoomanScore([face("self", "sleep", 5)], { now: NOW }).words, "Doing well");
+  });
+
+  test("the score shows from the very first answer", () => {
+    const s = H.computeHoomanScore([face("self", "sleep", 3)], { now: NOW });
+    assert.equal(s.overall, 72);
+    assert.equal(s.answered, 1);
+  });
+
+  test("days in a row count back from today, or from yesterday", () => {
+    const answers = [0, 1, 2].map((n) => face("self", "sleep", 4, daysAgo(n)));
+    assert.equal(H.computeHoomanScore(answers, { now: NOW, today: "2026-09-21" }).streak, 3);
+    assert.equal(H.computeHoomanScore(answers.slice(1), { now: NOW, today: "2026-09-21" }).streak, 2, "not answered yet today still keeps yesterday's run");
+    assert.equal(H.computeHoomanScore([face("self", "sleep", 4, daysAgo(3))], { now: NOW, today: "2026-09-21" }).streak, 0);
+  });
+
+  test("a wrong attention sum halves that day's answers, and is due weekly", () => {
+    const good = H.computeHoomanScore([face("self", "sleep", 5, daysAgo(1)), face("self", "sleep", 1)], { now: NOW });
+    assert.equal(good.items["self.sleep"].points, 17.5);
+    const unsure = H.computeHoomanScore([face("self", "sleep", 5, daysAgo(1)), face("self", "sleep", 1), sum(false)], { now: NOW });
+    assert.equal(unsure.items["self.sleep"].points, (25 + 10 * 0.5) / 1.5, "today's answer should count half");
+    assert.equal(unsure.categories.attention, undefined, "an attention sum became a pillar");
+    assert.equal(good.attentionDue, true);
+    assert.equal(unsure.attentionDue, false);
+    assert.equal(H.computeHoomanScore([sum(true, daysAgo(8))], { now: NOW }).attentionDue, true);
+  });
+
+  test("support: the lowest face, or two low answers in a row, about how you feel", () => {
+    assert.equal(H.computeHoomanScore([face("self", "mental", 1)], { now: NOW }).support, true);
+    assert.equal(H.computeHoomanScore([face("self", "mental", 2)], { now: NOW }).support, false, "one low answer is not a pattern");
+    assert.equal(H.computeHoomanScore([face("self", "mental", 2, daysAgo(4)), face("self", "mental", 2)], { now: NOW }).support, true);
+    assert.equal(H.computeHoomanScore([face("self", "mental", 2, daysAgo(4)), face("self", "mental", 4)], { now: NOW }).support, false, "feeling better clears it");
+    assert.equal(H.computeHoomanScore([face("self", "mental", 1, daysAgo(25))], { now: NOW }).support, false, "three weeks on, it no longer shows");
   });
 });

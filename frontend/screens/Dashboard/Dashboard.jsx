@@ -2781,7 +2781,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // to reconcile. It also made the rupee look disabled next to a figure it
     // is every bit as true as.
     style={{ fontSize: geuLensTrailSize(balanceFontSize), fontWeight: 700, marginLeft: GEU_LENS_BAR_GAP, letterSpacing: 0.2 }}
-  >{balanceBracket}</span></> : <BalanceMaskFace size={balanceFontSize} nudge={12} />}</span><button
+  >{balanceBracket}</span></> : <BalanceMaskSign size={38} onShow={handleToggleBalance} />}</span>{
+    /* While the friend is holding the sign, the sign IS the "Show
+       balance" button (0192), so the eye steps aside: one thing to tap.
+       It comes back, as "Hide balance", the moment the number is up — and
+       stays through loading and errors, when there is no sign. */
+  }{(balanceVisible || balanceStatus === "loading" || balanceStatus === "waking" || balanceStatus === "error") && <button
     onClick={handleToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"
@@ -2797,7 +2802,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       cursor: "pointer",
       flexShrink: 0
     }}
-  ><EyeIcon open={balanceVisible} /></button></div>{
+  ><EyeIcon open={balanceVisible} /></button>}</div>{
     /* Spending mini chart — sits below its own divider so it
        reads as a distinct footer section of the wallet card
        rather than competing with the balance above it. */

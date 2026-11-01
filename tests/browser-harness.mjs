@@ -135,16 +135,26 @@ export async function buildOnce() {
       '<body style="margin:0"><div id="root"></div><script src="/app.js"></script></body></html>'
   );
 
+  // The app's own static files (gloobal-essentials-preview/public) are
+  // served too. The tab icon is one of them — GloobalLogoFavicon points
+  // <link rel="icon"> at /icons/logo/<colour>-32.png, and with only the
+  // bundle served that fetch was a 404 on OUR origin, which "the app
+  // starts clean" rightly counts as a fault. It was a fault in this server,
+  // not in the app.
+  const PUBLIC = path.join(PREVIEW, "public");
+  const TYPES = { ".js": "text/javascript", ".html": "text/html; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
   const server = http.createServer((req, res) => {
     const file = req.url === "/" || req.url.startsWith("/?") ? "index.html" : req.url.replace(/^\//, "").split("?")[0];
-    const full = path.join(tmp, file);
+    let full = path.join(tmp, file);
     if (!full.startsWith(tmp) || !fs.existsSync(full)) {
+      const pub = path.join(PUBLIC, file);
+      full = pub.startsWith(PUBLIC) && fs.existsSync(pub) && fs.statSync(pub).isFile() ? pub : "";
+    }
+    if (!full) {
       res.writeHead(404).end("not found");
       return;
     }
-    res.writeHead(200, {
-      "Content-Type": file.endsWith(".js") ? "text/javascript" : "text/html; charset=utf-8"
-    });
+    res.writeHead(200, { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream" });
     res.end(fs.readFileSync(full));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

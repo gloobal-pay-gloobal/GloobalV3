@@ -206,9 +206,12 @@ describe("a character each, not one character four times", () => {
     // the question it has always asked.
     const face = strip(mask).slice(strip(mask).indexOf("function BalanceMaskFace"));
     assert.match(face, /seed == null \? balanceMaskPick\(\) : choiceMaskPick\(seed\)/);
+    // The dashboard balance is the friend holding the sign since 0192, and
+    // it asks balanceMaskPick() with no seed either.
     assert.match(strip(readSource("frontend/screens/Dashboard/Dashboard.jsx")),
-      /<BalanceMaskFace size=\{balanceFontSize\} nudge=\{\d+\} \/>/,
+      /<BalanceMaskSign size=\{38\} onShow=\{handleToggleBalance\} \/>/,
       "the dashboard balance has grown a seed");
+    assert.match(strip(mask), /kind: balanceMaskPick\(\)/);
   });
 });
 

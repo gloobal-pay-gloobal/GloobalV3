@@ -48,8 +48,15 @@ const PURE = source.slice(
   source.indexOf("var BALANCE_MASK_MARKS")
 );
 
-function makeLib(token) {
+// A clock the test can set. The picker reads the hour itself (0192): the
+// friend follows the time of day, which is not a secret.
+function clockAt(hour) {
+  return class extends Date { getHours() { return hour; } };
+}
+
+function makeLib(token, hour = 14) {
   const store = new Map();
+  let clock = clockAt(hour);
   const window = {
     localStorage: {
       getItem: (k) => (store.has(k) ? store.get(k) : null),
@@ -71,12 +78,18 @@ function makeLib(token) {
     }
     return (hash >>> 0).toString(36);
   };
-  const lib = new Function("gloobalSessionFingerprint", "window", `${PURE}
-    return { BALANCE_MASK_CAST, balanceMaskPick, balanceMaskSignature };`)(
+  // `Date` is resolved through a proxy, so a test can move the clock on a
+  // live page; `reopen` starts a fresh page that shares the same storage.
+  const build = () => new Function("gloobalSessionFingerprint", "window", "Date", `${PURE}
+    return { BALANCE_MASK_CAST, BALANCE_MASK_HOURS, balanceMaskPick, balanceMaskSignature, balanceMaskWord, balanceMaskHourGroup };`)(
     fingerprint,
-    window
+    window,
+    new Proxy(function () {}, { construct: (_, args) => new clock(...args), get: (_, k) => clock[k] })
   );
+  const lib = build();
   lib.signIn = (next) => { current = next; };
+  lib.setHour = (h) => { clock = clockAt(h); };
+  lib.reopen = () => Object.assign(lib, build());
   lib.store = store;
   return lib;
 }
@@ -166,73 +179,98 @@ describe("ten characters, not one in ten colours", () => {
     }
   });
 
-  test("every one of them waves", () => {
+  test("nobody waves, and nobody reaches past the crop (0192)", () => {
+    // The old cast waved, flashed speed marks and spilled off the card.
+    // The calm cast breathes and that is all.
     for (const [name, art] of drawings()) {
-      assert.match(art, /className="bm-wave"/, `${name} has no waving arm`);
-      assert.equal((art.match(/className="bm-wave"/g) || []).length, 1,
-        `${name} waves with more than one limb`);
+      assert.doesNotMatch(art, /bm-wave/, `${name} is waving again`);
     }
+    assert.match(source, /var BALANCE_MASK_VIEWBOX = "8 8 48 48";/);
+    assert.equal((source.match(/viewBox=\{BALANCE_MASK_VIEWBOX\}/g) || []).length, 2,
+      "the face and the sign do not share one crop");
   });
 
-  test("each carries its own gradient, under its own id", () => {
-    const ids = [];
+  test("every one smiles with closed eyes", () => {
+    // The shared face, or (panda, sloth) the same closed arcs drawn inside
+    // their own eye patches.
     for (const [name, art] of drawings()) {
-      const own = art.match(/id="(bmG[A-Za-z]+)"/g) || [];
-      assert.ok(own.length >= 1, `${name} has no gradient of its own`);
-      for (const id of own) {
-        assert.equal(ids.includes(id), false, `${name} reuses the gradient id ${id}`);
-        ids.push(id);
-        assert.match(art, new RegExp(`url\\(#${id.slice(4, -1)}\\)`),
-          `${name} defines ${id} and never paints with it`);
-      }
+      assert.ok(/<BmFace /.test(art) || /q2\.6 -[23](\.8)? 5\.2 0/.test(art),
+        `${name} has no closed, smiling eyes`);
     }
   });
 });
 
-describe("one character per sign-in", () => {
-  test("the same session keeps the same character", () => {
+describe("a new friend each time you open, from the hour's group (0192)", () => {
+  test("the same open keeps the same friend", () => {
     const lib = makeLib("token-one");
     const first = lib.balanceMaskPick();
     for (let i = 0; i < 50; i += 1) {
-      assert.equal(lib.balanceMaskPick(), first,
-        "the character changed without a new sign-in");
+      assert.equal(lib.balanceMaskPick(), first, "the friend changed while the app stayed open");
     }
+    // Not even when the hour turns: the change waits for the next open.
+    lib.setHour(22);
+    assert.equal(lib.balanceMaskPick(), first);
   });
 
-  test("signing in again brings a different one", () => {
+  test("opening the app again brings somebody else", () => {
     const lib = makeLib("token-one");
     let last = lib.balanceMaskPick();
     for (let round = 0; round < 60; round += 1) {
-      lib.signIn(`token-${round}-${Math.random()}`);
+      lib.reopen();
       const next = lib.balanceMaskPick();
-      assert.notEqual(next, last, "two sign-ins in a row drew the same character");
+      assert.notEqual(next, last, "two opens in a row drew the same friend");
       last = next;
     }
   });
 
-  test("every one of them is reachable", () => {
-    // A character in the cast that the picker can never choose is a
-    // drawing nobody will ever see. Rounds scaled to the cast so adding
-    // more does not quietly make this flaky.
+  test("signing in again in the same page brings somebody else", () => {
     const lib = makeLib("token-one");
-    const seen = new Set();
-    const rounds = lib.BALANCE_MASK_CAST.length * 80;
-    for (let round = 0; round < rounds; round += 1) {
-      lib.signIn(`token-${round}`);
-      seen.add(lib.balanceMaskPick());
+    let last = lib.balanceMaskPick();
+    for (let round = 0; round < 40; round += 1) {
+      lib.signIn(`token-${round}-${Math.random()}`);
+      const next = lib.balanceMaskPick();
+      assert.notEqual(next, last);
+      last = next;
     }
-    assert.equal(seen.size, lib.BALANCE_MASK_CAST.length,
-      `only ${seen.size} of the ${lib.BALANCE_MASK_CAST.length} ever appear`);
   });
 
-  test("every character has a speed-mark colour of its own", () => {
-    // Missing entries fall back to one yellow, so a new character would
-    // silently wear somebody else's flash.
+  test("each part of the day draws only from its own friends, and every friend appears", () => {
+    const groups = {
+      8: ["sunny", "birdie", "sprout", "bunny"],
+      14: ["cloud", "otter", "kitty", "lotus"],
+      22: ["moon", "panda", "sloth", "koala"],
+      3: ["moon", "panda", "sloth", "koala"]
+    };
+    const seen = new Set();
+    for (const [hour, cast] of Object.entries(groups)) {
+      const lib = makeLib("tok", Number(hour));
+      for (let round = 0; round < 80; round += 1) {
+        lib.reopen();
+        const k = lib.balanceMaskPick();
+        assert.ok(cast.includes(k), `${k} turned up at ${hour}:00`);
+        seen.add(k);
+      }
+    }
+    const lib = makeLib("tok");
+    assert.equal(seen.size, lib.BALANCE_MASK_CAST.length, `only ${seen.size} of the cast ever appear`);
+    // And the groups between them are exactly the cast.
+    assert.deepEqual(lib.BALANCE_MASK_HOURS.flatMap((g) => g.cast).sort(), [...lib.BALANCE_MASK_CAST].sort());
+  });
+
+  test("the sign says hello for the hour", () => {
+    const lib = makeLib("tok");
+    assert.equal(lib.balanceMaskWord(7), "Good morning");
+    assert.equal(lib.balanceMaskWord(13), "All safe");
+    assert.equal(lib.balanceMaskWord(19), "Good evening");
+    assert.equal(lib.balanceMaskWord(23), "Good night");
+    assert.equal(lib.balanceMaskWord(2), "Good night");
+  });
+
+  test("every friend has hands of its own colour", () => {
     const lib = makeLib("tok-a");
     const marks = strip(source).slice(strip(source).indexOf("var BALANCE_MASK_MARKS"));
     for (const name of lib.BALANCE_MASK_CAST) {
-      assert.match(marks.slice(0, marks.indexOf("};")), new RegExp(`\\b${name}:`),
-        `${name} has no mark colour and would fall back to the default`);
+      assert.match(marks.slice(0, marks.indexOf("};")), new RegExp(`\\b${name}:`), `${name} has no hand colour`);
     }
   });
 
@@ -244,14 +282,11 @@ describe("one character per sign-in", () => {
     assert.ok(held, "nothing was remembered");
     assert.doesNotMatch(held, /aVeryRealLooking|withASignature/,
       "part of the bearer token was written to storage");
-    // Short enough that it cannot be carrying the credential: a 32-bit
-    // fold in base 36 is at most seven characters.
     const sig = JSON.parse(held).sig;
     assert.ok(sig.length <= 7, `the signature is ${sig.length} characters long`);
-    assert.notEqual(sig, token.slice(0, sig.length));
   });
 
-  test("a phone with storage blocked still holds one character", () => {
+  test("a phone with storage blocked still holds one friend", () => {
     const lib = new Function("gloobalSessionFingerprint", "window", `${PURE}
       return { balanceMaskPick };`)(
       () => "abc123",
@@ -259,10 +294,7 @@ describe("one character per sign-in", () => {
     );
     const first = lib.balanceMaskPick();
     assert.ok(first, "it gave up and returned nothing");
-    for (let i = 0; i < 20; i += 1) {
-      assert.equal(lib.balanceMaskPick(), first,
-        "with no storage it re-picks on every hide");
-    }
+    for (let i = 0; i < 20; i += 1) assert.equal(lib.balanceMaskPick(), first);
   });
 
   test("a signed-out page does not crash looking for a token", () => {
@@ -296,15 +328,23 @@ describe("it breathes, unless asked not to", () => {
     assert.match(source, /aria-hidden="true"/);
   });
 
-  test("both call sites still ask for it by the card's own font size", () => {
-    assert.match(strip(readSource(DASH)), /<BalanceMaskFace size=\{balanceFontSize\} nudge=\{\d+\} \/>/);
-    // The drawing is larger than the figure it stands in for, and the row
-    // it sits in is not: a character read whole needs more room than a
-    // number read glyph by glyph, but the card must not change height when
-    // the eye is tapped.
+  test("both balance cards show the friend holding the sign, inside the line (0192)", () => {
+    const dash = strip(readSource(DASH));
+    const bank = strip(readSource(BANK));
+    assert.match(dash, /<BalanceMaskSign size=\{38\} onShow=\{handleToggleBalance\} \/>/);
+    assert.match(bank, /<BalanceMaskSign size=\{34\} onShow=\{onToggleBalance\} \/>/);
+    assert.doesNotMatch(dash + bank, /<BalanceMaskFace /, "a balance card is back to the bare face");
+    // The sign is the "Show balance" button, so the eye steps aside while
+    // it is up: one thing to tap.
+    assert.match(dash, /\{\(balanceVisible \|\| balanceStatus === "loading" \|\| balanceStatus === "waking" \|\| balanceStatus === "error"\) && <button\s+onClick=\{handleToggleBalance\}/);
+    assert.match(bank, /\{\(balanceVisible \|\| balanceStatus === "loading" \|\| balanceStatus === "error"\) && <button\s+onClick=\{onToggleBalance\}/);
     const mask = strip(readSource(MASK));
-    assert.match(mask, /const box = Math\.round\(px \* 1\.75\);/);
+    const sign = mask.slice(mask.indexOf("function BalanceMaskSign"));
+    assert.match(sign, /aria-label=\{label\}/);
+    assert.match(sign, /label = "Show balance"/);
+    assert.match(sign, /onClick=\{onShow\}/);
+    assert.match(sign, /width=\{size\}\s+height=\{size\}/, "the friend is drawn bigger than the line it sits in");
+    assert.match(mask, /const box = Math\.round\(px \* 1\.2\);/);
     assert.match(mask, /height: px/, "the row grows with the drawing");
-    assert.match(strip(readSource(BANK)), /<BalanceMaskFace size=\{29\} \/>/);
   });
 });

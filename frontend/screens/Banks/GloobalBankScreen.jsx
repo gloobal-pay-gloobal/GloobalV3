@@ -121,12 +121,12 @@ function GloobalBankScreen({
     style={{ position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12, marginTop: 5 }}
   ><span
     style={{ fontSize: 29, fontWeight: 800, color: "#fff", fontFamily: T.fontDisplay, letterSpacing: -0.5, minWidth: 0 }}
-  >{balanceStatus === "loading" ? <BalanceLoading /> : balanceStatus === "error" ? <BalanceError onRetry={onRetryBalance} /> : balanceVisible ? balance : <BalanceMaskFace size={29} />}</span><button
+  >{balanceStatus === "loading" ? <BalanceLoading /> : balanceStatus === "error" ? <BalanceError onRetry={onRetryBalance} /> : balanceVisible ? balance : <BalanceMaskSign size={34} onShow={onToggleBalance} />}</span>{(balanceVisible || balanceStatus === "loading" || balanceStatus === "error") && <button
     onClick={onToggleBalance}
     aria-label={balanceVisible ? "Hide balance" : "Show balance"}
     className="v2-tap"
     style={{ width: 34, height: 34, borderRadius: "50%", border: "none", flexShrink: 0, background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><EyeIcon open={balanceVisible} /></button></div>{
+  ><EyeIcon open={balanceVisible} /></button>}</div>{
     /* The ID, on the account it belongs to. Rendered white rather than
        through ColoredGloobalId: that component paints each position in the
        twelve-colour palette, which is right on a light surface and

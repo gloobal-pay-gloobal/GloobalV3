@@ -2742,6 +2742,22 @@ app.get('/api/coverage/me', lookupLimit, requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/creator-share/overview?currency=INR — what people are sharing
+// with each other (0194). Public; with a token it also carries `me`.
+app.get('/api/creator-share/overview', lookupLimit, async (req, res) => {
+  try {
+    const user = await authenticatedUser(req);
+    const view = await require('./lib/creatorShareView').buildCreatorShareOverview({
+      currency: String(req.query.currency || ''),
+      user: user || null,
+    });
+    return res.json(view);
+  } catch (error) {
+    console.error('creator share overview error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load the Creator Share overview just now.' });
+  }
+});
+
 app.get('/api/coverage/books', lookupLimit, async (req, res) => {
   try {
     await coverageView.booksToday();
@@ -5044,7 +5060,7 @@ async function bazaarRatings(userIds) {
   return new Map(rows.map((r) => [String(r._id), { avg: Math.round(r.avg * 10) / 10, count: r.count }]));
 }
 
-async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], sub = '', near = null, needCategory = false, countryIso = '', openNow = false, maxPrice = 0, newOnly = false, fuzzyOwners = null, word = '' }) {
+async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], sub = '', near = null, needCategory = false, countryIso = '', openNow = false, maxPrice = 0, newOnly = false, fuzzyOwners = null, word = '', minShare = null }) {
   const match = {
     'creatorProfile.handle': { $type: 'string', $ne: '' },
     'creatorProfile.listed': { $ne: false }
@@ -5121,9 +5137,11 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], s
     match['creatorProfile.addressParts.lat'] = { $gte: box.minLat, $lte: box.maxLat };
     match['creatorProfile.addressParts.lng'] = { $gte: box.minLng, $lte: box.maxLng };
   }
+  if (minShare === 'some') and.push({ cashbackRate: { $gt: 0 } });
+  else if (minShare !== null && minShare !== undefined && Number(minShare) > 0) and.push({ cashbackRate: { $gte: Number(minShare) / 100 } });
   if (and.length) match.$and = and;
   const users = await User.find(match)
-    .select('_id symbolId countryIso creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category creatorProfile.category2 creatorProfile.subcategory creatorProfile.otherWords creatorProfile.joinedAt creatorProfile.shop creatorProfile.hours creatorProfile.addressParts.lat creatorProfile.addressParts.lng')
+    .select('_id symbolId countryIso cashbackRate creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category creatorProfile.category2 creatorProfile.subcategory creatorProfile.otherWords creatorProfile.joinedAt creatorProfile.shop creatorProfile.hours creatorProfile.addressParts.lat creatorProfile.addressParts.lng')
     .limit(bazaar.BAZAAR_CANDIDATE_CAP)
     .lean();
   const rows = [];
@@ -5141,10 +5159,17 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], s
       subcategory: bazaar.bazaarSubcategoryValid(p.category, p.subcategory) ? p.subcategory : '',
       otherWords: p.category === 'other' ? (p.otherWords || '') : '',
       joinedAt: p.joinedAt || null,
+      // The shop's Creator Share, as a percentage (0194): what comes back
+      // to the payer. Shown on every row and filterable.
+      sharePct: Math.round((Number(u.cashbackRate) || 0) * 10000) / 100,
       color: creatorShopOut(p.shop).color,
       matchedItem: itemHit.get(u.symbolId) || '',
       hours: p.hours && Array.isArray(p.hours.days) && p.hours.days.length === 7 ? { tz: p.hours.tz, days: p.hours.days } : null
     };
+    // Who shares (0194): "some" is any rate above zero; a number is a floor.
+    if (minShare !== null && minShare !== undefined) {
+      if (minShare === 'some' ? !(row.sharePct > 0) : row.sharePct < Number(minShare)) continue;
+    }
     // Open now: only shops whose hours say so. A shop with no hours set
     // is left out rather than assumed open.
     if (openNow && !openHours.openHoursStatus(row.hours, new Date()).open) continue;
@@ -5187,9 +5212,12 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
     if (q) await bazaarEnsureKeys();
     const rawQ = String(req.query.q || '').trim().slice(0, 40);
     const openNow = req.query.open === '1';
+    // Creator Share filter (0194): share=some | 1 | 3 | 5 (a floor, in %).
+    const shareRaw = String(req.query.share || '');
+    const minShare = shareRaw === 'some' ? 'some' : (['1', '3', '5'].includes(shareRaw) ? Number(shareRaw) : null);
     // A shared word from creators' own two words (0186), as a filter.
     const word = bazaar.bazaarWordQuery(req.query.word);
-    const base = { q, rawQ, category: word ? '' : category, cats, sub, near, countryIso, openNow, maxPrice: priceCap, newOnly: sort === 'new', word };
+    const base = { q, rawQ, category: word ? '' : category, cats, sub, near, countryIso, openNow, maxPrice: priceCap, newOnly: sort === 'new', word, minShare };
     let rows = await bazaarCandidates(base);
     // Typo-proof: nobody spelled like that, so try near spellings.
     let fuzzy = false;
@@ -5230,6 +5258,7 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
       // "Sells Samosa", when the shop was found by what it sells rather
       // than by its name.
       matchedItem: r.matchedItem || '',
+      sharePct: r.sharePct || 0,
       hours: r.hours
       // No volume, no count of payments, nothing about money. The order
       // is the only trace the ranking leaves.
@@ -8658,6 +8687,7 @@ app.post('/api/assets/claim-interest', writeLimit, requireAuth, requireSelf('sym
 // that country from abroad, and what a short corridor borrows from.
 const paylaterPool = require('./lib/paylaterPool');
 paylaterPool.configurePaylaterPool({ computeSeed });
+require('./lib/creatorShareView').configureCreatorShareView({ computeSeed });
 const regionNames = (() => { try { return new Intl.DisplayNames(['en'], { type: 'region' }); } catch (e) { return null; } })();
 const countryNameOf = (iso) => { try { return (regionNames && regionNames.of(String(iso || '').toUpperCase())) || String(iso || ''); } catch (e) { return String(iso || ''); } };
 const money2 = (n) => (Math.floor((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

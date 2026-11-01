@@ -75,7 +75,7 @@ function bazaarSubcategoryValid(category, sub) {
 // paid (default): most paid in 24 hours; week: in 7 days ("Trending this
 // week"); rating: best average stars, then most reviews; new: newest
 // shops first; near: closest first (needs Near me).
-var BAZAAR_SORTS = ['paid', 'week', 'rating', 'new', 'near'];
+var BAZAAR_SORTS = ['paid', 'week', 'rating', 'new', 'near', 'share'];
 var BAZAAR_NEW_DAYS = 14;
 
 // ── TYPO-PROOF ─────────────────────────────────────────────────────────
@@ -186,7 +186,9 @@ function bazaarRank(rows, volume, { q = '', near = null, sort = 'paid' } = {}) {
     week: (a, b) => (b.d7 - a.d7) || (b.d1 - a.d1),
     rating: (a, b) => (rating(b) - rating(a)) || (count(b) - count(a)) || (b.d7 - a.d7),
     new: (a, b) => (joined(b) - joined(a)) || (b.d7 - a.d7),
-    near: (a, b) => ((a.row.distanceM || 0) - (b.row.distanceM || 0)) || (b.d1 - a.d1)
+    near: (a, b) => ((a.row.distanceM || 0) - (b.row.distanceM || 0)) || (b.d1 - a.d1),
+    // Shares most (0194): the biggest Creator Share first, then most paid.
+    share: (a, b) => ((b.row.sharePct || 0) - (a.row.sharePct || 0)) || (b.d1 - a.d1) || (b.d7 - a.d7)
   }[BAZAAR_SORTS.indexOf(sort) >= 0 ? sort : 'paid'];
   scored.sort((a, b) => (Number(b.exact) - Number(a.exact)) || by(a, b)
     || String(a.row.handle || '').localeCompare(String(b.row.handle || '')));

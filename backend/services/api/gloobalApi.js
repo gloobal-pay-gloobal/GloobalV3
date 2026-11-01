@@ -1388,6 +1388,18 @@ var GloobalApi = {
   // Platform-wide Creator Share distribution — counts per bucket, nothing
   // else. Returns null when the server cannot be reached, so the caller can
   // fall back to the single-account view rather than draw invented bars.
+  // The Creator Share overview (0194): what people are sharing with each
+  // other, and — signed in — this account's own part. null when it could
+  // not be read.
+  async getCreatorShareOverview() {
+    try {
+      const result = await gloobalApiClient.get("/api/creator-share/overview");
+      return result && result.success ? result : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
   async getCreatorShareDistribution() {
     try {
       const result = await gloobalApiClient.get("/api/creator-share/distribution");
@@ -1734,7 +1746,7 @@ var GloobalApi = {
   // Ranked on the server by recent payments; no amounts come back.
   // Returns the shops as an array; `.fuzzy` on it says they were found by
   // a near spelling ("smosa" → samosa) rather than the words typed.
-  async bazaarSearch({ q = "", category = "", near = null, country = "", openNow = false, sub = "", cats = [], sort = "", minRating = 0, maxPrice = 0, word = "" } = {}) {
+  async bazaarSearch({ q = "", category = "", near = null, country = "", openNow = false, sub = "", cats = [], sort = "", minRating = 0, maxPrice = 0, word = "", minShare = null } = {}) {
     const p = new URLSearchParams();
     // A shared word from creators' own two words (0186).
     if (word) p.set("word", word);
@@ -1746,6 +1758,8 @@ var GloobalApi = {
     if (!category && Array.isArray(cats) && cats.length) p.set("cats", cats.join(","));
     if (sort && sort !== "paid") p.set("sort", sort);
     if (minRating) p.set("minRating", String(minRating));
+    // Who shares (0194): "some", or the smallest share in percent.
+    if (minShare) p.set("share", String(minShare));
     if (q && maxPrice > 0) p.set("maxPrice", String(maxPrice));
     if (near) { p.set("lat", String(near.lat)); p.set("lng", String(near.lng)); p.set("radiusKm", String(near.radiusKm)); }
     const result = await gloobalApiClient.get(`/api/bazaar?${p.toString()}`);

@@ -23,7 +23,7 @@ import {
   LocateFixed as LocateFixed2, Loader as Loader7, Flame as BzFlame, SearchX as BzSearchOff, ChevronRight as ChevronRight10,
   History as BzRecent, Star as BzStar,
   Gift as BzFestive, Search as BzSuggest, SlidersHorizontal as BzFilter, X as BzX,
-  List as BzList, Map as BzMapIcon, ChevronDown as BzMore
+  List as BzList, Map as BzMapIcon, ChevronDown as BzMore, Undo2 as BzShareBack
 } from "lucide-react";
 
 // The same fourteen, in the same order, as server/lib/bazaar.js. The order
@@ -158,8 +158,32 @@ var BAZAAR_SORT_INFO = [
   { key: "week", label: "Trending this week" },
   { key: "rating", label: "Top rated" },
   { key: "new", label: "New on GLOOBAL" },
-  { key: "near", label: "Nearest" }
+  { key: "near", label: "Nearest" },
+  // Shares most (0194): the biggest Creator Share first.
+  { key: "share", label: "Shares most" }
 ];
+
+// Who shares (0194): null is any shop; "some" is any rate above zero; a
+// number is the smallest share, in percent, a shop must give back.
+var BAZAAR_SHARE_STEPS = [
+  { key: null, label: "Any" },
+  { key: "some", label: "Shares" },
+  { key: 1, label: "1%+" },
+  { key: 3, label: "3%+" },
+  { key: 5, label: "5%+" }
+];
+function bazaarShareLabel(minShare) {
+  return minShare === "some" ? "Shares back" : minShare ? `Shares ${minShare}%+` : "";
+}
+// The tag on a shop's line: what comes back to the payer.
+function BazaarShareTag({ pct }) {
+  const n = Number(pct) || 0;
+  const text = n > 0 ? (Number.isInteger(n) ? `${n}%` : `${n.toFixed(n * 10 % 1 ? 2 : 1)}%`) : "";
+  return <span data-testid="bazaar-share-tag" data-share={n > 0 ? "yes" : "no"} style={{
+    flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 900, borderRadius: 999, padding: "3px 8px",
+    background: n > 0 ? "#EAF7EE" : T.surfaceAlt, color: n > 0 ? "#178A4C" : T.inkFaint, whiteSpace: "nowrap"
+  }}>{n > 0 ? <><BzShareBack size={11} strokeWidth={3} />{text}</> : "not yet"}</span>;
+}
 
 var BAZAAR_PRICE_CAPS = [50, 100, 500];
 
@@ -322,6 +346,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   // ── 0141: order, rating, price, sub-category, festival, suggestions ──
   const [sort, setSort] = useState62("paid");
   const [minRating, setMinRating] = useState62(0);
+  const [minShare, setMinShare] = useState62(null);
   const [maxPrice, setMaxPrice] = useState62(0);
   const [sub, setSub] = useState62("");
   // 0186: a shared word under Other, and the words on offer here.
@@ -358,7 +383,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
         const opts = {
           q: query, category, near, country, openNow, sub, word: category === "other" && word ? word.key : "",
           cats: festivalOn && festivalNow ? festivalNow.cats : [],
-          sort: sort === "near" && !near ? "paid" : sort, minRating, maxPrice
+          sort: sort === "near" && !near ? "paid" : sort, minRating, maxPrice, minShare
         };
         let list = await GloobalApi.bazaarSearch(opts);
         const wasFuzzy = Boolean(list && list.fuzzy);
@@ -385,7 +410,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       setBusy(false);
     }, query ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [query, category, nearKey, country, openNow, sub, sort, minRating, maxPrice, festivalOn, word ? word.key : ""]);
+  }, [query, category, nearKey, country, openNow, sub, sort, minRating, maxPrice, minShare, festivalOn, word ? word.key : ""]);
 
   // ── MADE NEAR YOU (0186) ──────────────────────────────────────────────
   // The words three or more Other creators share where the searcher is.
@@ -467,13 +492,14 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   if (nearOn && here) active.push({ key: "near", label: radiusLabel, clear: () => { setNearOn(false); setAsMap(false); if (sort === "near") setSort("paid"); } });
   if (openNow) active.push({ key: "open", label: "Open now", clear: () => setOpenNow(false) });
   if (minRating) active.push({ key: "rating", label: "4★ & up", clear: () => setMinRating(0) });
+  if (minShare) active.push({ key: "share", label: bazaarShareLabel(minShare), clear: () => setMinShare(null) });
   if (sort !== "paid") active.push({ key: "sort", label: sortLabel, clear: () => setSort("paid") });
   if (maxPrice && query) active.push({ key: "price", label: `Under ${ccySymbol}${maxPrice}`, clear: () => setMaxPrice(0) });
   const activeCount = active.length;
   useEffect59(() => { if (onActiveChange) onActiveChange(activeCount); }, [activeCount]);
   const resetAll = () => {
     setCategory(""); setSub(""); setWord(null); setFestivalOn(false); setNearOn(false); setAsMap(false);
-    setOpenNow(false); setMinRating(0); setSort("paid"); setMaxPrice(0);
+    setOpenNow(false); setMinRating(0); setSort("paid"); setMaxPrice(0); setMinShare(null);
   };
   // A distance is the one filter that needs the phone's location, so it is
   // asked for when a distance is picked — never when the sheet opens.
@@ -643,7 +669,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
             }}>{[kind, dist].filter(Boolean).join(" · ")}{openLine.open !== null ? <span style={{
               fontWeight: 800, color: openLine.open ? "#178A4C" : T.inkFaint
-            }}>{(kind || dist ? " · " : "") + (openLine.open ? "Open" : "Closed")}</span> : null}</span></span><ChevronRight10 size={15} color={T.inkFaint} /></button>;
+            }}>{(kind || dist ? " · " : "") + (openLine.open ? "Open" : "Closed")}</span> : null}</span></span><BazaarShareTag pct={s.sharePct} /><ChevronRight10 size={15} color={T.inkFaint} /></button>;
           })
   }</div>}{
     /* ── THE FILTER SHEET (0184) ──────────────────────────────────────
@@ -739,7 +765,29 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
           background: on ? T.ink : "transparent", color: on ? T.surface : T.inkSoft, whiteSpace: "nowrap"
         }}
       >{r.label}</button>;
-    })}</div><div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7, fontSize: 11.5, fontWeight: 600, color: T.inkFaint }}>{locating ? <Loader7 size={12} style={{ animation: "spin 0.9s linear infinite" }} /> : <LocateFixed2 size={12} />}{locating ? "Finding you…" : "From where you are now. Used for this search, never saved."}</div></div><div>{sheetLabel("Show only")}<div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}><button
+    })}</div><div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7, fontSize: 11.5, fontWeight: 600, color: T.inkFaint }}>{locating ? <Loader7 size={12} style={{ animation: "spin 0.9s linear infinite" }} /> : <LocateFixed2 size={12} />}{locating ? "Finding you…" : "From where you are now. Used for this search, never saved."}</div></div><div>{sheetLabel("Creator Share")}<div role="radiogroup" aria-label="Creator Share" data-testid="bazaar-share-filter" style={{
+      display: "grid", gridTemplateColumns: `repeat(${BAZAAR_SHARE_STEPS.length}, minmax(0, 1fr))`, gap: 4, padding: 4, borderRadius: 14, background: T.surface,
+      boxShadow: `inset 0 0 0 1px ${T.line}`
+    }}>{BAZAAR_SHARE_STEPS.map((st) => {
+      const on = st.key === minShare;
+      return <button
+        key={String(st.key)}
+        role="radio"
+        aria-checked={on}
+        onClick={() => setMinShare(st.key)}
+        style={{
+          border: "none", borderRadius: 10, padding: "9px 0", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800,
+          background: on ? T.ink : "transparent", color: on ? T.surface : T.inkSoft, whiteSpace: "nowrap"
+        }}
+      >{st.label}</button>;
+    })}</div><div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7, fontSize: 11.5, fontWeight: 600, color: T.inkFaint }}><BzShareBack size={12} />{
+      /* The collective, for this very search: how many of the shops
+         shown share something back. Counted from the rows in hand. */
+    }{(() => {
+      const all = Array.isArray(shops) ? shops : [];
+      const sharing = all.filter((x) => Number(x.sharePct) > 0).length;
+      return all.length ? `${sharing} of ${all.length} shops here share something back.` : "What comes back to you from each payment, planted in My Assets.";
+    })()}</div></div><div>{sheetLabel("Show only")}<div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}><button
       onClick={() => setOpenNow((v) => !v)}
       aria-pressed={openNow}
       style={pill(openNow)}

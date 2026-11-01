@@ -119,21 +119,23 @@ describe("the endpoint publishes counts and nothing else", () => {
   });
 });
 
-describe("the screen says which view it is showing", () => {
-  test("it reads the platform rows, not the single-account helper", () => {
-    assert.match(dash, /creatorShareDistributionRows\(shareDistribution, myShareRate\)/);
+describe("the screen is the Creator Share overview (0194)", () => {
+  // The bars used to be drawn in Dashboard.jsx from the distribution
+  // route. The screen is now features/creator/CreatorShareOverview.jsx,
+  // fed by GET /api/creator-share/overview, which carries the same counts
+  // per bucket plus the money actually shared back. The distribution
+  // helper and route stay for anything else that reads them.
+  const screen = readSource("frontend/features/creator/CreatorShareOverview.jsx");
+  test("the dashboard opens the overview screen, not a filter box", () => {
+    assert.match(dash, /showCreatorOverview && <CreatorShareOverviewScreen/);
+    assert.doesNotMatch(dash, /creatorFilterMin|Between %/);
   });
 
-  test("the heading and the footnote both follow the data", () => {
-    // The old footnote asserted "1 user, 1 rate" unconditionally. Left alone
-    // it would have contradicted real bars sitting directly above it.
-    assert.match(dash, /Real Creator Share choices across \$\{shareDistribution\.totalUsers\}/);
-    assert.match(dash, /Every rate actually set on GLOOBAL, counted\./);
-    assert.match(dash, /This account is the only real Creator Share choice tracked so far/);
+  test("the overview is fetched when the screen mounts", () => {
+    assert.match(screen, /GloobalApi\.getCreatorShareOverview\(\)/);
   });
 
-  test("it is fetched only when the screen is open", () => {
-    assert.match(dash, /if \(!showCreatorOverview\) return undefined;/);
-    assert.match(dash, /GloobalApi\.getCreatorShareDistribution\(\)/);
+  test("the footnote still follows the data", () => {
+    assert.match(screen, /Counted from real payments and rates set on GLOOBAL\. \{a\.total\} account/);
   });
 });

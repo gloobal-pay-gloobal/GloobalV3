@@ -338,6 +338,7 @@ const FRONTEND_MODULES = [
   // The owner's private "this week" sheet.
   "features/creator/ShopInsights.jsx",
   "features/creator/CreatorPage.jsx",
+  "features/creator/CreatorShareOverview.jsx",
   // Gloobal बाज़ार on Pay & Services: famous categories and Near me.
   "features/bazaar/bazaarMap.jsx",
   "features/bazaar/bazaar.jsx",

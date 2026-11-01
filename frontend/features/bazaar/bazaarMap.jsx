@@ -134,7 +134,7 @@ function BazaarMap({ center, radiusKm, shops = [], onOpen }) {
     display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
   }}>{creatorDisplayName(pickedPin.shop)}</span><span style={{
     display: "block", fontSize: 11, color: T.inkFaint, fontWeight: 600, marginTop: 1
-  }}>{[bazaarDistanceLabel(pickedPin.shop.distanceM), openHoursLabel(pickedPin.shop.hours, new Date()).text].filter(Boolean).join(" · ")}</span></span><span style={{
+  }}>{[bazaarDistanceLabel(pickedPin.shop.distanceM), openHoursLabel(pickedPin.shop.hours, new Date()).text].filter(Boolean).join(" · ")}</span></span><BazaarShareTag pct={pickedPin.shop.sharePct} /><span style={{
     fontSize: 12, fontWeight: 800, color: T.accent, flexShrink: 0
   }}>Open</span></button> : null}<span style={{
     position: "absolute", right: 0, bottom: 0, zIndex: 5, fontSize: 9.5, color: "#333",

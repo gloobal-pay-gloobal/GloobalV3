@@ -856,35 +856,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   });
   const [showCreatorOverview, setShowCreatorOverview] = useState14(false);
   const requestCloseCreatorOverview = useBackClose(showCreatorOverview, () => setShowCreatorOverview(false));
-  // Platform-wide account count for the Creator Share overview's filter,
-  // read when that screen is opened. It was the literal `1` — true of the
-  // test database and of nothing else, and wrong the moment a second person
-  // registered. null means the server could not be reached, which renders as
-  // "—" rather than as a number nobody counted.
-  const [platformUserCount, setPlatformUserCount] = useState14(null);
-  // How everyone has actually set their Creator Share. Counts per bucket and
-  // nothing else (GET /api/creator-share/distribution). null means it could
-  // not be read, and the bars fall back to this account's own single choice
-  // rather than to invented figures.
-  const [shareDistribution, setShareDistribution] = useState14(null);
-  useEffect12(() => {
-    if (!showCreatorOverview) return undefined;
-    let cancelled = false;
-    (async () => {
-      const [total, distribution] = await Promise.all([
-        GloobalApi.getPlatformUserCount(),
-        GloobalApi.getCreatorShareDistribution()
-      ]);
-      if (cancelled) return;
-      setPlatformUserCount(total);
-      setShareDistribution(distribution);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [showCreatorOverview]);
-  const [creatorFilterMin, setCreatorFilterMin] = useState14(0);
-  const [creatorFilterMax, setCreatorFilterMax] = useState14(7);
+  // The overview itself reads GET /api/creator-share/overview (0194) —
+  // see features/creator/CreatorShareOverview.jsx.
   const [showRentChoice, setShowRentChoice] = useState14(false);
   const requestCloseRentChoice = useBackClose(showRentChoice, () => setShowRentChoice(false));
   const [showRecharge, setShowRecharge] = useState14(false);
@@ -5482,73 +5455,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     /* Creator Share overview box itself — an example distribution of
        what rate other people tend to choose, shown plainly as example
        data rather than dressed up as a live figure. */
-  }{showCreatorOverview && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseCreatorOverview} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Creator Share overview</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}>{
-    /* Filter — real numbers, not fake. "Total users" is the
-       platform-wide count from the backend (GET /api/stats, the
-       same figure Global Coverage shows), not the hardcoded 1 it
-       used to be — that was true of the test database and of
-       nothing after it.
-
-       The other two tiles are deliberately about THIS account and
-       say so in their labels. Nobody else's cashback rate is
-       readable from here — the backend exposes a rate only on a
-       user you resolve by ID — so a tile claiming "3 of 40 are
-       sharing" would be an invention. "You share" is a rate above
-       0%; the min/max inputs below say whether your own rate falls
-       in the range being asked about. */
-  }<div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px" }}><div style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, marginBottom: 12 }}>Filter</div><div style={{ display: "flex", gap: 10, marginBottom: 14 }}><div style={{ flex: 1, borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "10px 12px" }}><div style={{ fontSize: 10, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.3 }}>Total users</div><div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 2 }}>{platformUserCount === null ? "—" : platformUserCount}</div></div><div style={{ flex: 1, borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "10px 12px" }}><div style={{ fontSize: 10, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.3 }}>You share</div><div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 2 }}>{myShareRate > 0 ? "Yes" : "No"}</div></div><div style={{ flex: 1, borderRadius: T.radiusMd, background: T.surfaceAlt, padding: "10px 12px" }}><div style={{ fontSize: 10, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.3 }}>Your rate</div><div style={{ fontSize: 18, fontWeight: 800, color: T.accent, fontFamily: T.fontDisplay, marginTop: 2 }}>{myShareRate >= creatorFilterMin && myShareRate <= creatorFilterMax ? "In range" : "Outside"}</div></div></div><div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ flex: 1 }}><div style={{ fontSize: 10, color: T.inkFaint, marginBottom: 4 }}>Between %</div><input
-    type="number"
-    min={0}
-    max={7}
-    step={0.1}
-    value={creatorFilterMin}
-    onChange={(e) => {
-      if (e.target.value === "") {
-        setCreatorFilterMin("");
-        return;
-      }
-      const v = parseFloat(e.target.value);
-      if (isNaN(v)) return;
-      setCreatorFilterMin(v);
+  }{showCreatorOverview && <CreatorShareOverviewScreen
+    onBack={requestCloseCreatorOverview}
+    myRate={myShareRate}
+    side={shareRole === "merchant" ? "creator" : "personal"}
+    shopName={shareRole === "merchant" && creatorProfile ? creatorDisplayName(creatorProfile) : ""}
+    onChangeRate={() => { setShowCreatorOverview(false); setShowMyShare(true); }}
+    onPickRate={(rate) => { setShowCreatorOverview(false); setMyShareRate(rate); setShowMyShare(true); }}
+    onOpenShop={async (shop) => {
+      const found = await GloobalApi.resolveCreatorHandle((shop && shop.handle) || "");
+      if (found) { setShowCreatorOverview(false); setOpenCreator(found); } else showToast2("Could not open that shop just now.");
     }}
-    onBlur={() => {
-      if (creatorFilterMin === "" || creatorFilterMin < 0) setCreatorFilterMin(0);
-      else if (creatorFilterMin > 7) setCreatorFilterMin(7);
-    }}
-    aria-label="Minimum share percentage"
-    style={{ width: "100%", border: `1.5px solid ${T.line}`, borderRadius: T.radiusMd, padding: "9px 10px", fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "inherit" }}
-  /></div><span style={{ fontSize: 12, color: T.inkFaint, marginTop: 14 }}>and</span><div style={{ flex: 1 }}><div style={{ fontSize: 10, color: T.inkFaint, marginBottom: 4 }}>% (max)</div><input
-    type="number"
-    min={0}
-    max={7}
-    step={0.1}
-    value={creatorFilterMax}
-    onChange={(e) => {
-      if (e.target.value === "") {
-        setCreatorFilterMax("");
-        return;
-      }
-      const v = parseFloat(e.target.value);
-      if (isNaN(v)) return;
-      setCreatorFilterMax(v);
-    }}
-    onBlur={() => {
-      if (creatorFilterMax === "" || creatorFilterMax > 7) setCreatorFilterMax(7);
-      else if (creatorFilterMax < 0) setCreatorFilterMax(0);
-    }}
-    aria-label="Maximum share percentage"
-    style={{ width: "100%", border: `1.5px solid ${T.line}`, borderRadius: T.radiusMd, padding: "9px 10px", fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "inherit" }}
-  /></div></div></div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 16px" }}><div style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft, marginBottom: 14 }}>
-                {shareDistribution && shareDistribution.totalUsers > 0
-                  ? `Real Creator Share choices across ${shareDistribution.totalUsers} ${shareDistribution.totalUsers === 1 ? "account" : "accounts"}`
-                  : "Real Creator Share choices on this account"}
-              </div>{creatorShareDistributionRows(shareDistribution, myShareRate).map((row, i) => <div key={row.range} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}><span style={{ width: 40, flexShrink: 0, fontSize: 12, fontWeight: 700, color: T.ink }}>{row.range}</span><span style={{ flex: 1, height: 8, borderRadius: 999, background: T.surfaceAlt, overflow: "hidden" }}><span style={{ display: "block", width: `${row.pct}%`, height: "100%", borderRadius: 999, background: GH_CATEGORIES[i % GH_CATEGORIES.length].color, transition: "width 0.3s ease" }} /></span><span style={{ width: 32, flexShrink: 0, textAlign: "right", fontSize: 12, fontWeight: 800, color: T.inkSoft }}>{row.pct}%</span></div>)}</div><div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: T.radiusLg, background: T.accentSoft, padding: "14px 16px" }}><span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, background: T.surface, display: "flex", alignItems: "center", justifyContent: "center" }}><PieChart size={16} color={T.accent} /></span><span style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.4 }}>
-                Your own rate is <strong>{myShareRate}%</strong>. You can change it any time from My Share.
-              </span></div><div style={{ fontSize: 11, color: T.inkFaint, textAlign: "center", lineHeight: 1.4 }}>
-              {shareDistribution && shareDistribution.totalUsers > 0
-                ? `Every rate actually set on GLOOBAL, counted. ${shareDistribution.totalUsers} ${shareDistribution.totalUsers === 1 ? "account" : "accounts"} \u2014 not a projection or an example.`
-                : "This account is the only real Creator Share choice tracked so far \u2014 1 user, 1 rate, 100% in that one bucket. Not a projection or an example."}
-            </div></div></div>}{
+  />}{
     /* Saving a new Gloobal ID — same verification, required before the
        change actually takes effect. */
   }{showUpdateIdBiometric && <BiometricVerifyScreen

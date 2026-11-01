@@ -100,7 +100,10 @@ function CreatorShareOverviewScreen({ onBack, myRate = 0, side = "personal", sho
     return () => { alive = false; };
   }, []);
   const ccy = data ? data.currency : "INR";
-  const money = (n) => creatorShareMoney(n, ccy);
+  // Every figure with its other name (GEU), in the viewer's own currency
+  // — see GeuTwin. `moneyText` is for a figure inside a sentence or label.
+  const moneyText = (n) => creatorShareMoney(n, ccy);
+  const money = (n, trailColor) => { const v = Math.abs(Number(n) || 0); return <GeuTwin amount={n} currency={ccy} own={ccy} compact={v >= 100000} whole={v >= 100 && v < 100000} trailColor={trailColor} />; };
   const shop = side === "creator";
   const CREATOR_SHARE_TAG_COLOR = creatorShareTagColor(side);
   const me = data && data.me;
@@ -127,7 +130,7 @@ function CreatorShareOverviewScreen({ onBack, myRate = 0, side = "personal", sho
   // ── 1. The collective ───────────────────────────────────────────────
   const hero = <div data-testid="share-hero" style={{ borderRadius: 24, background: T.gradWallet, color: "#fff", padding: 18, boxShadow: T.shadowRaised }}>
     <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "rgba(255,255,255,0.72)" }}>{shop ? "Shops on GLOOBAL have shared" : "People on GLOOBAL have shared"}</div>
-    <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: -0.6, marginTop: 4, lineHeight: 1, fontFamily: T.fontDisplay }}>{coverageMoney(t.share, ccy, { compact: false, whole: t.share >= 100 })}</div>
+    <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: -0.6, marginTop: 4, lineHeight: 1, fontFamily: T.fontDisplay }}>{<GeuTwin amount={t.share} currency={ccy} own={ccy} whole={t.share >= 100} />}</div>
     <div style={{ fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.85)", marginTop: 7, lineHeight: 1.45 }}>{shop ? "with their customers" : "with each other"} · from <b style={{ color: "#fff" }}>{t.payments.toLocaleString("en-IN")} payment{t.payments === 1 ? "" : "s"}</b>{t.lastAt ? ` · last one ${creatorShareAgo(t.lastAt)}` : ""}</div>
     <div style={{ display: "flex", gap: 8, marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.2)" }}>
       {[[money(t.thisMonth), "this month"], [money(t.perPayment), "per payment"], [creatorSharePct(t.avgRatePct), "average rate"]].map(([v, l]) => <div key={l} style={{ flex: 1 }}><b style={{ display: "block", fontSize: 16, fontWeight: 800 }}>{v}</b><span style={{ fontSize: 10.5, color: "rgba(255,255,255,0.75)", fontWeight: 600, display: "block", marginTop: 2 }}>{l}</span></div>)}
@@ -183,7 +186,7 @@ function CreatorShareOverviewScreen({ onBack, myRate = 0, side = "personal", sho
   const when = <CsCard testId="share-weeks" title="Week by week" sub={<>{money(t.thisMonth)} this month{monthUp !== null ? ` · ${monthUp >= 0 ? "up" : "down"} ${Math.abs(monthUp)}% on last month` : ""}</>}>
     <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 62, marginTop: 22 }}>{weeks.map((w, i) => {
       const last = i === weeks.length - 1;
-      return <div key={w.from} style={{ flex: 1, position: "relative", height: `${Math.max(4, (w.share / wMax) * 100)}%`, background: last ? T.accent2 : T.accent, opacity: last ? 1 : 0.8, borderRadius: "5px 5px 2px 2px" }}>{last && w.share > 0 ? <span style={{ position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)", fontSize: 10, fontWeight: 800, color: T.accent2, whiteSpace: "nowrap" }}>{money(w.share)}</span> : null}</div>;
+      return <div key={w.from} style={{ flex: 1, position: "relative", height: `${Math.max(4, (w.share / wMax) * 100)}%`, background: last ? T.accent2 : T.accent, opacity: last ? 1 : 0.8, borderRadius: "5px 5px 2px 2px" }}>{last && w.share > 0 ? <span style={{ position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)", fontSize: 10, fontWeight: 800, color: T.accent2, whiteSpace: "nowrap" }}>{moneyText(w.share)}</span> : null}</div>;
     })}</div>
     <div style={{ display: "flex", gap: 6, marginTop: 6 }}>{weeks.map((w, i) => <span key={w.from} style={{ flex: 1, textAlign: "center", fontSize: 9.5, fontWeight: 700, color: T.inkFaint, whiteSpace: "nowrap", overflow: "hidden" }}>{creatorShareWeekLabel(w.from, i, weeks.length)}</span>)}</div>
   </CsCard>;
@@ -193,7 +196,7 @@ function CreatorShareOverviewScreen({ onBack, myRate = 0, side = "personal", sho
   const growing = <CsCard testId="share-growing" title="Still growing in My Assets" sub="Shared money people have left planted">
     <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
       <div aria-hidden="true" style={{ width: 60, height: 60, borderRadius: 18, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><svg viewBox="0 0 64 64" width="42" height="42"><path d="M32 46V26" stroke="#5DAE5F" strokeWidth="3" strokeLinecap="round"/><path d="M32 30q-12 -8 -15 2 9 4 15 -2z" fill="#6CC47E"/><path d="M32 24q12 -9 16 1 -9 5 -16 -1z" fill="#80D18E"/><path d="M20 46h24l-3 12H23z" fill="#E8701E"/><path d="M18 44h28v4H18z" fill="#F7925E"/></svg></div>
-      <div style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink }}>{money(g.planted)}{t.share > 0 ? ` of ${money(t.share)}` : ""}</b><span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 600, lineHeight: 1.4, display: "block" }}>still planted · grown <b style={{ color: T.positive }}>+{money(g.grown)}</b> so far at 1% a month</span>
+      <div style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink }}>{money(g.planted)}{t.share > 0 ? <> of {money(t.share)}</> : ""}</b><span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 600, lineHeight: 1.4, display: "block" }}>still planted · grown <b style={{ color: T.positive }}>+{money(g.grown)}</b> so far at 1% a month</span>
         <div style={{ height: 7, borderRadius: 4, background: T.surfaceSunk, marginTop: 8, overflow: "hidden" }}><div style={{ width: `${t.share > 0 ? Math.min(100, (g.planted / t.share) * 100) : 0}%`, height: "100%", background: T.positive, borderRadius: 4 }} /></div></div>
     </div>
   </CsCard>;

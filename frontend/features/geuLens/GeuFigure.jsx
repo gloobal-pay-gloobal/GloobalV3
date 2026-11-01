@@ -116,3 +116,46 @@ function GeuFigure({
 
   return <span style={hostStyle}>{sign}{parts.lead}<span style={trailStyle}> {parts.trail}</span></span>;
 }
+
+// ── THE SAME RULE, FOR A FIGURE ALREADY WRITTEN SHORT (0198) ────────────
+//
+// GeuFigure writes the figure itself, always to two decimals. The newer
+// screens — Our numbers, the Creator Share overview, Rent — write theirs
+// the way a person reads a total: whole rupees ("₹24,038"), and lakhs and
+// crores once a figure is that big ("₹47.5Cr"). They were built without the
+// GEU half at all, which is the defect the comment above describes: half a
+// fact. GeuTwin gives those figures their other name without changing how
+// the figure is written.
+//
+//     local lens   ₹24,038 │ GEU        geu lens   24,038 GEU │ ₹
+//
+// Only when the figure is in the viewer's own currency. A figure in
+// somebody else's (a USD total read in India) is left as it is: GEU is
+// never a label on money that is not yours.
+function geuTwinBare(amount, currency, { compact = false, whole = false } = {}) {
+  const n = Number(amount) || 0;
+  const big = compact && Math.abs(n) >= 1000;
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      notation: big ? "compact" : "standard",
+      maximumFractionDigits: big ? 1 : whole ? 0 : 2,
+      minimumFractionDigits: big || whole ? 0 : 2
+    }).format(n).replace(/(\d)T$/, "$1K");
+  } catch (e) {
+    return n.toFixed(whole ? 0 : 2);
+  }
+}
+
+function GeuTwin({ amount, currency, own = null, compact = false, whole = false, trailColor = null }) {
+  const lens = useGeuLens();
+  const code = String(currency || "").toUpperCase();
+  const ownCode = String(own || currency || "").toUpperCase();
+  const local = coverageMoney(amount, code, { compact, whole });
+  if (!geuLensSameCurrency(code, ownCode)) return <span style={{ whiteSpace: "nowrap" }}>{local}</span>;
+  const trailStyle = { fontSize: `${GEU_LENS_TRAIL_RATIO}em`, fontWeight: 800, marginLeft: GEU_LENS_BAR_GAP / 2, whiteSpace: "nowrap" };
+  if (trailColor) trailStyle.color = trailColor;
+  if (lens === GEU_LENS_GEU) {
+    return <span data-geu="geu" style={{ whiteSpace: "nowrap" }}>{geuTwinBare(amount, code, { compact, whole })} {COIN_TICKER}<span style={trailStyle}>{GEU_LENS_BAR} {String(typeof currencySuffix === "function" ? currencySuffix(code) : code).trim()}</span></span>;
+  }
+  return <span data-geu="local" style={{ whiteSpace: "nowrap" }}>{local}<span style={trailStyle}>{GEU_LENS_BAR} {COIN_TICKER}</span></span>;
+}

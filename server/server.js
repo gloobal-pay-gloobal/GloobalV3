@@ -2778,13 +2778,13 @@ app.get('/api/open-data/:file', lookupLimit, async (req, res) => {
 
 app.get('/open-data', lookupLimit, (req, res) => {
   const rows = [
-    ['daily', 'Daily totals by country', 'Money moved and payments per day and country. Countries with fewer than 5 payments that day are merged into OTHER.'],
-    ['split', 'Where every 100 goes', 'Per month: paid, reached the person paid, Creator Share, GLOOBAL kept (0), fees (0).'],
-    ['books', 'Books check', 'Per day and currency: money that should exist, money that does, and the gap. Test money until a bank partner is connected.'],
-    ['projects', 'Hooman Projects', 'Every published project with its goal, raised and backers.'],
+    ['daily', 'Money paid each day', 'For each day and country: how much money was paid and how many payments. If a country had fewer than 5 payments on a day, it is added to OTHER so no one can be picked out.'],
+    ['split', 'Where the money went', 'For each month: how much was paid, how much went to the person or shop, how much came back to the payer as Creator Share, what GLOOBAL kept (0) and fees (0).'],
+    ['books', 'Does the money add up?', 'For each day and currency: the money that should be in GLOOBAL, the money that is, and any difference.'],
+    ['projects', 'Hooman Projects', 'Every published project: its goal, the money raised so far and how many people helped.'],
   ];
   res.set('Content-Type', 'text/html; charset=utf-8');
-  return res.send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GLOOBAL open data</title><style>body{font-family:system-ui,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#1C1830;background:#F4F2FB;line-height:1.5}a{color:#5B34E6;font-weight:700}li{margin:14px 0}small{color:#5F5A78}</style></head><body><h1>GLOOBAL open data</h1><p>The public totals behind GLOOBAL Coverage, as spreadsheets anyone can open. Totals only: never a person, an ID or a shop's takings.</p><ul>${rows.map(([f, t, d]) => `<li><a href="/api/open-data/${f}.csv">${t}</a><br><small>${d}</small></li>`).join('')}</ul><p><small>All balances are test money until a bank partner is connected.</small></p></body></html>`);
+  return res.send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GLOOBAL's numbers</title><style>body{font-family:system-ui,sans-serif;max-width:640px;margin:0 auto;padding:24px 16px;color:#1C1830;background:#F4F2FB;line-height:1.5}a{color:#5B34E6;font-weight:700}li{margin:14px 0}small{color:#5F5A78}</style></head><body><h1>GLOOBAL's numbers</h1><p>The totals behind GLOOBAL Coverage, as spreadsheet files that open in Excel or Google Sheets. Totals only: no names, no IDs, nothing about one shop.</p><ul>${rows.map(([f, t, d]) => `<li><a href="/api/open-data/${f}.csv">${t}</a><br><small>${d}</small></li>`).join('')}</ul><p><small>This is test money: balances are not real money until a bank partner is connected.</small></p></body></html>`);
 });
 
 app.get('/api/stats', async (req, res) => {

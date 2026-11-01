@@ -495,7 +495,7 @@ async function openDataCsv(name, { currency } = {}) {
     }
     const rows = Object.values(merged).sort((a, b) => a.day.localeCompare(b.day) || a.iso.localeCompare(b.iso))
       .map((m) => [m.day, m.iso, round2(m.money).toFixed(2), m.payments]);
-    return toCsv(['date_utc', 'country', `money_moved_${target}`, 'payments'], rows);
+    return toCsv(['date_utc', 'country', `money_paid_${target}`, 'number_of_payments'], rows);
   }
   if (name === 'split') {
     const groups = await windowGroups({ from: null, to: null, bucket: 'month', tz: 'UTC' });
@@ -510,13 +510,13 @@ async function openDataCsv(name, { currency } = {}) {
     }
     const rows = Object.entries(months).sort().filter(([, m]) => m.payments >= OPEN_DATA_MIN_GROUP)
       .map(([k, m]) => [k, round2(m.paid).toFixed(2), round2(m.paid - m.share).toFixed(2), round2(m.share).toFixed(2), '0.00', '0.00', m.payments]);
-    return toCsv(['month_utc', `paid_${target}`, 'reached_payee', 'creator_share', 'gloobal_kept', 'fees', 'payments'], rows);
+    return toCsv(['month_utc', `paid_${target}`, 'to_people_and_shops', 'back_to_payer_creator_share', 'gloobal_kept', 'fees', 'number_of_payments'], rows);
   }
   if (name === 'books') {
     const docs = await BooksCheck.find({}).sort({ day: 1 }).lean();
     const rows = [];
     for (const d of docs) for (const c of d.currencies || []) rows.push([d.day, c.currency, c.shouldExist.toFixed(2), c.doesExist.toFixed(2), c.difference.toFixed(2), c.ok ? 'yes' : 'no', 'test money']);
-    return toCsv(['date_utc', 'currency', 'should_exist', 'does_exist', 'difference', 'balances', 'note'], rows);
+    return toCsv(['date_utc', 'currency', 'should_be_here', 'is_here', 'difference', 'adds_up', 'note'], rows);
   }
   if (name === 'projects') {
     const projects = await Project.find({ status: 'published' }, 'title category countryIso goalMinor goalCurrency createdAt').lean();
@@ -526,7 +526,7 @@ async function openDataCsv(name, { currency } = {}) {
       const s = by.get(String(pr._id));
       return [String(pr._id), pr.title, pr.category, pr.countryIso || '', pr.goalCurrency || '', pr.goalMinor != null ? (pr.goalMinor / 100).toFixed(2) : '', s ? round2(s.raised).toFixed(2) : '0.00', s ? s.backers.length : 0, new Date(pr.createdAt).toISOString().slice(0, 10)];
     });
-    return toCsv(['project_id', 'title', 'category', 'country', 'currency', 'goal', 'raised', 'backers', 'created_utc'], rows);
+    return toCsv(['project_id', 'title', 'category', 'country', 'currency', 'goal', 'raised', 'people_who_helped', 'created_utc'], rows);
   }
   return null;
 }

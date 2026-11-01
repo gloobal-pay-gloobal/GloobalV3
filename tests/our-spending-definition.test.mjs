@@ -45,12 +45,13 @@ const code = (p) =>
 const DASH = 'frontend/features/coverage/CoverageDashboard.jsx';
 const VIEW = 'server/lib/coverageView.js';
 
-describe('GLOOBAL paid out on top says what it measures', () => {
+describe('Extra GLOOBAL gave people says what it measures', () => {
   test('the line is named for what GLOOBAL pays, apart from the split', () => {
     const src = code(DASH);
-    assert.match(src, /GLOOBAL paid out on top/);
+    // 0188 put it in plain words: "Extra GLOOBAL gave people".
+    assert.match(src, /Extra GLOOBAL gave people/);
     // It is shown beside the split, never inside the bands that add up to 100.
-    assert.match(src, /paid out on top" v=\{money\(view\.split\.payoutsOnTop\)\}/);
+    assert.match(src, /Extra GLOOBAL gave people" v=\{money\(view\.split\.payoutsOnTop\)\}/);
   });
 
   test('the screen says it never comes out of a payment', () => {

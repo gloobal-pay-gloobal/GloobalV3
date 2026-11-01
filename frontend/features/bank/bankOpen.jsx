@@ -707,7 +707,7 @@ function BankNeedsAccountSheet({ amountText, bank, onOpen, onClose }) {
 
 // On the GLOOBAL Bank screen, under the balance: the account's details once
 // it is open, or the way to open it until then.
-function BankAccountPanel({ bank, gloobalId, onOpen, onToast }) {
+function BankAccountPanel({ bank, gloobalId, onOpen, onToast, onMoney }) {
   const [shown, setShown] = useStateBank(false);
   if (!bank) return null;
   if (bank.status !== "open") {
@@ -719,9 +719,12 @@ function BankAccountPanel({ bank, gloobalId, onOpen, onToast }) {
   }
   const nominee = (bank.nominees || [])[0];
   const rel = nominee ? ((BANK_RELATIONS.find(([k]) => k === nominee.relation) || [])[1] || "") : "";
-  return <div style={{ flexShrink: 0, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "4px 16px" }}>
+  // Money in and out (features/bank/bankMoney.jsx): three doors, above the
+  // account's facts, because they are what an open account is FOR.
+  const moneyActions = typeof onMoney === "function" ? <div data-testid="bank-money-actions" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 12 }}>{[["add", "\u2199", "Add money"], ["send", "\u2197", "Send to bank"], ["history", "\u2261", "Bank transfers"]].map(([k, icon, label]) => <button key={k} type="button" onClick={() => onMoney(k)} className="v2-tap" style={{ border: "none", borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, padding: "12px 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer" }}><span aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 12, background: hexToRgba(T.accent, 0.12), color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 900 }}>{icon}</span><span style={{ fontSize: 12, fontWeight: 800, color: T.ink }}>{label}</span></button>)}</div> : null;
+  return <>{moneyActions}<div style={{ flexShrink: 0, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "4px 16px" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", borderBottom: `1px solid ${T.lineSoft}` }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint }}>Account number · GLOOBAL ID</span><span style={{ display: "block", marginTop: 6 }}><BankIdSymbols id={bank.accountNumber || gloobalId} masked={!shown} size={15} /></span></span><button type="button" aria-label={shown ? "Hide account number" : "Show account number"} onClick={() => setShown((s) => !s)} style={{ width: 32, height: 32, borderRadius: 10, border: "none", background: T.accentSoft, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>{shown ? <EyeOffBk size={15} /> : <EyeBk size={15} />}</button><button type="button" aria-label="Copy account number" onClick={() => { copyToClipboard(bank.accountNumber || gloobalId); if (onToast) onToast("Copied"); }} style={{ width: 32, height: 32, borderRadius: 10, border: "none", background: T.accentSoft, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><CopyBk size={15} /></button></div>
     <div style={{ padding: "12px 0", borderBottom: nominee ? `1px solid ${T.lineSoft}` : "none" }}><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint }}>Name on account</span><span style={{ display: "block", fontSize: 14.5, fontWeight: 700, marginTop: 3, color: T.ink }}>{bank.nameOnAccount}</span></div>
     {nominee && <div style={{ padding: "12px 0", display: "flex", alignItems: "center" }}><span style={{ flex: 1 }}><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint }}>Nominee</span><span style={{ display: "block", fontSize: 14.5, fontWeight: 700, marginTop: 3, color: T.ink }}>{nominee.name}{rel ? ` · ${rel}` : ""}{(bank.nominees || []).length > 1 ? ` +${bank.nominees.length - 1}` : ""}</span></span><ChevronRightBk size={15} color={T.inkFaint} /></div>}
-  </div>;
+  </div></>;
 }

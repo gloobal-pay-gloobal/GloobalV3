@@ -56,6 +56,8 @@ function GloobalBankScreen({
   // balance is: one source, one answer, no chance of this screen and the
   // dashboard disagreeing about who is logged in.
   gloobalId = "",
+  // Add money / send to bank / bank transfers (features/bank/bankMoney.jsx).
+  onOpenMoney,
   countryFlag = "",
   countryName = "",
   onCopyId,
@@ -136,7 +138,7 @@ function GloobalBankScreen({
     aria-label="Copy Gloobal ID"
     className="v2-tap"
     style={{ width: 30, height: 30, borderRadius: 9, border: "none", flexShrink: 0, background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><BankCopy size={14} color="#fff" /></button>}</div>}</div><BankAccountPanel bank={bankAccount} gloobalId={gloobalId} onOpen={onOpenBankFlow} onToast={onToast} /><ProductServicesCard services={services} />{
+  ><BankCopy size={14} color="#fff" /></button>}</div>}</div><BankAccountPanel bank={bankAccount} gloobalId={gloobalId} onOpen={onOpenBankFlow} onToast={onToast} onMoney={onOpenMoney} /><ProductServicesCard services={services} />{
     /* Recent transactions — the same five rows the Home tab's activity
        list draws, merged across both directions rather than split by a
        tab, because this screen is about the account rather than about

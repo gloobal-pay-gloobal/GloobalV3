@@ -1050,6 +1050,45 @@ var GloobalApi = {
   // The account number is the GLOOBAL ID, so none of these hands one back
   // that is anything else. `getBank` answers null when the server could not
   // be asked — a different thing from status "none", which is a real answer.
+  // ── Money in and out of GLOOBAL Bank (test mode until a partner signs) ──
+  async getBankTransfers(month) {
+    return gloobalApiClient.get(`/api/bank-transfers${month ? `?month=${encodeURIComponent(month)}` : ""}`);
+  },
+  async getBankTransfer(ref) {
+    const result = await gloobalApiClient.get(`/api/bank-transfers/${encodeURIComponent(ref)}`);
+    return (result && result.transfer) || null;
+  },
+  async addMoney(body) {
+    const result = await gloobalApiClient.post("/api/bank-transfers/in", body || {});
+    return (result && result.transfer) || null;
+  },
+  async sendToBank(body) {
+    const result = await gloobalApiClient.post("/api/bank-transfers/out", body || {});
+    return (result && result.transfer) || null;
+  },
+  async getLinkedAccounts() {
+    const result = await gloobalApiClient.get("/api/bank-transfers/accounts");
+    return (result && result.accounts) || [];
+  },
+  async linkBankAccount(body) {
+    return gloobalApiClient.post("/api/bank-transfers/accounts", body || {});
+  },
+  async removeLinkedAccount(id) {
+    await gloobalApiClient.delete(`/api/bank-transfers/accounts/${encodeURIComponent(id)}`);
+  },
+  async openTransferCase(ref, body) {
+    const result = await gloobalApiClient.post(`/api/bank-transfers/${encodeURIComponent(ref)}/case`, body || {});
+    return (result && result.case) || null;
+  },
+  async sendTransferCaseMessage(caseRef, text) {
+    const result = await gloobalApiClient.post(`/api/bank-transfers/cases/${encodeURIComponent(caseRef)}/messages`, { text });
+    return (result && result.case) || null;
+  },
+  async setTransferCaseStatus(caseRef, status) {
+    const result = await gloobalApiClient.post(`/api/bank-transfers/cases/${encodeURIComponent(caseRef)}/status`, { status });
+    return (result && result.case) || null;
+  },
+
   async getBank(symbolId) {
     try {
       const result = await gloobalApiClient.get(`/api/bank/${encodeURIComponent(symbolId)}`);

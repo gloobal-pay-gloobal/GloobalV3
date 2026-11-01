@@ -436,6 +436,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // showing Scan & Pay) instead of dropping them back on Dashboard.
   const [pendingReopenEssentials, setPendingReopenEssentials] = useState14(false);
   const [showGloobalBankInfo, setShowGloobalBankInfo] = useState14(false);
+  // Add money / send to bank / bank transfers, opened from GLOOBAL Bank.
+  const [bankMoney, setBankMoney] = useState14(null);
+  const requestCloseBankMoney = useBackClose(!!bankMoney, () => setBankMoney(null));
   const requestCloseGloobalBankInfo = useBackClose(showGloobalBankInfo, () => {
     setShowGloobalBankInfo(false);
     if (pendingReopenEssentials) {
@@ -4139,7 +4142,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        Accounts. "Interested" just flips a local flag and shows a
        toast, standing in for what would be a real signup/waitlist
        call that gives the business a signal of demand. */
-  }{showGloobalBankInfo && <ScreenErrorBoundary name="Gloobal Bank" onClose={requestCloseGloobalBankInfo}><GloobalBankScreen
+  }{bankMoney && <ScreenErrorBoundary name="Bank transfers" onClose={requestCloseBankMoney}><BankMoneyScreen
+    start={bankMoney}
+    ccyCode={ccyCode}
+    balance={Number(bankBalance) || 0}
+    countryIso={dialCountry && dialCountry.iso}
+    accountName={myName}
+    onClose={requestCloseBankMoney}
+    onToast={showToast2}
+    onChanged={() => { if (onRefreshAccount) onRefreshAccount(); }}
+  /></ScreenErrorBoundary>}{showGloobalBankInfo && <ScreenErrorBoundary name="Gloobal Bank" onClose={requestCloseGloobalBankInfo}><GloobalBankScreen
     onBack={requestCloseGloobalBankInfo}
     onOpenStats={() => {
       loadInterestCount("bank");
@@ -4166,6 +4178,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       showToast2("Copied");
     }}
     bankAccount={bankAccount}
+    onOpenMoney={(mode) => setBankMoney(mode)}
     onOpenBankFlow={() => openBankFlow("bank")}
     onToast={showToast2}
   /></ScreenErrorBoundary>}{

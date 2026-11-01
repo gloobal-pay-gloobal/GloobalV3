@@ -8485,6 +8485,19 @@ const gloobalBank = require('./lib/bank').createBank({
 });
 gloobalBank.mount(app);
 
+// Money in and out of GLOOBAL Bank: add money, send to your own bank, the
+// history of both, and "Report a problem" on each. Test mode until a payment
+// partner is connected — see lib/bankTransfers.js.
+const bankTransfers = require('./lib/bankTransfers').createBankTransfers({
+  User, Pin, LedgerEntry, Notification, requireAuth, writeLimit, lookupLimit, credentialLimit,
+  pin: { beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
+  isBankOpen: (userId) => gloobalBank.isOpen(userId),
+  currencyOf: (user) => localCurrencyFor(accountCountryIso(user)),
+  mintReference: createPrototypeTransactionReference,
+  hashKey: process.env.BANK_ID_PEPPER || process.env.AUTH_TOKEN_SECRET,
+});
+bankTransfers.mount(app);
+
 app.post('/api/assets/settle', writeLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const cleanSymbolId = String(req.body?.symbolId || '').trim();

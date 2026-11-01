@@ -16,6 +16,13 @@ const ledgerEntrySchema = new mongoose.Schema(
       index: true,
     },
 
+    // What `transactionId` points at. A payment (the default) or, for money
+    // moving to or from a bank outside GLOOBAL, a BankTransfer.
+    source: {
+      type: String,
+      enum: ['payment', 'bank_transfer'],
+      default: 'payment',
+    },
     entryType: {
       type: String,
       enum: ['debit', 'credit', 'hold', 'release', 'refund', 'reversal'],

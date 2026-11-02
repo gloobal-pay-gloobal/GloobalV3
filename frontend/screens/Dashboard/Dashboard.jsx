@@ -4281,6 +4281,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     bankAccount={bankAccount}
     onOpenMoney={(mode) => setBankMoney(mode)}
     onOpenBankFlow={() => openBankFlow("bank")}
+    onOpenAddBank={onOpenBank}
     onToast={showToast2}
   /></ScreenErrorBoundary>}{
     /* Real interest data, counted server-side. Both numbers used to be
@@ -4372,6 +4373,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     }}
   />}{bankFlow && <ScreenErrorBoundary name="Open Gloobal Bank" onClose={requestCloseBankFlow}><BankOpenFlow
     symbolId={myGloobalId}
+    onOpenAddBank={onOpenBank}
     myName={myName}
     mobileNumber={mobileNumber}
     dialCountry={dialCountry}

@@ -187,7 +187,7 @@ function useBankDigitKeys(active, onDigit, onDelete) {
 }
 
 // ── THE FLOW ────────────────────────────────────────────────────────────
-function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, initialBank, after = "bank", onClose, onOpened, onFinish, onToast }) {
+function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, initialBank, after = "bank", onClose, onOpened, onFinish, onToast, onOpenAddBank }) {
   const [bank, setBank] = useStateBank(initialBank || null);
   // Which ways to prove identity apply comes from the SERVER, for the
   // account's registered country (lib/kycCountries.js) — not from the
@@ -410,7 +410,10 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
         [<CoinsBk size={19} />, "Settle My Assets into it", "Your accumulated assets move here when you choose"],
         [<ShieldBk size={19} />, "Locked by your PIN", "Nobody opens it but you"]
       ].map(([icon, title, sub], i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "center" }}><BankIconBox size={38}>{icon}</BankIconBox><span style={{ minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink }}>{title}</span><span style={{ display: "block", fontSize: 12, fontWeight: 500, color: T.inkSoft, marginTop: 1 }}>{sub}</span></span></div>)}</div>
-      <div style={{ marginTop: 16, borderRadius: 14, background: T.surfaceAlt, padding: "11px 12px" }}><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint }}>Keep ready</div><div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>{[...((kyc && kyc.keepReady) || []), "Your face for a selfie"].map((t) => <span key={t} style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 99, background: T.surface, color: T.ink }}>{t}</span>)}</div></div>
+      <div style={{ marginTop: 16, borderRadius: 14, background: T.surfaceAlt, padding: "11px 12px" }}><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint }}>Keep ready</div><div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>{[...((kyc && kyc.keepReady) || []), "Your face for a selfie"].map((t) => <span key={t} style={{ fontSize: 12, fontWeight: 700, padding: "5px 10px", borderRadius: 99, background: T.surface, color: T.ink }}>{t}</span>)}</div></div>{
+        /* The other banks in this country, for somebody who came to Add
+           Bank to link the bank they already have (0203). */
+      }{onOpenAddBank ? <button type="button" data-testid="bank-open-link-another" onClick={onOpenAddBank} style={{ display: "block", margin: "14px auto 0", border: "none", background: "none", color: T.accent, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>Link a bank you already have ›</button> : null}
     </>;
     foot = <BankCta testId="bank-start" onClick={() => go("about")}>Start</BankCta>;
   }

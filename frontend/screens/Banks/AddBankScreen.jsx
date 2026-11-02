@@ -34,7 +34,9 @@ function AddBankScreen({ onClose, country: countryProp }) {
   };
   return <div
     className="bg-white flex flex-col font-sans"
-    style={{ position: "fixed", inset: 0, zIndex: 250 }}
+    // Above GLOOBAL Bank (300) and its opening flow (320), which is where
+    // it is opened from now (0203), so Back lands there again.
+    style={{ position: "fixed", inset: 0, zIndex: 330 }}
   ><style>{`
         @keyframes abBankListIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .ab-bank-row { animation: abBankListIn 0.4s ease-out both; }

@@ -1,5 +1,5 @@
 // src/screens/Banks/GloobalBankScreen.jsx
-import { Copy as BankCopy } from "lucide-react";
+import { Copy as BankCopy, Landmark as BankLinkIcon, ChevronRight as BankLinkGo } from "lucide-react";
 
 // Gloobal Bank — the account this app actually runs on, and the screen
 // people land on from the Accounts tab.
@@ -58,6 +58,9 @@ function GloobalBankScreen({
   gloobalId = "",
   // Add money / send to bank / bank transfers (features/bank/bankMoney.jsx).
   onOpenMoney,
+  // The other banks in this country (AddBankScreen). Since 0190 the Home
+  // tile comes here instead, so this row is the way to that list.
+  onOpenAddBank,
   countryFlag = "",
   countryName = "",
   onCopyId,
@@ -156,7 +159,27 @@ function GloobalBankScreen({
   ><BankCopy size={14} color="#fff" /></button>}</div>{bankOpen && bankAccount.nameOnAccount ? <span
     data-testid="bank-card-name"
     style={{ display: "block", marginTop: 9, fontSize: 12, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: "rgba(255,255,255,0.86)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-  >{bankAccount.nameOnAccount}</span> : null}</div>}</div><BankAccountPanel bank={bankAccount} gloobalId={gloobalId} onOpen={onOpenBankFlow} onToast={onToast} onMoney={onOpenMoney} numberOnCard /><ProductServicesCard services={services} />{
+  >{bankAccount.nameOnAccount}</span> : null}</div>}</div><BankAccountPanel bank={bankAccount} gloobalId={gloobalId} onOpen={onOpenBankFlow} onToast={onToast} onMoney={onOpenMoney} numberOnCard />{
+    /* ── LINK ANOTHER BANK ─────────────────────────────────────────────
+       The founder: "yesterday you have removed add bank screen". 0190 made
+       the Home tile open GLOOBAL Bank, and with it the list of other banks
+       in the person's country stopped being reachable from anywhere (its
+       old door, Profile → Linked Banks, was never in the profile list).
+       It comes back here, inside GLOOBAL Bank, as chosen. */
+  }{onOpenAddBank ? <button
+    type="button"
+    data-testid="bank-link-another"
+    onClick={onOpenAddBank}
+    className="v2-tap"
+    style={{
+      display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 14px", marginBottom: 12, border: "none",
+      borderRadius: 18, background: T.surface, boxShadow: T.shadowCard, cursor: "pointer", fontFamily: "inherit", textAlign: "left"
+    }}
+  ><span aria-hidden="true" style={{
+    width: 38, height: 38, borderRadius: 12, background: hexToRgba(T.accent, 0.12), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+  }}><BankLinkIcon size={18} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{
+    display: "block", fontSize: 14, fontWeight: 800, color: T.ink
+  }}>Link another bank</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkSoft, marginTop: 2 }}>{countryName ? `Banks in ${countryName}` : "Banks in your country"}</span></span><BankLinkGo size={16} color={T.inkFaint} /></button> : null}<ProductServicesCard services={services} />{
     /* Recent transactions — the same five rows the Home tab's activity
        list draws, merged across both directions rather than split by a
        tab, because this screen is about the account rather than about

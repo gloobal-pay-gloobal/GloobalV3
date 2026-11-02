@@ -46,7 +46,9 @@ test("joining words do not count toward the two", () => {
 test("Other cannot be saved without its words, and the words are sent", () => {
   const setup = read("frontend/features/creator/CreatorSetupScreen.jsx");
   assert.match(setup, /const otherReady = category !== "other" \|\| \(Boolean\(otherWords\.trim\(\)\) && !bazaarOtherWordsProblem\(otherWords\)\);/);
-  assert.match(setup, /disabled=\{!canSaveAll\}/);
+  // 0199: the What you sell step's Next waits for the words.
+  assert.match(setup, /const ctaOn = step === "name" \? canSave : step === "sell" \? otherReady && !busy : !busy;/);
+  assert.match(setup, /disabled=\{!ctaOn\}/);
   assert.match(setup, /\.\.\.\(category === "other" \? \{ otherWords: otherWords\.trim\(\) \} : \{\}\)/);
   assert.match(setup, /category === "other" \? <div style=\{\{ marginTop: 14 \}\}><BazaarOtherWordsBox/);
 });

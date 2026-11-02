@@ -477,7 +477,7 @@ test("the scan card hangs the message in the creator's chosen style", () => {
 test("the creator picks it, and the pick is saved", () => {
   const setup = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
   assert.match(setup, /<ScanNoteStylePicker\s*\n\s*value=\{scanNoteStyle\}/);
-  assert.match(setup, /scanNoteStyle,\n/, "the chosen style is never sent to the server");
+  assert.match(setup, /patch: \{ scanNote: scanNote\.trim\(\), scanNoteStyle \}/, "the chosen style is never sent to the server");
   // The previews are the real strip, in the account's own colour.
   const client = readSource("frontend/features/scan/scanNoteStrip.jsx");
   assert.match(client, /<ScanNoteStrip text=\{sample\} seed=\{seed\} styleKey=\{s\.key\} compact \/>/);

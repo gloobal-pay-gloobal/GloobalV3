@@ -42,23 +42,27 @@ test("the font is saved through the shop route, never the profile one", () => {
   assert.match(dash, /const \{ font, \.\.\.profilePatch \} = patch \|\| \{\};/);
   assert.match(dash, /GloobalApi\.saveCreatorProfile\(myGloobalId, profilePatch\)/);
   assert.match(dash, /GloobalApi\.saveCreatorShop\(myGloobalId, \{ font \}\)/);
-  assert.match(setup(), /scanNoteStyle,\s*font,\s*logo: logo \|\| undefined/);
+  // 0199: the name step sends the font with the tagline, on the shop half.
+  assert.match(setup(), /return \{ patch, shop: \{ font, tagline: tagline\.trim\(\) \} \};/);
+  assert.match(dash, /const savedShop = await GloobalApi\.saveCreatorShop\(myGloobalId, shop\);/);
 });
 
 test("the card at the top is the shop's own colour and the chosen font", () => {
   const s = setup();
   assert.match(s, /const look = resolveShopTheme\(/);
   assert.match(s, /linear-gradient\(140deg, \$\{look\.hero\.from\} 0%, \$\{look\.hero\.to\} 100%\)/);
-  assert.match(s, /fontFamily: fontFace\.stack, fontWeight: fontFace\.weight/);
+  assert.match(s, /lookBase, \{ font \}\)\);/, "the chosen font is laid over the look");
+  assert.match(s, /fontFamily: look\.font\.stack, fontWeight: look\.font\.weight/);
 });
 
 test("Save stays on screen, and steps aside for Gloobal's keyboard", () => {
   const s = setup();
   assert.match(s, /THE SAVE BAR/);
-  assert.match(s, /\{kbField \? null : <div style=\{\{\s*flexShrink: 0/);
+  assert.match(s, /\{kbField \|\| step === "hub" \? null : <div style=\{\{\s*flexShrink: 0/);
   assert.match(s, /aria-label="Set this up later"/);
-  assert.match(s, />Later<\/button><button/);
-  assert.match(s, /aria-label="Save my creator name"/);
+  assert.match(s, />Later<\/button> : null\}/);
+  // The name step's button keeps its long name for screen readers (0199).
+  assert.match(s, /aria-label=\{step === "name" \? "Save my creator name" : ctaLabel\}/);
   // One line on a phone: neither button may wrap.
   assert.equal((s.match(/whiteSpace: "nowrap"/g) || []).length >= 2, true);
 });

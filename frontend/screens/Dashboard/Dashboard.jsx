@@ -1371,6 +1371,14 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [otherWordsDraft, setOtherWordsDraft] = useState14("");
   const [otherWordsSaving, setOtherWordsSaving] = useState14(false);
   const [showCreatorSetup, setShowCreatorSetup] = useState14(false);
+  // Where the setup opens (0199): the बाज़ार splash on the first flip, the
+  // name step from a gate or a banner, the Edit list once a shop exists.
+  const [creatorSetupStart, setCreatorSetupStart] = useState14("name");
+  const openCreatorSetup = (start) => {
+    setCreatorError("");
+    setCreatorSetupStart(start || (creatorSetupDone(creatorProfile) ? "hub" : "name"));
+    setShowCreatorSetup(true);
+  };
   const [creatorSaving, setCreatorSaving] = useState14(false);
   const [creatorError, setCreatorError] = useState14("");
   const creatorLoadedRef = useRef10(false);
@@ -1418,7 +1426,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const openMyShop = async () => {
     const profile = creatorProfile || await loadCreatorProfile();
     const handle = profile && profile.handle;
-    if (!handle) { setShowCreatorSetup(true); return; }
+    if (!handle) { openCreatorSetup("name"); return; }
     try {
       const found = await GloobalApi.resolveCreatorHandle(String(handle));
       if (found) setOpenCreator(found); else showToast2("Your shop could not be opened just now.");
@@ -1553,6 +1561,58 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // Dismissed without finishing. Recorded so the Creator dashboard can
   // keep offering it without putting the whole screen back in the way on
   // every flip — see creatorProfile.setupSkippedAt on the server.
+  // ── ONE STEP OF THE SETUP FLOW (0199) ────────────────────────────────
+  //
+  // The flow saves as each step is left, so this answers rather than
+  // closes: { ok, creator } or { ok: false, message } for the step to show.
+  // `shop` is the look half (font, tagline, a ready look), which lives in
+  // its own document and is merged by the server.
+  const saveCreatorStep = async (patch, shop) => {
+    try {
+      let next = creatorProfile;
+      if (patch && Object.keys(patch).length) {
+        const saved = await GloobalApi.saveCreatorProfile(myGloobalId, patch);
+        if (saved) next = saved;
+      }
+      if (shop && Object.keys(shop).length) {
+        try {
+          const savedShop = await GloobalApi.saveCreatorShop(myGloobalId, shop);
+          if (savedShop && next) next = { ...next, shop: savedShop };
+        } catch (e) {
+          // The look is not worth losing the step over; it is set again
+          // from Look on the shop.
+        }
+      }
+      if (next) {
+        setCreatorProfile(next);
+        setOpenCreator((c) => (c && c.symbolId === myGloobalId ? { ...c, ...next } : c));
+      }
+      return { ok: true, creator: next };
+    } catch (e) {
+      return { ok: false, message: (e && e.message) || "Could not save that right now." };
+    }
+  };
+  // Creator Share from the setup: the same rate as My Share, behind the
+  // same check that it is really this person, because it is a promise to
+  // every future payer.
+  const saveShareFromSetup = async (pct) => {
+    const ok = await requireBiometric({ pinReason: "Confirm it's you to set your Creator Share." });
+    if (!ok) return false;
+    try {
+      const saved = await GloobalApi.setCreatorCashbackRate(currentSymbolId || myGloobalId, pct / 100);
+      setMyShareRate(Math.round(saved * 1e4) / 100);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+  // Leaving the setup. Before a name exists that is the recorded "Later";
+  // after, it is only closing.
+  const closeCreatorSetup = () => {
+    if (creatorSetupDone(creatorProfile)) setShowCreatorSetup(false);
+    else skipCreatorSetup();
+  };
+
   const skipCreatorSetup = async () => {
     setShowCreatorSetup(false);
     try {
@@ -1680,7 +1740,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // the app itself does not go.
     else if (deepLinkTarget === "payservices") setShowMore(true);
     else if (deepLinkTarget === "receive") setShowReceive(true);
-    else if (deepLinkTarget === "creatorSetup") setShowCreatorSetup(true);
+    else if (deepLinkTarget === "creatorSetup") openCreatorSetup();
     else if (deepLinkTarget === "security") { setActiveTab("profile"); setProfileDetail("Security"); }
     // My shop: see openMyShop.
     else if (deepLinkTarget === "myshop") openMyShop();
@@ -2505,8 +2565,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       const loaded = creatorProfile || (await loadCreatorProfile());
       if (!loaded) return;
       if (creatorSetupDone(loaded) || loaded.setupSkippedAt) return;
-      setCreatorError("");
-      setShowCreatorSetup(true);
+      openCreatorSetup("splash");
     }}
     aria-label={shareRole === "merchant" ? "Switch to personal profile" : "Switch to creator profile"}
     className="v2-tap"
@@ -2605,10 +2664,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       }}
     >{otherWordsSaving ? "Saving\u2026" : "Save"}</button></div>
   }{shareRole === "merchant" && creatorProfile && !creatorSetupDone(creatorProfile) && <button
-    onClick={() => {
-      setCreatorError("");
-      setShowCreatorSetup(true);
-    }}
+    onClick={() => openCreatorSetup("name")}
     className="v2-tap"
     style={{
       display: "flex",
@@ -4302,8 +4358,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     data-testid="creator-name-gate-save"
     onClick={() => {
       setCreatorNameGate(false);
-      setCreatorError("");
-      setShowCreatorSetup(true);
+      openCreatorSetup("name");
     }}
     className="v2-tap"
     style={{ marginTop: 18, height: 50, borderRadius: 16, border: "none", background: T.gradButton, color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", boxShadow: `0 10px 24px rgba(${T.accentRgb},.28)` }}
@@ -4357,13 +4412,23 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     myGloobalId={myGloobalId}
     creator={creatorProfile}
     onSave={saveCreatorProfile}
+    onSaveStep={saveCreatorStep}
+    onSaveShare={saveShareFromSetup}
+    startStep={creatorSetupStart}
+    shareRate={myShareRate}
+    ccyCode={ccyCode}
+    mobileNumber={mobileNumber}
+    onToast={showToast2}
+    onOpenPage={() => { setShowCreatorSetup(false); openMyShop(); }}
+    onShowQr={() => { setShowCreatorSetup(false); setShopCode(gloobalAnimalQrRandom()); }}
+    onEditLook={() => { setShowCreatorSetup(false); setShowShopTheme(true); }}
     onSkip={skipCreatorSetup}
     // Closing with the back arrow is the same thing as skipping, and is
     // recorded the same way. Treating a dismissal as "ask me again next
     // flip" and a tap on "Set this up later" as "don't" would make the
     // difference between two ways of leaving a screen load-bearing,
     // which nobody would guess and nobody should have to.
-    onClose={skipCreatorSetup}
+    onClose={closeCreatorSetup}
     countryIso={dialCountry && dialCountry.iso}
     saving={creatorSaving}
     error={creatorError}
@@ -4649,10 +4714,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     creator={creatorProfile}
     myGloobalId={myGloobalId}
     onLoad={loadCreatorProfile}
-    onEdit={() => {
-      setCreatorError("");
-      setShowCreatorSetup(true);
-    }}
+    onEdit={() => openCreatorSetup()}
     // The code screen the Receive tile already opens — one QR screen for
     // the account, not a second one that would have to be kept in step
     // with it. It is the same account either way.

@@ -5286,6 +5286,46 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
 // GET /api/bazaar/suggest?q=sam&country=IN
 // What to offer while somebody types: up to four shops, five item names
 // and the categories the words mean. Names only — no money, no order.
+// GET /api/bazaar/showcase — the "Just opened" list on the splash a person
+// sees the first time they flip to the Creator side (0199): the six newest
+// listed shops, newest first, with when each opened, and three counts. Only
+// what the listing already shows — names, colour, logo, category, share —
+// plus the city, and that only for a shop whose address is public. Too few
+// shops and the app draws labelled examples instead; it never invents one.
+app.get('/api/bazaar/showcase', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const rows = await bazaarCandidates({});
+    const when = (r) => (r.joinedAt ? new Date(r.joinedAt).getTime() : 0);
+    const picked = rows.slice().sort((a, b) => when(b) - when(a)).slice(0, 6);
+    const ids = picked.map((r) => r._id);
+    const [logos, places] = await Promise.all([
+      CreatorLogo.find({ userId: { $in: ids } }).select('userId dataUrl').lean(),
+      User.find({ _id: { $in: ids }, 'creatorProfile.addressPublic': true }).select('_id creatorProfile.addressParts.city').lean()
+    ]);
+    const logoBy = new Map(logos.map((l) => [String(l.userId), l.dataUrl]));
+    const cityBy = new Map(places.map((u) => [String(u._id), String((((u.creatorProfile || {}).addressParts) || {}).city || '').slice(0, 40)]));
+    const listed = { 'creatorProfile.handle': { $type: 'string', $ne: '' }, 'creatorProfile.listed': { $ne: false } };
+    const [shops, countries, week] = await Promise.all([
+      User.countDocuments(listed),
+      User.distinct('countryIso', listed),
+      User.countDocuments({ ...listed, 'creatorProfile.joinedAt': { $gte: new Date(Date.now() - 7 * 86400000) } })
+    ]);
+    return res.json({
+      success: true,
+      shops: picked.map((r) => ({
+        symbolId: r.symbolId, countryIso: r.countryIso, handle: r.handle, handleFirst: r.handleFirst, handleLast: r.handleLast,
+        category: r.category, subcategory: r.subcategory, otherWords: r.otherWords || '', color: r.color,
+        sharePct: r.sharePct || 0, logo: logoBy.get(String(r._id)) || null, city: cityBy.get(String(r._id)) || '',
+        joinedAt: r.joinedAt || null
+      })),
+      counts: { shops, countries: countries.filter(Boolean).length, week }
+    });
+  } catch (error) {
+    console.error('Bazaar showcase error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load shops right now.' });
+  }
+});
+
 app.get('/api/bazaar/suggest', lookupLimit, requireAuth, async (req, res) => {
   try {
     const q = bazaar.bazaarQuery(req.query.q);

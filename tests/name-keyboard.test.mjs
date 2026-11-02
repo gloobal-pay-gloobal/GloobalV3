@@ -315,7 +315,8 @@ test("the board moves the floating map button out of its own way", () => {
   // screen that mounts it, so a fourth screen cannot forget.
   const src = kbSrc();
   assert.match(src, /gloobal:blockingOverlay/);
-  assert.match(src, /fire\(Boolean\(open\)\)/);
+  // Only while open, so every "on" has exactly one "off" (0199).
+  assert.match(src, /if \(!open\) return undefined;\s*fire\(true\);/);
   assert.match(src, /return \(\) => fire\(false\)/,
     "the map button has to come back when the board closes");
 });

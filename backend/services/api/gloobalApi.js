@@ -1802,6 +1802,18 @@ var GloobalApi = {
     return shops;
   },
 
+  // The first-flip splash (0199): real shops and three counts, or null when
+  // the server cannot be reached, so the splash draws its examples.
+  async bazaarShowcase() {
+    try {
+      const result = await gloobalApiClient.get("/api/bazaar/showcase");
+      if (!result || !Array.isArray(result.shops)) return null;
+      return { shops: result.shops, counts: result.counts || { shops: 0, countries: 0, week: 0 } };
+    } catch (e) {
+      return null;
+    }
+  },
+
   // What to offer while somebody types: shops, item names, categories.
   async bazaarSuggest(q, country = "") {
     const p = new URLSearchParams();

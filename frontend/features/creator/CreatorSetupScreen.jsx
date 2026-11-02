@@ -1,6 +1,6 @@
 // src/features/creator/CreatorSetupScreen.jsx
 import { useState as useState53, useEffect as useEffect50, useRef as useRef30 } from "react";
-import { Camera as Camera6, Check as Check9, X as X12, MapPin as MapPin5, Loader as Loader5, Pencil as Pencil4, QrCode as QrCode2, Share2 as Share26, Copy as Copy5, Eye as Eye3, EyeOff as EyeOff4, Store as Store3, ShieldCheck as ShieldCheck2, ChevronRight as ChevronRight9, Contact as Contact4, ArrowLeftRight, Volume2 as VolumeOn1, VolumeX as VolumeOff1 } from "lucide-react";
+import { Camera as Camera6, Check as Check9, X as X12, MapPin as MapPin5, Loader as Loader5, Pencil as Pencil4, QrCode as QrCode2, Share2 as Share26, Copy as Copy5, Eye as Eye3, EyeOff as EyeOff4, Store as Store3, ShieldCheck as ShieldCheck2, ChevronRight as ChevronRight9, Contact as Contact4, ArrowLeftRight, Volume2 as VolumeOn1, VolumeX as VolumeOff1, Palette as PaletteSu, Percent as PercentSu, Sparkles as SparklesSu, MessageCircle as MessageSu, Phone as PhoneSu, Instagram as InstagramSu, Plus as PlusSu, Clock as ClockSu } from "lucide-react";
 
 // ── THE CREATOR SIDE INTRODUCES ITSELF ──────────────────────────────────
 //
@@ -213,12 +213,116 @@ function CreatorNameBox({ value, onChange, placeholder, label, tone, quiet = fal
   />;
 }
 
+// ── SETUP AS FIVE SHORT STEPS (0199) ────────────────────────────────────
+//
+// This was one long form under the title "Your creator name": name, font,
+// what you sell, Bazaar, hours, about and contacts, address, and the
+// message on the code, all in one scroll with one Save at the bottom. The
+// founder asked for it reworked as a flow, and chose from the drawings:
+//
+//   * the first flip opens on GLOOBAL बाज़ार — real shops from around the
+//     world and a Join button (ShopSetupSplash, shopSetupSplash.jsx);
+//   * five steps — Name & logo (About folded in), What you sell, Where &
+//     when, Look, Creator Share — each with Skip except the name;
+//   * the shop's own card on top of every step, filling in as it goes;
+//   * Creator Share from 0% to 7%, the range the server already allows;
+//   * a "Your shop is open" screen, and later an Edit list (the hub) that
+//     opens any one step on its own instead of the long form.
+//
+// Every step SAVES as it is left, through onSaveStep, so a person who stops
+// after step two has a shop with a name and a category rather than nothing.
+// The name step is the one that reserves the handle, and the only one that
+// cannot be skipped: until it exists the Creator side cannot take money.
+var CREATOR_SETUP_STEPS = [
+  { key: "name", title: "Your shop name", row: "Name & logo" },
+  { key: "sell", title: "What you sell", row: "What you sell" },
+  { key: "where", title: "Where & when", row: "Where & when" },
+  { key: "look", title: "How it looks", row: "Look & QR message" },
+  { key: "share", title: "Creator Share", row: "Creator Share" }
+];
+
+// The ready looks offered in setup. Each sets every dial at once, the same
+// way the Look screen's Style does; the full set stays on that screen.
+var CREATOR_SETUP_LOOKS = ["chai", "mithai", "kirana", "pharmacy", "dhaba", "boutique"];
+
+// Creator Share's quick picks. Whole numbers to tap, and a slider beside
+// them for anything in between, to 0.01 — what My Share has always taken.
+var CREATOR_SHARE_STEPS = [0, 1, 2, 3, 4, 5, 6, 7];
+
+// Opening hours as three presets instead of a week grid; "Set my own" still
+// opens the grid. Built in the person's own zone so "7am" is their 7am.
+function creatorHoursPreset(key) {
+  let tz = "UTC";
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { /* UTC */ }
+  const day = (open, close, closed = false) => ({ open, close, closed });
+  if (key === "daily") return { tz, days: OPEN_HOURS_DAYS.map(() => day("07:00", "22:00")) };
+  if (key === "weekdays") return { tz, days: OPEN_HOURS_DAYS.map((d) => (d === "Sun" ? day("09:00", "21:00", true) : day("09:00", "21:00"))) };
+  return null;
+}
+function creatorHoursWhich(hours) {
+  if (!hours || !Array.isArray(hours.days) || hours.days.length !== 7) return "none";
+  const sig = (h) => JSON.stringify(h.days.map((d) => [d.open, d.close, Boolean(d.closed)]));
+  if (sig(hours) === sig(creatorHoursPreset("daily"))) return "daily";
+  if (sig(hours) === sig(creatorHoursPreset("weekdays"))) return "weekdays";
+  return "own";
+}
+
+// The card at the top of every step: the shop as it will look, in its own
+// colour, cover and font, with whatever this step has filled in.
+function CreatorSetupCard({ look, name, tagline, logo, chips = [], badge = "", onLogo, big = false, dim = false }) {
+  const cover = look.coverStyle === "pattern" ? shopPatternCss(look.pattern, look.color, look.dark)
+    : `linear-gradient(140deg, ${look.hero.from} 0%, ${look.hero.to} 100%)`;
+  const mark = big ? 70 : 58;
+  const markBox = {
+    position: "relative", flexShrink: 0, width: mark, height: mark, borderRadius: big ? 20 : 16, padding: 0, marginTop: -(mark / 2) - 4,
+    border: logo ? "3px solid #fff" : `1.5px dashed ${look.hero.from}`, background: logo ? "#fff" : T.surface,
+    boxShadow: "0 4px 12px rgba(0,0,0,.16)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "visible"
+  };
+  const markInner = logo
+    ? <img src={logo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: big ? 17 : 13 }} />
+    : <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><Camera6 size={17} color={look.hero.from} /><span style={{ fontSize: 9.5, fontWeight: 800, color: look.hero.from }}>Logo</span></span>;
+  return <div data-creator-live-card="" style={{
+    position: "relative", overflow: "hidden", borderRadius: big ? 24 : 20, color: "#fff", flexShrink: 0,
+    background: `linear-gradient(140deg, ${look.hero.from} 0%, ${look.hero.to} 100%)`, boxShadow: `0 12px 26px ${look.hero.glow}`
+  }}><div aria-hidden="true" style={{ height: big ? 72 : 50, background: cover }} />{badge ? <span style={{
+    position: "absolute", right: 10, top: 9, fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase",
+    background: "rgba(15,20,30,.55)", borderRadius: 999, padding: "3px 8px"
+  }}>{badge}</span> : null}<div style={{ display: "flex", gap: 12, padding: big ? "0 16px 16px" : "0 14px 13px", alignItems: big ? "flex-start" : "center", flexDirection: big ? "column" : "row" }}>{onLogo ? <button
+    type="button"
+    onClick={onLogo}
+    aria-label={logo ? "Change your creator logo" : "Add your creator logo"}
+    className="v2-tap"
+    style={{ ...markBox, cursor: "pointer" }}
+  >{markInner}<span aria-hidden="true" style={{
+    position: "absolute", right: -7, bottom: -7, width: 24, height: 24, borderRadius: "50%", background: T.surface,
+    boxShadow: "0 2px 8px rgba(0,0,0,0.2)", display: "flex", alignItems: "center", justifyContent: "center"
+  }}><Camera6 size={12} color={look.hero.from} /></span></button> : <span style={markBox}>{markInner}</span>}<span style={{ flex: 1, minWidth: 0, paddingTop: big ? 0 : 8 }}><span style={{
+    display: "block", fontSize: big ? 28 : 23, lineHeight: 1.12, color: "#fff", overflowWrap: "anywhere",
+    fontFamily: look.font.stack, fontWeight: look.font.weight, opacity: dim ? 0.6 : 1
+  }}>{name}</span>{tagline ? <span style={{ display: "block", fontSize: 12.5, fontWeight: 600, opacity: 0.88, marginTop: 3 }}>{tagline}</span> : null}{chips.length ? <span style={{
+    display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7
+  }}>{chips.map((c) => <span key={c.text} style={{
+    fontSize: 10.5, fontWeight: 800, borderRadius: 999, padding: "3px 8px",
+    background: c.good ? "#DCFCE7" : "rgba(255,255,255,0.18)", color: c.good ? "#166534" : "#fff"
+  }}>{c.text}</span>)}</span> : null}</span></div></div>;
+}
+
 function CreatorSetupScreen({
   myGloobalId,
   creator,
   onSave,
+  onSaveStep,
+  onSaveShare,
   onSkip,
   onClose,
+  onOpenPage,
+  onShowQr,
+  onEditLook,
+  onToast,
+  startStep = "name",
+  shareRate = 1,
+  ccyCode = "",
+  mobileNumber = "",
   countryIso = "",
   saving = false,
   error = ""
@@ -245,6 +349,8 @@ function CreatorSetupScreen({
     return SHOP_FONTS[saved] && saved !== "grotesk" ? saved : "mukta";
   });
   const [fontsOpen, setFontsOpen] = useState53(false);
+  // The one line under the name, the same field Look's Tagline sets.
+  const [tagline, setTagline] = useState53((creator && creator.shop && creator.shop.tagline) || "");
   // What kind of shop, for Gloobal बाज़ार's categories, and whether to be
   // listed there at all. Listed is ON unless the creator turned it off.
   const [category, setCategoryRaw] = useState53((creator && creator.category) || "");
@@ -261,9 +367,20 @@ function CreatorSetupScreen({
   const [listed, setListed] = useState53(!(creator && creator.listed === false));
   // Null until the creator turns hours on; see openHoursEditor.jsx.
   const [hours, setHours] = useState53((creator && creator.hours) || null);
+  const [ownHours, setOwnHours] = useState53(() => creatorHoursWhich((creator && creator.hours) || null) === "own");
   // A few lines about the shop, and how to reach it. All optional.
   const [about, setAbout] = useState53((creator && creator.about) || "");
+  const [aboutOpen, setAboutOpen] = useState53(Boolean(creator && creator.about));
   const [contacts, setContacts] = useState53(() => Object.assign({ whatsapp: "", phone: "", instagram: "" }, (creator && creator.contacts) || {}));
+  // Which of the three buttons are switched on. Kept apart from the text so
+  // switching one off and on again does not lose what was typed.
+  const [reachOn, setReachOn] = useState53(() => ({
+    whatsapp: Boolean(contacts.whatsapp), phone: Boolean(contacts.phone), instagram: Boolean(contacts.instagram)
+  }));
+  // The ready look picked in step four, if any.
+  const [lookKey, setLookKey] = useState53((creator && creator.shop && creator.shop.theme) || "");
+  // Creator Share, as a percentage.
+  const [rate, setRate] = useState53(() => Math.min(7, Math.max(0, Number(shareRate) || 0)));
   // Every face is drawn in the person's name — the three tiles, the live
   // card and the More fonts list — so all of them are fetched up front.
   useEffect50(() => { Object.keys(SHOP_FONTS).forEach(ensureShopFont); }, []);
@@ -275,6 +392,20 @@ function CreatorSetupScreen({
   // good, and a phone that cannot write their own alphabet is how a shop
   // ends up called something its owner would not have chosen.
   const [kbField, setKbField] = useState53("");
+
+  // Where in the flow. "hub" is the Edit list; `single` means one step was
+  // opened from it and Save goes back there rather than on.
+  const hubMode = startStep === "hub";
+  const [step, setStep] = useState53(startStep);
+  const [cameFromSplash, setCameFromSplash] = useState53(startStep === "splash");
+  const [busy, setBusy] = useState53(false);
+  const [stepError, setStepError] = useState53("");
+  const [savedAs, setSavedAs] = useState53(() => ({
+    handle: (creator && creator.handle) || "",
+    first: (creator && creator.handleFirst) || "",
+    last: (creator && creator.handleLast) || "",
+    logo: (creator && creator.logo) || null
+  }));
 
   const availability = useHandleAvailability(first, last);
 
@@ -315,8 +446,8 @@ function CreatorSetupScreen({
   // Other needs its two words: a shop that is only "Other" cannot be
   // found by what it makes. The server holds the same rule.
   const otherReady = category !== "other" || (Boolean(otherWords.trim()) && !bazaarOtherWordsProblem(otherWords));
-  const canSave = enough && !saving && !refused;
-  const canSaveAll = canSave && otherReady;
+  const canSave = enough && !saving && !busy && !refused;
+  const nameKept = savedAs.handle && first.trim() === savedAs.first && last.trim() === savedAs.last;
 
   const pickLogo = (e) => {
     const file = e.target.files && e.target.files[0];
@@ -338,32 +469,67 @@ function CreatorSetupScreen({
     ? `${first.trim().toLowerCase()}.${last.trim().toLowerCase()}`
     : (first.trim().toLowerCase() || "your name");
 
-  // The card at the top is painted in this shop's own colour, from the same
-  // resolver the shop page uses, so the setup screen and the page it sets up
-  // look like one thing. A creator with no colour yet gets Gloobal violet.
-  const look = resolveShopTheme(Object.assign({}, (creator && creator.shop) || {}, { font }));
+  // The card is painted from the same resolver the shop page uses, so the
+  // setup screen and the page it sets up look like one thing. A look picked
+  // in step four shows here at once, in the font chosen in step one.
+  const lookBase = lookKey && SHOP_THEMES[lookKey] ? creatorSetupLookDials(lookKey) : ((creator && creator.shop) || {});
+  const look = resolveShopTheme(Object.assign({}, (creator && creator.shop) || {}, lookBase, { font }));
   const fontFace = SHOP_FONTS[font] || SHOP_FONTS.grotesk;
-  const shownName = enough ? (twoParts ? `${first.trim()} ${last.trim()}` : first.trim()) : "Your name";
+  const shownName = enough ? (twoParts ? `${first.trim()} ${last.trim()}` : first.trim()) : "Your shop";
   const quickKeys = SHOP_FONT_QUICK.map((q) => q.key);
   const moreName = quickKeys.indexOf(font) < 0 ? fontFace.name : "";
+  const ccy = String(ccyCode || "").toUpperCase();
 
-  // A white section card. One shape for all three, so the screen reads as
-  // three things to fill in rather than one long form.
+  // What the card says under the name, step by step.
+  const catInfo = (BAZAAR_CATEGORY_INFO || []).find((c) => c.key === category);
+  const subInfo = category ? ((BAZAAR_SUBCATEGORY_INFO[category] || []).find((s) => s[0] === subcategory)) : null;
+  const status = openHoursStatus(hours, new Date());
+  const cardChips = (k) => {
+    if (k === "sell") return [catInfo ? { text: catInfo.label } : null, subInfo ? { text: subInfo[1] } : null].filter(Boolean);
+    if (k === "where") {
+      const city = (addressParts && (addressParts.city || addressParts.area)) || "";
+      return [status.known ? { text: status.open ? "Open now" : "Closed now", good: status.open } : null, city && addressPublic ? { text: city } : null].filter(Boolean);
+    }
+    if (k === "share") return rate > 0 ? [{ text: `${creatorShareText(rate)}% back`, good: true }] : [];
+    if (k === "done" || k === "hub") {
+      return [
+        status.known ? { text: status.open ? "Open now" : "Closed now", good: status.open } : null,
+        rate > 0 ? { text: `${creatorShareText(rate)}% back`, good: true } : null,
+        subInfo ? { text: subInfo[1] } : (catInfo ? { text: catInfo.label } : null)
+      ].filter(Boolean);
+    }
+    return [];
+  };
+
+  // A white section card, one shape for every group on every step.
   const section = (title, Icon, children, aside) => <section style={{
-    background: T.surface, borderRadius: 22, padding: "16px 16px 18px", marginTop: 14,
+    background: T.surface, borderRadius: 20, padding: "14px 14px 16px", marginTop: 12,
     boxShadow: `0 1px 2px rgba(${T.inkRgb},0.04), 0 6px 18px rgba(${T.inkRgb},0.05)`
-  }}><div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>{Icon ? <span style={{
+  }}>{title ? <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>{Icon ? <span style={{
     width: 22, height: 22, borderRadius: 7, background: T.accentSoft,
     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
   }}><Icon size={12} color={T.accent} /></span> : null}<span style={{
     flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay
-  }}>{title}</span>{aside || null}</div>{children}</section>;
+  }}>{title}</span>{aside || null}</div> : null}{children}</section>;
 
   const fieldBox = {
     width: "100%", border: `1.5px solid ${T.line}`, borderRadius: 14, background: T.bg,
     padding: "12px 14px", fontSize: 14, lineHeight: 1.5, color: T.ink, fontFamily: "inherit",
     outline: "none", resize: "none", boxSizing: "border-box"
   };
+  const small = (text) => <div style={{
+    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, margin: "14px 2px 7px"
+  }}>{text}</div>;
+  const switchRow = (title, sub, on, onToggle, label) => <div style={{
+    display: "flex", alignItems: "center", gap: 12, marginTop: 12, paddingTop: 11, borderTop: `1px solid ${T.line}`
+  }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>{title}</span><span style={{
+    display: "block", fontSize: 11.5, lineHeight: 1.45, color: T.inkFaint, marginTop: 2
+  }}>{sub}</span></span><ProfileToggle on={on} onToggle={onToggle} label={label} /></div>;
+  const pick = (on) => ({
+    border: "none", cursor: "pointer", fontFamily: "inherit", borderRadius: 13,
+    background: on ? T.accentSoft : T.bg, color: on ? T.accent : T.inkSoft,
+    boxShadow: on ? `inset 0 0 0 2px ${T.accent}` : `inset 0 0 0 1px ${T.line}`
+  });
 
   // One font tile: the person's OWN name in that face, with the face's
   // label under it. Their name, not "Aa" — the question is how MY shop
@@ -394,6 +560,106 @@ function CreatorSetupScreen({
     }}>{label}</span></button>;
   };
 
+  // ── SAVING A STEP ────────────────────────────────────────────────────
+  //
+  // Each step sends only its own fields. The handle is sent only when it
+  // changed, so going back to fix a tagline does not re-run the name rules
+  // (or re-stamp completedAt) for a name nobody touched.
+  const stepPatch = (k) => {
+    if (k === "name") {
+      const patch = { about: about.trim() };
+      if (!nameKept) Object.assign(patch, { handleFirst: first.trim(), handleLast: last.trim() });
+      if (logo && logo !== savedAs.logo) patch.logo = logo;
+      return { patch, shop: { font, tagline: tagline.trim() } };
+    }
+    if (k === "sell") {
+      return {
+        patch: {
+          category,
+          subcategory: category ? subcategory : "",
+          category2: category2 && category2 !== category ? category2 : "",
+          listed,
+          ...(category === "other" ? { otherWords: otherWords.trim() } : {})
+        }
+      };
+    }
+    if (k === "where") {
+      const shown = {};
+      for (const key of ["whatsapp", "phone", "instagram"]) shown[key] = reachOn[key] ? String(contacts[key] || "").trim() : "";
+      return { patch: { addressParts, addressPublic, hours, contacts: shown } };
+    }
+    if (k === "look") {
+      return {
+        patch: { scanNote: scanNote.trim(), scanNoteStyle },
+        shop: lookKey && SHOP_THEMES[lookKey] ? Object.assign(creatorSetupLookDials(lookKey), { font }) : null
+      };
+    }
+    return null;
+  };
+
+  const order = CREATOR_SETUP_STEPS.map((s) => s.key);
+  const nextOf = (k) => (order.indexOf(k) >= 0 && order.indexOf(k) < order.length - 1 ? order[order.indexOf(k) + 1] : "done");
+  const prevOf = (k) => (order.indexOf(k) > 0 ? order[order.indexOf(k) - 1] : (cameFromSplash ? "splash" : null));
+
+  const commit = async (k) => {
+    setStepError("");
+    if (k === "share") {
+      const had = Math.round((Number(shareRate) || 0) * 100);
+      if (Math.round(rate * 100) === had) return true;
+      if (!onSaveShare) return true;
+      const ok = await onSaveShare(rate);
+      if (!ok) setStepError("Creator Share was not changed. You can set it again from your shop.");
+      return Boolean(ok);
+    }
+    const body = stepPatch(k);
+    if (!body || !onSaveStep) return true;
+    const answer = await onSaveStep(body.patch, body.shop);
+    if (!answer || !answer.ok) {
+      setStepError((answer && answer.message) || "Could not save that right now.");
+      return false;
+    }
+    if (k === "name") setSavedAs({ handle: (answer.creator && answer.creator.handle) || preview, first: first.trim(), last: last.trim(), logo });
+    return true;
+  };
+  const go = async () => {
+    if (busy) return;
+    if (step === "name" && !canSave) return;
+    if (step === "sell" && !otherReady) return;
+    setBusy(true);
+    const ok = await commit(step);
+    setBusy(false);
+    if (!ok) return;
+    if (hubMode) { setStep("hub"); return; }
+    setStep(nextOf(step));
+  };
+  const back = () => {
+    setStepError("");
+    if (hubMode && step !== "hub") { setStep("hub"); return; }
+    if (step === "hub" || step === "done") { onClose && onClose(); return; }
+    const prev = prevOf(step);
+    if (prev) { setStep(prev); return; }
+    // The name step with nothing behind it. Leaving here before the name
+    // exists is the old "Later"; after, it just closes.
+    if (savedAs.handle) onClose && onClose(); else onSkip && onSkip();
+  };
+
+  // ── THE SPLASH ──────────────────────────────────────────────────────
+  if (step === "splash") {
+    return <ShopSetupSplash
+      onJoin={() => { setCameFromSplash(true); setStep("name"); }}
+      onLater={onSkip}
+    />;
+  }
+
+  const stepIndex = order.indexOf(step);
+  const stepInfo = CREATOR_SETUP_STEPS[stepIndex] || null;
+  const isStep = stepIndex >= 0;
+  const ctaLabel = step === "name"
+    ? (hubMode ? "Save" : "Save name & next")
+    : hubMode ? "Save" : step === "share" ? "Open my shop" : "Next";
+  const ctaOn = step === "name" ? canSave : step === "sell" ? otherReady && !busy : !busy;
+  const shareSplit = (n) => <GeuTwin amount={n} currency={ccy} own={ccy} />;
+
   return <div style={{
     position: "fixed",
     inset: 0,
@@ -406,91 +672,60 @@ function CreatorSetupScreen({
     display: "flex",
     alignItems: "center",
     gap: 12,
-    padding: "calc(16px + env(safe-area-inset-top, 0px)) 16px 8px",
+    padding: "calc(14px + env(safe-area-inset-top, 0px)) 16px 8px",
     flexShrink: 0
-  }}><NavBackButton onClick={onClose} /><span style={{
-    flex: 1,
-    textAlign: "center",
-    fontSize: 17,
-    fontWeight: 800,
-    color: T.ink,
-    fontFamily: T.fontDisplay
-  }}>Your creator name</span>{
-    /* The back button's own width, so the title is centred on the screen
-       rather than on the space left beside it. */
-  }<span aria-hidden="true" style={{ width: 40, flexShrink: 0 }} /></div><div style={{
-    flex: 1,
-    minHeight: 0,
-    overflowY: "auto",
-    WebkitOverflowScrolling: "touch",
-    // Room for the board, so the availability line under the name boxes
-    // — the one that says whether the name is yours — is not the first
-    // thing it covers.
-    padding: kbField ? "6px 16px 58vh" : "6px 16px 24px"
-  }}>{
-    /* ── THE LIVE CARD ────────────────────────────────────────────────
-       What customers will see, drawn as it is typed: the logo, the name in
-       the chosen font, and the address people can type to pay. It IS the
-       preview, so the screen needs no separate one — and the logo is
-       changed by tapping it here, on the card, where it will be seen.
-
-       A square mark rather than a circle, and that is the whole distinction
-       between this and the profile photo: a round frame reads as a face and
-       a squared one reads as a shop's sign. */
-  }<div data-creator-live-card="" style={{
-    position: "relative", overflow: "hidden", borderRadius: 26, padding: "18px 18px 16px", color: "#fff",
-    background: `linear-gradient(140deg, ${look.hero.from} 0%, ${look.hero.to} 100%)`,
-    boxShadow: `0 14px 30px ${look.hero.glow}`
-  }}><span aria-hidden="true" style={{
-    position: "absolute", right: -50, top: -60, width: 170, height: 170, borderRadius: "50%",
-    background: "rgba(255,255,255,0.08)", pointerEvents: "none"
-  }} /><div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}><button
-    onClick={() => fileRef.current && fileRef.current.click()}
-    aria-label={logo ? "Change your creator logo" : "Add your creator logo"}
-    className="v2-tap"
+  }}><NavBackButton onClick={back} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
+    display: "block", fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay
+  }}>{step === "hub" ? "Edit your shop" : step === "done" ? "" : stepInfo ? stepInfo.title : ""}</span>{isStep && !hubMode ? <span style={{
+    display: "block", fontSize: 11.5, fontWeight: 700, color: T.inkSoft, marginTop: 1
+  }}>{`Step ${stepIndex + 1} of ${order.length}`}</span> : step === "hub" ? <span style={{
+    display: "block", fontSize: 11.5, fontWeight: 700, color: T.inkSoft, marginTop: 1
+  }}>Changes show to customers once saved</span> : null}</span>{isStep && !hubMode && step !== "name" ? <button
+    type="button"
+    data-testid="creator-setup-skip"
+    onClick={() => { setStepError(""); setStep(nextOf(step)); }}
+    style={{ border: "none", background: "none", color: T.accent, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", padding: "8px 4px" }}
+  >Skip</button> : null}</div>{isStep && !hubMode ? <div aria-hidden="true" style={{
+    display: "flex", gap: 5, padding: "0 16px 8px", flexShrink: 0
+  }}>{order.map((k, i) => <span key={k} style={{ flex: 1, height: 4, borderRadius: 2, background: i <= stepIndex ? T.accent : T.line }} />)}</div> : null}<div
+    data-creator-setup-step={step}
     style={{
-      position: "relative", flexShrink: 0, width: 76, height: 76, borderRadius: 22, padding: 0,
-      border: logo ? "3px solid rgba(255,255,255,0.92)" : "1.5px dashed rgba(255,255,255,0.7)",
-      background: logo ? "none" : "rgba(255,255,255,0.14)", cursor: "pointer",
-      display: "flex", alignItems: "center", justifyContent: "center"
+      flex: 1,
+      minHeight: 0,
+      overflowY: "auto",
+      WebkitOverflowScrolling: "touch",
+      // Room for the board, so the availability line under the name boxes
+      // — the one that says whether the name is yours — is not the first
+      // thing it covers.
+      padding: kbField ? "6px 16px 58vh" : "6px 16px 24px"
     }}
-  >{logo ? <img
-    src={logo}
-    alt=""
-    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: 19 }}
-  /> : <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}><Camera6 size={20} color="#fff" /><span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff" }}>Logo</span></span>}<span
-    aria-hidden="true"
-    style={{
-      position: "absolute", right: -7, bottom: -7, width: 26, height: 26, borderRadius: "50%",
-      background: T.surface, boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-      display: "flex", alignItems: "center", justifyContent: "center"
-    }}
-  ><Camera6 size={12} color={look.hero.from} /></span></button><input
+  >{step === "done" ? <div style={{ textAlign: "center", margin: "4px 0 14px" }}><div style={{
+    fontSize: 23, fontWeight: 800, color: T.ink, fontFamily: look.font.stack, lineHeight: 1.2
+  }}>{`${shownName} is open`}</div><div style={{ fontSize: 13, color: T.inkSoft, fontWeight: 600, marginTop: 6 }}>People can pay you at <b style={{ color: T.ink }}>{savedAs.handle || preview}</b> from now.</div></div> : null}<CreatorSetupCard
+    look={look}
+    name={shownName}
+    tagline={tagline.trim()}
+    logo={logo}
+    dim={!enough}
+    big={step === "done"}
+    badge={step === "name" ? "Live preview" : ""}
+    chips={cardChips(step)}
+    onLogo={step === "name" ? () => fileRef.current && fileRef.current.click() : null}
+  /><input
     ref={fileRef}
     type="file"
     accept="image/*"
     onChange={pickLogo}
     style={{ display: "none" }}
-  /><span style={{ flex: 1, minWidth: 0 }}><span style={{
-    display: "block", fontSize: 24, lineHeight: 1.2, color: "#fff", overflowWrap: "anywhere",
-    fontFamily: fontFace.stack, fontWeight: fontFace.weight, opacity: enough ? 1 : 0.6
-  }}>{shownName}</span><span style={{
-    display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, maxWidth: "100%",
-    padding: "4px 10px", borderRadius: 999, background: "rgba(255,255,255,0.16)",
-    fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.95)"
-  }}><Store3 size={12} color="#fff" style={{ flexShrink: 0 }} /><span style={{
-    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-  }}>{preview}</span></span></span></div><p style={{
-    position: "relative", fontSize: 12, lineHeight: 1.5, color: "rgba(255,255,255,0.82)", margin: "14px 0 0"
-  }}>This is how people pay you as a creator — a name they can say, instead of twelve symbols.</p></div>
+  />{
 
-  {section("Name", Pencil4, <>{
-    /* ── THE NAME ─────────────────────────────────────────────────────
-       Still two parts with the dot drawn BETWEEN them rather than typed —
-       it cannot be deleted, doubled or misplaced — but now one joined
-       field, with the keyboard button at its edge, so it reads as one name
-       in two halves rather than two separate questions. */
-  }<div style={{
+  /* ── 1. NAME & LOGO ───────────────────────────────────────────────── */
+  step === "name" ? <>{section("", null, <>{
+    /* Still two parts with the dot drawn BETWEEN them rather than typed —
+       it cannot be deleted, doubled or misplaced — in one joined field,
+       with the keyboard button at its edge, so it reads as one name in two
+       halves rather than two separate questions. */
+  }<div style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 2px 7px" }}>Shop name</div><div style={{
     display: "flex", alignItems: "stretch", borderRadius: 16, background: T.bg, overflow: "hidden",
     boxShadow: `inset 0 0 0 1.5px ${tone === "bad" ? T.negative : tone === "good" ? T.positive : T.line}`,
     transition: "box-shadow 0.18s ease"
@@ -541,20 +776,36 @@ function CreatorSetupScreen({
     fontSize: 12,
     fontWeight: 700,
     margin: "9px 2px 0"
-  }}>{availability.status === "checking" && <><Loader5 size={13} color={T.inkFaint} /><span style={{ color: T.inkFaint }}>Checking…</span></>}{availability.status === "free" && <><Check9 size={13} color={T.positive} /><span style={{ color: T.positive }}>{availability.handle} is yours</span></>}{refused && <><X12 size={13} color={T.negative} /><span style={{ color: T.negative }}>{availability.message || "That name is taken."}</span></>}{(availability.status === "idle" || availability.status === "unknown") && <span style={{ color: T.inkFaint, fontWeight: 600 }}>
+  }}>{nameKept ? <><Check9 size={13} color={T.positive} /><span style={{ color: T.positive }}>{savedAs.handle} is yours</span></> : <>{availability.status === "checking" && <><Loader5 size={13} color={T.inkFaint} /><span style={{ color: T.inkFaint }}>Checking…</span></>}{availability.status === "free" && <><Check9 size={13} color={T.positive} /><span style={{ color: T.positive }}>{availability.handle} is yours</span></>}{refused && <><X12 size={13} color={T.negative} /><span style={{ color: T.negative }}>{availability.message || "That name is taken."}</span></>}{(availability.status === "idle" || availability.status === "unknown") && <span style={{ color: T.inkFaint, fontWeight: 600 }}>
         {enough ? preview : "A first part is needed. The second is optional."}
-      </span>}</div>{
+      </span>}</>}</div>{small(<>One line under your name <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, color: T.inkFaint }}>(optional)</span></>)}<input
+    id="creator-tagline"
+    value={tagline}
+    maxLength={60}
+    autoComplete="off"
+    placeholder="Chai since 2015"
+    onChange={(e) => setTagline(e.target.value.slice(0, 60))}
+    style={{ ...fieldBox, padding: "11px 14px" }}
+  />{aboutOpen ? <>{small(<>About your shop <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, color: T.inkFaint }}>(optional)</span></>)}<textarea
+    id="creator-about"
+    value={about}
+    onChange={(e) => setAbout(e.target.value.slice(0, 280))}
+    placeholder="Fresh chai and snacks since 2015. Orders for parties too."
+    aria-label="About your shop"
+    rows={3}
+    style={fieldBox}
+  /><div style={{ textAlign: "right", fontSize: 10.5, color: T.inkFaint, fontWeight: 700, margin: "4px 2px 0" }}>{about.length}/280</div></> : <button
+    type="button"
+    data-testid="creator-about-open"
+    onClick={() => setAboutOpen(true)}
+    style={{ display: "flex", alignItems: "center", gap: 7, border: "none", background: "none", padding: "12px 2px 2px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: T.accent }}
+  ><PlusSu size={15} />A few lines about your shop</button>}{
     /* ── HOW THE NAME IS WRITTEN ──────────────────────────────────────
-       "This type of suggestions i need during they create there name both
-       normal and custom": three suggestions drawn in the person's own name
-       — Clean, Classic, Bold — and every other face behind More fonts.
-       All of them carry Hindi AND English in one design, so both halves of
-       a name like रसोई Ghar come out in the same hand. The pick is the
-       shop's font, the same one the Look screen sets. */
-  }<div style={{
-    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase",
-    letterSpacing: 0.5, margin: "16px 2px 8px"
-  }}>Font</div><div style={{ display: "flex", gap: 8 }}>{SHOP_FONT_QUICK.map((q) => fontTile(q.key, q.label))}</div><button
+       Three suggestions drawn in the person's own name — Clean, Classic,
+       Bold — and every other face behind More fonts. All of them carry
+       Hindi AND English in one design, so both halves of a name like
+       रसोई Ghar come out in the same hand. */
+  }{small("Font")}<div style={{ display: "flex", gap: 8 }}>{SHOP_FONT_QUICK.map((q) => fontTile(q.key, q.label))}</div><button
     onClick={() => setFontsOpen(true)}
     className="v2-tap"
     style={{
@@ -570,20 +821,14 @@ function CreatorSetupScreen({
     display: "block", fontSize: 13, fontWeight: 800, color: T.ink
   }}>More fonts</span><span style={{
     display: "block", fontSize: 11, fontWeight: 600, color: moreName ? T.accent : T.inkFaint, marginTop: 1
-  }}>{moreName ? `Using ${moreName}` : `${Object.keys(SHOP_FONTS).length - SHOP_FONT_QUICK.length} more, each in your name`}</span></span><ChevronRight9 size={16} color={T.inkFaint} /></button></>)}
+  }}>{moreName ? `Using ${moreName}` : `${Object.keys(SHOP_FONTS).length - SHOP_FONT_QUICK.length} more, each in your name`}</span></span><ChevronRight9 size={16} color={T.inkFaint} /></button></>)}</> : null}{
 
-  {section("What you sell", Store3, <>{
-    /* ── THE SHOP'S CATEGORY ──────────────────────────────────────────
-       One of fourteen, so "Food & Chai" on Pay & Services gathers every
+  /* ── 2. WHAT YOU SELL ─────────────────────────────────────────────── */
+  step === "sell" ? <>{section("", null, <>{
+    /* One of fourteen, so "Food & Chai" on Pay & Services gathers every
        chai stall however each one spells chai. Optional: a shop with no
        category is still found by name and Near me. */
-  }<BazaarCategoryPicker value={category} onChange={setCategory} />{category === "other" ? <div style={{ marginTop: 14 }}><BazaarOtherWordsBox value={otherWords} onChange={setOtherWords} /></div> : null}{category && (BAZAAR_SUBCATEGORY_INFO[category] || []).length ? <div style={{ marginTop: 12 }}><div style={{
-    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 2px 7px"
-  }}>What kind exactly</div><BazaarSubcategoryPicker category={category} value={subcategory} onChange={setSubcategory} /></div> : null}{category ? <div style={{ marginTop: 12 }}><div style={{
-    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 2px 7px"
-  }}>Also show me in <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, color: T.inkFaint }}>(optional)</span></div><BazaarAlsoPicker primary={category} value={category2} onChange={setCategory2} /></div> : null}<div style={{
-    display: "flex", alignItems: "center", gap: 12, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.line}`
-  }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>
+  }<BazaarCategoryPicker value={category} onChange={setCategory} />{category === "other" ? <div style={{ marginTop: 14 }}><BazaarOtherWordsBox value={otherWords} onChange={setOtherWords} /></div> : null}{category && (BAZAAR_SUBCATEGORY_INFO[category] || []).length ? <div style={{ marginTop: 12 }}>{small("What kind exactly")}<BazaarSubcategoryPicker category={category} value={subcategory} onChange={setSubcategory} /></div> : null}{category ? <div style={{ marginTop: 12 }}>{small(<>Also show me in <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, color: T.inkFaint }}>(optional)</span></>)}<BazaarAlsoPicker primary={category} value={category2} onChange={setCategory2} /></div> : null}</>)}{section("", null, <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>
         Show my shop in <GloobalWordmark /> बाज़ार
       </span><span style={{ display: "block", fontSize: 11.5, lineHeight: 1.45, color: T.inkFaint, marginTop: 2 }}>{listed
     ? "People can find you by name, in your category, and in Near me if your address is public."
@@ -591,28 +836,69 @@ function CreatorSetupScreen({
     on={listed}
     onToggle={() => setListed((v) => !v)}
     label="Show my shop in GLOOBAL बाज़ार"
-  /></div></>)}
+  /></div>)}</> : null}{
 
-  {section("Opening hours", ClockHours, <OpenHoursEditor value={hours} onChange={setHours} />)}
-
-  {section("About & contact", Contact4, <>{
-    /* ── ABOUT AND CONTACT ────────────────────────────────────────────
-       All optional and all PUBLIC — said under the boxes, because a phone
-       number typed here is shown to everybody who opens the page. Each
-       filled one becomes a button there: WhatsApp, Call, Instagram. */
-  }<textarea
-    id="creator-about"
-    value={about}
-    onChange={(e) => setAbout(e.target.value.slice(0, 280))}
-    placeholder="Fresh chai and snacks since 2015. Orders for parties too."
-    aria-label="About your shop"
-    rows={3}
-    style={fieldBox}
-  /><div style={{ textAlign: "right", fontSize: 10.5, color: T.inkFaint, fontWeight: 700, margin: "4px 2px 10px" }}>{about.length}/280</div>{[
+  /* ── 3. WHERE & WHEN ──────────────────────────────────────────────── */
+  step === "where" ? <>{section("Address", MapPin5, <>{
+    /* Private unless its owner says otherwise, and the switch says who
+       will see it rather than naming a setting. The app cannot tell a
+       shop's address from the kitchen somebody cooks in, and the cost of
+       guessing wrong falls entirely on the person who typed it. */
+  }<CreatorAddressFields value={addressParts} onChange={setAddressParts} countryIso={countryIso} />{switchRow(
+    "Show this to people who pay me",
+    addressPublic ? "Anybody who opens your creator page sees this address and gets Directions to your pin." : "Only you can see this. Nobody paying you will.",
+    addressPublic, () => setAddressPublic((v) => !v), "Show my address to people who pay me"
+  )}</>)}{section("Open", ClockSu, <>{
+    /* Three presets for what most shops are, and the full grid behind the
+       third. "Don't show" is a real answer: a shop with no hours shows no
+       Open or Closed line at all, rather than a wrong one. */
+  }<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>{[
+    { key: "daily", title: "Every day", sub: "7am – 10pm" },
+    { key: "weekdays", title: "Mon – Sat", sub: "9am – 9pm" },
+    { key: "own", title: "Set my own", sub: "day by day" },
+    { key: "none", title: "Don't show", sub: "no Open line" }
+  ].map((o) => {
+    const which = ownHours ? "own" : creatorHoursWhich(hours);
+    const on = which === o.key;
+    return <button
+      key={o.key}
+      type="button"
+      data-testid={`creator-hours-${o.key}`}
+      aria-pressed={on}
+      onClick={() => {
+        if (o.key === "own") { setOwnHours(true); if (!hours) setHours(creatorHoursPreset("daily")); return; }
+        setOwnHours(false);
+        setHours(o.key === "none" ? null : creatorHoursPreset(o.key));
+      }}
+      style={{ ...pick(on), padding: "10px 8px", textAlign: "center" }}
+    ><span style={{ display: "block", fontSize: 13, fontWeight: 800 }}>{o.title}</span><span style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: on ? T.accent : T.inkFaint, marginTop: 1 }}>{o.sub}</span></button>;
+  })}</div>{ownHours ? <div style={{ marginTop: 12 }}><OpenHoursEditor value={hours} onChange={setHours} /></div> : null}</>)}{section("Buttons on your page", Contact4, <>{
+    /* ── HOW PEOPLE REACH YOU ─────────────────────────────────────────
+       All optional and all PUBLIC. WhatsApp and Call start from the
+       account's own number, but only once switched on: a number is never
+       published because a box happened to be pre-filled. */
+  }<div style={{ display: "flex", gap: 8 }}>{[
+    { key: "whatsapp", label: "WhatsApp", Icon: MessageSu },
+    { key: "phone", label: "Call", Icon: PhoneSu },
+    { key: "instagram", label: "Instagram", Icon: InstagramSu }
+  ].map(({ key, label, Icon }) => {
+    const on = Boolean(reachOn[key]);
+    return <button
+      key={key}
+      type="button"
+      data-testid={`creator-contact-${key}-toggle`}
+      aria-pressed={on}
+      onClick={() => {
+        setReachOn((r) => ({ ...r, [key]: !on }));
+        if (!on && key !== "instagram" && !String(contacts[key] || "").trim() && mobileNumber) setContacts((c) => ({ ...c, [key]: mobileNumber }));
+      }}
+      style={{ ...pick(on), flex: 1, padding: "10px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
+    ><Icon size={17} /><span style={{ fontSize: 11.5, fontWeight: 800 }}>{on ? `${label} ✓` : label}</span></button>;
+  })}</div>{[
     { key: "whatsapp", label: "WhatsApp number", placeholder: "+91 98765 43210", mode: "tel" },
     { key: "phone", label: "Phone to call", placeholder: "+91 98765 43210", mode: "tel" },
     { key: "instagram", label: "Instagram", placeholder: "rasoi.ghar", mode: "text" }
-  ].map(({ key, label, placeholder, mode }) => <label key={key} style={{ display: "block", marginBottom: 9 }}><span style={{
+  ].filter(({ key }) => Boolean(reachOn[key])).map(({ key, label, placeholder, mode }) => <label key={key} style={{ display: "block", marginTop: 10 }}><span style={{
     display: "block", fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: T.inkFaint, margin: "0 2px 5px"
   }}>{label}</span><input
     id={`creator-contact-${key}`}
@@ -622,40 +908,44 @@ function CreatorSetupScreen({
     placeholder={placeholder}
     onChange={(e) => setContacts((c) => ({ ...c, [key]: key === "instagram" ? e.target.value.replace(/^@/, "").slice(0, 30) : e.target.value.slice(0, 20) }))}
     style={{ ...fieldBox, padding: "11px 12px" }}
-  /></label>)}<div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45, margin: "2px 2px 0" }}>Anybody who opens your shop page sees these as buttons. Leave any empty to hide it.</div></>)}
+  /></label>)}<div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45, margin: "10px 2px 0" }}>Anybody who opens your shop page sees these as buttons. Leave any empty to hide it.</div></>)}</> : null}{
 
-  {section("Address", MapPin5, <>{
-    /* ── THE ADDRESS ──────────────────────────────────────────────────
-       Private unless its owner says otherwise, and the switch says who
-       will see it rather than naming a setting. The app cannot tell a
-       shop's address from the kitchen somebody cooks in, and the cost of
-       guessing wrong falls entirely on the person who typed it. */
-  }<CreatorAddressFields value={addressParts} onChange={setAddressParts} countryIso={countryIso} /><div style={{
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    marginTop: 14,
-    paddingTop: 12,
-    borderTop: `1px solid ${T.line}`
-  }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>
-        Show this to people who pay me
-      </span><span style={{ display: "block", fontSize: 11.5, lineHeight: 1.45, color: T.inkFaint, marginTop: 2 }}>{addressPublic
-    ? "Anybody who opens your creator page sees this address and gets Directions to your pin."
-    : "Only you can see this. Nobody paying you will."}</span></span><ProfileToggle
-    on={addressPublic}
-    onToggle={() => setAddressPublic((v) => !v)}
-    label="Show my address to people who pay me"
-  /></div></>)}
-
-  {section("A message on your code", ShieldCheck2, <>{
+  /* ── 4. LOOK ──────────────────────────────────────────────────────── */
+  step === "look" ? <>{section("Pick a look", PaletteSu, <><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{CREATOR_SETUP_LOOKS.map((key) => {
+    const t = SHOP_THEMES[key];
+    const l = resolveShopTheme({ theme: key });
+    const on = lookKey === key;
+    const ground = t.coverStyle === "pattern" ? shopPatternCss(t.pattern, l.color, l.dark) : `linear-gradient(140deg, ${l.hero.from}, ${l.hero.to})`;
+    return <button
+      key={key}
+      type="button"
+      data-testid={`creator-look-${key}`}
+      aria-pressed={on}
+      onClick={() => setLookKey(on ? "" : key)}
+      className="v2-tap"
+      style={{
+        border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0, overflow: "hidden", textAlign: "left",
+        background: l.dark ? "#1E1814" : T.surface, borderRadius: 13,
+        boxShadow: on ? `0 0 0 2.5px ${T.accent}, ${T.shadowCard}` : T.shadowCard
+      }}
+    ><span style={{ display: "block", height: 42, background: ground, position: "relative" }}><span style={{
+      position: "absolute", left: 7, bottom: -8, width: 20, height: 20, borderRadius: 6, background: l.color, border: "2px solid #fff"
+    }} />{on ? <span style={{
+      position: "absolute", top: 5, right: 5, width: 16, height: 16, borderRadius: "50%", background: T.accent,
+      display: "flex", alignItems: "center", justifyContent: "center"
+    }}><Check9 size={10} color="#fff" strokeWidth={3} /></span> : null}</span><span style={{
+      display: "block", padding: "11px 8px 8px", fontSize: 11.5, fontWeight: 800, color: l.dark ? "#F3EBE1" : T.ink, fontFamily: l.font.stack
+    }}>{t.name}</span></button>;
+  })}</div><div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45, margin: "10px 2px 0" }}>Colour, cover and pattern in one tap. Your font from step one stays.</div>{hubMode && onEditLook ? <button
+    type="button"
+    onClick={onEditLook}
+    style={{ display: "flex", alignItems: "center", gap: 6, border: "none", background: "none", padding: "10px 2px 0", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: T.accent }}
+  >Colour, cover and top band<ChevronRight9 size={15} /></button> : null}</>)}{section("A message on your code", ShieldCheck2, <>{
     /* ── WHAT YOUR CODE SAYS ──────────────────────────────────────────
        One short line under the Pay button on the card somebody gets
        from scanning. "Cash only after 9pm", "Order number on the slip
        please" — the things a counter says out loud, said by the code.
-
-       Capped at 120 characters by the server and by this box. A payer
-       is not reading a notice board with their thumb over Pay, and a
-       long message would push that button off a small screen. */
+       Capped at 120 characters by the server and by this box. */
   }<textarea
     id="creator-scan-note"
     value={scanNote}
@@ -666,28 +956,110 @@ function CreatorSetupScreen({
     style={fieldBox}
   /><div style={{
     fontSize: 11.5, lineHeight: 1.45, color: T.inkFaint, margin: "6px 2px 0"
-  }}>{
-    /* Said plainly, because a creator deciding what to write needs to
-       know who reads it and when. "Everybody" is the honest answer and
-       it is not the same answer the address field gives. */
-  }Anybody who scans your code sees this, right under the Pay button.</div>{
-    /* ── HOW IT HANGS ─────────────────────────────────────────────────
-       Eight shapes, each drawn by the real strip under a miniature of
-       the card a scanner gets — in this account's own colour, with the
-       message as typed — so what is tapped here is what is seen there. */
-  }<div style={{
-    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase",
-    letterSpacing: 0.5, margin: "16px 2px 8px"
-  }}>How it looks</div><ScanNoteStylePicker
+  }}>Anybody who scans your code sees this, right under the Pay button.</div>{scanNote.trim() ? <>{small("How it looks")}<ScanNoteStylePicker
     value={scanNoteStyle}
     onChange={setScanNoteStyle}
     text={scanNote}
     seed={myGloobalId}
-  /></>, <span style={{
+  /></> : null}</>, <span style={{
     fontSize: 11, fontWeight: 700, color: scanNote.length > 104 ? T.negative : T.inkFaint, fontVariantNumeric: "tabular-nums"
-  }}>{`${scanNote.length}/120`}</span>)}
+  }}>{`${scanNote.length}/120`}</span>)}</> : null}{
 
-  {error && <div
+  /* ── 5. CREATOR SHARE ─────────────────────────────────────────────── */
+  step === "share" ? <><div style={{ margin: "16px 2px 4px" }}><div style={{ fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.25 }}>Give a little back on every payment?</div><div style={{
+    fontSize: 12.5, color: T.inkSoft, fontWeight: 600, lineHeight: 1.45, marginTop: 5
+  }}>It goes to the person who paid you, into their My Assets. You can change it any time.</div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(8, minmax(0, 1fr))", gap: 5, marginTop: 12 }}>{CREATOR_SHARE_STEPS.map((n) => {
+    const on = Math.abs(rate - n) < 0.005;
+    return <button
+      key={n}
+      type="button"
+      data-testid={`creator-share-${n}`}
+      aria-pressed={on}
+      aria-label={`${n}%`}
+      onClick={() => setRate(n)}
+      style={{
+        border: "none", cursor: "pointer", fontFamily: "inherit", borderRadius: 12, padding: "10px 0",
+        fontSize: 16, fontWeight: 900, background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink,
+        boxShadow: on ? "none" : `inset 0 0 0 1px ${T.line}`
+      }}
+    >{n}<span style={{ fontSize: 10.5, opacity: 0.7, marginLeft: 1 }}>%</span></button>;
+  })}</div>{section("", null, <><div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}><span style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft }}>Fine-tune</span><span data-testid="creator-share-value" style={{ fontSize: 15, fontWeight: 900, color: T.accent }}>{`${rate.toFixed(2)}%`}</span></div><input
+    type="range"
+    min={0}
+    max={7}
+    step={0.01}
+    value={rate}
+    aria-label="Creator Share"
+    onChange={(e) => setRate(Math.min(7, Math.max(0, parseFloat(e.target.value) || 0)))}
+    style={{ width: "100%", accentColor: T.accent, margin: "12px 0 4px" }}
+  /><div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, fontWeight: 800, color: T.inkFaint }}><span>0%</span><span>7%</span></div></>)}{section("", null, <>{
+    /* The split of a round 100 in the creator's own currency, both halves
+       with their GEU name, so the rate is read as money rather than as a
+       percentage sign. */
+  }<div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: T.inkFaint }}>When someone pays you {shareSplit(100)}</div><div aria-hidden="true" style={{
+    display: "flex", height: 12, borderRadius: 999, overflow: "hidden", margin: "10px 0 8px", background: T.line
+  }}><span style={{ width: `${100 - rate}%`, background: T.accent }} /><span style={{ width: `${rate}%`, background: T.positive }} /></div>{[
+    { key: "keep", label: "You keep", sub: "", amount: Math.round((100 - rate) * 100) / 100, color: T.accent },
+    { key: "back", label: "They get back", sub: "in their My Assets", amount: Math.round(rate * 100) / 100, color: T.positive }
+  ].map((r, i) => <div key={r.key} style={{
+    display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: i ? `1px solid ${T.line}` : "none"
+  }}><span style={{ width: 10, height: 10, borderRadius: 3, background: r.color, flexShrink: 0 }} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink }}>{r.label}</span>{r.sub ? <span style={{
+    display: "block", fontSize: 11, color: T.inkFaint, fontWeight: 600, marginTop: 1
+  }}>{r.sub}</span> : null}</span><span data-testid={`creator-share-${r.key}`} style={{ fontSize: 14, fontWeight: 800, color: r.key === "back" ? T.positive : T.ink }}>{shareSplit(r.amount)}</span></div>)}</>)}<div style={{
+    display: "flex", alignItems: "center", gap: 10, marginTop: 12, padding: "11px 14px", borderRadius: 16, background: T.accentSoft
+  }}><PercentSu size={16} color={T.accent} /><span style={{ fontSize: 12, fontWeight: 700, color: T.ink, lineHeight: 1.4 }}>{rate > 0 ? <>Shows as <b>{`${creatorShareText(rate)}% back`}</b> on your card and in बाज़ार's "Who shares".</> : "No share: your shop still takes payments as normal."}</span></div></> : null}{
+
+  /* ── DONE ─────────────────────────────────────────────────────────── */
+  step === "done" ? <><div style={{ display: "flex", gap: 8, marginTop: 12 }}>{[
+    { key: "share", label: "Share", Icon: Share26, onClick: () => shareCreatorShop(Object.assign({}, creator || {}, { symbolId: (creator && creator.symbolId) || myGloobalId, handle: savedAs.handle, handleFirst: first.trim(), handleLast: last.trim(), shop: { tagline: tagline.trim() } }), onToast) },
+    { key: "qr", label: "QR to print", Icon: QrCode2, onClick: () => onShowQr && onShowQr() },
+    { key: "page", label: "See my shop", Icon: Store3, onClick: () => onOpenPage && onOpenPage() }
+  ].map(({ key, label, Icon, onClick }) => <button
+    key={key}
+    type="button"
+    data-testid={`creator-done-${key}`}
+    onClick={onClick}
+    className="v2-tap"
+    style={{
+      flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 4px", border: "none", borderRadius: 16,
+      background: T.surface, boxShadow: T.shadowCard, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, color: T.ink
+    }}
+  ><Icon size={18} color={T.accent} />{label}</button>)}</div>{section("Next", null, <button
+    type="button"
+    onClick={() => onOpenPage && onOpenPage()}
+    style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
+  ><span style={{ width: 24, height: 24, borderRadius: "50%", boxShadow: `inset 0 0 0 2px ${T.line}`, flexShrink: 0 }} /><span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: T.ink }}>Add your first things to sell</span><span style={{ fontSize: 12.5, fontWeight: 800, color: T.accent }}>Add</span></button>)}</> : null}{
+
+  /* ── THE EDIT LIST ────────────────────────────────────────────────── */
+  step === "hub" ? <div style={{
+    marginTop: 12, background: T.surface, borderRadius: 20, overflow: "hidden", boxShadow: T.shadowCard
+  }}>{CREATOR_SETUP_STEPS.map((s, i) => {
+    const Icon = { name: Pencil4, sell: Store3, where: MapPin5, look: PaletteSu, share: PercentSu }[s.key];
+    const line = {
+      name: [tagline.trim() || savedAs.handle || preview].filter(Boolean).join(" · "),
+      sell: [catInfo && catInfo.label, subInfo && subInfo[1], listed ? "in बाज़ार" : "not listed"].filter(Boolean).join(" · "),
+      where: [addressParts && (addressParts.city || addressParts.area), hours ? "hours set" : "no hours", addressPublic ? "address shown" : "address private"].filter(Boolean).join(" · "),
+      look: [lookKey && SHOP_THEMES[lookKey] ? SHOP_THEMES[lookKey].name : look.name, scanNote.trim() ? `“${scanNote.trim()}”` : ""].filter(Boolean).join(" · "),
+      share: rate > 0 ? `${creatorShareText(rate)}% back on every payment` : "None"
+    }[s.key];
+    const done = { name: Boolean(savedAs.handle), sell: Boolean(category), where: Boolean(hours || (addressParts && addressParts.city)), look: true, share: true }[s.key];
+    return <button
+      key={s.key}
+      type="button"
+      data-testid={`creator-hub-${s.key}`}
+      onClick={() => { setStepError(""); setStep(s.key); }}
+      style={{
+        display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 14px", border: "none", cursor: "pointer",
+        fontFamily: "inherit", textAlign: "left", background: "none", borderTop: i ? `1px solid ${T.line}` : "none"
+      }}
+    ><span style={{ width: 36, height: 36, borderRadius: 11, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={16} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{
+      display: "block", fontSize: 14, fontWeight: 800, color: T.ink
+    }}>{s.row}</span><span style={{
+      display: "block", fontSize: 11.5, color: T.inkSoft, fontWeight: 600, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+    }}>{line}</span></span>{done ? null : <span style={{
+      fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "3px 9px", background: "#FEF3C7", color: "#92400E", flexShrink: 0
+    }}>Add</span>}<ChevronRight9 size={16} color={T.inkFaint} /></button>;
+  })}</div> : null}{(stepError || error) && <div
     role="alert"
     style={{
       marginTop: 16,
@@ -700,7 +1072,7 @@ function CreatorSetupScreen({
       textAlign: "center",
       lineHeight: 1.45
     }}
-  >{error}</div>}<p style={{
+  >{stepError || error}</div>}{step === "name" && !savedAs.handle ? <p style={{
     fontSize: 11.5,
     lineHeight: 1.5,
     color: T.inkFaint,
@@ -708,66 +1080,38 @@ function CreatorSetupScreen({
     margin: "16px 8px 0"
   }}>
       Until you set this up, people can still pay your creator side at your <GloobalWordmark /> ID.
-    </p></div>{
+    </p> : null}</div>{
     /* ── THE SAVE BAR ─────────────────────────────────────────────────
        Pinned under the scroll rather than at the end of it, so the one
-       thing this screen wants done is always a thumb away however far
-       down the message picker somebody has gone. Hidden while Gloobal's
-       own keyboard is up, which needs that space.
-
-       "Later" is plain text beside it, not a second button of equal
-       weight: two equal buttons is a question, and this is not one. The
-       founder chose a skippable screen; skipping is RECORDED
-       (creatorProfile.setupSkippedAt), so the Creator dashboard can keep
-       offering it without putting the whole screen back in the way. */
-  }{kbField ? null : <div style={{
+       thing each step wants done is always a thumb away. Hidden while
+       Gloobal's own keyboard is up, which needs that space, and on the
+       Edit list, where each row is its own way in. */
+  }{kbField || step === "hub" ? null : <div style={{
     flexShrink: 0, display: "flex", alignItems: "center", gap: 10,
     padding: "10px 16px calc(12px + env(safe-area-inset-bottom, 0px))",
     background: T.surface, boxShadow: `0 -6px 20px rgba(${T.inkRgb},0.06)`
-  }}>{
-    /* One line, always. A render on a 390px phone had "Save my creator
-       name" folding onto two lines beside "Set this up later"; the
-       buttons now say "Later" and "Save my name", keep the long wording
-       for screen readers, and never wrap. */
-  }<button
+  }}>{step === "name" && !hubMode && !savedAs.handle && !cameFromSplash ? <button
     onClick={onSkip}
     aria-label="Set this up later"
     className="v2-tap"
     style={{
-      flexShrink: 0,
-      height: 50,
-      padding: "0 18px",
-      border: "none",
-      borderRadius: 999,
-      background: T.surfaceAlt,
-      fontSize: 14,
-      fontWeight: 800,
-      color: T.inkSoft,
-      cursor: "pointer",
-      fontFamily: "inherit",
-      whiteSpace: "nowrap"
+      flexShrink: 0, height: 50, padding: "0 18px", border: "none", borderRadius: 999, background: T.surfaceAlt,
+      fontSize: 14, fontWeight: 800, color: T.inkSoft, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap"
     }}
-  >Later</button><button
-    onClick={() => onSave({
-      handleFirst: first.trim(),
-      handleLast: last.trim(),
-      addressParts,
-      category,
-      subcategory: category ? subcategory : "",
-      category2: category2 && category2 !== category ? category2 : "",
-      listed,
-      ...(category === "other" ? { otherWords: otherWords.trim() } : {}),
-      hours,
-      about: about.trim(),
-      contacts,
-      addressPublic,
-      scanNote: scanNote.trim(),
-      scanNoteStyle,
-      font,
-      logo: logo || undefined
-    })}
-    disabled={!canSaveAll}
-    aria-label="Save my creator name"
+  >Later</button> : null}{step === "done" ? <button
+    type="button"
+    data-testid="creator-done-go"
+    onClick={() => onOpenPage && onOpenPage()}
+    className="v2-tap"
+    style={{
+      flex: 1, height: 50, border: "none", borderRadius: 999, background: T.gradButton, color: "#fff", fontSize: 15, fontWeight: 800,
+      fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap", boxShadow: `0 8px 20px rgba(${T.accentRgb},0.28)`
+    }}
+  >Go to my shop</button> : <button
+    onClick={go}
+    disabled={!ctaOn}
+    data-testid="creator-setup-next"
+    aria-label={step === "name" ? "Save my creator name" : ctaLabel}
     className="v2-tap"
     style={{
       flex: 1,
@@ -780,16 +1124,16 @@ function CreatorSetupScreen({
       border: "none",
       borderRadius: 999,
       padding: "0 18px",
-      background: canSaveAll ? T.gradButton : T.surfaceAlt,
-      color: canSaveAll ? "#fff" : T.inkFaint,
+      background: ctaOn ? T.gradButton : T.surfaceAlt,
+      color: ctaOn ? "#fff" : T.inkFaint,
       fontSize: 15,
       fontWeight: 800,
       fontFamily: "inherit",
       whiteSpace: "nowrap",
-      cursor: canSaveAll ? "pointer" : "default",
-      boxShadow: canSaveAll ? `0 8px 20px rgba(${T.accentRgb},0.28)` : "none"
+      cursor: ctaOn ? "pointer" : "default",
+      boxShadow: ctaOn ? `0 8px 20px rgba(${T.accentRgb},0.28)` : "none"
     }}
-  >{saving ? <Loader5 size={17} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check9 size={18} strokeWidth={2.8} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{saving ? "Saving…" : "Save my name"}</span></button></div>}{
+  >{busy || saving ? <Loader5 size={17} style={{ animation: "spin 0.9s linear infinite" }} /> : step === "share" && !hubMode ? <SparklesSu size={17} /> : <Check9 size={18} strokeWidth={2.8} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{busy || saving ? "Saving…" : ctaLabel}</span></button>}</div>}{
     /* ── MORE FONTS ───────────────────────────────────────────────────
        Every face, each drawn in the person's own name, the same way the
        three suggestions are. Tapping one picks it and closes the sheet. */
@@ -849,6 +1193,25 @@ function CreatorSetupScreen({
     lastLabel="Second part"
     onClose={() => setKbField("")}
   /></div>;
+}
+
+// Every dial a ready look sets, the same replacement Look's Style makes:
+// picking "Chai Stall" gives Chai Stall, not Chai Stall's colour on
+// whatever corners were there before.
+function creatorSetupLookDials(key) {
+  const base = SHOP_THEMES[key] || SHOP_THEMES.gloobal;
+  return {
+    theme: key, color: base.color, font: base.font, corners: base.corners,
+    cards: base.cards, density: base.density, photoShape: base.photoShape, dark: base.dark,
+    layout: base.layout || "list", buttons: base.buttons || "filled", heroStyle: base.heroStyle || "gradient",
+    coverStyle: base.coverStyle || "photo", pattern: base.pattern || "dots"
+  };
+}
+
+// 3 → "3", 2.5 → "2.5", 2.36 → "2.36": a share as people say it.
+function creatorShareText(rate) {
+  const n = Math.round((Number(rate) || 0) * 100) / 100;
+  return String(n);
 }
 
 // ── THE CREATOR'S PAGE, UNDER PROFILE ───────────────────────────────────

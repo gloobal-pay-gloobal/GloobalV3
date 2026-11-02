@@ -812,7 +812,13 @@ function CreatorNameKeyboard({
     const fire = (on) => window.dispatchEvent(
       new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } })
     );
-    fire(Boolean(open));
+    // Only while open, so every "on" is paired with exactly one "off". It
+    // used to fire "off" on mount as well, which the map button counts:
+    // a board mounting closed under a screen that had already hidden the
+    // button took that screen's "on" away and the button reappeared on the
+    // setup steps (0199).
+    if (!open) return undefined;
+    fire(true);
     return () => fire(false);
   }, [open]);
 

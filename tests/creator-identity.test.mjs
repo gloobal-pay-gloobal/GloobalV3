@@ -387,7 +387,7 @@ describe("the second box is optional on the screen too", () => {
   });
 
   test("saving needs only the first part", () => {
-    assert.match(strip(setup), /const canSave = enough && !saving && !refused;/);
+    assert.match(strip(setup), /const canSave = enough && !saving && !busy && !refused;/);
     assert.match(strip(setup), /const enough = Boolean\(first\.trim\(\)\);/);
   });
 
@@ -461,7 +461,7 @@ describe("the three answers stay three", () => {
     // fault of the name. Both refusals — taken, and not a usable name —
     // turn it red and block the save.
     assert.match(strip(setup), /const tone = refused \? "bad" : availability\.status === "free" \? "good" : null;/);
-    assert.match(strip(setup), /const canSave = enough && !saving && !refused;/,
+    assert.match(strip(setup), /const canSave = enough && !saving && !busy && !refused;/,
       "the save button is disabled by states that are not a refusal");
   });
 
@@ -485,7 +485,10 @@ describe("a creator who skipped is a real creator", () => {
   test("closing it is the same as skipping it", () => {
     // Two ways out of one screen that mean different things is a
     // distinction nobody would guess and nobody should have to.
-    assert.match(dash, /onClose=\{skipCreatorSetup\}/,
+    // 0199: closing goes through closeCreatorSetup, which is a skip until
+    // a name exists and only a close after.
+    assert.match(dash, /const closeCreatorSetup = \(\) => \{\s*if \(creatorSetupDone\(creatorProfile\)\) setShowCreatorSetup\(false\);\s*else skipCreatorSetup\(\);/);
+    assert.match(dash, /onClose=\{closeCreatorSetup\}/,
       "dismissing the screen means something different from skipping it");
   });
 
@@ -548,7 +551,7 @@ describe("the mark is a picture of a different thing", () => {
   });
 
   test("square, because a round frame is a face", () => {
-    assert.match(strip(setup), /borderRadius: 26,/);
+    assert.match(strip(setup), /borderRadius: big \? 20 : 16/);
     assert.doesNotMatch(strip(setup).slice(strip(setup).indexOf("Add your creator logo")), /borderRadius: "50%",\s*\n\s*background: logo/);
   });
 });

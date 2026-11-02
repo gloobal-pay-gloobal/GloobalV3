@@ -212,6 +212,8 @@ function gloobalSessionSave(user, phoneNumber, biometricEnrolled) {
   // hadPreviousAccount is computed at the top of this function now — the
   // token carried above asks the same question and must get the same answer.
   if (!sameAccount && hadPreviousAccount) gloobalNotifyAccountSwitched(user.symbolId);
+  // Remembered among the accounts on this phone (0201).
+  gloobalAccountsRemember(user);
 }
 
 // Returns { user, phoneNumber, biometricEnrolled } for a valid, unexpired
@@ -405,6 +407,7 @@ function gloobalSessionSetSymbolId(newSymbolId) {
     // Storage unavailable. The in-memory React state still carries the new
     // ID for this session; only persistence across a reload is lost.
   }
+  gloobalAccountsRename(parsed.user.symbolId, newSymbolId);
   gloobalNotifySymbolIdChanged(newSymbolId);
 }
 
@@ -440,4 +443,75 @@ function gloobalSessionClear() {
   // out's balance/history.
   gloobalNotifySymbolIdChanged(null);
   gloobalNotifyAccountSwitched(null);
+}
+
+// ── ACCOUNTS ON THIS PHONE (0201) ───────────────────────────────────────
+//
+// "I saw that multi account add option was not there." It never was: one
+// phone held one session. This keeps a short list of the accounts that
+// have signed in here — Gloobal ID, name, the last digits of the mobile —
+// so Profile can offer them back with one tap, the way a mail app does.
+//
+// It holds NO TOKEN. Switching signs the current account out and opens the
+// PIN screen for the chosen one, so a phone with three accounts on it is
+// never three signed-in accounts, and somebody picking it up can see who
+// uses it but cannot be anybody without that person's PIN. Five at most;
+// the one used longest ago makes room for a sixth.
+var GLOOBAL_ACCOUNTS_KEY = "gloobal.accounts.v1";
+var GLOOBAL_ACCOUNTS_MAX = 5;
+var GLOOBAL_ACCOUNTS_EVENT = "gloobal:accountsChanged";
+
+function gloobalAccountsList() {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(GLOOBAL_ACCOUNTS_KEY) || "[]");
+    return Array.isArray(raw)
+      ? raw.filter((a) => a && typeof a.symbolId === "string" && a.symbolId).slice(0, GLOOBAL_ACCOUNTS_MAX)
+      : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function gloobalAccountsWrite(list) {
+  try {
+    window.localStorage.setItem(GLOOBAL_ACCOUNTS_KEY, JSON.stringify(list.slice(0, GLOOBAL_ACCOUNTS_MAX)));
+  } catch (e) {
+    // Storage unavailable: the list is a convenience, nothing depends on it.
+  }
+  try {
+    window.dispatchEvent(new CustomEvent(GLOOBAL_ACCOUNTS_EVENT));
+  } catch (e) {
+    /* no window */
+  }
+}
+
+// The last few digits only. Enough to tell "work" from "home", not enough
+// to read somebody's number off a phone they left on a table.
+function gloobalAccountsTail(mobile) {
+  const digits = String(mobile || "").replace(/\D/g, "");
+  return digits.length >= 4 ? digits.slice(-5) : "";
+}
+
+function gloobalAccountsRemember(user) {
+  if (!user || !user.symbolId) return;
+  const tail = gloobalAccountsTail(user.mobileNumber);
+  const entry = {
+    symbolId: user.symbolId,
+    name: String(user.fullName || user.name || "").trim().slice(0, 60),
+    mobileTail: tail,
+    at: Date.now()
+  };
+  // The same account under a new Gloobal ID is still the same account.
+  const rest = gloobalAccountsList().filter((a) => a.symbolId !== user.symbolId && !(tail && a.mobileTail === tail && a.name === entry.name));
+  const list = [entry].concat(rest).sort((x, y) => (y.at || 0) - (x.at || 0)).slice(0, GLOOBAL_ACCOUNTS_MAX);
+  gloobalAccountsWrite(list);
+}
+
+function gloobalAccountsForget(symbolId) {
+  gloobalAccountsWrite(gloobalAccountsList().filter((a) => a.symbolId !== symbolId));
+}
+
+function gloobalAccountsRename(oldId, newId) {
+  if (!oldId || !newId || oldId === newId) return;
+  gloobalAccountsWrite(gloobalAccountsList().map((a) => (a.symbolId === oldId ? Object.assign({}, a, { symbolId: newId }) : a)));
 }

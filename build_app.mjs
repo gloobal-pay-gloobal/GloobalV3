@@ -370,6 +370,8 @@ const FRONTEND_MODULES = [
   // The dashboard's paste-anybody box, with the globe into Coverage.
   "features/payee/quickPayBar.jsx",
   "features/hooman/HoomanScoreFlow.jsx",
+  // Accounts on this phone, on Profile (0201).
+  "features/accounts/accountsOnPhone.jsx",
   "screens/Dashboard/Dashboard.jsx",
   "screens/SendMoney/SendMoney.jsx",
   // Giving to a Hooman Project, and the list of who has. Emitted before the

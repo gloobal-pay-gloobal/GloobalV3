@@ -61,6 +61,6 @@ test("My shop with no name yet opens setup, not an empty store", () => {
   assert.match(dash, /deepLinkTarget === "myshop"\) openMyShop\(\)/);
   const i = dash.indexOf("const openMyShop = async");
   const body = dash.slice(i, i + 700);
-  assert.match(body, /if \(!handle\) \{ setShowCreatorSetup\(true\); return; \}/);
+  assert.match(body, /if \(!handle\) \{ openCreatorSetup\("name"\); return; \}/);
   assert.match(body, /resolveCreatorHandle/);
 });

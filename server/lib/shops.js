@@ -113,7 +113,136 @@ function createShops({ User, Transaction, LedgerEntry, Notification, CreatorLogo
     return shop;
   }
 
+  // ── ALL SHOPS TOGETHER (0212) ─────────────────────────────────────────
+  // What every shop on the account took over one period, side by side: the
+  // whole, each shop's part of it, its payments and the people who paid,
+  // and a series (hours for today, days for 7 or 30, months for all time)
+  // split by shop. Days are the caller's own days: `tz` is their offset.
+  const RANGES = { today: 'hour', '7d': 'day', '30d': 'day', all: 'month' };
+  const tzOf = (raw) => {
+    // A "+" sent unencoded arrives as a space.
+    const m = /^([+-])(\d{2}):(\d{2})$/.exec(String(raw || '').replace(/^ /, '+'));
+    if (!m || Number(m[2]) > 14 || Number(m[3]) > 59) return { tz: '+00:00', minutes: 0 };
+    return { tz: m[0], minutes: (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) };
+  };
+  async function summary(owner, rangeRaw, tzRaw) {
+    const range = Object.prototype.hasOwnProperty.call(RANGES, rangeRaw) ? rangeRaw : '7d';
+    const unit = RANGES[range];
+    const { tz, minutes } = tzOf(tzRaw);
+    // Midnight today where the caller is, as an instant.
+    const nowLocal = new Date(Date.now() + minutes * 60000);
+    const todayStart = new Date(Date.UTC(nowLocal.getUTCFullYear(), nowLocal.getUTCMonth(), nowLocal.getUTCDate()) - minutes * 60000);
+    const days = range === '7d' ? 7 : range === '30d' ? 30 : 1;
+    const from = range === 'all' ? null : new Date(todayStart.getTime() - (days - 1) * 86400000);
+
+    const others = await User.find({ shopOwnerId: owner._id }).select('symbolId creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category createdAt').sort({ createdAt: 1 }).lean();
+    const all = [owner, ...others];
+    const ids = all.map((u) => u._id);
+    const match = { toUserId: { $in: ids }, type: 'send', status: 'success', ...(from ? { createdAt: { $gte: from } } : {}) };
+    const value = { $ifNull: ['$metadata.destinationAmount', '$amount'] };
+    const fmt = unit === 'hour' ? '%H' : unit === 'day' ? '%Y-%m-%d' : '%Y-%m';
+    const [perShop, people, series] = await Promise.all([
+      Transaction.aggregate([
+        { $match: match },
+        { $group: { _id: '$toUserId', amount: { $sum: value }, payments: { $sum: 1 }, payers: { $addToSet: '$fromUserId' }, last: { $max: '$createdAt' } } },
+      ]),
+      Transaction.aggregate([
+        { $match: match },
+        { $group: { _id: '$fromUserId' } },
+        { $count: 'n' },
+      ]),
+      Transaction.aggregate([
+        { $match: match },
+        { $group: { _id: { k: { $dateToString: { format: fmt, date: '$createdAt', timezone: tz } }, s: '$toUserId' }, amount: { $sum: value } } },
+      ]),
+    ]);
+    const logos = await CreatorLogo.find({ userId: { $in: ids } }).select('userId dataUrl').lean();
+    const logoOf = new Map(logos.map((l) => [String(l.userId), l.dataUrl]));
+    const by = new Map(perShop.map((r) => [String(r._id), r]));
+    const symOf = new Map(all.map((u) => [String(u._id), u.symbolId]));
+    const total = round2(perShop.reduce((a, r) => a + (Number(r.amount) || 0), 0));
+    const payments = perShop.reduce((a, r) => a + r.payments, 0);
+
+    const shopsOut = all.map((u, i) => {
+      const r = by.get(String(u._id)) || {};
+      const amount = round2(r.amount || 0);
+      const p = r.payments || 0;
+      return {
+        symbolId: u.symbolId,
+        primary: i === 0,
+        handle: (u.creatorProfile && u.creatorProfile.handle) || '',
+        name: [u.creatorProfile && u.creatorProfile.handleFirst, u.creatorProfile && u.creatorProfile.handleLast].filter(Boolean).join(' '),
+        category: (u.creatorProfile && u.creatorProfile.category) || '',
+        setUp: Boolean(u.creatorProfile && u.creatorProfile.handle),
+        logo: logoOf.get(String(u._id)) || null,
+        amount,
+        payments: p,
+        customers: (r.payers || []).length,
+        average: p ? round2(amount / p) : 0,
+        share: total > 0 ? amount / total : 0,
+        lastPaidAt: r.last || null,
+      };
+    });
+
+    // The series, every bucket present (empty ones at zero) so a chart
+    // never closes a gap the shops really had.
+    const keys = [];
+    const pad = (n) => String(n).padStart(2, '0');
+    const localKey = (d) => { const x = new Date(d.getTime() + minutes * 60000); return `${x.getUTCFullYear()}-${pad(x.getUTCMonth() + 1)}-${pad(x.getUTCDate())}`; };
+    if (unit === 'hour') {
+      const nowHour = nowLocal.getUTCHours();
+      for (let h = 0; h <= nowHour; h += 1) keys.push(pad(h));
+    } else if (unit === 'day') {
+      for (let i = 0; i < days; i += 1) keys.push(localKey(new Date(from.getTime() + i * 86400000)));
+    } else {
+      const seen = series.map((s) => s._id.k).sort();
+      const first = seen[0] || `${nowLocal.getUTCFullYear()}-${pad(nowLocal.getUTCMonth() + 1)}`;
+      let [y, m] = first.split('-').map(Number);
+      const endKey = `${nowLocal.getUTCFullYear()}-${pad(nowLocal.getUTCMonth() + 1)}`;
+      // At least six months, so a new account's chart is not one bar.
+      const start = new Date(Date.UTC(nowLocal.getUTCFullYear(), nowLocal.getUTCMonth() - 5, 1));
+      if (`${start.getUTCFullYear()}-${pad(start.getUTCMonth() + 1)}` < first) { y = start.getUTCFullYear(); m = start.getUTCMonth() + 1; }
+      for (let i = 0; i < 240; i += 1) {
+        const k = `${y}-${pad(m)}`;
+        keys.push(k);
+        if (k >= endKey) break;
+        m += 1; if (m > 12) { m = 1; y += 1; }
+      }
+    }
+    const points = new Map(keys.map((k) => [k, { key: k, total: 0, by: {} }]));
+    for (const s of series) {
+      const pt = points.get(s._id.k);
+      if (!pt) continue;
+      const sym = symOf.get(String(s._id.s));
+      const a = round2(s.amount || 0);
+      pt.by[sym] = round2((pt.by[sym] || 0) + a);
+      pt.total = round2(pt.total + a);
+    }
+
+    return {
+      range,
+      unit,
+      tz,
+      from: from ? from.toISOString() : null,
+      max: MAX_SHOPS,
+      all: { amount: total, payments, customers: (people[0] && people[0].n) || 0, average: payments ? round2(total / payments) : 0 },
+      shops: shopsOut,
+      series: [...points.values()],
+    };
+  }
+
   function mount(app) {
+    app.get('/api/shops/summary', lookupLimit, requireAuth, async (req, res) => {
+      try {
+        const owner = req.authUser;
+        if (owner.shopOwnerId) return res.status(403).json({ success: false, message: 'A shop has no shops of its own.' });
+        return res.json({ success: true, ...(await summary(owner, String(req.query.range || ''), String(req.query.tz || ''))) });
+      } catch (error) {
+        console.error('Shops summary error:', error);
+        return res.status(500).json({ success: false, message: 'Could not add up your shops just now.' });
+      }
+    });
+
     // The account's shops: its own first, then the others, each with its
     // totals, and the whole Creator side's together.
     app.get('/api/shops', lookupLimit, requireAuth, async (req, res) => {
@@ -167,7 +296,7 @@ function createShops({ User, Transaction, LedgerEntry, Notification, CreatorLogo
     });
   }
 
-  return { mount, sweep, idsOf, list, createShop, MAX_SHOPS };
+  return { mount, sweep, idsOf, list, summary, createShop, MAX_SHOPS };
 }
 
 module.exports = { createShops, MAX_SHOPS };

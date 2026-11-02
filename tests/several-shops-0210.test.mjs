@@ -45,12 +45,10 @@ describe("the app", () => {
     }
   });
   test("each shop's code is its own", () => assert.match(d, /gloobalId=\{activeShop \|\| gloobalIdTag\}/));
-  test("the strip: one chip per shop with today's takings, and + Shop until five", () => {
-    const strip = code("frontend/features/creator/creatorShops.jsx");
-    assert.match(strip, /Your shops · \$\{shops\.length\} of/);
-    assert.match(strip, /Today, all shops: /);
-    assert.match(strip, /data-testid="creator-shop-add"/);
-    assert.match(d, /<CreatorShopsStrip/);
+  test("+ Shop lives on My shops (0212), not on Home", () => {
+    const screen = code("frontend/features/creator/creatorShops.jsx");
+    assert.match(screen, /data-testid="creator-shop-add"/);
+    assert.ok(!/<CreatorShopsStrip/.test(d), "the strip is gone from Home");
   });
   test("a new shop opens straight into naming it", () => assert.match(d, /setCreatorSetupStart\("name"\);\s*setShowCreatorSetup\(true\);/));
   test("the file is in the build", () => assert.match(readSource("build_app.mjs"), /"features\/creator\/creatorShops\.jsx"/));

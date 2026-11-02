@@ -1174,6 +1174,19 @@ var GloobalApi = {
       return null;
     }
   },
+  // All the shops together over a period (0212): "today", "7d", "30d" or
+  // "all", bucketed by the person's own days.
+  async getShopsSummary(range) {
+    try {
+      const off = -new Date().getTimezoneOffset();
+      const pad = (n) => String(Math.floor(Math.abs(n))).padStart(2, "0");
+      const tz = `${off < 0 ? "-" : "+"}${pad(Math.abs(off) / 60)}:${pad(Math.abs(off) % 60)}`;
+      const result = await gloobalApiClient.get(`/api/shops/summary?range=${encodeURIComponent(range || "7d")}&tz=${encodeURIComponent(tz)}`);
+      return result && result.success ? result : null;
+    } catch (e) {
+      return null;
+    }
+  },
   async openShop() {
     return gloobalApiClient.post("/api/shops", {});
   },

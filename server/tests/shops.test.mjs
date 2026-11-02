@@ -184,6 +184,32 @@ async function run() {
   const books = await computeBooks();
   check("shops are not counted as people with an opening balance", books.ok === true, JSON.stringify(books.currencies?.map((c) => [c.currency, c.difference])));
 
+  console.log("\n7. all shops together (0212)");
+  const meena2 = await register(9003, "+919000009003", "Asha Verma");
+  await pay(meena2, shopId, 30, "pay-sweets-2");
+  const s7 = await call("GET", "/api/shops/summary?range=7d&tz=%2B05%3A30", { token: raju.token });
+  const sw = s7.body?.shops?.find((s) => s.symbolId === shopId);
+  const kr = s7.body?.shops?.find((s) => s.primary);
+  check("summary answers", s7.status === 200 && s7.body?.range === "7d" && s7.body?.unit === "day" && s7.body?.tz === "+05:30", `status ${s7.status}`);
+  check("the whole: 230 in 3 payments", near(s7.body?.all?.amount, 230) && s7.body?.all?.payments === 3, JSON.stringify(s7.body?.all));
+  check("two different people paid", s7.body?.all?.customers === 2);
+  check("each shop's part, payments and payers", near(sw?.amount, 150) && sw?.payments === 2 && sw?.customers === 2 && near(kr?.amount, 80) && kr?.customers === 1);
+  check("shares add up to the whole", Math.abs(s7.body.shops.reduce((a, s) => a + s.share, 0) - 1) < 1e-9 && near(sw.share * 230, 150));
+  check("average per payment", near(sw?.average, 75));
+  check("all five shops listed, empty ones at zero", s7.body?.shops?.length === 5 && s7.body.shops.filter((s) => s.amount === 0).length === 3);
+  check("seven days, every one present", s7.body?.series?.length === 7 && near(s7.body.series[6].total, 230), JSON.stringify(s7.body?.series?.map((p) => p.key)));
+  check("today split by shop", near(s7.body.series[6].by[shopId], 150) && near(s7.body.series[6].by[raju.id], 80));
+  const today = await call("GET", "/api/shops/summary?range=today&tz=+05:30", { token: raju.token });
+  check("today in hours, an unencoded + still read", today.body?.unit === "hour" && today.body?.tz === "+05:30" && near(today.body?.series?.reduce((a, p) => a + p.total, 0), 230));
+  const allTime = await call("GET", "/api/shops/summary?range=all", { token: raju.token });
+  check("all time in months, at least six", allTime.body?.unit === "month" && allTime.body?.series?.length >= 6 && near(allTime.body.series.at(-1).total, 230));
+  const odd = await call("GET", "/api/shops/summary?range=nope&tz=garbage", { token: raju.token });
+  check("an unknown range or zone falls back", odd.status === 200 && odd.body?.range === "7d" && odd.body?.tz === "+00:00");
+  const asShop = await call("GET", "/api/shops/summary", { token: meena.token });
+  check("someone else sees only their own (none)", asShop.status === 200 && asShop.body?.shops?.length === 1 && near(asShop.body?.all?.amount, 0));
+  const noAuth = await call("GET", "/api/shops/summary");
+  check("signed out is refused", noAuth.status === 401);
+
   console.log(`\n${failures === 0 ? "all checks passed" : `${failures} check(s) failed`}`);
 }
 

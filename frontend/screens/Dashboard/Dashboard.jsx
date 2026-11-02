@@ -267,7 +267,7 @@ function BalanceEssentialsSplit({ summary, balance, ccyCode, lens, onOpen }) {
   const free = Math.max(0, Math.round((bal - held) * 100) / 100);
   const stays = Math.min(held, bal);
   const freePct = bal > 0 ? Math.max(free > 0 ? 3 : 0, (free / bal) * 100) : 0;
-  const fig = (v) => geuLensMoney(v, ccyCode, lens);
+  const fig = (v) => geuLensBarMoney(v, ccyCode, lens, ccyCode);
   return <div data-testid="balance-essentials-split" style={{ marginTop: 12 }}>
     <div style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", background: "rgba(255,255,255,0.2)" }}><i style={{ display: "block", width: `${freePct}%`, background: "#FED7AA" }} /><i style={{ display: "block", flex: 1, background: "#67E8F9" }} /></div>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 8 }}>
@@ -1402,6 +1402,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const creatorSymbol = activeShop || myGloobalId;
   const [shopsInfo, setShopsInfo] = useState83(null);
   const [addingShop, setAddingShop] = useState83(false);
+  // 0212: the shops live behind "My shops" on the creator side's Profile
+  // list, not on Home: all of them together, each one's part, and + Add.
+  const [showMyShops, setShowMyShops] = useState83(false);
+  const requestCloseMyShops = useBackClose(showMyShops, () => setShowMyShops(false));
   // The name market (0211): { mode: "name" | "buy" | "thread" | "sell", handle, info, threadId }.
   const [nameMarket, setNameMarket] = useState83(null);
   // 0185: the creator side's one-time "what do you make" card.
@@ -2758,15 +2762,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        lesson the install banner's own first draft taught: anything
        wearing the wallet's gradient directly above the wallet card runs
        into it. */
-  }{shareRole === "merchant" && shopsInfo && shopsInfo.shops && shopsInfo.shops[0] && shopsInfo.shops[0].setUp && <CreatorShopsStrip
-    info={shopsInfo}
-    active={creatorSymbol}
-    ccyCode={ccyCode}
-    lens={displayLens}
-    onPick={(s) => { if (s.symbolId !== creatorSymbol) switchShop(s.symbolId).then(() => { if (!s.setUp) openCreatorSetup("name"); }); else if (!s.setUp) openCreatorSetup("name"); }}
-    onAdd={addShop}
-    adding={addingShop}
-  />}{
+  }{
     /* ── CREATORS ALREADY IN OTHER (0185) ─────────────────────────────
        Picked Other before it asked for words, so search cannot find them
        by what they make. One card, until filled; it never blocks taking
@@ -3553,12 +3549,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        because there is already an "About" row in this list and two rows
        starting with that word is a menu nobody can scan. */
   }{PROFILE_ROWS.slice(0, 1)
-    .concat(["Creator Profile"], PROFILE_ROWS.slice(1, 4), ["Complaints & reports"], PROFILE_ROWS.slice(4)).map((label, i) => {
+    .concat(["Creator Profile"], shareRole === "merchant" ? ["My shops"] : [], PROFILE_ROWS.slice(1, 4), ["Complaints & reports"], PROFILE_ROWS.slice(4)).map((label, i) => {
     // The theme's own family, very faint: one soft tint per row instead of
     // the eight-colour stripe the shared list drew in every theme.
     const rowColor = gloobalFamilyColor(i);
     return <button
       key={label}
+      data-testid={label === "My shops" ? "profile-my-shops" : undefined}
       // "Notifications" is the one row with a real screen behind it — the
       // server-held list, rendered from App.jsx so a push click can open
       // the same sheet. The rest still open their placeholder detail view.
@@ -3566,7 +3563,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         ? window.dispatchEvent(new Event("gloobal:openNotifications"))
         : label === "Complaints & reports"
           ? setShowComplaints(true)
-          : setProfileDetail(label))}
+          : label === "My shops"
+            ? (loadShops(), setShowMyShops(true))
+            : setProfileDetail(label))}
       className="v2-row"
       style={{
         width: "100%",
@@ -3579,7 +3578,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         cursor: "pointer",
         textAlign: "left"
       }}
-    ><span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{label}</span><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>{label === "Complaints & reports" && complaintsNeedingMe > 0 && <span
+    ><span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{label}</span><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>{label === "My shops" && shopsInfo && shopsInfo.shops && <span
+      data-testid="profile-my-shops-count"
+      style={{ fontSize: 11.5, fontWeight: 800, color: T.inkFaint }}
+    >{`${shopsInfo.shops.length} of ${Number(shopsInfo.max) || 5}`}</span>}{label === "Complaints & reports" && complaintsNeedingMe > 0 && <span
       data-complaints-badge
       style={{ minWidth: 20, height: 20, borderRadius: 10, background: T.negative, color: "#fff", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}
     >{complaintsNeedingMe}</span>}<ChevronRightIcon /></span></button>;
@@ -4582,7 +4584,25 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
-  }{nameMarket && <ScreenErrorBoundary name="Creator names" onClose={() => setNameMarket(null)}><NameMarketScreen
+  }{showMyShops && shareRole === "merchant" && <ScreenErrorBoundary name="My shops" onClose={() => setShowMyShops(false)}><MyShopsScreen
+    shops={shopsInfo}
+    active={creatorSymbol}
+    ccyCode={ccyCode}
+    lens={displayLens}
+    adding={addingShop}
+    onClose={requestCloseMyShops}
+    onAdd={addShop}
+    onSetUpFirst={() => openCreatorSetup("name")}
+    onPick={(s) => {
+      const go = s.symbolId === creatorSymbol ? Promise.resolve() : switchShop(s.symbolId);
+      go.then(() => {
+        if (!s.setUp) { openCreatorSetup("name"); return; }
+        requestCloseMyShops();
+        setActiveTab("home");
+        if (s.symbolId !== creatorSymbol) showToast2(`Now working on ${creatorShopName(s)}`);
+      });
+    }}
+  /></ScreenErrorBoundary>}{nameMarket && <ScreenErrorBoundary name="Creator names" onClose={() => setNameMarket(null)}><NameMarketScreen
     start={nameMarket}
     ccyCode={ccyCode}
     lens={displayLens}

@@ -12,7 +12,7 @@ import { useState as useState85, useEffect as useEffect81, useRef as useRef45 } 
 // — dates, shops, prices — is public.
 
 function nameFig(v, ccy, lens) {
-  return geuLensMoney(Number(v) || 0, ccy || "INR", lens);
+  return geuLensBarMoney(Number(v) || 0, ccy || "INR", lens, ccy || "INR");
 }
 
 // In the name step, under "That name is taken": who has it, and what can be

@@ -1121,6 +1121,11 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     return () => { live = false; };
   }, [searchStage, top.id, bottom.id, top.currency, bottom.currency]);
   const overCorridorLimit = Boolean(corridorLimit && receiverAmount > (Number(corridorLimit.maxReceive) || 0) + 0.005);
+  // The ceiling is only worth reading when it matters (0207): once the
+  // amount reaches 80% of the most that can go, when it is over, or when the
+  // corridor is paused. Not as a standing "₹48 crore" line under every ₹100
+  // payment, which only raised the question of where so much money is from.
+  const nearCorridorLimit = Boolean(corridorLimit && Number(corridorLimit.maxReceive) > 0 && receiverAmount >= Number(corridorLimit.maxReceive) * 0.8);
   function handleSend() {
     if (overCorridorLimit) return;
     // A payment of nothing is not a payment. Stopped before the pay-method
@@ -2185,6 +2190,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   />}{searchStage === "found" && corridorLimit && (() => {
     const maxParts = geuLensBarParts(Number(corridorLimit.maxSend) || 0, top.currency, lens, top.currency);
     const paused = !(Number(corridorLimit.maxSend) > 0);
+    if (!paused && !overCorridorLimit && !nearCorridorLimit) return null;
     return <div data-testid="send-corridor-limit" role={overCorridorLimit ? "alert" : void 0} style={{ marginTop: topOpen ? 0 : 18, marginBottom: -10, borderRadius: 14, padding: "10px 12px", fontSize: 12.5, fontWeight: 700, lineHeight: 1.45, background: overCorridorLimit || paused ? T.negativeSoft : T.surfaceAlt, color: overCorridorLimit || paused ? T.negative : T.inkSoft }}>{paused
       ? `Payments to ${corridorLimit.countryName} are paused right now.`
       : <>{overCorridorLimit ? "Too large to send to " : "You can send up to "}{overCorridorLimit ? `${corridorLimit.countryName} right now. You can send up to ` : ""}<span style={{ whiteSpace: "nowrap", color: overCorridorLimit ? T.negative : T.ink }}>{maxParts.lead}{maxParts.trail && <span style={{ fontSize: geuLensTrailSize(12.5) }}> {maxParts.trail}</span>}</span>{overCorridorLimit ? "." : ` to ${corridorLimit.countryName} right now.`}</>}</div>;

@@ -178,6 +178,7 @@ const CreatorCover = require('./models/CreatorCover');
 const CreatorReview = require('./models/CreatorReview');
 const CreatorStat = require('./models/CreatorStat');
 const Notification = require('./models/Notification');
+const NameHistory = require('./models/NameHistory');
 // Web Push. The model holds one row per subscribed browser; the service is the
 // only thing that talks to a push service and is inert when VAPID is unset.
 const PushSubscription = require('./models/PushSubscription');
@@ -5768,6 +5769,10 @@ app.get('/api/creator/resolve/:handle', lookupLimit, requireAuth, async (req, re
     creator.repeatPayers = repeatPayers;
     creator.reviews = reviews;
     creator.cover = cover ? { photo: cover.dataUrl, focusY: cover.focusY } : null;
+    // Changed hands in the last 30 days (0211): payers are told, and told
+    // where the old shop went.
+    const sale = await NameHistory.findOne({ handle: user.creatorProfile && user.creatorProfile.handle, at: { $gt: new Date(Date.now() - 30 * 86400000) } }).sort({ at: -1 }).lean();
+    creator.newOwner = sale ? { since: sale.at, oldShopNowAt: sale.fromNewHandle || '' } : null;
     return res.json({ success: true, creator });
   } catch (error) {
     console.error('Creator resolve error:', error);
@@ -8820,6 +8825,18 @@ const shops = require('./lib/shops').createShops({
   mintSymbolId: () => mintShopSymbolId(),
 });
 shops.mount(app);
+
+// Buying and selling creator names (0211). See lib/names.js.
+const names = require('./lib/names').createNames({
+  User, Transaction, LedgerEntry, Notification, requireAuth, writeLimit, lookupLimit, credentialLimit,
+  withAtomicSession: (work) => withAtomicSession(work),
+  buildCreatorHandle: (a, b) => buildCreatorHandle(a, b),
+  mintReference: () => createPrototypeTransactionReference(),
+  resolveOwnCurrency: (u) => resolveOwnCurrency(u),
+  pin: { Pin, beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
+  shops,
+});
+names.mount(app);
 
 // My Essentials (0208): the daily draw, paid by GLOOBAL into the GLOOBAL
 // Bank balance, and the hold on leaving — everything an account has used

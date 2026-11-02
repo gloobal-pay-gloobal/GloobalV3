@@ -95,6 +95,24 @@ function createShops({ User, Transaction, LedgerEntry, Notification, CreatorLogo
     return { shops: shopsOut, max: MAX_SHOPS, totals: { today: sum('today'), month: sum('month'), all: sum('all'), payments: shopsOut.reduce((a, s) => a + s.totals.payments, 0) } };
   }
 
+  // A new, nameless shop for an account (0211: a bought name can land on
+  // one). Null when the account already runs five.
+  async function createShop(owner, session = null) {
+    const count = 1 + await User.countDocuments({ shopOwnerId: owner._id }).session(session);
+    if (count >= MAX_SHOPS) return null;
+    let symbolId = '';
+    for (let i = 0; i < 8 && !symbolId; i += 1) {
+      const candidate = mintSymbolId();
+      if (!(await User.exists({ symbolId: candidate }).session(session))) symbolId = candidate;
+    }
+    if (!symbolId) return null;
+    const shop = new User({ fullName: owner.fullName, symbolId, symbolIdHistory: [{ symbolId, action: 'created' }], countryIso: owner.countryIso, shopOwnerId: owner._id, balance: 0, cashbackRate: owner.cashbackRate });
+    shop.set('mobileNumber', undefined);
+    shop.set('referralCode', undefined);
+    await shop.save({ session });
+    return shop;
+  }
+
   function mount(app) {
     // The account's shops: its own first, then the others, each with its
     // totals, and the whole Creator side's together.
@@ -149,7 +167,7 @@ function createShops({ User, Transaction, LedgerEntry, Notification, CreatorLogo
     });
   }
 
-  return { mount, sweep, idsOf, list, MAX_SHOPS };
+  return { mount, sweep, idsOf, list, createShop, MAX_SHOPS };
 }
 
 module.exports = { createShops, MAX_SHOPS };

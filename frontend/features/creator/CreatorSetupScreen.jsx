@@ -308,6 +308,9 @@ function CreatorSetupCard({ look, name, tagline, logo, chips = [], badge = "", o
 }
 
 function CreatorSetupScreen({
+  // 0211: a taken name offers Make an offer / Ask to buy / Buy; the Edit
+  // list offers Sell this name.
+  onOpenNameMarket,
   myGloobalId,
   creator,
   onSave,
@@ -778,7 +781,7 @@ function CreatorSetupScreen({
     margin: "9px 2px 0"
   }}>{nameKept ? <><Check9 size={13} color={T.positive} /><span style={{ color: T.positive }}>{savedAs.handle} is yours</span></> : <>{availability.status === "checking" && <><Loader5 size={13} color={T.inkFaint} /><span style={{ color: T.inkFaint }}>Checking…</span></>}{availability.status === "free" && <><Check9 size={13} color={T.positive} /><span style={{ color: T.positive }}>{availability.handle} is yours</span></>}{refused && <><X12 size={13} color={T.negative} /><span style={{ color: T.negative }}>{availability.message || "That name is taken."}</span></>}{(availability.status === "idle" || availability.status === "unknown") && <span style={{ color: T.inkFaint, fontWeight: 600 }}>
         {enough ? preview : "A first part is needed. The second is optional."}
-      </span>}</>}</div>{small(<>One line under your name <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, color: T.inkFaint }}>(optional)</span></>)}<input
+      </span>}</>}</div>{refused && availability.status === "taken" && availability.handle && onOpenNameMarket && !nameKept ? <NameTakenCard handle={availability.handle} onOpen={onOpenNameMarket} /> : null}{small(<>One line under your name <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600, color: T.inkFaint }}>(optional)</span></>)}<input
     id="creator-tagline"
     value={tagline}
     maxLength={60}
@@ -1059,7 +1062,12 @@ function CreatorSetupScreen({
     }}>{line}</span></span>{done ? null : <span style={{
       fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "3px 9px", background: "#FEF3C7", color: "#92400E", flexShrink: 0
     }}>Add</span>}<ChevronRight9 size={16} color={T.inkFaint} /></button>;
-  })}</div> : null}{(stepError || error) && <div
+  })}{savedAs.handle && onOpenNameMarket ? <button
+    type="button"
+    data-testid="creator-hub-sell-name"
+    onClick={() => onOpenNameMarket({ mode: "sell", handle: savedAs.handle })}
+    style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 14px", border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left", background: "none", borderTop: `1px solid ${T.line}` }}
+  ><span style={{ width: 36, height: 36, borderRadius: 11, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontWeight: 900, color: T.accent }}>₹</span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>Sell this name</span><span style={{ display: "block", fontSize: 11.5, color: T.inkSoft, fontWeight: 600, marginTop: 2 }}>{`${savedAs.handle} · a price or open to offers, and the offers`}</span></span><ChevronRight9 size={16} color={T.inkFaint} /></button> : null}</div> : null}{(stepError || error) && <div
     role="alert"
     style={{
       marginTop: 16,

@@ -558,7 +558,7 @@ function CreatorPage({
   <div style={{
     flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",
     padding: `0 18px ${count > 0 && !isOwner ? 110 : 30}px`
-  }}>{
+  }}>{!isOwner && creator && creator.newOwner ? <div data-testid="creator-new-owner" role="note" style={{ margin: "4px 0 12px", borderRadius: 14, padding: "10px 12px", background: "#FEF3C7", color: "#92400E", fontSize: 12.5, fontWeight: 700, lineHeight: 1.45 }}>{`⚠ New owner since ${new Date(creator.newOwner.since).toLocaleDateString([], { day: "numeric", month: "short" })} · this name changed hands.`}{creator.newOwner.oldShopNowAt ? ` Looking for the old shop? It's now ${creator.newOwner.oldShopNowAt}.` : ""}</div> : null}{
     /* ── THE COVER ────────────────────────────────────────────────────
        Full-bleed out of the scroll container's own padding, with the
        owner's crop position honoured so a photo framed on a shopfront is

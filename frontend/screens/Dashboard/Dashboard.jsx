@@ -1402,6 +1402,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const creatorSymbol = activeShop || myGloobalId;
   const [shopsInfo, setShopsInfo] = useState83(null);
   const [addingShop, setAddingShop] = useState83(false);
+  // The name market (0211): { mode: "name" | "buy" | "thread" | "sell", handle, info, threadId }.
+  const [nameMarket, setNameMarket] = useState83(null);
   // 0185: the creator side's one-time "what do you make" card.
   const [otherWordsDraft, setOtherWordsDraft] = useState14("");
   const [otherWordsSaving, setOtherWordsSaving] = useState14(false);
@@ -4544,6 +4546,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        into the PIN fallback's modal while the balance eye two taps away
        put this screen up first. */
   }{showCreatorSetup && <CreatorSetupScreen
+    onOpenNameMarket={(start) => setNameMarket(start)}
     myGloobalId={myGloobalId}
     creator={creatorProfile}
     onSave={saveCreatorProfile}
@@ -4579,7 +4582,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     /* Single-asset growth chart — from the month cashback was earned
        up to the month it fully compounds to 100% of the original
        spend, at the fixed 1%/month rate. Layered above My Assets. */
-  }{shopCode && <ScreenErrorBoundary name="Your shop code" onClose={() => setShopCode(null)}><div style={{
+  }{nameMarket && <ScreenErrorBoundary name="Creator names" onClose={() => setNameMarket(null)}><NameMarketScreen
+    start={nameMarket}
+    ccyCode={ccyCode}
+    lens={displayLens}
+    shopSymbol={creatorSymbol}
+    shops={shopsInfo}
+    onClose={() => setNameMarket(null)}
+    onToast={showToast2}
+    onChanged={() => { loadShops(); creatorLoadedRef.current = false; loadCreatorProfile(creatorSymbol); }}
+  /></ScreenErrorBoundary>}{shopCode && <ScreenErrorBoundary name="Your shop code" onClose={() => setShopCode(null)}><div style={{
     position: "fixed", inset: 0, zIndex: 335, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden"
   }}><div style={{
     display: "flex", alignItems: "center", gap: 10,

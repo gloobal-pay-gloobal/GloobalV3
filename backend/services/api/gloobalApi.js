@@ -1177,6 +1177,23 @@ var GloobalApi = {
   async openShop() {
     return gloobalApiClient.post("/api/shops", {});
   },
+  // Buying and selling creator names (0211).
+  async getName(handle) {
+    try {
+      const r = await gloobalApiClient.get(`/api/names/${encodeURIComponent(handle)}`);
+      return r && r.success ? r : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async listName(body) { return gloobalApiClient.put("/api/names/listing", body || {}); },
+  async nameThreads() { return gloobalApiClient.get("/api/names/threads"); },
+  async nameThread(id) { return gloobalApiClient.get(`/api/names/threads/${encodeURIComponent(id)}`); },
+  async openNameThread(handle, body) { return gloobalApiClient.post(`/api/names/${encodeURIComponent(handle)}/threads`, body || {}); },
+  async nameMessage(id, body) { return gloobalApiClient.post(`/api/names/threads/${encodeURIComponent(id)}/messages`, body || {}); },
+  async acceptName(id, body) { return gloobalApiClient.post(`/api/names/threads/${encodeURIComponent(id)}/accept`, body || {}); },
+  async buyName(handle) { return gloobalApiClient.post(`/api/names/${encodeURIComponent(handle)}/buy`, {}); },
+  async payName(id, body) { return gloobalApiClient.post(`/api/names/threads/${encodeURIComponent(id)}/pay`, body || {}); },
   // Link a bank by paying ₹1 from it by UPI (0209, test mode): the payment
   // carries the account, IFSC and name, so nothing is typed.
   async linkBankByRupee(body) {

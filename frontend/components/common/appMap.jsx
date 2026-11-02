@@ -283,12 +283,49 @@ var APP_MAP_ICONS = {
 // from a second palette invented here.
 var APP_MAP_BRANCH_COLORS = [T.accent, T.txnOut, T.accent2, T.positive, T.inkFaint];
 
-// One destination. A chip rather than a row, because a branch holds four of
-// them and four full-width rows per branch is the flat list this replaced.
+// ── BIG FOUR, THEN EVERYTHING (0205) ───────────────────────────────────
 //
-// The chip for the screen you are ON is filled rather than outlined: on a map
-// whose whole point is "where am I", the current position has to be findable
-// without reading every label.
+// The founder chose layout C from three drawings: the four places people go
+// most as big coloured cards, and every other place as a small pill with
+// its icon in a tinted square, under its group. The spine-and-branches map
+// this replaces took a long scroll for 25 places; this fits in about one
+// screen and the common trips are one thumb away.
+//
+// Which four is a fixed choice, not a count of visits: a layout that moves
+// its biggest buttons around is one nobody can learn.
+var APP_MAP_BIG = [
+  { key: "send", sub: "ID, mobile or shop", from: "#B91C1C", to: "#EF4444" },
+  { key: "gbank", sub: "Account & transfers", from: "#5B21B6", to: "#8B5CF6" },
+  { key: "scan", sub: "Point at a code", from: "#9A3412", to: "#F97316" },
+  { key: "payservices", sub: "Bills · बाज़ार", from: "#1E40AF", to: "#3B82F6" }
+];
+var APP_MAP_BIG_KEYS = APP_MAP_BIG.map((b) => b.key);
+
+function AppMapBigCard({ entry, big, current, onPress }) {
+  const Icon = APP_MAP_ICONS[entry.key] || MapFallbackIcon;
+  return <button
+    onClick={() => onPress(entry)}
+    className="v2-tap"
+    data-testid={`app-map-big-${entry.key}`}
+    aria-current={current ? "page" : void 0}
+    style={{
+      display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 14, minHeight: 104,
+      padding: 14, borderRadius: 22, border: "none", cursor: "pointer", font: "inherit", textAlign: "left", color: "#fff",
+      background: `linear-gradient(140deg, ${big.from}, ${big.to})`,
+      boxShadow: current ? `0 0 0 3px ${T.bg}, 0 0 0 5px ${big.to}` : `0 8px 20px ${big.from}40`
+    }}
+  ><span style={{
+    width: 38, height: 38, borderRadius: 12, background: "rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center"
+  }}><Icon size={19} color="#fff" /></span><span style={{ minWidth: 0 }}><span style={{
+    display: "block", fontSize: 15, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+  }}>{entry.label}</span><span style={{
+    display: "block", fontSize: 11, fontWeight: 600, opacity: 0.86, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+  }}>{big.sub}</span></span></button>;
+}
+
+// One destination as a pill: its icon in a square of its group's colour,
+// then the name. The screen you are ON is filled with that colour, so it is
+// found without reading every label.
 function AppMapChip({ entry, color, current, onPress }) {
   const Icon = APP_MAP_ICONS[entry.key] || MapFallbackIcon;
   return <button
@@ -298,62 +335,36 @@ function AppMapChip({ entry, color, current, onPress }) {
     style={{
       display: "inline-flex",
       alignItems: "center",
-      gap: 7,
+      gap: 8,
       maxWidth: "100%",
       minWidth: 0,
-      padding: "8px 12px",
-      borderRadius: 999,
+      padding: "7px 12px 7px 7px",
+      borderRadius: 14,
       cursor: "pointer",
       font: "inherit",
       textAlign: "left",
-      background: current ? color : T.surface,
-      border: `1px solid ${current ? color : T.line}`,
-      boxShadow: current ? `0 4px 14px ${color}44` : `0 2px 8px rgba(${T.accentDeepRgb},0.05)`,
-      color: current ? "#fff" : T.ink,
-      opacity: entry.locked ? 0.6 : 1
+      background: current ? color : entry.locked ? "transparent" : T.surface,
+      border: entry.locked ? `1px dashed ${T.line}` : "none",
+      boxShadow: current ? `0 4px 14px ${color}44` : entry.locked ? "none" : `0 2px 8px rgba(${T.accentDeepRgb},0.06)`,
+      color: current ? "#fff" : entry.locked ? T.inkFaint : T.ink
     }}
-  >{entry.locked
-    ? <MapLockIcon size={13} color={T.inkFaint} style={{ flexShrink: 0 }} />
-    : <Icon size={13} color={current ? "#fff" : color} style={{ flexShrink: 0 }} />
-  }<span
-    style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+  ><span aria-hidden="true" style={{
+    width: 26, height: 26, borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+    background: current ? "rgba(255,255,255,0.22)" : entry.locked ? T.surfaceAlt : `${color}1F`
+  }}>{entry.locked
+    ? <MapLockIcon size={13} color={T.inkFaint} />
+    : <Icon size={14} color={current ? "#fff" : color} />
+  }</span><span
+    style={{ fontSize: 12.5, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
   >{entry.label}</span></button>;
 }
 
-// One branch off the spine: the node, the stub connecting it, the section
-// name, and its destinations.
-//
-// `last` stops the spine at the final node instead of letting it run on into
-// empty space below the map — a line that continues past the last thing on it
-// reads as content that failed to load.
-function AppMapBranch({ title, color, rows, current, onPress, dashed, last }) {
+// One group: a dot and its name in the group's colour, then its pills.
+function AppMapGroup({ title, color, rows, current, onPress }) {
   if (!rows.length) return null;
-  return <div style={{ position: "relative", paddingLeft: 38, paddingBottom: last ? 2 : 16 }}>{
-    /* The spine, continuing down from the hub. */
-  }<span
-    aria-hidden="true"
-    style={{ position: "absolute", left: 19, top: 0, bottom: last ? "calc(100% - 20px)" : 0, width: 2, background: T.line }}
-  /><span
-    aria-hidden="true"
-    style={{ position: "absolute", left: 19, top: 19, width: 17, height: 2, background: color }}
-  /><span
-    aria-hidden="true"
-    style={{
-      position: "absolute",
-      left: 14,
-      top: 14,
-      width: 12,
-      height: 12,
-      borderRadius: "50%",
-      background: T.bg,
-      // Dashed for the locked branch: it is drawn on the map because the map
-      // should show the whole app, and outlined differently because those
-      // destinations are not open from here.
-      border: `2.5px ${dashed ? "dashed" : "solid"} ${color}`
-    }}
-  /><div
-    style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color, marginBottom: 9, paddingTop: 6 }}
-  >{title}</div><div
+  return <div style={{ marginTop: 16 }}><div style={{
+    display: "flex", alignItems: "center", gap: 7, fontSize: 11, fontWeight: 900, letterSpacing: 0.8, textTransform: "uppercase", color, marginBottom: 9
+  }}><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />{title}</div><div
     style={{ display: "flex", flexWrap: "wrap", gap: 7 }}
   >{rows.map((entry) => <AppMapChip
     key={entry.key}
@@ -445,6 +456,8 @@ function AppMapOverlay({ entries, currentKey, query, onQueryChange, onClose, onL
     if (!sections.includes(name)) sections.push(name);
   }
   const here = entries.find((e) => e.key === currentKey) || null;
+  // The big four that are open to this person, in their fixed order.
+  const bigRows = APP_MAP_BIG.map((big) => ({ big, entry: unlocked.find((e) => e.key === big.key) })).filter((r) => r.entry);
   const HereIcon = here ? APP_MAP_ICONS[here.key] || MapFallbackIcon : MapHomeIcon;
 
   return <div
@@ -455,7 +468,7 @@ function AppMapOverlay({ entries, currentKey, query, onQueryChange, onClose, onL
   ><div
     style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", flexShrink: 0 }}
   ><span
-    style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}
+    style={{ fontSize: 24, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}
   >Where to?</span><button
     onClick={onClose}
     aria-label="Close"
@@ -480,37 +493,35 @@ function AppMapOverlay({ entries, currentKey, query, onQueryChange, onClose, onL
       style={{ textAlign: "center", color: T.inkFaint, fontSize: 13, marginTop: 40 }}
     >No screens match "{query}"</div>}
   </> : <>{
-    /* The hub. Only drawn when the caller actually knows where the person
-       is — a "You are here" pointing at a guess is worse on a map than no
-       hub at all, because a map is the one screen a person consults
-       precisely because they are unsure. */
-  }{here && <div
-    style={{ display: "flex", alignItems: "center", gap: 12, background: T.gradWallet, borderRadius: 20, padding: "15px 17px", boxShadow: `0 12px 30px rgba(${T.accentDeepRgb},0.26)` }}
-  ><span
-    style={{ width: 40, height: 40, borderRadius: 13, background: "rgba(255,255,255,0.16)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-  ><HereIcon size={20} color="#fff" /></span><span style={{ flex: 1, minWidth: 0 }}><span
-    style={{ display: "block", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: "rgba(255,255,255,0.6)" }}
-  >You are here</span><span
-    style={{ display: "block", fontSize: 16, fontWeight: 800, color: "#fff", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-  >{here.label}</span></span></div>}{here && <div
-    aria-hidden="true"
-    style={{ position: "relative", height: 18 }}
-  ><span style={{ position: "absolute", left: 19, top: 0, bottom: 0, width: 2, background: T.line }} /></div>}{sections.map((name, i) => <AppMapBranch
+    /* Where you are, as a small pill — only when the caller actually knows.
+       A "You are here" pointing at a guess is worse than none, because a
+       map is the one screen people open precisely when unsure. */
+  }{here && <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: T.inkSoft }}>You are here<span style={{
+    display: "inline-flex", alignItems: "center", gap: 6, background: T.surface, color: T.ink, borderRadius: 999,
+    padding: "5px 11px 5px 6px", fontWeight: 800, boxShadow: `0 2px 6px rgba(${T.accentDeepRgb},0.08)`, minWidth: 0
+  }}><span style={{
+    width: 20, height: 20, borderRadius: "50%", background: T.accent, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+  }}><HereIcon size={11} color="#fff" /></span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{here.label}</span></span></div>}{
+    /* The big four. */
+  }{bigRows.length ? <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: here ? 12 : 0 }}>{bigRows.map(({ entry, big }) => <AppMapBigCard
+    key={entry.key}
+    entry={entry}
+    big={big}
+    current={entry.key === currentKey}
+    onPress={handleUnlockedPress}
+  />)}</div> : null}{sections.map((name, i) => <AppMapGroup
     key={name}
     title={name}
     color={APP_MAP_BRANCH_COLORS[i % APP_MAP_BRANCH_COLORS.length]}
-    rows={unlocked.filter((e) => (e.section || "Elsewhere") === name)}
+    rows={unlocked.filter((e) => (e.section || "Elsewhere") === name && APP_MAP_BIG_KEYS.indexOf(e.key) < 0)}
     current={currentKey}
     onPress={handleUnlockedPress}
-    last={i === sections.length - 1 && locked.length === 0}
-  />)}<AppMapBranch
-    title="Locked"
+  />)}<AppMapGroup
+    title={unlocked.length ? "Get started · done" : "Locked"}
     color={T.inkFaint}
     rows={locked}
     current={null}
     onPress={handleLockedPress}
-    dashed
-    last
   /></>}</div></div>;
 }
 

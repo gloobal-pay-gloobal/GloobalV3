@@ -94,7 +94,7 @@ describe("the hub only claims what the app actually knows", () => {
     // because a map is the one screen consulted precisely when somebody is
     // unsure where they are.
     assert.match(map, /const here = entries\.find\(\(e\) => e\.key === currentKey\) \|\| null;/);
-    assert.match(map, /\{here && <div/);
+    assert.match(map, /\{here && <div style=\{\{ display: "flex", alignItems: "center", gap: 8/);
   });
 
   test("the current key is derived, not assumed", () => {
@@ -115,7 +115,7 @@ describe("the hub only claims what the app actually knows", () => {
 
   test("the screen you are on is findable without reading every label", () => {
     assert.match(map, /current=\{entry\.key === current\}/);
-    assert.match(map, /background: current \? color : T\.surface/);
+    assert.match(map, /background: current \? color : entry\.locked \? "transparent" : T\.surface/);
     assert.match(map, /aria-current=\{current \? "page" : void 0\}/);
   });
 });
@@ -136,23 +136,21 @@ describe("searching drops the map", () => {
 });
 
 describe("the drawing holds together", () => {
-  test("the locked branch is on the map, marked as locked", () => {
-    // The map should show the whole app, not only the part currently
-    // reachable — but those nodes are outlined differently because they are
-    // not open from here.
-    assert.match(map, /title="Locked"/);
-    assert.match(map, /dashed/);
-    assert.match(map, /border: `2\.5px \$\{dashed \? "dashed" : "solid"\} \$\{color\}`/);
+  test("the locked places are on the map, marked as locked", () => {
+    // The map shows the whole app, not only the part open now — locked
+    // places are dashed, greyed and carry a lock (0205: layout C).
+    assert.match(map, /title=\{unlocked\.length \? "Get started · done" : "Locked"\}/);
+    assert.match(map, /border: entry\.locked \? `1px dashed \$\{T\.line\}` : "none"/);
+    assert.match(map, /<MapLockIcon size=\{13\} color=\{T\.inkFaint\} \/>/);
   });
 
-  test("the spine stops at the last node", () => {
-    // A line that continues past the last thing on it reads as content that
-    // failed to load.
-    assert.match(map, /bottom: last \? "calc\(100% - 20px\)" : 0/);
+  test("the big four come first, and are not repeated below", () => {
+    assert.match(map, /var APP_MAP_BIG = \[\s*\{ key: "send",[^\n]*\n\s*\{ key: "gbank",[^\n]*\n\s*\{ key: "scan",[^\n]*\n\s*\{ key: "payservices",/);
+    assert.match(map, /APP_MAP_BIG_KEYS\.indexOf\(e\.key\) < 0/);
   });
 
-  test("branch colours come from the app's palette, not a new one", () => {
-    assert.match(map, /var APP_MAP_BRANCH_COLORS = \[T\.accent, TXN_OUT_COLOR, T\.accent2, T\.positive, T\.inkFaint\];/);
+  test("group colours come from the app's palette, not a new one", () => {
+    assert.match(map, /var APP_MAP_BRANCH_COLORS = \[T\.accent, T\.txnOut, T\.accent2, T\.positive, T\.inkFaint\];/);
   });
 
   test("an icon this map has never heard of still renders", () => {

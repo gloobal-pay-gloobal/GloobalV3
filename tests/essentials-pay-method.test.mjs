@@ -42,13 +42,18 @@ const strip = (s) => s.replace(/(^|[\s{(,])\/\*[\s\S]*?\*\//g, "$1").replace(/^\
 const app = readSource(APP);
 const send = readSource(SEND);
 
-describe("the subsidy is reachable at last", () => {
-  test("something actually calls it", () => {
-    // The test that would have caught the original fault: a count of
-    // references that are not the definition and not the destructure.
-    const body = strip(app);
-    const calls = (body.match(/applyEssentialsPoolSubsidy\(\{/g) || []).length;
-    assert.ok(calls >= 1, "applyEssentialsPoolSubsidy is unreachable again");
+describe("the draw is reachable, and is the server's (0208)", () => {
+  // It used to call applyEssentialsPoolSubsidy, this device's own ledger,
+  // and the server that pays never knew Essentials had been used. 0208
+  // moves the draw to POST /api/essentials/draw, which pays it as
+  // GLOOBAL's own payout and writes it down, so what was used can stay in
+  // GLOOBAL when money goes out (server/tests/essentials-held.test.mjs).
+  const fnOf = () => {
+    const at = strip(app).indexOf("const drawEssentialsForPayment");
+    return strip(app).slice(at, strip(app).indexOf("\n  };", at));
+  };
+  test("something actually calls it, on the server", () => {
+    assert.match(fnOf(), /GloobalApi\.drawEssentials\(/);
   });
 
   test("the caller is wired to the Send screen", () => {
@@ -57,28 +62,24 @@ describe("the subsidy is reachable at last", () => {
   });
 
   test("it never draws more than the payment", () => {
-    // A subsidy larger than what is being paid for is a standing top-up,
-    // which is a different product.
-    const at = strip(app).indexOf("const drawEssentialsForPayment");
-    const fn = strip(app).slice(at, strip(app).indexOf("\n  };", at));
-    assert.match(fn, /requestedAmount: typed/);
-    assert.doesNotMatch(fn, /requestedAmount: *(baseline|dailyLimit)/,
+    // A draw larger than what is being paid for is a standing top-up,
+    // which is a different product. The server also caps it at what is
+    // left today.
+    assert.match(fnOf(), /drawEssentials\(Math\.round\(typed \* 100\) \/ 100, key\)/);
+    assert.doesNotMatch(fnOf(), /drawEssentials\((baseline|dailyLimit)/,
       "the draw is sized by the daily limit rather than by the payment");
   });
 
   test("a refused or failed draw does not fail the payment", () => {
-    const at = strip(app).indexOf("const drawEssentialsForPayment");
-    const fn = strip(app).slice(at, strip(app).indexOf("\n  };", at));
-    assert.match(fn, /catch \(err\)/);
-    assert.match(fn, /applied: 0/);
-    assert.doesNotMatch(fn, /throw/,
-      "a failed subsidy now throws, which would take the payment down with it");
+    // drawEssentials never throws (gloobalApi resolves { applied: 0 }).
+    assert.match(fnOf(), /Number\(result && result\.applied\) \|\| 0/);
+    assert.doesNotMatch(fnOf(), /throw/,
+      "a failed draw now throws, which would take the payment down with it");
+    assert.match(readSource("backend/services/api/gloobalApi.js"), /async drawEssentials\(amount, idempotencyKey\) \{\s*try \{[\s\S]*?catch \(e\) \{[\s\S]*?return \{ applied: 0/);
   });
 
   test("a non-positive amount draws nothing", () => {
-    const at = strip(app).indexOf("const drawEssentialsForPayment");
-    const fn = strip(app).slice(at, strip(app).indexOf("\n  };", at));
-    assert.match(fn, /!Number\.isFinite\(typed\) \|\| typed <= 0/);
+    assert.match(fnOf(), /!Number\.isFinite\(typed\) \|\| typed <= 0/);
   });
 });
 

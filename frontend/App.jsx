@@ -1384,29 +1384,24 @@ function GloobalId() {
   const drawEssentialsForPayment = async (amount) => {
     const typed = Number(amount);
     if (!Number.isFinite(typed) || typed <= 0) return { applied: 0 };
-    const iso = dialCountry && dialCountry.iso;
-    const baseline = computeEssentialsBaseline(iso);
-    const currency = COUNTRY_CURRENCY[iso] || "USD";
-    try {
-      const result = applyEssentialsPoolSubsidy({
-        // Never more than the payment: a subsidy larger than what is
-        // being paid for would be a standing top-up, which is a
-        // different product and not what was asked for.
-        requestedAmount: typed,
-        dailyLimit: Number(baseline.dailyTotal) || 0,
-        currency
-      });
-      const applied = Number(result && result.subsidyAmount) || 0;
-      // The balance moved underneath the dashboard, so re-read it rather
-      // than assuming this device's arithmetic matches the server's.
-      if (applied > 0) setRefreshBalanceToken((n) => n + 1);
-      return { applied, code: result && result.code };
-    } catch (err) {
-      // A failed subsidy is not a failed payment. The pool is untouched
-      // (the orchestrator rolls its own snapshot back), and the payment
-      // that follows simply draws entirely on the bank.
-      return { applied: 0, code: "SUBSIDY_FAILED" };
-    }
+    // ── THE DRAW IS THE SERVER'S NOW (0208) ───────────────────────────
+    //
+    // It used to happen only in this device's own ledger, so the server —
+    // the thing that actually pays — never knew Essentials had been used,
+    // and the rule the founder set could not be kept: everything used from
+    // Essentials stays in GLOOBAL when money goes to an outside bank. The
+    // server pays the draw into the GLOOBAL Bank balance (GLOOBAL's own
+    // payout, so the books still add up) and writes it down; the payment
+    // that follows draws on that balance exactly as before.
+    //
+    // Rounded to the paisa, and keyed so a double tap cannot draw twice.
+    const key = `draw-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const result = await GloobalApi.drawEssentials(Math.round(typed * 100) / 100, key);
+    const applied = Number(result && result.applied) || 0;
+    // The balance moved underneath the dashboard, so re-read it rather
+    // than assuming this device's arithmetic matches the server's.
+    if (applied > 0) setRefreshBalanceToken((n) => n + 1);
+    return { applied, code: result && result.code, message: result && result.message };
   };
 
   const handleQrScanned = async (rawCode) => {

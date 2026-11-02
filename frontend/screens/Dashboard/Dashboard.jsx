@@ -1,5 +1,6 @@
 // src/screens/Dashboard/Dashboard.jsx
 import React3, { useState as useState14, useEffect as useEffect12, useRef as useRef10, useMemo as useMemo5 } from "react";
+import { useState as useState83, useEffect as useEffect78 } from "react";
 import {
   Search as Search3,
   User,
@@ -251,6 +252,30 @@ function BalanceError({ onRetry }) {
       cursor: "pointer"
     }}
   >Retry</button>}</span>;
+}
+
+// ── THE BALANCE, IN TWO HALVES (0208) ───────────────────────────────────
+// Only once something has been used from Essentials: what can go to any
+// bank, and what stays in GLOOBAL because it was already used. The whole
+// figure above stays spendable anywhere on GLOOBAL, and the line under the
+// bar says so — the rule is visible every day, not only on the day somebody
+// tries to send money out. Hidden with the balance.
+function BalanceEssentialsSplit({ summary, balance, ccyCode, lens, onOpen }) {
+  const held = summary && Number(summary.held) > 0 ? Number(summary.held) : 0;
+  if (!held) return null;
+  const bal = Math.max(0, Number(balance) || 0);
+  const free = Math.max(0, Math.round((bal - held) * 100) / 100);
+  const stays = Math.min(held, bal);
+  const freePct = bal > 0 ? Math.max(free > 0 ? 3 : 0, (free / bal) * 100) : 0;
+  const fig = (v) => geuLensMoney(v, ccyCode, lens);
+  return <div data-testid="balance-essentials-split" style={{ marginTop: 12 }}>
+    <div style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", background: "rgba(255,255,255,0.2)" }}><i style={{ display: "block", width: `${freePct}%`, background: "#FED7AA" }} /><i style={{ display: "block", flex: 1, background: "#67E8F9" }} /></div>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 8 }}>
+      <div style={{ minWidth: 0 }}><span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, opacity: 0.9 }}><i style={{ width: 8, height: 8, borderRadius: 3, background: "#FED7AA" }} />To your bank</span><b data-testid="balance-free" style={{ display: "block", fontSize: 15, fontWeight: 900, whiteSpace: "nowrap" }}>{fig(free)}</b></div>
+      <div style={{ minWidth: 0, textAlign: "right" }}><span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, fontSize: 11, fontWeight: 700, opacity: 0.9 }}><i style={{ width: 8, height: 8, borderRadius: 3, background: "#67E8F9" }} />Stays in GLOOBAL</span><b data-testid="balance-stays" style={{ display: "block", fontSize: 15, fontWeight: 900, whiteSpace: "nowrap" }}>{fig(stays)}</b></div>
+    </div>
+    <button type="button" onClick={onOpen} className="v2-tap" style={{ marginTop: 10, width: "100%", border: "none", borderRadius: 12, padding: "8px 10px", background: "rgba(255,255,255,0.14)", color: "inherit", fontFamily: "inherit", fontSize: 11.5, fontWeight: 700, textAlign: "left", cursor: "pointer", lineHeight: 1.4 }}>{`You used ${fig(held)} from Essentials \u00B7 spend it anywhere on GLOOBAL \u203A`}</button>
+  </div>;
 }
 
 function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "", themeKey = "day", onPickTheme }) {
@@ -1916,6 +1941,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // changes the unit written after it. ₹9,700.00 and 9,700.00 GEU are the
   // same money, which is the claim the subtext under this makes out loud.
   const balance = geuLensMoney(bankBalance, ccyCode, displayLens);
+  // ── WHAT STAYS IN (0208) ───────────────────────────────────────────
+  // Everything used from My Essentials stays in GLOOBAL; only the balance
+  // above it can go to an outside bank. Read again whenever the balance
+  // moves, so the two halves on the card never disagree with the figure.
+  const [essentialsHeld, setEssentialsHeld] = useState83(null);
+  useEffect78(() => {
+    let live = true;
+    GloobalApi.getEssentials().then((r) => { if (live) setEssentialsHeld(r); });
+    return () => { live = false; };
+  }, [bankBalance]);
   // The other name for the same figure, in brackets beside it, and the size
   // the pair can be printed at without wrapping. Both are needed up here
   // rather than inline below, because the size depends on the LENGTH of the
@@ -2872,7 +2907,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       cursor: "pointer",
       flexShrink: 0
     }}
-  ><EyeIcon open={balanceVisible} /></button>}</div>{
+  ><EyeIcon open={balanceVisible} /></button>}</div>{balanceVisible && balanceStatus === "ready" && <BalanceEssentialsSplit summary={essentialsHeld} balance={bankBalance} ccyCode={ccyCode} lens={displayLens} onOpen={() => setShowEssentials(true)} />}{
     /* Spending mini chart — sits below its own divider so it
        reads as a distinct footer section of the wallet card
        rather than competing with the balance above it. */

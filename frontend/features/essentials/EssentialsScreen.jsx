@@ -1,5 +1,6 @@
 // src/features/essentials/EssentialsScreen.jsx
 import { useState as useState45 } from "react";
+import { useEffect as useEffect79 } from "react";
 import { Utensils as EssUtensils, Droplet as EssDroplet, Home as EssHome, Sparkles as EssSparkles, CheckCircle2 as EssCheckCircle, Circle as EssCircle, Lock as Lock8, ChevronRight as ChevronRight6 } from "lucide-react";
 
 var ESSENTIALS_COMPONENT_META = [
@@ -42,6 +43,37 @@ function EssentialsBar({ fraction, color, track }) {
   /></span>;
 }
 
+// ── WHAT YOU HAVE USED, AND WHAT STAYS IN (0208) ─────────────────────────
+// Everything used from Essentials is free and never paid back, and the same
+// amount stays in GLOOBAL when money comes in: spend it anywhere here, and
+// only what is above it can go to an outside bank. The months show where
+// the figure came from.
+function EssentialsUsedCard({ summary, figure }) {
+  const used = Number(summary.used) || 0;
+  const months = Array.isArray(summary.months) ? summary.months.slice(-6) : [];
+  const peak = Math.max(1, ...months.map((m) => Number(m.used) || 0));
+  const label = (key) => { try { return new Date(`${key}-15T12:00:00Z`).toLocaleDateString([], { month: "short" }); } catch (e) { return key; } };
+  const big = { fontSize: 24, fontWeight: 800, fontFamily: T.fontDisplay, color: T.ink, marginTop: 3, whiteSpace: "nowrap" };
+  const cap = { fontSize: 11, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkSoft };
+  const sub = { fontSize: 11, fontWeight: 700, color: T.inkFaint, marginTop: 2 };
+  return <div data-testid="essentials-used-card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    {/* One above the other: a figure with its GEU twin is too wide for
+        half a phone, and the two are read in that order anyway. */}
+    <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "4px 16px" }}>
+      <div style={{ padding: "12px 0", minWidth: 0 }}><div style={cap}>Used so far</div><div data-testid="essentials-used" style={big}>{figure(used, 24)}</div><div style={sub}>free · never paid back</div></div>
+      <div style={{ padding: "12px 0", minWidth: 0, borderTop: `1px solid ${T.line}` }}><div style={cap}>Stays in GLOOBAL</div><div data-testid="essentials-stays" style={{ ...big, color: "#0E7490" }}>{figure(used, 24)}</div><div style={sub}>{Number(summary.short) > 0 ? <>{figure(summary.short, 11)} more has to come in before anything can go to another bank</> : <>{figure(summary.free, 11)} of your balance can go to any bank</>}</div></div>
+    </div>
+    {months.length > 0 && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "14px 14px 12px" }}>
+      <div style={cap}>Used each month</div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 92, marginTop: 10 }}>{months.map((m) => <div key={m.month} style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
+        <span style={{ display: "block", width: "100%", maxWidth: 44, height: `${Math.max(4, ((Number(m.used) || 0) / peak) * 100)}%`, borderRadius: "7px 7px 3px 3px", background: "#16A34A" }} title={`${m.days} days`} />
+        <span style={{ fontSize: 10, fontWeight: 800, color: T.inkFaint }}>{label(m.month)}</span>
+      </div>)}</div>
+    </div>}
+    <div style={{ display: "flex", gap: 10, alignItems: "flex-start", borderRadius: 16, padding: "11px 13px", background: "rgba(14,116,144,0.10)", color: "#155E75", fontSize: 12.5, fontWeight: 700, lineHeight: 1.45 }}><span aria-hidden="true">{"\u21BA"}</span><span>What you use is free and never paid back. When money comes in, the same amount stays in your GLOOBAL Bank — spend it on anything here. Only between GLOOBAL Banks, never to or from an outside bank.</span></div>
+  </div>;
+}
+
 function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEnough, onToggleIHaveEnough, bankUnlocked, onUnlockGloobalBank, onOpenScanAndPay }) {
   // ── THIS SCREEN ANSWERED TO NOTHING ───────────────────────────────────
   //
@@ -64,8 +96,20 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
       style={{ fontSize: geuLensTrailSize(base), fontWeight: 800 }}
     > {parts.trail}</span>}</>;
   };
-  const baseline = useMemo5(() => computeEssentialsBaseline(dialCountry.iso), [dialCountry.iso]);
-  const poolRemainingToday = useEssentialsPoolRemaining(baseline.dailyTotal);
+  const localBaseline = useMemo5(() => computeEssentialsBaseline(dialCountry.iso), [dialCountry.iso]);
+  const localRemaining = useEssentialsPoolRemaining(localBaseline.dailyTotal);
+  // ── THE SERVER'S FIGURES WIN (0208) ───────────────────────────────────
+  // Essentials is drawn on the server now, so today's limit, what is left
+  // and everything used come from there. This device's own estimate is
+  // kept only for the moment before the answer arrives (and offline).
+  const [summary, setSummary] = useState45(null);
+  useEffect79(() => {
+    let live = true;
+    GloobalApi.getEssentials().then((r) => { if (live) setSummary(r); });
+    return () => { live = false; };
+  }, []);
+  const baseline = summary && Number(summary.dailyLimit) > 0 ? { ...localBaseline, dailyTotal: Number(summary.dailyLimit) } : localBaseline;
+  const poolRemainingToday = summary && Number(summary.dailyLimit) > 0 ? Number(summary.leftToday) || 0 : localRemaining;
 
   // ── WHAT "HIDDEN" IS KEYED ON, AND WHY IT IS NOT THE TOGGLE ───────────
   //
@@ -153,7 +197,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
     style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.5, margin: "11px 2px 0" }}
   >{revealed
     ? <><GloobalWordmark /> carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here, which is worked out at {essentialsFigure(baseline.fullDailyTotal, 11.5)} a day. The rest is yours.</>
-    : <><GloobalWordmark /> carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here. The rest is yours.</>}</div>{
+    : <><GloobalWordmark /> carries {Math.round((Number(baseline.share) || 0) * 100)}% of an estimated day here. The rest is yours.</>}</div>{summary && (summary.bankOpen || Number(summary.used) > 0) && <EssentialsUsedCard summary={summary} figure={essentialsFigure} />}{
     /* The four components */
   }<div><div
     style={{ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" }}

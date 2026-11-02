@@ -1158,7 +1158,11 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       } else {
         // Nothing left in the pool today. Say so rather than letting the
         // payment proceed as though Essentials had carried part of it.
-        showToast2("Nothing left in your Essentials today — paying from your bank");
+        // Essentials only moves between GLOOBAL Banks (0208): without one
+        // open, the server refuses the draw and says so.
+        showToast2(drawn && drawn.code === "bank_closed"
+          ? "Open GLOOBAL Bank to use Essentials — paying from your bank"
+          : "Nothing left in your Essentials today — paying from your bank");
       }
     } else {
       essentialsAppliedRef.current = 0;

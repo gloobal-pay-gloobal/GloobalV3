@@ -114,6 +114,26 @@ function BankMoneyButton({ children, onClick, disabled, quiet }) {
   >{children}</button>;
 }
 
+// ── WHAT STAYS IN, ON THE SEND SCREEN (0208) ───────────────────────────
+// The sum written out (balance − used = can go), the reason in one line,
+// and a chip that fills in the most. Typing more turns the amount's line
+// red here, before the PIN, so nobody is refused after it.
+function BankEssentialsHeld({ balance, held, canGo, value, money, onMost }) {
+  const over = value > canGo + 0.004;
+  const row = (k, v, color, strong) => <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 14px", borderTop: strong || k !== "In your GLOOBAL Bank" ? `1px solid ${T.line}` : "none", fontSize: strong ? 14 : 13, fontWeight: strong ? 900 : 700, color: strong ? T.ink : T.inkSoft }}><span>{k}</span><b style={{ color: color || T.ink, fontWeight: 900, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{v}</b></div>;
+  return <div data-testid="bank-essentials-held" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>
+      {row("In your GLOOBAL Bank", money(balance))}
+      {row("Used from Essentials so far", `− ${money(held)}`, "#0E7490")}
+      {row("Can go to your bank", money(canGo), canGo > 0 ? "#C2410C" : T.inkFaint, true)}
+    </div>
+    <div role={over ? "alert" : void 0} style={{ display: "flex", gap: 9, alignItems: "flex-start", borderRadius: 14, padding: "10px 12px", background: over ? T.negativeSoft : "rgba(14,116,144,0.10)", color: over ? T.negative : "#155E75", fontSize: 12.5, fontWeight: 700, lineHeight: 1.45 }}><span aria-hidden="true">{over ? "!" : "\u21BA"}</span><span>{over
+      ? (canGo > 0 ? `Only ${money(canGo)} can go to another bank right now. ` : "Nothing can go to another bank yet. ")
+      : ""}{`${money(held)} stays in GLOOBAL because you already used it from Essentials. You can still pay anyone or any shop with it.`}</span></div>
+    {canGo > 0 && <button type="button" onClick={onMost} className="v2-tap" data-testid="bank-send-most" style={{ alignSelf: "center", border: "none", borderRadius: 999, padding: "8px 14px", background: "rgba(194,65,12,0.12)", color: "#9A3412", fontWeight: 900, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>{`Send the most: ${money(canGo)}`}</button>}
+  </div>;
+}
+
 function BankMoneyScreen({ start = "history", ccyCode = "INR", balance = 0, countryIso = "", accountName = "", onClose, onToast, onChanged }) {
   const [screen, setScreen] = useState74(start);
   const [history, setHistory] = useState74(null);
@@ -130,6 +150,10 @@ function BankMoneyScreen({ start = "history", ccyCode = "INR", balance = 0, coun
   const [caseReason, setCaseReason] = useState74("not_credited");
   const [caseNote, setCaseNote] = useState74("");
   const [caseText, setCaseText] = useState74("");
+  // My Essentials (0208): what this account has used stays in GLOOBAL, so
+  // only the balance above it can go to an outside bank. Null until known;
+  // the send screen then behaves as before and the server still checks.
+  const [essentials, setEssentials] = useState74(null);
   const idem = useRef43("");
   const india = String(countryIso || "").toUpperCase() === "IN";
   const money = (n) => bankMoneyFmt(n, ccyCode);
@@ -154,9 +178,13 @@ function BankMoneyScreen({ start = "history", ccyCode = "INR", balance = 0, coun
       setAccountId((cur) => cur && list.some((a) => a.id === cur && a.status === "active") ? cur : first ? first.id : null);
     } catch (e) { /* the send screen says so */ }
   };
+  const loadEssentials = async () => {
+    try { setEssentials(await GloobalApi.getEssentials()); } catch (e) { /* the server still checks */ }
+  };
   useEffect70(() => {
     loadHistory();
     loadAccounts();
+    loadEssentials();
     // The floating map button stands aside, as on the other bank screens.
     const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
     fire(true);
@@ -181,6 +209,10 @@ function BankMoneyScreen({ start = "history", ccyCode = "INR", balance = 0, coun
   const go = (next) => { setError(""); setScreen(next); };
   const value = Math.round(Number(amount) * 100) / 100;
   const amountOk = value > 0 && /^\d+(\.\d{1,2})?$/.test(String(amount).trim());
+  // What can go out: the balance above what stays in. Without the figure
+  // (offline, older server) it is the balance, as it always was.
+  const held = essentials && Number(essentials.held) > 0 ? Number(essentials.held) : 0;
+  const canGo = held > 0 ? Math.max(0, Math.round((Number(balance) - held) * 100) / 100) : Number(balance);
 
   const addMoney = async () => {
     setBusy(true);
@@ -210,6 +242,7 @@ function BankMoneyScreen({ start = "history", ccyCode = "INR", balance = 0, coun
       setTransfer(t);
       if (onChanged) onChanged();
       loadHistory();
+      loadEssentials();
       go("onway");
     } catch (e) {
       setPinValue("");
@@ -328,7 +361,7 @@ function BankMoneyScreen({ start = "history", ccyCode = "INR", balance = 0, coun
   } else if (screen === "added" && transfer) {
     body = <><div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, marginTop: 6 }}><span style={{ width: 70, height: 70, borderRadius: "50%", background: T.positiveSoft, color: T.positive, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, fontWeight: 900 }}>{"✓"}</span><span style={{ fontSize: 36, fontWeight: 700, fontFamily: T.fontDisplay, color: T.positive }}>+{money(transfer.amount)}</span><span style={{ fontSize: 13, fontWeight: 700, color: T.inkSoft }}>added to GLOOBAL Bank</span></div><BankMoneyKV rows={[["New balance", money(transfer.balanceAfter)], ["From", transfer.counterpart && transfer.counterpart.label], ["Reference", transfer.externalRef], ["Fee", "Free", T.positive]]} /><BankMoneyRefBox testId="bank-ref" label="GLOOBAL reference" value={transfer.ref} at={transfer.settledAt || transfer.createdAt} atLabel="Added on" onCopy={copyRef} /></>;
   } else if (screen === "send") {
-    body = <>{amountBox(`From GLOOBAL Bank \xB7 available ${money(balance)}`)}<div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: T.inkFaint, padding: "0 4px" }}>To</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{accounts.filter((a) => a.status === "active").map((a) => radioRow(a.id, accountId === a.id, () => setAccountId(a.id), a.kind === "upi" ? "⚡" : "\u{1F3E6}", a.label, `${a.holderName} \xB7 verified`))}<button type="button" onClick={() => go("link")} className="v2-row" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", border: "none", borderTop: `1px solid ${T.line}`, background: "none", textAlign: "left", cursor: "pointer" }}><span style={{ width: 40, height: 40, borderRadius: 13, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>+</span><span><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>Add a bank account</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkFaint }}>In your own name</span></span></button></div><BankMoneyKV rows={[["Speed", "Instant (IMPS)"], ["Fee", "Free", T.positive], ["Arrives", "Usually within 2 minutes"]]} /></>;
+    body = <>{amountBox(held > 0 ? `From GLOOBAL Bank \xB7 can go out ${money(canGo)}` : `From GLOOBAL Bank \xB7 available ${money(balance)}`)}{held > 0 && <BankEssentialsHeld balance={balance} held={held} canGo={canGo} value={amountOk ? value : 0} money={money} onMost={() => setAmount(String(canGo))} />}<div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase", color: T.inkFaint, padding: "0 4px" }}>To</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{accounts.filter((a) => a.status === "active").map((a) => radioRow(a.id, accountId === a.id, () => setAccountId(a.id), a.kind === "upi" ? "⚡" : "\u{1F3E6}", a.label, `${a.holderName} \xB7 verified`))}<button type="button" onClick={() => go("link")} className="v2-row" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", border: "none", borderTop: `1px solid ${T.line}`, background: "none", textAlign: "left", cursor: "pointer" }}><span style={{ width: 40, height: 40, borderRadius: 13, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>+</span><span><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>Add a bank account</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkFaint }}>In your own name</span></span></button></div><BankMoneyKV rows={[["Speed", "Instant (IMPS)"], ["Fee", "Free", T.positive], ["Arrives", "Usually within 2 minutes"]]} /></>;
   } else if (screen === "link") {
     const field = (key, label, props = {}) => <label key={key} style={{ display: "block", background: T.surface, borderRadius: 14, padding: "10px 14px", boxShadow: T.shadowCard }}><span style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.inkFaint }}>{label}</span><input id={`bank-link-${key}`} value={link[key]} onChange={(e) => setLink((l) => ({ ...l, [key]: e.target.value }))} style={{ width: "100%", border: "none", outline: "none", background: "transparent", fontSize: 15.5, fontWeight: 700, color: T.ink, marginTop: 2 }} {...props} /></label>;
     const ifscBank = india && /^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(link.code.trim());
@@ -361,7 +394,7 @@ function BankMoneyScreen({ start = "history", ccyCode = "INR", balance = 0, coun
   else if (screen === "upi") footer = <BankMoneyButton disabled={busy} onClick={addMoney}>{busy ? "One moment…" : "Approve (test UPI)"}</BankMoneyButton>;
   else if (screen === "details") footer = <BankMoneyButton disabled={busy || !amountOk} onClick={addMoney}>{busy ? "One moment…" : `I've sent ${amountOk ? money(value) : ""} (test)`}</BankMoneyButton>;
   else if (screen === "added") footer = <div style={{ display: "flex", gap: 10 }}><BankMoneyButton quiet onClick={shareReceipt}>Share receipt</BankMoneyButton><BankMoneyButton onClick={() => { setAmount(""); go("history"); }}>Done</BankMoneyButton></div>;
-  else if (screen === "send") footer = <BankMoneyButton disabled={!amountOk || !accountId || value > Number(balance)} onClick={() => go("confirm")}>{value > Number(balance) ? "More than your balance" : "Continue →"}</BankMoneyButton>;
+  else if (screen === "send") footer = <BankMoneyButton disabled={!amountOk || !accountId || value > Number(balance) || value > canGo + 0.004} onClick={() => go("confirm")}>{value > Number(balance) ? "More than your balance" : value > canGo + 0.004 ? (canGo > 0 ? `The most you can send is ${money(canGo)}` : "Nothing can go out yet") : "Continue →"}</BankMoneyButton>;
   else if (screen === "link") footer = <BankMoneyButton disabled={busy} onClick={saveAccount}>{busy ? "Checking with the bank…" : "Save account"}</BankMoneyButton>;
   else if (screen === "confirm") footer = <BankMoneyButton disabled={busy || pinValue.length < 4} onClick={sendOut}>{busy ? "Sending…" : `Send ${money(value)}`}</BankMoneyButton>;
   else if (screen === "onway") footer = <BankMoneyButton onClick={() => { setAmount(""); go("history"); }}>Done</BankMoneyButton>;

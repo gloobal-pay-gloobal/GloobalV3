@@ -47,7 +47,7 @@ const monthKey = (d) => new Date(d).toISOString().slice(0, 7);
 
 function createBankTransfers({
   User, Pin, LedgerEntry, Notification, requireAuth, writeLimit, lookupLimit, credentialLimit,
-  pin, isBankOpen, currencyOf, mintReference, hashKey,
+  pin, isBankOpen, currencyOf, mintReference, hashKey, essentialsHeld = async () => 0,
 }) {
   // ── The outside world (test mode) ─────────────────────────────────────
   const partnerCollectRef = () => digits(12); // a UPI / bank reference
@@ -405,13 +405,28 @@ function createBankTransfers({
         const utr = partnerUtr();
         const label = account.kind === 'upi' ? account.upiId : `${account.bankName} ••${account.last4}`;
         const now = new Date();
+        // ── WHAT USED ESSENTIALS STAYS IN (0208) ─────────────────────────
+        // Everything this account has ever used from My Essentials stays in
+        // GLOOBAL: only the balance above it can go to an outside bank.
+        // Read inside the same transaction as the debit, and written into
+        // the debit's own condition, so a draw landing in between cannot
+        // let more out than the rule allows.
+        let heldNow = 0;
+        let blockedByHeld = false;
         const transfer = await withTxn(async (session) => {
+          heldNow = round2(await essentialsHeld(user._id, session));
           const debited = await User.findOneAndUpdate(
-            { _id: user._id, balance: { $gte: amount } },
+            // Half a paisa of slack: stored balances carry float dust
+            // (294.3999…), and the free part is shown rounded.
+            { _id: user._id, balance: { $gte: heldNow > 0 ? round2(amount + heldNow) - 0.005 : amount } },
             { $inc: { balance: -amount } },
             { session, returnDocument: 'after', projection: { balance: 1 } }
           ).lean();
-          if (!debited) return null;
+          if (!debited) {
+            const now2 = await User.findById(user._id, 'balance', { session }).lean();
+            blockedByHeld = heldNow > 0 && Number(now2?.balance || 0) >= amount;
+            return null;
+          }
           const after = round2(debited.balance);
           const [t] = await BankTransfer.create([{
             userId: user._id, direction: 'out', method: account.kind === 'upi' ? 'upi' : 'imps', amount, currency,
@@ -431,6 +446,18 @@ function createBankTransfers({
           }], { session });
           return t;
         });
+        // The balance covers the amount, but not on top of what stays in.
+        // (More than the whole balance is still plain "not enough".)
+        if (!transfer && blockedByHeld) {
+          const latest = await User.findById(user._id, 'balance').lean();
+          const free = Math.max(0, round2(Number(latest?.balance || 0) - heldNow));
+          return res.status(409).json({
+            success: false, code: 'essentials_held', held: heldNow, free, currency,
+            message: free > 0
+              ? `You can send up to ${fmt(free, currency)} to another bank. ${fmt(heldNow, currency)} stays in GLOOBAL because you already used it from Essentials. Nothing was taken.`
+              : `Nothing can go to another bank yet: ${fmt(heldNow, currency)} stays in GLOOBAL because you already used it from Essentials. You can still spend it on GLOOBAL. Nothing was taken.`,
+          });
+        }
         if (!transfer) return res.status(409).json({ success: false, code: 'insufficient', message: 'Not enough in your GLOOBAL balance. Nothing was taken.' });
         return res.status(201).json({ success: true, transfer: publicTransfer(transfer.toObject()) });
       } catch (error) {

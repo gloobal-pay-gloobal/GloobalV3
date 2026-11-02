@@ -67,7 +67,10 @@ const disbursementSchema = new mongoose.Schema(
       type: String,
       // `referral_reward` is a referral network's slice of a Creator Share
       // (see ReferralEarning), paid when its earner settles it.
-      enum: ['seed_interest', 'referral_reward'],
+      // `essentials` is a day's My Essentials, paid into the GLOOBAL Bank
+      // balance (lib/essentials.js). Never paid back; what an account has
+      // drawn stays in GLOOBAL when it sends money out.
+      enum: ['seed_interest', 'referral_reward', 'essentials'],
       required: true,
       index: true,
     },

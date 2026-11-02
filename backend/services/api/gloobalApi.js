@@ -1135,6 +1135,28 @@ var GloobalApi = {
     const result = await gloobalApiClient.post("/api/bank-transfers/out", body || {});
     return (result && result.transfer) || null;
   },
+  // My Essentials (0208): where the account stands — used, held (stays in
+  // GLOOBAL), free (can go to an outside bank) — and today's draw.
+  async getEssentials() {
+    try {
+      const result = await gloobalApiClient.get("/api/essentials/me");
+      return result && result.success ? result : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  // Draws up to `amount` of today's Essentials into the GLOOBAL Bank
+  // balance. Resolves { applied, code, ...summary }; never throws, because a
+  // draw that did not happen is not a failed payment.
+  async drawEssentials(amount, idempotencyKey) {
+    try {
+      const result = await gloobalApiClient.post("/api/essentials/draw", { amount, idempotencyKey });
+      return result || { applied: 0 };
+    } catch (e) {
+      const body = e && e.body;
+      return { applied: 0, code: (body && body.code) || "failed", message: (body && body.message) || (e && e.message) || "" };
+    }
+  },
   async getLinkedAccounts() {
     const result = await gloobalApiClient.get("/api/bank-transfers/accounts");
     return (result && result.accounts) || [];

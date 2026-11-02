@@ -8792,10 +8792,24 @@ gloobalBank.mount(app);
 // Money in and out of GLOOBAL Bank: add money, send to your own bank, the
 // history of both, and "Report a problem" on each. Test mode until a payment
 // partner is connected — see lib/bankTransfers.js.
+// My Essentials (0208): the daily draw, paid by GLOOBAL into the GLOOBAL
+// Bank balance, and the hold on leaving — everything an account has used
+// from Essentials stays in GLOOBAL. See lib/essentials.js.
+const essentials = require('./lib/essentials').createEssentials({
+  User, requireAuth, writeLimit, lookupLimit, getRate,
+  // Wrapped: withAtomicSession is required further down this file, so it
+  // does not exist yet when this line runs at start-up.
+  withAtomicSession: (work) => withAtomicSession(work),
+  isBankOpen: (userId) => gloobalBank.isOpen(userId),
+  accountCountryIso, resolveOwnCurrency,
+});
+essentials.mount(app);
+
 const bankTransfers = require('./lib/bankTransfers').createBankTransfers({
   User, Pin, LedgerEntry, Notification, requireAuth, writeLimit, lookupLimit, credentialLimit,
   pin: { beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
   isBankOpen: (userId) => gloobalBank.isOpen(userId),
+  essentialsHeld: (userId, session) => essentials.heldFor(userId, session),
   currencyOf: (user) => localCurrencyFor(accountCountryIso(user)),
   mintReference: createPrototypeTransactionReference,
   hashKey: process.env.BANK_ID_PEPPER || process.env.AUTH_TOKEN_SECRET,

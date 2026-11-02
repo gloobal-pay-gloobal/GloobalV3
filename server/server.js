@@ -511,8 +511,41 @@ app.use((req, res, next) => {
 const mongoURI = process.env.MONGO_URI || 'YOUR_MONGODB_CONNECTION_STRING_HERE';
 
 mongoose.connect(mongoURI)
-  .then(() => console.log('Connected to MongoDB Atlas'))
+  .then(() => {
+    console.log('Connected to MongoDB Atlas');
+    return repairUserIndexes();
+  })
   .catch((err) => console.error('MongoDB Connection Error:', err));
+
+// ── INDEXES THAT REFUSE NEW PEOPLE (0213) ───────────────────────────────
+//
+// Two unique indexes were once declared { unique, sparse } on fields every
+// account stores as null until it has one: the shop name and the referral
+// code. A sparse index skips only a MISSING field, so null is indexed and
+// two nulls collide. Both are partial indexes in the schema now, but an
+// index already built on a database stays until something drops it — and
+// while it stays, a brand-new account is refused at the PIN step with
+// "This Secure ID is already registered", whatever ID was picked.
+//
+// So, once connected: drop the old null-indexing versions (an index holds no
+// data; dropping one loses nothing) and build the schema's own. Only these
+// two, only when they are unique and not partial.
+const LEGACY_NULL_INDEXED = ['creatorProfile.handle', 'referralCode'];
+async function repairUserIndexes() {
+  try {
+    const indexes = await User.collection.indexes();
+    for (const index of indexes) {
+      const keys = Object.keys(index.key || {});
+      if (keys.length === 1 && LEGACY_NULL_INDEXED.includes(keys[0]) && index.unique && !index.partialFilterExpression) {
+        await User.collection.dropIndex(index.name);
+        console.log(`Dropped index ${index.name}: it refused new accounts on a null ${keys[0]}.`);
+      }
+    }
+    await User.createIndexes();
+  } catch (error) {
+    console.error('User index repair error:', error.message);
+  }
+}
 
 const normalizeText = (value) =>
   String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -2447,12 +2480,17 @@ app.post('/api/register-symbol', registerLimit, async (req, res) => {
     if (error.code === 11000) {
       const duplicateField = Object.keys(error.keyPattern || {})[0] || 'identity';
 
-      return res.status(409).json({
-        message:
-          duplicateField === 'mobileNumber'
-            ? 'This mobile number is already linked with another Secure ID. Please login.'
-            : 'This Secure ID is already registered.'
-      });
+      // Named for what actually clashed. Every duplicate used to read "This
+      // Secure ID is already registered", so an index refusing a null shop
+      // name sent people off picking new IDs that could never work (0213).
+      if (duplicateField === 'mobileNumber') {
+        return res.status(409).json({ message: 'This mobile number is already linked with another Secure ID. Please login.' });
+      }
+      if (duplicateField === 'symbolId') {
+        return res.status(409).json({ message: 'This Secure ID is already registered.', alreadyRegistered: true });
+      }
+      console.error(`Registration refused by the ${duplicateField} index:`, error.message);
+      return res.status(500).json({ message: 'Your account could not be created just now. Please try again in a moment.' });
     }
 
     console.error('Registration Error:', error);

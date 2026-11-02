@@ -152,11 +152,16 @@ const userSchema = new mongoose.Schema({
   // server.js): accounts that predate this field hold no value until their
   // next signed-in response, and a plain unique index would treat every one
   // of those nulls as a collision with every other.
+  // Unique among the codes that EXIST (index declared below). This was
+  // `{ unique: true, sparse: true }`, and a sparse index skips only a
+  // missing field — null is indexed. A new account is written with null and
+  // minted a code a moment later; one that never got its code made every
+  // registration after it collide on { referralCode: null }, which the
+  // register route reported as "This Secure ID is already registered" (0213).
   referralCode: {
     type: String,
     default: null,
-    trim: true,
-    index: { unique: true, sparse: true }
+    trim: true
   },
   passkeys: [{
     id: {
@@ -519,6 +524,11 @@ userSchema.index({ 'creatorProfile.category': 1 });
 userSchema.index(
   { 'creatorProfile.handle': 1 },
   { name: 'creatorProfile.handle_unique_named', unique: true, partialFilterExpression: { 'creatorProfile.handle': { $type: 'string' } } }
+);
+
+userSchema.index(
+  { referralCode: 1 },
+  { name: 'referralCode_unique_named', unique: true, partialFilterExpression: { referralCode: { $type: 'string' } } }
 );
 
 module.exports = mongoose.model('User', userSchema);

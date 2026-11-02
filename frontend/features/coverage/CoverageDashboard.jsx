@@ -111,6 +111,60 @@ function CoverageChange({ pct }) {
   const up = pct >= 0;
   return <span style={{ fontSize: 11, fontWeight: 800, color: up ? "#0F8A4F" : "#B42318" }}>{`${up ? "▲" : "▼"} ${Math.abs(pct).toFixed(pct >= 100 ? 0 : 1)}%`}</span>;
 }
+// ── MY IMPACT, WHEN THE NUMBERS GET BIG (0206) ──────────────────────────
+// Tested at 320, 360 and 390 px with ₹26 lakh, ₹45 crore and ₹987 crore.
+// A share is never written "0%" when something is there, and never "100%"
+// unless it is everything.
+function impactPct(part, whole) {
+  const p = Number(part) || 0, w = Number(whole) || 0;
+  if (!w || p <= 0) return "0%";
+  if (p >= w) return "100%";
+  const v = (p / w) * 100;
+  if (v < 0.1) return "<0.1%";
+  if (v > 99.9) return ">99.9%";
+  return `${v.toFixed(1).replace(/\.0$/, "")}%`;
+}
+// Counts: in full up to 99,999, then 3.5L, 12Cr.
+function impactCount(n) {
+  const v = Math.max(0, Math.round(Number(n) || 0));
+  try {
+    return new Intl.NumberFormat("en-IN", v >= 100000 ? { notation: "compact", maximumFractionDigits: 1 } : {}).format(v).replace(/(\d)T$/, "$1K");
+  } catch (e) { return String(v); }
+}
+// The type steps down as a figure gets longer, so it never leaves its box.
+function impactCountPx(text) { return text.length <= 4 ? 22 : text.length <= 5 ? 19 : 16; }
+// Of every 100: two decimals each, and the biggest part takes the rounding
+// so the chips always add up to exactly 100.
+function impactPer100(parts, whole) {
+  const w = Number(whole) || 0;
+  if (!w) return parts.map(() => 0);
+  const raw = parts.map((v) => Math.round(((Number(v) || 0) / w) * 10000) / 100);
+  const sum = raw.reduce((a, v) => a + v, 0);
+  let big = 0;
+  raw.forEach((v, i) => { if (v > raw[big]) big = i; });
+  raw[big] = Math.round((raw[big] + 100 - sum) * 100) / 100;
+  return raw;
+}
+// The ring with the total in its hole, written as HTML over the SVG so the
+// words can sit on two lines. A part that is there but tiny is drawn at a
+// sliver you can see; the figures beside it stay exact.
+function ImpactRing({ parts, paid, payments, currency, size = 184, thickness = 24 }) {
+  const total = parts.reduce((a, p) => a + Math.max(0, p.value), 0);
+  const shown = total > 0
+    ? parts.filter((p) => p.value > 0).map((p) => ({ ...p, value: Math.max(p.value, total * 0.012) }))
+    : [{ value: 1, color: T.surfaceAlt }];
+  const head = coverageMoney(paid, currency);
+  const n = Math.max(0, Math.round(Number(payments) || 0));
+  return <div data-testid="impact-ring" style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+    <CoverageDonut parts={shown} size={size} thickness={thickness} />
+    <div style={{ position: "absolute", inset: thickness + 8, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 1 }}>
+      <b data-testid="impact-ring-paid" style={{ fontFamily: T.fontDisplay, fontWeight: 700, fontSize: head.length <= 7 ? 26 : 22, color: T.ink, whiteSpace: "nowrap", lineHeight: 1.1 }}>{head}</b>
+      <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, lineHeight: 1.25 }}>you paid</span>
+      <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, lineHeight: 1.25, whiteSpace: "nowrap" }}>{`${impactCount(n)} payment${n === 1 ? "" : "s"}`}</span>
+    </div>
+  </div>;
+}
+
 function CoverageSubScreen({ title, onBack, right, children }) {
   // The map button floats over every screen; a sub-screen is full-page,
   // so it tells the button to step aside, as Pay & Services does.
@@ -315,16 +369,69 @@ function CoverageDashboard({ currency = "INR", signedIn = false, onOpenProjects,
     { value: imp.split.projects, color: "#16A34A", label: "Went to Hooman Projects" },
     { value: imp.split.gloobal + imp.split.fees, color: "#C2410C", label: "Kept by GLOOBAL or fees" }
   ] : [];
-  const myMoney = (v) => coverageMoney(v, imp ? imp.currency : cur, { compact: false });
+  // 0206: the ring, bigger, with the legend as full-width rows under it;
+  // "of every ₹100"; three counts; the sum. Figures carry their GEU twin.
+  const impCur = imp ? imp.currency : cur;
+  const impOwn = String(currency || "INR").toUpperCase();
+  // Exact to the paisa below a lakh, then ₹25.8L / ₹44Cr, as Our numbers does.
+  const impFig = (v) => { const n = Math.abs(Number(v) || 0); return <GeuTwin amount={v} currency={impCur} own={impOwn} compact={n >= 1e5} />; };
+  const impExact = (v) => <GeuTwin amount={v} currency={impCur} own={impOwn} />;
+  const impactPeriodWord = { "7d": "7 days", "30d": "30 days", all: "" }[impactPeriod] || "";
+  const impKeys = ["reached", "back", "projects", "kept"];
   const impactScreen = screen === "impact" ? <CoverageSubScreen title="My impact" onBack={() => setScreen("")} right={<CoveragePill tone="info"><CovLock size={11} />Only you</CoveragePill>}>
     <CoveragePeriodSwitch value={impactPeriod} onChange={setImpactPeriod} options={[["7d", "7 days"], ["30d", "30 days"], ["all", "All"]]} />
-    {!imp ? <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: T.inkFaint }}>Loading…</div> : <>
-      <CoverageCard style={{ padding: 14, display: "flex", gap: 14, alignItems: "center" }}><CoverageDonut parts={impParts.filter((p) => p.value > 0).length ? impParts.filter((p) => p.value > 0) : [{ value: 1, color: T.surfaceAlt }]} size={124} thickness={18} center={coverageMoney(imp.paid, imp.currency)} sub="you paid" /><div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 7 }}>{impParts.map((p) => <div key={p.label} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, color: T.ink }}><span style={{ width: 9, height: 9, borderRadius: 3, background: p.color, flexShrink: 0 }} /><span style={{ flex: 1, minWidth: 0 }}>{p.label}</span><b style={{ whiteSpace: "nowrap" }}>{myMoney(p.value)}</b></div>)}</div></CoverageCard>
-      <CoverageCard><CoverageRow k="Payments" v={String(imp.payments)} /><CoverageRow k="People and shops paid" v={String(imp.payees)} /><CoverageRow k="Growing for you in My Assets" v={myMoney(imp.growingInMyAssets)} color="#0F8A4F" /><CoverageRow k="Adds up to" v={`${myMoney(imp.paid)} ✓`} strong /></CoverageCard>
-      <CoverageSection title="Projects you helped" action={imp.projects.length ? String(imp.projects.length) : ""} onAction={onOpenProjects} />
-      <CoverageCard>{imp.projects.length ? imp.projects.map((p, i) => <div key={p.id} style={{ padding: "11px 14px", borderTop: i ? `1px solid ${T.line}` : "none" }}><b style={{ display: "block", fontSize: 13.5, color: T.ink }}>{p.title}</b><span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}>{`You gave ${myMoney(p.given)} · ${p.category}`}</span></div>) : <div style={{ padding: 16, fontSize: 12.5, color: T.inkFaint, textAlign: "center" }}>You haven't helped a project in this period.</div>}</CoverageCard>
-      <div style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600, textAlign: "center", lineHeight: 1.45 }}>Made from your own payments. Only you can see this, and it is never part of the public numbers.</div>
-    </>}
+    {!imp ? <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: T.inkFaint }}>Loading…</div> : (() => {
+      const parts = [
+        { ...impParts[0], label: "Went to people & shops" },
+        { ...impParts[1], label: "Came back to you", sub: "Creator Share" },
+        { ...impParts[2], label: "Hooman Projects" },
+        { ...impParts[3], label: "Kept by GLOOBAL / fees" }
+      ];
+      const per = impactPer100(parts.map((p) => p.value), imp.paid);
+      const per100Money = (v) => coverageMoney(v, impCur, { compact: false });
+      const hundred = coverageMoney(100, impCur, { whole: true });
+      const chips = [
+        [0, `${per100Money(per[0])} went to them`],
+        [1, `${per100Money(per[1])} came back`],
+        ...(per[2] > 0 ? [[2, `${per100Money(per[2])} to projects`]] : []),
+        [3, per[3] > 0 ? `${per100Money(per[3])} kept by GLOOBAL` : `${coverageMoney(0, impCur, { whole: true })} kept by GLOOBAL`]
+      ];
+      const payTxt = impactCount(imp.payments), payeeTxt = impactCount(imp.payees);
+      const growTxt = coverageMoney(imp.growingInMyAssets, impCur);
+      return <>
+        <CoverageCard style={{ padding: "16px 14px 6px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <ImpactRing parts={parts} paid={imp.paid} payments={imp.payments} currency={impCur} />
+          <div style={{ width: "100%", marginTop: 12 }}>{parts.map((p, i) => <div key={impKeys[i]} data-testid={`impact-row-${impKeys[i]}`} style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 2px", borderTop: i ? `1px solid ${T.line}` : "none", fontSize: 13, fontWeight: 700, color: T.ink }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: p.color, flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0 }}><span style={{ lineHeight: 1.25, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.label}</span>{p.sub ? <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: T.inkFaint }}>{p.sub}</span> : null}</span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: T.inkFaint, flexShrink: 0, minWidth: 34, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{impactPct(p.value, imp.paid)}</span>
+            <b style={{ flexShrink: 0, fontWeight: 900, fontVariantNumeric: "tabular-nums", color: p.value > 0 ? T.ink : T.inkFaint }}>{impFig(p.value)}</b>
+          </div>)}</div>
+        </CoverageCard>
+        {imp.paid > 0 ? <>
+          <CoverageSection title={`Of every ${hundred} you paid`} />
+          <div data-testid="impact-per100" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{chips.map(([i, text]) => <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: T.surface, boxShadow: T.shadowCard, borderRadius: 12, padding: "8px 10px", fontSize: 12, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}><span style={{ width: 8, height: 8, borderRadius: 3, background: parts[i].color }} />{text}</span>)}</div>
+        </> : <div style={{ fontSize: 12.5, color: T.inkFaint, fontWeight: 600, textAlign: "center" }}>{impactPeriodWord ? `No payments in these ${impactPeriodWord}. Pay someone and it shows here.` : "No payments yet. Pay someone and it shows here."}</div>}
+        <div data-testid="impact-stats" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{[
+          ["payments", payTxt, Number(imp.payments) === 1 ? "payment" : "payments", T.ink, impactCountPx(payTxt)],
+          ["payees", payeeTxt, Number(imp.payees) === 1 ? "person or shop" : "people & shops", T.ink, impactCountPx(payeeTxt)],
+          ["growing", growTxt, "growing in My Assets", "#0F8A4F", growTxt.length <= 6 ? 17 : 15]
+        ].map(([key, value, label, color, px]) => <CoverageCard key={key} style={{ padding: "11px 8px", textAlign: "center", minWidth: 0 }}><b data-testid={`impact-stat-${key}`} style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 27, fontFamily: T.fontDisplay, fontWeight: 700, fontSize: px, color, whiteSpace: "nowrap" }}>{value}</b><span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: T.inkSoft, lineHeight: 1.3 }}>{label}</span></CoverageCard>)}</div>
+        <CoverageCard style={{ padding: "11px 14px" }}><div data-testid="impact-adds-up" style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 6, rowGap: 2, fontSize: 13, fontWeight: 800, color: "#0F8A4F" }}><span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><CovCheck size={13} strokeWidth={3.5} />Adds up to</span><span>{impExact(imp.paid)}</span></div></CoverageCard>
+        <CoverageSection title="Projects you helped" action="See projects ›" onAction={onOpenProjects} />
+        {imp.projects.length ? <CoverageCard>{imp.projects.map((p, i) => <div key={p.id} data-testid="impact-project" style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderTop: i ? `1px solid ${T.line}` : "none" }}>
+          <span style={{ width: 36, height: 36, borderRadius: 12, background: "#DCFCE7", display: "grid", placeItems: "center", flexShrink: 0 }}><CovProjects size={17} color="#166534" /></span>
+          <span style={{ flex: 1, minWidth: 0 }}><b style={{ fontSize: 13, color: T.ink, lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.title}</b><span style={{ fontSize: 11, color: T.inkFaint, fontWeight: 700 }}>{p.category}</span></span>
+          <b style={{ flexShrink: 0, fontSize: 13, fontWeight: 900, color: T.ink }}>{impFig(p.given)}</b>
+        </div>)}</CoverageCard>
+          : <CoverageCard onClick={onOpenProjects} label="Find a Hooman Project" style={{ padding: "14px", display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ width: 40, height: 40, borderRadius: 13, background: "#DCFCE7", display: "grid", placeItems: "center", flexShrink: 0 }}><CovProjects size={18} color="#166534" /></span>
+            <span style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 13.5, color: T.ink }}>{impactPeriodWord ? `None in these ${impactPeriodWord}` : "None yet"}</b><span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 600 }}>A Hooman Project you give to shows here.</span></span>
+            <span style={{ fontSize: 12.5, fontWeight: 800, color: T.accent, whiteSpace: "nowrap" }}>Find one ›</span>
+          </CoverageCard>}
+        <div style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600, textAlign: "center", lineHeight: 1.45 }}>Made from your own payments. Only you can see this, and it is never part of the public numbers.</div>
+      </>;
+    })()}
   </CoverageSubScreen> : null;
 
   // ── OUR NUMBERS (0197) ──

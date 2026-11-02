@@ -1155,6 +1155,15 @@ function GloobalId() {
   // forever. `retry` is the label: "Try again" for a network failure, "Scan
   // again" for an answer (not found, own code).
   const [scanRetry, setScanRetry] = useState19(null);
+  // Phone Back closes the scanner (0204). It had no Back entry, so Back
+  // from it fell through to whatever was open underneath.
+  const requestCloseScanScreen = useBackClose(showScanScreen, () => {
+    setShowScanScreen(false);
+    setScanPayee(null);
+    setScanError(null);
+    setScanRetry(null);
+    setScanCameraAccessGranted(false);
+  });
   const [scanResolving, setScanResolving] = useState19(false);
   // Guards re-entry synchronously: BarcodeDetector and jsQR can both hand a
   // code up before React has re-rendered with scanResolving set.
@@ -3043,7 +3052,12 @@ function GloobalId() {
   // screen, requested via dashboardDeepLink and opened by Dashboard.jsx
   // itself (see its deepLinkTarget prop).
   const applyDashboardDestination = (target) => {
-    if (!target) return;
+    // The Dashboard entry, and every screen this file opens itself, also
+    // tell the Dashboard to put away what it has open (0204).
+    if (!target || ["send", "coverage", "scan", "notifications"].includes(target)) {
+      setDashboardDeepLink(target ? "reset" : "home");
+      if (!target) return;
+    }
     if (target === "send") {
       setActiveScreen("send");
       return;
@@ -3062,19 +3076,22 @@ function GloobalId() {
       setShowNotifications(true);
       return;
     }
-    if (target === "history") {
-      // Same mechanism the dashboard's own "Paid" history link already
-      // uses (see the SendMoney onOpenPaidHistory callback below) — any
-      // truthy value opens history; "sending" is the value already
-      // proven to work end-to-end.
-      setDashboardHistoryDirection("sending");
-      return;
-    }
+    // History goes through the Dashboard's own deep link like the rest
+    // (0204), so the putting-away above and the opening happen in one
+    // place and in that order.
     setDashboardDeepLink(target);
   };
+  // From the map, a screen opens ALONE (0204): everything already open is
+  // closed first — the ones that know Back through backStackCloseAll, and
+  // the few up here that don't by hand — and only then is the chosen one
+  // opened, so Back from it lands on the Dashboard, not on a pile.
   const goToDashboardDestination = (target) => {
     if (stage === "dashboard") {
-      applyDashboardDestination(target);
+      setShowScanScreen(false);
+      setShowNotifications(false);
+      setHelpSheet(null);
+      setDashboardHistoryDirection(null);
+      backStackWhenSettled().then(backStackCloseAll).then(() => applyDashboardDestination(target));
       return;
     }
     // Not on Dashboard right now (mid-flow elsewhere, or signed out on a
@@ -4688,7 +4705,7 @@ function GloobalId() {
       setScanRetry(null);
       if (scanGalleryInputRef.current) scanGalleryInputRef.current.click();
     }}
-  />}<div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={closeScanScreen} />{
+  />}<div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseScanScreen} />{
     /* ── ONE TITLE, CENTRED, AND IT NAMES THE THING ──────────────────────
        It was a two-line block pinned beside the back button: "Scan QR"
        over "Point at any Gloobal code". Two faults in that.

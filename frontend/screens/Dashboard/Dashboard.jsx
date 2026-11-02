@@ -416,8 +416,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       // The gate closes either way — the same as every other verify
       // screen in the app. A refusal leaves the person where they were:
       // no error, no toast, because declining a check is an answer
-      // rather than a fault.
-      setShowChoicesGate(false);
+      // rather than a fault. Closed through Back's own list, so no dead
+      // Back press is left behind it (0204).
+      requestCloseChoicesGate();
       if (!ok) return;
       setActiveTab("choices");
     } finally {
@@ -1612,6 +1613,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     if (creatorSetupDone(creatorProfile)) setShowCreatorSetup(false);
     else skipCreatorSetup();
   };
+  // Phone Back closes the setup and a shop page too (0204): neither had a
+  // Back entry, so Back from them did nothing, or left whatever was under.
+  const requestCloseCreatorSetup = useBackClose(showCreatorSetup, () => closeCreatorSetup());
+  const requestCloseOpenCreator = useBackClose(Boolean(openCreator), () => setOpenCreator(null));
+  const requestCloseChoicesGate = useBackClose(showChoicesGate, () => setShowChoicesGate(false));
 
   const skipCreatorSetup = async () => {
     setShowCreatorSetup(false);
@@ -1712,7 +1718,39 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       onConsumeDeepLink && onConsumeDeepLink();
       return;
     }
-    if (deepLinkTarget === "bank") setShowGloobalBankInfo(true);
+    // ── ONE SCREEN AT A TIME FROM THE MAP (0204) ─────────────────────
+    // Screens that close through Back were already put away by App
+    // (backStackCloseAll). These few are opened without a Back entry of
+    // their own, so they are closed here, by hand, before anything opens.
+    setOpenCreator(null);
+    setShowShopTheme(false);
+    setShowCreatorSetup(false);
+    setShowSupplierFinder(false);
+    setShowPoster(false);
+    setShowChangePin(false);
+    setShowIdTag(false);
+    setShopCode(null);
+    setProfileOverlay(null);
+    setProfileDetail(null);
+    // The checks that ask for a fingerprint or PIN before a screen opens.
+    // One left up (My Choices asks) sat over the next screen the map opened.
+    setShowChoicesGate(false);
+    setShowBalanceBiometric(false);
+    setShowSettleAssetsBiometric(false);
+    setShowMyShareBiometric(false);
+    setShowPayTargetBiometric(false);
+    setShowUpdateIdBiometric(false);
+    setShowSettleReferralBiometric(false);
+    // Back from a screen the map opened lands on Home, not on whichever
+    // tab happened to be showing; History and Security live on Profile.
+    if (deepLinkTarget !== "history" && deepLinkTarget !== "security") setActiveTab("home");
+    if (deepLinkTarget === "home" || deepLinkTarget === "reset") {
+      if (deepLinkTarget === "home") setActiveTab("home");
+      if (onConsumeDeepLink) onConsumeDeepLink();
+      return;
+    }
+    if (deepLinkTarget === "history") { setActiveTab("profile"); setProfileDetail("History"); }
+    else if (deepLinkTarget === "bank") setShowGloobalBankInfo(true);
     else if (deepLinkTarget === "assets") setShowAssets(true);
     else if (deepLinkTarget === "paylater") setShowPayLater(true);
     else if (deepLinkTarget === "aboutus") setShowAboutUs(true);
@@ -1721,7 +1759,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // showing, so the app map can open them from anywhere the same way it
     // opens the show* screens above.
     else if (deepLinkTarget === "ghscore") setProfileOverlay("ghscore");
-    else if (deepLinkTarget === "share") setProfileOverlay("share");
+    // "Creator Share" on the map opened the Share-your-GLOOBAL-ID card —
+    // a different thing with a similar word (0204). It is the Creator
+    // Share screen (0194).
+    else if (deepLinkTarget === "share") setShowCreatorOverview(true);
     else if (deepLinkTarget === "updateId") setProfileOverlay("updateId");
     else if (deepLinkTarget === "referral") setProfileOverlay("referral");
     // Through the SAME gate the tab bar uses, not straight to the tab.
@@ -4424,18 +4465,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onOpenPage={() => { setShowCreatorSetup(false); openMyShop(); }}
     onShowQr={() => { setShowCreatorSetup(false); setShopCode(gloobalAnimalQrRandom()); }}
     onEditLook={() => { setShowCreatorSetup(false); setShowShopTheme(true); }}
-    onSkip={skipCreatorSetup}
+    onSkip={requestCloseCreatorSetup}
     // Closing with the back arrow is the same thing as skipping, and is
     // recorded the same way. Treating a dismissal as "ask me again next
     // flip" and a tap on "Set this up later" as "don't" would make the
     // difference between two ways of leaving a screen load-bearing,
     // which nobody would guess and nobody should have to.
-    onClose={closeCreatorSetup}
+    onClose={requestCloseCreatorSetup}
     countryIso={dialCountry && dialCountry.iso}
     saving={creatorSaving}
     error={creatorError}
   />}{showChoicesGate && <BiometricVerifyScreen
-    onBack={() => setShowChoicesGate(false)}
+    onBack={requestCloseChoicesGate}
     onVerify={verifyChoices}
     scanning={choicesChecking}
   />}{showSettleReferralBiometric && <BiometricVerifyScreen
@@ -4565,7 +4606,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     lens={displayLens}
     pinned={payPins.includes(openCreator.symbolId)}
     onTogglePin={() => togglePin(openCreator.symbolId, openCreator)}
-    onClose={() => setOpenCreator(null)}
+    onClose={requestCloseOpenCreator}
     onScan={onOpenScan}
     onToast={showToast2}
     onEditLook={() => setShowShopTheme(true)}

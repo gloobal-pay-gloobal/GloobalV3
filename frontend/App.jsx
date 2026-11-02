@@ -3814,57 +3814,6 @@ function GloobalId() {
       setOwnProfilePhotoPending(previousSymbolId, false);
     }
   };
-  // ── ANOTHER ACCOUNT ON THIS PHONE (0201) ──────────────────────────────
-  //
-  // Both are a full sign-out first — the saved list holds no tokens — and
-  // then the screen the next account needs: the PIN for the chosen GLOOBAL
-  // ID, the ordinary sign-in, or registration.
-  //
-  // The next screen is written down BEFORE signing out, in sessionStorage,
-  // because a sign-out remounts this whole component (the root keys it by
-  // account — __artifactEntry.jsx), and anything held in state here is gone
-  // with it. The fresh instance reads it and goes there once it is resting
-  // on the phone screen, where every sign-out ends.
-  const ACCOUNT_NEXT_KEY = "gloobal.accountNext.v1";
-  const [accountNext, setAccountNext] = useState19(() => {
-    try {
-      return JSON.parse(window.sessionStorage.getItem(ACCOUNT_NEXT_KEY) || "null");
-    } catch (e) {
-      return null;
-    }
-  });
-  useEffect15(() => {
-    if (!accountNext || stage !== "phone" || flipping) return;
-    const next = accountNext;
-    try { window.sessionStorage.removeItem(ACCOUNT_NEXT_KEY); } catch (e) { /* already gone */ }
-    setAccountNext(null);
-    if (next.kind === "pin" && next.symbolId) {
-      setIsLoginAttempt(true);
-      setLoginEntryMode("id");
-      setSecureId(next.symbolId);
-      setLoginIdentifier(next.symbolId);
-      setLoginIdResolved(true);
-      flipTo("loginAuth");
-    } else if (next.kind === "signin") {
-      goToLogin();
-    }
-    // "create" is the phone screen itself.
-  }, [accountNext, stage, flipping]);
-  // Whoever is signed in is on the list — including an account that signed
-  // in before the list existed and has not saved its session since.
-  useEffect15(() => {
-    if (registeredUser && registeredUser.symbolId) gloobalAccountsRemember(registeredUser);
-  }, [registeredUser && registeredUser.symbolId]);
-  const signOutThen = (next) => {
-    try { window.sessionStorage.setItem(ACCOUNT_NEXT_KEY, JSON.stringify(next)); } catch (e) { /* the phone screen is fine too */ }
-    handleStartOver();
-    setAccountNext(next);
-  };
-  const switchToSavedAccount = (account) => {
-    if (!account || !account.symbolId) return;
-    signOutThen({ kind: "pin", symbolId: account.symbolId });
-  };
-  const addAnotherAccount = (kind) => signOutThen({ kind: kind === "signin" ? "signin" : "create" });
   const handleStartOver = () => {
     // Web Push FIRST, before anything below clears the token.
     //
@@ -4607,8 +4556,6 @@ function GloobalId() {
   />}{stage === "dashboard" && <Dashboard_default
     dialCountry={dialCountry}
     onLogout={handleStartOver}
-    onSwitchAccount={switchToSavedAccount}
-    onAddAccount={addAnotherAccount}
     onOpenSend={(opts) => {
       setSendPrefillChoiceId((opts && opts.choiceId) || null);
       setActiveScreen("send");

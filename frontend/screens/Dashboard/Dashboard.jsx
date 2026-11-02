@@ -253,7 +253,7 @@ function BalanceError({ onRetry }) {
   >Retry</button>}</span>;
 }
 
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "", themeKey = "day", onPickTheme, onSwitchAccount, onAddAccount }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "", themeKey = "day", onPickTheme }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -1374,9 +1374,6 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // Where the setup opens (0199): the बाज़ार splash on the first flip, the
   // name step from a gate or a banner, the Edit list once a shop exists.
   const [creatorSetupStart, setCreatorSetupStart] = useState14("name");
-  // Accounts on this phone (0201).
-  const [showAccounts, setShowAccounts] = useState14(false);
-  const requestCloseAccounts = useBackClose(showAccounts, () => setShowAccounts(false));
   const openCreatorSetup = (start) => {
     setCreatorError("");
     setCreatorSetupStart(start || (creatorSetupDone(creatorProfile) ? "hub" : "name"));
@@ -3399,11 +3396,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        the GH Score circle rather than an afterthought; IdSymbolDots still
        shrinks each dot to fit whatever width is actually free (see its
        own comment), so this is a ceiling, not a fixed size. */
-  }<IdSymbolDots id={personalGloobalId} revealed oneLine size={48} /></button></div></div>{
-    /* Every account that has signed in on this phone, and Add account
-       (0201). Its own row above the list, where somebody looking for
-       "another account" looks first. */
-  }<AccountsOnPhoneRow currentId={currentSymbolId || myGloobalId} onOpen={() => setShowAccounts(true)} /><div style={{ borderRadius: T.radiusLg, overflow: "hidden", boxShadow: T.shadowCard, display: "flex", flexDirection: "column", gap: 2 }}>{
+  }<IdSymbolDots id={personalGloobalId} revealed oneLine size={48} /></button></div></div><div style={{ borderRadius: T.radiusLg, overflow: "hidden", boxShadow: T.shadowCard, display: "flex", flexDirection: "column", gap: 2 }}>{
     /* ── ONE EXTRA ROW, ON BOTH SIDES ─────────────────────────────────
        Asked for: a line holding the creator's own name, mark and address.
        It sits directly under "Personal Details" because it is that row's
@@ -4415,15 +4408,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        the whole point of the change — this tab used to drop straight
        into the PIN fallback's modal while the balance eye two taps away
        put this screen up first. */
-  }{showAccounts && <AccountsOnPhoneSheet
-    currentId={currentSymbolId || myGloobalId}
-    onClose={requestCloseAccounts}
-    // Closed the way Back closes it, and the switch made a moment later:
-    // the sheet's own history entry is popped on close, and a sign-in
-    // screen already up by then would take that pop as its own Back.
-    onSwitch={(a) => { requestCloseAccounts(); setTimeout(() => onSwitchAccount && onSwitchAccount(a), 350); }}
-    onAdd={(kind) => { requestCloseAccounts(); setTimeout(() => onAddAccount && onAddAccount(kind), 350); }}
-  />}{showCreatorSetup && <CreatorSetupScreen
+  }{showCreatorSetup && <CreatorSetupScreen
     myGloobalId={myGloobalId}
     creator={creatorProfile}
     onSave={saveCreatorProfile}

@@ -39,6 +39,7 @@ const IFSC_BANKS = {
   PUNB: 'Punjab National Bank', KKBK: 'Kotak Mahindra Bank', BARB: 'Bank of Baroda',
   CNRB: 'Canara Bank', UBIN: 'Union Bank of India', IDIB: 'Indian Bank', IOBA: 'Indian Overseas Bank',
   YESB: 'Yes Bank', INDB: 'IndusInd Bank', IDFB: 'IDFC First Bank', FDRL: 'Federal Bank',
+  AUBL: 'AU Small Finance Bank',
 };
 
 const round2 = (n) => Math.round(Number(n) * 100) / 100;
@@ -81,6 +82,8 @@ function createBankTransfers({
     id: String(a._id), kind: a.kind, bankName: a.bankName, code: a.code, last4: a.last4,
     upiId: a.upiId, holderName: a.holderName, nameMatched: a.nameMatched, status: a.status,
     closedReason: a.closedReason, label: a.kind === 'upi' ? a.upiId : `${a.bankName} ••${a.last4}`,
+    verifiedBy: a.verifiedBy || 'name_check', verifiedAt: a.verifiedAt || a.createdAt || null,
+    createdAt: a.createdAt || null,
   });
 
   const publicTransfer = (t, caseDoc) => ({
@@ -232,7 +235,7 @@ function createBankTransfers({
           const upiId = String(body.upiId || '').trim().toLowerCase();
           if (!/^[a-z0-9._-]{2,64}@[a-z]{2,32}$/.test(upiId)) return res.status(400).json({ success: false, code: 'upi_id', message: 'Enter a UPI ID like name@bank.' });
           if (await LinkedBankAccount.exists({ userId: user._id, upiId, status: 'active' })) return res.status(409).json({ success: false, code: 'duplicate', message: 'That UPI ID is already saved.' });
-          const saved = await LinkedBankAccount.create({ userId: user._id, kind, upiId, holderName, nameMatched: true });
+          const saved = await LinkedBankAccount.create({ userId: user._id, kind, upiId, holderName, nameMatched: true, verifiedBy: 'name_check', verifiedAt: new Date() });
           return res.status(201).json({ success: true, account: publicAccount(saved), nameAtBank: holderName });
         }
         const number = String(body.accountNumber || '').replace(/\s+/g, '');
@@ -250,11 +253,87 @@ function createBankTransfers({
         const existing = await LinkedBankAccount.findOne({ userId: user._id, accountHash });
         if (existing && existing.status === 'active') return res.status(409).json({ success: false, code: 'duplicate', message: 'That account is already saved.' });
         if (existing) await LinkedBankAccount.deleteOne({ _id: existing._id });
-        const saved = await LinkedBankAccount.create({ userId: user._id, kind, bankName, code, last4: number.slice(-4), accountHash, holderName, nameMatched: true });
-        return res.status(201).json({ success: true, account: publicAccount(saved), nameAtBank: holderName });
+        // ₹1 to the account (a penny drop, test mode): the bank answers with
+        // the name on it, which is checked against yours before saving. The
+        // ₹1 is GLOOBAL's, not taken from you.
+        const utr = partnerUtr();
+        const saved = await LinkedBankAccount.create({ userId: user._id, kind, bankName, code, last4: number.slice(-4), accountHash, holderName, nameMatched: true, verifiedBy: 'penny_drop', verifyUtr: utr, verifiedAt: new Date() });
+        return res.status(201).json({ success: true, account: publicAccount(saved), nameAtBank: holderName, pennyDrop: { amount: 1, utr, nameAtBank: holderName, matched: true, testMode: true } });
       } catch (error) {
         console.error('Linked account error:', error);
         return res.status(500).json({ success: false, message: 'Could not save that account right now.' });
+      }
+    });
+
+    // ── Link by paying ₹1 from it (0209, test mode) ──────────────────────
+    //
+    // A reverse penny drop: the person pays ₹1 by UPI from the bank they
+    // want to link, and the payment itself says which account it came from
+    // — number, IFSC and the name at the bank — so there is nothing to type.
+    // The ₹1 lands in their GLOOBAL Bank as an ordinary "money added" row.
+    //
+    // Test mode: no UPI app is opened. The ₹1 is credited here and the
+    // account details are what a bank of the chosen IFSC prefix would send;
+    // when a partner is connected, this becomes "wait for the collect".
+    app.post('/api/bank-transfers/accounts/upi-rupee', writeLimit, requireAuth, async (req, res) => {
+      try {
+        if (!(await requireOpenBank(req, res))) return;
+        const user = req.authUser;
+        const body = req.body || {};
+        const india = String(user.countryIso || '').toUpperCase() === 'IN';
+        const prefix = String(body.bankCode || '').trim().toUpperCase();
+        if (india ? !/^[A-Z]{4}$/.test(prefix) : !/^[A-Z0-9]{2,11}$/.test(prefix)) return res.status(400).json({ success: false, code: 'bank_code', message: 'Pick your bank first.' });
+        const key = typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim() ? body.idempotencyKey.trim().slice(0, 80) : null;
+        if (!key) return res.status(400).json({ success: false, code: 'key', message: 'This needs an idempotency key.' });
+        const again = await BankTransfer.findOne({ userId: user._id, idempotencyKey: key }).lean();
+        if (again) {
+          const acct = await LinkedBankAccount.findOne({ userId: user._id, verifyUtr: again.externalRef }).lean();
+          return res.status(200).json({ success: true, replay: true, transfer: publicTransfer(again), account: acct ? publicAccount(acct) : null, nameAtBank: acct ? acct.holderName : '' });
+        }
+        if (await LinkedBankAccount.countDocuments({ userId: user._id, status: 'active' }) >= MAX_LINKED) {
+          return res.status(409).json({ success: false, code: 'too_many', message: `You can keep up to ${MAX_LINKED} accounts. Remove one first.` });
+        }
+        const currency = await currencyOf(user);
+        const holderName = partnerNameAtBank(user);
+        // What the ₹1 carries (test mode): an account number and IFSC from
+        // the chosen bank.
+        const number = `50${digits(12)}`;
+        const code = india ? `${prefix}0${digits(6)}` : prefix;
+        const bankName = india ? (IFSC_BANKS[prefix] || String(body.bankName || '').trim().slice(0, 60) || `${prefix} bank`) : String(body.bankName || '').trim().slice(0, 60) || 'Your bank';
+        const utr = partnerUtr();
+        const referenceId = await newRef(BankTransfer, 'referenceId');
+        const now = new Date();
+        const label = `${bankName} ••${number.slice(-4)}`;
+        const out = await withTxn(async (session) => {
+          const before = await User.findById(user._id).session(session).select('balance').lean();
+          const after = round2(Number(before.balance) + 1);
+          const [t] = await BankTransfer.create([{
+            userId: user._id, direction: 'in', method: 'upi', amount: 1, currency, status: 'credited', referenceId, idempotencyKey: key,
+            counterpart: { kind: 'bank', label, bankName, last4: number.slice(-4), code, holderName },
+            externalRef: utr, fee: 0, balanceAfter: after, settledAt: now,
+            steps: [
+              { key: 'requested', label: 'Paid ₹1 to verify', detail: 'By UPI, from your bank', at: now },
+              { key: 'received', label: 'Received by UPI', detail: `UTR ${utr}`, at: now },
+              { key: 'credited', label: 'Added to GLOOBAL Bank', detail: `New balance ${fmt(after, currency)}`, at: now },
+            ],
+          }], { session });
+          await User.updateOne({ _id: user._id }, { $inc: { balance: 1 } }, { session });
+          await LedgerEntry.create([{
+            transactionId: t._id, userId: user._id, source: 'bank_transfer', entryType: 'credit', amount: 1,
+            balanceBefore: Number(before.balance), balanceAfter: after, currency,
+          }], { session });
+          const [a] = await LinkedBankAccount.create([{
+            userId: user._id, kind: 'bank', bankName, code, last4: number.slice(-4), accountHash: hashAccount(number, code),
+            holderName, nameMatched: true, verifiedBy: 'upi_rupee', verifyUtr: utr, verifiedAt: now,
+          }], { session });
+          return { t, a };
+        });
+        notify(user._id, 'Bank linked', `${label} is linked. Your ₹1 was added to GLOOBAL Bank.`, { bankTransfer: referenceId });
+        return res.status(201).json({ success: true, transfer: publicTransfer(out.t.toObject()), account: publicAccount(out.a.toObject()), nameAtBank: holderName, utr, testMode: true });
+      } catch (error) {
+        if (error && error.code === 11000) return res.status(409).json({ success: false, code: 'duplicate', message: 'That was already done.' });
+        console.error('Link by ₹1 error:', error);
+        return res.status(500).json({ success: false, message: 'Could not link it right now. Nothing was taken.' });
       }
     });
 

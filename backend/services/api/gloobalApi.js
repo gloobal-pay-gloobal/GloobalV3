@@ -1164,6 +1164,11 @@ var GloobalApi = {
   async linkBankAccount(body) {
     return gloobalApiClient.post("/api/bank-transfers/accounts", body || {});
   },
+  // Link a bank by paying ₹1 from it by UPI (0209, test mode): the payment
+  // carries the account, IFSC and name, so nothing is typed.
+  async linkBankByRupee(body) {
+    return gloobalApiClient.post("/api/bank-transfers/accounts/upi-rupee", body || {});
+  },
   async removeLinkedAccount(id) {
     await gloobalApiClient.delete(`/api/bank-transfers/accounts/${encodeURIComponent(id)}`);
   },

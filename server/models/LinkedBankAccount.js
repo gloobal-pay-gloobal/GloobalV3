@@ -18,6 +18,14 @@ const linkedBankAccountSchema = new mongoose.Schema(
     status: { type: String, enum: ['active', 'closed'], default: 'active' },
     closedReason: { type: String, default: '', maxlength: 120 },
     testMode: { type: Boolean, default: true },
+    // How it was proved to be yours (0209). `upi_rupee`: you paid ₹1 from
+    // it by UPI and the account, IFSC and name were read from that payment
+    // (a reverse penny drop). `penny_drop`: you typed the numbers and ₹1 was
+    // sent to it; the bank answered with the name. `name_check`: older rows
+    // and UPI IDs, where only the name was checked.
+    verifiedBy: { type: String, enum: ['', 'name_check', 'penny_drop', 'upi_rupee'], default: '' },
+    verifyUtr: { type: String, default: '', maxlength: 32 },
+    verifiedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

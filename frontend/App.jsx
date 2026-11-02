@@ -5159,7 +5159,7 @@ function GloobalId() {
       requestCloseActiveScreen();
       setShowScanScreen(true);
     }}
-  /></div>}{activeScreen === "bank" && <ScreenErrorBoundary name="Add bank" onClose={requestCloseActiveScreen}><AddBankScreen onClose={requestCloseActiveScreen} country={dialCountry} /></ScreenErrorBoundary>}{activeScreen === "coverage" && <ScreenErrorBoundary name="Gloobal Coverage" onClose={requestCloseActiveScreen}><GloobalCoverageScreen
+  /></div>}{activeScreen === "bank" && <ScreenErrorBoundary name="Add bank" onClose={requestCloseActiveScreen}><AddBankScreen onClose={requestCloseActiveScreen} country={dialCountry} balance={bankBalance} myName={documentedName} onOpenGloobalBank={() => { requestCloseActiveScreen(); goToDashboardDestination("bank"); }} /></ScreenErrorBoundary>}{activeScreen === "coverage" && <ScreenErrorBoundary name="Gloobal Coverage" onClose={requestCloseActiveScreen}><GloobalCoverageScreen
     onClose={requestCloseActiveScreen}
     dialCountry={dialCountry}
     sendHistory={sendMoneyHistory}

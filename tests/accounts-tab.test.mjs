@@ -52,8 +52,8 @@ describe("the padlock agrees with itself", () => {
     // bundle fails to parse. It bit Unlock2 (taken by the Coverage
     // screen) and then Star (taken by Add Bank), and esbuild catches it
     // only after the build.
-    const takenElsewhere = code("frontend/screens/Banks/AddBankScreen.jsx");
-    assert.match(takenElsewhere, /\n  Star,/);
+    // (The bare `Star` was Add Bank's until 0209 redrew that screen
+    // without lucide icons; the alias stays unique either way.)
     assert.match(misc(), /Star as Star3/);
   });
 });

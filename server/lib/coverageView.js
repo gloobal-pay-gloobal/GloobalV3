@@ -190,7 +190,7 @@ const pct = (cur, prev) => (prev > 0 ? round2(((cur - prev) / prev) * 100) : nul
 // All of it is test money until a bank partner is connected, and the check
 // says so; the arithmetic is the same either way.
 async function computeBooks({ now = new Date() } = {}) {
-  const users = await User.find({}, 'balance countryIso mobileNumber').lean();
+  const users = await User.find({}, 'balance countryIso mobileNumber shopOwnerId').lean();
   const isoCurrency = new Map();
   const currencyOf = async (u) => {
     const iso = accountCountryIso(u);
@@ -208,6 +208,12 @@ async function computeBooks({ now = new Date() } = {}) {
   const OPENING = typeof opening === 'function' ? opening() : Number(opening) || 10000;
   for (const u of users) {
     const r = row(await currencyOf(u));
+    // A shop (0210) is not a person and was given no opening balance; what
+    // it holds is counted, briefly, until it moves to its owner.
+    if (u.shopOwnerId) {
+      r.does.balances += Number(u.balance) || 0;
+      continue;
+    }
     r.accounts += 1;
     r.should.opening += OPENING;
     r.does.balances += Number.isFinite(Number(u.balance)) ? Number(u.balance) : OPENING;

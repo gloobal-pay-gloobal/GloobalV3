@@ -1393,6 +1393,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // screen. Anything reading this has to tell those two apart, which is
   // why creatorSetupDone() takes the object rather than a boolean.
   const [creatorProfile, setCreatorProfile] = useState14(null);
+  // ── WHICH SHOP (0210) ─────────────────────────────────────────────────
+  // Up to five shops on one account. The creator side works on one at a
+  // time: null is the account's own (first) shop; otherwise another shop's
+  // GLOOBAL ID. Every creator call below goes to creatorSymbol, and the
+  // server lets an account act for its own shops.
+  const [activeShop, setActiveShop] = useState83(null);
+  const creatorSymbol = activeShop || myGloobalId;
+  const [shopsInfo, setShopsInfo] = useState83(null);
+  const [addingShop, setAddingShop] = useState83(false);
   // 0185: the creator side's one-time "what do you make" card.
   const [otherWordsDraft, setOtherWordsDraft] = useState14("");
   const [otherWordsSaving, setOtherWordsSaving] = useState14(false);
@@ -1410,11 +1419,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const creatorLoadedRef = useRef10(false);
 
   // Fetch it once, the first time anything wants it.
-  const loadCreatorProfile = async () => {
-    if (creatorLoadedRef.current || !myGloobalId) return null;
+  const loadCreatorProfile = async (forSymbol) => {
+    const target = forSymbol || creatorSymbol;
+    if ((creatorLoadedRef.current && !forSymbol) || !target) return null;
     creatorLoadedRef.current = true;
     try {
-      const fetched = await GloobalApi.getCreatorProfile(myGloobalId);
+      const fetched = await GloobalApi.getCreatorProfile(target);
       // A brand-new account has no creator row at all; an empty shape
       // stands in, so every reader sees an object either way.
       const next = fetched || { handle: "", handleFirst: "", handleLast: "", logo: null, address: "", addressPublic: false };
@@ -1449,6 +1459,43 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // The person's own store, opened the way a customer sees it. No name
   // yet means there is no store to open, so the setup screen that makes
   // one is the honest destination. Used by the app map and the profile.
+  // The shops, with their totals, whenever the creator side is open.
+  const loadShops = async () => {
+    const r = await GloobalApi.getShops();
+    if (r) setShopsInfo(r);
+    return r;
+  };
+  useEffect78(() => {
+    if (shareRole === "merchant" && myGloobalId) loadShops();
+  }, [shareRole, myGloobalId, creatorProfile && creatorProfile.handle]);
+  // Make the creator side another shop: its profile, look, items and code.
+  const switchShop = async (symbol) => {
+    const target = symbol && symbol !== myGloobalId ? symbol : null;
+    setActiveShop(target);
+    setCreatorProfile(null);
+    creatorLoadedRef.current = false;
+    return loadCreatorProfile(target || myGloobalId);
+  };
+  // Open another shop, make it the one being worked on, and set it up the
+  // way the first was (its name first).
+  const addShop = async () => {
+    if (addingShop) return;
+    setAddingShop(true);
+    try {
+      const r = await GloobalApi.openShop();
+      if (r && r.shop) {
+        setShopsInfo({ shops: r.shops, totals: r.totals, max: r.max });
+        await switchShop(r.shop.symbolId);
+        setCreatorError("");
+        setCreatorSetupStart("name");
+        setShowCreatorSetup(true);
+      }
+    } catch (e) {
+      showToast2((e && e.message) || "Couldn't open another shop just now.");
+    } finally {
+      setAddingShop(false);
+    }
+  };
   const openMyShop = async () => {
     const profile = creatorProfile || await loadCreatorProfile();
     const handle = profile && profile.handle;
@@ -1560,12 +1607,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       // the profile route would drop it, and a rename must not be able to
       // reset somebody's colour.
       const { font, ...profilePatch } = patch || {};
-      const saved = await GloobalApi.saveCreatorProfile(myGloobalId, profilePatch);
+      const saved = await GloobalApi.saveCreatorProfile(creatorSymbol, profilePatch);
       let next = saved;
       const hadFont = creatorProfile && creatorProfile.shop && creatorProfile.shop.font;
       if (font && font !== hadFont) {
         try {
-          const shop = await GloobalApi.saveCreatorShop(myGloobalId, { font });
+          const shop = await GloobalApi.saveCreatorShop(creatorSymbol, { font });
           if (shop && next) next = { ...next, shop };
         } catch (e) {
           // The name is saved; a font that did not stick is a look, not a
@@ -1597,12 +1644,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     try {
       let next = creatorProfile;
       if (patch && Object.keys(patch).length) {
-        const saved = await GloobalApi.saveCreatorProfile(myGloobalId, patch);
+        const saved = await GloobalApi.saveCreatorProfile(creatorSymbol, patch);
         if (saved) next = saved;
       }
       if (shop && Object.keys(shop).length) {
         try {
-          const savedShop = await GloobalApi.saveCreatorShop(myGloobalId, shop);
+          const savedShop = await GloobalApi.saveCreatorShop(creatorSymbol, shop);
           if (savedShop && next) next = { ...next, shop: savedShop };
         } catch (e) {
           // The look is not worth losing the step over; it is set again
@@ -1625,8 +1672,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     const ok = await requireBiometric({ pinReason: "Confirm it's you to set your Creator Share." });
     if (!ok) return false;
     try {
-      const saved = await GloobalApi.setCreatorCashbackRate(currentSymbolId || myGloobalId, pct / 100);
-      setMyShareRate(Math.round(saved * 1e4) / 100);
+      // Another shop (0210) keeps its own rate; the account's own shop's
+      // rate is My Share's.
+      const saved = await GloobalApi.setCreatorCashbackRate(activeShop || currentSymbolId || myGloobalId, pct / 100);
+      if (!activeShop) setMyShareRate(Math.round(saved * 1e4) / 100);
       return true;
     } catch (e) {
       return false;
@@ -1647,7 +1696,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const skipCreatorSetup = async () => {
     setShowCreatorSetup(false);
     try {
-      const saved = await GloobalApi.saveCreatorProfile(myGloobalId, { skipped: true });
+      const saved = await GloobalApi.saveCreatorProfile(creatorSymbol, { skipped: true });
       if (saved) setCreatorProfile(saved);
     } catch (e) {
       // Not worth telling anybody about: the screen is already closed and
@@ -2707,7 +2756,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        lesson the install banner's own first draft taught: anything
        wearing the wallet's gradient directly above the wallet card runs
        into it. */
-  }{
+  }{shareRole === "merchant" && shopsInfo && shopsInfo.shops && shopsInfo.shops[0] && shopsInfo.shops[0].setUp && <CreatorShopsStrip
+    info={shopsInfo}
+    active={creatorSymbol}
+    ccyCode={ccyCode}
+    lens={displayLens}
+    onPick={(s) => { if (s.symbolId !== creatorSymbol) switchShop(s.symbolId).then(() => { if (!s.setUp) openCreatorSetup("name"); }); else if (!s.setUp) openCreatorSetup("name"); }}
+    onAdd={addShop}
+    adding={addingShop}
+  />}{
     /* ── CREATORS ALREADY IN OTHER (0185) ─────────────────────────────
        Picked Other before it asked for words, so search cannot find them
        by what they make. One card, until filled; it never blocks taking
@@ -2722,7 +2779,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         if (otherWordsSaving || !otherWordsDraft.trim() || bazaarOtherWordsProblem(otherWordsDraft)) return;
         setOtherWordsSaving(true);
         try {
-          const saved = await GloobalApi.saveCreatorProfile(myGloobalId, { otherWords: otherWordsDraft.trim() });
+          const saved = await GloobalApi.saveCreatorProfile(creatorSymbol, { otherWords: otherWordsDraft.trim() });
           if (saved) setCreatorProfile(saved);
           showToast2("Saved \u00B7 people can find you by these words");
         } catch (e) {
@@ -4533,7 +4590,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",
     padding: "6px 16px calc(30px + env(safe-area-inset-bottom, 0px))"
   }}><GloobalReceiveQrCard
-    gloobalId={gloobalIdTag}
+    gloobalId={activeShop || gloobalIdTag}
     name={(creatorProfile && creatorDisplayName(creatorProfile)) || myName}
     side="shop"
     style={shopCode}
@@ -4578,16 +4635,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     countryIso={dialCountry && dialCountry.iso}
     onClose={() => setShowSupplierFinder(false)}
     onPick={async (creator) => {
-      const added = await GloobalApi.addCreatorSupplier(myGloobalId, creator.handle || "");
+      const added = await GloobalApi.addCreatorSupplier(creatorSymbol, creator.handle || "");
       if (!added) { showToast2("Could not add that supplier."); return false; }
-      setCreatorSuppliers(await GloobalApi.getCreatorSuppliers(myGloobalId));
+      setCreatorSuppliers(await GloobalApi.getCreatorSuppliers(creatorSymbol));
       return true;
     }}
   /></ScreenErrorBoundary>}{showShopTheme && <ScreenErrorBoundary name="Shop look" onClose={() => setShowShopTheme(false)}><ShopThemeEditor
     cover={(creatorProfile && creatorProfile.cover) || null}
     onSaveCover={async (change) => {
       try {
-        const saved = await GloobalApi.saveCreatorCover(myGloobalId, change);
+        const saved = await GloobalApi.saveCreatorCover(creatorSymbol, change);
         // Both copies again: the profile this editor reads from, and the
         // page behind it. A cover changed here and stale there is the same
         // fault as a colour changed here and stale there.
@@ -4599,7 +4656,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       }
     }}
     shop={(creatorProfile && creatorProfile.shop) || null}
-    symbolId={myGloobalId}
+    symbolId={creatorSymbol}
     // The shop as it stands, for the live preview: the page that is open
     // behind the editor (which has the items), else the profile.
     creator={(openCreator && openCreator.symbolId === myGloobalId ? openCreator : creatorProfile) || null}
@@ -4609,7 +4666,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onClose={() => setShowShopTheme(false)}
     onSave={async (shop) => {
       try {
-        const saved = await GloobalApi.saveCreatorShop(myGloobalId, shop);
+        const saved = await GloobalApi.saveCreatorShop(creatorSymbol, shop);
         if (!saved) return false;
         // Both copies move together: the profile row the owner came from,
         // and the page they may have open behind this. Leaving either stale
@@ -4636,7 +4693,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onSendBack={sendBackForComplaint}
   /></ScreenErrorBoundary>}{openCreator && <ScreenErrorBoundary name="Creator page" onClose={() => setOpenCreator(null)}><CreatorPage
     creator={openCreator}
-    isOwner={Boolean(openCreator.symbolId) && openCreator.symbolId === myGloobalId}
+    isOwner={Boolean(openCreator.symbolId) && (openCreator.symbolId === myGloobalId || Boolean(shopsInfo && shopsInfo.shops && shopsInfo.shops.some((x) => x.symbolId === openCreator.symbolId)))}
     ccyCode={ccyCode}
     lens={displayLens}
     pinned={payPins.includes(openCreator.symbolId)}
@@ -4650,7 +4707,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         // The list as the page is showing it, which is the server's own
         // last answer — the photos in it are the ones a save may reference.
         const current = (openCreator && openCreator.items) || [];
-        const saved = await GloobalApi.saveCreatorItems(myGloobalId, next, current);
+        const saved = await GloobalApi.saveCreatorItems(creatorSymbol, next, current);
         setOpenCreator((c) => (c ? { ...c, items: saved } : c));
         return true;
       } catch (e) {
@@ -4809,12 +4866,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       // exactly the page everybody else does — plus the Buying tab, which
       // the server only answers to them.
       try {
-        const mine = await GloobalApi.getCreatorProfile(myGloobalId);
+        const mine = await GloobalApi.getCreatorProfile(creatorSymbol);
         if (!mine) { showToast2("Finish your creator name first."); return; }
         setOpenCreator(mine);
         const [sup, buys] = await Promise.all([
-          GloobalApi.getCreatorSuppliers(myGloobalId).catch(() => []),
-          GloobalApi.getCreatorPurchases(myGloobalId).catch(() => [])
+          GloobalApi.getCreatorSuppliers(creatorSymbol).catch(() => []),
+          GloobalApi.getCreatorPurchases(creatorSymbol).catch(() => [])
         ]);
         setCreatorSuppliers(sup);
         setCreatorPurchases(buys);

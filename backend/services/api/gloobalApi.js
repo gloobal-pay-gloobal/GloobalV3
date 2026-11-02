@@ -1164,6 +1164,19 @@ var GloobalApi = {
   async linkBankAccount(body) {
     return gloobalApiClient.post("/api/bank-transfers/accounts", body || {});
   },
+  // Several shops on one account (0210): the list, with each shop's own
+  // totals and the Creator side's together; and opening another.
+  async getShops() {
+    try {
+      const result = await gloobalApiClient.get("/api/shops");
+      return result && result.success ? result : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async openShop() {
+    return gloobalApiClient.post("/api/shops", {});
+  },
   // Link a bank by paying ₹1 from it by UPI (0209, test mode): the payment
   // carries the account, IFSC and name, so nothing is typed.
   async linkBankByRupee(body) {

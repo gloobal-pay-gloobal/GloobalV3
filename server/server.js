@@ -1108,8 +1108,21 @@ const requireSelf = (...sources) => async (req, res, next) => {
     const decoded = safeDecodeSymbolId(candidate).trim() || candidate;
     if (decoded === req.authUser.symbolId) continue;
 
-    const owner = await User.findOne({ symbolId: decoded }).select('_id').lean();
+    const owner = await User.findOne({ symbolId: decoded }).select('_id shopOwnerId').lean();
     if (owner && String(owner._id) === String(req.authUser._id)) continue;
+
+    // One of this account's other shops (0210). The request acts AS that
+    // shop from here on — the creator routes read req.authUser — and the
+    // person behind it is kept as req.shopOwner. Nobody signs in to a shop,
+    // so this is the only way anything is done for one.
+    if (owner && owner.shopOwnerId && String(owner.shopOwnerId) === String(req.authUser._id)) {
+      const shop = await User.findById(owner._id);
+      if (shop) {
+        req.shopOwner = req.authUser;
+        req.authUser = shop;
+        continue;
+      }
+    }
 
     return res.status(403).json({
       success: false,
@@ -3570,6 +3583,12 @@ const isValidSymbolId = (value) => {
   return chars.length === SYMBOL_ID_LENGTH && chars.every((ch) => GLOOBAL_SYMBOLS.includes(ch));
 };
 
+// A GLOOBAL ID for a shop (0210): nobody chooses it, so it is drawn at
+// random from the same eight symbols. lib/shops.js checks it is free.
+function mintShopSymbolId() {
+  return Array.from({ length: SYMBOL_ID_LENGTH }, () => GLOOBAL_SYMBOLS[crypto.randomInt(GLOOBAL_SYMBOLS.length)]).join('');
+}
+
 // ── Retired Gloobal IDs (audit finding GLB-12) ──────────────────────────────
 //
 // A Gloobal ID is a payment address. It is printed on QR codes, pasted into
@@ -5459,14 +5478,16 @@ app.get('/api/creator/handle-available', lookupLimit, requireAuth, async (req, r
 app.get('/api/creator/:symbolId/profile', lookupLimit, requireAuth, async (req, res) => {
   try {
     const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
-    const user = symbolId ? await User.findOne({ symbolId }).select('_id symbolId creatorProfile countryIso').lean() : null;
+    const user = symbolId ? await User.findOne({ symbolId }).select('_id symbolId creatorProfile countryIso shopOwnerId').lean() : null;
     if (!user) {
       return res.status(404).json({
         success: false, code: 'user_not_found', message: 'No account found for that Gloobal ID.'
       });
     }
     const logo = await CreatorLogo.findOne({ userId: user._id }).select('dataUrl').lean();
-    const isOwner = String(user._id) === String(req.authUser._id);
+    // The owner of a shop (0210) sees it as its owner does.
+    const shopOf = user.shopOwnerId ? String(user.shopOwnerId) : '';
+    const isOwner = String(user._id) === String(req.authUser._id) || (shopOf && shopOf === String(req.authUser._id));
     const out = publicCreator(user, logo?.dataUrl);
     if (isOwner) {
       const profile = user.creatorProfile || {};
@@ -8792,6 +8813,14 @@ gloobalBank.mount(app);
 // Money in and out of GLOOBAL Bank: add money, send to your own bank, the
 // history of both, and "Report a problem" on each. Test mode until a payment
 // partner is connected — see lib/bankTransfers.js.
+// Several shops on one account (0210). See lib/shops.js.
+const shops = require('./lib/shops').createShops({
+  User, Transaction, LedgerEntry, Notification, CreatorLogo, requireAuth, writeLimit, lookupLimit,
+  withAtomicSession: (work) => withAtomicSession(work),
+  mintSymbolId: () => mintShopSymbolId(),
+});
+shops.mount(app);
+
 // My Essentials (0208): the daily draw, paid by GLOOBAL into the GLOOBAL
 // Bank balance, and the hold on leaving — everything an account has used
 // from Essentials stays in GLOOBAL. See lib/essentials.js.
@@ -11275,6 +11304,18 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         await sendPaymentPushes(shareLegs, shareTransaction);
       } catch (shareNotifyError) {
         console.error('Share notification error (non-fatal):', shareNotifyError);
+      }
+    }
+
+    // Paid to one of somebody's shops (0210): the money moves to the
+    // account that runs it — one Creator balance — and the payment stays
+    // recorded against the shop. Best-effort after the payment, like the
+    // steps above; a shop left holding a balance is swept on the next one.
+    if (receiver && receiver.shopOwnerId) {
+      try {
+        await shops.sweep(receiver._id);
+      } catch (sweepError) {
+        console.error('Shop sweep error (non-fatal):', sweepError);
       }
     }
 
@@ -13808,8 +13849,12 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
       });
     }
 
+    // Payments to this account's other shops (0210) are this account's
+    // income: the money was moved here. They come back as received rows,
+    // each saying which shop.
+    const shopIds = await shops.idsOf(user._id);
     const transactions = await Transaction.find({
-      $or: [{ fromUserId: user._id }, { toUserId: user._id }],
+      $or: [{ fromUserId: user._id }, { toUserId: { $in: [user._id, ...shopIds] } }],
       // 'share' legs (lib/merchantShareFlow.js) move no real balance and
       // exist purely as a receipt-trail record of a diversion already
       // reflected in the payer's AssetSeed. Every reader of this endpoint

@@ -40,11 +40,11 @@ test("a font is fetched before it is drawn", () => {
 test("the font is saved through the shop route, never the profile one", () => {
   const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
   assert.match(dash, /const \{ font, \.\.\.profilePatch \} = patch \|\| \{\};/);
-  assert.match(dash, /GloobalApi\.saveCreatorProfile\(myGloobalId, profilePatch\)/);
-  assert.match(dash, /GloobalApi\.saveCreatorShop\(myGloobalId, \{ font \}\)/);
+  assert.match(dash, /GloobalApi\.saveCreatorProfile\(creatorSymbol, profilePatch\)/);
+  assert.match(dash, /GloobalApi\.saveCreatorShop\(creatorSymbol, \{ font \}\)/);
   // 0199: the name step sends the font with the tagline, on the shop half.
   assert.match(setup(), /return \{ patch, shop: \{ font, tagline: tagline\.trim\(\) \} \};/);
-  assert.match(dash, /const savedShop = await GloobalApi\.saveCreatorShop\(myGloobalId, shop\);/);
+  assert.match(dash, /const savedShop = await GloobalApi\.saveCreatorShop\(creatorSymbol, shop\);/);
 });
 
 test("the card at the top is the shop's own colour and the chosen font", () => {

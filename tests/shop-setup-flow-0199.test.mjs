@@ -44,7 +44,7 @@ test("Creator Share runs 0 to 7, to the hundredth, behind the PIN", () => {
   assert.match(s, /<GeuTwin amount=\{n\} currency=\{ccy\} own=\{ccy\} \/>/, "the split is money with its GEU name");
   const d = dash();
   assert.match(d, /const ok = await requireBiometric\(\{ pinReason: "Confirm it's you to set your Creator Share\." \}\);/);
-  assert.match(d, /GloobalApi\.setCreatorCashbackRate\(currentSymbolId \|\| myGloobalId, pct \/ 100\)/);
+  assert.match(d, /GloobalApi\.setCreatorCashbackRate\(activeShop \|\| currentSymbolId \|\| myGloobalId, pct \/ 100\)/);
 });
 
 test("the first flip opens on the splash, an existing shop on the Edit list", () => {

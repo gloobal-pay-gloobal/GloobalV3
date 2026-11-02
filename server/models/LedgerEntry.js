@@ -20,7 +20,7 @@ const ledgerEntrySchema = new mongoose.Schema(
     // moving to or from a bank outside GLOOBAL, a BankTransfer.
     source: {
       type: String,
-      enum: ['payment', 'bank_transfer'],
+      enum: ['payment', 'bank_transfer', 'shop_sweep'],
       default: 'payment',
     },
     entryType: {

@@ -493,7 +493,7 @@ describe("a creator who skipped is a real creator", () => {
   });
 
   test("a skip is recorded, so the offer stops being a wall", () => {
-    assert.match(dash, /GloobalApi\.saveCreatorProfile\(myGloobalId, \{ skipped: true \}\)/);
+    assert.match(dash, /GloobalApi\.saveCreatorProfile\(creatorSymbol, \{ skipped: true \}\)/);
     assert.match(server, /if \(body\.skipped === true && !wantsHandle\) \{/,
       "a save that carries a handle could also mark the setup as skipped");
     assert.match(server, /set\['creatorProfile\.setupSkippedAt'\] = null;/,

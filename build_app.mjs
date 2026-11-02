@@ -311,6 +311,7 @@ const FRONTEND_MODULES = [
   // The first-flip splash the setup flow opens on (0199).
   "features/creator/shopSetupSplash.jsx",
   "features/creator/CreatorSetupScreen.jsx",
+  "features/creator/creatorShops.jsx",
   // Which businesses this account pinned. Plain functions and two `var`
   // initialisers — and PAY_PINS_VISIBLE is read by the strip in
   // businessMark.jsx below, so it has to come first. (Only at render

@@ -48,6 +48,15 @@ const userSchema = new mongoose.Schema({
   // written alongside it so documents saved by this version stay readable
   // to a client built before it. Full datetime, not a date — two renames a
   // minute apart are otherwise indistinguishable.
+  // ── A SHOP OF ANOTHER ACCOUNT (0210) ─────────────────────────────────
+  // A creator may run up to five shops on one GLOOBAL account. The first is
+  // the account itself (its creatorProfile). Each further shop is an
+  // account of its own — its own GLOOBAL ID, name, page, items and code —
+  // that nobody signs in to: this field names the account that runs it.
+  // Money paid to a shop is moved to that account at once (one Creator
+  // balance), and the payment stays recorded against the shop, which is
+  // what the per-shop totals are read from. See lib/shops.js.
+  shopOwnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   symbolIdHistory: [{
     symbolId: {
       type: String,

@@ -20,9 +20,9 @@ test("the preview is the real page, and it counts nothing", () => {
   assert.match(p, /if \(typeof window === "undefined" \|\| preview\) return undefined;/, "a preview leaves the map button alone");
 });
 
-test("six tabs, Undo, and a prompt before losing changes", () => {
+test("four rows and More (0200), Undo, and a prompt before losing changes", () => {
   const e = editor();
-  for (const t of ["Theme", "Colour", "Font", "Layout", "Cover", "Extras"]) assert.match(e, new RegExp(`label: "${t}"`));
+  for (const t of ["Style", "Colour", "Cover", "Top band", "More"]) assert.match(e, new RegExp(`label: "${t}"`));
   assert.match(e, /setHistory\(\(h\) => h\.concat\(\[draft\]\)\.slice\(-30\)\);/);
   assert.match(e, /const close = \(\) => \(dirty \? setLeaving\(true\) : onClose && onClose\(\)\);/);
   assert.match(e, />Save and leave<|"Save and leave"/);

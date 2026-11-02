@@ -35,7 +35,7 @@ test("every photo the founder named goes through the cropper", () => {
 
 test("smaller tiles on the Look editor and setup screen", () => {
   const ed = readSource("frontend/features/creator/ShopThemeEditor.jsx");
-  assert.match(ed, /theme: <div style=\{\{ display: "grid", gridTemplateColumns: "repeat\(3, minmax\(0, 1fr\)\)", gap: 8 \}\}>/);
+  assert.match(ed, /style: <div style=\{\{ display: "grid", gridTemplateColumns: "repeat\(3, minmax\(0, 1fr\)\)", gap: 8 \}\}>/);
   assert.match(ed, /gridTemplateColumns: "repeat\(8, 1fr\)", gap: 8/);
   assert.match(readSource("frontend/features/bazaar/bazaar.jsx"), /gridTemplateColumns: "repeat\(4, minmax\(0, 1fr\)\)", gap: 6/);
 });

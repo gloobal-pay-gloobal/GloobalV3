@@ -166,14 +166,68 @@ function lookBuzz() {
   }
 }
 
-var LOOK_TABS = [
-  { key: "theme", label: "Theme" },
+// ── FOUR CHOICES, NOT SIX TABS OF DIALS (0200) ─────────────────────────
+//
+// Look was six tabs and about fourteen dials — theme, thirteen colours,
+// dark page, font, list or grid, corners, cards, density, photo shape,
+// buttons, name-card style, cover type, pattern, tagline, band — under a
+// half-screen preview. The founder asked for it simplified, and chose the
+// drawing: the real shop on top, four rows under it — Style, Colour,
+// Cover, Top band — and More for the three dials worth turning by hand
+// (font, list or grid, corners), plus the tagline. Each row says what it
+// is set to now and opens a sheet over the bottom, so the shop stays in
+// sight while it changes.
+//
+// Cards, density, photo shape, buttons and the name-card style are no
+// longer separate controls: a Style sets them, the way it always did. A
+// shop that set them by hand before keeps them until it picks a Style.
+var LOOK_ROWS = [
+  { key: "style", label: "Style" },
   { key: "colour", label: "Colour" },
-  { key: "font", label: "Font" },
-  { key: "layout", label: "Layout" },
   { key: "cover", label: "Cover" },
-  { key: "extras", label: "Extras" }
+  { key: "band", label: "Top band" },
+  { key: "more", label: "More" }
 ];
+
+// "From your logo": the shop colours nearest the logo's own. Snapped to
+// the palette rather than taken raw, because the palette is the whole
+// validation of a colour that ends up in CSS (shopThemeColor), so a raw
+// pixel could not be saved anyway. Greys, near-white and near-black are
+// skipped: they are the background of most logos, not their colour.
+function lookLogoColours(src) {
+  return new Promise((resolve) => {
+    if (!src || typeof Image === "undefined" || typeof document === "undefined") { resolve([]); return; }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const n = 24;
+        const c = document.createElement("canvas");
+        c.width = n; c.height = n;
+        const ctx = c.getContext("2d");
+        ctx.drawImage(img, 0, 0, n, n);
+        const px = ctx.getImageData(0, 0, n, n).data;
+        const hex = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+        const pal = SHOP_COLORS.map((h) => ({ h, rgb: hex(h), n: 0 }));
+        for (let i = 0; i < px.length; i += 4) {
+          const r = px[i], g = px[i + 1], b = px[i + 2], a = px[i + 3];
+          const hi = Math.max(r, g, b), lo = Math.min(r, g, b);
+          if (a < 128 || hi - lo < 28 || hi < 40 || lo > 225) continue;
+          let best = null, bd = Infinity;
+          for (const q of pal) {
+            const d = (q.rgb[0] - r) ** 2 + (q.rgb[1] - g) ** 2 + (q.rgb[2] - b) ** 2;
+            if (d < bd) { bd = d; best = q; }
+          }
+          best.n += 1;
+        }
+        resolve(pal.filter((q) => q.n > 6).sort((x, y) => y.n - x.n).slice(0, 3).map((q) => q.h));
+      } catch (e) {
+        resolve([]);
+      }
+    };
+    img.onerror = () => resolve([]);
+    img.src = src;
+  });
+}
 
 var LOOK_DRAFT_FIELDS = ["theme", "color", "font", "corners", "cards", "density", "photoShape", "layout", "buttons",
   "heroStyle", "coverStyle", "pattern", "dark", "tagline", "announceText", "announceColor", "announceOn"];
@@ -203,7 +257,16 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
   const [history, setHistory] = useState55([]);
   const [saving, setSaving] = useState55(false);
   const [error, setError] = useState55("");
-  const [tab, setTab] = useState55("theme");
+  // Which sheet is open over the bottom: one of LOOK_ROWS, or none.
+  const [sheet, setSheet] = useState55(null);
+  // The shop colours nearest the logo's, once it has been read.
+  const [logoColours, setLogoColours] = useState55([]);
+  const logoSrc = creator && creator.logo;
+  useEffect57(() => {
+    let live = true;
+    lookLogoColours(logoSrc).then((c) => { if (live) setLogoColours(c); });
+    return () => { live = false; };
+  }, [logoSrc]);
   const [leaving, setLeaving] = useState55(false);
   const [fullPage, setFullPage] = useState55(false);
 
@@ -283,10 +346,28 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
   const name = creatorDisplayName(previewCreator);
 
   // ── THE TABS ────────────────────────────────────────────────────────────
+  // Every face as a chip in the shop's own name, in one row to swipe.
+  const fontRow = <div style={{ display: "flex", gap: 8, overflowX: "auto", scrollbarWidth: "none", margin: "0 -16px", padding: "2px 16px 4px" }}>{Object.keys(SHOP_FONTS).map((key) => {
+    const f = SHOP_FONTS[key];
+    const on = theme.fontKey === key;
+    return <button
+      key={key}
+      onClick={() => set({ font: key })}
+      aria-pressed={on}
+      aria-label={`${f.name} font`}
+      style={{
+        flexShrink: 0, border: "none", cursor: "pointer", fontFamily: "inherit", borderRadius: 13, padding: "8px 12px",
+        background: T.surface, boxShadow: ring(on), display: "flex", flexDirection: "column", alignItems: "center", gap: 3
+      }}
+    ><span style={{ fontSize: 17, lineHeight: 1.3, color: T.ink, fontFamily: f.stack, fontWeight: f.weight, whiteSpace: "nowrap" }}>{Array.from(name).slice(0, 8).join("")}</span><span style={{
+      fontSize: 10, fontWeight: 700, color: on ? T.accent : T.inkFaint, whiteSpace: "nowrap"
+    }}>{f.name}</span></button>;
+  })}</div>;
+
   const tabs = {
     // Three to a row with a shorter swatch: two big cards to a row made
     // twelve themes six screens of scrolling (founder: "icons oversized").
-    theme: <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{SHOP_THEME_KEYS.map((key) => {
+    style: <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{SHOP_THEME_KEYS.map((key) => {
       const t = SHOP_THEMES[key];
       const look = resolveShopTheme({ theme: key });
       const on = draft.theme === key;
@@ -320,7 +401,23 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
       }}>{t.note}</span></span></button>;
     })}</div>,
 
-    colour: <>{row("Shop colour", <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 8 }}>{SHOP_COLORS.map((c) => {
+    colour: <>{logoColours.length ? <div data-testid="look-logo-colours" style={{
+      display: "flex", alignItems: "center", gap: 10, background: T.surface, borderRadius: 15, padding: "10px 12px", boxShadow: T.shadowCard, marginBottom: 14
+    }}><img src={logoSrc} alt="" style={{ width: 38, height: 38, borderRadius: 11, objectFit: "cover", flexShrink: 0 }} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
+      display: "block", fontSize: 13, fontWeight: 800, color: T.ink
+    }}>From your logo</span><span style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 1 }}>Matches your photo</span></span>{logoColours.map((c) => {
+      const on = theme.color.toUpperCase() === c.toUpperCase();
+      return <button
+        key={c}
+        onClick={() => set({ color: c })}
+        aria-label={`Use ${c} from your logo`}
+        aria-pressed={on}
+        style={{
+          width: 30, height: 30, borderRadius: "50%", background: c, border: "none", cursor: "pointer", flexShrink: 0,
+          boxShadow: on ? `0 0 0 2.5px ${T.surface}, 0 0 0 4.5px ${c}` : `0 2px 6px rgba(${T.inkRgb},0.15)`
+        }}
+      />;
+    })}</div> : null}{row("Shop colour", <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 8 }}>{SHOP_COLORS.map((c) => {
       const on = theme.color.toUpperCase() === c.toUpperCase();
       return <button
         key={c}
@@ -346,28 +443,7 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
       fontSize: 11, color: T.inkFaint, fontWeight: 600, margin: "12px 2px 0", lineHeight: 1.5
     }}>Your colour washes the page and fills your name card, the chips and the Add button. The price keeps the app's own look in every shop, so people can read a figure the same way everywhere.</div></>,
 
-    font: <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{Object.keys(SHOP_FONTS).map((key) => {
-      const f = SHOP_FONTS[key];
-      const on = theme.fontKey === key;
-      const quick = SHOP_FONT_QUICK.find((q) => q.key === key);
-      return <button
-        key={key}
-        onClick={() => set({ font: key })}
-        aria-pressed={on}
-        className="v2-tap"
-        style={{
-          display: "flex", alignItems: "center", gap: 10, textAlign: "left", background: T.surface, borderRadius: 13,
-          padding: "8px 12px", border: "none", cursor: "pointer", fontFamily: "inherit", boxShadow: ring(on)
-        }}
-      ><span style={{ flex: 1, minWidth: 0 }}><span style={{
-        display: "block", fontSize: 16, lineHeight: 1.3, color: T.ink, fontFamily: f.stack, fontWeight: f.weight,
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-      }}>{name}</span><span style={{
-        display: "block", fontSize: 10.5, color: T.inkFaint, fontWeight: 600, marginTop: 2
-      }}>{f.name} · {quick ? quick.label : f.note}</span></span>{on ? <Check10 size={14} color={T.accent} /> : null}</button>;
-    })}</div>,
-
-    layout: <>{SHOP_EDIT_SECTIONS.map((sec) => <div key={sec.field}>{row(sec.label, chips(sec.field, sec.options, (key, on) => {
+    layout: <>{SHOP_EDIT_SECTIONS.filter((sec) => sec.field === "layout" || sec.field === "corners").map((sec) => <div key={sec.field}>{row(sec.label, chips(sec.field, sec.options, (key, on) => {
       // A small picture of each choice, so nobody has to know what
       // "outline" or "tall" means before seeing it.
       const c = on ? T.accent : T.inkFaint;
@@ -415,19 +491,9 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
       theme.coverStyle === "pattern" ? row("Pattern", chips("pattern", Object.keys(SHOP_PATTERNS), (key) => <span style={{
         width: 32, height: 20, borderRadius: 5, background: shopPatternCss(key, theme.color, theme.dark)
       }} />)) : null
-    }{row("Name card", chips("heroStyle", Object.keys(SHOP_HERO_STYLES), (key) => <span style={{
-      width: 32, height: 19, borderRadius: 5, position: "relative", overflow: "hidden",
-      background: key === "glass" ? (theme.coverStyle === "pattern" ? shopPatternCss(theme.pattern, theme.color, theme.dark) : `linear-gradient(140deg, ${theme.hero.from}, ${theme.hero.to})`) : "transparent",
-      boxShadow: key === "minimal" ? `inset 0 0 0 1.5px ${T.line}` : "none"
-    }}><span style={{
-      position: "absolute", inset: key === "glass" ? 4 : 0, borderRadius: key === "glass" ? 4 : 5,
-      background: key === "gradient" ? `linear-gradient(140deg, ${theme.hero.from}, ${theme.hero.to})` : key === "solid" ? theme.hero.from
-        : key === "glass" ? "rgba(18,14,26,0.45)" : "transparent"
-    }} /><span style={{ position: "absolute", left: key === "glass" ? 8 : 5, top: key === "glass" ? 8 : 7, width: 13, height: 3, borderRadius: 2, background: key === "minimal" ? T.ink : "#fff" }} /></span>), <span style={{
-      textTransform: "none", letterSpacing: 0, fontWeight: 600, color: T.inkFaint
-    }}>{theme.heroStyle === "glass" && !(theme.coverStyle !== "photo" || (cover && cover.photo)) ? "Glass needs a cover" : ""}</span>)}</>,
+    }</>,
 
-    extras: <>{row("Tagline", <div style={{
+    tagline: <>{row("Tagline", <div style={{
       background: T.surface, borderRadius: 15, padding: "11px 14px", boxShadow: T.shadowCard
     }}><label htmlFor="shop-tagline" style={{
       display: "block", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkFaint
@@ -442,7 +508,9 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
         width: "100%", border: "none", outline: "none", background: "none", marginTop: 5,
         fontSize: 14, fontWeight: 700, color: T.ink, fontFamily: "inherit"
       }}
-    /></div>)}{row("Announcement", <>
+    /></div>)}</>,
+
+    band: <>{row("Announcement", <>
       <div style={{
         background: T.surface, borderRadius: 15, padding: "11px 14px", boxShadow: T.shadowCard, marginBottom: 9
       }}><label htmlFor="shop-announce" style={{
@@ -480,7 +548,7 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
     padding: "calc(14px + env(safe-area-inset-top, 0px)) 16px 8px", flexShrink: 0
   }}><NavBackButton onClick={close} /><span style={{
     flex: 1, minWidth: 0, fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay
-  }}>How your shop looks</span><button
+  }}>Your shop's look</span><button
     onClick={() => setFullPage(true)}
     className="v2-tap"
     style={{
@@ -491,32 +559,51 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
 
   {
     /* The real page, small — or the old one-row sample when this editor is
-       opened without a shop to draw (a profile that has none yet). */
+       opened without a shop to draw (a profile that has none yet). Taller
+       on the four rows, shorter while a sheet is open under it. */
   }<div style={{ padding: "2px 16px 10px", flexShrink: 0 }}>{creator
-    ? <LookLivePreview creator={previewCreator} ccyCode={ccyCode} lens={lens} height={Math.round(Math.min(320, (typeof window !== "undefined" ? window.innerHeight : 800) * 0.36))} />
+    ? <LookLivePreview creator={previewCreator} ccyCode={ccyCode} lens={lens} height={Math.round(Math.min(sheet ? 300 : 360, (typeof window !== "undefined" ? window.innerHeight : 800) * (sheet ? 0.32 : 0.42)))} />
     : <ShopThemePreview shop={draft} lens={lens} ccyCode={ccyCode} />}</div>
 
-  <div role="tablist" aria-label="What to change" style={{
-    display: "flex", gap: 6, overflowX: "auto", padding: "4px 16px 10px", flexShrink: 0, scrollbarWidth: "none",
-    borderBottom: `1px solid ${T.line}`
-  }}>{LOOK_TABS.map((t) => <button
-    key={t.key}
-    role="tab"
-    aria-selected={tab === t.key}
-    onClick={() => setTab(t.key)}
-    style={{
-      flexShrink: 0, border: "none", borderRadius: 999, padding: "8px 14px", cursor: "pointer", fontFamily: "inherit",
-      fontSize: 12.5, fontWeight: 800, background: tab === t.key ? T.ink : "transparent",
-      color: tab === t.key ? "#fff" : T.inkSoft, transition: "background 0.15s ease, color 0.15s ease"
-    }}
-  >{t.label}</button>)}</div>
-
-  <div key={tab} style={{
-    flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "14px 16px 20px",
-    animation: "lookTabIn 0.22s ease"
-  }}><style>{"@keyframes lookTabIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } } @media (prefers-reduced-motion: reduce) { [role=tabpanel] { animation: none !important; } }"}</style><div role="tabpanel">{tabs[tab]}</div>{error ? <div style={{
+  {sheet ? <div key={sheet} role="dialog" aria-label={(LOOK_ROWS.find((r) => r.key === sheet) || {}).label} data-look-sheet={sheet} style={{
+    flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: T.surface, borderRadius: "24px 24px 0 0",
+    boxShadow: `0 -8px 24px rgba(${T.inkRgb},0.10)`, animation: "lookSheetIn 0.22s ease"
+  }}><style>{"@keyframes lookSheetIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } } @media (prefers-reduced-motion: reduce) { [data-look-sheet] { animation: none !important; } }"}</style><div style={{
+    display: "flex", alignItems: "center", padding: "14px 16px 6px", flexShrink: 0
+  }}><span style={{ flex: 1, fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{(LOOK_ROWS.find((r) => r.key === sheet) || {}).label}</span><button
+    type="button"
+    data-testid="look-sheet-done"
+    onClick={() => setSheet(null)}
+    style={{ border: "none", background: "none", color: T.accent, fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", padding: "6px 2px" }}
+  >Done</button></div><div style={{
+    flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 16px 18px"
+  }}>{sheet === "more" ? <>{tabs.tagline}{row("Font", fontRow)}{tabs.layout}</> : tabs[sheet]}{error ? <div style={{
     fontSize: 12, fontWeight: 700, color: T.negative, marginTop: 10
-  }}>{error}</div> : null}</div>
+  }}>{error}</div> : null}</div></div> : <div style={{
+    flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "4px 16px 16px"
+  }}><div style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}>{LOOK_ROWS.map((r, i) => {
+    const value = {
+      style: `${theme.name} · ${theme.note}`,
+      colour: `${logoColours.some((c) => c.toUpperCase() === theme.color.toUpperCase()) ? "From your logo" : "Your colour"} · ${theme.dark ? "dark page" : "light page"}`,
+      cover: `${shopOptionLabel("coverStyle", theme.coverStyle)}${theme.coverStyle === "pattern" ? ` · ${shopOptionLabel("pattern", theme.pattern)}` : ""}`,
+      band: draft.announceOn !== false && String(draft.announceText || "").trim() ? `“${String(draft.announceText).trim()}”` : "Off",
+      more: `${theme.font.name} · ${shopOptionLabel("layout", theme.layout)} · ${(SHOP_CORNERS[draft.corners] || {}).name || "Round"} corners`
+    }[r.key];
+    return <button
+      key={r.key}
+      type="button"
+      data-testid={`look-row-${r.key}`}
+      onClick={() => setSheet(r.key)}
+      style={{
+        display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "13px 14px", border: "none", background: "none",
+        borderTop: i ? `1px solid ${T.line}` : "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left"
+      }}
+    ><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14.5, fontWeight: 800, color: T.ink }}>{r.label}</span><span style={{
+      display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+    }}>{value}</span></span>{r.key === "colour" ? <span style={{ width: 22, height: 22, borderRadius: "50%", background: theme.color, flexShrink: 0 }} /> : null}<span aria-hidden="true" style={{ color: T.inkFaint, fontSize: 18, fontWeight: 700 }}>›</span></button>;
+  })}</div>{error ? <div style={{
+    fontSize: 12, fontWeight: 700, color: T.negative, marginTop: 10
+  }}>{error}</div> : null}</div>}
 
   <div style={{
     flexShrink: 0, display: "flex", alignItems: "center", gap: 10, background: T.surface, borderTop: `1px solid ${T.line}`,
@@ -539,7 +626,7 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
       cursor: saving || !dirty ? "default" : "pointer", opacity: saving ? 0.7 : 1,
       boxShadow: dirty ? `0 8px 20px rgba(${T.accentRgb},0.28)` : "none"
     }}
-  >{saving ? "Saving…" : dirty ? "Save look" : "No changes"}</button></div>
+  >{saving ? "Saving…" : !dirty ? "No changes" : history.length > 1 ? `Save — ${history.length} changes` : "Save look"}</button></div>
 
   {
     /* ── LEAVING WITH CHANGES ─────────────────────────────────────────

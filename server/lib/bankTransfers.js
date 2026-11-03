@@ -447,6 +447,8 @@ function createBankTransfers({
     // ── Send to your bank (test mode) ────────────────────────────────────
     app.post('/api/bank-transfers/out', credentialLimit, requireAuth, async (req, res) => {
       try {
+        // Holds set by the GLOOBAL team (0220): payments or bank payouts.
+        { const h = await require('./holds').onHold(req.authUser._id, ['sending', 'payouts']); if (h) return require('./holds').holdRefusal(res, h.kind); }
         if (!(await requireOpenBank(req, res))) return;
         const user = req.authUser;
         const body = req.body || {};

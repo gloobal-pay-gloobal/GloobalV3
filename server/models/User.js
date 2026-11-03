@@ -349,6 +349,9 @@ const userSchema = new mongoose.Schema({
     // a switch to leave. Paying by exact name or by scanning works either
     // way; this only decides being LISTED.
     listed: { type: Boolean, default: true },
+    // Hidden by the GLOOBAL team (0220, an AccountHold of kind 'shop'):
+    // out of search, not found by name or ID, except by its owner.
+    hiddenByGloobal: { type: Boolean, default: false },
 
     // A second category (optional) and a sub-category of the first, from
     // the fixed lists in server/lib/bazaar.js (0141). A sweet shop that

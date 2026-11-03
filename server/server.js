@@ -198,6 +198,7 @@ const Category = require('./models/Category');
 const TransactionTag = require('./models/TransactionTag');
 const CategoryLink = require('./models/CategoryLink');
 const Complaint = require('./models/Complaint');
+const holds = require('./lib/holds');
 // A picture chosen instead of an icon, for one category. Its own
 // collection for the same reason ProfilePhoto is: the category list is a
 // constant read and an image on every row would cost all of it.
@@ -5104,7 +5105,7 @@ function bazaarEnsureKeys() {
 async function bazaarFuzzyOwners(rawQ, countryIso) {
   const typed = searchKey.searchKeyQuery(rawQ).filter((w) => w.length >= 3);
   if (!typed.length) return { owners: new Set(), itemHit: new Map() };
-  const shopMatch = { 'creatorProfile.handle': { $type: 'string', $ne: '' }, 'creatorProfile.listed': { $ne: false } };
+  const shopMatch = { 'creatorProfile.handle': { $type: 'string', $ne: '' }, 'creatorProfile.listed': { $ne: false }, 'creatorProfile.hiddenByGloobal': { $ne: true } };
   if (countryIso) shopMatch.countryIso = countryIso;
   const shops = await User.find(shopMatch).select('symbolId creatorProfile.searchKey').limit(3000).lean();
   const owners = new Set();
@@ -5141,7 +5142,7 @@ async function bazaarRatings(userIds) {
 async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], sub = '', near = null, needCategory = false, countryIso = '', openNow = false, maxPrice = 0, newOnly = false, fuzzyOwners = null, word = '', minShare = null }) {
   const match = {
     'creatorProfile.handle': { $type: 'string', $ne: '' },
-    'creatorProfile.listed': { $ne: false }
+    'creatorProfile.listed': { $ne: false }, 'creatorProfile.hiddenByGloobal': { $ne: true }
   };
   const and = [];
   // Without Near me, a list is the searcher's own country: "most famous"
@@ -5369,7 +5370,7 @@ app.get('/api/bazaar/showcase', lookupLimit, requireAuth, async (req, res) => {
     ]);
     const logoBy = new Map(logos.map((l) => [String(l.userId), l.dataUrl]));
     const cityBy = new Map(places.map((u) => [String(u._id), String((((u.creatorProfile || {}).addressParts) || {}).city || '').slice(0, 40)]));
-    const listed = { 'creatorProfile.handle': { $type: 'string', $ne: '' }, 'creatorProfile.listed': { $ne: false } };
+    const listed = { 'creatorProfile.handle': { $type: 'string', $ne: '' }, 'creatorProfile.listed': { $ne: false }, 'creatorProfile.hiddenByGloobal': { $ne: true } };
     const [shops, countries, week] = await Promise.all([
       User.countDocuments(listed),
       User.distinct('countryIso', listed),
@@ -5402,7 +5403,7 @@ app.get('/api/bazaar/suggest', lookupLimit, requireAuth, async (req, res) => {
     const keyRe = searchKey.searchKeyRegex(searchKey.searchKeyQuery(rawQ));
     const shopOr = [{ 'creatorProfile.handle': re }, { 'creatorProfile.handleFirst': re }];
     if (keyRe) shopOr.push({ 'creatorProfile.searchKey': keyRe });
-    const shopMatch = { 'creatorProfile.handle': { $type: 'string', $ne: '' }, 'creatorProfile.listed': { $ne: false }, $or: shopOr };
+    const shopMatch = { 'creatorProfile.handle': { $type: 'string', $ne: '' }, 'creatorProfile.listed': { $ne: false }, 'creatorProfile.hiddenByGloobal': { $ne: true }, $or: shopOr };
     if (countryIso) shopMatch.countryIso = countryIso;
     const shopRows = await User.find(shopMatch)
       .select('symbolId countryIso creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category')
@@ -5451,7 +5452,7 @@ app.get('/api/bazaar/words', lookupLimit, requireAuth, async (req, res) => {
     const countryIso = /^[A-Z]{2}$/.test(String(req.query.country || '')) ? String(req.query.country) : '';
     const match = {
       'creatorProfile.handle': { $type: 'string', $ne: '' },
-      'creatorProfile.listed': { $ne: false },
+      'creatorProfile.listed': { $ne: false }, 'creatorProfile.hiddenByGloobal': { $ne: true },
       'creatorProfile.category': 'other',
       'creatorProfile.otherWords': { $type: 'string', $ne: '' }
     };
@@ -5534,6 +5535,9 @@ app.get('/api/creator/:symbolId/profile', lookupLimit, requireAuth, async (req, 
     // The owner of a shop (0210) sees it as its owner does.
     const shopOf = user.shopOwnerId ? String(user.shopOwnerId) : '';
     const isOwner = String(user._id) === String(req.authUser._id) || (shopOf && shopOf === String(req.authUser._id));
+    if (!isOwner && user.creatorProfile && user.creatorProfile.hiddenByGloobal) {
+      return res.status(404).json({ success: false, code: 'creator_hidden', message: "This shop isn't available right now." });
+    }
     const out = publicCreator(user, logo?.dataUrl);
     if (isOwner) {
       const profile = user.creatorProfile || {};
@@ -5791,8 +5795,12 @@ app.get('/api/creator/resolve/:handle', lookupLimit, requireAuth, async (req, re
     if (!built.ok) {
       return res.status(400).json({ success: false, code: built.code, message: built.message });
     }
-    const user = await User.findOne({ 'creatorProfile.handle': built.handle })
-      .select('_id symbolId fullName creatorProfile countryIso').lean();
+    const found = await User.findOne({ 'creatorProfile.handle': built.handle })
+      .select('_id symbolId fullName creatorProfile countryIso shopOwnerId').lean();
+    // A shop the GLOOBAL team hid (0220) is not found, except by its owner.
+    const hiddenFromMe = found && found.creatorProfile && found.creatorProfile.hiddenByGloobal
+      && String(found._id) !== String(req.authUser._id) && String(found.shopOwnerId || '') !== String(req.authUser._id);
+    const user = hiddenFromMe ? null : found;
     if (!user) {
       return res.status(404).json({
         success: false, code: 'creator_not_found', message: 'No creator found with that name.'
@@ -8905,6 +8913,13 @@ require('./lib/support').createSupport({
   staff: admin,
 }).mount(app);
 
+// Problems and holds for the staff site (0220). See lib/staffCases.js.
+require('./lib/staffCases').createStaffCases({
+  User, Transaction, LedgerEntry, Notification, pushService, pruneNotifications,
+  withAtomicSession: (work) => withAtomicSession(work), resolveTransactionReference, accountCountryIso,
+  closeComplaintByReturn, notifyComplaintParty, staff: admin, lookupLimit, writeLimit,
+}).mount(app);
+
 // Countries and Money & books for the staff site (0219). See lib/staffMoney.js.
 require('./lib/staffMoney').createStaffMoney({ staff: admin, lookupLimit, writeLimit }).mount(app);
 
@@ -9988,6 +10003,12 @@ app.get('/api/projects/:id/contributions', lookupLimit, async (req, res) => {
 
 app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderSymbolId', 'fromSymbolId', 'symbolId'), async (req, res) => {
   try {
+    // A hold set by the GLOOBAL team (0220) stops payments before anything
+    // else is looked at. Receiving is never held.
+    {
+      const held = await holds.onHold(req.authUser._id, ['sending']);
+      if (held) return holds.holdRefusal(res, held.kind);
+    }
     const {
       senderSymbolId,
       fromSymbolId,

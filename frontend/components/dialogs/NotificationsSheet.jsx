@@ -127,7 +127,7 @@ var GLOOBAL_NOTIF_ASK_BUTTON = {
   unreachable: "Try again",
   failed: "Try again"
 };
-function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, pushState }) {
+function NotificationsSheet({ open, onClose, onOpenTransaction, onOpenSupport, onUnreadCount, pushState }) {
   const [askState, setAskState] = useState40(pushState || "");
   const [asking, setAsking] = useState40(false);
   useEffect40(() => { setAskState(pushState || ""); }, [pushState]);
@@ -216,6 +216,13 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onUnreadCount, p
     // takes — the one that looks the transaction up in this account's own
     // history and builds a read-only receipt from it. Nothing is fetched
     // by reference, here or there.
+    // A Help & Support reply opens its chat (0216).
+    const meta = (row && row.metadata) || {};
+    if (meta.event === "support_reply" && meta.conversationId && onOpenSupport) {
+      onOpenSupport(String(meta.conversationId));
+      requestClose();
+      return;
+    }
     if (txnId && onOpenTransaction) {
       onOpenTransaction(String(txnId));
       // requestClose, not onClose: this sheet pushed a history entry when

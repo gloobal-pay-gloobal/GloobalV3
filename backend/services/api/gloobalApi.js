@@ -1187,6 +1187,30 @@ var GloobalApi = {
       return null;
     }
   },
+  // Help & Support (0216): chats with a person at GLOOBAL. The list, one
+  // chat (reading it clears its unread), a new one, and adding to one.
+  async getSupportChats() {
+    try {
+      const r = await gloobalApiClient.get("/api/support/conversations");
+      return r && r.success ? r : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async getSupportChat(id) {
+    try {
+      const r = await gloobalApiClient.get(`/api/support/conversations/${encodeURIComponent(id)}`);
+      return r && r.success ? r.conversation : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async startSupportChat({ topic, text, side }) {
+    return gloobalApiClient.post("/api/support/conversations", { topic, text, side });
+  },
+  async sendSupportMessage(id, text) {
+    return gloobalApiClient.post(`/api/support/conversations/${encodeURIComponent(id)}/messages`, { text });
+  },
   async openShop() {
     return gloobalApiClient.post("/api/shops", {});
   },

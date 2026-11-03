@@ -1405,6 +1405,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // 0212: the shops live behind "My shops" on the creator side's Profile
   // list, not on Home: all of them together, each one's part, and + Add.
   const [showMyShops, setShowMyShops] = useState83(false);
+  // A chat to open on Help & Support, from a reply notice or push (0216).
+  const [supportOpenId, setSupportOpenId] = useState83(null);
   const requestCloseMyShops = useBackClose(showMyShops, () => setShowMyShops(false));
   // The name market (0211): { mode: "name" | "buy" | "thread" | "sell", handle, info, threadId }.
   const [nameMarket, setNameMarket] = useState83(null);
@@ -1790,6 +1792,14 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // A complaint, by id — a push tap or a ?complaint= link.
     if (deepLinkTarget && typeof deepLinkTarget === "object" && deepLinkTarget.complaint) {
       openComplaintById(deepLinkTarget.complaint);
+      onConsumeDeepLink && onConsumeDeepLink();
+      return;
+    }
+    // A Help & Support reply, by chat — a push tap or a notice (0216).
+    if (deepLinkTarget && typeof deepLinkTarget === "object" && deepLinkTarget.support) {
+      setActiveTab("profile");
+      setSupportOpenId(String(deepLinkTarget.support));
+      setProfileDetail("Help & Support");
       onConsumeDeepLink && onConsumeDeepLink();
       return;
     }
@@ -4971,12 +4981,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     ["txAlerts", "Transaction alerts", "Money sent, received, and requests"],
     ["referralAlerts", "Referral earnings", "When your network earns you a share"],
     ["promos", "Offers & promotions", <>Occasional deals from <GloobalWordmark suffix=" ID" /></>]
-  ].map(([key, title, sub], i) => <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{title}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>{sub}</div></span><ProfileToggle on={profileToggles[key]} onToggle={() => flipToggle(key)} label={title} /></div>)}</div>}{profileDetail === "Help & Support" && <div style={{ display: "flex", flexDirection: "column", gap: 14 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{["How do I send money?", "How do referrals work?", "Which countries are supported?"].map((q, i) => <button
-    key={q}
-    onClick={() => showToast2("Full help center coming soon")}
-    className="v2-row"
-    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px", border: "none", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, background: "none", cursor: "pointer", textAlign: "left" }}
-  ><span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{q}</span><ChevronRightIcon /></button>)}</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px" }}><div style={{ fontSize: 12, color: T.inkFaint }}>Need more help?</div><div style={{ fontSize: 13.5, fontWeight: 700, color: T.accent, marginTop: 2 }}>support@gloobal.id</div></div></div>}{profileDetail === "About" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px" }}><span style={{ fontSize: 13.5, fontWeight: 600, color: T.inkSoft }}>Version</span><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>1.0.0 (prototype)</span></div>{["Terms of Service", "Privacy Policy"].map((label) => <button
+  ].map(([key, title, sub], i) => <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{title}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>{sub}</div></span><ProfileToggle on={profileToggles[key]} onToggle={() => flipToggle(key)} label={title} /></div>)}</div>}{profileDetail === "Help & Support" && <HelpSupportPanel
+    side={shareRole === "merchant" ? "shop" : "person"}
+    openId={supportOpenId}
+    onOpened={() => setSupportOpenId(null)}
+    showToast={showToast2}
+  />}{profileDetail === "About" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px" }}><span style={{ fontSize: 13.5, fontWeight: 600, color: T.inkSoft }}>Version</span><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>1.0.0 (prototype)</span></div>{["Terms of Service", "Privacy Policy"].map((label) => <button
     key={label}
     onClick={() => showToast2(`${label} coming soon`)}
     className="v2-row"

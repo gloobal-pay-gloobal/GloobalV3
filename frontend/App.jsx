@@ -1975,6 +1975,13 @@ function GloobalId() {
         setDashboardDeepLink({ complaint: String(complaintId) });
         return;
       }
+      // A Help & Support reply: straight to the chat (0216).
+      const supportId = data.payload && data.payload.supportId;
+      if (supportId) {
+        setActiveScreen(null);
+        setDashboardDeepLink({ support: String(supportId) });
+        return;
+      }
       const txnId = data.payload && data.payload.transactionId;
       if (txnId && data.payload.category !== "promotional") {
         setSharedTxnRef(String(txnId));
@@ -5115,6 +5122,7 @@ function GloobalId() {
     open={showNotifications}
     onClose={() => setShowNotifications(false)}
     onOpenTransaction={(txnId) => setSharedTxnRef(txnId)}
+    onOpenSupport={(id) => { setActiveScreen(null); setDashboardDeepLink({ support: String(id) }); }}
     pushState={pushState}
   /><LocationRequiredModal
     open={Boolean(locationGate)}

@@ -39,7 +39,9 @@ function createSupport({ User, Transaction, SupportConversation, Notification, p
     messages: (c.messages || []).filter((m) => !m.internal).map((m) => ({ from: m.from, name: m.from === 'staff' ? `${m.authorName || 'GLOOBAL'}, GLOOBAL Support` : m.from === 'system' ? 'GLOOBAL' : 'You', text: m.text, at: m.at })),
   });
   const summary = (c, viewer) => {
-    const visible = (c.messages || []).filter((m) => viewer === 'staff' || !m.internal);
+    // The preview is the last thing a person said, never the automatic line
+    // or a team note.
+    const visible = (c.messages || []).filter((m) => m.from !== 'system' && !m.internal);
     const last = visible[visible.length - 1];
     return { id: String(c._id), ref: c.ref, topic: c.topic, topicWords: TOPIC_WORDS[c.topic], side: c.side, status: c.status, passedTo: c.passedTo, lastActivityAt: c.lastActivityAt, createdAt: c.createdAt, unread: c.customerUnread || 0, preview: last ? String(last.text).slice(0, 140) : '', lastFrom: last ? last.from : null };
   };
@@ -49,7 +51,7 @@ function createSupport({ User, Transaction, SupportConversation, Notification, p
       const row = await Notification.create({ userId: c.userId, type: 'system', title, message: String(text).slice(0, 500), metadata: { event: 'support_reply', conversationId: String(c._id), ref: c.ref } });
       await pruneNotifications(c.userId);
       if (pushService.isPushEnabled()) {
-        await pushService.sendPushToUser(c.userId, { v: 1, category: 'transactional', type: 'system', notificationId: String(row._id), title, body: String(text).slice(0, 200), url: '/', tag: `gloobal-support-${c.ref}`, timestamp: Date.now() }, { category: 'transactional', app: 'gloobal' });
+        await pushService.sendPushToUser(c.userId, { v: 1, category: 'transactional', type: 'system', notificationId: String(row._id), supportId: String(c._id), title, body: String(text).slice(0, 200), url: '/', tag: `gloobal-support-${c.ref}`, timestamp: Date.now() }, { category: 'transactional', app: 'gloobal' });
       }
     } catch (e) { console.error('support notify failed:', e.message); }
   }

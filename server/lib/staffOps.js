@@ -57,7 +57,7 @@ async function fetchJson(url, ms = 6000) {
   } catch (e) { return { error: e.name === 'AbortError' ? 'timed out' : e.message }; } finally { clearTimeout(timer); }
 }
 
-function createStaffOps({ staff, lookupLimit, writeLimit }) {
+function createStaffOps({ staff, lookupLimit, writeLimit, alertsStatus }) {
   const rateCache = { at: 0, fn: null };
   const toViewer = async (amount, ccy) => { if (!rateCache.fn || Date.now() - rateCache.at > 10 * 60000) { rateCache.fn = makeRateResolver(VIEWER); rateCache.at = Date.now(); } const r = await rateCache.fn(ccy); return r === null ? null : round2(amount * r); };
   const names = async (isos) => new Map((await Country.find({ iso: { $in: [...isos] } }, 'iso name').lean()).map((c) => [c.iso, c.name]));
@@ -72,7 +72,7 @@ function createStaffOps({ staff, lookupLimit, writeLimit }) {
   // ── system ──
   let systemCache = { at: 0, data: null };
   async function system() {
-    if (systemCache.data && Date.now() - systemCache.at < 90 * 1000) return { ...systemCache.data, cached: true };
+    if (systemCache.data && Date.now() - systemCache.at < 90 * 1000) return { ...systemCache.data, alerts: alertsStatus ? alertsStatus() : null, errors: await require('./serverErrors').summary(), cached: true };
     const renderCommit = process.env.RENDER_GIT_COMMIT || null;
     const [main, netlify, booksLast, ratesLast] = await Promise.all([
       fetchJson(`https://api.github.com/repos/${REPO}/commits/main`),
@@ -96,6 +96,9 @@ function createStaffOps({ staff, lookupLimit, writeLimit }) {
       render: { commit: renderCommit ? renderCommit.slice(0, 7) : null, behind: await behind(renderCommit), startedAt: new Date(Date.now() - process.uptime() * 1000), node: process.version, memoryMb: Math.round(mem.rss / 1048576), dbPingMs: ping },
       netlify: netlify.data ? { commit: netlifyCommit ? netlifyCommit.slice(0, 7) : null, builtAt: netlify.data.builtAt || null, behind: await behind(netlifyCommit) } : { error: netlify.error === 'HTTP 404' ? 'This build has no version.json yet (it arrives with patch 0221).' : netlify.error },
       checks: { booksAt: booksLast ? booksLast.checkedAt : null, booksOk: booksLast ? booksLast.ok : null, ratesAt: ratesLast ? ratesLast.fetchedAt : null },
+      // 0222: is the server awake enough to alert anyone, and is it failing.
+      alerts: alertsStatus ? alertsStatus() : null,
+      errors: await require('./serverErrors').summary(),
       appUrl: APP_URL, repo: REPO,
     };
     systemCache = { at: Date.now(), data };

@@ -46,6 +46,14 @@ const auditLogSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+
+    // When this row may be deleted (0222). Only staff-site screen views set
+    // it (90 days); every action — sign-ins, replies, holds, send-backs —
+    // leaves it null and is kept for good.
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -55,5 +63,6 @@ const auditLogSchema = new mongoose.Schema(
 auditLogSchema.index({ userId: 1, createdAt: -1 });
 auditLogSchema.index({ action: 1, createdAt: -1 });
 auditLogSchema.index({ status: 1, createdAt: -1 });
+auditLogSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, partialFilterExpression: { expiresAt: { $type: 'date' } }, name: 'audit_view_expiry' });
 
 module.exports = mongoose.model('AuditLog', auditLogSchema);

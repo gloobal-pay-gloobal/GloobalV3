@@ -12,6 +12,7 @@
 //   pools       a pool for another country is 75%+ spoken for   Admin, Finance
 //   rates       a rate in use is over a day old    Admin, Finance
 //   failures    5+ payments failed in an hour      Admin, Risk, Tech
+//   errors      10+ server errors (5xx) in an hour   Admin, Tech   (0222)
 //   complaints  an escalated complaint has had no answer for a day   Admin, Support
 //   sendbacks   a send-back has waited 2 hours for approval   Admin, Finance
 //   morning     yesterday in four lines, at the time you pick   anyone
@@ -34,6 +35,7 @@ const KINDS = {
   pools: { roles: ['admin', 'finance'], words: 'A pool for another country is 75% or more spoken for' },
   rates: { roles: ['admin', 'finance'], words: 'An exchange rate in use is over a day old' },
   failures: { roles: ['admin', 'risk', 'tech'], words: '5 or more payments failed within an hour' },
+  errors: { roles: ['admin', 'tech'], words: '10 or more server errors within an hour' },
   complaints: { roles: ['admin', 'support'], words: 'An escalated complaint has waited a day for GLOOBAL' },
   sendbacks: { roles: ['admin', 'finance'], words: 'A send-back has waited 2 hours for approval' },
   morning: { roles: ['admin', 'support', 'finance', 'risk', 'tech'], words: 'Yesterday, in four lines, each morning' },
@@ -106,6 +108,10 @@ function createStaffAlerts({ staff, pushService, lookupLimit, writeLimit, adminT
     const inUse = new Set((await User.distinct('countryIso')).filter(Boolean));
     const stale = await ExchangeRate.find({ toCurrency: 'INR', fetchedAt: { $lt: new Date(Date.now() - 24 * 3600000) } }, 'fromCurrency fetchedAt').lean();
     if (inUse.size > 1) for (const r of stale) out.push({ kind: 'rates', key: `rate:${r.fromCurrency}:${today}`, title: `${r.fromCurrency} → INR rate is ${Math.round((Date.now() - new Date(r.fetchedAt)) / 3600000)} hours old`, body: 'Payments on it still go through at the last rate. Refresh it on Exchange rates.', url: '/#rates' });
+    try {
+      const e = await require('./serverErrors').summary();
+      if (e.lastHour >= 10) out.push({ kind: 'errors', key: `errors:${new Date().toISOString().slice(0, 13)}`, title: `${e.lastHour} server errors in the last hour`, body: e.top.slice(0, 3).map((r) => `${r.route} ×${r.count}`).join(' · '), url: '/#system' });
+    } catch (err) { /* counted elsewhere */ }
     const failed = await Transaction.countDocuments({ type: 'send', status: 'failed', createdAt: { $gte: new Date(Date.now() - 3600000) } });
     if (failed >= 5) out.push({ kind: 'failures', key: `fail:${new Date().toISOString().slice(0, 13)}`, title: `${failed} payments failed in the last hour`, body: 'Open the Live feed to see them.', url: '/#live' });
     for (const c of await Complaint.find({ status: 'escalated', escalatedAt: { $lt: new Date(Date.now() - 24 * 3600000) } }, 'ref messages').lean()) {
@@ -143,6 +149,7 @@ function createStaffAlerts({ staff, pushService, lookupLimit, writeLimit, adminT
   }
 
   let running = false;
+  const status = { lastRun: null, lastSent: 0, lastFound: 0, lastError: null };
   async function runOnce() {
     if (running) return { sent: 0, skipped: 'already running' };
     running = true;
@@ -154,13 +161,16 @@ function createStaffAlerts({ staff, pushService, lookupLimit, writeLimit, adminT
         for (const f of found) if (wants(p, member.role, f.kind) && (await deliver(member, f.key, f.kind, f.title, f.body, f.url))) sent += 1;
         if (wants(p, member.role, 'morning') && (await morningFor(member, p))) sent += 1;
       }
+      Object.assign(status, { lastRun: new Date(), lastSent: sent, lastFound: found.length, lastError: null });
       return { sent, found: found.length };
-    } finally { running = false; }
+    } catch (e) { status.lastError = e.message; throw e; } finally { running = false; }
   }
-  // First check two minutes after start, then every five.
+  // First check 30 seconds after start — the free Render instance wakes
+  // from sleep often, and a wake is exactly when something may have been
+  // missed — then every five minutes.
   function start() {
     if (process.env.STAFF_ALERTS === 'off') return;
-    const t1 = setTimeout(() => { runOnce().catch((e) => console.error('staff alerts:', e.message)); const t2 = setInterval(() => runOnce().catch((e) => console.error('staff alerts:', e.message)), 5 * 60000); if (t2.unref) t2.unref(); }, 2 * 60000);
+    const t1 = setTimeout(() => { runOnce().catch((e) => console.error('staff alerts:', e.message)); const t2 = setInterval(() => runOnce().catch((e) => console.error('staff alerts:', e.message)), 5 * 60000); if (t2.unref) t2.unref(); }, 30 * 1000);
     if (t1.unref) t1.unref();
   }
 
@@ -199,7 +209,7 @@ function createStaffAlerts({ staff, pushService, lookupLimit, writeLimit, adminT
       }
     });
   }
-  return { mount, start, runOnce, findings };
+  return { mount, start, runOnce, findings, status: () => ({ ...status, every: 5, enabled: process.env.STAFF_ALERTS !== 'off' }) };
 }
 
 module.exports = { createStaffAlerts, KINDS };

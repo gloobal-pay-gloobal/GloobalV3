@@ -357,6 +357,25 @@ async function countUsersByCountry() {
 
 const app = express();
 
+// Every 5xx response, counted per route and minute (0222) — first in line,
+// so nothing is missed. The staff site's Server & deploys shows them and
+// alerts Admin and Tech. See lib/serverErrors.js.
+const serverErrors = require('./lib/serverErrors');
+app.use(serverErrors.middleware);
+
+// GET /api/health (0222): the cheapest question the server can answer,
+// for an uptime pinger that keeps the free Render instance awake. 503 when
+// the database is not connected, so the pinger notices that too.
+app.get('/api/health', (req, res) => {
+  const db = mongoose.connection.readyState === 1;
+  res.set('Cache-Control', 'no-store');
+  return res.status(db ? 200 : 503).json({ ok: db, db: db ? 'connected' : 'not connected', upSeconds: Math.round(process.uptime()), commit: (process.env.RENDER_GIT_COMMIT || '').slice(0, 7) || null });
+});
+if (process.env.GLOOBAL_TEST_ROUTES === '1' && process.env.NODE_ENV !== 'production' && !process.env.RENDER) {
+  // Tests only: a route that fails on purpose, to check the counting.
+  app.get('/api/__test/boom', (req, res) => res.status(500).json({ success: false }));
+}
+
 // Middleware
 //
 // A body cap, because express.json() defaults to 100kb and nothing this API
@@ -8926,9 +8945,9 @@ require('./lib/support').createSupport({
 // The rest of the staff site (0221): controls between countries, Server &
 // deploys, Growth, Shops, Risk signals, Live feed — and alerts to the team's
 // phones, checked every five minutes. See lib/staffOps.js, lib/staffAlerts.js.
-require('./lib/staffOps').createStaffOps({ staff: admin, lookupLimit, writeLimit }).mount(app);
 {
   const staffAlerts = require('./lib/staffAlerts').createStaffAlerts({ staff: admin, pushService, lookupLimit, writeLimit, adminToday: admin.today });
+  require('./lib/staffOps').createStaffOps({ staff: admin, lookupLimit, writeLimit, alertsStatus: staffAlerts.status }).mount(app);
   staffAlerts.mount(app);
   staffAlerts.start();
 }

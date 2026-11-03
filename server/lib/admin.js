@@ -72,15 +72,34 @@ function createAdmin(deps) {
   const bearer = (req) => { const h = String(req.headers.authorization || ''); return h.startsWith('Bearer ') ? h.slice(7).trim() : ''; };
 
   // ── the audit log ──
-  const audit = (req, userId, action, status, message, metadata = {}) => AuditLog.create({
-    userId: userId || null,
-    action: `admin.${action}`,
-    status,
-    message: String(message || '').slice(0, 500),
-    ipAddress: String(req.ip || ''),
-    userAgent: String(req.get('user-agent') || '').slice(0, 300),
-    metadata: { origin: req.get('origin') || '', ...metadata },
-  }).catch((e) => console.error('admin audit write failed:', e.message));
+  // ── VIEWS ONCE, ACTIONS ALWAYS (0222) ──
+  // A screen that refreshes itself (the desk every 20 s, the live feed every
+  // 10 s) used to write a row on every refresh. A view is now written once
+  // per person, screen and address every 10 minutes, and kept 90 days; an
+  // action is written every time and kept for good.
+  const VIEW_EVERY_MS = 10 * 60 * 1000;
+  const VIEW_KEEP_MS = 90 * 86400000;
+  const lastView = new Map();
+  const isView = (action, status) => status === 'info' && /^view\./.test(action);
+  const audit = (req, userId, action, status, message, metadata = {}) => {
+    if (isView(action, status)) {
+      const key = `${userId}|${action}|${req.path}`;
+      const at = lastView.get(key);
+      if (at && Date.now() - at < VIEW_EVERY_MS) return Promise.resolve(null);
+      lastView.set(key, Date.now());
+      if (lastView.size > 5000) for (const [k, t] of lastView) if (Date.now() - t > VIEW_EVERY_MS) lastView.delete(k);
+    }
+    return AuditLog.create({
+      userId: userId || null,
+      action: `admin.${action}`,
+      status,
+      message: String(message || '').slice(0, 500),
+      ipAddress: String(req.ip || ''),
+      userAgent: String(req.get('user-agent') || '').slice(0, 300),
+      metadata: { origin: req.get('origin') || '', ...metadata },
+      expiresAt: isView(action, status) ? new Date(Date.now() + VIEW_KEEP_MS) : null,
+    }).catch((e) => console.error('admin audit write failed:', e.message));
+  };
 
   // ── the fence ──
   const fromAdminSite = (req) => cfg().origins.includes(String(req.get('origin') || ''));

@@ -180,8 +180,9 @@ function ProductServicesCard({ services }) {
 // Header shared by Bank, Coin and About Us: back control, title, and an
 // optional right-hand action. Identical markup in all three before this,
 // down to the safe-area padding.
-function ProductScreenHeader({ title, onBack, onAction, actionLabel }) {
-  return <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onBack} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}>{title}</span>{onAction && <button
+// `help` (0223): the Ask GLOOBAL ? for this screen, beside the action.
+function ProductScreenHeader({ title, onBack, onAction, actionLabel, help }) {
+  return <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onBack} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}>{title}</span>{help}{onAction && <button
     onClick={onAction}
     aria-label={actionLabel || "More"}
     className="v2-tap"

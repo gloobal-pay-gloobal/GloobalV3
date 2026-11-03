@@ -8942,6 +8942,14 @@ require('./lib/support').createSupport({
   staff: admin,
 }).mount(app);
 
+// Ask GLOOBAL (0223): the guide the app answers "how does this work?" from,
+// in the person's language, with no AI service — and the staff site's view
+// of what people asked. See lib/guide.js.
+require('./lib/guide').createGuide({
+  GuideCard: require('./models/GuideCard'), GuideEvent: require('./models/GuideEvent'),
+  requireAuth, writeLimit, lookupLimit, staff: admin,
+}).mount(app);
+
 // The rest of the staff site (0221): controls between countries, Server &
 // deploys, Growth, Shops, Risk signals, Live feed — and alerts to the team's
 // phones, checked every five minutes. See lib/staffOps.js, lib/staffAlerts.js.

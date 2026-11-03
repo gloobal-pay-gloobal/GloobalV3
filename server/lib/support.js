@@ -20,6 +20,7 @@ const { recentPayments, paymentFor, namesFor } = require('./staffTools');
 const OPEN_LIMIT = 3;
 const TEXT_MAX = 1000;
 const TOPIC_WORDS = { payment: 'A payment', bank: 'GLOOBAL Bank', essentials: 'My Essentials', shop: 'My shop', account: 'My account', other: 'Something else' };
+const ASK_LANGS = { en: 'English', hi: 'Hindi', hl: 'Hinglish', ta: 'Tamil' };
 const ROLE_WORDS = { finance: 'Finance', risk: 'Risk', admin: 'the founder' };
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const clean = (t) => String(t || '').replace(/\s+\n/g, '\n').trim().slice(0, TEXT_MAX);
@@ -103,6 +104,8 @@ function createSupport({ User, Transaction, Complaint, SupportConversation, Noti
         const text = clean(req.body && req.body.text);
         const topic = SupportConversation.TOPICS.includes(req.body && req.body.topic) ? req.body.topic : 'other';
         const side = req.body && req.body.side === 'shop' ? 'shop' : 'person';
+        const via = req.body && req.body.via === 'ask' ? 'ask' : '';
+        const askLang = String((req.body && req.body.askLang) || '');
         if (text.length < 2) return res.status(400).json({ success: false, message: 'Tell us a little about it first.' });
         const open = await SupportConversation.countDocuments({ userId: req.authUser._id, status: { $ne: 'done' } });
         if (open >= OPEN_LIMIT) return res.status(409).json({ success: false, code: 'too_many_open', message: `You already have ${open} chats open. Add to one of those, and we'll answer there.` });
@@ -120,6 +123,9 @@ function createSupport({ User, Transaction, Complaint, SupportConversation, Noti
           messages: [
             { from: 'customer', authorId: req.authUser._id, text, at: now },
             { from: 'system', text: 'Thanks — a person from GLOOBAL will answer here. You will also get a notice when they do.', at: new Date(now.getTime() + 1) },
+            // Started from Ask GLOOBAL (0223): the desk sees where it came
+            // from and the language it was asked in, so the reply can match.
+            ...(via === 'ask' ? [{ from: 'system', text: `Started from Ask GLOOBAL${ASK_LANGS[askLang] ? ` — asked in ${ASK_LANGS[askLang]}` : ''}.`, internal: true, at: new Date(now.getTime() + 2) }] : []),
           ],
         });
         const pay = await paymentOf(c);

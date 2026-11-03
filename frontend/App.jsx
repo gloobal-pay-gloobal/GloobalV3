@@ -5124,7 +5124,15 @@ function GloobalId() {
     onOpenTransaction={(txnId) => setSharedTxnRef(txnId)}
     onOpenSupport={(id) => { setActiveScreen(null); setDashboardDeepLink({ support: String(id) }); }}
     pushState={pushState}
-  /><LocationRequiredModal
+  />{
+    /* Ask GLOOBAL (0223): the question helper's full screen, the sheet the
+       ? on Send, GLOOBAL Bank, My Essentials and My shop opens, and "Show
+       me". Its buttons go where the app map goes, the same way; "talk to a
+       person" opens Help & Support with the question filled in. */
+  }{stage === "dashboard" && <AskGloobalHost
+    onGo={(target) => goToDashboardDestination(target === "help" ? { supportNew: {} } : target)}
+    onTalk={(p) => goToDashboardDestination({ supportNew: p || {} })}
+  />}<LocationRequiredModal
     open={Boolean(locationGate)}
     reason={locationGate && locationGate.reason}
     busy={locationGateBusy}

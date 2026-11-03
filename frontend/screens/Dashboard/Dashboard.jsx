@@ -1407,6 +1407,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [showMyShops, setShowMyShops] = useState83(false);
   // A chat to open on Help & Support, from a reply notice or push (0216).
   const [supportOpenId, setSupportOpenId] = useState83(null);
+  // A question handed over from Ask GLOOBAL (0223): Help & Support opens
+  // with it filled in, ready to send to a person.
+  const [supportPrefill, setSupportPrefill] = useState83(null);
   const requestCloseMyShops = useBackClose(showMyShops, () => setShowMyShops(false));
   // The name market (0211): { mode: "name" | "buy" | "thread" | "sell", handle, info, threadId }.
   const [nameMarket, setNameMarket] = useState83(null);
@@ -1799,6 +1802,13 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     if (deepLinkTarget && typeof deepLinkTarget === "object" && deepLinkTarget.support) {
       setActiveTab("profile");
       setSupportOpenId(String(deepLinkTarget.support));
+      setProfileDetail("Help & Support");
+      onConsumeDeepLink && onConsumeDeepLink();
+      return;
+    }
+    if (deepLinkTarget && typeof deepLinkTarget === "object" && deepLinkTarget.supportNew) {
+      setActiveTab("profile");
+      setSupportPrefill(deepLinkTarget.supportNew.text ? deepLinkTarget.supportNew : null);
       setProfileDetail("Help & Support");
       onConsumeDeepLink && onConsumeDeepLink();
       return;
@@ -4987,6 +4997,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onOpened={() => setSupportOpenId(null)}
     showToast={showToast2}
     lens={displayLens}
+    prefill={supportPrefill}
+    onPrefilled={() => setSupportPrefill(null)}
   />}{profileDetail === "About" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px" }}><span style={{ fontSize: 13.5, fontWeight: 600, color: T.inkSoft }}>Version</span><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>1.0.0 (prototype)</span></div>{["Terms of Service", "Privacy Policy"].map((label) => <button
     key={label}
     onClick={() => showToast2(`${label} coming soon`)}

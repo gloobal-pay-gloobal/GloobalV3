@@ -1205,8 +1205,23 @@ var GloobalApi = {
       return null;
     }
   },
-  async startSupportChat({ topic, text, side, transactionId }) {
-    return gloobalApiClient.post("/api/support/conversations", { topic, text, side, transactionId: transactionId || undefined });
+  async startSupportChat({ topic, text, side, transactionId, via, askLang }) {
+    return gloobalApiClient.post("/api/support/conversations", { topic, text, side, transactionId: transactionId || undefined, via: via || undefined, askLang: askLang || undefined });
+  },
+  // Ask GLOOBAL (0223): the guide's cards — "unchanged" when the phone
+  // already has this version — and anonymous counts for the team.
+  async getGuide(have) {
+    try {
+      const r = await gloobalApiClient.get(`/api/guide${have ? `?have=${encodeURIComponent(have)}` : ""}`);
+      return r && r.success ? r : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async logGuideEvents(events) {
+    try {
+      await gloobalApiClient.post("/api/guide/events", { events });
+    } catch (e) { /* counting is best-effort */ }
   },
   // Their last ten payments, to pick the one a question is about (0218).
   async getSupportPayments() {

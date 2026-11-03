@@ -150,7 +150,7 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
     style={{ fontSize: 19, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}
   >
       My Essentials
-    </span></div><div
+    </span><span style={{ flex: 1 }} /><AskHelpButton screen="essentials" /></div><div
     style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}
   >{
     /* The hero. Locked, it shows the SHAPE of the thing — a label, a

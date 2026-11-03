@@ -537,7 +537,7 @@ function CreatorPage({
     flex: 1, minWidth: 0,
     fontSize: 14, fontWeight: 700, color: theme.inkSoft, overflow: "hidden",
     textOverflow: "ellipsis", whiteSpace: "nowrap"
-  }}>{isOwner ? "Your shop" : `Paying ${name}`}</span>{
+  }}>{isOwner ? "Your shop" : `Paying ${name}`}</span>{isOwner && <AskHelpButton screen="shop" />}{
     /* ── THE THREE CORNER CONTROLS ARE ONE COMPONENT ──────────────────
        Back, flag and scanner all go through NavIconButton, which is a
        40px circle with the app's own surface and shadow. They used to be

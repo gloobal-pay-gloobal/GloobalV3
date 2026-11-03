@@ -314,6 +314,8 @@ const FRONTEND_MODULES = [
   "features/creator/creatorShops.jsx",
   "features/creator/nameMarket.jsx",
   // Help & Support: answers, and chats with the Support desk (0216).
+  "features/support/askEngine.js",
+  "features/support/askGloobal.jsx",
   "features/support/helpSupport.jsx",
   // Which businesses this account pinned. Plain functions and two `var`
   // initialisers — and PAY_PINS_VISIBLE is read by the strip in

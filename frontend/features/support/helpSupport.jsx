@@ -24,7 +24,9 @@ var HELP_ANSWERS = [
   ["How do I send money?", "Home → Send. Pick someone by their GLOOBAL ID, a name, or a code you scan, type the amount, and confirm with your PIN. They have it the moment you see Sent."],
   ["A payment I sent has not arrived", "Open it from History: its receipt says exactly where it is. Sent and credited means it reached their account. If the receipt says something else, or they still cannot see it, chat with us below and pick “A payment”."],
   ["How does GLOOBAL Bank work?", "GLOOBAL Bank moves money between your GLOOBAL balance and a bank account you link. Money going out shows as Processing until your bank confirms it; if a bank sends it back, it returns to your balance by itself."],
-  ["What is locked in My Essentials?", "Money you set aside for rent, bills and other essentials is held for them, so it is not spent by accident. It still belongs to you, and you can see each part in My Essentials."],
+  // 0223: what My Essentials actually is — a free daily amount — and what
+  // "locked" means, as the code has it (the Ask GLOOBAL guide agrees).
+  ["What is locked in My Essentials?", "My Essentials is a free daily amount from GLOOBAL towards food, water, shelter and creativity — never paid back. What you have used from it stays in GLOOBAL when money comes in: still yours to spend or pay anyone on GLOOBAL, it just cannot go to an outside bank. My Essentials shows how much."],
   ["How do referrals work?", "Share your GLOOBAL ID. When someone joins with it, the app shows them as yours in Referrals."],
   ["Which countries are supported?", "GLOOBAL works in every country on the registration list. Each account pays and is paid in its own country's money; payments between countries show both amounts before you confirm."],
 ];
@@ -80,7 +82,7 @@ function HelpPaymentLine({ p, lens }) {
   </span>;
 }
 
-function HelpSupportPanel({ side = "person", openId, onOpened, showToast, lens }) {
+function HelpSupportPanel({ side = "person", openId, onOpened, showToast, lens, prefill, onPrefilled }) {
   const [chats, setChats] = useState87(null);
   const [failed, setFailed] = useState87(false);
   const [openAnswer, setOpenAnswer] = useState87(null);
@@ -93,6 +95,10 @@ function HelpSupportPanel({ side = "person", openId, onOpened, showToast, lens }
   const [payments, setPayments] = useState87(null);
   const [picked, setPicked] = useState87(null);
   const endRef = useRef46(null);
+  const composeRef = useRef46(null);
+  // Handed over from Ask GLOOBAL (0223): where it came from and its language,
+  // so the desk can answer in it.
+  const viaRef = useRef46(null);
   const say = (m) => (showToast ? showToast(m) : null);
 
   const loadList = async () => {
@@ -105,6 +111,17 @@ function HelpSupportPanel({ side = "person", openId, onOpened, showToast, lens }
     else if (!thread) { say("Could not open that chat just now."); setThreadId(null); }
   };
   useEffect83(() => { loadList(); }, []);
+  // A question from Ask GLOOBAL arrives filled in: the topic, their words.
+  useEffect83(() => {
+    if (!prefill || !prefill.text) return;
+    const k = HELP_TOPICS.some(([t]) => t === prefill.topic) && (side === "shop" || prefill.topic !== "shop") ? prefill.topic : "other";
+    setThreadId(null);
+    setTopic(k);
+    setDraft(String(prefill.text).slice(0, 1000));
+    viaRef.current = { via: "ask", askLang: prefill.lang || "" };
+    onPrefilled && onPrefilled();
+    setTimeout(() => { if (composeRef.current && composeRef.current.scrollIntoView) composeRef.current.scrollIntoView({ block: "center", behavior: "smooth" }); }, 250);
+  }, [prefill]);
   // A question about a payment: load the last ten to pick from, once.
   useEffect83(() => {
     if (topic !== "payment" || payments) return;
@@ -138,8 +155,8 @@ function HelpSupportPanel({ side = "person", openId, onOpened, showToast, lens }
     if (!topic || text.length < 2 || sending) return;
     setSending(true);
     try {
-      const r = await GloobalApi.startSupportChat({ topic, text, side, transactionId: topic === "payment" ? picked : null });
-      setDraft(""); setTopic(null); setPicked(null);
+      const r = await GloobalApi.startSupportChat({ topic, text, side, transactionId: topic === "payment" ? picked : null, ...(viaRef.current || {}) });
+      setDraft(""); setTopic(null); setPicked(null); viaRef.current = null;
       setThread(r.conversation);
       setThreadId(r.conversation.id);
     } catch (e) {
@@ -205,6 +222,7 @@ function HelpSupportPanel({ side = "person", openId, onOpened, showToast, lens }
   const ready = topic && draft.trim().length >= 2 && !sending;
   const openCount = (chats || []).filter((c) => c.status !== "done").length;
   return <div data-testid="help-support" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <AskHelpBox />
     <div>
       <div style={helpLabel()}>Answers</div>
       <div style={helpCard()}>{HELP_ANSWERS.map(([q, a], i) => {
@@ -219,7 +237,7 @@ function HelpSupportPanel({ side = "person", openId, onOpened, showToast, lens }
       })}</div>
     </div>
 
-    <div>
+    <div ref={composeRef}>
       <div style={helpLabel()}>Chat with us</div>
       <div style={{ ...helpCard(), padding: "16px 16px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ fontSize: 13, color: T.inkSoft, lineHeight: 1.5 }}>A person from GLOOBAL answers here{side === "shop" ? ", about your shop" : ""}. You get a notice when they do.</div>

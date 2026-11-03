@@ -29,12 +29,6 @@ function creatorShareTagColor(side) {
   return side === "creator" ? T.accent2 : "#E8701E";
 }
 
-// Whole rupees from a hundred up, lakhs and crores from a lakh up: the
-// paise on a figure like ₹2,140 say nothing a person reads.
-function creatorShareMoney(n, ccy) {
-  const v = Math.abs(Number(n) || 0);
-  return coverageMoney(n, ccy, { compact: v >= 100000, whole: v >= 100 && v < 100000 });
-}
 function creatorSharePct(n) {
   const v = Number(n) || 0;
   return Number.isInteger(v) ? `${v}%` : `${v.toFixed(v * 10 % 1 ? 2 : 1)}%`;
@@ -102,7 +96,11 @@ function CreatorShareOverviewScreen({ onBack, myRate = 0, side = "personal", sho
   const ccy = data ? data.currency : "INR";
   // Every figure with its other name (GEU), in the viewer's own currency
   // — see GeuTwin. `moneyText` is for a figure inside a sentence or label.
-  const moneyText = (n) => creatorShareMoney(n, ccy);
+  // 0224: the sentence form carries GEU too. Whole rupees from a hundred
+  // up, lakhs and crores from a lakh up: the paise on a figure like 2,140₹
+  // say nothing a person reads.
+  const lens = useGeuLens();
+  const moneyText = (n) => { const v = Math.abs(Number(n) || 0); return geuTwinText(n, ccy, { lens, own: ccy, compact: v >= 100000, whole: v >= 100 && v < 100000 }); };
   const money = (n, trailColor) => { const v = Math.abs(Number(n) || 0); return <GeuTwin amount={n} currency={ccy} own={ccy} compact={v >= 100000} whole={v >= 100 && v < 100000} trailColor={trailColor} />; };
   const shop = side === "creator";
   const CREATOR_SHARE_TAG_COLOR = creatorShareTagColor(side);
@@ -164,7 +162,7 @@ function CreatorShareOverviewScreen({ onBack, myRate = 0, side = "personal", sho
   } else if (me) {
     mine = <CsCard testId="share-mine" accent={CREATOR_SHARE_TAG_COLOR} title={<>Your part of it {badge("Not yet", T.inkFaint)}</>} sub="Counted from your own payments">
       <div style={{ display: "flex", gap: 10, marginTop: 12 }}>{tile("Came back to you", money(me.got.share), `from ${me.got.people} shop${me.got.people === 1 ? "" : "s"} you paid`, "↙")}{tile("You gave", money(0), "no rate set", "↗")}</div>
-      {note(<span style={{ fontSize: 12, fontWeight: 800 }}>1%</span>, <><b style={{ color: T.ink }}>At 1%</b>, every {coverageMoney(500, ccy, { compact: false, whole: true })} paid to you gives {coverageMoney(5, ccy, { compact: false })} back to the payer, planted in their My Assets.</>)}
+      {note(<span style={{ fontSize: 12, fontWeight: 800 }}>1%</span>, <><b style={{ color: T.ink }}>At 1%</b>, every <GeuTwin amount={500} currency={ccy} own={ccy} whole /> paid to you gives <GeuTwin amount={5} currency={ccy} own={ccy} /> back to the payer, planted in their My Assets.</>)}
       <div role="radiogroup" aria-label="Start sharing at" style={{ display: "flex", gap: 6, marginTop: 12 }}>{[0.5, 1, 2].map((r) => <button key={r} type="button" role="radio" aria-checked={r === 1} data-testid={`share-pick-${r}`} onClick={() => onPickRate && onPickRate(r)} className="v2-tap" style={{ flex: 1, border: "none", borderRadius: 12, padding: "10px 0", cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, background: r === 1 ? T.accent : T.surfaceAlt, color: r === 1 ? "#fff" : T.ink }}>{creatorSharePct(r)}{r === 1 ? <span style={{ display: "block", fontSize: 9.5, fontWeight: 700, opacity: 0.8, marginTop: 2 }}>most people</span> : null}</button>)}</div>
     </CsCard>;
   }

@@ -12,11 +12,16 @@ import { readSource } from "./harness.mjs";
 
 const code = (p) => readSource(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-test("GeuTwin exists, beside GeuFigure, and only for the viewer's own currency", () => {
+// 0224: GEU is on every figure now, yours or not — the founder's new rule.
+// What is still protected: the names come from geuLensNames (your money by
+// its sign, anyone else's by its code), so GEU is never without its currency,
+// and a figure with no usable currency gets no GEU at all.
+test("GeuTwin exists, beside GeuFigure, and names every figure with its currency and GEU", () => {
   const g = code("frontend/features/geuLens/GeuFigure.jsx");
   assert.match(g, /function GeuTwin\(/);
-  assert.match(g, /if \(!geuLensSameCurrency\(code, ownCode\)\) return/);
-  assert.match(g, /\{GEU_LENS_BAR\} \{COIN_TICKER\}/);
+  assert.match(g, /const names = geuLensNames\(code, lens, ownCode\);/);
+  assert.match(g, /if \(!names\) return <span[^>]*>\{coverageMoney\(/);
+  assert.match(g, /\{GEU_LENS_BAR\} \{names\.trail\}/);
 });
 
 for (const [file, re] of [

@@ -213,13 +213,20 @@ export function loadNotifCardPages() {
   // around them already bring in. ORDER MATTERS: these are function
   // declarations and hoist, but geuLensBarMoney calls geuLensOwnMoney, so
   // dropping either from this list throws rather than quietly misformatting.
+  // 0224: geuLensBarMoney writes both names through geuLensNames (which
+  // name leads), geuLensDigits (the untouched digits) and geuLensGlue (a sign
+  // sits on the number, a word stands apart) — so they come too.
   const lensSlice = ["geuLensMoney", "geuLensSameCurrency", "geuLensOwnMoney", "geuLensAppliesTo",
-    "geuLensBarUnit", "geuLensBarMoney"]
+    "geuLensBarUnit", "geuLensNames", "geuLensDigits", "geuLensBarMoney"]
     .map((n) => {
       const at = lensSrc.indexOf(`function ${n}(`);
       if (at < 0) throw new Error(`${n} not found in geuLens.js`);
       return lensSrc.slice(at, lensSrc.indexOf("\n}\n", at) + 3);
-    }).join("\n");
+    }).join("\n") + "\n" + (() => {
+      const glue = lensSrc.match(/function geuLensGlue\(name\) \{[^\n]*\}/);
+      if (!glue) throw new Error("geuLensGlue not found in geuLens.js");
+      return glue[0];
+    })();
   const lensConsts = ["GEU_LENS_LOCAL", "GEU_LENS_GEU", "GEU_LENS_BAR"].map((n) => {
     const found = lensSrc.match(new RegExp(`var ${n} = "[^"]*";`));
     if (!found) throw new Error(`var ${n} not found in geuLens.js`);

@@ -63,7 +63,10 @@ function CoverageDotMap({ lit = {}, arcs = [], pins = [], land = "#544C86", crop
 }
 
 // ── THIS PERIOD AGAINST THE LAST ────────────────────────────────────────
-function CoverageAreaChart({ series, previous, value = "money", labelOf, money, highlight, tip }) {
+// `axis` writes the tick labels. They are a SCALE in a 34px gutter, not
+// figures, so they keep the short form; every figure the chart scales (the
+// headline, the tip) carries both names (0224).
+function CoverageAreaChart({ series, previous, value = "money", labelOf, money, axis, highlight, tip }) {
   const W = 330, H = 168, L = 34, B = 20, Tp = 10;
   const cur = (series || []).map((s) => Number(s[value]) || 0);
   const prev = previous ? previous.map((s) => Number(s[value]) || 0) : [];
@@ -76,7 +79,7 @@ function CoverageAreaChart({ series, previous, value = "money", labelOf, money, 
   const hi = highlight == null ? cur.indexOf(Math.max(...cur)) : highlight;
   const every = Math.ceil(n / 7);
   const gid = `cova${value}`;
-  return <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }} role="img" aria-label="Chart of this period against the one before"><defs><linearGradient id={gid} x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor={T.accent} stopOpacity="0.28" /><stop offset="1" stopColor={T.accent} stopOpacity="0" /></linearGradient></defs>{ticks.map((t, i) => <g key={i}><line x1={L} x2={W} y1={Y(t)} y2={Y(t)} stroke={T.line} /><text x={0} y={Y(t) + 3.5} fontSize={9.5} fill={T.inkFaint} fontWeight={600} fontFamily="Inter, system-ui">{t ? money(t) : "0"}</text></g>)}{cur.length > 1 ? <path d={`${path(cur)} L ${X(cur.length - 1)} ${H - B} L ${X(0)} ${H - B} Z`} fill={`url(#${gid})`} /> : null}{prev.length > 1 ? <path d={path(prev)} fill="none" stroke={T.inkFaint} strokeWidth={1.5} strokeDasharray="4 4" /> : null}{cur.length > 1 ? <path d={path(cur)} fill="none" stroke={T.accent} strokeWidth={2.6} strokeLinejoin="round" /> : null}{(series || []).map((s, i) => (i % every === 0 || i === n - 1) ? <text key={i} x={X(i)} y={H - 5} fontSize={9.5} fill={T.inkFaint} textAnchor="middle" fontWeight={600} fontFamily="Inter, system-ui">{labelOf(s.key)}</text> : null)}{hi >= 0 && cur.length ? <g><line x1={X(hi)} x2={X(hi)} y1={Tp} y2={H - B} stroke={T.accent} strokeOpacity={0.35} strokeDasharray="2 3" /><circle cx={X(hi)} cy={Y(cur[hi])} r={5} fill={T.surface} stroke={T.accent} strokeWidth={2.5} />{tip ? (() => {
+  return <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }} role="img" aria-label="Chart of this period against the one before"><defs><linearGradient id={gid} x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor={T.accent} stopOpacity="0.28" /><stop offset="1" stopColor={T.accent} stopOpacity="0" /></linearGradient></defs>{ticks.map((t, i) => <g key={i}><line x1={L} x2={W} y1={Y(t)} y2={Y(t)} stroke={T.line} /><text x={0} y={Y(t) + 3.5} fontSize={9.5} fill={T.inkFaint} fontWeight={600} fontFamily="Inter, system-ui">{t ? (axis || money)(t) : "0"}</text></g>)}{cur.length > 1 ? <path d={`${path(cur)} L ${X(cur.length - 1)} ${H - B} L ${X(0)} ${H - B} Z`} fill={`url(#${gid})`} /> : null}{prev.length > 1 ? <path d={path(prev)} fill="none" stroke={T.inkFaint} strokeWidth={1.5} strokeDasharray="4 4" /> : null}{cur.length > 1 ? <path d={path(cur)} fill="none" stroke={T.accent} strokeWidth={2.6} strokeLinejoin="round" /> : null}{(series || []).map((s, i) => (i % every === 0 || i === n - 1) ? <text key={i} x={X(i)} y={H - 5} fontSize={9.5} fill={T.inkFaint} textAnchor="middle" fontWeight={600} fontFamily="Inter, system-ui">{labelOf(s.key)}</text> : null)}{hi >= 0 && cur.length ? <g><line x1={X(hi)} x2={X(hi)} y1={Tp} y2={H - B} stroke={T.accent} strokeOpacity={0.35} strokeDasharray="2 3" /><circle cx={X(hi)} cy={Y(cur[hi])} r={5} fill={T.surface} stroke={T.accent} strokeWidth={2.5} />{tip ? (() => {
     const tw = tip.length * 5.6 + 16;
     const tx = Math.max(L, Math.min(X(hi) - tw / 2, W - tw - 2));
     const ty = Math.max(2, Y(cur[hi]) - 32);
@@ -114,7 +117,10 @@ function CoverageRing({ pct, color, size = 44, label }) {
 // ── EVERY 100, AS A FLOW ────────────────────────────────────────────────
 // Stage one draws 100 to scale: what reached people, and the rest. Stage
 // two draws the rest enlarged, so a 4 beside a 96 is still readable.
-function CoverageFlow({ parts, currency }) {
+function CoverageFlow({ parts, currency, own = null }) {
+  // 0224: SVG text takes a string, so the figures here are geuTwinText —
+  // the money they are in and GEU, in the lens's order.
+  const lens = useGeuLens();
   const W = 354;
   const big = parts[0];
   // Zero parts get no band: stacked ₹0.00 labels only overlap. They are
@@ -128,7 +134,7 @@ function CoverageFlow({ parts, currency }) {
     return <path d={`M${x1} ${y1a} C${mx} ${y1a} ${mx} ${y2a} ${x2} ${y2a} L${x2} ${y2b} C${mx} ${y2b} ${mx} ${y1b} ${x1} ${y1b} Z`} fill={c} fillOpacity={op} />;
   };
   const label = (x, y, amt, text) => <g><text x={x} y={y} fontFamily={T.fontDisplay} fontWeight={700} fontSize={13} fill={T.ink}>{amt}</text><text x={x} y={y + 13} fontFamily="Inter, system-ui" fontWeight={600} fontSize={10} fill={T.inkSoft}>{text}</text></g>;
-  const fmt = (v) => coverageMoney(v, currency, { compact: false });
+  const fmt = (v) => geuTwinText(v, currency, { lens, own: own || currency, compact: false });
   const bigH = big.value * k1;
   const restY = y0 + bigH + 8;
   const restH = Math.max(restTotal * k1, 6);
@@ -136,7 +142,7 @@ function CoverageFlow({ parts, currency }) {
   const k2 = restTotal > 0 ? 150 / restTotal : 0;
   let srcY = t0, dstY = t0;
   const H = t0 + 150 + rest.length * 26 + (zero.length ? 28 : 8);
-  return <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }} role="img" aria-label="Where your money goes"><text x={sx} y={14} fontFamily={T.fontDisplay} fontWeight={700} fontSize={12.5} fill={T.ink}>{`${fmt(100)} paid`}</text><rect x={sx} y={y0} width={sw} height={100 * k1} rx={4} fill={T.accent} />{band(sx + sw, y0, y0 + bigH, nx, y0, y0 + bigH, big.color, 0.3)}<rect x={nx} y={y0} width={nw} height={bigH} rx={4} fill={big.color} />{label(nx + nw + 10, y0 + bigH / 2, fmt(big.value), big.label)}{restTotal > 0 ? <g>{band(sx + sw, y0 + bigH, y0 + 100 * k1, nx, restY, restY + restH, "#E3601F", 0.45)}<rect x={nx} y={restY} width={nw} height={restH} rx={3} fill="#E3601F" /><text x={nx + nw + 10} y={restY + restH} fontFamily={T.fontDisplay} fontWeight={700} fontSize={13} fill={T.ink}>{fmt(restTotal)}</text><text x={nx + nw + 64} y={restY + restH} fontFamily="Inter, system-ui" fontWeight={700} fontSize={10} fill="#E3601F">the rest, zoomed in</text><line x1={sx} x2={W - 6} y1={t0 - 18} y2={t0 - 18} stroke={T.line} strokeDasharray="3 4" /><rect x={sx} y={t0} width={sw} height={restTotal * k2} rx={4} fill="#E3601F" />{rest.map((p, i) => {
+  return <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }} role="img" aria-label="Where your money goes"><text x={sx} y={14} fontFamily={T.fontDisplay} fontWeight={700} fontSize={12.5} fill={T.ink}>{`${fmt(100)} paid`}</text><rect x={sx} y={y0} width={sw} height={100 * k1} rx={4} fill={T.accent} />{band(sx + sw, y0, y0 + bigH, nx, y0, y0 + bigH, big.color, 0.3)}<rect x={nx} y={y0} width={nw} height={bigH} rx={4} fill={big.color} />{label(nx + nw + 10, y0 + bigH / 2, fmt(big.value), big.label)}{restTotal > 0 ? <g>{band(sx + sw, y0 + bigH, y0 + 100 * k1, nx, restY, restY + restH, "#E3601F", 0.45)}<rect x={nx} y={restY} width={nw} height={restH} rx={3} fill="#E3601F" /><text x={nx + nw + 10} y={restY + restH} fontFamily={T.fontDisplay} fontWeight={700} fontSize={13} fill={T.ink}>{fmt(restTotal)}</text><text x={nx + nw + 10} y={restY + restH + 13} fontFamily="Inter, system-ui" fontWeight={700} fontSize={10} fill="#E3601F">the rest, zoomed in</text><line x1={sx} x2={W - 6} y1={t0 - 18} y2={t0 - 18} stroke={T.line} strokeDasharray="3 4" /><rect x={sx} y={t0} width={sw} height={restTotal * k2} rx={4} fill="#E3601F" />{rest.map((p, i) => {
     const h = Math.max(p.value * k2, p.value > 0 ? 4 : 0);
     const el = <g key={i}>{band(sx + sw, srcY, srcY + p.value * k2, 140, dstY, dstY + h, p.color, 0.32)}<rect x={140} y={dstY} width={12} height={Math.max(h, 3)} rx={3} fill={p.color} />{label(162, dstY + Math.max(h, 3) / 2, fmt(p.value), p.label)}</g>;
     srcY += p.value * k2; dstY += Math.max(h, 3) + 14 + (h < 24 ? 12 : 0);

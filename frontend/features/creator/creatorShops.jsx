@@ -58,7 +58,15 @@ function myShopsMoney(v, ccy, lens, short) {
 }
 function MyShopsFig({ v, ccy, lens, short = true }) {
   const [main, trail] = myShopsParts(v, ccy, lens, short);
-  return <span style={{ whiteSpace: "nowrap" }}>{main}{trail ? <span style={{ fontSize: `${GEU_LENS_TRAIL_RATIO}em`, fontWeight: 800, marginLeft: GEU_LENS_BAR_GAP / 2, opacity: 0.8 }}>{`${GEU_LENS_BAR} ${trail}`}</span> : null}</span>;
+  // 0224: the look every figure has — the number full size, its name at ¾
+  // and bright, the bar and the other name at ¾ and dimmed.
+  const names = geuLensNames(ccy, lens, ccy);
+  const name = names ? `${geuLensGlue(names.lead)}${names.lead}` : "";
+  const cut = name && main.endsWith(name) ? main.length - name.length : -1;
+  const ems = `${GEU_LENS_TRAIL_RATIO}em`;
+  return <span style={{ whiteSpace: "nowrap" }}>{cut >= 0
+    ? <>{main.slice(0, cut)}<span style={{ fontSize: ems, fontWeight: 800 }}>{name}</span></>
+    : main}{trail ? <span style={{ fontSize: ems, fontWeight: 700, marginLeft: GEU_LENS_BAR_GAP / 2, opacity: GEU_LENS_TRAIL_DIM }}>{`${GEU_LENS_BAR} ${trail}`}</span> : null}</span>;
 }
 function myShopsCount(n) {
   const v = Math.max(0, Math.round(Number(n) || 0));
@@ -131,7 +139,7 @@ function MyShopsChart({ data, colorOf, ccy, lens }) {
           const on = sel === p;
           const h = max > 0 ? (p.total / max) * 100 : 0;
           const segs = order.map((sym) => ({ sym, v: Number(p.by[sym]) || 0 })).filter((x) => x.v > 0);
-          return <button key={p.key} type="button" role="listitem" onClick={() => setPick(i)} aria-label={`${myShopsBucket(p.key, data.unit, true)}: ${myShopsMoney(p.total, ccy, lens)}`} aria-pressed={on} style={{ flex: 1, minWidth: 0, height: "100%", padding: 0, border: "none", background: on ? T.surfaceAlt : "transparent", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          return <button key={p.key} type="button" role="listitem" onClick={() => setPick(i)} aria-label={`${myShopsBucket(p.key, data.unit, true)}: ${myShopsMoney(p.total, ccy, lens).replace(` ${GEU_LENS_BAR} `, ", ")}`} aria-pressed={on} style={{ flex: 1, minWidth: 0, height: "100%", padding: 0, border: "none", background: on ? T.surfaceAlt : "transparent", borderRadius: 6, cursor: "pointer", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
             <span style={{ width: many ? "100%" : "62%", maxWidth: 22, height: `${h}%`, minHeight: p.total > 0 ? 3 : 0, display: "flex", flexDirection: "column-reverse", gap: segs.length > 1 ? 2 : 0, borderRadius: "4px 4px 0 0", overflow: "hidden" }}>
               {segs.map((x) => <span key={x.sym} style={{ flex: `${x.v} 0 0`, minHeight: 2, background: colorOf(x.sym) }} />)}
             </span>

@@ -350,7 +350,9 @@ describe("the screens answer to the lens", () => {
     // vocabularies.
     assert.match(code(DETAIL), /const chartUnit = geuLensUnitPair\(code, lens, code\);/,
       "the chart names one unit where every figure above it names two");
-    assert.match(code(DETAIL), /\{chartUnit\.trail \? ` \$\{chartUnit\.trail\}` : ""\}/,
+    // 0224: the pair no longer carries its own bar, so the caption draws it,
+    // with the second name dimmed like every trail.
+    assert.match(code(DETAIL), /\{chartUnit\.trail \? <span style=\{geuLensTrailStyle\([^)]*\)\}>\{` \$\{GEU_LENS_BAR\} \$\{chartUnit\.trail\}`\}<\/span> : ""\}/,
       "the second unit is dropped when there is one");
   });
 

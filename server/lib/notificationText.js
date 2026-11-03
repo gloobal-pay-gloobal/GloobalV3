@@ -74,6 +74,43 @@ function formatBannerMoney(amount, currency) {
   return `${digits}${currencySuffix(currency)}`;
 }
 
+// ── BOTH NAMES, FROM A SERVER THAT CANNOT SEE THE LENS (0224) ───────────
+//
+// Every money figure in the app carries the money it is in AND GEU. The
+// server cannot know which of the two a person reads in (the lens lives on
+// their phone), so it writes the local form, which is the app's default:
+//
+//     own money       500.00₹ │ GEU        the recipient's own currency, by its sign
+//     anyone else's   40.00 USD │ GEU      by its code
+//
+// GEU is never written without the currency beside it — that is the rule
+// the whole lens exists to keep.
+var GEU_TICKER = 'GEU';
+function realCode(currency) {
+  const code = String(currency || '').trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(code) && code !== GEU_TICKER ? code : '';
+}
+function formatMoneyPair(amount, currency, { own = true } = {}) {
+  const code = realCode(currency);
+  if (!code) return formatBannerMoney(amount, currency);
+  const places = decimalsFor(code);
+  const digits = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: places,
+    maximumFractionDigits: places,
+  }).format(Number(amount) || 0);
+  const named = own ? `${digits}${currencySuffix(code)}` : `${digits} ${code}`;
+  return `${named} \u2502 ${GEU_TICKER}`;
+}
+// The same two names for a line the OPERATING SYSTEM draws and may read
+// aloud. U+2502 has no reliable spoken form, so a comma separates them —
+// exactly what the app's own banner does (geuLensSpokenMoney), and the
+// parity test holds the two together.
+function formatSpokenMoneyPair(amount, currency) {
+  const code = realCode(currency);
+  if (!code) return formatBannerMoney(amount, currency);
+  return `${formatBannerMoney(amount, code)}, ${GEU_TICKER}`;
+}
+
 // ── The disc ────────────────────────────────────────────────────────────
 //
 // In the app the Gloobal mark sits on a coloured circle, and the colour is
@@ -116,7 +153,9 @@ function notifDiscIcon(seed) {
 // figure, and `fallback` is that sentence for whichever event this is.
 function bannerAmountTitle({ sent, amount, currency, fallback }) {
   if (amount == null || !Number.isFinite(Number(amount)) || !currency) return fallback;
-  return `${sent ? '−' : '+'}${formatBannerMoney(amount, currency)}`;
+  // 0224: both names — the figure is always the recipient's own money here
+  // (their side of the payment, their share back), so its sign, then GEU.
+  return `${sent ? '−' : '+'}${formatSpokenMoneyPair(amount, currency)}`;
 }
 
 function paymentBannerText({ direction, amount, currency, counterpartyName }) {
@@ -232,6 +271,8 @@ module.exports = {
   NOTIF_DISC_COUNT,
   currencySuffix,
   formatBannerMoney,
+  formatMoneyPair,
+  formatSpokenMoneyPair,
   notifDiscIndex,
   notifDiscIcon,
   paymentBannerText,

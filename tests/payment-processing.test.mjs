@@ -218,14 +218,16 @@ describe("the figure on screen is the one leaving the balance", () => {
     // somebody stares at for thirty seconds, between a Send screen and a
     // receipt that both carry the bar.
     const s = code(SCREEN);
-    assert.match(s, /geuLensTrailSize\(PROCESSING_AMOUNT_SIZE\)/,
+    // 0224: the name read in at ¾ (GeuLead), the bar and the other name at
+    // ¾ and dimmed (geuLensTrailStyle) — sized from the figure's own size.
+    assert.match(s, /geuLensTrailStyle\(PROCESSING_AMOUNT_SIZE/,
       "the unit is set at the same size as the figure");
     // 0189: no minus. While it sends nothing has left yet, and on a failure
     // nothing left at all — the minus is what made a failed payment look
     // like lost money. The receipt carries it once the money has gone.
-    assert.match(s, /\}\{amount\.lead\}\{amount\.trail/,
+    assert.match(s, /\}<GeuLead parts=\{amount\} px=\{PROCESSING_AMOUNT_SIZE\} \/>\{amount\.trail/,
       "the figure and its unit are not drawn together");
-    assert.doesNotMatch(s, /\{"\u2212"\}\{amount\.lead\}/, "the minus is back on a payment that has not left");
+    assert.doesNotMatch(s, /\{"\u2212"\}\{amount\.lead\}|<GeuLead parts=\{amount\}[^>]*sign=/, "the minus is back on a payment that has not left");
     assert.doesNotMatch(s, /fmtMoney/, "the dialog formats money of its own again");
   });
 

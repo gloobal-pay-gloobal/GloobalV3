@@ -306,8 +306,8 @@ function TransactionHistoryScreen({ isActive, sendHistory, receiveHistory = [], 
           whiteSpace: "nowrap",
           flexShrink: 0
         }}
-      >{active.sign}{historyTotalParts.lead}{historyTotalParts.trail && <span
-        style={{ fontSize: geuLensTrailSize(historyTotalSize), fontWeight: 800 }}
+      ><GeuLead parts={historyTotalParts} px={historyTotalSize} sign={active.sign} />{historyTotalParts.trail && <span
+        style={geuLensTrailStyle(historyTotalSize)}
       > {historyTotalParts.trail}</span>}</span>}
     /></div>;
   })()}</div>{

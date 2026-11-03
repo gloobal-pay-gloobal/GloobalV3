@@ -564,6 +564,20 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
   const headline = money
     ? (gloobalNotifCardAmount(meta, cardLens, cardOwnCurrency) || gloobalNotifHeadline(meta, cardLens, cardOwnCurrency))
     : ((row && row.title) || "GLOOBAL");
+  // 0224: the figure is drawn the way every figure is — the number full
+  // size, the name read in at ¾ and bright, everything after the first bar
+  // at ¾ and dimmed. Built from the same string, so the card and the tests
+  // that read gloobalNotifCardAmount cannot disagree about what it says.
+  const headlineNode = (() => {
+    if (!money || typeof headline !== "string") return headline;
+    const amount = meta == null ? null : meta.amount;
+    if (amount == null || !Number.isFinite(Number(amount)) || !meta.currency) return headline;
+    const sign = meta.direction === "sent" ? "\u2212" : "+";
+    const parts = geuLensBarParts(Number(amount), meta.currency, cardLens, cardOwnCurrency);
+    const head = `${sign}${parts.lead}`;
+    if (!parts.unit || !headline.startsWith(head)) return headline;
+    return <><GeuLead parts={parts} px={16} sign={sign} /><span style={geuLensTrailStyle(16)}>{headline.slice(head.length)}</span></>;
+  })();
   // Red out, green in — and neither for a notice about no money at all,
   // where a green sentence would read as something having arrived.
   const tint = money ? (sent ? T.negative : T.positive) : T.ink;
@@ -669,7 +683,7 @@ function GloobalNotificationCard({ row, when, unread, onOpen }) {
     // figure off centre by three. Nobody would name the fault; they would
     // just see a row that sits slightly wrong.
     style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 16, fontWeight: 800, color: tint, overflowWrap: "anywhere" }}
-  >{headline}</span>{
+  >{headlineNode}</span>{
     /* The counterparty's flag, cut and ringed the way the receipt cuts and
        rings it — same component, same disc, same rim — so the notification
        and the document it opens are plainly about the same payment. The rim

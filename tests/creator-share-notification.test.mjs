@@ -273,8 +273,10 @@ describe("the share banner and the share card say the same thing", () => {
     const { shareBannerText } = await import("../server/lib/notificationText.js");
     assert.equal(shareBannerText({ direction: "sent" }).title, "Creator Share sent");
     assert.equal(shareBannerText({ direction: "received" }).title, "Creator Share received");
-    assert.equal(shareBannerText({ direction: "received", amount: 20, currency: "INR" }).title, "+20.00₹");
-    assert.equal(shareBannerText({ direction: "sent", amount: 20, currency: "INR" }).title, "−20.00₹");
+    // 0224: with GEU beside the money it is in. A comma, not the bar: the
+    // operating system draws this line and may read it aloud.
+    assert.equal(shareBannerText({ direction: "received", amount: 20, currency: "INR" }).title, "+20.00₹, GEU");
+    assert.equal(shareBannerText({ direction: "sent", amount: 20, currency: "INR" }).title, "−20.00₹, GEU");
   });
 
   test("the sign is a minus, not a hyphen", async () => {

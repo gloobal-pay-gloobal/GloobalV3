@@ -250,8 +250,8 @@ function PaymentProcessing({
        and when it fails nothing left at all — a minus here was the reason a
        failed payment looked like lost money. The receipt carries the minus
        once the money has really gone. */
-  }{amount.lead}{amount.trail ? <span
-    style={{ fontSize: geuLensTrailSize(PROCESSING_AMOUNT_SIZE), fontWeight: 800, letterSpacing: 0, opacity: 0.72 }}
+  }<GeuLead parts={amount} px={PROCESSING_AMOUNT_SIZE} />{amount.trail ? <span
+    style={geuLensTrailStyle(PROCESSING_AMOUNT_SIZE, { letterSpacing: 0 })}
   >{` ${amount.trail}`}</span> : null}</div> : null}{failed && recipientName ? <div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkFaint }}>{`to ${recipientName}`}</div> : null}{
     /* THE OTHER HALF OF A CROSS-BORDER PAYMENT. The figure above is what
        leaves this balance; this is what arrives. Null when both sides are
@@ -260,8 +260,8 @@ function PaymentProcessing({
     style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: T.inkSoft, maxWidth: 290, lineHeight: 1.4 }}
   >{recipientName ? `${recipientName} gets ` : "They get "}<span
     style={{ color: failed ? T.inkSoft : T.ink, fontVariantNumeric: "tabular-nums" }}
-  >{receives.lead}</span>{receives.trail ? <span
-    style={{ color: T.inkFaint }}
+  ><GeuLead parts={receives} px={12} /></span>{receives.trail ? <span
+    style={geuLensTrailStyle(12)}
   >{` ${receives.trail}`}</span> : null}</div> : null}</div>{
     failed
       ? <div data-testid="processing-safe" style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", textAlign: "left" }}><div style={{

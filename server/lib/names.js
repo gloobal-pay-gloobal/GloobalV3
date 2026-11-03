@@ -21,6 +21,11 @@ const mongoose = require('mongoose');
 const NameListing = require('../models/NameListing');
 const NameThread = require('../models/NameThread');
 const NameHistory = require('../models/NameHistory');
+const { formatMoneyPair } = require('./notificationText');
+// 0224: a name's price is money, so the notifications name it with both
+// names — its currency by code (buyer and seller may hold different money)
+// and GEU: "500.00 INR │ GEU".
+const nameMoney = (n, currency) => formatMoneyPair(n, currency, { own: false });
 
 const DAY = 24 * 3600 * 1000;
 const PAY_WITHIN = DAY;
@@ -218,7 +223,7 @@ function createNames({
           messages: [{ from: 'buyer', text, offer, at: new Date() }],
           lastOffer: offer, lastOfferBy: offer !== null ? 'buyer' : null,
         });
-        if (!filed) notify(sellerId, forSale ? `An offer for ${handle}` : `Somebody asked to buy ${handle}`, offer !== null ? `${offer} ${currency}${text ? ` · “${text.slice(0, 80)}”` : ''}` : (text || 'Open it to reply.'), { nameThread: String(t._id) });
+        if (!filed) notify(sellerId, forSale ? `An offer for ${handle}` : `Somebody asked to buy ${handle}`, offer !== null ? `${nameMoney(offer, currency)}${text ? ` · “${text.slice(0, 80)}”` : ''}` : (text || 'Open it to reply.'), { nameThread: String(t._id) });
         return res.status(201).json({ success: true, thread: threadOut(t.toObject(), me._id) });
       } catch (error) {
         console.error('Name thread open error:', error);
@@ -243,7 +248,7 @@ function createNames({
         if (from === 'buyer' && offer !== null) set.filed = Boolean(listing && listing.floor > 0 && offer < listing.floor);
         await NameThread.updateOne({ _id: t._id }, { $set: set, $push: { messages: { from, text, offer, at: new Date() } } });
         const to = from === 'buyer' ? t.sellerId : t.buyerId;
-        if (!(from === 'buyer' && set.filed)) notify(to, offer !== null ? `${from === 'buyer' ? 'Offer' : 'Counter'} for ${t.handle}: ${offer} ${t.currency}` : `New message about ${t.handle}`, text || 'Open it to reply.', { nameThread: String(t._id) });
+        if (!(from === 'buyer' && set.filed)) notify(to, offer !== null ? `${from === 'buyer' ? 'Offer' : 'Counter'} for ${t.handle}: ${nameMoney(offer, t.currency)}` : `New message about ${t.handle}`, text || 'Open it to reply.', { nameThread: String(t._id) });
         return res.json({ success: true, thread: threadOut(await NameThread.findById(t._id).lean(), req.authUser._id) });
       } catch (error) {
         console.error('Name message error:', error);
@@ -268,7 +273,7 @@ function createNames({
           $set: { status: 'deal', price: t.lastOffer, nextFirst: String(req.body.nextFirst || '').trim(), nextLast: String(req.body.nextLast || '').trim(), dealAt: new Date(), payBy },
           $push: { messages: { from: 'seller', text: 'Accepted. Pay within 24 hours and the name is yours.', offer: t.lastOffer, at: new Date() } },
         });
-        notify(t.buyerId, `Deal: ${t.handle} for ${t.lastOffer} ${t.currency}`, 'Pay within 24 hours and the name is yours.', { nameThread: String(t._id) });
+        notify(t.buyerId, `Deal: ${t.handle} for ${nameMoney(t.lastOffer, t.currency)}`, 'Pay within 24 hours and the name is yours.', { nameThread: String(t._id) });
         return res.json({ success: true, thread: threadOut(await NameThread.findById(t._id).lean(), req.authUser._id) });
       } catch (error) {
         console.error('Name accept error:', error);
@@ -294,7 +299,7 @@ function createNames({
         const set = { status: 'deal', price: listing.price, nextFirst: listing.nextFirst, nextLast: listing.nextLast, dealAt: new Date(), payBy, lastOffer: listing.price, lastOfferBy: 'buyer', filed: false };
         if (t) { await NameThread.updateOne({ _id: t._id }, { $set: set, $push: { messages: msg } }); t = await NameThread.findById(t._id).lean(); }
         else t = (await NameThread.create({ handle, shopId: holder._id, sellerId, buyerId: me._id, currency: listing.currency, kind: 'offer', messages: [msg], ...set })).toObject();
-        notify(sellerId, `${handle} is being bought`, `At your asking price, ${listing.price} ${listing.currency}.`, { nameThread: String(t._id) });
+        notify(sellerId, `${handle} is being bought`, `At your asking price, ${nameMoney(listing.price, listing.currency)}.`, { nameThread: String(t._id) });
         return res.status(201).json({ success: true, thread: threadOut(t, me._id) });
       } catch (error) {
         console.error('Name buy error:', error);
@@ -393,7 +398,7 @@ function createNames({
           const why = { gone: 'The name is no longer held by that shop. Nothing was taken.', funds: 'Not enough in your GLOOBAL balance. Nothing was taken.', too_many: 'You already run 5 shops — pick one of them for the name. Nothing was taken.', target: 'Pick one of your own shops for the name. Nothing was taken.' }[(outcome && outcome.error) || 'gone'];
           return res.status(409).json({ success: false, code: (outcome && outcome.error) || 'gone', message: why });
         }
-        notify(t.sellerId, `Sold: ${t.handle} for ${price} ${t.currency}`, outcome.sellerNew ? `Your shop is now ${outcome.sellerNew}. The money is in your balance.` : 'The money is in your balance. Pick a new name for your shop.', { nameThread: String(t._id) });
+        notify(t.sellerId, `Sold: ${t.handle} for ${nameMoney(price, t.currency)}`, outcome.sellerNew ? `Your shop is now ${outcome.sellerNew}. The money is in your balance.` : 'The money is in your balance. Pick a new name for your shop.', { nameThread: String(t._id) });
         return res.json({ success: true, thread: threadOut(await NameThread.findById(t._id).lean(), buyer._id), shop: outcome.toSymbolId, sellerNewHandle: outcome.sellerNew, referenceId });
       } catch (error) {
         if (error && error.code === 'not_atomic') return res.status(503).json({ success: false, message: 'Not available right now. Nothing was taken.' });

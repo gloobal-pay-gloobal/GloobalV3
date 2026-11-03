@@ -16,8 +16,8 @@ function PayLaterLedger({ title, rows, direction, ccy, ccyCode = "USD" }) {
     const text = `${sign}${geuLensBarMoney(amount, ccyCode, lens, ccyCode)}`;
     const size = geuLensRowFontSize(text, 13.5, 150, 10);
     // Drawn as two sizes, measured as one string.
-    return { text, size, node: <>{sign}{parts.lead}{parts.trail && <span
-      style={{ fontSize: geuLensTrailSize(size), fontWeight: 800 }}
+    return { text, size, node: <><GeuLead parts={parts} px={size} sign={sign} />{parts.trail && <span
+      style={geuLensTrailStyle(size)}
     > {parts.trail}</span>}</> };
   };
   return <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "4px 2px 8px" }}>{title}</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{rows.length === 0 ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>Nothing yet</div> : rows.map((t, i) => <div

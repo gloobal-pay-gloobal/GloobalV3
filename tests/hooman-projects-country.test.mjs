@@ -278,8 +278,10 @@ describe("the number on the card counts what the list shows", () => {
     // see GEU_LENS_TRAIL_RATIO — so the markup carries the PARTS and the
     // joined string drives the sizing beside it.
     assert.match(src, /const hoomanRaisedParts = geuLensBarParts\(hoomanRaisedTotal, displayCurrency, lens, myCurrency\);/);
-    assert.match(src, /\{hoomanRaisedParts\.lead\}/, "the hero is not rendering the figure it built");
-    assert.match(src, /geuLensTrailSize\(hoomanRaisedSize\)/, "the hero's second unit is not drawn smaller");
+    // 0224: the lead is drawn by GeuLead (its name at ¾, bright) and the bar
+    // with the other name by geuLensTrailStyle (¾, dimmed).
+    assert.match(src, /<GeuLead parts=\{hoomanRaisedParts\} px=\{hoomanRaisedSize\} \/>/, "the hero is not rendering the figure it built");
+    assert.match(src, /geuLensTrailStyle\(hoomanRaisedSize\)/, "the hero's second unit is not drawn in the trail's style");
 
     // Only one place inside the projects overlay talks about Our spending now
     // — none. The Coverage panel's row lives outside it.

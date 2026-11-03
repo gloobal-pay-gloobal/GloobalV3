@@ -75,7 +75,9 @@ function OurNumbersScreen({ currency = "INR", onBack }) {
   const own = String(currency || "INR").toUpperCase();
   const whole = (v, trailColor) => <GeuTwin amount={v} currency={cur} own={own} whole trailColor={trailColor} />;
   const big = (v) => { const n = Math.abs(Number(v) || 0); return <GeuTwin amount={v} currency={cur} own={own} compact={n >= 1e5} whole={n < 1e5} />; };
-  const bigText = (v) => { const n = Math.abs(Number(v) || 0); return coverageMoney(v, cur, { compact: n >= 1e5, whole: n < 1e5 }); };
+  // 0224: a figure inside a sentence carries GEU too, as a string.
+  const lens = useGeuLens();
+  const bigText = (v) => { const n = Math.abs(Number(v) || 0); return geuTwinText(v, cur, { lens, own, compact: n >= 1e5, whole: n < 1e5 }); };
   const stamp = data && data.viewer ? `Viewed by ${data.viewer} · ${new Date().toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "";
   const ccyList = [...new Set([String(currency || "INR").toUpperCase(), ...OUR_NUMBERS_CURRENCIES])];
 
@@ -139,7 +141,7 @@ function OurNumbersScreen({ currency = "INR", onBack }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><b style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}>{ourNumbersDay(d.day, { weekday: "short", day: "numeric", month: "short" })}</b><span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 11, fontWeight: 900, borderRadius: 999, padding: "3px 9px", background: d.ok ? hexToRgba(T.positive, 0.12) : hexToRgba(T.negative, 0.12), color: d.ok ? T.positive : T.negative }}>{d.ok ? "Adds up" : `${bigText(Math.abs(d.difference))} apart`}</span><NumMore size={14} color={T.inkFaint} style={{ transform: open ? "rotate(180deg)" : "none" }} /></span></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 6, fontSize: 11, color: T.inkSoft, fontWeight: 700 }}>{[["Should be here", big(d.should)], ["Is here", big(d.is)], ["Difference", big(d.difference)]].map(([k, v]) => <span key={k}>{k}<b style={{ display: "block", color: k === "Difference" && !d.ok ? T.negative : T.ink, fontSize: 12.5, fontWeight: 800, marginTop: 1 }}>{v}</b></span>)}</div>
           </button>
-          {open ? <div style={{ marginTop: 8, background: T.surfaceAlt, borderRadius: 12, padding: "4px 10px" }}>{d.currencies.map((c, j) => <div key={c.currency} style={{ display: "grid", gridTemplateColumns: "48px 1fr 1fr 18px", gap: 8, alignItems: "center", padding: "7px 0", borderTop: j ? `1px solid ${T.line}` : "none", fontSize: 11.5, fontWeight: 700, color: T.ink }}><b>{c.currency}</b><span style={{ color: T.inkSoft }}>{coverageMoney(c.should, c.currency, { compact: true })}</span><span style={{ color: T.inkSoft }}>{coverageMoney(c.is, c.currency, { compact: true })}</span><span style={{ color: c.ok ? T.positive : T.negative, fontWeight: 900 }}>{c.ok ? "✓" : "!"}</span></div>)}</div> : null}
+          {open ? <div style={{ marginTop: 8, background: T.surfaceAlt, borderRadius: 12, padding: "4px 10px" }}>{d.currencies.map((c, j) => <div key={c.currency} style={{ display: "grid", gridTemplateColumns: "48px 1fr 1fr 18px", gap: 8, alignItems: "center", padding: "7px 0", borderTop: j ? `1px solid ${T.line}` : "none", fontSize: 11.5, fontWeight: 700, color: T.ink }}><b>{c.currency}</b><span style={{ color: T.inkSoft }}><GeuTwin amount={c.should} currency={c.currency} own={own} compact /></span><span style={{ color: T.inkSoft }}><GeuTwin amount={c.is} currency={c.currency} own={own} compact /></span><span style={{ color: c.ok ? T.positive : T.negative, fontWeight: 900 }}>{c.ok ? "✓" : "!"}</span></div>)}</div> : null}
         </div>;
       }) : <div style={{ fontSize: 12.5, color: T.inkFaint, fontWeight: 600 }}>No checks yet.</div>}</>)}</>;
   } else {

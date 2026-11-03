@@ -545,9 +545,9 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // the figure beside it also said GEU was naming the unit twice and
   // offering to change neither.
   //
-  // The compact tiles print their own unit rather than going through
-  // fmtMoney — see the note at the first one for why.
-  const spendSuffix = currencySuffix(displayCurrency);
+  // The compact tiles print their own digits rather than going through
+  // fmtMoney — see the note at the first one for why. Their names (the
+  // currency and GEU) come from GeuTwin, like every figure's (0224).
 
   // ── Our spending ───────────────────────────────────────────────────────
   //
@@ -900,7 +900,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     className="v2-tap"
     aria-label={`Showing ${country.name}. Change country`}
     style={{ display: "flex", alignItems: "center", gap: 7, height: 34, padding: "0 10px 0 6px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.16)", minWidth: 0, cursor: "pointer" }}
-  ><FlagEmoji flag={country.flag} size={24} shape="circle" border="none" /><span style={{ fontSize: 12, fontWeight: 800, color: "#FFFFFF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{country.name}</span><ChevronDown3 size={13} color="rgba(255,255,255,0.85)" style={{ flexShrink: 0 }} /></button><span style={{ display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.12)", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}><Layers3 size={13} />{projectsData ? `${hoomanVisibleProjects.length} ${hoomanVisibleProjects.length === 1 ? "project" : "projects"}` : "∆"}</span></div><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.66)", marginTop: 18 }}>Raised</div><div style={{ fontSize: hoomanRaisedSize, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, lineHeight: 1.1, marginTop: 4, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{hoomanRaisedParts.lead}{hoomanRaisedParts.trail && <span style={{ fontSize: geuLensTrailSize(hoomanRaisedSize), fontWeight: 800 }}> {hoomanRaisedParts.trail}</span>}</div><div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.56)", marginTop: 8, lineHeight: 1.45 }}>
+  ><FlagEmoji flag={country.flag} size={24} shape="circle" border="none" /><span style={{ fontSize: 12, fontWeight: 800, color: "#FFFFFF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{country.name}</span><ChevronDown3 size={13} color="rgba(255,255,255,0.85)" style={{ flexShrink: 0 }} /></button><span style={{ display: "flex", alignItems: "center", gap: 6, height: 34, padding: "0 12px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.26)", background: "rgba(255,255,255,0.12)", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.92)" }}><Layers3 size={13} />{projectsData ? `${hoomanVisibleProjects.length} ${hoomanVisibleProjects.length === 1 ? "project" : "projects"}` : "∆"}</span></div><div style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.66)", marginTop: 18 }}>Raised</div><div style={{ fontSize: hoomanRaisedSize, fontWeight: 800, color: "#FFFFFF", fontFamily: T.fontDisplay, lineHeight: 1.1, marginTop: 4, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}><GeuLead parts={hoomanRaisedParts} px={hoomanRaisedSize} />{hoomanRaisedParts.trail && <span style={geuLensTrailStyle(hoomanRaisedSize)}> {hoomanRaisedParts.trail}</span>}</div><div style={{ fontSize: 10.5, color: "rgba(255,255,255,0.56)", marginTop: 8, lineHeight: 1.45 }}>
 {hoomanRaisedTotal > 0
       ? `Given to ${hoomanVisibleProjects.filter((p) => projectRaised(p) > 0).length} of these projects.`
       : "Nothing given here yet. Open a project to be the first."}</div></div>{projectFiledIn === country.code && <div
@@ -1161,7 +1161,9 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       // fmtMoney's long form truncated the middle cell to "20,000...." —
       // which is not a number, it is the shape of one. Same compact form the
       // Coverage panel uses for Total spending, so the two read alike.
-      const money = (amount) => `${fmtCompact(amount)}${currencySuffix(currency)}`;
+      // 0224: and with GEU beside the money it is in (GeuTwin keeps these
+      // compact digits; it only adds the names).
+      const money = (amount) => <GeuTwin amount={amount} currency={currency} own={myCurrency} digits={fmtCompact(amount)} />;
       return <div style={{ marginTop: 16, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 6px" }}><div style={{ display: "flex", alignItems: "stretch" }}>{cell("Raised", figure(money(raised)))}<span style={{ width: 1, background: T.line, flexShrink: 0 }} />{cell("Goal", figure(hoomanProject.goal ? money(goalMajor) : "—"))}<span style={{ width: 1, background: T.line, flexShrink: 0 }} />{cell("Backers", figure(String(backers)))}</div><div style={{ height: 6, borderRadius: 3, background: paint.tint, overflow: "hidden", margin: "16px 12px 0" }}><div style={{ width: `${barPct}%`, height: "100%", borderRadius: 3, background: paint.solid, transition: "width 0.4s ease" }} /></div>{hoomanProject.goal && raised > 0 && <div
         style={{ fontSize: 11.5, fontWeight: 700, color: pct >= 100 ? T.positive : T.inkFaint, marginTop: 9, paddingInline: 12, fontVariantNumeric: "tabular-nums" }}
       >{pct >= 100 ? `${pct}% of goal — passed` : `${pct}% of goal`}</div>}</div>;
@@ -1443,7 +1445,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     return <div
       key={c.code}
       style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
-    ><FlagEmoji flag={c.flag} width={28} height={21} radius={6} /><span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>{rowSpend != null ? <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>{fmtCompact(rowSpend)}{spendSuffix}</span> : <span style={{ fontSize: 15, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</span>}</div>;
+    ><FlagEmoji flag={c.flag} width={28} height={21} radius={6} /><span style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>{rowSpend != null ? <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}><GeuTwin amount={rowSpend} currency={displayCurrency} own={myCurrency} digits={fmtCompact(rowSpend)} /></span> : <span style={{ fontSize: 15, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</span>}</div>;
   })}{COVERAGE_ALL_COUNTRIES.filter((c) => c.name.toLowerCase().includes(spendingBreakdownQuery.trim().toLowerCase())).length === 0 && <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>No countries match "{spendingBreakdownQuery}"</div>}</div>{
     /* Aggregate total — real number, viewable in any currency,
        not just the one this account happens to use. */

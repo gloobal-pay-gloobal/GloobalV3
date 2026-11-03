@@ -2074,6 +2074,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // independently, it just no longer decides what they say.
   const balanceBarUnit = geuLensUnitPair(ccyCode, displayLens, ccyCode).trail;
   const balanceBracket = balanceBarUnit ? `${GEU_LENS_BAR} ${balanceBarUnit}` : "";
+  // 0224: the figure's own name is drawn at ¾ and bright, the bracket at ¾
+  // and dimmed — the look every figure has. Same digits as `balance`.
+  const balanceParts = geuLensBarParts(bankBalance, ccyCode, displayLens, ccyCode);
   // The room is the row's width LESS the gap before the bar, because that gap
   // is width the figure does not get. See GEU_LENS_BAR_GAP — the same
   // constant is the marginLeft below, so the measurement and the layout
@@ -2935,7 +2938,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       // The figure sits on the baseline it would have had at 32px, so the
       // card does not change height when a balance crosses a size step.
       lineHeight: "38px"
-    }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? <>{balance}<span
+    }}>{balanceStatus === "loading" || balanceStatus === "waking" ? <BalanceLoading waking={balanceStatus === "waking"} /> : balanceStatus === "error" ? <BalanceError onRetry={onRefreshAccount} /> : balanceVisible ? <><GeuLead parts={balanceParts} px={balanceFontSize} /><span
     // THE OTHER NAME FOR THE SAME NUMBER, in brackets beside it.
     //
     // ₹10,000.00 (GEU) and 10,000.00 GEU (INR) — the figure never moves,
@@ -2960,7 +2963,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // you chose, and a second signal saying the same thing is one the eye has
     // to reconcile. It also made the rupee look disabled next to a figure it
     // is every bit as true as.
-    style={{ fontSize: geuLensTrailSize(balanceFontSize), fontWeight: 700, marginLeft: GEU_LENS_BAR_GAP, letterSpacing: 0.2 }}
+    //
+    // 0224: the fade is back, at the founder's ask — the name you are NOT
+    // reading in is dimmed, so the light says which one you chose.
+    style={geuLensTrailStyle(balanceFontSize, { marginLeft: GEU_LENS_BAR_GAP, letterSpacing: 0.2 })}
   >{balanceBracket}</span></> : <BalanceMaskSign size={38} onShow={handleToggleBalance} />}</span>{
     /* While the friend is holding the sign, the sign IS the "Show
        balance" button (0192), so the eye steps aside: one thing to tap.
@@ -4119,12 +4125,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onClick={requestClosePayTarget}
     aria-label="Close"
     style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-  ><X3 size={15} color={T.inkSoft} /></button></div><div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>Amount</div><div style={{ display: "flex", alignItems: "center", gap: 8, background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px", marginBottom: 8 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{ccy}</span><input
+  ><X3 size={15} color={T.inkSoft} /></button></div><div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>Amount</div><div style={{ display: "flex", alignItems: "center", gap: 8, background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px", marginBottom: 8 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{geuLensUnitPair(ccyCode, displayLens, ccyCode).lead || ccy}</span><input
     value={payAmount}
     onChange={(e) => setPayAmount(e.target.value.replace(/[^0-9.]/g, ""))}
     inputMode="decimal"
-    style={{ flex: 1, border: "none", outline: "none", background: "none", fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "inherit" }}
-  /></div>{payTarget.cashbackRate > 0 && <div style={{ fontSize: 11.5, color: T.positive, fontWeight: 700, marginBottom: 18 }}>
+    style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "inherit" }}
+  />{
+    /* 0224: the field's unit names both — the one read in before the
+       digits, the other after them, dimmed — as Send Money's box does. */
+  }{geuLensUnitPair(ccyCode, displayLens, ccyCode).trail && <span style={geuLensTrailStyle(18, { color: T.inkSoft })}>{`${GEU_LENS_BAR} ${geuLensUnitPair(ccyCode, displayLens, ccyCode).trail}`}</span>}</div>{payTarget.cashbackRate > 0 && <div style={{ fontSize: 11.5, color: T.positive, fontWeight: 700, marginBottom: 18 }}>
                 Earn {(payTarget.cashbackRate * 100).toFixed(2)}% back — <GeuFigure amount={(parseFloat(payAmount) || 0) * payTarget.cashbackRate} currency={ccyCode} lens={displayLens} size={11.5} /> instantly added to My Assets and your PayLater limit
               </div>}<button
     onClick={() => {
@@ -4420,7 +4429,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     interested={gloobalBankInterested}
     interestBusy={interestBusy === "bank"}
     onRegisterInterest={() => registerInterest("bank")} ccyCode={ccyCode}
-    balance={balance}
+    // 0224: the GLOOBAL Bank card shows the same balance, so it carries both
+    // names too — it was the bare `balance` string, the one big figure in
+    // the app with no GEU on it. Shrinks with its pair to fit the card.
+    balance={<GeuFigure amount={bankBalance} currency={ccyCode} lens={displayLens} own={ccyCode} size={29} room={230} floor={14} />}
     balanceUnavailable={balanceUnavailable}
     balanceStatus={balanceStatus}
     onRetryBalance={onRefreshAccount}
@@ -4522,7 +4534,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     style={{ marginTop: 18, height: 50, borderRadius: 16, border: "none", background: T.gradButton, color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", boxShadow: `0 10px 24px rgba(${T.accentRgb},.28)` }}
   >Save my creator name</button><button type="button" onClick={requestCloseCreatorNameGate} style={{ border: "none", background: "none", color: T.inkSoft, fontSize: 13, fontWeight: 700, marginTop: 12, cursor: "pointer", fontFamily: "inherit" }}>Not now</button></div></div>}{showBankNeeds && <BankNeedsAccountSheet
     bank={bankAccount}
-    amountText={totalAssets > 0 ? `${ccy}${Number(totalAssets).toFixed(2)}` : ""}
+    // 0224: was a symbol stuck on fixed two-decimal digits with no GEU.
+    amountText={totalAssets > 0 ? geuLensBarMoney(totalAssets, ccyCode, displayLens, ccyCode) : ""}
     onClose={requestCloseBankNeeds}
     onOpen={() => {
       setShowBankNeeds(false);

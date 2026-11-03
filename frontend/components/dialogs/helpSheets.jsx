@@ -323,7 +323,7 @@ function ReferralHelpSheet({ open, onClose }) {
       background: T.surface,
       border: `1px solid ${T.line}`
     }}
-  ><HelpStepRow n="1">You pay Jio <strong style={{ fontWeight: 800 }}>₹1,000</strong> for a recharge.</HelpStepRow><HelpStepRow n="2">Jio's Creator Share is 2%, so <strong style={{ fontWeight: 800 }}>₹20</strong> comes straight back to you and is planted in My Assets.</HelpStepRow><HelpStepRow n="3">GLOOBAL gives the person whose ID you entered here <strong style={{ fontWeight: 800 }}>1% of your ₹20 — ₹0.20</strong>, the person who invited them 0.5%, and one more 0.25%. Your ₹20 stays yours.</HelpStepRow><HelpStepRow n="4" emphasis>Your ₹20 is not reduced. Their share is a percentage of what you <em>earn</em>, never a cut of what you pay.</HelpStepRow></div><div
+  ><HelpStepRow n="1">You pay Jio <strong style={{ fontWeight: 800 }}><HelpRupees n={1000} /></strong> for a recharge.</HelpStepRow><HelpStepRow n="2">Jio's Creator Share is 2%, so <strong style={{ fontWeight: 800 }}><HelpRupees n={20} /></strong> comes straight back to you and is planted in My Assets.</HelpStepRow><HelpStepRow n="3">GLOOBAL gives the person whose ID you entered here <strong style={{ fontWeight: 800 }}>1% of your <HelpRupees n={20} /> — <HelpRupees n={0.2} cents /></strong>, the person who invited them 0.5%, and one more 0.25%. Your <HelpRupees n={20} /> stays yours.</HelpStepRow><HelpStepRow n="4" emphasis>Your <HelpRupees n={20} /> is not reduced. Their share is a percentage of what you <em>earn</em>, never a cut of what you pay.</HelpStepRow></div><div
     style={{
       marginTop: 12,
       padding: "12px 13px",
@@ -334,4 +334,11 @@ function ReferralHelpSheet({ open, onClose }) {
   ><span style={{ display: "block", fontSize: 12.5, lineHeight: 1.55, color: T.ink }}>
       It runs the other way too. Once you are in, your own <GloobalWordmark /> ID is your referral ID — anyone who signs up with it joins your network, and you earn 1% of every Creator Share <em>they</em> get — plus 0.5% from the people they invite, and 0.25% one level further.
     </span></div><div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}><HelpStepRow n="•">Your network and its earnings live under <strong style={{ fontWeight: 800 }}>My Referral Network</strong> in your profile.</HelpStepRow><HelpStepRow n="•">No code? Tap <strong style={{ fontWeight: 800 }}>Skip for now</strong>. Nothing about your account depends on it.</HelpStepRow></div></HelpSheet>;
+}
+
+// The worked example's rupees, with GEU beside them like every figure in the
+// app (0224). The example is a rupee story (a Jio recharge), so it stays in
+// INR; a reader elsewhere sees "1,000 INR │ GEU", which is still true.
+function HelpRupees({ n, cents = false }) {
+  return <GeuTwin amount={n} currency="INR" own={geuLensOwnCurrency() || "INR"} whole={!cents} />;
 }

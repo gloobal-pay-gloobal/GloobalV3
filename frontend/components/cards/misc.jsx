@@ -316,8 +316,10 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
   );
   const figureSpan = (color, sign, value) => {
     const parts = barParts(Number(value) || 0);
-    return <span style={figureStyle(color)}>{sign}{parts.lead}{parts.trail && <span
-      style={{ fontSize: geuLensTrailSize(figureSize), fontWeight: 800 }}
+    // 0224: the name read in at ¾ and bright, the bar and the other name at
+    // ¾ and dimmed — the same look GeuFigure draws.
+    return <span style={figureStyle(color)}><GeuLead parts={parts} px={figureSize} sign={sign} />{parts.trail && <span
+      style={geuLensTrailStyle(figureSize)}
     > {parts.trail}</span>}</span>;
   };
   const paidFigure = !single && (!focusDirection || focusDirection === "paid") && figureSpan(C.paidText, "\u2212", displayed.paid);

@@ -364,8 +364,12 @@ function notifyPaymentEvent({ direction, txnId, amount, currencySymbol, currency
   // "Money sent" / "Money received" rather than a signed zero — so the only
   // reason left to build a string here is a caller that carried a SYMBOL but
   // no currency code, which cannot be formatted by the shared table.
+  // 0224: the local form with both names — "+500.00₹, GEU" — which is what
+  // the server's push writes too (lib/notificationText.js). The figure here
+  // is always this person's own money (what left them, what reached them),
+  // so its own currency is passed as theirs and it is named by its sign.
   const title = currencyCode
-    ? gloobalNotifHeadline(meta)
+    ? gloobalNotifHeadline(meta, GEU_LENS_LOCAL, currencyCode)
     : Number.isFinite(Number(amount)) && currencySymbol
       ? `${direction === "sent" ? "\u2212" : "+"}${Number(amount).toFixed(2)}${currencySymbol}`
       : gloobalNotifHeadline({ ...meta, amount: null, currency: null });

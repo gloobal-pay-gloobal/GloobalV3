@@ -78,7 +78,7 @@ function HelpPaymentLine({ p, lens }) {
       <span style={{ display: "block", fontSize: 13, fontWeight: 750, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.out ? "Paid" : "From"} {p.other}</span>
       <span style={{ display: "block", fontSize: 11, color: T.inkFaint }}>{helpWhen(p.at)}{p.status !== "success" ? ` · ${p.status}` : ""}</span>
     </span>
-    <span style={{ flexShrink: 0, fontWeight: 800, color: T.ink }}><GeuFigure amount={p.amount} currency={p.currency} lens={lens} size={13} /></span>
+    <span style={{ flexShrink: 0, fontWeight: 800, color: T.ink }}><GeuFigure amount={p.amount} currency={p.currency} lens={lens} own={geuLensOwnCurrency() || p.currency} size={13} /></span>
   </span>;
 }
 

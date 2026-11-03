@@ -66,7 +66,7 @@ function CreatorLedgerRow({ mark, markTint, title, subtitle, amount, currency, l
   }}>{subtitle}</span></span><span style={{
     flexShrink: 0, textAlign: "right", fontSize: 13, fontWeight: 800,
     color: sign === "+" ? T.positive : T.ink
-  }}><GeuFigure amount={amount} currency={currency} lens={lens} size={13} /></span></div>;
+  }}><GeuFigure amount={amount} currency={currency} lens={lens} own={geuLensOwnCurrency() || currency} size={13} /></span></div>;
 }
 
 function CreatorLedgerScreen({

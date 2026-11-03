@@ -30,6 +30,7 @@ const TransferCase = require('../models/TransferCase');
 const BankTransfer = require('../models/BankTransfer');
 const RefundRequest = require('../models/RefundRequest');
 const AccountHold = require('../models/AccountHold');
+const { formatMoneyPair } = require('./notificationText'); // 0224: user-facing send-back notice names the money and GEU
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const PROBLEM_ROLES = ['admin', 'support', 'finance', 'risk'];
@@ -270,7 +271,7 @@ function createStaffCases(deps) {
         // second person decided, so what the receiver got closes it — their
         // Creator Share stays in the payer's My Assets.
         await Complaint.updateOne({ _id: c._id, status: { $in: ['open', 'replied', 'escalated'] } }, { $set: { status: 'returned', closedAt: new Date(), returnTransactionId: moved.tx._id }, $push: { messages: { from: null, text: 'Closed: GLOOBAL Support sent the money back. Any Creator Share stays in My Assets.' } } });
-        await tell(moved.from._id, `GLOOBAL sent a payment back · ${r.complaintRef}`, `${r.amount} ${r.currency} went back to ${nameOf(moved.to)}, after GLOOBAL Support reviewed the complaint.`, { event: 'staff_return', complaintId: String(c._id) });
+        await tell(moved.from._id, `GLOOBAL sent a payment back · ${r.complaintRef}`, `${formatMoneyPair(r.amount, r.currency, { own: false })} went back to ${nameOf(moved.to)}, after GLOOBAL Support reviewed the complaint.`, { event: 'staff_return', complaintId: String(c._id) });
         staff.audit(req, req.staff._id, 'refund.approve', 'success', `${r.complaintRef}: sent back ${r.amount} ${r.currency}`, { ref: r.complaintRef, amount: r.amount, currency: r.currency, proposedBy: String(r.proposedBy), transaction: moved.tx.referenceId });
         const fresh = await Complaint.findById(c._id).lean();
         return res.json({ success: true, complaint: await complaintView(fresh, req.staffRole, req.staff._id) });

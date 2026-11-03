@@ -92,8 +92,8 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
   // unit follows at 75% of it.
   const essentialsFigure = (value, base) => {
     const parts = essentialsMoney(value);
-    return <>{parts.lead}{parts.trail && <span
-      style={{ fontSize: geuLensTrailSize(base), fontWeight: 800 }}
+    return <><GeuLead parts={parts} px={base} />{parts.trail && <span
+      style={geuLensTrailStyle(base)}
     > {parts.trail}</span>}</>;
   };
   const localBaseline = useMemo5(() => computeEssentialsBaseline(dialCountry.iso), [dialCountry.iso]);

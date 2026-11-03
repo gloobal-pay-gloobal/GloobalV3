@@ -476,7 +476,7 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   const heroFigure = (amount, code, sign) => {
     const parts = geuLensBarParts(amount, code, lens, viewerCurrency);
     const whole = `${sign}${geuLensBarMoney(amount, code, lens, viewerCurrency)}`;
-    return { lead: parts.lead, trail: parts.trail, size: receiptAmountFontSize(whole, 31) };
+    return { ...parts, size: receiptAmountFontSize(whole, 31) };
   };
   const heroPayment = heroFigure(paymentAmount, paymentCurrency, paymentIsSent ? "\u2212" : "+");
   const heroCurrencyCode = heroCurrencyRaw && !heroBarUnit &&
@@ -1157,8 +1157,8 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       overflowWrap: "anywhere"
     }}
     data-testid="receipt-hero-payment"
-  >{paymentIsSent ? "\u2212" : "+"}{heroPayment.lead}{heroPayment.trail && <span
-    style={{ fontSize: geuLensTrailSize(heroPayment.size), fontWeight: 800 }}
+  ><GeuLead parts={heroPayment} px={heroPayment.size} sign={paymentIsSent ? "\u2212" : "+"} />{heroPayment.trail && <span
+    style={geuLensTrailStyle(heroPayment.size)}
   > {heroPayment.trail}</span>}</div> : <div
     style={{ fontSize: 12.5, fontWeight: 700, color: "rgba(255,255,255,0.88)", lineHeight: 1.4, padding: "6px 0" }}
     data-testid="receipt-payment-unavailable"
@@ -1178,8 +1178,8 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
       overflowWrap: "anywhere"
     }}
     data-testid="receipt-hero-share"
-  >{shareIsCredit ? "+" : "\u2212"}{heroShare.lead}{heroShare.trail && <span
-    style={{ fontSize: geuLensTrailSize(heroShare.size), fontWeight: 800 }}
+  ><GeuLead parts={heroShare} px={heroShare.size} sign={shareIsCredit ? "+" : "\u2212"} />{heroShare.trail && <span
+    style={geuLensTrailStyle(heroShare.size)}
   > {heroShare.trail}</span>}</div>}{
     /* The currency CODE under the figure.
        fmtMoney draws the symbol, and a symbol is not the currency: ₹ is

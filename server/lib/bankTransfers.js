@@ -23,6 +23,7 @@ const mongoose = require('mongoose');
 const BankTransfer = require('../models/BankTransfer');
 const LinkedBankAccount = require('../models/LinkedBankAccount');
 const TransferCase = require('../models/TransferCase');
+const { formatMoneyPair } = require('./notificationText');
 
 // How long a test transfer out "takes" at the bank.
 const TEST_SETTLE_MS = Number(process.env.BANK_TEST_SETTLE_MS || 20000);
@@ -110,13 +111,10 @@ function createBankTransfers({
     createdAt: c.createdAt, resolvedAt: c.resolvedAt, escalatedAt: c.escalatedAt,
   });
 
-  const fmt = (amount, currency) => {
-    try {
-      return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(amount));
-    } catch (e) {
-      return `${currency} ${Number(amount).toFixed(2)}`;
-    }
-  };
+  // 0224: every figure here is the account holder's own money, and the app
+  // shows every figure with both its names — "500.00₹ │ GEU". The server
+  // cannot see the lens, so it writes the local form, the app's default.
+  const fmt = (amount, currency) => formatMoneyPair(amount, currency);
 
   const notify = (userId, title, message, meta) =>
     Notification.create({ userId, type: 'payment', title: title.slice(0, 100), message: message.slice(0, 500), metadata: meta }).catch(() => {});
@@ -312,7 +310,7 @@ function createBankTransfers({
             counterpart: { kind: 'bank', label, bankName, last4: number.slice(-4), code, holderName },
             externalRef: utr, fee: 0, balanceAfter: after, settledAt: now,
             steps: [
-              { key: 'requested', label: 'Paid ₹1 to verify', detail: 'By UPI, from your bank', at: now },
+              { key: 'requested', label: `Paid ${fmt(1, currency)} to verify`, detail: 'By UPI, from your bank', at: now },
               { key: 'received', label: 'Received by UPI', detail: `UTR ${utr}`, at: now },
               { key: 'credited', label: 'Added to GLOOBAL Bank', detail: `New balance ${fmt(after, currency)}`, at: now },
             ],
@@ -328,7 +326,7 @@ function createBankTransfers({
           }], { session });
           return { t, a };
         });
-        notify(user._id, 'Bank linked', `${label} is linked. Your ₹1 was added to GLOOBAL Bank.`, { bankTransfer: referenceId });
+        notify(user._id, 'Bank linked', `${label} is linked. Your ${fmt(1, currency)} was added to GLOOBAL Bank.`, { bankTransfer: referenceId });
         return res.status(201).json({ success: true, transfer: publicTransfer(out.t.toObject()), account: publicAccount(out.a.toObject()), nameAtBank: holderName, utr, testMode: true });
       } catch (error) {
         if (error && error.code === 11000) return res.status(409).json({ success: false, code: 'duplicate', message: 'That was already done.' });

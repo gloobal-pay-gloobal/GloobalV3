@@ -154,6 +154,11 @@ const send = (from, to, extra) =>
 const notificationsFor = (key) => Notification.find({ userId: userIds[key] }).sort({ createdAt: -1 }).lean();
 const fmt = (n, places) =>
   new Intl.NumberFormat("en-US", { minimumFractionDigits: places, maximumFractionDigits: places }).format(n);
+// 0224: every figure carries both its names. The server cannot see the lens,
+// so the inbox line is in the local form: the reader's own money by its
+// sign, then GEU — "You sent 500.00₹ │ GEU to …".
+const { currencySuffix } = require(join(BACKEND, "lib/notificationText"));
+const pair = (n, places, ccy) => `${fmt(n, places)}${currencySuffix(ccy)} \u2502 GEU`;
 
 const N_KEYS = ["id", "type", "title", "message", "readAt", "createdAt", "metadata"].sort().join(",");
 const META_KEYS = [
@@ -189,7 +194,7 @@ async function tracePayment({ label, from, to, extra, senderPlaces, receiverPlac
     check("sent: currency is the server's senderCurrency", s.metadata.currency === body.senderCurrency && s.metadata.currency === byKey[from].ccy,
       `${s.metadata.currency} vs ${body.senderCurrency}`);
     check("sent: message uses those figures in the currency's own precision",
-      s.message === `You sent ${fmt(body.debitAmount, senderPlaces)} ${body.senderCurrency} to ${byKey[to].name}`, s.message);
+      s.message === `You sent ${pair(body.debitAmount, senderPlaces, body.senderCurrency)} to ${byKey[to].name}`, s.message);
     check("sent: counterparty is the payee",
       s.metadata.counterpartyName === byKey[to].name && s.metadata.counterpartySymbolId === byKey[to].id);
     check("sent: transactionId stored as a string", typeof s.metadata.transactionId === "string");
@@ -205,7 +210,7 @@ async function tracePayment({ label, from, to, extra, senderPlaces, receiverPlac
     check("received: currency is the server's destinationCurrency",
       r.metadata.currency === body.destinationCurrency && r.metadata.currency === byKey[to].ccy, r.metadata.currency);
     check("received: message uses those figures in the currency's own precision",
-      r.message === `You received ${fmt(body.payeeReceives, receiverPlaces)} ${body.destinationCurrency} from ${byKey[from].name}`, r.message);
+      r.message === `You received ${pair(body.payeeReceives, receiverPlaces, body.destinationCurrency)} from ${byKey[from].name}`, r.message);
     check("received: counterparty is the payer",
       r.metadata.counterpartyName === byKey[from].name && r.metadata.counterpartySymbolId === byKey[from].id);
   }
@@ -267,7 +272,7 @@ async function run() {
     senderPlaces: 2, receiverPlaces: 0,
   });
   const jpy = (await notificationsFor("J"))[0];
-  check("the JPY message carries no decimal places", Boolean(jpy) && /You received 1,500 JPY from/.test(jpy.message), jpy?.message);
+  check("the JPY message carries no decimal places", Boolean(jpy) && /You received 1,500¥ \u2502 GEU from/.test(jpy.message), jpy?.message);
 
   console.log("\n5. the unique index is the backstop");
   const existing = (await notificationsFor("A"))[0];

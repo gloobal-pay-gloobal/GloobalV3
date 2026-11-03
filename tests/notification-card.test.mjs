@@ -178,8 +178,10 @@ describe("the card is built from what the server recorded", () => {
       head.indexOf("G_LOGO_DATA_URI") < head.indexOf("<FlagEmoji"),
       "the flag is back in front of the mark"
     );
-    assert.ok(head.indexOf("{headline}") > head.indexOf("G_LOGO_DATA_URI"), "the mark is not leading the row");
-    assert.ok(head.indexOf("{headline}") < head.indexOf("<FlagEmoji"), "the flag is not closing the row");
+    // 0224: the headline is drawn as a node now (number, bright name, dimmed
+    // trail), built from the same string — headlineNode.
+    assert.ok(head.indexOf("{headlineNode}") > head.indexOf("G_LOGO_DATA_URI"), "the mark is not leading the row");
+    assert.ok(head.indexOf("{headlineNode}") < head.indexOf("<FlagEmoji"), "the flag is not closing the row");
     assert.match(card, /src=\{G_LOGO_DATA_URI\}/);
     // A disc, in one of the app's own colours, chosen from the payment's own
     // reference so it is stable rather than flickering on every render — and
@@ -347,6 +349,8 @@ describe("in the app", () => {
       // glossed with it a second time.
       assert.ok(!new RegExp(`${B.currency}[^A-Za-z]+${B.currency}`).test(head),
         `the code is printed twice on the headline: ${head}`);
+      // 0224: and GEU is on it too — never without the currency beside it.
+      assert.match(head, /GEU/, `the headline does not carry GEU: ${head}`);
       assert.match(seen[1], /Sender paid/);
       assert.match(seen[1], /0\.009165/, "the rate is not the one recorded");
       // THE RECORDED DIRECTION: 1 unit of the RECEIVER's currency in the
@@ -438,14 +442,20 @@ describe("the banner says what the card says", () => {
       // the headline called with no lens, which is what the lock-screen
       // banner gets, because a system notification is drawn by the OS long
       // after the app that knows about the lens is gone.
+      //
+      // 0224: the headline writes BOTH names (geuLensSpokenMoney, a comma
+      // where the bar would be), so the pair's whole rule comes with it.
       const lensSrc = readSource("frontend/features/geuLens/geuLens.js");
-      const fns = ["geuLensMoney", "geuLensSameCurrency", "geuLensOwnMoney"].map((n) => {
+      const fns = ["geuLensMoney", "geuLensSameCurrency", "geuLensOwnMoney", "geuLensBarUnit",
+        "geuLensNames", "geuLensDigits", "geuLensBarMoney", "geuLensSpokenMoney"].map((n) => {
         const at = lensSrc.indexOf(`function ${n}(`);
         return lensSrc.slice(at, lensSrc.indexOf("\n}\n", at) + 3);
       }).join("\n");
-      const consts = ["GEU_LENS_LOCAL", "GEU_LENS_GEU"]
+      const glue = lensSrc.match(/function geuLensGlue\(name\) \{[^\n]*\}/)[0];
+      const consts = ["GEU_LENS_LOCAL", "GEU_LENS_GEU", "GEU_LENS_BAR"]
         .map((n) => lensSrc.match(new RegExp(`var ${n} = "[^"]*";`))[0]).join("\n");
-      return `${consts}\n${fns}`;
+      const ticker = currencies.match(/var COIN_TICKER = "[^"]+";/)[0];
+      return `${ticker}\n${consts}\n${fns}\n${glue}`;
     })()}
     ${lift(card, "gloobalNotifHeadline")}
     ${lift(card, "gloobalNotifSubline")}
@@ -475,7 +485,11 @@ describe("the banner says what the card says", () => {
     const { paymentBannerText } = await import("../server/lib/notificationText.js");
     for (const meta of CASES) {
       const server = paymentBannerText(meta);
-      assert.equal(server.title, frontend.gloobalNotifHeadline(meta), `title for ${meta.currency} ${meta.direction}`);
+      // 0224: the tray calls the headline with the local lens and the
+      // figure's own currency (it is always the reader's own money), and the
+      // server writes the same local form: "−250.00₹, GEU".
+      assert.equal(server.title, frontend.gloobalNotifHeadline(meta, "local", meta.currency), `title for ${meta.currency} ${meta.direction}`);
+      assert.match(server.title, /, GEU$/, `the banner names no GEU: ${server.title}`);
       assert.equal(server.body, frontend.gloobalNotifSubline(meta), `body for ${meta.currency} ${meta.direction}`);
     }
   });
@@ -505,13 +519,17 @@ describe("the banner says what the card says", () => {
 
   test("the headline carries the sign, and it is a minus, not a hyphen", () => {
     // U+2212. A hyphen next to a figure reads as a dash between two things.
-    assert.equal(frontend.gloobalNotifHeadline(CASES[0]).charAt(0), "−");
-    assert.equal(frontend.gloobalNotifHeadline(CASES[1]).charAt(0), "+");
+    const own = (meta) => frontend.gloobalNotifHeadline(meta, "local", meta.currency);
+    assert.equal(own(CASES[0]).charAt(0), "−");
+    assert.equal(own(CASES[1]).charAt(0), "+");
+    // 0224: both names, the money first and GEU after it — a comma, not the
+    // bar, because the OS draws this line and may read it aloud.
+    assert.equal(own(CASES[0]), "\u2212250.00\u20B9, GEU");
     // AND NOTHING AFTER THE FIGURE. The word used to follow it — "−250.00₹
     // sent" — and it was the third thing on one line saying which way the
     // money went, after the sign and the colour it is drawn in, with "To
     // Chdg" directly beneath. The sign is the sentence.
-    assert.match(frontend.gloobalNotifHeadline(CASES[0]), /^\u2212[\d,.]+\S*$/);
+    assert.match(own(CASES[0]), /^\u2212[\d,.]+\S*, GEU$/);
     assert.ok(!/ sent| received/.test(frontend.gloobalNotifHeadline(CASES[0])), "the word is back on the headline");
     assert.ok(!/ sent| received/.test(frontend.gloobalNotifHeadline(CASES[1])), "the word is back on the headline");
     // Which way it went is still said once, on the line under it.
@@ -521,7 +539,7 @@ describe("the banner says what the card says", () => {
 
   test("the page's own banner uses those functions rather than composing its own", () => {
     const hook = readSource(HOOK);
-    assert.match(hook, /\? gloobalNotifHeadline\(meta\)/);
+    assert.match(hook, /\? gloobalNotifHeadline\(meta, GEU_LENS_LOCAL, currencyCode\)/);
     // Named once and passed to BOTH routes. The in-app banner and the tray
     // banner are two destinations for one wording, which is the whole point
     // of these shared functions — the hook composing a second string for

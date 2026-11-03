@@ -247,7 +247,7 @@ function createAdmin(deps) {
 
     const oldestHours = oldestComplaint ? Math.floor((now - new Date(oldestComplaint.createdAt)) / 3600000) : 0;
     const flags = [];
-    if (books && !books.ok) flags.push({ tone: 'bad', kind: 'books', title: `The books are off by ${Math.abs(books.differenceInr).toLocaleString('en-IN', { maximumFractionDigits: 0 })}₹`, detail: books.off.map((o) => `${o.currency} ${o.difference}`).slice(0, 6).join(' · ') });
+    if (books && !books.ok) flags.push({ tone: 'bad', kind: 'books', title: `The books are off by ${Math.abs(books.differenceInr).toLocaleString('en-IN', { maximumFractionDigits: 0 })}₹ │ GEU`, detail: books.off.map((o) => `${o.difference} ${o.currency} │ GEU`).slice(0, 6).join(' · ') });
     if (complaintsOpen && oldestHours >= 24) flags.push({ tone: 'bad', kind: 'complaints', title: `${complaintsOpen} complaint${complaintsOpen === 1 ? '' : 's'} open`, detail: `the oldest has waited ${oldestHours} hours` });
     if (casesOpen) flags.push({ tone: 'warn', kind: 'transfers', title: `${casesOpen} bank transfer problem${casesOpen === 1 ? '' : 's'} open`, detail: 'reported by people from GLOOBAL Bank' });
     if (unconvertible.size) flags.push({ tone: 'warn', kind: 'rates', title: 'Some money could not be converted', detail: [...unconvertible].join(', ') });

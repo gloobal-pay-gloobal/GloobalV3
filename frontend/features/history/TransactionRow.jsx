@@ -185,7 +185,7 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
     ? { lead: `${sign}${amountText}`, trail: "" }
     : (() => {
         const parts = geuLensBarParts(Number(t.amount || 0), rowCode, lens, ccyCode);
-        return { lead: `${sign}${parts.lead}`, trail: parts.trail };
+        return { ...parts, lead: `${sign}${parts.lead}`, sign };
       })();
   // The whole thing as text, for the screen reader and for the sizer. The
   // READER of a row hears one phrase; only the eye gets two sizes.
@@ -267,11 +267,13 @@ function TransactionRow({ t, color, sign, ccy, ccyCode = "USD", isFirst, onSelec
       // not need to know which list it is in.
       color
     }}
-  >{amountParts.lead}{amountParts.trail && <span
-    // Smaller, NOT fainter. The row's colour already says direction — red
-    // out, green in — and fading half the figure would put a third signal on
-    // a line that has two. It inherits the colour from the span above.
-    style={{ fontSize: geuLensTrailSize(amountSize), fontWeight: 800 }}
+  >{amountParts.num != null
+    ? <GeuLead parts={amountParts} px={amountSize} sign={amountParts.sign} />
+    : amountParts.lead}{amountParts.trail && <span
+    // 0224: the other name is dimmed now, at the founder's ask — the light
+    // says which name you read in. It still inherits the row's colour, so
+    // direction (red out, green in) is unchanged.
+    style={geuLensTrailStyle(amountSize)}
   > {amountParts.trail}</span>}</span>{
     /* Sits under the amount, where a message list puts its unread pill, and
        means the one thing worth interrupting a scan for: this payment never

@@ -491,8 +491,8 @@ function PaymentUnlock({ receipt, onClose, onViewShareReceipt, onToast }) {
   //
   // Split here rather than at each of the two faces so the scratch card and
   // the card behind it cannot end up sized differently.
-  const shareFigure = (size) => <span style={{ fontVariantNumeric: "tabular-nums" }}>+{shareParts.lead}{shareParts.trail ? <span
-    style={{ fontSize: geuLensTrailSize(size), fontWeight: 800, letterSpacing: 0, opacity: 0.88 }}
+  const shareFigure = (size) => <span style={{ fontVariantNumeric: "tabular-nums" }}><GeuLead parts={shareParts} px={size} sign="+" />{shareParts.trail ? <span
+    style={geuLensTrailStyle(size, { letterSpacing: 0 })}
   >{` ${shareParts.trail}`}</span> : null}</span>;
   const optionButton = (key, label, value, extra = {}) => {
     const chosen = picked === value;

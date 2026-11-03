@@ -129,7 +129,7 @@ function ChoiceMoney({ amount, code, size, color, sign, fit }) {
       fontFamily: T.fontDisplay,
       display: "inline-block"
     }}
-  >{sign || ""}{parts.lead}{parts.trail && <span style={{ fontSize: geuLensTrailSize(usePx), fontWeight: 800 }}> {parts.trail}</span>}</span>;
+  ><GeuLead parts={parts} px={usePx} sign={sign || ""} />{parts.trail && <span style={geuLensTrailStyle(usePx)}> {parts.trail}</span>}</span>;
 
   if (!fit) return figure;
   // The host is what has the room; the span inside is what is measured
@@ -434,7 +434,7 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
     >
         Last 6 months
       </div><div style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkFaint }}>
-        Amounts in {chartUnit.lead}{chartUnit.trail ? ` ${chartUnit.trail}` : ""}
+        Amounts in {chartUnit.lead}{chartUnit.trail ? <span style={geuLensTrailStyle(15.5)}>{` ${GEU_LENS_BAR} ${chartUnit.trail}`}</span> : ""}
       </div>{series.skipped > 0 && <div style={{ fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>
         {series.skipped} not in {code}
       </div>}</div></div>

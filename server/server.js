@@ -71,7 +71,7 @@ const {
 // card in the app are the same notification rather than two about one
 // payment. See that file's header for why the wording is duplicated here
 // instead of imported from the frontend.
-const { paymentBannerText, shareBannerText, notifDiscIcon } = require('./lib/notificationText');
+const { paymentBannerText, shareBannerText, notifDiscIcon, formatMoneyPair } = require('./lib/notificationText');
 
 // Audit fix: AuditLog was fully defined (schema, indexes) but never written
 // to anywhere in this file — every route that could meaningfully report a
@@ -8842,7 +8842,6 @@ paylaterPool.configurePaylaterPool({ computeSeed });
 require('./lib/creatorShareView').configureCreatorShareView({ computeSeed });
 const regionNames = (() => { try { return new Intl.DisplayNames(['en'], { type: 'region' }); } catch (e) { return null; } })();
 const countryNameOf = (iso) => { try { return (regionNames && regionNames.of(String(iso || '').toUpperCase())) || String(iso || ''); } catch (e) { return String(iso || ''); } };
-const money2 = (n) => (Math.floor((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // GET /api/corridor/limit?from=<your ID>&to=<their ID, mobile or link>
 //
@@ -10459,7 +10458,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     if (senderCountry.iso !== receiverCountry.iso) {
       const rule = await corridorRules.ruleFor(senderCountry.iso, receiverCountry.iso);
       if (rule && (rule.paused || (rule.cap && sourceFaceAmount > rule.cap))) {
-        return corridorRules.refusal(res, rule, countryNameOf(receiverCountry.iso), `${money2(rule.cap)} ${senderCurrency}`);
+        return corridorRules.refusal(res, rule, countryNameOf(receiverCountry.iso), formatMoneyPair(Math.floor((Number(rule.cap) || 0) * 100) / 100, senderCurrency));
       }
     }
 
@@ -11228,7 +11227,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
           success: false,
           code: 'corridor_limit',
           message: maxSend > 0
-            ? `Too large to send to ${intoName} right now. Nothing left your balance. You can send up to ${money2(maxSend)} ${senderCurrency}.`
+            // 0224: both names, like every figure the app shows — the payer's
+            // own money by its sign, then GEU ("85,500.00₹ │ GEU"). Floored to
+            // the currency's places first, so a yen limit is never rounded UP.
+            ? `Too large to send to ${intoName} right now. Nothing left your balance. You can send up to ${formatMoneyPair(Math.floor(maxSend * 10 ** decimalsFor(senderCurrency)) / 10 ** decimalsFor(senderCurrency), senderCurrency)}.`
             : `Payments to ${intoName} are paused right now. Nothing left your balance.`,
           countryIso: transferError.countryIso,
           countryName: intoName,
@@ -11588,12 +11590,13 @@ function notificationDisplayName(partySnapshot, user) {
 }
 
 // In the currency's own precision — a zero-decimal currency never reads "500.00".
-function formatNotificationAmount(amount, currency) {
-  const places = decimalsFor(currency);
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: places,
-    maximumFractionDigits: places,
-  }).format(Number(amount) || 0);
+// 0224: the figure with BOTH its names, as the app writes every figure —
+// "500.00₹ │ GEU" for the reader's own money, "40.00 USD │ GEU" for anyone
+// else's (`own: false`). The server cannot see the lens, so this is the
+// local form, the app's default. Places still come from decimalsFor, so a
+// yen figure stays "1,500¥ │ GEU".
+function formatNotificationAmount(amount, currency, { own = true } = {}) {
+  return formatMoneyPair(amount, currency, { own });
 }
 
 // Writes the payer's and the payee's notification for one payment. Upserted
@@ -11636,7 +11639,7 @@ async function recordPaymentNotifications({
     {
       userId: sender._id,
       title: 'Money sent',
-      message: `You sent ${formatNotificationAmount(debitAmount, senderCurrency)} ${senderCurrency} to ${receiverName}`,
+      message: `You sent ${formatNotificationAmount(debitAmount, senderCurrency)} to ${receiverName}`,
       direction: 'sent',
       amount: debitAmount,
       currency: senderCurrency,
@@ -11684,7 +11687,7 @@ async function recordPaymentNotifications({
       // the same number History reads.
       userId: receiver._id,
       title: 'Money received',
-      message: `You received ${formatNotificationAmount(transaction.amount, destinationCurrency)} ${destinationCurrency} from ${senderName}`,
+      message: `You received ${formatNotificationAmount(transaction.amount, destinationCurrency)} from ${senderName}`,
       direction: 'received',
       amount: transaction.amount,
       currency: destinationCurrency,
@@ -11871,7 +11874,7 @@ async function recordShareNotifications({ shareTransaction, paymentTransaction, 
       // The payee, who gave it. `fromUserId` on the share leg is theirs.
       userId: receiver._id,
       title: 'Creator Share sent',
-      message: `You shared ${formatNotificationAmount(payeeAmount, payeeCurrency)} ${payeeCurrency} with ${payerName}${onPayment}`,
+      message: `You shared ${formatNotificationAmount(payeeAmount, payeeCurrency)} with ${payerName}${onPayment}`,
       direction: 'sent',
       amount: payeeAmount,
       currency: payeeCurrency,
@@ -11886,7 +11889,7 @@ async function recordShareNotifications({ shareTransaction, paymentTransaction, 
       // The payer, who got it back.
       userId: sender._id,
       title: 'Creator Share received',
-      message: `You earned ${formatNotificationAmount(payerAmount, payerCurrency)} ${payerCurrency} back from ${payeeName}${onPayment}`,
+      message: `You earned ${formatNotificationAmount(payerAmount, payerCurrency)} back from ${payeeName}${onPayment}`,
       direction: 'received',
       amount: payerAmount,
       currency: payerCurrency,
@@ -13558,7 +13561,11 @@ async function closeComplaintByReturn({ complaintId, transaction, sender, receiv
     const full = owedCurrency && String(transaction.currency).toUpperCase() === String(owedCurrency).toUpperCase()
       ? paid >= owed * 0.99
       : true;
-    const amountText = `${formatNotificationAmount(paid, transaction.currency)} ${transaction.currency}`;
+    // The case chat is read by both sides, who may hold different money, so
+    // it names the currency by its code; the reporter's own notification
+    // below names it by its sign. Both carry GEU (0224).
+    const amountText = formatNotificationAmount(paid, transaction.currency, { own: false });
+    const ownAmountText = formatNotificationAmount(paid, transaction.currency);
     doc.messages.push({ from: null, text: `${notificationDisplayName(null, sender)} sent back ${amountText}` });
     if (full) {
       doc.status = 'returned';
@@ -13569,7 +13576,7 @@ async function closeComplaintByReturn({ complaintId, transaction, sender, receiv
     await doc.save();
     await notifyComplaintParty(doc.reporterId, {
       title: full ? `Money sent back · ${doc.ref}` : `Part sent back · ${doc.ref}`,
-      message: `${notificationDisplayName(null, sender)} sent back ${amountText}.`,
+      message: `${notificationDisplayName(null, sender)} sent back ${ownAmountText}.`,
       complaint: doc,
     });
     return doc;

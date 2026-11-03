@@ -207,7 +207,9 @@ describe("the send button names the choice without breaking", () => {
     // verb and the figure once.
     const button = src.slice(src.indexOf('className="send-btn"'));
     const block = button.slice(0, button.indexOf("</button>"));
-    assert.match(block, /<span style=\{\{ whiteSpace: "nowrap" \}\}>\{verb\} \{parts\.lead\}/,
+    // 0224: the figure's lead is drawn by GeuLead (name at ¾), still inside
+    // the one span.
+    assert.match(block, /<span style=\{\{ whiteSpace: "nowrap" \}\}>\{verb\} <GeuLead parts=\{parts\} px=\{16\} \/>/,
       "the verb, the figure and its unit are no longer one unbreakable span");
   });
 

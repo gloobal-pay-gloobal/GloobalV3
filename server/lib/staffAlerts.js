@@ -67,7 +67,7 @@ const localNow = (tz) => new Date(Date.now() + tzMinutes(tz) * 60000);
 const dayKey = (d = new Date()) => d.toISOString().slice(0, 10);
 // GEU on every figure, as the app writes it in a notification: rupees as
 // "X₹ │ GEU", any other money by its code ("X USD").
-const money = (n, c) => { const v = Math.round(Math.abs(Number(n)) * 100) / 100; const sign = Number(n) < 0 ? '−' : ''; const code = String(c || 'INR').toUpperCase(); return code === 'INR' || code === '₹' ? `${sign}${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}₹ │ GEU` : `${sign}${v.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${code}`; };
+const money = (n, c) => { const v = Math.round(Math.abs(Number(n)) * 100) / 100; const sign = Number(n) < 0 ? '−' : ''; const code = String(c || 'INR').toUpperCase(); return code === 'INR' || code === '₹' ? `${sign}${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}₹ │ GEU` : `${sign}${v.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${code} │ GEU`; }; // 0224: GEU on every figure
 
 function createStaffAlerts({ staff, pushService, lookupLimit, writeLimit, adminToday }) {
   const kindsFor = (role) => Object.keys(KINDS).filter((k) => KINDS[k].roles.includes(role));

@@ -104,9 +104,14 @@ function GeuFigure({
     return <span style={hostStyle}>{sign}{parts.lead}</span>;
   }
 
+  // 0224: both names the same size; the one you read in is bright and comes
+  // first, the other follows the bar, dimmed. The number stays full size.
+  const nameSize = geuLensTrailSize(px);
+  const unitStyle = { fontSize: nameSize, fontWeight: 800 };
   const trailStyle = {
-    fontSize: geuLensTrailSize(px),
-    fontWeight: trailWeight,
+    fontSize: nameSize,
+    fontWeight: 700,
+    opacity: GEU_LENS_TRAIL_DIM,
     // The bar and the unit after it are one token. Letting them wrap apart
     // produces a line ending in "│", which reads as a figure whose unit got
     // cut off — worse than either half alone.
@@ -114,7 +119,7 @@ function GeuFigure({
   };
   if (trailColor) trailStyle.color = trailColor;
 
-  return <span style={hostStyle}>{sign}{parts.lead}<span style={trailStyle}> {parts.trail}</span></span>;
+  return <span style={hostStyle} data-geu={lens === GEU_LENS_GEU ? "geu" : "local"}>{sign}{parts.num}<span style={unitStyle}>{parts.glue}{parts.unit}</span><span style={trailStyle}> {parts.trail}</span></span>;
 }
 
 // ── THE SAME RULE, FOR A FIGURE ALREADY WRITTEN SHORT (0198) ────────────
@@ -129,9 +134,9 @@ function GeuFigure({
 //
 //     local lens   ₹24,038 │ GEU        geu lens   24,038 GEU │ ₹
 //
-// Only when the figure is in the viewer's own currency. A figure in
-// somebody else's (a USD total read in India) is left as it is: GEU is
-// never a label on money that is not yours.
+// 0224: on EVERY figure, yours or not. Your own money is named by its sign,
+// anyone else's by its code — a USD total read in India is
+// "1,200 USD │ GEU" — so GEU never stands without the money it is in.
 function geuTwinBare(amount, currency, { compact = false, whole = false } = {}) {
   const n = Number(amount) || 0;
   const big = compact && Math.abs(n) >= 1000;
@@ -146,16 +151,49 @@ function geuTwinBare(amount, currency, { compact = false, whole = false } = {}) 
   }
 }
 
-function GeuTwin({ amount, currency, own = null, compact = false, whole = false, trailColor = null }) {
+// `digits`, when given, is a number a screen already wrote its own way
+// (fmtCompact's "20K") and is drawn as it is; only the names are added.
+function GeuTwin({ amount, currency, own = null, compact = false, whole = false, trailColor = null, digits = null }) {
   const lens = useGeuLens();
   const code = String(currency || "").toUpperCase();
   const ownCode = String(own || currency || "").toUpperCase();
-  const local = coverageMoney(amount, code, { compact, whole });
-  if (!geuLensSameCurrency(code, ownCode)) return <span style={{ whiteSpace: "nowrap" }}>{local}</span>;
-  const trailStyle = { fontSize: `${GEU_LENS_TRAIL_RATIO}em`, fontWeight: 800, marginLeft: GEU_LENS_BAR_GAP / 2, whiteSpace: "nowrap" };
+  const names = geuLensNames(code, lens, ownCode);
+  // 0224: GEU on every figure, yours or not — the money it is in always
+  // beside it. The name you read in first and bright, the other dimmed.
+  if (!names) return <span style={{ whiteSpace: "nowrap" }}>{coverageMoney(amount, code, { compact, whole })}</span>;
+  const nameStyle = { fontSize: `${GEU_LENS_TRAIL_RATIO}em`, fontWeight: 800 };
+  const trailStyle = { fontSize: `${GEU_LENS_TRAIL_RATIO}em`, fontWeight: 700, opacity: GEU_LENS_TRAIL_DIM, marginLeft: GEU_LENS_BAR_GAP / 2, whiteSpace: "nowrap" };
   if (trailColor) trailStyle.color = trailColor;
-  if (lens === GEU_LENS_GEU) {
-    return <span data-geu="geu" style={{ whiteSpace: "nowrap" }}>{geuTwinBare(amount, code, { compact, whole })} {COIN_TICKER}<span style={trailStyle}>{GEU_LENS_BAR} {String(typeof currencySuffix === "function" ? currencySuffix(code) : code).trim()}</span></span>;
-  }
-  return <span data-geu="local" style={{ whiteSpace: "nowrap" }}>{local}<span style={trailStyle}>{GEU_LENS_BAR} {COIN_TICKER}</span></span>;
+  return <span data-geu={lens === GEU_LENS_GEU ? "geu" : "local"} style={{ whiteSpace: "nowrap" }}>{digits != null ? digits : geuTwinBare(amount, code, { compact, whole })}<span style={nameStyle}>{geuLensGlue(names.lead)}{names.lead}</span><span style={trailStyle}>{GEU_LENS_BAR} {names.trail}</span></span>;
+}
+
+// The same pair as a STRING, for a place that cannot take a node: an SVG
+// <text>, a sentence built in a template, an aria-label. Same digits as
+// GeuTwin and as coverageMoney's defaults (compact from a thousand), so a
+// screen that swaps one for the other changes only the names, never the
+// number (0224).
+function geuTwinText(amount, currency, { lens = GEU_LENS_LOCAL, own = null, compact = true, whole = false } = {}) {
+  const code = String(currency || "").toUpperCase();
+  const names = geuLensNames(code, lens, String(own || currency || "").toUpperCase());
+  if (!names) return coverageMoney(amount, code, { compact, whole });
+  return `${geuTwinBare(amount, code, { compact, whole })}${geuLensGlue(names.lead)}${names.lead} ${GEU_LENS_BAR} ${names.trail}`;
+}
+
+// ── FOR A FIGURE DRAWN BY HAND (0224) ───────────────────────────────────
+//
+// Screens that lay a figure out themselves (receipts, history rows, the
+// processing sheet…) use these, so they look exactly like GeuFigure: the
+// number full size; the name you read in at ¾, bright; the bar and the other
+// name at ¾, dimmed.
+function geuLensNameStyle(px) {
+  return { fontSize: geuLensTrailSize(px), fontWeight: 800 };
+}
+function geuLensTrailStyle(px, extra) {
+  return { fontSize: geuLensTrailSize(px), fontWeight: 700, opacity: GEU_LENS_TRAIL_DIM, whiteSpace: "nowrap", ...(extra || {}) };
+}
+// The lead of geuLensBarParts: the number, then its name at ¾. A lead built
+// some other way (no `num`) is drawn as it is.
+function GeuLead({ parts, px, sign = "" }) {
+  if (!parts || parts.num == null || !parts.unit) return <>{sign}{parts ? parts.lead : ""}</>;
+  return <>{sign}{parts.num}<span style={geuLensNameStyle(px)}>{parts.glue}{parts.unit}</span></>;
 }

@@ -84,7 +84,9 @@ function AddBankScreen({ onClose, country: countryProp, balance = 0, myName = ""
   const country = countryProp || COUNTRY_BY_ISO?.IN || ALL_COUNTRIES?.[0] || { iso: "IN", name: "India", flag: "🇮🇳" };
   const india = country.iso === "IN";
   const ccy = (typeof COUNTRY_CURRENCY !== "undefined" && COUNTRY_CURRENCY[country.iso]) || "INR";
-  const one = bankMoneyFmt(1, ccy).replace(/\.00$/, "");
+  // 0224: the one-rupee check is money too, so it carries GEU beside it.
+  const lens = useGeuLens();
+  const one = geuLensBarMoney(1, ccy, lens, ccy).replace(/\.00(?=\D|$)/, "");
   const popular = (typeof BANKS_BY_COUNTRY !== "undefined" && BANKS_BY_COUNTRY[country.iso]) || [];
   const all = useMemo19(() => linkBankList(country.iso).slice().sort((a, b) => a.name.localeCompare(b.name)), [country.iso]);
 

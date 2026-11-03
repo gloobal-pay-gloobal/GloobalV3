@@ -121,7 +121,7 @@ try {
   const capped = await call("POST", "/api/admin/corridors", { ...S, token: fin, body: { from: "IN", to: "US", paused: false, cap: 2000, reason: "Spike explained; capping for a week" } });
   check("Finance swaps the pause for a cap, in rupees", capped.status === 201 && capped.body.rules.filter((r) => r.active).length === 1 && capped.body.rules[0].cap === 2000 && capped.body.rules[0].capCurrency === "INR");
   const over = await toUS(2640, "op-2");
-  check("above the cap: refused, naming it", over.status === 400 && over.body?.code === "corridor_cap" && /2,000.00 INR/.test(over.body.message), JSON.stringify(over.body));
+  check("above the cap: refused, naming it (0224: in the payer's money, with GEU)", over.status === 400 && over.body?.code === "corridor_cap" && /2,000\.00₹ │ GEU/.test(over.body.message), JSON.stringify(over.body));
   check("below it: goes through", (await toUS(880, "op-3")).status === 201);
   const lim2 = await call("GET", `/api/corridor/limit?from=${encodeURIComponent(asha.id)}&to=${encodeURIComponent(john.id)}`, { token: asha.token });
   check("the send screen's limit is the cap", lim2.body?.capped === true && lim2.body.maxSend === 2000);

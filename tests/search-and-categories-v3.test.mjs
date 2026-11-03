@@ -72,7 +72,9 @@ test("the route takes the new filters, and the setup screen saves the new fields
   assert.match(setup, /<BazaarSubcategoryPicker category=\{category\} value=\{subcategory\} onChange=\{setSubcategory\} \/>/);
   assert.match(setup, /<BazaarAlsoPicker primary=\{category\} value=\{category2\} onChange=\{setCategory2\} \/>/);
   const c = client();
-  assert.match(c, /Under \{ccySymbol\}\{cap\}/);
+  // 0224: the price caps still show, now with both names (the money and GEU).
+  assert.match(c, /Under \{capText\(cap\)\}/);
+  assert.match(c, /geuLensBarMoney\(n, capCode, lens, capOwn\)/);
   // 0184: Trending and New are sort orders in the filter sheet now.
   assert.match(c, /\{ key: "week", label: "Trending this week" \}/);
   assert.match(c, /\{ key: "new", label: "New on GLOOBAL" \}/);

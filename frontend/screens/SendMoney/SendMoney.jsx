@@ -708,16 +708,14 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     const filedUnder = choiceId
       || (essentialsAppliedRef.current > 0 ? choicesSystemCategoryId(choicesState, "essentials") : null);
     choicesTagQuietly(confirmedTxnId, filedUnder);
+    // 0224: the toast names the figure the way every figure is named — the
+    // money it is in and GEU, in the lens's order — instead of the currency's
+    // long name before bare digits.
+    const sentText = geuLensBarMoney(senderAmount, top.currency, lens, top.currency);
     showToast2(
       settledRemotely
-        ? `Sending ${CURRENCIES[top.currency].label} ${fmt(
-            senderAmount,
-            top.currency
-          )} to ${bottom.country} \xB7 via ${payMethod || "Gloobal Bank"}`
-        : `Not sent — ${CURRENCIES[top.currency].label} ${fmt(
-            senderAmount,
-            top.currency
-          )} recorded locally only, no registered GLOOBAL account to credit`
+        ? `Sending ${sentText} to ${bottom.country} \xB7 via ${payMethod || "Gloobal Bank"}`
+        : `Not sent — ${sentText} recorded locally only, no registered GLOOBAL account to credit`
     );
     const { receipt: receipt2, historyEntry } = buildTransactionSnapshot({
       sender: top,
@@ -1893,7 +1891,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     const pair = geuLensUnitPair(bottom.currency, lens, top.currency);
     if (!pair.lead) return CURRENCY_SYMBOL[bottom.currency] || bottom.currency;
     return <>{pair.lead}{pair.trail && <span
-      style={{ fontSize: geuLensTrailSize(20), fontWeight: 800 }}
+      style={geuLensTrailStyle(20)}
     > {GEU_LENS_BAR} {pair.trail}</span>}</>;
   })()}</span></div>{
     /* WHAT THIS PAYMENT IS FOR, under the box it belongs to.
@@ -2011,7 +2009,14 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       flexShrink: 0
     }}
     aria-label={`Your currency: ${top.currency} \u2014 fixed to your account, can't be changed`}
-  >{top.currency}</span></div></div></>}</div>}{
+  >{(() => {
+    // 0224: this pill was the bare code, so "You pay" was the one figure on
+    // the screen with no GEU beside it. It names both now, like the
+    // receiver's box: the name you read in first, the other dimmed.
+    const pair = geuLensUnitPair(top.currency, lens, top.currency);
+    if (!pair.lead) return top.currency;
+    return <>{pair.lead}{pair.trail && <span style={geuLensTrailStyle(13)}>{` ${GEU_LENS_BAR} ${pair.trail}`}</span>}</>;
+  })()}</span></div></div></>}</div>}{
     /* SEND BUTTON — just my own currency and amount now, nothing
        about what the receiver gets. */
   }{searchStage === "found" && <div style={{ marginTop: topOpen ? 0 : 20 }}><div
@@ -2176,7 +2181,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     // about the budget rather than repeating which category it belongs to.
     return <div style={{ fontSize: 11, color: T.inkFaint, marginTop: 8 }}><span
       style={{ fontWeight: 700, color: budget.over ? T.negative : T.inkSoft, whiteSpace: "nowrap" }}
-    >{parts.lead}{parts.trail && <span style={{ fontSize: geuLensTrailSize(11) }}> {parts.trail}</span>}</span>{budget.over ? " over this month" : " left this month"}</div>;
+    ><GeuLead parts={parts} px={11} />{parts.trail && <span style={geuLensTrailStyle(11)}> {parts.trail}</span>}</span>{budget.over ? " over this month" : " left this month"}</div>;
   })()}</div>}{
     /* The whole section, reached from the strip's "All". Rendered here
        rather than handed up to the Dashboard because everything it can do
@@ -2197,7 +2202,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     if (!paused && !overCorridorLimit && !nearCorridorLimit) return null;
     return <div data-testid="send-corridor-limit" role={overCorridorLimit ? "alert" : void 0} style={{ marginTop: topOpen ? 0 : 18, marginBottom: -10, borderRadius: 14, padding: "10px 12px", fontSize: 12.5, fontWeight: 700, lineHeight: 1.45, background: overCorridorLimit || paused ? T.negativeSoft : T.surfaceAlt, color: overCorridorLimit || paused ? T.negative : T.inkSoft }}>{paused
       ? `Payments to ${corridorLimit.countryName} are paused right now.`
-      : <>{overCorridorLimit ? "Too large to send to " : "You can send up to "}{overCorridorLimit ? `${corridorLimit.countryName} right now. You can send up to ` : ""}<span style={{ whiteSpace: "nowrap", color: overCorridorLimit ? T.negative : T.ink }}>{maxParts.lead}{maxParts.trail && <span style={{ fontSize: geuLensTrailSize(12.5) }}> {maxParts.trail}</span>}</span>{overCorridorLimit ? "." : ` to ${corridorLimit.countryName} right now.`}</>}</div>;
+      : <>{overCorridorLimit ? "Too large to send to " : "You can send up to "}{overCorridorLimit ? `${corridorLimit.countryName} right now. You can send up to ` : ""}<span style={{ whiteSpace: "nowrap", color: overCorridorLimit ? T.negative : T.ink }}><GeuLead parts={maxParts} px={12.5} />{maxParts.trail && <span style={geuLensTrailStyle(12.5)}> {maxParts.trail}</span>}</span>{overCorridorLimit ? "." : ` to ${corridorLimit.countryName} right now.`}</>}</div>;
   })()}{searchStage === "found" && payLocationNeedsAction(payLocation.state) && <PayLocationNotice
     state={payLocation.state}
     busy={payLocation.busy}
@@ -2219,8 +2224,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     // once, and between the verb and the figure once.
     const parts = geuLensBarParts(senderAmount, top.currency, lens, top.currency);
     const verb = bottom.registered === false ? "Simulate" : pickedChoice ? "Pay" : "Send";
-    return <span style={{ whiteSpace: "nowrap" }}>{verb} {parts.lead}{parts.trail && <span
-      style={{ fontSize: geuLensTrailSize(16), fontWeight: 800 }}
+    return <span style={{ whiteSpace: "nowrap" }}>{verb} <GeuLead parts={parts} px={16} />{parts.trail && <span
+      style={geuLensTrailStyle(16)}
     > {parts.trail}</span>}</span>;
   })()}</button>}</>}{
     /* Funding source — the four ways a transfer can be paid. Picking
@@ -2231,7 +2236,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     aria-modal="true"
     aria-label="Choose how to pay"
     onClick={requestClosePayMethod}
-  ><div className="pin-modal" onClick={(e) => e.stopPropagation()}><button className="pin-close" onClick={requestClosePayMethod} aria-label="Cancel"><X4 size={18} /></button><h3 className="pin-title">Pay with</h3><p className="pin-sub">{CURRENCIES[top.currency].label} {fmt(senderAmount, top.currency)}{top.currency !== bottom.currency && <> — they get {CURRENCY_SYMBOL[bottom.currency] || ""}{fmt(receiverAmount, bottom.currency)} {bottom.currency} at 1 {top.currency} = {fmt(convert(1, top.currency, bottom.currency), bottom.currency)} {bottom.currency}</>}{" "}
+  ><div className="pin-modal" onClick={(e) => e.stopPropagation()}><button className="pin-close" onClick={requestClosePayMethod} aria-label="Cancel"><X4 size={18} /></button><h3 className="pin-title">Pay with</h3><p className="pin-sub"><GeuFigure amount={senderAmount} currency={top.currency} lens={lens} own={top.currency} size={13.5} />{top.currency !== bottom.currency && <> — they get <GeuFigure amount={receiverAmount} currency={bottom.currency} lens={lens} own={top.currency} size={13.5} /> at 1 {top.currency} = {fmt(convert(1, top.currency, bottom.currency), bottom.currency)} {bottom.currency}</>}{" "}
               to {bottom.phone}</p><div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6, textAlign: "left" }}>{[
     { key: "gbank", label: "Gloobal Bank", displayLabel: <GloobalWordmark suffix=" Bank" /> },
     {

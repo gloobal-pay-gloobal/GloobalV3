@@ -477,7 +477,12 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     : query
       ? "Shops on GLOOBAL"
       : sort === "paid" && !where ? "Most paid today" : `${sortLabel}${where}`;
-  const ccySymbol = (typeof COUNTRY_CURRENCY !== "undefined" && typeof CURRENCY_SYMBOL !== "undefined" && CURRENCY_SYMBOL[COUNTRY_CURRENCY[country]]) || "";
+  // 0224: a price cap is money, so it names the money it is in and GEU, in
+  // the lens's order ("Under 500₹ │ GEU"). Whole numbers, as the caps are.
+  const lens = useGeuLens();
+  const capCode = (typeof COUNTRY_CURRENCY !== "undefined" && COUNTRY_CURRENCY[country]) || "";
+  const capOwn = geuLensOwnCurrency() || capCode;
+  const capText = (n) => (capCode ? geuLensBarMoney(n, capCode, lens, capOwn).replace(/\.00(?=\D|$)/, "") : String(n));
 
   // ── WHAT IS ON, AS CHIPS (0184) ───────────────────────────────────────
   //
@@ -494,7 +499,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   if (minRating) active.push({ key: "rating", label: "4★ & up", clear: () => setMinRating(0) });
   if (minShare) active.push({ key: "share", label: bazaarShareLabel(minShare), clear: () => setMinShare(null) });
   if (sort !== "paid") active.push({ key: "sort", label: sortLabel, clear: () => setSort("paid") });
-  if (maxPrice && query) active.push({ key: "price", label: `Under ${ccySymbol}${maxPrice}`, clear: () => setMaxPrice(0) });
+  if (maxPrice && query) active.push({ key: "price", label: `Under ${capText(maxPrice)}`, clear: () => setMaxPrice(0) });
   const activeCount = active.length;
   useEffect59(() => { if (onActiveChange) onActiveChange(activeCount); }, [activeCount]);
   const resetAll = () => {
@@ -800,7 +805,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       onClick={() => setMaxPrice((v) => (v === cap ? 0 : cap))}
       aria-pressed={maxPrice === cap}
       style={pill(maxPrice === cap)}
-    >Under {ccySymbol}{cap}</button>) : null}</div></div><div>{sheetLabel("Sort by")}<div role="radiogroup" aria-label="Sort" style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{BAZAAR_SORT_INFO.filter((o) => o.key !== "near" || (nearOn && here)).map((o) => <button
+    >Under {capText(cap)}</button>) : null}</div></div><div>{sheetLabel("Sort by")}<div role="radiogroup" aria-label="Sort" style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{BAZAAR_SORT_INFO.filter((o) => o.key !== "near" || (nearOn && here)).map((o) => <button
       key={o.key}
       role="radio"
       aria-checked={sort === o.key}

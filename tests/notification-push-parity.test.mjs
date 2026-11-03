@@ -24,6 +24,22 @@ import vm from "node:vm";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
+// 0224: what the headline needs to write a figure's two names. Function
+// declarations hoist, so a repeat of one already lifted is harmless.
+const GEU_PAIR = () => {
+  const lens = read("frontend/features/geuLens/geuLens.js");
+  const fn = (name) => {
+    const at = lens.indexOf(`function ${name}(`);
+    return lens.slice(at, lens.indexOf("\n}\n", at) + 3);
+  };
+  return [
+    read("backend/data/currencies.js").match(/var COIN_TICKER = "[^"]+";/)[0],
+    lens.match(/var GEU_LENS_BAR = "[^"]+";/)[0],
+    fn("geuLensSameCurrency"), fn("geuLensBarUnit"), fn("geuLensNames"), fn("geuLensDigits"),
+    lens.match(/function geuLensGlue\(name\) \{[^\n]*\}/)[0],
+    fn("geuLensBarMoney"), fn("geuLensSpokenMoney"),
+  ];
+};
 
 test("foreground banners use the push's per-payment tag", () => {
   const src = read("frontend/hooks/usePaymentNotifications.js");
@@ -122,6 +138,9 @@ function notificationsHarness() {
     lift(read("frontend/features/geuLens/geuLens.js"), "geuLensMoney"),
     lift(read("frontend/features/geuLens/geuLens.js"), "geuLensSameCurrency"),
     lift(read("frontend/features/geuLens/geuLens.js"), "geuLensOwnMoney"),
+    // 0224: the headline writes BOTH names (the money, then GEU), so the
+    // pair's whole rule comes along — see geuLensSpokenMoney.
+    ...GEU_PAIR(),
     lift(read("frontend/components/common/flipIcons.jsx"), "flipSeedHash"),
     "var LOGO_FLIP_COLORS = new Array(8);",
     lift(read("frontend/components/cards/notificationCard.jsx"), "gloobalNotifHeadline"),
@@ -359,10 +378,11 @@ describe("the banner names the figure the server recorded", () => {
       assert.ok(row, "the fake recorded no payment");
 
       // The debit the SERVER recorded, formatted the way the app formats
-      // money: amount first, symbol after, grouped.
+      // money: amount first, symbol after, grouped — and (0224) GEU after a
+      // comma, the spoken form of the bar, since the OS draws this line.
       const expected = "\u2212" + row.sourceAmount.toLocaleString("en-US", {
         minimumFractionDigits: 2, maximumFractionDigits: 2
-      }) + "\u20B9";
+      }) + "\u20B9, GEU";
       assert.equal(shown[0].title, expected,
         `the tray disagrees with the ledger: banner ${shown[0].title}, recorded ${row.sourceAmount} ${row.sourceCurrency}`);
       // And it is the SENDER's side, not the receiver's £20 wearing a ₹.
@@ -460,6 +480,7 @@ describe("the notification the OS draws is the same one, open or closed", () => 
       cut(read("frontend/features/geuLens/geuLens.js"), 'var GEU_LENS_BAR_GAP = ', '\n'),
       lift(read("frontend/features/geuLens/geuLens.js"), "geuLensBarUnit"),
       lift(read("frontend/features/geuLens/geuLens.js"), "geuLensBarMoney"),
+      ...GEU_PAIR(),
       lift(read("frontend/components/common/flipIcons.jsx"), "flipSeedHash"),
       "var LOGO_FLIP_COLORS = new Array(8);",
       lift(card, "gloobalNotifHeadline"),
@@ -528,7 +549,9 @@ describe("the notification the OS draws is the same one, open or closed", () => 
     }
     assert.ok(fields.includes("timestamp"), "neither path is stamping a time any more");
     // And they are the values we mean, not two matching mistakes.
-    assert.equal(open.title, "\u22122,105.20\u20B9");
+    // 0224: the money first, then GEU — never GEU alone, never the money
+    // alone. A comma, because the OS may read this line aloud.
+    assert.equal(open.title, "\u22122,105.20\u20B9, GEU");
     assert.equal(open.body, "To Tom Whitfield");
     // The app logo in its colour for these two hours, on both paths.
     assert.match(open.icon, LOGO_ICON);

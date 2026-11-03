@@ -29,6 +29,10 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const { accountCountryIso } = require('./accountCountry');
 const { localCurrencyFor } = require('./countryCurrency');
+const { formatMoneyPair } = require('./notificationText');
+// 0224: rent figures in notifications carry both names, like every figure
+// in the app: the owner's own money by its sign ("12,000.00₹ │ GEU"); a
+// nudge to somebody else by the code, since their money may differ.
 
 const MANDATE_HEADER = 'x-gloobal-rent-mandate';
 const MANDATE_TTL_MS = 2 * 60 * 1000;
@@ -240,7 +244,7 @@ async function runRentAutoSettle(now = new Date()) {
     if (!paid && place.remindDaysBefore > 0 && inDays === place.remindDaysBefore && !(place.reminders || []).some((r) => r.month === month && r.kind === 'ahead')) {
       const owner = await User.findById(place.userId).select('_id').lean();
       if (owner) {
-        await Notification.create({ userId: owner._id, type: 'payment', title: `Rent in ${inDays} day${inDays === 1 ? '' : 's'} · ${place.name}`, message: place.mode === 'auto' ? `${place.amount} ${place.currency} will be sent by itself on the ${place.dueDay}. Keep it in GLOOBAL Bank.` : `${place.amount} ${place.currency} is due on the ${place.dueDay}. Tap to pay.`, metadata: { rentPlaceId: String(place._id) } }).catch(() => {});
+        await Notification.create({ userId: owner._id, type: 'payment', title: `Rent in ${inDays} day${inDays === 1 ? '' : 's'} · ${place.name}`, message: place.mode === 'auto' ? `${formatMoneyPair(place.amount, place.currency)} will be sent by itself on the ${place.dueDay}. Keep it in GLOOBAL Bank.` : `${formatMoneyPair(place.amount, place.currency)} is due on the ${place.dueDay}. Tap to pay.`, metadata: { rentPlaceId: String(place._id) } }).catch(() => {});
         await RentPlace.updateOne({ _id: place._id }, { $push: { reminders: { month, at: now, kind: 'ahead' } } });
       }
     }
@@ -250,7 +254,7 @@ async function runRentAutoSettle(now = new Date()) {
       done.push([String(place._id), await settleOne(place, now)]);
     } else if (!(place.reminders || []).some((r) => r.month === month && r.kind === 'day')) {
       const owner = await User.findById(place.userId).select('_id').lean();
-      if (owner) await Notification.create({ userId: owner._id, type: 'payment', title: `Rent due today · ${place.name}`, message: `${place.amount} ${place.currency}. Tap to pay.`, metadata: { rentPlaceId: String(place._id) } }).catch(() => {});
+      if (owner) await Notification.create({ userId: owner._id, type: 'payment', title: `Rent due today · ${place.name}`, message: `${formatMoneyPair(place.amount, place.currency)}. Tap to pay.`, metadata: { rentPlaceId: String(place._id) } }).catch(() => {});
       await RentPlace.updateOne({ _id: place._id }, { $push: { reminders: { month, at: now, kind: 'day' } } });
     }
   }
@@ -370,7 +374,7 @@ function registerRentRoutes(app, { requireAuth, writeLimit, lookupLimit, verifyP
       if (!other) return res.status(404).json({ success: false, message: 'No GLOOBAL account has that ID.' });
       const me = req.authUser;
       const myName = me.creatorProfile && me.creatorProfile.handle ? String(me.creatorProfile.handle).replace(/\./g, ' ') : (me.fullName && !me.nameIsMobile ? me.fullName : 'Your landlord');
-      await Notification.create({ userId: other._id, type: 'payment', title: `Rent for ${place.name}`, message: `${myName} is expecting ${place.amount} ${place.currency} on the ${place.dueDay}. Pay to ${me.symbolId}.`, metadata: { rentNudge: true, toSymbolId: me.symbolId, amount: place.amount } }).catch(() => {});
+      await Notification.create({ userId: other._id, type: 'payment', title: `Rent for ${place.name}`, message: `${myName} is expecting ${formatMoneyPair(place.amount, place.currency, { own: false })} on the ${place.dueDay}. Pay to ${me.symbolId}.`, metadata: { rentNudge: true, toSymbolId: me.symbolId, amount: place.amount } }).catch(() => {});
       await RentPlace.updateOne({ _id: place._id }, { $push: { reminders: { month, at: new Date(), kind: 'nudge' } } });
       return res.json({ success: true });
     } catch (error) {

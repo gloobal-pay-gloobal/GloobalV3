@@ -462,32 +462,37 @@ function geuLensBarUnit(currencyCode, lens, ownCurrency) {
 // currency on both sides, with no GEU anywhere — the founder confirmed both.
 // A quote that travels between two people cannot carry a unit whose meaning
 // depends on who is reading it, however well it is labelled.
-function geuLensBarMoney(amount, currencyCode, lens, ownCurrency) {
+// ── THE NAME YOU READ IN COMES FIRST, BRIGHT (0224) ─────────────────────
+//
+// Every figure carries both its names: the money it is in, and GEU. The lens
+// decides which comes first; the other follows the bar, dimmed (GeuFigure).
+//
+//     local lens   1,000.00₹ │ GEU        40.00 USD │ GEU
+//     geu lens     1,000.00 GEU │ ₹       40.00 GEU │ USD
+//
+// Your own money by its sign, anyone else's by its code. GEU is on every
+// figure, yours or not (founder, 3 Nov: "geu is missing in a few places") —
+// and still never WITHOUT the currency it is in, which is the safety rule
+// above.
+function geuLensNames(currencyCode, lens, ownCurrency) {
   const unit = geuLensBarUnit(currencyCode, lens, ownCurrency);
+  if (!unit) return null;
+  return lens === GEU_LENS_GEU ? { lead: COIN_TICKER, trail: unit } : { lead: unit, trail: COIN_TICKER };
+}
+function geuLensDigits(amount, currencyCode) {
+  const places = typeof currencyDecimals === "function" ? currencyDecimals(currencyCode) : 2;
+  return new Intl.NumberFormat("en-US", { minimumFractionDigits: places, maximumFractionDigits: places }).format(Number(amount) || 0);
+}
+// A sign sits on the number ("1,000₹"); a word stands apart ("40.00 USD").
+function geuLensGlue(name) { return /[A-Za-z]/.test(String(name || "")) ? " " : ""; }
+
+function geuLensBarMoney(amount, currencyCode, lens, ownCurrency) {
+  const names = geuLensNames(currencyCode, lens, ownCurrency);
   // No usable currency — a figure that is not money in any tender, or a code
   // that arrived malformed. GEU would have nothing to stand beside, so it is
   // not written: the rule above is the whole point.
-  if (!unit) return fmtMoney(amount, currencyCode);
-
-  if (lens !== GEU_LENS_GEU) {
-    // Toggle off: the real money leads and GEU follows — but only on the
-    // viewer's own figure, where GEU is the second NAME for it. On somebody
-    // else's, the second name is already their code, which the bar carries;
-    // adding GEU as a third would say "this is Gloobal" on a line that is
-    // about whose money it is.
-    const figure = fmtMoney(amount, currencyCode);
-    const trailing = geuLensSameCurrency(currencyCode, ownCurrency) ? COIN_TICKER : unit;
-    // The franc case: fmtMoney already ends in the code for a currency with
-    // no symbol of its own, so "1,450.25 CHF │ CHF" would name it twice.
-    if (String(figure).trim().toUpperCase().endsWith(String(trailing).toUpperCase())) return figure;
-    return `${figure} ${GEU_LENS_BAR} ${trailing}`;
-  }
-
-  // Toggle on: GEU leads, the bar names the real money. geuLensMoney is
-  // handed the lens directly rather than going through the own-money gate,
-  // because under this model every figure may carry the name — what keeps it
-  // honest is `unit`, which is never empty on this path.
-  return `${geuLensMoney(amount, currencyCode, GEU_LENS_GEU)} ${GEU_LENS_BAR} ${unit}`;
+  if (!names) return fmtMoney(amount, currencyCode);
+  return `${geuLensDigits(amount, currencyCode)}${geuLensGlue(names.lead)}${names.lead} ${GEU_LENS_BAR} ${names.trail}`;
 }
 
 // ── THE UNIT YOU CHOSE IS THE BIGGER ONE ────────────────────────────────
@@ -529,11 +534,17 @@ var GEU_LENS_TRAIL_RATIO = 0.75;
 function geuLensBarParts(amount, currencyCode, lens, ownCurrency) {
   const whole = geuLensBarMoney(amount, currencyCode, lens, ownCurrency);
   const at = whole.indexOf(GEU_LENS_BAR);
-  // No bar means no second unit — a figure with no currency at all, or one
-  // whose own text already ends in its code. It is one piece, at full size.
-  if (at < 0) return { lead: whole, trail: "" };
-  return { lead: whole.slice(0, at).trimEnd(), trail: whole.slice(at) };
+  if (at < 0) return { lead: whole, trail: "", num: whole, unit: "", glue: "" };
+  const names = geuLensNames(currencyCode, lens, ownCurrency);
+  const lead = whole.slice(0, at).trimEnd();
+  const glue = geuLensGlue(names.lead);
+  return { lead, trail: whole.slice(at), num: lead.slice(0, lead.length - names.lead.length - glue.length), unit: names.lead, glue };
 }
+
+// The name after the bar is the one you are NOT reading in: same size as the
+// name you are, but dimmed, so the lens is seen at a glance (0224). It used
+// to be "smaller, not fainter"; the founder asked for the light to say it.
+var GEU_LENS_TRAIL_DIM = 0.42;
 
 // ── THE SAME PAIR, FOR TEXT THAT IS SPOKEN RATHER THAN DRAWN ────────────
 //
@@ -595,17 +606,8 @@ function geuLensTrailSize(figurePx) {
 // what a foreign FIGURE reads in the same lens ("98.00€ │ EUR"). The symbol
 // is what you recognise; the code is which dollar it is.
 function geuLensUnitPair(currencyCode, lens, ownCurrency) {
-  const unit = geuLensBarUnit(currencyCode, lens, ownCurrency);
-  // Not a currency — no marker and no GEU, same as a figure with none.
-  if (!unit) return { lead: "", trail: "" };
-  if (lens === GEU_LENS_GEU) return { lead: COIN_TICKER, trail: unit };
-  const code = String(currencyCode || "").trim().toUpperCase();
-  const symbol = String(typeof currencySuffix === "function" ? currencySuffix(code) : code).trim();
-  const trail = geuLensSameCurrency(code, ownCurrency) ? COIN_TICKER : unit;
-  // The franc again: its symbol IS its code, so "CHF │ CHF" would name it
-  // twice. One name is the honest answer.
-  if (symbol.toUpperCase() === String(trail).toUpperCase()) return { lead: symbol, trail: "" };
-  return { lead: symbol, trail };
+  const names = geuLensNames(currencyCode, lens, ownCurrency);
+  return names || { lead: "", trail: "" };
 }
 
 // ── WHAT A FOREIGN FIGURE COST YOU ──────────────────────────────────────

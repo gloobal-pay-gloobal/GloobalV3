@@ -97,7 +97,9 @@ describe("the banner is gone, not hidden", () => {
     // The whole reason the three surfaces were worth testing together.
     // They share gloobalNotifHeadline and gloobalNotifSubline, and
     // tests/notification-card.test.mjs fails if they drift.
-    assert.match(hook, /gloobalNotifHeadline\(meta\)/);
+    // 0224: with the local lens and the figure's own currency, so the tray
+    // names it the way the server's push does — "+500.00₹, GEU".
+    assert.match(hook, /gloobalNotifHeadline\(meta, GEU_LENS_LOCAL, currencyCode\)/);
     assert.match(hook, /const body = gloobalNotifSubline\(meta\);/);
   });
 

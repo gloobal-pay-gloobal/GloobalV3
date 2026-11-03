@@ -250,7 +250,7 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, theme, onAdd, onR
        between two shops has to read a figure the same way in both, and a
        shop that could restyle its own total could make 550 read as 55.
        See shopTheme.js, SHOP_THEME_FORBIDDEN. */
-  }<GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} size={12.5} /></span></span>{
+  }<GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} own={geuLensOwnCurrency() || item.currency || ccyCode} size={12.5} /></span></span>{
     /* The control column is one fixed width with its contents pushed right,
        so a row with a stepper and a row with a bare + end on the same
        vertical line. */
@@ -376,7 +376,7 @@ function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, on
   }}>{item.note}</span> : null}<span style={{ display: "block", marginTop: "auto", paddingTop: 6, color: theme.ink }}>{
     /* The price is the app's, in every shop and every layout — see the
        row above and SHOP_THEME_FORBIDDEN. */
-  }<GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} size={12.5} /></span></div>;
+  }<GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} own={geuLensOwnCurrency() || item.currency || ccyCode} size={12.5} /></span></div>;
 }
 
 function CreatorPage({
@@ -818,7 +818,7 @@ function CreatorPage({
       fontSize: 12.5, fontWeight: 700, color: theme.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
     }}>{item.title}</div><div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginTop: 4, color: theme.ink
-    }}><GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} size={11.5} />{
+    }}><GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} own={geuLensOwnCurrency() || item.currency || ccyCode} size={11.5} />{
       isOwner || item.soldOut ? null : <button
         onClick={() => bump(item.id, 1)}
         aria-label={qty ? `One more ${item.title}` : `Add ${item.title}`}

@@ -199,6 +199,7 @@ const TransactionTag = require('./models/TransactionTag');
 const CategoryLink = require('./models/CategoryLink');
 const Complaint = require('./models/Complaint');
 const holds = require('./lib/holds');
+const corridorRules = require('./lib/corridorRules');
 // A picture chosen instead of an icon, for one category. Its own
 // collection for the same reason ProfilePhoto is: the category list is a
 // constant read and an image on every row would cost all of it.
@@ -8846,15 +8847,24 @@ app.get('/api/corridor/limit', lookupLimit, requireAuth, requireSelf('from'), as
     if (sendCurrency === receiveCurrency) return res.json({ crossBorder: false });
     const { rate } = await getRate(receiveCurrency, sendCurrency);
     const limit = await paylaterPool.maxIntoCountry({ countryIso: receiverCountry.iso, currency: receiveCurrency, counterCurrency: sendCurrency });
+    // A pause or a cap set on the staff site (0221) lowers what the send
+    // screen offers, before anyone types an amount.
+    const rule = await corridorRules.ruleFor(senderCountry.iso, receiverCountry.iso);
+    let maxSend = Math.floor(limit.max * rate * 100) / 100;
+    let maxReceive = limit.max;
+    if (rule && rule.paused) { maxSend = 0; maxReceive = 0; }
+    else if (rule && rule.cap && rule.cap < maxSend) { maxSend = rule.cap; maxReceive = Math.floor((rule.cap / rate) * 100) / 100; }
     return res.json({
       crossBorder: true,
       countryIso: receiverCountry.iso,
       countryName: countryNameOf(receiverCountry.iso),
       sendCurrency,
       receiveCurrency,
-      maxReceive: limit.max,
-      maxSend: Math.floor(limit.max * rate * 100) / 100,
+      maxReceive,
+      maxSend,
       rate,
+      paused: Boolean(rule && rule.paused),
+      capped: Boolean(rule && !rule.paused && rule.cap),
     });
   } catch (error) {
     console.error('Corridor limit error:', error);
@@ -8912,6 +8922,16 @@ require('./lib/support').createSupport({
   SupportConversation: require('./models/SupportConversation'),
   staff: admin,
 }).mount(app);
+
+// The rest of the staff site (0221): controls between countries, Server &
+// deploys, Growth, Shops, Risk signals, Live feed — and alerts to the team's
+// phones, checked every five minutes. See lib/staffOps.js, lib/staffAlerts.js.
+require('./lib/staffOps').createStaffOps({ staff: admin, lookupLimit, writeLimit }).mount(app);
+{
+  const staffAlerts = require('./lib/staffAlerts').createStaffAlerts({ staff: admin, pushService, lookupLimit, writeLimit, adminToday: admin.today });
+  staffAlerts.mount(app);
+  staffAlerts.start();
+}
 
 // Problems and holds for the staff site (0220). See lib/staffCases.js.
 require('./lib/staffCases').createStaffCases({
@@ -10404,6 +10424,16 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         success: false,
         message: "That amount is too small to convert into the recipient's currency.",
       });
+    }
+
+    // Controls on payments between two countries (0221), set on the staff
+    // site: a paused direction refuses; a cap refuses a payment above it, in
+    // the sender's own money.
+    if (senderCountry.iso !== receiverCountry.iso) {
+      const rule = await corridorRules.ruleFor(senderCountry.iso, receiverCountry.iso);
+      if (rule && (rule.paused || (rule.cap && sourceFaceAmount > rule.cap))) {
+        return corridorRules.refusal(res, rule, countryNameOf(receiverCountry.iso), `${money2(rule.cap)} ${senderCurrency}`);
+      }
     }
 
     // The client's own view of the corridor, checked but never trusted. A

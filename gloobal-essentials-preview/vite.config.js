@@ -29,9 +29,20 @@ import { VitePWA } from "vite-plugin-pwa";
 // - The document handler is NetworkFirst so a fresh deploy is picked up as
 //   soon as the network allows, falling back to cache when offline. It now
 //   lives in src/sw.js, registered against the same "html-cache" name.
+// version.json (0221): which commit this build is, so the staff site's
+// "Server & deploys" can say whether Netlify is serving the latest code.
+// Netlify sets COMMIT_REF during its build; a local build writes null.
+const versionFile = () => ({
+  name: "gloobal-version-json",
+  generateBundle() {
+    this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ commit: process.env.COMMIT_REF || null, builtAt: new Date().toISOString() }) });
+  },
+});
+
 export default defineConfig({
   plugins: [
     react(),
+    versionFile(),
     VitePWA({
       strategies: "injectManifest",
       srcDir: "src",

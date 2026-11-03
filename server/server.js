@@ -8905,6 +8905,9 @@ require('./lib/support').createSupport({
   staff: admin,
 }).mount(app);
 
+// Countries and Money & books for the staff site (0219). See lib/staffMoney.js.
+require('./lib/staffMoney').createStaffMoney({ staff: admin, lookupLimit, writeLimit }).mount(app);
+
 // The staff site's tools (0218): alerts on its own devices, and looking up
 // an account. See lib/staffTools.js.
 require('./lib/staffTools').createStaffTools({

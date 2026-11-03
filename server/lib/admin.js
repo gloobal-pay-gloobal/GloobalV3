@@ -399,7 +399,13 @@ function createAdmin(deps) {
       }
     });
 
-    app.get('/api/admin/me', lookupLimit, requireStaff(['admin', 'support', 'finance', 'risk', 'tech'], 'view.me'), async (req, res) => res.json({ success: true, admin: { symbolId: req.admin.symbolId, name: req.admin.fullName, role: req.staffRole }, expiresAt: new Date(req.adminExp).toISOString() }));
+    app.get('/api/admin/me', lookupLimit, requireStaff(['admin', 'support', 'finance', 'risk', 'tech'], 'view.me'), async (req, res) => {
+      // Their own currency (0219): the staff site writes it as "₹ │ GEU" and
+      // every other currency by its code, the way the app does.
+      let currency = 'INR';
+      try { currency = (await require('./countryCurrency').localCurrencyFor(require('./accountCountry').accountCountryIso(req.admin))) || 'INR'; } catch (e) { /* INR */ }
+      return res.json({ success: true, admin: { symbolId: req.admin.symbolId, name: req.admin.fullName, role: req.staffRole, currency }, expiresAt: new Date(req.adminExp).toISOString() });
+    });
 
     // ── Team & roles (admins only) ──
     app.get('/api/admin/team', lookupLimit, requireAdmin('view.team'), async (req, res) => {

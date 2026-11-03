@@ -14,7 +14,7 @@ const part = { type: Number, default: 0 };
 const CurrencyRowSchema = new mongoose.Schema({
   currency: { type: String, required: true },
   accounts: { type: Number, default: 0 },
-  should: { opening: part, pools: part, payouts: part, poolFunding: part, bankIn: part, bankOut: part },
+  should: { opening: part, pools: part, payouts: part, poolFunding: part, bankIn: part, bankOut: part, legacy: part },
   does: { balances: part, pools: part, custody: part },
   shouldExist: part,
   doesExist: part,
@@ -29,6 +29,8 @@ const BooksCheckSchema = new mongoose.Schema({
   // Every balance is test money until a bank partner is connected.
   testMoney: { type: Boolean, default: true },
   currencies: { type: [CurrencyRowSchema], default: [] },
+  // When a gap was last explained and set aside (BooksBaseline, 0214).
+  legacySince: { type: Date, default: null },
   // Corridor pools that exist as rows but were never given an opening
   // float (closed corridors). Listed so the check can say they were left
   // out of "should be here" rather than counted as money gone missing.

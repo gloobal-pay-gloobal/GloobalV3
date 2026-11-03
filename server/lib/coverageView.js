@@ -27,6 +27,7 @@ const PlatformAccount = require('../models/PlatformAccount');
 const PoolFunding = require('../models/PoolFunding');
 const BankTransfer = require('../models/BankTransfer');
 const BooksCheck = require('../models/BooksCheck');
+const BooksBaseline = require('../models/BooksBaseline');
 const Contribution = require('../models/Contribution');
 const AssetSeed = require('../models/AssetSeed');
 const Project = require('../models/Project');
@@ -185,11 +186,12 @@ const pct = (cur, prev) => (prev > 0 ? round2(((cur - prev) / prev) * 100) : nul
 //          + PayLater pool funding still outstanding
 //          + bank "add money" credited (test mode)
 //          − bank "send to bank" that left and was not returned
+//          + a gap set aside on a date, explained (BooksBaseline, 0214)
 //   does   = Σ account balances + Σ pool balances + Creator Share custody
 //
 // All of it is test money until a bank partner is connected, and the check
 // says so; the arithmetic is the same either way.
-async function computeBooks({ now = new Date() } = {}) {
+async function computeBooks({ now = new Date(), withBaseline = true } = {}) {
   const users = await User.find({}, 'balance countryIso mobileNumber shopOwnerId').lean();
   const isoCurrency = new Map();
   const currencyOf = async (u) => {
@@ -200,7 +202,7 @@ async function computeBooks({ now = new Date() } = {}) {
   const rows = {};
   const row = (c) => rows[c] || (rows[c] = {
     currency: c,
-    should: { opening: 0, pools: 0, payouts: 0, poolFunding: 0, bankIn: 0, bankOut: 0 },
+    should: { opening: 0, pools: 0, payouts: 0, poolFunding: 0, bankIn: 0, bankOut: 0, legacy: 0 },
     does: { balances: 0, pools: 0, custody: 0 },
     accounts: 0,
   });
@@ -246,17 +248,22 @@ async function computeBooks({ now = new Date() } = {}) {
     if (g._id.d === 'out' && (g._id.s === 'processing' || g._id.s === 'credited')) row(g._id.c).should.bankOut += g.t;
   }
   for (const a of await PlatformAccount.find({ purpose: 'custody' }, 'currency balance').lean()) row(String(a.currency || '').toUpperCase()).does.custody += Number(a.balance) || 0;
+  // A gap explained and set aside on a date (0214): only what goes wrong
+  // after it shows red. Never applied to a currency nobody holds any more.
+  const baselines = withBaseline ? await BooksBaseline.find({}).lean() : [];
+  for (const b of baselines) if (rows[b.currency]) rows[b.currency].should.legacy += Number(b.amount) || 0;
+  const legacySince = baselines.length ? baselines.reduce((d, b) => (b.setAt > d ? b.setAt : d), baselines[0].setAt) : null;
 
   const currencies = Object.values(rows).map((r) => {
     const s = r.should;
-    const shouldExist = s.opening + s.pools + s.payouts + s.poolFunding + s.bankIn - s.bankOut;
+    const shouldExist = s.opening + s.pools + s.payouts + s.poolFunding + s.bankIn - s.bankOut + s.legacy;
     const doesExist = r.does.balances + r.does.pools + r.does.custody;
     const difference = round2(doesExist - shouldExist);
     for (const k of Object.keys(s)) s[k] = round2(s[k]);
     for (const k of Object.keys(r.does)) r.does[k] = round2(r.does[k]);
     return { ...r, shouldExist: round2(shouldExist), doesExist: round2(doesExist), difference, ok: Math.abs(difference) < BOOKS_TOLERANCE };
   }).sort((a, b) => b.accounts - a.accounts || a.currency.localeCompare(b.currency));
-  return { checkedAt: now, testMoney: true, currencies, unopened, ok: currencies.every((c) => c.ok) };
+  return { checkedAt: now, testMoney: true, currencies, unopened, legacySince, ok: currencies.every((c) => c.ok) };
 }
 
 // Today's check, stored once per UTC day and refreshed when older than 6 h.
@@ -274,15 +281,16 @@ async function booksHistory(days = 7) {
 
 // Reduce the per-currency books to one picture in the target currency.
 async function booksIn(books, target, rateTo) {
-  let should = 0, does = 0; const parts = { balances: 0, pools: 0, custody: 0 }; const missing = [];
+  let should = 0, does = 0, legacy = 0; const parts = { balances: 0, pools: 0, custody: 0 }; const missing = [];
   for (const c of books.currencies || []) {
     const rate = c.currency === target ? 1 : await rateTo(c.currency);
     if (rate === null) { missing.push(c.currency); continue; }
     should += c.shouldExist * rate; does += c.doesExist * rate;
+    legacy += ((c.should && c.should.legacy) || 0) * rate;
     for (const k of Object.keys(parts)) parts[k] += (c.does[k] || 0) * rate;
   }
   for (const k of Object.keys(parts)) parts[k] = round2(parts[k]);
-  return { ok: Boolean(books.ok), checkedAt: books.checkedAt, should: round2(should), does: round2(does), difference: round2(does - should), parts, unconvertible: missing, currencies: (books.currencies || []).length, unopened: (books.unopened || []).length, testMoney: true };
+  return { ok: Boolean(books.ok), checkedAt: books.checkedAt, should: round2(should), does: round2(does), difference: round2(does - should), parts, unconvertible: missing, currencies: (books.currencies || []).length, unopened: (books.unopened || []).length, legacy: round2(legacy), legacySince: books.legacySince || null, testMoney: true };
 }
 
 // ── The public view ───────────────────────────────────────────────────────

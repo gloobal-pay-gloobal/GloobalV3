@@ -44,7 +44,7 @@ function adminConfig(env = process.env) {
 
 function createAdmin(deps) {
   const {
-    User, Pin, Transaction, Complaint, TransferCase, BankTransfer, AuditLog, AdminPasskey,
+    User, Pin, Transaction, Complaint, TransferCase, BankTransfer, AuditLog, AdminPasskey, StaffMember,
     bcrypt, secret, getWebAuthnServer, coverageView, makeRateResolver,
     pin: { beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
     credentialLimit, lookupLimit,
@@ -90,28 +90,45 @@ function createAdmin(deps) {
     if (!fromAdminSite(req)) { res.status(403).json({ success: false, code: 'admin_origin', message: 'Admin calls are only accepted from the admin site.' }); return false; }
     return true;
   }
+  // ── who is on the team, and as what (0216) ──
+  // Admins are named on Render; everyone else is a StaffMember row. Read on
+  // every request, never from the token, so removing someone ends their
+  // sessions at once.
+  async function roleOf(user) {
+    if (!user) return null;
+    if (cfg().ids.includes(user.symbolId)) return 'admin';
+    if (!StaffMember) return null;
+    const m = await StaffMember.findOne({ userId: user._id, removedAt: null }).select('role symbolId').lean();
+    return m && m.symbolId === user.symbolId ? m.role : null;
+  }
   async function userFrom(req, scope) {
     const claims = read(bearer(req), scope);
-    if (!claims || !cfg().ids.includes(claims.symbolId)) return null;
+    if (!claims) return null;
     const user = await User.findById(claims.sub);
     if (!user || user.symbolId !== claims.symbolId) return null;
     if (user.credentialsInvalidatedAt && claims.iat < new Date(user.credentialsInvalidatedAt).getTime()) return null;
-    return { user, claims };
+    const role = await roleOf(user);
+    if (!role) return null;
+    return { user, claims, role };
   }
-  const requireAdmin = (action) => async (req, res, next) => {
+  const requireStaff = (roles, action) => async (req, res, next) => {
     try {
       if (!gate(req, res)) return undefined;
       const got = await userFrom(req, 'admin');
-      if (!got) return res.status(401).json({ success: false, code: 'admin_token_invalid', message: 'Sign in to the admin site again.' });
+      if (!got) return res.status(401).json({ success: false, code: 'admin_token_invalid', message: 'Sign in to the staff site again.' });
+      if (!roles.includes(got.role)) return res.status(403).json({ success: false, code: 'not_your_desk', message: 'That is not part of your desk.' });
       req.admin = got.user;
+      req.staff = got.user;
+      req.staffRole = got.role;
       req.adminExp = got.claims.exp;
-      audit(req, got.user._id, action, 'info', `${req.method} ${req.path}`);
+      audit(req, got.user._id, action, 'info', `${req.method} ${req.path}`, { role: got.role });
       return next();
     } catch (error) {
-      console.error('admin gate error:', error);
-      return res.status(500).json({ success: false, message: 'Admin check failed.' });
+      console.error('staff gate error:', error);
+      return res.status(500).json({ success: false, message: 'Staff check failed.' });
     }
   };
+  const requireAdmin = (action) => requireStaff(['admin'], action);
 
   // ── passkey ceremonies: one challenge per account, five minutes, used once ──
   const challenges = new Map();
@@ -123,8 +140,9 @@ function createAdmin(deps) {
   };
   const rpFor = (req) => { const origin = String(req.get('origin')); return { origin, rpID: new URL(origin).hostname }; };
   const finish = async (req, res, user, how) => {
-    audit(req, user._id, 'signin', 'success', `Signed in with PIN and ${how}`);
-    return res.json({ success: true, token: issue(user, 'admin', ADMIN_TTL_MS), expiresAt: new Date(Date.now() + ADMIN_TTL_MS).toISOString(), admin: { symbolId: user.symbolId, name: user.fullName } });
+    const role = await roleOf(user);
+    audit(req, user._id, 'signin', 'success', `Signed in with PIN and ${how}`, { role });
+    return res.json({ success: true, token: issue(user, 'admin', ADMIN_TTL_MS), expiresAt: new Date(Date.now() + ADMIN_TTL_MS).toISOString(), admin: { symbolId: user.symbolId, name: user.fullName, role } });
   };
 
   // ── Today ──
@@ -243,13 +261,14 @@ function createAdmin(deps) {
         if (!gate(req, res)) return undefined;
         const symbolId = String((req.body && req.body.symbolId) || '').trim();
         const pin = String((req.body && req.body.pin) || '').trim();
-        if (!cfg().ids.includes(symbolId)) {
-          audit(req, null, 'signin', 'blocked', 'Not an admin GLOOBAL ID', { symbolId });
-          return res.status(403).json({ success: false, code: 'not_admin', message: 'This GLOOBAL ID is not an admin.' });
+        const user = symbolId ? await User.findOne({ symbolId }) : null;
+        const role = await roleOf(user);
+        if (!role) {
+          audit(req, null, 'signin', 'blocked', 'Not on the team', { symbolId });
+          return res.status(403).json({ success: false, code: 'not_admin', message: 'This GLOOBAL ID is not on the GLOOBAL team.' });
         }
-        const user = await User.findOne({ symbolId });
-        const pinRecord = user && await Pin.findOne({ userId: user._id });
-        if (!user || !pinRecord) return res.status(403).json({ success: false, code: 'not_admin', message: 'This GLOOBAL ID is not an admin.' });
+        const pinRecord = await Pin.findOne({ userId: user._id });
+        if (!pinRecord) return res.status(403).json({ success: false, code: 'not_admin', message: 'This GLOOBAL ID is not on the GLOOBAL team.' });
         await beginPinAttempt(pinRecord);
         if (pinLockRemainingMs(pinRecord) > 0) {
           const locked = pinLockoutResponse(pinRecord);
@@ -262,7 +281,7 @@ function createAdmin(deps) {
         }
         await registerPinSuccess(pinRecord);
         const hasPasskey = (await AdminPasskey.countDocuments({ userId: user._id, rpID: rpFor(req).rpID })) > 0;
-        return res.json({ success: true, step: hasPasskey ? 'passkey' : 'setup', preToken: issue(user, 'admin-pre', PRE_TTL_MS) });
+        return res.json({ success: true, step: hasPasskey ? 'passkey' : 'setup', role, preToken: issue(user, 'admin-pre', PRE_TTL_MS) });
       } catch (error) {
         console.error('admin login error:', error);
         return res.status(500).json({ success: false, message: 'Could not sign in just now.' });
@@ -280,10 +299,21 @@ function createAdmin(deps) {
     app.post('/api/admin/passkey/register/options', credentialLimit, async (req, res) => {
       try {
         const user = await pre(req, res); if (!user) return undefined;
-        const code = cfg().setupCode;
-        if (!code) return res.status(503).json({ success: false, code: 'setup_off', message: 'ADMIN_SETUP_CODE is not set on the server.' });
-        const given = Buffer.from(String((req.body && req.body.setupCode) || '')), want = Buffer.from(code);
-        if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) {
+        // Admins: the code on Render. Everyone else: the one-time code an
+        // admin was shown when adding them (seven days).
+        const role = await roleOf(user);
+        const typed = String((req.body && req.body.setupCode) || '');
+        let codeOk = false;
+        if (role === 'admin') {
+          const code = cfg().setupCode;
+          if (!code) return res.status(503).json({ success: false, code: 'setup_off', message: 'ADMIN_SETUP_CODE is not set on the server.' });
+          const given = Buffer.from(typed), want = Buffer.from(code);
+          codeOk = given.length === want.length && crypto.timingSafeEqual(given, want);
+        } else {
+          const m = await StaffMember.findOne({ userId: user._id, removedAt: null }).lean();
+          codeOk = Boolean(m && m.setupCodeHash && m.setupCodeExpiresAt > new Date() && typed && await bcrypt.compare(typed, m.setupCodeHash));
+        }
+        if (!codeOk) {
           audit(req, user._id, 'passkey.setup', 'failed', 'Wrong setup code');
           return res.status(401).json({ success: false, code: 'wrong_setup_code', message: 'That setup code is not right.' });
         }
@@ -313,7 +343,8 @@ function createAdmin(deps) {
         if (!v.verified) return res.status(400).json({ success: false, message: 'The passkey could not be checked.' });
         const { credential } = v.registrationInfo;
         await AdminPasskey.create({ userId: user._id, rpID, credentialId: credential.id, publicKey: Buffer.from(credential.publicKey), counter: credential.counter, transports: credential.transports || [] });
-        audit(req, user._id, 'passkey.setup', 'success', `Admin passkey made for ${rpID}`);
+        audit(req, user._id, 'passkey.setup', 'success', `Staff passkey made for ${rpID}`);
+        if (StaffMember) await StaffMember.updateOne({ userId: user._id, removedAt: null }, { $set: { setupCodeHash: null, setupCodeExpiresAt: null } });
         return finish(req, res, user, 'a new passkey');
       } catch (error) {
         console.error('admin passkey verify error:', error);
@@ -357,7 +388,63 @@ function createAdmin(deps) {
       }
     });
 
-    app.get('/api/admin/me', lookupLimit, requireAdmin('view.me'), async (req, res) => res.json({ success: true, admin: { symbolId: req.admin.symbolId, name: req.admin.fullName }, expiresAt: new Date(req.adminExp).toISOString() }));
+    app.get('/api/admin/me', lookupLimit, requireStaff(['admin', 'support', 'finance', 'risk', 'tech'], 'view.me'), async (req, res) => res.json({ success: true, admin: { symbolId: req.admin.symbolId, name: req.admin.fullName, role: req.staffRole }, expiresAt: new Date(req.adminExp).toISOString() }));
+
+    // ── Team & roles (admins only) ──
+    app.get('/api/admin/team', lookupLimit, requireAdmin('view.team'), async (req, res) => {
+      try {
+        const admins = await User.find({ symbolId: { $in: cfg().ids } }).select('fullName symbolId').lean();
+        const rows = await StaffMember.find({ removedAt: null }).sort({ createdAt: 1 }).lean();
+        const users = new Map((await User.find({ _id: { $in: rows.map((r) => r.userId) } }).select('fullName symbolId').lean()).map((u) => [String(u._id), u]));
+        const adders = new Map((await User.find({ _id: { $in: rows.map((r) => r.addedBy).filter(Boolean) } }).select('fullName').lean()).map((u) => [String(u._id), u.fullName]));
+        const last = new Map((await AuditLog.aggregate([{ $match: { action: /^admin\./, userId: { $in: [...admins.map((a) => a._id), ...rows.map((r) => r.userId)] } } }, { $group: { _id: '$userId', at: { $max: '$createdAt' } } }])).map((x) => [String(x._id), x.at]));
+        const keys = new Set((await AdminPasskey.find({ userId: { $in: rows.map((r) => r.userId) } }).select('userId').lean()).map((k) => String(k.userId)));
+        return res.json({
+          success: true,
+          roles: ['admin', ...StaffMember.ROLES],
+          team: [
+            ...admins.map((a) => ({ name: a.fullName, symbolId: a.symbolId, role: 'admin', addedBy: 'Render', addedAt: null, lastSeen: last.get(String(a._id)) || null, ready: true })),
+            ...rows.map((r) => { const u = users.get(String(r.userId)) || {}; return { name: u.fullName || '', symbolId: r.symbolId, role: r.role, addedBy: adders.get(String(r.addedBy)) || '', addedAt: r.createdAt, lastSeen: last.get(String(r.userId)) || null, ready: keys.has(String(r.userId)) }; }),
+          ],
+        });
+      } catch (error) {
+        console.error('team list error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load the team just now.' });
+      }
+    });
+    app.post('/api/admin/team', credentialLimit, requireAdmin('team.add'), async (req, res) => {
+      try {
+        const symbolId = String((req.body && req.body.symbolId) || '').trim();
+        const role = String((req.body && req.body.role) || '');
+        if (!StaffMember.ROLES.includes(role)) return res.status(400).json({ success: false, message: 'Pick Support, Finance, Risk or Tech.' });
+        const user = await User.findOne({ symbolId });
+        if (!user || user.shopOwnerId) return res.status(404).json({ success: false, code: 'no_account', message: 'No GLOOBAL account has that ID. They need an account first.' });
+        if (cfg().ids.includes(symbolId)) return res.status(409).json({ success: false, message: 'That ID is already an admin.' });
+        const code = crypto.randomBytes(9).toString('base64url');
+        const existing = await StaffMember.findOne({ userId: user._id, removedAt: null });
+        const fields = { role, setupCodeHash: await bcrypt.hash(code, 10), setupCodeExpiresAt: new Date(Date.now() + 7 * 86400000) };
+        if (existing) await StaffMember.updateOne({ _id: existing._id }, { $set: fields });
+        else await StaffMember.create({ userId: user._id, symbolId, addedBy: req.admin._id, ...fields });
+        audit(req, req.admin._id, 'team.add', 'success', `${user.fullName} as ${role}`, { symbolId, role });
+        return res.status(existing ? 200 : 201).json({ success: true, member: { name: user.fullName, symbolId, role }, setupCode: code, setupCodeExpiresAt: fields.setupCodeExpiresAt });
+      } catch (error) {
+        console.error('team add error:', error);
+        return res.status(500).json({ success: false, message: 'Could not add them just now.' });
+      }
+    });
+    app.delete('/api/admin/team/:symbolId', credentialLimit, requireAdmin('team.remove'), async (req, res) => {
+      try {
+        const m = await StaffMember.findOne({ symbolId: String(req.params.symbolId), removedAt: null });
+        if (!m) return res.status(404).json({ success: false, message: 'Not on the team.' });
+        m.removedAt = new Date(); m.removedBy = req.admin._id; await m.save();
+        await AdminPasskey.deleteMany({ userId: m.userId });
+        audit(req, req.admin._id, 'team.remove', 'success', `Removed ${m.symbolId} (${m.role})`, { symbolId: m.symbolId });
+        return res.json({ success: true });
+      } catch (error) {
+        console.error('team remove error:', error);
+        return res.status(500).json({ success: false, message: 'Could not remove them just now.' });
+      }
+    });
     app.get('/api/admin/today', lookupLimit, requireAdmin('view.today'), async (req, res) => {
       try { return res.json({ success: true, ...(await today({ tzRaw: String(req.query.tz || '') })) }); } catch (error) {
         console.error('admin today error:', error);
@@ -374,10 +461,10 @@ function createAdmin(deps) {
         return res.status(500).json({ success: false, message: 'Could not load the audit log just now.' });
       }
     });
-    app.post('/api/admin/logout', lookupLimit, requireAdmin('signout'), (req, res) => res.json({ success: true }));
+    app.post('/api/admin/logout', lookupLimit, requireStaff(['admin', 'support', 'finance', 'risk', 'tech'], 'signout'), (req, res) => res.json({ success: true }));
   }
 
-  return { mount, today, adminConfig };
+  return { mount, today, adminConfig, requireStaff, requireAdmin, audit, roleOf };
 }
 
 module.exports = { createAdmin, adminConfig, ADMIN_TTL_MS };

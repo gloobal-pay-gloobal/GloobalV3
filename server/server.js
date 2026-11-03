@@ -8889,12 +8889,21 @@ const admin = require('./lib/admin').createAdmin({
   TransferCase: require('./models/TransferCase'),
   BankTransfer: require('./models/BankTransfer'),
   AdminPasskey: require('./models/AdminPasskey'),
+  StaffMember: require('./models/StaffMember'),
   bcrypt, secret: AUTH_TOKEN_SECRET, getWebAuthnServer, coverageView,
   makeRateResolver: require('./lib/coverageAggregation').makeRateResolver,
   pin: { beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
   credentialLimit, lookupLimit,
 });
 admin.mount(app);
+
+// Help & Support (0216): people and shops ask in the app; the team answers
+// from the Support desk on the staff site. See lib/support.js.
+require('./lib/support').createSupport({
+  User, Transaction, Notification, pushService, pruneNotifications, requireAuth, writeLimit, lookupLimit,
+  SupportConversation: require('./models/SupportConversation'),
+  staff: admin,
+}).mount(app);
 
 // My Essentials (0208): the daily draw, paid by GLOOBAL into the GLOOBAL
 // Bank balance, and the hold on leaving — everything an account has used

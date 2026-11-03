@@ -694,7 +694,21 @@ describe("on screen", () => {
 //
 // What makes that safe rather than sweeping is one rule, and these tests
 // are about the rule rather than about the screens.
-describe("only the reader's own money is renamed", () => {
+//
+// ── WHAT THIS SUITE IS ABOUT NOW (0224) ─────────────────────────────────
+//
+// It used to be the DISPLAY rule: a foreign figure kept its symbol and never
+// carried GEU. That is no longer what a screen shows — every figure carries
+// both its names, "98.00 EUR │ GEU" included (see "the bar names the
+// figure's other name" below). What is tested here is the underlying
+// question every formatter still asks first: IS THIS FIGURE IN THE READER'S
+// OWN MONEY. geuLensSameCurrency answers it, and the answer decides whether
+// the money is named by its sign (₹) or its code (EUR) — so a wrong answer
+// is still a wrongly named figure. geuLensOwnMoney and geuLensAppliesTo are
+// the single-name formatters that only ever renamed the reader's own money;
+// no screen calls them any more, but they are the plainest reading of that
+// question, so the suite keeps exercising it through them.
+describe("whose money a figure is in — the question under every formatter", () => {
   // The shipped functions, evaluated from their own source. geuLens.js is a
   // frontend module, so loadDomain — which builds the backend scope — does
   // not have it.
@@ -719,11 +733,17 @@ describe("only the reader's own money is renamed", () => {
   `)();
   const { geuLensOwnMoney, geuLensAppliesTo, geuLensSameCurrency, GEU_LENS_GEU: GEU, GEU_LENS_LOCAL: LOCAL } = sandbox;
 
-  test("a cross-border payment keeps two units on one screen, and is right to", () => {
+  test("the single-name formatter tells the reader's rupee from the payee's euro", () => {
     // The founder pays 8,000 of his own rupees; 98 euro reaches the payee.
-    // Both figures are real and they are NOT the same unit. Writing GEU
-    // after both would let somebody read "8000 GEU" beside "98 GEU" and
-    // conclude the money shrank in transit.
+    // Both figures are real and they are NOT the same unit. The old display
+    // rule followed from that: writing a bare GEU after both would let
+    // somebody read "8000 GEU" beside "98 GEU" and conclude the money shrank
+    // in transit.
+    //
+    // 0224: on screen the euro DOES carry GEU now — "98.00 GEU │ EUR" — and
+    // it is safe because its code is beside it. What this test still pins
+    // is the question underneath: this formatter writes one name only, so
+    // it must know whose money the figure is, and it does.
     const mine = geuLensOwnMoney(8000, "INR", GEU, "INR");
     const theirs = geuLensOwnMoney(98, "EUR", GEU, "INR");
     assert.match(mine, /GEU$/, "the reader's own figure was not renamed");

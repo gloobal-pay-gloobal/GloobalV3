@@ -459,6 +459,13 @@ for (const origin of String(process.env.HELLOO_ORIGIN || 'https://gloobalhelloo.
   if (clean && !ALLOWED_ORIGINS.includes(clean)) ALLOWED_ORIGINS.push(clean);
 }
 
+// The admin site (0215): its own Netlify site, accepted here so the browser
+// lets it call the API; lib/admin.js separately refuses admin calls from
+// any other page. ADMIN_ORIGINS overrides the address.
+for (const origin of require('./lib/admin').adminConfig().origins) {
+  if (!ALLOWED_ORIGINS.includes(origin)) ALLOWED_ORIGINS.push(origin);
+}
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -8875,6 +8882,19 @@ const names = require('./lib/names').createNames({
   shops,
 });
 names.mount(app);
+
+// GLOOBAL Admin, part 1 (0215): the founder's own site. See lib/admin.js.
+const admin = require('./lib/admin').createAdmin({
+  User, Pin, Transaction, Complaint, AuditLog,
+  TransferCase: require('./models/TransferCase'),
+  BankTransfer: require('./models/BankTransfer'),
+  AdminPasskey: require('./models/AdminPasskey'),
+  bcrypt, secret: AUTH_TOKEN_SECRET, getWebAuthnServer, coverageView,
+  makeRateResolver: require('./lib/coverageAggregation').makeRateResolver,
+  pin: { beginPinAttempt, pinLockRemainingMs, pinLockoutResponse, registerPinFailure, registerPinSuccess },
+  credentialLimit, lookupLimit,
+});
+admin.mount(app);
 
 // My Essentials (0208): the daily draw, paid by GLOOBAL into the GLOOBAL
 // Bank balance, and the hold on leaving — everything an account has used

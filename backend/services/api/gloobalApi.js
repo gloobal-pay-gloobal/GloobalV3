@@ -1205,8 +1205,17 @@ var GloobalApi = {
       return null;
     }
   },
-  async startSupportChat({ topic, text, side }) {
-    return gloobalApiClient.post("/api/support/conversations", { topic, text, side });
+  async startSupportChat({ topic, text, side, transactionId }) {
+    return gloobalApiClient.post("/api/support/conversations", { topic, text, side, transactionId: transactionId || undefined });
+  },
+  // Their last ten payments, to pick the one a question is about (0218).
+  async getSupportPayments() {
+    try {
+      const r = await gloobalApiClient.get("/api/support/payments");
+      return r && r.success ? r.payments : null;
+    } catch (e) {
+      return null;
+    }
   },
   async sendSupportMessage(id, text) {
     return gloobalApiClient.post(`/api/support/conversations/${encodeURIComponent(id)}/messages`, { text });

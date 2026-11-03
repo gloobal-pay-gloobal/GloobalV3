@@ -15,6 +15,7 @@
 //   Finance and Risk see only what was passed to them.
 
 const crypto = require('crypto');
+const { recentPayments, paymentFor, namesFor } = require('./staffTools');
 
 const OPEN_LIMIT = 3;
 const TEXT_MAX = 1000;
@@ -24,7 +25,7 @@ const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const clean = (t) => String(t || '').replace(/\s+\n/g, '\n').trim().slice(0, TEXT_MAX);
 const maskPhone = (p) => { const d = String(p || ''); return d.length > 6 ? `${d.slice(0, d.length - 8)}•••• ••${d.slice(-2)}` : '••••'; };
 
-function createSupport({ User, Transaction, SupportConversation, Notification, pushService, pruneNotifications, requireAuth, writeLimit, lookupLimit, staff }) {
+function createSupport({ User, Transaction, Complaint, SupportConversation, Notification, pushService, pruneNotifications, requireAuth, writeLimit, lookupLimit, staff }) {
   const newRef = async () => {
     for (let i = 0; i < 6; i += 1) {
       const ref = `H-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
@@ -32,8 +33,31 @@ function createSupport({ User, Transaction, SupportConversation, Notification, p
     }
     return `H-${Date.now().toString(36).toUpperCase()}`;
   };
+  // The payment a chat is about, from the person's side (0218).
+  async function paymentOf(c) {
+    if (!c.transactionId) return null;
+    const t = await Transaction.findById(c.transactionId).select('fromUserId toUserId amount currency status referenceId metadata.senderCurrency metadata.debitAmount metadata.destinationAmount metadata.destinationCurrency metadata.cashback createdAt').lean();
+    if (!t) return null;
+    const names = await namesFor(User, [String(t.fromUserId) === String(c.userId) ? t.toUserId : t.fromUserId]);
+    return paymentFor(t, c.userId, names);
+  }
+  // Alerts on the staff site's devices (0218): a new chat to Support (and
+  // the founder), an answer to whoever has the chat, a pass to that desk.
+  async function alertStaff(target, c, title, body, exceptUserId) {
+    try {
+      if (!pushService.isPushEnabled()) return;
+      const ids = Array.isArray(target) && target.length && typeof target[0] === 'string' && ['admin', 'support', 'finance', 'risk', 'tech'].includes(target[0])
+        ? await staff.teamUserIds(target) : target;
+      const payload = { v: 1, kind: 'staff', title, body: String(body || '').slice(0, 160), url: `/#ticket/${String(c._id)}`, tag: `gloobal-staff-${c.ref}`, timestamp: Date.now() };
+      for (const id of ids || []) {
+        if (exceptUserId && String(id) === String(exceptUserId)) continue;
+        await pushService.sendPushToUser(id, payload, { category: 'transactional', app: 'staff' });
+      }
+    } catch (e) { console.error('staff alert failed:', e.message); }
+  }
   // What the person sees: their own words and the team's replies, never notes.
-  const forCustomer = (c) => ({
+  const forCustomer = (c, payment) => ({
+    payment: payment || null,
     id: String(c._id), ref: c.ref, topic: c.topic, topicWords: TOPIC_WORDS[c.topic], side: c.side, status: c.status,
     createdAt: c.createdAt, lastActivityAt: c.lastActivityAt, unread: c.customerUnread || 0,
     messages: (c.messages || []).filter((m) => !m.internal).map((m) => ({ from: m.from, name: m.from === 'staff' ? `${m.authorName || 'GLOOBAL'}, GLOOBAL Support` : m.from === 'system' ? 'GLOOBAL' : 'You', text: m.text, at: m.at })),
@@ -67,6 +91,13 @@ function createSupport({ User, Transaction, SupportConversation, Notification, p
         return res.status(500).json({ success: false, message: 'Could not load your chats just now.' });
       }
     });
+    // Their last payments, to pick the one a question is about (0218).
+    app.get('/api/support/payments', lookupLimit, requireAuth, async (req, res) => {
+      try { return res.json({ success: true, payments: await recentPayments(User, Transaction, req.authUser._id, 10) }); } catch (error) {
+        console.error('support payments error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load your payments just now.' });
+      }
+    });
     app.post('/api/support/conversations', writeLimit, requireAuth, async (req, res) => {
       try {
         const text = clean(req.body && req.body.text);
@@ -75,15 +106,25 @@ function createSupport({ User, Transaction, SupportConversation, Notification, p
         if (text.length < 2) return res.status(400).json({ success: false, message: 'Tell us a little about it first.' });
         const open = await SupportConversation.countDocuments({ userId: req.authUser._id, status: { $ne: 'done' } });
         if (open >= OPEN_LIMIT) return res.status(409).json({ success: false, code: 'too_many_open', message: `You already have ${open} chats open. Add to one of those, and we'll answer there.` });
+        // A payment it is about: only one of their own.
+        let transactionId = null;
+        const tid = String((req.body && req.body.transactionId) || '');
+        if (tid) {
+          const t = /^[a-f0-9]{24}$/i.test(tid) ? await Transaction.findOne({ _id: tid, type: 'send', $or: [{ fromUserId: req.authUser._id }, { toUserId: req.authUser._id }] }).select('_id').lean() : null;
+          if (!t) return res.status(400).json({ success: false, message: 'That payment is not one of yours.' });
+          transactionId = t._id;
+        }
         const now = new Date();
         const c = await SupportConversation.create({
-          ref: await newRef(), userId: req.authUser._id, side, topic, status: 'new', lastActivityAt: now,
+          ref: await newRef(), userId: req.authUser._id, side, topic, status: 'new', lastActivityAt: now, transactionId,
           messages: [
             { from: 'customer', authorId: req.authUser._id, text, at: now },
             { from: 'system', text: 'Thanks — a person from GLOOBAL will answer here. You will also get a notice when they do.', at: new Date(now.getTime() + 1) },
           ],
         });
-        return res.status(201).json({ success: true, conversation: forCustomer(c.toObject()) });
+        const pay = await paymentOf(c);
+        alertStaff(['support', 'admin'], c, `New: ${TOPIC_WORDS[topic]}${side === 'shop' ? ' (shop)' : ''}`, text);
+        return res.status(201).json({ success: true, conversation: forCustomer(c.toObject(), pay) });
       } catch (error) {
         console.error('support create error:', error);
         return res.status(500).json({ success: false, message: 'Could not send that just now.' });
@@ -93,7 +134,7 @@ function createSupport({ User, Transaction, SupportConversation, Notification, p
       try {
         const c = await SupportConversation.findOneAndUpdate({ _id: req.params.id, userId: req.authUser._id }, { $set: { customerUnread: 0 } }, { returnDocument: 'after' }).lean().catch(() => null);
         if (!c) return res.status(404).json({ success: false, message: 'That chat is not yours.' });
-        return res.json({ success: true, conversation: forCustomer(c) });
+        return res.json({ success: true, conversation: forCustomer(c, await paymentOf(c)) });
       } catch (error) {
         return res.status(500).json({ success: false, message: 'Could not open that chat just now.' });
       }
@@ -110,7 +151,11 @@ function createSupport({ User, Transaction, SupportConversation, Notification, p
         if (c.status === 'waiting' || c.status === 'done') { c.status = c.assignedTo ? 'open' : 'new'; c.closedAt = null; }
         c.lastActivityAt = new Date();
         await c.save();
-        return res.json({ success: true, conversation: forCustomer(c.toObject()) });
+        // Whoever has the chat hears about it; nobody yet, then Support.
+        const who = c.assignedTo ? [c.assignedTo] : ['support', 'admin'];
+        alertStaff(who, c, `${TOPIC_WORDS[c.topic]}: they answered`, text);
+        if (c.passedTo) alertStaff([c.passedTo], c, `${TOPIC_WORDS[c.topic]}: they answered`, text, c.assignedTo);
+        return res.json({ success: true, conversation: forCustomer(c.toObject(), await paymentOf(c)) });
       } catch (error) {
         console.error('support message error:', error);
         return res.status(500).json({ success: false, message: 'Could not send that just now.' });
@@ -167,16 +212,19 @@ function createSupport({ User, Transaction, SupportConversation, Notification, p
       return c;
     }
     async function context(c, role) {
-      const u = await User.findById(c.userId).select('fullName mobileNumber countryIso createdAt balance creatorProfile.handle').lean();
-      const pays = await Transaction.find({ $or: [{ fromUserId: c.userId }, { toUserId: c.userId }], type: 'send', status: 'success' }).sort({ createdAt: -1 }).limit(5).select('fromUserId toUserId amount currency metadata.senderCurrency metadata.debitAmount createdAt').lean();
-      const others = new Map((await User.find({ _id: { $in: pays.map((p) => (String(p.fromUserId) === String(c.userId) ? p.toUserId : p.fromUserId)) } }).select('fullName creatorProfile.handle').lean()).map((x) => [String(x._id), (x.creatorProfile && x.creatorProfile.handle) || x.fullName]));
+      const u = await User.findById(c.userId).select('fullName symbolId mobileNumber countryIso createdAt balance creatorProfile.handle').lean();
       const seesMoney = role !== 'support';
+      const payment = await paymentOf(c);
+      // An open complaint on that same payment, if there is one.
+      const complaint = payment && Complaint ? await Complaint.findOne({ transactionId: c.transactionId }).select('ref status').lean() : null;
       return {
+        symbolId: (u && u.symbolId) || '',
         name: (u && u.fullName) || 'Someone', shop: (u && u.creatorProfile && u.creatorProfile.handle) || null,
         country: (u && u.countryIso) || '', since: u && u.createdAt,
         phone: seesMoney ? (u && u.mobileNumber) || '' : maskPhone(u && u.mobileNumber),
         balance: seesMoney && u ? round2(u.balance) : null,
-        recentPayments: pays.map((p) => { const out = String(p.fromUserId) === String(c.userId); return { out, other: others.get(String(out ? p.toUserId : p.fromUserId)) || 'someone', amount: round2(Number((p.metadata && p.metadata.debitAmount) || p.amount) || 0), currency: String((p.metadata && p.metadata.senderCurrency) || p.currency || 'INR').toUpperCase(), at: p.createdAt }; }),
+        recentPayments: await recentPayments(User, Transaction, c.userId, 5),
+        payment: payment ? { ...payment, complaint: complaint ? { ref: complaint.ref, status: complaint.status } : null } : null,
         hidden: seesMoney ? [] : ['balance', 'full phone number'],
       };
     }
@@ -246,6 +294,7 @@ function createSupport({ User, Transaction, SupportConversation, Notification, p
         if (!ROLE_WORDS[to]) return res.status(400).json({ success: false, message: 'Finance, Risk or the founder.' });
         const why = clean(req.body && req.body.note);
         c.passedTo = to;
+        alertStaff([to], c, `Passed to you: ${TOPIC_WORDS[c.topic]}`, why || (c.messages.filter((m) => m.from === 'customer').slice(-1)[0] || {}).text, req.staff._id);
         if (c.status === 'new' || c.status === 'done') c.status = 'open';
         c.messages.push({ from: 'system', text: `Passed to ${ROLE_WORDS[to]} by ${first(req.staff.fullName)}${why ? `: ${why}` : '.'}`, internal: true });
         c.lastActivityAt = new Date();

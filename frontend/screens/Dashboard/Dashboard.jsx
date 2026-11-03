@@ -4986,6 +4986,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     openId={supportOpenId}
     onOpened={() => setSupportOpenId(null)}
     showToast={showToast2}
+    lens={displayLens}
   />}{profileDetail === "About" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px" }}><span style={{ fontSize: 13.5, fontWeight: 600, color: T.inkSoft }}>Version</span><span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>1.0.0 (prototype)</span></div>{["Terms of Service", "Privacy Policy"].map((label) => <button
     key={label}
     onClick={() => showToast2(`${label} coming soon`)}

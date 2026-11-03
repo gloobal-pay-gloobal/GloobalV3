@@ -26,6 +26,8 @@ const SupportConversationSchema = new mongoose.Schema({
   status: { type: String, enum: STATUSES, default: 'new', index: true },
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   passedTo: { type: String, enum: [null, 'finance', 'risk', 'admin'], default: null, index: true },
+  // The payment it is about, when the person picked one (0218).
+  transactionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction', default: null },
   messages: { type: [MessageSchema], default: [] },
   firstReplyAt: { type: Date, default: null },
   lastActivityAt: { type: Date, default: Date.now, index: true },

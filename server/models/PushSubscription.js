@@ -39,7 +39,8 @@ const pushSubscriptionSchema = new mongoose.Schema(
     // a push is sent to one app's devices, never both.
     app: {
       type: String,
-      enum: ['gloobal', 'helloo'],
+      // 'staff' (0218): the GLOOBAL staff site, for desk alerts.
+      enum: ['gloobal', 'helloo', 'staff'],
       default: 'gloobal',
     },
 

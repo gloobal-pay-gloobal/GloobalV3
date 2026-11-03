@@ -129,6 +129,17 @@ function createAdmin(deps) {
     }
   };
   const requireAdmin = (action) => requireStaff(['admin'], action);
+  // Everyone on the team in these roles, as account ids — for alerts
+  // (0218). Admins are the IDs named on Render.
+  async function teamUserIds(roles) {
+    const want = new Set(roles || []);
+    const ids = [];
+    if (want.has('admin') && cfg().ids.length) ids.push(...(await User.find({ symbolId: { $in: cfg().ids } }).select('_id').lean()).map((u) => u._id));
+    const staffRoles = [...want].filter((r) => r !== 'admin');
+    if (staffRoles.length && StaffMember) ids.push(...(await StaffMember.find({ role: { $in: staffRoles }, removedAt: null }).select('userId').lean()).map((m) => m.userId));
+    const seen = new Set();
+    return ids.filter((id) => { const k = String(id); if (seen.has(k)) return false; seen.add(k); return true; });
+  }
 
   // ── passkey ceremonies: one challenge per account, five minutes, used once ──
   const challenges = new Map();
@@ -464,7 +475,7 @@ function createAdmin(deps) {
     app.post('/api/admin/logout', lookupLimit, requireStaff(['admin', 'support', 'finance', 'risk', 'tech'], 'signout'), (req, res) => res.json({ success: true }));
   }
 
-  return { mount, today, adminConfig, requireStaff, requireAdmin, audit, roleOf };
+  return { mount, today, adminConfig, requireStaff, requireAdmin, audit, roleOf, teamUserIds };
 }
 
 module.exports = { createAdmin, adminConfig, ADMIN_TTL_MS };

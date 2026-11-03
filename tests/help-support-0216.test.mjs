@@ -59,6 +59,18 @@ describe("the screen", () => {
   });
 });
 
+describe("a question about one payment (0218)", () => {
+  test("picking a payment is offered for A payment, and sent with the chat", () => {
+    assert.match(panel, /topic === "payment" && <div data-testid="help-payments"/);
+    assert.match(panel, /transactionId: topic === "payment" \? picked : null/);
+    assert.match(api, /async getSupportPayments\(/);
+    assert.match(api, /"\/api\/support\/payments"/);
+  });
+  test("the figure carries both names", () => assert.match(panel, /<GeuFigure amount=\{p\.amount\} currency=\{p\.currency\} lens=\{lens\}/));
+  test("the thread shows the payment it is about", () => assert.match(panel, /data-testid="help-thread-payment"/));
+  test("the dashboard hands the lens in", () => assert.match(d, /<HelpSupportPanel[\s\S]{0,200}lens=\{displayLens\}/));
+});
+
 describe("a reply finds them", () => {
   test("the API", () => {
     for (const m of ["getSupportChats", "getSupportChat", "startSupportChat", "sendSupportMessage"]) assert.match(api, new RegExp(`async ${m}\\(`));

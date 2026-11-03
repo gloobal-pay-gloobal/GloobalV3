@@ -15,6 +15,10 @@ import { useState as useState87, useEffect as useEffect83, useRef as useRef46 } 
 //
 // Team notes on a chat never reach here: the server leaves them out, so
 // there is nothing to hide on this side.
+//
+// 0218: a question about a payment starts from the payment itself — the last
+// ten, picked here — so the team sees exactly which one, how it went, and
+// who it was with, without asking.
 
 var HELP_ANSWERS = [
   ["How do I send money?", "Home → Send. Pick someone by their GLOOBAL ID, a name, or a code you scan, type the amount, and confirm with your PIN. They have it the moment you see Sent."],
@@ -64,7 +68,19 @@ function HelpStatusPill({ status }) {
 var helpCard = () => ({ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" });
 var helpLabel = () => ({ fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "2px 2px 8px" });
 
-function HelpSupportPanel({ side = "person", openId, onOpened, showToast }) {
+// One payment as a line: who, how much (both names), when.
+function HelpPaymentLine({ p, lens }) {
+  return <span style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1 }}>
+    <span aria-hidden="true" style={{ width: 30, height: 30, borderRadius: 10, flexShrink: 0, display: "grid", placeItems: "center", background: p.out ? T.accentSoft : T.positiveSoft, color: p.out ? T.accent : T.positive, fontWeight: 900, fontSize: 14 }}>{p.out ? "↑" : "↓"}</span>
+    <span style={{ flex: 1, minWidth: 0 }}>
+      <span style={{ display: "block", fontSize: 13, fontWeight: 750, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.out ? "Paid" : "From"} {p.other}</span>
+      <span style={{ display: "block", fontSize: 11, color: T.inkFaint }}>{helpWhen(p.at)}{p.status !== "success" ? ` · ${p.status}` : ""}</span>
+    </span>
+    <span style={{ flexShrink: 0, fontWeight: 800, color: T.ink }}><GeuFigure amount={p.amount} currency={p.currency} lens={lens} size={13} /></span>
+  </span>;
+}
+
+function HelpSupportPanel({ side = "person", openId, onOpened, showToast, lens }) {
   const [chats, setChats] = useState87(null);
   const [failed, setFailed] = useState87(false);
   const [openAnswer, setOpenAnswer] = useState87(null);
@@ -74,6 +90,8 @@ function HelpSupportPanel({ side = "person", openId, onOpened, showToast }) {
   const [thread, setThread] = useState87(null);
   const [threadId, setThreadId] = useState87(null);
   const [reply, setReply] = useState87("");
+  const [payments, setPayments] = useState87(null);
+  const [picked, setPicked] = useState87(null);
   const endRef = useRef46(null);
   const say = (m) => (showToast ? showToast(m) : null);
 
@@ -87,6 +105,11 @@ function HelpSupportPanel({ side = "person", openId, onOpened, showToast }) {
     else if (!thread) { say("Could not open that chat just now."); setThreadId(null); }
   };
   useEffect83(() => { loadList(); }, []);
+  // A question about a payment: load the last ten to pick from, once.
+  useEffect83(() => {
+    if (topic !== "payment" || payments) return;
+    GloobalApi.getSupportPayments().then((list) => setPayments(list || []));
+  }, [topic]);
   // A notice or a push for a reply opens its chat directly.
   useEffect83(() => {
     if (!openId) return;
@@ -115,8 +138,8 @@ function HelpSupportPanel({ side = "person", openId, onOpened, showToast }) {
     if (!topic || text.length < 2 || sending) return;
     setSending(true);
     try {
-      const r = await GloobalApi.startSupportChat({ topic, text, side });
-      setDraft(""); setTopic(null);
+      const r = await GloobalApi.startSupportChat({ topic, text, side, transactionId: topic === "payment" ? picked : null });
+      setDraft(""); setTopic(null); setPicked(null);
       setThread(r.conversation);
       setThreadId(r.conversation.id);
     } catch (e) {
@@ -147,6 +170,7 @@ function HelpSupportPanel({ side = "person", openId, onOpened, showToast }) {
         {thread && <HelpStatusPill status={thread.status} />}
       </div>
       {thread && <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{thread.topicWords}{thread.side === "shop" ? " · your shop" : ""}</div>}
+      {thread && thread.payment && <div data-testid="help-thread-payment" style={{ ...helpCard(), display: "flex", padding: "10px 12px" }}><HelpPaymentLine p={thread.payment} lens={lens} /></div>}
       {!thread && <div style={{ ...helpCard(), padding: 18, fontSize: 13, color: T.inkFaint }}>Opening…</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {msgs.map((m, i) => {
@@ -205,6 +229,15 @@ function HelpSupportPanel({ side = "person", openId, onOpened, showToast }) {
             return <button key={k} role="radio" aria-checked={on} data-testid={`help-topic-${k}`} onClick={() => setTopic(k)} style={{ border: `1.5px solid ${on ? T.accent : T.line}`, background: on ? T.accentSoft : "transparent", color: on ? T.accent : T.ink, borderRadius: 999, padding: "7px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{words}</button>;
           })}
         </div>
+        {topic === "payment" && <div data-testid="help-payments" role="radiogroup" aria-label="Which payment?" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft }}>Which payment?</div>
+          {payments === null && <div style={{ fontSize: 12, color: T.inkFaint }}>Loading your payments…</div>}
+          {payments && payments.length === 0 && <div style={{ fontSize: 12, color: T.inkFaint }}>No payments yet — just tell us below.</div>}
+          {payments && payments.map((p) => {
+            const on = picked === p.id;
+            return <button key={p.id} role="radio" aria-checked={on} data-testid="help-payment" onClick={() => setPicked(on ? null : p.id)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", border: `1.5px solid ${on ? T.accent : T.line}`, background: on ? T.accentSoft : "transparent", borderRadius: 12, padding: "8px 10px", cursor: "pointer" }}><HelpPaymentLine p={p} lens={lens} /></button>;
+          })}
+        </div>}
         {topic && <>
           <textarea
             id="help-first"

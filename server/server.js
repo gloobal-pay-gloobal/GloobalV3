@@ -8900,7 +8900,16 @@ admin.mount(app);
 // Help & Support (0216): people and shops ask in the app; the team answers
 // from the Support desk on the staff site. See lib/support.js.
 require('./lib/support').createSupport({
-  User, Transaction, Notification, pushService, pruneNotifications, requireAuth, writeLimit, lookupLimit,
+  User, Transaction, Complaint, Notification, pushService, pruneNotifications, requireAuth, writeLimit, lookupLimit,
+  SupportConversation: require('./models/SupportConversation'),
+  staff: admin,
+}).mount(app);
+
+// The staff site's tools (0218): alerts on its own devices, and looking up
+// an account. See lib/staffTools.js.
+require('./lib/staffTools').createStaffTools({
+  User, Transaction, Complaint,
+  BankTransfer: require('./models/BankTransfer'), PushSubscription, pushService, lookupLimit, writeLimit,
   SupportConversation: require('./models/SupportConversation'),
   staff: admin,
 }).mount(app);

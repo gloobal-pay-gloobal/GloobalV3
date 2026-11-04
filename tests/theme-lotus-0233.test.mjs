@@ -20,9 +20,10 @@ const load = (saved) => {
 };
 const lum = (h) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 
-test("five themes, Lotus where Night was, no Night", () => {
+test("Lotus where Night was, no Night, and the six added in 0234", () => {
   const x = load(null);
-  assert.equal(JSON.stringify(x.GLOOBAL_THEME_ORDER), JSON.stringify(["day", "lotus", "tiranga", "ocean", "ink"]));
+  assert.equal(JSON.stringify(x.GLOOBAL_THEME_ORDER), JSON.stringify(["day", "lotus", "tiranga", "ocean", "ink", "mehendi", "rajasthan", "peacock", "chai", "jamun", "monsoon"]));
+  assert.equal(JSON.stringify(Object.keys(x.GLOOBAL_THEMES).sort()), JSON.stringify([...x.GLOOBAL_THEME_ORDER].sort()), "every theme is in the order, and only those");
   assert.ok(!x.GLOOBAL_THEMES.night);
   assert.equal(x.GLOOBAL_THEMES.lotus.personal.accent, "#C2185B");
   assert.equal(x.GLOOBAL_THEMES.lotus.creator.accent, "#2E7D32");
@@ -44,8 +45,14 @@ test("Ink's shop side is still the other side: different paper and ink from Pers
   assert.notEqual(t.ink.creator.accent, t.ink.personal.accent);
 });
 
+test("each side of each theme has its own accent, so the switch is plain", () => {
+  const { GLOOBAL_THEMES: t } = load(null);
+  for (const [key, th] of Object.entries(t)) assert.notEqual(th.personal.accent, th.creator.accent, key);
+});
+
 test("a saved Night opens on Lotus; an unknown name falls back to Day", () => {
   assert.equal(load("night").readGloobalThemePref(), "lotus");
   assert.equal(load("ocean").readGloobalThemePref(), "ocean");
+  assert.equal(load("peacock").readGloobalThemePref(), "peacock");
   assert.equal(load("nonsense").readGloobalThemePref(), "day");
 });

@@ -1,6 +1,6 @@
 // src/constants/theme.js
 //
-// ── ONE APP, FIVE THEMES, TWO SIDES ─────────────────────────────────────
+// ── ONE APP, ELEVEN THEMES, TWO SIDES ─────────────────────────────────────
 //
 // Every colour the app draws comes through `T`. `T` used to be a plain
 // object of fixed values; it is now a set of GETTERS over whichever
@@ -69,7 +69,7 @@ function gloobalPalette(p) {
   }, p.dark ? GLOOBAL_MONEY_DARK : GLOOBAL_MONEY_LIGHT, p);
 }
 
-// The five themes. Each is { key, name, tagline, personal, creator }.
+// The themes. Each is { key, name, tagline, personal, creator }.
 //
 // `family` is the theme's own small set of colours (four or five, all
 // hex). The tiles, the flip faces and the profile rows used to pick from
@@ -121,6 +121,123 @@ var GLOOBAL_THEMES = {
       gradWallet: "linear-gradient(150deg,#0E2A11 0%,#1B4D1F 42%,#2E7D32 78%,#6CBF5E 100%)",
       gradButton: "linear-gradient(135deg,#276B2B 0%,#43A047 100%)",
       family: ["#2E7D32", "#558B2F", "#00897B", "#827717", "#33691E"]})
+  },
+  // ── 0234: six more, all light, each a pair ─────────────────────────
+  // The founder picked every one of them from the drawing. They join the
+  // list after the original five; nothing about how a theme works changed.
+  mehendi: {
+    key: "mehendi", name: "Mehendi", tagline: "Henna paper. Henna red-brown for your own money, mehendi-leaf olive for the shop.",
+    personal: gloobalPalette({ side: "personal",
+      bg: "#FAF3EC", surface: "#FFFFFF", surfaceAlt: "#F4E7DA", surfaceSunk: "#EEDCCB",
+      ink: "#2B160C", inkSoft: "#7D6252", inkFaint: "#AE9585", line: "#F0E2D4",
+      accent: "#A2401C", accentDeep: "#5E200B", accent2: "#5F7A1E", accentSoft: "#FBE6DA",
+      gradPrimary: "linear-gradient(135deg,#5E200B 0%,#A2401C 58%,#D9774A 100%)",
+      gradWallet: "linear-gradient(150deg,#3A1306 0%,#6E2710 42%,#A2401C 78%,#D9774A 100%)",
+      gradButton: "linear-gradient(135deg,#8E3517 0%,#C45A2C 100%)",
+      family: ["#A2401C", "#C2410C", "#7C2D12", "#B45309", "#9F1239"]}),
+    creator: gloobalPalette({ side: "creator",
+      bg: "#F4F6EA", surface: "#FFFFFF", surfaceAlt: "#E9EDD8", surfaceSunk: "#E0E6CB",
+      ink: "#1C2210", inkSoft: "#677055", inkFaint: "#99A186", line: "#E1E7CF",
+      accent: "#5F7A1E", accentDeep: "#3A4C10", accent2: "#A2401C", accentSoft: "#ECF1D9",
+      gradPrimary: "linear-gradient(135deg,#3A4C10 0%,#5F7A1E 55%,#9DB74A 100%)",
+      gradWallet: "linear-gradient(150deg,#1F2A08 0%,#3A4C10 42%,#5F7A1E 78%,#9DB74A 100%)",
+      gradButton: "linear-gradient(135deg,#526C18 0%,#7A9A2A 100%)",
+      family: ["#5F7A1E", "#4D7C0F", "#A16207", "#65A30D", "#3F6212"]})
+  },
+  rajasthan: {
+    key: "rajasthan", name: "Rajasthan", tagline: "Sand paper. Indigo for your own money, terracotta for the shop: blue doors, clay walls.",
+    personal: gloobalPalette({ side: "personal",
+      bg: "#F7F3EA", surface: "#FFFFFF", surfaceAlt: "#EFE8D9", surfaceSunk: "#E8DFCC",
+      ink: "#161A33", inkSoft: "#666A80", inkFaint: "#9A9DAE", line: "#EAE2D2",
+      accent: "#2F3E9E", accentDeep: "#1A2363", accent2: "#C0582B", accentSoft: "#E6E9F8",
+      gradPrimary: "linear-gradient(135deg,#1A2363 0%,#2F3E9E 58%,#6A7BE0 100%)",
+      gradWallet: "linear-gradient(150deg,#0F1540 0%,#1A2363 42%,#2F3E9E 78%,#6A7BE0 100%)",
+      gradButton: "linear-gradient(135deg,#283590 0%,#4757C2 100%)",
+      family: ["#2F3E9E", "#1D4ED8", "#0E7490", "#4338CA", "#C0582B"]}),
+    creator: gloobalPalette({ side: "creator",
+      bg: "#FBF1EA", surface: "#FFFFFF", surfaceAlt: "#F5E4D7", surfaceSunk: "#EFD8C8",
+      ink: "#2A170D", inkSoft: "#7C6152", inkFaint: "#AD9586", line: "#F1DFD2",
+      accent: "#C0582B", accentDeep: "#7A3112", accent2: "#2F3E9E", accentSoft: "#FBE5D9",
+      gradPrimary: "linear-gradient(135deg,#7A3112 0%,#C0582B 55%,#EE9563 100%)",
+      gradWallet: "linear-gradient(150deg,#3D1606 0%,#7A3112 42%,#C0582B 78%,#EE9563 100%)",
+      gradButton: "linear-gradient(135deg,#AD4C22 0%,#DC7040 100%)",
+      family: ["#C0582B", "#B45309", "#9A3412", "#D97706", "#2F3E9E"]})
+  },
+  peacock: {
+    key: "peacock", name: "Peacock", tagline: "Pearl paper. Peacock blue for your own money, emerald with gold for the shop.",
+    personal: gloobalPalette({ side: "personal",
+      bg: "#EFF4FA", surface: "#FFFFFF", surfaceAlt: "#E2EBF5", surfaceSunk: "#D7E2EF",
+      ink: "#0D1B2E", inkSoft: "#566679", inkFaint: "#8D9AAB", line: "#DCE5F0",
+      accent: "#1546A6", accentDeep: "#0B2A66", accent2: "#0B7A55", accentSoft: "#E1EAF8",
+      gradPrimary: "linear-gradient(135deg,#0B2A66 0%,#1546A6 55%,#3FA7C9 100%)",
+      gradWallet: "linear-gradient(150deg,#061638 0%,#0B2A66 40%,#1546A6 75%,#3FA7C9 100%)",
+      gradButton: "linear-gradient(135deg,#123E95 0%,#2D6BD0 100%)",
+      family: ["#1546A6", "#0891B2", "#0B7A55", "#4F46E5", "#0369A1"]}),
+    creator: gloobalPalette({ side: "creator",
+      bg: "#F0F7F3", surface: "#FFFFFF", surfaceAlt: "#E1F0E8", surfaceSunk: "#D5E9DE",
+      ink: "#0E241A", inkSoft: "#557063", inkFaint: "#8AA399", line: "#D9EBE1",
+      accent: "#0B7A55", accentDeep: "#064A33", accent2: "#C9A227", accentSoft: "#DDF2E8",
+      gradPrimary: "linear-gradient(135deg,#064A33 0%,#0B7A55 60%,#C9A227 100%)",
+      gradWallet: "linear-gradient(150deg,#042A1D 0%,#064A33 40%,#0B7A55 75%,#C9A227 100%)",
+      gradButton: "linear-gradient(135deg,#096A4A 0%,#13996C 100%)",
+      family: ["#0B7A55", "#C9A227", "#0F766E", "#1546A6", "#15803D"]})
+  },
+  chai: {
+    key: "chai", name: "Chai", tagline: "Milky paper. Masala-chai brown for your own money, cardamom green for the shop.",
+    personal: gloobalPalette({ side: "personal",
+      bg: "#F7F2EC", surface: "#FFFFFF", surfaceAlt: "#EFE6DC", surfaceSunk: "#E8DDD0",
+      ink: "#24180F", inkSoft: "#776656", inkFaint: "#A89888", line: "#ECE2D6",
+      accent: "#7B4A2A", accentDeep: "#4A2A14", accent2: "#4F7A3A", accentSoft: "#F2E6DA",
+      gradPrimary: "linear-gradient(135deg,#4A2A14 0%,#7B4A2A 58%,#B9875E 100%)",
+      gradWallet: "linear-gradient(150deg,#2A170A 0%,#4A2A14 42%,#7B4A2A 78%,#B9875E 100%)",
+      gradButton: "linear-gradient(135deg,#6B3F22 0%,#96613B 100%)",
+      family: ["#7B4A2A", "#A16207", "#92400E", "#4F7A3A", "#9A6B4F"]}),
+    creator: gloobalPalette({ side: "creator",
+      bg: "#F2F6EE", surface: "#FFFFFF", surfaceAlt: "#E5EDDE", surfaceSunk: "#DBE5D2",
+      ink: "#15200F", inkSoft: "#617058", inkFaint: "#93A08A", line: "#DDE7D5",
+      accent: "#4F7A3A", accentDeep: "#2E4B21", accent2: "#7B4A2A", accentSoft: "#E4EFDC",
+      gradPrimary: "linear-gradient(135deg,#2E4B21 0%,#4F7A3A 55%,#8AB66F 100%)",
+      gradWallet: "linear-gradient(150deg,#16260F 0%,#2E4B21 42%,#4F7A3A 78%,#8AB66F 100%)",
+      gradButton: "linear-gradient(135deg,#446B32 0%,#62944A 100%)",
+      family: ["#4F7A3A", "#3F6212", "#7B4A2A", "#65A30D", "#0F766E"]})
+  },
+  jamun: {
+    key: "jamun", name: "Jamun", tagline: "Lilac paper. Jamun-berry purple for your own money, fresh mint for the shop.",
+    personal: gloobalPalette({ side: "personal",
+      bg: "#F6F1F9", surface: "#FFFFFF", surfaceAlt: "#ECE2F2", surfaceSunk: "#E3D6EC",
+      ink: "#221330", inkSoft: "#715F80", inkFaint: "#A393B0", line: "#EADFF0",
+      accent: "#5E2A84", accentDeep: "#3A1555", accent2: "#12897A", accentSoft: "#EFE3F7",
+      gradPrimary: "linear-gradient(135deg,#3A1555 0%,#5E2A84 58%,#9C6BC4 100%)",
+      gradWallet: "linear-gradient(150deg,#1F0A30 0%,#3A1555 42%,#5E2A84 78%,#9C6BC4 100%)",
+      gradButton: "linear-gradient(135deg,#522474 0%,#7A3FA8 100%)",
+      family: ["#5E2A84", "#86198F", "#4C1D95", "#BE185D", "#12897A"]}),
+    creator: gloobalPalette({ side: "creator",
+      bg: "#EEF8F6", surface: "#FFFFFF", surfaceAlt: "#DFF1EC", surfaceSunk: "#D2EAE3",
+      ink: "#0E2622", inkSoft: "#557169", inkFaint: "#88A39C", line: "#D6EBE5",
+      accent: "#12897A", accentDeep: "#0A554C", accent2: "#5E2A84", accentSoft: "#DBF2EC",
+      gradPrimary: "linear-gradient(135deg,#0A554C 0%,#12897A 55%,#4CC2B0 100%)",
+      gradWallet: "linear-gradient(150deg,#05302A 0%,#0A554C 42%,#12897A 78%,#4CC2B0 100%)",
+      gradButton: "linear-gradient(135deg,#0F776A 0%,#1BA38F 100%)",
+      family: ["#12897A", "#0D9488", "#0E7490", "#5E2A84", "#059669"]})
+  },
+  monsoon: {
+    key: "monsoon", name: "Monsoon", tagline: "Rain-grey paper. Monsoon blue for your own money, mango yellow for the shop.",
+    personal: gloobalPalette({ side: "personal",
+      bg: "#EEF2F6", surface: "#FFFFFF", surfaceAlt: "#E1E8EF", surfaceSunk: "#D6DFE8",
+      ink: "#13202E", inkSoft: "#5B6978", inkFaint: "#8E9AA8", line: "#DCE3EA",
+      accent: "#2F5D8C", accentDeep: "#1B3A5C", accent2: "#D4A000", accentSoft: "#E1EAF4",
+      gradPrimary: "linear-gradient(135deg,#1B3A5C 0%,#2F5D8C 58%,#6F9CC8 100%)",
+      gradWallet: "linear-gradient(150deg,#0E1F33 0%,#1B3A5C 42%,#2F5D8C 78%,#6F9CC8 100%)",
+      gradButton: "linear-gradient(135deg,#29527C 0%,#4577A8 100%)",
+      family: ["#2F5D8C", "#0369A1", "#475569", "#0E7490", "#4F46E5"]}),
+    creator: gloobalPalette({ side: "creator",
+      bg: "#FCF7E8", surface: "#FFFFFF", surfaceAlt: "#F7EDCF", surfaceSunk: "#F1E3BC",
+      ink: "#2A2008", inkSoft: "#7A6C47", inkFaint: "#AA9D78", line: "#F2E7C8",
+      accent: "#D4A000", accentDeep: "#8A6400", accent2: "#2F5D8C", accentSoft: "#FCF0C8",
+      gradPrimary: "linear-gradient(135deg,#8A6400 0%,#D4A000 58%,#FFD34D 100%)",
+      gradWallet: "linear-gradient(150deg,#3D2C00 0%,#8A6400 42%,#D4A000 78%,#FFD34D 100%)",
+      gradButton: "linear-gradient(135deg,#C29200 0%,#EBB817 100%)",
+      family: ["#D4A000", "#CA8A04", "#EA580C", "#2F5D8C", "#B45309"]})
   },
   tiranga: {
     key: "tiranga", name: "Tiranga", tagline: "Cream paper. Saffron for you, chakra blue for the shop — the flag's two inks.",
@@ -183,7 +300,7 @@ var GLOOBAL_THEMES = {
       family: ["#1F1F1F", "#4B4B4B", "#6E6A64", "#2E2C2A"]})
   }
 };
-var GLOOBAL_THEME_ORDER = ["day", "lotus", "tiranga", "ocean", "ink"];
+var GLOOBAL_THEME_ORDER = ["day", "lotus", "tiranga", "ocean", "ink", "mehendi", "rajasthan", "peacock", "chai", "jamun", "monsoon"];
 var GLOOBAL_THEME_DEFAULT = "day";
 var GLOOBAL_THEME_PREF_KEY = "gloobal.theme.v1";
 

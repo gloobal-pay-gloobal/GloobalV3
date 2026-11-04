@@ -372,7 +372,9 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
       transition: dragging ? "none" : "transform 0.25s ease"
     }}
   >{days.map((d, i) => {
-    const isToday = weekOffset === 0 && i === days.length - 1;
+    // 0246: today is TODAY. It was "the last column", so a Saturday was
+    // lit up as today all week.
+    const isToday = d && d.dateKey ? d.dateKey === new Date().toDateString() : weekOffset === 0 && i === days.length - 1;
     const isSelected = selectedDay === i;
     const highlighted = selectedDay !== null ? isSelected : isToday;
     return <div key={i} data-day-index={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", gap: 5 }}>{
@@ -419,7 +421,7 @@ function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "d
         boxShadow: isSelected ? `0 0 0 1.5px ${C.selectRing}` : "none",
         transition: "height 0.3s ease, background 0.15s ease"
       }}
-    />}</div><span style={{ fontSize: 9.5, fontWeight: 700, color: palette === "light" ? T.inkSoft : "inherit", opacity: highlighted ? 0.95 : 0.6 }}>{SPENDING_DAY_LABELS[i]}</span></div>;
+    />}</div><span data-testid="spending-day-label" style={{ fontSize: 9.5, fontWeight: 700, color: palette === "light" ? T.inkSoft : "inherit", opacity: highlighted ? 0.95 : 0.6, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{SPENDING_DAY_LABELS[i]}{Number.isFinite(d.dayOfMonth) ? <span style={{ fontWeight: 600, opacity: 0.85 }}>{`/${String(d.dayOfMonth).padStart(2, "0")}`}</span> : null}</span></div>;
   })}</div>{
     /* Two dots mark the hard two-week limit — just a quiet sense of
        "there's one more week back, and that's it". */

@@ -104,7 +104,8 @@ function generateDailySpending(sendHistory, receiveHistory, weekCount = 2, curre
       );
       const paid = dayEntries.filter((t) => t.direction === "paid").reduce((s, t) => s + t.amount, 0);
       const received = dayEntries.filter((t) => t.direction === "received").reduce((s, t) => s + t.amount, 0);
-      return { paid: Math.round(paid * 100) / 100, received: Math.round(received * 100) / 100 };
+      // 0246: the day of the month too, so the card can print "M/04".
+      return { paid: Math.round(paid * 100) / 100, received: Math.round(received * 100) / 100, dayOfMonth: day.getDate(), dateKey: day.toDateString() };
     });
   });
   const totals = weeks.map((week) => ({

@@ -42,20 +42,8 @@ describe("each theme has its own colour family", () => {
     }
   }
 
-  test("Ink is greys only, so money is the only colour on it", () => {
-    for (const side of ["personal", "creator"]) {
-      for (const c of GLOOBAL_THEMES.ink[side].family) {
-        const [r, g, b] = rgb(c);
-        assert.ok(Math.max(r, g, b) - Math.min(r, g, b) <= 16, `${c} on Ink ${side} is not a grey`);
-      }
-    }
-  });
-
-  test("Ink's cards are white on a grey page, not grey on white", () => {
-    const p = GLOOBAL_THEMES.ink.personal;
-    assert.equal(p.surface.toUpperCase(), "#FFFFFF");
-    assert.notEqual(p.bg.toUpperCase(), "#FFFFFF");
-  });
+  // 0235: Ink (black and greys) was retired at the founder's request, so
+  // the two Ink-only checks that stood here went with it.
 });
 
 describe("the colour picker follows the active theme", () => {

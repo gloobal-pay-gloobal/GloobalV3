@@ -1,6 +1,6 @@
 // src/constants/theme.js
 //
-// ── ONE APP, ELEVEN THEMES, TWO SIDES ─────────────────────────────────────
+// ── ONE APP, TEN THEMES, TWO SIDES ─────────────────────────────────────
 //
 // Every colour the app draws comes through `T`. `T` used to be a plain
 // object of fixed values; it is now a set of GETTERS over whichever
@@ -43,6 +43,10 @@ var GLOOBAL_MONEY_DARK = { positive: "#34D399", positiveSoft: "#113A2E", negativ
 // as "r,g,b" so a shadow or wash can be written rgba(${T.accentRgb},0.3)
 // and follow the theme; the literal rgba(124,58,237,…) that used to sit in
 // sixty places was the violet shadow under every button in every theme.
+var GLOOBAL_CARD_TEXTURE = {
+  creator: "repeating-linear-gradient(135deg, rgba(255,255,255,0.07) 0 2px, transparent 2px 9px)",
+  personal: "radial-gradient(circle at 85% 20%, rgba(255,255,255,0.18), transparent 32%)"
+};
 function gloobalPalette(p) {
   const hexRgb = (hex) => {
     const h = String(hex).replace("#", "");
@@ -61,9 +65,7 @@ function gloobalPalette(p) {
     // The Creator side's balance card wears a fine diagonal weave; the
     // Personal side's is plain with a soft light in one corner. Drawn as
     // an overlay by the balance card (see Dashboard).
-    cardTexture: p.side === "creator"
-      ? "repeating-linear-gradient(135deg, rgba(255,255,255,0.07) 0 2px, transparent 2px 9px)"
-      : "radial-gradient(circle at 85% 20%, rgba(255,255,255,0.18), transparent 32%)",
+    cardTexture: GLOOBAL_CARD_TEXTURE[p.side === "creator" ? "creator" : "personal"],
     dark: false,
     side: "personal"
   }, p.dark ? GLOOBAL_MONEY_DARK : GLOOBAL_MONEY_LIGHT, p);
@@ -80,7 +82,7 @@ function gloobalPalette(p) {
 // on Ink, money (green in, red out) is the only colour left.
 var GLOOBAL_THEMES = {
   day: {
-    key: "day", name: "Day", tagline: "White paper. Violet for your own money, amber-gold for the shop.",
+    key: "day", looks: { personal: "Violet", creator: "Amber gold" }, name: "Day", tagline: "White paper. Violet for your own money, amber-gold for the shop.",
     personal: gloobalPalette({ side: "personal",
       bg: "#F5F4FB", surface: "#FFFFFF", surfaceAlt: "#F3F1FA", surfaceSunk: "#EEEBF9",
       ink: "#15132A", inkSoft: "#6B6580", inkFaint: "#9C96AF", line: "#EAE6F7",
@@ -104,7 +106,7 @@ var GLOOBAL_THEMES = {
   // side you are on is plain and it still reads as one app. Anyone whose
   // saved theme was Night opens on Lotus (readGloobalThemePref).
   lotus: {
-    key: "lotus", name: "Lotus", tagline: "Blush paper. Lotus pink for your own money, leaf green for the shop.",
+    key: "lotus", looks: { personal: "Lotus pink", creator: "Leaf green" }, name: "Lotus", tagline: "Blush paper. Lotus pink for your own money, leaf green for the shop.",
     personal: gloobalPalette({ side: "personal",
       bg: "#FBF2F6", surface: "#FFFFFF", surfaceAlt: "#F7E8EF", surfaceSunk: "#F2DFE8",
       ink: "#2A1220", inkSoft: "#7E5F6E", inkFaint: "#AE94A1", line: "#F1DCE6",
@@ -126,7 +128,7 @@ var GLOOBAL_THEMES = {
   // The founder picked every one of them from the drawing. They join the
   // list after the original five; nothing about how a theme works changed.
   mehendi: {
-    key: "mehendi", name: "Mehendi", tagline: "Henna paper. Henna red-brown for your own money, mehendi-leaf olive for the shop.",
+    key: "mehendi", looks: { personal: "Henna", creator: "Mehendi olive" }, name: "Mehendi", tagline: "Henna paper. Henna red-brown for your own money, mehendi-leaf olive for the shop.",
     personal: gloobalPalette({ side: "personal",
       bg: "#FAF3EC", surface: "#FFFFFF", surfaceAlt: "#F4E7DA", surfaceSunk: "#EEDCCB",
       ink: "#2B160C", inkSoft: "#7D6252", inkFaint: "#AE9585", line: "#F0E2D4",
@@ -145,7 +147,7 @@ var GLOOBAL_THEMES = {
       family: ["#5F7A1E", "#4D7C0F", "#A16207", "#65A30D", "#3F6212"]})
   },
   rajasthan: {
-    key: "rajasthan", name: "Rajasthan", tagline: "Sand paper. Indigo for your own money, terracotta for the shop: blue doors, clay walls.",
+    key: "rajasthan", looks: { personal: "Indigo", creator: "Terracotta" }, name: "Rajasthan", tagline: "Sand paper. Indigo for your own money, terracotta for the shop: blue doors, clay walls.",
     personal: gloobalPalette({ side: "personal",
       bg: "#F7F3EA", surface: "#FFFFFF", surfaceAlt: "#EFE8D9", surfaceSunk: "#E8DFCC",
       ink: "#161A33", inkSoft: "#666A80", inkFaint: "#9A9DAE", line: "#EAE2D2",
@@ -164,7 +166,7 @@ var GLOOBAL_THEMES = {
       family: ["#C0582B", "#B45309", "#9A3412", "#D97706", "#2F3E9E"]})
   },
   peacock: {
-    key: "peacock", name: "Peacock", tagline: "Pearl paper. Peacock blue for your own money, emerald with gold for the shop.",
+    key: "peacock", looks: { personal: "Peacock blue", creator: "Emerald & gold" }, name: "Peacock", tagline: "Pearl paper. Peacock blue for your own money, emerald with gold for the shop.",
     personal: gloobalPalette({ side: "personal",
       bg: "#EFF4FA", surface: "#FFFFFF", surfaceAlt: "#E2EBF5", surfaceSunk: "#D7E2EF",
       ink: "#0D1B2E", inkSoft: "#566679", inkFaint: "#8D9AAB", line: "#DCE5F0",
@@ -183,7 +185,7 @@ var GLOOBAL_THEMES = {
       family: ["#0B7A55", "#C9A227", "#0F766E", "#1546A6", "#15803D"]})
   },
   chai: {
-    key: "chai", name: "Chai", tagline: "Milky paper. Masala-chai brown for your own money, cardamom green for the shop.",
+    key: "chai", looks: { personal: "Masala chai", creator: "Cardamom" }, name: "Chai", tagline: "Milky paper. Masala-chai brown for your own money, cardamom green for the shop.",
     personal: gloobalPalette({ side: "personal",
       bg: "#F7F2EC", surface: "#FFFFFF", surfaceAlt: "#EFE6DC", surfaceSunk: "#E8DDD0",
       ink: "#24180F", inkSoft: "#776656", inkFaint: "#A89888", line: "#ECE2D6",
@@ -202,7 +204,7 @@ var GLOOBAL_THEMES = {
       family: ["#4F7A3A", "#3F6212", "#7B4A2A", "#65A30D", "#0F766E"]})
   },
   jamun: {
-    key: "jamun", name: "Jamun", tagline: "Lilac paper. Jamun-berry purple for your own money, fresh mint for the shop.",
+    key: "jamun", looks: { personal: "Jamun", creator: "Mint" }, name: "Jamun", tagline: "Lilac paper. Jamun-berry purple for your own money, fresh mint for the shop.",
     personal: gloobalPalette({ side: "personal",
       bg: "#F6F1F9", surface: "#FFFFFF", surfaceAlt: "#ECE2F2", surfaceSunk: "#E3D6EC",
       ink: "#221330", inkSoft: "#715F80", inkFaint: "#A393B0", line: "#EADFF0",
@@ -221,7 +223,7 @@ var GLOOBAL_THEMES = {
       family: ["#12897A", "#0D9488", "#0E7490", "#5E2A84", "#059669"]})
   },
   monsoon: {
-    key: "monsoon", name: "Monsoon", tagline: "Rain-grey paper. Monsoon blue for your own money, mango yellow for the shop.",
+    key: "monsoon", looks: { personal: "Monsoon blue", creator: "Mango" }, name: "Monsoon", tagline: "Rain-grey paper. Monsoon blue for your own money, mango yellow for the shop.",
     personal: gloobalPalette({ side: "personal",
       bg: "#EEF2F6", surface: "#FFFFFF", surfaceAlt: "#E1E8EF", surfaceSunk: "#D6DFE8",
       ink: "#13202E", inkSoft: "#5B6978", inkFaint: "#8E9AA8", line: "#DCE3EA",
@@ -240,7 +242,7 @@ var GLOOBAL_THEMES = {
       family: ["#D4A000", "#CA8A04", "#EA580C", "#2F5D8C", "#B45309"]})
   },
   tiranga: {
-    key: "tiranga", name: "Tiranga", tagline: "Cream paper. Saffron for you, chakra blue for the shop — the flag's two inks.",
+    key: "tiranga", looks: { personal: "Saffron", creator: "Chakra blue" }, name: "Tiranga", tagline: "Cream paper. Saffron for you, chakra blue for the shop — the flag's two inks.",
     personal: gloobalPalette({ side: "personal",
       bg: "#FBF6EE", surface: "#FFFFFF", surfaceAlt: "#F6EEE0", surfaceSunk: "#F0E6D4",
       ink: "#241B12", inkSoft: "#7A6A58", inkFaint: "#A89883", line: "#EFE4D2",
@@ -259,7 +261,7 @@ var GLOOBAL_THEMES = {
       family: ["#1F4FA3", "#138A5E", "#E8701E", "#3C7BE0", "#0E7490"]})
   },
   ocean: {
-    key: "ocean", name: "Ocean", tagline: "Sea-glass paper. Deep teal for your own money, coral for the shop.",
+    key: "ocean", looks: { personal: "Deep teal", creator: "Coral" }, name: "Ocean", tagline: "Sea-glass paper. Deep teal for your own money, coral for the shop.",
     personal: gloobalPalette({ side: "personal",
       bg: "#EFF7F8", surface: "#FFFFFF", surfaceAlt: "#E6F1F3", surfaceSunk: "#DCEAED",
       ink: "#0F2A30", inkSoft: "#5A747A", inkFaint: "#8FA6AB", line: "#DDEAEC",
@@ -276,37 +278,15 @@ var GLOOBAL_THEMES = {
       gradWallet: "linear-gradient(150deg,#3D140C 0%,#9A2E1C 42%,#E8553F 80%,#F7925E 100%)",
       gradButton: "linear-gradient(135deg,#D1432F 0%,#F07A4A 100%)",
       family: ["#E8553F", "#F59E0B", "#0E7C86", "#EC4899", "#F97316"]})
-  },
-  ink: {
-    key: "ink", name: "Ink", tagline: "No colour but money's. Black on white for you; graphite on stone for the shop.",
-    personal: gloobalPalette({ side: "personal",
-      bg: "#F4F4F3", surface: "#FFFFFF", surfaceAlt: "#EDEDEC", surfaceSunk: "#E6E6E6",
-      ink: "#111111", inkSoft: "#5C5C5C", inkFaint: "#9A9A9A", line: "#E3E3E1",
-      accent: "#111111", accentDeep: "#000000", accent2: "#444444", accentSoft: "#EAEAEA",
-      gradPrimary: "linear-gradient(135deg,#000000 0%,#1A1A1A 55%,#333333 100%)",
-      gradWallet: "linear-gradient(150deg,#000000 0%,#1A1A1A 55%,#333333 100%)",
-      gradButton: "linear-gradient(135deg,#000000 0%,#2A2A2A 100%)",
-      family: ["#111111", "#3F3F46", "#57534E", "#27272A"]}),
-    // 0233: the shop side was a black page; it is stone-grey paper now,
-    // with graphite ink and the creator weave on the card — still no
-    // colour but money's, and still plainly the other side.
-    creator: gloobalPalette({ side: "creator",
-      bg: "#E9E7E2", surface: "#F8F7F4", surfaceAlt: "#E2DFD9", surfaceSunk: "#DAD7D0",
-      ink: "#1A1917", inkSoft: "#5E5B56", inkFaint: "#97938C", line: "#D9D6CF",
-      accent: "#2A2826", accentDeep: "#0F0E0D", accent2: "#55524D", accentSoft: "#E0DDD7",
-      gradPrimary: "linear-gradient(135deg,#1C1B19 0%,#3A3835 55%,#5E5B56 100%)",
-      gradWallet: "linear-gradient(150deg,#1C1B19 0%,#3A3835 50%,#6B6762 100%)",
-      gradButton: "linear-gradient(135deg,#2A2826 0%,#4A4743 100%)",
-      family: ["#1F1F1F", "#4B4B4B", "#6E6A64", "#2E2C2A"]})
   }
 };
-var GLOOBAL_THEME_ORDER = ["day", "lotus", "tiranga", "ocean", "ink", "mehendi", "rajasthan", "peacock", "chai", "jamun", "monsoon"];
+var GLOOBAL_THEME_ORDER = ["day", "lotus", "tiranga", "ocean", "mehendi", "rajasthan", "peacock", "chai", "jamun", "monsoon"];
 var GLOOBAL_THEME_DEFAULT = "day";
 var GLOOBAL_THEME_PREF_KEY = "gloobal.theme.v1";
 
 // The palette in force. Starts on Day · Personal so the first paint, before
 // App has read the saved choice, is the look the app has always had.
-var GLOOBAL_THEME_ACTIVE = { key: GLOOBAL_THEME_DEFAULT, side: "personal" };
+var GLOOBAL_THEME_ACTIVE = { key: GLOOBAL_THEME_DEFAULT, side: "personal", look: `${GLOOBAL_THEME_DEFAULT}.personal` };
 var GLOOBAL_PALETTE_ACTIVE = Object.assign({}, GLOOBAL_THEME_STATIC, GLOOBAL_THEMES.day.personal);
 
 // `T`: every key of a palette, as a getter over the active one.
@@ -329,12 +309,83 @@ var T = {};
   Object.defineProperty(T, "themeKey", { enumerable: true, get() { return GLOOBAL_THEME_ACTIVE.key; } });
 })();
 
+// ── A THEME, OR A MIX (0235) ──────────────────────────────────────────
+//
+// The founder asked for "common themes of creators and personal": one
+// shared list of looks, with each side free to wear any of them. So the
+// saved choice is either a theme's key ("peacock" — its own pair, as
+// before) or a mix, "mix:<look>|<look>", where a look is one palette of a
+// theme, "peacock.personal" or "mehendi.creator". The Personal side wears
+// the first, the Creator side the second, whatever side each was drawn
+// for; the card's texture always follows the side it is on, so the shop
+// keeps its weave.
+//
+// Retired: Night (0233) and Ink (0235). A saved choice naming either is
+// carried to Lotus and Day.
+var GLOOBAL_THEME_RETIRED = { night: "lotus", ink: "day" };
+function gloobalLookValid(id) {
+  const [k, side] = String(id || "").split(".");
+  return Boolean(GLOOBAL_THEMES[k] && (side === "personal" || side === "creator"));
+}
+function gloobalRetireLook(id) {
+  const [k, side] = String(id || "").split(".");
+  return GLOOBAL_THEME_RETIRED[k] ? `${GLOOBAL_THEME_RETIRED[k]}.${side}` : id;
+}
+// Every look, in theme order: [{ id, theme, side, name }].
+function gloobalLooks() {
+  const out = [];
+  for (const k of GLOOBAL_THEME_ORDER) for (const side of ["personal", "creator"]) out.push({ id: `${k}.${side}`, theme: k, side, name: GLOOBAL_THEMES[k].looks[side] });
+  return out;
+}
+function gloobalMixChoice(personalLook, creatorLook) {
+  const [a, sa] = String(personalLook).split(".");
+  const [b, sb] = String(creatorLook).split(".");
+  // A theme's own pair is just that theme.
+  if (a === b && sa === "personal" && sb === "creator") return a;
+  return `mix:${personalLook}|${creatorLook}`;
+}
+// The two looks a saved choice stands for; anything unreadable is Day.
+function gloobalChoiceLooks(choice) {
+  let c = String(choice || "");
+  if (c.startsWith("mix:")) {
+    const [a, b] = c.slice(4).split("|").map(gloobalRetireLook);
+    if (gloobalLookValid(a) && gloobalLookValid(b)) return { personal: a, creator: b, mixed: true };
+    c = "";
+  }
+  c = GLOOBAL_THEME_RETIRED[c] || c;
+  const key = GLOOBAL_THEMES[c] ? c : GLOOBAL_THEME_DEFAULT;
+  return { personal: `${key}.personal`, creator: `${key}.creator`, mixed: false, key };
+}
+function gloobalChoiceValid(choice) {
+  const c = String(choice || "");
+  if (c.startsWith("mix:")) { const [a, b] = c.slice(4).split("|"); return gloobalLookValid(a) && gloobalLookValid(b); }
+  return Boolean(GLOOBAL_THEMES[c]);
+}
+// The cleaned form of a saved choice, so what is stored and what is shown
+// agree.
+function gloobalNormalChoice(choice) {
+  const l = gloobalChoiceLooks(choice);
+  return l.mixed ? gloobalMixChoice(l.personal, l.creator) : l.key;
+}
+// One look's palette, worn on `asSide`.
+function gloobalLookPalette(id, asSide) {
+  const [k, side] = String(id).split(".");
+  const base = GLOOBAL_THEMES[k][side];
+  if (base.side === asSide) return base;
+  return Object.assign({}, base, { side: asSide, cardTexture: GLOOBAL_CARD_TEXTURE[asSide] });
+}
+// What the Profile row and the picker call the current choice.
+function gloobalChoiceName(choice) {
+  const l = gloobalChoiceLooks(choice);
+  if (!l.mixed) return GLOOBAL_THEMES[l.key].name;
+  const name = (id) => { const [k, side] = id.split("."); return GLOOBAL_THEMES[k].looks[side]; };
+  return `${name(l.personal)} + ${name(l.creator)}`;
+}
+
 function readGloobalThemePref() {
   try {
     const raw = typeof window !== "undefined" ? window.localStorage.getItem(GLOOBAL_THEME_PREF_KEY) : null;
-    // 0233: Night was retired; whoever chose it opens on Lotus.
-    const saved = raw === "night" ? "lotus" : raw;
-    return saved && GLOOBAL_THEMES[saved] ? saved : GLOOBAL_THEME_DEFAULT;
+    return gloobalNormalChoice(raw || GLOOBAL_THEME_DEFAULT);
   } catch (e) {
     return GLOOBAL_THEME_DEFAULT;
   }
@@ -346,11 +397,13 @@ function saveGloobalThemePref(key) {
 // Swap the active palette. Idempotent and cheap, so App may call it on
 // every render. Returns true when something actually changed.
 function applyGloobalTheme(themeKey, side) {
-  const key = GLOOBAL_THEMES[themeKey] ? themeKey : GLOOBAL_THEME_DEFAULT;
   const which = side === "creator" ? "creator" : "personal";
-  if (GLOOBAL_THEME_ACTIVE.key === key && GLOOBAL_THEME_ACTIVE.side === which) return false;
-  GLOOBAL_THEME_ACTIVE = { key, side: which };
-  GLOOBAL_PALETTE_ACTIVE = Object.assign({}, GLOOBAL_THEME_STATIC, GLOOBAL_THEMES[key][which]);
+  const looks = gloobalChoiceLooks(themeKey);
+  const look = looks[which];
+  const key = gloobalNormalChoice(themeKey);
+  if (GLOOBAL_THEME_ACTIVE.key === key && GLOOBAL_THEME_ACTIVE.side === which && GLOOBAL_THEME_ACTIVE.look === look) return false;
+  GLOOBAL_THEME_ACTIVE = { key, side: which, look };
+  GLOOBAL_PALETTE_ACTIVE = Object.assign({}, GLOOBAL_THEME_STATIC, gloobalLookPalette(look, which));
   return true;
 }
 // The parts of the page React does not own: the ground behind the app

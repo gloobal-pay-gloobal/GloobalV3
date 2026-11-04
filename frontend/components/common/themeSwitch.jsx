@@ -2,7 +2,8 @@
 //
 // THE THEME PICKER, AND THE MOMENT THE SIDE FLIPS.
 //
-// Five themes, each a pair of palettes (constants/theme.js). The picker
+// Ten themes, each a pair of palettes (constants/theme.js), and a mix of
+// any two looks (0235). The picker
 // shows every theme as the two cards it really is — Personal on the left,
 // Creator on the right — so the choice is made with both sides in view.
 //
@@ -16,7 +17,8 @@ import { User as UserTheme, Store as StoreTheme, Check as CheckTheme, Palette as
 
 function SideFlipCard({ side, onDone }) {
   const creator = side === "creator";
-  const p = GLOOBAL_THEMES[GLOOBAL_THEME_ACTIVE.key][creator ? "creator" : "personal"];
+  const which = creator ? "creator" : "personal";
+  const p = gloobalLookPalette(gloobalChoiceLooks(GLOOBAL_THEME_ACTIVE.key)[which], which);
   useEffectTheme(() => {
     const t = setTimeout(() => onDone && onDone(), 1150);
     return () => clearTimeout(t);
@@ -47,8 +49,44 @@ function ThemeSwatchPair({ theme }) {
   return <span style={{ display: "flex", gap: 8, width: "100%" }}>{mini(theme.personal, false)}{mini(theme.creator, true)}</span>;
 }
 
+// ── MIX YOUR OWN (0235) ─────────────────────────────────────────────────
+// Every look of every theme in one shared row, once for each side: pick
+// any for your own money and any for your shop.
+function LookSwatch({ look, on, onPick, testId }) {
+  const p = GLOOBAL_THEMES[look.theme][look.side];
+  return <button type="button" data-testid={testId} aria-pressed={on} onClick={onPick} className="v2-tap" style={{
+    flexShrink: 0, width: 92, display: "flex", flexDirection: "column", gap: 6, padding: 6, borderRadius: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+    background: p.bg, border: on ? `2px solid ${T.accent}` : `1px solid ${p.line}`, boxShadow: on ? T.shadowRaised : "none"
+  }}><span style={{ height: 38, borderRadius: 11, background: p.gradWallet, position: "relative", overflow: "hidden", display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: 4 }}>{on ? <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", color: p.accent, display: "flex", alignItems: "center", justifyContent: "center" }}><CheckTheme size={12} strokeWidth={3.2} /></span> : null}</span><span style={{ fontSize: 10.5, fontWeight: 800, color: p.ink, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{look.name}</span></button>;
+}
+function MixYourOwn({ current, onPick }) {
+  const looks = gloobalLooks();
+  const now = gloobalChoiceLooks(current);
+  const same = now.personal === now.creator;
+  // Opened, the picked look in each row is in view, not off to the side.
+  useEffectTheme(() => {
+    for (const side of ["personal", "creator"]) {
+      try {
+        const row = document.querySelector(`[data-testid="mix-${side}"]`);
+        const el = row && row.querySelector('[aria-pressed="true"]');
+        if (row && el) row.scrollLeft = Math.max(0, el.offsetLeft - row.offsetLeft - 8);
+      } catch (e) { /* nothing to scroll */ }
+    }
+  }, []);
+  const row = (side, label, Icon) => <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+    <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: T.inkSoft, padding: "0 2px" }}><Icon size={12} />{label}</span>
+    <div data-testid={`mix-${side}`} style={{ display: "flex", gap: 7, overflowX: "auto", padding: "2px 2px 6px", margin: "0 -2px", scrollbarWidth: "none" }}>{looks.map((l) => <LookSwatch key={l.id} look={l} on={now[side] === l.id} testId={`look-${side}-${l.id}`} onPick={() => onPick(side === "personal" ? gloobalMixChoice(l.id, now.creator) : gloobalMixChoice(now.personal, l.id))} />)}</div>
+  </div>;
+  return <div data-testid="mix-your-own" style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: now.mixed ? T.shadowRaised : T.shadowCard, border: now.mixed ? `2px solid ${T.accent}` : `1px solid ${T.line}`, padding: now.mixed ? 13 : 14, display: "flex", flexDirection: "column", gap: 12 }}>
+    <span style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Mix your own</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkSoft, marginTop: 2, lineHeight: 1.4 }}>Any look for your own money, any look for your shop.</span></span>{now.mixed ? <span style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: T.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><CheckTheme size={15} strokeWidth={3} /></span> : null}</span>
+    {row("personal", "For you", UserTheme)}
+    {row("creator", "For your shop", StoreTheme)}
+    {same ? <span data-testid="mix-same-note" style={{ fontSize: 11.5, fontWeight: 700, color: "#B26A00", background: "#FDF1DA", borderRadius: 12, padding: "8px 10px", lineHeight: 1.4 }}>Both sides look the same now, so the app won't change colour when you switch to your shop.</span> : null}
+  </div>;
+}
+
 function AppearanceScreen({ current, onPick, onBack }) {
-  return <div data-testid="appearance-screen" style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onBack} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Appearance</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 18px 30px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5, padding: "0 2px 4px" }}>Every theme has two looks: one for your own money, one for your shop. The app changes colour when you flip, so you always know which side you are on.</div>{GLOOBAL_THEME_ORDER.map((key) => {
+  return <div data-testid="appearance-screen" style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={onBack} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Appearance</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 18px 30px", display: "flex", flexDirection: "column", gap: 12 }}><div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5, padding: "0 2px 4px" }}>Every theme has two looks: one for your own money, one for your shop. The app changes colour when you flip, so you always know which side you are on. Or mix your own from any of them.</div><MixYourOwn current={current} onPick={onPick} />{GLOOBAL_THEME_ORDER.map((key) => {
     const theme = GLOOBAL_THEMES[key];
     const on = key === current;
     return <button
@@ -65,12 +103,13 @@ function AppearanceScreen({ current, onPick, onBack }) {
 
 // The Profile row that opens the picker.
 function AppearanceRow({ current, onOpen }) {
-  const theme = GLOOBAL_THEMES[current] || GLOOBAL_THEMES[GLOOBAL_THEME_DEFAULT];
+  const looks = gloobalChoiceLooks(current);
+  const theme = { name: gloobalChoiceName(current), personal: gloobalLookPalette(looks.personal, "personal"), creator: gloobalLookPalette(looks.creator, "creator") };
   return <div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}><button
     type="button"
     onClick={onOpen}
     data-testid="appearance-row"
     className="v2-row"
     style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", border: "none", background: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
-  ><span style={{ width: 36, height: 36, borderRadius: 12, background: T.accentSoft, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><PaletteTheme size={18} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 600, color: T.ink }}>Appearance</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkFaint, marginTop: 1 }}>{theme.name} · two looks, one for each side</span></span><span style={{ display: "flex", gap: 3, flexShrink: 0 }}><span style={{ width: 14, height: 22, borderRadius: 5, background: theme.personal.gradWallet }} /><span style={{ width: 14, height: 22, borderRadius: 5, background: theme.creator.gradWallet }} /></span><ChevronRightIcon /></button></div>;
+  ><span style={{ width: 36, height: 36, borderRadius: 12, background: T.accentSoft, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><PaletteTheme size={18} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 600, color: T.ink }}>Appearance</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkFaint, marginTop: 1 }}>{theme.name} · {looks.mixed ? "your own mix" : "two looks, one for each side"}</span></span><span style={{ display: "flex", gap: 3, flexShrink: 0 }}><span style={{ width: 14, height: 22, borderRadius: 5, background: theme.personal.gradWallet }} /><span style={{ width: 14, height: 22, borderRadius: 5, background: theme.creator.gradWallet }} /></span><ChevronRightIcon /></button></div>;
 }

@@ -36,6 +36,33 @@ function hexToHsv(hex) {
   if (h < 0) h += 360;
   return { h, s: max === 0 ? 0 : d / max };
 }
+// ── READABLE ON ITS GROUND (0235) ──────────────────────────────────────
+// WCAG contrast between two #RRGGBB colours, and a colour darkened in
+// small steps until it reaches `min` against `bg`. The dial's symbols and
+// its centre key take colours from the theme's family, and some family
+// colours (mango, gold, sky) are too light to read on a white key or to
+// carry a white cross; this keeps the hue and fixes the contrast.
+function gloobalLuminance(hex) {
+  const h = String(hex || "").replace("#", "");
+  if (h.length !== 6) return 1;
+  const ch = (i) => { const c = parseInt(h.slice(i, i + 2), 16) / 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  return 0.2126 * ch(0) + 0.7152 * ch(2) + 0.0722 * ch(4);
+}
+function gloobalContrast(a, b) {
+  const x = gloobalLuminance(a), y = gloobalLuminance(b);
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+function gloobalReadable(color, bg, min) {
+  const want = min || 3;
+  const ground = bg || "#FFFFFF";
+  let c = String(color || "");
+  if (!/^#[0-9a-f]{6}$/i.test(c)) return color;
+  for (let i = 0; i < 20 && gloobalContrast(c, ground) < want; i += 1) {
+    const h = c.slice(1);
+    c = "#" + [0, 2, 4].map((j) => Math.round(parseInt(h.slice(j, j + 2), 16) * 0.9).toString(16).padStart(2, "0")).join("");
+  }
+  return c;
+}
 // The active theme's colour family (see GLOOBAL_THEMES in
 // constants/theme.js), or the shared list when no palette carries one.
 function gloobalFamily() {

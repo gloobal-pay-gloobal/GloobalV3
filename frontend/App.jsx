@@ -1615,10 +1615,12 @@ function GloobalId() {
   const themeSide = activeShareRole === "merchant" ? "creator" : "personal";
   applyGloobalTheme(themeKey, themeSide);
   useEffect15(() => { paintGloobalThemeChrome(); }, [themeKey, themeSide]);
+  // A theme's key, or a mix of two looks (0235: "mix:<look>|<look>").
   const pickTheme = (key) => {
-    if (!GLOOBAL_THEMES[key]) return;
-    saveGloobalThemePref(key);
-    setThemeKey(key);
+    if (!gloobalChoiceValid(key)) return;
+    const clean = gloobalNormalChoice(key);
+    saveGloobalThemePref(clean);
+    setThemeKey(clean);
   };
   // The flip moment: a card slides across naming the side just arrived
   // on, in its own ink. Not on first mount — only on a real switch.

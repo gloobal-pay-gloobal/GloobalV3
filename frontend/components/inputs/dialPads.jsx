@@ -46,7 +46,7 @@ function SymbolChipRow({ length, value, masked, boxSize = 21, justify = "flex-st
       justifyContent: "center",
       fontSize: fitWidth ? "min(4.5vw, 18px)" : boxSize > 21 ? 18 : 13,
       fontWeight: 800,
-      color: chars[i] && !masked ? POSITION_COLORS[i % POSITION_COLORS.length] : T.ink,
+      color: chars[i] && !masked ? gloobalReadable(POSITION_COLORS[i % POSITION_COLORS.length], T.accentSoft, 3) : T.ink,
       background: chars[i] ? T.accentSoft : T.surfaceAlt,
       border: "1.5px solid " + (chars[i] ? T.accent : T.line),
       borderRadius: 9,
@@ -401,7 +401,8 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      background: "linear-gradient(160deg, #ffffff 0%, #f5f3fc 100%)",
+      // 0235: the face takes the theme's own paper, not a fixed violet tint.
+      background: `linear-gradient(160deg, ${T.surface} 0%, ${T.surfaceAlt} 100%)`,
       border: `1px solid rgba(${T.accentRgb},0.16)`,
       backfaceVisibility: "hidden",
       WebkitBackfaceVisibility: "hidden",
@@ -427,8 +428,9 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
         transform: `rotate(${angle}deg) translate(0, -${radius}px) rotate(${-angle}deg)`,
         borderRadius: "50%",
         border: `1px solid rgba(${T.accentRgb},0.18)`,
-        background: "linear-gradient(160deg, #ffffff 0%, #f2effb 100%)",
-        color: symbolColors[i] || T.ink,
+        background: `linear-gradient(160deg, ${T.surface} 0%, ${T.surfaceAlt} 100%)`,
+        // Readable on the key in every theme, whatever colour it flips to.
+        color: symbolColors[i] ? gloobalReadable(symbolColors[i], T.surfaceAlt, 3) : T.ink,
         fontSize: Math.round(21 * DIAL_SCALE),
         fontWeight: 800,
         display: "flex",
@@ -456,12 +458,12 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
       margin: -buttonSize / 2,
       borderRadius: "50%",
       border: "none",
-      background: crossColor,
+      background: gloobalReadable(crossColor, "#FFFFFF", 3),
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       cursor: "pointer",
-      boxShadow: `0 6px 14px ${crossColor}55`,
+      boxShadow: `0 6px 14px ${gloobalReadable(crossColor, "#FFFFFF", 3)}55`,
       transition: "background 0.4s ease, box-shadow 0.4s ease"
     }}
   ><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" strokeWidth="2.4"><path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" /></svg></button></div></div></div>{

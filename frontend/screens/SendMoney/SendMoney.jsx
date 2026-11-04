@@ -570,6 +570,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     // this screen's own senderAmount. Null for a local simulation, which then
     // shows no conversion block rather than a client-computed one.
     let confirmedRecorded = null;
+    // 0242: the method as the server recorded it; the chosen one until then.
+    let confirmedPayMethod = payMethod;
     // Whether the backend actually recorded this payment — false for a
     // `skipped` local simulation, and (consistently) false when there is
     // no onRemoteSend at all to have recorded it. Read below by the final
@@ -613,6 +615,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         // The verified PIN, from the ref — `pin` state is "" by now.
         pin: verifiedPinRef.current || "",
         payMethodLabel: payMethod,
+        essentialsDrawKey: essentialsDrawKeyRef.current || undefined,
         memo: `Send Money to ${bottom.name}`,
         clientRequestId: requestIdRef.current
       });
@@ -664,8 +667,15 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
           // payee's. Receipt display only, like the five above.
           shareCurrency: remote.shareCurrency,
           sharePayeeAmount: remote.sharePayeeAmount,
-          sharePayeeCurrency: remote.sharePayeeCurrency
+          sharePayeeCurrency: remote.sharePayeeCurrency,
+          // 0242: the method the server settled on from the real draw, the
+          // two parts, and where the share went.
+          payMethod: remote.payMethod || null,
+          essentialsPart: remote.essentialsPart,
+          bankPart: remote.bankPart,
+          shareDestination: remote.cashbackDestination || ""
         };
+        if (remote.payMethod) confirmedPayMethod = remote.payMethod;
       }
     }
     // ONE call: risk-check, posting, provenance, complaint window, and
@@ -717,7 +727,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     const sentText = geuLensBarMoney(senderAmount, top.currency, lens, top.currency);
     showToast2(
       settledRemotely
-        ? `Sending ${sentText} to ${bottom.country} \xB7 via ${payMethod || "Gloobal Bank"}`
+        ? `Sending ${sentText} to ${bottom.country} \xB7 via ${confirmedPayMethod || "Gloobal Bank"}`
         : `Not sent — ${sentText} recorded locally only, no registered GLOOBAL account to credit`
     );
     const { receipt: receipt2, historyEntry } = buildTransactionSnapshot({
@@ -1107,6 +1117,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   // How much Essentials actually carried of the payment in flight. Read
   // by the receipt; cleared whenever a new payment starts.
   const essentialsAppliedRef = useRef11(0);
+  const essentialsDrawKeyRef = useRef11(null);
   // What the payment takes from where, when Essentials carries part of it
   // (0228): the founder could send more than Essentials allows without
   // seeing that the rest came out of GLOOBAL Bank. Shown at the PIN, before
@@ -1159,6 +1170,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     if (label === ESSENTIALS_PAY_METHOD && onDrawEssentials) {
       const drawn = await onDrawEssentials(senderAmount);
       essentialsAppliedRef.current = Number(drawn && drawn.applied) || 0;
+      // 0242: the draw's key goes with the payment, so the server can record
+      // how much of it Essentials really carried.
+      essentialsDrawKeyRef.current = essentialsAppliedRef.current > 0 ? (drawn && drawn.key) || null : null;
       {
         const fromEssentials = Math.min(Number(senderAmount) || 0, essentialsAppliedRef.current);
         setEssentialsSplit({ fromEssentials, fromBank: Math.max(0, Math.round(((Number(senderAmount) || 0) - fromEssentials) * 100) / 100) });
@@ -1176,6 +1190,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       }
     } else {
       essentialsAppliedRef.current = 0;
+      essentialsDrawKeyRef.current = null;
       setEssentialsSplit(null);
     }
     setPayMethod(label);

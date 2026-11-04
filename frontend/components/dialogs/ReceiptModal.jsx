@@ -428,7 +428,12 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
   // Only the CREDIT side moves. On the payee's side the share was taken
   // out of what they would otherwise have been paid, which came from their
   // balance either way.
-  const shareDestinationName = shareIsCredit && receipt.shareDestination === "assets"
+  // 0242: My Assets is where it goes unless the person chooses otherwise.
+  // Once they move it ("Add to balance", or claiming it from My Assets) the
+  // receipt says that too — planted in My Assets, then moved by them.
+  const shareInAssets = shareIsCredit && receipt.shareDestination === "assets";
+  const shareMoved = shareInAssets && Boolean(receipt.shareMovedToBalance);
+  const shareDestinationName = shareInAssets
     ? "My Assets"
     : "GLOOBAL balance";
   // Guarded rather than read straight off `receiptTab`, so a receipt opened
@@ -1275,7 +1280,18 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     /* A rate with no date attached is a rate the reader assumes is today's.
        This one is the rate the payment settled at, and saying so is the
        difference between a record and an estimate. */
-  }As settled at the time of this transaction, not a current rate.</div></div>}<ReceiptSectionLabel>Proof</ReceiptSectionLabel>{receipt.method && <ReceiptRow label="Method" value={receipt.method} />}<ReceiptRow label={"Date \xB7 Time"} value={dateTimeValue} /></> : <>{
+  }As settled at the time of this transaction, not a current rate.</div></div>}<ReceiptSectionLabel>Proof</ReceiptSectionLabel>{receipt.method && <ReceiptRow label="Method" value={receipt.method} testId="receipt-method" />}{
+    /* 0242: when Essentials carried any of it, the two parts — so "My
+       Essentials + GLOOBAL Bank" says how much came from each. */
+  }{receipt.paySplit && <div data-testid="receipt-pay-split" className="rcpt-sub"><ReceiptRow
+    label="From My Essentials"
+    value={moneyCoded(receipt.paySplit.essentials, receipt.paySplit.currency || receipt.currencyCode)}
+    testId="receipt-from-essentials"
+  />{receipt.paySplit.bank > 0 && <ReceiptRow
+    label="From GLOOBAL Bank"
+    value={moneyCoded(receipt.paySplit.bank, receipt.paySplit.currency || receipt.currencyCode)}
+    testId="receipt-from-bank"
+  />}</div>}<ReceiptRow label={"Date \xB7 Time"} value={dateTimeValue} /></> : <>{
     /* The Creator Share's own document: the arithmetic, where it went, and
        who it came from. Rate and amount are shown even at 0 rather than the
        tab disappearing — a 0% share is still a real, reportable outcome. */
@@ -1315,7 +1331,11 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     value={moneyCoded(shareConversion.gotAmount, shareConversion.gotCurrency)}
   />{shareConversion.rateLabel && <ReceiptRow label="Rate applied" value={shareConversion.rateLabel} accent />}<div className="rcpt-note" style={{ fontSize: 10, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4, paddingTop: 6 }}>
       As settled at the time of this transaction, not a current rate.
-    </div></div>}<ReceiptSectionLabel>Where it went</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Credited to" : "Taken from"} value={shareDestinationName} /><ReceiptRow label={"Date \xB7 Time"} value={dateTimeValue} /><ReceiptSectionLabel>Who</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Shared back to" : "You shared back to"} value={shareIsCredit ? "You" : receipt.name} />{
+    </div></div>}<ReceiptSectionLabel>Where it went</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Credited to" : "Taken from"} value={shareDestinationName} testId="receipt-share-destination" />{shareInAssets && <ReceiptRow
+    label={shareMoved ? "Moved by you to" : "Now"}
+    value={shareMoved ? "GLOOBAL balance" : "Growing until you claim it"}
+    testId="receipt-share-now"
+  />}<ReceiptRow label={"Date \xB7 Time"} value={dateTimeValue} /><ReceiptSectionLabel>Who</ReceiptSectionLabel><ReceiptRow label={shareIsCredit ? "Shared back to" : "You shared back to"} value={shareIsCredit ? "You" : receipt.name} />{
     /* Who the other side of the share is, by name and by ID.
 
        When I RECEIVED the payment, the row above already names the person I

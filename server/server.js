@@ -20,6 +20,7 @@ const Interest = require('./models/Interest');
 const Product = require('./models/Product');
 const ProductService = require('./models/ProductService');
 const AssetSeed = require('./models/AssetSeed');
+const Disbursement = require('./models/Disbursement');
 const AssetSettlement = require('./models/AssetSettlement');
 // Seeds still in My Assets. A settled seed (see AssetSettlement) is closed:
 // `settledAt: null` matches both an explicit null and a seed written before
@@ -9242,8 +9243,13 @@ app.get('/api/assets/paylater/:symbolId', lookupLimit, requireAuth, requireSelf(
       const payee = t.toUserId?.fullName || t.toUserId?.symbolId || 'Gloobal user';
       return {
         id: String(t._id),
+        // 0242: the payment's reference, so a row can open its receipt.
+        referenceId: t.referenceId || null,
         type: repayment ? 'repayment' : 'charge',
-        amount: t.amount,
+        // What left the payer, in their own currency — `amount` on the row
+        // is the receiver's face value, which on a cross-border payment is
+        // another currency altogether.
+        amount: Number.isFinite(Number(t.metadata?.debitAmount)) ? Number(t.metadata.debitAmount) : t.amount,
         description: repayment ? 'Repayment' : `PayLater charge · ${payee}`,
         createdAt: t.createdAt,
       };
@@ -10129,6 +10135,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       pin,
       idempotencyKey,
       payMethod,
+      // 0242: the key of the Essentials draw made for THIS payment (see
+      // POST /api/essentials/draw). The server reads the draw itself; the
+      // client never says how much came from Essentials.
+      essentialsDrawKey,
       // Paid at the receiver's shop (their creator name) rather than at
       // them as a person. Only honoured when the receiver really has one.
       toCreator,
@@ -10705,6 +10715,49 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // retry-safety is `idempotencyKey`, checked above, and that is unchanged.
     const transactionReference = await resolveTransactionReference();
 
+    // ── WHERE THE MONEY CAME FROM, WHEN ESSENTIALS WAS CHOSEN (0242) ──────
+    //
+    // "My Essentials" was printed on every payment where it was CHOSEN,
+    // including a 2,568 payment Essentials could only carry a small part of.
+    // The method now says what really happened, from the draw the server
+    // itself recorded for this payment:
+    //
+    //   all of it from today's Essentials  -> "My Essentials"
+    //   part of it                         -> "My Essentials + GLOOBAL Bank"
+    //   none (nothing left today, no bank) -> "GLOOBAL Bank"
+    //
+    // and both parts are kept on the row so the receipt can show them. A
+    // draw names one payment: it is linked after the payment completes, and
+    // a draw already linked to another payment counts for nothing here.
+    let paySplit = null;
+    if (/essentials/i.test(cleanPayMethod)) {
+      let drawn = 0;
+      let drawId = null;
+      const drawKey = String(essentialsDrawKey || '').trim().slice(0, 80);
+      if (drawKey) {
+        try {
+          const draw = await Disbursement.findOne({
+            idempotencyKey: `essentials:${sender._id}:${drawKey}`,
+            createdAt: { $gte: new Date(Date.now() - 2 * 60 * 60 * 1000) },
+          }).lean();
+          if (draw && String(draw.currency || '').toUpperCase() === String(senderCurrency).toUpperCase() && !(draw.metadata && draw.metadata.paymentReferenceId)) {
+            drawn = Number(draw.amount) || 0;
+            drawId = draw._id;
+          }
+        } catch (drawReadError) {
+          console.error('Essentials draw lookup (non-fatal):', drawReadError);
+        }
+      }
+      const essentials = toMinorUnit(Math.min(drawn, debitAmount), senderCurrency);
+      const bank = toMinorUnit(Math.max(0, debitAmount - essentials), senderCurrency);
+      paySplit = {
+        essentials,
+        bank,
+        drawId: essentials > 0 ? drawId : null,
+        label: essentials <= 0 ? 'GLOOBAL Bank' : bank <= 0 ? 'My Essentials' : 'My Essentials + GLOOBAL Bank',
+      };
+    }
+
     const transactionFields = {
       fromUserId: sender._id,
       toUserId: receiver._id,
@@ -10727,7 +10780,12 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         senderInput: senderIdentifier,
         receiverInput: receiverIdentifier,
         maxPrototypeAmount,
-        payMethod: cleanPayMethod || null,
+        payMethod: paySplit ? paySplit.label : (cleanPayMethod || null),
+        // 0242: the two parts, in the sender's own currency. Null when
+        // Essentials was not chosen — the whole of debitAmount is the method.
+        essentialsPart: paySplit ? paySplit.essentials : null,
+        bankPart: paySplit ? paySplit.bank : null,
+        essentialsDrawId: paySplit ? paySplit.drawId : null,
         // The sender's own side of this payment, in their own currency —
         // what POST /api/pin/... and the receipt screen need to show "you
         // paid X" correctly for a cross-border send, since `amount`/
@@ -11329,6 +11387,26 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     const senderBalanceAfter = transferred.senderBalanceAfter;
     const settlement = transferred.settlement;
 
+    // 0242: the Essentials draw now belongs to this payment. Conditional, so
+    // two payments can never both claim one draw; if this one lost that race
+    // its record is corrected to say the bank paid all of it.
+    if (paySplit && paySplit.drawId) {
+      try {
+        const linked = await Disbursement.updateOne(
+          { _id: paySplit.drawId, 'metadata.paymentReferenceId': { $exists: false } },
+          { $set: { 'metadata.paymentReferenceId': completedTransaction.referenceId } }
+        );
+        if (!linked.modifiedCount) {
+          await Transaction.updateOne({ _id: completedTransaction._id }, {
+            $set: { 'metadata.payMethod': 'GLOOBAL Bank', 'metadata.essentialsPart': 0, 'metadata.bankPart': debitAmount, 'metadata.essentialsDrawId': null },
+          });
+          completedTransaction.metadata = Object.assign({}, completedTransaction.metadata, { payMethod: 'GLOOBAL Bank', essentialsPart: 0, bankPart: debitAmount, essentialsDrawId: null });
+        }
+      } catch (linkError) {
+        console.error('Essentials draw link (non-fatal):', linkError);
+      }
+    }
+
     recordAudit({
       userId: sender._id, action: 'transaction.send.success', status: 'success',
       message: `Sent ${numericAmount} ${senderCurrency !== destinationCurrency ? `(${senderCurrency}->${destinationCurrency})` : destinationCurrency}`,
@@ -11539,6 +11617,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       // field they can read is better than three places guessing.
       cashback: cashbackCredit,
       cashbackDestination: cashbackCredit > 0 ? 'assets' : null,
+      // 0242: the method as recorded, and the Essentials / bank parts.
+      payMethod: completedTransaction.metadata?.payMethod || null,
+      essentialsPart: completedTransaction.metadata?.essentialsPart ?? null,
+      bankPart: completedTransaction.metadata?.bankPart ?? null,
       cashbackCurrency: senderCurrency,
       cashbackRate: payeeCashbackRate,
       payeeReceives,
@@ -14044,6 +14126,23 @@ app.delete('/api/hooman', writeLimit, requireAuth, async (req, res) => {
   }
 });
 
+// 0242: the AssetSeeds behind a page of Creator Share legs, by id.
+async function shareSeedsFor(legs) {
+  const ids = legs.map((l) => l && l.metadata && l.metadata.assetSeedId).filter(Boolean);
+  if (!ids.length) return new Map();
+  const seeds = await AssetSeed.find({ _id: { $in: ids } })
+    .select('cashback principalClaimed principalHeld lastClaimedAt')
+    .lean();
+  return new Map(seeds.map((x) => [String(x._id), x]));
+}
+// A share is "moved to balance" once its whole principal has been claimed.
+function shareMovedFields(seedById, seedId) {
+  const seed = seedId ? seedById.get(String(seedId)) : null;
+  if (!seed || !seed.principalHeld) return { shareMovedToBalance: false, shareMovedAt: null };
+  const moved = (Number(seed.principalClaimed) || 0) >= (Number(seed.cashback) || 0) - 1e-9 && (Number(seed.cashback) || 0) > 0;
+  return { shareMovedToBalance: moved, shareMovedAt: moved && seed.lastClaimedAt ? new Date(seed.lastClaimedAt).toISOString() : null };
+}
+
 app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {
     const symbolId = String(req.params.symbolId || '').trim();
@@ -14105,11 +14204,15 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
       type: 'share',
       'metadata.paymentTransactionId': { $in: transactions.map((t) => t._id) },
     })
-      .select('referenceId receiptCode metadata.paymentTransactionId')
+      .select('referenceId receiptCode metadata.paymentTransactionId metadata.cashbackDestination metadata.assetSeedId')
       .lean();
     const shareByPayment = new Map(
       shareLegs.map((leg) => [String(leg.metadata?.paymentTransactionId), leg])
     );
+    // 0242: whether each Creator Share is still in My Assets or the person
+    // moved it to their balance ("Add to balance", or claimed from My
+    // Assets). The seed is the record of that; one query for the page.
+    const shareSeedById = await shareSeedsFor([...shareLegs, ...transactions.filter((t) => t.type === 'share')]);
 
     // Give every row on this page its short receipt-link handle, minting one
     // for any row that predates the field. Rows that already have one cost
@@ -14222,6 +14325,18 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
         cashbackDestination: transaction.type === 'share'
           ? (transaction.metadata?.cashbackDestination || null)
           : (shareByPayment.get(String(transaction._id))?.metadata?.cashbackDestination || null),
+        // 0242: and whether the person has since moved it to the balance —
+        // the default is that it stays in My Assets until they choose.
+        ...shareMovedFields(shareSeedById, transaction.type === 'share'
+          ? transaction.metadata?.assetSeedId
+          : shareByPayment.get(String(transaction._id))?.metadata?.assetSeedId),
+        // 0242: how it was paid, as recorded — and when Essentials carried
+        // it, how much came from Essentials and how much from the bank.
+        payMethod: transaction.metadata?.payMethod || null,
+        essentialsPart: Number.isFinite(Number(transaction.metadata?.essentialsPart)) && transaction.metadata?.essentialsPart != null
+          ? Number(transaction.metadata.essentialsPart) : null,
+        bankPart: Number.isFinite(Number(transaction.metadata?.bankPart)) && transaction.metadata?.bankPart != null
+          ? Number(transaction.metadata.bankPart) : null,
         // And the other direction: on a SHARE LEG, the reference of the
         // payment that produced it.
         //
@@ -14379,11 +14494,15 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
       type: 'share',
       'metadata.paymentTransactionId': { $in: records.map((t) => t._id) },
     })
-      .select('referenceId receiptCode metadata.paymentTransactionId')
+      .select('referenceId receiptCode metadata.paymentTransactionId metadata.cashbackDestination metadata.assetSeedId')
       .lean();
     const shareByPayment = new Map(
       shareLegs.map((leg) => [String(leg.metadata?.paymentTransactionId), leg])
     );
+    // 0242: whether each Creator Share is still in My Assets or the person
+    // moved it to their balance ("Add to balance", or claimed from My
+    // Assets). The seed is the record of that; one query for the page.
+    const shareSeedById = await shareSeedsFor([...shareLegs, ...records.filter((t) => t.type === 'share')]);
 
     // Same lazy mint as /api/transactions/history — see the note there. This
     // is the list the app actually restores its history from, so it is the
@@ -14496,6 +14615,18 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         cashbackDestination: transaction.type === 'share'
           ? (transaction.metadata?.cashbackDestination || null)
           : (shareByPayment.get(String(transaction._id))?.metadata?.cashbackDestination || null),
+        // 0242: and whether the person has since moved it to the balance —
+        // the default is that it stays in My Assets until they choose.
+        ...shareMovedFields(shareSeedById, transaction.type === 'share'
+          ? transaction.metadata?.assetSeedId
+          : shareByPayment.get(String(transaction._id))?.metadata?.assetSeedId),
+        // 0242: how it was paid, as recorded — and when Essentials carried
+        // it, how much came from Essentials and how much from the bank.
+        payMethod: transaction.metadata?.payMethod || null,
+        essentialsPart: Number.isFinite(Number(transaction.metadata?.essentialsPart)) && transaction.metadata?.essentialsPart != null
+          ? Number(transaction.metadata.essentialsPart) : null,
+        bankPart: Number.isFinite(Number(transaction.metadata?.bankPart)) && transaction.metadata?.bankPart != null
+          ? Number(transaction.metadata.bankPart) : null,
         // And the other direction: on a SHARE LEG, the reference of the
         // payment that produced it.
         //

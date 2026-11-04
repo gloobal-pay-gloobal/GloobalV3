@@ -3,7 +3,7 @@ import { ArrowLeft as ArrowLeft2, ChevronRight as ChevronRight2 } from "lucide-r
 
 
 // src/features/paylater/PayLaterScreen.jsx
-function PayLaterScreen({ onClose, ccy, ccyCode = "USD", paylaterAvailable, paylaterLimit, totalAssets, paylaterDue, paylaterReceiving, paylaterSending, onViewAssets, onPayNow, toast }) {
+function PayLaterScreen({ onClose, ccy, ccyCode = "USD", paylaterAvailable, paylaterLimit, totalAssets, paylaterDue, paylaterReceiving, paylaterSending, paylaterLive = false, onOpenHistory, onViewAssets, onPayNow, toast }) {
   // Every figure on this screen is the account's own money in the account's
   // own currency, so the lens applies to all of them or none. Read from the
   // shared store the balance card's toggle writes.
@@ -59,7 +59,14 @@ function PayLaterScreen({ onClose, ccy, ccyCode = "USD", paylaterAvailable, payl
                 Pay now
               </button>}</div></div>{
     /* History — split into the two directions of the ledger. */
-  }<PayLaterLedger title="Receiving" rows={paylaterReceiving} direction="in" ccy={ccy} ccyCode={ccyCode} /><PayLaterLedger title="Sending" rows={paylaterSending} direction="out" ccy={ccy} ccyCode={ccyCode} /></div>{
+  }<PayLaterLedger title="Paid with PayLater" rows={paylaterSending} direction="out" ccy={ccy} ccyCode={ccyCode} /><PayLaterLedger title="What raised your limit" rows={paylaterReceiving} direction="in" ccy={ccy} ccyCode={ccyCode} />{onOpenHistory && <button
+    type="button"
+    data-testid="paylater-open-history"
+    data-live={paylaterLive ? "1" : "0"}
+    onClick={onOpenHistory}
+    className="v2-tap"
+    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, border: "none", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "14px 16px", fontSize: 13, fontWeight: 800, color: T.accent, cursor: "pointer" }}
+  >See PayLater in your History<ChevronRight2 size={15} color={T.accent} /></button>}</div>{
     /* Toast echo — this overlay (z 300) covers the dashboard's own
        toast (z 50). */
   }{toast && <div

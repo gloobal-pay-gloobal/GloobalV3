@@ -21,7 +21,7 @@ function PayLaterLedger({ title, rows, direction, ccy, ccyCode = "USD" }) {
     > {parts.trail}</span>}</> };
   };
   return <div><div style={{ fontSize: 12.5, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4, margin: "4px 2px 8px" }}>{title}</div><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{rows.length === 0 ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12, color: T.inkFaint }}>Nothing yet</div> : rows.map((t, i) => <div
-    key={`${t.name}-${t.date}`}
+    key={t.key || `${t.name}-${t.date}-${i}`}
     style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}
   ><span
     style={{

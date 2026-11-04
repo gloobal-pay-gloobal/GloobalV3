@@ -540,7 +540,11 @@ function mapServerTransaction(row, viewerSymbolId) {
     // keyed on the server's `type` — see historyRowShape above for what the
     // two words mean and for the binary line this replaced.
     kind: historyRowShape(row.type).kind,
-    method: historyRowShape(row.type).method,
+    // 0242: a payment put on PayLater files under PayLater — History's
+    // PayLater filter and the PayLater screen are the same records. It read
+    // "bank" for every server row, so the filter only ever found rows made
+    // on this phone.
+    method: /paylater/i.test(String(row.payMethod || "")) ? "paylater" : historyRowShape(row.type).method,
     // The server's own word for what this is, carried through unchanged.
     //
     // `kind` and `method` are both lossy on purpose — they answer "which
@@ -624,6 +628,13 @@ function mapServerTransaction(row, viewerSymbolId) {
     // behaviour, because a receipt is a record rather than a description of
     // how the app currently works.
     shareDestination: row.cashbackDestination || "",
+    // 0242: and whether the person has since moved it to their balance.
+    shareMovedToBalance: Boolean(row.shareMovedToBalance),
+    shareMovedAt: row.shareMovedAt || null,
+    // 0242: how it was paid, as recorded, with the Essentials / bank parts.
+    payMethodLabel: row.payMethod || "",
+    essentialsPart: row.essentialsPart ?? null,
+    bankPart: row.bankPart ?? null,
     // The reference of the payment this row is attached to.
     //
     // On a PAYMENT that carried a share: its own reference, which is what the
@@ -1001,6 +1012,7 @@ function GloobalId() {
     receiver,
     pin: sendPin,
     payMethodLabel,
+    essentialsDrawKey,
     memo,
     clientRequestId
   }) => {
@@ -1042,6 +1054,9 @@ function GloobalId() {
         note: memo || "",
         pin: sendPin,
         payMethod: payMethodLabel || "",
+        // 0242: which Essentials draw paid for this — the server reads the
+        // draw and records how much of the payment it carried.
+        essentialsDrawKey: essentialsDrawKey || undefined,
         // Paid at the receiver's SHOP (their creator name), not at them as a
         // person. The server checks the receiver really has a creator name
         // and records it on the payment; history and receipts read it back.
@@ -1123,7 +1138,13 @@ function GloobalId() {
         destinationCurrency: (result && result.destinationCurrency) || null,
         fxRate: gloobalRecordedFigure(result && result.fxRate),
         fxRateSource: (result && result.fxRateSource) || null,
-        payeeReceives: gloobalRecordedFigure(result && result.payeeReceives)
+        payeeReceives: gloobalRecordedFigure(result && result.payeeReceives),
+        // 0242: the method as the server recorded it, the Essentials / bank
+        // parts, and where the Creator Share went ("assets").
+        payMethod: (result && result.payMethod) || null,
+        essentialsPart: gloobalRecordedFigure(result && result.essentialsPart),
+        bankPart: gloobalRecordedFigure(result && result.bankPart),
+        cashbackDestination: (result && result.cashbackDestination) || null
       };
     } catch (err) {
       return { ok: false, reason: err.message };
@@ -1427,7 +1448,7 @@ function GloobalId() {
     // The balance moved underneath the dashboard, so re-read it rather
     // than assuming this device's arithmetic matches the server's.
     if (applied > 0) setRefreshBalanceToken((n) => n + 1);
-    return { applied, code: result && result.code, message: result && result.message };
+    return { applied, key, code: result && result.code, message: result && result.message };
   };
 
   const handleQrScanned = async (rawCode) => {
@@ -2562,7 +2583,9 @@ function GloobalId() {
   // Money moved by a screen that does not hold the balance itself — "Add to
   // balance" on the Creator Share card (0189) — asks for a fresh read.
   useEffect15(() => {
-    const onBalanceChanged = () => setRefreshBalanceToken((n) => n + 1);
+    // 0242: and re-reads history too, so a receipt opened next says the
+    // Creator Share was moved to the balance rather than still growing.
+    const onBalanceChanged = () => { setRefreshBalanceToken((n) => n + 1); setReceivedPollToken((n) => n + 1); };
     window.addEventListener("gloobal:balanceChanged", onBalanceChanged);
     return () => window.removeEventListener("gloobal:balanceChanged", onBalanceChanged);
   }, []);

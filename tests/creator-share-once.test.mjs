@@ -81,7 +81,9 @@ describe("a share appears exactly once in Recent Activity", () => {
     // Coin movement as a bank payment.
     const src = code(app());
     assert.match(src, /kind: historyRowShape\(row\.type\)\.kind/);
-    assert.match(src, /method: historyRowShape\(row\.type\)\.method/);
+    // 0242: a payment put on PayLater files under PayLater; everything else
+    // still from the table.
+    assert.match(src, /method: \/paylater\/i\.test\(String\(row\.payMethod \|\| ""\)\) \? "paylater" : historyRowShape\(row\.type\)\.method/);
     assert.match(src, /share: \{ kind: "share", method: "share" \}/);
   });
 

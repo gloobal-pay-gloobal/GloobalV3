@@ -817,8 +817,34 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   }, [assetDetailKey, assetRows]);
   const realPaylaterDue = usePaylaterDue();
   const { paylaterLimit: PAYLATER_LIMIT, paylaterDue, paylaterAvailable } = computePaylaterAvailable(assetSeeds, paylaterHistory, realPaylaterDue);
-  const paylaterSending = paylaterHistory.filter((t) => t.direction === "out");
-  const paylaterReceiving = paylaterHistory.filter((t) => t.direction === "in");
+  // 0242: the PayLater screen shows the account's real PayLater records —
+  // payments put on PayLater and the Creator Shares that raised the limit —
+  // read from the server when the screen opens. The rows on this phone are
+  // the fallback while that loads, or if it cannot.
+  const [serverPaylater, setServerPaylater] = useState14(null);
+  useEffect12(() => {
+    if (!showPayLater) return undefined;
+    const me = typeof gloobalCurrentSymbolId === "function" ? gloobalCurrentSymbolId() : null;
+    if (!me) return undefined;
+    let live = true;
+    GloobalApi.getPaylater(me).then((r) => { if (live && r) setServerPaylater(r); }).catch(() => {});
+    return () => { live = false; };
+  }, [showPayLater]);
+  const paylaterRowDate = (iso) => {
+    const d = iso ? new Date(iso) : null;
+    return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+  };
+  const serverPaylaterRows = serverPaylater ? serverPaylater.transactions.map((r) => ({
+    key: r.id,
+    referenceId: r.referenceId || null,
+    name: String(r.description || "").replace(/^PayLater charge · /, "").replace(/^Cashback credited · /, "Creator Share · "),
+    date: paylaterRowDate(r.createdAt),
+    amount: Number(r.amount) || 0,
+    direction: r.type === "charge" ? "out" : "in",
+    status: r.type === "repayment" ? "paid" : "pending"
+  })) : null;
+  const paylaterSending = serverPaylaterRows ? serverPaylaterRows.filter((t) => t.direction === "out") : paylaterHistory.filter((t) => t.direction === "out");
+  const paylaterReceiving = serverPaylaterRows ? serverPaylaterRows.filter((t) => t.direction === "in") : paylaterHistory.filter((t) => t.direction === "in");
   const [showIdTag, setShowIdTag] = useState14(false);
   const [toast, setToast] = useState14(null);
   const [showReceive, setShowReceive] = useState14(false);
@@ -4463,6 +4489,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     paylaterDue={paylaterDue}
     paylaterReceiving={paylaterReceiving}
     paylaterSending={paylaterSending}
+    paylaterLive={Boolean(serverPaylaterRows)}
+    // 0242: the same payments in Profile → History, filtered to PayLater.
+    onOpenHistory={() => {
+      requestClosePayLater();
+      setHistoryTab("sending");
+      setHistoryMethodFilter("paylater");
+      setProfileDetail("History");
+      setActiveTab("profile");
+    }}
     onViewAssets={() => {
       requestClosePayLater();
       setShowAssets(true);

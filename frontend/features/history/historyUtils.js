@@ -383,7 +383,29 @@ function buildHistoryReceipt(t, direction, dialCountry, ccy, sourcePayment = nul
         t.shareSenderCurrency, t.shareReceiverCurrency,
         t.senderSideCurrency, t.receiverSideCurrency, t.fxRate
       ),
-    method: HISTORY_METHOD_META[t.method]?.label,
+    // 0242: the payer sees the method as the server recorded it — "My
+    // Essentials", "My Essentials + GLOOBAL Bank", "GLOOBAL Bank", PayLater —
+    // and the two parts when Essentials carried any. The person paid sees
+    // only how it reached them, never how the payer funded it.
+    //
+    // On a Creator Share receipt the Payment tab describes the payment the
+    // share came from, so its method is THAT payment's — it read "Creator
+    // Share", the name of the share, under "Proof · Method" of a payment.
+    method: t.kind === "share"
+      ? (sourcePayment
+        ? (sourcePayment.direction === "sent" && sourcePayment.row.payMethodLabel) || HISTORY_METHOD_META[sourcePayment.row.method]?.label || HISTORY_METHOD_META[t.method]?.label
+        : HISTORY_METHOD_META[t.method]?.label)
+      : (direction === "sent" && t.payMethodLabel) || HISTORY_METHOD_META[t.method]?.label,
+    paySplit: t.kind === "share"
+      ? (sourcePayment && sourcePayment.direction === "sent"
+        ? gloobalPaySplit(sourcePayment.row.essentialsPart, sourcePayment.row.bankPart, sourcePayment.row.senderSideCurrency || sourcePayment.row.currency || rowCurrency)
+        : null)
+      : direction === "sent"
+        ? gloobalPaySplit(t.essentialsPart, t.bankPart, rowCurrency)
+        : null,
+    // 0242: whether the person moved their Creator Share to the balance.
+    shareMovedToBalance: Boolean(t.shareMovedToBalance),
+    shareMovedAt: t.shareMovedAt || null,
     date: t.date,
     time: t.time || formatClockTime(/* @__PURE__ */ new Date()),
     status: t.status === "completed" || t.status === "received" ? "completed" : t.status,

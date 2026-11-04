@@ -186,7 +186,9 @@ describe("two generations of seed, told apart by what happened", () => {
     // receipt keeps saying "Gloobal balance", which is what happened to it.
     assert.match(code(SHARE_FLOW), /cashbackDestination: 'assets',/);
     const card = code("frontend/components/dialogs/ReceiptModal.jsx");
-    assert.match(card, /receipt\.shareDestination === "assets"\s*\n?\s*\? "My Assets"\s*\n?\s*: "GLOOBAL balance"/);
+    // 0242: through shareInAssets, which also drives "Moved by you to".
+    assert.match(card, /const shareInAssets = shareIsCredit && receipt\.shareDestination === "assets";/);
+    assert.match(card, /shareInAssets\s*\n?\s*\? "My Assets"\s*\n?\s*: "GLOOBAL balance"/);
     // And nothing names the balance unconditionally any more.
     assert.ok(!/label=\{shareIsCredit \? "Credited to" : "Taken from"\} value="GLOOBAL balance"/.test(card),
       "the receipt is hardcoding the destination again");

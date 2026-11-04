@@ -90,9 +90,18 @@ describe("one source of funds, not two", () => {
     // /api/transactions/send makes has to be re-argued.
     const server = readSource("server/server.js");
     const at = server.indexOf("app.post('/api/transactions/send'");
-    const route = strip(server.slice(at, at + 20000));
-    assert.doesNotMatch(route, /essentials/i,
-      "the send route now knows about Essentials, so there are two sources of funds");
+    // 0242: the whole route, to the next top-level app.* — 20,000 characters
+    // stopped short of where it reads the draw.
+    const route = strip(server.slice(at, server.indexOf("\napp.", at + 10)));
+    // 0242: the route now READS the draw made for this payment, to name the
+    // method honestly ("My Essentials + GLOOBAL Bank") and keep both parts
+    // on the record. It still draws nothing and pays nothing out: the one
+    // deduction is debitAmount from the bank, as before.
+    assert.doesNotMatch(route, /recordDisbursement\(/,
+      "the send route pays something out of Essentials, so there are two sources of funds");
+    assert.doesNotMatch(route, /essentials\/draw/,
+      "the send route draws Essentials itself");
+    assert.match(route, /Disbursement\.findOne\(/, "it reads the draw, and only reads it");
   });
 
   test("the draw happens before the PIN, not after", () => {

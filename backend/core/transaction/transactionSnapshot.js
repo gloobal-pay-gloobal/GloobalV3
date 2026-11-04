@@ -32,6 +32,16 @@ function snapshotRecordedFigure(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+// 0242: the two parts of a payment Essentials was chosen for, as the server
+// recorded them, in the payer's own currency. Null when Essentials carried
+// none of it or nothing was recorded — the method alone then says it all.
+function gloobalPaySplit(essentialsPart, bankPart, currency) {
+  const e = Number(essentialsPart);
+  const b = Number(bankPart);
+  if (essentialsPart == null || bankPart == null || !Number.isFinite(e) || !Number.isFinite(b)) return null;
+  if (!(e > 0)) return null;
+  return { essentials: e, bank: Math.max(0, b), currency: currency || null };
+}
 function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, payMethod, now, shareRatePercent, ledgerRecordId, txnId, shareTxnId = "", shareAmount = 0, receiptCode = "", shareReceiptCode = "", recorded = null }) {
   const resolvedTxnId = txnId || genTxnId();
   const txnTime = formatClockTime(now);
@@ -101,7 +111,13 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     // currency (what they asked for).
     convertedAmount: parseFloat(amount) || null,
     convertedCurrency: receiver.currency || sender.currency || "USD",
-    method: payMethod || "Gloobal Bank",
+    // 0242: the method the server recorded (it decides "My Essentials",
+    // "My Essentials + GLOOBAL Bank" or "GLOOBAL Bank" from the real draw),
+    // and the two parts when Essentials carried any of it.
+    method: rec.payMethod || payMethod || "Gloobal Bank",
+    paySplit: gloobalPaySplit(rec.essentialsPart, rec.bankPart, headlineCurrency),
+    // Where the payer's Creator Share went, as the server said: "assets".
+    shareDestination: rec.shareDestination || "",
     date: now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
     time: txnTime,
     // The instant this payment happened, which every transaction list sorts
@@ -147,6 +163,10 @@ function buildTransactionSnapshot({ sender, receiver, amount, convertedAmount, p
     flag: receiver.flag,
     status: "completed",
     method: methodKey,
+    payMethodLabel: rec.payMethod || payMethod || "",
+    essentialsPart: rec.essentialsPart ?? null,
+    bankPart: rec.bankPart ?? null,
+    shareDestination: rec.shareDestination || "",
     // Carried through so the receipt still shows these when reopened
     // later from History.
     id: receiver.id,

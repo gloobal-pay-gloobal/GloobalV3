@@ -51,7 +51,7 @@ const mapServerTransaction = loadMapServerTransaction();
 const buildHistoryReceipt = new Function(
   "COUNTRY_CURRENCY", "CURRENCY_SYMBOL", "COUNTRY_BY_ISO", "ALL_COUNTRIES",
   "HISTORY_METHOD_META", "formatClockTime", "randomShareRate",
-  `${CURRENCY_SRC}\n${sliceFunction("frontend/features/history/historyUtils.js", "buildHistoryReceipt")}; return buildHistoryReceipt;`
+  `${CURRENCY_SRC}\n${sliceFunction("backend/core/transaction/transactionSnapshot.js", "gloobalPaySplit")}\n${sliceFunction("frontend/features/history/historyUtils.js", "buildHistoryReceipt")}; return buildHistoryReceipt;`
 )(
   { FR: "EUR", IN: "INR" }, { EUR: "€", INR: "₹" }, {}, [],
   { bank: { label: "Gloobal Bank" }, share: { label: "Creator Share" } },

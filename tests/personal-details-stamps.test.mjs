@@ -181,11 +181,12 @@ describe("the four changes asked for", () => {
     assert.match(strip(src), /right: -3, bottom: -3/);
   });
 
-  test("the title is gone and the flag faces the back arrow", () => {
+  test("the title is gone, and the flag lives in the ID card (0236)", () => {
     assert.match(dash, /profileDetail !== "History" && profileDetail !== "Personal Details" && <span/,
       "the Personal Details title is being rendered again");
-    assert.match(dash, /profileDetail === "Personal Details" && <><span style=\{\{ flex: 1 \}\} \/><FlagEmoji/,
-      "the flag is not in the header opposite the back arrow");
+    assert.ok(!/profileDetail === "Personal Details" && <><span style=\{\{ flex: 1 \}\} \/><FlagEmoji/.test(dash), "the flag floats in the header again");
+    const pd = readSource("frontend/features/identity/PersonalDetailsScreen.jsx");
+    assert.match(pd, /data-pd-country[^>]*>\{dialCountry && dialCountry\.name\}\{dialCountry && dialCountry\.flag \? <FlagEmoji/);
   });
 });
 

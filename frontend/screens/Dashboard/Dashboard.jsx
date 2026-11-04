@@ -4213,7 +4213,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       }, 700);
     }}
     scanning={payTargetBiometricScanning}
-  />}{showReceive && <div style={{ position: "fixed", inset: 0, zIndex: 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px 6px", flexShrink: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" ID" withSymbols /></span><div style={{ display: "flex", alignItems: "center", gap: 8 }}>{
+  />}{showReceive && <div style={{ position: "fixed", inset: 0, zIndex: profileDetail ? 320 : 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px 6px", flexShrink: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" ID" withSymbols /></span><div style={{ display: "flex", alignItems: "center", gap: 8 }}>{
     /* Scan, beside history. This screen shows YOUR code; half the time
        two people open it at once and one of them needs to be scanning
        instead. Without this that person backs out to the dashboard to
@@ -4865,7 +4865,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        where you are better than a label would — and it is what a
        document does anyway. The flag is nationality, which belongs to
        the page rather than sitting beside the holder's name. */
-  }{profileDetail === "Personal Details" && <><span style={{ flex: 1 }} /><FlagEmoji flag={dialCountry.flag} size={40} shape="circle" border="none" /></>}{profileDetail === "History" && <div style={{ display: "flex", gap: 8, flex: 1 }}><button
+  }{
+    /* 0236: the flag moved into the ID card beside the country's name, so
+       the header is the back arrow alone — still no title, as asked. */
+  }{profileDetail === "History" && <div style={{ display: "flex", gap: 8, flex: 1 }}><button
     onClick={() => setHistoryTab("receiving")}
     aria-label="Received"
     className="v2-tap"
@@ -4923,6 +4926,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       copyToClipboard(personalGloobalId);
       showToast2("GLOOBAL ID copied");
     }}
+    // 0236: the shortcuts under the ID card.
+    onShareId={() => gloobalShareLink({ title: "My GLOOBAL ID", message: `Pay me on GLOOBAL. My GLOOBAL ID: ${personalGloobalId}`, onToast: showToast2 })}
+    onOpenQr={() => setShowReceive(true)}
+    onUpdateId={() => setProfileOverlay("updateId")}
   />}{
     /* ── THE CREATOR'S OWN PAGE ───────────────────────────────────────
        The mark, the handle and the address, with one way to change all

@@ -1,6 +1,6 @@
 // src/features/identity/PersonalDetailsScreen.jsx
-import { useState as useState52, useMemo as useMemo14 } from "react";
-import { ChevronRight as ChevronRight7, ChevronLeft as ChevronLeft5, Camera as Camera4, Copy as PdCopyIcon, Phone as PdPhoneIcon, CalendarDays as PdCalendarIcon, Store as PdStoreIcon, Sparkles as PdScoreIcon, Globe2 as PdGlobeIcon, ArrowLeftRight as PdPaymentsIcon } from "lucide-react";
+import { useState as useState52, useMemo as useMemo14, useEffect as useEffect87 } from "react";
+import { ChevronRight as ChevronRight7, ChevronLeft as ChevronLeft5, Camera as Camera4, Copy as PdCopyIcon, Phone as PdPhoneIcon, CalendarDays as PdCalendarIcon, Store as PdStoreIcon, Sparkles as PdScoreIcon, Globe2 as PdGlobeIcon, ArrowLeftRight as PdPaymentsIcon, Share2 as PdShareIcon, QrCode as PdQrIcon, RefreshCw as PdUpdateIcon, Eye as PdEyeIcon, EyeOff as PdEyeOffIcon } from "lucide-react";
 
 // ── THE ACCOUNT, AS A DOCUMENT ──────────────────────────────────────────
 //
@@ -185,6 +185,19 @@ function IdentityStamp({ crossing, slot, name }) {
   >{name}</span><span style={{ fontSize: 8.5, fontWeight: 700, fontFamily: "ui-monospace, monospace" }}>{identityStampDate(crossing.first)}</span></span></div>;
 }
 
+// The twelve symbols on ONE line, in three groups of four, colours turning
+// as they do everywhere else. ColoredGloobalId wraps, which is what left
+// one symbol alone on a second line on a narrow phone.
+function PdIdLine({ id }) {
+  const [offset, setOffset] = useState52(0);
+  useEffect87(() => {
+    const t = setInterval(() => setOffset((o) => (o + 1) % POSITION_COLORS.length), 2e3 * FLIP_SLOW);
+    return () => clearInterval(t);
+  }, []);
+  const chars = [...String(id || "")].filter((c) => c !== " ");
+  return <span aria-label={`GLOOBAL ID ${chars.join(" ")}`} style={{ display: "inline-flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" }}>{chars.map((ch, i) => <span key={i} style={{ marginLeft: i > 0 && i % 4 === 0 ? 7 : 0, color: gloobalReadable(POSITION_COLORS[(i + offset) % POSITION_COLORS.length], "#FFFFFF", 3), transition: "color 0.4s ease" }}>{ch}</span>)}</span>;
+}
+
 function PersonalDetailsScreen({
   myName,
   mobileNumber,
@@ -198,8 +211,18 @@ function PersonalDetailsScreen({
   onOpenHoomanScore,
   shopHandle = "",
   onOpenShop,
-  onCopyId
+  onCopyId,
+  onShareId,
+  onOpenQr,
+  onUpdateId
 }) {
+  const [showMobile, setShowMobile] = useState52(false);
+  // The number shows only while asked for, and hides itself again.
+  useEffect87(() => {
+    if (!showMobile) return undefined;
+    const t = setTimeout(() => setShowMobile(false), 8000);
+    return () => clearTimeout(t);
+  }, [showMobile]);
   const [page, setPage] = useState52(0);
   const ownIso = dialCountry && dialCountry.iso;
   const crossings = useMemo14(() => identityCrossings(history, ownIso), [history, ownIso]);
@@ -234,51 +257,52 @@ function PersonalDetailsScreen({
     }}
   >{dir === "next" ? <ChevronRight7 size={17} color={T.ink} /> : <ChevronLeft5 size={17} color={T.ink} />}</button>;
 
-  // ── THE ID CARD ───────────────────────────────────────────────────
+  // ── THE PASSPORT PAGE ON TOP (0236) ───────────────────────────────
   //
-  // The screen was a white card of label:value rows whose values ran off
-  // the right edge (under the map button), a Joined time to the second,
-  // and half a screen of empty beige paper under one stamp. It is now an
-  // ID card first — the face, the name, the twelve symbols and the two
-  // things a person does with them (copy, share) — then three numbers
-  // worth knowing, then the places it leads (Hooman Score, the shop),
-  // then the plain facts, then the passport page sized to its stamps.
+  // The founder picked layout A of three: the card is the photo page of a
+  // passport — photo, name, flag, the twelve symbols — with the four
+  // things a person does from here right under it, one strip of numbers,
+  // then their details and their shop, each under its own label.
+  //
+  // What it fixes, in his screenshot: the ID wrapped (eleven symbols, then
+  // one alone); the full mobile number was on screen; the flag floated by
+  // itself and India was said three times; two big tiles held two numbers;
+  // and the shop sat under the Hooman score as if it were personal.
   const joined = accountCreatedAt instanceof Date && !Number.isNaN(accountCreatedAt.getTime()) ? accountCreatedAt : null;
   const joinedLong = joined ? joined.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+  const joinedShort = joined ? joined.toLocaleDateString("en-GB", { month: "short", year: "numeric" }) : "";
   const paymentCount = Array.isArray(history) ? history.length : 0;
-  const stats = [
-    [PdGlobeIcon, String(crossings.length), crossings.length === 1 ? "Country" : "Countries", "#2563EB"],
-    [PdPaymentsIcon, String(paymentCount), paymentCount === 1 ? "Payment" : "Payments", "#059669"]
-  ];
-  const linkRow = (Icon, color, title, value, onPress, dataKey) => <button
-    onClick={onPress}
-    className="v2-tap"
-    data-pd-link={dataKey}
-    style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, border: "none", background: "none", padding: "13px 16px", cursor: onPress ? "pointer" : "default", textAlign: "left", fontFamily: T.fontBody }}
-  ><span style={{ width: 40, height: 40, borderRadius: 13, background: color + "1F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={19} color={color} /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>{title}</span><span style={{ display: "block", fontSize: 12, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span></span>{onPress && <ChevronRight7 size={17} color={T.inkFaint} />}</button>;
-  const factRow = (Icon, label, value, first) => <div
-    key={label}
-    style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderTop: first ? "none" : `1px solid ${T.line}` }}
-  ><Icon size={17} color={T.inkFaint} style={{ flexShrink: 0 }} /><span style={{ fontSize: 13.5, color: T.inkSoft, flexShrink: 0 }}>{label}</span><span
-    style={{ flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 800, color: T.ink, textAlign: "right", overflowWrap: "anywhere", fontVariantNumeric: "tabular-nums" }}
-  >{value}</span></div>;
   const score = hoomanScore || null;
-  const scoreValue = !score ? "Take the check-in" : score.complete ? `${score.value} of ${score.max} · ${score.tier}` : `${score.answered} of ${score.total} answered`;
+  const scoreShort = !score ? "—" : score.complete ? String(score.value) : `${score.answered}/${score.total}`;
+  const stats = [
+    [String(crossings.length), crossings.length === 1 ? "country" : "countries"],
+    [String(paymentCount), paymentCount === 1 ? "payment made" : "payments made"],
+    [scoreShort, "Hooman score"]
+  ];
+  const label = (t) => <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.9, textTransform: "uppercase", color: T.inkSoft, margin: "2px 4px -6px" }}>{t}</div>;
+  const icon = (Icon, color) => <span style={{ width: 36, height: 36, borderRadius: 12, background: hexToRgba(color, 0.12), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={17} color={color} /></span>;
+  const action = (Icon, text, onPress, key) => <button key={key} type="button" data-pd-action={key} onClick={onPress} disabled={!onPress} className="v2-tap" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, border: "none", background: "none", padding: 0, cursor: onPress ? "pointer" : "default", fontFamily: "inherit" }}><span style={{ width: 48, height: 48, borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={20} color={T.accent} /></span><span style={{ fontSize: 11, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{text}</span></button>;
+  const dial = (dialCountry && dialCountry.dialCode) || "";
+  const mobileShown = (() => {
+    const m = String(mobileNumber || "");
+    const rest = dial && m.startsWith(dial) ? m.slice(dial.length) : m.replace(/^\+/, "");
+    const lead = dial ? `${dial} ` : (m.startsWith("+") ? "+" : "");
+    if (showMobile || rest.length < 6) return `${lead}${rest}`;
+    return `${lead}${rest.slice(0, 2)}••• ••${rest.slice(-3)}`;
+  })();
+  const factRow = (Icon, title, value, extra, first, key) => <div key={key} data-pd-fact={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderTop: first ? "none" : `1px solid ${T.line}` }}>{icon(Icon, T.accent)}<span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, flexShrink: 0 }}>{title}</span><span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</span>{extra}</div>;
 
   return <div data-personal-profile style={{ display: "flex", flexDirection: "column", gap: 16 }}>{
     /* The ink filter, defined once for every stamp on the page. */
   }<svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true"><defs><filter id="gloobalStampInk"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="4" result="n" /><feDisplacementMap in="SourceGraphic" in2="n" scale="1.5" xChannelSelector="R" yChannelSelector="G" /></filter></defs></svg><div
     data-pd-card
-    style={{ position: "relative", borderRadius: 26, background: T.gradWallet, padding: "18px 18px 16px", color: "#fff", overflow: "hidden", boxShadow: `0 14px 34px rgba(${T.accentDeepRgb},0.28)` }}
+    style={{ position: "relative", borderRadius: 26, background: T.gradWallet, padding: "16px 16px 14px", color: "#fff", overflow: "hidden", boxShadow: `0 14px 34px rgba(${T.accentDeepRgb},0.28)` }}
   ><span aria-hidden="true" style={{ position: "absolute", inset: 0, background: "repeating-radial-gradient(circle at 110% -10%, rgba(255,255,255,0.07) 0 1px, transparent 1px 14px)", pointerEvents: "none" }} /><div
-    style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10, fontWeight: 800, letterSpacing: 1.3, textTransform: "uppercase", color: "rgba(255,255,255,0.75)" }}
-  ><GloobalWordmark suffix=" ID" /><span>{dialCountry && dialCountry.name}</span></div><div
+    style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10, fontWeight: 800, letterSpacing: 1.3, textTransform: "uppercase", color: "rgba(255,255,255,0.8)" }}
+  ><GloobalWordmark suffix=" ID" /><span data-pd-country style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>{dialCountry && dialCountry.name}{dialCountry && dialCountry.flag ? <FlagEmoji flag={dialCountry.flag} size={22} shape="circle" border="2px solid #fff" fit="cover" /> : null}</span></div><div
     data-pd-row
-    style={{ position: "relative", display: "flex", alignItems: "center", gap: 14, marginTop: 14 }}
-  >{
-    /* Photo on the left, name and ID on the right — asked for in those
-       words. The ID sits on white because its symbols are coloured. */
-  }<button
+    style={{ position: "relative", display: "flex", alignItems: "center", gap: 14, marginTop: 12 }}
+  ><button
     onClick={() => onChangePhoto && onChangePhoto()}
     className="v2-tap"
     aria-label={profilePhoto ? "Change your photo" : "Add a photo"}
@@ -286,42 +310,42 @@ function PersonalDetailsScreen({
   ><ProfileAvatar photo={profilePhoto} name={myName} size={74} /><span
     aria-hidden="true"
     style={{ position: "absolute", right: -3, bottom: -3, width: 28, height: 28, borderRadius: "50%", background: T.accent, border: "2.5px solid #fff", display: "flex", alignItems: "center", justifyContent: "center" }}
-  ><Camera4 size={12} color="#fff" /></span></button><div
-    style={{ flex: 1, minWidth: 0 }}
-  ><div
-    style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5, fontFamily: T.fontDisplay, lineHeight: 1.15, overflowWrap: "anywhere" }}
-  >{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</div><div
+  ><Camera4 size={12} color="#fff" /></span></button><div style={{ flex: 1, minWidth: 0 }}><div
+    style={{ fontSize: 23, fontWeight: 800, letterSpacing: -0.5, fontFamily: T.fontDisplay, lineHeight: 1.15, overflowWrap: "anywhere" }}
+  >{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</div>{joinedShort ? <div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.8)", marginTop: 3 }}>Member since {joinedShort}</div> : null}</div></div><div
     data-pd-id
-    style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", boxSizing: "border-box", marginTop: 10, background: T.surface, borderRadius: 12, padding: "5px 5px 5px 10px", boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
-  ><span
-    style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, lineHeight: 1.2 }}
-  >{gloobalId ? <ColoredGloobalId id={gloobalId} /> : <span style={{ color: T.inkFaint }}>—</span>}</span>{
-    /* Copy sits in the ID's own box, on the right of it — one box, one
-       action, nothing for the eye to line up. */
-  }<button
+    style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, marginTop: 13, background: T.surface, borderRadius: 14, padding: "7px 7px 7px 12px", boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
+  ><span data-pd-id-line style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", whiteSpace: "nowrap", overflow: "hidden", fontSize: 16, fontWeight: 900, lineHeight: 1.2 }}>{gloobalId ? <PdIdLine id={gloobalId} /> : <span style={{ color: T.inkFaint }}>—</span>}</span><button
     onClick={onCopyId}
     className="v2-tap"
     aria-label="Copy ID"
     title="Copy ID"
     data-pd-action="copy"
-    style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 9, border: "none", background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
-  ><PdCopyIcon size={15} color={T.accent} /></button></div></div></div></div><div
-    data-pd-stats
-    style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}
-  >{stats.map(([Icon, value, label, color]) => <div
-    key={label}
-    style={{ background: T.surface, borderRadius: 18, boxShadow: T.shadowCard, padding: "13px 14px", display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}
-  ><span style={{ width: 40, height: 40, borderRadius: 13, background: color + "1F", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={19} color={color} /></span><span style={{ minWidth: 0 }}><span style={{ display: "block", fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{value}</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: T.inkFaint, marginTop: 2 }}>{label}</span></span></div>)}</div><div
-    style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}
-  >{linkRow(PdScoreIcon, "#9333EA", "Hooman Score", scoreValue, onOpenHoomanScore, "score")}<div style={{ height: 1, background: T.line, marginLeft: 69 }} />{linkRow(PdStoreIcon, "#DB2777", shopHandle ? <CreatorHandleText handle={shopHandle} /> : "Your shop", shopHandle ? "Open your shop" : "Pick a shop name and start selling", onOpenShop, "shop")}</div><div
-    data-pd-facts
-    style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}
+    style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 10, border: "none", background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
+  ><PdCopyIcon size={15} color={T.accent} /></button></div></div><div
+    data-pd-actions
+    style={{ display: "flex", gap: 6 }}
   >{[
-    ...(mobileNumber ? [[PdPhoneIcon, "Mobile", mobileNumber]] : []),
-    // Name only: the flag is already in the header, opposite the back arrow.
-    [PdGlobeIcon, "Country", (dialCountry && dialCountry.name) || "—"],
-    [PdCalendarIcon, "Joined", joinedLong]
-  ].map(([Icon, label, value], i) => factRow(Icon, label, value, i === 0))}</div>{
+    action(PdShareIcon, "Share ID", onShareId, "share"),
+    action(PdQrIcon, "My QR", onOpenQr, "qr"),
+    action(PdUpdateIcon, "Update ID", onUpdateId, "update"),
+    action(PdScoreIcon, "Hooman", onOpenHoomanScore, "hooman")
+  ]}</div><div
+    data-pd-stats
+    style={{ display: "flex", background: T.surface, borderRadius: 18, boxShadow: T.shadowCard, overflow: "hidden" }}
+  >{stats.map(([value, text], i) => <div key={text} style={{ flex: 1, minWidth: 0, textAlign: "center", padding: "12px 4px", borderLeft: i ? `1px solid ${T.line}` : "none" }}><span style={{ display: "block", fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{value}</span><span style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 3 }}>{text}</span></div>)}</div>{label("Your details")}<div
+    data-pd-facts
+    style={{ background: T.surface, borderRadius: 18, boxShadow: T.shadowCard, overflow: "hidden" }}
+  >{[
+    mobileNumber ? factRow(PdPhoneIcon, "Mobile", mobileShown, <button type="button" data-pd-action="reveal-mobile" aria-label={showMobile ? "Hide mobile number" : "Show mobile number"} onClick={() => setShowMobile((v) => !v)} style={{ border: "none", background: "none", padding: 4, marginLeft: 2, cursor: "pointer", display: "flex" }}>{showMobile ? <PdEyeOffIcon size={17} color={T.accent} /> : <PdEyeIcon size={17} color={T.accent} />}</button>, true, "mobile") : null,
+    factRow(PdCalendarIcon, "Joined", joinedLong, null, !mobileNumber, "joined")
+  ]}</div>{label("Your shop")}<button
+    type="button"
+    data-pd-link="shop"
+    onClick={onOpenShop}
+    className="v2-tap"
+    style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, border: "none", background: T.surface, borderRadius: 18, boxShadow: T.shadowCard, padding: "12px 14px", cursor: onOpenShop ? "pointer" : "default", textAlign: "left", fontFamily: T.fontBody }}
+  >{icon(PdStoreIcon, "#DB2777")}<span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>{shopHandle ? <CreatorHandleText handle={shopHandle} /> : "Your shop"}</span><span style={{ display: "block", fontSize: 12, color: T.inkSoft, marginTop: 2 }}>{shopHandle ? "Open your shop" : "Pick a shop name and start selling"}</span></span><ChevronRight7 size={17} color={T.inkFaint} /></button>{
     /* ── THE PASSPORT PAGE ─────────────────────────────────────────── */
   }<div><div
     style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 9, padding: "0 2px" }}

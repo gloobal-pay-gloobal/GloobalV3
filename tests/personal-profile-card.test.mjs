@@ -12,24 +12,35 @@ import { readSource } from "./harness.mjs";
 const pd = readSource("frontend/features/identity/PersonalDetailsScreen.jsx");
 const dash = readSource("frontend/screens/Dashboard/Dashboard.jsx");
 
-test("copy only — inside the ID box, on its right; share is gone", () => {
-  const box = pd.slice(pd.indexOf("data-pd-id"), pd.indexOf("data-pd-stats"));
+// 0236: the founder picked the "passport page" layout (A of three). It
+// brings back a Share shortcut and a "Member since" line inside the card,
+// and moves the flag into the card; these tests follow that choice.
+test("copy inside the ID box, on its right; the ID is one line", () => {
+  const box = pd.slice(pd.indexOf("data-pd-id\n"), pd.indexOf("data-pd-actions"));
   assert.match(box, /onClick=\{onCopyId\}/);
   assert.match(box, /aria-label="Copy ID"/);
-  assert.ok(box.indexOf("ColoredGloobalId") < box.indexOf("onCopyId"), "copy sits after the ID");
-  assert.match(box.slice(0, 260), /width: "100%"/);
-  assert.doesNotMatch(pd, /Share ID|onShareId|PdShareIcon/);
-  assert.doesNotMatch(dash, /onShareId=/);
+  assert.ok(box.indexOf("PdIdLine") < box.indexOf("onCopyId"), "copy sits after the ID");
+  assert.match(box, /whiteSpace: "nowrap"/);
+  assert.match(pd, /marginLeft: i > 0 && i % 4 === 0 \? 7 : 0/, "three groups of four");
 });
 
-test("no Member since tile — Joined is the one place the date lives", () => {
-  assert.doesNotMatch(pd, /Member since/);
-  assert.match(pd, /\[PdCalendarIcon, "Joined", joinedLong\]/);
+test("the shortcuts under the card: Share ID, My QR, Update ID, Hooman", () => {
+  for (const s of ['action(PdShareIcon, "Share ID", onShareId, "share")', 'action(PdQrIcon, "My QR", onOpenQr, "qr")', 'action(PdUpdateIcon, "Update ID", onUpdateId, "update")', 'action(PdScoreIcon, "Hooman", onOpenHoomanScore, "hooman")']) assert.ok(pd.includes(s), s);
+  assert.match(dash, /onShareId=\{\(\) => gloobalShareLink\(/);
+  assert.match(dash, /onOpenQr=\{\(\) => setShowReceive\(true\)\}/);
+  assert.match(dash, /onUpdateId=\{\(\) => setProfileOverlay\("updateId"\)\}/);
+});
+
+test("Member since in the card (month and year); the full date in Joined", () => {
+  assert.match(pd, /Member since \{joinedShort\}/);
+  assert.match(pd, /factRow\(PdCalendarIcon, "Joined", joinedLong/);
   assert.doesNotMatch(pd, /formatClockTime\(accountCreatedAt\)/, "Joined shows seconds again");
 });
 
-test("long values wrap instead of running under the map button", () => {
-  assert.match(pd, /overflowWrap: "anywhere", fontVariantNumeric: "tabular-nums"/);
+test("the mobile number is hidden until the eye is tapped, and hides again", () => {
+  assert.match(pd, /\$\{rest\.slice\(0, 2\)\}••• ••\$\{rest\.slice\(-3\)\}/);
+  assert.match(pd, /data-pd-action="reveal-mobile"/);
+  assert.match(pd, /setTimeout\(\(\) => setShowMobile\(false\), 8000\)/);
 });
 
 test("the dashboard wires score, shop, copy and share", () => {
@@ -50,7 +61,7 @@ test("photo on the left, name and ID on the right, copy inside the ID box", () =
   assert.ok(photo > 0 && photo < name && name < id && id < copy, "order is photo, name, ID, copy");
 });
 
-test("the flag appears once — in the header, not again in the Country row", () => {
-  assert.doesNotMatch(pd, /<FlagEmoji/);
-  assert.match(pd, /\[PdGlobeIcon, "Country", \(dialCountry && dialCountry\.name\) \|\| "—"\]/);
+test("the country and its flag appear once — in the card — with no Country row (0236)", () => {
+  assert.equal((pd.match(/<FlagEmoji/g) || []).length, 1);
+  assert.doesNotMatch(pd, /"Country", \(dialCountry && dialCountry\.name\)/);
 });

@@ -39,6 +39,7 @@ const Notification = require('../models/Notification');
 const { accountCountryIso } = require('./accountCountry');
 const { localCurrencyFor } = require('./countryCurrency');
 const { formatMoneyPair } = require('./notificationText');
+const pushService = require('../services/pushService');
 
 let deps = { AUTH_TOKEN_SECRET: '' };
 function configureRentLink(d) { deps = { ...deps, ...d }; }
@@ -256,8 +257,24 @@ async function publicLink(link, me, { full = false } = {}) {
   return out;
 }
 
+// 0239: the in-app notice AND a push to the phone. The founder's request
+// "went nowhere": it was only ever a row in the notification list, and
+// tapping that row did nothing. The push carries the link's id; a tap
+// opens Rent on that very request (?rent=<id>, or the worker's message).
 async function notify(userId, title, message, link) {
-  await Notification.create({ userId, type: 'payment', title, message, metadata: { rentLinkId: String(link._id) } }).catch(() => {});
+  const id = String(link._id);
+  const row = await Notification.create({ userId, type: 'payment', title, message, metadata: { rentLinkId: id, event: 'rent_link' } }).catch(() => null);
+  try {
+    if (pushService.isPushEnabled()) {
+      await pushService.sendPushToUser(userId, {
+        v: 1, category: 'transactional', type: 'payment',
+        notificationId: row ? String(row._id) : undefined,
+        title, body: String(message || '').slice(0, 200),
+        url: `/?rent=${encodeURIComponent(id)}`, rentLinkId: id,
+        tag: `gloobal-rent-${id}`, timestamp: Date.now(),
+      }, { category: 'transactional', app: 'gloobal' });
+    }
+  } catch (e) { /* the notice is there either way */ }
 }
 function event(link, kind, by, v) {
   link.events.push({ at: new Date(), kind, by, v: v || undefined });

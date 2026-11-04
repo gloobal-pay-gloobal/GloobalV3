@@ -885,7 +885,24 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // The overview itself reads GET /api/creator-share/overview (0194) —
   // see features/creator/CreatorShareOverview.jsx.
   const [showRentChoice, setShowRentChoice] = useState14(false);
-  const requestCloseRentChoice = useBackClose(showRentChoice, () => setShowRentChoice(false));
+  const requestCloseRentChoice = useBackClose(showRentChoice, () => { setShowRentChoice(false); setRentStartLink(null); refreshRentWaiting(); });
+  // ── RENT REQUESTS REACH THE OTHER PERSON (0239) ─────────────────────
+  // Which request to open Rent on (a push, a notice, a ?rent= link), and
+  // how many rent requests are waiting for THIS person — shown on the Rent
+  // tile, so a request is seen without opening anything.
+  const [rentStartLink, setRentStartLink] = useState14(null);
+  const [rentWaiting, setRentWaiting] = useState14(0);
+  const refreshRentWaiting = () => {
+    GloobalApi.getRentLinks().then((links) => {
+      if (!Array.isArray(links)) return;
+      setRentWaiting(links.filter((l) => (l.status === "requested" && !l.mine) || (l.status === "terms" && l.role === "tenant") || (l.status === "connected" && l.pending && l.role === "tenant")).length);
+    }).catch(() => {});
+  };
+  useEffect12(() => {
+    refreshRentWaiting();
+    const t = setInterval(refreshRentWaiting, 60000);
+    return () => clearInterval(t);
+  }, []);
   const [showRecharge, setShowRecharge] = useState14(false);
   const requestCloseRecharge = useBackClose(showRecharge, () => setShowRecharge(false));
   const [showElectricity, setShowElectricity] = useState14(false);
@@ -1817,6 +1834,14 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       onConsumeDeepLink && onConsumeDeepLink();
       return;
     }
+    // A rent request or change of terms, by link id (0239).
+    if (deepLinkTarget && typeof deepLinkTarget === "object" && deepLinkTarget.rent) {
+      setActiveTab("home");
+      setRentStartLink(/^[a-f0-9]{24}$/i.test(String(deepLinkTarget.rent)) ? String(deepLinkTarget.rent) : null);
+      setShowRentChoice(true);
+      onConsumeDeepLink && onConsumeDeepLink();
+      return;
+    }
     if (deepLinkTarget && typeof deepLinkTarget === "object" && deepLinkTarget.supportNew) {
       setActiveTab("profile");
       setSupportPrefill(deepLinkTarget.supportNew.text ? deepLinkTarget.supportNew : null);
@@ -1897,6 +1922,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // My shop: see openMyShop.
     else if (deepLinkTarget === "myshop") openMyShop();
     else if (deepLinkTarget === "complaints") setShowComplaints(true);
+    // Rent, from the app map, on either side (0239).
+    else if (deepLinkTarget === "rent") setShowRentChoice(true);
     if (onConsumeDeepLink) onConsumeDeepLink();
   }, [deepLinkTarget]);
   useEffect12(() => {
@@ -2339,6 +2366,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     : showCreatorSetup ? "creatorSetup"
     : showMyShops ? "myshop"
     : showComplaints ? "complaints"
+    : showRentChoice ? "rent"
     : showMore ? "payservices"
     : showReceive ? "receive"
     : showEssentials ? "essentials"
@@ -3134,6 +3162,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   }{shareRole === "user" ? <div><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint, marginBottom: 9 }}>Bills &amp; recharges</div><div style={{ display: "grid", gridTemplateColumns: `repeat(${BILL_ACTIONS.length}, minmax(0, 1fr))`, gap: 8 }}>{BILL_ACTIONS.map(({ key, label, Icon }) => <IconTile
     key={key}
     onClick={() => key === "recharge" ? setShowRecharge(true) : key === "electricity" ? setShowElectricity(true) : key === "rent" ? setShowRentChoice(true) : key === "more" ? setShowMore(true) : showToast2(`${label} \u2014 coming soon`)}
+    badge={key === "rent" && rentWaiting > 0 ? <span data-testid="rent-tile-badge" aria-label={`${rentWaiting} rent request${rentWaiting === 1 ? "" : "s"} waiting`} style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: T.negative, color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 0 0 2px ${T.surface}` }}>{rentWaiting}</span> : null}
     label={label}
     box={52}
     radius={16}
@@ -4412,6 +4441,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        QR + GLOOBAL ID sheet. */
   }{showRentChoice && <RentScreen
     myGloobalId={myGloobalId}
+    startLink={rentStartLink}
     onClose={requestCloseRentChoice}
     onSendOnce={() => { requestCloseRentChoice(); onOpenSend(); }}
     onGetRent={() => { requestCloseRentChoice(); setShowReceive(true); }}

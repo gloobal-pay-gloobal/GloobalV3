@@ -685,6 +685,17 @@ function readComplaintFromUrl() {
   }
 }
 
+// ?rent=<link id> — where a rent request's push lands (0239).
+function readRentFromUrl() {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = new URLSearchParams(window.location.search).get("rent");
+    return raw && /^[a-f0-9]{24}$/i.test(raw) ? raw : "";
+  } catch (e) {
+    return "";
+  }
+}
+
 function readSharedTxnFromUrl() {
   if (typeof window === "undefined") return "";
   try {
@@ -1825,6 +1836,21 @@ function GloobalId() {
       // The case still opens.
     }
   }, [stage]);
+  // A rent request link (?rent=) opens Rent on that request (0239).
+  const rentLinkRef = useRef29(readRentFromUrl());
+  useEffect15(() => {
+    if (stage !== "dashboard" || !rentLinkRef.current) return;
+    const id = rentLinkRef.current;
+    rentLinkRef.current = "";
+    setDashboardDeepLink({ rent: id });
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("rent");
+      window.history.replaceState({}, "", url.toString());
+    } catch (e) {
+      // Rent still opens.
+    }
+  }, [stage]);
   // A receipt link someone was sent. Read once here; acted on further down,
   // below the history it has to search.
   const [sharedTxnRef, setSharedTxnRef] = useState19(() => readSharedTxnFromUrl());
@@ -1990,6 +2016,13 @@ function GloobalId() {
       if (complaintId) {
         setActiveScreen(null);
         setDashboardDeepLink({ complaint: String(complaintId) });
+        return;
+      }
+      // A rent request or change of terms: Rent, on it (0239).
+      const rentId = data.payload && data.payload.rentLinkId;
+      if (rentId) {
+        setActiveScreen(null);
+        setDashboardDeepLink({ rent: String(rentId) });
         return;
       }
       // A Help & Support reply: straight to the chat (0216).
@@ -3185,6 +3218,9 @@ function GloobalId() {
     { key: "paylater", section: "Move money", group: "post", label: "PayLater", locked: !everRegistered, onPress: () => goToDashboardDestination("paylater") },
     { key: "history", section: "Move money", group: "post", label: "Transaction History", locked: !everRegistered, onPress: () => goToDashboardDestination("history") },
     { key: "share", section: "Move money", group: "post", label: "Creator Share", locked: !everRegistered, onPress: () => goToDashboardDestination("share") },
+    // 0239: Rent was reachable only from a tile on the Personal side, so a
+    // person on their shop side could not find a request sent to them.
+    { key: "rent", section: "Move money", group: "post", label: "Rent", locked: !everRegistered, onPress: () => goToDashboardDestination("rent") },
     // ── THE TWO THE MAP DID NOT KNOW ABOUT ─────────────────────────────
     //
     // My Choices is a whole tab of the app and was on no branch of this
@@ -5144,6 +5180,7 @@ function GloobalId() {
     onClose={() => setShowNotifications(false)}
     onOpenTransaction={(txnId) => setSharedTxnRef(txnId)}
     onOpenSupport={(id) => { setActiveScreen(null); setDashboardDeepLink({ support: String(id) }); }}
+    onOpenRent={(id) => { setActiveScreen(null); setDashboardDeepLink({ rent: String(id) }); }}
     pushState={pushState}
   />{
     /* Ask GLOOBAL (0223): the question helper's full screen, the sheet the

@@ -253,9 +253,11 @@ function RentPlacePage({ id, onBack, onPay, onToast, onChanged }) {
 }
 
 // ── THE SCREEN ──────────────────────────────────────────────────────────
-function RentScreen({ onClose, onSendOnce, onGetRent, onPayPerson, onToast, myGloobalId }) {
+function RentScreen({ onClose, onSendOnce, onGetRent, onPayPerson, onToast, myGloobalId, startLink = null }) {
   const [places, setPlaces] = useState79(null);
-  const [view, setView] = useState79({ name: "home" });
+  // 0239: opened from a push or a notice, Rent starts on that request.
+  const [view, setView] = useState79(() => (startLink ? { name: "link", id: startLink } : { name: "home" }));
+  useEffect74(() => { if (startLink) setView({ name: "link", id: startLink }); }, [startLink]);
   // 0232: requests and connections, alongside the places.
   const [links, setLinks] = useState79([]);
   const load = () => {

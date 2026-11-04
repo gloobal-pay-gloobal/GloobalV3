@@ -127,7 +127,7 @@ var GLOOBAL_NOTIF_ASK_BUTTON = {
   unreachable: "Try again",
   failed: "Try again"
 };
-function NotificationsSheet({ open, onClose, onOpenTransaction, onOpenSupport, onUnreadCount, pushState }) {
+function NotificationsSheet({ open, onClose, onOpenTransaction, onOpenSupport, onOpenRent, onUnreadCount, pushState }) {
   const [askState, setAskState] = useState40(pushState || "");
   const [asking, setAsking] = useState40(false);
   useEffect40(() => { setAskState(pushState || ""); }, [pushState]);
@@ -218,6 +218,16 @@ function NotificationsSheet({ open, onClose, onOpenTransaction, onOpenSupport, o
     // by reference, here or there.
     // A Help & Support reply opens its chat (0216).
     const meta = (row && row.metadata) || {};
+    // A rent request or a change of terms opens Rent on it (0239).
+    if ((meta.rentLinkId || meta.rentPlaceId || meta.rentNudge) && onOpenRent) {
+      // Close first, then open: closing pops this sheet's Back entry, and
+      // a Rent screen opened in the same moment caught that Back and shut.
+      // A reminder about a place opens Rent itself; a request, that request.
+      const id = meta.rentLinkId ? String(meta.rentLinkId) : "home";
+      requestClose();
+      setTimeout(() => onOpenRent(id), 250);
+      return;
+    }
     if (meta.event === "support_reply" && meta.conversationId && onOpenSupport) {
       onOpenSupport(String(meta.conversationId));
       requestClose();

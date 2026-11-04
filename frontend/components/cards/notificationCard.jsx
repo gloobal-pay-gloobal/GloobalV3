@@ -123,7 +123,17 @@ function gloobalNotifHeadline(meta, lens, ownCurrency) {
 var GLOOBAL_NOTIF_MONEY_TYPES = ["payment", "share", "coin"];
 
 function gloobalNotifIsMoney(row) {
-  return GLOOBAL_NOTIF_MONEY_TYPES.indexOf((row && row.type) || "") !== -1;
+  if (GLOOBAL_NOTIF_MONEY_TYPES.indexOf((row && row.type) || "") === -1) return false;
+  // 0239: a "payment" notice that moved no money — a rent request, a
+  // change of terms, a reminder that rent is due — carries no figure and
+  // no payment. Drawn as money it read "Money received" over a date, and
+  // the founder's "the other person doesn't receive it" was exactly that:
+  // the request was there, headed by a sentence that wasn't true. Those
+  // are told by their own title and message.
+  const meta = (row && row.metadata) || {};
+  if (meta.rentLinkId || meta.rentPlaceId || meta.rentNudge) return false;
+  if (row.type !== "payment") return true;
+  return meta.amount != null || Boolean(meta.transactionId || meta.referenceId || meta.counterpartyName);
 }
 
 // ── WHO THE OTHER SIDE IS, IN THE WORDS OF THIS KIND OF MOVEMENT ─────────

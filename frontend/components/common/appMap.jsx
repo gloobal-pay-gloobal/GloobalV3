@@ -32,7 +32,8 @@ import {
   PieChart as MapChoicesIcon,
   ShoppingBasket as MapEssentialsIcon,
   MessageSquareWarning as MapComplaintIcon,
-  Sparkles as MapAskIcon
+  Sparkles as MapAskIcon,
+  DoorOpen as MapRentIcon
 } from "lucide-react";
 
 // The floating map button's last settled spot — which screen edge, and how
@@ -359,7 +360,8 @@ var APP_MAP_ICONS = {
   notifications: MapBellIcon,
   idGuide: MapGuideIcon,
   complaints: MapComplaintIcon,
-  ask: MapAskIcon
+  ask: MapAskIcon,
+  rent: MapRentIcon
 };
 
 // A colour per branch, drawn from the dial pad's own palette so the map is

@@ -12123,6 +12123,15 @@ function publicNotification(doc) {
       //
       // Null on every other type, which have no payment above them.
       paymentReferenceId: metadata.paymentReferenceId ?? null,
+      // 0239: what a notice that moved no money points at. These were
+      // stripped here, so a rent request's notice could not open the
+      // request, and a Help & Support reply could not open its chat: the
+      // app checked for fields this function never sent.
+      event: typeof metadata.event === 'string' ? metadata.event : null,
+      conversationId: metadata.conversationId ? String(metadata.conversationId) : null,
+      rentLinkId: metadata.rentLinkId ? String(metadata.rentLinkId) : null,
+      rentPlaceId: metadata.rentPlaceId ? String(metadata.rentPlaceId) : null,
+      rentNudge: metadata.rentNudge ? true : null,
     },
   };
 }

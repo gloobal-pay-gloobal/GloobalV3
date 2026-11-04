@@ -126,29 +126,14 @@ describe("five to a sheet, in the same five places", () => {
     assert.equal((slots.match(/\{ x:/g) || []).length, 5);
   });
 
-  test("the slots are fixed, so page two is the same page", () => {
-    // A layout that reshuffled itself when the arrow is tapped would read
-    // as a different screen rather than the next page of the same one.
-    assert.match(strip(src), /slot=\{IDENTITY_STAMP_SLOTS\[i\]\}/,
-      "the slot is no longer taken by position, so it can vary per page");
+  // 0243: one stamp per payment, the latest five on the profile and the
+  // rest behind the eye — so there are no pages, arrows or dots any more.
+  test("the latest five sit in five fixed places; the eye opens the rest", () => {
+    assert.match(strip(src), /latestFive\.map\(\(stamp, i\) => <span/);
+    assert.match(strip(src), /left: PASSPORT_PROFILE_SLOTS\[i\]\.x, top: PASSPORT_PROFILE_SLOTS\[i\]\.y/);
+    assert.match(strip(src), /data-testid="passport-see-all"/);
+    assert.doesNotMatch(strip(src), /arrow\("next"\)/, "the paging arrows are back");
     assert.doesNotMatch(strip(src), /Math\.random/, "the layout has become random");
-  });
-
-  test("the page index is clamped, not trusted", () => {
-    // A crossing arriving while the last page is open shrinks the count,
-    // and an index past the end renders an empty sheet with no way back.
-    assert.match(strip(src), /const at = Math\.min\(page, pages - 1\);/);
-    assert.match(strip(src), /Math\.max\(1, Math\.ceil\(crossings\.length \/ IDENTITY_STAMPS_PER_PAGE\)\)/);
-  });
-
-  test("both arrows exist and neither can run off the end", () => {
-    assert.match(strip(src), /\{at > 0 && arrow\("prev"\)\}/);
-    assert.match(strip(src), /\{at < pages - 1 && arrow\("next"\)\}/);
-    assert.match(strip(src), /Math\.max\(0, Math\.min\(pages - 1, n \+ \(dir === "next" \? 1 : -1\)\)\)/);
-  });
-
-  test("the dots appear only when there is more than one page", () => {
-    assert.match(strip(src), /\{pages > 1 && <div/);
   });
 
   test("a country always gets the same ink, and neighbours differ", () => {
@@ -192,23 +177,22 @@ describe("the four changes asked for", () => {
 
 describe("a brand-new account", () => {
   test("gets a sentence, not blank paper", () => {
-    // Day one there are no crossings, and an empty sheet is a worse empty
-    // state than the space it replaced. It says what would put a mark
-    // there, which is the only thing somebody looking at it wants to know.
-    assert.match(strip(src), /Pay somebody in another country and the first mark lands here\./);
-    assert.match(strip(src), /NO CROSSINGS YET/);
+    assert.match(strip(src), /Pay somebody in another country and the first stamp lands here\./);
+    assert.match(strip(src), /NO STAMPS YET/);
   });
 
-  test("and the count reads in countries, not payments", () => {
-    assert.match(strip(src), /crossings\.length === 1 \? "COUNTRY" : "COUNTRIES"/);
+  test("and the count reads in stamps and countries", () => {
+    assert.match(strip(src), /dressedStamps\.length === 1 \? "STAMP" : "STAMPS"/);
+    assert.match(strip(src), /countryCount === 1 \? "COUNTRY" : "COUNTRIES"/);
   });
 });
 
 describe("where it gets its history", () => {
-  test("both directions count", () => {
-    // A crossing is a payment between two countries; which way the money
-    // went does not make it less of one.
-    assert.match(dash, /history=\{roleSendHistory\.concat\(receivedRows\)\}/);
+  test("payments made, both sides of the account (0243)", () => {
+    // The founder's pick: money SENT, Personal and Creator. The server's
+    // full record replaces this as soon as it answers.
+    assert.match(dash, /history=\{sendHistory\}/);
+    assert.match(strip(src), /GloobalApi\.getPassport\(me\)/);
   });
 
   test("it is in the bundle, ahead of the screen that hosts it", () => {

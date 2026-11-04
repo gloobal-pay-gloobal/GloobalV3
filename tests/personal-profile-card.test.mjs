@@ -51,7 +51,7 @@ test("the dashboard wires score, shop, copy and share", () => {
 });
 
 test("one or two stamps get a hint instead of empty paper", () => {
-  assert.match(pd, /crossings\.length > 0 && crossings\.length < 3 && <div\s+data-pd-passport-hint/);
+  assert.match(pd, /dressedStamps\.length > 0 && dressedStamps\.length < 3 && <div\s+data-pd-passport-hint/);
 });
 
 test("photo on the left, name and ID on the right, copy inside the ID box", () => {

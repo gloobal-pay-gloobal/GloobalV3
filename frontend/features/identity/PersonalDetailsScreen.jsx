@@ -42,6 +42,15 @@ import { ChevronRight as ChevronRight7, ChevronLeft as ChevronLeft5, Camera as C
 // tapped would read as a different screen rather than the next page of
 // the same one.
 var IDENTITY_STAMPS_PER_PAGE = 5;
+// 0243: the latest five, one per slot, in boxes up to 140 wide — the right
+// column still ends inside a 360px phone's 324px sheet.
+var PASSPORT_PROFILE_SLOTS = [{ x: 8, y: 8 }, { x: 172, y: 12 }, { x: 18, y: 134 }, { x: 176, y: 140 }, { x: 92, y: 258 }];
+function passportProfileSheetHeight(count) {
+  if (count <= 0) return 150;
+  if (count <= 2) return 150;
+  if (count <= 4) return 276;
+  return 392;
+}
 var IDENTITY_STAMP_SLOTS = [
   { x: 12, y: 2, rot: -7, shape: "circle" },
   { x: 192, y: 12, rot: 6, shape: "rect" },
@@ -214,7 +223,11 @@ function PersonalDetailsScreen({
   onCopyId,
   onShareId,
   onOpenQr,
-  onUpdateId
+  onUpdateId,
+  // 0243: open a stamp's payment receipt, when this phone holds it.
+  canOpenReceipt,
+  onOpenReceipt,
+  ownCurrency
 }) {
   const [showMobile, setShowMobile] = useState52(false);
   // The number shows only while asked for, and hides itself again.
@@ -223,39 +236,31 @@ function PersonalDetailsScreen({
     const t = setTimeout(() => setShowMobile(false), 8000);
     return () => clearTimeout(t);
   }, [showMobile]);
-  const [page, setPage] = useState52(0);
-  const ownIso = dialCountry && dialCountry.iso;
-  const crossings = useMemo14(() => identityCrossings(history, ownIso), [history, ownIso]);
-  const pages = Math.max(1, Math.ceil(crossings.length / IDENTITY_STAMPS_PER_PAGE));
-  // Clamped rather than trusted: a crossing arriving while the last page is
-  // open can shrink the count, and a page index past the end would render
-  // an empty sheet with no way back.
-  const at = Math.min(page, pages - 1);
-  const slice = crossings.slice(at * IDENTITY_STAMPS_PER_PAGE, at * IDENTITY_STAMPS_PER_PAGE + IDENTITY_STAMPS_PER_PAGE);
-
-  const arrow = (dir) => <button
-    onClick={() => setPage((n) => Math.max(0, Math.min(pages - 1, n + (dir === "next" ? 1 : -1))))}
-    className="v2-tap"
-    aria-label={dir === "next" ? "Next stamps" : "Previous stamps"}
-    style={{
-      position: "absolute",
-      [dir === "next" ? "right" : "left"]: -13,
-      top: "50%",
-      transform: "translateY(-50%)",
-      width: 34,
-      height: 34,
-      borderRadius: "50%",
-      border: "none",
-      background: T.surface,
-      boxShadow: `0 4px 14px rgba(${T.inkRgb},0.18)`,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      padding: 0,
-      zIndex: 5
-    }}
-  >{dir === "next" ? <ChevronRight7 size={17} color={T.ink} /> : <ChevronLeft5 size={17} color={T.ink} />}</button>;
+  // ── THE STAMPS (0243) ──────────────────────────────────────────────
+  //
+  // One stamp per payment SENT to another country, both sides of the
+  // account, from the server's whole record. Until it answers (or if it
+  // cannot), the payments this phone holds stand in.
+  const ownIso = String((dialCountry && dialCountry.iso) || "").toUpperCase();
+  const [passport, setPassport] = useState52(null);
+  useEffect87(() => {
+    const me = typeof gloobalCurrentSymbolId === "function" ? gloobalCurrentSymbolId() : null;
+    if (!me || typeof GloobalApi === "undefined" || !GloobalApi.getPassport) return undefined;
+    let live = true;
+    GloobalApi.getPassport(me).then((r) => { if (live && r) setPassport(r); }).catch(() => {});
+    return () => { live = false; };
+  }, [gloobalId]);
+  const localSent = useMemo14(() => (Array.isArray(history) ? history : []).filter((t) => t && t.kind !== "share" && t.direction !== "received" && t.status !== "simulated"), [history]);
+  const localStamps = useMemo14(() => localSent
+    .map((t) => ({ referenceId: t.txnId || null, iso: identityRowIso(t), name: t.creatorHandle || t.personName || t.name || "", amount: Number(t.senderAmount ?? t.amount) || 0, currency: t.senderSideCurrency || t.currency || null, receivedAmount: Number(t.receiverAmount ?? t.amount) || 0, receivedCurrency: t.receiverSideCurrency || null, at: t.occurredAt || null }))
+    .filter((x) => x.iso && x.iso !== ownIso)
+    .sort((a, b) => String(b.at || "").localeCompare(String(a.at || ""))), [localSent, ownIso]);
+  const stamps = passport ? passport.stamps : localStamps;
+  const dressedStamps = useMemo14(() => passportDressStamps(stamps), [stamps]);
+  const latestFive = dressedStamps.slice(0, PASSPORT_PROFILE_SLOTS.length);
+  const countryCount = passport ? passport.countries : new Set(localStamps.map((x) => x.iso)).size;
+  const [stampsOpen, setStampsOpen] = useState52(false);
+  const requestCloseStamps = typeof useBackClose === "function" ? useBackClose(stampsOpen, () => setStampsOpen(false)) : () => setStampsOpen(false);
 
   // ── THE PASSPORT PAGE ON TOP (0236) ───────────────────────────────
   //
@@ -270,11 +275,13 @@ function PersonalDetailsScreen({
   // and the shop sat under the Hooman score as if it were personal.
   const joined = accountCreatedAt instanceof Date && !Number.isNaN(accountCreatedAt.getTime()) ? accountCreatedAt : null;
   const joinedLong = joined ? joined.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
-  const paymentCount = Array.isArray(history) ? history.length : 0;
+  // Every payment this account has made, Personal and Creator — counted by
+  // the server, not the hundred rows this phone holds, and never money in.
+  const paymentCount = passport ? passport.paymentsMade : localSent.length;
   const score = hoomanScore || null;
   const scoreShort = !score ? "—" : score.complete ? String(score.value) : `${score.answered}/${score.total}`;
   const stats = [
-    [String(crossings.length), crossings.length === 1 ? "country" : "countries"],
+    [String(countryCount), countryCount === 1 ? "country" : "countries"],
     [String(paymentCount), paymentCount === 1 ? "payment made" : "payments made"],
     [scoreShort, "Hooman score"]
   ];
@@ -357,35 +364,39 @@ function PersonalDetailsScreen({
       Where your money has been
     </span><span
     style={{ fontSize: 10, fontWeight: 700, color: T.inkFaint, fontFamily: "ui-monospace, monospace" }}
-  >{crossings.length === 0
-    ? "NO CROSSINGS YET"
-    : `${crossings.length} ${crossings.length === 1 ? "COUNTRY" : "COUNTRIES"}`}</span></div><div style={{ position: "relative" }}><div
+  >{dressedStamps.length === 0
+    ? "NO STAMPS YET"
+    : `${dressedStamps.length} ${dressedStamps.length === 1 ? "STAMP" : "STAMPS"} · ${countryCount} ${countryCount === 1 ? "COUNTRY" : "COUNTRIES"}`}</span></div><div
     data-pd-passport
-    style={{ position: "relative", height: identitySheetHeight(slice.length) + (crossings.length < 3 ? 34 : 0), borderRadius: 20, background: "#F4F1E8", backgroundImage: "repeating-radial-gradient(circle at 50% 120%, rgba(120,104,70,0.07) 0 1px, transparent 1px 11px), repeating-linear-gradient(115deg, rgba(120,104,70,0.04) 0 1px, transparent 1px 9px)", boxShadow: T.shadowCard, overflow: "hidden" }}
-  >{crossings.length === 0
+    style={{ position: "relative", height: passportProfileSheetHeight(latestFive.length) + (dressedStamps.length < 3 ? 34 : 0), borderRadius: 20, ...PASSPORT_PAPER, boxShadow: T.shadowCard, overflow: "hidden" }}
+  >{dressedStamps.length === 0
     ? <div
       style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 34px", textAlign: "center", fontSize: 12.5, color: "#A79F8C", lineHeight: 1.6 }}
     >
-      Pay somebody in another country and the first mark lands here.
+      Pay somebody in another country and the first stamp lands here.
     </div>
-    : slice.map((crossing, i) => <IdentityStamp
-      key={crossing.iso}
-      crossing={crossing}
-      slot={IDENTITY_STAMP_SLOTS[i]}
-      name={identityStampCountryName(crossing.iso)}
-    />)}{crossings.length > 0 && crossings.length < 3 && <div
+    : latestFive.map((stamp, i) => <span
+      key={stamp.referenceId || i}
+      data-testid="identity-stamp"
+      style={{ position: "absolute", left: PASSPORT_PROFILE_SLOTS[i].x, top: PASSPORT_PROFILE_SLOTS[i].y, transform: `rotate(${stamp.rot}deg)` }}
+    ><PassportStamp stamp={stamp} /></span>)}{dressedStamps.length > 0 && dressedStamps.length < 3 && <div
       data-pd-passport-hint
       style={{ position: "absolute", left: 14, right: 14, bottom: 12, textAlign: "right", fontSize: 11.5, fontWeight: 700, color: "#9C927B" }}
-    >Next stamp: pay anyone in another country</div>}{crossings.length > 0 && crossings.length === 1 && <div
-      aria-hidden="true"
-      style={{ position: "absolute", right: 20, top: 22, width: 118, height: 76, borderRadius: 6, border: "1.6px dashed rgba(156,146,123,0.55)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, letterSpacing: 1.2, color: "rgba(156,146,123,0.8)" }}
-    >NEXT STAMP</div>}</div>{at > 0 && arrow("prev")}{at < pages - 1 && arrow("next")}</div>{pages > 1 && <div
-    style={{ display: "flex", gap: 5, justifyContent: "center", alignItems: "center", marginTop: 13 }}
-  >{Array.from({ length: pages }).map((_, i) => <span
-    key={i}
-    aria-hidden="true"
-    style={{ width: i === at ? 18 : 6, height: 6, borderRadius: 3, background: i === at ? T.accent : `rgba(${T.accentRgb},0.22)`, transition: "width 0.2s ease" }}
-  />)}</div>}</div></div>;
+    >Next stamp: pay anyone in another country</div>}</div>{
+    /* The eye: every stamp, on a screen of its own. */
+  }{dressedStamps.length > 0 && <button
+    type="button"
+    data-testid="passport-see-all"
+    onClick={() => setStampsOpen(true)}
+    className="v2-tap"
+    style={{ width: "100%", marginTop: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: "none", borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, padding: "12px 14px", fontSize: 13, fontWeight: 800, color: T.accent, cursor: "pointer", fontFamily: T.fontBody }}
+  ><PdEyeIcon size={17} color={T.accent} />{dressedStamps.length > 5 ? `See all ${dressedStamps.length} stamps` : "See your stamps"}</button>}{stampsOpen && <PassportStampsScreen
+    stamps={stamps}
+    onClose={requestCloseStamps}
+    ownCurrency={ownCurrency}
+    canOpenReceipt={canOpenReceipt}
+    onOpenReceipt={onOpenReceipt}
+  />}</div></div>;
 }
 
 // The name a stamp prints. Short enough to read inside a 102px circle:

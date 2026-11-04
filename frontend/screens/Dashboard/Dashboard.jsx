@@ -4995,10 +4995,15 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     accountCreatedAt={accountCreatedAt}
     profilePhoto={profilePhoto}
     onChangePhoto={() => profilePhotoInputRef.current?.click()}
-    // Both directions: a crossing is a payment between two countries, and
-    // which way the money went does not make it less of one. Paid and
-    // received are the two halves of this account's own border history.
-    history={roleSendHistory.concat(receivedRows)}
+    // 0243: payments MADE, from both sides of the account — the founder's
+    // pick. Only the stand-in until the server's full record arrives.
+    history={sendHistory}
+    ownCurrency={ccyCode}
+    canOpenReceipt={(ref) => sendHistory.some((t) => t.txnId === ref)}
+    onOpenReceipt={(ref) => {
+      const row = sendHistory.find((t) => t.txnId === ref);
+      if (row) openRowReceipt(row, "sent");
+    }}
     hoomanScore={ghOverallScore() !== null
       ? { complete: true, value: ghOverallScore(), max: 100, tier: hoomanWordsFor(ghOverallScore()) }
       : { complete: false, answered: ghTotalAnswered, total: ghTotalQuestions }}

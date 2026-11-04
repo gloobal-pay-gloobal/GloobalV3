@@ -1053,6 +1053,25 @@ var GloobalApi = {
   // `pendingDues` is the figure computePaylaterAvailable already accepts as
   // its `realPaylaterDue` override, which exists precisely so the server's
   // number can replace the records-summed one that never saw settlements.
+  // GET /api/passport/:symbolId (0243) — every payment this account SENT,
+  // counted on the server, and each one that crossed a border as a stamp:
+  // { referenceId, iso, name, amount, currency, receivedAmount,
+  // receivedCurrency, at }. Null when it cannot be read; the profile then
+  // keeps what this phone holds.
+  async getPassport(symbolId) {
+    try {
+      const result = await gloobalApiClient.get(`/api/passport/${encodeURIComponent(symbolId)}`);
+      if (!result) return null;
+      return {
+        paymentsMade: Number(result.paymentsMade) || 0,
+        countries: Number(result.countries) || 0,
+        stamps: Array.isArray(result.stamps) ? result.stamps : []
+      };
+    } catch (e) {
+      return null;
+    }
+  },
+
   async getPaylater(symbolId) {
     try {
       const result = await gloobalApiClient.get(`/api/assets/paylater/${encodeURIComponent(symbolId)}`);

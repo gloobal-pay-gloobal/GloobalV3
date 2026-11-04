@@ -2918,6 +2918,55 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+// ── THE PASSPORT: EVERY PAYMENT THAT CROSSED A BORDER (0243) ────────────
+//
+// The profile counted what the phone happened to hold — the last 100 rows,
+// one side of the account, received money mixed in — so "2 countries" and
+// "104 payments made" were a slice of the record, not the record. These
+// figures come from every payment this account has SENT, Personal and
+// Creator alike (the founder's pick), and each one that went to another
+// country is its own stamp: where, to whom, how much, and the second it
+// happened.
+app.get('/api/passport/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
+  try {
+    const user = await User.findOne({ symbolId: String(req.params.symbolId || '').trim() });
+    if (!user) return res.status(404).json({ message: 'Secure ID not found.' });
+    const ownIso = String(accountCountryIso(user) || '').toUpperCase();
+    const sent = { fromUserId: user._id, type: 'send', status: 'success' };
+    const paymentsMade = await Transaction.countDocuments(sent);
+    const rows = await Transaction.find(sent)
+      .sort({ createdAt: -1 })
+      .limit(2000)
+      .select('referenceId receiptCode amount currency createdAt toUserId metadata.parties metadata.debitAmount metadata.senderCurrency')
+      .populate('toUserId', 'fullName symbolId countryIso mobileNumber country')
+      .lean();
+    const stamps = [];
+    const countries = new Set();
+    for (const t of rows) {
+      const parties = (t.metadata && t.metadata.parties) || {};
+      const fromIso = String((parties.sender && parties.sender.countryIso) || ownIso || '').toUpperCase();
+      const toIso = String((parties.receiver && parties.receiver.countryIso) || (t.toUserId ? accountCountryIso(t.toUserId) : '') || '').toUpperCase();
+      if (!toIso || !fromIso || toIso === fromIso) continue;
+      countries.add(toIso);
+      const debit = Number(t.metadata && t.metadata.debitAmount);
+      stamps.push({
+        referenceId: t.referenceId || null,
+        iso: toIso,
+        name: (parties.receiver && (parties.receiver.creatorHandle || parties.receiver.fullName)) || (t.toUserId && t.toUserId.fullName) || '',
+        amount: Number.isFinite(debit) ? debit : Number(t.amount) || 0,
+        currency: (t.metadata && t.metadata.senderCurrency) || (parties.sender && parties.sender.currency) || t.currency || null,
+        receivedAmount: Number(t.amount) || 0,
+        receivedCurrency: t.currency || null,
+        at: t.createdAt ? new Date(t.createdAt).toISOString() : null,
+      });
+    }
+    return res.json({ paymentsMade, countries: countries.size, stamps, capped: rows.length >= 2000 });
+  } catch (error) {
+    console.error('Passport error:', error);
+    return res.status(500).json({ message: 'Could not read your stamps just now.' });
+  }
+});
+
 // Profile Details
 app.get('/api/profile/:symbolId', lookupLimit, requireAuth, requireSelf('symbolId'), async (req, res) => {
   try {

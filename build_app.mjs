@@ -291,6 +291,7 @@ const FRONTEND_MODULES = [
   // ColoredGloobalId, GloobalWordmark and COUNTRY_BY_ISO — all emitted
   // earlier, all function declarations or module-level consts.
   "features/identity/PersonalDetailsScreen.jsx",
+  "features/identity/passportStamps.jsx",
   "features/complaints/complaints.jsx",
   // The Creator side's own name, mark and address. Emitted before the
   // Dashboard, which both hosts the setup screen and calls

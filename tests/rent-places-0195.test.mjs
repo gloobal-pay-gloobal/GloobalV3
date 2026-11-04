@@ -42,13 +42,18 @@ describe("Rent, on the screen", () => {
     assert.match(s, /Array\.from\(\{ length: 28 \}, \(_, i\) => i \+ 1\)/);
   });
 
-  test("paying by itself asks for the PIN and says what happens when short", () => {
-    assert.match(s, /pin: live && mode === "auto" \? pin : undefined/);
-    assert.match(s, /nothing is sent/);
+  test("paying by itself asks for the PIN, once connected (0232)", () => {
+    // A new place starts as a request; paying by itself is switched on
+    // from the place's page, with the PIN, against the accepted terms.
+    assert.match(s, /GloobalApi\.startRentLink\(\{ role: kind,/);
+    assert.match(s, /GloobalApi\.updateRentPlace\(p\.id, on \? \{ mode: "auto", pin \} : \{ mode: "ask" \}\)/);
+    assert.match(s, /paying by itself can be turned on once you're connected/);
   });
 
   test("Pay now is the ordinary Send, with the place attached", () => {
-    assert.match(s, /prefillAmount: p\.amount, rentPlaceId: p\.id/);
+    // 0232: a connected place asks for its bill (rent plus the extras).
+    assert.match(s, /prefillAmount: rentDue\(p\), rentPlaceId: p\.id/);
+    assert.match(s, /function rentDue\(p\) \{ return p && p\.bill \? p\.bill\.total : p \? p\.amount : 0; \}/);
     assert.match(code("frontend/App.jsx"), /rentPlaceId: \(receiver && receiver\.rentPlaceId\) \|\| undefined,/);
     assert.match(code("frontend/screens/SendMoney/SendMoney.jsx"), /rentPlaceId: prefillReceiver\.rentPlaceId \|\| null,/);
   });

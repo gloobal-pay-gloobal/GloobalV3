@@ -48,6 +48,9 @@ function rentMaskId(id) {
   const s = String(id || "");
   return s.length >= 12 ? `${s.slice(0, 2)}••••••${s.slice(-2)}` : s;
 }
+// What a place asks for this month: a connected place's bill (rent plus
+// the extras, 0232), else its rent.
+function rentDue(p) { return p && p.bill ? p.bill.total : p ? p.amount : 0; }
 function rentTz() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; }
 }
@@ -73,9 +76,10 @@ function RentHero({ place, onPay, onOpen }) {
   return <div data-testid="rent-hero" style={{ borderRadius: 24, background: T.gradWallet, color: "#fff", padding: 18, boxShadow: T.shadowRaised, position: "relative" }}>
     <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}><div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: "rgba(255,255,255,0.72)" }}>{live ? "Next rent" : "Rent coming to you"} · {rentDateLabel(place.nextDue.date)}</div>
-      <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: -0.5, marginTop: 4, lineHeight: 1, fontFamily: T.fontDisplay }}>{rentFigure(place.amount, place.currency)}</div>
+      <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: -0.5, marginTop: 4, lineHeight: 1, fontFamily: T.fontDisplay }}>{rentFigure(rentDue(place), place.currency)}</div>
       <div style={{ fontSize: 12.5, fontWeight: 600, color: "rgba(255,255,255,0.86)", marginTop: 7, lineHeight: 1.45 }}>{place.name} · <b style={{ color: "#fff" }}>{live ? (place.mode === "auto" ? "pays by itself" : "asks you first") : `from ${place.counterparty.name}`}</b></div>
     </div><RentCountdown days={place.nextDue.inDays} /></div>
+    {place.bill && place.bill.lines.length > 1 ? <div data-testid="rent-bill" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "3px 10px", marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.2)", fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.88)" }}>{place.bill.lines.map((l) => [<span key={`${l.key}a`}>{l.label}{l.units !== undefined ? ` · ${l.units} units × ${l.rate}` : ""}</span>, <b key={`${l.key}b`} style={{ textAlign: "right", color: "#fff" }}>{rentFigure(l.amount, place.currency)}</b>])}</div> : null}
     {live ? <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.2)" }}><ProfileAvatar name={place.counterparty.name} size={36} /><div style={{ minWidth: 0 }}><b style={{ display: "block", fontSize: 13.5 }}>{place.counterparty.name}</b><span style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", fontWeight: 600 }}>Who you pay · {rentMaskId(place.counterparty.symbolId)}</span></div></div> : null}
     <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
       {live ? <button type="button" data-testid="rent-hero-pay" onClick={onPay} className="v2-tap" style={{ flex: 1, border: "none", borderRadius: 12, padding: 10, fontSize: 12.5, fontWeight: 800, background: "#fff", color: T.accentDeep, cursor: "pointer", fontFamily: "inherit" }}>Pay now</button> : null}
@@ -92,7 +96,7 @@ function RentRow({ p, onOpen, first }) {
   return <button type="button" data-testid="rent-row" data-kind={p.kind} onClick={onOpen} className="v2-row" style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", padding: "12px 14px", border: "none", borderTop: first ? "none" : `1px solid ${T.line}`, background: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
     <span style={{ position: "relative" }}><RentIconBox kind={p.kind} /><span aria-hidden="true" style={{ position: "absolute", right: -3, bottom: -3, width: 14, height: 14, borderRadius: "50%", border: `2px solid ${T.surface}`, background: paid ? T.positive : "#D98A00" }} /></span>
     <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.counterparty.name} · {rentRule(p)}</span></span>
-    <span style={{ textAlign: "right", flexShrink: 0 }}><b style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>{rentFigure(p.amount, p.currency)}</b><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: paid ? T.positive : T.inkFaint, marginTop: 2 }}>{state}</span></span>
+    <span style={{ textAlign: "right", flexShrink: 0 }}><b style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>{rentFigure(rentDue(p), p.currency)}</b><span style={{ display: "block", fontSize: 10.5, fontWeight: 800, color: paid ? T.positive : T.inkFaint, marginTop: 2 }}>{state}</span></span>
   </button>;
 }
 
@@ -106,8 +110,8 @@ function RentAdd({ kindStart, myId, onCancel, onSaved, onToast }) {
   const [name, setName] = useState79("");
   const [amount, setAmount] = useState79("");
   const [day, setDay] = useState79(1);
-  const [mode, setMode] = useState79("auto");
-  const [pin, setPin] = useState79("");
+  const [moveIn, setMoveIn] = useState79("");
+  const [termsDraft, setTermsDraft] = useState79(null);
   const [busy, setBusy] = useState79(false);
   const [err, setErr] = useState79("");
   const live = kind === "live";
@@ -130,8 +134,10 @@ function RentAdd({ kindStart, myId, onCancel, onSaved, onToast }) {
   const save = async () => {
     setErr(""); setBusy(true);
     try {
-      const place = await GloobalApi.addRentPlace({ kind, name: name.trim(), counterpartySymbolId: who.symbolId, amount: Number(amount), dueDay: day, mode: live ? mode : "ask", tz: rentTz(), pin: live && mode === "auto" ? pin : undefined });
-      onSaved(place);
+      // 0232: every new place starts as a request to connect.
+      const terms = live ? undefined : rlDraftToTerms(termsDraft);
+      const link = await GloobalApi.startRentLink({ role: kind, otherSymbolId: who.symbolId, name: name.trim(), rent: live ? Number(amount) : terms.rent, dueDay: live ? day : terms.dueDay, moveIn: moveIn || "", tz: rentTz(), terms });
+      onSaved(link);
     } catch (e) {
       setErr((e && e.message) || "Couldn't save this place.");
     }
@@ -139,7 +145,7 @@ function RentAdd({ kindStart, myId, onCancel, onSaved, onToast }) {
   };
   const shell = (title, body, cta) => <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: "100%" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}><NavBackButton onClick={() => (step <= (kindStart ? 1 : 0) ? onCancel() : setStep(step - 1))} /><span style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: 800, color: T.ink }}>{title}</span><span style={{ width: 40 }} /></div>
-    {step > 0 ? <div style={{ display: "flex", gap: 5 }}>{[1, 2].map((n) => <span key={n} style={{ flex: 1, height: 4, borderRadius: 2, background: n <= step ? T.accent : T.surfaceSunk }} />)}</div> : null}
+    {step > 0 ? <div style={{ display: "flex", gap: 5 }}>{(live ? [1, 2] : [1, 2, 3]).map((n) => <span key={n} style={{ flex: 1, height: 4, borderRadius: 2, background: n <= step ? T.accent : T.surfaceSunk }} />)}</div> : null}
     {body}
     <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 8 }}>{err ? <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: T.negative, textAlign: "center" }}>{err}</div> : null}{cta}</div>
   </div>;
@@ -166,9 +172,18 @@ function RentAdd({ kindStart, myId, onCancel, onSaved, onToast }) {
     </>, cta("Next · the rent", () => setStep(2), !who, "rent-next"));
   }
 
-  // Step 2: name, rent, day, and (live) what happens on the day.
+  // Step 3 (an owner starting it): the terms, sent with the request.
+  if (step === 3 && termsDraft) {
+    return shell("A place I'm creating", <>
+      {q("Your terms", `${who ? who.name : "They"} reads them and accepts to connect. You can change them later; every change comes back to them to accept.`)}
+      <RentTermsEditor draft={termsDraft} setDraft={setTermsDraft} />
+    </>, cta(`Send to ${who ? who.name : "them"}`, save, !(Number(termsDraft.rent) > 0), "rent-save"));
+  }
+
+  // Step 2: name, rent, day, and when they move in. (0232: what happens on
+  // the day is chosen once connected, against the terms both accepted.)
   const amt = Number(amount);
-  const ready = name.trim() && amt > 0 && (!live || mode !== "auto" || /^\d{4,6}$/.test(pin));
+  const ready = name.trim() && amt > 0;
   return shell(live ? "A place I live" : "A place I'm creating", <>
     {q("How much, and on which day?", live ? `Rent you pay to ${who ? who.name : "them"}.` : `Rent ${who ? who.name : "they"} pays you.`)}
     <div>{lbl("Name this place")}<input data-testid="rent-name" value={name} onChange={(e) => setName(e.target.value.slice(0, 60))} placeholder={live ? "Flat 302 · Alwar" : "Room 1 · Jaipur"} style={{ width: "100%", boxSizing: "border-box", border: "none", borderRadius: 16, padding: "13px 14px", fontSize: 15, fontWeight: 700, color: T.ink, background: T.surface, boxShadow: T.shadowCard, fontFamily: "inherit", outline: "none" }} /></div>
@@ -177,11 +192,9 @@ function RentAdd({ kindStart, myId, onCancel, onSaved, onToast }) {
       <div role="radiogroup" aria-label="Due day" style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>{Array.from({ length: 28 }, (_, i) => i + 1).map((d) => { const on = d === day; const quick = RENT_DAY_PICKS.includes(d); return <button key={d} type="button" role="radio" aria-checked={on} data-testid={`rent-day-${d}`} onClick={() => setDay(d)} style={{ aspectRatio: "1", border: "none", borderRadius: "50%", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", background: on ? T.accent : "transparent", color: on ? "#fff" : T.ink, boxShadow: !on && quick ? `inset 0 0 0 1.5px ${hexToRgba(T.accent, 0.35)}` : "none" }}>{d}</button>; })}</div>
       <div style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 600, marginTop: 8, textAlign: "center" }}>The <b style={{ color: T.ink }}>{rentOrdinal(day)}</b> of every month · up to the 28th, so every month has it</div>
     </div></div>
-    {live ? <div>{lbl("On the day")}{[["auto", RentAuto, "Pay by itself", "From GLOOBAL Bank on the day. A receipt and a note to you both."], ["ask", RentBell, "Ask me first", "A reminder on the day, one tap to pay."]].map(([k, Icon, t, s]) => <button key={k} type="button" role="radio" aria-checked={mode === k} data-testid={`rent-mode-${k}`} onClick={() => setMode(k)} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", marginTop: k === "ask" ? 8 : 0, border: "none", borderRadius: 16, padding: "12px 14px", background: T.surface, boxShadow: mode === k ? `0 0 0 2px ${T.accent}` : T.shadowCard, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}><span style={{ width: 36, height: 36, borderRadius: 12, background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", color: T.accent, flexShrink: 0 }}><Icon size={17} /></span><span style={{ flex: 1 }}><b style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>{t}</b><span style={{ display: "block", fontSize: 11.5, color: T.inkSoft, fontWeight: 600, marginTop: 2, lineHeight: 1.4 }}>{s}</span></span><span style={{ width: 20, height: 20, borderRadius: "50%", boxSizing: "border-box", border: mode === k ? `6px solid ${T.accent}` : `2px solid ${T.line}`, flexShrink: 0 }} /></button>)}
-      {mode === "auto" ? <div style={{ marginTop: 10 }}>{lbl("Your PIN, to let it pay by itself")}<input data-testid="rent-pin" type="password" inputMode="numeric" autoComplete="off" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="••••••" style={{ width: "100%", boxSizing: "border-box", border: "none", borderRadius: 16, padding: "12px 14px", fontSize: 20, letterSpacing: 6, fontWeight: 800, color: T.ink, background: T.surface, boxShadow: T.shadowCard, fontFamily: "inherit", outline: "none" }} /></div> : null}
-      <div style={{ display: "flex", gap: 9, alignItems: "flex-start", marginTop: 10, background: T.surfaceAlt, borderRadius: 14, padding: "10px 12px", fontSize: 11.5, color: T.inkSoft, fontWeight: 600, lineHeight: 1.45 }}><RentSafe size={15} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} /><span>If GLOOBAL Bank is short on the day, <b style={{ color: T.ink }}>nothing is sent</b>: you get a note and a tap to pay. No PayLater, no overdraft.</span></div>
-    </div> : <div style={{ display: "flex", gap: 9, alignItems: "flex-start", background: T.surfaceAlt, borderRadius: 14, padding: "10px 12px", fontSize: 11.5, color: T.inkSoft, fontWeight: 600, lineHeight: 1.45 }}><RentSafe size={15} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} /><span>Nothing is ever taken from {who ? who.name : "them"}. You'll see when it arrives, and can send one reminder a month.</span></div>}
-  </>, cta("Save place", save, !ready, "rent-save"));
+    <div>{lbl("Moving in · optional")}<input data-testid="rent-move-in" type="date" value={moveIn} onChange={(e) => setMoveIn(e.target.value)} style={{ width: "100%", boxSizing: "border-box", border: "none", borderRadius: 16, padding: "12px 14px", fontSize: 15, fontWeight: 700, color: T.ink, background: T.surface, boxShadow: T.shadowCard, fontFamily: "inherit", outline: "none" }} /></div>
+    <div style={{ display: "flex", gap: 9, alignItems: "flex-start", background: T.surfaceAlt, borderRadius: 14, padding: "10px 12px", fontSize: 11.5, color: T.inkSoft, fontWeight: 600, lineHeight: 1.45 }}><RentSafe size={15} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} /><span>{live ? <>This is a <b style={{ color: T.ink }}>request</b>: {who ? who.name : "they"} accepts and sends the terms — electricity, maintenance and the rest — and you accept them. Nothing is paid before that; paying by itself can be turned on once you're connected.</> : <>Next you set the terms. {who ? who.name : "They"} gets them as a <b style={{ color: T.ink }}>request</b> and accepts to connect. Nothing is ever taken from them.</>}</span></div>
+  </>, live ? cta("Send request", save, !ready, "rent-save") : cta("Next · the terms", () => { setTermsDraft(rlDraftFrom(null, { rent: amt, dueDay: day })); setStep(3); }, !ready, "rent-next-terms"));
 }
 
 // ── ONE PLACE ───────────────────────────────────────────────────────────
@@ -234,7 +247,8 @@ function RentPlacePage({ id, onBack, onPay, onToast, onChanged }) {
     {pinFor ? <div style={{ background: T.surface, borderRadius: 16, padding: 12, boxShadow: `0 0 0 2px ${T.accent}` }}><div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Your PIN, to let it pay by itself</div><div style={{ display: "flex", gap: 8 }}><input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))} autoFocus placeholder="••••••" style={{ flex: 1, minWidth: 0, border: "none", borderRadius: 12, padding: "10px 12px", fontSize: 18, letterSpacing: 6, fontWeight: 800, background: T.surfaceAlt, color: T.ink, outline: "none", fontFamily: "inherit" }} /><button type="button" disabled={busy || !/^\d{4,6}$/.test(pin)} onClick={() => setAuto(true)} style={{ border: "none", borderRadius: 12, padding: "0 16px", background: T.accent, color: "#fff", fontWeight: 800, fontFamily: "inherit", cursor: "pointer", opacity: /^\d{4,6}$/.test(pin) ? 1 : 0.5 }}>Turn on</button></div></div> : null}
     <div style={{ display: "flex", alignItems: "center", gap: 12, background: T.surface, borderRadius: 16, padding: "12px 14px", boxShadow: T.shadowCard }}><ProfileAvatar name={p.counterparty.name} size={38} /><span style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>{p.counterparty.name}</b><span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 600 }}>{live ? "Who you pay" : "Who pays you"} · {rentMaskId(p.counterparty.symbolId)}</span></span></div>
     <div style={{ background: T.surface, borderRadius: 18, padding: "2px 14px", boxShadow: T.shadowCard }}>{data.history.length ? data.history.slice(0, 12).map((h, i) => <div key={h.referenceId || i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}><span style={{ width: 28, height: 28, borderRadius: "50%", background: hexToRgba(T.positive, 0.12), color: T.positive, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><RentCheck size={14} strokeWidth={3} /></span><span style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>{new Date(h.at).toLocaleString("en", { month: "long" })}</b><span style={{ fontSize: 11.5, color: T.inkSoft, fontWeight: 600 }}>{new Date(h.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {h.auto ? "by itself" : live ? "paid by you" : "received"}{h.receiptCode ? ` · ${h.receiptCode}` : ""}</span></span><b style={{ fontSize: 13, color: T.ink }}>{rentFigure(h.amount, h.currency || p.currency)}</b></div>) : <div style={{ padding: "16px 0", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>{live ? "Nothing paid here yet." : "Nothing received here yet."}</div>}</div>
-    <button type="button" data-testid="rent-remove" onClick={remove} className="v2-tap" style={{ border: "none", borderRadius: 16, padding: 13, background: T.surface, color: T.negative, fontSize: 13.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", boxShadow: T.shadowCard }}>Remove this place</button>
+    {p.link ? <RentLinkPanel linkId={p.link.id} onToast={onToast} onChanged={() => { load(); onChanged && onChanged(); }} /> : null}
+    {p.link && p.link.status === "connected" ? null : <button type="button" data-testid="rent-remove" onClick={remove} className="v2-tap" style={{ border: "none", borderRadius: 16, padding: 13, background: T.surface, color: T.negative, fontSize: 13.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", boxShadow: T.shadowCard }}>Remove this place</button>}
   </div>;
 }
 
@@ -242,21 +256,32 @@ function RentPlacePage({ id, onBack, onPay, onToast, onChanged }) {
 function RentScreen({ onClose, onSendOnce, onGetRent, onPayPerson, onToast, myGloobalId }) {
   const [places, setPlaces] = useState79(null);
   const [view, setView] = useState79({ name: "home" });
-  const load = () => GloobalApi.getRentPlaces().then(setPlaces).catch(() => setPlaces([]));
+  // 0232: requests and connections, alongside the places.
+  const [links, setLinks] = useState79([]);
+  const load = () => {
+    GloobalApi.getRentLinks().then((l) => setLinks(Array.isArray(l) ? l : [])).catch(() => setLinks([]));
+    return GloobalApi.getRentPlaces().then(setPlaces).catch(() => setPlaces([]));
+  };
+  const openLink = (l) => setView(l.status === "connected" && l.placeId ? { name: "place", id: l.placeId } : { name: "link", id: l.id });
   useEffect74(() => { load(); }, []);
-  const pay = (p) => onPayPerson && onPayPerson({ gloobalId: p.counterparty.symbolId, name: p.counterparty.name, countryIso: p.counterparty.countryIso, prefillAmount: p.amount, rentPlaceId: p.id });
+  const pay = (p) => onPayPerson && onPayPerson({ gloobalId: p.counterparty.symbolId, name: p.counterparty.name, countryIso: p.counterparty.countryIso, prefillAmount: rentDue(p), rentPlaceId: p.id });
   const body = view.name === "add"
-    ? <RentAdd kindStart={view.kind || ""} myId={myGloobalId} onCancel={() => setView({ name: "home" })} onToast={onToast} onSaved={(p) => { load(); setView({ name: "home" }); onToast && onToast(p && p.kind === "creating" ? "Place saved" : p && p.mode === "auto" ? "Saved · it pays by itself" : "Place saved"); }} />
+    ? <RentAdd kindStart={view.kind || ""} myId={myGloobalId} onCancel={() => setView({ name: "home" })} onToast={onToast} onSaved={(l) => { load(); setView(l && l.id ? { name: "link", id: l.id } : { name: "home" }); onToast && onToast(l && l.other ? `Request sent to ${l.other.name}` : "Request sent"); }} />
+    : view.name === "link"
+      ? <RentLinkPage id={view.id} onBack={() => { load(); setView({ name: "home" }); }} onToast={onToast} onChanged={load} onConnected={(l) => setView({ name: "place", id: l.placeId })} />
     : view.name === "place"
       ? <RentPlacePage id={view.id} onBack={() => setView({ name: "home" })} onPay={pay} onToast={onToast} onChanged={load} />
       : (() => {
         const list = places || [];
-        const upcoming = list.filter((p) => !(p.thisMonth && p.thisMonth.paid)).sort((a, b) => a.nextDue.inDays - b.nextDue.inDays)[0] || null;
-        const monthly = list.filter((p) => p.kind === "live").reduce((a, p) => a + p.amount, 0);
+        const upcoming = list.filter((p) => p.active !== false && !(p.thisMonth && p.thisMonth.paid)).sort((a, b) => a.nextDue.inDays - b.nextDue.inDays)[0] || null;
+        const monthly = list.filter((p) => p.kind === "live" && p.active !== false).reduce((a, p) => a + rentDue(p), 0);
+        const asks = links.filter(rentLinkNeedsShowing);
         const ccy = (list[0] && list[0].currency) || "INR";
         return <div style={{ display: "flex", flexDirection: "column", gap: 13, minHeight: "100%" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Rent</span><button type="button" onClick={onClose} aria-label="Close" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RentX size={16} color={T.inkSoft} /></button></div>
           {places === null ? <div style={{ padding: 30, textAlign: "center" }}><RentLoader size={18} color={T.inkFaint} style={{ animation: "spin 0.9s linear infinite" }} /></div> : null}
+          {asks.length ? <><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}><span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft }}>Requests</span><span style={{ fontSize: 11.5, fontWeight: 800, color: T.accent }}>{asks.length}</span></div>
+            <div data-testid="rent-requests" style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}>{asks.map((l, i) => <RentLinkRow key={l.id} link={l} first={i === 0} onOpen={() => openLink(l)} />)}</div></> : null}
           {upcoming ? <RentHero place={upcoming} onPay={() => pay(upcoming)} onOpen={() => setView({ name: "place", id: upcoming.id })} /> : null}
           {list.length ? <><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}><span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft }}>Your places</span>{monthly ? <span style={{ fontSize: 12, fontWeight: 800, color: T.accent }}>{rentFigure(monthly, ccy)} a month</span> : null}</div>
             <div style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}>{list.map((p, i) => <RentRow key={p.id} p={p} first={i === 0} onOpen={() => setView({ name: "place", id: p.id })} />)}</div></> : places !== null ? <div style={{ background: T.surface, borderRadius: 20, padding: "20px 16px", textAlign: "center", boxShadow: T.shadowCard }}><div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>No place saved yet</div><div style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600, marginTop: 4, lineHeight: 1.45 }}>Save a place you live and it can pay rent by itself. Save a place you're creating and see when rent arrives.</div></div> : null}

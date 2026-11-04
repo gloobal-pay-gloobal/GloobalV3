@@ -1542,6 +1542,55 @@ var GloobalApi = {
   async remindRentPlace(id) {
     return gloobalApiClient.post(`/api/rent/places/${encodeURIComponent(id)}/remind`, {});
   },
+  // ── Rent between two connected people (0232) ───────────────────────
+  // A request to connect, terms the owner sets and the tenant accepts
+  // (again after every edit), meter readings, and the tenant's documents.
+  // Server: lib/rentLink.js. Reads answer [] / null; writes throw.
+  async getRentLinks() {
+    try {
+      const result = await gloobalApiClient.get("/api/rent/links");
+      return Array.isArray(result && result.links) ? result.links : [];
+    } catch (e) { return null; }
+  },
+  async getRentLink(id) {
+    const result = await gloobalApiClient.get(`/api/rent/links/${encodeURIComponent(id)}`);
+    return result && result.link ? result.link : null;
+  },
+  async startRentLink(body) {
+    const result = await gloobalApiClient.post("/api/rent/links", body);
+    return result && result.link;
+  },
+  async acceptRentLink(id, terms) {
+    const result = await gloobalApiClient.post(`/api/rent/links/${encodeURIComponent(id)}/accept`, { terms });
+    return result && result.link;
+  },
+  async declineRentLink(id) { return gloobalApiClient.post(`/api/rent/links/${encodeURIComponent(id)}/decline`, {}); },
+  async cancelRentLink(id) { return gloobalApiClient.post(`/api/rent/links/${encodeURIComponent(id)}/cancel`, {}); },
+  async endRentLink(id) { return gloobalApiClient.post(`/api/rent/links/${encodeURIComponent(id)}/end`, {}); },
+  async sendRentTerms(id, terms) {
+    const result = await gloobalApiClient.put(`/api/rent/links/${encodeURIComponent(id)}/terms`, { terms });
+    return result && result.link;
+  },
+  async acceptRentTerms(id, v) {
+    const result = await gloobalApiClient.post(`/api/rent/links/${encodeURIComponent(id)}/terms/accept`, { v });
+    return result && result.link;
+  },
+  async askRentTerms(id, line, note) { return gloobalApiClient.post(`/api/rent/links/${encodeURIComponent(id)}/terms/ask`, { line, note }); },
+  async addRentMeter(id, body) {
+    const result = await gloobalApiClient.post(`/api/rent/links/${encodeURIComponent(id)}/meter`, body);
+    return result && result.link;
+  },
+  async removeRentMeter(id, mid) { return gloobalApiClient.delete(`/api/rent/links/${encodeURIComponent(id)}/meter/${encodeURIComponent(mid)}`); },
+  async addRentDoc(id, body) {
+    const result = await gloobalApiClient.post(`/api/rent/links/${encodeURIComponent(id)}/docs`, body);
+    return result && result.doc;
+  },
+  async getRentDoc(id, docId) {
+    const result = await gloobalApiClient.get(`/api/rent/links/${encodeURIComponent(id)}/docs/${encodeURIComponent(docId)}`);
+    return result && result.doc;
+  },
+  async removeRentDoc(id, docId) { return gloobalApiClient.delete(`/api/rent/links/${encodeURIComponent(id)}/docs/${encodeURIComponent(docId)}`); },
+  async requestRentDoc(id, key) { return gloobalApiClient.post(`/api/rent/links/${encodeURIComponent(id)}/docs/request`, { key }); },
 
   async getCreatorShareOverview() {
     try {

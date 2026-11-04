@@ -414,8 +414,12 @@ const PROJECT_ATTACHMENT_PATH = /^\/api\/projects\/[^/]+\/attachment\/?$/i;
 // global parser refused the body here before the route ever saw it
 // (PayloadTooLargeError at this line, in the Render logs).
 const CREATOR_ITEMS_PATH = /^\/api\/creator\/[^/]+\/items\/?$/i;
+// POST /api/rent/links/:id/docs carries a tenant's document (0232) — up to
+// 2 MB, encrypted on arrival — and parses its own body after requireAuth.
+const RENT_DOC_UPLOAD_PATH = /^\/api\/rent\/links\/[^/]+\/docs\/?$/i;
 const globalJsonParser = express.json({ limit: '64kb' });
 app.use((req, res, next) => {
+  if (req.method === 'POST' && RENT_DOC_UPLOAD_PATH.test(req.path)) return next();
   if (req.method === 'PUT' && PROFILE_PHOTO_UPLOAD_PATH.test(req.path)) return next();
   if (req.method === 'PUT' && CREATOR_ITEMS_PATH.test(req.path)) return next();
   // POST only: the GET on the same path returns the bytes and carries no

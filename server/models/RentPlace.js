@@ -38,6 +38,10 @@ const RentPlaceSchema = new mongoose.Schema(
     tz: { type: String, default: 'UTC' },
     active: { type: Boolean, default: true },
     mandateAt: { type: Date, default: null },
+    // 0232: a place made by a connection (lib/rentLink.js). Its rent and
+    // day follow the terms both people accepted, and its monthly figure is
+    // the bill: rent plus the extras.
+    linkId: { type: mongoose.Schema.Types.ObjectId, ref: 'RentLink', default: null },
     // Months (YYYY-MM) the auto job has already tried, with the outcome, so
     // a short balance is reported once and a success is never repeated.
     attempts: {

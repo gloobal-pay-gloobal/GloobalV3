@@ -30,6 +30,7 @@ const Notification = require('../models/Notification');
 const { accountCountryIso } = require('./accountCountry');
 const { localCurrencyFor } = require('./countryCurrency');
 const { formatMoneyPair } = require('./notificationText');
+const rentLink = require('./rentLink');
 // 0224: rent figures in notifications carry both names, like every figure
 // in the app: the owner's own money by its sign ("12,000.00₹ │ GEU"); a
 // nudge to somebody else by the code, since their money may differ.
@@ -38,7 +39,7 @@ const MANDATE_HEADER = 'x-gloobal-rent-mandate';
 const MANDATE_TTL_MS = 2 * 60 * 1000;
 
 let deps = null;
-function configureRent(d) { deps = d; }
+function configureRent(d) { deps = d; rentLink.configureRentLink(d); }
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const monthKey = (d) => `${d.y}-${String(d.m).padStart(2, '0')}`;
@@ -137,7 +138,24 @@ async function publicPlace(place, me, now = new Date()) {
     nextDue: { date: `${due.y}-${String(due.m).padStart(2, '0')}-${String(due.d).padStart(2, '0')}`, inDays: daysUntil(due, now, place.tz || 'UTC') },
     thisMonth: paid ? { paid: true, at: paid.createdAt, referenceId: paid.referenceId, amount: paid.amount } : { paid: false, tried: tried ? { at: tried.at, outcome: tried.outcome } : null },
     createdAt: place.createdAt,
+    ...(await linkedView(place)),
   };
+}
+// 0232: a connected place carries its connection and this month's bill.
+async function linkedView(place) {
+  if (!place.linkId) return { link: null, bill: null };
+  const s = await rentLink.linkedPlaceState(place);
+  return {
+    link: { id: String(place.linkId), status: s && s.link ? s.link.status : 'ended', pending: Boolean(s && s.pending) },
+    bill: s && s.bill ? { lines: s.bill.lines, total: s.bill.total } : null,
+  };
+}
+// What a place asks for this month: the bill when connected, else the rent.
+async function amountDue(place) {
+  if (!place.linkId) return { amount: place.amount, ok: true, pending: false };
+  const s = await rentLink.linkedPlaceState(place);
+  if (!s || !s.connected || !s.bill) return { amount: place.amount, ok: false, pending: false };
+  return { amount: s.bill.total, ok: true, pending: s.pending };
 }
 
 function cleanPlaceInput(body, kind) {
@@ -177,17 +195,22 @@ async function readRentMandate(req) {
   if (Math.abs(Date.now() - Number(at)) > MANDATE_TTL_MS) throw new Error('stale rent mandate');
   const place = await RentPlace.findById(placeId).lean();
   if (!place || !place.active || place.kind !== 'live' || place.mode !== 'auto' || !place.mandateAt) throw new Error('no standing instruction for this place');
+  // A connected place pays the bill of the terms both accepted, and never
+  // while a change of terms is waiting for the tenant.
+  const due = await amountDue(place);
+  if (!due.ok || due.pending) throw new Error('no standing instruction for this place');
+  place.mandateAmount = due.amount;
   return place;
 }
 // The send route calls this once sender, receiver and amount are known.
 function mandateCovers(place, { senderId, receiverSymbolId, amount }) {
   return String(place.userId) === String(senderId)
     && place.counterpartySymbolId === receiverSymbolId
-    && round2(amount) === round2(place.amount);
+    && round2(amount) === round2(place.mandateAmount === undefined ? place.amount : place.mandateAmount);
 }
 
 // ── Auto-settle ──────────────────────────────────────────────────────────
-async function settleOne(place, now = new Date()) {
+async function settleOne(place, now = new Date(), figure = place.amount) {
   const owner = await User.findById(place.userId).lean();
   if (!owner) return 'no-owner';
   const t = partsIn(now, place.tz || 'UTC');
@@ -196,7 +219,7 @@ async function settleOne(place, now = new Date()) {
   const body = {
     senderSymbolId: owner.symbolId,
     receiverSymbolId: place.counterpartySymbolId,
-    amount: place.amount,
+    amount: figure,
     note: `Rent · ${place.name}`.slice(0, 140),
     idempotencyKey: `rent-${place._id}-${month}`,
     rentPlaceId: String(place._id),
@@ -219,9 +242,9 @@ async function settleOne(place, now = new Date()) {
   await RentPlace.updateOne({ _id: place._id }, { $push: { attempts: { month, at: now, outcome, referenceId } } });
   const fmt = (n) => { try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: place.currency }).format(n); } catch (e) { return `${place.currency} ${n}`; } };
   if (outcome === 'paid') {
-    await Notification.create({ userId: owner._id, type: 'payment', title: `Rent paid · ${place.name}`, message: `${fmt(place.amount)} sent by itself, as you set. Receipt ${referenceId || ''}.`.trim(), metadata: { rentPlaceId: String(place._id), referenceId } }).catch(() => {});
+    await Notification.create({ userId: owner._id, type: 'payment', title: `Rent paid · ${place.name}`, message: `${fmt(figure)} sent by itself, as you set. Receipt ${referenceId || ''}.`.trim(), metadata: { rentPlaceId: String(place._id), referenceId } }).catch(() => {});
   } else if (outcome === 'short') {
-    await Notification.create({ userId: owner._id, type: 'payment', title: `Rent not sent · ${place.name}`, message: `GLOOBAL Bank was short of ${fmt(place.amount)} today, so nothing was sent. Add money and tap to pay.`, metadata: { rentPlaceId: String(place._id), rentShort: true } }).catch(() => {});
+    await Notification.create({ userId: owner._id, type: 'payment', title: `Rent not sent · ${place.name}`, message: `GLOOBAL Bank was short of ${fmt(figure)} today, so nothing was sent. Add money and tap to pay.`, metadata: { rentPlaceId: String(place._id), rentShort: true } }).catch(() => {});
   } else {
     await Notification.create({ userId: owner._id, type: 'payment', title: `Rent not sent · ${place.name}`, message: `We couldn't send it by itself today${message ? ` (${message})` : ''}. Tap to pay.`, metadata: { rentPlaceId: String(place._id), rentFailed: true } }).catch(() => {});
     console.error('rent auto-settle failed:', String(place._id), message);
@@ -235,6 +258,13 @@ async function runRentAutoSettle(now = new Date()) {
   const places = await RentPlace.find({ kind: 'live', active: true }).lean();
   const done = [];
   for (const place of places) {
+    // 0232: a connected place asks for its bill; one whose connection is
+    // not (or no longer) in force asks for nothing; a change of terms that
+    // waits for the tenant turns paying-by-itself into a reminder.
+    const owed = await amountDue(place);
+    if (!owed.ok) continue;
+    const figure = owed.amount;
+    const auto = place.mode === 'auto' && place.mandateAt && !owed.pending;
     const t = partsIn(now, place.tz || 'UTC');
     const month = monthKey(t);
     const due = nextDue(place, now);
@@ -244,17 +274,17 @@ async function runRentAutoSettle(now = new Date()) {
     if (!paid && place.remindDaysBefore > 0 && inDays === place.remindDaysBefore && !(place.reminders || []).some((r) => r.month === month && r.kind === 'ahead')) {
       const owner = await User.findById(place.userId).select('_id').lean();
       if (owner) {
-        await Notification.create({ userId: owner._id, type: 'payment', title: `Rent in ${inDays} day${inDays === 1 ? '' : 's'} · ${place.name}`, message: place.mode === 'auto' ? `${formatMoneyPair(place.amount, place.currency)} will be sent by itself on the ${place.dueDay}. Keep it in GLOOBAL Bank.` : `${formatMoneyPair(place.amount, place.currency)} is due on the ${place.dueDay}. Tap to pay.`, metadata: { rentPlaceId: String(place._id) } }).catch(() => {});
+        await Notification.create({ userId: owner._id, type: 'payment', title: `Rent in ${inDays} day${inDays === 1 ? '' : 's'} · ${place.name}`, message: auto ? `${formatMoneyPair(figure, place.currency)} will be sent by itself on the ${place.dueDay}. Keep it in GLOOBAL Bank.` : `${formatMoneyPair(figure, place.currency)} is due on the ${place.dueDay}. Tap to pay.`, metadata: { rentPlaceId: String(place._id) } }).catch(() => {});
         await RentPlace.updateOne({ _id: place._id }, { $push: { reminders: { month, at: now, kind: 'ahead' } } });
       }
     }
     if (t.d !== place.dueDay || paid) continue;
     if ((place.attempts || []).some((a) => a.month === month)) continue;
-    if (place.mode === 'auto' && place.mandateAt) {
-      done.push([String(place._id), await settleOne(place, now)]);
+    if (auto) {
+      done.push([String(place._id), await settleOne(place, now, figure)]);
     } else if (!(place.reminders || []).some((r) => r.month === month && r.kind === 'day')) {
       const owner = await User.findById(place.userId).select('_id').lean();
-      if (owner) await Notification.create({ userId: owner._id, type: 'payment', title: `Rent due today · ${place.name}`, message: `${formatMoneyPair(place.amount, place.currency)}. Tap to pay.`, metadata: { rentPlaceId: String(place._id) } }).catch(() => {});
+      if (owner) await Notification.create({ userId: owner._id, type: 'payment', title: `Rent due today · ${place.name}`, message: `${formatMoneyPair(figure, place.currency)}${owed.pending ? ' · the new terms wait for you, so it did not pay by itself' : ''}. Tap to pay.`, metadata: { rentPlaceId: String(place._id) } }).catch(() => {});
       await RentPlace.updateOne({ _id: place._id }, { $push: { reminders: { month, at: now, kind: 'day' } } });
     }
   }
@@ -263,6 +293,7 @@ async function runRentAutoSettle(now = new Date()) {
 
 // ── Routes ───────────────────────────────────────────────────────────────
 function registerRentRoutes(app, { requireAuth, writeLimit, lookupLimit, verifyPin }) {
+  rentLink.registerRentLinkRoutes(app, { requireAuth, writeLimit, lookupLimit });
   const own = async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.id)) { res.status(404).json({ success: false, message: 'No such place.' }); return null; }
     const place = await RentPlace.findOne({ _id: req.params.id, userId: req.authUser._id });
@@ -321,7 +352,16 @@ function registerRentRoutes(app, { requireAuth, writeLimit, lookupLimit, verifyP
   app.patch('/api/rent/places/:id', writeLimit, requireAuth, async (req, res) => {
     try {
       const place = await own(req, res); if (!place) return undefined;
-      const b = req.body || {};
+      const b = { ...(req.body || {}) };
+      // 0232: a connected place's rent, day and person come from the terms
+      // both accepted; only its name, reminders and paying-by-itself are
+      // its own.
+      if (place.linkId) { delete b.amount; delete b.dueDay; delete b.counterpartySymbolId; delete b.symbolId; }
+      if (place.linkId && b.mode === 'auto') {
+        const due = await amountDue(place);
+        if (!due.ok) return res.status(409).json({ success: false, message: 'This connection has ended.' });
+        if (due.pending) return res.status(409).json({ success: false, message: 'Accept or answer the new terms first.' });
+      }
       const c = cleanPlaceInput({ ...place.toObject(), counterpartySymbolId: place.counterpartySymbolId, ...b, mode: b.mode === undefined ? place.mode : b.mode, tz: b.tz === undefined ? place.tz : b.tz }, place.kind);
       if (c.errors.length) return res.status(400).json({ success: false, message: c.errors[0] });
       // The instruction changed: amount, day, payee or switching auto on
@@ -354,6 +394,7 @@ function registerRentRoutes(app, { requireAuth, writeLimit, lookupLimit, verifyP
   app.delete('/api/rent/places/:id', writeLimit, requireAuth, async (req, res) => {
     try {
       const place = await own(req, res); if (!place) return undefined;
+      if (place.linkId && place.active) return res.status(409).json({ success: false, message: 'End the connection first, from the place\'s page.' });
       await RentPlace.deleteOne({ _id: place._id });
       return res.json({ success: true });
     } catch (error) {
@@ -390,4 +431,4 @@ function startRentAutoSettle() {
   setInterval(tick, 60 * 60 * 1000).unref();
 }
 
-module.exports = { configureRent, registerRentRoutes, readRentMandate, mandateCovers, runRentAutoSettle, startRentAutoSettle, nextDue, daysUntil, MANDATE_HEADER };
+module.exports = { amountDue, configureRent, registerRentRoutes, readRentMandate, mandateCovers, runRentAutoSettle, startRentAutoSettle, nextDue, daysUntil, MANDATE_HEADER };

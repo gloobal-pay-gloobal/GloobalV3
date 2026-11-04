@@ -568,10 +568,12 @@ function CreatorPage({
        than read off a `flag` field — publicCreator never sent one, so the
        conditional that looked for it silently rendered nothing and the
        flag was simply missing from the shipped screen. */
-  }{creatorFlag(creator) ? <NavFlagBadge
+  }<NavScanButton label="Scan a GLOOBAL code" onClick={onScan} />{
+    /* 0227: the flag in the corner, after the scanner. */
+    creatorFlag(creator) ? <NavFlagBadge
     flag={creatorFlag(creator)}
     label={`${creatorCountryName(creator)} — where this creator is`}
-  /> : null}<NavScanButton label="Scan a GLOOBAL code" onClick={onScan} /></div>
+  /> : null}</div>
 
   <div style={{
     flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch",

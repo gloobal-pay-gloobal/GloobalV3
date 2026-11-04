@@ -71,13 +71,14 @@ function NavScanButton({ onClick, label = "Scan a GLOOBAL QR code", disabled, st
 // A country in a header: the app's real flag picture (FlagEmoji, the one
 // every country row uses) filling the same 40px circle as the buttons
 // beside it, rather than an emoji floating inside a white disc.
-// 0226: the flag fills its circle edge to edge, and the circle is exactly
-// the scanner's circle beside it — one size, one shape, no white ring
-// round a smaller flag (founder: "full circle fit flag").
-var NAV_FLAG_SIZE = NAV_BUTTON_SIZE;
+// 0227: the flag fills its circle edge to edge, a little smaller than the
+// scanner's circle beside it (34px to 40px), and sits in the corner — the
+// scanner before it (founder: "flag in corner then scanner, flag a little
+// smaller").
+var NAV_FLAG_SIZE = 34;
 function NavFlagBadge({ flag, label }) {
   return <span role="img" aria-label={label} style={{
-    width: NAV_BUTTON_SIZE, height: NAV_BUTTON_SIZE, flexShrink: 0, borderRadius: "50%", overflow: "hidden",
+    width: NAV_FLAG_SIZE, height: NAV_FLAG_SIZE, flexShrink: 0, borderRadius: "50%", overflow: "hidden",
     boxShadow: T.shadowCard, display: "inline-flex", alignItems: "center", justifyContent: "center"
   }}><FlagEmoji flag={flag} shape="circle" size={NAV_FLAG_SIZE} fit="cover" border="none" /></span>;
 }

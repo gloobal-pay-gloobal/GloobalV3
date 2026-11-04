@@ -28,10 +28,12 @@ test("every header scan button is the one NavScanButton", () => {
   }
 });
 
-// 0226: the flag fills a full circle exactly the size of the scanner's.
-test("the shop header's flag is the app's flag picture, filling a circle the scanner's size", () => {
+// 0227: the flag fills its own circle, a little smaller than the scanner's,
+// and sits in the corner after the scanner.
+test("the shop header's flag is the app's flag picture, in the corner after the scanner", () => {
   assert.match(nav(), /<FlagEmoji flag=\{flag\} shape="circle" size=\{NAV_FLAG_SIZE\} fit="cover"/);
-  assert.match(nav(), /var NAV_FLAG_SIZE = NAV_BUTTON_SIZE;/);
+  assert.match(nav(), /var NAV_FLAG_SIZE = 34;/);
+  assert.ok(page().indexOf("<NavScanButton") < page().indexOf("<NavFlagBadge"), "scanner first, flag in the corner");
   assert.match(page(), /<NavFlagBadge\s+flag=\{creatorFlag\(creator\)\}/);
   assert.ok(!/fontSize: 17, lineHeight: 1 \}\}>\{creatorFlag/.test(page()), "no emoji in a white disc");
 });

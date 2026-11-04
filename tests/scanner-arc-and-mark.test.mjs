@@ -680,7 +680,8 @@ describe("the aperture is ours, not every scanner's", () => {
     // The ring, the rail and the two round buttons are the only things
     // on this screen. If they do not share a colour the screen has no
     // look at all — which is the state the founder was reporting.
-    assert.match(scanner, /border: lit \? "none" : "1px solid rgba\(167,139,250,0\.55\)"/,
+    // 0248: the edge is the theme's accent now, lifted for the dark picture.
+    assert.match(scanner, /border: lit \? "none" : `1px solid \$\{scannerInkRgba\(0\.35, 0\.55\)\}`/,
       "the round controls went back to a neutral white edge");
     assert.match(scanner, /boxShadow: lit \? "0 6px 18px rgba\(0,0,0,0\.4\)" : "0 0 18px rgba\(124,58,237,0\.28\)"/);
   });

@@ -273,12 +273,29 @@ async function cameraPermissionState() {
 // not agree with each other the screen has no look at all. `lit` still
 // inverts to a solid white button, because a torch that is ON has to be
 // readable as on from the corner of an eye.
+// 0248: the edge follows the theme. It was a fixed violet on every theme —
+// green on Lotus's shop side, saffron on Tiranga, the scanner still violet.
+// The camera picture is dark, so the theme's accent is lifted toward white
+// until it glows there: `lift` 0 is the accent itself, 1 is white.
+function scannerInk(lift) {
+  const hex = String(T.accent || "#7C3AED");
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return hex;
+  const k = Math.max(0, Math.min(1, lift));
+  return "#" + [1, 3, 5].map((i) => {
+    const v = parseInt(hex.slice(i, i + 2), 16);
+    return Math.round(v + (255 - v) * k).toString(16).padStart(2, "0");
+  }).join("");
+}
+function scannerInkRgba(lift, alpha) {
+  const h = scannerInk(lift);
+  return `rgba(${parseInt(h.slice(1, 3), 16)},${parseInt(h.slice(3, 5), 16)},${parseInt(h.slice(5, 7), 16)},${alpha})`;
+}
 function scannerControlStyle(lit) {
   return {
     width: 52,
     height: 52,
     borderRadius: "50%",
-    border: lit ? "none" : "1px solid rgba(167,139,250,0.55)",
+    border: lit ? "none" : `1px solid ${scannerInkRgba(0.35, 0.55)}`,
     background: lit ? "#FFFFFF" : "rgba(10,6,24,0.45)",
     boxShadow: lit ? "0 6px 18px rgba(0,0,0,0.4)" : `0 0 18px rgba(${T.accentRgb},0.28)`,
     backdropFilter: "blur(10px)",
@@ -429,7 +446,8 @@ function QrFrameGuide({ children, rail = null, hunting = false }) {
   }<rect
     x="1.5" y="1.5" width="297" height="297" rx="34"
     fill="none"
-    stroke="#A78BFA"
+    stroke={scannerInk(0.35)}
+    data-testid="scan-ring-glow"
     strokeWidth="2.5"
     strokeLinecap="round"
     strokeDasharray={`${QR_RING_DASH} ${QR_RING_GAP}`}
@@ -438,7 +456,7 @@ function QrFrameGuide({ children, rail = null, hunting = false }) {
   /><rect
     x="1.5" y="1.5" width="297" height="297" rx="34"
     fill="none"
-    stroke="rgba(233,213,255,0.95)"
+    stroke={scannerInkRgba(0.82, 0.95)}
     strokeWidth="1"
     strokeLinecap="round"
     strokeDasharray={`${QR_RING_DASH} ${QR_RING_GAP}`}
@@ -464,8 +482,8 @@ function QrFrameGuide({ children, rail = null, hunting = false }) {
       top: "50%",
       height: 2,
       borderRadius: 2,
-      background: "linear-gradient(90deg, rgba(167,139,250,0), #A78BFA, #F3E8FF, #A78BFA, rgba(167,139,250,0))",
-      boxShadow: "0 0 20px 4px rgba(167,139,250,0.6)",
+      background: `linear-gradient(90deg, ${scannerInkRgba(0.35, 0)}, ${scannerInk(0.35)}, ${scannerInk(0.9)}, ${scannerInk(0.35)}, ${scannerInkRgba(0.35, 0)})`,
+      boxShadow: `0 0 20px 4px ${scannerInkRgba(0.35, 0.6)}`,
       animation: "gloobalScanSweep 2.6s ease-in-out infinite"
     }}
   />}{rail}{children ? <div

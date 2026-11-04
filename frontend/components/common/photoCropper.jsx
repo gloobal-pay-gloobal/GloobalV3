@@ -262,7 +262,7 @@ function PhotoCropper({ dataUrl, shape, onDone }) {
     value={zoom}
     onChange={(e) => setZoomTo(Number(e.target.value))}
     aria-label="Zoom"
-    style={{ flex: 1, accentColor: "#A78BFA" }}
+    style={{ flex: 1, accentColor: T.accent }}
   /><button
     onClick={rotate}
     aria-label="Rotate"

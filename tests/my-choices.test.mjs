@@ -1352,23 +1352,12 @@ describe("the editor is not shared with a floating launcher", () => {
   const sheets = code(SHEETS);
   const shell = sheets.slice(sheets.indexOf("function ChoiceFullScreen"), sheets.indexOf("function ChoiceFieldCard"));
 
-  test("it asks the app map's launcher to step aside", () => {
-    // That launcher sits at z-index 10000 and was covering the Shape
-    // card and the word "optional" on the budget field.
-    assert.match(shell, /gloobal:blockingOverlay/,
-      "the map launcher floats over the editor again");
-    assert.match(shell, /fire\(true\);\n    return \(\) => fire\(false\);/,
-      "the launcher is hidden without being brought back");
-  });
-
-  test("it is keyed on open, not on mount", () => {
-    // This component stays mounted and renders null when closed. A
-    // mount-only effect hides the launcher for the rest of the session,
-    // and the count on the other end never comes back down.
-    const effect = shell.slice(shell.indexOf("gloobal:blockingOverlay"));
-    assert.match(effect.slice(0, effect.indexOf("}, [") + 12), /\}, \[open\]\)/,
-      "the blocking effect does not re-run when the editor opens and closes");
-    assert.match(shell, /if \(!open \|\| typeof window === "undefined"\) return undefined;/);
+  test("the launcher is an edge tab now and stays; the editor reports itself (0231)", () => {
+    // It used to cover the Shape card and was hidden. As a tab in the
+    // margin it no longer does; only the amount pad, while open, hides it.
+    assert.ok(!/gloobal:blockingOverlay/.test(shell), "the editor no longer hides the map");
+    assert.match(shell, /useAppMapHere\(open \? "choices" : null\)/,
+      "keyed on open: a mount-only report would claim Choices for the whole session");
   });
 });
 

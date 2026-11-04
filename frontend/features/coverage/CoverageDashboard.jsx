@@ -171,11 +171,9 @@ function ImpactRing({ parts, paid, payments, currency, own = null, size = 184, t
 function CoverageSubScreen({ title, onBack, right, children }) {
   // The map button floats over every screen; a sub-screen is full-page,
   // so it tells the button to step aside, as Pay & Services does.
-  useEffect71(() => {
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
-  }, []);
+  // (0231) The map button is an edge tab now and stays here; this tells
+  // the map where the person is instead.
+  useAppMapHere("coverage");
   return <div style={{ position: "fixed", inset: 0, zIndex: 330, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(16px + env(safe-area-inset-top, 0px)) 18px 12px", flexShrink: 0 }}><NavBackButton onClick={onBack} /><span style={{ flex: 1, fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{title}</span>{right}</div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "2px 18px 30px", display: "flex", flexDirection: "column", gap: 12 }}>{children}</div></div>;
 }
 

@@ -62,12 +62,9 @@ function OurNumbersScreen({ currency = "INR", onBack }) {
     GloobalApi.getOurNumbers(ccy, tz).then((d) => { if (!alive) return; if (d) setData(d); else setFailed(true); });
     return () => { alive = false; };
   }, [ccy]);
-  // The map button floats over every screen; this one is full-page.
-  useEffect75(() => {
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
-  }, []);
+  // (0231) The map button is an edge tab now and stays here; this tells
+  // the map where the person is instead.
+  useAppMapHere("coverage");
 
   const cur = data ? data.currency : ccy;
   // Every figure carries its other name (GEU) when it is in the viewer's

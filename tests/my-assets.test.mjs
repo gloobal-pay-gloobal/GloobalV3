@@ -287,6 +287,9 @@ describe("the settle button says where the money is going", () => {
     // landed across the end of the settle button. Hidden rather than
     // nudged — which is what the scanner, the creator page and every
     // other full-screen overlay already do with this event.
-    assert.match(code(), /gloobal:blockingOverlay/);
+    // (0231) It is an edge tab now, in the margin past the button's end,
+    // so it stays, and the screen tells the map where you are.
+    assert.ok(!/gloobal:blockingOverlay/.test(code()));
+    assert.match(code(), /useAppMapHere\("assets"\)/);
   });
 });

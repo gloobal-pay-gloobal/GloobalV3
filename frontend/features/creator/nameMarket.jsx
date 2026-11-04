@@ -81,13 +81,13 @@ function NameMarketScreen({ start, ccyCode = "INR", lens, shopSymbol, shops, onC
   const loadThread = async (id) => { const r = await GloobalApi.nameThread(id); if (r && r.thread) keep(r.thread); return r && r.thread; };
   const loadList = async () => { try { const r = await GloobalApi.nameThreads(); setList(r); const l = r && r.listings && r.listings.find((x) => x.handle === handle); if (l) setListing({ forSale: l.forSale, open: l.price === null, price: l.price === null ? "" : String(l.price), floor: l.floor ? String(l.floor) : "", allowAsks: l.allowAsks !== false, nextFirst: (l.nextHandle || "").split(".")[0] || "", nextLast: (l.nextHandle || "").split(".").slice(1).join(".") }); } catch (e) { setList({ threads: [], filed: 0 }); } };
   useEffect81(() => {
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
     if (start.mode === "thread" && start.threadId) loadThread(start.threadId);
     if (start.mode === "sell") loadList();
     if (start.mode === "buy") (async () => { setBusy(true); try { const r = await GloobalApi.buyName(start.handle); setThread(r.thread); setView("thread"); } catch (e) { setError((e && e.message) || "Couldn't start that."); setView("compose"); } finally { setBusy(false); } })();
-    return () => fire(false);
   }, []);
+  // (0231) The map button is an edge tab now and stays here; this tells
+  // the map where the person is instead.
+  useAppMapHere("creatorSetup");
   useEffect81(() => { if (endRef.current) endRef.current.scrollIntoView({ block: "end" }); }, [thread && thread.messages && thread.messages.length, view]);
 
   const run = async (fn) => { setBusy(true); setError(""); try { await fn(); } catch (e) { setError((e && e.message) || "Couldn't do that just now."); } finally { setBusy(false); } };

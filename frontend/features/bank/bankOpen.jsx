@@ -206,11 +206,11 @@ function BankOpenFlow({ symbolId, myName = "", mobileNumber = "", dialCountry, i
   // The app-map button floats at z-index 10000 and sat on top of this
   // flow's own buttons. Hidden while the flow is up — it is a form with a
   // PIN at the end, not a screen to jump away from mid-way.
-  useEffectBank(() => {
-    window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: true } }));
-    return () => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: false } }));
-  }, []);
+  // (0231) Now an edge tab: it stays, and stands aside only at the PIN
+  // and the code — see useMapStandsAside below the screen state.
+  useAppMapHere("gbank");
   const [screen, setScreen] = useStateBank(() => bankResumeScreen(initialBank));
+  useMapStandsAside(screen === "pin" || screen === "otp");
   const [busy, setBusy] = useStateBank(false);
   const [error, setError] = useStateBank("");
   const [fieldError, setFieldError] = useStateBank({});

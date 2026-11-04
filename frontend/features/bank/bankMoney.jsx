@@ -193,11 +193,11 @@ function BankMoneyScreen({ start = "history", ccyCode = "INR", balance = 0, coun
     loadHistory();
     loadAccounts();
     loadEssentials();
-    // The floating map button stands aside, as on the other bank screens.
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
   }, []);
+  // (0231) The map button stays (an edge tab now) and stands aside only at
+  // the PIN, where sending is one tap away.
+  useAppMapHere("gbank");
+  useMapStandsAside(screen === "confirm");
   // A transfer still at the bank: look again every 3 seconds.
   useEffect70(() => {
     if (!transfer || transfer.status !== "processing" || (screen !== "onway" && screen !== "transfer")) return undefined;

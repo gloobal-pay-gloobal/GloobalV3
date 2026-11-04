@@ -902,12 +902,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // (founder's screenshot). The screen has its own List / Map now, so the
   // button steps aside while it is open — the same counted signal payments
   // use, so this can never unhide it over something else.
-  useEffect12(() => {
-    if (!showMore || typeof window === "undefined") return undefined;
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
-  }, [showMore]);
+  //
+  // (0231) It is a slim edge tab now, clear of the shop names, and stays.
   // ── PINNED BUSINESSES ─────────────────────────────────────────────────
   //
   // Which businesses this account has put at the top of Pay & Services.
@@ -2313,14 +2309,34 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // byLevel, rates } } or null until read.
   const [referralSummary, setReferralSummary] = useState14(null);
   const [referralReload, setReferralReload] = useState14(0);
-  // The floating map button sat over the referral screen's figures; hide it
-  // there, as every other full-screen page does.
-  useEffect12(() => {
-    if (typeof window === "undefined" || profileOverlay !== "referral") return undefined;
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
-  }, [profileOverlay]);
+  // ── WHERE YOU ARE, FOR THE MAP (0231) ────────────────────────────────
+  //
+  // The map lit "Dashboard" for every screen inside the dashboard. Each
+  // screen the map can open is named here by the same key the map uses, so
+  // "You are here" is the real place. Screens opened inside these (a shop,
+  // the setup) report themselves one level deeper and win.
+  //
+  // The map button used to hide on the referral screen; as an edge tab it
+  // no longer covers the figures, so it stays.
+  const dashMapHere = profileOverlay === "ghscore" ? "ghscore"
+    : profileOverlay === "updateId" ? "updateId"
+    : profileOverlay === "referral" ? "referralnet"
+    : showCreatorSetup ? "creatorSetup"
+    : showMyShops ? "myshop"
+    : showComplaints ? "complaints"
+    : showMore ? "payservices"
+    : showReceive ? "receive"
+    : showEssentials ? "essentials"
+    : showAssets ? "assets"
+    : showGloobalBankInfo ? "gbank"
+    : showPayLater ? "paylater"
+    : showCreatorOverview ? "share"
+    : showAboutUs ? "aboutus"
+    : activeTab === "profile" && profileDetail === "History" ? "history"
+    : activeTab === "profile" && profileDetail === "Security" ? "security"
+    : activeTab === "choices" ? "choices"
+    : null;
+  useAppMapHere(dashMapHere, 1);
   useEffect12(() => {
     const symbolId = currentSymbolId;
     if (!symbolId) return;

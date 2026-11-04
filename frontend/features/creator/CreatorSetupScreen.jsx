@@ -422,12 +422,9 @@ function CreatorSetupScreen({
   //
   // The same event a payment in flight uses. This is a full-screen form:
   // the only thing the map could do here is throw the form away.
-  useEffect50(() => {
-    if (typeof window === "undefined") return undefined;
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
-  }, []);
+  // (0231) The map button is an edge tab now and stays here; this tells
+  // the map where the person is instead. The tab sits in the margin, clear of the address switch.
+  useAppMapHere("creatorSetup");
   // ── THE SECOND BOX IS OPTIONAL ────────────────────────────────────────
   //
   // A creator whose name is one word — amazon, netflix, chacha — holds
@@ -1278,12 +1275,9 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
   // map disc sitting half over the edit button. Same event the setup
   // screen and the keyboard fire; a profile with four buttons on one card
   // is not a screen that wants a fifth floating on top of them.
-  useEffect50(() => {
-    if (typeof window === "undefined") return undefined;
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
-  }, []);
+  // (0231) The map button is an edge tab now and stays here; this tells
+  // the map where the person is instead. The tab sits in the margin, clear of the card's pencil.
+  useAppMapHere("myshop");
 
   if (!creator) {
     return <div style={{ padding: "28px 0", textAlign: "center", fontSize: 13, color: T.inkFaint }}>

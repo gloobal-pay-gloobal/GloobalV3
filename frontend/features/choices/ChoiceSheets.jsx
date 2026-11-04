@@ -391,12 +391,10 @@ function ChoiceFullScreen({ open, onClose, title, header, footer, children }) {
   // Keyed on `open` rather than on mount, because this component stays
   // mounted and merely renders null when closed. A mount-only effect
   // would hide the launcher for the rest of the session.
-  useEffect43(() => {
-    if (!open || typeof window === "undefined") return undefined;
-    const fire = (active) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active } }));
-    fire(true);
-    return () => fire(false);
-  }, [open]);
+  //
+  // (0231) The button is an edge tab now and no longer covers the sheet;
+  // it stays. The amount pad hides it while it is open.
+  useAppMapHere(open ? "choices" : null);
 
   if (!open) return null;
   return <div

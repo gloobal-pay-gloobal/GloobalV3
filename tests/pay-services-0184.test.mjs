@@ -80,7 +80,10 @@ test("a shop is one line, and the map button no longer covers it", () => {
   assert.match(bz, /data-testid="bazaar-row"/);
   assert.ok(!/s\.rating && s\.rating\.count \? `★/.test(bz), "ratings live on the page");
   const dash = read("frontend/screens/Dashboard/Dashboard.jsx");
-  assert.match(dash, /if \(!showMore \|\| typeof window === "undefined"\) return undefined;\s*const fire = \(on\) => window\.dispatchEvent\(new CustomEvent\("gloobal:blockingOverlay"/);
+  // (0231) The button is an edge tab clear of the rows, so it stays on
+  // Pay & Services, and the map knows that is where you are.
+  assert.ok(!/if \(!showMore \|\| typeof window === "undefined"\) return undefined;\s*const fire/.test(dash), "Pay & Services no longer hides the map");
+  assert.match(dash, /: showMore \? "payservices"/);
 });
 
 test("the shop's page always has Pay", () => {

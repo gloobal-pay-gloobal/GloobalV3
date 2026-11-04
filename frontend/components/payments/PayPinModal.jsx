@@ -27,6 +27,8 @@ function PayPinModal({ open, onClose, amountLabel, onVerified }) {
   const [pinError, setPinError] = useState(null);
   const [checking, setChecking] = useState(false);
   const errorTimer = useRef2(null);
+  // (0231) The map button stands aside while the PIN is up.
+  useMapStandsAside(open);
   useEffect(() => {
     if (!open) {
       setPin("");

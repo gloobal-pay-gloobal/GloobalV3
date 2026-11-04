@@ -18,12 +18,9 @@ function AssetsScreen({ onClose, ccy, ccyCode = "USD", assetRows, onViewPayLater
   // and every other full-screen overlay in this app already do with the
   // same event. The map belongs to the dashboard; a screen stacked on top
   // of it is not a place to open one from.
-  useEffect53(() => {
-    if (typeof window === "undefined") return undefined;
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
-  }, []);
+  // (0231) The map button is an edge tab now and stays on this screen;
+  // the screen tells the map where the person is instead of hiding it.
+  useAppMapHere("assets");
   const [assetsExpanded, setAssetsExpanded] = useState10(false);
   // Settle asks first (a short sheet that says what settling does), and
   // the history of settlements is one tap away in the top-right corner.

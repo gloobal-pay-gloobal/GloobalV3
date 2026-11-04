@@ -17,7 +17,8 @@ test("the preview is the real page, and it counts nothing", () => {
   assert.match(editor(), /onClickCapture=\{\(e\) => \{ e\.preventDefault\(\); e\.stopPropagation\(\); \}\}/);
   const p = page();
   assert.match(p, /if \(!isOwner && !preview && creator && creator\.symbolId\) GloobalApi\.creatorEvent\(creator\.symbolId, "view"\);/);
-  assert.match(p, /if \(typeof window === "undefined" \|\| preview\) return undefined;/, "a preview leaves the map button alone");
+  // (0231) The page no longer hides the map; a preview also reports nothing.
+  assert.match(p, /useAppMapHere\(isOwner && !preview \? "myshop" : null\)/, "a preview leaves the map alone");
 });
 
 test("four rows and More (0200), Undo, and a prompt before losing changes", () => {

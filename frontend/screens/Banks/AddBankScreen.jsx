@@ -116,10 +116,8 @@ function AddBankScreen({ onClose, country: countryProp, balance = 0, myName = ""
   };
   useEffect80(() => {
     load();
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
   }, []);
+  // (0231) The map button stays here (an edge tab now, clear of the form).
 
   const go = (next) => { setError(""); setStep(next); };
   const pickBank = (b) => {

@@ -297,12 +297,9 @@ function HoomanScoreFlow({
   const today = ghTodayKey();
   // The floating app-map button sat on top of the pillar tiles and the
   // check-in's faces. Same event the creator screens use to stand it aside.
-  useEffect69(() => {
-    if (typeof window === "undefined") return undefined;
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
-  }, []);
+  // (0231) The map button is an edge tab now and stays here; this tells
+  // the map where the person is instead.
+  useAppMapHere("ghscore");
   // The cards for this run of the check-in, fixed when it starts so the
   // stack does not reshuffle as answers land.
   const [cards, setCards] = useState73([]);

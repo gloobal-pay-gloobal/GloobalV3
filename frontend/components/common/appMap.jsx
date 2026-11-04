@@ -1,7 +1,6 @@
 // src/components/common/appMap.jsx
 import { useState as useState22, useRef as useRef16, useEffect as useEffect26 } from "react";
 import {
-  Map as MapNavIcon,
   Search as MapSearchIcon,
   X as MapCloseIcon,
   Lock as MapLockIcon,
@@ -65,7 +64,18 @@ function saveMapIconPos(pos) {
   }
 }
 
-var MAP_ICON_SIZE = 52;
+// ── AN EDGE TAB, ON EVERY SCREEN (0231) ─────────────────────────────────
+//
+// The button was a 52px disc floating over the screen, so it kept landing
+// on something: a shop's "+", the bank's keys, the pencil on a profile.
+// Thirteen screens answered by hiding it, and on those the way back was
+// gone. Now it is a slim tab pressed against the edge, inside the margin
+// every screen already leaves, so it can stay — and it hides only where a
+// tap on it would throw something away: money in flight, a PIN, the
+// camera, a photo being cropped, or a keyboard or number pad that is open.
+var MAP_TAB_THICK = 26;
+var MAP_TAB_LONG = 56;
+var MAP_ICON_SIZE = 44; // while it is being dragged
 // Anything under this many px of total pointer travel is a tap (open the
 // map), not a drag (reposition the button) — same distance DailySpendingChart
 // already uses to tell a tap from a swipe (components/cards/misc.jsx).
@@ -102,6 +112,77 @@ function mapIconEdgeStyle(pos) {
   if (pos.edge === "right") return { right: 0, top: off, transform: "translateY(-50%)" };
   if (pos.edge === "top") return { top: 0, left: off, transform: "translateX(-50%)" };
   return { bottom: 0, left: off, transform: "translateX(-50%)" };
+}
+
+// The tab's size, corners and shadow for the edge it rests on — rounded
+// only on the side facing into the screen, flat against the edge. While
+// held it is a small disc under the finger.
+function mapTabShape(edge) {
+  const line = `1px solid ${T.line}`;
+  if (!edge) return { width: MAP_ICON_SIZE, height: MAP_ICON_SIZE, borderRadius: "50%", border: "none", boxShadow: "0 10px 24px rgba(15,10,40,0.26)" };
+  const across = edge === "left" || edge === "right";
+  const radius = { right: "16px 0 0 16px", left: "0 16px 16px 0", top: "0 0 16px 16px", bottom: "16px 16px 0 0" }[edge];
+  const shadow = { right: "-4px 6px 16px", left: "4px 6px 16px", top: "0 6px 16px", bottom: "0 -4px 16px" }[edge];
+  return {
+    width: across ? MAP_TAB_THICK : MAP_TAB_LONG,
+    height: across ? MAP_TAB_LONG : MAP_TAB_THICK,
+    borderRadius: radius,
+    border: line,
+    [`border${edge[0].toUpperCase()}${edge.slice(1)}`]: "none",
+    boxShadow: `${shadow} rgba(15,10,40,0.16)`
+  };
+}
+
+// The icon: every screen of the app as four tiles, the one you are on lit.
+// It says "the app's screens", which a folded paper map did not — that read
+// as directions to a shop.
+function MapScreensIcon({ size = 17, lit = T.positive, color = T.accent }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" strokeWidth="2.2" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="3" width="7.5" height="7.5" rx="2" stroke={color} />
+    <rect x="13.5" y="3" width="7.5" height="7.5" rx="2" stroke={color} />
+    <rect x="3" y="13.5" width="7.5" height="7.5" rx="2" stroke={color} />
+    <rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2" fill={lit} stroke={lit} />
+  </svg>;
+}
+
+// ── TWO SIGNALS SCREENS SEND THE MAP ────────────────────────────────────
+//
+// useMapStandsAside(active): "a tap on you here would throw something
+// away" — a PIN, a payment in flight, an open pad. The same counted
+// `gloobal:blockingOverlay` event the scanner and payments already fire;
+// every true is matched by the cleanup.
+//
+// useAppMapHere(key): "this is where the person is", so the map can light
+// the right place instead of saying Home for everything inside the
+// dashboard. `level` orders nested screens: App's own guess is 0, a
+// dashboard screen 1, a screen opened inside one 2. The deepest wins; among
+// equals, the newest.
+function useMapStandsAside(active) {
+  useEffect26(() => {
+    if (!active || typeof window === "undefined") return undefined;
+    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
+    fire(true);
+    return () => fire(false);
+  }, [Boolean(active)]);
+}
+var APP_MAP_HERE_SEQ = 0;
+function useAppMapHere(key, level = 2) {
+  useEffect26(() => {
+    if (!key || typeof window === "undefined") return undefined;
+    APP_MAP_HERE_SEQ += 1;
+    const id = APP_MAP_HERE_SEQ;
+    const send = (on) => window.dispatchEvent(new CustomEvent("gloobal:mapHere", { detail: { id, key, level, on } }));
+    send(true);
+    return () => send(false);
+  }, [key, level]);
+}
+// Which reported place wins. Exported for tests.
+function appMapHereKey(reports, fallback) {
+  let best = null;
+  for (const r of reports || []) {
+    if (!best || r.level > best.level || (r.level === best.level && r.id > best.id)) best = r;
+  }
+  return best ? best.key : fallback;
 }
 
 // The floating button: draggable anywhere on screen with a real pointer-
@@ -212,8 +293,13 @@ function AppMapButton({ onOpen }) {
 
   if (blockedBy > 0) return null;
 
+  const held = dragging && dragPoint;
+  const shape = held ? mapTabShape(null) : mapTabShape(pos.edge);
+
   return <button
     ref={btnRef}
+    data-testid="app-map-button"
+    data-edge={held ? "drag" : pos.edge}
     onPointerDown={handlePointerDown}
     onPointerMove={handlePointerMove}
     onPointerUp={endDrag}
@@ -221,12 +307,8 @@ function AppMapButton({ onOpen }) {
     aria-label="Open app map"
     style={{
       ...style,
-      width: MAP_ICON_SIZE,
-      height: MAP_ICON_SIZE,
-      borderRadius: "50%",
-      border: "none",
+      ...shape,
       background: T.surface,
-      boxShadow: "0 8px 20px rgba(15,10,40,0.24), 0 2px 6px rgba(15,10,40,0.12)",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -234,7 +316,7 @@ function AppMapButton({ onOpen }) {
       touchAction: "none",
       padding: 0
     }}
-  ><MapNavIcon size={22} color={T.accent} /></button>;
+  ><MapScreensIcon size={held ? 22 : 17} /></button>;
 }
 
 // An icon per destination, keyed by the entry's own key.
@@ -533,6 +615,23 @@ function AppMapOverlay({ entries, currentKey, query, onQueryChange, onClose, onL
 function AppMapLauncher({ entries, currentKey, onLockedPress }) {
   const [open, setOpen] = useState22(false);
   const [query, setQuery] = useState22("");
+  const [hereReports, setHereReports] = useState22([]);
+  useEffect26(() => {
+    if (typeof window === "undefined") return undefined;
+    const onHere = (e) => {
+      const d = e && e.detail;
+      if (!d || !d.id) return;
+      setHereReports((list) => {
+        const rest = list.filter((r) => r.id !== d.id);
+        return d.on ? [...rest, { id: d.id, key: d.key, level: Number(d.level) || 0 }] : rest;
+      });
+    };
+    window.addEventListener("gloobal:mapHere", onHere);
+    return () => window.removeEventListener("gloobal:mapHere", onHere);
+  }, []);
+  // Only screens reported while the dashboard is up count; outside it
+  // (registration, login) App's own key is the truth.
+  const hereKey = currentKey && currentKey !== "dashboard" ? currentKey : appMapHereKey(hereReports, currentKey);
   // The returned function (not a separately-defined one) is what every
   // close path — the header X, a row tap, the hardware/browser Back
   // button — must call, the same way every other full-screen overlay in
@@ -549,7 +648,7 @@ function AppMapLauncher({ entries, currentKey, onLockedPress }) {
     <AppMapButton onOpen={() => setOpen(true)} />
     {open && <AppMapOverlay
       entries={entries}
-      currentKey={currentKey}
+      currentKey={hereKey}
       query={query}
       onQueryChange={setQuery}
       onClose={requestCloseMap}

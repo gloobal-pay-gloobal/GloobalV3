@@ -163,11 +163,9 @@ function MyShopsScreen({ shops, active, ccyCode = "INR", lens, adding, onClose, 
     if (got) setData(got); else setFailed(true);
   };
   useEffect82(() => { load(range); }, [range, shops]);
-  useEffect82(() => {
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
-  }, []);
+  // (0231) The map button is an edge tab now and stays here; this tells
+  // the map where the person is instead.
+  useAppMapHere("myshop");
   const list = (data && data.range === range ? data : null);
   const colorOf = useMemo20(() => {
     const ids = ((list && list.shops) || (shops && shops.shops) || []).map((s) => s.symbolId);

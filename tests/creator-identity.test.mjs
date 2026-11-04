@@ -1072,11 +1072,13 @@ describe("the Creator Profile's code button", () => {
     assert.ok(call > 0 && download > call, "the card downloads only after the share helper");
   });
 
-  test("the map button stands aside on the Creator Profile", () => {
-    // Its default resting place is the violet card's pencil.
+  test("the map button stays on the Creator Profile, as an edge tab (0231)", () => {
+    // It used to rest on the violet card's pencil and was hidden; the tab
+    // sits in the margin instead, and the profile says where you are.
     const src = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
     const panel = src.slice(src.indexOf("function CreatorProfilePanel"));
-    assert.match(panel, /gloobal:blockingOverlay/);
+    assert.ok(!/gloobal:blockingOverlay/.test(panel));
+    assert.match(panel, /useAppMapHere\("myshop"\)/);
   });
 
   test("a pasted address splits into both search boxes", () => {

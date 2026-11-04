@@ -209,6 +209,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   }, []);
   const [pinOpen, setPinOpen] = useState15(false);
   const requestClosePin = useBackClose(pinOpen, () => closePin());
+  // (0231) The map button showed over the PIN keys. It stands aside while
+  // the PIN is up: a tap there would walk away from a payment mid-way.
+  useMapStandsAside(pinOpen);
   const [pin, setPin] = useState15("");
   const [pinError, setPinError] = useState15(false);
   const [pinRevealed, setPinRevealed] = useState15(false);

@@ -187,12 +187,11 @@ test("a purchase line is written after the money moved, never before", () => {
   assert.match(api(), /Written AFTER the payment succeeds, never before/);
 });
 
-test("the creator page hides the floating map button", () => {
-  // AppMapButton is fixed at z-index 10000, 62% down the right edge, which
-  // on this page lands on an item's stepper. Found by rendering: a tap
-  // meant for "one more chai" hit the map.
-  assert.match(page(), /gloobal:blockingOverlay/,
-    "the page must fire the blocking-overlay event the map button listens for");
+test("the creator page keeps the map button, as a tab clear of the steppers (0231)", () => {
+  // The old 52px disc landed on an item's stepper, so the page hid it. The
+  // edge tab sits in the margin; your own shop tells the map where you are.
+  assert.ok(!/gloobal:blockingOverlay/.test(page()), "the page no longer hides the map");
+  assert.match(page(), /useAppMapHere\(isOwner && !preview \? "myshop" : null\)/);
 });
 
 test("the three corner controls are one component, so they cannot drift", () => {

@@ -68,6 +68,9 @@ function AmountPadHost() {
   const fieldRef = useRef48(null);
   fieldRef.current = field;
   const close = useBackClose(Boolean(field), () => { const f = fieldRef.current; if (f && f.el && f.el.blur) f.el.blur(); setField(null); });
+  // (0231) The map button stands aside while the pad is open, as it does
+  // for the other keyboards, so a thumb reaching for 9 cannot open the map.
+  useMapStandsAside(Boolean(field));
 
   // Opened by a tap or focus on any amount field, anywhere in the app.
   useEffect85(() => {
@@ -128,7 +131,8 @@ function AmountPadHost() {
   if (!field) return null;
   const noDot = !(field.decimals > 0);
   return <div ref={sheetRef} data-testid="amount-pad" role="group" aria-label={`${field.label} pad`} style={{
-    position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10050, // above the app map button, which floats at 10000 maxWidth: 480, margin: "0 auto",
+    // Above the app map button (10000), though the button also steps aside.
+    position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10050, maxWidth: 480, margin: "0 auto",
     background: T.surface, borderRadius: "22px 22px 0 0", boxShadow: "0 -12px 36px rgba(0,0,0,0.16)",
     padding: "12px 16px calc(14px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column", gap: 10
   }}>

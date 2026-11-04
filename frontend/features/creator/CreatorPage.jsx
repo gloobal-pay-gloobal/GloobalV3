@@ -491,14 +491,10 @@ function CreatorPage({
   // which on this page lands squarely on an item's stepper. It already
   // listens for this event, which the scanner fires for the same reason.
   // Found by rendering: a tap meant for "one more chai" hit the map.
-  useEffect51(() => {
-    // A preview is inside another screen; closing it must not bring the
-    // map button back over the shop page still open behind the editor.
-    if (typeof window === "undefined" || preview) return undefined;
-    const fire = (on) => window.dispatchEvent(new CustomEvent("gloobal:blockingOverlay", { detail: { active: on } }));
-    fire(true);
-    return () => fire(false);
-  }, []);
+  //
+  // (0231) Not any more: the button is a slim tab in the page's margin,
+  // clear of the steppers, so it stays. Your own shop tells the map so.
+  useAppMapHere(isOwner && !preview ? "myshop" : null);
 
   // A customer opening the page counts as one view for the owner's
   // insights — once a day per person, never the owner (server side).

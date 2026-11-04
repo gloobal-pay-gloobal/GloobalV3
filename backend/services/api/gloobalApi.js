@@ -1575,6 +1575,40 @@ var GloobalApi = {
     const result = await gloobalApiClient.get(`/api/rent/links/${encodeURIComponent(id)}`);
     return result && result.link ? result.link : null;
   },
+  // ── Rent profile and listings (0249) ───────────────────────────────
+  async rentProfileMine() { return gloobalApiClient.get("/api/rent/profile"); },
+  async rentNameAvailable(first, last) {
+    return gloobalApiClient.get(`/api/rent/name-available?first=${encodeURIComponent(first || "")}&last=${encodeURIComponent(last || "")}`);
+  },
+  async saveRentName(first, last) { return gloobalApiClient.post("/api/rent/profile", { first, last }); },
+  async saveRentListing(id, body) {
+    const result = id
+      ? await gloobalApiClient.put(`/api/rent/listings/${encodeURIComponent(id)}`, body)
+      : await gloobalApiClient.post("/api/rent/listings", body);
+    return result && result.listing;
+  },
+  async setRentListingStatus(id, status) {
+    const result = await gloobalApiClient.post(`/api/rent/listings/${encodeURIComponent(id)}/status`, { status });
+    return result && result.listing;
+  },
+  async searchRentListings(params) {
+    const q = Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== null && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+    const result = await gloobalApiClient.get(`/api/rent/listings${q ? `?${q}` : ""}`);
+    return (result && result.listings) || [];
+  },
+  async rentListing(id) {
+    const result = await gloobalApiClient.get(`/api/rent/listings/${encodeURIComponent(id)}`);
+    return result && result.listing;
+  },
+  // A chat with the owner (Helloo), text only, read and sent from Rent.
+  async hellooOpenChat(withId) { const r = await gloobalApiClient.post("/api/helloo/chats", { with: withId }); return r && r.chat; },
+  async hellooMessages(chatId) { const r = await gloobalApiClient.get(`/api/helloo/chats/${encodeURIComponent(chatId)}/messages?limit=50`); return (r && r.messages) || []; },
+  async hellooSend(chatId, text) {
+    const clientId = `rent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const r = await gloobalApiClient.post(`/api/helloo/chats/${encodeURIComponent(chatId)}/messages`, { kind: "text", text, clientId });
+    return r && r.message;
+  },
+
   async startRentLink(body) {
     const result = await gloobalApiClient.post("/api/rent/links", body);
     return result && result.link;

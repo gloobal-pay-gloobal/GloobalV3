@@ -21,6 +21,8 @@ const Product = require('./models/Product');
 const ProductService = require('./models/ProductService');
 const AssetSeed = require('./models/AssetSeed');
 const Disbursement = require('./models/Disbursement');
+const RentProfile = require('./models/RentProfile');
+const rentProfile = require('./lib/rentProfile');
 const AssetSettlement = require('./models/AssetSettlement');
 // Seeds still in My Assets. A settled seed (see AssetSettlement) is closed:
 // `settledAt: null` matches both an explicit null and a seed written before
@@ -421,6 +423,8 @@ const RENT_DOC_UPLOAD_PATH = /^\/api\/rent\/links\/[^/]+\/docs\/?$/i;
 const globalJsonParser = express.json({ limit: '64kb' });
 app.use((req, res, next) => {
   if (req.method === 'POST' && RENT_DOC_UPLOAD_PATH.test(req.path)) return next();
+  // 0249: a rent listing carries up to six photos and parses its own body.
+  if ((req.method === 'POST' || req.method === 'PUT') && rentProfile.RENT_LISTING_PATH.test(req.path)) return next();
   if (req.method === 'PUT' && PROFILE_PHOTO_UPLOAD_PATH.test(req.path)) return next();
   if (req.method === 'PUT' && CREATOR_ITEMS_PATH.test(req.path)) return next();
   // POST only: the GET on the same path returns the bytes and carries no
@@ -2819,6 +2823,8 @@ async function verifyPinForUser(user, pin) {
   return { verified: true };
 }
 rent.registerRentRoutes(app, { requireAuth, writeLimit, lookupLimit, verifyPin: verifyPinForUser });
+// 0249: rent profiles and listings, found in GLOOBAL Bazaar → Rent.
+rentProfile.registerRentProfileRoutes(app, { requireAuth, writeLimit, lookupLimit, buildHandle: buildCreatorHandle, brandRefusal: creatorBrandRefusal, creatorHandleTaken });
 
 
 app.get('/api/coverage/view', lookupLimit, async (req, res) => {
@@ -4718,6 +4724,8 @@ function creatorBrandRefusal(built, currentHandle) {
 
 // Is this handle free? Free means no OTHER account holds it.
 async function creatorHandleTaken(handle, exceptUserId) {
+  // 0249: a rent name holds its name across GLOOBAL too.
+  if (await RentProfile.exists({ handle })) return true;
   const owner = await User.findOne({ 'creatorProfile.handle': handle }).select('_id').lean();
   if (!owner) return false;
   return !exceptUserId || String(owner._id) !== String(exceptUserId);

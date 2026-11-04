@@ -21,7 +21,7 @@ import {
   Pill as BzHealth, Smartphone as BzElectronics, Wrench as BzRepair, Hammer as BzHome, GraduationCap as BzEducation,
   Bus as BzTravel, Palette as BzArt, PartyPopper as BzEvents, Store as BzOther,
   LocateFixed as LocateFixed2, Loader as Loader7, Flame as BzFlame, SearchX as BzSearchOff, ChevronRight as ChevronRight10,
-  History as BzRecent, Star as BzStar,
+  History as BzRecent, Star as BzStar, KeyRound as BzRentIcon,
   Gift as BzFestive, Search as BzSuggest, SlidersHorizontal as BzFilter, X as BzX,
   List as BzList, Map as BzMapIcon, ChevronDown as BzMore, Undo2 as BzShareBack
 } from "lucide-react";
@@ -337,6 +337,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   const [here, setHere] = useState62(null);
   const [locating, setLocating] = useState62(false);
   const [categories, setCategories] = useState62(BAZAAR_CATEGORY_INFO.map((c) => ({ key: c.key, shops: 0 })));
+  const [rentOpen, setRentOpen] = useState62(false);
   const [shops, setShops] = useState62(null);
   const [busy, setBusy] = useState62(false);
   const [failed, setFailed] = useState62(false);
@@ -535,7 +536,11 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   const catTiles = categories.filter((c) => bazaarCategoryInfo(c.key));
   const catShown = allCats ? catTiles : catTiles.slice(0, festivalNow ? 6 : 7);
 
-  return <section aria-label="Gloobal बाज़ार">{!query && (recent.queries.length || recent.shops.length) ? <div data-bazaar-recent="" style={{ margin: "0 0 12px" }}><div style={{
+  // 0249: Rent — rooms, flats, shops and the rest that owners list from
+  // their rent profile. Its own search, because what matters is the rent
+  // a month, the kind of place and where it is, not a shop's items.
+  const rentEntry = !query ? <button type="button" data-testid="bazaar-rent-entry" onClick={() => setRentOpen(true)} className="v2-tap" style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, border: "none", borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "12px 14px", margin: "0 0 12px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}><span style={{ width: 40, height: 40, borderRadius: 13, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><BzRentIcon size={20} color={T.accent} /></span><span style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 14, color: T.ink }}>Rent</b><span style={{ display: "block", fontSize: 12, color: T.inkSoft, fontWeight: 600 }}>Rooms, PG beds, flats, shops, parking</span></span><ChevronRight10 size={16} color={T.inkFaint} /></button> : null;
+  return <section aria-label="Gloobal बाज़ार">{rentEntry}{rentOpen ? <RentBazaarScreen onClose={() => setRentOpen(false)} onToast={onToast} /> : null}{!query && (recent.queries.length || recent.shops.length) ? <div data-bazaar-recent="" style={{ margin: "0 0 12px" }}><div style={{
     display: "flex", alignItems: "center", justifyContent: "space-between", margin: "2px 2px 8px"
   }}><span style={{
     display: "inline-flex", alignItems: "center", gap: 6,

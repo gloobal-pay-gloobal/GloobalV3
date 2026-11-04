@@ -33,6 +33,7 @@ const mongoose = require('mongoose');
 const RentLink = require('../models/RentLink');
 const RentDoc = require('../models/RentDoc');
 const RentPlace = require('../models/RentPlace');
+const RentListing = require('../models/RentListing');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
@@ -237,6 +238,11 @@ async function publicLink(link, me, { full = false } = {}) {
     pending: hasPending(link),
     changes: acc && last && last.v > acc.v ? termsChanges(acc.t, last.t) : [],
     placeId: String((role === 'tenant' ? link.tenantPlaceId : link.ownerPlaceId) || '') || null,
+    // 0249: the owner answering a request made from their Bazaar listing
+    // starts from that listing's cost and conditions.
+    listingTerms: role === 'owner' && link.status === 'requested' && link.proposal && link.proposal.listingId
+      ? plainTerms(((await RentListing.findById(link.proposal.listingId).select('terms').lean()) || {}).terms || null)
+      : null,
     docRequests: link.docRequests || [],
     createdAt: link.createdAt,
     updatedAt: link.updatedAt,
@@ -365,9 +371,16 @@ function registerRentLinkRoutes(app, { requireAuth, writeLimit, lookupLimit }) {
     const owner = role === 'owner' ? req.authUser : await User.findById(ownerUserId).lean();
     const currency = (await localCurrencyFor(accountCountryIso(owner))) || 'INR';
     const tz = String(b.tz || 'UTC').slice(0, 64);
+    // 0249: asked from a Bazaar listing — kept, so the owner's terms start
+    // from the listing's cost and conditions. Only a listing of THAT owner.
+    let listingId = null;
+    if (role === 'tenant' && mongoose.isValidObjectId(String(b.listingId || ''))) {
+      const listing = await RentListing.findOne({ _id: b.listingId, userId: ownerUserId, status: 'active' }).select('_id').lean();
+      if (listing) listingId = listing._id;
+    }
     const link = new RentLink({
       tenantUserId, ownerUserId, startedBy: role, status: role === 'owner' ? 'terms' : 'requested', currency, tz,
-      proposal: { name, rent, dueDay, moveIn },
+      proposal: { name, rent, dueDay, moveIn, listingId },
       terms: terms ? [{ v: 1, at: new Date(), t: terms }] : [],
       events: [],
     });

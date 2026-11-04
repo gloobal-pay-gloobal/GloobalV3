@@ -63,6 +63,8 @@ const RentLinkSchema = new mongoose.Schema({
     rent: { type: Number, default: 0 },
     dueDay: { type: Number, default: 1 },
     moveIn: { type: String, default: '' }, // YYYY-MM-DD
+    // 0249: the Bazaar listing this request was made from, if any.
+    listingId: { type: mongoose.Schema.Types.ObjectId, ref: 'RentListing', default: null },
   },
   terms: {
     type: [new mongoose.Schema({ v: Number, at: Date, t: TermsSchema }, { _id: false })],

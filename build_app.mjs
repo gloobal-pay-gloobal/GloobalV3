@@ -350,6 +350,7 @@ const FRONTEND_MODULES = [
   "features/creator/CreatorPage.jsx",
   "features/creator/CreatorShareOverview.jsx",
   "features/rent/rentLink.jsx",
+  "features/rent/rentProfile.jsx",
   "features/rent/RentScreen.jsx",
   // Gloobal बाज़ार on Pay & Services: famous categories and Near me.
   "features/bazaar/bazaarMap.jsx",

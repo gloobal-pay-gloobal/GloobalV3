@@ -488,7 +488,7 @@ function RentLinkPage({ id, onBack, onToast, onChanged, onConnected }) {
   };
   useEffect86(() => { load(); }, [id]);
   useEffect86(() => { if (link && link.status === "connected" && link.placeId && onConnected) onConnected(link); }, [link && link.status]);
-  useEffect86(() => { if (link && !draft && link.role === "owner" && link.status === "requested") setDraft(rlDraftFrom(null, link.proposal)); }, [link]);
+  useEffect86(() => { if (link && !draft && link.role === "owner" && link.status === "requested") setDraft(rlDraftFrom(link.listingTerms || null, link.proposal)); /* 0249: from the Bazaar listing it was asked from */ }, [link]);
   if (failed) return <div style={{ padding: 20, textAlign: "center", color: T.inkSoft, fontSize: 13 }}>Couldn't load this request. <button type="button" onClick={onBack} style={{ border: "none", background: "none", color: T.accent, fontWeight: 800, cursor: "pointer" }}>Back</button></div>;
   if (!link) return <div style={{ padding: 30, textAlign: "center", color: T.inkFaint, fontSize: 13 }}>Loading…</div>;
   const reload = (fresh) => { load(fresh); onChanged && onChanged(); };

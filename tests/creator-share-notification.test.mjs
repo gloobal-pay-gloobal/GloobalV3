@@ -274,9 +274,10 @@ describe("the share banner and the share card say the same thing", () => {
     assert.equal(shareBannerText({ direction: "sent" }).title, "Creator Share sent");
     assert.equal(shareBannerText({ direction: "received" }).title, "Creator Share received");
     // 0224: with GEU beside the money it is in. A comma, not the bar: the
-    // operating system draws this line and may read it aloud.
-    assert.equal(shareBannerText({ direction: "received", amount: 20, currency: "INR" }).title, "+20.00₹, GEU");
-    assert.equal(shareBannerText({ direction: "sent", amount: 20, currency: "INR" }).title, "−20.00₹, GEU");
+    // operating system draws this line and may read it aloud. 0228: the
+    // money's own name — the one the local lens picks — second.
+    assert.equal(shareBannerText({ direction: "received", amount: 20, currency: "INR" }).title, "+20.00 GEU, ₹");
+    assert.equal(shareBannerText({ direction: "sent", amount: 20, currency: "INR" }).title, "−20.00 GEU, ₹");
   });
 
   test("the sign is a minus, not a hyphen", async () => {

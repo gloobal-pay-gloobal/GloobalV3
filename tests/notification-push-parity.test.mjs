@@ -138,7 +138,7 @@ function notificationsHarness() {
     lift(read("frontend/features/geuLens/geuLens.js"), "geuLensMoney"),
     lift(read("frontend/features/geuLens/geuLens.js"), "geuLensSameCurrency"),
     lift(read("frontend/features/geuLens/geuLens.js"), "geuLensOwnMoney"),
-    // 0224: the headline writes BOTH names (the money, then GEU), so the
+    // 0224: the headline writes BOTH names (0228: GEU, then the money), so the
     // pair's whole rule comes along — see geuLensSpokenMoney.
     ...GEU_PAIR(),
     lift(read("frontend/components/common/flipIcons.jsx"), "flipSeedHash"),
@@ -378,11 +378,12 @@ describe("the banner names the figure the server recorded", () => {
       assert.ok(row, "the fake recorded no payment");
 
       // The debit the SERVER recorded, formatted the way the app formats
-      // money: amount first, symbol after, grouped — and (0224) GEU after a
-      // comma, the spoken form of the bar, since the OS draws this line.
+      // money: amount first, grouped, both names after it — (0228) GEU on
+      // the number, then the symbol after a comma, the spoken form of the
+      // bar, since the OS draws this line.
       const expected = "\u2212" + row.sourceAmount.toLocaleString("en-US", {
         minimumFractionDigits: 2, maximumFractionDigits: 2
-      }) + "\u20B9, GEU";
+      }) + " GEU, \u20B9";
       assert.equal(shown[0].title, expected,
         `the tray disagrees with the ledger: banner ${shown[0].title}, recorded ${row.sourceAmount} ${row.sourceCurrency}`);
       // And it is the SENDER's side, not the receiver's £20 wearing a ₹.
@@ -549,9 +550,10 @@ describe("the notification the OS draws is the same one, open or closed", () => 
     }
     assert.ok(fields.includes("timestamp"), "neither path is stamping a time any more");
     // And they are the values we mean, not two matching mistakes.
-    // 0224: the money first, then GEU — never GEU alone, never the money
-    // alone. A comma, because the OS may read this line aloud.
-    assert.equal(open.title, "\u22122,105.20\u20B9, GEU");
+    // 0228: GEU on the number, then the money (the local lens's picked
+    // name) — never GEU alone, never the money alone. A comma, because the
+    // OS may read this line aloud.
+    assert.equal(open.title, "\u22122,105.20 GEU, \u20B9");
     assert.equal(open.body, "To Tom Whitfield");
     // The app logo in its colour for these two hours, on both paths.
     assert.match(open.icon, LOGO_ICON);

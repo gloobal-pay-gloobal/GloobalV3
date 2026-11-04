@@ -963,7 +963,7 @@ function ChoicesEditorSheet({ open, onClose, category, kind, side, ccyCode, onSa
        the ticker in front of its own pair, so the field read "GEU | GEU"
        with the lens off. One span, nowrap, for the same flex-gap reason
        the Send button's unit is wrapped. */
-  }{unit.trail && <span style={geuLensTrailStyle(18.5, { color: T.inkSoft, flexShrink: 0 })}>{GEU_LENS_BAR} {unit.trail}</span>}</div></ChoiceFieldCard><ChoiceFieldCard
+  }{unit.trail && <span style={geuLensTrailStyle(18.5, { color: T.ink, flexShrink: 0 })}>{GEU_LENS_BAR} {unit.trail}</span>}</div></ChoiceFieldCard><ChoiceFieldCard
     label="Accent colour"
     note={`${CHOICES_BAR_COLORS.length} to choose from`}
   >{

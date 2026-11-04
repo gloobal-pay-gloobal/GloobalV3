@@ -1104,6 +1104,11 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
   // How much Essentials actually carried of the payment in flight. Read
   // by the receipt; cleared whenever a new payment starts.
   const essentialsAppliedRef = useRef11(0);
+  // What the payment takes from where, when Essentials carries part of it
+  // (0228): the founder could send more than Essentials allows without
+  // seeing that the rest came out of GLOOBAL Bank. Shown at the PIN, before
+  // anything is confirmed.
+  const [essentialsSplit, setEssentialsSplit] = useState15(null);
   // ── THE MOST THAT CAN GO TO THEIR COUNTRY RIGHT NOW ─────────────────
   //
   // A cross-border payment is paid out of the receiver's country's PayLater
@@ -1151,6 +1156,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     if (label === ESSENTIALS_PAY_METHOD && onDrawEssentials) {
       const drawn = await onDrawEssentials(senderAmount);
       essentialsAppliedRef.current = Number(drawn && drawn.applied) || 0;
+      {
+        const fromEssentials = Math.min(Number(senderAmount) || 0, essentialsAppliedRef.current);
+        setEssentialsSplit({ fromEssentials, fromBank: Math.max(0, Math.round(((Number(senderAmount) || 0) - fromEssentials) * 100) / 100) });
+      }
       if (essentialsAppliedRef.current > 0) {
         showToast2(`${geuLensBarMoney(essentialsAppliedRef.current, top.currency, lens, top.currency)} from your Essentials`);
       } else {
@@ -1164,6 +1173,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       }
     } else {
       essentialsAppliedRef.current = 0;
+      setEssentialsSplit(null);
     }
     setPayMethod(label);
     requestClosePayMethod();
@@ -1890,7 +1900,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     // sender's symbol. See geuLensUnitPair.
     const pair = geuLensUnitPair(bottom.currency, lens, top.currency);
     if (!pair.lead) return CURRENCY_SYMBOL[bottom.currency] || bottom.currency;
-    return <>{pair.lead}{pair.trail && <span
+    // 0228: the name on the figure dimmed, the one read in after the bar.
+    return <><span style={{ opacity: GEU_LENS_TRAIL_DIM }}>{pair.lead}</span>{pair.trail && <span
       style={geuLensTrailStyle(20)}
     > {GEU_LENS_BAR} {pair.trail}</span>}</>;
   })()}</span></div>{
@@ -2015,7 +2026,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     // receiver's box: the name you read in first, the other dimmed.
     const pair = geuLensUnitPair(top.currency, lens, top.currency);
     if (!pair.lead) return top.currency;
-    return <>{pair.lead}{pair.trail && <span style={geuLensTrailStyle(13)}>{` ${GEU_LENS_BAR} ${pair.trail}`}</span>}</>;
+    return <><span style={{ opacity: GEU_LENS_TRAIL_DIM }}>{pair.lead}</span>{pair.trail && <span style={geuLensTrailStyle(13)}>{` ${GEU_LENS_BAR} ${pair.trail}`}</span>}</>;
   })()}</span></div></div></>}</div>}{
     /* SEND BUTTON — just my own currency and amount now, nothing
        about what the receiver gets. */
@@ -2250,7 +2261,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       // phone is most likely to be visible to somebody else.
       // What it says instead is whether there is anything to draw on,
       // which is the only thing needed to choose.
-      note: essentialsLeft > 0 ? "Covers what it can today" : "Nothing left today",
+      // 0228: says whether it covers ALL of this payment or only part —
+      // still without the figure — so nobody picks Essentials thinking it
+      // pays the whole amount when GLOOBAL Bank pays the rest.
+      note: !(essentialsLeft > 0) ? "Nothing left today" : essentialsLeft + 0.005 >= (Number(senderAmount) || 0) ? "Covers all of this today" : "Covers part — the rest from GLOOBAL Bank",
       disabled: !(essentialsLeft > 0)
     },
     { key: "gpaylater", label: "Gloobal PayLater", displayLabel: <GloobalWordmark suffix=" PayLater" /> },
@@ -2327,6 +2341,24 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     }}
   >
                 <GeuFigure amount={senderAmount} currency={top.currency} lens={lens} sign={"\u2212"} size={receiptAmountFontSize(`\u2212${geuLensBarMoney(senderAmount, top.currency, lens, top.currency)}`, 26)} /></div></div>{
+    /* 0228: when Essentials carries part of it, how much comes from where,
+       before the PIN — Essentials first (it is used first), then GLOOBAL
+       Bank for the rest. */
+    payMethod === ESSENTIALS_PAY_METHOD && essentialsSplit ? <div data-testid="pay-split" style={{
+      marginTop: 10, borderRadius: T.radiusMd, border: `1px solid ${T.line}`, background: T.surface, textAlign: "left", overflow: "hidden"
+    }}>{[
+      ["essentials", "From My Essentials", essentialsSplit.fromEssentials],
+      ["bank", "From GLOOBAL Bank", essentialsSplit.fromBank]
+    ].filter(([k, , v]) => k === "essentials" || v > 0.005).map(([k, words, v], i) => <div key={k} style={{
+      display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderTop: i === 0 ? "none" : `1px solid ${T.line}`
+    }}><span aria-hidden="true" style={{
+      width: 28, height: 28, borderRadius: 9, flexShrink: 0, display: "grid", placeItems: "center",
+      background: k === "essentials" ? "#E3F4EA" : T.accentSoft
+    }}>{k === "essentials" ? <EssentialsPayIcon size={15} color="#2E7A4F" /> : <Landmark6 size={15} color={T.accent} />}</span><span style={{
+      flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.inkSoft
+    }}>{words}</span><span style={{ fontSize: 13.5, fontWeight: 800, color: T.ink }}><GeuFigure amount={v} currency={top.currency} lens={lens} own={top.currency} size={13.5} /></span></div>)}{
+      essentialsSplit.fromEssentials <= 0.005 ? <div style={{ padding: "0 12px 10px", fontSize: 11.5, color: T.inkFaint }}>Nothing was left in your Essentials today, so all of it comes from GLOOBAL Bank.</div> : null
+    }</div> : null}{
     /* Same dial pad used for PIN/OTP everywhere else in the app
        (registration, login) instead of this screen's own
        separate keypad — one PIN entry pattern app-wide. Reaching

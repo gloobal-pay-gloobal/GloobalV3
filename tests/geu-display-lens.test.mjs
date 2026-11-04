@@ -649,17 +649,19 @@ describe("on screen", () => {
     //
     // This used to forbid ₹ anywhere on a GEU card, and that was the right
     // rule while GEU meant the local symbol disappeared. It does not any
-    // more: every figure now carries its other unit after a bar, so a card
-    // read in GEU shows "−959.07 GEU │ ₹" by design, and the old assertion
-    // would fail on the feature working.
+    // more: every figure now carries both names, so a card read in GEU shows
+    // "−959.07₹ │ GEU" by design (0228: the rupee on the number, dimmed, and
+    // GEU after the bar, bright), and the old assertion would fail on the
+    // feature working.
     //
     // Narrowed rather than deleted, because the thing it catches is still
     // worth catching. A figure the lens MISSED prints its symbol straight
-    // after the digits — "959.07₹" — and no bar precedes it. So the bar's
-    // own rupees are removed and anything left over is a real miss.
-    const stray = after.card.replace(/\u2502\s*₹/g, "");
+    // after the digits — "959.07₹" — and no bar and GEU follow it. So the
+    // rupees that are followed by "│ GEU" are removed, and anything left
+    // over is a real miss.
+    const stray = after.card.replace(/₹\s*\u2502\s*GEU/g, "");
     assert.ok(!/₹/.test(stray),
-      `a rupee figure that is not a bar's second name is left on a GEU card: ${after.card}`);
+      `a rupee figure with no "│ GEU" after it is left on a GEU card: ${after.card}`);
   });
 
   test("and back again, with the choice remembered across a reload", async () => {
@@ -1020,20 +1022,22 @@ describe("the bar names the figure's other name", () => {
   test("your own money gains the unit you are NOT reading in", () => {
     const local = geuLensBarMoney(959.07, "INR", GEU_LENS_LOCAL, "INR");
     const geu = geuLensBarMoney(959.07, "INR", GEU_LENS_GEU, "INR");
-    assert.equal(local, `959.07\u20B9 ${GEU_LENS_BAR} GEU`);
-    assert.equal(geu, `959.07 GEU ${GEU_LENS_BAR} \u20B9`);
+    // 0228: the unit you are NOT reading in sits on the number (dimmed when
+    // drawn); the one you are follows the bar.
+    assert.equal(local, `959.07 GEU ${GEU_LENS_BAR} \u20B9`);
+    assert.equal(geu, `959.07\u20B9 ${GEU_LENS_BAR} GEU`);
   });
 
-  test("the two halves SWAP — the active unit is always on the left", () => {
-    // Not "the symbol is always first". The founder's example was
-    // "−959.07 rupee | GEU" and his chosen flip was
-    // "−959.07 GEU | ₹", so the left is whichever unit the figure is
-    // currently being read in. A fixed order would mean the toggle changed
-    // only which of the two names was duplicated.
+  test("the two halves SWAP — the active unit is always on the right, after the bar", () => {
+    // Not "the symbol is always first". The toggle decides which name is
+    // read in, and (0228) that name comes SECOND, after the bar, bright; the
+    // other sits on the number, dimmed. 0224 had the picked name first. A
+    // fixed order would mean the toggle changed only which of the two names
+    // was duplicated.
     const local = geuLensBarMoney(1000, "INR", GEU_LENS_LOCAL, "INR").split(GEU_LENS_BAR).map((p) => p.trim());
     const geu = geuLensBarMoney(1000, "INR", GEU_LENS_GEU, "INR").split(GEU_LENS_BAR).map((p) => p.trim());
-    assert.ok(local[0].endsWith("\u20B9") && local[1] === "GEU");
-    assert.ok(geu[0].endsWith("GEU") && geu[1] === "\u20B9");
+    assert.ok(local[0].endsWith("GEU") && local[1] === "\u20B9", `local lens: ${local.join(" | ")}`);
+    assert.ok(geu[0].endsWith("\u20B9") && geu[1] === "GEU", `geu lens: ${geu.join(" | ")}`);
   });
 
   test("THE DIGITS ARE STILL NEVER TOUCHED", () => {
@@ -1069,11 +1073,11 @@ describe("the bar names the figure's other name", () => {
     // symbol: ₹ is the rupee of five countries and $ belongs to more than
     // twenty, so "98.00 GEU │ €" would still leave a reader guessing.
     //
-    // 0224: in BOTH lenses now. The picked name comes first — the code with
-    // the toggle off, GEU with it on — and the other follows the bar. Two
-    // names, never three, and never the symbol.
-    assert.equal(geuLensBarMoney(98, "EUR", GEU_LENS_LOCAL, "INR"), `98.00 EUR ${GEU_LENS_BAR} GEU`);
-    assert.equal(geuLensBarMoney(98, "EUR", GEU_LENS_GEU, "INR"), `98.00 GEU ${GEU_LENS_BAR} EUR`);
+    // 0224: in BOTH lenses now. 0228: the picked name follows the bar — the
+    // code with the toggle off, GEU with it on — and the other sits on the
+    // number. Two names, never three, and never the symbol.
+    assert.equal(geuLensBarMoney(98, "EUR", GEU_LENS_LOCAL, "INR"), `98.00 GEU ${GEU_LENS_BAR} EUR`);
+    assert.equal(geuLensBarMoney(98, "EUR", GEU_LENS_GEU, "INR"), `98.00 EUR ${GEU_LENS_BAR} GEU`);
     for (const lens of [GEU_LENS_LOCAL, GEU_LENS_GEU]) {
       const out = geuLensBarMoney(98, "EUR", lens, "INR");
       assert.ok(!/\u20AC/.test(out), `a foreign figure was named by its symbol: ${out}`);
@@ -1081,12 +1085,13 @@ describe("the bar names the figure's other name", () => {
     }
   });
 
-  test("a currency whose symbol IS its code gets GEU after the bar, never its own name twice", () => {
+  test("a currency whose symbol IS its code gets GEU beside it, never its own name twice", () => {
     // 0224: it used to get no bar at all, because the only name a bar could
     // add was the code it already ended in. GEU is on every figure now, so
-    // the franc reads "1,450.25 CHF │ GEU" — and still never "CHF │ CHF".
-    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_LOCAL, "INR"), `1,450.25 CHF ${GEU_LENS_BAR} GEU`);
-    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_GEU, "INR"), `1,450.25 GEU ${GEU_LENS_BAR} CHF`);
+    // the franc reads "1,450.25 GEU │ CHF" (0228, local lens) — and still
+    // never "CHF │ CHF".
+    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_LOCAL, "INR"), `1,450.25 GEU ${GEU_LENS_BAR} CHF`);
+    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_GEU, "INR"), `1,450.25 CHF ${GEU_LENS_BAR} GEU`);
     for (const lens of [GEU_LENS_LOCAL, GEU_LENS_GEU]) {
       assert.ok(!/CHF.*CHF/.test(geuLensBarMoney(1450.25, "CHF", lens, "INR")), "the franc is named twice");
     }
@@ -1094,16 +1099,16 @@ describe("the bar names the figure's other name", () => {
 
   test("but YOUR OWN franc still gains GEU, because that is a different name", () => {
     // Same two names as anybody else's franc — the code is already its
-    // shortest true name — with the picked one first.
-    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_GEU, "CHF"), `1,450.25 GEU ${GEU_LENS_BAR} CHF`);
-    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_LOCAL, "CHF"), `1,450.25 CHF ${GEU_LENS_BAR} GEU`);
+    // shortest true name — with the picked one after the bar (0228).
+    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_GEU, "CHF"), `1,450.25 CHF ${GEU_LENS_BAR} GEU`);
+    assert.equal(geuLensBarMoney(1450.25, "CHF", GEU_LENS_LOCAL, "CHF"), `1,450.25 GEU ${GEU_LENS_BAR} CHF`);
   });
 
   test("a currency with no minor unit keeps having none, on both sides of the bar", () => {
     // ¥9,700 is 9,700 GEU, not 9,700.00 — the decimals belong to the amount,
     // and the bar does not change what the amount is.
-    assert.equal(geuLensBarMoney(9700, "JPY", GEU_LENS_GEU, "JPY"), `9,700 GEU ${GEU_LENS_BAR} \u00A5`);
-    assert.equal(geuLensBarMoney(9700, "JPY", GEU_LENS_LOCAL, "JPY"), `9,700\u00A5 ${GEU_LENS_BAR} GEU`);
+    assert.equal(geuLensBarMoney(9700, "JPY", GEU_LENS_GEU, "JPY"), `9,700\u00A5 ${GEU_LENS_BAR} GEU`);
+    assert.equal(geuLensBarMoney(9700, "JPY", GEU_LENS_LOCAL, "JPY"), `9,700 GEU ${GEU_LENS_BAR} \u00A5`);
   });
 
   test("an unknown viewer currency is named by CODE, never by a guessed symbol", () => {
@@ -1118,7 +1123,7 @@ describe("the bar names the figure's other name", () => {
     // own money. Not knowing whose money it is falls to the precise form.
     for (const unknown of [null, undefined, "", "rupee", "IN"]) {
       const out = geuLensBarMoney(500, "INR", GEU_LENS_GEU, unknown);
-      assert.equal(out, `500.00 GEU ${GEU_LENS_BAR} INR`,
+      assert.equal(out, `500.00 INR ${GEU_LENS_BAR} GEU`,
         `an unusable viewer currency ${JSON.stringify(unknown)} produced ${out}`);
       assert.ok(!/\u20B9/.test(out), "a symbol was guessed for a viewer whose currency is unknown");
     }
@@ -1140,8 +1145,11 @@ describe("the bar names the figure's other name", () => {
       geuLensBarMoney(500, "inr", GEU_LENS_GEU, "INR"),
       geuLensBarMoney(500, "INR", GEU_LENS_GEU, "INR")
     );
-    assert.match(geuLensBarMoney(500, "inr", GEU_LENS_GEU, "inr"), /\u20B9$/,
+    // 0228: the money's own name is after the bar in the LOCAL lens.
+    assert.match(geuLensBarMoney(500, "inr", GEU_LENS_LOCAL, "inr"), /\u20B9$/,
       "a lowercase code did not resolve to its symbol after the bar");
+    assert.match(geuLensBarMoney(500, "inr", GEU_LENS_GEU, "inr"), /^500\.00\u20B9 /,
+      "a lowercase code did not resolve to its symbol on the number");
     // And the same question asked of the unit directly, since that is what
     // the Coverage tiles read.
     assert.equal(geuLensBarUnit("inr", GEU_LENS_GEU, "INR"), "\u20B9");
@@ -1416,8 +1424,8 @@ describe("a foreign figure says what it cost you, from a recorded figure only", 
   const { geuLensCostToYou, GEU_LENS_LOCAL, GEU_LENS_GEU, GEU_LENS_BAR } = loadLens();
 
   test("it reads in the same shape as every other figure, and flips with the toggle", () => {
-    assert.equal(geuLensCostToYou(8000, "INR", GEU_LENS_GEU, "INR"), `\u2248 8,000.00 GEU ${GEU_LENS_BAR} \u20B9`);
-    assert.equal(geuLensCostToYou(8000, "INR", GEU_LENS_LOCAL, "INR"), `\u2248 8,000.00\u20B9 ${GEU_LENS_BAR} GEU`);
+    assert.equal(geuLensCostToYou(8000, "INR", GEU_LENS_GEU, "INR"), `\u2248 8,000.00\u20B9 ${GEU_LENS_BAR} GEU`);
+    assert.equal(geuLensCostToYou(8000, "INR", GEU_LENS_LOCAL, "INR"), `\u2248 8,000.00 GEU ${GEU_LENS_BAR} \u20B9`);
   });
 
   test("NO recorded counterpart means NO line", () => {
@@ -1472,10 +1480,10 @@ describe("a foreign figure says what it cost you, from a recorded figure only", 
   });
 });
 
-// ── THE NAME YOU CHOSE IS THE BRIGHT ONE, AND COMES FIRST ──────────────
+// ── THE NAME YOU CHOSE IS THE BRIGHT ONE, AFTER THE BAR (0228) ─────────
 //
-//     toggle on     8,000.00 GEU │ ₹      number full size, GEU ¾ bright, │ ₹ ¾ dimmed
-//     toggle off    8,000.00₹ │ GEU       number full size, ₹ ¾ bright, │ GEU ¾ dimmed
+//     toggle on     8,000.00₹ │ GEU       number full size, ₹ ¾ dimmed, │ GEU ¾ bright
+//     toggle off    8,000.00 GEU │ ₹      number full size, GEU ¾ dimmed, │ ₹ ¾ bright
 //
 // Both names are always on the line — that is this module's whole rule — so
 // the only thing left to say is WHICH ONE YOU ARE READING IN, and a person
@@ -1484,24 +1492,28 @@ describe("a foreign figure says what it cost you, from a recorded figure only", 
 // 0224: the founder asked for the LIGHT to say it rather than the size. The
 // number is full size; both names are ¾ of it; the picked one is bright and
 // first, the other follows the bar, dimmed (GEU_LENS_TRAIL_DIM).
-describe("the active name is bright and first, the other dimmed after the bar", () => {
+// 0228: the founder asked for the picked name SECOND: the other name sits on
+// the number, dimmed; the picked one follows the bar, bright.
+describe("the active name is bright and after the bar, the other dimmed on the number", () => {
   const { geuLensBarParts, geuLensTrailSize, geuLensBarMoney, GEU_LENS_TRAIL_RATIO, GEU_LENS_TRAIL_DIM,
           GEU_LENS_LOCAL, GEU_LENS_GEU, GEU_LENS_BAR } = loadLens();
 
-  test("the split puts the ACTIVE unit in the lead and the other in the trail", () => {
+  test("the split puts the OTHER unit on the number and the ACTIVE one in the trail", () => {
     const off = geuLensBarParts(8000, "INR", GEU_LENS_LOCAL, "INR");
-    assert.equal(off.lead, "8,000.00\u20B9");
-    assert.equal(off.trail, `${GEU_LENS_BAR} GEU`);
+    assert.equal(off.lead, "8,000.00 GEU");
+    assert.equal(off.trail, `${GEU_LENS_BAR} \u20B9`);
     // The lead's own pieces, so the number can be drawn full size and its
     // name at ¾: a sign sits on the number, a word stands apart.
-    assert.deepEqual([off.num, off.glue, off.unit], ["8,000.00", "", "\u20B9"]);
+    assert.deepEqual([off.num, off.glue, off.unit], ["8,000.00", " ", "GEU"]);
     const on = geuLensBarParts(8000, "INR", GEU_LENS_GEU, "INR");
-    assert.equal(on.lead, "8,000.00 GEU");
-    assert.equal(on.trail, `${GEU_LENS_BAR} \u20B9`);
-    assert.deepEqual([on.num, on.glue, on.unit], ["8,000.00", " ", "GEU"]);
+    assert.equal(on.lead, "8,000.00\u20B9");
+    assert.equal(on.trail, `${GEU_LENS_BAR} GEU`);
+    assert.deepEqual([on.num, on.glue, on.unit], ["8,000.00", "", "\u20B9"]);
     // Somebody else's money splits the same way, by its code.
-    const usd = geuLensBarParts(40, "USD", GEU_LENS_GEU, "INR");
-    assert.deepEqual([usd.num, usd.unit, usd.trail], ["40.00", "GEU", `${GEU_LENS_BAR} USD`]);
+    const usdOff = geuLensBarParts(40, "USD", GEU_LENS_LOCAL, "INR");
+    assert.deepEqual([usdOff.num, usdOff.unit, usdOff.trail], ["40.00", "GEU", `${GEU_LENS_BAR} USD`]);
+    const usdOn = geuLensBarParts(40, "USD", GEU_LENS_GEU, "INR");
+    assert.deepEqual([usdOn.num, usdOn.glue, usdOn.unit, usdOn.trail], ["40.00", " ", "USD", `${GEU_LENS_BAR} GEU`]);
   });
 
   test("the number is full size, both names ¾, the other one dimmed", () => {
@@ -1510,13 +1522,20 @@ describe("the active name is bright and first, the other dimmed after the bar", 
     assert.ok(GEU_LENS_TRAIL_DIM > 0 && GEU_LENS_TRAIL_DIM < 1, `dim is ${GEU_LENS_TRAIL_DIM}`);
     const fig = code("frontend/features/geuLens/GeuFigure.jsx");
     assert.match(fig, /const nameSize = geuLensTrailSize\(px\);/);
-    assert.match(fig, /const unitStyle = \{ fontSize: nameSize, fontWeight: 800 \};/, "the picked name is not ¾ and bright");
-    assert.match(fig, /opacity: GEU_LENS_TRAIL_DIM,/, "the other name is not dimmed");
-    assert.match(fig, /\{sign\}\{parts\.num\}<span style=\{unitStyle\}>/, "the number is not drawn at the figure's own size");
-    assert.match(fig, /function geuLensNameStyle\(px\) \{\s*return \{ fontSize: geuLensTrailSize\(px\), fontWeight: 800 \};/);
-    assert.match(fig, /function geuLensTrailStyle\(px, extra\) \{\s*return \{ fontSize: geuLensTrailSize\(px\), fontWeight: 700, opacity: GEU_LENS_TRAIL_DIM,/);
-    // The bright name carries no opacity of its own.
-    assert.doesNotMatch(fig.slice(fig.indexOf("function geuLensNameStyle"), fig.indexOf("function geuLensTrailStyle")), /opacity/);
+    // 0228: the name ON the number (unitStyle) is the other one, dimmed; the
+    // name after the bar (trailStyle) is the picked one, bright.
+    assert.match(fig, /const unitStyle = \{ fontSize: nameSize, fontWeight: 700, opacity: GEU_LENS_TRAIL_DIM \};/,
+      "the name on the number is not ¾ and dimmed");
+    const trailDecl = fig.slice(fig.indexOf("const trailStyle = {"), fig.indexOf("};", fig.indexOf("const trailStyle = {")));
+    assert.match(trailDecl, /fontSize: nameSize,\s*fontWeight: 800,/, "the picked name after the bar is not ¾ and bright");
+    assert.doesNotMatch(trailDecl, /opacity/, "the picked name after the bar is dimmed");
+    assert.match(fig, /\{sign\}\{parts\.num\}<span style=\{unitStyle\}>\{parts\.glue\}\{parts\.unit\}<\/span><span style=\{trailStyle\}> \{parts\.trail\}<\/span>/,
+      "the number is not drawn at the figure's own size, or the names are in the wrong spans");
+    assert.match(fig, /function geuLensNameStyle\(px\) \{\s*return \{ fontSize: geuLensTrailSize\(px\), fontWeight: 700, opacity: GEU_LENS_TRAIL_DIM \};/);
+    assert.match(fig, /function geuLensTrailStyle\(px, extra\) \{\s*return \{ fontSize: geuLensTrailSize\(px\), fontWeight: 800, whiteSpace: "nowrap",/);
+    // The bright name, after the bar, carries no opacity of its own.
+    const trailFn = fig.slice(fig.indexOf("function geuLensTrailStyle"));
+    assert.doesNotMatch(trailFn.slice(0, trailFn.indexOf("\n}\n")), /opacity/);
   });
 
   test("the two halves always rejoin into the string form", () => {
@@ -1537,14 +1556,14 @@ describe("the active name is bright and first, the other dimmed after the bar", 
   test("a figure with no second unit is ONE piece, at full size", () => {
     // No currency at all: no GEU to stand beside it, so no trail — rather
     // than an empty span that would still cost a space. (0224: the franc is
-    // no longer in this list; it gets "│ GEU" like every currency.)
+    // no longer in this list; it gets GEU and a bar like every currency.)
     for (const [amount, code, viewer] of [[500,"","INR"],[500,"GC","INR"]]) {
       const p = geuLensBarParts(amount, code, GEU_LENS_LOCAL, viewer);
       assert.equal(p.trail, "", `${code} produced a trailing unit: ${JSON.stringify(p)}`);
       assert.ok(p.lead.length > 0);
     }
     const chf = geuLensBarParts(1450.25, "CHF", GEU_LENS_LOCAL, "INR");
-    assert.deepEqual([chf.num, chf.unit, chf.trail], ["1,450.25", "CHF", `${GEU_LENS_BAR} GEU`]);
+    assert.deepEqual([chf.num, chf.unit, chf.trail], ["1,450.25", "GEU", `${GEU_LENS_BAR} CHF`]);
   });
 
   test("the trail is three-quarters of the figure, and never below 8px", () => {

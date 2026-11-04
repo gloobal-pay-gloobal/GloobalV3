@@ -4137,7 +4137,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   />{
     /* 0224: the field's unit names both — the one read in before the
        digits, the other after them, dimmed — as Send Money's box does. */
-  }{geuLensUnitPair(ccyCode, displayLens, ccyCode).trail && <span style={geuLensTrailStyle(18, { color: T.inkSoft })}>{`${GEU_LENS_BAR} ${geuLensUnitPair(ccyCode, displayLens, ccyCode).trail}`}</span>}</div>{payTarget.cashbackRate > 0 && <div style={{ fontSize: 11.5, color: T.positive, fontWeight: 700, marginBottom: 18 }}>
+  }{geuLensUnitPair(ccyCode, displayLens, ccyCode).trail && <span style={geuLensTrailStyle(18, { color: T.ink })}>{`${GEU_LENS_BAR} ${geuLensUnitPair(ccyCode, displayLens, ccyCode).trail}`}</span>}</div>{payTarget.cashbackRate > 0 && <div style={{ fontSize: 11.5, color: T.positive, fontWeight: 700, marginBottom: 18 }}>
                 Earn {(payTarget.cashbackRate * 100).toFixed(2)}% back — <GeuFigure amount={(parseFloat(payAmount) || 0) * payTarget.cashbackRate} currency={ccyCode} lens={displayLens} size={11.5} /> instantly added to My Assets and your PayLater limit
               </div>}<button
     onClick={() => {

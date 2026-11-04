@@ -80,8 +80,9 @@ function formatBannerMoney(amount, currency) {
 // server cannot know which of the two a person reads in (the lens lives on
 // their phone), so it writes the local form, which is the app's default:
 //
-//     own money       500.00₹ │ GEU        the recipient's own currency, by its sign
-//     anyone else's   40.00 USD │ GEU      by its code
+//     own money       500.00 GEU │ ₹        the recipient's own currency, by its sign
+//     anyone else's   40.00 GEU │ USD      by its code
+// (0228: the picked name — the money, in the local lens — after the bar.)
 //
 // GEU is never written without the currency beside it — that is the rule
 // the whole lens exists to keep.
@@ -98,8 +99,8 @@ function formatMoneyPair(amount, currency, { own = true } = {}) {
     minimumFractionDigits: places,
     maximumFractionDigits: places,
   }).format(Number(amount) || 0);
-  const named = own ? `${digits}${currencySuffix(code)}` : `${digits} ${code}`;
-  return `${named} \u2502 ${GEU_TICKER}`;
+  const name = own ? currencySuffix(code).trim() : code;
+  return `${digits} ${GEU_TICKER} \u2502 ${name}`;
 }
 // The same two names for a line the OPERATING SYSTEM draws and may read
 // aloud. U+2502 has no reliable spoken form, so a comma separates them —
@@ -108,7 +109,9 @@ function formatMoneyPair(amount, currency, { own = true } = {}) {
 function formatSpokenMoneyPair(amount, currency) {
   const code = realCode(currency);
   if (!code) return formatBannerMoney(amount, currency);
-  return `${formatBannerMoney(amount, code)}, ${GEU_TICKER}`;
+  const places = decimalsFor(code);
+  const digits = new Intl.NumberFormat('en-US', { minimumFractionDigits: places, maximumFractionDigits: places }).format(Number(amount) || 0);
+  return `${digits} ${GEU_TICKER}, ${currencySuffix(code).trim()}`;
 }
 
 // ── The disc ────────────────────────────────────────────────────────────

@@ -121,7 +121,7 @@ try {
   const capped = await call("POST", "/api/admin/corridors", { ...S, token: fin, body: { from: "IN", to: "US", paused: false, cap: 2000, reason: "Spike explained; capping for a week" } });
   check("Finance swaps the pause for a cap, in rupees", capped.status === 201 && capped.body.rules.filter((r) => r.active).length === 1 && capped.body.rules[0].cap === 2000 && capped.body.rules[0].capCurrency === "INR");
   const over = await toUS(2640, "op-2");
-  check("above the cap: refused, naming it (0224: in the payer's money, with GEU)", over.status === 400 && over.body?.code === "corridor_cap" && /2,000\.00₹ │ GEU/.test(over.body.message), JSON.stringify(over.body));
+  check("above the cap: refused, naming it (0224: in the payer's money, with GEU)", over.status === 400 && over.body?.code === "corridor_cap" && /2,000\.00 GEU │ ₹/.test(over.body.message), JSON.stringify(over.body));
   check("below it: goes through", (await toUS(880, "op-3")).status === 201);
   const lim2 = await call("GET", `/api/corridor/limit?from=${encodeURIComponent(asha.id)}&to=${encodeURIComponent(john.id)}`, { token: asha.token });
   check("the send screen's limit is the cap", lim2.body?.capped === true && lim2.body.maxSend === 2000);
@@ -191,7 +191,7 @@ try {
   await call("POST", "/api/admin/alerts/check", { ...S, token: adm });
   check("and gets it, once", (await al(sup)).filter((k) => k === "morning").length === 1);
   const morning = (await call("GET", "/api/admin/alerts", { ...S, token: sup })).body.recent.find((r) => r.kind === "morning");
-  check("yesterday only: today's sign-ups and payments are not in it", /^0 joined · 0 payments · 0₹ │ GEU paid/.test(morning.body), morning.body);
+  check("yesterday only: today's sign-ups and payments are not in it", /^0 joined · 0 payments · 0 GEU │ ₹ paid/.test(morning.body), morning.body);
 } catch (error) {
   console.error(error);
   failures += 1;

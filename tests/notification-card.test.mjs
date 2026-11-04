@@ -178,8 +178,9 @@ describe("the card is built from what the server recorded", () => {
       head.indexOf("G_LOGO_DATA_URI") < head.indexOf("<FlagEmoji"),
       "the flag is back in front of the mark"
     );
-    // 0224: the headline is drawn as a node now (number, bright name, dimmed
-    // trail), built from the same string — headlineNode.
+    // 0224: the headline is drawn as a node now (number, then — 0228 — the
+    // other name dimmed and the picked one bright after the bar), built from
+    // the same string — headlineNode.
     assert.ok(head.indexOf("{headlineNode}") > head.indexOf("G_LOGO_DATA_URI"), "the mark is not leading the row");
     assert.ok(head.indexOf("{headlineNode}") < head.indexOf("<FlagEmoji"), "the flag is not closing the row");
     assert.match(card, /src=\{G_LOGO_DATA_URI\}/);
@@ -487,9 +488,10 @@ describe("the banner says what the card says", () => {
       const server = paymentBannerText(meta);
       // 0224: the tray calls the headline with the local lens and the
       // figure's own currency (it is always the reader's own money), and the
-      // server writes the same local form: "−250.00₹, GEU".
+      // server writes the same local form. 0228: GEU on the number, the
+      // money (the name the local lens picks) after it: "−250.00 GEU, ₹".
       assert.equal(server.title, frontend.gloobalNotifHeadline(meta, "local", meta.currency), `title for ${meta.currency} ${meta.direction}`);
-      assert.match(server.title, /, GEU$/, `the banner names no GEU: ${server.title}`);
+      assert.match(server.title, / GEU, \S+$/, `the banner does not read "<figure> GEU, <money>": ${server.title}`);
       assert.equal(server.body, frontend.gloobalNotifSubline(meta), `body for ${meta.currency} ${meta.direction}`);
     }
   });
@@ -522,14 +524,15 @@ describe("the banner says what the card says", () => {
     const own = (meta) => frontend.gloobalNotifHeadline(meta, "local", meta.currency);
     assert.equal(own(CASES[0]).charAt(0), "−");
     assert.equal(own(CASES[1]).charAt(0), "+");
-    // 0224: both names, the money first and GEU after it — a comma, not the
-    // bar, because the OS draws this line and may read it aloud.
-    assert.equal(own(CASES[0]), "\u2212250.00\u20B9, GEU");
+    // Both names — 0228: GEU on the number, then the money (the picked name
+    // in the local lens) after a comma, not the bar, because the OS draws
+    // this line and may read it aloud.
+    assert.equal(own(CASES[0]), "\u2212250.00 GEU, \u20B9");
     // AND NOTHING AFTER THE FIGURE. The word used to follow it — "−250.00₹
     // sent" — and it was the third thing on one line saying which way the
     // money went, after the sign and the colour it is drawn in, with "To
     // Chdg" directly beneath. The sign is the sentence.
-    assert.match(own(CASES[0]), /^\u2212[\d,.]+\S*, GEU$/);
+    assert.match(own(CASES[0]), /^\u2212[\d,.]+ GEU, \S+$/);
     assert.ok(!/ sent| received/.test(frontend.gloobalNotifHeadline(CASES[0])), "the word is back on the headline");
     assert.ok(!/ sent| received/.test(frontend.gloobalNotifHeadline(CASES[1])), "the word is back on the headline");
     // Which way it went is still said once, on the line under it.

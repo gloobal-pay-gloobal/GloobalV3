@@ -361,8 +361,21 @@ function historyRowShape(type) {
 // Only mint and redeem. A coin SEND has two real accounts and resolves a
 // name like any payment; if it ever arrives without one, "Gloobal User" is
 // the truthful answer there, because a person is who it was with.
-function coinPartyName(type) {
-  return type === "coin_mint" || type === "coin_redeem" ? COIN_RESERVE_NAME : "GLOOBAL User";
+function coinPartyName(type, reason) {
+  if (type === "coin_mint" || type === "coin_redeem") return COIN_RESERVE_NAME;
+  // A payout from GLOOBAL itself has no paying user (0228). It said "From
+  // GLOOBAL User" — on a payment of the person's OWN Essentials, drawn the
+  // moment they paid, which read as money from a stranger.
+  if (type === "disbursement") return GLOOBAL_PAYOUT_NAMES[reason] || "GLOOBAL";
+  return "GLOOBAL User";
+}
+var GLOOBAL_PAYOUT_NAMES = { essentials: "My Essentials", referral_reward: "Referral reward", seed_interest: "GLOOBAL interest" };
+// An Essentials draw is part of a payment this person is making, not money
+// arriving: never announced as "+192.04 received" (0228). Rows from a server
+// that does not yet send `reason` are treated the same way — the draw is by
+// far the commonest payout, and the others say what they are once it does.
+function gloobalIsEssentialsDraw(entry) {
+  return Boolean(entry) && entry.txnType === "disbursement" && (!entry.payoutReason || entry.payoutReason === "essentials");
 }
 
 function mapServerTransaction(row, viewerSymbolId) {
@@ -381,7 +394,7 @@ function mapServerTransaction(row, viewerSymbolId) {
   const counterpartyName =
     counterparty.fullName && counterparty.fullName !== counterparty.symbolId
       ? counterparty.fullName
-      : counterparty.symbolId || coinPartyName(row.type);
+      : counterparty.symbolId || coinPartyName(row.type, row.reason);
   // WHOSE money this row is about.
   //
   // A payment has two sides and they are not the same number. The server
@@ -536,6 +549,8 @@ function mapServerTransaction(row, viewerSymbolId) {
     // to tell a buy from a sell needs the type itself, and until now the only
     // copy of it on this side was consumed by the ternary above and dropped.
     txnType: row.type || null,
+    // Why GLOOBAL paid this, on a payout ("essentials", "referral_reward"…).
+    payoutReason: row.reason || null,
     // THE EXCHANGE, where there was one.
     //
     // The fiat a buy cost or a sell paid out, the rate it converted at, and
@@ -2938,6 +2953,7 @@ function GloobalId() {
         // mapServerTransaction, which carries one precisely so nothing
         // downstream has to guess — and this was guessing.
         news.forEach((entry) => {
+          if (gloobalIsEssentialsDraw(entry)) { markPaymentNotified(entry.txnId); return; }
           const got = gloobalOwnMoneyOf(entry, COUNTRY_CURRENCY[dialCountry.iso] || "USD");
           notifyPaymentReceived({
             txnId: entry.txnId,

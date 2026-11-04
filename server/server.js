@@ -14129,6 +14129,9 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
         // their currency, and currency is not the discriminator (Gloobal Coin
         // and the GEU growth prototype are both denominated 'GEU').
         type: transaction.type || 'payment',
+        // Why GLOOBAL paid it, on a payout row (0228): "essentials" is the
+        // person's own Essentials, drawn as they paid — not money arriving.
+        reason: transaction.type === 'disbursement' ? (transaction.metadata?.reason || null) : null,
         // Coin direction comes from `type`, not fromUserId — see the long
         // note on the same line of /api/transactions/:symbolId. A mint and a
         // redeem both write fromUserId = the holder, so `isSender` cannot
@@ -14413,6 +14416,9 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         // from two sides, and a client that cannot tell them apart cannot
         // label the second one or keep it out of a "payments" count.
         type: transaction.type || 'payment',
+        // Why GLOOBAL paid it, on a payout row (0228): "essentials" is the
+        // person's own Essentials, drawn as they paid — not money arriving.
+        reason: transaction.type === 'disbursement' ? (transaction.metadata?.reason || null) : null,
         from: transaction.fromUserId?.symbolId || null,
         to: transaction.toUserId?.symbolId || null,
         // The RECEIVER's side: the face value this payment was denominated

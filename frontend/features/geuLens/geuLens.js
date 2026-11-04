@@ -462,13 +462,15 @@ function geuLensBarUnit(currencyCode, lens, ownCurrency) {
 // currency on both sides, with no GEU anywhere — the founder confirmed both.
 // A quote that travels between two people cannot carry a unit whose meaning
 // depends on who is reading it, however well it is labelled.
-// ── THE NAME YOU READ IN COMES FIRST, BRIGHT (0224) ─────────────────────
+// ── THE NAME YOU READ IN IS LIT, AFTER THE BAR (0228) ───────────────────
 //
-// Every figure carries both its names: the money it is in, and GEU. The lens
-// decides which comes first; the other follows the bar, dimmed (GeuFigure).
+// Every figure carries both its names: the money it is in, and GEU. The
+// other name sits on the number, dimmed; the bar; then the name the lens
+// picked, bright, so the eye lands on it (GeuFigure). 0224 put the picked
+// name first; the founder asked for it second (4 Nov).
 //
-//     local lens   1,000.00₹ │ GEU        40.00 USD │ GEU
-//     geu lens     1,000.00 GEU │ ₹       40.00 GEU │ USD
+//     local lens   1,000.00 GEU │ ₹       40.00 GEU │ USD
+//     geu lens     1,000.00₹ │ GEU        40.00 USD │ GEU
 //
 // Your own money by its sign, anyone else's by its code. GEU is on every
 // figure, yours or not (founder, 3 Nov: "geu is missing in a few places") —
@@ -477,7 +479,8 @@ function geuLensBarUnit(currencyCode, lens, ownCurrency) {
 function geuLensNames(currencyCode, lens, ownCurrency) {
   const unit = geuLensBarUnit(currencyCode, lens, ownCurrency);
   if (!unit) return null;
-  return lens === GEU_LENS_GEU ? { lead: COIN_TICKER, trail: unit } : { lead: unit, trail: COIN_TICKER };
+  // lead = on the number, dimmed; trail = after the bar, the one picked.
+  return lens === GEU_LENS_GEU ? { lead: unit, trail: COIN_TICKER } : { lead: COIN_TICKER, trail: unit };
 }
 function geuLensDigits(amount, currencyCode) {
   const places = typeof currencyDecimals === "function" ? currencyDecimals(currencyCode) : 2;
@@ -541,9 +544,10 @@ function geuLensBarParts(amount, currencyCode, lens, ownCurrency) {
   return { lead, trail: whole.slice(at), num: lead.slice(0, lead.length - names.lead.length - glue.length), unit: names.lead, glue };
 }
 
-// The name after the bar is the one you are NOT reading in: same size as the
-// name you are, but dimmed, so the lens is seen at a glance (0224). It used
-// to be "smaller, not fainter"; the founder asked for the light to say it.
+// The name ON the number is the one you are NOT reading in: same size as the
+// one after the bar, but dimmed, so the picked one is what the eye finds
+// (0224, 0228). It used to be "smaller, not fainter"; the founder asked for
+// the light to say it.
 var GEU_LENS_TRAIL_DIM = 0.42;
 
 // ── THE SAME PAIR, FOR TEXT THAT IS SPOKEN RATHER THAN DRAWN ────────────

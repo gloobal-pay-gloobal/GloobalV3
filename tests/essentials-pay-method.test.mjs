@@ -138,7 +138,10 @@ describe("the row says enough and no more", () => {
     const row = body.slice(at, body.indexOf("},", at));
     assert.doesNotMatch(row, /essentialsLeft\s*\)|fmt\(|fmtMoney|ChoiceMoney/,
       "the remaining Essentials figure is printed in the Pay-with sheet");
-    assert.match(row, /note: essentialsLeft > 0 \? "Covers what it can today" : "Nothing left today"/);
+    // 0228: whether it covers all of THIS payment or only part — still no figure.
+    assert.match(row, /"Nothing left today"/);
+    assert.match(row, /"Covers all of this today"/);
+    assert.match(row, /"Covers part — the rest from GLOOBAL Bank"/);
   });
 
   test("it is unavailable when the pool is empty", () => {
@@ -187,5 +190,25 @@ describe("what it pays for is filed where it came from", () => {
     const fn = store.slice(at, store.indexOf("\n}", at));
     assert.match(fn, /Array\.isArray\(state\.categories\) \? state\.categories : \[\]/);
     assert.match(fn, /found \? found\.id : null/);
+  });
+});
+
+// 0228: paying with Essentials when it covers only part — the rest from
+// GLOOBAL Bank — is shown, figure by figure, at the PIN, before anything is
+// confirmed. And the Essentials draw itself is the person's own money for
+// this payment, not money arriving: it is named "My Essentials" and never
+// announced as "+192.04 received from GLOOBAL User".
+describe("how much from where", () => {
+  const app = strip(readSource("frontend/App.jsx"));
+  test("the split is shown at the PIN: Essentials first, GLOOBAL Bank for the rest", () => {
+    assert.match(send, /data-testid="pay-split"/);
+    assert.match(send, /"From My Essentials", essentialsSplit\.fromEssentials/);
+    assert.match(send, /"From GLOOBAL Bank", essentialsSplit\.fromBank/);
+    assert.match(send, /setEssentialsSplit\(\{ fromEssentials, fromBank:/);
+  });
+  test("the Essentials payout is named, and not announced as money arriving", () => {
+    assert.match(app, /essentials: "My Essentials"/);
+    assert.match(app, /if \(gloobalIsEssentialsDraw\(entry\)\) \{ markPaymentNotified\(entry\.txnId\); return; \}/);
+    assert.match(readSource("server/server.js"), /reason: transaction\.type === 'disbursement' \? \(transaction\.metadata\?\.reason \|\| null\) : null,/);
   });
 });

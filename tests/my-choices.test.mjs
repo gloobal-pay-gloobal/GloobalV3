@@ -342,16 +342,18 @@ describe("the screens answer to the lens", () => {
     // Six bars labelled "420 510 610" with no unit anywhere is the
     // single-currency representation the lens exists to prevent. Repeating
     // the unit on each bar is unreadable, so it is stated for the axis.
-    assert.match(code(DETAIL), /Amounts in \{chartUnit\.lead\}/,
-      "the month chart no longer says what unit its bars are in");
+    // 0228: the first name is the one NOT picked, so it is dimmed.
+    assert.match(code(DETAIL), /Amounts in <span style=\{\{ opacity: GEU_LENS_TRAIL_DIM \}\}>\{chartUnit\.lead\}<\/span>/,
+      "the month chart no longer says what unit its bars are in (the other name on it, dimmed)");
     // BOTH units, not one. geuLensUnitLabel names a single unit, which
     // left the caption reading "Amounts in INR" directly under a hero
     // reading "30,500.00 GEU | ₹" — same screen, same money, two
     // vocabularies.
     assert.match(code(DETAIL), /const chartUnit = geuLensUnitPair\(code, lens, code\);/,
       "the chart names one unit where every figure above it names two");
-    // 0224: the pair no longer carries its own bar, so the caption draws it,
-    // with the second name dimmed like every trail.
+    // 0224: the pair no longer carries its own bar, so the caption draws it.
+    // 0228: the second name, after the bar, is the picked one, bright like
+    // every trail.
     assert.match(code(DETAIL), /\{chartUnit\.trail \? <span style=\{geuLensTrailStyle\([^)]*\)\}>\{` \$\{GEU_LENS_BAR\} \$\{chartUnit\.trail\}`\}<\/span> : ""\}/,
       "the second unit is dropped when there is one");
   });

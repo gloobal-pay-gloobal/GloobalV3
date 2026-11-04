@@ -156,9 +156,10 @@ const fmt = (n, places) =>
   new Intl.NumberFormat("en-US", { minimumFractionDigits: places, maximumFractionDigits: places }).format(n);
 // 0224: every figure carries both its names. The server cannot see the lens,
 // so the inbox line is in the local form: the reader's own money by its
-// sign, then GEU — "You sent 500.00₹ │ GEU to …".
+// sign — "You sent 500.00 GEU │ ₹ to …" (0228: the money's own name, the
+// one the local lens picks, after the bar).
 const { currencySuffix } = require(join(BACKEND, "lib/notificationText"));
-const pair = (n, places, ccy) => `${fmt(n, places)}${currencySuffix(ccy)} \u2502 GEU`;
+const pair = (n, places, ccy) => `${fmt(n, places)} GEU \u2502 ${currencySuffix(ccy).trim()}`;
 
 const N_KEYS = ["id", "type", "title", "message", "readAt", "createdAt", "metadata"].sort().join(",");
 const META_KEYS = [
@@ -272,7 +273,7 @@ async function run() {
     senderPlaces: 2, receiverPlaces: 0,
   });
   const jpy = (await notificationsFor("J"))[0];
-  check("the JPY message carries no decimal places", Boolean(jpy) && /You received 1,500¥ \u2502 GEU from/.test(jpy.message), jpy?.message);
+  check("the JPY message carries no decimal places", Boolean(jpy) && /You received 1,500 GEU \u2502 ¥ from/.test(jpy.message), jpy?.message);
 
   console.log("\n5. the unique index is the backstop");
   const existing = (await notificationsFor("A"))[0];

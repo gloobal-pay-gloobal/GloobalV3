@@ -434,7 +434,7 @@ function CategoryScreen({ category, onBack, history, tags, ccyCode, onPay, onSca
     >
         Last 6 months
       </div><div style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: 11.5, fontWeight: 800, color: T.inkFaint }}>
-        Amounts in {chartUnit.lead}{chartUnit.trail ? <span style={geuLensTrailStyle(15.5)}>{` ${GEU_LENS_BAR} ${chartUnit.trail}`}</span> : ""}
+        Amounts in <span style={{ opacity: GEU_LENS_TRAIL_DIM }}>{chartUnit.lead}</span>{chartUnit.trail ? <span style={geuLensTrailStyle(15.5)}>{` ${GEU_LENS_BAR} ${chartUnit.trail}`}</span> : ""}
       </div>{series.skipped > 0 && <div style={{ fontSize: 10.5, color: T.inkFaint, marginTop: 1 }}>
         {series.skipped} not in {code}
       </div>}</div></div>

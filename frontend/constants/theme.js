@@ -98,24 +98,29 @@ var GLOOBAL_THEMES = {
       gradButton: "linear-gradient(135deg,#C97800 0%,#EFA820 100%)",
       family: ["#D98A00", "#E4572E", "#0F9D8A", "#C2410C", "#B7791F"]})
   },
-  night: {
-    key: "night", name: "Night", tagline: "Dark for OLED and late hours. Violet for you, stage-light gold for the shop.",
-    personal: gloobalPalette({ side: "personal", dark: true,
-      bg: "#0B0A17", surface: "#16142B", surfaceAlt: "#1E1B38", surfaceSunk: "#100E22",
-      ink: "#F4F2FF", inkSoft: "#B4ADD0", inkFaint: "#7C76A0", line: "#2A2648",
-      accent: "#A78BFA", accentDeep: "#6D5BF5", accent2: "#60A5FA", accentSoft: "#2A2350",
-      gradPrimary: "linear-gradient(135deg,#3A2A9A 0%,#6D4CF0 60%,#9F7BFF 100%)",
-      gradWallet: "linear-gradient(150deg,#1B1550 0%,#3A2A9A 45%,#6D4CF0 80%,#9F7BFF 100%)",
-      gradButton: "linear-gradient(135deg,#6D4CF0 0%,#9F7BFF 100%)",
-      family: ["#A78BFA", "#60A5FA", "#22D3EE", "#F472B6", "#818CF8"]}),
-    creator: gloobalPalette({ side: "creator", dark: true,
-      bg: "#110D07", surface: "#1D170E", surfaceAlt: "#272012", surfaceSunk: "#1A1409",
-      ink: "#FBF5E8", inkSoft: "#CDB996", inkFaint: "#8E7F63", line: "#3A2F1C",
-      accent: "#F5B83D", accentDeep: "#C98A08", accent2: "#FB7185", accentSoft: "#3A2C10",
-      gradPrimary: "linear-gradient(135deg,#7A4E08 0%,#C98A12 55%,#F5C451 100%)",
-      gradWallet: "linear-gradient(150deg,#3A2405 0%,#7A4E08 45%,#C98A12 80%,#F5C451 100%)",
-      gradButton: "linear-gradient(135deg,#C98A08 0%,#F2B33D 100%)",
-      family: ["#F5B83D", "#FB923C", "#F87171", "#2DD4BF", "#FBBF24"]})
+  // 0233: Lotus replaces Night. The founder: "Remove black theme, try
+  // something better." Blush paper; the lotus's pink for your own money
+  // and its leaf's green for the shop — one flower, two colours, so the
+  // side you are on is plain and it still reads as one app. Anyone whose
+  // saved theme was Night opens on Lotus (readGloobalThemePref).
+  lotus: {
+    key: "lotus", name: "Lotus", tagline: "Blush paper. Lotus pink for your own money, leaf green for the shop.",
+    personal: gloobalPalette({ side: "personal",
+      bg: "#FBF2F6", surface: "#FFFFFF", surfaceAlt: "#F7E8EF", surfaceSunk: "#F2DFE8",
+      ink: "#2A1220", inkSoft: "#7E5F6E", inkFaint: "#AE94A1", line: "#F1DCE6",
+      accent: "#C2185B", accentDeep: "#7A0E3A", accent2: "#8E24AA", accentSoft: "#FCE4EE",
+      gradPrimary: "linear-gradient(135deg,#7A0E3A 0%,#C2185B 58%,#EC6A9C 100%)",
+      gradWallet: "linear-gradient(150deg,#4A0A27 0%,#8E1450 42%,#C2185B 78%,#EC6A9C 100%)",
+      gradButton: "linear-gradient(135deg,#B0154F 0%,#E04A85 100%)",
+      family: ["#C2185B", "#8E24AA", "#E8590C", "#D6336C", "#7B1FA2"]}),
+    creator: gloobalPalette({ side: "creator",
+      bg: "#F2F8F1", surface: "#FFFFFF", surfaceAlt: "#E6F1E4", surfaceSunk: "#DCEBD9",
+      ink: "#12230F", inkSoft: "#5C7558", inkFaint: "#8FA58B", line: "#DCEAD8",
+      accent: "#2E7D32", accentDeep: "#1B4D1F", accent2: "#C2185B", accentSoft: "#E3F2E1",
+      gradPrimary: "linear-gradient(135deg,#1B4D1F 0%,#2E7D32 55%,#6CBF5E 100%)",
+      gradWallet: "linear-gradient(150deg,#0E2A11 0%,#1B4D1F 42%,#2E7D32 78%,#6CBF5E 100%)",
+      gradButton: "linear-gradient(135deg,#276B2B 0%,#43A047 100%)",
+      family: ["#2E7D32", "#558B2F", "#00897B", "#827717", "#33691E"]})
   },
   tiranga: {
     key: "tiranga", name: "Tiranga", tagline: "Cream paper. Saffron for you, chakra blue for the shop — the flag's two inks.",
@@ -156,7 +161,7 @@ var GLOOBAL_THEMES = {
       family: ["#E8553F", "#F59E0B", "#0E7C86", "#EC4899", "#F97316"]})
   },
   ink: {
-    key: "ink", name: "Ink", tagline: "No colour but money's. Black on white for you; the page turns over for the shop.",
+    key: "ink", name: "Ink", tagline: "No colour but money's. Black on white for you; graphite on stone for the shop.",
     personal: gloobalPalette({ side: "personal",
       bg: "#F4F4F3", surface: "#FFFFFF", surfaceAlt: "#EDEDEC", surfaceSunk: "#E6E6E6",
       ink: "#111111", inkSoft: "#5C5C5C", inkFaint: "#9A9A9A", line: "#E3E3E1",
@@ -165,17 +170,20 @@ var GLOOBAL_THEMES = {
       gradWallet: "linear-gradient(150deg,#000000 0%,#1A1A1A 55%,#333333 100%)",
       gradButton: "linear-gradient(135deg,#000000 0%,#2A2A2A 100%)",
       family: ["#111111", "#3F3F46", "#57534E", "#27272A"]}),
-    creator: gloobalPalette({ side: "creator", dark: true,
-      bg: "#0A0A0A", surface: "#171717", surfaceAlt: "#222222", surfaceSunk: "#111111",
-      ink: "#F5F5F5", inkSoft: "#B3B3B3", inkFaint: "#7A7A7A", line: "#2A2A2A",
-      accent: "#F5F5F5", accentDeep: "#BDBDBD", accent2: "#D4D4D4", accentSoft: "#262626",
-      gradPrimary: "linear-gradient(135deg,#2E2E2E 0%,#4A4A4A 55%,#6A6A6A 100%)",
-      gradWallet: "linear-gradient(150deg,#262626 0%,#3A3A3A 55%,#5C5C5C 100%)",
-      gradButton: "linear-gradient(135deg,#3A3A3A 0%,#5A5A5A 100%)",
-      family: ["#F5F5F5", "#D4D4D4", "#A3A3A3", "#E7E5E4"]})
+    // 0233: the shop side was a black page; it is stone-grey paper now,
+    // with graphite ink and the creator weave on the card — still no
+    // colour but money's, and still plainly the other side.
+    creator: gloobalPalette({ side: "creator",
+      bg: "#E9E7E2", surface: "#F8F7F4", surfaceAlt: "#E2DFD9", surfaceSunk: "#DAD7D0",
+      ink: "#1A1917", inkSoft: "#5E5B56", inkFaint: "#97938C", line: "#D9D6CF",
+      accent: "#2A2826", accentDeep: "#0F0E0D", accent2: "#55524D", accentSoft: "#E0DDD7",
+      gradPrimary: "linear-gradient(135deg,#1C1B19 0%,#3A3835 55%,#5E5B56 100%)",
+      gradWallet: "linear-gradient(150deg,#1C1B19 0%,#3A3835 50%,#6B6762 100%)",
+      gradButton: "linear-gradient(135deg,#2A2826 0%,#4A4743 100%)",
+      family: ["#1F1F1F", "#4B4B4B", "#6E6A64", "#2E2C2A"]})
   }
 };
-var GLOOBAL_THEME_ORDER = ["day", "night", "tiranga", "ocean", "ink"];
+var GLOOBAL_THEME_ORDER = ["day", "lotus", "tiranga", "ocean", "ink"];
 var GLOOBAL_THEME_DEFAULT = "day";
 var GLOOBAL_THEME_PREF_KEY = "gloobal.theme.v1";
 
@@ -206,7 +214,9 @@ var T = {};
 
 function readGloobalThemePref() {
   try {
-    const saved = typeof window !== "undefined" ? window.localStorage.getItem(GLOOBAL_THEME_PREF_KEY) : null;
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(GLOOBAL_THEME_PREF_KEY) : null;
+    // 0233: Night was retired; whoever chose it opens on Lotus.
+    const saved = raw === "night" ? "lotus" : raw;
     return saved && GLOOBAL_THEMES[saved] ? saved : GLOOBAL_THEME_DEFAULT;
   } catch (e) {
     return GLOOBAL_THEME_DEFAULT;

@@ -7,10 +7,12 @@ const mongoose = require('mongoose');
 // words are kept only when they were about how GLOOBAL works; a question
 // about the person's own money is counted, never written down. Numbers in
 // the words are blanked before they are stored. Gone after 90 days.
-const KINDS = ['answer', 'choices', 'none', 'personal', 'yes', 'no'];
+// 0238: 'feedback' — how Ask GLOOBAL itself is working, with a mood.
+const KINDS = ['answer', 'choices', 'none', 'personal', 'yes', 'no', 'feedback'];
 const GuideEventSchema = new mongoose.Schema({
   kind: { type: String, enum: KINDS, required: true },
-  text: { type: String, default: '', maxlength: 160 },
+  text: { type: String, default: '', maxlength: 300 },
+  mood: { type: String, enum: ['', 'good', 'ok', 'bad'], default: '' },
   lang: { type: String, default: '', maxlength: 12 },
   cardId: { type: String, default: '', maxlength: 40 },
   screen: { type: String, default: '', maxlength: 20 },

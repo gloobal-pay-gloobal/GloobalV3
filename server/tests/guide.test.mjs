@@ -122,6 +122,14 @@ try {
   check("phone numbers and e-mail blanked", rows.some((r) => r.text === "call me on # or @"), rows.map((r) => r.text).join(" | "));
   check("a question about their own money: counted, words not kept", rows.some((r) => r.kind === "personal" && r.text === ""));
   check("they go away after 90 days", rows.every((r) => r.expiresAt - r.at > 89 * 86400000));
+  // 0238: feedback about Ask GLOOBAL itself, same anonymous route.
+  const fb = await call("POST", "/api/guide/events", { token: asha.token, body: { events: [
+    { kind: "feedback", mood: "bad", text: "Need Bengali please, my number is 9876543210", lang: "en" },
+    { kind: "feedback", mood: "great", text: "", lang: "hi" },
+  ] } });
+  check("feedback is kept", fb.status === 200 && fb.body.kept === 2);
+  const fbs = await GuideEvent.find({ kind: "feedback" }).lean();
+  check("feedback: a mood it knows, numbers blanked", fbs.some((r) => r.mood === "bad" && r.text === "Need Bengali please, my number is #") && fbs.some((r) => r.mood === ""), JSON.stringify(fbs.map((r) => [r.mood, r.text])));
 
   console.log("\n3. the staff site sees it");
   check("Finance does not", (await call("GET", "/api/admin/guide", { ...S, token: fin })).status === 403);
@@ -131,6 +139,8 @@ try {
   check("the same question twice is one row, unanswered first", q && q.count === 2 && q.none === 2 && /wapas/.test(q.text), JSON.stringify(q));
   check("totals: asked, nothing found, about their own money", sv.body.totals.asked === 4 && sv.body.totals.none === 2 && sv.body.totals.personal === 1);
   check("each card's numbers", sv.body.cards.find((c) => c.id === "send-how").stats.yes === 1 && sv.body.cards.find((c) => c.id === "send-how").stats.shown === 1);
+  check("the staff see feedback, newest first, with mood counts", Array.isArray(sv.body.feedback) && sv.body.feedback.length === 2 && sv.body.totals.mood_bad === 1, JSON.stringify(sv.body.feedback));
+  check("feedback is not counted as a question", sv.body.totals.asked === 4);
   check("from the app's own site: refused", (await call("GET", "/api/admin/guide", { origin: "https://evil.example", token: sup })).status === 403);
 
   console.log("\n4. a new card, not about money");

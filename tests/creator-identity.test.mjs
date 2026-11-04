@@ -604,7 +604,7 @@ test("the creator row is on both sides of the profile", () => {
     dash,
     // 0153 put "Complaints & reports" after Notifications; the Creator
     // Profile row still follows Personal Details for everybody.
-    /\}\{PROFILE_ROWS\.slice\(0, 1\)\s*\n?\s*\.concat\(\["Creator Profile"\], (?:shareRole === "merchant" \? \["My shops"\] : \[\], )?PROFILE_ROWS\.slice\(1, 4\), \["Complaints & reports"\], PROFILE_ROWS\.slice\(4\)\)\.map/,
+    /\}\{PROFILE_ROWS\.slice\(0, 1\)\s*\n?\s*\.concat\(\["Creator Profile"\], (?:shareRole === "merchant" \? \["My shops"\] : \[\], )?PROFILE_ROWS\.slice\(1, 4\), \["Complaints & reports"(?:, "Ask GLOOBAL")?\], PROFILE_ROWS\.slice\(4\)\)\.map/,
     "the row must not be gated on shareRole"
   );
   assert.ok(

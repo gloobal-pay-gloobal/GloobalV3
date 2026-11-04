@@ -8,12 +8,12 @@ import { useState as useState88, useEffect as useEffect84, useRef as useRef47, u
 // the staff site. No AI service: the cards come from GET /api/guide once,
 // stay on the phone, and askEngine.js finds the answer as the person types.
 //
-// Two ways in:
-//   • Help & Support → "Ask GLOOBAL" opens it full screen, with a greeting,
-//     topics and the questions people ask most.
-//   • A small ? on Send, GLOOBAL Bank, My Essentials and My shop opens it as
-//     a sheet over that screen, listing that screen's questions first. The
-//     screen underneath stays as it was.
+// Ways in (0238): Help & Support → "Ask GLOOBAL", the app map, and the
+// Profile list. Each opens it full screen, with a greeting, topics and the
+// questions people ask most. The small "?" that sat in the header of Send,
+// GLOOBAL Bank, My Essentials and My shop is gone, at the founder's ask.
+// A "Give feedback" in the page's header (and on its first screen) lets
+// anyone say how it is working — anonymous, like everything counted here.
 //
 // An answer comes in steps, with the screen it is about one tap away, read
 // aloud by the phone's own voice if wanted, and — for withdrawing to a bank —
@@ -62,6 +62,7 @@ var ASK_UI = {
     topic_send: "Sending money", topic_bank: "GLOOBAL Bank", topic_essentials: "My Essentials", topic_shop: "My shop", topic_geu: "What is GEU", topic_account: "My account", topic_receive: "Receiving money", topic_help: "Help",
     screen_send: "Questions about Send", screen_bank: "Questions about GLOOBAL Bank", screen_essentials: "Questions about My Essentials", screen_shop: "Questions about My shop",
     helpBoxTitle: "Ask GLOOBAL", helpBoxSub: "Ask how anything in GLOOBAL works, in your own language. Answers in seconds.",
+    fbOpen: "Give feedback", fbHome: "Help us make Ask GLOOBAL better", fbTitle: "How is Ask GLOOBAL working for you?", fbGood: "Good", fbOk: "Okay", fbBad: "Not good", fbPlaceholder: "What should we add or fix? (optional)", fbNote: "Anonymous. Numbers and emails are removed before it is kept.", fbSend: "Send feedback", fbThanks: "Thank you! The team reads every one.",
     qButton: "Questions about this screen",
   },
   hi: {
@@ -81,6 +82,7 @@ var ASK_UI = {
     topic_send: "पैसे भेजना", topic_bank: "GLOOBAL Bank", topic_essentials: "My Essentials", topic_shop: "My shop", topic_geu: "GEU क्या है", topic_account: "मेरा खाता", topic_receive: "पैसे पाना", topic_help: "मदद",
     screen_send: "Send के बारे में सवाल", screen_bank: "GLOOBAL Bank के बारे में सवाल", screen_essentials: "My Essentials के बारे में सवाल", screen_shop: "My shop के बारे में सवाल",
     helpBoxTitle: "Ask GLOOBAL", helpBoxSub: "GLOOBAL में कुछ भी कैसे काम करता है, अपनी भाषा में पूछें। जवाब तुरंत।",
+    fbOpen: "सुझाव दें", fbHome: "Ask GLOOBAL को बेहतर बनाने में मदद करें", fbTitle: "Ask GLOOBAL आपके लिए कैसा है?", fbGood: "अच्छा", fbOk: "ठीक", fbBad: "अच्छा नहीं", fbPlaceholder: "हम क्या जोड़ें या सुधारें? (वैकल्पिक)", fbNote: "बिना नाम के। रखने से पहले नंबर और ईमेल हटा दिए जाते हैं।", fbSend: "सुझाव भेजें", fbThanks: "धन्यवाद! टीम हर सुझाव पढ़ती है।",
     qButton: "इस स्क्रीन के बारे में सवाल",
   },
   hl: {
@@ -100,6 +102,7 @@ var ASK_UI = {
     topic_send: "Paise bhejna", topic_bank: "GLOOBAL Bank", topic_essentials: "My Essentials", topic_shop: "My shop", topic_geu: "GEU kya hai", topic_account: "Mera account", topic_receive: "Paise paana", topic_help: "Madad",
     screen_send: "Send ke baare mein sawaal", screen_bank: "GLOOBAL Bank ke baare mein sawaal", screen_essentials: "My Essentials ke baare mein sawaal", screen_shop: "My shop ke baare mein sawaal",
     helpBoxTitle: "Ask GLOOBAL", helpBoxSub: "GLOOBAL mein kuch bhi kaise kaam karta hai, apni bhasha mein poochiye. Jawab turant.",
+    fbOpen: "Feedback do", fbHome: "Ask GLOOBAL ko behtar banane mein madad karo", fbTitle: "Ask GLOOBAL aapko kaisa laga?", fbGood: "Accha", fbOk: "Theek", fbBad: "Accha nahi", fbPlaceholder: "Kya jodein ya sudhaarein? (zaroori nahi)", fbNote: "Bina naam ke. Rakhne se pehle number aur email hata diye jaate hain.", fbSend: "Feedback bhejo", fbThanks: "Shukriya! Team har feedback padhti hai.",
     qButton: "Is screen ke baare mein sawaal",
   },
   ta: {
@@ -119,6 +122,7 @@ var ASK_UI = {
     topic_send: "பணம் அனுப்புதல்", topic_bank: "GLOOBAL Bank", topic_essentials: "My Essentials", topic_shop: "My shop", topic_geu: "GEU என்றால் என்ன", topic_account: "என் கணக்கு", topic_receive: "பணம் பெறுதல்", topic_help: "உதவி",
     screen_send: "Send பற்றிய கேள்விகள்", screen_bank: "GLOOBAL Bank பற்றிய கேள்விகள்", screen_essentials: "My Essentials பற்றிய கேள்விகள்", screen_shop: "My shop பற்றிய கேள்விகள்",
     helpBoxTitle: "Ask GLOOBAL", helpBoxSub: "GLOOBAL-இல் எது எப்படி வேலை செய்கிறது என்று உங்கள் மொழியில் கேளுங்கள். உடனே பதில்.",
+    fbOpen: "கருத்து தெரிவிக்க", fbHome: "Ask GLOOBAL-ஐ மேம்படுத்த உதவுங்கள்", fbTitle: "Ask GLOOBAL உங்களுக்கு எப்படி இருக்கிறது?", fbGood: "நன்று", fbOk: "பரவாயில்லை", fbBad: "நன்றாக இல்லை", fbPlaceholder: "எதைச் சேர்க்க அல்லது சரிசெய்ய வேண்டும்? (விருப்பம்)", fbNote: "பெயர் இல்லாமல். சேமிக்கும் முன் எண்களும் மின்னஞ்சல்களும் நீக்கப்படும்.", fbSend: "கருத்தை அனுப்பு", fbThanks: "நன்றி! குழு ஒவ்வொன்றையும் படிக்கிறது.",
     qButton: "இந்தத் திரை பற்றிய கேள்விகள்",
   },
 };
@@ -231,13 +235,6 @@ var ASK_SPEAKER = "M4 9v6h4l5 4V5L8 9zM16 9a4 4 0 010 6M19 6a8 8 0 010 12";
 
 // The small ? in a screen's top corner. It opens the questions about that
 // screen over it; the screen keeps what was typed.
-function AskHelpButton({ screen }) {
-  const lang = askStartLang();
-  return <NavIconButton onClick={() => window.dispatchEvent(new CustomEvent("gloobal:ask", { detail: { mode: "sheet", screen } }))} label={askT(lang, "qButton")}>
-    <span data-testid={`ask-help-${screen}`} style={{ fontSize: 17, fontWeight: 900, color: T.accent, lineHeight: 1, fontFamily: T.fontDisplay }}>?</span>
-  </NavIconButton>;
-}
-
 function AskPill({ on, onClick, children, testid }) {
   return <button type="button" data-testid={testid} onClick={onClick} style={{ border: `1.5px solid ${on ? T.accent : T.line}`, background: on ? T.accentSoft : T.surface, color: on ? T.accent : T.inkSoft, borderRadius: 999, padding: "4px 10px", fontSize: 11.5, fontWeight: 800, cursor: "pointer" }}>{children}</button>;
 }
@@ -392,6 +389,7 @@ function AskConversation({ mode, screen, guide, lang, setLang, onGo, onTalk, onS
           <span style={{ fontSize: 12, fontWeight: 750, color: T.ink, lineHeight: 1.25 }}>{askT(lang, `topic_${topic}`)}</span></button>)}</div>
         {popular.length > 0 && <div style={{ fontSize: 10.5, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, margin: "2px 2px -4px" }}>{askT(lang, "popular")}</div>}
         {popular.length > 0 && <AskList testid="ask-popular" cards={popular.slice(0, 4)} lang={lang} onPick={(c) => pick(c, "")} />}
+        <button type="button" data-testid="ask-feedback-home" onClick={() => window.dispatchEvent(new Event("gloobal:askFeedback"))} style={{ display: "flex", alignItems: "center", gap: 10, border: `1.5px dashed ${hexToRgba(T.accent, 0.35)}`, background: "transparent", borderRadius: 16, padding: "11px 13px", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}><AskIcon d="M4 5h16v11H9l-5 4zM9 10h6" color={T.accent} size={17} /><span style={{ flex: 1, fontSize: 13, fontWeight: 750, color: T.ink }}>{askT(lang, "fbHome")}</span><span style={{ fontSize: 12, fontWeight: 800, color: T.accent }}>{askT(lang, "fbOpen")} ›</span></button>
       </>}
       {guide && empty && mode === "sheet" && screenCards.length > 0 && <AskList testid="ask-screen-list" cards={screenCards} lang={lang} onPick={(c) => pick(c, "")} />}
       {msgs.map((m) => {
@@ -509,9 +507,37 @@ function AskTour({ id, lang, onClose }) {
 }
 
 // Lives once in App, over everything: the full screen, the sheet, the tour.
+// ── FEEDBACK (0238) ─────────────────────────────────────────────────────
+// How Ask GLOOBAL is working, in three faces and an optional line. Sent as
+// one anonymous event (kind "feedback"); the server blanks numbers and
+// emails before it keeps the words, and keeps them 90 days.
+var ASK_MOODS = [["good", "#0FA372", "M8 14s1.5 2 4 2 4-2 4-2"], ["ok", "#D98A00", "M8 15h8"], ["bad", "#E23F45", "M16 16s-1.5-2-4-2-4 2-4 2"]];
+function AskFeedback({ lang, onClose }) {
+  const [mood, setMood] = useState88("");
+  const [text, setText] = useState88("");
+  const [sent, setSent] = useState88(false);
+  const send = () => { if (!mood || sent) return; askLog({ kind: "feedback", mood, text: text.trim(), lang }); setSent(true); };
+  const label = { good: "fbGood", ok: "fbOk", bad: "fbBad" };
+  return <div data-testid="ask-feedback" style={{ display: "flex", flexDirection: "column", gap: 12, padding: "4px 18px 18px" }}>
+    {sent ? <div data-testid="ask-feedback-thanks" style={{ background: T.surface, boxShadow: T.shadowCard, borderRadius: 18, padding: "18px 16px", display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-start" }}>
+      <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{askT(lang, "fbThanks")}</span>
+      <button type="button" onClick={onClose} style={{ border: "none", background: T.gradButton, color: "#fff", borderRadius: 12, padding: "9px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>{askT(lang, "close")}</button>
+    </div> : <>
+      <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.3 }}>{askT(lang, "fbTitle")}</div>
+      <div role="radiogroup" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>{ASK_MOODS.map(([k, color, mouth]) => <button key={k} type="button" role="radio" aria-checked={mood === k} data-testid={`ask-mood-${k}`} onClick={() => setMood(k)} style={{ border: mood === k ? `2px solid ${color}` : `1.5px solid ${T.line}`, background: mood === k ? hexToRgba(color, 0.1) : T.surface, borderRadius: 16, padding: "12px 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, cursor: "pointer", fontFamily: "inherit" }}>
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="9" cy="10" r="0.6" fill={color} /><circle cx="15" cy="10" r="0.6" fill={color} /><path d={mouth} /></svg>
+        <span style={{ fontSize: 12, fontWeight: 800, color: mood === k ? color : T.ink }}>{askT(lang, label[k])}</span></button>)}</div>
+      <textarea data-testid="ask-feedback-text" value={text} onChange={(e) => setText(e.target.value.slice(0, 280))} rows={4} placeholder={askT(lang, "fbPlaceholder")} style={{ border: `1.5px solid ${T.line}`, borderRadius: 14, padding: "11px 12px", fontSize: 14, color: T.ink, background: T.surface, fontFamily: "inherit", outline: "none", resize: "none" }} />
+      <span style={{ fontSize: 11.5, color: T.inkFaint, fontWeight: 600 }}>{askT(lang, "fbNote")}</span>
+      <button type="button" data-testid="ask-feedback-send" disabled={!mood} onClick={send} style={{ border: "none", borderRadius: 14, padding: 13, background: mood ? T.gradButton : T.gradButtonDisabled, color: "#fff", fontSize: 14, fontWeight: 800, cursor: mood ? "pointer" : "default", fontFamily: "inherit" }}>{askT(lang, "fbSend")}</button>
+    </>}
+  </div>;
+}
+
 function AskGloobalHost({ onGo, onTalk }) {
   const [open, setOpen] = useState88(null);
   const [tour, setTour] = useState88(null);
+  const [feedback, setFeedback] = useState88(false);
   const [guide, setGuide] = useState88(askGuide.index ? { cards: askGuide.cards, index: askGuide.index } : null);
   const [failed, setFailed] = useState88(false);
   const [lang, setLangRaw] = useState88(askStartLang);
@@ -528,18 +554,27 @@ function AskGloobalHost({ onGo, onTalk }) {
     return () => { window.removeEventListener("gloobal:ask", onAsk); clearTimeout(t); };
   }, []);
   useEffect84(() => { if (open && !guide) load(); }, [open]);
-  const close = useBackClose(Boolean(open), () => { askStopSpeaking(); setOpen(null); }, { unwind: true });
+  const close = useBackClose(Boolean(open), () => { askStopSpeaking(); setOpen(null); setFeedback(false); }, { unwind: true });
+  useEffect84(() => { if (!open) setFeedback(false); }, [open]);
+  useEffect84(() => {
+    const onFb = () => setFeedback(true);
+    window.addEventListener("gloobal:askFeedback", onFb);
+    return () => window.removeEventListener("gloobal:askFeedback", onFb);
+  }, []);
   const go = (target) => { askStopSpeaking(); setOpen(null); setTimeout(() => onGo(target), 0); };
   const talk = (p) => { askStopSpeaking(); setOpen(null); setTimeout(() => onTalk(p), 0); };
   const showMe = (id, l) => { const t = ASK_TOURS[id]; if (!t) return; askStopSpeaking(); setOpen(null); setTimeout(() => { onGo(t.target); setTour({ id, lang: l }); }, 0); };
-  const body = open && (failed && !guide
+  const body = open && (feedback
+    ? <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}><AskFeedback lang={lang} onClose={() => setFeedback(false)} /></div>
+    : failed && !guide
     ? <div style={{ padding: "24px 18px", display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}><span style={{ fontSize: 13.5, color: T.inkSoft, lineHeight: 1.5 }}>{askT(lang, "offline")}</span><button type="button" onClick={load} style={{ border: "none", background: T.gradButton, color: "#fff", borderRadius: 12, padding: "9px 14px", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>{askT(lang, "retry")}</button></div>
     : <AskConversation key={`${open.mode}-${open.screen || ""}-${open.first || ""}`} mode={open.mode} screen={open.screen || null} first={open.first || null} guide={guide} lang={lang} setLang={setLang} onGo={go} onTalk={talk} onShowMe={showMe} />);
   return <>
     {open && open.mode === "page" && <div data-testid="ask-page" style={{ position: "fixed", inset: 0, zIndex: 1500, background: T.bg, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(16px + env(safe-area-inset-top, 0px)) 18px 10px", flexShrink: 0 }}>
-        <NavBackButton onClick={close} />
+        <NavBackButton onClick={feedback ? () => setFeedback(false) : close} />
         <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Ask GLOOBAL</span><span style={{ display: "block", fontSize: 11, color: T.inkFaint, fontWeight: 600 }}>{askT(lang, "sub")}</span></span>
+        {!feedback && <button type="button" data-testid="ask-feedback-open" onClick={() => setFeedback(true)} aria-label={askT(lang, "fbOpen")} title={askT(lang, "fbOpen")} style={{ width: 38, height: 38, borderRadius: 12, border: `1.5px solid ${T.line}`, background: T.surface, display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0 }}><AskIcon d="M4 5h16v11H9l-5 4zM9 10h6" color={T.accent} size={17} /></button>}
         <AskLangMenu lang={lang} setLang={setLang} />
       </div>
       {body}

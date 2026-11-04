@@ -3606,7 +3606,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        because there is already an "About" row in this list and two rows
        starting with that word is a menu nobody can scan. */
   }{PROFILE_ROWS.slice(0, 1)
-    .concat(["Creator Profile"], shareRole === "merchant" ? ["My shops"] : [], PROFILE_ROWS.slice(1, 4), ["Complaints & reports"], PROFILE_ROWS.slice(4)).map((label, i) => {
+    .concat(["Creator Profile"], shareRole === "merchant" ? ["My shops"] : [], PROFILE_ROWS.slice(1, 4), ["Complaints & reports", "Ask GLOOBAL"], PROFILE_ROWS.slice(4)).map((label, i) => {
     // The theme's own family, very faint: one soft tint per row instead of
     // the eight-colour stripe the shared list drew in every theme.
     const rowColor = gloobalFamilyColor(i);
@@ -3618,6 +3618,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       // the same sheet. The rest still open their placeholder detail view.
       onClick={() => (label === "Notifications"
         ? window.dispatchEvent(new Event("gloobal:openNotifications"))
+        : label === "Ask GLOOBAL"
+          // 0238: straight into Ask GLOOBAL, full screen.
+          ? window.dispatchEvent(new CustomEvent("gloobal:ask", { detail: { mode: "page" } }))
         : label === "Complaints & reports"
           ? setShowComplaints(true)
           : label === "My shops"

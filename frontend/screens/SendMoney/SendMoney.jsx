@@ -1579,7 +1579,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
        cards together through name → Gloobal ID → mobile number →
        country name. Replaces the old per-card flip button that used
        to sit on the found receiver card's own corner. */
-  }<div className="header"><NavBackButton onClick={onClose} /><div style={{ display: "flex", alignItems: "center", gap: 10 }}>{searchStage === "found" ? <PayLocationChip state={payLocation.state} /> : null}<AskHelpButton screen="send" /><NavIconButton onClick={openContactPicker} label="Choose from contacts"><ContactIcon size={17} color={T.ink} /></NavIconButton>{
+  }<div className="header"><NavBackButton onClick={onClose} /><div style={{ display: "flex", alignItems: "center", gap: 10 }}>{searchStage === "found" ? <PayLocationChip state={payLocation.state} /> : null}<NavIconButton onClick={openContactPicker} label="Choose from contacts"><ContactIcon size={17} color={T.ink} /></NavIconButton>{
     /* Scan, beside history, where the founder asked for it. Somebody on
        this screen is about to type twelve symbols they are reading off
        another phone; the code on that phone says the same thing and

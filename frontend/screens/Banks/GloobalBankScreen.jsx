@@ -78,7 +78,6 @@ function GloobalBankScreen({
     onBack={onBack}
     onAction={onOpenStats}
     actionLabel="Interest stats"
-    help={<AskHelpButton screen="bank" />}
   /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 20 }}>{
     /* The account, as one card.
        This was a standalone flipping logo box, and under it a plain white

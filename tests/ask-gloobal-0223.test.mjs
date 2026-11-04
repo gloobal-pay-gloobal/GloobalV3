@@ -110,11 +110,22 @@ describe("the screens", () => {
     const a = build.indexOf('"features/support/askEngine.js"'), b = build.indexOf('"features/support/askGloobal.jsx"'), c = build.indexOf('"features/support/helpSupport.jsx"');
     assert.ok(a > 0 && a < b && b < c);
   });
-  test("a ? on Send, GLOOBAL Bank, My Essentials and My shop", () => {
-    assert.match(code("frontend/screens/SendMoney/SendMoney.jsx"), /<AskHelpButton screen="send" \/>/);
-    assert.match(code("frontend/screens/Banks/GloobalBankScreen.jsx"), /help=\{<AskHelpButton screen="bank" \/>\}/);
-    assert.match(code("frontend/features/essentials/EssentialsScreen.jsx"), /<AskHelpButton screen="essentials" \/>/);
-    assert.match(code("frontend/features/creator/CreatorPage.jsx"), /isOwner && <AskHelpButton screen="shop" \/>/);
+  test("no ? in any screen header any more; Ask lives in the map, the Profile list and Help & Support (0238)", () => {
+    for (const f of ["frontend/screens/SendMoney/SendMoney.jsx", "frontend/screens/Banks/GloobalBankScreen.jsx", "frontend/features/essentials/EssentialsScreen.jsx", "frontend/features/creator/CreatorPage.jsx", "frontend/features/support/askGloobal.jsx"]) {
+      assert.ok(!/AskHelpButton/.test(code(f)), f);
+    }
+    assert.match(app, /\{ key: "ask", section: "You", group: "post", label: "Ask GLOOBAL",/);
+    assert.match(code("frontend/components/common/appMap.jsx"), /ask: MapAskIcon/);
+    const dash = code("frontend/screens/Dashboard/Dashboard.jsx");
+    assert.match(dash, /\["Complaints & reports", "Ask GLOOBAL"\]/);
+    assert.match(dash, /label === "Ask GLOOBAL"[\s\S]{0,120}\? window\.dispatchEvent\(new CustomEvent\("gloobal:ask", \{ detail: \{ mode: "page" \} \}\)\)/);
+  });
+  test("feedback: three faces, an optional line, sent anonymously, in all four languages (0238)", () => {
+    const a = code("frontend/features/support/askGloobal.jsx");
+    assert.match(a, /askLog\(\{ kind: "feedback", mood, text: text\.trim\(\), lang \}\)/);
+    assert.match(a, /data-testid="ask-feedback-open"/);
+    assert.match(a, /data-testid="ask-feedback-home"/);
+    assert.equal((a.match(/fbThanks:/g) || []).length, 4);
   });
   test("Help & Support opens with Ask GLOOBAL on top", () => {
     assert.ok(help.indexOf("<AskHelpBox />") < help.indexOf(">Answers<"));

@@ -39,12 +39,12 @@ const first = (n) => String(n || '').trim().split(/\s+/)[0] || 'Someone';
 
 // Words people typed, made safe to keep: no long numbers (amounts, phone
 // numbers, account numbers), no e-mail addresses, nothing past 140 letters.
-function safeText(v) {
-  return str(v, 400)
+function safeText(v, max = 140) {
+  return str(v, 600)
     .replace(/[^\s@]+@[^\s@]+/g, '@')
     .replace(/[+]?\d[\d\s,.-]{2,}\d/g, '#')
     .replace(/\d{3,}/g, '#')
-    .slice(0, 140);
+    .slice(0, max);
 }
 const normQ = (t) => String(t || '').toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{M}\p{N}#@\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 
@@ -132,6 +132,7 @@ function createGuide({ GuideCard, GuideEvent, requireAuth, writeLimit, lookupLim
       }
     });
 
+    // Feedback (0238) rides the same anonymous route as kind 'feedback'.
     app.post('/api/guide/events', writeLimit, requireAuth, async (req, res) => {
       try {
         const list = Array.isArray(req.body && req.body.events) ? req.body.events.slice(0, 5) : [];
@@ -142,7 +143,9 @@ function createGuide({ GuideCard, GuideEvent, requireAuth, writeLimit, lookupLim
           rows.push({
             kind: e.kind,
             // A question about their own money is counted, never written down.
-            text: e.kind === 'personal' ? '' : safeText(e.text),
+            // Feedback keeps a little more (280), cleaned the same way.
+            text: e.kind === 'personal' ? '' : safeText(e.text, e.kind === 'feedback' ? 280 : 140),
+            mood: e.kind === 'feedback' && ['good', 'ok', 'bad'].includes(e.mood) ? e.mood : '',
             lang: /^[a-z]{2,3}(?:-[a-z]{2,4})?$/i.test(String(e.lang || '')) ? String(e.lang).toLowerCase() : '',
             cardId,
             screen: SCREENS.includes(e.screen) ? e.screen : '',
@@ -169,6 +172,7 @@ function createGuide({ GuideCard, GuideEvent, requireAuth, writeLimit, lookupLim
         const stats = new Map();
         const totals = { asked: 0, answer: 0, choices: 0, none: 0, personal: 0, yes: 0, no: 0 };
         const asked = new Map();
+        const feedback = [];
         for (const e of events) {
           totals[e.kind] = (totals[e.kind] || 0) + 1;
           if (['answer', 'choices', 'none', 'personal'].includes(e.kind)) totals.asked += 1;
@@ -178,6 +182,11 @@ function createGuide({ GuideCard, GuideEvent, requireAuth, writeLimit, lookupLim
             if (e.kind === 'yes') s.yes += 1;
             if (e.kind === 'no') s.no += 1;
             stats.set(e.cardId, s);
+          }
+          if (e.kind === 'feedback') {
+            totals[`mood_${e.mood || 'none'}`] = (totals[`mood_${e.mood || 'none'}`] || 0) + 1;
+            if (feedback.length < 100) feedback.push({ mood: e.mood || '', text: e.text || '', lang: e.lang || '', at: e.at });
+            continue;
           }
           if (!['answer', 'choices', 'none'].includes(e.kind) || !e.text) continue;
           const key = `${e.lang}|${normQ(e.text)}`;
@@ -193,7 +202,7 @@ function createGuide({ GuideCard, GuideEvent, requireAuth, writeLimit, lookupLim
         const byId = new Map(rows.map((r) => [r.cardId, r]));
         const ids = [...BUILT_IN.map((c) => c.id), ...rows.map((r) => r.cardId).filter((id) => !builtIn.has(id))];
         const cards = ids.map((id) => staffCard(id, byId.get(id), req.staff._id, stats));
-        return res.json({ success: true, days, totals, questions, cards, langs: LANGS, topics: TOPICS, screens: SCREENS, targets: TARGETS, tours: TOURS });
+        return res.json({ success: true, days, totals, questions, feedback, cards, langs: LANGS, topics: TOPICS, screens: SCREENS, targets: TARGETS, tours: TOURS });
       } catch (error) {
         console.error('admin guide error:', error);
         return res.status(500).json({ success: false, message: 'Could not load the guide.' });

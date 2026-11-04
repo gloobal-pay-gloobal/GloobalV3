@@ -3219,6 +3219,9 @@ function GloobalId() {
     { key: "updateId", section: "You", group: "post", label: "Update GLOOBAL ID", locked: !everRegistered, onPress: () => goToDashboardDestination("updateId") },
     { key: "referralnet", section: "You", group: "post", label: "Referral Network", locked: !everRegistered, onPress: () => goToDashboardDestination("referral") },
     { key: "complaints", section: "You", group: "post", label: "Complaints & Reports", locked: !everRegistered, onPress: () => goToDashboardDestination("complaints") },
+    // 0238: Ask GLOOBAL, on the map as well as in Help & Support and the
+    // Profile list (the "?" in screen headers is gone).
+    { key: "ask", section: "You", group: "post", label: "Ask GLOOBAL", locked: !everRegistered, onPress: () => window.dispatchEvent(new CustomEvent("gloobal:ask", { detail: { mode: "page" } })) },
     { key: "security", section: "You", group: "post", label: "Security & App Lock", locked: !everRegistered, onPress: () => goToDashboardDestination("security") },
     { key: "notifications", section: "You", group: "post", label: "Notifications", locked: !everRegistered, onPress: () => goToDashboardDestination("notifications") },
     { key: "coverage", section: "GLOOBAL", group: "post", label: "GLOOBAL Coverage", locked: !everRegistered, onPress: () => goToDashboardDestination("coverage") },

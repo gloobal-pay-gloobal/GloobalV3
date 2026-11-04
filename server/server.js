@@ -10830,6 +10830,12 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         receiverInput: receiverIdentifier,
         maxPrototypeAmount,
         payMethod: paySplit ? paySplit.label : (cleanPayMethod || null),
+        // 0245: which side of each account this payment belongs to. Paid
+        // FROM the Creator side, or paid TO the receiver's creator name /
+        // creator QR — everything else (GLOOBAL ID, mobile number, personal
+        // QR) is the Personal side. History splits on these, never mixes.
+        fromCreator: fromCreator === true,
+        toCreator: toCreator === true && Boolean(receiver.creatorProfile && receiver.creatorProfile.handle),
         // 0242: the two parts, in the sender's own currency. Null when
         // Essentials was not chosen — the whole of debitAmount is the method.
         essentialsPart: paySplit ? paySplit.essentials : null,
@@ -14175,6 +14181,38 @@ app.delete('/api/hooman', writeLimit, requireAuth, async (req, res) => {
   }
 });
 
+// ── WHICH SIDE A ROW BELONGS TO, FOR THE PERSON VIEWING IT (0245) ────────
+//
+// The founder: money received at my GLOOBAL ID, my mobile number or my
+// personal QR is Personal; money received at my creator name / creator QR
+// (or at one of my shops) is Creator; what I pay from a side is that side.
+// No row is in both. A Creator Share leg runs payee -> payer, so it belongs
+// to the side its payment was received on (for the payee) or paid from
+// (for the payer). Rows from before the payment recorded fromCreator read
+// as Personal, which is what the app showed for them.
+async function sharePaymentsFor(rows) {
+  const ids = rows.filter((t) => t.type === 'share' && t.metadata && t.metadata.paymentTransactionId).map((t) => t.metadata.paymentTransactionId);
+  if (!ids.length) return new Map();
+  const pays = await Transaction.find({ _id: { $in: ids } })
+    .select('toUserId metadata.fromCreator metadata.toCreator metadata.parties.receiver.creatorHandle')
+    .lean();
+  return new Map(pays.map((x) => [String(x._id), x]));
+}
+function receivedAsCreator(t, shopIdSet) {
+  const m = (t && t.metadata) || {};
+  const to = String((t && t.toUserId && (t.toUserId._id || t.toUserId)) || '');
+  return Boolean(m.toCreator || (m.parties && m.parties.receiver && m.parties.receiver.creatorHandle) || (shopIdSet && shopIdSet.has(to)));
+}
+function rowSideFor(t, isSender, sharePayments, shopIdSet) {
+  if (t.type === 'share') {
+    const pay = sharePayments.get(String(t.metadata && t.metadata.paymentTransactionId));
+    if (!pay) return 'personal';
+    return (isSender ? receivedAsCreator(pay, shopIdSet) : Boolean(pay.metadata && pay.metadata.fromCreator)) ? 'creator' : 'personal';
+  }
+  if (isSender) return t.metadata && t.metadata.fromCreator ? 'creator' : 'personal';
+  return receivedAsCreator(t, shopIdSet) ? 'creator' : 'personal';
+}
+
 // 0242: the AssetSeeds behind a page of Creator Share legs, by id.
 async function shareSeedsFor(legs) {
   const ids = legs.map((l) => l && l.metadata && l.metadata.assetSeedId).filter(Boolean);
@@ -14262,6 +14300,8 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
     // moved it to their balance ("Add to balance", or claimed from My
     // Assets). The seed is the record of that; one query for the page.
     const shareSeedById = await shareSeedsFor([...shareLegs, ...transactions.filter((t) => t.type === 'share')]);
+    const sideShares = await sharePaymentsFor(transactions);
+    const sideShops = new Set(shopIds.map(String));
 
     // Give every row on this page its short receipt-link handle, minting one
     // for any row that predates the field. Rows that already have one cost
@@ -14374,6 +14414,8 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
         cashbackDestination: transaction.type === 'share'
           ? (transaction.metadata?.cashbackDestination || null)
           : (shareByPayment.get(String(transaction._id))?.metadata?.cashbackDestination || null),
+        // 0245: Personal or Creator, for this viewer. History never mixes.
+        side: rowSideFor(transaction, isSender, sideShares, sideShops),
         // 0242: and whether the person has since moved it to the balance —
         // the default is that it stays in My Assets until they choose.
         ...shareMovedFields(shareSeedById, transaction.type === 'share'
@@ -14552,6 +14594,8 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
     // moved it to their balance ("Add to balance", or claimed from My
     // Assets). The seed is the record of that; one query for the page.
     const shareSeedById = await shareSeedsFor([...shareLegs, ...records.filter((t) => t.type === 'share')]);
+    const sideShares = await sharePaymentsFor(records);
+    const sideShops = new Set((await shops.idsOf(user._id)).map(String));
 
     // Same lazy mint as /api/transactions/history — see the note there. This
     // is the list the app actually restores its history from, so it is the
@@ -14664,6 +14708,8 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         cashbackDestination: transaction.type === 'share'
           ? (transaction.metadata?.cashbackDestination || null)
           : (shareByPayment.get(String(transaction._id))?.metadata?.cashbackDestination || null),
+        // 0245: Personal or Creator, for this viewer. History never mixes.
+        side: rowSideFor(transaction, isSender, sideShares, sideShops),
         // 0242: and whether the person has since moved it to the balance —
         // the default is that it stays in My Assets until they choose.
         ...shareMovedFields(shareSeedById, transaction.type === 'share'

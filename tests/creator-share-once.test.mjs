@@ -52,7 +52,8 @@ describe("a share appears exactly once in Recent Activity", () => {
       src,
       // One source, ordered by the shared newest-first rule
       // (transactionOrder.js) — see tests/transaction-order.test.mjs.
-      /return sortTransactionsNewestFirst\(receivedHistory\);/,
+      // 0245: still one source, now only this side's rows of it.
+      /return sortTransactionsNewestFirst\(receivedHistory\.filter\(\(t\) => \(t\.role \|\| "user"\) === shareRole\)\);/,
       "the received list is being built from more than one source again"
     );
     assert.ok(

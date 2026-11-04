@@ -657,9 +657,12 @@ function mapServerTransaction(row, viewerSymbolId) {
     creatorHandle: row.creatorHandle || null,
     memo: row.note || "",
     ledgerRecordId: null,
-    // Server rows predate this device's Personal/Creator split and carry
-    // no role of their own; they belong to the personal book.
-    role: "user",
+    // 0245: the side this row belongs to, as the server worked it out for
+    // this viewer — paid from / received at the creator name -> Creator,
+    // everything else -> Personal. It read "user" for every server row, so
+    // a creator-side payment moved to Personal on the next reload and money
+    // received at a personal QR sat in the Creator history as well.
+    role: row.side === "creator" ? "merchant" : "user",
     // Marks rows that came from MongoDB rather than this session's local
     // ledger, so the two can never be confused when reconciling.
     remote: true

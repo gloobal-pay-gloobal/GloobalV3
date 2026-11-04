@@ -663,6 +663,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       startOfToday.setHours(0, 0, 0, 0);
       const rows = (Array.isArray(receivedHistory) ? receivedHistory : []).filter((t) => {
         if (t.kind === "share") return false;
+        // 0245: a creator's takings are what came in at the creator name.
+        if ((t.role || "user") !== "merchant") return false;
         // A row with no recorded instant cannot be placed on a day. Left out
         // rather than assumed to be today: this figure is a creator's takings
         // for the day, and counting an undated row into it would be inventing
@@ -689,42 +691,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // sent list and rendered as money paid out — so a two-sided transaction
   // showed as a debit on BOTH accounts. Newest first, across both sources, so
   // the merged list reads as one history rather than two concatenated ones.
-  const receivedRows = useMemo5(() => {
-    // ONE row per Creator Share, and it is the SERVER's.
-    //
-    // This used to be `creatorShareRows.concat(receivedHistory)` and it
-    // showed every share twice. The two sources are the same event:
-    //
-    //   - creatorShareRows synthesises a row from the local asset seed.
-    //   - receivedHistory already contains the server's share leg, minted by
-    //     merchantShareFlow as a real transaction with type "share",
-    //     direction "received" and metadata.assetSeedId naming the very seed
-    //     the other row was built from.
-    //
-    // The server added that `type` field for exactly this — its own comment
-    // says a client that cannot tell a share from a payment "cannot keep it
-    // out of a payments count" — and mapServerTransaction reads it into
-    // `kind`. Nothing ever filtered on it, so both rows went in, and one
-    // 50.00 share arrived as two 50.00 rows with the same timestamp.
-    //
-    // The server's row wins because the synthesised one is denominated
-    // wrongly. It computed amountPaid * cashbackRate, and amountPaid is the
-    // amount handed to executeTransaction — which on a cross-border payment
-    // is the RECEIVER's face value (App.jsx says so where it picks
-    // debitAmount over `amount` for the same reason). So a 5,000 USD payment
-    // to India would have drawn its share from ₹478,000 and printed the
-    // result with a dollar sign. The server credits cashbackCredit in the
-    // payer's own currency and sends it with that currency attached.
-    //
-    // The server row also carries everything the synthesised one did —
-    // shareRate, method, name, date, time, txnId — so no receipt loses a
-    // field, and unlike a local seed it survives a reinstall.
-    //
-    // Ordered by the shared newest-first rule (transactionOrder.js), on each
-    // row's recorded instant. This compared parseDemoDate(row.date) — the day
-    // alone — so every row on the same day tied and kept arrival order.
-    return sortTransactionsNewestFirst(receivedHistory);
-  }, [receivedHistory]);
+  // receivedRows: declared below shareRole (0245), which it filters on.
   // THE PAYMENT A SEED CAME OUT OF.
   //
   // AssetSeed has always recorded `transactionId`; the assets route now sends
@@ -1434,6 +1401,47 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   // role-aware — same source of truth toggleShareRole/roleSendHistory
   // further down use, just introduced here instead of down there.
   const [shareRole, setShareRole] = useState14("user");
+  const receivedRows = useMemo5(() => {
+    // ONE row per Creator Share, and it is the SERVER's.
+    //
+    // This used to be `creatorShareRows.concat(receivedHistory)` and it
+    // showed every share twice. The two sources are the same event:
+    //
+    //   - creatorShareRows synthesises a row from the local asset seed.
+    //   - receivedHistory already contains the server's share leg, minted by
+    //     merchantShareFlow as a real transaction with type "share",
+    //     direction "received" and metadata.assetSeedId naming the very seed
+    //     the other row was built from.
+    //
+    // The server added that `type` field for exactly this — its own comment
+    // says a client that cannot tell a share from a payment "cannot keep it
+    // out of a payments count" — and mapServerTransaction reads it into
+    // `kind`. Nothing ever filtered on it, so both rows went in, and one
+    // 50.00 share arrived as two 50.00 rows with the same timestamp.
+    //
+    // The server's row wins because the synthesised one is denominated
+    // wrongly. It computed amountPaid * cashbackRate, and amountPaid is the
+    // amount handed to executeTransaction — which on a cross-border payment
+    // is the RECEIVER's face value (App.jsx says so where it picks
+    // debitAmount over `amount` for the same reason). So a 5,000 USD payment
+    // to India would have drawn its share from ₹478,000 and printed the
+    // result with a dollar sign. The server credits cashbackCredit in the
+    // payer's own currency and sends it with that currency attached.
+    //
+    // The server row also carries everything the synthesised one did —
+    // shareRate, method, name, date, time, txnId — so no receipt loses a
+    // field, and unlike a local seed it survives a reinstall.
+    //
+    // Ordered by the shared newest-first rule (transactionOrder.js), on each
+    // row's recorded instant. This compared parseDemoDate(row.date) — the day
+    // alone — so every row on the same day tied and kept arrival order.
+    //
+    // 0245: and only THIS side's. Received at the GLOOBAL ID, the mobile
+    // number or the personal QR is Personal; received at the creator name,
+    // the creator QR or a shop is Creator. It was every received row on
+    // both sides.
+    return sortTransactionsNewestFirst(receivedHistory.filter((t) => (t.role || "user") === shareRole));
+  }, [receivedHistory, shareRole]);
   // ── THE CREATOR SIDE'S OWN IDENTITY ───────────────────────────────────
   //
   // The handle people pay this account at when it is acting as a creator,

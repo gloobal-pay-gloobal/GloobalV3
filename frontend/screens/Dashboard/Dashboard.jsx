@@ -4132,7 +4132,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   ><X3 size={15} color={T.inkSoft} /></button></div><div style={{ fontSize: 11, fontWeight: 700, color: T.inkSoft, marginBottom: 6 }}>Amount</div><div style={{ display: "flex", alignItems: "center", gap: 8, background: T.surfaceAlt, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px", marginBottom: 8 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{geuLensUnitPair(ccyCode, displayLens, ccyCode).lead || ccy}</span><input
     value={payAmount}
     onChange={(e) => setPayAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-    inputMode="decimal"
+    inputMode="none"
+    readOnly
+    data-amount-pad={currencyDecimals(ccyCode)}
     style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "none", fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "inherit" }}
   />{
     /* 0224: the field's unit names both — the one read in before the

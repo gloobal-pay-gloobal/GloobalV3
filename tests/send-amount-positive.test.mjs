@@ -9,7 +9,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readSource, loadDomain } from "./harness.mjs";
-import { ACCOUNTS, buildOnce, login, openPage, teardown } from "./browser-harness.mjs";
+import { ACCOUNTS, buildOnce, login, openPage, teardown, padFill } from "./browser-harness.mjs";
 
 const { isPositivePaymentAmount } = loadDomain(["isPositivePaymentAmount"]);
 
@@ -77,7 +77,7 @@ describe("in the browser: typing 0 cannot start a payment", () => {
       await page.getByRole("button", { name: "Search", exact: true }).click({ force: true });
       const field = page.getByLabel(`Amount the receiver gets, in their own currency (${B.currency})`);
       await field.waitFor({ timeout: 25000 });
-      await field.fill("0");
+      await padFill(page, field, "0");
       await page.waitForTimeout(700);
 
       const sendButton = page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last();

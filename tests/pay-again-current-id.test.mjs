@@ -28,7 +28,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "./harness.mjs";
-import { buildOnce, openPage, login, teardown, skipPaymentUnlock, ACCOUNTS } from "./browser-harness.mjs";
+import { buildOnce, openPage, login, teardown, skipPaymentUnlock, ACCOUNTS, padFill } from "./browser-harness.mjs";
 
 const MODAL = "frontend/components/dialogs/ReceiptModal.jsx";
 const SERVER = "server/server.js";
@@ -56,7 +56,7 @@ async function payOnce(page, sender, receiver, receiverGets = 2000) {
 
   const field = page.getByLabel(`Amount the receiver gets, in their own currency (${receiver.currency})`);
   await field.waitFor({ timeout: 25000 });
-  await field.fill(String(receiverGets));
+  await padFill(page, field, String(receiverGets));
   await page.waitForTimeout(700);
 
   await page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last().click({ force: true });

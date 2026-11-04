@@ -32,8 +32,7 @@ import {
   convert,
   login,
   openPage,
-  teardown
-} from "./browser-harness.mjs";
+  teardown, padFill } from "./browser-harness.mjs";
 
 before(async () => {
   await buildOnce();
@@ -171,7 +170,7 @@ describe("the amount box is the payee's currency and the Send button is the paye
 
       // ---- 2. SEND BUTTON: the sender's symbol, and the sender's figure
       const receiverGets = receiver.currency === "JPY" ? 5000 : 100;
-      await field.fill(String(receiverGets));
+      await padFill(page, field, String(receiverGets));
       await page.waitForTimeout(900);
 
       const payButton = page.getByRole("button", { name: /^(Send|Simulate)\s/ }).last();
@@ -305,7 +304,7 @@ describe("the two sides stay attached to the right people", () => {
     await login(page, sender);
 
     const firstField = await openAmountStep(page, first);
-    await firstField.fill("100");
+    await padFill(page, firstField, "100");
     await page.waitForTimeout(700);
 
     // Read the same way as the first suite: the marker carries two names
@@ -326,7 +325,7 @@ describe("the two sides stay attached to the right people", () => {
     await page.getByLabel("Send", { exact: true }).waitFor({ timeout: 20000 });
 
     const secondField = await openAmountStep(page, second);
-    await secondField.fill("5000");
+    await padFill(page, secondField, "5000");
     await page.waitForTimeout(900);
 
     const secondMarker = await boxMarker(page, second.currency);

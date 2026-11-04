@@ -943,7 +943,9 @@ function ChoicesEditorSheet({ open, onClose, category, kind, side, ccyCode, onSa
   >{unit.lead && <span style={{ fontSize: 15, fontWeight: 800, color: T.inkFaint, flexShrink: 0 }}>{unit.lead}</span>}<input
     value={budget}
     onChange={(e) => setBudget(e.target.value.replace(/[^0-9.]/g, "").slice(0, 15))}
-    inputMode="decimal"
+    inputMode="none"
+    readOnly
+    data-amount-pad="2"
     placeholder="0"
     aria-label="Monthly budget"
     style={{

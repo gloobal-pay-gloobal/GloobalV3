@@ -39,8 +39,7 @@ import {
   revealBalance,
   shownBalance,
   teardown,
-  text
-} from "./browser-harness.mjs";
+  text, padFill } from "./browser-harness.mjs";
 
 before(async () => {
   await buildOnce();
@@ -512,7 +511,7 @@ async function sendPayment(page, { sender, receiver, sends, expectBlocked = fals
     `Amount the receiver gets, in their own currency (${receiver.currency})`
   );
   await amountField.waitFor({ timeout: 25000 });
-  await amountField.fill(String(sends));
+  await padFill(page, amountField, String(sends));
   await page.waitForTimeout(800);
 
   // The pay button carries the sender-currency quote: "Send ₹3,021.41".

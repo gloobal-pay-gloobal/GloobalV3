@@ -1876,7 +1876,11 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     className="amount-input"
     value={amount}
     onChange={handleAmountChange}
-    inputMode="decimal"
+    // 0229: our own number pad, not the phone's keyboard (amountPad.jsx).
+    inputMode="none"
+    readOnly
+    data-amount-pad={currencyDecimals(bottom.currency)}
+    data-amount-label={`${bottom.name || "They"} get${bottom.name ? "s" : ""}`}
     placeholder={fmt(0, bottom.currency)}
     aria-label={`Amount the receiver gets, in their own currency (${bottom.currency})`}
   /><span

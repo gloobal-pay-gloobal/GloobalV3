@@ -344,7 +344,9 @@ function BankMoneyScreen({ start = "history", ccyCode = "INR", balance = 0, coun
   const ccySign = fieldUnit.lead || (bankMoneyFmt(0, ccyCode).match(/^[^\d\s.,]+/) || [ccyCode])[0];
   const amountBox = (label) => <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}><span style={{ fontSize: 12, fontWeight: 700, color: T.inkFaint }}>{label}</span><span style={{ display: "flex", alignItems: "baseline", justifyContent: "center", width: "100%" }}><span aria-hidden="true" style={{ fontSize: 26, fontWeight: 700, color: T.inkSoft, fontFamily: T.fontDisplay }}>{ccySign}</span><input
     id="bank-money-amount"
-    inputMode="decimal"
+    inputMode="none"
+    readOnly
+    data-amount-pad="2"
     value={amount}
     onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, "").slice(0, 12))}
     placeholder="0"

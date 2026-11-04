@@ -1504,3 +1504,17 @@ export async function skipPaymentUnlock(page, { timeout = 45000 } = {}) {
   await page.getByTestId("receipt-counterparty").waitFor({ timeout });
   return false;
 }
+
+// 0229: amounts are typed on the app's own number pad (amountPad.jsx), not
+// the phone's keyboard, so an amount field is read-only to `fill`. This
+// taps it the way a person does: open the pad from the field, clear it,
+// press each key, Done.
+export async function padFill(page, field, text) {
+  await field.click({ force: true });
+  const pad = page.getByTestId("amount-pad");
+  await pad.waitFor({ timeout: 10000 });
+  for (let i = 0; i < 16; i += 1) await page.getByTestId("amount-key-back").click();
+  for (const ch of String(text)) await page.getByTestId(`amount-key-${ch === "." ? "dot" : ch}`).click();
+  await page.getByTestId("amount-pad-done").click();
+  await pad.waitFor({ state: "detached", timeout: 10000 });
+}

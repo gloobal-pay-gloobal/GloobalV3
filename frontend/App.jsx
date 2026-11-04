@@ -5145,7 +5145,9 @@ function GloobalId() {
        ? on Send, GLOOBAL Bank, My Essentials and My shop opens, and "Show
        me". Its buttons go where the app map goes, the same way; "talk to a
        person" opens Help & Support with the question filled in. */
-  }{stage === "dashboard" && <AskGloobalHost
+  }{
+    /* 0229: the app's own number pad for every amount field. */
+  }<AmountPadHost />{stage === "dashboard" && <AskGloobalHost
     onGo={(target) => goToDashboardDestination(target === "help" ? { supportNew: {} } : target)}
     onTalk={(p) => goToDashboardDestination({ supportNew: p || {} })}
   />}<LocationRequiredModal

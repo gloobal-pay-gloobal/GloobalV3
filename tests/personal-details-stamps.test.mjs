@@ -133,7 +133,11 @@ describe("five to a sheet, in the same five places", () => {
     assert.match(strip(src), /left: PASSPORT_PROFILE_SLOTS\[i\]\.x, top: PASSPORT_PROFILE_SLOTS\[i\]\.y/);
     assert.match(strip(src), /data-testid="passport-see-all"/);
     assert.doesNotMatch(strip(src), /arrow\("next"\)/, "the paging arrows are back");
-    assert.doesNotMatch(strip(src), /Math\.random/, "the layout has become random");
+    // The five places are fixed; the only randomness on the screen (0247)
+    // is which shortcut turns over next, never where a stamp sits.
+    const slots = src.slice(src.indexOf("var PASSPORT_PROFILE_SLOTS"), src.indexOf("function passportProfileSheetHeight"));
+    assert.doesNotMatch(slots, /Math\.random/, "the layout has become random");
+    assert.doesNotMatch(strip(src).slice(strip(src).indexOf("latestFive.map")), /Math\.random/, "the layout has become random");
   });
 
   test("a country always gets the same ink, and neighbours differ", () => {

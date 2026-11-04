@@ -228,6 +228,25 @@ function PersonalDetailsScreen({
   onOpenReceipt,
   ownCurrency
 }) {
+  // One shortcut at a time: a random one (never the same twice running)
+  // turns over to a dial symbol in a random colour, holds, and turns back.
+  const [shortcutFlip, setShortcutFlip] = useState52({ key: null, on: false, symbol: "", color: "" });
+  useEffect87(() => {
+    if (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
+    const keys = ["share", "qr", "update", "hooman"];
+    let last = null;
+    let back = null;
+    const tick = setInterval(() => {
+      const pool = keys.filter((k) => k !== last);
+      const key = pool[Math.floor(Math.random() * pool.length)];
+      last = key;
+      const symbol = DIAL_SYMBOLS[Math.floor(Math.random() * DIAL_SYMBOLS.length)];
+      const color = gloobalReadable(randomLogoFlipColor(), "#FFFFFF", 3);
+      setShortcutFlip({ key, on: true, symbol, color });
+      back = setTimeout(() => setShortcutFlip((f) => (f.key === key ? { ...f, on: false } : f)), 1600 * FLIP_SLOW);
+    }, 4200 * FLIP_SLOW);
+    return () => { clearInterval(tick); if (back) clearTimeout(back); };
+  }, []);
   const [showMobile, setShowMobile] = useState52(false);
   // The number shows only while asked for, and hides itself again.
   useEffect87(() => {
@@ -286,7 +305,14 @@ function PersonalDetailsScreen({
   ];
   const label = (t) => <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.9, textTransform: "uppercase", color: T.inkSoft, margin: "2px 4px -6px" }}>{t}</div>;
   const icon = (Icon, color) => <span style={{ width: 36, height: 36, borderRadius: 12, background: hexToRgba(color, 0.12), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon size={17} color={color} /></span>;
-  const action = (Icon, text, onPress, key) => <button key={key} type="button" data-pd-action={key} onClick={onPress} disabled={!onPress} className="v2-tap" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, border: "none", background: "none", padding: 0, cursor: onPress ? "pointer" : "default", fontFamily: "inherit" }}><span style={{ width: 48, height: 48, borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={20} color={T.accent} /></span><span style={{ fontSize: 11, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{text}</span></button>;
+  // 0247: the four shortcuts turn over slowly, one at a time, to a dial
+  // symbol in a random colour — the same life the Home tiles have.
+  const flip = shortcutFlip;
+  const action = (Icon, text, onPress, key) => <button key={key} type="button" data-pd-action={key} onClick={onPress} disabled={!onPress} className="v2-tap" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, border: "none", background: "none", padding: 0, cursor: onPress ? "pointer" : "default", fontFamily: "inherit" }}><span style={{ width: 48, height: 48, perspective: 400, display: "block" }}><span
+    data-pd-flip={key}
+    data-flipped={flip.key === key && flip.on ? "1" : "0"}
+    style={{ position: "relative", display: "block", width: "100%", height: "100%", transformStyle: "preserve-3d", transition: `transform ${0.9 * FLIP_SLOW}s cubic-bezier(.4,.15,.2,1)`, transform: flip.key === key && flip.on ? "rotateY(180deg)" : "rotateY(0deg)" }}
+  ><span style={{ position: "absolute", inset: 0, borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}><Icon size={20} color={T.accent} /></span><span aria-hidden="true" style={{ position: "absolute", inset: 0, borderRadius: 16, background: flip.key === key ? flip.color : T.accent, boxShadow: T.shadowCard, display: "flex", alignItems: "center", justifyContent: "center", transform: "rotateY(180deg)", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", color: "#fff", fontSize: 24, fontWeight: 900, fontFamily: T.fontDisplay }}>{flip.key === key ? flip.symbol : ""}</span></span></span><span style={{ fontSize: 11, fontWeight: 800, color: T.ink, whiteSpace: "nowrap" }}>{text}</span></button>;
   const dial = (dialCountry && dialCountry.dialCode) || "";
   const mobileShown = (() => {
     const m = String(mobileNumber || "");

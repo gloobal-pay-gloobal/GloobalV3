@@ -335,8 +335,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     run: () => setBalanceVisible(true)
   });
   const [ghFlipped, setGhFlipped] = useState14(false);
-  const [showGhCircleMenu, setShowGhCircleMenu] = useState14(false);
-  const requestCloseGhCircleMenu = useBackClose(showGhCircleMenu, () => setShowGhCircleMenu(false));
+  // 0247: the Profile card's circle and ID row opened a menu of three
+  // things (ID, Score, Photo) that Personal Details already does — its
+  // photo badge, Update ID and Hooman. They open Personal Details now, the
+  // one place those live.
+  const openPersonalDetails = () => setProfileDetail("Personal Details");
   const [ghLogoColor, setGhLogoColor] = useState14(() => randomLogoFlipColor());
   const ghFlipTimeoutRef = useRef10(null);
   useEffect12(() => {
@@ -3428,8 +3431,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        through colors, flips to reveal the logo every 10
        seconds, tap opens the Edit ID / GH Score menu. */
   }<span style={{ position: "absolute", top: 14, right: 14, zIndex: 1 }}><div style={{ width: GH_HERO_CIRCLE_SIZE, height: GH_HERO_CIRCLE_SIZE, flexShrink: 0, perspective: 600 }}><button
-    onClick={() => setShowGhCircleMenu((v) => !v)}
-    aria-label={ghOverallScore() === null ? "Hooman Score, no score yet \u2014 tap for options" : `Hooman Score, ${ghOverallScore()} out of 100 \u2014 tap for options`}
+    onClick={openPersonalDetails}
+    aria-label={ghOverallScore() === null ? "Hooman Score, no score yet \u2014 open your profile" : `Hooman Score, ${ghOverallScore()} out of 100 \u2014 open your profile`}
     style={{
       position: "relative",
       width: "100%",
@@ -3570,45 +3573,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     accept="image/*"
     onChange={handleProfilePhotoFile}
     style={{ display: "none" }}
-  /><div style={{ position: "relative" }}>{
-    /* Three-option menu — Edit ID, GH Score, or Profile (photo for
-       Personal, logo for Creator — same underlying file picker
-       either way, just different framing). */
-  }{showGhCircleMenu && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column" }}><NavBackButton onClick={requestCloseGhCircleMenu} style={{
-      position: "absolute",
-      top: "calc(18px + env(safe-area-inset-top, 0px))",
-      left: 18,
-      zIndex: 1
-     }} /><div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 24px" }}><div
-    style={{
-      width: "100%",
-      maxWidth: 380,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 16,
-      padding: "36px 16px",
-      borderRadius: T.radiusXl,
-      background: T.surface,
-      boxShadow: T.shadowRaised
-    }}
-  >{[
-    { key: "id", label: "ID", Icon: Pencil, onClick: () => { setSuggestedUpdateId(genSuggestedId(12)); setProfileOverlay("updateId"); } },
-    { key: "score", label: "Score", Icon: TrendingUp2, onClick: () => setProfileOverlay("ghscore") },
-    // Personal asks for a photo, Creator asks for a logo — same file
-    // picker either way (profilePhotoInputRef), just different
-    // framing depending on which side of the account is active.
-    { key: "profile", label: shareRole === "merchant" ? "Logo" : "Photo", Icon: ImageIcon, onClick: () => profilePhotoInputRef.current?.click() }
-  ].map((opt) => <button
-    key={opt.key}
-    onClick={() => {
-      setShowGhCircleMenu(false);
-      opt.onClick();
-    }}
-    aria-label={opt.label}
-    className="v2-tap"
-    style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, border: "none", background: "none", padding: 0, cursor: "pointer" }}
-  ><FlippingMenuIcon Icon={opt.Icon} size={88} /><span style={{ fontSize: 12, fontWeight: 800, color: T.inkSoft }}>{opt.label}</span></button>)}</div></div></div>}</div>{
+  />{
     /* Gloobal ID — one line, shrinking to fit rather than
        wrapping. Eye icon sits on the card's right edge,
        straddling it, vertically aligned with this specific
@@ -3626,8 +3591,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       paddingRight: GH_ID_ROW_RESERVE
     }}
   ><button
-    onClick={() => setShowGhCircleMenu(true)}
-    aria-label="Gloobal ID — tap for options"
+    onClick={openPersonalDetails}
+    aria-label="Gloobal ID — open your profile"
     className="v2-tap"
     style={{
       display: "flex",
@@ -5749,7 +5714,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        not decoration, it is how a person tells two IDs apart at a glance
        when both are rows of the same twelve symbols. Two IDs stacked as
        "From" and "To" is precisely where that matters most. */
-  }{showIdHistory && <div style={{ position: "fixed", inset: 0, zIndex: 320, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseIdHistory} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Update History</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{combinedIdHistory.length === 0 ? <div style={{ textAlign: "center", padding: "40px 20px", color: T.inkFaint, fontSize: 13 }}>No updates yet</div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{combinedIdHistory.map((h, i) => {
+  }{showIdHistory && <div data-testid="id-update-history" style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseIdHistory} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Update History</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "6px 18px 30px" }}>{combinedIdHistory.length === 0 ? <div style={{ textAlign: "center", padding: "40px 20px", color: T.inkFaint, fontSize: 13 }}>No updates yet</div> : <div style={{ borderRadius: T.radiusLg, background: T.surface, overflow: "hidden", boxShadow: T.shadowCard }}>{combinedIdHistory.map((h, i) => {
     const older = combinedIdHistory[i + 1];
     return <div key={i} style={{ padding: "14px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` }}><div style={{ display: "flex", flexDirection: "column", gap: 3 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: T.inkFaint, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0, width: 32 }}>From</span><span style={{ fontSize: 12, opacity: 0.75, wordBreak: "break-all" }}><ColoredGloobalId id={h.previousId} /></span></div><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: T.accent, textTransform: "uppercase", letterSpacing: 0.4, flexShrink: 0, width: 32 }}>To</span><span style={{ fontSize: 13, wordBreak: "break-all" }}><ColoredGloobalId id={h.id} /></span></div></div><div style={{ fontSize: 11, color: T.inkFaint, marginTop: 6, display: "flex", alignItems: "center", gap: 5 }}><span>{older ? `${older.date}, ${older.time}` : `${accountCreatedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}, ${formatClockTime(accountCreatedAt)}`}</span><ArrowRight2 size={10} style={{ flexShrink: 0 }} /><span>{h.date}, {h.time}</span></div></div>;
   })}</div>}</div></div>}{

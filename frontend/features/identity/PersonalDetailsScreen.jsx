@@ -270,7 +270,6 @@ function PersonalDetailsScreen({
   // and the shop sat under the Hooman score as if it were personal.
   const joined = accountCreatedAt instanceof Date && !Number.isNaN(accountCreatedAt.getTime()) ? accountCreatedAt : null;
   const joinedLong = joined ? joined.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
-  const joinedShort = joined ? joined.toLocaleDateString("en-GB", { month: "short", year: "numeric" }) : "";
   const paymentCount = Array.isArray(history) ? history.length : 0;
   const score = hoomanScore || null;
   const scoreShort = !score ? "—" : score.complete ? String(score.value) : `${score.answered}/${score.total}`;
@@ -312,7 +311,10 @@ function PersonalDetailsScreen({
     style={{ position: "absolute", right: -3, bottom: -3, width: 28, height: 28, borderRadius: "50%", background: T.accent, border: "2.5px solid #fff", display: "flex", alignItems: "center", justifyContent: "center" }}
   ><Camera4 size={12} color="#fff" /></span></button><div style={{ flex: 1, minWidth: 0 }}><div
     style={{ fontSize: 23, fontWeight: 800, letterSpacing: -0.5, fontFamily: T.fontDisplay, lineHeight: 1.15, overflowWrap: "anywhere" }}
-  >{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</div>{joinedShort ? <div style={{ fontSize: 11.5, fontWeight: 600, color: "rgba(255,255,255,0.8)", marginTop: 3 }}>Member since {joinedShort}</div> : null}</div></div><div
+  >{myName && myName.trim() ? myName : <GloobalWordmark suffix=" ID Member" />}</div>{
+    /* 0237: no "Member since" here — "Joined" below is the one place the
+       date lives; the founder saw it twice. */
+  }</div></div><div
     data-pd-id
     style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, marginTop: 13, background: T.surface, borderRadius: 14, padding: "7px 7px 7px 12px", boxShadow: "0 4px 14px rgba(0,0,0,0.12)" }}
   ><span data-pd-id-line style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", whiteSpace: "nowrap", overflow: "hidden", fontSize: 16, fontWeight: 900, lineHeight: 1.2 }}>{gloobalId ? <PdIdLine id={gloobalId} /> : <span style={{ color: T.inkFaint }}>—</span>}</span><button
@@ -333,7 +335,7 @@ function PersonalDetailsScreen({
   ]}</div><div
     data-pd-stats
     style={{ display: "flex", background: T.surface, borderRadius: 18, boxShadow: T.shadowCard, overflow: "hidden" }}
-  >{stats.map(([value, text], i) => <div key={text} style={{ flex: 1, minWidth: 0, textAlign: "center", padding: "12px 4px", borderLeft: i ? `1px solid ${T.line}` : "none" }}><span style={{ display: "block", fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{value}</span><span style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 3 }}>{text}</span></div>)}</div>{label("Your details")}<div
+  >{stats.map(([value, text], i) => <div key={text} data-pd-stat={i === 2 ? "hooman" : undefined} role={i === 2 && onOpenHoomanScore ? "button" : undefined} tabIndex={i === 2 && onOpenHoomanScore ? 0 : undefined} onClick={i === 2 ? onOpenHoomanScore : undefined} className={i === 2 && onOpenHoomanScore ? "v2-tap" : undefined} style={{ flex: 1, minWidth: 0, textAlign: "center", padding: "12px 4px", borderLeft: i ? `1px solid ${T.line}` : "none", cursor: i === 2 && onOpenHoomanScore ? "pointer" : "default" }}><span style={{ display: "block", fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{value}</span><span style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.inkSoft, marginTop: 3 }}>{text}</span></div>)}</div>{label("Your details")}<div
     data-pd-facts
     style={{ background: T.surface, borderRadius: 18, boxShadow: T.shadowCard, overflow: "hidden" }}
   >{[

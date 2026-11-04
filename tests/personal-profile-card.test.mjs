@@ -31,8 +31,8 @@ test("the shortcuts under the card: Share ID, My QR, Update ID, Hooman", () => {
   assert.match(dash, /onUpdateId=\{\(\) => setProfileOverlay\("updateId"\)\}/);
 });
 
-test("Member since in the card (month and year); the full date in Joined", () => {
-  assert.match(pd, /Member since \{joinedShort\}/);
+test("the date shows once: Joined, never a second Member since (0237)", () => {
+  assert.doesNotMatch(pd, /Member since \{/);
   assert.match(pd, /factRow\(PdCalendarIcon, "Joined", joinedLong/);
   assert.doesNotMatch(pd, /formatClockTime\(accountCreatedAt\)/, "Joined shows seconds again");
 });
@@ -64,4 +64,13 @@ test("photo on the left, name and ID on the right, copy inside the ID box", () =
 test("the country and its flag appear once — in the card — with no Country row (0236)", () => {
   assert.equal((pd.match(/<FlagEmoji/g) || []).length, 1);
   assert.doesNotMatch(pd, /"Country", \(dialCountry && dialCountry\.name\)/);
+});
+
+test("from the profile, Update ID, Hooman and My QR slide up as sheets over it (0237)", () => {
+  assert.match(dash, /const pdSheet = profileDetail === "Personal Details";/);
+  for (const k of ["qr", "hooman", "update"]) assert.ok(dash.includes(`data-pd-sheet={pdSheet ? "${k}" : undefined}`), k);
+  assert.match(dash, /\{showReceive && pdSheetBackdrop\(requestCloseReceive, "pd-sheet-dim-qr"\)\}/);
+  assert.match(dash, /\{profileOverlay === "ghscore" && pdSheetBackdrop\(requestCloseGhScore, "pd-sheet-dim-hooman"\)\}/);
+  assert.match(pd, /data-pd-stat=\{i === 2 \? "hooman" : undefined\}/, "the Hooman count opens it too");
+  assert.match(dash, /Copied — paste it in any chat to share your GLOOBAL ID/);
 });

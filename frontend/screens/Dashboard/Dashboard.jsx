@@ -1070,6 +1070,21 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [showHowItWorks, setShowHowItWorks] = useState14(false);
   const requestCloseHowItWorks = useBackClose(showHowItWorks, () => setShowHowItWorks(false));
   const [profileDetail, setProfileDetail] = useState14(null);
+  // ── FROM THE PROFILE, AS SHEETS (0237) ──────────────────────────────
+  // The founder: Share ID, My QR, Update ID and Hooman should open "on
+  // the profile itself". Opened from the profile, each of those screens
+  // slides up as a sheet over it — the profile still showing above and
+  // dimmed behind — and a tap on the dim, Back, or the screen's own close
+  // puts you exactly where you were. Opened from anywhere else they are
+  // the full screens they always were.
+  const pdSheet = profileDetail === "Personal Details";
+  const pdSheetBox = (fallback) => (pdSheet ? {
+    position: "fixed", left: 0, right: 0, bottom: 0, top: "max(64px, 9vh)", zIndex: 330, background: T.bg,
+    display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: "26px 26px 0 0",
+    boxShadow: "0 -18px 50px rgba(0,0,0,0.28)", animation: "pdSheetUp 0.32s cubic-bezier(.2,.8,.2,1) both"
+  } : fallback);
+  const pdSheetBackdrop = (onClose, testId) => (pdSheet ? <div data-testid={testId} aria-hidden="true" onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 325, background: "rgba(8,20,26,0.45)", animation: "pdSheetDim 0.25s ease both" }}><style>{"@keyframes pdSheetUp { from { transform: translateY(100%); } to { transform: none; } } @keyframes pdSheetDim { from { opacity: 0; } to { opacity: 1; } } @media (prefers-reduced-motion: reduce) { [data-pd-sheet] { animation: none !important; } }"}</style></div> : null);
+  const pdSheetGrip = () => (pdSheet ? <span aria-hidden="true" style={{ display: "block", width: 42, height: 5, borderRadius: 3, background: T.line, margin: "8px auto -6px", flexShrink: 0 }} /> : null);
   const requestCloseProfileDetail = useBackClose(!!profileDetail, () => setProfileDetail(null));
   const [ghScreen, setGhScreen] = useState14("categories");
   const [ghActiveCategory, setGhActiveCategory] = useState14(null);
@@ -4213,7 +4228,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       }, 700);
     }}
     scanning={payTargetBiometricScanning}
-  />}{showReceive && <div style={{ position: "fixed", inset: 0, zIndex: profileDetail ? 320 : 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px 6px", flexShrink: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" ID" withSymbols /></span><div style={{ display: "flex", alignItems: "center", gap: 8 }}>{
+  />}{showReceive && pdSheetBackdrop(requestCloseReceive, "pd-sheet-dim-qr")}{showReceive && <div data-pd-sheet={pdSheet ? "qr" : undefined} style={pdSheetBox({ position: "fixed", inset: 0, zIndex: 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" })}>{pdSheetGrip()}<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "calc(18px + env(safe-area-inset-top, 0px)) 22px 6px", flexShrink: 0 }}><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}><GloobalWordmark suffix=" ID" withSymbols /></span><div style={{ display: "flex", alignItems: "center", gap: 8 }}>{
     /* Scan, beside history. This screen shows YOUR code; half the time
        two people open it at once and one of them needs to be scanning
        instead. Without this that person backs out to the dashboard to
@@ -4927,7 +4942,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       showToast2("GLOOBAL ID copied");
     }}
     // 0236: the shortcuts under the ID card.
-    onShareId={() => gloobalShareLink({ title: "My GLOOBAL ID", message: `Pay me on GLOOBAL. My GLOOBAL ID: ${personalGloobalId}`, onToast: showToast2 })}
+    onShareId={() => gloobalShareLink({ title: "My GLOOBAL ID", message: `Pay me on GLOOBAL. My GLOOBAL ID: ${personalGloobalId}`, onToast: (m) => showToast2(m === "Link copied" ? "Copied — paste it in any chat to share your GLOOBAL ID" : m) })}
     onOpenQr={() => setShowReceive(true)}
     onUpdateId={() => setProfileOverlay("updateId")}
   />}{
@@ -5413,7 +5428,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        derived from today's date); Finance locks each item permanently
        after its first answer. Each pillar's colour is customisable via
        the header's colour-wheel icon. */
-  }{profileOverlay === "ghscore" && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><style>{GH_STYLE}</style>{
+  }{profileOverlay === "ghscore" && pdSheetBackdrop(requestCloseGhScore, "pd-sheet-dim-hooman")}{profileOverlay === "ghscore" && <div data-pd-sheet={pdSheet ? "hooman" : undefined} style={pdSheetBox({ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" })}>{pdSheetGrip()}<style>{GH_STYLE}</style>{
     /* The reworked flow (0180): overview, daily check-in, done, one
        pillar. See features/hooman/HoomanScoreFlow.jsx. The consent and
        delete sheet and the colour popover below are unchanged. */
@@ -5590,7 +5605,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     /* Update Gloobal ID — same 12-symbol dial pad used at registration,
        reused here to create a replacement ID. A History icon in the
        header opens the log of every past change. */
-  }{profileOverlay === "updateId" && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
+  }{profileOverlay === "updateId" && pdSheetBackdrop(() => { requestCloseProfileOverlay(); setNewIdBuffer(""); setShowUpdateIdBiometric(false); }, "pd-sheet-dim-update")}{profileOverlay === "updateId" && <div data-pd-sheet={pdSheet ? "update" : undefined} style={pdSheetBox({ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" })}>{pdSheetGrip()}<div style={{ display: "flex", alignItems: "center", gap: 12, padding: pdSheet ? "16px 18px 12px" : "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={() => {
       requestCloseProfileOverlay();
       setNewIdBuffer("");
       setShowUpdateIdBiometric(false);

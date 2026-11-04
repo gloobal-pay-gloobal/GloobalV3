@@ -58,6 +58,9 @@ test("the filter lives in the corner and every narrowing is in one sheet", () =>
   // filter still sits in the corner, right after.
   assert.match(dash, /Pay & Services<\/span><\/span><BazaarFilterButton count=\{bzActive\} onClick=\{\(\) => setBzFilterOpen\(true\)\} \/>/);
   assert.match(dash, /<GloobalWordmark \/><\/b> <span style=\{\{ fontWeight: 600 \}\}>बाज़ार<\/span><\/span><span style=\{\{ fontSize: 11\.5[^}]*\}\}>Pay & Services<\/span>/);
+  // 0226: and only there — the list below no longer repeats the name.
+  const bzSrc = read("frontend/features/bazaar/bazaar.jsx");
+  assert.ok(!/<GloobalWordmark \/><\/b> <span style=\{\{ fontWeight: 600 \}\}>बाज़ार/.test(bzSrc), "the bazaar name is said once, in the header");
   assert.match(dash, /filterOpen=\{bzFilterOpen\}/);
   assert.match(dash, /onActiveChange=\{setBzActive\}/);
   const bz = read("frontend/features/bazaar/bazaar.jsx");

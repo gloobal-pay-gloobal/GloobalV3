@@ -71,15 +71,15 @@ function NavScanButton({ onClick, label = "Scan a GLOOBAL QR code", disabled, st
 // A country in a header: the app's real flag picture (FlagEmoji, the one
 // every country row uses) filling the same 40px circle as the buttons
 // beside it, rather than an emoji floating inside a white disc.
-// 0225: the flag sits INSIDE the same white circle the other controls use,
-// at glyph size, rather than filling the circle edge to edge — a 40px flag
-// beside a 17px scanner glyph read as two different sizes (founder).
-var NAV_FLAG_SIZE = 22;
+// 0226: the flag fills its circle edge to edge, and the circle is exactly
+// the scanner's circle beside it — one size, one shape, no white ring
+// round a smaller flag (founder: "full circle fit flag").
+var NAV_FLAG_SIZE = NAV_BUTTON_SIZE;
 function NavFlagBadge({ flag, label }) {
   return <span role="img" aria-label={label} style={{
-    width: NAV_BUTTON_SIZE, height: NAV_BUTTON_SIZE, flexShrink: 0, borderRadius: "50%",
-    background: T.surface, boxShadow: T.shadowCard, display: "inline-flex", alignItems: "center", justifyContent: "center"
-  }}><FlagEmoji flag={flag} shape="circle" size={NAV_FLAG_SIZE} border="none" /></span>;
+    width: NAV_BUTTON_SIZE, height: NAV_BUTTON_SIZE, flexShrink: 0, borderRadius: "50%", overflow: "hidden",
+    boxShadow: T.shadowCard, display: "inline-flex", alignItems: "center", justifyContent: "center"
+  }}><FlagEmoji flag={flag} shape="circle" size={NAV_FLAG_SIZE} fit="cover" border="none" /></span>;
 }
 
 // Go back. `label` is overridable only because a couple of screens describe

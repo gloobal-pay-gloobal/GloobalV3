@@ -570,9 +570,11 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     /* ── THE NAME, AND LIST / MAP ─────────────────────────────────────
        List / Map sits beside the name rather than as a floating button
        over the list, where it used to cover a shop's name. */
-  }<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, margin: "2px 2px 10px" }}><span style={{
-    fontSize: 17, color: T.ink, fontFamily: T.fontDisplay
-  }}><b style={{ fontWeight: 800 }}><GloobalWordmark /></b> <span style={{ fontWeight: 600 }}>बाज़ार</span></span><span role="tablist" aria-label="Show as" style={{
+  }{
+    /* 0226: the name is in the screen's header now (Dashboard, Pay &
+       Services), so it is not said a second time here — only List / Map,
+       on the right where it was. */
+  }<div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, margin: "2px 2px 10px" }}><span role="tablist" aria-label="Show as" style={{
     display: "inline-flex", padding: 3, borderRadius: 12, background: T.surfaceAlt, flexShrink: 0
   }}>{[["List", false, BzList], ["Map", true, BzMapIcon]].map(([label, value, Icon]) => <button
     key={label}

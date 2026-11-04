@@ -167,7 +167,8 @@ describe("the three platforms are told three different things", () => {
     // The steps are behind `ios`, which is exclusive of `elsewhere`, and
     // the button's branch returns null for it. Both are asserted because
     // either one alone would let the other regress.
-    assert.match(body, /\{ios \? <InstallIosSteps \/> : elsewhere \? null :/,
+    // 0240: and gets the link to copy into a browser that can.
+    assert.match(body, /\{ios \? <InstallIosSteps \/> : elsewhere \? <InstallCopyLink target=\{otherBrowser\} \/> :/,
       "the banner's main branch no longer sends 'elsewhere' past both the steps and the button");
     assert.match(body, /!install\.canPrompt && !ios && !elsewhere/,
       "the browser-menu line can now reach an in-app browser, which has no such menu");
@@ -201,7 +202,10 @@ describe("every sign-in, and no more than that", () => {
   });
 
   test("it is keyed on the session, not on a clock", () => {
-    assert.doesNotMatch(strip(source), /Date\.now|new Date|setTimeout|dismissCount|\+ 1\b/,
+    // 0240: scoped to the dismissal and the hook — the copy-link button's
+    // "Copied" fades on a timer, which says nothing about the dismissal.
+    const dismissal = strip(source.slice(source.indexOf("var GLOOBAL_INSTALL_DISMISS_KEY"), source.indexOf("function InstallIosSteps")));
+    assert.doesNotMatch(dismissal, /Date\.now|new Date|setTimeout|dismissCount|\+ 1\b/,
       "the dismissal has grown a clock or a counter");
     assert.match(strip(source), /gloobalSessionFingerprint/,
       "it no longer asks the session who it is");

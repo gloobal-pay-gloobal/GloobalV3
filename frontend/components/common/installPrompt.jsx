@@ -1,6 +1,6 @@
 // src/components/common/installPrompt.jsx
 import { useState as useState49, useEffect as useEffect48, useRef as useRef28 } from "react";
-import { Download, X as X11, Share as Share3, SquarePlus } from "lucide-react";
+import { Download, X as X11, Share as Share3, SquarePlus, EllipsisVertical as InstallDotsIcon, Menu as InstallMenuIcon, MonitorDown as InstallDesktopIcon, Link2 as InstallLinkIcon, Check as InstallCheckIcon } from "lucide-react";
 
 // ── ASKING PEOPLE TO KEEP THE APP ───────────────────────────────────────
 //
@@ -65,7 +65,11 @@ function gloobalInstallPlatform() {
   const ua = String(navigator.userAgent || "");
   const touchMac = /Macintosh/.test(ua) && Number(navigator.maxTouchPoints) > 1;
   const apple = /iPhone|iPad|iPod/.test(ua) || touchMac;
-  if (!apple) return "prompt";
+  // 0240: Android has in-app browsers too — Instagram, Facebook, LinkedIn,
+  // or any app's WebView ("; wv)") — and none of them can install
+  // anything. They were sent down the Chrome route, to a menu item that
+  // isn't there.
+  if (!apple) return /FBAN|FBAV|Instagram|Line\/|LinkedInApp|; wv\)/.test(ua) && /Android/.test(ua) ? "android-elsewhere" : "prompt";
   // On iOS every browser is Safari underneath, but only Safari's own
   // chrome has the Add to Home Screen item. Chrome and Firefox for iOS
   // have a share sheet; the embedded browsers inside Instagram, Facebook
@@ -76,6 +80,29 @@ function gloobalInstallPlatform() {
   return "ios";
 }
 
+// ── WHICH MENU, IN WHICH BROWSER (0240) ─────────────────────────────────
+// "How to install" did nothing when the browser had not offered its own
+// install dialog — a tap that went nowhere, the one thing this file set
+// out never to do — and its one line said "Install app", a name Samsung
+// Internet's menu does not use. The steps are now the real ones, for the
+// browser actually in hand.
+function gloobalInstallBrowser() {
+  if (typeof navigator === "undefined") return "other";
+  const ua = String(navigator.userAgent || "");
+  const mobile = /Android|Mobile/.test(ua);
+  if (/SamsungBrowser/.test(ua)) return "samsung";
+  if (/Firefox|FxiOS/.test(ua)) return mobile ? "firefox" : "other";
+  if (/Edg\//.test(ua)) return mobile ? "chrome" : "desktop";
+  if (/Chrome\//.test(ua)) return mobile ? "chrome" : "desktop";
+  return "other";
+}
+var GLOOBAL_INSTALL_STEPS = {
+  chrome: [["dots", "Tap", "⋮", "at the top right of Chrome"], ["plus", "Tap", "Add to Home screen", "(or Install app)"], ["check", "Then", "Install", ""]],
+  samsung: [["menu", "Tap", "≡", "at the bottom right"], ["plus", "Tap", "Add page to", ""], ["check", "Choose", "Home screen", ""]],
+  firefox: [["dots", "Tap", "⋮", "next to the address bar"], ["plus", "Tap", "Install", ""]],
+  desktop: [["desktop", "Click the", "install icon", "at the right end of the address bar"], ["dots", "Or open", "⋮", "→ Cast, save and share → Install page"]],
+  other: [["dots", "Open your browser's", "menu", ""], ["plus", "Choose", "Add to Home screen", "or Install"]]
+};
 // Dismissed for THIS SIGN-IN, which is what was asked for: the banner
 // comes back every time somebody signs in, and a tap on the cross clears
 // it until they do.
@@ -160,7 +187,11 @@ function useInstallPrompt() {
       // us a button that silently does nothing.
       eventRef.current = null;
       setCanPrompt(false);
-      return choice && choice.outcome === "accepted";
+      const ok = Boolean(choice && choice.outcome === "accepted");
+      // Accepted: it is installing. The banner goes now rather than waiting
+      // for "appinstalled", which some browsers send late or never.
+      if (ok) setInstalled(true);
+      return ok;
     } catch (e) {
       eventRef.current = null;
       setCanPrompt(false);
@@ -174,7 +205,9 @@ function useInstallPrompt() {
   };
 
   const platform = gloobalInstallPlatform();
+  const browser = gloobalInstallBrowser();
   return {
+    browser,
     installed,
     platform,
     canPrompt,
@@ -212,13 +245,34 @@ function InstallIosSteps({ onDark }) {
 // and it is the worst moment to interrupt. Here they have already seen the
 // app work, which is the honest moment to ask whether they want to keep
 // it.
+function InstallMenuSteps({ browser }) {
+  const steps = GLOOBAL_INSTALL_STEPS[browser] || GLOOBAL_INSTALL_STEPS.other;
+  const icon = { dots: InstallDotsIcon, menu: InstallMenuIcon, plus: SquarePlus, check: InstallCheckIcon, desktop: InstallDesktopIcon };
+  return <div data-testid="install-steps" data-browser={browser} style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 12.5, color: T.inkSoft, lineHeight: 1.45 }}>{steps.map(([k, a, b, c], i) => {
+    const Icon = icon[k] || SquarePlus;
+    return <span key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 20, height: 20, borderRadius: "50%", background: T.surface, color: T.accent, fontSize: 10.5, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</span><Icon size={15} color={T.ink} style={{ flexShrink: 0 }} /><span>{a} <strong style={{ color: T.ink }}>{b}</strong>{c ? ` ${c}` : ""}</span></span>;
+  })}</div>;
+}
+// In a browser that cannot install: the way out is to open the page in
+// one that can, and the easiest way there is the link on the clipboard.
+function InstallCopyLink({ target }) {
+  const [copied, setCopied] = useState49(false);
+  const copy = async () => {
+    const url = typeof window !== "undefined" ? window.location.origin + "/" : "";
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch (e) { setCopied(false); }
+  };
+  return <button type="button" data-testid="install-copy-link" onClick={copy} className="v2-tap" style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 7, border: "none", borderRadius: 999, padding: "9px 16px", background: copied ? T.positive : T.gradButton, color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>{copied ? <InstallCheckIcon size={15} /> : <InstallLinkIcon size={15} />}{copied ? `Copied — paste it in ${target}` : "Copy the link"}</button>;
+}
+
 function InstallBanner() {
   const install = useInstallPrompt();
   const [busy, setBusy] = useState49(false);
+  const [howOpen, setHowOpen] = useState49(false);
   if (!install.offerable || install.dismissed) return null;
 
   const ios = install.platform === "ios";
-  const elsewhere = install.platform === "ios-elsewhere";
+  const elsewhere = install.platform === "ios-elsewhere" || install.platform === "android-elsewhere";
+  const otherBrowser = install.platform === "android-elsewhere" ? "Chrome" : "Safari";
 
   // ── WHY THIS IS NOT ANOTHER VIOLET SLAB ─────────────────────────────
   //
@@ -254,22 +308,24 @@ function InstallBanner() {
       </div><div
     style={{ fontSize: 12, color: T.inkSoft, marginTop: 2, lineHeight: 1.4 }}
   >{elsewhere
-    ? "Open this page in Safari to add it to your home screen."
+    ? `This app's browser can't add it to your home screen. Open it in ${otherBrowser}.`
     : "Opens like an app, works offline."}</div></div><button
     onClick={install.dismiss}
     aria-label="Not now"
     className="v2-tap"
     style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: `rgba(${T.accentRgb},0.10)`, color: T.accent, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 0 }}
-  ><X11 size={14} /></button></div>{ios ? <InstallIosSteps /> : elsewhere ? null : <button
+  ><X11 size={14} /></button></div>{ios ? <InstallIosSteps /> : elsewhere ? <InstallCopyLink target={otherBrowser} /> : <button
+    data-testid="install-button"
     onClick={async () => {
       if (busy) return;
+      // The browser's own dialog when it has offered one; otherwise the
+      // steps for this browser's menu, shown right here.
+      if (!install.canPrompt) { setHowOpen((v) => !v); return; }
       setBusy(true);
-      // No event yet is not a dead end: every Chromium browser has
-      // "Install app" in its own menu, and saying so is true whether or
-      // not the event ever arrives.
-      if (install.canPrompt) await install.promptInstall();
+      await install.promptInstall();
       setBusy(false);
     }}
+    aria-expanded={install.canPrompt ? undefined : howOpen}
     className="v2-tap"
     style={{
       alignSelf: "flex-start",
@@ -282,11 +338,7 @@ function InstallBanner() {
       fontWeight: 800,
       cursor: "pointer"
     }}
-  >{install.canPrompt ? (busy ? "Installing…" : "Install") : "How to install"}</button>}{!install.canPrompt && !ios && !elsewhere && <div
-    style={{ fontSize: 11.5, color: T.inkSoft, lineHeight: 1.45 }}
-  >
-      Open your browser's menu and choose <strong style={{ color: T.ink }}>Install app</strong>.
-    </div>}</div>;
+  >{install.canPrompt ? (busy ? "Installing…" : "Install") : howOpen ? "Hide the steps" : "How to install"}</button>}{!install.canPrompt && !ios && !elsewhere && howOpen && <InstallMenuSteps browser={install.browser} />}</div>;
 }
 
 // And the way back, for somebody who dismissed it twice and then changed
@@ -295,9 +347,11 @@ function InstallBanner() {
 // is a control that can only confuse.
 function InstallProfileRow({ onToast }) {
   const install = useInstallPrompt();
+  const [howOpen, setHowOpen] = useState49(false);
   if (!install.offerable) return null;
   const ios = install.platform === "ios";
-  const elsewhere = install.platform === "ios-elsewhere";
+  const elsewhere = install.platform === "ios-elsewhere" || install.platform === "android-elsewhere";
+  const otherBrowser = install.platform === "android-elsewhere" ? "Chrome" : "Safari";
 
   return <div
     data-testid="install-profile-row"
@@ -312,22 +366,20 @@ function InstallProfileRow({ onToast }) {
       </div><div style={{ fontSize: 12, color: T.inkSoft, marginTop: 1 }}>
         An icon on your home screen
       </div></div>{!ios && !elsewhere && <button
+    data-testid="install-profile-button"
     onClick={async () => {
       if (install.canPrompt) {
         const ok = await install.promptInstall();
         if (ok && onToast) onToast("Installing GLOOBAL…");
-      } else if (onToast) {
-        onToast("Open your browser's menu and choose Install app.");
+      } else {
+        setHowOpen((v) => !v);
       }
     }}
     className="v2-tap"
     style={{ flexShrink: 0, border: "none", borderRadius: 999, padding: "9px 18px", background: T.gradButton, color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}
-  >
-        Install
-      </button>}</div>{ios && <InstallIosSteps />}{elsewhere && <div
+  >{install.canPrompt ? "Install" : howOpen ? "Hide" : "How to"}</button>}</div>{ios && <InstallIosSteps />}{!install.canPrompt && !ios && !elsewhere && howOpen && <InstallMenuSteps browser={install.browser} />}{elsewhere && <><div
     style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.45 }}
   >
-      Open this page in Safari first — this browser cannot add it to your
-      home screen.
-    </div>}</div>;
+      This app's browser can't add it to your home screen. Open it in {otherBrowser} first.
+    </div><InstallCopyLink target={otherBrowser} /></>}</div>;
 }

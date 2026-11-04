@@ -18,7 +18,7 @@ import { readSource } from "./harness.mjs";
 
 const src = readSource("frontend/features/identity/passportStamps.jsx");
 const ctx = vm.createContext({});
-vm.runInContext(src.slice(src.indexOf("var PASSPORT_STAMP_SHAPES"), src.indexOf("// The outline, as an SVG path")), ctx);
+vm.runInContext(src.slice(src.indexOf("var PASSPORT_STAMP_SHAPES"), src.indexOf("// ── The fifteen designs")), ctx);
 
 test("every stamp gets a shape, and any five in a row are five different shapes", () => {
   const stamps = Array.from({ length: 40 }, (_, i) => ({ referenceId: "REF" + i, iso: "US", at: new Date(2026, 0, 1 + i).toISOString() }));
@@ -31,6 +31,11 @@ test("a new payment never changes the stamps already pressed", () => {
   const before = ctx.passportDressStamps(old).map((x) => x.shape + x.ink);
   const after = ctx.passportDressStamps([{ referenceId: "NEW", iso: "GB", at: "99" }, ...old]).slice(1).map((x) => x.shape + x.ink);
   assert.deepEqual(after, before);
+});
+
+test("the fifteen designs the founder picked, and every one is drawn (0244)", () => {
+  assert.equal(JSON.stringify(ctx.PASSPORT_STAMP_SHAPES), JSON.stringify(["plane", "departed", "train", "bus", "ship", "car", "cablecar", "globe", "mountain", "palm", "postage", "star", "diamond", "octagon", "circle"]));
+  for (const k of ctx.PASSPORT_STAMP_SHAPES.slice(0, -1)) assert.ok(src.includes(`case "${k}":`), k);
 });
 
 test("the time is printed to the second", () => {

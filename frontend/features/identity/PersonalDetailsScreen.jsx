@@ -44,12 +44,11 @@ import { ChevronRight as ChevronRight7, ChevronLeft as ChevronLeft5, Camera as C
 var IDENTITY_STAMPS_PER_PAGE = 5;
 // 0243: the latest five, one per slot, in boxes up to 140 wide — the right
 // column still ends inside a 360px phone's 324px sheet.
-var PASSPORT_PROFILE_SLOTS = [{ x: 8, y: 8 }, { x: 172, y: 12 }, { x: 18, y: 134 }, { x: 176, y: 140 }, { x: 92, y: 258 }];
+var PASSPORT_PROFILE_SLOTS = [{ x: 10, y: 8 }, { x: 178, y: 14 }, { x: 22, y: 140 }, { x: 172, y: 146 }, { x: 98, y: 270 }];
 function passportProfileSheetHeight(count) {
-  if (count <= 0) return 150;
-  if (count <= 2) return 150;
-  if (count <= 4) return 276;
-  return 392;
+  if (count <= 2) return 160;
+  if (count <= 4) return 292;
+  return 414;
 }
 var IDENTITY_STAMP_SLOTS = [
   { x: 12, y: 2, rot: -7, shape: "circle" },

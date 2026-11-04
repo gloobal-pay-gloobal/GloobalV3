@@ -1,6 +1,6 @@
 // src/features/identity/passportStamps.jsx
 import { useState as useState91, useEffect as useEffect88, useRef as useRef50, useMemo as useMemo22 } from "react";
-import { X as PsCloseIcon, Plus as PsZoomInIcon, Minus as PsZoomOutIcon, ReceiptText as PsReceiptIcon } from "lucide-react";
+import { X as PsCloseIcon, Plus as PsZoomInIcon, Minus as PsZoomOutIcon, ReceiptText as PsReceiptIcon, Plane as PsPlane, PlaneTakeoff as PsPlaneTakeoff, TrainFront as PsTrain, Bus as PsBus, Ship as PsShip, Car as PsCar, CableCar as PsCableCar, Globe as PsGlobe, MountainSnow as PsMountain, TreePalm as PsPalm, Landmark as PsLandmark } from "lucide-react";
 
 // ── A STAMP FOR EVERY PAYMENT THAT CROSSED A BORDER (0243) ──────────────
 //
@@ -15,13 +15,15 @@ import { X as PsCloseIcon, Plus as PsZoomInIcon, Minus as PsZoomOutIcon, Receipt
 // list comes from the server (GET /api/passport), so it is the whole record
 // and not the hundred rows this phone happens to hold.
 
-// The shapes a stamp can take. "Different for every stamp": each is picked
-// from its payment's reference, and never the same as the stamp before it.
-var PASSPORT_STAMP_SHAPES = ["circle", "rect", "hexagon", "oval", "octagon", "diamond", "scallop", "ticket"];
-var PASSPORT_STAMP_BOX = {
-  circle: [104, 104], hexagon: [112, 100], octagon: [104, 104], diamond: [118, 118], scallop: [110, 110],
-  rect: [138, 86], oval: [140, 92], ticket: [140, 86]
-};
+// The designs a stamp can take — the fifteen the founder picked from
+// twenty (0244): travel (plane, departed, train ticket, bus, ship, car,
+// cable car), places (globe postmark, mountain, palm sun, postage stamp)
+// and classic shapes (star badge, diamond, octagon, circle). Each payment
+// draws one from its reference, never one of the four before it.
+var PASSPORT_STAMP_SHAPES = ["plane", "departed", "train", "bus", "ship", "car", "cablecar", "globe", "mountain", "palm", "postage", "star", "diamond", "octagon", "circle"];
+// Every design is drawn in the same 180-unit square and shown at this size.
+var PASSPORT_STAMP_PX = 128;
+var PASSPORT_STAMP_BOX = PASSPORT_STAMP_SHAPES.reduce((m, k) => { m[k] = [PASSPORT_STAMP_PX, PASSPORT_STAMP_PX]; return m; }, {});
 var PASSPORT_STAMP_INKS = ["#1F6FB2", "#B2254A", "#2E7A4F", "#6B3FA0", "#A8571E", "#15756E", "#8A2B52", "#3B5CA8"];
 
 function passportHash(text) {
@@ -72,30 +74,37 @@ function passportStampTime(at) {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-// The outline, as an SVG path inside a w×h box, inset by `i`.
-function passportShapePath(shape, w, h, i) {
-  const x0 = i, y0 = i, x1 = w - i, y1 = h - i, cx = w / 2, cy = h / 2, rx = cx - i, ry = cy - i;
-  const poly = (pts) => "M" + pts.map((p) => p.map((n) => n.toFixed(1)).join(" ")).join("L") + "Z";
+// ── The fifteen designs, each in a 180×180 square ───────────────────────
+function psPoly(pts) { return "M" + pts.map((p) => p.map((n) => n.toFixed(1)).join(" ")).join("L") + "Z"; }
+function psRing(cx, cy, r) { return `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${r * 2} 0a${r} ${r} 0 1 0 ${-r * 2} 0Z`; }
+function psOval(cx, cy, rx, ry) { return `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${rx * 2} 0a${rx} ${ry} 0 1 0 ${-rx * 2} 0Z`; }
+function psRRect(x, y, w, h, r) { return `M${x + r} ${y}H${x + w - r}Q${x + w} ${y} ${x + w} ${y + r}V${y + h - r}Q${x + w} ${y + h} ${x + w - r} ${y + h}H${x + r}Q${x} ${y + h} ${x} ${y + h - r}V${y + r}Q${x} ${y} ${x + r} ${y}Z`; }
+function psTicket(x, y, w, h, n) { return `M${x + n} ${y}H${x + w - n}A${n} ${n} 0 0 0 ${x + w} ${y + n}V${y + h / 2 - 7}A7 7 0 0 0 ${x + w} ${y + h / 2 + 7}V${y + h - n}A${n} ${n} 0 0 0 ${x + w - n} ${y + h}H${x + n}A${n} ${n} 0 0 0 ${x} ${y + h - n}V${y + h / 2 + 7}A7 7 0 0 0 ${x} ${y + h / 2 - 7}V${y + n}A${n} ${n} 0 0 0 ${x + n} ${y}Z`; }
+function psPerf(x, y, w, h) { let d = ""; for (let i = x + 8; i < x + w - 4; i += 12) d += psRing(i, y, 4) + psRing(i, y + h, 4); for (let k = y + 8; k < y + h - 4; k += 12) d += psRing(x, k, 4) + psRing(x + w, k, 4); return d; }
+function psScallop(cx, cy, r, n) { const p = []; for (let k = 0; k < n * 2; k += 1) { const a = (k / (n * 2)) * Math.PI * 2; const rr = k % 2 ? r * 0.9 : r; p.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]); } return psPoly(p); }
+function psStar(cx, cy, R, r, n) { const p = []; for (let k = 0; k < n * 2; k += 1) { const a = -Math.PI / 2 + (k * Math.PI) / n; const rr = k % 2 ? r : R; p.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]); } return psPoly(p); }
+
+function PassportStampArt({ shape, name, date, time }) {
+  const line = (d, w = 2.4, extra) => <path d={d} fill="none" stroke="currentColor" strokeWidth={w} {...extra} />;
+  const t = (txt, x, y, size, weight, ls = 0.4) => <text x={x} y={y} textAnchor="middle" fontSize={size} fontWeight={weight} fill="currentColor" letterSpacing={ls} fontFamily="ui-monospace, Menlo, monospace">{txt}</text>;
+  const body = (cx, top, big = 15, sm = 10.5) => <>{t("GLOOBAL", cx, top, 7, 800, 1.6)}{t(name, cx, top + 18, big, 900)}{t(date, cx, top + 32, sm, 700)}{t(time, cx, top + 45, sm, 800)}</>;
+  const emblem = (Icon, x, y, s) => <Icon x={x} y={y} width={s} height={s} color="currentColor" strokeWidth={1.9} />;
   switch (shape) {
-    case "circle": return `M${cx - rx} ${cy}a${rx} ${rx} 0 1 0 ${rx * 2} 0a${rx} ${rx} 0 1 0 ${-rx * 2} 0Z`;
-    case "oval": return `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${rx * 2} 0a${rx} ${ry} 0 1 0 ${-rx * 2} 0Z`;
-    case "hexagon": return poly([[x0, cy], [x0 + rx * 0.5, y0], [x1 - rx * 0.5, y0], [x1, cy], [x1 - rx * 0.5, y1], [x0 + rx * 0.5, y1]]);
-    case "octagon": { const c = rx * 0.42; return poly([[x0 + c, y0], [x1 - c, y0], [x1, y0 + c], [x1, y1 - c], [x1 - c, y1], [x0 + c, y1], [x0, y1 - c], [x0, y0 + c]]); }
-    case "diamond": return poly([[cx, y0], [x1, cy], [cx, y1], [x0, cy]]);
-    case "scallop": {
-      const n = 16, pts = [];
-      for (let k = 0; k < n * 2; k += 1) {
-        const a = (k / (n * 2)) * Math.PI * 2;
-        const r = k % 2 === 0 ? rx : rx * 0.9;
-        pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
-      }
-      return poly(pts);
-    }
-    case "ticket": {
-      const n = 9;
-      return `M${x0 + n} ${y0}H${x1 - n}A${n} ${n} 0 0 0 ${x1} ${y0 + n}V${y1 - n}A${n} ${n} 0 0 0 ${x1 - n} ${y1}H${x0 + n}A${n} ${n} 0 0 0 ${x0} ${y1 - n}V${y0 + n}A${n} ${n} 0 0 0 ${x0 + n} ${y0}Z`;
-    }
-    default: return `M${x0 + 4} ${y0}H${x1 - 4}Q${x1} ${y0} ${x1} ${y0 + 4}V${y1 - 4}Q${x1} ${y1} ${x1 - 4} ${y1}H${x0 + 4}Q${x0} ${y1} ${x0} ${y1 - 4}V${y0 + 4}Q${x0} ${y0} ${x0 + 4} ${y0}Z`;
+    case "plane": return <>{line(psOval(90, 90, 80, 62))}{line(psOval(90, 90, 72, 54), 1)}{line("M28 70 Q90 20 152 70", 1.2, { strokeDasharray: "4 4" })}{emblem(PsPlane, 74, 36, 30)}{body(90, 78)}</>;
+    case "departed": return <>{line(psRRect(14, 32, 152, 118, 6))}{line("M14 58H166", 1.4)}{t("DEPARTED", 104, 51, 13, 900, 2)}{emblem(PsPlaneTakeoff, 22, 36, 20)}{body(90, 80)}</>;
+    case "train": return <>{line(psTicket(12, 38, 156, 106, 10))}{line("M40 44V138", 1, { strokeDasharray: "3 3" })}{emblem(PsTrain, 14, 78, 24)}{body(104, 64, 14)}</>;
+    case "bus": return <>{line(psRRect(14, 30, 152, 120, 22))}{line(psRRect(22, 38, 136, 104, 16), 1)}{emblem(PsBus, 76, 44, 28)}{body(90, 88, 14)}</>;
+    case "ship": return <>{line(psRing(90, 90, 74))}{line("M26 124 q8 -6 16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0 t16 0", 1.3)}{emblem(PsShip, 76, 28, 28)}{body(90, 70, 14)}</>;
+    case "car": return <>{line(psPoly([[18, 90], [52, 28], [128, 28], [162, 90], [128, 152], [52, 152]]))}{emblem(PsCar, 76, 36, 28)}{body(90, 80, 14)}</>;
+    case "cablecar": return <>{line("M20 150V80a70 70 0 0 1 140 0V150Z")}{line("M28 150V82a62 62 0 0 1 124 0V150", 1)}{emblem(PsCableCar, 76, 30, 28)}{body(90, 78, 13.5)}</>;
+    case "globe": return <>{line(psScallop(80, 90, 66, 18), 2.2)}{[0, 1, 2, 3, 4].map((k) => <path key={k} d={`M140 ${66 + k * 12} q6 -5 12 0 t12 0 t12 0`} fill="none" stroke="currentColor" strokeWidth={1.4} />)}{emblem(PsGlobe, 68, 34, 24)}{body(80, 76, 13)}</>;
+    case "mountain": return <>{line(psPoly([[10, 166], [60, 40], [86, 82], [116, 22], [170, 166]]))}{emblem(PsMountain, 79, 74, 22)}{body(90, 112, 12.5, 9.5)}</>;
+    case "palm": return <>{Array.from({ length: 24 }, (_, k) => { const a = (k / 24) * Math.PI * 2; return <path key={k} d={`M${90 + Math.cos(a) * 66} ${90 + Math.sin(a) * 66}L${90 + Math.cos(a) * 78} ${90 + Math.sin(a) * 78}`} stroke="currentColor" strokeWidth={2} />; })}{line(psRing(90, 90, 60))}{emblem(PsPalm, 78, 36, 24)}{body(90, 76, 13)}</>;
+    case "postage": return <>{line(psRRect(24, 24, 132, 132, 2), 2.2)}{line(psPerf(24, 24, 132, 132), 1.2)}{line(psRRect(34, 34, 112, 112, 2), 1)}{emblem(PsLandmark, 78, 40, 24)}{body(90, 82, 13)}</>;
+    case "star": return <>{line(psStar(90, 90, 82, 62, 10))}{line(psRing(90, 90, 52), 1)}{body(90, 72, 13, 9.5)}</>;
+    case "diamond": return <>{line(psPoly([[90, 10], [170, 90], [90, 170], [10, 90]]))}{line(psPoly([[90, 22], [158, 90], [90, 158], [22, 90]]), 1)}{body(90, 70, 13, 9.5)}</>;
+    case "octagon": return <>{line(psPoly([[56, 16], [124, 16], [164, 56], [164, 124], [124, 164], [56, 164], [16, 124], [16, 56]]))}{line(psPoly([[60, 26], [120, 26], [154, 60], [154, 120], [120, 154], [60, 154], [26, 120], [26, 60]]), 1, { strokeDasharray: "3 2" })}{body(90, 70)}</>;
+    default: return <>{line(psRing(90, 90, 74))}{line(psRing(90, 90, 66), 1)}{line(psRing(90, 90, 44), 0.8, { strokeDasharray: "2 3" })}{t("\u2605 \u2605 \u2605", 90, 40, 10, 900, 3)}{body(90, 72)}{t("\u2605 \u2605 \u2605", 90, 148, 10, 900, 3)}</>;
   }
 }
 
@@ -111,18 +120,12 @@ function passportStampName(iso) {
 
 // One stamp. The ink filter is the page's own (filterId), so the edges read
 // as pressed rather than printed.
-function PassportStamp({ stamp, filterId = "gloobalStampInk" }) {
-  const [w, h] = PASSPORT_STAMP_BOX[stamp.shape] || PASSPORT_STAMP_BOX.circle;
-  const small = stamp.shape === "diamond" || stamp.shape === "hexagon";
+function PassportStamp({ stamp, filterId = "gloobalStampInk", size = PASSPORT_STAMP_PX }) {
   return <span
     data-testid="passport-stamp"
     data-shape={stamp.shape}
-    style={{ position: "relative", display: "block", width: w, height: h, color: stamp.ink, opacity: 0.86, filter: `url(#${filterId})` }}
-  ><svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "visible" }}><path d={passportShapePath(stamp.shape, w, h, 1.5)} fill="none" stroke="currentColor" strokeWidth="2.2" /><path d={passportShapePath(stamp.shape, w, h, 6)} fill="none" stroke="currentColor" strokeWidth="0.9" strokeDasharray={stamp.shape === "rect" || stamp.shape === "ticket" ? "3 2" : "none"} /></svg><span
-    style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, textAlign: "center", lineHeight: 1.05 }}
-  ><span style={{ fontSize: 5.5, fontWeight: 800, letterSpacing: 1.2 }}>GLOOBAL</span><span
-    style={{ fontSize: small ? 10.5 : 12, fontWeight: 900, letterSpacing: 0.3, whiteSpace: "nowrap" }}
-  >{passportStampName(stamp.iso)}</span><span style={{ fontSize: small ? 7.5 : 8.5, fontWeight: 700, fontFamily: "ui-monospace, monospace" }}>{passportStampDate(stamp.at)}</span><span style={{ fontSize: small ? 7.5 : 8.5, fontWeight: 800, fontFamily: "ui-monospace, monospace", letterSpacing: 0.4 }}>{passportStampTime(stamp.at)}</span></span></span>;
+    style={{ position: "relative", display: "block", width: size, height: size, color: stamp.ink, opacity: 0.88, filter: `url(#${filterId})` }}
+  ><svg width={size} height={size} viewBox="0 0 180 180" role="img" aria-label={`${passportStampName(stamp.iso)} ${passportStampDate(stamp.at)} ${passportStampTime(stamp.at)}`} style={{ position: "absolute", inset: 0, overflow: "visible" }}><PassportStampArt shape={stamp.shape} name={passportStampName(stamp.iso)} date={passportStampDate(stamp.at)} time={passportStampTime(stamp.at)} /></svg></span>;
 }
 
 function PassportInkFilter({ id }) {
@@ -199,7 +202,7 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
         x: Math.min(W - w / 2, 80 + col * 150 + ((h2 >>> 4) % 30)),
         y: Math.min(H - h / 2, 70 + row * 140 + ((h2 >>> 9) % 30)),
         vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
-        w, h, r: Math.min(w, h) / 2 + 4, rot: s.rot, blink: 0, held: false
+        w, h, r: Math.min(w, h) / 2 - 4, rot: s.rot, blink: 0, held: false
       };
     });
     const touching = new Set();

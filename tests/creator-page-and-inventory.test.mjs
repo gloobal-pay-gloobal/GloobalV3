@@ -294,3 +294,20 @@ test("the owner has a door into their own page", () => {
     "the creator profile panel no longer opens the page at all");
   assert.match(dash(), /onOpenPage=\{async \(\) => \{/, "and the dashboard wires it");
 });
+
+// 0226: a supplier is shown by its shop NAME — the two words its owner
+// typed — on the Buying tab, in "What I bought", and in Sales & purchases'
+// Bought tab; never the dotted address, never a twelve-symbol ID.
+test("suppliers are named by their shop name, not their address or ID", () => {
+  const page = readSource("frontend/features/creator/CreatorPage.jsx");
+  const ledger = readSource("frontend/features/creator/CreatorLedger.jsx");
+  const server = readSource("server/server.js");
+  assert.match(page, /function supplierShownName\(name, handle\)/);
+  assert.ok(!/\{s\.handle \|\| s\.symbolId\}/.test(page), "the Buying row no longer prints the address or ID");
+  assert.ok(!/p\.supplierHandle \|\| p\.supplierSymbolId/.test(page), "What I bought no longer prints the address or ID");
+  assert.match(page, /supplierShownName\(p\.supplierName, p\.supplierHandle\)/);
+  assert.match(ledger, /supplierShownName\(row\.supplierName, row\.supplierHandle\)/);
+  assert.match(ledger, /row\.paidAt \|\| row\.createdAt/);
+  assert.match(server, /function shopNameOf\(u\)/);
+  assert.match(server, /supplierName: \(sellerName\[r\.supplierSymbolId\]/);
+});

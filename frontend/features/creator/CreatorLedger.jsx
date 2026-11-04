@@ -191,8 +191,10 @@ function CreatorLedgerScreen({
         markTint={T.accentSoft}
         title={`${Number(row.quantity) > 1 ? `${row.quantity} × ` : ""}${row.title || "Something"}`}
         subtitle={[
-          row.supplierHandle || "",
-          row.createdAt ? new Date(row.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""
+          // 0226: the shop's name, not its dotted address; and the date it
+          // was paid — the server sends paidAt, so createdAt was always empty.
+          supplierShownName(row.supplierName, row.supplierHandle),
+          (row.paidAt || row.createdAt) ? new Date(row.paidAt || row.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""
         ].filter(Boolean).join(" · ") || "—"}
         amount={row.amount}
         currency={row.currency}

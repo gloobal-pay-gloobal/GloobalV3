@@ -298,6 +298,17 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, theme, onAdd, onR
 // the owner gets a pencil where a customer gets +. The controls sit ON the
 // photo's corner because a 150px card has no room for a stepper beside a
 // price, and a stepper squeezed under it wraps on long figures.
+// A supplier as people read it (0226): its shop name — the two words its
+// owner typed — never the dotted address, and never a twelve-symbol ID.
+// `name` comes from the server, read live; an older row with only the
+// address shows the address's words with a space.
+function supplierShownName(name, handle) {
+  const n = String(name || "").trim();
+  if (n) return n;
+  const h = String(handle || "").trim();
+  return h ? h.replace(/\./g, " ") : "A shop";
+}
+
 function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, onRemove, onEdit, onViewPhotos }) {
   const paint = businessMarkInk(item.title);
   const shots = Array.isArray(item.photos) && item.photos.length ? item.photos : (item.photo ? [item.photo] : []);
@@ -963,7 +974,8 @@ function CreatorPage({
     }}
   ><Plus7 size={15} />Add a supplier by their name</button>{
     suppliers.map((s) => {
-      const paint = businessMarkInk(s.handle || s.symbolId);
+      const shown = supplierShownName(s.name, s.handle);
+      const paint = businessMarkInk(shown);
       return <button
         key={s.symbolId}
         onClick={() => onOpenSupplier && onOpenSupplier(s)}
@@ -980,9 +992,9 @@ function CreatorPage({
           width: 44, height: 44, borderRadius: 14, background: paint.bg, flexShrink: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 15, fontWeight: 800, color: paint.fg
-        }}>{businessMarkInitials(s.handle || s.symbolId)}</span>}<span style={{ flex: 1, minWidth: 0 }}><span style={{
+        }}>{businessMarkInitials(shown)}</span>}<span style={{ flex: 1, minWidth: 0 }}><span style={{
         display: "block", fontSize: 13, fontWeight: 700, color: T.ink
-      }}>{s.handle || s.symbolId}</span><span style={{
+      }}>{shown}</span><span style={{
         display: "block", fontSize: 11, color: theme.inkFaint, marginTop: 2
       }}>{s.lastOrderAt ? `last order ${creatorWhen(s.lastOrderAt)}` : "no orders yet"}</span></span><ChevronRight8 size={15} color={theme.inkFaint} /></button>;
     })
@@ -1002,7 +1014,7 @@ function CreatorPage({
     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
   }}>{p.title}{p.quantity > 1 ? ` × ${p.quantity}` : ""}</span><span style={{
     display: "block", fontSize: 10.5, color: theme.inkFaint, marginTop: 2
-  }}>{p.supplierHandle || p.supplierSymbolId} · {creatorWhen(p.paidAt)}</span></span><GeuFigure
+  }}>{supplierShownName(p.supplierName, p.supplierHandle)} · {creatorWhen(p.paidAt)}</span></span><GeuFigure
     amount={p.amount}
     currency={p.currency}
     lens={lens}

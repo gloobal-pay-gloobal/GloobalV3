@@ -6393,6 +6393,16 @@ app.put(
   }
 );
 
+// A shop's name as people should read it (0226): the two words its owner
+// typed, with a space — "santosh traders" — never the dotted address
+// "santosh.traders", which is for typing. The address is kept beside it.
+function shopNameOf(u) {
+  const p = (u && u.creatorProfile) || {};
+  const first = typeof p.handleFirst === 'string' ? p.handleFirst.trim() : '';
+  const last = typeof p.handleLast === 'string' ? p.handleLast.trim() : '';
+  return { name: first ? (last ? `${first} ${last}` : first) : '', handle: p.handle || '' };
+}
+
 // GET /api/creator/:symbolId/suppliers — OWNER ONLY. See the model for why.
 app.get(
   '/api/creator/:symbolId/suppliers',
@@ -6413,10 +6423,14 @@ app.get(
       // first, then every logo in a single `$in`.
       const ids = rows.map((r) => r.supplierSymbolId).filter(Boolean);
       const logoBySymbol = Object.create(null);
+      // 0226: and its NAME, read live — the two words as the shop typed them
+      // ("santosh traders"), not the dotted address cached on the row, which
+      // is what the Buying tab used to print and goes stale on a rename.
+      const nameBySymbol = Object.create(null);
       if (ids.length) {
-        const users = await User.find({ symbolId: { $in: ids } }).select('_id symbolId').lean();
+        const users = await User.find({ symbolId: { $in: ids } }).select('_id symbolId creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast').lean();
         const byId = Object.create(null);
-        for (const u of users) byId[String(u._id)] = u.symbolId;
+        for (const u of users) { byId[String(u._id)] = u.symbolId; nameBySymbol[u.symbolId] = shopNameOf(u); }
         const logos = await CreatorLogo.find({ userId: { $in: users.map((u) => u._id) } })
           .select('userId dataUrl').lean();
         for (const l of logos) {
@@ -6429,7 +6443,8 @@ app.get(
         success: true,
         suppliers: rows.map((r) => ({
           symbolId: r.supplierSymbolId,
-          handle: r.supplierHandle || '',
+          handle: (nameBySymbol[r.supplierSymbolId] && nameBySymbol[r.supplierSymbolId].handle) || r.supplierHandle || '',
+          name: (nameBySymbol[r.supplierSymbolId] && nameBySymbol[r.supplierSymbolId].name) || '',
           logo: logoBySymbol[r.supplierSymbolId] || null,
           lastOrderAt: r.lastOrderAt || null
         }))
@@ -6461,7 +6476,7 @@ app.post(
       if (!built.ok) return res.status(400).json({ success: false, code: built.code, message: built.message });
 
       const supplier = await User.findOne({ 'creatorProfile.handle': built.handle })
-        .select('symbolId').lean();
+        .select('symbolId creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast').lean();
       if (!supplier) {
         return res.status(404).json({
           success: false, code: 'creator_not_found', message: 'No creator found with that name.'
@@ -6478,7 +6493,7 @@ app.post(
         { $set: { supplierHandle: built.handle } },
         { upsert: true }
       );
-      return res.json({ success: true, supplier: { symbolId: supplier.symbolId, handle: built.handle } });
+      return res.json({ success: true, supplier: { symbolId: supplier.symbolId, handle: built.handle, name: shopNameOf(supplier).name } });
     } catch (error) {
       console.error('Creator supplier add error:', error);
       return res.status(500).json({ success: false, message: 'Could not add that supplier right now.' });
@@ -6515,12 +6530,18 @@ app.get(
       const symbolId = safeDecodeSymbolId(req.params.symbolId).trim();
       const rows = await CreatorPurchase.find({ buyerSymbolId: symbolId })
         .sort({ paidAt: -1 }).limit(100).lean();
+      // 0226: each supplier by its name, read live (see the suppliers list).
+      const sellers = await User.find({ symbolId: { $in: [...new Set(rows.map((r) => r.supplierSymbolId).filter(Boolean))] } })
+        .select('symbolId creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast').lean();
+      const sellerName = Object.create(null);
+      for (const u of sellers) sellerName[u.symbolId] = shopNameOf(u);
       return res.json({
         success: true,
         purchases: rows.map((r) => ({
           id: String(r._id),
           supplierSymbolId: r.supplierSymbolId,
-          supplierHandle: r.supplierHandle || '',
+          supplierHandle: (sellerName[r.supplierSymbolId] && sellerName[r.supplierSymbolId].handle) || r.supplierHandle || '',
+          supplierName: (sellerName[r.supplierSymbolId] && sellerName[r.supplierSymbolId].name) || '',
           title: r.title,
           quantity: r.quantity,
           amount: r.amount,

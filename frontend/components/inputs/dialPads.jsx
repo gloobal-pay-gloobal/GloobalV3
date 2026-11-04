@@ -73,7 +73,10 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
   const momentumRef = useRef3(null);
   const suppressClickRef = useRef3(false);
   const [logoFlips, setLogoFlips] = useState5(0);
-  const [logoColor, setLogoColor] = useState5(() => randomLogoFlipColor());
+  // 0241: the back is the app's logo — the white-square stamp, its mark
+  // in the logo colour of the hour (the same five, the same two-hour walk
+  // as the icon on Home), instead of a random wash with the old "g".
+  const logoInk = useGloobalLogoColor();
   const [crossColor, setCrossColor] = useState5(() => randomLogoFlipColor());
   useEffect5(() => {
     const interval = setInterval(() => {
@@ -134,7 +137,6 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
   const scheduleIdleFlip = () => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     idleTimerRef.current = setTimeout(() => {
-      setLogoColor((prev) => randomLogoFlipColor(prev));
       setLogoFlips((n) => n + 1);
       if (backTimerRef.current) clearTimeout(backTimerRef.current);
       backTimerRef.current = setTimeout(() => {
@@ -481,25 +483,22 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      background: hexToRgba(logoColor, 0.55),
-      border: "1px solid rgba(255,255,255,0.5)",
+      background: "#FFFFFF",
+      border: `1px solid rgba(${T.accentRgb},0.18)`,
+      boxShadow: `0 0 0 3px rgba(${T.accentRgb},0.32), 0 12px 28px rgba(${T.accentDeepRgb},0.2)`,
       transform: "rotateY(180deg)",
       backfaceVisibility: "hidden",
       WebkitBackfaceVisibility: "hidden",
-      pointerEvents: "none",
-      transition: "background 0.3s ease"
+      pointerEvents: "none"
     }}
-  ><img
-    src={G_LOGO_DATA_URI}
-    alt=""
+  ><svg
+    data-testid="dial-logo-back"
+    viewBox="0 0 512 512"
+    width={logoSize * 0.78}
+    height={logoSize * 0.78}
     aria-hidden="true"
-    style={{
-      width: logoSize,
-      height: "auto",
-      userSelect: "none",
-      filter: `brightness(0) invert(1) drop-shadow(0 0 8px ${logoColor}80)`
-    }}
-  /></div>}</div></div></div>;
+    style={{ userSelect: "none" }}
+  ><path fill={logoInk.hex} fillRule="evenodd" d={GLOOBAL_LOGO_MARK_PATH} style={{ transition: "fill 0.6s ease" }} /></svg></div>}</div></div></div>;
 }
 // ── WHAT THE PAD SHOWS, AND WHEN IT SENDS ──────────────────────────────
 //

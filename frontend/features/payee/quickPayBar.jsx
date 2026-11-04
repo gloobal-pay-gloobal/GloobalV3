@@ -646,7 +646,7 @@ function QuickPayBar({ myGloobalId = "", dialCode = "", countryIso = "", onOpenC
       }}
     >{dialCountry ? <FlagEmoji flag={dialCountry.flag} shape="circle" size={30} border="none" /> : <ChevronDown7 size={16} color={T.inkSoft} />}</button>{toggle}</div>{padKind === "id" ? <div style={{
       display: "flex", justifyContent: "center", padding: "2px 12px 6px"
-    }}><SymbolDialPad value={text} onChange={dialChange} length={QUICK_PAY_ID_LENGTH} showLogo={false} soundWhileTyping /></div> : <div style={{
+    }}><SymbolDialPad value={text} onChange={dialChange} length={QUICK_PAY_ID_LENGTH} soundWhileTyping /></div> : <div style={{
       display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, padding: "0 0 10px"
     }}>{QUICK_PAY_MOBILE_ROWS.map((row) => row.map(key))}</div>}<div><button
       type="button"

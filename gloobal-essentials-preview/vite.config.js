@@ -56,7 +56,11 @@ export default defineConfig({
         description: "GLOOBAL ID — international remittance, identity, and wallet.",
         lang: "en",
         dir: "ltr",
-        theme_color: "#7C3AED",
+        // 0241: Android paints its own bottom button bar from this, once,
+        // and no page can recolour it after. Violet sat under every theme;
+        // white suits all ten (none is dark). The status bar at the top
+        // still follows the theme live, through <meta name="theme-color">.
+        theme_color: "#FFFFFF",
         background_color: "#F6F5FC",
         display: "standalone",
         orientation: "portrait",
@@ -79,6 +83,11 @@ export default defineConfig({
       },
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
+        // 0241: the app is one bundle and it passed Workbox's default
+        // 2 MiB cap (2,098,717 bytes), which fails the whole build — on
+        // Netlify too. Precaching it is the point: it is what opens the
+        // app offline. 4 MiB is room to grow, still a ceiling.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: {
         // The dev server should serve the app directly. A service worker in

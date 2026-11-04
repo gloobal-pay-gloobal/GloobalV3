@@ -3860,7 +3860,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        10 businesses. Full-screen like Add Bank / Coverage rather than
        a bottom sheet, since the list can run long once search is in
        play. */
-  }{showMore && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseMore} /><span style={{ flex: 1, fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Pay & Services</span><BazaarFilterButton count={bzActive} onClick={() => setBzFilterOpen(true)} /></div><div style={{ padding: "0 18px 10px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px", boxShadow: T.shadowCard }}><Search3 size={16} color={T.inkFaint} /><input
+  }{showMore && <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseMore} />{
+    /* 0225: the screen is the bazaar, so its name leads — the wordmark
+       and बाज़ार, as the heading further down already wrote it — and
+       "Pay & Services" sits under it as what else is here. */
+  }<span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", lineHeight: 1.15 }}><span style={{ fontSize: 17, color: T.ink, fontFamily: T.fontDisplay, whiteSpace: "nowrap" }}><b style={{ fontWeight: 800 }}><GloobalWordmark /></b> <span style={{ fontWeight: 600 }}>बाज़ार</span></span><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, marginTop: 2 }}>Pay & Services</span></span><BazaarFilterButton count={bzActive} onClick={() => setBzFilterOpen(true)} /></div><div style={{ padding: "0 18px 10px", flexShrink: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: T.radiusMd, padding: "12px 14px", boxShadow: T.shadowCard }}><Search3 size={16} color={T.inkFaint} /><input
     value={moreQuery}
     onChange={(e) => setMoreQuery(e.target.value)}
     // A pasted `rasoi.ghar` lands in the first box whole. Split it at the

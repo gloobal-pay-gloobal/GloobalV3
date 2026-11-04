@@ -311,9 +311,16 @@ function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, on
   return <div style={{
     ...card, padding: 8, minWidth: 0, display: "flex", flexDirection: "column",
     opacity: item.soldOut ? 0.6 : 1
-  }}><div style={{
+  }}>{
+    /* 0225: one box for every item, whatever its photo. The photo area
+       is the theme's ratio and nothing else: a tall photo used to grow
+       the box (a flex child's min-height is its content), so cards in a
+       row came out at different heights and the grid broke. The title
+       keeps two lines' room and the note one line's, so the price sits
+       at the same place on every card. */
+  }<div style={{
     position: "relative", width: round ? "78%" : "100%", alignSelf: "center",
-    aspectRatio: String(ratio)
+    aspectRatio: String(ratio), minHeight: 0, flexShrink: 0, overflow: "hidden"
   }}>{item.photo
     ? <button
       onClick={() => onViewPhotos && onViewPhotos(item)}
@@ -369,14 +376,14 @@ function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, on
         style={ctl({ right: 6, bottom: 6, width: 32, height: 32, borderRadius: "50%", ...shopButtonStyle(theme), ...(theme.buttons === "filled" ? {} : { background: T.surface }) })}
       ><Plus7 size={16} /></button>)}</div><span style={{
     display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-    fontSize: 13, fontWeight: 700, color: theme.ink, lineHeight: 1.3, marginTop: 8, overflowWrap: "anywhere"
-  }}>{item.title}</span>{item.note ? <span style={{
-    display: "block", fontSize: 10.5, color: theme.inkFaint, marginTop: 2,
+    fontSize: 13, fontWeight: 700, color: theme.ink, lineHeight: 1.3, marginTop: 8, overflowWrap: "anywhere", minHeight: 34
+  }}>{item.title}</span><span style={{
+    display: "block", fontSize: 10.5, color: theme.inkFaint, marginTop: 2, minHeight: 14,
     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-  }}>{item.note}</span> : null}<span style={{ display: "block", marginTop: "auto", paddingTop: 6, color: theme.ink }}>{
+  }}>{item.note || ""}</span><span style={{ display: "block", marginTop: "auto", paddingTop: 6, color: theme.ink }}>{
     /* The price is the app's, in every shop and every layout — see the
        row above and SHOP_THEME_FORBIDDEN. */
-  }<GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} own={geuLensOwnCurrency() || item.currency || ccyCode} size={12.5} /></span></div>;
+  }<GeuFigure amount={item.price} currency={item.currency || ccyCode} lens={lens} own={geuLensOwnCurrency() || item.currency || ccyCode} size={12.5} room={130} floor={10} /></span></div>;
 }
 
 function CreatorPage({
@@ -939,7 +946,10 @@ function CreatorPage({
         onEdit={() => { setSaveError(""); setDraft({ id: item.id, title: item.title, price: String(item.price), note: item.note || "", category: item.category || "", badge: item.badge || "", photos: (item.photos && item.photos.length ? item.photos : (item.photo ? [item.photo] : [])), soldOut: Boolean(item.soldOut), special: Boolean(item.special) }); }}
       />);
         return theme.layout === "grid"
-          ? <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>{drawn}</div>
+          // minmax(0, 1fr): a plain 1fr will not go narrower than its widest
+          // content, so a big photo or a long price pushed one column wider
+          // than the other and cut the price off at the edge (0225).
+          ? <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10, alignItems: "stretch" }}>{drawn}</div>
           : drawn;
       })()}</>
   }</>}

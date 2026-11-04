@@ -54,7 +54,10 @@ test("the strip is one row until asked, and every pin stays reachable", () => {
 
 test("the filter lives in the corner and every narrowing is in one sheet", () => {
   const dash = read("frontend/screens/Dashboard/Dashboard.jsx");
-  assert.match(dash, /Pay & Services<\/span><BazaarFilterButton count=\{bzActive\} onClick=\{\(\) => setBzFilterOpen\(true\)\} \/>/);
+  // 0225: the header names the bazaar, with "Pay & Services" under it; the
+  // filter still sits in the corner, right after.
+  assert.match(dash, /Pay & Services<\/span><\/span><BazaarFilterButton count=\{bzActive\} onClick=\{\(\) => setBzFilterOpen\(true\)\} \/>/);
+  assert.match(dash, /<GloobalWordmark \/><\/b> <span style=\{\{ fontWeight: 600 \}\}>बाज़ार<\/span><\/span><span style=\{\{ fontSize: 11\.5[^}]*\}\}>Pay & Services<\/span>/);
   assert.match(dash, /filterOpen=\{bzFilterOpen\}/);
   assert.match(dash, /onActiveChange=\{setBzActive\}/);
   const bz = read("frontend/features/bazaar/bazaar.jsx");

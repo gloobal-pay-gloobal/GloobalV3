@@ -7,7 +7,7 @@ import { BedDouble as RpRoom, Home as RpFlat, Store as RpShop, ParkingSquare as 
 // The founder: an owner builds a rent profile — a rent name of its own,
 // first and second name like a shop's (sharma.rooms); then what they rent,
 // at what cost and conditions, with photos and the exact pin — and anybody
-// finds it in GLOOBAL Bazaar under Rent, and either requests to rent (the
+// finds it in Rent (search bar, type chips, filter), and either requests to rent (the
 // rent request the app already has, its terms filled in from the listing)
 // or chats with the owner first.
 
@@ -224,41 +224,65 @@ function RentListingEditor({ listing, onBack, onSaved }) {
 
 // ── BAZAAR → RENT ────────────────────────────────────────────────────────
 var RP_MAX_CHIPS = [[0, "Any rent"], [5000, "Under 5k"], [8000, "Under 8k"], [15000, "Under 15k"], [30000, "Under 30k"]];
-function RentBazaarScreen({ onClose, onToast }) {
-  const [q, setQ] = useState92("");
-  const [type, setType] = useState92("");
-  const [max, setMax] = useState92(0);
-  const [here, setHere] = useState92(null);
-  const [nearOn, setNearOn] = useState92(false);
-  const [mapOn, setMapOn] = useState92(false);
+var RP_KM_CHIPS = [[2, "Near me · 2 km"], [5, "Near me · 5 km"], [0, "Anywhere"]];
+// 0251: the filters behind the ⚲ button on Rent's search bar. One object,
+// owned by RentScreen, read by RentFind; `km: 0` means anywhere.
+var RENT_FIND_DEFAULT = { max: 0, km: 0, here: null, mapOn: false };
+function rentFindActive(f) { return !!(f && (f.max || (f.km && f.here) || f.mapOn)); }
+function rpChip(key, label, on, onClick) { return <button key={key} type="button" data-testid={`rent-bz-chip-${key}`} aria-pressed={on} onClick={onClick} style={{ border: on ? "none" : `1px solid ${T.line}`, borderRadius: 999, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink, whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>; }
+
+// 0251: what's to rent, inside Rent. Rent's own search bar and type chips
+// (RentScreen) drive it; this is the list, or the map, under them. It
+// used to be a screen of its own behind a second "Rent" card in Bazaar —
+// two doors called Rent, so now there is one.
+function RentFind({ q, type, filters, onCount, onToast }) {
+  const f = filters || RENT_FIND_DEFAULT;
   const [rows, setRows] = useState92(null);
   const [open, setOpen] = useState92(null);
   useEffect89(() => {
     let live = true;
     const t = setTimeout(async () => {
       try {
-        const r = await GloobalApi.searchRentListings({ q: q.trim(), type, max: max || "", ...(nearOn && here ? { lat: here.lat, lng: here.lng, km: 2 } : {}) });
-        if (live) setRows(r);
-      } catch (e) { if (live) setRows([]); }
+        const r = await GloobalApi.searchRentListings({ q: (q || "").trim(), type: type || "", max: f.max || "", ...(f.km && f.here ? { lat: f.here.lat, lng: f.here.lng, km: f.km } : {}) });
+        if (live) { setRows(r); if (onCount) onCount(r.length); }
+      } catch (e) { if (live) { setRows([]); if (onCount) onCount(0); } }
     }, 250);
     return () => { live = false; clearTimeout(t); };
-  }, [q, type, max, nearOn, here]);
-  const near = async () => {
-    if (nearOn) { setNearOn(false); return; }
-    if (here) { setNearOn(true); return; }
-    const seen = await captureBrowserGeo({ timeoutMs: 12000, highAccuracy: true });
-    if (seen && seen.status === LOCATION_STATUS.AVAILABLE) { setHere({ lat: seen.latitude, lng: seen.longitude }); setNearOn(true); } else if (onToast) onToast("Location is off, so Near me can't work.");
-  };
-  const chip = (key, label, on, onClick) => <button key={key} type="button" data-testid={`rent-bz-chip-${key}`} aria-pressed={on} onClick={onClick} style={{ border: on ? "none" : `1px solid ${T.line}`, borderRadius: 999, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink, whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>;
+  }, [q, type, f.max, f.km, f.here]);
   const shown = rows || [];
-  return <><RpScreen title={<span>GLOOBAL बाज़ार · Rent</span>} onBack={onClose} testId="rent-bazaar" z={335}>
-    <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.surface, borderRadius: 16, padding: "0 12px", boxShadow: T.shadowCard }}><RpSearch size={17} color={T.inkFaint} /><input data-testid="rent-bz-search" value={q} onChange={(e) => setQ(e.target.value.slice(0, 60))} placeholder="Rooms, flats, shops, a rent name…" style={{ ...rpInput, boxShadow: "none", padding: "12px 0", color: T.ink, background: "transparent" }} /></div>
-    <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>{chip("all", "All", !type, () => setType(""))}{RP_TYPES.map((t) => chip(t.key, t.label, type === t.key, () => setType(type === t.key ? "" : t.key)))}</div>
-    <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>{RP_MAX_CHIPS.map(([v, l]) => chip(`max-${v}`, l, max === v, () => setMax(v)))}{chip("near", "Near me · 2 km", nearOn, near)}{chip("map", mapOn ? "List" : "Map", mapOn, () => setMapOn(!mapOn))}</div>
-    {mapOn ? <RpPinMap pin={nearOn && here ? here : (shown[0] && Number.isFinite(shown[0].location.lat) ? shown[0].location : null)} readOnly height={330} pins={shown.filter((l) => Number.isFinite(l.location.lat)).map((l) => ({ id: l.id, lat: l.location.lat, lng: l.location.lng, label: `${Math.round(Number(l.rent) / 100) / 10}k` }))} onPick={(p) => setOpen(p.id)} /> : null}
-    {rows === null ? <div style={{ padding: 24, textAlign: "center", color: T.inkFaint, fontSize: 13 }}>Loading…</div> : shown.length === 0 ? <div style={{ background: T.surface, borderRadius: 18, padding: 20, textAlign: "center", boxShadow: T.shadowCard }}><b style={{ color: T.ink, fontSize: 13.5 }}>Nothing to rent here yet</b><div style={{ color: T.inkFaint, fontSize: 12, marginTop: 4 }}>Try fewer filters, or a bigger area.</div></div> : null}
-    {shown.map((l) => { const ty = rpType(l.type); return <button key={l.id} type="button" data-testid="rent-bz-row" onClick={() => setOpen(l.id)} className="v2-tap" style={{ border: "none", background: T.surface, borderRadius: 18, boxShadow: T.shadowCard, padding: 10, display: "flex", gap: 11, alignItems: "center", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{l.thumb ? <img src={l.thumb} alt="" style={{ width: 70, height: 70, borderRadius: 13, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ width: 70, height: 70, borderRadius: 13, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><ty.Icon size={26} color={T.accent} /></span>}<span style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 14, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</b><span style={{ display: "block", fontSize: 11.5, color: T.inkSoft, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{[l.handle, ty.label, Number.isFinite(l.distanceKm) ? `${l.distanceKm} km` : ""].filter(Boolean).join(" · ")}</span><span style={{ display: "block", fontSize: 15, fontWeight: 900, color: T.accent, marginTop: 2 }}>{rentFigure(l.rent, l.currency)}<span style={{ fontSize: 11, color: T.inkFaint, fontWeight: 700 }}> /month</span></span></span><RpNext size={16} color={T.inkFaint} /></button>; })}
-  </RpScreen>{open ? <RentListingPage id={open} onClose={() => setOpen(null)} onToast={onToast} /> : null}</>;
+  const ty = type ? rpType(type) : null;
+  const where = f.km && f.here ? `within ${f.km} km` : "";
+  return <div data-testid="rent-find" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 2px" }}><span data-testid="rent-find-title" style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft }}>{rows === null ? "Looking…" : `${shown.length} to rent`}{ty ? ` · ${ty.label}` : ""}{where ? ` · ${where}` : ""}</span>{f.max ? <span style={{ fontSize: 11.5, fontWeight: 800, color: T.accent }}>under {rentFigure(f.max, "INR")}</span> : null}</div>
+    {f.mapOn ? <RpPinMap pin={f.km && f.here ? f.here : (shown[0] && Number.isFinite(shown[0].location.lat) ? shown[0].location : null)} readOnly height={330} pins={shown.filter((l) => Number.isFinite(l.location.lat)).map((l) => ({ id: l.id, lat: l.location.lat, lng: l.location.lng, label: `${Math.round(Number(l.rent) / 100) / 10}k` }))} onPick={(p) => setOpen(p.id)} /> : null}
+    {rows !== null && shown.length === 0 ? <div style={{ background: T.surface, borderRadius: 18, padding: 20, textAlign: "center", boxShadow: T.shadowCard }}><b style={{ color: T.ink, fontSize: 13.5 }}>Nothing to rent here yet</b><div style={{ color: T.inkFaint, fontSize: 12, marginTop: 4 }}>Try another word, a different type, or a bigger area.</div></div> : null}
+    {shown.length ? <div style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}>{shown.map((l, i) => { const t = rpType(l.type); return <button key={l.id} type="button" data-testid="rent-bz-row" onClick={() => setOpen(l.id)} className="v2-tap" style={{ width: "100%", border: "none", borderTop: i ? `1px solid ${T.line}` : "none", background: "transparent", padding: "10px 12px", display: "flex", gap: 11, alignItems: "center", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{l.thumb ? <img src={l.thumb} alt="" style={{ width: 60, height: 60, borderRadius: 13, objectFit: "cover", flexShrink: 0 }} /> : <span style={{ width: 60, height: 60, borderRadius: 13, background: T.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><t.Icon size={24} color={T.accent} /></span>}<span style={{ flex: 1, minWidth: 0 }}><b style={{ display: "block", fontSize: 14, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</b><span style={{ display: "block", fontSize: 11.5, color: T.inkSoft, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{[l.handle, t.label, Number.isFinite(l.distanceKm) ? `${l.distanceKm} km` : ""].filter(Boolean).join(" · ")}</span><span style={{ display: "block", fontSize: 14.5, fontWeight: 900, color: T.accent, marginTop: 2 }}>{rentFigure(l.rent, l.currency)}<span style={{ fontSize: 11, color: T.inkFaint, fontWeight: 700 }}> /month</span></span></span><RpNext size={16} color={T.inkFaint} /></button>; })}</div> : null}
+    {open ? <RentListingPage id={open} onClose={() => setOpen(null)} onToast={onToast} /> : null}
+  </div>;
+}
+
+// 0251: the sheet behind ⚲ — rent up to, how far, list or map.
+function RentFilterSheet({ filters, count, onChange, onClose, onToast }) {
+  const f = filters || RENT_FIND_DEFAULT;
+  const [busy, setBusy] = useState92(false);
+  const set = (patch) => onChange({ ...f, ...patch });
+  const pickKm = async (km) => {
+    if (!km) { set({ km: 0 }); return; }
+    if (f.here) { set({ km }); return; }
+    setBusy(true);
+    const seen = await captureBrowserGeo({ timeoutMs: 12000, highAccuracy: true });
+    setBusy(false);
+    if (seen && seen.status === LOCATION_STATUS.AVAILABLE) set({ km, here: { lat: seen.latitude, lng: seen.longitude } });
+    else if (onToast) onToast("Location is off, so Near me can't work.");
+  };
+  const group = (label) => <div style={{ fontSize: 10.5, fontWeight: 900, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft, margin: "10px 2px 6px" }}>{label}</div>;
+  return <div data-testid="rent-filter-sheet" style={{ position: "fixed", inset: 0, zIndex: 330, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}><div data-testid="rent-filter-dim" onClick={onClose} aria-hidden="true" style={{ position: "absolute", inset: 0, background: `rgba(${T.inkRgb},0.42)` }} /><div style={{ position: "relative", background: T.bg, borderRadius: "24px 24px 0 0", padding: "16px 18px calc(18px + env(safe-area-inset-bottom, 0px))", boxShadow: T.shadowRaised }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><b style={{ fontSize: 16, color: T.ink, fontFamily: T.fontDisplay }}>Filter</b><button type="button" data-testid="rent-filter-reset" onClick={() => onChange({ ...RENT_FIND_DEFAULT, here: f.here })} style={{ border: "none", background: "none", fontSize: 12.5, fontWeight: 800, color: T.accent, cursor: "pointer", fontFamily: "inherit" }}>Reset</button></div>
+    {group("Rent up to")}<div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>{RP_MAX_CHIPS.map(([v, l]) => rpChip(`max-${v}`, l, f.max === v, () => set({ max: v })))}</div>
+    {group("How far")}<div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>{RP_KM_CHIPS.map(([v, l]) => rpChip(`km-${v}`, busy && v ? "Finding you…" : l, v ? f.km === v && !!f.here : !f.km, () => pickKm(v)))}</div>
+    {group("Show as")}<div style={{ display: "flex", background: T.surfaceAlt, borderRadius: 14, padding: 4 }}>{[["list", "List", RpListIcon], ["map", "Map", RpMapIcon]].map(([k, l, I]) => { const on = f.mapOn === (k === "map"); return <button key={k} type="button" data-testid={`rent-filter-${k}`} aria-pressed={on} onClick={() => set({ mapOn: k === "map" })} style={{ flex: 1, border: "none", borderRadius: 11, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", background: on ? T.surface : "transparent", color: on ? T.ink : T.inkSoft, boxShadow: on ? T.shadowCard : "none" }}><I size={15} />{l}</button>; })}</div>
+    <RpButton testId="rent-filter-show" onClick={onClose} style={{ width: "100%", marginTop: 14 }}>{Number.isFinite(count) ? `Show ${count} to rent` : "Show what's to rent"}</RpButton>
+  </div></div>;
 }
 
 // One listing, as anybody sees it: photos, cost and conditions, the pin.

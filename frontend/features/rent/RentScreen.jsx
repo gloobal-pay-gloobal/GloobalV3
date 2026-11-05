@@ -21,7 +21,7 @@
 // Pay now opens the ordinary Send screen with the person and the amount
 // filled in and the place attached, so it is counted on the place.
 import { useState as useState79, useEffect as useEffect74 } from "react";
-import { Home as RentHome, KeyRound as RentKey, Plus as RentPlus, X as RentX, ChevronRight as RentNext, Bell as RentBell, Zap as RentAuto, ShieldCheck as RentSafe, ArrowUpDown as RentSendOnce, ArrowDown as RentGet, ClipboardPaste as RentPaste, Check as RentCheck, Loader as RentLoader } from "lucide-react";
+import { Home as RentHome, KeyRound as RentKey, Plus as RentPlus, X as RentX, ChevronRight as RentNext, Bell as RentBell, Zap as RentAuto, ShieldCheck as RentSafe, ArrowUpDown as RentSendOnce, ArrowDown as RentGet, ClipboardPaste as RentPaste, Check as RentCheck, Loader as RentLoader, Search as RentSearch, SlidersHorizontal as RentFilter } from "lucide-react";
 
 var RENT_DAY_PICKS = [1, 5, 10, 15];
 var RENT_ID_LENGTH = 12;
@@ -260,6 +260,17 @@ function RentScreen({ onClose, onSendOnce, onGetRent, onPayPerson, onToast, myGl
   useEffect74(() => { if (startLink) setView({ name: "link", id: startLink }); }, [startLink]);
   // 0232: requests and connections, alongside the places.
   const [links, setLinks] = useState79([]);
+  // 0251: what's to rent lives here too. A word, a type chip or a filter
+  // turns the home into the list of places to rent; clearing brings the
+  // home back. There used to be a second "Rent" card in Bazaar for this.
+  const [findQ, setFindQ] = useState79("");
+  const [findType, setFindType] = useState79("");
+  const [findF, setFindF] = useState79(RENT_FIND_DEFAULT);
+  const [findBrowse, setFindBrowse] = useState79(false);
+  const [filterOpen, setFilterOpen] = useState79(false);
+  const [findCount, setFindCount] = useState79(null);
+  const finding = !!(findQ.trim() || findType || findBrowse || rentFindActive(findF));
+  const clearFind = () => { setFindQ(""); setFindType(""); setFindBrowse(false); setFindF({ ...RENT_FIND_DEFAULT, here: findF.here }); setFindCount(null); };
   const load = () => {
     GloobalApi.getRentLinks().then((l) => setLinks(Array.isArray(l) ? l : [])).catch(() => setLinks([]));
     return GloobalApi.getRentPlaces().then(setPlaces).catch(() => setPlaces([]));
@@ -279,15 +290,20 @@ function RentScreen({ onClose, onSendOnce, onGetRent, onPayPerson, onToast, myGl
         const monthly = list.filter((p) => p.kind === "live" && p.active !== false).reduce((a, p) => a + rentDue(p), 0);
         const asks = links.filter(rentLinkNeedsShowing);
         const ccy = (list[0] && list[0].currency) || "INR";
+        const chip = (key, label, on, onClick) => <button key={key} type="button" data-testid={`rent-find-type-${key}`} aria-pressed={on} onClick={onClick} style={{ border: on ? "none" : `1px solid ${T.line}`, borderRadius: 999, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink, whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>;
         return <div style={{ display: "flex", flexDirection: "column", gap: 13, minHeight: "100%" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Rent</span><button type="button" onClick={onClose} aria-label="Close" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RentX size={16} color={T.inkSoft} /></button></div>
+          {/* 0251: find a place to rent — the search bar, the type chips, the filter. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.surface, borderRadius: 16, padding: "0 6px 0 12px", boxShadow: T.shadowCard }}><RentSearch size={17} color={T.inkFaint} /><input data-testid="rent-find-search" value={findQ} onChange={(e) => setFindQ(e.target.value.slice(0, 60))} placeholder="Rooms, flats, shops, a rent name…" style={{ flex: 1, minWidth: 0, border: "none", padding: "12px 0", fontSize: 14.5, fontWeight: 700, color: T.ink, background: "transparent", fontFamily: "inherit", outline: "none" }} />{finding ? <button type="button" data-testid="rent-find-clear" aria-label="Clear" onClick={clearFind} style={{ width: 34, height: 34, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RentX size={14} color={T.inkSoft} /></button> : null}<button type="button" data-testid="rent-find-filter" aria-label="Filter" aria-pressed={rentFindActive(findF)} onClick={() => setFilterOpen(true)} style={{ width: 34, height: 34, borderRadius: 12, border: "none", background: rentFindActive(findF) ? T.accent : T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RentFilter size={16} color={rentFindActive(findF) ? "#fff" : T.accent} /></button></div>
+          <div data-testid="rent-find-chips" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, margin: "-5px 0 -3px" }}>{chip("all", "All", finding && !findType, () => { setFindType(""); setFindBrowse(true); })}{RP_TYPES.map((t) => chip(t.key, t.label, findType === t.key, () => setFindType(findType === t.key ? "" : t.key)))}</div>
+          {finding ? <RentFind q={findQ} type={findType} filters={findF} onCount={setFindCount} onToast={onToast} /> : <>
           {places === null ? <div style={{ padding: 30, textAlign: "center" }}><RentLoader size={18} color={T.inkFaint} style={{ animation: "spin 0.9s linear infinite" }} /></div> : null}
           {asks.length ? <><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}><span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft }}>Requests</span><span style={{ fontSize: 11.5, fontWeight: 800, color: T.accent }}>{asks.length}</span></div>
             <div data-testid="rent-requests" style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}>{asks.map((l, i) => <RentLinkRow key={l.id} link={l} first={i === 0} onOpen={() => openLink(l)} />)}</div></> : null}
           {upcoming ? <RentHero place={upcoming} onPay={() => pay(upcoming)} onOpen={() => setView({ name: "place", id: upcoming.id })} /> : null}
           {list.length ? <><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}><span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft }}>Your places</span>{monthly ? <span style={{ fontSize: 12, fontWeight: 800, color: T.accent }}>{rentFigure(monthly, ccy)} a month</span> : null}</div>
             <div style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}>{list.map((p, i) => <RentRow key={p.id} p={p} first={i === 0} onOpen={() => setView({ name: "place", id: p.id })} />)}</div></> : places !== null ? <div style={{ background: T.surface, borderRadius: 20, padding: "20px 16px", textAlign: "center", boxShadow: T.shadowCard }}><div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>No place saved yet</div><div style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600, marginTop: 4, lineHeight: 1.45 }}>Save a place you live and it can pay rent by itself. Save a place you're creating and see when rent arrives.</div></div> : null}
-          {/* 0249: an owner's rent profile, found in GLOOBAL Bazaar → Rent. */}
+          {/* 0249: an owner's rent profile, found by the search bar above (0251). */}
           <RentProfileEntry key={view.name === "home" ? "home" : "away"} onOpen={() => setView({ name: "profile" })} />
           <div data-testid="rent-add" style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, padding: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 8px 10px" }}><span style={{ width: 34, height: 34, borderRadius: 12, background: T.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><RentPlus size={18} strokeWidth={3} /></span><b style={{ fontSize: 14.5, fontWeight: 800, color: T.ink }}>Add a place</b></div>
@@ -296,7 +312,8 @@ function RentScreen({ onClose, onSendOnce, onGetRent, onPayPerson, onToast, myGl
           <div style={{ display: "flex", gap: 10, marginTop: "auto" }}>
             <button type="button" aria-label="Send Rent" onClick={onSendOnce} className="v2-tap" style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, border: "none", borderRadius: 16, padding: 12, background: T.surfaceAlt, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}><span style={{ width: 32, height: 32, borderRadius: 10, background: T.surface, display: "flex", alignItems: "center", justifyContent: "center", color: T.accent, flexShrink: 0 }}><RentSendOnce size={15} /></span><span><b style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink }}>Pay rent once</b><span style={{ fontSize: 10.5, color: T.inkFaint, fontWeight: 600 }}>Without saving</span></span></button>
             <button type="button" aria-label="Accept Rent" onClick={onGetRent} className="v2-tap" style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, border: "none", borderRadius: 16, padding: 12, background: T.surfaceAlt, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}><span style={{ width: 32, height: 32, borderRadius: 10, background: T.surface, display: "flex", alignItems: "center", justifyContent: "center", color: T.accent, flexShrink: 0 }}><RentGet size={15} /></span><span><b style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: T.ink }}>Get rent</b><span style={{ fontSize: 10.5, color: T.inkFaint, fontWeight: 600 }}>Show your QR</span></span></button>
-          </div>
+          </div></>}
+          {filterOpen ? <RentFilterSheet filters={findF} count={findCount} onChange={(f) => { setFindF(f); setFindBrowse(true); }} onClose={() => setFilterOpen(false)} onToast={onToast} /> : null}
         </div>;
       })();
   return <div data-testid="rent-screen" style={{ position: "fixed", inset: 0, zIndex: 60, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px calc(24px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column" }}>{body}</div>{view.name === "profile" ? <RentProfileFlow onClose={() => setView({ name: "home" })} onToast={onToast} /> : null}</div>;

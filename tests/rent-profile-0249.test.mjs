@@ -28,7 +28,23 @@ test("a listing carries the same terms a connected rent does, and an exact pin",
 test("Bazaar shows only active listings, by type, rent and distance", () => {
   assert.match(srv, /const match = \{ status: 'active' \};/);
   assert.match(srv, /match\['terms\.rent'\] = \{ \$lte: max \};/);
-  assert.match(readSource("frontend/features/bazaar/bazaar.jsx"), /data-testid="bazaar-rent-entry"/);
+  // 0251: the second Rent card in Bazaar is gone; the search is inside Rent.
+  assert.doesNotMatch(readSource("frontend/features/bazaar/bazaar.jsx"), /data-testid="bazaar-rent-entry"|RentBazaarScreen/);
+});
+
+test("0251: one Rent — its search bar, type chips and filter find what is to rent", () => {
+  const rs = readSource("frontend/features/rent/RentScreen.jsx");
+  assert.match(rs, /data-testid="rent-find-search"/);
+  assert.match(rs, /data-testid=\{`rent-find-type-\$\{key\}`\}/);
+  assert.match(rs, /data-testid="rent-find-filter"/);
+  assert.match(rs, /const finding = !!\(findQ\.trim\(\) \|\| findType \|\| findBrowse \|\| rentFindActive\(findF\)\);/);
+  assert.match(rs, /\{finding \? <RentFind q=\{findQ\} type=\{findType\} filters=\{findF\}/, "results replace own rent while finding");
+  assert.match(rs, /const clearFind = \(\) => \{ setFindQ\(""\); setFindType\(""\); setFindBrowse\(false\);/, "clear brings own rent back");
+  assert.doesNotMatch(ui, /function RentBazaarScreen/);
+  assert.match(ui, /function RentFind\(\{ q, type, filters, onCount, onToast \}\)/);
+  assert.match(ui, /function RentFilterSheet\(/);
+  assert.match(ui, /RP_KM_CHIPS = \[\[2, "Near me · 2 km"\], \[5, "Near me · 5 km"\], \[0, "Anywhere"\]\]/);
+  assert.match(ui, /\$\{count\} to rent/);
 });
 
 test("a request from a listing starts from the listing's terms", () => {

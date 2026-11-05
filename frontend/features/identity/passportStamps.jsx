@@ -1,6 +1,6 @@
 // src/features/identity/passportStamps.jsx
 import { useState as useState91, useEffect as useEffect88, useRef as useRef50, useMemo as useMemo22 } from "react";
-import { X as PsCloseIcon, Plus as PsZoomInIcon, Minus as PsZoomOutIcon, ReceiptText as PsReceiptIcon, Plane as PsPlane, PlaneTakeoff as PsPlaneTakeoff, TrainFront as PsTrain, Bus as PsBus, Ship as PsShip, Car as PsCar, CableCar as PsCableCar, Globe as PsGlobe, MountainSnow as PsMountain, TreePalm as PsPalm, Landmark as PsLandmark } from "lucide-react";
+import { X as PsCloseIcon, ReceiptText as PsReceiptIcon, Plane as PsPlane, PlaneTakeoff as PsPlaneTakeoff, TrainFront as PsTrain, Bus as PsBus, Ship as PsShip, Car as PsCar, CableCar as PsCableCar, Globe as PsGlobe, MountainSnow as PsMountain, TreePalm as PsPalm, Landmark as PsLandmark } from "lucide-react";
 
 // ── A STAMP FOR EVERY PAYMENT THAT CROSSED A BORDER (0243) ──────────────
 //
@@ -144,6 +144,13 @@ var PASSPORT_PAPER = {
 // and drag the paper to look around. A tap — a touch that did not move —
 // opens the payment.
 //
+// 0250, from the founder's phone with 47 stamps: no zoom buttons (pinch
+// only); the paper is the width of the screen and SCROLLS down — it never
+// slides left and right unless pinched bigger — so stamps keep their size
+// instead of all being squeezed onto one screen; they drift slowly; and a
+// tap opens the payment every time (the tap's own click was landing on the
+// card's backdrop and closing it again).
+//
 // The simulation writes straight to each stamp's style on every frame
 // rather than through React state, which would re-render every stamp sixty
 // times a second.
@@ -154,16 +161,34 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
   const worldRef = useRef50(null);
   const nodesRef = useRef50([]);
   const simRef = useRef50(null);
-  const viewRef = useRef50({ s: 1, tx: 0, ty: 0, min: 0.4, max: 3 });
+  const viewRef = useRef50({ s: 1, tx: 0, ty: 0, min: 1, max: 2.5 });
   const [picked, setPicked] = useState91(null);
   const pickedRef = useRef50(null);
   pickedRef.current = picked;
-  const [zoomShown, setZoomShown] = useState91(100);
+  const pickedAtRef = useRef50(0);
+  const thumbRef = useRef50(null);
+  const glideRef = useRef50(0);
 
+  // Kept inside the paper: never past the top or the bottom, and never
+  // sideways while the paper is the width of the screen.
   const applyView = () => {
     const v = viewRef.current;
+    const area = areaRef.current;
+    const sim = simRef.current;
+    if (area && sim) {
+      const aw = area.clientWidth, ah = area.clientHeight;
+      const ww = sim.W * v.s, wh = sim.H * v.s;
+      v.tx = ww <= aw ? (aw - ww) / 2 : Math.min(0, Math.max(aw - ww, v.tx));
+      v.ty = wh <= ah ? 0 : Math.min(0, Math.max(ah - wh, v.ty));
+      if (thumbRef.current) {
+        const show = wh > ah + 4;
+        const h = Math.max(36, (ah / wh) * ah);
+        thumbRef.current.style.opacity = show ? "1" : "0";
+        thumbRef.current.style.height = `${h}px`;
+        thumbRef.current.style.transform = `translateY(${show ? (-v.ty / (wh - ah)) * (ah - h) : 0}px)`;
+      }
+    }
     if (worldRef.current) worldRef.current.style.transform = `translate(${v.tx}px, ${v.ty}px) scale(${v.s})`;
-    setZoomShown(Math.round(v.s * 100));
   };
   const zoomAt = (factor, px, py) => {
     const v = viewRef.current;
@@ -178,35 +203,34 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
   useEffect88(() => {
     const area = areaRef.current;
     if (!area) return undefined;
-    const W0 = area.clientWidth || 360;
+    const W = area.clientWidth || 360;
     const H0 = area.clientHeight || 600;
-    // Room for every stamp: the paper grows with the count, and the view
-    // starts zoomed out just enough to show all of it.
-    const need = dressed.length * 150 * 140;
-    const grow = Math.max(1, Math.sqrt(need / (W0 * H0)));
-    const W = Math.round(W0 * grow);
-    const H = Math.round(H0 * grow);
+    // The paper is the width of the screen and as tall as the stamps need,
+    // two or more to a row at their own size — then it scrolls.
+    const cols = Math.max(2, Math.floor((W - 12) / 150));
+    const rowH = 150;
+    const rows = Math.ceil(dressed.length / cols);
+    const H = Math.max(H0, rows * rowH + 60);
     if (worldRef.current) { worldRef.current.style.width = `${W}px`; worldRef.current.style.height = `${H}px`; }
-    const fit = 1 / grow;
-    viewRef.current = { s: fit, tx: 0, ty: 0, min: Math.min(fit, 1) * 0.8, max: 3 };
-    applyView();
     const still = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const cols = Math.max(1, Math.floor(W / 150));
     const bodies = dressed.map((s, i) => {
       const [w, h] = PASSPORT_STAMP_BOX[s.shape] || PASSPORT_STAMP_BOX.circle;
       const h2 = passportHash(`${s.referenceId}-${i}`);
       const col = i % cols, row = Math.floor(i / cols);
       const ang = ((h2 % 360) / 180) * Math.PI;
-      const speed = still ? 0 : 10 + (h2 % 14);
+      // Slow: a few pixels a second, so they wander rather than swim.
+      const speed = still ? 0 : 3 + (h2 % 5);
       return {
-        x: Math.min(W - w / 2, 80 + col * 150 + ((h2 >>> 4) % 30)),
-        y: Math.min(H - h / 2, 70 + row * 140 + ((h2 >>> 9) % 30)),
+        x: Math.max(w / 2, Math.min(W - w / 2, ((col + 0.5) * W) / cols + (((h2 >>> 4) % 21) - 10))),
+        y: Math.max(h / 2, Math.min(H - h / 2, 70 + row * rowH + (((h2 >>> 9) % 21) - 10))),
         vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
         w, h, r: Math.min(w, h) / 2 - 4, rot: s.rot, blink: 0, held: false
       };
     });
-    const touching = new Set();
     simRef.current = { bodies, W, H, still };
+    viewRef.current = { s: 1, tx: 0, ty: 0, min: 1, max: 2.5 };
+    applyView();
+    const touching = new Set();
     let last = performance.now();
     let raf = 0;
     const tick = (now) => {
@@ -222,8 +246,8 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
         if (b.y > H - hh) { b.y = H - hh; b.vy = -Math.abs(b.vy); }
         // A thrown stamp slows to a drift, and a drift never quite stops.
         const sp = Math.hypot(b.vx, b.vy);
-        if (sp > 26) { b.vx *= 0.985; b.vy *= 0.985; }
-        else if (!still && sp < 8) { b.vx += (Math.random() - 0.5) * 2; b.vy += (Math.random() - 0.5) * 2; }
+        if (sp > 10) { b.vx *= 0.97; b.vy *= 0.97; }
+        else if (!still && sp < 2) { b.vx += (Math.random() - 0.5) * 0.6; b.vy += (Math.random() - 0.5) * 0.6; }
       }
       for (let i = 0; i < bodies.length; i += 1) {
         for (let k = i + 1; k < bodies.length; k += 1) {
@@ -266,8 +290,10 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
     const v = viewRef.current;
     return { x: (clientX - rect.left - v.tx) / v.s, y: (clientY - rect.top - v.ty) / v.s, px: clientX - rect.left, py: clientY - rect.top };
   };
+  const stopGlide = () => { if (glideRef.current) cancelAnimationFrame(glideRef.current); glideRef.current = 0; };
   const onDown = (e) => {
     if (pickedRef.current) return;
+    stopGlide();
     areaRef.current.setPointerCapture?.(e.pointerId);
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const sim = simRef.current;
@@ -285,7 +311,7 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
       body.held = true; body.vx = 0; body.vy = 0;
       gesture.current = { kind: "stamp", idx, body, ox: at.x - body.x, oy: at.y - body.y, sx: e.clientX, sy: e.clientY, t: performance.now(), lx: at.x, ly: at.y, lt: performance.now(), moved: false };
     } else {
-      gesture.current = { kind: "pan", sx: e.clientX, sy: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty };
+      gesture.current = { kind: "pan", sx: e.clientX, sy: e.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty, ly: e.clientY, lt: performance.now(), vy: 0 };
     }
   };
   const onMove = (e) => {
@@ -303,7 +329,7 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
     }
     if (g.kind === "stamp") {
       const at = toWorld(e.clientX, e.clientY);
-      if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 6) g.moved = true;
+      if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 9) g.moved = true;
       const now = performance.now();
       const dtm = Math.max(0.016, (now - g.lt) / 1000);
       g.body.vx = (at.x - g.lx) / dtm; g.body.vy = (at.y - g.ly) / dtm;
@@ -314,6 +340,9 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
     if (g.kind === "pan") {
       viewRef.current.tx = g.tx + (e.clientX - g.sx);
       viewRef.current.ty = g.ty + (e.clientY - g.sy);
+      const now = performance.now();
+      g.vy = (e.clientY - g.ly) / Math.max(8, now - g.lt);
+      g.ly = e.clientY; g.lt = now;
       applyView();
     }
   };
@@ -324,7 +353,18 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
       g.body.held = false;
       const sp = Math.hypot(g.body.vx, g.body.vy);
       if (sp > 600) { g.body.vx *= 600 / sp; g.body.vy *= 600 / sp; }
-      if (!g.moved && performance.now() - g.t < 450) { g.body.vx = 0; g.body.vy = 0; setPicked(dressed[g.idx]); }
+      if (!g.moved && performance.now() - g.t < 650) { g.body.vx = 0; g.body.vy = 0; pickedAtRef.current = performance.now(); setPicked(dressed[g.idx]); }
+    }
+    // A flick keeps scrolling for a moment, like any list.
+    if (g && g.kind === "pan" && pointers.current.size === 0 && Math.abs(g.vy) > 0.15) {
+      let vy = g.vy * 16;
+      const step = () => {
+        vy *= 0.94;
+        if (Math.abs(vy) < 0.4) { glideRef.current = 0; return; }
+        viewRef.current.ty += vy; applyView();
+        glideRef.current = requestAnimationFrame(step);
+      };
+      glideRef.current = requestAnimationFrame(step);
     }
     if (pointers.current.size === 0) gesture.current = null;
     else if (g && g.kind === "pinch") {
@@ -332,20 +372,17 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
       gesture.current = { kind: "pan", sx: p.x, sy: p.y, tx: viewRef.current.tx, ty: viewRef.current.ty };
     }
   };
+  // A mouse wheel scrolls; with Ctrl (a trackpad pinch) it zooms.
   const onWheel = (e) => {
     const rect = areaRef.current.getBoundingClientRect();
-    zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - rect.left, e.clientY - rect.top);
-  };
-  const zoomButton = (factor) => {
-    const area = areaRef.current;
-    zoomAt(factor, (area ? area.clientWidth : 360) / 2, (area ? area.clientHeight : 600) / 2);
+    if (e.ctrlKey) { zoomAt(e.deltaY < 0 ? 1.08 : 1 / 1.08, e.clientX - rect.left, e.clientY - rect.top); return; }
+    viewRef.current.ty -= e.deltaY; viewRef.current.tx -= e.deltaX; applyView();
   };
 
   const p = picked;
   const pickedCountry = p && typeof COUNTRY_BY_ISO === "object" && COUNTRY_BY_ISO ? COUNTRY_BY_ISO[String(p.iso || "").toUpperCase()] : null;
   const pickedDate = p && p.at ? new Date(p.at) : null;
   const canOpen = Boolean(p && p.referenceId && canOpenReceipt && canOpenReceipt(p.referenceId));
-  const zoomBtnStyle = { width: 42, height: 42, borderRadius: "50%", border: "none", background: T.surface, boxShadow: `0 4px 14px rgba(${T.inkRgb},0.18)`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" };
 
   return <div data-testid="passport-stamps-screen" style={{ position: "fixed", inset: 0, zIndex: 330, display: "flex", flexDirection: "column", ...PASSPORT_PAPER }}><style>{`
       [data-stamp-index][data-blink="1"] > span { animation: passportBlink 0.7s ease-in-out; }
@@ -353,7 +390,7 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
       @media (prefers-reduced-motion: reduce) { [data-stamp-index][data-blink="1"] > span { animation-duration: 0.01s; } }
     `}</style><PassportInkFilter id="gloobalStampInkAll" /><div
     style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(16px + env(safe-area-inset-top, 0px)) 16px 10px", flexShrink: 0 }}
-  ><NavBackButton onClick={onClose} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 16, fontWeight: 800, color: "#3D3527", fontFamily: T.fontDisplay }}>Your stamps</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "#8C836F", marginTop: 1 }}>{`${dressed.length} ${dressed.length === 1 ? "stamp" : "stamps"} · pinch to zoom · drag them · tap one`}</span></span></div><div
+  ><NavBackButton onClick={onClose} /><span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 16, fontWeight: 800, color: "#3D3527", fontFamily: T.fontDisplay }}>Your stamps</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "#8C836F", marginTop: 1 }}>{`${dressed.length} ${dressed.length === 1 ? "stamp" : "stamps"} · scroll · pinch to zoom · tap one`}</span></span></div><div
     ref={areaRef}
     data-testid="passport-stamps-area"
     onPointerDown={onDown}
@@ -362,7 +399,7 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
     onPointerCancel={onUp}
     onWheel={onWheel}
     style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", touchAction: "none", cursor: "grab" }}
-  ><div ref={worldRef} style={{ position: "absolute", left: 0, top: 0, transformOrigin: "0 0" }}>{dressed.map((s, i) => <div
+  ><div ref={worldRef} data-testid="passport-stamps-world" style={{ position: "absolute", left: 0, top: 0, transformOrigin: "0 0" }}>{dressed.map((s, i) => <div
     key={s.referenceId || i}
     ref={(el) => { nodesRef.current[i] = el; }}
     data-stamp-index={i}
@@ -370,8 +407,9 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
     style={{ position: "absolute", left: 0, top: 0, cursor: "pointer", willChange: "transform" }}
   ><PassportStamp stamp={s} filterId="gloobalStampInkAll" /></div>)}</div>{dressed.length === 0 && <div
     style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 40px", textAlign: "center", fontSize: 13, color: "#A79F8C", lineHeight: 1.6 }}
-  >Pay somebody in another country and your first stamp lands here.</div>}<div style={{ position: "absolute", right: 14, bottom: "calc(16px + env(safe-area-inset-bottom, 0px))", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}><button type="button" aria-label="Zoom in" data-testid="passport-zoom-in" onPointerDown={(e) => e.stopPropagation()} onClick={() => zoomButton(1.25)} style={zoomBtnStyle}><PsZoomInIcon size={18} color={T.ink} /></button><span data-testid="passport-zoom" style={{ fontSize: 10.5, fontWeight: 800, color: "#8C836F" }}>{zoomShown}%</span><button type="button" aria-label="Zoom out" data-testid="passport-zoom-out" onPointerDown={(e) => e.stopPropagation()} onClick={() => zoomButton(0.8)} style={zoomBtnStyle}><PsZoomOutIcon size={18} color={T.ink} /></button></div></div>{p && <div
-    onClick={() => setPicked(null)}
+  >Pay somebody in another country and your first stamp lands here.</div>}<span ref={thumbRef} data-testid="passport-scroll-thumb" aria-hidden="true" style={{ position: "absolute", right: 3, top: 0, width: 4, borderRadius: 2, background: "rgba(61,53,39,0.28)", opacity: 0, transition: "opacity 0.2s ease", pointerEvents: "none" }} /></div>{p && <div
+    data-testid="passport-stamp-info-dim"
+    onClick={() => { if (performance.now() - pickedAtRef.current > 600) setPicked(null); }}
     style={{ position: "fixed", inset: 0, zIndex: 335, background: "rgba(20,16,10,0.35)", display: "flex", alignItems: "flex-end" }}
   ><div
     data-testid="passport-stamp-info"

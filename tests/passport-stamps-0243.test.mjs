@@ -55,8 +55,8 @@ test("the server counts every payment sent, never money received", () => {
 test("the screen: blink on touch, drag, pinch, zoom buttons, tap for the payment", () => {
   assert.match(src, /if \(!touching\.has\(key\)\) \{ touching\.add\(key\); a\.blink = now \+ 700; c\.blink = now \+ 700; \}/);
   assert.match(src, /kind: "pinch"/);
-  assert.match(src, /data-testid="passport-zoom-in"/);
-  assert.match(src, /if \(!g\.moved && performance\.now\(\) - g\.t < 450\)/);
+  assert.doesNotMatch(src, /passport-zoom-in/, "0250: pinch only, no zoom buttons");
+  assert.match(src, /if \(!g\.moved && performance\.now\(\) - g\.t < 650\)/);
   assert.match(src, /data-testid="passport-open-receipt"/);
   assert.match(src, /prefers-reduced-motion: reduce/);
 });
@@ -64,4 +64,12 @@ test("the screen: blink on touch, drag, pinch, zoom buttons, tap for the payment
 test("it is in the bundle after the profile that opens it", () => {
   const b = readSource("build_app.mjs");
   assert.ok(b.indexOf('"features/identity/passportStamps.jsx"') > b.indexOf('"features/identity/PersonalDetailsScreen.jsx"'));
+});
+
+test("0250: the paper scrolls down at the stamps' own size, never sideways, and a tap stays open", () => {
+  assert.match(src, /const cols = Math\.max\(2, Math\.floor\(\(W - 12\) \/ 150\)\);/);
+  assert.match(src, /v\.tx = ww <= aw \? \(aw - ww\) \/ 2 : Math\.min\(0, Math\.max\(aw - ww, v\.tx\)\);/);
+  assert.match(src, /viewRef\.current = \{ s: 1, tx: 0, ty: 0, min: 1, max: 2\.5 \};/);
+  assert.match(src, /const speed = still \? 0 : 3 \+ \(h2 % 5\);/, "slow");
+  assert.match(src, /if \(performance\.now\(\) - pickedAtRef\.current > 600\) setPicked\(null\);/, "the tap's own click doesn't close the card");
 });

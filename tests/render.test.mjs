@@ -108,7 +108,7 @@ before(async () => {
 
   fs.writeFileSync(
     path.join(tmp, "index.html"),
-    '<!doctype html><html><body style="margin:0"><div id="root"></div><script src="app.js"></script></body></html>'
+    '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0"><div id="root"></div><script src="app.js"></script></body></html>'
   );
 
   try {

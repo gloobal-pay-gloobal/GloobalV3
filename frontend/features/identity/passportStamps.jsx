@@ -166,7 +166,6 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
   const pickedRef = useRef50(null);
   pickedRef.current = picked;
   const pickedAtRef = useRef50(0);
-  const thumbRef = useRef50(null);
   const glideRef = useRef50(0);
 
   // Kept inside the paper: never past the top or the bottom, and never
@@ -180,13 +179,6 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
       const ww = sim.W * v.s, wh = sim.H * v.s;
       v.tx = ww <= aw ? (aw - ww) / 2 : Math.min(0, Math.max(aw - ww, v.tx));
       v.ty = wh <= ah ? 0 : Math.min(0, Math.max(ah - wh, v.ty));
-      if (thumbRef.current) {
-        const show = wh > ah + 4;
-        const h = Math.max(36, (ah / wh) * ah);
-        thumbRef.current.style.opacity = show ? "1" : "0";
-        thumbRef.current.style.height = `${h}px`;
-        thumbRef.current.style.transform = `translateY(${show ? (-v.ty / (wh - ah)) * (ah - h) : 0}px)`;
-      }
     }
     if (worldRef.current) worldRef.current.style.transform = `translate(${v.tx}px, ${v.ty}px) scale(${v.s})`;
   };
@@ -407,7 +399,7 @@ function PassportStampsScreen({ stamps, onClose, ownCurrency, canOpenReceipt, on
     style={{ position: "absolute", left: 0, top: 0, cursor: "pointer", willChange: "transform" }}
   ><PassportStamp stamp={s} filterId="gloobalStampInkAll" /></div>)}</div>{dressed.length === 0 && <div
     style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 40px", textAlign: "center", fontSize: 13, color: "#A79F8C", lineHeight: 1.6 }}
-  >Pay somebody in another country and your first stamp lands here.</div>}<span ref={thumbRef} data-testid="passport-scroll-thumb" aria-hidden="true" style={{ position: "absolute", right: 3, top: 0, width: 4, borderRadius: 2, background: "rgba(61,53,39,0.28)", opacity: 0, transition: "opacity 0.2s ease", pointerEvents: "none" }} /></div>{p && <div
+  >Pay somebody in another country and your first stamp lands here.</div>}</div>{p && <div
     data-testid="passport-stamp-info-dim"
     onClick={() => { if (performance.now() - pickedAtRef.current > 600) setPicked(null); }}
     style={{ position: "fixed", inset: 0, zIndex: 335, background: "rgba(20,16,10,0.35)", display: "flex", alignItems: "flex-end" }}

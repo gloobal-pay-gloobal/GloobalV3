@@ -845,9 +845,9 @@ function CreatorSetupScreen({
        shop's address from the kitchen somebody cooks in, and the cost of
        guessing wrong falls entirely on the person who typed it. */
   }<CreatorAddressFields value={addressParts} onChange={setAddressParts} countryIso={countryIso} />{switchRow(
-    "Show this to people who pay me",
-    addressPublic ? "Anybody who opens your creator page sees this address and gets Directions to your pin." : "Only you can see this. Nobody paying you will.",
-    addressPublic, () => setAddressPublic((v) => !v), "Show my address to people who pay me"
+    <>Show on <GloobalWordmark /> बाज़ार map</>,
+    addressPublic ? "Customers can see this address and your pin, on the map and on your page. Turn this off if it's your home." : "Only you can see this. Your store stays in बाज़ार's list, but not on the map.",
+    addressPublic, () => setAddressPublic((v) => !v), "Show my store on the GLOOBAL बाज़ार map"
   )}</>)}{section("Open", ClockSu, <>{
     /* Three presets for what most shops are, and the full grid behind the
        third. "Don't show" is a real answer: a shop with no hours shows no

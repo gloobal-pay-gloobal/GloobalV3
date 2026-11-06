@@ -1,0 +1,496 @@
+{
+ "lang": "de",
+ "cards": {
+  "send-how": {
+   "q": "Wie sende ich Geld?",
+   "asks": ["Geld senden", "Geld schicken", "wie schicke ich Geld", "wie kann ich jemandem Geld schicken", "jemanden bezahlen", "Geld an einen Freund überweisen", "Geld an eine Telefonnummer senden", "Geld per GLOOBAL ID senden", "eine Zahlung machen", "wie bezahle ich eine Person", "Geld ueberweisen", "wie überweise ich", "Gled senden", "Freund bezahlen"],
+   "steps": [
+    "Tippen Sie auf Home auf **Send**.",
+    "Suchen Sie die Person über ihre GLOOBAL ID oder wechseln Sie zu ihrer Telefonnummer. Sie können auch auf Home auf **Scanner** tippen und ihren Code scannen.",
+    "Geben Sie den Betrag ein und tippen Sie auf **Send**. Wählen Sie dann, womit Sie bezahlen, zum Beispiel **GLOOBAL Bank**.",
+    "Bestätigen Sie mit Ihrer PIN (und mit Fingerabdruck oder Face ID, wenn Ihr Telefon danach fragt). Zahlungen zwischen GLOOBAL-Konten kommen sofort bei der Person an."
+   ]
+  },
+  "send-abroad": {
+   "q": "Wie sende ich Geld in ein anderes Land?",
+   "asks": ["Geld ins Ausland senden", "Geld ins Ausland schicken", "Auslandsüberweisung", "Auslandsueberweisung", "internationale Überweisung", "Geld in ein anderes Land", "jemanden im Ausland bezahlen", "Zahlung ins Ausland", "welche Währung bekommt die Person", "Wechselkurs", "wie viel kommt beim Empfänger an", "warum sehe ich zwei Beträge", "zwei Beträge", "die Person bekommt einen anderen Betrag"],
+   "steps": [
+    "Nutzen Sie **Send** wie gewohnt und suchen Sie die Person über ihre GLOOBAL ID oder Telefonnummer. Ihr Land wird auf ihrer Karte angezeigt.",
+    "Sie zahlen in der Währung Ihres Landes, und die Person erhält die Währung ihres Landes.",
+    "Bevor Sie bestätigen, zeigt der Bildschirm beide Beträge – was Sie zahlen und was die Person erhält – mit dem verwendeten Kurs.",
+    "Der Beleg in **History** behält beide Beträge."
+   ]
+  },
+  "send-limit": {
+   "q": "Warum kann ich diesen Betrag nicht senden?",
+   "asks": ["Sendelimit", "Überweisungslimit", "Limit beim Senden", "warum ist das Senden pausiert", "Zahlung pausiert", "Höchstbetrag zum Senden", "ich kann kein Geld senden", "Betrag zu hoch", "Senden gesperrt", "warum ist der Betrag begrenzt", "wie viel kann ich senden", "wie viel darf ich heute schicken", "wie hoch ist mein Limit", "maximaler Betrag"],
+   "steps": [
+    "GLOOBAL kann Zahlungen in ein Land für eine Weile pausieren oder begrenzen, wie viel dorthin gehen kann.",
+    "Der **Send**-Bildschirm sagt es Ihnen, bevor Sie zahlen – zum Beispiel „paused right now“ oder „You can send up to…“. Dort wird auch Ihr Limit angezeigt.",
+    "Senden Sie einen kleineren Betrag oder versuchen Sie es später noch einmal.",
+    "Wenn dort steht, dass Zahlungen von Ihrem Konto pausiert sind, gehen Sie zu **Help & Support** und tippen Sie auf **Chat with us**."
+   ]
+  },
+  "send-speed": {
+   "q": "Wie schnell kommt das Geld bei der Person an?",
+   "asks": ["wie lange dauert es", "wie lange dauert eine Zahlung", "Zahlung nicht angekommen", "ist mein Geld angekommen", "geht das sofort", "Geld nicht angekommen", "Dauer der Überweisung", "wann bekommt die Person das Geld", "Zahlung ausstehend", "Empfänger hat das Geld nicht bekommen", "wie schnell geht das", "wann ist das Geld da", "wie lange braucht eine Zahlung"],
+   "steps": [
+    "Zahlungen zwischen GLOOBAL-Konten erfolgen sofort. Sobald die Zahlung als gesendet angezeigt wird, ist sie auf dem Konto der Person angekommen.",
+    "Nicht sicher? Öffnen Sie die Zahlung unter Profile → **History**. Ihr Beleg zeigt genau, wo sie sich befindet.",
+    "Geld an eine externe Bank ist etwas anderes: Es zeigt **Processing**, bis die Bank bestätigt.",
+    "Immer noch ein Problem? Gehen Sie zu **Help & Support** → **Chat with us** und wählen Sie **A payment**."
+   ]
+  },
+  "send-undo": {
+   "q": "Kann ich eine gesendete Zahlung stornieren?",
+   "asks": ["Zahlung stornieren", "Zahlung abbrechen", "Überweisung rückgängig machen", "Überweisung rueckgaengig", "Geld zurückholen", "mein Geld zurückbekommen", "Rückerstattung", "Zahlung stoppen", "Transaktion stornieren", "Geld zurueck holen", "Zahlung widerrufen", "Zahlung zurückziehen"],
+   "steps": [
+    "Bevor Sie Ihre PIN eingeben, können Sie noch abbrechen – es wurde nichts gesendet.",
+    "Sobald die Zahlung gesendet ist, können Sie sie nicht selbst zurückholen. Die Person, die Sie bezahlt haben, kann sie zurücksenden.",
+    "Öffnen Sie den Beleg der Zahlung in **History** und tippen Sie auf **Complain**. Die Person wird benachrichtigt und kann im Fall auf **Send back** tippen. Sie können auch mit uns chatten."
+   ]
+  },
+  "send-wrong": {
+   "q": "Ich habe Geld an die falsche Person gesendet",
+   "asks": ["an falsche Person gesendet", "Geld an falsche Nummer geschickt", "falschen Betrag bezahlt", "doppelt bezahlt", "zweimal gezahlt", "falsche Überweisung", "Zahlung aus Versehen", "an falsche GLOOBAL ID geschickt", "Geld ging auf das falsche Konto", "aus Versehen zu viel bezahlt", "Fehler bei der Zahlung", "falsch überwiesen"],
+   "steps": [
+    "Öffnen Sie die Zahlung in **History** und tippen Sie auf ihrem Beleg auf **Complain**.",
+    "Wählen Sie den Grund, zum Beispiel **Sent to the wrong person** oder **Wrong amount**. Das Melden bewegt kein Geld.",
+    "Die Person wird benachrichtigt. Sie können im Chat des Falls miteinander sprechen, und die Person kann das Geld von dort zurücksenden.",
+    "Keine Antwort nach 48 Stunden? Tippen Sie auf **Ask support**, um den Fall an GLOOBAL zu übergeben. Alle Fälle finden Sie unter Profile → **Complaints & reports**."
+   ]
+  },
+  "send-location": {
+   "q": "Warum braucht GLOOBAL zum Bezahlen meinen Standort?",
+   "asks": ["Standort zum Bezahlen nötig", "Standort einschalten", "Standort aus", "warum Standort", "GPS Berechtigung", "Standort blockiert", "kann wegen Standort nicht bezahlen", "Standort konnte nicht gefunden werden", "Standortfreigabe", "Standort erlauben", "Standort aktivieren"],
+   "steps": [
+    "GLOOBAL prüft, aus welchem Land Sie bezahlen. Das hält Ihr Geld sicher.",
+    "Wenn der Standort ausgeschaltet ist, zeigt der **Send**-Bildschirm anstelle der Send-Schaltfläche **Turn on location**. Tippen Sie darauf und erlauben Sie den Zugriff.",
+    "In Ihrem Browser blockiert? Tippen Sie auf das Einstellungssymbol neben der Webadresse, tippen Sie auf **Permissions** und schalten Sie **Location** ein."
+   ]
+  },
+  "send-rent": {
+   "q": "Wie bezahle ich jeden Monat meine Miete?",
+   "asks": ["Miete bezahlen", "monatliche Miete", "Miete automatisch zahlen", "Dauerauftrag Miete", "Vermieter bezahlen", "Erinnerung für die Miete", "Mietdaten speichern", "Miete vom Mieter einziehen", "Miete kassieren", "Miete annehmen", "Miete zahlen"],
+   "steps": [
+    "Tippen Sie auf Home auf **Rent**, dann auf **Add a place**, und wählen Sie **A place I live**.",
+    "Geben Sie an, wen Sie bezahlen (die GLOOBAL ID der Person), wie viel und an welchem Tag.",
+    "Wählen Sie **Pay by itself**, um am jeweiligen Tag von GLOOBAL Bank zu zahlen, oder **Ask me first** für eine Erinnerung und Zahlung mit einem Tippen.",
+    "Ziehen Sie stattdessen Miete ein? Wählen Sie **A place I'm creating**, um zu sehen, ob sie angekommen ist."
+   ]
+  },
+  "scan-pay": {
+   "q": "Wie bezahle ich, indem ich einen QR-Code scanne?",
+   "asks": ["scannen und bezahlen", "QR scannen", "mit QR bezahlen", "Scanner", "Code zum Bezahlen scannen", "im Geschäft bezahlen", "im Laden bezahlen", "Scannen funktioniert nicht", "QR aus der Galerie hochladen", "QR-Zahlung", "Scanner geht nicht"],
+   "steps": [
+    "Tippen Sie auf Home auf **Scanner** und erlauben Sie den Kamerazugriff.",
+    "Richten Sie die Kamera auf einen GLOOBAL-Code. Haben Sie den QR als Bild? Tippen Sie auf **Upload from gallery**.",
+    "Prüfen Sie den angezeigten Namen, geben Sie dann den Betrag ein und bestätigen Sie mit Ihrer PIN."
+   ]
+  },
+  "receive-qr": {
+   "q": "Wie empfange ich Geld?",
+   "asks": ["Geld empfangen", "Geld bekommen", "Geld erhalten", "mein QR-Code", "meinen QR zeigen", "meine GLOOBAL ID teilen", "wie kann mich jemand bezahlen", "Geld einsammeln", "wo ist mein QR", "Geld von einem Freund bekommen", "Geld empfagen", "bezahlt werden"],
+   "steps": [
+    "Tippen Sie auf Home auf **Receive**. Dort sehen Sie Ihren GLOOBAL QR und Ihre GLOOBAL ID.",
+    "Lassen Sie die Person den QR scannen, oder senden Sie Ihre GLOOBAL ID mit den Schaltflächen zum Kopieren oder Teilen in einem beliebigen Chat.",
+    "Das Geld landet sofort in Ihrem GLOOBAL-Guthaben, und Sie erhalten eine Benachrichtigung."
+   ]
+  },
+  "gloobal-id": {
+   "q": "Was ist meine GLOOBAL ID?",
+   "asks": ["was ist die GLOOBAL ID", "meine ID", "wo finde ich meine GLOOBAL ID", "wie funktioniert die ID", "Symbole in meiner ID", "wie lese ich meine ID", "Kontonummer", "ID finden", "Bedeutung der GLOOBAL ID", "was bedeuten die Zeichen in meiner ID"],
+   "steps": [
+    "Ihre GLOOBAL ID ist Ihre Adresse bei GLOOBAL: 12 Symbole aus 8 Formen, in jeder Sprache gleich.",
+    "Damit können Menschen Sie bezahlen, und Sie können sich damit anmelden. Sie ist auch Ihre GLOOBAL Bank-Kontonummer.",
+    "Lesen Sie sie in Vierergruppen vor, wie eine Telefonnummer. Sie finden sie jederzeit unter **Receive**."
+   ]
+  },
+  "account-login": {
+   "q": "Wie melde ich mich auf einem neuen Telefon an?",
+   "asks": ["Anmeldung auf neuem Telefon", "anmelden", "einloggen", "neues Handy", "Handy gewechselt", "wie logge ich mich ein", "mit Handynummer anmelden", "mit GLOOBAL ID anmelden", "ich kann mich nicht anmelden", "Login geht nicht", "wieder einloggen", "neu anmelden"],
+   "steps": [
+    "Öffnen Sie GLOOBAL auf dem neuen Telefon und tippen Sie auf dem ersten Bildschirm auf **Log in**.",
+    "Geben Sie Ihre GLOOBAL ID ein oder wechseln Sie zu Ihrer Handynummer.",
+    "Geben Sie Ihre PIN ein. Ihre PIN funktioniert auf jedem Telefon; **Biometric login** können Sie später unter Profile → **Security** einschalten."
+   ]
+  },
+  "account-security": {
+   "q": "Wie ändere ich meine PIN oder sperre die App?",
+   "asks": ["PIN ändern", "PIN aendern", "neue PIN", "App-Sperre", "App sperren", "Anmeldung mit Fingerabdruck", "Face ID", "Sicherheitseinstellungen", "PIN gesperrt", "zu oft falsche PIN", "Biometrie einschalten", "Passkey", "Geheimzahl ändern"],
+   "steps": [
+    "Gehen Sie zu Profile → **Security**.",
+    "Tippen Sie auf **Change PIN**. Um eine neue PIN festzulegen, brauchen Sie Ihre aktuelle PIN.",
+    "Schalten Sie **App lock** ein, damit nach 5 Minuten Abwesenheit erneut nach Ihrer PIN gefragt wird, und **Biometric login**, um Fingerabdruck oder Face ID zu nutzen.",
+    "Geben Sie Ihre PIN niemals weiter. Zu viele falsche Versuche sperren sie für eine Weile."
+   ]
+  },
+  "account-history": {
+   "q": "Wo sehe ich meine Zahlungen und Belege?",
+   "asks": ["Zahlungsverlauf", "Transaktionsverlauf", "meine Belege", "alte Zahlungen ansehen", "Kontoauszug", "wo ist mein Beleg", "Quittung herunterladen", "Beleg teilen", "frühere Transaktionen", "Umsätze ansehen", "Zahlungshistorie", "Quittung"],
+   "steps": [
+    "Gehen Sie zu Profile → **History**. Wechseln Sie zwischen **Paid** und **Received** und wählen Sie einen Zeitraum.",
+    "Tippen Sie auf eine Zahlung, um ihren Beleg zu öffnen: wer, wie viel, wann und wo sich die Zahlung befindet.",
+    "Über den Beleg können Sie ihn mit **Share** teilen oder auf **Complain** tippen, wenn etwas schiefgelaufen ist."
+   ]
+  },
+  "account-notifications": {
+   "q": "Wie werde ich benachrichtigt, wenn Geld eingeht?",
+   "asks": ["Benachrichtigungen", "Benachrichtigungen einschalten", "keine Meldung bei Geldeingang", "Push-Benachrichtigung", "Zahlungsbenachrichtigung", "Benachrichtigungen blockiert", "ich bekomme keine Benachrichtigungen", "Mitteilungen aktivieren", "Hinweis bei Geldeingang", "Mitteilungen kommen nicht"],
+   "steps": [
+    "Gehen Sie zu Profile → **Notifications**.",
+    "Tippen Sie auf **Enable** und erlauben Sie Benachrichtigungen, wenn Ihr Telefon danach fragt. Sie werden informiert, wenn Geld eingeht, auch wenn GLOOBAL geschlossen ist.",
+    "Wenn dort steht, dass Benachrichtigungen blockiert sind, schalten Sie sie in Ihren Browser-Einstellungen für diese Website ein.",
+    "Die Liste enthält Ihre neuesten Mitteilungen; **History** enthält jede Zahlung."
+   ]
+  },
+  "account-hold": {
+   "q": "Warum ist mein Konto pausiert?",
+   "asks": ["Konto pausiert", "Konto gesperrt", "Zahlungen von diesem Konto sind pausiert", "ich kann gar nichts senden", "Konto eingefroren", "Senden an die Bank pausiert", "Konto eingeschränkt", "warum ist mein Konto gesperrt", "Konto blockiert", "Konto auf Eis gelegt"],
+   "steps": [
+    "Das GLOOBAL-Team kann einen Teil eines Kontos pausieren: einen Shop, das Senden von Geld oder das Senden an eine Bank.",
+    "Sie können sich weiterhin anmelden und Geld empfangen.",
+    "Um mehr zu erfahren, gehen Sie zu Profile → **Help & Support** → **Chat with us** und wählen Sie **My account**. Ein Mensch wird antworten."
+   ]
+  },
+  "account-safe": {
+   "q": "Ist mein Geld bei GLOOBAL sicher?",
+   "asks": ["ist mein Geld sicher", "ist GLOOBAL sicher", "jemand hat mein Konto benutzt", "Konto gehackt", "Betrug", "ist das sicher", "Konto schützen", "kann jemand mein Geld stehlen", "Abzocke", "Sicherheit meines Geldes", "fremder Zugriff auf mein Konto"],
+   "steps": [
+    "Jede Zahlung braucht Ihre PIN, dazu Fingerabdruck oder Face ID, wenn Ihr Telefon das hat. Zu viele falsche PINs sperren sie für eine Weile.",
+    "GLOOBAL prüft, aus welchem Land Sie bezahlen, bevor Geld bewegt wird.",
+    "Schalten Sie **App lock** unter Profile → **Security** ein. Wenn jemand anderes Ihr Konto benutzt hat, ändern Sie jetzt Ihre PIN und chatten Sie mit uns."
+   ]
+  },
+  "account-privacy": {
+   "q": "Wer kann meine Chats und Daten sehen?",
+   "asks": ["wer sieht meine Daten", "Datenschutz", "kann GLOOBAL meinen Chat lesen", "wer sieht meine Beschwerde", "wird mein Selfie gespeichert", "Guthaben verbergen", "Kontostand ausblenden", "meine persönlichen Daten", "sind meine Daten sicher", "Privatsphäre"],
+   "steps": [
+    "Ein Beschwerde-Chat findet nur zwischen Ihnen und der anderen Person statt. Der GLOOBAL-Support sieht ihn nur, wenn der Fall an ihn übergeben wird.",
+    "Help & Support-Chats werden vom GLOOBAL-Team gelesen, damit es Ihnen helfen kann.",
+    "Das Selfie für die Eröffnung von GLOOBAL Bank bleibt auf Ihrem Telefon. Tippen Sie auf das Auge bei Ihrem Guthaben, um es zu verbergen."
+   ]
+  },
+  "account-referral": {
+   "q": "Wie funktionieren Empfehlungen?",
+   "asks": ["Empfehlung", "Freunde einladen", "Freund werben", "Empfehlungscode", "mein Empfehlungsnetzwerk", "wer ist mit meiner ID beigetreten", "Empfehlungslink teilen", "Referral", "Einladungscode", "Freunde empfehlen"],
+   "steps": [
+    "Teilen Sie Ihre GLOOBAL ID. Wenn sich jemand registriert, kann die Person sie im Schritt **Referral Code** eingeben.",
+    "Die Person wird dann unter Profile → **My Referral Network** als Ihre angezeigt.",
+    "Von dem, was die Person zahlt, wird nichts abgezogen. Der Empfehlungsschritt ist für sie freiwillig."
+   ]
+  },
+  "bank-what": {
+   "q": "Wie funktioniert GLOOBAL Bank?",
+   "asks": ["was ist GLOOBAL Bank", "GLOOBAL Bank", "wie funktioniert die Bank", "mein Bankkonto", "Kontostand Bank", "Geld auf meine Bank bewegen", "wo ist GLOOBAL Bank", "Bankkontonummer", "was kann GLOOBAL Bank"],
+   "steps": [
+    "GLOOBAL Bank ist Ihr GLOOBAL-Konto. Öffnen Sie es über den Tab **Accounts** oder tippen Sie auf Home auf **Add Bank**.",
+    "Mit **Add money** bringen Sie Geld hinein, und mit **Send to bank** bewegen Sie es auf ein von Ihnen verknüpftes Bankkonto.",
+    "Ausgehendes Geld zeigt **Processing**, bis Ihre Bank bestätigt. Wenn eine Bank es zurücksendet, kommt es von selbst auf Ihr Guthaben zurück."
+   ]
+  },
+  "bank-open": {
+   "q": "Wie eröffne ich mein GLOOBAL Bank-Konto?",
+   "asks": ["GLOOBAL Bank eröffnen", "Bankkonto eröffnen", "Bankkonto erstellen", "Kontoeröffnung abschließen", "KYC", "Identitätsprüfung", "Begünstigter", "Kontoeröffnung fortsetzen", "wie lange dauert die Kontoeröffnung", "Konto eroeffnen", "Konto anlegen"],
+   "steps": [
+    "Gehen Sie zu **Accounts** → **GLOOBAL Bank** und tippen Sie auf **Open account**. Das dauert mit Ihrem Ausweis etwa 5 Minuten.",
+    "Gehen Sie die Schritte durch: About you, Your ID, Selfie, Nominee, Review, und bestätigen Sie mit Ihrer PIN.",
+    "Brauchen Sie eine Pause? Tippen Sie auf **Save & exit** und machen Sie später über dieselbe Karte weiter.",
+    "Ihre GLOOBAL ID wird Ihre Kontonummer."
+   ]
+  },
+  "bank-link": {
+   "q": "Wie verknüpfe ich mein Bankkonto?",
+   "asks": ["Bankkonto verknüpfen", "Bankkonto hinzufügen", "meine Bank verbinden", "UPI-ID verknüpfen", "IFSC hinzufügen", "IBAN hinterlegen", "weitere Bank verknüpfen", "mein Bankkonto bestätigen", "verknüpfte Banken", "Bankkonto verknuepfen"],
+   "steps": [
+    "Öffnen Sie **GLOOBAL Bank**, tippen Sie auf **Link another bank** und wählen Sie Ihre Bank.",
+    "Folgen Sie **Verify it's your account**. Die App prüft, ob der Name bei der Bank mit Ihrem übereinstimmt.",
+    "Nur Konten auf Ihren eigenen Namen können verknüpft werden. Sie können auch beim Senden eines hinzufügen: **Send to bank** → **Add a bank account**."
+   ]
+  },
+  "bank-withdraw": {
+   "q": "Wie hebe ich Geld auf meine Bank ab?",
+   "asks": ["Geld abheben", "auf die Bank abheben", "Geld an meine Bank senden", "auszahlen", "Geld auszahlen lassen", "auf mein Bankkonto überweisen", "Guthaben auf die Bank", "Geld herausnehmen", "Auszahlung", "Auszahlung auf die Bank", "abheben", "Guthaben abheben", "Guthaben auszahlen lassen"],
+   "steps": [
+    "Öffnen Sie **GLOOBAL Bank** und tippen Sie auf **Send to bank**.",
+    "Geben Sie den Betrag ein und wählen Sie Ihr Bankkonto, oder tippen Sie auf **Add a bank account** (es muss auf Ihren Namen laufen). Tippen Sie auf **Continue**.",
+    "Prüfen Sie die Angaben, geben Sie Ihre GLOOBAL PIN ein und tippen Sie auf **Send**.",
+    "Es zeigt **Processing**, bis Ihre Bank bestätigt. Sie finden es jederzeit unter **Bank transfers**."
+   ]
+  },
+  "bank-add": {
+   "q": "Wie lade ich Geld auf GLOOBAL?",
+   "asks": ["Geld hinzufügen", "aufladen", "Geld aufladen", "Geld einzahlen", "Einzahlung", "mit UPI aufladen", "Geld von der Bank hinzufügen", "mit Debitkarte aufladen", "Geld auf GLOOBAL bringen", "Aufladelimit heute", "Geld einzahlen per Karte"],
+   "steps": [
+    "Öffnen Sie **GLOOBAL Bank** und tippen Sie auf **Add money**.",
+    "Geben Sie den Betrag ein und wählen Sie **UPI**, **Bank transfer** oder **Debit card**.",
+    "Geld kann nur von einem Konto auf Ihren eigenen Namen kommen. Der Bildschirm zeigt, wie viel Sie heute noch hinzufügen können."
+   ]
+  },
+  "bank-processing": {
+   "q": "Warum steht bei meiner Banküberweisung Processing oder Returned?",
+   "asks": ["Banküberweisung in Bearbeitung", "Processing", "Returned", "Geld nicht auf meiner Bank angekommen", "Auszahlung ausstehend", "Überweisung zurückgekommen", "Bank hat das Geld zurückgeschickt", "von der Bank zurückgesendet", "Banküberweisung fehlgeschlagen", "Geld hängt in Bearbeitung", "warum steht da Processing", "Processing dauert lange"],
+   "steps": [
+    "**Processing** bedeutet, dass das Geld unterwegs ist und GLOOBAL auf die Bestätigung Ihrer Bank wartet. Sobald die Bank bestätigt, ändert es sich zu **Credited**.",
+    "**Returned** bedeutet, dass die Bank es zurückgesendet hat. Das Geld kommt von selbst zurück auf Ihr GLOOBAL-Guthaben.",
+    "Hängt es immer noch? Öffnen Sie es unter **Bank transfers** und tippen Sie auf **Report a problem**."
+   ]
+  },
+  "essentials-what": {
+   "q": "Was ist My Essentials?",
+   "asks": ["was sind Essentials", "Essentials", "tägliche Essentials", "Essen Wasser Unterkunft", "Tageslimit", "muss ich das zurückzahlen", "ist Essentials kostenlos", "Essentials Grundbetrag", "jeden Tag kostenloses Geld", "Grundbedarf", "Essenzials"],
+   "steps": [
+    "My Essentials ist ein täglicher Betrag, den GLOOBAL für Sie trägt – für Essen, Wasser, Unterkunft und Kreativität.",
+    "Er ist kostenlos und wird nie zurückgezahlt. Was Sie heute nicht nutzen, wird nicht übertragen; morgen wird er wieder aufgefüllt.",
+    "Sie finden ihn im Tab **Accounts** → **My Essentials**. GLOOBAL Bank muss eröffnet sein, damit Sie Ihre Beträge sehen und nutzen können."
+   ]
+  },
+  "essentials-use": {
+   "q": "Wie bezahle ich mit meinen Essentials?",
+   "asks": ["Essentials nutzen", "mit Essentials bezahlen", "Essentials ausgeben", "wie verwende ich meine Essentials", "Essentials funktioniert nicht", "nichts mehr in Essentials übrig", "Zahlung mit GLOOBAL Essentials", "Essentials einsetzen", "Essentials verwenden"],
+   "steps": [
+    "Senden Sie Geld wie gewohnt. Nachdem Sie auf **Send** getippt haben, wählen Sie unter **Pay with** die Option **GLOOBAL Essentials**.",
+    "Es deckt ab, was es mit dem heute noch übrigen Betrag kann, und der Rest wird von Ihrer GLOOBAL Bank bezahlt.",
+    "Bestätigen Sie dann mit Ihrer PIN. Wenn heute nichts mehr übrig ist oder GLOOBAL Bank noch nicht eröffnet ist, kommt die Zahlung von Ihrem Bankguthaben."
+   ]
+  },
+  "essentials-unlock": {
+   "q": "Warum sind meine Essentials-Beträge verborgen?",
+   "asks": ["Essentials verborgen", "Essentials versteckt", "Essentials freischalten", "Essentials gesperrt", "ich sehe meine Essentials nicht", "Punkte bei Essentials", "wie schalte ich meine Essentials frei", "Tageslimit versteckt", "meine Beträge anzeigen", "Essentials Beträge sichtbar machen"],
+   "steps": [
+    "Ihre Beträge sind bereits berechnet. Erst die Eröffnung von GLOOBAL Bank macht sie sichtbar.",
+    "Tippen Sie in **My Essentials** auf **Start opening GLOOBAL Bank**. Das dauert mit Ihrem Ausweis etwa 5 Minuten.",
+    "Sobald es eröffnet ist, können Sie sehen, was heute noch übrig ist, und es nutzen."
+   ]
+  },
+  "essentials-locked": {
+   "q": "Warum kann ich nicht mein ganzes Guthaben an meine Bank senden?",
+   "asks": ["was ist in meinen Essentials gebunden", "bleibt in GLOOBAL", "ist es noch mein Geld", "kann nicht das ganze Guthaben abheben", "der Höchstbetrag, den ich senden kann", "noch nichts kann raus", "Essentials einbehalten", "gebundenes Geld", "warum hängt ein Teil meines Guthabens fest", "warum nicht alles an die Bank", "Teil des Guthabens gesperrt"],
+   "steps": [
+    "Was Sie aus Essentials genutzt haben, ist kostenlos. Im Gegenzug bleibt derselbe Betrag in GLOOBAL, wenn Geld eingeht.",
+    "Dieser Teil ist weiterhin Ihr Geld: Sie können ihn ausgeben oder jeden bei GLOOBAL bezahlen. Er kann nur nicht an eine externe Bank gehen.",
+    "Alles darüber kann an jede Bank gehen. **My Essentials** zeigt, was drinnen bleibt, und **Send to bank** zeigt das Maximum, das Sie senden können."
+   ]
+  },
+  "geu-what": {
+   "q": "Was ist GEU?",
+   "asks": ["was ist GEU", "Bedeutung von GEU", "was bedeutet GEU", "warum steht da GEU", "zu GEU wechseln", "Beträge in meiner Währung anzeigen", "Währungsanzeige ändern", "GEU oder Euro", "ist GEU eine Münze", "ist GEU eine Kryptowährung", "GUE"],
+   "steps": [
+    "GEU ist ein anderer Name für Ihr eigenes Geld: 1 GEU ist 1 Einheit der Währung Ihres Landes. In Indien gilt 1 GEU = ₹1.",
+    "Tippen Sie auf den Schalter auf Ihrer Guthabenkarte, um Beträge in GEU oder in Ihrer Währung anzuzeigen. Nichts wird umgerechnet, es gibt keine Gebühr, und Ihr Geld ändert sich nicht.",
+    "GEU bedeutet in jedem Land einen anderen Betrag, deshalb wird beim Senden immer auf beiden Seiten echtes Geld verwendet."
+   ]
+  },
+  "shop-setup": {
+   "q": "Wie richte ich meinen Shop ein?",
+   "asks": ["Shop eröffnen", "meinen Shop einrichten", "Creator-Seite", "Shopname", "mit dem Verkaufen anfangen", "Creator werden", "Geschäftskonto", "weiteren Shop hinzufügen", "Creator-Name", "wie mache ich einen Shop", "Shop erstellen", "Laden eröffnen", "Shop aufmachen"],
+   "steps": [
+    "Tippen Sie oben auf Home auf den runden Schalter, um zu Ihrer Creator-Seite zu wechseln. Beim ersten Mal öffnet sich die Shop-Einrichtung – tippen Sie auf **Join — open my shop**.",
+    "Wählen Sie Ihren Shopnamen in zwei Teilen, zum Beispiel rasoi.ghar. Jede Sprache funktioniert. Einen Shop zu eröffnen ist kostenlos.",
+    "Übersprungen? Gehen Sie zu Profile → **Creator Profile** → **Set up my creator name**.",
+    "Auf der Creator-Seite können Sie unter Profile → **My shops** weitere Shops hinzufügen."
+   ]
+  },
+  "shop-get-paid": {
+   "q": "Wie bezahlen Kunden meinen Shop?",
+   "asks": ["Kunden bezahlen meinen Shop", "Shop QR-Code", "Code meines Shops", "QR für die Kasse drucken", "Plakat zum Scannen und Bezahlen", "wie finden Leute meinen Shop", "Zahlungen im Shop annehmen", "als Shop bezahlt werden", "Zahlungen im Laden annehmen", "Kundenzahlung Shop"],
+   "steps": [
+    "Zeigen Sie den Code Ihres Shops: Tippen Sie auf der Creator-Seite auf **Receive**, oder gehen Sie zu Profile → **Creator Profile** → **Show your code**. Kunden scannen ihn mit **Scanner**.",
+    "Holen Sie sich auf dem Code-Bildschirm **Poster for your counter** – ein „Scan to pay“-Blatt zum Ausdrucken.",
+    "Kunden können Ihren Shopnamen auch unter **Pay & Services** eingeben (tippen Sie auf Home auf **More**)."
+   ]
+  },
+  "shop-money": {
+   "q": "Wann kommt das Shop-Geld auf mein Guthaben?",
+   "asks": ["wann bekomme ich das Shop-Geld", "Shop-Zahlungen Guthaben", "wohin geht das Shop-Geld", "Creator-Guthaben", "heutige Einnahmen", "Shop-Einnahmen", "Geld aus meinem Shop", "Abrechnung Shop", "Einnahmen des Tages", "Umsatz meines Shops", "Verdienst aus dem Laden"],
+   "steps": [
+    "Sofort. Jede Zahlung an einen Ihrer Shops landet in Ihrem einen Creator-Guthaben, sobald sie bezahlt ist.",
+    "Auf der Creator-Seite zeigt Home **Today's Collection**, und Profile → **My shops** zeigt die Summen jedes Shops.",
+    "Jede Zahlung steht außerdem mit ihrem Beleg in **History**."
+   ]
+  },
+  "shop-hidden": {
+   "q": "Warum können die Leute meinen Shop nicht finden?",
+   "asks": ["Shop wird nicht angezeigt", "ich finde meinen Shop nicht", "Shop verborgen", "Kunden sehen meinen Shop nicht", "Shop nicht in der Suche", "Shop pausiert", "mein Shop ist verschwunden", "Shop gesperrt", "Laden nicht auffindbar", "Shop nicht sichtbar"],
+   "steps": [
+    "Kunden finden einen Shop über seinen genauen Namen. Prüfen Sie also, ob sie beide Teile richtig eingeben.",
+    "Ein Shop ohne Namen kann nicht gefunden werden. Stellen Sie ihn unter Profile → **Creator Profile** fertig.",
+    "GLOOBAL kann einen Shop auch für eine Weile verbergen; Sie selbst sehen ihn weiterhin. Gehen Sie auf der Creator-Seite zu **Help & Support** → **Chat with us** → **My shop**."
+   ]
+  },
+  "help-chat": {
+   "q": "Wie spreche ich mit einem Menschen bei GLOOBAL?",
+   "asks": ["mit dem Support sprechen", "Kundendienst", "GLOOBAL kontaktieren", "Chat mit uns", "mit einem Menschen sprechen", "Hilfe", "Support-Nummer", "bei GLOOBAL beschweren", "Kundenservice", "Mitarbeiter sprechen", "Kontakt", "mit jemandem reden"],
+   "steps": [
+    "Gehen Sie zu Profile → **Help & Support**.",
+    "Wählen Sie unter **Chat with us** das Thema, schreiben Sie, was passiert ist, und tippen Sie auf **Send to GLOOBAL**.",
+    "Ein Mensch von GLOOBAL antwortet dort. Sie erhalten dann eine Mitteilung und eine Push-Benachrichtigung.",
+    "Geht es um eine Zahlung? Wählen Sie **A payment** und dann die Zahlung aus Ihren letzten Zahlungen, damit das Team genau sieht, welche es ist."
+   ]
+  },
+  "help-complaint": {
+   "q": "Wie melde ich ein Problem mit einer Zahlung?",
+   "asks": ["Problem melden", "Beschwerde einreichen", "Beschwerden und Meldungen", "Zahlung beanstanden", "Ware nicht bekommen", "diese Zahlung habe ich nicht gemacht", "meine Beschwerden", "einen Fall eröffnen", "Reklamation", "Zahlung reklamieren", "über eine Zahlung beschweren", "wo beschweren"],
+   "steps": [
+    "Öffnen Sie die Zahlung in **History**, tippen Sie auf ihrem Beleg auf **Complain** und wählen Sie dann einen Grund.",
+    "Jeder Fall, den Sie gemeldet haben oder der Sie betrifft, steht unter Profile → **Complaints & reports**.",
+    "Bei einer GLOOBAL Bank-Überweisung öffnen Sie sie unter **Bank transfers** und tippen auf **Report a problem**."
+   ]
+  }
+ },
+ "ui": {
+  "sub": "Antworten aus dem GLOOBAL-Leitfaden",
+  "hello": "Hallo! Fragen Sie alles über GLOOBAL",
+  "helloSub": "Schreiben oder sprechen Sie in Ihrer eigenen Sprache – die Antwort kommt in derselben Sprache.",
+  "placeholder": "Geben Sie Ihre Frage ein…",
+  "more": "Etwas anderes fragen…",
+  "ask": "Fragen",
+  "popular": "Häufige Fragen",
+  "maybe": "Meinten Sie",
+  "helped": "Hat das geholfen?",
+  "yes": "Ja",
+  "no": "Nein",
+  "thanks": "Danke – das hilft uns, den Leitfaden zu verbessern.",
+  "sorry": "Das tut uns leid. Fragen Sie anders, oder ein Mensch kann helfen.",
+  "askAgain": "Erneut fragen",
+  "talk": "Mit einem Menschen sprechen",
+  "talkTeam": "Mit dem Team sprechen",
+  "showMe": "Zeigen",
+  "listen": "Anhören",
+  "stop": "Stopp",
+  "readIn": "Lesen auf:",
+  "which": "Welche davon meinen Sie?",
+  "noneOfThese": "Keine davon – mit einem Menschen sprechen",
+  "nothing": "Das konnte ich im Leitfaden nicht finden.",
+  "nothingSub": "Versuchen Sie andere Wörter, wählen Sie ein Thema, oder ein Mensch kann helfen.",
+  "otherLang": "Dazu haben wir keine Antwort in Ihrer Sprache – hier ist die nächstliegende auf Englisch.",
+  "personalTitle": "Hier geht es um Ihr eigenes Geld",
+  "personalBody": "Ask GLOOBAL kann Ihre Zahlungen und Ihr Guthaben nicht sehen. Ein Mensch aus dem Team kann das – er schaut nach und antwortet Ihnen unter Help & Support.",
+  "meanwhile": "Während Sie warten, können Sie das selbst prüfen",
+  "talkNote": "Ihre Frage wird mitgesendet. Die Zahlung wählen Sie dort aus.",
+  "never": "Ask GLOOBAL sieht niemals Ihr Guthaben oder Ihre Zahlungen",
+  "voiceNote": "Die Spracheingabe nutzt den Sprachdienst des Browsers auf Ihrem Telefon.",
+  "loading": "Antworten werden geladen…",
+  "offline": "Die Antworten konnten nicht geladen werden. Prüfen Sie Ihre Verbindung und versuchen Sie es noch einmal.",
+  "retry": "Erneut versuchen",
+  "from": "Aus dem Leitfaden",
+  "open": "{x} öffnen",
+  "tourNext": "Weiter",
+  "tourDone": "Verstanden",
+  "tourClose": "Schließen",
+  "tourStep": "Schritt {n} von {m}",
+  "noVoice": "Dieses Telefon hat keine Stimme für diese Sprache.",
+  "listening": "Ich höre zu…",
+  "lang": "Sprache",
+  "close": "Schließen",
+  "topic_send": "Geld senden",
+  "topic_bank": "GLOOBAL Bank",
+  "topic_essentials": "My Essentials",
+  "topic_shop": "Mein Shop",
+  "topic_geu": "Was ist GEU",
+  "topic_account": "Mein Konto",
+  "topic_receive": "Geld empfangen",
+  "topic_help": "Hilfe",
+  "screen_send": "Fragen zu Send",
+  "screen_bank": "Fragen zu GLOOBAL Bank",
+  "screen_essentials": "Fragen zu My Essentials",
+  "screen_shop": "Fragen zu Mein Shop",
+  "helpBoxTitle": "Ask GLOOBAL",
+  "helpBoxSub": "Fragen Sie in Ihrer eigenen Sprache, wie alles bei GLOOBAL funktioniert. Antworten in Sekunden.",
+  "fbOpen": "Feedback geben",
+  "fbHome": "Helfen Sie uns, Ask GLOOBAL zu verbessern",
+  "fbTitle": "Wie funktioniert Ask GLOOBAL für Sie?",
+  "fbGood": "Gut",
+  "fbOk": "Okay",
+  "fbBad": "Nicht gut",
+  "fbPlaceholder": "Was sollen wir ergänzen oder verbessern? (optional)",
+  "fbNote": "Anonym. Zahlen und E-Mail-Adressen werden entfernt, bevor es gespeichert wird.",
+  "fbSend": "Feedback senden",
+  "fbThanks": "Danke! Das Team liest jede Nachricht.",
+  "qButton": "Fragen zu diesem Bildschirm"
+ },
+ "tours": {
+  "bank-withdraw": {
+   "steps": [
+    "Hier sind die Geld-Schaltflächen Ihrer Bank.",
+    "Tippen Sie auf **Send to bank**, um zu beginnen.",
+    "Geben Sie dann den Betrag ein, wählen Sie Ihre Bank, tippen Sie auf **Continue** und bestätigen Sie mit Ihrer PIN. Es zeigt **Processing**, bis Ihre Bank bestätigt."
+   ],
+   "missing": "Die Schaltfläche **Send to bank** erscheint auf diesem Bildschirm, sobald Ihr GLOOBAL Bank-Konto eröffnet ist."
+  }
+ },
+ "syn": {
+  "money": ["geld", "gelder", "betrag", "betrage"],
+  "send": ["schick", "geschick", "verschick", "uberweis", "uberwies", "gesend"],
+  "withdraw": ["abheb", "abgehob", "auszahl", "ausgezahl"],
+  "bank": ["banken"],
+  "shop": ["geschaft", "geschaeft", "laden"],
+  "account": ["konto", "konten"],
+  "fast": ["schnell", "sofort", "rasch"],
+  "cancel": ["storn", "abbrech", "widerruf", "ruckgang", "zuruck", "ruckerstat"],
+  "limit": ["hochstbetrag", "obergrenze", "maximal", "begrenz"],
+  "abroad": ["ausland", "auslands", "ubersee", "deutschland", "osterreich", "schweiz"],
+  "hold": ["sperr", "gesperr", "eingefror", "pausier", "eingeschrank"],
+  "scan": ["einscan", "abscan", "gescan"],
+  "wrong": ["falsch", "versehen", "irrtum", "fehler"],
+  "history": ["verlauf", "quittung", "beleg", "kontoauszug", "historie"],
+  "essentials": ["essenzi", "grundbedarf"],
+  "geu": [],
+  "notify": ["benachricht", "mitteil", "meldung", "hinweis"],
+  "pin": ["geheimzahl", "geheimnummer"],
+  "receive": ["erhalt", "bekomm", "empfang", "empfag", "kriegen"],
+  "shopmoney": ["umsatz", "umsatze", "einnahm", "verdienst", "abrechnung"]
+ },
+ "stop": ["der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "einem", "einer", "ist", "sind", "bin", "ich", "mir", "mich", "mein", "meine", "meinen", "meinem", "meiner", "sie", "ihr", "ihre", "du", "bitte", "und", "auf", "für", "mit", "es", "man", "im", "von", "wie", "wo", "wer", "da", "denn"],
+ "personal": {
+  "me": ["ich", "mein", "mir", "mich", "wir", "unser", "habe", "hab "],
+  "happened": ["geschickt", "gesendet", "uberwiesen", "ueberwiesen", "bezahlt", "gezahlt", "abgebucht", "abgezogen", "nicht angekommen", "nicht ankommt", "kommt nicht an", "kam nicht an", "nicht erhalten", "nichts erhalten", "nicht bekommen", "nichts bekommen", "kein geld", "nicht eingegangen", "nicht gutgeschrieben", "fehlgeschlagen", "hangt", "haengt", "hangen", "steckt fest", "verschwunden", "fehlt", "ist weg"]
+ },
+ "probes": {
+  "ask": [
+   { "q": "Wie kann ich meiner Mutter Geld schicken?", "id": "send-how" },
+   { "q": "Ich möchte Geld nach Spanien ins Ausland überweisen", "id": "send-abroad" },
+   { "q": "Was ist das höchste Limit für eine Zahlung?", "id": "send-limit" },
+   { "q": "Wie lange braucht das Geld bis es da ist?", "id": "send-speed" },
+   { "q": "Kann man eine Überweisung noch stornieren?", "id": "send-undo" },
+   { "q": "Habe aus Versehen die falsche Person bezahlt, was nun?", "id": "send-wrong" },
+   { "q": "Wozu braucht die App den Standort?", "id": "send-location" },
+   { "q": "Kann ich die Miete an den Vermieter automatisch zahlen?", "id": "send-rent" },
+   { "q": "Wie funktioniert das Bezahlen per QR-Code?", "id": "scan-pay" },
+   { "q": "Wo sehe ich meinen QR-Code, um Geld zu bekommen?", "id": "receive-qr" },
+   { "q": "Wo steht meine GLOOBAL ID?", "id": "gloobal-id" },
+   { "q": "Ich habe ein neues Handy, wie logge ich mich dort ein?", "id": "account-login" },
+   { "q": "Ich will meine PIN wechseln", "id": "account-security" },
+   { "q": "Wo finde ich meine alten Belege?", "id": "account-history" },
+   { "q": "Wie stelle ich Benachrichtigungen an?", "id": "account-notifications" },
+   { "q": "Warum wurde mein Konto gesperrt?", "id": "account-hold" },
+   { "q": "Wie sicher ist mein Geld hier?", "id": "account-safe" },
+   { "q": "Wer darf meine persönlichen Daten lesen?", "id": "account-privacy" },
+   { "q": "Wie lade ich Freunde mit meinem Code ein?", "id": "account-referral" },
+   { "q": "Was genau ist die GLOOBAL Bank?", "id": "bank-what" },
+   { "q": "Wie kann ich ein Konto bei GLOOBAL Bank eröffnen?", "id": "bank-open" },
+   { "q": "Ich möchte mein eigenes Bankkonto verbinden", "id": "bank-link" },
+   { "q": "Wie kann ich mein Guthaben auszahlen?", "id": "bank-withdraw" },
+   { "q": "Wie kann ich mein Konto aufladen?", "id": "bank-add" },
+   { "q": "Was heißt Processing bei der Banküberweisung?", "id": "bank-processing" },
+   { "q": "Was bringt mir My Essentials?", "id": "essentials-what" },
+   { "q": "Wofür steht GEU?", "id": "geu-what" },
+   { "q": "Wie kann ich einen eigenen Shop aufmachen?", "id": "shop-setup" },
+   { "q": "Wie kann ich mit einem Mitarbeiter reden?", "id": "help-chat" },
+   { "q": "Wo kann ich mich über eine Zahlung beschweren?", "id": "help-complaint" }
+  ],
+  "personal": [
+   "Ich habe gestern 500 Euro geschickt und sie sind nicht angekommen",
+   "Von meinem Konto wurden 2000 Euro abgebucht",
+   "Habe Ravi 1000 Euro überwiesen, er hat nichts bekommen",
+   "Mein Geld hängt fest und ist nicht auf meiner Bank",
+   "Meine Zahlung ist fehlgeschlagen, wo ist mein Geld?"
+  ],
+  "notPersonal": [
+   "Wie lange dauert eine Überweisung ins Ausland?",
+   "Was bedeutet GEU?",
+   "Wie ändere ich die PIN?",
+   "Kann man mit der Debitkarte Geld aufladen?"
+  ]
+ }
+}

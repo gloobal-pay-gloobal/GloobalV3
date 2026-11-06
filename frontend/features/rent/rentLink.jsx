@@ -548,6 +548,39 @@ function RentLinkPanel({ linkId, onToast, onChanged }) {
 function rentLinkNeedsShowing(l) {
   return l.status === "requested" || l.status === "terms" || (l.status === "connected" && l.pending);
 }
+// Waiting on ME, not on the other person: what the bell counts.
+function rentLinkIsForMe(l) {
+  return (l.status === "requested" && !l.mine) || (l.status === "terms" && l.role === "tenant") || (l.status === "connected" && l.pending && l.role === "tenant");
+}
+
+// 0252: behind the bell. Accept opens the request, because accepting means
+// sending terms and those are set there. What you sent stays below, since this
+// is where it can still be cancelled.
+function RentRequestsPage({ links, onBack, onOpen, onChanged, onToast }) {
+  const [busy, setBusy] = useState90("");
+  const open = (links || []).filter(rentLinkNeedsShowing);
+  const received = open.filter(rentLinkIsForMe);
+  const sent = open.filter((l) => !rentLinkIsForMe(l));
+  const decline = async (l) => {
+    setBusy(l.id);
+    try { await GloobalApi.declineRentLink(l.id); onToast && onToast("Declined"); onChanged && onChanged(); }
+    catch (e) { onToast && onToast((e && e.message) || "Couldn't do that."); }
+    setBusy("");
+  };
+  const label = (text) => <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft, margin: "2px 2px 0" }}>{text}</div>;
+  return <div data-testid="rent-requests-page" style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}><NavBackButton onClick={onBack} /><span style={{ flex: 1, textAlign: "center", fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Requests</span><span style={{ width: 40 }} /></div>
+    {received.length ? received.map((l) => <div key={l.id} data-testid="rent-received" style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}>
+      <RentLinkRow link={l} first onOpen={() => onOpen(l)} />
+      <div style={{ display: "flex", gap: 8, padding: "0 14px 14px" }}>
+        {l.status !== "connected" ? <RLButton quiet disabled={busy === l.id} testId="rent-received-decline" onClick={() => decline(l)}>Decline</RLButton> : null}
+        <RLButton disabled={busy === l.id} testId="rent-received-accept" onClick={() => onOpen(l)}>{l.status === "requested" ? "Accept" : l.status === "terms" ? "Read terms" : "Read changes"}</RLButton>
+      </div>
+    </div>) : <div data-testid="rent-received-empty" style={{ background: T.surface, borderRadius: 20, padding: "20px 16px", textAlign: "center", boxShadow: T.shadowCard, fontSize: 14, fontWeight: 800, color: T.ink }}>No new requests</div>}
+    {sent.length ? <>{label("You sent")}<div data-testid="rent-sent" style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}>{sent.map((l, i) => <RentLinkRow key={l.id} link={l} first={i === 0} onOpen={() => onOpen(l)} />)}</div></> : null}
+  </div>;
+}
+
 function RentLinkRow({ link, first, onOpen }) {
   const s = link.status;
   const n = (link.changes || []).length;

@@ -398,6 +398,7 @@ function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, on
 }
 
 function CreatorPage({
+  startPaying = false,
   creator,
   isOwner = false,
   ccyCode = "USD",
@@ -504,6 +505,8 @@ function CreatorPage({
 
   // The shop's own typeface, fetched the first time its page is drawn.
   useEffect51(() => { ensureShopFont(theme.fontKey); }, [theme.fontKey]);
+  // Pay on the Bazaar map: straight to paying them, as "Pay" at the foot of this page does.
+  useEffect51(() => { if (startPaying && !isOwner && creator && creator.symbolId && onPay) onPay({ amount: 0, currency: ccyCode, lines: [], creator }); }, [startPaying, creator && creator.symbolId]);
 
   const bump = (id, by) => {
     // A tap on + is the clearest "I want this" a page gets.

@@ -43,7 +43,7 @@ test("0251: one Rent — its search bar, type chips and filter find what is to r
   assert.doesNotMatch(ui, /function RentBazaarScreen/);
   assert.match(ui, /function RentFind\(\{ q, type, filters, onCount, onToast \}\)/);
   assert.match(ui, /function RentFilterSheet\(/);
-  assert.match(ui, /RP_KM_CHIPS = \[\[2, "Near me · 2 km"\], \[5, "Near me · 5 km"\], \[0, "Anywhere"\]\]/);
+  assert.match(ui, /RP_KM_CHIPS = \[\[2, "2 km"\], \[5, "5 km"\], \[10, "10 km"\], \[15, "15 km"\]\]/);
   assert.match(ui, /\$\{count\} to rent/);
 });
 

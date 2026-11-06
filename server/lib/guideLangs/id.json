@@ -1,0 +1,496 @@
+{
+ "lang": "id",
+ "cards": {
+  "send-how": {
+   "q": "Bagaimana cara mengirim uang?",
+   "asks": ["kirim uang", "cara kirim uang", "cara transfer uang", "transfer ke teman", "bayar ke orang lain", "kirim uang lewat gloobal id", "kirim ke nomor hp", "gimana cara transfer", "melakukan pembayaran", "kirm uang", "gimana bayar ke teman saya", "bayar teman", "mau kirim duit"],
+   "steps": [
+    "Di Home, ketuk **Send**.",
+    "Cari orangnya lewat GLOOBAL ID, atau ganti ke nomor HP mereka. Anda juga bisa mengetuk **Scanner** di Home lalu memindai kode mereka.",
+    "Ketik jumlahnya lalu ketuk **Send**. Kemudian pilih cara bayarnya, misalnya **GLOOBAL Bank**.",
+    "Konfirmasi dengan PIN Anda (dan sidik jari atau Face ID jika ponsel Anda memintanya). Pembayaran antar-akun GLOOBAL langsung sampai ke mereka."
+   ]
+  },
+  "send-abroad": {
+   "q": "Bagaimana cara mengirim uang ke negara lain?",
+   "asks": ["kirim uang ke luar negeri", "kirim ke negara lain", "transfer internasional", "bayar orang di negara lain", "kirim uang ke mancanegara", "transfer luar negeri", "pembayaran lintas negara", "mereka terima mata uang apa", "kurs", "nilai tukar", "berapa yang mereka terima", "kenapa ada dua jumlah", "dua jumlah", "jumlah yang diterima berbeda"],
+   "steps": [
+    "Gunakan **Send** seperti biasa dan cari mereka lewat GLOOBAL ID atau nomor HP. Negara mereka terlihat di kartu mereka.",
+    "Anda membayar dengan uang negara Anda sendiri, dan mereka menerima uang negara mereka sendiri.",
+    "Sebelum Anda mengonfirmasi, layar menunjukkan kedua jumlah — yang Anda bayar dan yang mereka terima — beserta kurs yang dipakai.",
+    "Struk di **History** menyimpan kedua jumlah itu."
+   ]
+  },
+  "send-limit": {
+   "q": "Kenapa saya tidak bisa mengirim jumlah ini?",
+   "asks": ["batas pengiriman", "kenapa pengiriman dihentikan sementara", "pembayaran dihentikan sementara", "maksimal yang bisa dikirim", "batas transfer", "tidak bisa kirim uang", "jumlahnya terlalu besar untuk dikirim", "pengiriman diblokir", "kenapa dibatasi", "limit transfer", "berapa yang bisa saya kirim", "berapa batas kirim hari ini", "limit saya berapa"],
+   "steps": [
+    "GLOOBAL dapat menghentikan pembayaran ke suatu negara, atau membatasi jumlah yang bisa dikirim ke sana, untuk sementara waktu.",
+    "Layar **Send** memberi tahu Anda sebelum membayar — misalnya \"paused right now\" atau \"You can send up to…\". Batas Anda terlihat di sana.",
+    "Kirim jumlah yang lebih kecil, atau coba lagi nanti.",
+    "Jika tertulis pembayaran dari akun Anda dihentikan sementara, buka **Help & Support** lalu ketuk **Chat with us**."
+   ]
+  },
+  "send-speed": {
+   "q": "Seberapa cepat uangnya sampai ke mereka?",
+   "asks": ["berapa lama sampainya", "pembayaran belum diterima", "apakah uang saya sudah sampai", "apakah langsung masuk", "uang belum sampai", "waktu transfer", "kapan mereka terima uangnya", "pembayaran tertunda", "mereka belum terima uangnya", "lama kirim uang", "transfer berapa lama"],
+   "steps": [
+    "Pembayaran antar-akun GLOOBAL terjadi seketika. Begitu terlihat terkirim, uangnya sudah sampai ke akun mereka.",
+    "Tidak yakin? Buka pembayaran itu di Profile → **History**. Struknya menunjukkan dengan tepat posisi uang itu.",
+    "Uang ke bank luar berbeda: statusnya **Processing** sampai bank mengonfirmasi.",
+    "Masih ada masalah? Buka **Help & Support** → **Chat with us** lalu pilih **A payment**."
+   ]
+  },
+  "send-undo": {
+   "q": "Bisakah saya membatalkan pembayaran yang sudah terkirim?",
+   "asks": ["batalkan pembayaran", "batalkan transfer", "membatalkan kiriman", "minta uang kembali", "refund pembayaran saya", "hentikan pembayaran", "tarik kembali uang", "pembatalan transaksi", "uang bisa dikembalikan", "cancel transfer"],
+   "steps": [
+    "Sebelum Anda memasukkan PIN, Anda masih bisa mundur — belum ada yang terkirim.",
+    "Setelah terkirim, Anda tidak bisa menariknya kembali sendiri. Orang yang Anda bayar bisa mengirimkannya kembali.",
+    "Buka struk pembayaran itu di **History** lalu ketuk **Complain**. Mereka akan diberi tahu, dan bisa mengetuk **Send back** di kasus itu. Anda juga bisa chat dengan kami."
+   ]
+  },
+  "send-wrong": {
+   "q": "Saya mengirim uang ke orang yang salah",
+   "asks": ["salah kirim orang", "transfer ke nomor yang salah", "salah jumlah bayar", "terbayar dua kali", "salah transfer", "pembayaran keliru", "salah kirim gloobal id", "uang masuk ke akun yang salah", "kelebihan bayar karena keliru", "keliru kirim uang"],
+   "steps": [
+    "Buka pembayaran itu dari **History** lalu ketuk **Complain** di struknya.",
+    "Pilih alasannya, misalnya **Sent to the wrong person** atau **Wrong amount**. Mengajukannya tidak memindahkan uang apa pun.",
+    "Orang itu akan diberi tahu. Anda bisa berbicara di chat kasus itu, dan mereka bisa mengirim uangnya kembali dari sana.",
+    "Tidak ada balasan dalam 48 jam? Ketuk **Ask support** untuk menyerahkannya ke GLOOBAL. Semua kasus ada di Profile → **Complaints & reports**."
+   ]
+  },
+  "send-location": {
+   "q": "Kenapa GLOOBAL perlu lokasi saya untuk membayar?",
+   "asks": ["lokasi diperlukan untuk bayar", "nyalakan lokasi", "lokasi mati", "kenapa perlu lokasi", "izin gps", "lokasi diblokir", "tidak bisa bayar karena lokasi", "lokasi tidak ditemukan", "izin lokasi", "aktifkan lokasi"],
+   "steps": [
+    "GLOOBAL memeriksa dari negara mana Anda membayar. Ini menjaga uang Anda tetap aman.",
+    "Jika lokasi mati, layar **Send** menampilkan **Turn on location** sebagai pengganti tombol Send. Ketuk itu lalu izinkan.",
+    "Diblokir di browser Anda? Ketuk ikon pengaturan di samping alamat web, ketuk **Permissions**, lalu nyalakan **Location**."
+   ]
+  },
+  "send-rent": {
+   "q": "Bagaimana cara membayar sewa setiap bulan?",
+   "asks": ["bayar sewa", "sewa bulanan", "bayar kos", "bayar kontrakan", "bayar sewa otomatis", "bayar ke pemilik kos", "pengingat sewa", "simpan data sewa", "tagih sewa dari penyewa", "terima uang sewa", "sewa rumah tiap bulan"],
+   "steps": [
+    "Di Home, ketuk **Rent**, lalu **Add a place** dan pilih **A place I live**.",
+    "Tambahkan siapa yang Anda bayar (GLOOBAL ID mereka), berapa jumlahnya, dan pada tanggal berapa.",
+    "Pilih **Pay by itself** untuk membayar dari GLOOBAL Bank pada hari itu, atau **Ask me first** untuk mendapat pengingat dan membayar dengan sekali ketuk.",
+    "Anda justru menagih sewa? Pilih **A place I'm creating** untuk melihat apakah uangnya sudah masuk."
+   ]
+  },
+  "scan-pay": {
+   "q": "Bagaimana cara membayar dengan scan kode QR?",
+   "asks": ["scan dan bayar", "scan qr", "bayar pakai qr", "scanner", "scan kode untuk bayar", "bayar di toko", "scan tidak berfungsi", "unggah qr dari galeri", "pembayaran qr", "bayar qris", "kamera scan"],
+   "steps": [
+    "Di Home, ketuk **Scanner** dan izinkan akses kamera.",
+    "Arahkan ke kode GLOOBAL. Punya QR dalam bentuk gambar? Ketuk **Upload from gallery**.",
+    "Periksa nama yang muncul, lalu ketik jumlahnya dan konfirmasi dengan PIN Anda."
+   ]
+  },
+  "receive-qr": {
+   "q": "Bagaimana cara menerima uang?",
+   "asks": ["terima uang", "menerima pembayaran", "kode qr saya", "tampilkan qr saya", "bagikan gloobal id saya", "bagaimana orang membayar saya", "kumpulkan uang", "qr saya di mana", "terima uang dari teman", "trima uang", "minta dibayar"],
+   "steps": [
+    "Di Home, ketuk **Receive**. Di sana terlihat QR GLOOBAL dan GLOOBAL ID Anda.",
+    "Biarkan mereka memindai QR itu, atau gunakan tombol salin atau bagikan untuk mengirim GLOOBAL ID Anda di chat apa pun.",
+    "Uangnya langsung masuk ke saldo GLOOBAL Anda, dan Anda mendapat notifikasi."
+   ]
+  },
+  "gloobal-id": {
+   "q": "Apa itu GLOOBAL ID saya?",
+   "asks": ["apa itu gloobal id", "id saya", "gloobal id saya di mana", "bagaimana id bekerja", "simbol di id saya", "cara membaca id saya", "nomor rekening", "cari id saya", "arti gloobal id", "12 simbol"],
+   "steps": [
+    "GLOOBAL ID adalah alamat Anda di GLOOBAL: 12 simbol, dibuat dari 8 bentuk, sama dalam semua bahasa.",
+    "Orang memakainya untuk membayar Anda, dan Anda bisa memakainya untuk masuk. Ini juga nomor rekening GLOOBAL Bank Anda.",
+    "Bacakan per empat simbol, seperti nomor telepon. Anda selalu bisa menemukannya di **Receive**."
+   ]
+  },
+  "account-login": {
+   "q": "Bagaimana cara masuk di ponsel baru?",
+   "asks": ["login di hp baru", "masuk akun", "ganti hp", "login hp baru", "cara login", "login pakai nomor hp", "login pakai gloobal id", "tidak bisa login", "login lagi", "ponsel baru"],
+   "steps": [
+    "Buka GLOOBAL di ponsel baru lalu ketuk tombol **Log in** di layar pertama.",
+    "Masukkan GLOOBAL ID Anda, atau ganti ke nomor HP Anda.",
+    "Masukkan PIN Anda. PIN Anda berlaku di ponsel apa pun; Anda bisa menyalakan **Biometric login** nanti di Profile → **Security**."
+   ]
+  },
+  "account-security": {
+   "q": "Bagaimana cara mengganti PIN atau mengunci aplikasi?",
+   "asks": ["ganti pin", "pin baru", "kunci aplikasi", "login sidik jari", "face id", "pengaturan keamanan", "pin terkunci", "salah pin terlalu sering", "nyalakan biometrik", "passkey", "lupa pin", "ubah pin"],
+   "steps": [
+    "Buka Profile → **Security**.",
+    "Ketuk **Change PIN**. Anda perlu PIN saat ini untuk membuat yang baru.",
+    "Nyalakan **App lock** agar PIN diminta lagi setelah 5 menit ditinggalkan, dan **Biometric login** untuk memakai sidik jari atau Face ID.",
+    "Jangan pernah membagikan PIN Anda. Terlalu banyak percobaan salah akan menguncinya untuk sementara."
+   ]
+  },
+  "account-history": {
+   "q": "Di mana saya bisa melihat pembayaran dan struk saya?",
+   "asks": ["riwayat pembayaran", "riwayat transaksi", "struk saya", "lihat pembayaran lama", "mutasi rekening", "struk saya di mana", "unduh struk", "bagikan struk", "transaksi sebelumnya", "bukti transfer", "bukti pembayaran"],
+   "steps": [
+    "Buka Profile → **History**. Beralih antara **Paid** dan **Received**, lalu pilih periodenya.",
+    "Ketuk pembayaran mana pun untuk membuka struknya: siapa, berapa, kapan, dan di mana posisi pembayaran itu.",
+    "Dari struk itu Anda bisa **Share**, atau mengetuk **Complain** jika ada yang salah."
+   ]
+  },
+  "account-notifications": {
+   "q": "Bagaimana cara mendapat pemberitahuan saat uang masuk?",
+   "asks": ["notifikasi", "nyalakan notifikasi", "tidak ada notif saat uang masuk", "notif push", "peringatan pembayaran", "notifikasi diblokir", "tidak dapat notifikasi", "aktifkan pemberitahuan", "notif tidak muncul"],
+   "steps": [
+    "Buka Profile → **Notifications**.",
+    "Ketuk **Enable** dan izinkan notifikasi saat ponsel Anda memintanya. Anda akan diberi tahu saat uang masuk, bahkan ketika GLOOBAL tertutup.",
+    "Jika tertulis notifikasi diblokir, nyalakan untuk situs ini di pengaturan browser Anda.",
+    "Daftarnya menyimpan pemberitahuan terbaru Anda; **History** menyimpan setiap pembayaran."
+   ]
+  },
+  "account-hold": {
+   "q": "Kenapa akun saya ditahan?",
+   "asks": ["akun ditahan", "akun diblokir", "pembayaran dari akun ini dihentikan sementara", "tidak bisa kirim apa pun", "akun dibekukan", "kirim ke bank dihentikan", "akun dibatasi", "kenapa akun saya dihentikan sementara", "akun ditangguhkan", "akun kena blokir"],
+   "steps": [
+    "Tim GLOOBAL dapat menghentikan sementara sebagian akun: pengiriman uang, pengiriman ke bank, atau sebuah toko.",
+    "Anda tetap bisa masuk dan menerima uang.",
+    "Untuk tahu lebih lanjut, buka Profile → **Help & Support** → **Chat with us** lalu pilih **My account**. Seorang petugas akan membalas."
+   ]
+  },
+  "account-safe": {
+   "q": "Apakah uang saya aman di GLOOBAL?",
+   "asks": ["apakah uang saya aman", "apakah gloobal aman", "ada yang memakai akun saya", "akun diretas", "penipuan", "aman tidak", "lindungi akun saya", "bisakah uang saya dicuri", "scam", "akun dihack"],
+   "steps": [
+    "Setiap pembayaran memerlukan PIN Anda, ditambah sidik jari atau Face ID jika ponsel Anda memilikinya. Terlalu banyak PIN salah akan menguncinya untuk sementara.",
+    "GLOOBAL memeriksa dari negara mana Anda membayar sebelum uang berpindah.",
+    "Nyalakan **App lock** di Profile → **Security**. Jika orang lain memakai akun Anda, segera ganti PIN Anda dan chat dengan kami."
+   ]
+  },
+  "account-privacy": {
+   "q": "Siapa yang bisa melihat chat dan data saya?",
+   "asks": ["siapa yang melihat data saya", "privasi", "apakah gloobal bisa baca chat saya", "siapa yang bisa lihat keluhan saya", "apakah selfie saya disimpan", "sembunyikan saldo", "data pribadi saya", "keamanan data", "kerahasiaan data"],
+   "steps": [
+    "Chat pengaduan hanya antara Anda dan orang tersebut. Tim bantuan GLOOBAL hanya melihatnya jika kasus itu diserahkan kepada mereka.",
+    "Chat Help & Support dibaca oleh tim GLOOBAL, agar mereka bisa membantu Anda.",
+    "Selfie untuk membuka GLOOBAL Bank tetap ada di ponsel Anda. Ketuk ikon mata pada saldo Anda untuk menyembunyikannya."
+   ]
+  },
+  "account-referral": {
+   "q": "Bagaimana cara kerja referral?",
+   "asks": ["referral", "undang teman", "ajak teman", "kode referral", "jaringan referral saya", "siapa yang gabung dengan id saya", "bagikan link referral", "refferal", "kode undangan"],
+   "steps": [
+    "Bagikan GLOOBAL ID Anda. Saat seseorang mendaftar, mereka bisa mengetiknya di langkah **Referral Code**.",
+    "Setelah itu mereka terlihat sebagai referral Anda di Profile → **My Referral Network**.",
+    "Tidak ada yang diambil dari apa yang mereka bayar. Langkah referral itu tidak wajib bagi mereka."
+   ]
+  },
+  "bank-what": {
+   "q": "Bagaimana cara kerja GLOOBAL Bank?",
+   "asks": ["apa itu gloobal bank", "gloobal bank", "bagaimana banknya bekerja", "rekening bank saya", "saldo bank", "pindahkan uang ke bank saya", "gloobal bank di mana", "nomor rekening bank", "fungsi gloobal bank"],
+   "steps": [
+    "GLOOBAL Bank adalah akun GLOOBAL Anda. Bukalah dari tab **Accounts**, atau ketuk **Add Bank** di Home.",
+    "Gunakan **Add money** untuk memasukkan uang, dan **Send to bank** untuk mengeluarkannya ke rekening bank yang Anda hubungkan.",
+    "Uang yang keluar berstatus **Processing** sampai bank Anda mengonfirmasi. Jika bank mengirimkannya kembali, uang itu kembali ke saldo Anda dengan sendirinya."
+   ]
+  },
+  "bank-open": {
+   "q": "Bagaimana cara membuka rekening GLOOBAL Bank saya?",
+   "asks": ["buka gloobal bank", "buka rekening bank", "buat rekening bank", "selesaikan pembukaan rekening", "kyc", "ahli waris", "lanjutkan pembukaan rekening", "berapa lama buka rekening", "daftar rekening", "syarat buka rekening"],
+   "steps": [
+    "Buka **Accounts** → **GLOOBAL Bank** lalu ketuk **Open account**. Prosesnya sekitar 5 menit dengan kartu identitas Anda.",
+    "Ikuti langkah-langkahnya: tentang Anda, kartu identitas, selfie, ahli waris, tinjauan, lalu konfirmasi dengan PIN Anda.",
+    "Perlu istirahat? Ketuk **Save & exit** dan lanjutkan nanti dari kartu yang sama.",
+    "GLOOBAL ID Anda menjadi nomor rekening Anda."
+   ]
+  },
+  "bank-link": {
+   "q": "Bagaimana cara menghubungkan rekening bank saya?",
+   "asks": ["hubungkan rekening bank", "tambah rekening bank", "sambungkan bank saya", "hubungkan upi", "tambah ifsc", "hubungkan bank lain", "verifikasi rekening bank saya", "bank yang terhubung", "tautkan rekening", "menambah rekening", "tambahkan rekening lain"],
+   "steps": [
+    "Buka **GLOOBAL Bank**, ketuk **Link another bank**, lalu pilih bank Anda.",
+    "Ikuti **Verify it's your account**. Aplikasi memeriksa bahwa nama di bank sama dengan nama Anda.",
+    "Hanya rekening atas nama Anda sendiri yang bisa dihubungkan. Anda juga bisa menambahkannya saat mengirim: **Send to bank** → **Add a bank account**."
+   ]
+  },
+  "bank-withdraw": {
+   "q": "Bagaimana cara menarik uang ke bank saya?",
+   "asks": ["tarik uang", "tarik ke bank", "kirim uang ke rekening saya", "cairkan saldo", "transfer ke rekening bank saya", "pindahkan saldo ke bank", "keluarkan uang", "penarikan", "pencairan ke bank", "tarik tunai ke bank"],
+   "steps": [
+    "Buka **GLOOBAL Bank** lalu ketuk **Send to bank**.",
+    "Ketik jumlahnya dan pilih rekening bank Anda, atau ketuk **Add a bank account** (harus atas nama Anda). Ketuk **Continue**.",
+    "Periksa detailnya, masukkan PIN GLOOBAL Anda, lalu ketuk **Send**.",
+    "Statusnya **Processing** sampai bank Anda mengonfirmasi. Anda bisa menemukannya kapan saja di **Bank transfers**."
+   ]
+  },
+  "bank-add": {
+   "q": "Bagaimana cara menambah uang ke GLOOBAL?",
+   "asks": ["tambah uang", "isi saldo", "top up", "setor uang", "isi saldo pakai upi", "tambah uang dari bank", "tambah uang pakai kartu debit", "masukkan uang ke gloobal", "batas isi saldo hari ini", "tambah saldo"],
+   "steps": [
+    "Buka **GLOOBAL Bank** lalu ketuk **Add money**.",
+    "Ketik jumlahnya lalu pilih **UPI**, **Bank transfer**, atau **Debit card**.",
+    "Uang hanya bisa berasal dari rekening atas nama Anda sendiri. Layar menunjukkan berapa lagi yang masih bisa Anda tambahkan hari ini."
+   ]
+  },
+  "bank-processing": {
+   "q": "Kenapa transfer bank saya bertuliskan Processing atau Returned?",
+   "asks": ["transfer bank processing", "uang belum sampai ke bank saya", "penarikan tertunda", "transfer dikembalikan", "bank mengembalikan uang", "dikembalikan oleh bank", "transfer bank gagal", "uang nyangkut di processing", "kenapa tertulis processing", "processing lama", "arti returned"],
+   "steps": [
+    "**Processing** berarti uang sedang dalam perjalanan dan GLOOBAL menunggu bank Anda mengonfirmasi. Statusnya berubah menjadi **Credited** setelah bank mengonfirmasi.",
+    "**Returned** berarti bank mengirimkannya kembali. Uangnya kembali ke saldo GLOOBAL Anda dengan sendirinya.",
+    "Masih tertahan? Buka di **Bank transfers** lalu ketuk **Report a problem**."
+   ]
+  },
+  "essentials-what": {
+   "q": "Apa itu My Essentials?",
+   "asks": ["apa itu my essentials", "essentials", "essentials harian", "makanan air tempat tinggal", "jatah harian", "apakah harus dikembalikan", "apakah essentials gratis", "dasar essentials", "uang gratis setiap hari", "arti essentials"],
+   "steps": [
+    "My Essentials adalah jumlah harian yang ditanggung GLOOBAL untuk Anda, untuk makanan, air, tempat tinggal, dan kreativitas.",
+    "Ini gratis dan tidak pernah perlu dibayar kembali. Yang tidak Anda pakai hari ini tidak terbawa ke hari berikutnya; besok terisi lagi.",
+    "Temukan di tab **Accounts** → **My Essentials**. GLOOBAL Bank harus sudah terbuka agar Anda bisa melihat jumlahnya dan memakainya."
+   ]
+  },
+  "essentials-use": {
+   "q": "Bagaimana cara membayar dengan Essentials saya?",
+   "asks": ["pakai essentials", "bayar pakai essentials", "belanja dengan essentials", "cara memakai essentials saya", "essentials tidak berfungsi", "essentials sudah habis", "pembayaran gloobal essentials", "menggunakan essentials"],
+   "steps": [
+    "Kirim uang seperti biasa. Setelah mengetuk **Send**, pilih **GLOOBAL Essentials** di bawah **Pay with**.",
+    "Essentials menutup sebanyak yang bisa dari sisa hari ini, dan sisanya dibayar dari GLOOBAL Bank Anda.",
+    "Lalu konfirmasi dengan PIN Anda. Jika tidak ada sisa hari ini, atau GLOOBAL Bank belum terbuka, pembayaran diambil dari saldo bank Anda."
+   ]
+  },
+  "essentials-unlock": {
+   "q": "Kenapa jumlah Essentials saya disembunyikan?",
+   "asks": ["essentials disembunyikan", "buka kunci essentials", "essentials terkunci", "tidak bisa lihat essentials saya", "titik-titik di essentials", "cara membuka essentials saya", "jatah harian tersembunyi", "tampilkan jumlah saya", "jumlah essentials tidak terlihat"],
+   "steps": [
+    "Jumlah Anda sudah dihitung. Membuka GLOOBAL Bank-lah yang menampilkannya.",
+    "Di **My Essentials**, ketuk **Start opening GLOOBAL Bank**. Prosesnya sekitar 5 menit dengan kartu identitas Anda.",
+    "Setelah terbuka, Anda bisa melihat sisa hari ini dan memakainya."
+   ]
+  },
+  "essentials-locked": {
+   "q": "Kenapa saya tidak bisa mengirim seluruh saldo ke bank saya?",
+   "asks": ["apa yang terkunci di essentials saya", "tetap di gloobal", "apakah masih uang saya", "tidak bisa tarik seluruh saldo", "paling banyak yang bisa dikirim", "belum ada yang bisa keluar", "essentials tertahan", "uang terkunci", "kenapa sebagian saldo saya tertahan", "saldo tidak bisa ditarik semua"],
+   "steps": [
+    "Yang sudah Anda pakai dari Essentials itu gratis. Sebagai gantinya, jumlah yang sama tetap berada di GLOOBAL saat uang masuk.",
+    "Bagian itu tetap uang Anda: Anda bisa membelanjakannya atau membayar siapa saja di GLOOBAL. Hanya saja, uang itu tidak bisa keluar ke bank luar.",
+    "Semua yang di atas jumlah itu bisa keluar ke bank mana pun. **My Essentials** menunjukkan yang tetap tinggal, dan **Send to bank** menunjukkan jumlah terbanyak yang bisa Anda kirim."
+   ]
+  },
+  "geu-what": {
+   "q": "Apa itu GEU?",
+   "asks": ["apa itu geu", "arti geu", "kenapa tertulis geu", "ganti ke geu", "tampilkan jumlah dalam mata uang saya", "ubah tampilan mata uang", "geu atau rupiah", "apakah geu itu koin", "geu itu apa", "geu sama dengan rupiah"],
+   "steps": [
+    "GEU adalah nama lain untuk uang Anda sendiri: 1 GEU sama dengan 1 satuan uang negara Anda. Di India, 1 GEU = ₹1.",
+    "Ketuk sakelar di kartu saldo Anda untuk menampilkan jumlah dalam GEU atau dalam mata uang Anda. Tidak ada yang dikonversi, tidak ada biaya, dan uang Anda tidak berubah.",
+    "GEU berarti jumlah yang berbeda di setiap negara, jadi pengiriman selalu memakai uang sungguhan di kedua sisi."
+   ]
+  },
+  "shop-setup": {
+   "q": "Bagaimana cara menyiapkan toko saya?",
+   "asks": ["buka toko", "siapkan toko saya", "sisi creator", "nama toko", "mulai berjualan", "jadi creator", "akun bisnis", "tambah toko lain", "nama creator", "cara membuat toko", "bikin toko", "buat toko online"],
+   "steps": [
+    "Ketuk sakelar bundar di bagian atas Home untuk beralih ke sisi Creator Anda. Pada kali pertama, penyiapan toko akan terbuka — ketuk **Join — open my shop**.",
+    "Pilih nama toko Anda dalam dua bagian, misalnya rasoi.ghar. Bahasa apa pun bisa. Membuka toko itu gratis.",
+    "Melewatkannya? Buka Profile → **Creator Profile** → **Set up my creator name**.",
+    "Di sisi Creator, Profile → **My shops** memungkinkan Anda menambah toko lain."
+   ]
+  },
+  "shop-get-paid": {
+   "q": "Bagaimana pelanggan membayar ke toko saya?",
+   "asks": ["pelanggan bayar ke toko saya", "kode qr toko", "kode toko saya", "cetak qr untuk kasir", "poster scan untuk bayar", "bagaimana orang menemukan toko saya", "terima pembayaran di toko", "toko dibayar pelanggan", "qr untuk meja kasir"],
+   "steps": [
+    "Tunjukkan kode toko Anda: di sisi Creator ketuk **Receive**, atau buka Profile → **Creator Profile** → **Show your code**. Pelanggan memindainya dengan **Scanner**.",
+    "Dari layar kode, ambil **Poster for your counter** — lembar \"Scan to pay\" untuk dicetak.",
+    "Pelanggan juga bisa mengetik nama toko Anda di **Pay & Services** (ketuk **More** di Home)."
+   ]
+  },
+  "shop-money": {
+   "q": "Kapan uang toko masuk ke saldo saya?",
+   "asks": ["kapan saya dapat uang toko", "saldo pembayaran toko", "uang toko masuk ke mana", "saldo creator", "pemasukan hari ini", "pendapatan toko", "uang dari toko saya", "pencairan penjualan toko", "penghasilan toko"],
+   "steps": [
+    "Langsung. Setiap pembayaran ke toko Anda yang mana pun masuk ke satu saldo Creator Anda begitu dibayar.",
+    "Di sisi Creator, Home menampilkan **Today's Collection**, dan Profile → **My shops** menampilkan total setiap toko.",
+    "Setiap pembayaran juga ada di **History** beserta struknya."
+   ]
+  },
+  "shop-hidden": {
+   "q": "Kenapa orang tidak bisa menemukan toko saya?",
+   "asks": ["toko tidak muncul", "tidak bisa menemukan toko saya", "toko disembunyikan", "pelanggan tidak bisa lihat toko saya", "toko tidak ada di pencarian", "toko ditahan", "toko saya hilang", "toko diblokir", "toko tidak terlihat"],
+   "steps": [
+    "Pelanggan menemukan toko dari nama persisnya, jadi pastikan mereka mengetik kedua bagiannya dengan benar.",
+    "Toko yang belum punya nama tidak bisa ditemukan. Selesaikan di Profile → **Creator Profile**.",
+    "GLOOBAL juga dapat menyembunyikan toko untuk sementara; Anda sendiri tetap melihatnya. Di sisi Creator, buka **Help & Support** → **Chat with us** → **My shop**."
+   ]
+  },
+  "help-chat": {
+   "q": "Bagaimana cara berbicara dengan petugas GLOOBAL?",
+   "asks": ["hubungi bantuan", "layanan pelanggan", "kontak gloobal", "chat dengan kami", "bicara dengan orang", "bantuan", "nomor customer service", "mengadu ke gloobal", "customer service", "cs gloobal", "hubungi cs"],
+   "steps": [
+    "Buka Profile → **Help & Support**.",
+    "Di bawah **Chat with us**, pilih topiknya, tulis apa yang terjadi, lalu ketuk **Send to GLOOBAL**.",
+    "Seorang petugas GLOOBAL akan membalas di sana. Anda mendapat pemberitahuan dan notifikasi push saat mereka membalas.",
+    "Tentang pembayaran? Pilih **A payment** lalu pilih dari pembayaran terakhir Anda, agar tim melihat dengan tepat pembayaran yang mana."
+   ]
+  },
+  "help-complaint": {
+   "q": "Bagaimana cara melaporkan masalah pembayaran?",
+   "asks": ["laporkan masalah", "ajukan keluhan", "keluhan dan laporan", "sengketa pembayaran", "barang tidak saya terima", "saya tidak melakukan pembayaran ini", "keluhan saya", "buka kasus", "lapor transaksi", "komplain pembayaran"],
+   "steps": [
+    "Buka pembayaran itu dari **History** lalu ketuk **Complain** di struknya, kemudian pilih alasannya.",
+    "Setiap kasus yang Anda ajukan, atau yang menyangkut Anda, ada di Profile → **Complaints & reports**.",
+    "Untuk transfer GLOOBAL Bank, buka di **Bank transfers** lalu ketuk **Report a problem**."
+   ]
+  }
+ },
+ "ui": {
+  "sub": "Jawaban dari panduan GLOOBAL",
+  "hello": "Halo! Tanyakan apa saja tentang GLOOBAL",
+  "helloSub": "Tulis atau ucapkan dalam bahasa Anda — jawabannya kembali dalam bahasa itu.",
+  "placeholder": "Ketik pertanyaan Anda…",
+  "more": "Tanyakan hal lain…",
+  "ask": "Tanya",
+  "popular": "Yang sering ditanyakan",
+  "maybe": "Apakah maksud Anda",
+  "helped": "Apakah ini membantu?",
+  "yes": "Ya",
+  "no": "Tidak",
+  "thanks": "Terima kasih — ini membantu kami memperbaiki panduan.",
+  "sorry": "Maaf soal itu. Tanyakan dengan cara lain, atau petugas bisa membantu.",
+  "askAgain": "Tanya lagi",
+  "talk": "Bicara dengan petugas",
+  "talkTeam": "Bicara dengan tim",
+  "showMe": "Tunjukkan",
+  "listen": "Dengarkan",
+  "stop": "Berhenti",
+  "readIn": "Baca dalam:",
+  "which": "Yang mana maksud Anda?",
+  "noneOfThese": "Tidak ada — bicara dengan petugas",
+  "nothing": "Saya tidak menemukannya di panduan.",
+  "nothingSub": "Coba kata lain, pilih topik, atau petugas bisa membantu.",
+  "otherLang": "Kami belum punya jawaban dalam bahasa Anda — berikut yang paling dekat dalam bahasa Inggris.",
+  "personalTitle": "Ini tentang uang Anda sendiri",
+  "personalBody": "Ask GLOOBAL tidak bisa melihat pembayaran atau saldo Anda. Petugas dari tim bisa — mereka akan memeriksa dan menjawab Anda di Help & Support.",
+  "meanwhile": "Sambil menunggu, Anda bisa memeriksa ini sendiri",
+  "talkNote": "Pertanyaan Anda ikut terkirim. Anda memilih pembayarannya di sana.",
+  "never": "Ask GLOOBAL tidak pernah melihat saldo atau pembayaran Anda",
+  "voiceNote": "Pengetikan suara memakai layanan ucapan dari browser ponsel Anda.",
+  "loading": "Memuat jawaban…",
+  "offline": "Jawaban tidak bisa dimuat. Periksa koneksi Anda lalu coba lagi.",
+  "retry": "Coba lagi",
+  "from": "Dari panduan",
+  "open": "Buka {x}",
+  "tourNext": "Lanjut",
+  "tourDone": "Mengerti",
+  "tourClose": "Tutup",
+  "tourStep": "Langkah {n} dari {m}",
+  "noVoice": "Ponsel ini tidak punya suara untuk bahasa ini.",
+  "listening": "Mendengarkan…",
+  "lang": "Bahasa",
+  "close": "Tutup",
+  "topic_send": "Mengirim uang",
+  "topic_bank": "GLOOBAL Bank",
+  "topic_essentials": "My Essentials",
+  "topic_shop": "Toko saya",
+  "topic_geu": "Apa itu GEU",
+  "topic_account": "Akun saya",
+  "topic_receive": "Menerima uang",
+  "topic_help": "Bantuan",
+  "screen_send": "Pertanyaan tentang Send",
+  "screen_bank": "Pertanyaan tentang GLOOBAL Bank",
+  "screen_essentials": "Pertanyaan tentang My Essentials",
+  "screen_shop": "Pertanyaan tentang Toko saya",
+  "helpBoxTitle": "Ask GLOOBAL",
+  "helpBoxSub": "Tanyakan cara kerja apa pun di GLOOBAL, dalam bahasa Anda. Jawaban dalam hitungan detik.",
+  "fbOpen": "Beri masukan",
+  "fbHome": "Bantu kami memperbaiki Ask GLOOBAL",
+  "fbTitle": "Bagaimana pengalaman Anda dengan Ask GLOOBAL?",
+  "fbGood": "Bagus",
+  "fbOk": "Lumayan",
+  "fbBad": "Kurang bagus",
+  "fbPlaceholder": "Apa yang perlu kami tambah atau perbaiki? (opsional)",
+  "fbNote": "Anonim. Angka dan email dihapus sebelum disimpan.",
+  "fbSend": "Kirim masukan",
+  "fbThanks": "Terima kasih! Tim membaca setiap masukan.",
+  "qButton": "Pertanyaan tentang layar ini"
+ },
+ "tours": {
+  "bank-withdraw": {
+   "steps": [
+    "Tombol uang bank Anda ada di sini.",
+    "Ketuk **Send to bank** untuk memulai.",
+    "Lalu ketik jumlahnya, pilih bank Anda, ketuk **Continue**, dan konfirmasi dengan PIN Anda. Statusnya **Processing** sampai bank Anda mengonfirmasi."
+   ],
+   "missing": "Tombol **Send to bank** muncul di layar ini setelah rekening GLOOBAL Bank Anda terbuka."
+  }
+ },
+ "syn": {
+  "money": ["uang", "duit", "rupiah", "jumlah", "nominal", "dana"],
+  "send": ["kirim", "mengirim", "dikirim", "pengiriman", "ngirim", "mentransfer"],
+  "withdraw": ["tarik", "menarik", "penarikan", "cairk", "mencairk", "pencairan"],
+  "bank": ["bank"],
+  "shop": ["toko", "warung", "kios"],
+  "account": ["akun", "rekening"],
+  "fast": ["cepat", "segera", "langsung"],
+  "cancel": ["batal", "membatal", "pembatal", "dibatal", "kembalik", "dikembalik"],
+  "limit": ["batas", "membatas", "dibatas", "maksim", "limit"],
+  "abroad": ["negeri", "negara", "internasional", "mancanegara", "singapura", "malaysia"],
+  "hold": ["ditahan", "blokir", "diblokir", "dibeku", "ditangguh", "dihentik"],
+  "scan": ["pindai", "memindai", "scan"],
+  "wrong": ["salah", "keliru"],
+  "history": ["riwayat", "struk", "kuitansi", "histori", "mutasi", "bukti"],
+  "essentials": ["esensial", "esensi", "essential"],
+  "geu": [],
+  "notify": ["pemberitahu", "diberitahu", "peringatan", "notif"],
+  "pin": [],
+  "receive": ["terima", "menerima", "diterima", "penerima", "trima"],
+  "shopmoney": ["penjualan", "pendapatan", "penghasilan", "omzet", "omset", "pemasukan"]
+ },
+ "stop": ["saya", "aku", "gue", "gua", "kamu", "anda", "yang", "dan", "di", "ke", "dari", "ini", "itu", "untuk", "pada", "dengan", "atau", "adalah", "akan", "juga", "sih", "dong", "ya", "tolong", "mohon", "nih", "kok", "saja", "aja", "sudah", "udah", "apa", "apakah", "bagaimana", "gimana", "cara", "caranya", "bisa", "mau", "ingin"],
+ "personal": {
+  "me": ["saya", "gue", "gua", "gw", "aku kirim", "aku bayar", "aku transfer", "aku sudah", "aku udah", "aku belum", "aku tidak", "aku nggak", "aku gak", "aku salah", "aku tarik", "uangku", "duitku", "akunku", "saldoku", "rekeningku", "tokoku", "kirimanku", "transferku"],
+  "happened": ["sudah kirim", "sudah mengirim", "sudah dikirim", "sudah transfer", "sudah bayar", "sudah membayar", "sudah saya", "telah mengirim", "telah membayar", "telah transfer", "udah kirim", "udah transfer", "udah bayar", "terkirim", "kemarin", "tadi", "barusan", "terpotong", "dipotong", "kepotong", "terdebit", "didebit", "berkurang", "belum sampai", "belum masuk", "belum diterima", "belum terima", "belum dapat", "belum nyampe", "belum tiba", "tidak sampai", "tidak masuk", "tidak diterima", "tidak terima", "tak sampai", "nggak sampai", "nggak masuk", "ngga masuk", "gak sampai", "gak masuk", "ga sampai", "ga masuk", "gagal", "nyangkut", "tersangkut", "macet", "tertahan", "hilang", "salah kirim", "salah transfer", "di mana uang", "mana uang", "kemana uang", "uang saya di mana", "uang saya ke mana", "uang saya kemana"]
+ },
+ "probes": {
+  "ask": [
+   { "q": "saya mau transfer duit ke saudara, gimana ya?", "id": "send-how" },
+   { "q": "bisa kirim uang ke Singapura tidak?", "id": "send-abroad" },
+   { "q": "kenapa ada batas saat kirim uang?", "id": "send-limit" },
+   { "q": "berapa lama uang sampai ke penerima?", "id": "send-speed" },
+   { "q": "transfer yang sudah terkirim bisa dibatalkan?", "id": "send-undo" },
+   { "q": "aduh salah transfer ke orang lain, harus bagaimana", "id": "send-wrong" },
+   { "q": "kenapa aplikasi minta izin lokasi waktu bayar?", "id": "send-location" },
+   { "q": "bisa bayar uang kos otomatis tiap bulan?", "id": "send-rent" },
+   { "q": "cara bayar pakai scan qr di warung", "id": "scan-pay" },
+   { "q": "gimana supaya teman bisa bayar ke saya, mana qr-nya?", "id": "receive-qr" },
+   { "q": "gloobal id itu apa sih?", "id": "gloobal-id" },
+   { "q": "baru ganti hp, cara login lagi gimana?", "id": "account-login" },
+   { "q": "mau ubah pin aplikasi", "id": "account-security" },
+   { "q": "lihat riwayat transaksi bulan lalu di mana?", "id": "account-history" },
+   { "q": "kok notifikasi uang masuk tidak muncul?", "id": "account-notifications" },
+   { "q": "kenapa akun saya diblokir?", "id": "account-hold" },
+   { "q": "aman tidak menyimpan uang di gloobal?", "id": "account-safe" },
+   { "q": "kode referral itu apa dan bagaimana pakainya?", "id": "account-referral" },
+   { "q": "bagaimana cara buka rekening gloobal bank?", "id": "bank-open" },
+   { "q": "cara menambahkan rekening bank lain", "id": "bank-link" },
+   { "q": "cara tarik saldo ke rekening bank", "id": "bank-withdraw" },
+   { "q": "cara isi saldo gloobal lewat kartu debit", "id": "bank-add" },
+   { "q": "transfer ke bank masih processing terus", "id": "bank-processing" },
+   { "q": "my essentials itu apa ya?", "id": "essentials-what" },
+   { "q": "gimana bayar memakai essentials", "id": "essentials-use" },
+   { "q": "geu itu maksudnya apa?", "id": "geu-what" },
+   { "q": "saya ingin bikin toko di gloobal", "id": "shop-setup" },
+   { "q": "kapan hasil penjualan toko masuk saldo?", "id": "shop-money" },
+   { "q": "mau ngomong sama customer service", "id": "help-chat" },
+   { "q": "cara ajukan komplain transaksi", "id": "help-complaint" }
+  ],
+  "personal": [
+   "Saya kirim 500 ribu kemarin dan belum sampai",
+   "uang saya sudah terpotong tapi teman saya belum terima",
+   "transfer saya ke bank gagal dan saldo saya berkurang",
+   "aku sudah bayar 200 ribu ke toko tapi belum masuk",
+   "uang yang saya kirim tadi pagi nyangkut"
+  ],
+  "notPersonal": [
+   "berapa lama proses kirim uang",
+   "apa arti status Processing",
+   "bagaimana cara membatalkan pembayaran",
+   "apakah uang di GLOOBAL aman"
+  ]
+ }
+}

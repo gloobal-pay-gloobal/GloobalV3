@@ -54,8 +54,8 @@ describe("the screens", () => {
     assert.match(screen, /setStep\(3\)/);
     assert.match(screen, /<RentTermsEditor draft=\{termsDraft\} setDraft=\{setTermsDraft\} \/>/);
   });
-  test("the home lists requests that need someone, and a connected place shows its bill", () => {
-    assert.match(screen, /links\.filter\(rentLinkNeedsShowing\)/);
+  test("the bell lists requests that need someone, and a connected place shows its bill", () => {
+    assert.match(link, /\(links \|\| \[\]\)\.filter\(rentLinkNeedsShowing\)/);
     assert.match(screen, /data-testid="rent-bill"/);
     assert.match(screen, /\{p\.link \? <RentLinkPanel linkId=\{p\.link\.id\}/);
   });

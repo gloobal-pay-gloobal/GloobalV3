@@ -24,9 +24,25 @@
 // one who wrote the change cannot. Same rule as send-backs.
 
 const crypto = require('crypto');
-const BUILT_IN = require('./guideCards');
+const fs = require('fs');
+const path = require('path');
+const CORE_CARDS = require('./guideCards');
 
-const LANGS = ['en', 'hi', 'hl', 'ta'];
+// 0252: the four languages every phone gets, and the packs in guideLangs/, one
+// more of which a phone asks for when someone chooses or writes in it. A pack
+// holds that language's text for the built-in cards and the app's own words.
+const CORE_LANGS = ['en', 'hi', 'hl', 'ta'];
+const PACKS_DIR = path.join(__dirname, 'guideLangs');
+const PACKS = {};
+for (const f of fs.existsSync(PACKS_DIR) ? fs.readdirSync(PACKS_DIR) : []) {
+  if (f.endsWith('.json')) PACKS[f.slice(0, -5)] = JSON.parse(fs.readFileSync(path.join(PACKS_DIR, f), 'utf8'));
+}
+const BUILT_IN = CORE_CARDS.map((c) => {
+  const t = { ...c.t };
+  for (const [lang, pack] of Object.entries(PACKS)) if (pack.cards && pack.cards[c.id]) t[lang] = pack.cards[c.id];
+  return { ...c, t };
+});
+const LANGS = [...CORE_LANGS, ...Object.keys(PACKS)];
 const TOPICS = ['send', 'receive', 'bank', 'essentials', 'shop', 'geu', 'account', 'help'];
 const SCREENS = ['send', 'bank', 'essentials', 'shop'];
 const TARGETS = ['send', 'bank', 'essentials', 'myshop', 'history', 'receive', 'scan', 'complaints', 'security', 'referral', 'notifications', 'help'];
@@ -71,16 +87,22 @@ function cleanCard(id, raw) {
   if (!t.en) return { error: 'Every card needs the English version — the others can follow.' };
   return { card: { id, topic, screens, money: Boolean(raw.money), action: target ? { target } : null, tour, t } };
 }
-const LANG_NAMES = { en: 'English', hi: 'Hindi', hl: 'Hinglish', ta: 'Tamil' };
+const LANG_NAMES = { en: 'English', hi: 'Hindi', hl: 'Hinglish', ta: 'Tamil', bn: 'Bengali', te: 'Telugu', mr: 'Marathi', gu: 'Gujarati', kn: 'Kannada', ml: 'Malayalam', pa: 'Punjabi', ur: 'Urdu', ar: 'Arabic', es: 'Spanish', fr: 'French', pt: 'Portuguese', de: 'German', id: 'Indonesian', ru: 'Russian', zh: 'Chinese', ja: 'Japanese', ko: 'Korean' };
 
 function createGuide({ GuideCard, GuideEvent, requireAuth, writeLimit, lookupLimit, staff }) {
   const builtIn = new Map(BUILT_IN.map((c) => [c.id, c]));
-  let cache = null; // { version, cards }
+  const cache = new Map(); // extra language ('' = none) → { version, cards, pack }
+  const packFor = (extra) => {
+    const p = PACKS[extra];
+    return p ? { lang: extra, ui: p.ui, tours: p.tours, syn: p.syn, stop: p.stop, personal: p.personal } : null;
+  };
 
   // What the app shows: the built-in set, with the team's published
   // changes in place, their new cards added, and hidden ones left out.
-  async function current() {
-    if (cache) return cache;
+  async function current(extraRaw) {
+    const extra = PACKS[extraRaw] ? extraRaw : '';
+    if (cache.has(extra)) return cache.get(extra);
+    const langs = extra ? [...CORE_LANGS, extra] : CORE_LANGS;
     const rows = await GuideCard.find({}).lean();
     const byId = new Map(rows.map((r) => [r.cardId, r]));
     const cards = [];
@@ -90,12 +112,14 @@ function createGuide({ GuideCard, GuideEvent, requireAuth, writeLimit, lookupLim
       cards.push(r && r.live ? r.live : c);
     }
     for (const r of rows) if (!builtIn.has(r.cardId) && r.live && !r.hidden) cards.push(r.live);
-    const out = cards.map((c) => ({ id: c.id, topic: c.topic, screens: c.screens || [], action: c.action || null, tour: c.tour || null, t: c.t }));
-    const version = crypto.createHash('sha1').update(JSON.stringify(out)).digest('hex').slice(0, 12);
-    cache = { version, cards: out };
-    return cache;
+    const out = cards.map((c) => ({ id: c.id, topic: c.topic, screens: c.screens || [], action: c.action || null, tour: c.tour || null, t: Object.fromEntries(langs.filter((l) => c.t && c.t[l]).map((l) => [l, c.t[l]])) }));
+    const pack = packFor(extra);
+    const version = crypto.createHash('sha1').update(JSON.stringify(pack ? [out, pack] : out)).digest('hex').slice(0, 12);
+    const g = { version, cards: out, pack, langs };
+    cache.set(extra, g);
+    return g;
   }
-  const forget = () => { cache = null; };
+  const forget = () => { cache.clear(); };
 
   // Staff view of one card: what the app shows now, and any change waiting.
   function staffCard(id, row, me, stats) {
@@ -122,10 +146,10 @@ function createGuide({ GuideCard, GuideEvent, requireAuth, writeLimit, lookupLim
     // ── the app ──
     app.get('/api/guide', lookupLimit, async (req, res) => {
       try {
-        const g = await current();
+        const g = await current(String(req.query.extra || ''));
         res.set('Cache-Control', 'no-cache');
         if (String(req.query.have || '') === g.version) return res.json({ success: true, unchanged: true, version: g.version });
-        return res.json({ success: true, version: g.version, langs: LANGS, cards: g.cards });
+        return res.json({ success: true, version: g.version, langs: g.langs, cards: g.cards, ...(g.pack ? { pack: g.pack } : {}) });
       } catch (error) {
         console.error('guide error:', error);
         return res.status(500).json({ success: false, message: 'Could not load the guide just now.' });

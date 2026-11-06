@@ -72,14 +72,12 @@ img {
   user-select: none;
 }
 
-/* Hide scrollbars on the app's internal scroll containers without
-   disabling scrolling itself — matches the chrome-less look of a native
-   list/screen. Scoped to elements that opt in, not applied globally, so
-   it never silently changes a container's scroll behavior. */
-.no-scrollbar {
+/* No scrollbars anywhere in the app, up/down or left/right: the founder's
+   call. Everything still scrolls; only the bar is gone. */
+* {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-.no-scrollbar::-webkit-scrollbar {
+*::-webkit-scrollbar {
   display: none;
 }

@@ -110,6 +110,8 @@ function bazaarNearlyMatches(typed, stored) {
 
 var BAZAAR_RADII_KM = [0.5, 1, 2, 5, 10];
 var BAZAAR_RESULT_LIMIT = 10;
+// A map shows every shop in its circle, not the top of a list.
+var BAZAAR_MAP_RESULT_LIMIT = 60;
 // How many candidates are ranked per request. Enough for a town; the cap
 // keeps one request from aggregating a whole country's payments.
 var BAZAAR_CANDIDATE_CAP = 400;
@@ -173,7 +175,7 @@ function bazaarRoundDistance(m) {
 // Exact handle first (somebody who typed the whole name gets that shop),
 // then the chosen sort (see BAZAAR_SORTS), then the name so equal shops
 // have a stable order.
-function bazaarRank(rows, volume, { q = '', near = null, sort = 'paid' } = {}) {
+function bazaarRank(rows, volume, { q = '', near = null, sort = 'paid', limit = BAZAAR_RESULT_LIMIT } = {}) {
   const scored = rows.map((r) => {
     const v = volume.get(String(r._id)) || { d1: 0, d7: 0 };
     return { row: r, d1: v.d1, d7: v.d7, exact: Boolean(q) && String(r.handle || '').toLowerCase() === q };
@@ -192,7 +194,7 @@ function bazaarRank(rows, volume, { q = '', near = null, sort = 'paid' } = {}) {
   }[BAZAAR_SORTS.indexOf(sort) >= 0 ? sort : 'paid'];
   scored.sort((a, b) => (Number(b.exact) - Number(a.exact)) || by(a, b)
     || String(a.row.handle || '').localeCompare(String(b.row.handle || '')));
-  let top = scored.slice(0, BAZAAR_RESULT_LIMIT);
+  let top = scored.slice(0, limit);
   // Near me shows the top sellers in the circle, nearest first — the chosen
   // radius already says how far is acceptable, so inside it, closer wins.
   // An exact name typed still leads. Only for the default order: a person
@@ -356,6 +358,7 @@ module.exports = {
   BAZAAR_CATEGORIES,
   BAZAAR_RADII_KM,
   BAZAAR_RESULT_LIMIT,
+  BAZAAR_MAP_RESULT_LIMIT,
   BAZAAR_CANDIDATE_CAP,
   bazaarEscapeRegex,
   bazaarQuery,

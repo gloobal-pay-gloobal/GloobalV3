@@ -999,6 +999,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [creatorHit, setCreatorHit] = useState14(null);
   const [creatorLookupBusy, setCreatorLookupBusy] = useState14(false);
   const [openCreator, setOpenCreator] = useState14(null);
+  // Pay on the Bazaar map goes straight to paying this shop.
+  const [openCreatorPay, setOpenCreatorPay] = useState14(false);
   // A receipt's Store button (ReceiptModal → gloobal:openShop): the shop
   // that was paid, opened on its store.
   useEffect12(() => {
@@ -4144,9 +4146,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
         setMoreQueryLast(dot > 0 ? text.slice(dot + 1) : "");
       }}
       onToast={showToast2}
-      onOpen={async (shop) => {
+      onOpen={async (shop, intent) => {
         const found = await GloobalApi.resolveCreatorHandle(shop.handle || "");
-        if (found) { setPayUses(recordPayUse(myGloobalId, found.symbolId)); setOpenCreator(found); } else showToast2("Could not open that shop just now.");
+        if (found) { setPayUses(recordPayUse(myGloobalId, found.symbolId)); setOpenCreatorPay(Boolean(intent && intent.pay)); setOpenCreator(found); } else showToast2("Could not open that shop just now.");
       }}
     />{
       /* ── ONLINE BRANDS ─────────────────────────────────────────────────
@@ -4836,6 +4838,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onSendBack={sendBackForComplaint}
   /></ScreenErrorBoundary>}{openCreator && <ScreenErrorBoundary name="Creator page" onClose={() => setOpenCreator(null)}><CreatorPage
     creator={openCreator}
+    startPaying={openCreatorPay}
     isOwner={Boolean(openCreator.symbolId) && (openCreator.symbolId === myGloobalId || Boolean(shopsInfo && shopsInfo.shops && shopsInfo.shops.some((x) => x.symbolId === openCreator.symbolId)))}
     ccyCode={ccyCode}
     lens={displayLens}

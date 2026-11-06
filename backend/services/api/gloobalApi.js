@@ -1229,9 +1229,10 @@ var GloobalApi = {
   },
   // Ask GLOOBAL (0223): the guide's cards — "unchanged" when the phone
   // already has this version — and anonymous counts for the team.
-  async getGuide(have) {
+  async getGuide(have, extra) {
     try {
-      const r = await gloobalApiClient.get(`/api/guide${have ? `?have=${encodeURIComponent(have)}` : ""}`);
+      const params = [have ? `have=${encodeURIComponent(have)}` : "", extra ? `extra=${encodeURIComponent(extra)}` : ""].filter(Boolean).join("&");
+      const r = await gloobalApiClient.get(`/api/guide${params ? `?${params}` : ""}`);
       return r && r.success ? r : null;
     } catch (e) {
       return null;
@@ -2000,7 +2001,7 @@ var GloobalApi = {
   // Ranked on the server by recent payments; no amounts come back.
   // Returns the shops as an array; `.fuzzy` on it says they were found by
   // a near spelling ("smosa" → samosa) rather than the words typed.
-  async bazaarSearch({ q = "", category = "", near = null, country = "", openNow = false, sub = "", cats = [], sort = "", minRating = 0, maxPrice = 0, word = "", minShare = null } = {}) {
+  async bazaarSearch({ q = "", category = "", near = null, country = "", openNow = false, sub = "", cats = [], sort = "", minRating = 0, maxPrice = 0, word = "", minShare = null, forMap = false } = {}) {
     const p = new URLSearchParams();
     // A shared word from creators' own two words (0186).
     if (word) p.set("word", word);
@@ -2015,7 +2016,7 @@ var GloobalApi = {
     // Who shares (0194): "some", or the smallest share in percent.
     if (minShare) p.set("share", String(minShare));
     if (q && maxPrice > 0) p.set("maxPrice", String(maxPrice));
-    if (near) { p.set("lat", String(near.lat)); p.set("lng", String(near.lng)); p.set("radiusKm", String(near.radiusKm)); }
+    if (near) { p.set("lat", String(near.lat)); p.set("lng", String(near.lng)); p.set("radiusKm", String(near.radiusKm)); if (forMap) p.set("map", "1"); }
     const result = await gloobalApiClient.get(`/api/bazaar?${p.toString()}`);
     const shops = Array.isArray(result && result.shops) ? result.shops : [];
     shops.fuzzy = Boolean(result && result.fuzzy);
@@ -2091,6 +2092,16 @@ var GloobalApi = {
       return (result && result.parts) || null;
     } catch (e) {
       return null;
+    }
+  },
+
+  // A pin code, city or place, as points on the map. Empty if none or offline.
+  async geoSearch(q) {
+    try {
+      const result = await gloobalApiClient.get(`/api/geo/search?q=${encodeURIComponent(q)}`);
+      return (result && result.places) || [];
+    } catch (e) {
+      return [];
     }
   },
 

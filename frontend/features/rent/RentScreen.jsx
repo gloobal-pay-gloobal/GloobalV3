@@ -270,36 +270,48 @@ function RentScreen({ onClose, onSendOnce, onGetRent, onPayPerson, onToast, myGl
   const [filterOpen, setFilterOpen] = useState79(false);
   const [findCount, setFindCount] = useState79(null);
   const finding = !!(findQ.trim() || findType || findBrowse || rentFindActive(findF));
-  const clearFind = () => { setFindQ(""); setFindType(""); setFindBrowse(false); setFindF({ ...RENT_FIND_DEFAULT, here: findF.here }); setFindCount(null); };
+  // A place searched for (+ More) goes with the search; your own location stays.
+  const clearFind = () => { setFindQ(""); setFindType(""); setFindBrowse(false); setFindF({ ...RENT_FIND_DEFAULT, here: findF.place ? null : findF.here }); setFindCount(null); };
   const load = () => {
     GloobalApi.getRentLinks().then((l) => setLinks(Array.isArray(l) ? l : [])).catch(() => setLinks([]));
     return GloobalApi.getRentPlaces().then(setPlaces).catch(() => setPlaces([]));
   };
-  const openLink = (l) => setView(l.status === "connected" && l.placeId ? { name: "place", id: l.placeId } : { name: "link", id: l.id });
   useEffect74(() => { load(); }, []);
+  // 0252: a request that arrives while Rent is open shows without reopening it.
+  useEffect74(() => {
+    const refresh = () => { if (document.visibilityState !== "hidden") GloobalApi.getRentLinks().then((l) => { if (Array.isArray(l)) setLinks(l); }).catch(() => {}); };
+    const t = setInterval(refresh, 30000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", refresh); };
+  }, []);
   const pay = (p) => onPayPerson && onPayPerson({ gloobalId: p.counterparty.symbolId, name: p.counterparty.name, countryIso: p.counterparty.countryIso, prefillAmount: rentDue(p), rentPlaceId: p.id });
   const body = view.name === "add"
     ? <RentAdd kindStart={view.kind || ""} myId={myGloobalId} onCancel={() => setView({ name: "home" })} onToast={onToast} onSaved={(l) => { load(); setView(l && l.id ? { name: "link", id: l.id } : { name: "home" }); onToast && onToast(l && l.other ? `Request sent to ${l.other.name}` : "Request sent"); }} />
     : view.name === "link"
-      ? <RentLinkPage id={view.id} onBack={() => { load(); setView({ name: "home" }); }} onToast={onToast} onChanged={load} onConnected={(l) => setView({ name: "place", id: l.placeId })} />
+      ? <RentLinkPage id={view.id} onBack={() => { load(); setView({ name: view.from || "home" }); }} onToast={onToast} onChanged={load} onConnected={(l) => setView({ name: "place", id: l.placeId })} />
+    : view.name === "requests"
+      ? <RentRequestsPage links={links} onBack={() => setView({ name: "home" })} onOpen={(l) => setView(l.status === "connected" && l.placeId ? { name: "place", id: l.placeId } : { name: "link", id: l.id, from: "requests" })} onChanged={load} onToast={onToast} />
     : view.name === "place"
       ? <RentPlacePage id={view.id} onBack={() => setView({ name: "home" })} onPay={pay} onToast={onToast} onChanged={load} />
       : (() => {
         const list = places || [];
         const upcoming = list.filter((p) => p.active !== false && !(p.thisMonth && p.thisMonth.paid)).sort((a, b) => a.nextDue.inDays - b.nextDue.inDays)[0] || null;
         const monthly = list.filter((p) => p.kind === "live" && p.active !== false).reduce((a, p) => a + rentDue(p), 0);
-        const asks = links.filter(rentLinkNeedsShowing);
+        const received = links.filter(rentLinkIsForMe).length;
         const ccy = (list[0] && list[0].currency) || "INR";
         const chip = (key, label, on, onClick) => <button key={key} type="button" data-testid={`rent-find-type-${key}`} aria-pressed={on} onClick={onClick} style={{ border: on ? "none" : `1px solid ${T.line}`, borderRadius: 999, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", background: on ? T.accent : T.surface, color: on ? "#fff" : T.ink, whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>;
-        return <div style={{ display: "flex", flexDirection: "column", gap: 13, minHeight: "100%" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><span style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Rent</span><button type="button" onClick={onClose} aria-label="Close" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RentX size={16} color={T.inkSoft} /></button></div>
+        // 0252: flexShrink 0 is what keeps the requests on screen. This column
+        // sits in a flex scroller with min-height 100%, so a long page was
+        // squeezed to one screen, and every child with overflow hidden or
+        // auto gave up its height: the request rows and type chips collapsed
+        // to nothing (the chips to a bare scrollbar) while the count showed.
+        return <div style={{ display: "flex", flexDirection: "column", gap: 13, minHeight: "100%", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}><NavBackButton onClick={onClose} /><span style={{ flex: 1, textAlign: "center", fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Rent</span><button type="button" data-testid="rent-bell" onClick={() => setView({ name: "requests" })} aria-label={received ? `Requests, ${received} new` : "Requests"} style={{ position: "relative", width: 40, height: 40, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}><RentBell size={18} color={T.ink} />{received ? <span data-testid="rent-bell-count" style={{ position: "absolute", top: -2, right: -2, minWidth: 18, height: 18, padding: "0 5px", boxSizing: "border-box", borderRadius: 999, background: T.negative, color: "#fff", fontSize: 10.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{received > 9 ? "9+" : received}</span> : null}</button></div>
           {/* 0251: find a place to rent — the search bar, the type chips, the filter. */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.surface, borderRadius: 16, padding: "0 6px 0 12px", boxShadow: T.shadowCard }}><RentSearch size={17} color={T.inkFaint} /><input data-testid="rent-find-search" value={findQ} onChange={(e) => setFindQ(e.target.value.slice(0, 60))} placeholder="Rooms, flats, shops, a rent name…" style={{ flex: 1, minWidth: 0, border: "none", padding: "12px 0", fontSize: 14.5, fontWeight: 700, color: T.ink, background: "transparent", fontFamily: "inherit", outline: "none" }} />{finding ? <button type="button" data-testid="rent-find-clear" aria-label="Clear" onClick={clearFind} style={{ width: 34, height: 34, borderRadius: "50%", border: "none", background: T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RentX size={14} color={T.inkSoft} /></button> : null}<button type="button" data-testid="rent-find-filter" aria-label="Filter" aria-pressed={rentFindActive(findF)} onClick={() => setFilterOpen(true)} style={{ width: 34, height: 34, borderRadius: 12, border: "none", background: rentFindActive(findF) ? T.accent : T.surfaceAlt, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}><RentFilter size={16} color={rentFindActive(findF) ? "#fff" : T.accent} /></button></div>
           <div data-testid="rent-find-chips" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, margin: "-5px 0 -3px" }}>{chip("all", "All", finding && !findType, () => { setFindType(""); setFindBrowse(true); })}{RP_TYPES.map((t) => chip(t.key, t.label, findType === t.key, () => setFindType(findType === t.key ? "" : t.key)))}</div>
           {finding ? <RentFind q={findQ} type={findType} filters={findF} onCount={setFindCount} onToast={onToast} /> : <>
           {places === null ? <div style={{ padding: 30, textAlign: "center" }}><RentLoader size={18} color={T.inkFaint} style={{ animation: "spin 0.9s linear infinite" }} /></div> : null}
-          {asks.length ? <><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}><span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft }}>Requests</span><span style={{ fontSize: 11.5, fontWeight: 800, color: T.accent }}>{asks.length}</span></div>
-            <div data-testid="rent-requests" style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}>{asks.map((l, i) => <RentLinkRow key={l.id} link={l} first={i === 0} onOpen={() => openLink(l)} />)}</div></> : null}
           {upcoming ? <RentHero place={upcoming} onPay={() => pay(upcoming)} onOpen={() => setView({ name: "place", id: upcoming.id })} /> : null}
           {list.length ? <><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}><span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft }}>Your places</span>{monthly ? <span style={{ fontSize: 12, fontWeight: 800, color: T.accent }}>{rentFigure(monthly, ccy)} a month</span> : null}</div>
             <div style={{ background: T.surface, borderRadius: 20, boxShadow: T.shadowCard, overflow: "hidden" }}>{list.map((p, i) => <RentRow key={p.id} p={p} first={i === 0} onOpen={() => setView({ name: "place", id: p.id })} />)}</div></> : places !== null ? <div style={{ background: T.surface, borderRadius: 20, padding: "20px 16px", textAlign: "center", boxShadow: T.shadowCard }}><div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>No place saved yet</div><div style={{ fontSize: 12, color: T.inkSoft, fontWeight: 600, marginTop: 4, lineHeight: 1.45 }}>Save a place you live and it can pay rent by itself. Save a place you're creating and see when rent arrives.</div></div> : null}

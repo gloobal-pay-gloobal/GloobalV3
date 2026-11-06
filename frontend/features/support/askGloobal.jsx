@@ -4,7 +4,7 @@ import { useState as useState88, useEffect as useEffect84, useRef as useRef47, u
 // ── ASK GLOOBAL (0223) ─────────────────────────────────────────────────────
 //
 // Questions about how GLOOBAL works, answered in the language they are asked
-// in — English, हिन्दी, Hinglish, தமிழ் — from the guide the team writes on
+// in — English, हिन्दी, Hinglish, தமிழ், and (0252) 18 more as packs — from the guide the team writes on
 // the staff site. No AI service: the cards come from GET /api/guide once,
 // stay on the phone, and askEngine.js finds the answer as the person types.
 //
@@ -25,9 +25,10 @@ import { useState as useState88, useEffect as useEffect84, useRef as useRef47, u
 // with the question filled in. What is counted for the team is anonymous;
 // see server/lib/guide.js.
 
-var ASK_LANG_NAMES = { en: "English", hi: "हिन्दी", hl: "Hinglish", ta: "தமிழ்" };
-var ASK_VOICE = { en: "en-IN", hi: "hi-IN", hl: "en-IN", ta: "ta-IN" };
-var ASK_HEAR = { en: "en-IN", hi: "hi-IN", hl: "hi-IN", ta: "ta-IN" };
+var ASK_LANG_NAMES = { en: "English", hi: "हिन्दी", hl: "Hinglish", ta: "தமிழ்", bn: "বাংলা", te: "తెలుగు", mr: "मराठी", gu: "ગુજરાતી", kn: "ಕನ್ನಡ", ml: "മലയാളം", pa: "ਪੰਜਾਬੀ", ur: "اردو", ar: "العربية", es: "Español", fr: "Français", pt: "Português", de: "Deutsch", id: "Bahasa Indonesia", ru: "Русский", zh: "中文", ja: "日本語", ko: "한국어" };
+var ASK_VOICE = { en: "en-IN", hi: "hi-IN", hl: "en-IN", ta: "ta-IN", bn: "bn-IN", te: "te-IN", mr: "mr-IN", gu: "gu-IN", kn: "kn-IN", ml: "ml-IN", pa: "pa-IN", ur: "ur-PK", ar: "ar-SA", es: "es-ES", fr: "fr-FR", pt: "pt-BR", de: "de-DE", id: "id-ID", ru: "ru-RU", zh: "zh-CN", ja: "ja-JP", ko: "ko-KR" };
+var ASK_HEAR = { ...ASK_VOICE, hl: "hi-IN" };
+function askDir(l) { return l === "ar" || l === "ur" ? "rtl" : "ltr"; }
 var ASK_POPULAR = ["send-how", "bank-withdraw", "send-abroad", "geu-what", "essentials-what", "account-hold"];
 var ASK_TILES = [
   ["send", "#6D3AE8", "M5 19L19 5M9 5h10v10"],
@@ -148,10 +149,8 @@ function askT(lang, key, vars) {
 }
 function askStartLang() {
   try { const saved = localStorage.getItem("gloobal.askLang"); if (ASK_LANG_NAMES[saved]) return saved; } catch (e) { /* private mode */ }
-  const nav = (typeof navigator !== "undefined" && navigator.language || "").toLowerCase();
-  if (nav.startsWith("hi")) return "hi";
-  if (nav.startsWith("ta")) return "ta";
-  return "en";
+  const nav = (typeof navigator !== "undefined" && navigator.language || "").toLowerCase().slice(0, 2);
+  return nav !== "hl" && ASK_LANG_NAMES[nav] ? nav : "en";
 }
 function askCardIn(card, lang) {
   const l = card && card.t && card.t[lang] ? lang : "en";
@@ -159,32 +158,54 @@ function askCardIn(card, lang) {
 }
 
 // ── the guide, on the phone ──
-var askGuide = { version: null, cards: null, index: null, pending: null, fresh: false };
-function askUseCards(cards, version) {
+// `extra` is the one pack language this phone holds beside the core four ("" = none).
+var askGuide = { version: null, cards: null, index: null, pending: null, fresh: false, extra: "", want: null };
+function askUseCards(cards, version, extra, pack) {
+  // The pack's words first: the index below is built with them.
+  askUsePack(pack);
+  if (extra && pack && pack.ui) ASK_UI[extra] = pack.ui;
+  if (extra && pack && pack.tours) {
+    for (const [id, t] of Object.entries(pack.tours)) {
+      const tour = ASK_TOURS[id];
+      if (!tour || !t) continue;
+      (t.steps || []).forEach((line, i) => { if (tour.steps[i]) tour.steps[i].t[extra] = line; });
+      if (t.missing) tour.missing[extra] = t.missing;
+    }
+  }
   askGuide.cards = cards;
   askGuide.version = version;
+  askGuide.extra = extra || "";
   askGuide.index = askBuildIndex(cards);
 }
-function askLoadGuide() {
-  if (askGuide.index && askGuide.fresh) return Promise.resolve(askGuide);
-  if (askGuide.pending) return askGuide.pending;
+function askLoadGuide(extraWanted) {
+  let kept = null;
   if (!askGuide.index) {
     try {
       const raw = localStorage.getItem("gloobal.guide.v1");
-      const kept = raw ? JSON.parse(raw) : null;
-      if (kept && Array.isArray(kept.cards) && kept.cards.length) askUseCards(kept.cards, kept.version);
+      kept = raw ? JSON.parse(raw) : null;
+      if (kept && Array.isArray(kept.cards) && kept.cards.length) askUseCards(kept.cards, kept.version, kept.extra || "", kept.pack || null);
     } catch (e) { /* nothing kept */ }
   }
-  askGuide.pending = GloobalApi.getGuide(askGuide.version).then((r) => {
+  // Asked for nothing in particular, it keeps what it has (or the chosen language).
+  const startLang = askStartLang();
+  const want = extraWanted !== undefined ? extraWanted : (askGuide.index ? askGuide.extra : (askIsCore(startLang) ? "" : startLang));
+  if (askGuide.index && askGuide.fresh && askGuide.extra === want) return Promise.resolve(askGuide);
+  if (askGuide.pending && askGuide.want === want) return askGuide.pending;
+  askGuide.want = want;
+  const have = askGuide.index && askGuide.extra === want ? askGuide.version : null;
+  const pending = GloobalApi.getGuide(have, want).then((r) => {
+    if (askGuide.want !== want) return askGuide;
     if (r && r.cards) {
-      askUseCards(r.cards, r.version);
-      try { localStorage.setItem("gloobal.guide.v1", JSON.stringify({ version: r.version, cards: r.cards })); } catch (e) { /* full */ }
+      askUseCards(r.cards, r.version, want, r.pack || null);
+      try { localStorage.setItem("gloobal.guide.v1", JSON.stringify({ version: r.version, cards: r.cards, extra: want, pack: r.pack || null })); } catch (e) { /* full */ }
     }
     if (r) askGuide.fresh = true;
     return askGuide.index ? askGuide : null;
-  }).catch(() => (askGuide.index ? askGuide : null)).finally(() => { askGuide.pending = null; });
-  // What the phone already has answers at once; the fresh copy follows.
-  return askGuide.index ? Promise.resolve(askGuide) : askGuide.pending;
+  }).catch(() => (askGuide.index ? askGuide : null)).finally(() => { if (askGuide.pending === pending) askGuide.pending = null; });
+  askGuide.pending = pending;
+  // What the phone already has answers at once; the fresh copy follows. A new
+  // language has to be waited for.
+  return askGuide.index && askGuide.extra === want ? Promise.resolve(askGuide) : pending;
 }
 
 // ── what the team gets to see: anonymous, batched ──
@@ -208,8 +229,8 @@ function askSpeak(text, lang, onEnd) {
     const want = ASK_VOICE[lang] || "en-IN";
     const voices = synth.getVoices() || [];
     const voice = voices.find((v) => v.lang === want) || voices.find((v) => v.lang && v.lang.slice(0, 2) === want.slice(0, 2));
-    if (!voice && voices.length && lang === "ta") return false;
-    const u = new SpeechSynthesisUtterance(askPlain(text));
+    if (!voice && voices.length && !["en", "hi", "hl"].includes(lang)) return false;
+    const u = new SpeechSynthesisUtterance(askSpoken(text, lang));
     u.lang = want;
     if (voice) u.voice = voice;
     u.rate = 0.95;
@@ -257,7 +278,7 @@ function AskAnswer({ card, lang, onGo, onShowMe, onTalk, onAgain, question, scre
   const feedback = (kind) => { if (said) return; setSaid(kind); askLog({ kind, cardId: card.id, lang: shown, screen }); };
   const canSpeak = typeof window !== "undefined" && Boolean(window.speechSynthesis);
   const steps = x.steps || [];
-  return <div data-testid="ask-answer" style={{ alignSelf: "stretch", display: "flex", flexDirection: "column", gap: 6 }}>
+  return <div data-testid="ask-answer" dir={askDir(shown)} style={{ alignSelf: "stretch", display: "flex", flexDirection: "column", gap: 6 }}>
     <div style={{ fontSize: 10.5, fontWeight: 800, color: T.accent, display: "flex", alignItems: "center", gap: 6, padding: "0 2px" }}>{askT(shown, "from")} · {askT(shown, `topic_${card.topic}`)}</div>
     <div style={{ background: T.surface, boxShadow: T.shadowCard, borderRadius: "18px 18px 18px 6px", overflow: "hidden" }}>
       <div style={{ padding: "13px 15px 4px", fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.3 }}>{x.q}</div>
@@ -306,6 +327,8 @@ function AskConversation({ mode, screen, guide, lang, setLang, onGo, onTalk, onS
   const inputRef = useRef47(null);
   const recRef = useRef47(null);
   const seq = useRef47(0);
+  // Written in a language this phone doesn't hold yet: it waits for the pack.
+  const [waiting, setWaiting] = useState88(null);
   const cards = guide ? guide.cards : [];
   const byId = guide ? guide.index.byId : new Map();
   const add = (...m) => setMsgs((list) => [...list, ...m.map((x) => ({ ...x, key: (seq.current += 1) }))]);
@@ -335,10 +358,18 @@ function AskConversation({ mode, screen, guide, lang, setLang, onGo, onTalk, onS
     if (!q || !guide) return;
     const det = askDetectLang(q, lang);
     if (det.known && det.lang !== lang) setLang(det.lang);
+    setText("");
+    if (det.known && !askIsCore(det.lang) && guide.extra !== det.lang) { setWaiting({ q, det }); return; }
+    answer(q, det);
+  }
+  useEffect84(() => {
+    // Whether the pack came or could not (then the closest answer is in English).
+    if (waiting && guide && (guide.extra === waiting.det.lang || guide.tried === waiting.det.lang)) { const w = waiting; setWaiting(null); answer(w.q, w.det); }
+  }, [waiting, guide]);
+  function answer(q, det) {
     const l = det.known ? det.lang : "en";
     const ranked = askRank(guide.index, q, { lang: l, screen });
     const d = askDecide(ranked);
-    setText("");
     if (askIsPersonal(q)) {
       const near = d.kind === "answer" ? d.top[0].card : null;
       add({ who: "me", text: q }, { who: "bot", kind: "personal", card: near, lang: l, question: q });
@@ -375,7 +406,7 @@ function AskConversation({ mode, screen, guide, lang, setLang, onGo, onTalk, onS
   const screenTopic = screen === "shop" ? "shop" : screen;
   const screenCards = screen ? cards.filter((c) => (c.screens || []).includes(screen)).sort((a, b) => (a.topic === screenTopic ? 0 : 1) - (b.topic === screenTopic ? 0 : 1)).slice(0, 6) : [];
   const popular = ASK_POPULAR.map((id) => byId.get(id)).filter(Boolean);
-  return <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
+  return <div dir={askDir(lang)} style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
     <div data-testid="ask-thread" style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", display: "flex", flexDirection: "column", gap: 12, padding: mode === "page" ? "4px 18px 14px" : "2px 16px 12px" }}>
       {!guide && <div style={{ fontSize: 13, color: T.inkFaint, padding: "18px 2px" }}>{askT(lang, "loading")}</div>}
       {guide && empty && mode === "page" && <>
@@ -450,7 +481,7 @@ function AskLangMenu({ lang, setLang }) {
   return <span style={{ position: "relative", flexShrink: 0 }}>
     <button type="button" data-testid="ask-lang" onClick={() => setOpen(!open)} aria-label={askT(lang, "lang")} style={{ display: "flex", alignItems: "center", gap: 5, border: "none", background: T.surface, boxShadow: T.shadowCard, color: T.accentDeep || T.accent, borderRadius: 999, padding: "7px 11px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
       <AskIcon d={ASK_TILES[4][2]} color={T.accent} size={14} />{ASK_LANG_NAMES[lang]}</button>
-    {open && <span style={{ position: "absolute", right: 0, top: 40, zIndex: 3, background: T.surface, boxShadow: "0 12px 30px rgba(0,0,0,0.18)", borderRadius: 14, overflow: "hidden", minWidth: 150, display: "flex", flexDirection: "column" }}>
+    {open && <span data-testid="ask-lang-list" style={{ position: "absolute", right: 0, top: 40, zIndex: 3, background: T.surface, boxShadow: "0 12px 30px rgba(0,0,0,0.18)", borderRadius: 14, overflowX: "hidden", overflowY: "auto", maxHeight: "min(420px, 62vh)", minWidth: 170, display: "flex", flexDirection: "column" }}>
       {ASK_LANG_CODES.map((l) => <button key={l} type="button" data-testid={`ask-lang-${l}`} onClick={() => { setLang(l); setOpen(false); }} style={{ border: "none", borderTop: l === "en" ? "none" : `1px solid ${T.line}`, background: l === lang ? T.accentSoft : "none", color: l === lang ? T.accent : T.ink, padding: "11px 14px", fontSize: 13.5, fontWeight: l === lang ? 800 : 600, textAlign: "left", cursor: "pointer" }}>{ASK_LANG_NAMES[l]}</button>)}
     </span>}
   </span>;
@@ -538,14 +569,16 @@ function AskGloobalHost({ onGo, onTalk }) {
   const [open, setOpen] = useState88(null);
   const [tour, setTour] = useState88(null);
   const [feedback, setFeedback] = useState88(false);
-  const [guide, setGuide] = useState88(askGuide.index ? { cards: askGuide.cards, index: askGuide.index } : null);
+  const [guide, setGuide] = useState88(askGuide.index ? { cards: askGuide.cards, index: askGuide.index, extra: askGuide.extra } : null);
   const [failed, setFailed] = useState88(false);
   const [lang, setLangRaw] = useState88(askStartLang);
   const setLang = (l) => { setLangRaw(l); try { localStorage.setItem("gloobal.askLang", l); } catch (e) { /* private mode */ } };
-  const load = () => {
+  const load = (extra) => {
     setFailed(false);
-    askLoadGuide().then((g) => { if (g) setGuide({ cards: g.cards, index: g.index, version: g.version }); else setFailed(true); });
+    askLoadGuide(extra).then((g) => { if (g) setGuide({ cards: g.cards, index: g.index, version: g.version, extra: g.extra, tried: extra }); else setFailed(true); });
   };
+  // 0252: a pack language, chosen or written in, is fetched then.
+  useEffect84(() => { if (!askIsCore(lang) && (!guide || guide.extra !== lang)) load(lang); }, [lang]);
   useEffect84(() => {
     const onAsk = (e) => { setOpen({ mode: "sheet", ...(e.detail || {}) }); };
     window.addEventListener("gloobal:ask", onAsk);

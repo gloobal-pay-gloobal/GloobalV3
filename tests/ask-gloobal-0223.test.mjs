@@ -62,8 +62,8 @@ describe("which language", () => {
     assert.equal(ask("how do i send money").lang.lang, "en");
   });
   test("a language we have not written: known as such, answered in English", () => {
-    assert.equal(ask("¿cómo envío dinero a México?").lang.known, false);
-    assert.equal(ask("كيف أرسل المال").lang.known, false);
+    assert.equal(ask("วิธีส่งเงิน").lang.known, false);
+    assert.equal(ask("Πώς στέλνω χρήματα").lang.known, false);
   });
 });
 

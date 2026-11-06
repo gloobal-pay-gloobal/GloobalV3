@@ -20,7 +20,7 @@ const { recentPayments, paymentFor, namesFor } = require('./staffTools');
 const OPEN_LIMIT = 3;
 const TEXT_MAX = 1000;
 const TOPIC_WORDS = { payment: 'A payment', bank: 'GLOOBAL Bank', essentials: 'My Essentials', shop: 'My shop', account: 'My account', other: 'Something else' };
-const ASK_LANGS = { en: 'English', hi: 'Hindi', hl: 'Hinglish', ta: 'Tamil' };
+const ASK_LANGS = { en: 'English', hi: 'Hindi', hl: 'Hinglish', ta: 'Tamil', bn: 'Bengali', te: 'Telugu', mr: 'Marathi', gu: 'Gujarati', kn: 'Kannada', ml: 'Malayalam', pa: 'Punjabi', ur: 'Urdu', ar: 'Arabic', es: 'Spanish', fr: 'French', pt: 'Portuguese', de: 'German', id: 'Indonesian', ru: 'Russian', zh: 'Chinese', ja: 'Japanese', ko: 'Korean' };
 const ROLE_WORDS = { finance: 'Finance', risk: 'Risk', admin: 'the founder' };
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const clean = (t) => String(t || '').replace(/\s+\n/g, '\n').trim().slice(0, TEXT_MAX);

@@ -6,8 +6,8 @@
 // and told a customer nothing they could act on: no landmark, a PIN buried
 // somewhere in the middle, and no way to be walked there. Now it is six
 // short boxes — shop / house, street & area, landmark, PIN, city, state —
-// plus "Detect my location", which reads the phone's GPS, fills what it can
-// and keeps the point so a customer can tap Directions.
+// plus "Place my store on the map" (0253): the owner puts the pin on their door,
+// the address fills in from it, and a customer can tap Directions.
 //
 // Every box stays editable after detection. GPS puts a shop on the wrong
 // side of a road often enough that the creator has the last word.
@@ -17,7 +17,7 @@
 // "Postal code" and fills nothing: no free lookup covers every country, and
 // a wrong guess is worse than an empty box.
 import { useState as useState61, useEffect as useEffect58, useRef as useRef34 } from "react";
-import { LocateFixed as LocateFixed1, Loader as Loader6, X as X16, Navigation as Navigation1 } from "lucide-react";
+import { LocateFixed as LocateFixed1, X as X16, Navigation as Navigation1 } from "lucide-react";
 
 var CREATOR_ADDRESS_EMPTY = { line1: "", area: "", landmark: "", pin: "", city: "", state: "", lat: null, lng: null };
 
@@ -73,28 +73,15 @@ function creatorAddressLines(parts, fallback) {
 // the app asks the browser for location — a second caller is exactly what
 // tests/qa-2026-08-24 forbids, and for a good reason: one module owning the
 // ask is how the app keeps track of when it prompts.
-async function creatorAddressLocate() {
-  const seen = await captureBrowserGeo({ timeoutMs: 15000, highAccuracy: true });
-  if (seen && seen.status === LOCATION_STATUS.AVAILABLE) {
-    return { ok: true, lat: seen.latitude, lng: seen.longitude, accuracy: seen.accuracy };
-  }
-  if (seen && seen.status === LOCATION_STATUS.DENIED) {
-    return { ok: false, message: "Location is blocked for GLOOBAL. Allow it in your browser settings, or type the address." };
-  }
-  if (seen && seen.status === LOCATION_STATUS.TIMEOUT) {
-    return { ok: false, message: "Couldn't find your location. Step outside or near a window and try again." };
-  }
-  return { ok: false, message: "This phone can't share its location here. Type the address instead." };
-}
 
 function CreatorAddressFields({ value, onChange, countryIso = "" }) {
   const v = value || CREATOR_ADDRESS_EMPTY;
   const india = String(countryIso || "").toUpperCase() === "IN";
-  const [locating, setLocating] = useState61(false);
   const [note, setNote] = useState61({ tone: "", text: "" });
   const [accuracy, setAccuracy] = useState61(null);
   const [areas, setAreas] = useState61([]);
   const [pinState, setPinState] = useState61("");
+  const [placing, setPlacing] = useState61(false);
   const lastPin = useRef34(v.pin || "");
   const set = (patch) => onChange(Object.assign({}, v, patch));
 
@@ -124,35 +111,6 @@ function CreatorAddressFields({ value, onChange, countryIso = "" }) {
     return () => { live = false; };
   }, [v.pin, india]);
 
-  const detect = async () => {
-    setLocating(true);
-    setNote({ tone: "", text: "" });
-    const at = await creatorAddressLocate();
-    if (!at.ok) {
-      setLocating(false);
-      setNote({ tone: "bad", text: at.message });
-      return;
-    }
-    setAccuracy(Math.round(at.accuracy || 0));
-    const parts = await GloobalApi.geoReverse(at.lat, at.lng);
-    setLocating(false);
-    // The point is kept even when no address came back for it: Directions
-    // only needs the point, and the boxes can be typed.
-    const next = Object.assign({}, v, { lat: at.lat, lng: at.lng });
-    if (parts) {
-      // Fills empty boxes and replaces ones detection filled before. A
-      // landmark and a shop number are never touched: GPS cannot know
-      // either, and they are the two things only the creator can write.
-      for (const k of ["area", "city", "state", "pin"]) if (parts[k]) next[k] = parts[k];
-      if (!next.line1 && parts.line1) next.line1 = parts.line1;
-      setNote({ tone: "good", text: "Filled from your location. Check each line and add a landmark." });
-    } else {
-      setNote({ tone: "warn", text: "Pinned your location, but couldn't read a street name. Type the address below." });
-    }
-    lastPin.current = next.pin || "";
-    onChange(next);
-  };
-
   const box = {
     width: "100%", border: `1.5px solid ${T.line}`, borderRadius: 13, background: T.bg,
     padding: "11px 12px", fontSize: 14, lineHeight: 1.4, color: T.ink, fontFamily: "inherit",
@@ -172,6 +130,20 @@ function CreatorAddressFields({ value, onChange, countryIso = "" }) {
     style={box}
   /></label>;
 
+  // 0253: the owner puts the pin on their own door, on a map.
+  const placed = (lat, lng, parts) => {
+    setPlacing(false);
+    const next = Object.assign({}, v, { lat, lng });
+    if (parts) {
+      for (const k of ["area", "city", "state", "pin"]) if (parts[k]) next[k] = parts[k];
+      if (!next.line1 && parts.line1) next.line1 = parts.line1;
+      setNote({ tone: "good", text: "Pinned. Check each line and add a landmark." });
+    } else setNote({ tone: "warn", text: "Pinned, but couldn't read a street name. Type the address below." });
+    setAccuracy(null);
+    lastPin.current = next.pin || "";
+    onChange(next);
+  };
+  const typedAddress = [v.line1, v.area, v.city, v.pin].filter(Boolean).join(", ");
   const pinned = creatorAddressHasPoint(v);
   const noteColor = note.tone === "bad" ? T.negative : note.tone === "good" ? T.positive : T.inkSoft;
 
@@ -179,25 +151,26 @@ function CreatorAddressFields({ value, onChange, countryIso = "" }) {
     /* ── DETECT ───────────────────────────────────────────────────────
        First, and the full width: for most shops it fills five of the six
        boxes, which is the fastest way to a correct address. */
-  }<button
-    onClick={detect}
-    disabled={locating}
+  }{placing ? <GloobalPinScreen start={pinned ? { lat: v.lat, lng: v.lng } : null} typed={typedAddress} countryIso={countryIso} onCancel={() => setPlacing(false)} onConfirm={placed} /> : null}<button
+    type="button"
+    data-testid="address-place-on-map"
+    onClick={() => setPlacing(true)}
     className="v2-tap"
     style={{
       display: "flex", alignItems: "center", gap: 11, width: "100%", textAlign: "left",
-      padding: "12px 13px", borderRadius: 15, border: "none", cursor: locating ? "default" : "pointer",
+      padding: "12px 13px", borderRadius: 15, border: "none", cursor: "pointer",
       fontFamily: "inherit", background: T.accentSoft, boxShadow: `inset 0 0 0 1.5px ${T.accent}33`
     }}
   ><span style={{
     width: 34, height: 34, borderRadius: "50%", background: T.accent, flexShrink: 0,
     display: "flex", alignItems: "center", justifyContent: "center"
-  }}>{locating ? <Loader6 size={16} color="#fff" style={{ animation: "spin 0.9s linear infinite" }} /> : <LocateFixed1 size={17} color="#fff" />}</span><span style={{ flex: 1, minWidth: 0 }}><span style={{
+  }}><LocateFixed1 size={17} color="#fff" /></span><span style={{ flex: 1, minWidth: 0 }}><span style={{
     display: "block", fontSize: 13.5, fontWeight: 800, color: T.accent
-  }}>{locating ? "Finding you…" : pinned ? "Detect my location again" : "Detect my location"}</span><span style={{
+  }}>{pinned ? "Move my store's pin" : "Place my store on the map"}</span><span style={{
     display: "block", fontSize: 11, fontWeight: 600, color: T.inkSoft, marginTop: 1
-  }}>Fills the address and pins your shop for Directions</span></span></button>{
+  }}>Starts at your location. Fills the address and gives customers Directions</span></span></button>{
     note.text ? <div role="status" style={{ fontSize: 11.5, fontWeight: 700, color: noteColor, lineHeight: 1.45, margin: "-3px 2px 0" }}>{note.text}</div> : null
-  }{pinned ? <div style={{
+  }{pinned ? <GloobalPinPreview lat={Number(v.lat)} lng={Number(v.lng)} onMove={() => setPlacing(true)} /> : null}{pinned ? <div style={{
     display: "flex", alignItems: "center", gap: 9, padding: "9px 11px", borderRadius: 13,
     background: T.bg, border: `1px solid ${T.line}`
   }}><Navigation1 size={14} color={T.positive} style={{ flexShrink: 0 }} /><span style={{

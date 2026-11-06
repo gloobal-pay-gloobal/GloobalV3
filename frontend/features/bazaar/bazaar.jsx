@@ -311,7 +311,7 @@ function bazaarRecentAdd(recent, { query, shop }) {
 }
 
 // ── THE SECTION ON PAY & SERVICES ───────────────────────────────────────
-function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", ownerKey = "", onOpen, onQuery, onToast, filterOpen = false, onFilterClose, onActiveChange }) {
+function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", ownerKey = "", onOpen, onPay, onQuery, onToast, filterOpen = false, onFilterClose, onActiveChange }) {
   const [recent, setRecent] = useState62(() => bazaarRecentLoad(ownerKey));
   // Every way out of this section to a shop goes through here, so a shop
   // opened is remembered with the search that found it.
@@ -334,6 +334,8 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   // me on: a map needs a "here".
   const [asMap, setAsMap] = useState62(false);
   const [radius, setRadius] = useState62(BAZAAR_DEFAULT_RADIUS);
+  // A place searched for on the map (+ More), when "here" isn't where the phone is.
+  const [hereName, setHereName] = useState62("");
   const [here, setHere] = useState62(null);
   const [locating, setLocating] = useState62(false);
   const [categories, setCategories] = useState62(BAZAAR_CATEGORY_INFO.map((c) => ({ key: c.key, shops: 0 })));
@@ -360,6 +362,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
 
   const near = nearOn && here ? { lat: here.lat, lng: here.lng, radiusKm: radius } : null;
   const nearKey = near ? `${near.lat},${near.lng},${near.radiusKm}` : "";
+  const mapOn = Boolean(near && asMap);
   const country = String(countryIso || "").toUpperCase();
 
   // Categories reorder with the circle: what is famous within 1 km of a
@@ -383,7 +386,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
         const opts = {
           q: query, category, near, country, openNow, sub, word: category === "other" && word ? word.key : "",
           cats: festivalOn && festivalNow ? festivalNow.cats : [],
-          sort: sort === "near" && !near ? "paid" : sort, minRating, maxPrice, minShare
+          sort: sort === "near" && !near ? "paid" : sort, minRating, maxPrice, minShare, forMap: mapOn
         };
         let list = await GloobalApi.bazaarSearch(opts);
         const wasFuzzy = Boolean(list && list.fuzzy);
@@ -410,7 +413,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       setBusy(false);
     }, query ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [query, category, nearKey, country, openNow, sub, sort, minRating, maxPrice, minShare, festivalOn, word ? word.key : ""]);
+  }, [query, category, nearKey, country, openNow, sub, sort, minRating, maxPrice, minShare, festivalOn, word ? word.key : "", mapOn]);
 
   // ── MADE NEAR YOU (0186) ──────────────────────────────────────────────
   // The words three or more Other creators share where the searcher is.
@@ -469,7 +472,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   const activeInfo = bazaarCategoryInfo(category);
   const sortLabel = (BAZAAR_SORT_INFO.find((x) => x.key === sort) || BAZAAR_SORT_INFO[0]).label;
   const radiusLabel = (BAZAAR_RADII.find((r) => r.km === radius) || {}).label || "";
-  const where = near ? ` within ${radiusLabel}`
+  const where = near ? ` within ${radiusLabel}${hereName ? ` of ${hereName}` : ""}`
     : festivalOn && festivalNow ? ` for ${festivalNow.label}`
       : activeInfo ? ` in ${sub ? bazaarSubcategoryLabel(category, sub) : activeInfo.label}` : "";
   const heading = fallback
@@ -494,7 +497,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   if (festivalOn && festivalNow) active.push({ key: "fest", label: festivalNow.label, clear: () => setFestivalOn(false) });
   if (activeInfo) active.push({ key: "cat", label: sub ? bazaarSubcategoryLabel(category, sub) : activeInfo.label, clear: () => { setCategory(""); setSub(""); } });
   if (category === "other" && word) active.push({ key: "word", label: word.word, clear: () => setWord(null) });
-  if (nearOn && here) active.push({ key: "near", label: radiusLabel, clear: () => { setNearOn(false); setAsMap(false); if (sort === "near") setSort("paid"); } });
+  if (nearOn && here) active.push({ key: "near", label: radiusLabel, clear: () => { setNearOn(false); setAsMap(false); if (hereName) { setHere(null); setHereName(""); } if (sort === "near") setSort("paid"); } });
   if (openNow) active.push({ key: "open", label: "Open now", clear: () => setOpenNow(false) });
   if (minRating) active.push({ key: "rating", label: "4★ & up", clear: () => setMinRating(0) });
   if (minShare) active.push({ key: "share", label: bazaarShareLabel(minShare), clear: () => setMinShare(null) });
@@ -509,7 +512,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   // A distance is the one filter that needs the phone's location, so it is
   // asked for when a distance is picked — never when the sheet opens.
   const pickRadius = async (km) => {
-    if (!km) { setNearOn(false); setAsMap(false); if (sort === "near") setSort("paid"); return; }
+    if (!km) { setNearOn(false); setAsMap(false); if (hereName) { setHere(null); setHereName(""); } if (sort === "near") setSort("paid"); return; }
     setRadius(km);
     if (!nearOn) await toggleNear();
   };
@@ -520,7 +523,6 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     if (!(nearOn && here)) await toggleNear();
     setAsMap(true);
   };
-  const mapOn = Boolean(near && asMap);
 
   const pill = (on) => ({
     flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, height: 34, padding: "0 13px",
@@ -642,7 +644,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     display: "flex", alignItems: "center", gap: 10, margin: "0 0 10px", padding: "10px 12px", borderRadius: 14,
     background: T.accentSoft, color: T.ink
   }}><BzSearchOff size={16} color={T.accent} style={{ flexShrink: 0 }} /><span style={{ minWidth: 0, fontSize: 12.5, fontWeight: 700, lineHeight: 1.4 }}>No shop called “{String(query).replace(/\./g, " ").trim()}” yet. Here's what's on <GloobalWordmark />.</span></div> : null}
-  {mapOn ? <BazaarMap center={here} radiusKm={radius} shops={shown} onOpen={openShop} /> : <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{
+  {mapOn ? <BazaarMap center={here} placeName={hereName} radiusKm={radius} shops={shown} query={query} onRadius={(km) => setRadius(km)} onPlace={(p) => { setHere({ lat: p.lat, lng: p.lng }); setHereName(p.name); setNearOn(true); }} onBackToList={() => setAsMap(false)} onOpen={openShop} onPay={(s) => { const next = bazaarRecentAdd(recent, { query, shop: s }); setRecent(next); bazaarRecentSave(ownerKey, next); if (onOpen) onOpen(s, { pay: true }); }} onToast={onToast} /> : null}{mapOn ? null : <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{
     shops === null
       ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Loading shops…</div>
       : failed && shown.length === 0

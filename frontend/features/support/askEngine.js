@@ -21,7 +21,19 @@
 // A question about the person's OWN money ("maine kal Ravi ko 500 bheje")
 // is spotted separately: the guide cannot see payments, so it hands over.
 
-var ASK_LANG_CODES = ["en", "hi", "hl", "ta"];
+var ASK_LANG_CODES = ["en", "hi", "hl", "ta", "bn", "te", "mr", "gu", "kn", "ml", "pa", "ur", "ar", "es", "fr", "pt", "de", "id", "ru", "zh", "ja", "ko"];
+// 0252: every phone gets these four. Any other language is one "pack" more,
+// fetched when it is chosen or written in (see askLoadGuide), so nobody
+// carries or searches 22 languages to read one.
+var ASK_CORE_LANGS = ["en", "hi", "hl", "ta"];
+function askIsCore(l) { return ASK_CORE_LANGS.includes(l); }
+
+// The chosen pack's own words: spellings that mean the same thing, filler, and
+// what marks a question about the person's own money. Set by askUsePack.
+var ASK_PACK = { syn: [], stop: new Set(), me: [], happened: [], memo: new Map(), notCore: [] };
+// Everyday words of a pack language that start like a core key's word: Spanish
+// "país" is not "paisa" (money), "usar" is not "USA", Indonesian "pindah" is not a PIN.
+var ASK_NOT_CORE = { es: ["pais", "usa"], pt: ["pais", "usa"], fr: ["pais", "usa"], de: ["pinn"], id: ["pinda", "pinj"] };
 
 // Words that carry no meaning of their own, in all four languages at once.
 var ASK_STOP = new Set([
@@ -73,13 +85,6 @@ var ASK_HL_WORDS = new Set([
   "sakte", "sakti", "raha", "rahe", "rahi", "gaya", "gaye", "hua", "hue", "abhi", "tak", "kal", "aaj", "dikha", "dikh", "milega",
   "mila", "mile", "batao", "bataye", "samjhao", "dusre", "desh", "dukan", "galat",
 ]);
-// A few words of other Latin-script languages: understood where the words
-// match, answered in English, and noted for the team.
-var ASK_OTHER_LATIN = new Set([
-  "como", "cómo", "dinero", "enviar", "envío", "envio", "qué", "por", "para", "cuenta", "dinheiro", "conta",
-  "comment", "argent", "envoyer", "compte", "pourquoi", "geld", "senden", "wie", "warum", "konto", "bagaimana", "uang", "kirim",
-]);
-
 // The script a piece of text is written in.
 function askScript(text) {
   const s = String(text || "");
@@ -88,23 +93,71 @@ function askScript(text) {
     hi: count(/[ऀ-ॿ]/g), ta: count(/[஀-௿]/g), latin: count(/[A-Za-zÀ-ɏ]/g),
     other: count(/[؀-ۿঀ-৿਀-੿઀-૿଀-୿ఀ-౿ಀ-೿ഀ-ൿ฀-๿Ѐ-ӿͰ-Ͽ぀-ヿ一-鿿가-힯]/g),
   };
+  // "GLOOBAL Bank কি": app names are Latin in every language, so a question's
+  // own letters decide as soon as there are any to speak of.
+  const own = Object.entries(n).filter(([k]) => k !== "latin").sort((a, b) => b[1] - a[1])[0];
+  if (own[1] >= 2) return own[0];
   const top = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
   return top[1] ? top[0] : "";
 }
+
+// A script that belongs to one language, or that tells two apart.
+var ASK_SCRIPT_LANG = { bn: /[ঀ-৿]/g, pa: /[਀-੿]/g, gu: /[઀-૿]/g, kn: /[ಀ-೿]/g, ml: /[ഀ-ൿ]/g, te: /[ఀ-౿]/g, ru: /[Ѐ-ӿ]/g, ko: /[가-힯]/g };
+// Marathi and Hindi share their letters; these words are Marathi's.
+var ASK_MR_WORDS = new Set(["करणे", "कसे", "आहे", "माझे", "नाही", "माझ्या", "बँक", "माझा", "एसेन्शियल्स", "आहेत", "किती", "काय", "पाठवणे", "करायचे", "ट्रान्सफर", "परत", "बँकेत", "पाठवू", "झाले", "कुठे", "बॅलन्स", "मी", "येत", "नाहीत", "माझी", "भाडे", "स्कॅन", "रेफरल", "उघडणे", "ॲड", "त्यांना", "रक्कम", "रकमा", "घेणे", "चुकीच्या", "म्हणजे", "आयडी", "नवीन", "नोटिफिकेशन", "दुकानाचे", "पाठवायचे", "करू", "थांबवले", "शकतो", "वेळ", "पाठवले", "लागते", "करून", "आणि", "सुरू", "शकते", "कोण", "तक्रार", "जोडणे", "द्यायचे", "मित्राला", "व्यक्तीला", "मिळतील", "शकत", "मर्यादा"]);
+var ASK_HI_ONLY_WORDS = new Set(["है", "में", "से", "और", "पर", "कैसे", "के", "है।", "नहीं", "बैंक", "हैं।", "हैं", "की", "करें", "दबाएँ।", "रकम", "आपके", "अकाउंट", "को", "भी", "सकते", "क्या", "हो", "आप", "लिए", "मेरी", "खोलें", "वह", "बैलेंस", "किसी"]);
+function askDevCount(text, set) { return String(text || "").split(/[^\u0900-\u097f]+/).filter((w) => set.has(w)).length; }
+// Urdu's letters that Arabic does not use.
+var ASK_UR_LETTERS = /[ٹڈڑںھہےگچپژ]/;
+// A few words only each Latin-script language has, to tell them apart.
+var ASK_LATIN_WORDS = {
+  es: ["dinero", "cómo", "qué", "tienda", "cuenta", "pago", "con", "mis", "una", "puedo", "transferencia", "ubicación", "envío", "bancaria", "plata", "persona", "cuánto", "agregar", "alquiler", "los", "recibir", "límite", "dónde", "pagos", "otro", "del", "datos", "cobrar", "nuevo", "quién", "puede", "esenciales", "negocio", "pagarle", "teléfono", "moneda", "otra", "cantidades", "cantidad", "hoy", "envié", "equivocada", "activar", "sesión", "cambiar", "notificaciones", "retiro", "retirar", "alguien", "veo", "llega", "tarda", "llegó", "cuándo", "quiero", "pagué", "error", "renta", "desde", "leer"],
+  pt: ["dinheiro", "para", "como", "conta", "meu", "loja", "minha", "que", "não", "pagamento", "com", "meus", "pessoa", "uma", "transferência", "receber", "localização", "bancária", "quanto", "aluguel", "consigo", "adicionar", "envio", "novo", "pagamentos", "alguém", "valores", "valor", "tempo", "quando", "errada", "onde", "quem", "fazer", "outro", "posso", "dados", "pode", "notificações", "moeda", "vai", "hoje", "chegou", "enviei", "paguei", "ligar", "ler", "recebo", "colocar", "falar", "qual", "volta", "quero", "errado", "ativar", "compartilhar", "mudar", "estão", "minhas", "conversas"],
+  fr: ["mon", "argent", "est", "boutique", "compte", "comment", "envoyer", "payer", "paiement", "pas", "mes", "banque", "pourquoi", "bancaire", "une", "sur", "avec", "les", "solde", "loyer", "virement", "recevoir", "envoi", "dans", "vers", "ajouter", "faire", "numéro", "montant", "peux", "identifiant", "personne", "combien", "bloqué", "pour", "reçu", "localisation", "peut", "connecter", "paiements", "ouvrir", "quelqu", "ami", "autre", "montants", "suspendu", "quand", "annuler", "quoi", "connexion", "qui", "parrainage", "retirer", "parler", "téléphone", "envoyé", "mauvais", "payé", "position", "activer"],
+  de: ["geld", "ich", "wie", "ist", "nicht", "meine", "zahlung", "bezahlen", "die", "senden", "kann", "konto", "mit", "warum", "das", "auf", "meinen", "was", "standort", "miete", "eine", "bei", "guthaben", "bankkonto", "pausiert", "gesperrt", "falsche", "ein", "überweisung", "beträge", "betrag", "aus", "meiner", "zahlungen", "einen", "zum", "lange", "geht", "bezahlt", "scannen", "und", "laden", "funktioniert", "von", "anmelden", "sicher", "eröffnen", "hinzufügen", "abheben", "schicken", "freund", "bezahle", "ausland", "viel", "dauert", "angekommen", "wann", "bekommen", "werden", "mich"],
+  id: ["saya", "uang", "toko", "cara", "pembayaran", "tidak", "bagaimana", "bayar", "bisa", "rekening", "kirim", "yang", "akun", "kenapa", "apa", "apakah", "lokasi", "terima", "jumlah", "sewa", "itu", "orang", "masuk", "salah", "dengan", "lain", "berapa", "untuk", "kode", "pakai", "buka", "tambah", "teman", "nomor", "ini", "lama", "membayar", "dari", "mana", "mengirim", "mereka", "ada", "dihentikan", "diblokir", "belum", "tarik", "baru", "struk", "pelanggan", "negara", "batas", "sementara", "hari", "sampai", "transaksi", "dikembalikan", "dan", "arti", "terkunci", "lihat"],
+};
+var ASK_EN_WORDS = new Set(["how", "what", "why", "when", "where", "who", "which", "the", "is", "are", "my", "can", "do", "does", "send", "money", "pay", "bank", "account", "i", "to"]);
 
 // Which of our languages a question is in — and whether it is one we
 // actually wrote answers in (known: false → answered in English).
 function askDetectLang(text, fallback) {
   const script = askScript(text);
-  if (script === "hi") return { lang: "hi", known: true };
+  const s = String(text || "");
+  if (script === "hi") {
+    const mr = askDevCount(s, ASK_MR_WORDS);
+    const hiOnly = askDevCount(s, ASK_HI_ONLY_WORDS);
+    if (mr > hiOnly || (fallback === "mr" && hiOnly === 0)) return { lang: "mr", known: true };
+    return { lang: "hi", known: true };
+  }
   if (script === "ta") return { lang: "ta", known: true };
-  if (script === "other") return { lang: "en", known: false };
+  if (script === "other") {
+    for (const [l, re] of Object.entries(ASK_SCRIPT_LANG)) { re.lastIndex = 0; if (re.test(s)) return { lang: l, known: true }; }
+    if (/[؀-ۿ]/.test(s)) return { lang: ASK_UR_LETTERS.test(s) || fallback === "ur" ? "ur" : "ar", known: true };
+    if (/[぀-ヿ]/.test(s)) return { lang: "ja", known: true };
+    if (/[一-鿿]/.test(s)) return { lang: fallback === "ja" ? "ja" : "zh", known: true };
+    return { lang: "en", known: false };
+  }
   if (script !== "latin") return { lang: fallback || "en", known: true };
   const words = String(text).toLowerCase().split(/[^a-zÀ-ɏ]+/).filter(Boolean);
   const hl = words.filter((w) => ASK_HL_WORDS.has(w)).length;
-  const other = words.filter((w) => ASK_OTHER_LATIN.has(w)).length;
-  if (other >= 2 || (other >= 1 && words.length <= 3 && hl === 0)) return { lang: "en", known: false };
+  const scores = Object.entries(ASK_LATIN_WORDS).map(([l, list]) => {
+    let n = words.filter((w) => list.includes(w)).length;
+    // Letters that give a language away, and a tie goes to the chosen one.
+    if (l === "es" && /[ñ¿¡]/.test(s)) n += 1;
+    if (l === "pt" && /[ãõ]/.test(s)) n += 1;
+    if (l === "de" && /[ßäöü]/i.test(s)) n += 1;
+    if (l === "fr" && /[èêàç]/i.test(s)) n += 1;
+    return { l, n: n + (l === fallback ? 0.5 : 0) };
+  }).sort((a, b) => b.n - a.n);
+  const top = scores[0];
+  const en = words.filter((w) => ASK_EN_WORDS.has(w)).length;
+  if (top.n >= 2 && top.n > en) return { lang: top.l, known: true };
+  if (top.n >= 1 && hl === 0 && en === 0) return { lang: top.l, known: true };
   if (hl >= 2 || (hl >= 1 && words.length <= 3)) return { lang: "hl", known: true };
+  // A pack language chosen, and nothing in the words that says otherwise:
+  // Latin letters are how many people type Bengali, Urdu, Spanish and the rest.
+  if (fallback && !askIsCore(fallback) && en === 0 && hl === 0) return { lang: fallback, known: true };
   // A Hindi phone that types in Latin letters is probably Hinglish.
   if (hl >= 1 && fallback === "hl") return { lang: "hl", known: true };
   return { lang: "en", known: true };
@@ -128,20 +181,57 @@ function askNormalize(text) {
 }
 
 function askSynKey(w) {
+  if (ASK_PACK.notCore.some((x) => w.startsWith(x))) return ASK_PACK.syn.find(([, v]) => w === v || (v.length >= 3 && w.startsWith(v)))?.[0] || null;
   for (const [key, variants] of ASK_SYN) {
     for (const v of variants) if (w === v || (v.length >= 3 && w.startsWith(v))) return key;
   }
-  return null;
+  if (!ASK_PACK.syn.length) return null;
+  if (ASK_PACK.memo.has(w)) return ASK_PACK.memo.get(w);
+  let found = null;
+  for (const [key, v] of ASK_PACK.syn) if (w === v || (v.length >= 3 && w.startsWith(v))) { found = key; break; }
+  ASK_PACK.memo.set(w, found);
+  return found;
+}
+
+// A pack's words, tidied the way a question's words are.
+function askUsePack(pack) {
+  const tidy = (x) => askNormalize(x).split(" ").filter(Boolean).map(askTidyWord).join(" ");
+  const syn = [];
+  for (const [key, list] of Object.entries((pack && pack.syn) || {})) {
+    for (const v of list || []) { const t = tidy(v); if (t && !t.includes(" ")) syn.push([key, t]); }
+  }
+  const p = (pack && pack.personal) || {};
+  ASK_PACK = {
+    syn,
+    stop: new Set(((pack && pack.stop) || []).map(tidy).filter(Boolean)),
+    me: (p.me || []).map((x) => askNormalize(x)).filter(Boolean),
+    happened: (p.happened || []).map((x) => askNormalize(x)).filter(Boolean),
+    memo: new Map(),
+    notCore: ASK_NOT_CORE[(pack && pack.lang) || ""] || [],
+  };
+}
+
+// Chinese and Japanese have no spaces: two letters at a time stand in for words.
+var ASK_CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+function askSplitWords(raw) {
+  const out = [];
+  for (const w of raw) {
+    if (!ASK_CJK.test(w)) { out.push(w); continue; }
+    const ch = Array.from(w);
+    if (ch.length <= 2) { out.push(w); continue; }
+    for (let i = 0; i + 2 <= ch.length; i += 1) out.push(ch[i] + ch[i + 1]);
+  }
+  return out;
 }
 
 // The words of a question that matter, tidied, with shared meanings joined.
 function askTokens(text, keepLastRaw) {
-  const raw = askNormalize(text).split(" ").filter(Boolean);
+  const raw = askSplitWords(askNormalize(text).split(" ").filter(Boolean));
   const out = [];
   raw.forEach((w, i) => {
     if (ASK_STOP.has(w)) return;
     const t = askTidyWord(w);
-    if (!t) return;
+    if (!t || ASK_PACK.stop.has(t)) return;
     const key = askSynKey(t);
     // While someone is still typing, the last word is half a word: keep it
     // as written so it can match the start of a longer one.
@@ -262,10 +352,23 @@ var ASK_ME = /(^|[^\p{L}])(i|i've|ive|my|mine|me|maine|mene|mai|main|mera|meri|m
 var ASK_HAPPENED = /(?:^|[^\p{L}\p{M}])(sent|paid|transferred|deducted|debited|not received|didn'?t (get|receive|arrive|come)|not (arrived|credited|come)|haven'?t (got|received)|missing|stuck|where is my|bheje|bheja|bhejе|bhja|bheji|nahi (mil|aa|aay|pahunch|pohoch)|nahin (mil|aa|pahunch)|nai mil|kat gay|kat gaya|kata|cut ho|katt|भेजे|भेजा|भेजी|नहीं मिल|नही मिल|नहीं आ|नहीं पहुं|नहीं पहुँ|कट गए|कट गया|அனுப்பினேன்|அனுப்பிய|வரவில்லை|கிடைக்கவில்லை|போகவில்லை|சேரவில்லை|கழிந்த)/iu;
 function askIsPersonal(text) {
   const s = String(text || "");
-  const happened = ASK_HAPPENED.test(s);
+  // A pack's words, whole or as a word's start where words have spaces.
+  const hit = (list) => {
+    if (!list.length) return false;
+    const n = ` ${askNormalize(s)} `;
+    return list.some((p) => (/[a-z]/.test(p) ? n.includes(` ${p}`) : n.includes(p)));
+  };
+  const happened = ASK_HAPPENED.test(s) || hit(ASK_PACK.happened);
   if (!happened) return false;
-  return /\d/.test(s) || ASK_ME.test(s);
+  return /\p{Nd}/u.test(s) || ASK_ME.test(s) || hit(ASK_PACK.me);
 }
 
 // Bold in an answer is written **like this**.
 function askPlain(text) { return String(text || "").replace(/\*\*/g, ""); }
+
+// Read aloud, GLOOBAL is said "Global": a phone's voice spells the double-o
+// name out letter by letter. Only what is spoken changes, never what is shown.
+// Written in each voice's own letters, because a voice for another language
+// can stumble over a Latin word.
+var ASK_SPOKEN_NAME = { hi: "ग्लोबल", mr: "ग्लोबल", ta: "குளோபல்", bn: "গ্লোবাল", te: "గ్లోబల్", gu: "ગ્લોબલ", kn: "ಗ್ಲೋಬಲ್", ml: "ഗ്ലോബൽ", pa: "ਗਲੋਬਲ", ur: "گلوبل", ar: "جلوبال", ru: "Глобал", ja: "グローバル", ko: "글로벌" };
+function askSpoken(text, lang) { return askPlain(text).replace(/gloobal/gi, ASK_SPOKEN_NAME[lang] || "Global"); }

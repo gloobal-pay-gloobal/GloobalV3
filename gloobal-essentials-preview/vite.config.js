@@ -83,6 +83,9 @@ export default defineConfig({
       },
       injectManifest: {
         globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
+        // The map library is about 1.4 MB and most visits never open a map, so
+        // it downloads when one does rather than with every install.
+        globIgnores: ["**/maplibre-gl*"],
         // 0241: the app is one bundle and it passed Workbox's default
         // 2 MiB cap (2,098,717 bytes), which fails the whole build — on
         // Netlify too. Precaching it is the point: it is what opens the

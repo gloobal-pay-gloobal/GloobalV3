@@ -70,10 +70,11 @@
     #
     # `(self)` restores the ordinary behaviour: this origin may ASK, and the
     # browser's own permission prompt decides. It grants nothing by itself.
-    # microphone stays `()` — nothing in the app records audio, and the camera
-    # stream is requested with `video` only (qrScanner.jsx), so leaving it off
-    # keeps the policy narrow.
-    Permissions-Policy        = "camera=(self), microphone=(), geolocation=(self), payment=(self)"
+    # microphone is `(self)` since the live photo check: the person says three
+    # numbers out loud (features/identity/liveFaceCheck.jsx) and the browser's
+    # speech recogniser needs the microphone to hear them. Nothing records or
+    # uploads audio; the camera stream itself is still `video` only.
+    Permissions-Policy        = "camera=(self), microphone=(self), geolocation=(self), payment=(self)"
     Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
     Content-Security-Policy   = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://flagcdn.com https://logo.clearbit.com https://raw.githubusercontent.com https://tile.openstreetmap.org https://tiles.openfreemap.org; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://gloobal-pay.onrender.com https://tiles.openfreemap.org; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
 

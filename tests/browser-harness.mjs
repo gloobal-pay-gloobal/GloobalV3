@@ -485,6 +485,9 @@ export async function installApi(context, options = {}) {
   };
 
   const publicUser = (account) => ({
+    // 0253: how this account confirms payments. options.paymentCheck seeds
+    // it; PATCH /api/profile/security changes it.
+    securitySettings: { biometricLogin: true, appLock: false, paymentSound: true, paymentCheck: (state.paymentCheck || {})[account.symbolId] || options.paymentCheck || "pin" },
     symbolId: account.symbolId,
     fullName: account.fullName,
     mobileNumber: account.mobileNumber,
@@ -567,6 +570,20 @@ export async function installApi(context, options = {}) {
       return json(200, { verified: true });
     }
     if (pathname.startsWith("/api/passkey/")) return json(200, { registered: false, enrolled: false, credentials: [] });
+    // --- the face check on large payments (server/lib/paymentFace.js) ---
+    // options.payFaceAboveInr turns the gate on at that many rupees;
+    // options.payFaceAnswer is what the face comparison says: "ok"
+    // (default), "no_match" or "locked".
+    if (pathname === "/api/face/payment-approval" && request.method() === "POST") {
+      const caller = callerOf(request);
+      if (!caller) return json(401, { success: false, code: "auth_required" });
+      state.payFaceApprovals = (state.payFaceApprovals || 0) + 1;
+      if (!body || typeof body.bind !== "string" || !Array.isArray(body.descriptor)) return json(400, { success: false, code: "invalid" });
+      const answer = options.payFaceAnswer || "ok";
+      if (answer === "locked") return json(423, { success: false, code: "face_locked", message: "Too many tries. Large payments are paused for 10 minutes; smaller ones still work." });
+      if (answer === "no_match") return json(401, { success: false, code: "no_match", message: "That didn't match the face on this GLOOBAL ID. Try again in good light.", attemptsRemaining: 2 });
+      return json(200, { success: true, approval: "approved:" + body.bind });
+    }
     if (pathname.startsWith("/api/face/")) return json(200, { enrolled: false });
 
     // --- profile photos ---
@@ -587,6 +604,61 @@ export async function installApi(context, options = {}) {
       if (problem) return json(problem.status, { success: false, message: problem.message, code: problem.code });
       state.photos[id] = photo;
       return json(200, { success: true, hasPhoto: true });
+    }
+    // --- Security: how payments are confirmed (0253) ---
+    const securityMatch = pathname.match(/^\/api\/profile\/security\/([^/]+)$/);
+    if (securityMatch && request.method() === "PATCH") {
+      const caller = callerOf(request);
+      if (!caller) return json(401, { success: false, code: "auth_required" });
+      const choice = body && body.paymentCheck;
+      if (choice !== undefined) {
+        if (!["pin", "device", "face"].includes(choice)) return json(400, { success: false, message: "paymentCheck must be pin, device or face." });
+        if (choice === "device" && !options.hasPasskey) return json(409, { success: false, code: "passkey_required", message: "Turn on fingerprint / Face ID for GLOOBAL on this phone first." });
+        if (choice === "face" && options.hasFace === false) return json(409, { success: false, code: "face_setup_required", message: "Take your live photo first: Profile, then tap your photo." });
+        state.paymentCheck = state.paymentCheck || {};
+        state.paymentCheck[caller.symbolId] = choice;
+      }
+      return json(200, { success: true, user: publicUser(caller) });
+    }
+    // --- the live photo (server/lib/livePhoto.js) ---
+    // options.liveAnswer picks what the "server" decides about the face:
+    //   "saved" (default) · "taken" (on another account) · "different"
+    //   (needs the PIN, then waits 24 hours).
+    const livePhotoMatch = pathname.match(/^\/api\/profile\/([^/]+)\/live-photo(\/pending)?$/);
+    if (livePhotoMatch) {
+      const caller = callerOf(request);
+      if (!caller) return json(401, { success: false, message: "Authentication required.", code: "auth_required" });
+      const id = decodeURIComponent(livePhotoMatch[1]);
+      if (caller.symbolId !== id) return json(403, { success: false, message: "Not allowed.", code: "forbidden" });
+      state.pendingPhotos = state.pendingPhotos || {};
+      if (livePhotoMatch[2]) {
+        if (request.method() === "DELETE") {
+          const had = Boolean(state.pendingPhotos[id]);
+          delete state.pendingPhotos[id];
+          return json(200, { success: true, cancelled: had });
+        }
+        return json(200, { success: true, pending: state.pendingPhotos[id] || null });
+      }
+      if (request.method() !== "POST") return json(405, { success: false });
+      const problem = checkPhoto(body && body.photo);
+      if (problem) return json(problem.status, { success: false, message: problem.message, code: problem.code });
+      if (!Array.isArray(body.descriptor) || body.descriptor.length < 64) {
+        return json(400, { success: false, code: "invalid_descriptor", message: "The face check result could not be read." });
+      }
+      state.livePhotoPosts = (state.livePhotoPosts || 0) + 1;
+      const answer = options.liveAnswer || "saved";
+      if (answer === "taken") {
+        return json(409, { success: false, code: "face_taken", message: "This face is already on another GLOOBAL ID." });
+      }
+      if (answer === "different") {
+        if (!body.pin) return json(403, { success: false, code: "different_face_needs_pin", message: "Different person." });
+        if (body.pin !== caller.pin) return json(401, { success: false, code: "wrong_pin", message: "That PIN is wrong." });
+        const activateAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+        state.pendingPhotos[id] = { photo: body.photo, activateAt };
+        return json(202, { success: true, status: "pending", activateAt });
+      }
+      state.photos[id] = body.photo;
+      return json(200, { success: true, status: "saved", faceChecks: true });
     }
     const getPhotoMatch = pathname.match(/^\/api\/users\/([^/]+)\/photo$/);
     if (getPhotoMatch && request.method() === "GET") {
@@ -763,6 +835,31 @@ export async function installApi(context, options = {}) {
     if (pathname === "/api/stats") return json(200, { totalUsers: 85, byCountry: { IN: 61, JP: 4, GB: 3, MX: 1 } });
 
     // --- money ---
+    // A payment with no PIN: allowed only as the account chose, and only
+    // with that check's approval for exactly this payment.
+    if (pathname === "/api/transactions/send" && !(body && body.pin)) {
+      const s0 = byId(body.senderSymbolId || body.fromSymbolId);
+      const choice = (state.paymentCheck || {})[s0 && s0.symbolId] || options.paymentCheck || "pin";
+      const typed = Number(body.sourceAmount ?? body.destinationAmount ?? body.amount);
+      const bind = `send|${body.receiverSymbolId}|${typed}`;
+      state.noPinSends = (state.noPinSends || 0) + 1;
+      if (choice === "pin") return json(400, { success: false, code: "pin_required", message: "PIN is required before sending transaction." });
+      if (choice === "face" && convert(typed, s0.currency, "INR") > 10000) {
+        return json(403, { success: false, code: "pin_required", bind, message: "The face check covers payments up to ₹10,000. Use your PIN for this one." });
+      }
+      if (body.paymentApproval !== "approved:" + bind) {
+        return json(403, { success: false, code: "check_required", method: choice, bind, message: "Confirm it's you." });
+      }
+    }
+    if (pathname === "/api/transactions/send" && options.payFaceAboveInr) {
+      const s0 = byId(body.senderSymbolId || body.fromSymbolId);
+      const typed = Number(body.sourceAmount ?? body.destinationAmount ?? body.amount);
+      const inr = s0 ? convert(typed, s0.currency, "INR") : Infinity;
+      const bind = `send|${body.receiverSymbolId}|${typed}`;
+      if (inr >= options.payFaceAboveInr && body.faceApproval !== "approved:" + bind) {
+        return json(403, { success: false, code: "face_required", bind, thresholdInr: options.payFaceAboveInr, message: "Payments of ₹1 lakh or more need a quick face check." });
+      }
+    }
     if (pathname === "/api/transactions/send") {
       if (state.failNextSend) {
         const reason = state.failNextSend;

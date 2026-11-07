@@ -198,6 +198,24 @@ async function gloobalVerifyBiometric(symbolId) {
   }
 }
 
+// The phone's fingerprint / Face ID for one payment (0253), when the account
+// chose it instead of the PIN. Not the sign-in passkey check above: the
+// server asks for user verification REQUIRED and signs its answer for this
+// payment's bind only. → { approval } or { reason, cancelled? }.
+async function gloobalDevicePaymentApproval(bind) {
+  if (!gloobalWebAuthnAvailable()) return { reason: "This phone can't do fingerprint / Face ID here. Use your PIN." };
+  try {
+    const options = await GloobalApi.paymentDeviceOptions(bind);
+    const credential = await navigator.credentials.get({ publicKey: gloobalDecodeRequestOptions(options) });
+    if (!credential) return { reason: "Cancelled.", cancelled: true };
+    const result = await GloobalApi.paymentDeviceVerify(bind, gloobalEncodeAuthenticationCredential(credential));
+    return result && result.approval ? { approval: result.approval } : { reason: "Fingerprint / Face ID didn't confirm it." };
+  } catch (err) {
+    if (err && err.body && err.body.message) return { reason: err.body.message };
+    return { reason: gloobalBiometricErrorText(err), cancelled: err && err.name === "NotAllowedError" };
+  }
+}
+
 // Turns the DOMExceptions navigator.credentials throws into something a
 // person can act on. NotAllowedError covers both "they cancelled" and
 // "the check timed out", which the API deliberately does not separate.

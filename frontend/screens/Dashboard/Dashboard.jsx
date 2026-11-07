@@ -278,7 +278,7 @@ function BalanceEssentialsSplit({ summary, balance, ccyCode, lens, onOpen }) {
   </div>;
 }
 
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "", themeKey = "day", onPickTheme }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, onLiveProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "", themeKey = "day", onPickTheme }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -353,32 +353,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       clearTimeout(ghFlipTimeoutRef.current);
     };
   }, []);
-  const profilePhotoInputRef = useRef10(null);
-  const handleProfilePhotoFile = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file || !onChangeProfilePhoto) return;
-    const reader = new FileReader();
-    // Downscaled to fit the server's photo cap, exactly as the registration
-    // step does. This used to hand the raw camera photo straight up — a
-    // multi-megabyte data URL that overflowed the localStorage cache and
-    // could never be accepted as the account's one server copy.
-    // The answer is waited for and said out loud. It used to be dropped on
-    // the floor, so a photo that never reached the server still looked
-    // saved: the picture was on screen and nothing ever said otherwise.
-    reader.onload = async () => {
-      // Cropped first: a circle for a face, a square for a shop's logo.
-      const cropped = await requestPhotoCrop(reader.result, shareRole === "user" ? "circle" : "square");
-      if (!cropped) return;
-      const outcome = await onChangeProfilePhoto(await fitProfilePhotoForUpload(cropped));
-      if (!outcome || outcome.ok) return showToast2("Photo updated");
-      if (outcome.reason === "unprepared") {
-        return showToast2("That picture couldn't be prepared — try another one");
-      }
-      showToast2("Couldn't save your photo just now — we'll try again shortly");
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
+  // The account photo is taken live, never picked from the gallery: the
+  // founder's "camera only" (features/identity/liveFaceCheck.jsx). The
+  // hidden file input and its crop step that lived here are gone, so no
+  // path in the app can upload a stored picture as somebody's face.
   const [activeTab, setActiveTab] = useState14("home");
   // ── CHOICES IS BEHIND A CHECK ─────────────────────────────────────────
   //
@@ -1085,6 +1063,17 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [showHowItWorks, setShowHowItWorks] = useState14(false);
   const requestCloseHowItWorks = useBackClose(showHowItWorks, () => setShowHowItWorks(false));
   const [profileDetail, setProfileDetail] = useState14(null);
+  // The live photo check (features/identity/liveFaceCheck.jsx) for a new
+  // profile photo, and a different-face change still waiting its 24 hours.
+  const [livePhotoOpen, setLivePhotoOpen] = useState14(false);
+  const [pendingLivePhoto, setPendingLivePhoto] = useState14(null);
+  const refreshPendingLivePhoto = () => {
+    if (!myGloobalId) return;
+    GloobalApi.getPendingLivePhoto(myGloobalId).then(setPendingLivePhoto, () => {});
+  };
+  useEffect12(() => {
+    if (profileDetail === "Personal Details") refreshPendingLivePhoto();
+  }, [profileDetail, myGloobalId]);
   // ── FROM THE PROFILE, AS SHEETS (0237) ──────────────────────────────
   // The founder: Share ID, My QR, Update ID and Hooman should open "on
   // the profile itself". Opened from the profile, each of those screens
@@ -2016,6 +2005,19 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     // security setting.
     setSecurityPending(null);
     if (!ok) showToast2("Couldn't save that setting — please try again");
+  };
+  // 0253: PIN, the phone's fingerprint / Face ID, or the GLOOBAL face check.
+  const paymentCheckNow = securityPending && "paymentCheck" in securityPending
+    ? securityPending.paymentCheck
+    : (securitySettings && securitySettings.paymentCheck) || "pin";
+  const choosePaymentCheck = async (key) => {
+    if (!onUpdateSecuritySettings || key === paymentCheckNow) return;
+    setSecurityPending((prev) => Object.assign({}, prev, { paymentCheck: key }));
+    GLOOBAL_SECURITY_LAST_ERROR.message = "";
+    const ok = await onUpdateSecuritySettings({ paymentCheck: key });
+    setSecurityPending(null);
+    if (!ok) showToast2(GLOOBAL_SECURITY_LAST_ERROR.message || "Couldn't save that setting — please try again");
+    else showToast2(key === "pin" ? "Payments will ask for your PIN" : key === "device" ? "Payments will use fingerprint / Face ID" : "Payments up to ₹10,000 will use the face check");
   };
   const [showChangePin, setShowChangePin] = useState14(false);
   const [changePinCurrent, setChangePinCurrent] = useState14("");
@@ -3569,13 +3571,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        two separate photo-ish affordances competing for attention).
        The hidden file input stays; the menu option below still opens
        it the same way. */
-  }<input
-    ref={profilePhotoInputRef}
-    type="file"
-    accept="image/*"
-    onChange={handleProfilePhotoFile}
-    style={{ display: "none" }}
-  />{
+  }{
     /* Gloobal ID — one line, shrinking to fit rather than
        wrapping. Eye icon sits on the card's right edge,
        straddling it, vertically aligned with this specific
@@ -4970,7 +4966,14 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     gloobalId={personalGloobalId}
     accountCreatedAt={accountCreatedAt}
     profilePhoto={profilePhoto}
-    onChangePhoto={() => profilePhotoInputRef.current?.click()}
+    onChangePhoto={() => setLivePhotoOpen(true)}
+    pendingPhoto={pendingLivePhoto}
+    onCancelPendingPhoto={() => {
+      GloobalApi.cancelPendingLivePhoto(myGloobalId).then(
+        () => { setPendingLivePhoto(null); showToast2("Photo change cancelled"); },
+        () => showToast2("Couldn't cancel just now — try again")
+      );
+    }}
     // 0243: payments MADE, from both sides of the account — the founder's
     // pick. Only the stand-in until the server's full record arrives.
     history={sendHistory}
@@ -4994,6 +4997,20 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onShareId={() => gloobalShareLink({ title: "My GLOOBAL ID", message: `Pay me on GLOOBAL. My GLOOBAL ID: ${personalGloobalId}`, onToast: (m) => showToast2(m === "Link copied" ? "Copied — paste it in any chat to share your GLOOBAL ID" : m) })}
     onOpenQr={() => setShowReceive(true)}
     onUpdateId={() => setProfileOverlay("updateId")}
+  />}{livePhotoOpen && <LiveFaceCheck
+    purpose="change"
+    current={profilePhoto}
+    onUse={(result, pin) => onLiveProfilePhoto(result, pin)}
+    onClose={() => setLivePhotoOpen(false)}
+    onSaved={(outcome) => {
+      setLivePhotoOpen(false);
+      if (outcome && outcome.pending) {
+        refreshPendingLivePhoto();
+        showToast2("New photo goes live in 24 hours");
+      } else {
+        showToast2("Photo updated");
+      }
+    }}
   />}{
     /* ── THE CREATOR'S OWN PAGE ───────────────────────────────────────
        The mark, the handle and the address, with one way to change all
@@ -5089,7 +5106,20 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onClick={() => setProfileCurrency(code)}
     className="v2-row"
     style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px", border: "none", borderTop: i === 0 ? "none" : `1px solid ${T.line}`, background: "none", cursor: "pointer", textAlign: "left" }}
-  ><span style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 13.5, fontWeight: profileCurrency === code ? 800 : 600, color: profileCurrency === code ? T.accent : T.ink }}>{code}</span>{CURRENCIES[code] && <FlagEmoji flag={CURRENCIES[code].flag} width={20} height={15} radius={4} />}</span>{profileCurrency === code && <Check2 size={17} color={T.accent} />}</button>)}</div>}{profileDetail === "Security" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px" }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Biometric login</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Use Face ID or fingerprint to log in</div></span><ProfileToggle on={biometricOn} onToggle={() => flipSecurity("biometricLogin", !biometricOn)} label="Biometric login" /></div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>App lock</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Ask for your PIN again after 5 minutes away</div></span><ProfileToggle on={appLockOn} onToggle={() => flipSecurity("appLock", !appLockOn)} label="App lock" /></div><button
+  ><span style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 13.5, fontWeight: profileCurrency === code ? 800 : 600, color: profileCurrency === code ? T.accent : T.ink }}>{code}</span>{CURRENCIES[code] && <FlagEmoji flag={CURRENCIES[code].flag} width={20} height={15} radius={4} />}</span>{profileCurrency === code && <Check2 size={17} color={T.accent} />}</button>)}</div>}{profileDetail === "Security" && <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px" }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Biometric login</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Use Face ID or fingerprint to log in</div></span><ProfileToggle on={biometricOn} onToggle={() => flipSecurity("biometricLogin", !biometricOn)} label="Biometric login" /></div><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><span><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>App lock</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1 }}>Ask for your PIN again after 5 minutes away</div></span><ProfileToggle on={appLockOn} onToggle={() => flipSecurity("appLock", !appLockOn)} label="App lock" /></div><div data-testid="security-paycheck" style={{ padding: "15px 18px", borderTop: `1px solid ${T.line}` }}><div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>Confirm payments with</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 1, marginBottom: 10 }}>Instead of typing your PIN every time</div>{[
+    ["pin", "PIN", "Every payment asks for your PIN"],
+    ["device", "Fingerprint / Face ID", "This phone's own sensor. Any amount under ₹1 lakh"],
+    ["face", "GLOOBAL face check", "Up to ₹10,000 a payment and ₹25,000 a day; above that, your PIN"]
+  ].map(([key, title, sub]) => {
+    const on = paymentCheckNow === key;
+    return <button
+      key={key}
+      data-testid={`security-paycheck-${key}`}
+      data-on={on ? "1" : "0"}
+      onClick={() => choosePaymentCheck(key)}
+      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left", padding: "10px 12px", marginTop: 6, borderRadius: 14, border: `1.5px solid ${on ? T.accent : T.line}`, background: on ? T.accentSoft : T.surface, cursor: "pointer", fontFamily: "inherit" }}
+    ><span style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${on ? T.accent : T.inkFaint}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{on && <span style={{ width: 8, height: 8, borderRadius: "50%", background: T.accent }} />}</span><span><span style={{ display: "block", fontSize: 13, fontWeight: 800, color: T.ink }}>{title}</span><span style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: T.inkSoft, marginTop: 1 }}>{sub}</span></span></button>;
+  })}<div style={{ fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 10, lineHeight: 1.45 }}>₹1 lakh or more always needs your PIN and a face check. Money to an outside bank always needs your PIN.</div></div><button
     onClick={() => setShowChangePin(true)}
     className="v2-row"
     style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "15px 18px", border: "none", borderTop: `1px solid ${T.line}`, background: "none", cursor: "pointer", textAlign: "left" }}

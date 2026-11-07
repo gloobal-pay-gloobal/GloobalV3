@@ -244,7 +244,8 @@ function BankMoneyScreen({ start = "history", ccyCode = "INR", balance = 0, coun
     setError("");
     try {
       if (!idem.current) idem.current = `out-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const t = await GloobalApi.sendToBank({ amount: value, accountId, pin: pinValue, idempotencyKey: idem.current });
+      // ₹1 lakh equivalent and above: the face check first (lib/paymentFace.js).
+      const t = await withPaymentFaceCheck(null, (extra) => GloobalApi.sendToBank({ ...extra, amount: value, accountId, pin: pinValue, idempotencyKey: idem.current }));
       idem.current = "";
       setPinValue("");
       setTransfer(t);

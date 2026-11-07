@@ -117,6 +117,13 @@ const transactionSchema = new mongoose.Schema(
       index: true,
     },
 
+    // How the sender confirmed this payment (0253): 'pin', 'device',
+    // 'face' or 'mandate' (a standing rent instruction), and its value in
+    // rupees — which is what the ₹25,000-a-day limit on face-only payments
+    // is counted in.
+    authMethod: { type: String, enum: ['pin', 'device', 'face', 'mandate'], default: undefined },
+    authInr: { type: Number, default: undefined },
+
     note: {
       type: String,
       trim: true,

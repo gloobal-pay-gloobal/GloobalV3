@@ -12,6 +12,7 @@
     "test": "node --test tests/push-sw-core.test.mjs"
   },
   "dependencies": {
+    "@vladmandic/human": "3.3.6",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.383.0",
     "maplibre-gl": "^5.24.0",

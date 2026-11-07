@@ -619,6 +619,18 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         memo: `Send Money to ${bottom.name}`,
         clientRequestId: requestIdRef.current
       });
+      if (remote && remote.ok === false && !remote.skipped && remote.needPin) {
+        // This one needs the PIN after all. Nothing was sent; back to the
+        // pad, with the server's reason, and the same payment goes again.
+        verifiedPinRef.current = null;
+        appliedRequestIdRef.current = null;
+        setTransactionStatus("idle");
+        showToast2(remote.reason || "Enter your PIN for this payment.");
+        setPin("");
+        setPinError(false);
+        setPinOpen(true);
+        return;
+      }
       if (remote && remote.ok === false && !remote.skipped) {
         verifiedPinRef.current = null;
         setTransactionStatus("failed");
@@ -1197,6 +1209,19 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     requestClosePayMethod();
     setPin("");
     setPinError(false);
+    // 0253: an account that confirms payments with its phone's fingerprint /
+    // Face ID or the GLOOBAL face check skips the PIN pad. The payment goes
+    // straight to the server, which asks for that check (or, for ₹1 lakh and
+    // above or past the face-check limits, for the PIN — completePayment
+    // then opens the pad).
+    if (GLOOBAL_PAYMENT_CHECK.method !== "pin" && onRemoteSend && gloobalCurrentSymbolId()) {
+      verifiedPinRef.current = null;
+      requestIdRef.current = generateRequestId();
+      setFailureReason(null);
+      setTransactionStatus("processing");
+      completePayment();
+      return;
+    }
     setPinOpen(true);
   }
   function closePin() {
@@ -2322,7 +2347,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       overflow: "hidden",
       transition: "background 0.4s ease"
     }}
-  >{key === "gbank" ? <img src={G_LOGO_DATA_URI} alt="" style={{ width: 32, height: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }} /> : key === "gessentials" ? <EssentialsPayIcon size={19} color="#2E7A4F" /> : key === "gpaylater" ? <CreditCard4 size={19} color={T.accent} /> : key === "gcoin" ? <Coins3 size={19} color={T.accent} /> : <Landmark6 size={19} color={T.accent} />}</span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{displayLabel || label}</span>{note && <span style={{ fontSize: 11.5, color: "#8A84A0" }}>{note}</span>}</span><ChevronRight4 size={17} color="#B9B3CC" style={{ flexShrink: 0 }} /></button>)}</div></div></div>}{pinOpen && <div className="pin-overlay" role="dialog" aria-modal="true" aria-label="Enter OTP to confirm transfer"><div className="pin-modal"><button className="pin-close" onClick={requestClosePin} aria-label="Cancel"><X4 size={18} /></button><div className="pin-lock-icon"><Lock5 size={22} /></div><h3 className="pin-title">Enter OTP</h3>{
+  >{key === "gbank" ? <img src={G_LOGO_DATA_URI} alt="" style={{ width: 32, height: 32, objectFit: "contain", filter: "brightness(0) invert(1)" }} /> : key === "gessentials" ? <EssentialsPayIcon size={19} color="#2E7A4F" /> : key === "gpaylater" ? <CreditCard4 size={19} color={T.accent} /> : key === "gcoin" ? <Coins3 size={19} color={T.accent} /> : <Landmark6 size={19} color={T.accent} />}</span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{displayLabel || label}</span>{note && <span style={{ fontSize: 11.5, color: "#8A84A0" }}>{note}</span>}</span><ChevronRight4 size={17} color="#B9B3CC" style={{ flexShrink: 0 }} /></button>)}</div></div></div>}{pinOpen && <div className="pin-overlay" role="dialog" aria-modal="true" aria-label="Enter your PIN to confirm transfer"><div className="pin-modal"><button className="pin-close" onClick={requestClosePin} aria-label="Cancel"><X4 size={18} /></button><div className="pin-lock-icon"><Lock5 size={22} /></div><h3 className="pin-title">Enter your PIN</h3>{
     /* Just the amount now, in a box — same "card holding the
        thing being verified" concept as registration's OTP
        screen (which shows the phone number in its own card),

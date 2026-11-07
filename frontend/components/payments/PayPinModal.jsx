@@ -182,8 +182,12 @@ async function fitProfilePhotoForUpload(dataUrl) {
   return out;
 }
 
-function ProfileSetupScreen({ onBack, onSubmit, photo, onChangePhoto, docType, onSelectDocType, name, onChangeName }) {
-  const fileInputRef = useRef4(null);
+function ProfileSetupScreen({ onBack, onSubmit, photo, onChangePhoto, onLiveResult, docType, onSelectDocType, name, onChangeName }) {
+  // The photo is TAKEN here, live, never chosen from the gallery
+  // (features/identity/liveFaceCheck.jsx). The account doesn't exist yet at
+  // this step, so the check's result is handed up and saved after the PIN
+  // step creates it.
+  const [liveOpen, setLiveOpen] = useState6(false);
   const isDefaultPhoto = photo === G_LOGO_DATA_URI;
   // All three are required now. The photo used to be optional — the
   // Gloobal mark stood in for it indefinitely — which meant accounts could
@@ -205,14 +209,6 @@ function ProfileSetupScreen({ onBack, onSubmit, photo, onChangePhoto, docType, o
     { key: "license", label: "Driving Licence", Icon: Car2 },
     { key: "passport", label: "Passport", Icon: Globe2 }
   ];
-  const handleFile = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => onChangePhoto(await fitProfilePhotoForUpload(reader.result));
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
   return <div
     style={{
       position: "fixed",
@@ -262,8 +258,9 @@ function ProfileSetupScreen({ onBack, onSubmit, photo, onChangePhoto, docType, o
   >{
     /* Profile photo — defaults to the Gloobal 'g' mark until replaced */
   }<div style={{ position: "relative" }}><button
-    onClick={() => fileInputRef.current && fileInputRef.current.click()}
-    aria-label="Change profile photo"
+    onClick={() => setLiveOpen(true)}
+    data-testid="reg-photo"
+    aria-label={isDefaultPhoto ? "Take your photo" : "Retake your photo"}
     className="v2-tap"
     style={{
       width: 96,
@@ -304,12 +301,21 @@ function ProfileSetupScreen({ onBack, onSubmit, photo, onChangePhoto, docType, o
       color: "#fff",
       boxShadow: T.shadowCard
     }}
-  ><Plus2 size={16} strokeWidth={2.75} /></span><input ref={fileInputRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} /></div>{
+  ><Plus2 size={16} strokeWidth={2.75} /></span></div>{liveOpen && <LiveFaceCheck
+    purpose="register"
+    onUse={async (result) => {
+      onLiveResult && onLiveResult(result);
+      onChangePhoto(result.photo);
+      return { ok: true };
+    }}
+    onSaved={() => setLiveOpen(false)}
+    onClose={() => setLiveOpen(false)}
+  />}{
     /* Says why Continue is greyed out while the placeholder is still
        showing. A disabled button with no reason attached reads as a
        broken screen. */
   }{isDefaultPhoto && <span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint, textAlign: "center", marginTop: -12 }}>
-            Tap to add a profile photo
+            Tap to take your photo · a live check, about 10 seconds
           </span>}{
     /* Document type — mandatory single pick */
   }<div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}><span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: T.inkFaint }}>

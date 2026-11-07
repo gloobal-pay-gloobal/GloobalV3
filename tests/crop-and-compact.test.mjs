@@ -28,7 +28,10 @@ test("every photo the founder named goes through the cropper", () => {
   assert.match(picker, /id=\{`shop-item-photo-\$\{list\.length\}`\}\s*crop="square"/);
   assert.match(picker, /chosen = await requestPhotoCrop\(raw, crop\);/);
   assert.match(readSource("frontend/features/creator/CreatorSetupScreen.jsx"), /await requestPhotoCrop\(reader\.result, "square"\)/);
-  assert.match(readSource("frontend/screens/Dashboard/Dashboard.jsx"), /await requestPhotoCrop\(reader\.result, shareRole === "user" \? "circle" : "square"\)/);
+  // 0253: the account photo is no longer chosen and cropped — it is taken
+  // live (features/identity/liveFaceCheck.jsx), framed by the check itself.
+  assert.doesNotMatch(readSource("frontend/screens/Dashboard/Dashboard.jsx"), /requestPhotoCrop\(reader\.result/);
+  assert.match(readSource("frontend/screens/Dashboard/Dashboard.jsx"), /<LiveFaceCheck\s+purpose="change"/);
   assert.match(readSource("frontend/__artifactEntry.jsx"), /<PhotoCropHost \/>/);
   assert.match(readSource("build_app.mjs"), /components\/common\/photoCropper\.jsx/);
 });

@@ -214,6 +214,10 @@ function PersonalDetailsScreen({
   accountCreatedAt,
   profilePhoto,
   onChangePhoto,
+  // A different-face photo waiting out its 24 hours (lib/livePhoto.js):
+  // { photo, activateAt } or null, and how to cancel it.
+  pendingPhoto = null,
+  onCancelPendingPhoto,
   history,
   hoomanScore = null,
   onOpenHoomanScore,
@@ -323,7 +327,15 @@ function PersonalDetailsScreen({
   })();
   const factRow = (Icon, title, value, extra, first, key) => <div key={key} data-pd-fact={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderTop: first ? "none" : `1px solid ${T.line}` }}>{icon(Icon, T.accent)}<span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, flexShrink: 0 }}>{title}</span><span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, color: T.ink, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</span>{extra}</div>;
 
-  return <div data-personal-profile style={{ display: "flex", flexDirection: "column", gap: 16 }}>{
+  const pendingWhen = pendingPhoto && pendingPhoto.activateAt ? new Date(pendingPhoto.activateAt) : null;
+  return <div data-personal-profile style={{ display: "flex", flexDirection: "column", gap: 16 }}>{pendingPhoto && <div
+    data-testid="pd-pending-photo"
+    style={{ display: "flex", alignItems: "center", gap: 12, background: "#FFF6E5", border: "1px solid #F3D9A6", borderRadius: 18, padding: "10px 12px" }}
+  >{pendingPhoto.photo && <img src={pendingPhoto.photo} alt="Waiting photo" style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />}<div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 800, color: "#9A5A00" }}>A new photo is waiting</div><div style={{ fontSize: 12, fontWeight: 600, color: "#7A5A2A", lineHeight: 1.4 }}>Goes live {pendingWhen ? `${pendingWhen.toLocaleDateString(undefined, { day: "numeric", month: "short" })}, ${pendingWhen.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : "in 24 hours"}. Not you? Cancel it.</div></div><button
+    data-testid="pd-pending-cancel"
+    onClick={() => onCancelPendingPhoto && onCancelPendingPhoto()}
+    style={{ border: "none", background: "#9A5A00", color: "#fff", borderRadius: 12, padding: "8px 12px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}
+  >Cancel</button></div>}{
     /* The ink filter, defined once for every stamp on the page. */
   }<svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true"><defs><filter id="gloobalStampInk"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="4" result="n" /><feDisplacementMap in="SourceGraphic" in2="n" scale="1.5" xChannelSelector="R" yChannelSelector="G" /></filter></defs></svg><div
     data-pd-card

@@ -1967,6 +1967,41 @@ var GloobalApi = {
 
   // PUT /api/profile/:symbolId/photo — a JPEG/PNG data URL, or null to
   // remove the photo. Only the account itself may set it; the server checks.
+  // The live photo (features/identity/liveFaceCheck.jsx): the photo taken
+  // in the camera check plus its face descriptor. The server refuses a face
+  // already on another account (409 face_taken), asks for the PIN when the
+  // face differs from this account's own (403 different_face_needs_pin), and
+  // then holds the change for 24 hours (status "pending"). Errors throw as
+  // GloobalApiError with the server's body, which liveFaceSave reads.
+  // The face check on payments of ₹1 lakh equivalent and above
+  // (server/lib/paymentFace.js): { approval } to retry the payment with.
+  // The phone's own fingerprint / Face ID for ONE payment (0253): options,
+  // then the signed approval for exactly that payment's bind.
+  async paymentDeviceOptions(bind) {
+    return gloobalApiClient.post("/api/payment-check/device/options", { bind });
+  },
+  async paymentDeviceVerify(bind, response) {
+    return gloobalApiClient.post("/api/payment-check/device/verify", { bind, response });
+  },
+
+  async approvePaymentFace(payload) {
+    return gloobalApiClient.post("/api/face/payment-approval", payload);
+  },
+
+  async setLivePhoto(symbolId, payload) {
+    return gloobalApiClient.post(`/api/profile/${encodeURIComponent(symbolId)}/live-photo`, payload);
+  },
+
+  // A different-face photo still waiting out its 24 hours, or null.
+  async getPendingLivePhoto(symbolId) {
+    const result = await gloobalApiClient.get(`/api/profile/${encodeURIComponent(symbolId)}/live-photo/pending`);
+    return result && result.pending ? result.pending : null;
+  },
+
+  async cancelPendingLivePhoto(symbolId) {
+    return gloobalApiClient.delete(`/api/profile/${encodeURIComponent(symbolId)}/live-photo/pending`);
+  },
+
   async setProfilePhoto(symbolId, photoDataUrlOrNull) {
     const result = await gloobalApiClient.put(`/api/profile/${encodeURIComponent(symbolId)}/photo`, {
       photo: photoDataUrlOrNull || null

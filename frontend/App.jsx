@@ -115,6 +115,10 @@ function loadLocalProfile(symbolId) {
 // been confirmed by the server. While it is set, the local choice wins over
 // whatever the server holds; once the server accepts it, the server copy is
 // the one every device adopts.
+// The last reason the server gave for refusing a Security setting, read by
+// the Security screen after a failed save.
+var GLOOBAL_SECURITY_LAST_ERROR = { message: "" };
+
 var GLOOBAL_PROFILE_PHOTO_PENDING_PREFIX = "gloobal.profilePhotoPending.";
 // symbolId → in-flight upload promise, so a sync never races a write.
 var OWN_PROFILE_PHOTO_PUSHES = new Map();
@@ -189,7 +193,17 @@ function pushOwnProfilePhoto(symbolId, photo) {
       },
       // A cold Render instance takes 20-50s to wake and this is where that
       // lands. The flag stays set, so the next sync sends it again.
-      () => ({ ok: false, reason: "failed" })
+      //
+      // Except 409 live_photo_required: the account has a live-checked face
+      // and this picture isn't it. Sending it again would only be refused
+      // again, so the flag is cleared and the next sync adopts the server's.
+      (err) => {
+        if (err && err.status === 409 && err.body && err.body.code === "live_photo_required") {
+          if (OWN_PROFILE_PHOTO_PUSHES.get(symbolId) === push) setOwnProfilePhotoPending(symbolId, false);
+          return { ok: false, reason: "live" };
+        }
+        return { ok: false, reason: "failed" };
+      }
     )
     .finally(() => {
       if (OWN_PROFILE_PHOTO_PUSHES.get(symbolId) === push) OWN_PROFILE_PHOTO_PUSHES.delete(symbolId);
@@ -1040,7 +1054,11 @@ function GloobalId() {
     if (!senderSymbolId) return { ok: true, skipped: true, reason: "not signed in against the backend" };
     if (!receiverSymbolId) return { ok: true, skipped: true, reason: "receiver has no GLOOBAL ID" };
     try {
-      const result = await GloobalApi.sendTransaction({
+      // At ₹1 lakh equivalent and above the server asks for a face check;
+      // withPaymentFaceCheck runs it and sends the same payment again with
+      // the approval (features/identity/liveFaceCheck.jsx).
+      const result = await withPaymentFaceCheck(senderSymbolId, (extra) => GloobalApi.sendTransaction({
+        ...extra,
         senderSymbolId,
         receiverSymbolId,
         amountBasis,
@@ -1081,7 +1099,7 @@ function GloobalId() {
         // The backend also runs a 15-second identical-resend guard; this
         // makes the dedup explicit rather than time-based.
         idempotencyKey: clientRequestId || ""
-      });
+      }));
       // The server just moved money, so its balance is now ahead of the
       // local ledger's own view of the same payment. Re-read and reconcile
       // rather than assuming the two arrived at the same number: the
@@ -1150,7 +1168,9 @@ function GloobalId() {
         cashbackDestination: (result && result.cashbackDestination) || null
       };
     } catch (err) {
-      return { ok: false, reason: err.message };
+      // needPin: the server wants the PIN for this one after all (₹1 lakh
+      // and above, over the face-check limits, or the check was cancelled).
+      return { ok: false, reason: err.message, needPin: Boolean(err && err.needPin) };
     }
   };
   const handleReportTransactionIssue = (txnId, reason) => openComplaint({ txnId, raisedBy: "sender", reason });
@@ -2096,6 +2116,11 @@ function GloobalId() {
   const [loginMobileRevealed, setLoginMobileRevealed] = useState19(false);
   const [regBiometricScanning, setRegBiometricScanning] = useState19(false);
   const [profilePhoto, setProfilePhoto] = useState19(G_LOGO_DATA_URI);
+  // The live photo taken at the registration profile step, kept until the
+  // account exists (the PIN step): its descriptor goes with the register
+  // call so a face already on another account is refused before a second
+  // account is created, then the photo is saved through the live route.
+  const [liveRegResult, setLiveRegResult] = useState19(null);
   // Changing the photo has to WRITE it, not just show it.
   //
   // This was `onChangeProfilePhoto={setProfilePhoto}` — state only. The very
@@ -2112,6 +2137,20 @@ function GloobalId() {
   //
   // The picture is still shown immediately; what changed is that a failure
   // now contradicts it.
+  // A photo from the live camera check (features/identity/liveFaceCheck.jsx).
+  // The live route saves it on the server itself, so this only adopts it
+  // locally once the server has said yes — nothing is pushed a second time.
+  const handleLiveProfilePhoto = async (result, pinValue) => {
+    const symbolId = (registeredUser && registeredUser.symbolId) || secureId;
+    const outcome = await liveFaceSave(symbolId, result, pinValue);
+    if (outcome && outcome.ok) {
+      setProfilePhoto(result.photo);
+      persistLocalProfile(symbolId, documentedName.trim(), result.photo);
+      setOwnProfilePhotoPending(symbolId, false);
+      COUNTERPARTY_PHOTO_CACHE.set(symbolId, result.photo);
+    }
+    return outcome;
+  };
   const handleChangeProfilePhoto = async (photo) => {
     const previous = profilePhoto;
     setProfilePhoto(photo);
@@ -2254,6 +2293,13 @@ function GloobalId() {
     gloobalSetPaymentSoundEnabled(paymentSoundOn);
   }, [paymentSoundOn]);
 
+  // How ordinary payments are confirmed (0253): PIN, the phone's own
+  // fingerprint / Face ID, or the GLOOBAL face check. Send Money reads it.
+  const paymentCheckChoice = (securitySettings && securitySettings.paymentCheck) || "pin";
+  useEffect15(() => {
+    gloobalSetPaymentCheck(paymentCheckChoice);
+  }, [paymentCheckChoice]);
+
   // Writes a Security switch to the account and adopts whatever the server
   // says the account now holds. Returns a boolean so the switch can roll
   // itself back rather than sitting in a state the account does not share.
@@ -2276,6 +2322,9 @@ function GloobalId() {
       GloobalApi.saveSession(updated, phoneNumber);
       return true;
     } catch (e) {
+      // The server's own reason, for a setting it refused ("Turn on
+      // fingerprint / Face ID first"). The switch still gets its boolean.
+      GLOOBAL_SECURITY_LAST_ERROR.message = (e && e.body && e.body.message) || "";
       return false;
     }
   };
@@ -3443,7 +3492,10 @@ function GloobalId() {
         // real; server/scripts/backfill-country-iso.mjs repairs the accounts
         // written before this line existed.
         countryIso: dialCountry.iso,
-        referredBy: referralCode || ""
+        referredBy: referralCode || "",
+        face: liveRegResult && liveRegResult.photo === profilePhoto
+          ? { descriptor: liveRegResult.descriptor, model: liveRegResult.model }
+          : undefined
       });
       setRegisteredUser(result.user);
       // Normally the same country that was just sent; read back from the
@@ -3461,7 +3513,16 @@ function GloobalId() {
       // profile step can now become the account's server copy. Best-effort
       // and not awaited: a registration never waits on, or fails over, a
       // photo. Anything that does not land is retried at the next sign-in.
-      pushOwnProfilePhoto(newSymbolId, profilePhoto);
+      // A live photo is saved through the live route (it carries the face);
+      // only if GLOOBAL couldn't be reached does it fall back to the plain
+      // upload, which the next sign-in retries.
+      if (liveRegResult && liveRegResult.photo === profilePhoto) {
+        liveFaceSave(newSymbolId, liveRegResult).then((outcome) => {
+          if (outcome && outcome.reason === "offline") pushOwnProfilePhoto(newSymbolId, profilePhoto);
+        });
+      } else {
+        pushOwnProfilePhoto(newSymbolId, profilePhoto);
+      }
       // This — not the register call above — is what actually sets the
       // name. POST /api/register-symbol destructures `fullName` out of the
       // body and then throws it away: it does
@@ -3974,6 +4035,7 @@ function GloobalId() {
     setDocumentedName("");
     setDocType(null);
     setProfilePhoto(G_LOGO_DATA_URI);
+    setLiveRegResult(null);
     // Other people's photos were read under this account's token, and the
     // next account's own photo must be reconciled afresh.
     clearCounterpartyPhotoCache();
@@ -4631,6 +4693,7 @@ function GloobalId() {
     onSubmit={handleSubmitProfile}
     photo={profilePhoto}
     onChangePhoto={setProfilePhoto}
+    onLiveResult={setLiveRegResult}
     docType={docType}
     onSelectDocType={setDocType}
     name={documentedName}
@@ -4693,6 +4756,7 @@ function GloobalId() {
     onConsumePendingMyShare={() => setPendingOpenMyShare(false)}
     profilePhoto={profilePhoto}
     onChangeProfilePhoto={handleChangeProfilePhoto}
+    onLiveProfilePhoto={handleLiveProfilePhoto}
     // The account's own number, for Personal Details. Held in this session
     // since registration and restored with the session on login.
     // The ACCOUNT's number, not the one in the phone pad — see

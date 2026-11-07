@@ -25,6 +25,7 @@ import zlib from "node:zlib";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { ACCOUNTS, API_ORIGIN, ROOT_DIR, buildOnce, login, openPage, teardown, text } from "./browser-harness.mjs";
+import { liveFaceFake, takeProfileLivePhoto } from "./live-face-fake.mjs";
 
 const previewDir = path.join(ROOT_DIR, "gloobal-essentials-preview");
 const preview = createRequire(path.join(previewDir, "package.json"));
@@ -265,7 +266,9 @@ async function waitForAvatarState(page, state) {
 // The Profile tab holds the account's own photo circle and its picker.
 async function openProfileTab(page) {
   await tap(page.getByRole("button", { name: "Profile", exact: true }).last());
-  await page.getByLabel("Gloobal ID — tap for options", { exact: true }).waitFor({ timeout: 20000 });
+  // The control was "Gloobal ID — tap for options" until the profile card
+  // moved; it reads "… open your profile" now.
+  await page.getByLabel("Gloobal ID — open your profile", { exact: true }).waitFor({ timeout: 20000 });
 }
 
 const photoReadsOf = (api, account) =>
@@ -421,19 +424,23 @@ describe("the scan confirm card shows the payee's server-held photo", () => {
 });
 
 describe("the account's own photo is the one server copy", () => {
-  test("6. changing the photo on Dashboard uploads a downscaled JPEG, which the next scanner sees", async () => {
+  // 0253: the photo is taken live, never picked — so this goes through the
+  // live check (with a scripted face) and lands through the live route.
+  test("6. a new photo from the live check is a downscaled JPEG on the server, which the next scanner sees", async () => {
     const { page, context, api } = await openPage({ account: A });
+    await context.addInitScript(liveFaceFake({}));
+    await page.reload();
+    await page.waitForSelector("#root *", { timeout: 15000 });
     await login(page, A);
     // The sign-in sync asks the server first (nothing there, nothing local).
     await waitFor(async () => photoReadsOf(api, A).length >= 1, "the sign-in photo sync");
 
-    await openProfileTab(page);
-    const picker = page.locator('input[type=file][accept="image/*"]');
-    assert.equal(await picker.count(), 1, "the Dashboard's photo picker");
-    await picker.setInputFiles({ name: "me.png", mimeType: "image/png", buffer: noisePng(1200, 900) });
+    assert.equal(await page.locator('input[type=file][accept="image/*"]').count(), 0, "no gallery picker for the account photo");
+    await takeProfileLivePhoto(page);
 
-    await waitFor(async () => photoWritesOf(api, A).length === 1, "PUT /api/profile/<A>/photo");
-    const uploaded = photoWritesOf(api, A)[0].body.photo;
+    const liveWrites = () => api.calls.filter((c) => c.method === "POST" && decodeURIComponent(c.path) === `/api/profile/${A.symbolId}/live-photo`);
+    await waitFor(async () => liveWrites().length === 1, "POST /api/profile/<A>/live-photo");
+    const uploaded = liveWrites()[0].body.photo;
     assert.match(uploaded, /^data:image\/jpeg;base64,/, "uploaded as a JPEG data URL");
     assert.ok(decodedBytes(uploaded) <= PHOTO_CAP, `uploaded ${decodedBytes(uploaded)} bytes, over the cap`);
     await waitFor(async () => api.state.photos[A.symbolId] === uploaded, "the fake server to hold the photo");
@@ -448,7 +455,8 @@ describe("the account's own photo is the one server copy", () => {
     await waitFor(async () => photoReadsOf(api, A).length > readsBefore, "the post-reload photo sync");
     await page.waitForTimeout(800);
     await openProfileTab(page);
-    assert.equal(photoWritesOf(api, A).length, 1, "no re-upload when the server already has it");
+    assert.equal(liveWrites().length, 1, "no re-upload when the server already has it");
+    assert.equal(photoWritesOf(api, A).length, 0, "nothing through the old upload route");
     assert.equal(api.state.photos[A.symbolId], uploaded);
     assert.ok(await page.locator(`img[src="${uploaded}"]`).count() >= 1, "the Dashboard shows the photo after reload");
     await context.close();

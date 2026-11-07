@@ -263,7 +263,13 @@ const userSchema = new mongoose.Schema({
     appLock: { type: Boolean, default: false },
     // Creator payments: a chime and the amount spoken aloud when a payment
     // to the creator side is confirmed, like a shop counter's soundbox.
-    paymentSound: { type: Boolean, default: true }
+    paymentSound: { type: Boolean, default: true },
+    // How this account confirms an ordinary payment (0253), chosen on the
+    // Security screen: 'pin', 'device' (the phone's own fingerprint / Face
+    // ID through its passkey) or 'face' (the GLOOBAL live face check, for
+    // payments up to ₹10,000 each and ₹25,000 a day). Payments of ₹1 lakh
+    // and above always need the PIN and the face check, whatever this says.
+    paymentCheck: { type: String, enum: ['pin', 'device', 'face'], default: 'pin' }
   },
 
   // ── THE CREATOR SIDE OF THE SAME ACCOUNT ─────────────────────────────

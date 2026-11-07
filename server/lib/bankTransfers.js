@@ -50,6 +50,9 @@ const monthKey = (d) => new Date(d).toISOString().slice(0, 7);
 function createBankTransfers({
   User, Pin, LedgerEntry, Notification, requireAuth, writeLimit, lookupLimit, credentialLimit,
   pin, isBankOpen, currencyOf, mintReference, hashKey, essentialsHeld = async () => 0,
+  // The face check on ₹1 lakh and above (lib/paymentFace.js). Absent in
+  // tests that build this module alone: then nothing is gated.
+  faceGate = async () => null,
 }) {
   // ── The outside world (test mode) ─────────────────────────────────────
   const partnerCollectRef = () => digits(12); // a UPI / bank reference
@@ -480,6 +483,10 @@ function createBankTransfers({
         await pin.registerPinSuccess(pinRecord);
 
         const currency = await currencyOf(user);
+        // ₹1 lakh and above leaves only with a face approval for exactly
+        // this account and this amount.
+        const faceRefusal = await faceGate({ user, amount, currency, bind: `bank|${String(account._id)}|${amount}`, approval: body.faceApproval });
+        if (faceRefusal) return res.status(faceRefusal.status).json(faceRefusal.body);
         const referenceId = await newRef(BankTransfer, 'referenceId');
         const utr = partnerUtr();
         const label = account.kind === 'upi' ? account.upiId : `${account.bankName} ••${account.last4}`;

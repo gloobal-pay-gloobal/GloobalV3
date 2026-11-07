@@ -38,6 +38,8 @@ const PlatformAccount = require('./models/PlatformAccount');
 const Receipt = require('./models/Receipt');
 const Settlement = require('./models/Settlement');
 const FaceTemplate = require('./models/FaceTemplate');
+const PendingPhotoChange = require('./models/PendingPhotoChange');
+const livePhotoLib = require('./lib/livePhoto');
 const { nationalNumberFrom } = require('./constants/dialCodes');
 const faceCrypto = require('./lib/faceCrypto');
 const { compareDescriptors, matchThreshold } = require('./lib/faceMatch');
@@ -426,6 +428,8 @@ app.use((req, res, next) => {
   // 0249: a rent listing carries up to six photos and parses its own body.
   if ((req.method === 'POST' || req.method === 'PUT') && rentProfile.RENT_LISTING_PATH.test(req.path)) return next();
   if (req.method === 'PUT' && PROFILE_PHOTO_UPLOAD_PATH.test(req.path)) return next();
+  // The live photo carries the photo plus its face descriptor (lib/livePhoto.js).
+  if (req.method === 'POST' && livePhotoLib.LIVE_PHOTO_PATH.test(req.path)) return next();
   if (req.method === 'PUT' && CREATOR_ITEMS_PATH.test(req.path)) return next();
   // POST only: the GET on the same path returns the bytes and carries no
   // body, so it has nothing to parse and no reason to skip anything.
@@ -853,6 +857,7 @@ const publicUserPayload = async (user) => {
       // Creator payments: a chime and the amount spoken aloud. On unless
       // switched off.
       paymentSound: user.securitySettings?.paymentSound !== false,
+      paymentCheck: ['device', 'face'].includes(user.securitySettings?.paymentCheck) ? user.securitySettings.paymentCheck : 'pin',
     },
     referredBy: user.referredBy || null,
     // The inviter's display name, so the app can say "Invited by Priya"
@@ -2135,6 +2140,26 @@ app.patch(
         update['securitySettings.paymentSound'] = req.body.paymentSound;
       }
 
+      // How ordinary payments are confirmed (lib/paymentFace.js). A choice
+      // that can't work yet is refused rather than saved: 'device' needs a
+      // passkey on this account, 'face' needs the live photo's face.
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, 'paymentCheck')) {
+        const choice = req.body.paymentCheck;
+        if (!['pin', 'device', 'face'].includes(choice)) {
+          return res.status(400).json({ success: false, message: 'paymentCheck must be pin, device or face.' });
+        }
+        if (choice === 'device') {
+          const me = await User.findById(req.authUser._id).select('passkeys').lean();
+          if (!me || !Array.isArray(me.passkeys) || me.passkeys.length === 0) {
+            return res.status(409).json({ success: false, code: 'passkey_required', message: "Turn on fingerprint / Face ID for GLOOBAL on this phone first." });
+          }
+        }
+        if (choice === 'face' && !(await FaceTemplate.exists({ userId: req.authUser._id }))) {
+          return res.status(409).json({ success: false, code: 'face_setup_required', message: 'Take your live photo first: Profile, then tap your photo.' });
+        }
+        update['securitySettings.paymentCheck'] = choice;
+      }
+
       if (Object.keys(update).length === 0) {
         return res.status(400).json({ success: false, message: 'Nothing to update.' });
       }
@@ -2420,6 +2445,27 @@ app.post('/api/register-symbol', registerLimit, async (req, res) => {
       return res.status(409).json({
         message: 'This mobile number is already linked with another Secure ID. Please login with that Secure ID.'
       });
+    }
+
+    // One face, one GLOOBAL ID. The live photo taken at the profile step
+    // (before this account exists) sends its face descriptor with this call,
+    // so a face already on another account is refused BEFORE a second
+    // account is created, not after (lib/livePhoto.js). It runs only past
+    // the verified OTP above, so it can't be used to look faces up. The
+    // photo itself is saved right after, through POST .../live-photo.
+    const regFace = req.body && req.body.face;
+    if (regFace && faceCrypto.isConfigured()) {
+      const d = regFace.descriptor;
+      const model = typeof regFace.model === 'string' ? regFace.model.trim() : '';
+      if (Array.isArray(d) && d.length >= 64 && d.length <= 2048 && d.every((n) => typeof n === 'number' && Number.isFinite(n)) && model) {
+        const taken = await livePhoto.findOnOtherAccount(null, model, d);
+        if (taken) {
+          return res.status(409).json({
+            code: 'face_taken',
+            message: 'This face is already on another GLOOBAL ID. Sign in to that one, or contact support if this is a mistake.'
+          });
+        }
+      }
     }
 
     let validReferrerId = null;
@@ -4369,6 +4415,21 @@ app.put(
         });
       }
 
+      // Once the account has a live-checked face, a picture from anywhere
+      // else can't replace it: new photos go through the camera check
+      // (POST /api/profile/:symbolId/live-photo). Sending the SAME photo
+      // again is fine — the app re-sends its cached copy on sync.
+      if (await livePhoto.hasLiveFace(userId)) {
+        const current = await ProfilePhoto.findOne({ userId }).select('dataUrl').lean();
+        if (!current || current.dataUrl !== validated.dataUrl) {
+          return res.status(409).json({
+            success: false, code: 'live_photo_required',
+            message: 'Take a new photo with the live camera check.',
+          });
+        }
+        return res.json({ success: true, hasPhoto: true });
+      }
+
       const fields = { dataUrl: validated.dataUrl, mimeType: validated.mimeType, bytes: validated.bytes };
       try {
         await ProfilePhoto.updateOne({ userId }, { $set: fields }, { upsert: true });
@@ -4388,6 +4449,139 @@ app.put(
   }
 );
 
+// ── THE LIVE PHOTO ──────────────────────────────────────────────────────
+// Routes and rules in lib/livePhoto.js. The PIN check is the same one
+// /api/verify-pin runs, lockout included.
+async function livePhotoCheckPin(user, pin) {
+  const pinRecord = await Pin.findOne({ userId: user._id });
+  if (!pinRecord) return { ok: false, status: 404, message: 'PIN is not set for this account.' };
+  await beginPinAttempt(pinRecord);
+  if (pinLockRemainingMs(pinRecord) > 0) {
+    const locked = pinLockoutResponse(pinRecord);
+    return { ok: false, status: locked.status, message: locked.message, retryAfterSeconds: locked.retryAfterSeconds };
+  }
+  if (!(await bcrypt.compare(String(pin), pinRecord.pinHash))) {
+    const failure = await registerPinFailure(pinRecord);
+    return { ok: false, status: 401, message: failure.message, retryAfterSeconds: failure.lockedNow ? failure.retryAfterSeconds : undefined };
+  }
+  await registerPinSuccess(pinRecord);
+  return { ok: true };
+}
+
+// In the inbox and as a push, like the PIN-reset alert. Never fails the save.
+async function livePhotoNotify(user, { title, message, event }) {
+  try {
+    const row = await Notification.create({
+      userId: user._id, type: 'security', title, message: message.slice(0, 500), metadata: { event },
+    });
+    await pruneNotifications(user._id);
+    if (pushService.isPushEnabled()) {
+      await pushService.sendPushToUser(
+        user._id,
+        {
+          v: 1, category: 'transactional', type: 'security', notificationId: String(row._id),
+          title, body: message.slice(0, 200), url: '/', tag: `gloobal-${event}-${Date.now()}`, timestamp: Date.now(),
+        },
+        { category: 'transactional', app: 'gloobal' }
+      );
+    }
+  } catch (error) {
+    console.error('Live photo alert error (non-fatal):', error);
+  }
+}
+
+const livePhoto = livePhotoLib.registerLivePhotoRoutes(app, {
+  requireAuth, requireSelf, writeLimit, lookupLimit, credentialLimit,
+  models: { User, FaceTemplate, ProfilePhoto, PendingPhotoChange },
+  faceCrypto,
+  validateProfilePhoto,
+  checkPin: livePhotoCheckPin,
+  notify: livePhotoNotify,
+});
+
+// The face check on payments of ₹1 lakh equivalent and above
+// (lib/paymentFace.js): compared with the face the live photo enrolled.
+const paymentFace = require('./lib/paymentFace').createPaymentFace({
+  secret: AUTH_TOKEN_SECRET,
+  getRate,
+  FaceTemplate,
+  faceCrypto,
+});
+paymentFace.mount(app, { requireAuth, credentialLimit });
+
+// Rupees paid in the last 24 hours on the GLOOBAL face check alone — the
+// ₹25,000 limit on face-only payments is counted in this.
+async function faceOnlySpentToday(userId) {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await Transaction.aggregate([
+    { $match: { fromUserId: userId, authMethod: 'face', status: 'success', createdAt: { $gte: since } } },
+    { $group: { _id: null, inr: { $sum: '$authInr' } } },
+  ]);
+  return rows.length ? Number(rows[0].inr) || 0 : 0;
+}
+
+// The phone's own fingerprint / Face ID, for one payment (0253). The same
+// passkey the app already uses, asked with userVerification REQUIRED — the
+// sensor must actually have been used, not just the phone held — and the
+// answer signed for exactly this payment's bind, like the face approval.
+app.post('/api/payment-check/device/options', credentialLimit, requireAuth, async (req, res) => {
+  try {
+    const bind = typeof req.body?.bind === 'string' ? req.body.bind : '';
+    if (!bind || bind.length > 300) return res.status(400).json({ success: false, message: 'Start the payment again.' });
+    const user = await User.findById(req.authUser._id);
+    const passkeys = Array.isArray(user?.passkeys) ? user.passkeys : [];
+    if (!passkeys.length) {
+      return res.status(409).json({ success: false, code: 'passkey_required', message: 'Fingerprint / Face ID is not set up for GLOOBAL on this phone. Use your PIN.' });
+    }
+    const { generateAuthenticationOptions } = await getWebAuthnServer();
+    const { rpID } = getWebAuthnConfig(req);
+    const options = await generateAuthenticationOptions({
+      rpID,
+      allowCredentials: passkeys.map((p) => ({ id: p.id, transports: p.transports || [] })),
+      userVerification: 'required',
+    });
+    await stashWebAuthnChallenge(user, options.challenge);
+    return res.json(options);
+  } catch (error) {
+    console.error('Payment device options error:', error);
+    return res.status(500).json({ success: false, message: 'Could not start fingerprint / Face ID. Use your PIN.' });
+  }
+});
+
+app.post('/api/payment-check/device/verify', credentialLimit, requireAuth, async (req, res) => {
+  try {
+    const bind = typeof req.body?.bind === 'string' ? req.body.bind : '';
+    const response = req.body?.response;
+    if (!bind || bind.length > 300 || !response) return res.status(400).json({ success: false, message: 'Start the payment again.' });
+    const user = await User.findById(req.authUser._id);
+    const passkeys = Array.isArray(user?.passkeys) ? user.passkeys : [];
+    const passkey = passkeys.find((p) => p.id === response.id);
+    if (!passkey) return res.status(404).json({ success: false, message: 'This phone is not the one set up for fingerprint / Face ID. Use your PIN.' });
+    const challenge = await consumeWebAuthnChallenge(user);
+    if (!challenge) return res.status(400).json({ success: false, code: 'expired', message: 'That took too long. Try again.' });
+    const { verifyAuthenticationResponse } = await getWebAuthnServer();
+    const { rpID, origin } = getWebAuthnConfig(req);
+    const verification = await verifyAuthenticationResponse({
+      response,
+      expectedChallenge: challenge,
+      expectedOrigin: origin,
+      expectedRPID: rpID,
+      requireUserVerification: true,
+      credential: { id: passkey.id, publicKey: passkey.publicKey, counter: passkey.counter, transports: passkey.transports || [] },
+    });
+    if (!verification.verified || !verification.authenticationInfo.userVerified) {
+      return res.status(401).json({ success: false, message: "Fingerprint / Face ID didn't confirm it. Try again or use your PIN." });
+    }
+    passkey.counter = verification.authenticationInfo.newCounter;
+    user.passkeys = passkeys;
+    await user.save();
+    return res.json({ success: true, approval: paymentFace.sign(user._id, `device|${bind}`) });
+  } catch (error) {
+    console.error('Payment device verify error:', error);
+    return res.status(500).json({ success: false, message: 'Could not check fingerprint / Face ID. Use your PIN.' });
+  }
+});
+
 // GET /api/users/:symbolId/photo — any signed-in account; this is how a payer
 // sees who they are paying, and how a receipt shows the other party.
 //
@@ -4405,6 +4599,9 @@ app.get('/api/users/:symbolId/photo', lookupLimit, requireAuth, async (req, res)
       });
     }
 
+    // A different-face photo whose 24 hours are up goes live on the first
+    // read of it, so no timer is needed for the switch.
+    await livePhoto.applyDue(user);
     const stored = await ProfilePhoto.findOne({ userId: user._id }).select('dataUrl').lean();
 
     // Private: the response is only for the signed-in viewer. Five minutes is
@@ -9082,6 +9279,7 @@ const bankTransfers = require('./lib/bankTransfers').createBankTransfers({
   currencyOf: (user) => localCurrencyFor(accountCountryIso(user)),
   mintReference: createPrototypeTransactionReference,
   hashKey: process.env.BANK_ID_PEPPER || process.env.AUTH_TOKEN_SECRET,
+  faceGate: (args) => paymentFace.gate(args),
 });
 bankTransfers.mount(app);
 
@@ -10298,14 +10496,12 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // already authenticated by requireAuth/requireSelf, so their own currency
     // is not a secret being handed to a stranger.
 
-    if (!rentMandate && !cleanPin) {
-      return res.status(400).json({
-        success: false,
-        message: 'PIN is required before sending transaction.',
-      });
-    }
-
-    if (!rentMandate && !isValidPinFormat(cleanPin)) {
+    // No PIN is no longer refused here (0253): an account that confirms
+    // payments with its phone's fingerprint / Face ID or the GLOOBAL face
+    // check sends none. Whether THIS payment may go without one is decided
+    // below, once the amount is known (paymentFace.authorize), and an account
+    // still on the PIN gets the same refusal there as it got here.
+    if (!rentMandate && cleanPin && !isValidPinFormat(cleanPin)) {
       return res.status(400).json({
         success: false,
         message: 'PIN must be 4 to 6 digits.',
@@ -10375,7 +10571,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       if (!rent.mandateCovers(rentMandate, { senderId: sender._id, receiverSymbolId: receiver.symbolId, amount: amountForMandate })) {
         return res.status(403).json({ success: false, message: 'Rent could not be sent by itself: the instruction does not match this payment.' });
       }
-    } else {
+    } else if (cleanPin) {
       const pinRecord = await Pin.findOne({ userId: sender._id });
 
       if (!pinRecord) {
@@ -10542,6 +10738,29 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         success: false,
         message: "That amount is too small to convert into the recipient's currency.",
       });
+    }
+
+    // ── ₹1 LAKH AND ABOVE: THE FACE CHECK (0253) ─────────────────────────
+    // What the sender pays, in rupees; at or over the line, this payment
+    // needs a face approval signed for exactly this payee and this typed
+    // amount (lib/paymentFace.js). After the PIN, like the balance check.
+    // The same rule now also decides whether this payment may go without a
+    // PIN: the phone's fingerprint / Face ID (any amount under ₹1 lakh), or
+    // the GLOOBAL face check (up to ₹10,000, ₹25,000 a day).
+    let paymentAuth = { method: 'mandate', inr: null };
+    if (!rentMandate) {
+      const decided = await paymentFace.authorize({
+        user: sender,
+        pinVerified: Boolean(cleanPin),
+        amount: sourceFaceAmount,
+        currency: senderCurrency,
+        bind: `send|${receiver.symbolId}|${basis}|${typedAmount}`,
+        faceApproval: req.body && req.body.faceApproval,
+        paymentApproval: req.body && req.body.paymentApproval,
+        faceSpentToday: () => faceOnlySpentToday(sender._id),
+      });
+      if (decided.refusal) return res.status(decided.refusal.status).json(decided.refusal.body);
+      paymentAuth = decided;
     }
 
     // Controls on payments between two countries (0221), set on the staff
@@ -10816,6 +11035,8 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     }
 
     const transactionFields = {
+      authMethod: paymentAuth.method,
+      authInr: paymentAuth.inr === null ? undefined : paymentAuth.inr,
       fromUserId: sender._id,
       toUserId: receiver._id,
       amount: numericAmount,

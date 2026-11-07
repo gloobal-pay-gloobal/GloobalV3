@@ -32,6 +32,40 @@ import { VitePWA } from "vite-plugin-pwa";
 // version.json (0221): which commit this build is, so the staff site's
 // "Server & deploys" can say whether Netlify is serving the latest code.
 // Netlify sets COMMIT_REF during its build; a local build writes null.
+// The live photo's face models (features/identity/liveFaceCheck.jsx), served
+// from our own origin at /face-models/ rather than a CDN: copied out of the
+// pinned @vladmandic/human package at build, and served from node_modules
+// by the dev server. Only the five models the check uses, about 10 MB.
+// Not precached by the service worker (.json/.bin are outside globPatterns):
+// they download the first time somebody opens the camera, not at install.
+import { readFileSync as faceRead, existsSync as faceExists } from "node:fs";
+import { fileURLToPath as faceUrlPath } from "node:url";
+import { join as faceJoin, dirname as faceDir } from "node:path";
+const FACE_MODELS = ["blazeface", "facemesh", "faceres", "antispoof", "liveness"];
+// The package's "exports" hides package.json, so the folder is found from
+// here rather than resolved.
+const faceModelDir = () => faceJoin(faceDir(faceUrlPath(import.meta.url)), "node_modules", "@vladmandic", "human", "models");
+const faceModels = () => ({
+  name: "gloobal-face-models",
+  configureServer(server) {
+    server.middlewares.use("/face-models", (req, res, next) => {
+      const name = String(req.url || "").replace(/^\//, "").split("?")[0];
+      const ok = FACE_MODELS.some((m) => name === `${m}.json` || name === `${m}.bin`);
+      const file = ok ? faceJoin(faceModelDir(), name) : "";
+      if (!file || !faceExists(file)) return next();
+      res.setHeader("Content-Type", name.endsWith(".json") ? "application/json" : "application/octet-stream");
+      res.end(faceRead(file));
+    });
+  },
+  generateBundle() {
+    for (const m of FACE_MODELS) {
+      for (const ext of ["json", "bin"]) {
+        this.emitFile({ type: "asset", fileName: `face-models/${m}.${ext}`, source: faceRead(faceJoin(faceModelDir(), `${m}.${ext}`)) });
+      }
+    }
+  },
+});
+
 const versionFile = () => ({
   name: "gloobal-version-json",
   generateBundle() {
@@ -43,6 +77,7 @@ export default defineConfig({
   plugins: [
     react(),
     versionFile(),
+    faceModels(),
     VitePWA({
       strategies: "injectManifest",
       srcDir: "src",
@@ -85,7 +120,7 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,png,svg,ico}"],
         // The map library is about 1.4 MB and most visits never open a map, so
         // it downloads when one does rather than with every install.
-        globIgnores: ["**/maplibre-gl*"],
+        globIgnores: ["**/maplibre-gl*", "**/human*", "**/face-models/**"],
         // 0241: the app is one bundle and it passed Workbox's default
         // 2 MiB cap (2,098,717 bytes), which fails the whole build — on
         // Netlify too. Precaching it is the point: it is what opens the

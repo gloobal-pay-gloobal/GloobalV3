@@ -39,6 +39,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildOnce, openPage, teardown, login, ACCOUNTS } from "./browser-harness.mjs";
+import { liveFaceFake, takeProfileLivePhoto } from "./live-face-fake.mjs";
+
+// 0253: the account photo is taken live (features/identity/liveFaceCheck.jsx)
+// and saved through POST /api/profile/:id/live-photo. These suites drive the
+// check with a scripted face; the rest of what they prove — the server holds
+// it, it survives a reload and a sign-out, the cache is only a cache, a
+// failure is said out loud — is unchanged.
+async function openWithFace(account) {
+  const opened = await openPage({ account });
+  await opened.context.addInitScript(liveFaceFake({}));
+  await opened.page.reload();
+  await opened.page.waitForSelector("#root *", { timeout: 15000 });
+  return opened;
+}
 
 const A = ACCOUNTS.india;
 
@@ -166,13 +180,13 @@ async function signInAfterSignOut(page, account) {
 }
 
 async function choosePhoto(page) {
-  await page.locator('input[type="file"]').first().setInputFiles(photoFile);
-  await page.waitForTimeout(2500);
+  await takeProfileLivePhoto(page);
+  await page.waitForTimeout(1500);
 }
 
 describe("a photo that saves", () => {
   test("it reaches the server, says so, and survives a reload and a sign-out", async () => {
-    const { page, context } = await openPage({ account: A });
+    const { page, context } = await openWithFace(A);
     await login(page, A);
     await openProfileTab(page);
 
@@ -216,7 +230,7 @@ describe("a photo that saves", () => {
     // the way to ask this question within one context is to throw the cache
     // away and see the photo return anyway. What is left to hydrate from is
     // GET /api/users/:symbolId/photo and nothing else.
-    const { page, context } = await openPage({ account: A });
+    const { page, context } = await openWithFace(A);
     await login(page, A);
     await openProfileTab(page);
     await choosePhoto(page);
@@ -254,40 +268,29 @@ describe("a photo that saves", () => {
 });
 
 describe("a photo that does NOT save", () => {
-  test("the failure is said out loud, stays pending, and is retried until it sticks", async () => {
+  // 0253: a live photo is never saved behind the person's back. If the
+  // server can't be reached, the check says so on "This is you", nothing is
+  // stored or marked pending, and the same photo can be sent again by
+  // tapping Use this photo once the connection is back.
+  test("the failure is said out loud, nothing is half-saved, and Use this photo tries again", async () => {
     const B = ACCOUNTS.india2;
-    const { page, context } = await openPage({ account: B });
-
-    // 7. Force the save to fail the way a cold Render instance does: the
-    // request never completes.
-    await page.route("**/api/profile/**/photo", (route) => route.abort("failed"));
+    const { page, context } = await openWithFace(B);
+    await page.route("**/api/profile/**/live-photo", (route) => route.abort("failed"));
 
     await login(page, B);
     await openProfileTab(page);
     assert.equal(await serverPhoto(page), null, "this account should start with no photo");
 
-    await watchToasts(page);
-    await choosePhoto(page);
-
-    // The screen must NOT claim it saved.
-    const said = await toastsSeen(page);
-    assert.doesNotMatch(said, /Photo updated/, "a failed save reported success");
-    assert.match(said, /Couldn't save your photo/, "a failed save said nothing at all");
-    // 8. Still nothing on the server, and the attempt is remembered.
+    await takeProfileLivePhoto(page);
+    assert.match(await page.getByTestId("live-face-save-error").textContent(), /Couldn't reach GLOOBAL just now/);
     assert.equal(await serverPhoto(page), null, "the server got a photo the request never delivered");
-    assert.equal(await pendingFlag(page), "1", "a failed save was not left pending for a retry");
+    assert.equal(await pendingFlag(page), null, "a live photo must not be queued to upload behind the person's back");
 
-    // 9. The retry. Let the route through and come back to the dashboard.
-    await page.unroute("**/api/profile/**/photo");
-    await page.reload();
-    await page.waitForTimeout(2000);
-    await login(page, B);
-    await openProfileTab(page);
-    await page.waitForTimeout(2500);
-
+    await page.unroute("**/api/profile/**/live-photo");
+    await page.getByTestId("live-face-use").click();
+    await page.getByTestId("live-face-check").waitFor({ state: "detached", timeout: 15000 });
     const after = await serverPhoto(page);
-    assert.ok(after && after.startsWith("data:image/jpeg"), `the pending photo was never retried: ${after}`);
-    assert.equal(await pendingFlag(page), null, "the pending mark survived a successful retry");
+    assert.ok(after && after.startsWith("data:image/jpeg"), `the photo never reached the server: ${after}`);
     assert.equal(await photoOnScreen(page), true);
 
     await context.close();

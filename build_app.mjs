@@ -291,6 +291,9 @@ const FRONTEND_MODULES = [
   // ColoredGloobalId, GloobalWordmark and COUNTRY_BY_ISO — all emitted
   // earlier, all function declarations or module-level consts.
   "features/identity/PersonalDetailsScreen.jsx",
+  // The live photo: camera only, spoken numbers, a head-move combo. Uses
+  // fitProfilePhotoForUpload (PayPinModal.jsx) and GloobalApi.setLivePhoto.
+  "features/identity/liveFaceCheck.jsx",
   "features/identity/passportStamps.jsx",
   "features/complaints/complaints.jsx",
   // The Creator side's own name, mark and address. Emitted before the

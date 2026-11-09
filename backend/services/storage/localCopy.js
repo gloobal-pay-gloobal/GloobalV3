@@ -34,31 +34,89 @@ var GLOOBAL_LOCAL_COPY_LIVE_EVENT = "gloobal:liveCopy";
 // more misleading than "couldn't reach the server".
 var GLOOBAL_LOCAL_COPY_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1e3;
 
-// The account's own read-only views. Paths are matched without their query,
-// except where the query changes the answer (the stored key keeps it).
+// ── WHAT THE PHONE MAY KEEP, AND WHAT MUST COME FROM THE SERVER ─────────
+//
+// Three groups. Paths are matched without their query; the stored key keeps
+// the query, so "history, sent only" and "history, all" are separate copies.
+// Checked against every read the app makes by tests/offline-audit.mjs.
+//
+// 1. YOUR OWN VIEWS. What the server last said about this account: shown
+//    from the phone when the server can't be reached, with the notice.
 var GLOOBAL_LOCAL_COPY_PATHS = [
-  /^\/api\/profile\/[^/?]+$/,
+  // Money you hold, read-only
   /^\/api\/bank\/[^/?]+$/,
   /^\/api\/assets\/[^/?]+$/,
   /^\/api\/assets\/paylater\/[^/?]+$/,
   /^\/api\/assets\/settlements\/[^/?]+$/,
-  /^\/api\/transactions\/history\/[^/?]+$/,
   /^\/api\/coin\/[^/?]+$/,
-  /^\/api\/passport\/[^/?]+$/,
   /^\/api\/essentials\/me$/,
-  /^\/api\/creator-share\/(overview|distribution)$/,
-  /^\/api\/referrals\/[^/?]+$/,
   /^\/api\/bank-transfers$/,
   /^\/api\/bank-transfers\/accounts$/,
-  /^\/api\/notifications\/unread-count$/
+  /^\/api\/creator-share\/(overview|distribution)$/,
+  // History (the list, all / sent / received, and the old route)
+  /^\/api\/transactions\/[^/?]+$/,
+  /^\/api\/transactions\/history\/[^/?]+$/,
+  // Who you are
+  /^\/api\/profile\/[^/?]+$/,
+  /^\/api\/passport\/[^/?]+$/,
+  /^\/api\/users\/[^/?]+\/photo$/,
+  /^\/api\/referrals\/[^/?]+$/,
+  /^\/api\/interest\/status\/[^/?]+$/,
+  /^\/api\/hooman$/,
+  // Your shop
+  /^\/api\/creator\/[^/?]+\/(profile|items|suppliers|purchases|reviews|insights)$/,
+  /^\/api\/shops$/,
+  /^\/api\/shops\/summary$/,
+  // Your choices, chats, complaints, rent, notices
+  /^\/api\/categories$/,
+  /^\/api\/categories\/tags$/,
+  /^\/api\/category-links$/,
+  /^\/api\/support\/conversations(\/[^/?]+)?$/,
+  /^\/api\/support\/payments$/,
+  /^\/api\/complaints(\/[^/?]+)?$/,
+  /^\/api\/names\/threads(\/[^/?]+)?$/,
+  /^\/api\/helloo\/chats\/[^/?]+\/messages$/,
+  /^\/api\/rent\/(links|places)(\/[^/?]+)?$/,
+  /^\/api\/rent\/profile$/,
+  /^\/api\/notifications$/,
+  /^\/api\/notifications\/unread-count$/,
+  // 2. GLOOBAL'S OWN PAGES. The same for everyone and slow to change (what a
+  //    product is, the guide, coverage, the coin's totals). A saved copy is
+  //    fine; the notice still says it's saved.
+  /^\/api\/products\/[^/?]+$/,
+  /^\/api\/guide$/,
+  /^\/api\/coverage(\/(view|me|books|numbers))?$/,
+  /^\/api\/coin\/(supply|holders)$/,
+  /^\/api\/bazaar\/(showcase|categories)$/
+];
+
+// 3. LIVE ONLY. Never answered from the phone, even if a pattern above would
+//    match: each is a question whose answer must be true NOW, usually just
+//    before money moves or an ID is taken. (Every write, POST/PUT/PATCH/DELETE,
+//    is live only as well; that is checked before this list.)
+var GLOOBAL_LOCAL_COPY_LIVE_ONLY = [
+  /^\/api\/users\/resolve$/,          // who an ID or number belongs to, before paying
+  /^\/api\/payees\/current$/,         // the payee's current ID
+  /^\/api\/users\/available$/,        // is this ID free
+  /^\/api\/referrals\/code\/[^/?]+$/, // is this referral code real
+  /^\/api\/corridor\/limit$/,         // how much may be sent right now
+  /^\/api\/face\/status\/[^/?]+$/,    // face check state, guards payments
+  /^\/api\/profile\/[^/?]+\/live-photo\/pending$/,
+  /^\/api\/bank-transfers\/(?!accounts$)[^/?]+$/, // one transfer's status: is it done yet
+  /^\/api\/creator\/resolve\/[^/?]+$/,
+  /^\/api\/names\/(?!threads$)[^/?]+$/, // a name's price and owner
+  /^\/api\/rent\/name-available$/,
+  /^\/api\/rent\/listings(\/[^/?]+)?$/, // search results
+  /^\/api\/bazaar\/(suggest|words)$/,
+  /^\/api\/bazaar$/,
+  /^\/api\/geo\//,
+  /^\/api\/push\//
 ];
 
 function gloobalLocalCopyWanted(method, path) {
   if (method !== "GET" || typeof path !== "string") return false;
   const bare = path.split("?")[0];
-  // The coin's public pages share the /api/coin/ prefix; they are not this
-  // account's and change for everyone.
-  if (bare === "/api/coin/supply" || bare === "/api/coin/holders") return false;
+  if (GLOOBAL_LOCAL_COPY_LIVE_ONLY.some((re) => re.test(bare))) return false;
   return GLOOBAL_LOCAL_COPY_PATHS.some((re) => re.test(bare));
 }
 

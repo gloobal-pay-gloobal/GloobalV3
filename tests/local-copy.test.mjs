@@ -116,7 +116,7 @@ test("only the account's own views are kept, and liveOnly skips the copy", async
     await T.get("/api/transactions/history/SANJEEV", { liveOnly: true }),
   ]);
   assert.deepEqual(r[0], { err: 0 }, "someone else's lookup");
-  assert.deepEqual(r[1], { err: 0 }, "the coin's public page");
+  assert.equal(r[1].ok.path, "/api/coin/supply", "GLOOBAL's own page: a saved copy is fine");
   assert.equal(r[2].ok.path, "/api/transactions/history/SANJEEV");
   assert.deepEqual(r[3], { err: 0 }, "a caller that needs the live answer");
 });
@@ -133,6 +133,25 @@ test("another account on the same phone never sees the first one's copy; sign-ou
   assert.deepEqual(await page.evaluate(() => T.get("/api/bank/SANJEEV")), { err: 0 }, "gone after sign-out");
   await page.evaluate(() => T.as(null));
   assert.deepEqual(await page.evaluate(() => T.get("/api/bank/SANJEEV")), { err: 0 }, "signed out: nothing");
+});
+
+test("every read sorted: your views kept, GLOOBAL's pages kept, live questions never", () => {
+  const f = new Function(src("backend/services/storage/localCopy.js") + ";return gloobalLocalCopyWanted;")();
+  const kept = [
+    "/api/bank/ME", "/api/transactions/ME?type=all", "/api/support/conversations", "/api/support/conversations/abc",
+    "/api/complaints", "/api/creator/ME/profile", "/api/bank-transfers/accounts", "/api/names/threads", "/api/names/threads/t1",
+    "/api/rent/links", "/api/users/ME/photo", "/api/interest/status/ME", "/api/hooman?day=2026-11-09",
+    "/api/products/bank", "/api/guide?have=x", "/api/coverage/view?period=7d", "/api/coin/supply",
+  ];
+  const live = [
+    "/api/users/resolve?identifier=X", "/api/payees/current?gloobalId=X", "/api/users/available?symbolId=X",
+    "/api/referrals/code/ABC", "/api/corridor/limit?from=A&to=B", "/api/face/status/ME", "/api/profile/ME/live-photo/pending",
+    "/api/bank-transfers/REF123", "/api/names/rasoi.ghar", "/api/rent/listings?q=room", "/api/bazaar?q=tea", "/api/geo/search?q=x",
+    "/api/creator/resolve/shop", "/api/push/status",
+  ];
+  for (const p of kept) assert.equal(f("GET", p), true, `kept: ${p}`);
+  for (const p of live) assert.equal(f("GET", p), false, `live only: ${p}`);
+  for (const m of ["POST", "PUT", "PATCH", "DELETE"]) assert.equal(f(m, "/api/bank/ME"), false, `${m} is a write`);
 });
 
 test("sign-out and a rejected token are wired to wipe the copies; the banner is mounted", () => {

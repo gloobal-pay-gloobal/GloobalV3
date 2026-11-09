@@ -23,13 +23,22 @@ test("the Accounts tab opens the contributors list, and joining starts a message
   const screen = page.getByTestId("contributors-screen");
   await screen.waitFor({ timeout: 10000 });
   const names = await page.getByTestId("contributor").allInnerTexts();
-  assert.equal(names.length, 3);
-  assert.match(names[0], /Step 1 · Foundation[\s\S]*ChatGPT/i);
-  assert.match(names[1], /Claude[\s\S]*Wrote the code\. The ideas were Sanjeev's\./);
-  assert.match(names[2], /Chanchal Sharma[\s\S]*first Claude AI subscription/);
+  assert.equal(names.length, 4);
+  assert.match(names[0], /ChatGPT[\s\S]*AI[\s\S]*Foundation/i);
+  assert.match(names[1], /Gemini[\s\S]*AI/i);
+  assert.match(names[2], /Claude[\s\S]*Turned Sanjeev's ideas into working code/);
+  assert.match(names[3], /Chanchal Sharma[\s\S]*Person[\s\S]*first Claude AI subscription/i);
   assert.match(await page.getByTestId("contributor-you").innerText(), /You\?/);
   assert.equal(await page.getByTestId("contributors-founder").innerText(), "Sanjeev Santosh");
-  await page.screenshot({ path: process.env.CONTRIB_SHOT || "/tmp/contributors.png" });
+  if (process.env.CONTRIB_SHOT) {
+    // Two pictures for review: the top of the screen, then scrolled to the end.
+    const scroller = (to) => page.evaluate((y) => { const d = [...document.querySelectorAll("[data-testid=contributors-screen] div")].find((x) => x.style.overflowY === "auto"); d.scrollTop = y; }, to);
+    await page.screenshot({ path: process.env.CONTRIB_SHOT.replace(/\.png$/, "-top.png") });
+    await scroller(99999);
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: process.env.CONTRIB_SHOT.replace(/\.png$/, "-end.png") });
+    await scroller(0);
+  }
 
   await page.getByTestId("contributors-join").click();
   await screen.waitFor({ state: "detached", timeout: 10000 });

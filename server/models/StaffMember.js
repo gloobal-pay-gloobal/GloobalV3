@@ -8,7 +8,9 @@
 // request reads the role from here, not from the token.
 const mongoose = require('mongoose');
 
-const ROLES = ['support', 'finance', 'risk', 'tech'];
+// 'projects' reviews Hooman Project applications for GLOOBAL funding
+// (lib/projectReview.js).
+const ROLES = ['support', 'finance', 'risk', 'tech', 'projects'];
 
 const StaffMemberSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

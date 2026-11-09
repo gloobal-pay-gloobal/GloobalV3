@@ -1392,6 +1392,22 @@ function GloobalId() {
     openSendToPayee(result.payee);
   };
 
+  // A GLOOBAL reviewer paying a Hooman Project's milestone
+  // (features/projects/projectReview.jsx): an ordinary payment to the
+  // project's owner with the amount filled in. Not a contribution — GLOOBAL's
+  // own funding is recorded on the project when the reviewer marks it paid,
+  // and the server checks that this payment really happened.
+  const openSendForMilestone = async ({ toSymbolId, amountMajor }) => {
+    const result = await resolveGloobalPayee(toSymbolId);
+    if (!result.ok) {
+      showToast(result.retryable ? result.error : "The project owner's account could not be found.");
+      return;
+    }
+    contributionTargetRef.current = null;
+    requestCloseActiveScreen();
+    openSendToPayee({ ...result.payee, prefillAmount: amountMajor });
+  };
+
   // Called once a payment has completed, from handleSendMoneyComplete.
   //
   // Everything here is best-effort and nothing in it can lose money: by the
@@ -5359,6 +5375,7 @@ function GloobalId() {
       setPendingOpenMyShare(true);
     }}
     onContributeToProject={openSendToProject}
+    onPayMilestone={openSendForMilestone}
   /></ScreenErrorBoundary>}{
     /* Backend errors, shown over every stage — the PIN and login screens
        are their own full-screen overlays, so an in-card banner would be

@@ -401,6 +401,9 @@ const FRONTEND_MODULES = [
   // Coverage screen, which renders all three of its exports. Nothing in it
   // moves money — see server/models/Contribution.js for why that matters.
   "features/projects/ProjectContributions.jsx",
+  // Applying for GLOOBAL funding: status chips, the applicant's panel, the
+  // reviewer desk (server/lib/projectReview.js).
+  "features/projects/projectReview.jsx",
   "features/coverage/worldDots.js",
   "features/coverage/coverageCharts.jsx",
   "features/coverage/CoverageDashboard.jsx",

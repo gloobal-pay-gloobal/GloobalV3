@@ -116,9 +116,13 @@ describe("Hooman Projects: searching, choosing a country, choosing a category", 
     await page.getByLabel("Search Hooman Projects").fill("bridge");
     await page.waitForTimeout(1600);
 
-    assert.equal(calls.length, 1, `one request per search, got ${calls.length}: ${JSON.stringify(calls)}`);
-    assert.equal(calls[0].category, null, "the search still sends a category, so it only looks in one");
-    assert.equal(calls[0].iso, "IN", "the search stopped scoping to the country this screen is about");
+    // Two reads per search since GLOOBAL's review: the public list and the
+    // account's own drafts (?mine=1), with the same category and country.
+    assert.equal(calls.length, 2, `two reads per search, got ${calls.length}: ${JSON.stringify(calls)}`);
+    for (const c of calls) {
+      assert.equal(c.category, null, "the search still sends a category, so it only looks in one");
+      assert.equal(c.iso, "IN", "the search stopped scoping to the country this screen is about");
+    }
 
     const text = await screen();
     assert.match(text, /River footbridge/, "the Infrastructure match is missing");

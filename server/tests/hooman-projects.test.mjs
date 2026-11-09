@@ -140,6 +140,14 @@ async function run() {
   check("country came from the creator's resolved account country", stored?.countryIso === "IN",
     stored?.countryIso);
   check("owner is the token's account, never the body's", String(stored?.ownerSymbolId) === OWNER);
+  // Since GLOOBAL's review (lib/projectReview.js), a new project is a draft
+  // until it is submitted and approved; that road is tested in
+  // project-review.test.mjs. The checks below are about visibility and
+  // ownership of a live project, so this one is made live the way a project
+  // from before the review is: published, with no review.
+  check("a new project starts as a draft in GLOOBAL's review",
+    stored?.status === "draft" && stored?.review?.state === "draft", `${stored?.status}/${stored?.review?.state}`);
+  await Project.updateOne({ _id: projectId }, { $set: { status: "published" }, $unset: { review: 1 } });
 
   // ── 2 ──────────────────────────────────────────────────────────────────
   // Persistence across a session, which is the founder's "viewable again
@@ -237,9 +245,11 @@ async function run() {
   // names, which is what the Coverage screen's category picker does and
   // keeps doing.
   console.log("\n7. search queries stored projects");
-  await post("/api/projects", {
+  const solar = await post("/api/projects", {
     title: "Solar microgrid", category: "Environment", summary: "Panels for a village school.",
   }, ownerToken);
+  // Live, as a project from before GLOOBAL's review (see section 1).
+  await Project.updateOne({ _id: solar.body?.project?.id }, { $set: { status: "published" }, $unset: { review: 1 } });
 
   const byWord = await get("/api/projects?q=microgrid");
   check("a title word finds it", (byWord.body?.projects || []).some((p) => p.title === "Solar microgrid"),

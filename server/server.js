@@ -162,6 +162,7 @@ const {
 // any kind before these — see models/Project.js for what a project is and
 // models/ProjectAttachment.js for why its file lives in MongoDB.
 const Project = require('./models/Project');
+const { createProjectReview, publicReview: projectReviewPublic, givingOpen: projectGivingOpen } = require('./lib/projectReview');
 const ProjectAttachment = require('./models/ProjectAttachment');
 // What people have given to a project. NOT a money record — an attribution
 // of a payment that already happened through /api/transactions/send. The
@@ -9663,6 +9664,10 @@ const publicProject = (project, viewerId, totals) => ({
     : null,
   createdAt: project.createdAt,
   updatedAt: project.updatedAt,
+  // Where it is in GLOOBAL's review (lib/projectReview.js). The applicant
+  // sees their own timeline and questions; everyone sees the state, and the
+  // reason when it stopped.
+  review: projectReviewPublic(project, { isOwner: Boolean(viewerId) && String(project.ownerId) === String(viewerId) }),
 });
 
 // Loads a project and decides whether this viewer may see it at all.
@@ -9845,10 +9850,15 @@ app.post('/api/projects', writeLimit, requireAuth, async (req, res) => {
     // projects under the country its mobile number actually says.
     const countryIso = accountCountryIso(req.authUser);
 
+    // Every new project starts as a draft and is sent for GLOOBAL's review
+    // with POST /api/projects/:id/submit (lib/projectReview.js); it is never
+    // live straight from the form, whatever the body says.
     const project = await Project.create(Object.assign({}, validated.value, {
       ownerId: req.authUser._id,
       ownerSymbolId: req.authUser.symbolId,
       countryIso,
+      status: 'draft',
+      review: { state: 'draft', timeline: [{ at: new Date(), state: 'draft', by: 'applicant', note: '' }] },
     }));
 
     recordAudit({
@@ -9885,6 +9895,14 @@ app.patch('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
 
     const validated = validateProjectInput(req.body || {}, { partial: true });
     if (!validated.ok) return res.status(400).json({ success: false, message: validated.message });
+    // Under GLOOBAL's review: edits only while a draft or answering a
+    // question, and it goes live only through submit (lib/projectReview.js).
+    if (existing.review) {
+      if (!['draft', 'needs_info'].includes(existing.review.state)) {
+        return res.status(409).json({ success: false, code: 'under_review', message: 'It cannot be edited while GLOOBAL is reviewing or funding it.' });
+      }
+      delete validated.value.status;
+    }
 
     const updated = await Project.findOneAndUpdate(
       // ownerId in the filter as well as in the check above: the read and
@@ -9912,6 +9930,20 @@ app.patch('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
 
 // DELETE /api/projects/:id — owner only. Takes the attachment with it, so a
 // deleted project cannot leave its file behind as an unreferenced blob.
+// ── Hooman Projects: applying for GLOOBAL funding (lib/projectReview.js) ──
+const projectReview = createProjectReview({
+  Project,
+  BankAccount: require('./models/BankAccount'),
+  FaceTemplate,
+  Transaction,
+  StaffMember: require('./models/StaffMember'),
+  async notify(userId, { title, message, projectId }) {
+    await Notification.create({ userId, type: 'system', title: String(title).slice(0, 100), message: String(message).slice(0, 500), metadata: { projectId } });
+    await pruneNotifications(userId);
+  },
+});
+projectReview.mount(app, { requireAuth, writeLimit, lookupLimit });
+
 app.delete('/api/projects/:id', writeLimit, requireAuth, async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(String(req.params.id || ''))) {
@@ -10153,6 +10185,10 @@ app.post('/api/projects/:id/contributions', writeLimit, requireAuth, async (req,
     // would stop them anyway, but this is the clearer refusal.
     if (project.status !== 'published') {
       return res.status(409).json({ success: false, message: 'That project is not live yet.' });
+    }
+    // Giving opens once GLOOBAL approves it (lib/projectReview.js).
+    if (!projectGivingOpen(project)) {
+      return res.status(409).json({ success: false, code: 'not_approved', message: 'Giving opens once GLOOBAL approves this project.' });
     }
 
     // An owner cannot back their own project.

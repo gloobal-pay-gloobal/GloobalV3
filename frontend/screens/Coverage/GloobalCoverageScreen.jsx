@@ -53,7 +53,7 @@ import {
 // all. It is the whole live-update mechanism: this screen refetches when it
 // changes, so nothing here has to poll and nothing goes stale behind a
 // payment the person just made.
-function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryProp, isFullyRegistered, onOpenMyShare, onContributeToProject, coverageRefreshToken }) {
+function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryProp, isFullyRegistered, onOpenMyShare, onContributeToProject, onPayMilestone, coverageRefreshToken }) {
   // Three separate call sites iterate this prop; a missing one threw
   // "sendHistory is not iterable" and blanked the screen instead of
   // showing an empty history. Normalise once, here.
@@ -92,6 +92,22 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
   // ROW, so "View project" opens the real thing rather than a title and a
   // hope.
   const [hoomanJustCreated, setHoomanJustCreated] = useState16(null);
+  // GLOOBAL's review of Hooman Projects (features/projects/projectReview.jsx):
+  // whether this account reviews, the desk, and a one-line notice for the
+  // applicant's and reviewer's actions.
+  const [isProjectReviewer, setIsProjectReviewer] = useState16(false);
+  const [showReviewDesk, setShowReviewDesk] = useState16(false);
+  const [projectToast, setProjectToast] = useState16(null);
+  const showProjectToast = (text) => {
+    setProjectToast(text);
+    setTimeout(() => setProjectToast((t) => (t === text ? null : t)), 2600);
+  };
+  useEffect14(() => {
+    if (!showHoomanProjects || !isFullyRegistered) return undefined;
+    let live = true;
+    GloobalApi.amIProjectReviewer().then((yes) => { if (live) setIsProjectReviewer(yes); });
+    return () => { live = false; };
+  }, [showHoomanProjects, isFullyRegistered]);
   const [hoomanFavourites, setHoomanFavourites] = useState16(() => {
     try {
       const stored = window.localStorage.getItem("gloobal:project-favourites");
@@ -337,12 +353,22 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     // single deliberate act and should not feel delayed.
     const run = () => {
       (async () => {
-        const next = await GloobalApi.listProjects({
-          category: q ? undefined : selectedHoomanCategory,
-          country: country.code,
-          q: q || undefined
-        });
+        const ask = { category: q ? undefined : selectedHoomanCategory, country: country.code, q: q || undefined };
+        // The public list, plus this account's OWN projects. Every new
+        // project is a draft until GLOOBAL approves it, and a draft is
+        // visible only to its owner — so without this second read a person
+        // saved a project and could not find it again. Merged by id; the
+        // owner's copy wins, since it carries the review's timeline.
+        const [fetched, own] = await Promise.all([
+          GloobalApi.listProjects(ask),
+          isFullyRegistered ? GloobalApi.listProjects({ ...ask, mine: true }).catch(() => null) : null
+        ]);
         if (cancelled) return;
+        let next = fetched;
+        if (fetched && own && own.projects.length) {
+          const mine = new Map(own.projects.map((row) => [row.id, row]));
+          next = { ...fetched, projects: [...own.projects, ...fetched.projects.filter((row) => !mine.has(row.id))] };
+        }
         // null means the server could not answer, which is not the same as
         // "no projects" — the first shows ∆, the second shows a real zero.
         setProjectsData(next);
@@ -627,7 +653,8 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
 
   const hoomanVisibleProjects = (projectsData?.projects || []).filter((project) => {
     if (hoomanProjectFilter === "draft") return project.status === "draft";
-    if (hoomanProjectFilter === "live") return project.status !== "draft";
+    if (hoomanProjectFilter === "live") return project.status !== "draft" && (!project.review || project.review.givingOpen);
+    if (hoomanProjectFilter === "review") return Boolean(project.review) && ["submitted", "under_review", "needs_info"].includes(project.review.state);
     return true;
   });
 
@@ -960,6 +987,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
     return n === 1 ? "1 project" : `${n} projects`;
   })()}</span> : <span style={{ fontSize: 13, fontWeight: 800, color: T.inkFaint }} aria-label="No data">∆</span>}</div><div style={{ display: "flex", gap: 7, overflowX: "auto", margin: "-6px -18px 0", padding: "0 18px 2px", scrollbarWidth: "none", flexShrink: 0 }}>{[
     { id: "all", label: "All" },
+    { id: "review", label: "Under review" },
     { id: "live", label: "Live" },
     { id: "draft", label: "Drafts" },
   ].map((chip) => {
@@ -1008,7 +1036,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
          Live / Funding / In review / Draft; `Funding` and `In review`
          would be pills describing a lifecycle nothing moves a project
          through, so they are not drawn. */
-    }<span style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5, height: 24, padding: "0 9px", borderRadius: 999, fontSize: 10.5, fontWeight: 800, background: draft ? "#FDF1D8" : T.positiveSoft, color: draft ? "#7A4B06" : T.positive }}>{draft ? "Draft" : "Live"}</span></div>{project.summary && <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, marginTop: 10 }}>{project.summary.length > 110 ? project.summary.slice(0, 110).trimEnd() + "…" : project.summary}</div>}{
+    }{project.review && project.review.state !== "none" ? <ProjectStatusChip review={project.review} small /> : <span style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5, height: 24, padding: "0 9px", borderRadius: 999, fontSize: 10.5, fontWeight: 800, background: draft ? "#FDF1D8" : T.positiveSoft, color: draft ? "#7A4B06" : T.positive }}>{draft ? "Draft" : "Live"}</span>}</div>{project.summary && <div style={{ fontSize: 12.5, color: T.inkSoft, lineHeight: 1.5, marginTop: 10 }}>{project.summary.length > 110 ? project.summary.slice(0, 110).trimEnd() + "…" : project.summary}</div>}{
       /* The goal, as a TARGET and nothing more.
 
          The design this came from drew a progress bar and a "$12,400 of
@@ -1047,7 +1075,13 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
 
        The list's bottom padding leaves room for it, so the last project is
        not sitting underneath it. */
-  }{isFullyRegistered && <button
+  }{isProjectReviewer && <button
+    onClick={() => setShowReviewDesk(true)}
+    className="v2-tap"
+    data-testid="open-review-desk"
+    aria-label="GLOOBAL review desk"
+    style={{ position: "absolute", left: 18, bottom: "calc(20px + env(safe-area-inset-bottom, 0px))", display: "flex", alignItems: "center", gap: 8, height: 52, padding: "0 18px", borderRadius: 999, border: `1px solid ${T.line}`, cursor: "pointer", background: T.surface, color: T.ink, fontSize: 14, fontWeight: 800, fontFamily: "inherit", boxShadow: T.shadowRaised, zIndex: 3 }}
+  >Review desk</button>}{isFullyRegistered && <button
     onClick={() => { resetProjectForm(); setShowProjectForm(true); }}
     className="v2-tap"
     aria-label={`Add a project to ${selectedHoomanCategory}`}
@@ -1060,7 +1094,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        server/lib/projectValidation.js). The server still decides
        — this only stops somebody writing 1,400 words before
        being told. */
-  }{hoomanJustCreated && <div style={{ position: "fixed", inset: 0, zIndex: 355, background: T.bg, display: "flex", flexDirection: "column", padding: "0 22px calc(22px + env(safe-area-inset-bottom, 0px))" }}><div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}><span style={{ width: 84, height: 84, borderRadius: 999, background: T.accentSoft, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 0 0 12px ${T.accentSoft}55` }}><Check5 size={38} /></span><div style={{ fontSize: 21, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 24, lineHeight: 1.25 }}>{hoomanJustCreated.title}</div>{
+  }{showReviewDesk && <ProjectReviewDesk onClose={() => { setShowReviewDesk(false); setProjectsToken((n) => n + 1); }} onPayMilestone={onPayMilestone} onToast={showProjectToast} />}{projectToast && <div role="status" data-testid="project-toast" style={{ position: "fixed", left: "50%", bottom: "calc(90px + env(safe-area-inset-bottom, 0px))", transform: "translateX(-50%)", zIndex: 400, background: "#1f2937", color: "#fff", borderRadius: 999, padding: "9px 16px", fontSize: 13, fontWeight: 600, boxShadow: "0 8px 22px rgba(0,0,0,.25)", whiteSpace: "nowrap" }}>{projectToast}</div>}{hoomanJustCreated && <div style={{ position: "fixed", inset: 0, zIndex: 355, background: T.bg, display: "flex", flexDirection: "column", padding: "0 22px calc(22px + env(safe-area-inset-bottom, 0px))" }}><div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}><span style={{ width: 84, height: 84, borderRadius: 999, background: T.accentSoft, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 0 0 12px ${T.accentSoft}55` }}><Check5 size={38} /></span><div style={{ fontSize: 21, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 24, lineHeight: 1.25 }}>{hoomanJustCreated.title}</div>{
     /* Says where it went, not just that it saved. A project is filed under
        the country the ACCOUNT is registered in, which is not always the
        country being viewed — and somebody who has just submitted into what
@@ -1068,7 +1102,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
        they go looking for it. */
   }<div style={{ fontSize: 13, color: T.inkSoft, marginTop: 10, lineHeight: 1.55, maxWidth: 300 }}>
       Submitted to {hoomanCategory(hoomanJustCreated.category).name}{hoomanJustCreated.countryIso && COUNTRY_BY_ISO[hoomanJustCreated.countryIso] ? ` in ${COUNTRY_BY_ISO[hoomanJustCreated.countryIso].name}` : ""}.
-    </div>{hoomanJustCreated.status === "draft" && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, height: 26, padding: "0 11px", borderRadius: 999, background: "#FDF1D8", color: "#7A4B06", fontSize: 11, fontWeight: 800 }}>Saved as a draft</div>}</div><div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}><button
+    </div>{hoomanJustCreated.status === "draft" && <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, height: 26, padding: "0 11px", borderRadius: 999, background: "#FDF1D8", color: "#7A4B06", fontSize: 11, fontWeight: 800 }}>Saved as a draft</div>}{hoomanJustCreated.review && hoomanJustCreated.review.state === "draft" && <div style={{ fontSize: 12.5, color: T.inkSoft, marginTop: 10, lineHeight: 1.55, maxWidth: 300 }}>Next: open it, add the funding plan, and submit it for GLOOBAL's review. People can give once GLOOBAL approves it.</div>}</div><div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}><button
     onClick={() => { const created = hoomanJustCreated; setHoomanJustCreated(null); setHoomanProject(created); }}
     className="v2-tap"
     style={{ width: "100%", height: 52, borderRadius: T.radiusMd, border: "none", cursor: "pointer", background: T.gradButton, color: "#FFFFFF", fontSize: 14.5, fontWeight: 800, fontFamily: "inherit" }}
@@ -1136,7 +1170,7 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
       /* The logo is the category mark until a project can carry its own
          image. Drawn, not left blank — an empty square where a logo goes is
          a page that looks broken rather than one that is plain. */
-    }<div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}><span style={{ width: 72, height: 72, borderRadius: 22, background: paint.tint, color: paint.ink, border: `4px solid ${T.bg}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><CatIcon size={30} /></span><span style={{ display: "flex", alignItems: "center", gap: 5, height: 26, padding: "0 10px", borderRadius: 999, fontSize: 11, fontWeight: 800, marginBottom: 6, background: draft ? "#FDF1D8" : T.positiveSoft, color: draft ? "#7A4B06" : T.positive }}>{draft ? "Draft" : "Live"}</span></div><h2 style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.2, margin: "14px 0 0" }}>{hoomanProject.title}</h2><div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 11 }}><span style={{ display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 11px", borderRadius: 999, background: T.surface, border: `1px solid ${T.line}`, fontSize: 12, color: T.inkSoft }}><CatIcon size={13} color={paint.ink} />{cat.name}</span>{(hoomanProject.place || home) && <span style={{ display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 11px", borderRadius: 999, background: T.surface, border: `1px solid ${T.line}`, fontSize: 12, color: T.inkSoft, minWidth: 0 }}>{home ? <FlagEmoji flag={home.flag} width={16} height={12} radius={3} /> : <MapPin4 size={13} color={T.inkFaint} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanProject.place || home.name}</span></span>}</div>{
+    }<div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}><span style={{ width: 72, height: 72, borderRadius: 22, background: paint.tint, color: paint.ink, border: `4px solid ${T.bg}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><CatIcon size={30} /></span>{hoomanProject.review && hoomanProject.review.state !== "none" ? <span style={{ marginBottom: 6 }}><ProjectStatusChip review={hoomanProject.review} /></span> : <span style={{ display: "flex", alignItems: "center", gap: 5, height: 26, padding: "0 10px", borderRadius: 999, fontSize: 11, fontWeight: 800, marginBottom: 6, background: draft ? "#FDF1D8" : T.positiveSoft, color: draft ? "#7A4B06" : T.positive }}>{draft ? "Draft" : "Live"}</span>}</div><h2 style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.2, margin: "14px 0 0" }}>{hoomanProject.title}</h2><div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 11 }}><span style={{ display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 11px", borderRadius: 999, background: T.surface, border: `1px solid ${T.line}`, fontSize: 12, color: T.inkSoft }}><CatIcon size={13} color={paint.ink} />{cat.name}</span>{(hoomanProject.place || home) && <span style={{ display: "flex", alignItems: "center", gap: 6, height: 30, padding: "0 11px", borderRadius: 999, background: T.surface, border: `1px solid ${T.line}`, fontSize: 12, color: T.inkSoft, minWidth: 0 }}>{home ? <FlagEmoji flag={home.flag} width={16} height={12} radius={3} /> : <MapPin4 size={13} color={T.inkFaint} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hoomanProject.place || home.name}</span></span>}</div>{
       /* The goal, alone. The design put Raised / Goal / Backers in a row of
          three here; two of those three would have been a zero describing a
          flow that does not exist. One real figure beats three, two of which
@@ -1173,11 +1207,17 @@ function GloobalCoverageScreen({ onClose, dialCountry, sendHistory: sendHistoryP
          honest thing to write under three zeroes that described a flow
          which did not exist. The flow exists; a zero here now means the
          ordinary thing, and needs no apology under it. */
-    }<ProjectGiveButton
+    }{!hoomanProject.review || hoomanProject.review.givingOpen ? <ProjectGiveButton
       project={hoomanProject}
       tint={paint.tint}
       onGive={() => setGiveToProject(hoomanProject)}
-    /><div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 22 }}>About</div><div style={{ marginTop: 9, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", fontSize: 13.5, color: T.inkSoft, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{hoomanProject.summary}</div>{details.length > 0 && <><div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 22 }}>Details</div><div style={{ marginTop: 9, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{details.map((row, i) => {
+    /> : <div data-testid="project-giving-closed" style={{ marginTop: 14, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "12px 14px", fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5 }}>{hoomanProject.review.reason ? <><b style={{ color: T.ink }}>{hoomanProject.review.label}. </b>{hoomanProject.review.reason}</> : "Giving opens once GLOOBAL approves this project."}</div>}{hoomanProject.isOwner && hoomanProject.review && hoomanProject.review.state !== "none" ? <div style={{ marginTop: 16 }}><ProjectApplicantPanel project={hoomanProject} onToast={showProjectToast} onChanged={async () => {
+      setProjectsToken((n) => n + 1);
+      try {
+        const fresh = await GloobalApi.getProjectReview(hoomanProject.id);
+        if (fresh && fresh.review) setHoomanProject((p) => (p && p.id === hoomanProject.id ? { ...p, review: fresh.review, status: fresh.review.state === "draft" ? "draft" : "published" } : p));
+      } catch (e) { /* the panel shows its own error */ }
+    }} /></div> : null}<div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 22 }}>About</div><div style={{ marginTop: 9, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 18px", fontSize: 13.5, color: T.inkSoft, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{hoomanProject.summary}</div>{details.length > 0 && <><div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, marginTop: 22 }}>Details</div><div style={{ marginTop: 9, borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>{details.map((row, i) => {
       const RowIcon = row.Icon;
       const body = <><span style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: paint.tint, color: paint.ink, display: "flex", alignItems: "center", justifyContent: "center" }}><RowIcon size={16} /></span><span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}><span style={{ fontSize: 11, color: T.inkFaint }}>{row.label}</span><span style={{ fontSize: 13, fontWeight: 600, color: T.ink, wordBreak: "break-all" }}>{row.value}</span></span></>;
       const style = { display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderTop: i === 0 ? "none" : `1px solid ${T.line}` };

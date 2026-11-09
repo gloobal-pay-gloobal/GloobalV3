@@ -166,6 +166,72 @@ const ProjectSchema = new mongoose.Schema({
     }, { _id: false }),
     default: null,
   },
+
+  // ── GLOOBAL FUNDING: THE REVIEW (lib/projectReview.js) ───────────────────
+  //
+  // A project made before the review existed has no `review` and keeps the
+  // old behaviour: live, and open to giving. Every project made since starts
+  // as a draft and goes through review; giving opens when GLOOBAL approves.
+  //
+  // `plan` is what the money is for, line by line, adding up to the goal.
+  // `milestones` are GLOOBAL's own payments, set on approval. `timeline` and
+  // `questions` are what the applicant sees: every step, and every question
+  // GLOOBAL asked with their answer.
+  plan: {
+    type: [new mongoose.Schema({
+      label: { type: String, trim: true, required: true, maxlength: 80 },
+      amountMinor: { type: Number, required: true, min: 1 },
+    }, { _id: false })],
+    default: undefined,
+  },
+  review: {
+    type: new mongoose.Schema({
+      state: {
+        type: String,
+        enum: ['draft', 'submitted', 'under_review', 'needs_info', 'approved', 'funding', 'completed', 'declined', 'paused', 'withdrawn'],
+        required: true,
+      },
+      submittedAt: { type: Date, default: null },
+      decidedAt: { type: Date, default: null },
+      decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      reason: { type: String, trim: true, default: '', maxlength: 600 },
+      reapplyAfter: { type: Date, default: null },
+      fundMinor: { type: Number, default: 0, min: 0 },
+      fundCurrency: { type: String, trim: true, uppercase: true, default: '', maxlength: 8 },
+      milestones: {
+        type: [new mongoose.Schema({
+          label: { type: String, trim: true, required: true, maxlength: 80 },
+          amountMinor: { type: Number, required: true, min: 0 },
+          state: { type: String, enum: ['waiting', 'due', 'paid'], default: 'waiting' },
+          paidAt: { type: Date, default: null },
+          paidReference: { type: String, default: '' },
+          update: { type: String, trim: true, default: '', maxlength: 2000 },
+          updateAt: { type: Date, default: null },
+        }, { _id: false })],
+        default: [],
+      },
+      questions: {
+        type: [new mongoose.Schema({
+          id: { type: String, required: true },
+          askedAt: { type: Date, default: Date.now },
+          question: { type: String, trim: true, required: true, maxlength: 600 },
+          answer: { type: String, trim: true, default: '', maxlength: 2000 },
+          answeredAt: { type: Date, default: null },
+        }, { _id: false })],
+        default: [],
+      },
+      timeline: {
+        type: [new mongoose.Schema({
+          at: { type: Date, default: Date.now },
+          state: { type: String, required: true },
+          by: { type: String, enum: ['applicant', 'gloobal'], required: true },
+          note: { type: String, trim: true, default: '', maxlength: 600 },
+        }, { _id: false })],
+        default: [],
+      },
+    }, { _id: false }),
+    default: undefined,
+  },
 }, { timestamps: true });
 
 // The listing query: published rows of a category, newest first.
@@ -173,5 +239,6 @@ ProjectSchema.index({ status: 1, category: 1, createdAt: -1 });
 // A person's own projects, newest first — the "mine" listing, which must
 // include drafts.
 ProjectSchema.index({ ownerId: 1, createdAt: -1 });
+ProjectSchema.index({ 'review.state': 1, updatedAt: -1 });
 
 module.exports = mongoose.model('Project', ProjectSchema);

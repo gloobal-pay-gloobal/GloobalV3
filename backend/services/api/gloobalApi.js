@@ -756,6 +756,54 @@ var GloobalApi = {
     return (result && result.project) || null;
   },
 
+  // ── Applying for GLOOBAL funding (server/lib/projectReview.js) ─────────
+  // Each throws on a refusal so the screen can show the server's own words:
+  // which requirement is missing, which question is open, why it stopped.
+  // The answer is { review, plan?, requirements?, reviewer? }.
+  async getProjectReview(id) {
+    return gloobalApiClient.get(`/api/projects/${encodeURIComponent(id)}/review`);
+  },
+  async updateProject(id, patch) {
+    const result = await gloobalApiClient.patch(`/api/projects/${encodeURIComponent(id)}`, patch);
+    return (result && result.project) || null;
+  },
+  async setProjectPlan(id, plan) {
+    return gloobalApiClient.put(`/api/projects/${encodeURIComponent(id)}/plan`, { plan });
+  },
+  async submitProject(id) {
+    return gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/submit`, {});
+  },
+  async answerProjectQuestion(id, questionId, answer) {
+    return gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/answer`, { questionId, answer });
+  },
+  async withdrawProject(id, reason) {
+    return gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/withdraw`, { reason: reason || "" });
+  },
+  async reapplyProject(id) {
+    return gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/reapply`, {});
+  },
+  async postMilestoneUpdate(id, n, update) {
+    return gloobalApiClient.post(`/api/projects/${encodeURIComponent(id)}/milestones/${Number(n)}/update`, { update });
+  },
+  async amIProjectReviewer() {
+    try {
+      const r = await gloobalApiClient.get("/api/review/me");
+      return Boolean(r && r.reviewer);
+    } catch (e) {
+      return false;
+    }
+  },
+  async reviewQueue(state) {
+    return gloobalApiClient.get(`/api/review/projects${state ? `?state=${encodeURIComponent(state)}` : ""}`);
+  },
+  // action: start | ask | approve | decline | pause | resume
+  async reviewAction(id, action, body) {
+    return gloobalApiClient.post(`/api/review/projects/${encodeURIComponent(id)}/${action}`, body || {});
+  },
+  async reviewMarkPaid(id, n) {
+    return gloobalApiClient.post(`/api/review/projects/${encodeURIComponent(id)}/milestones/${Number(n)}/paid`, {});
+  },
+
   async deleteProject(id) {
     await gloobalApiClient.delete(`/api/projects/${encodeURIComponent(id)}`);
   },

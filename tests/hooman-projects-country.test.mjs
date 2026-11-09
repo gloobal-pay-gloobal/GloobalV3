@@ -54,7 +54,9 @@ const code = (p) => strip(readSource(p));
 // by a country appearing anywhere else in a 900-line screen.
 function listingEffect() {
   const src = code(SCREEN);
-  const at = src.indexOf("GloobalApi.listProjects({");
+  // The listing starts at the `ask` the two reads share (the public list and
+  // the account's own drafts — see the note in the screen).
+  const at = src.indexOf("const ask = {");
   assert.ok(at > 0, "the screen no longer lists projects");
   const end = src.indexOf("}, [showHoomanProjects", at);
   assert.ok(end > at, "the listing effect's dependency array moved");

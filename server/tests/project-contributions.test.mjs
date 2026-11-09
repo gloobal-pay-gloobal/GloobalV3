@@ -165,6 +165,11 @@ async function run() {
   }, ownerToken);
   const projectId = created.body?.project?.id;
   check("a project to give to exists", Boolean(projectId), `status=${created.status}`);
+  // A new project waits for GLOOBAL's approval before anyone can give
+  // (lib/projectReview.js, tested in project-review.test.mjs). This file is
+  // about giving, so the project is made live the way one from before the
+  // review is: published, with no review.
+  await Project.updateOne({ _id: projectId }, { $set: { status: "published" }, $unset: { review: 1 } });
   check("it starts at zero raised, zero backers",
     created.body?.project?.raised === 0 && created.body?.project?.backers === 0,
     JSON.stringify({ raised: created.body?.project?.raised, backers: created.body?.project?.backers }));

@@ -52,3 +52,14 @@ describe("the app", () => {
   test("payers see 'New owner' for 30 days", () => assert.match(code("frontend/features/creator/CreatorPage.jsx"), /data-testid="creator-new-owner"/));
   test("the file is in the build", () => assert.match(readSource("build_app.mjs"), /"features\/creator\/nameMarket\.jsx"/));
 });
+
+// 0254: "Put it up for sale is not working" — the server had refused, but its
+// reason was drawn at the bottom of the scrolling form, below the fold on a
+// phone. It now sits right above the button, and is a toast too.
+test("a refusal is shown above the button and as a toast, not under the fold", () => {
+  const src = code("frontend/features/creator/nameMarket.jsx");
+  const errAt = src.indexOf('data-testid="name-error"');
+  const footAt = src.indexOf("{footer ? <div style={{ flexShrink: 0");
+  assert.ok(errAt > 0 && footAt > errAt, "the reason sits just before the footer button");
+  assert.match(src, /setError\(why\); if \(onToast\) onToast\(why\);/);
+});

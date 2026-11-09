@@ -71,8 +71,10 @@ describe("the rules", () => {
     const base = pure.liveFaceBaseline([pure.liveFacePose(mesh()), pure.liveFacePose(mesh()), pure.liveFacePose(mesh())]);
     const at = (o) => pure.liveFacePose(mesh(o));
     assert.ok(pure.liveFaceTurned("left", at({ yaw: 0.25 }), base));
-    assert.ok(!pure.liveFaceTurned("right", at({ yaw: 0.25 }), base), "left is not right");
-    assert.ok(pure.liveFaceTurned("right", at({ yaw: -0.08 }), base));
+    // 0254: left/right counts either way round (cameras disagree on mirroring).
+    assert.ok(pure.liveFaceTurned("right", at({ yaw: 0.25 }), base));
+    assert.ok(pure.liveFaceTurned("right", at({ yaw: 0.0 }), base));
+    assert.ok(!pure.liveFaceTurned("up", at({ yaw: 0.25 }), base), "a side turn is not a nod");
     assert.ok(pure.liveFaceTurned("up", at({ pitch: 0.2 }), base));
     assert.ok(pure.liveFaceTurned("down", at({ pitch: 0.34 }), base));
     assert.ok(!pure.liveFaceTurned("left", at({ yaw: 0.12 }), base), "a small drift is not a turn");
@@ -81,9 +83,10 @@ describe("the rules", () => {
     assert.ok(pure.liveFaceStill(at({ yaw: 0.17 }), base, 1.6), "back to the centre is looser than the photo");
   });
 
-  test("the combo: random moves, repeats allowed, never all the same; 3 after speech, 4 alone", () => {
-    assert.equal(pure.liveFaceComboLength("speech"), 3);
-    assert.equal(pure.liveFaceComboLength("turns"), 4);
+  test("the combo: random moves, repeats allowed, never all the same; 2 after speech, 3 alone, 3 to pay", () => {
+    assert.equal(pure.liveFaceComboLength("speech"), 2);
+    assert.equal(pure.liveFaceComboLength("turns"), 3);
+    assert.equal(pure.liveFaceComboLength("turns", "pay"), 3);
     let repeats = 0;
     for (let i = 0; i < 2000; i++) {
       const c = pure.liveFaceTurns(Math.random, 3);
@@ -197,7 +200,7 @@ describe("the screen", () => {
     await page.waitForFunction(() => document.querySelectorAll("[data-testid=live-face-digit]").length === 3, null, { timeout: 20000 });
     assert.match(await page.getByTestId("live-face-subtitle").textContent(), /1 of 3 · say the numbers/);
     await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "combo", null, { timeout: 20000 });
-    assert.equal(await page.locator("[data-testid=live-face-move]").count(), 3, "three moves after the numbers");
+    assert.equal(await page.locator("[data-testid=live-face-move]").count(), 2, "two moves after the numbers");
     assert.match(await page.getByTestId("live-face-subtitle").textContent(), /2 of 3 · follow the arrows/);
     assert.equal(await takeLivePhoto(page, { open: false }), "review");
     assert.match(await page.textContent("[data-testid=live-face-check]"), /Live check passed/);
@@ -215,11 +218,11 @@ describe("the screen", () => {
     await context.close();
   });
 
-  test("no speech on this phone: the check is four head moves, and it passes", async () => {
+  test("no speech on this phone: the check is three head moves, and it passes", async () => {
     const { page, context, api } = await openLiveCheck({ speech: false });
     await page.getByTestId("live-face-open").click();
     await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "combo", null, { timeout: 20000 });
-    assert.equal(await page.locator("[data-testid=live-face-move]").count(), 4);
+    assert.equal(await page.locator("[data-testid=live-face-move]").count(), 3);
     assert.match(await page.getByTestId("live-face-subtitle").textContent(), /1 of 2 · follow the arrows/);
     assert.equal(await takeLivePhoto(page, { open: false }), "review");
     await page.getByTestId("live-face-use").click();
@@ -303,5 +306,28 @@ describe("the screen", () => {
     assert.equal(await takeLivePhoto(page, { open: false }), "review");
     assert.equal(await page.evaluate(() => window.__recLang), "hi-IN");
     await context.close();
+  });
+});
+
+// 0254: on a real phone the check took 15 tries. These hold it to the
+// 5–10 seconds the founder asked for, and keep a Take photo button there.
+describe("fast enough on a phone", () => {
+  test("a person who sits a little off-centre still gets their photo, and the shutter takes it at once", async () => {
+    const { page, context } = await openLiveCheck({ speech: false });
+    await page.getByTestId("live-face-open").click();
+    const started = Date.now();
+    await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "hold", null, { timeout: 20000 });
+    assert.ok(await page.getByTestId("live-face-shutter").isVisible(), "a Take photo button on the hold step");
+    await page.getByTestId("live-face-shutter").click();
+    await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "review", null, { timeout: 10000 });
+    const took = Date.now() - started;
+    assert.ok(took < 10000, `the whole check took ${took} ms`);
+    await context.close();
+  });
+
+  test("the heavy models run only at the start and for the photo; the models load while the intro is read", () => {
+    assert.match(src, /faces = await engine\.detect\(work, stage === "align" \|\| stage === "hold"\);/);
+    assert.match(src, /useEffect94\(\(\) => \{ liveFaceLoadEngine\(\)\.catch/);
+    assert.match(src, /const pct = Math\.min\(1, \(now - st\.holdStart\) \/ 800\);/);
   });
 });

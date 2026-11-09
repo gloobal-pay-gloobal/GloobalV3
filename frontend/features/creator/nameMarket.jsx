@@ -90,7 +90,9 @@ function NameMarketScreen({ start, ccyCode = "INR", lens, shopSymbol, shops, onC
   useAppMapHere("creatorSetup");
   useEffect81(() => { if (endRef.current) endRef.current.scrollIntoView({ block: "end" }); }, [thread && thread.messages && thread.messages.length, view]);
 
-  const run = async (fn) => { setBusy(true); setError(""); try { await fn(); } catch (e) { setError((e && e.message) || "Couldn't do that just now."); } finally { setBusy(false); } };
+  // A refusal is said twice: by the box above the button, and as a toast,
+  // so it can't be missed whatever is on screen.
+  const run = async (fn) => { setBusy(true); setError(""); try { await fn(); } catch (e) { const why = (e && e.message) || "Couldn't do that just now."; setError(why); if (onToast) onToast(why); } finally { setBusy(false); } };
   const send = () => run(async () => {
     const o = offer ? Number(offer) : null;
     const r = thread ? await GloobalApi.nameMessage(thread.id, { text, offer: o }) : await GloobalApi.openNameThread(handle, { message: text, offer: o });
@@ -205,7 +207,12 @@ function NameMarketScreen({ start, ccyCode = "INR", lens, shopSymbol, shops, onC
 
   return <div data-testid="name-market" style={{ position: "fixed", inset: 0, zIndex: 440, background: T.bg, display: "flex", flexDirection: "column" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(16px + env(safe-area-inset-top, 0px)) 18px 10px", flexShrink: 0 }}><NavBackButton onClick={back} /><span style={{ flex: 1, minWidth: 0, fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>{info && info.forSale && info.price !== null && view === "thread" ? <span style={{ fontSize: 11.5, fontWeight: 800, color: T.inkFaint }}>{`Asking ${fig(info.price)}`}</span> : null}</div>
-    <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 18px 16px", display: "flex", flexDirection: "column", gap: 12 }}>{busy && !thread && view !== "sell" && view !== "compose" ? <div role="status" style={{ padding: 30, textAlign: "center", color: T.inkFaint, fontWeight: 700 }}>One moment…</div> : body}{error ? <div role="alert" style={{ borderRadius: 12, padding: "10px 12px", background: T.negativeSoft, color: T.negative, fontSize: 12.5, fontWeight: 700 }}>{error}</div> : null}</div>
+    <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 18px 16px", display: "flex", flexDirection: "column", gap: 12 }}>{busy && !thread && view !== "sell" && view !== "compose" ? <div role="status" style={{ padding: 30, textAlign: "center", color: T.inkFaint, fontWeight: 700 }}>One moment…</div> : body}</div>
+    {/* The server's reason sits right above the button that was tapped. It
+        used to sit at the bottom of the scrolling body, which on a phone is
+        below the fold of a long form like "Sell": tapping "Put it up for
+        sale" and being refused looked like the button doing nothing. */}
+    {error ? <div role="alert" data-testid="name-error" style={{ flexShrink: 0, margin: "8px 18px 0", borderRadius: 12, padding: "10px 12px", background: T.negativeSoft, color: T.negative, fontSize: 12.5, fontWeight: 700 }}>{error}</div> : null}
     {footer ? <div style={{ flexShrink: 0, padding: "10px 18px calc(14px + env(safe-area-inset-bottom, 0px))" }}>{footer}</div> : null}
   </div>;
 }

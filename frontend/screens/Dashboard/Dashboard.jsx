@@ -498,6 +498,8 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [gloobalBankInterested, setGloobalBankInterested] = useState14(false);
   const [showAboutUs, setShowAboutUs] = useState14(false);
   const requestCloseAboutUs = useBackClose(showAboutUs, () => setShowAboutUs(false));
+  const [showContributors, setShowContributors] = useState14(false);
+  const requestCloseContributors = useBackClose(showContributors, () => setShowContributors(false));
   const [showGloobalBankStats, setShowGloobalBankStats] = useState14(false);
   const requestCloseGloobalBankStats = useBackClose(showGloobalBankStats, () => setShowGloobalBankStats(false));
   // Interest in Gloobal Bank / Gloobal Coin — the one thing those two
@@ -3361,7 +3363,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       dimmed={locked}
       badge={locked ? <ServiceLock locked size={13} /> : null}
     ><span style={{ position: "absolute", inset: 0 }}><SyncedFlipIcon Icon={TileIcon} size={40} flipInfo={buttonFlips[key]} frontBackground={`${heroColor}26`} radius={30} /></span></IconTile>;
-  })}</div></div>{
+  })}</div><ContributorsCard onOpen={() => setShowContributors(true)} /></div>{
     /* One bigger box now instead of the small divider line — the
        cost figure front and center, the HOOMAN-2-HOOMAN mark
        underneath in the same box. Taglines moved outside,
@@ -4545,7 +4547,18 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        mission line, a real feature list (not fabricated
        numbers), then the same Version/Terms/Privacy rows and
        support email already used on the profile About screen. */
-  }{showAboutUs && <ScreenErrorBoundary name="About Us" onClose={requestCloseAboutUs}><AboutUsScreen
+  }{showContributors && <ScreenErrorBoundary name="Contributors" onClose={requestCloseContributors}><ContributorsScreen
+    onBack={requestCloseContributors}
+    onJoin={() => {
+      // "I want to help" opens Help & Support with the message started,
+      // so the person only has to send it: the same path Ask GLOOBAL
+      // hands a question over by.
+      setShowContributors(false);
+      setActiveTab("profile");
+      setSupportPrefill({ text: "I'd like to help build GLOOBAL and be on the contributors list.", topic: "other" });
+      setProfileDetail("Help & Support");
+    }}
+  /></ScreenErrorBoundary>}{showAboutUs && <ScreenErrorBoundary name="About Us" onClose={requestCloseAboutUs}><AboutUsScreen
     onBack={requestCloseAboutUs}
     onShowToast={showToast2}
     gloobalId={personalGloobalId}

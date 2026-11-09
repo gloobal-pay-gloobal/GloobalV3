@@ -291,6 +291,8 @@ const FRONTEND_MODULES = [
   "components/cards/GloobalTaglineCard.jsx",
   "screens/Banks/GloobalBankScreen.jsx",
   "screens/About/AboutUsScreen.jsx",
+  // Who built GLOOBAL so far: the card on the Accounts tab and its screen.
+  "screens/About/ContributorsScreen.jsx",
   // The account's identity page, with the crossings pressed on it. Emitted
   // before the Dashboard, which hosts it. Reads ProfileAvatar,
   // ColoredGloobalId, GloobalWordmark and COUNTRY_BY_ISO — all emitted

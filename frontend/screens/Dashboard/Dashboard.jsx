@@ -255,27 +255,31 @@ function BalanceError({ onRetry }) {
 }
 
 // ── THE BALANCE, IN TWO HALVES (0208) ───────────────────────────────────
-// Only once something has been used from Essentials: what can go to any
-// bank, and what stays in GLOOBAL because it was already used. The whole
-// figure above stays spendable anywhere on GLOOBAL, and the line under the
-// bar says so — the rule is visible every day, not only on the day somebody
-// tries to send money out. Hidden with the balance.
+// Only once something has been used from Essentials: how much can go to a
+// bank, and how much stays in GLOOBAL because it was already used. One line,
+// tappable for the rest. It had a bar, two labelled figures and a sentence
+// repeating one of them; the two figures are the whole message, and the
+// Essentials screen (onOpen) explains the rule. Hidden with the balance.
 function BalanceEssentialsSplit({ summary, balance, ccyCode, lens, onOpen }) {
   const held = summary && Number(summary.held) > 0 ? Number(summary.held) : 0;
   if (!held) return null;
   const bal = Math.max(0, Number(balance) || 0);
   const free = Math.max(0, Math.round((bal - held) * 100) / 100);
   const stays = Math.min(held, bal);
-  const freePct = bal > 0 ? Math.max(free > 0 ? 3 : 0, (free / bal) * 100) : 0;
   const fig = (v) => geuLensBarMoney(v, ccyCode, lens, ccyCode);
-  return <div data-testid="balance-essentials-split" style={{ marginTop: 12 }}>
-    <div style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", background: "rgba(255,255,255,0.2)" }}><i style={{ display: "block", width: `${freePct}%`, background: "#FED7AA" }} /><i style={{ display: "block", flex: 1, background: "#67E8F9" }} /></div>
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 8 }}>
-      <div style={{ minWidth: 0 }}><span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, opacity: 0.9 }}><i style={{ width: 8, height: 8, borderRadius: 3, background: "#FED7AA" }} />To your bank</span><b data-testid="balance-free" style={{ display: "block", fontSize: 15, fontWeight: 900, whiteSpace: "nowrap" }}>{fig(free)}</b></div>
-      <div style={{ minWidth: 0, textAlign: "right" }}><span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, fontSize: 11, fontWeight: 700, opacity: 0.9 }}><i style={{ width: 8, height: 8, borderRadius: 3, background: "#67E8F9" }} />Stays in GLOOBAL</span><b data-testid="balance-stays" style={{ display: "block", fontSize: 15, fontWeight: 900, whiteSpace: "nowrap" }}>{fig(stays)}</b></div>
-    </div>
-    <button type="button" onClick={onOpen} className="v2-tap" style={{ marginTop: 10, width: "100%", border: "none", borderRadius: 12, padding: "8px 10px", background: "rgba(255,255,255,0.14)", color: "inherit", fontFamily: "inherit", fontSize: 11.5, fontWeight: 700, textAlign: "left", cursor: "pointer", lineHeight: 1.4 }}>{`You used ${fig(held)} from Essentials \u00B7 spend it anywhere on GLOOBAL \u203A`}</button>
-  </div>;
+  return <button
+    type="button"
+    onClick={onOpen}
+    className="v2-tap"
+    data-testid="balance-essentials-split"
+    style={{ marginTop: 12, width: "100%", display: "flex", alignItems: "center", gap: 10, border: "none", borderRadius: 12, padding: "9px 12px", background: "rgba(255,255,255,0.14)", color: "inherit", fontFamily: "inherit", textAlign: "left", cursor: "pointer" }}
+  >
+    <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.85, whiteSpace: "nowrap" }}>To your bank <b data-testid="balance-free" style={{ fontWeight: 900, opacity: 1 }}>{fig(free)}</b></span>
+      <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.85, whiteSpace: "nowrap" }}>Stays in GLOOBAL <b data-testid="balance-stays" style={{ fontWeight: 900, opacity: 1 }}>{fig(stays)}</b></span>
+    </span>
+    <span aria-hidden="true" style={{ fontSize: 16, fontWeight: 800, opacity: 0.8 }}>{"\u203A"}</span>
+  </button>;
 }
 
 function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, onLiveProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "", themeKey = "day", onPickTheme }) {

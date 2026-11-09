@@ -246,6 +246,7 @@ async function gloobalApiRequest(method, path, body, options) {
         res.status === 401 && Boolean(parsed) && parsed.code === "auth_token_invalid";
       if (tokenRejected && authToken && typeof gloobalAuthTokenClear === "function") {
         gloobalAuthTokenClear();
+        if (typeof gloobalLocalCopyClear === "function") gloobalLocalCopyClear();
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent(GLOOBAL_SESSION_EXPIRED_EVENT));
         }
@@ -253,16 +254,45 @@ async function gloobalApiRequest(method, path, body, options) {
       const message = (parsed && parsed.message) || `Request to ${path} failed with ${res.status}`;
       throw new GloobalApiError(message, res.status, parsed);
     }
+    // A good answer about this account's own read-only views is kept on the
+    // phone (backend/services/storage/localCopy.js), for when the server
+    // can't be reached next time.
+    if (gloobalApiKeepsLocalCopy(method, path, authToken, opts)) {
+      gloobalLocalCopySave(path, parsed);
+      gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_LIVE_EVENT, { path });
+    }
     return parsed;
   } catch (err) {
-    if (err instanceof GloobalApiError) throw err;
-    if (err && err.name === "AbortError") {
-      throw new GloobalApiError(`Request to ${path} timed out after ${timeoutMs}ms`, 0, null);
+    let failure = err;
+    if (!(err instanceof GloobalApiError)) {
+      failure = err && err.name === "AbortError"
+        ? new GloobalApiError(`Request to ${path} timed out after ${timeoutMs}ms`, 0, null)
+        : new GloobalApiError(`Network error calling ${path}: ${err && err.message}`, 0, null);
     }
-    throw new GloobalApiError(`Network error calling ${path}: ${err.message}`, 0, null);
+    // No answer at all (offline, timeout, Render still waking): show the
+    // phone's saved copy if there is one, and say it's a saved copy. Only
+    // for status 0 — a real answer, even a refusal, is never replaced.
+    if (failure.status === 0 && gloobalApiKeepsLocalCopy(method, path, authToken, opts)) {
+      const saved = await gloobalLocalCopyRead(path);
+      if (saved) {
+        gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_EVENT, { path, at: saved.at });
+        return saved.data;
+      }
+    }
+    throw failure;
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+// Signed-in GETs of the account's own views only; a caller that must have
+// the live answer (a balance a payment is about to rely on) passes
+// `{ liveOnly: true }`.
+function gloobalApiKeepsLocalCopy(method, path, authToken, opts) {
+  return Boolean(
+    authToken && !opts.anonymous && !opts.liveOnly &&
+    typeof gloobalLocalCopyWanted === "function" && gloobalLocalCopyWanted(method, path)
+  );
 }
 
 var gloobalApiClient = {

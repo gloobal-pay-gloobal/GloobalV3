@@ -433,6 +433,9 @@ function gloobalSessionClear() {
     // A stale blob is harmless — gloobalSessionLoad re-validates shape on
     // every read.
   }
+  // The phone's saved copies of this account's balance and history go too
+  // (backend/services/storage/localCopy.js).
+  if (typeof gloobalLocalCopyClear === "function") gloobalLocalCopyClear();
   // Signing out is a real account-identity change too — to "no account" —
   // so both notices fire: the broad one so any screen still showing an ID
   // clears it, and the account-switch one so the local ledger resets and

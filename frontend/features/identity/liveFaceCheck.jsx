@@ -260,6 +260,11 @@ var LIVE_FACE_HUMAN_CONFIG = {
   backend: "webgl",
   debug: false,
   warmup: "none",
+  // The model files are kept in the phone's IndexedDB after the first load,
+  // so the next check starts without downloading them again. This is the
+  // library's default in a browser; written out so nobody turns it off
+  // without seeing why it is on.
+  cacheModels: true,
   // Every frame is new; nothing is reused from the last one.
   cacheSensitivity: 0,
   filter: { enabled: true, equalization: false, flip: false },

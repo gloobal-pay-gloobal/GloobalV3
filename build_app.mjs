@@ -86,6 +86,9 @@ const BACKEND_MODULES = [
   "services/share/clipboard.js",
   "services/share/webShare.js",
   "services/storage/coverageStorage.js",
+  // The phone's saved copy of the account's own read-only views (IndexedDB).
+  // Before httpClient, which saves to it and reads from it.
+  "services/storage/localCopy.js",
   // Real backend (Express + MongoDB Atlas on Render). httpClient defines
   // the transport the rest build on, so it goes first.
   "services/api/httpClient.js",
@@ -134,6 +137,8 @@ const FRONTEND_MODULES = [
   // ahead of here) so "dismissed" means dismissed for this sign-in, and is
   // rendered by both the Dashboard and Profile — hence ahead of every screen.
   "components/common/installPrompt.jsx",
+  // "Offline · saved at 10:42" when a screen is showing the phone's saved copy.
+  "components/common/savedCopyBanner.jsx",
   // The pull-to-refresh wrapper. Needs the theme (emitted first) and is
   // rendered by the Dashboard, so it sits ahead of every screen.
   "components/common/PullToRefresh.jsx",

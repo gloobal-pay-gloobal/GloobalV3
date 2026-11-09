@@ -216,6 +216,10 @@ const FRONTEND_MODULES = [
   // Shares a link so it arrives as a link — used by every Share button.
   "components/common/shareLink.js",
   "components/common/gloobalAnimalQr.js",
+  // Pay nearby by sound: the signal, then its two buttons (Play on the QR
+  // card, Listen on the Scan screen).
+  "features/nearby/soundPay.js",
+  "features/nearby/soundPayUi.jsx",
   "components/common/gloobalReceiveQrCard.jsx",
   // The four action tiles' own motion: send flies off, receive drops in,
   // scan sweeps, bank settles. Sits outside the flip rather than replacing

@@ -269,8 +269,10 @@ function PersonalDetailsScreen({
     const me = typeof gloobalCurrentSymbolId === "function" ? gloobalCurrentSymbolId() : null;
     if (!me || typeof GloobalApi === "undefined" || !GloobalApi.getPassport) return undefined;
     let live = true;
-    GloobalApi.getPassport(me).then((r) => { if (live && r) setPassport(r); }).catch(() => {});
-    return () => { live = false; };
+    const load = () => GloobalApi.getPassport(me).then((r) => { if (live && r) setPassport(r); }).catch(() => {});
+    load();
+    const stop = gloobalOnFresh(/^\/api\/passport\/[^/]+$/, load);
+    return () => { live = false; stop(); };
   }, [gloobalId]);
   const localSent = useMemo14(() => (Array.isArray(history) ? history : []).filter((t) => t && t.kind !== "share" && t.direction !== "received" && t.status !== "simulated"), [history]);
   const localStamps = useMemo14(() => localSent

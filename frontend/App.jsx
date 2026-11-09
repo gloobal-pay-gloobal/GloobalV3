@@ -1474,8 +1474,20 @@ function GloobalId() {
     return { applied, key, code: result && result.code, message: result && result.message };
   };
 
-  const handleQrScanned = async (rawCode) => {
+  // An amount heard with an ID over sound (soundPay.js), carried to Send.
+  // A camera scan carries none, so it clears it.
+  const soundPayAmountRef = useRef13("");
+  const handleSoundHeard = (heard) => {
+    const url = soundPayToUrl(heard);
+    if (!url) return;
+    // Into the scan view first, as a gallery scan does: the resolving state,
+    // the payee card and any error are all drawn on that side.
+    setScanCameraAccessGranted(true);
+    handleQrScanned(url, { amount: heard.amount || "" });
+  };
+  const handleQrScanned = async (rawCode, fromSound = null) => {
     if (scanBusyRef.current || scanRetry) return;
+    soundPayAmountRef.current = (fromSound && fromSound.amount) || "";
     setScanError(null);
     const parsed = parseGloobalPayPayload(rawCode);
     if (!parsed) {
@@ -1541,7 +1553,10 @@ function GloobalId() {
     }
   };
   const handleSendToScanned = () => {
-    if (scanPayee) openSendToPayee(scanPayee);
+    if (!scanPayee) return;
+    const heardAmount = soundPayAmountRef.current;
+    soundPayAmountRef.current = "";
+    openSendToPayee(heardAmount ? { ...scanPayee, prefillAmount: heardAmount } : scanPayee);
   };
   // Business/travel "Pay" flow (Dashboard's More sheet) also runs
   // through executeTransaction — the same one canonical lifecycle as
@@ -2776,6 +2791,12 @@ function GloobalId() {
   useEffect15(() => {
     hydrateAccountRef.current = hydrateAccount;
   }, [hydrateAccount]);
+  // Phone first (localCopy.js): when the server is slow the balance shows from
+  // the phone's copy at once, and this reads the account again the moment the
+  // server's own answer lands, so the figure on screen is the server's.
+  useEffect15(() => gloobalOnFresh(/^\/api\/(profile|assets|assets\/paylater)\/[^/]+$/, () => {
+    hydrateAccountRef.current().catch(() => {});
+  }), []);
 
   // THE refresh. Pull-to-refresh and any refresh control both call this and
   // nothing else, so there is exactly one definition of what "refresh this
@@ -4938,7 +4959,9 @@ function GloobalId() {
     style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
   >
       Point at any <GloobalWordmark /> code
-    </div></div>}<input
+    </div></div>}{!scanPayee && !scanResolving && <div
+    style={{ position: "absolute", left: 0, right: 0, top: "calc(78px + env(safe-area-inset-top, 0px))", zIndex: 2, display: "flex", justifyContent: "center", pointerEvents: "none" }}
+  ><SoundPayListenButton onHeard={handleSoundHeard} onToast={showToast} disabled={Boolean(scanRetry)} /></div>}<input
       ref={scanGalleryInputRef}
       type="file"
       accept="image/*"

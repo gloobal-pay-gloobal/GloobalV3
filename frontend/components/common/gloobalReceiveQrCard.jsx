@@ -802,6 +802,8 @@ function GloobalReceiveQrCard({ gloobalId, name, side, style: forcedStyle = null
         </button>
       </div>
 
+      <SoundPayPlayPanel gloobalId={gloobalId} side={side || "either"} onToast={onToast} />
+
       <p style={{ margin: 0, fontSize: 12.5, color: T.inkSoft, textAlign: "center" }}>
         Scan this QR to pay into your <GloobalWordmark /> wallet.
       </p>

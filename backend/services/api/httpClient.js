@@ -113,7 +113,7 @@ function gloobalApiIsUnreachable(err) {
   return err instanceof GloobalApiError && err.status === 0;
 }
 
-async function gloobalApiRequest(method, path, body, options) {
+async function gloobalApiRequestNetwork(method, path, body, options) {
   const opts = options || {};
   const timeoutMs = opts.timeoutMs || GLOOBAL_API_DEFAULT_TIMEOUT_MS;
 
@@ -269,20 +269,70 @@ async function gloobalApiRequest(method, path, body, options) {
         ? new GloobalApiError(`Request to ${path} timed out after ${timeoutMs}ms`, 0, null)
         : new GloobalApiError(`Network error calling ${path}: ${err && err.message}`, 0, null);
     }
-    // No answer at all (offline, timeout, Render still waking): show the
-    // phone's saved copy if there is one, and say it's a saved copy. Only
-    // for status 0 — a real answer, even a refusal, is never replaced.
-    if (failure.status === 0 && gloobalApiKeepsLocalCopy(method, path, authToken, opts)) {
-      const saved = await gloobalLocalCopyRead(path);
-      if (saved) {
-        gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_EVENT, { path, at: saved.at });
-        return saved.data;
-      }
-    }
     throw failure;
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+// ── THE PHONE AND THE SERVER TOGETHER ───────────────────────────────────
+//
+// Every call goes to the server. For the reads the phone may keep
+// (localCopy.js):
+//   - no answer at all (offline, timeout, Render still waking): the phone's
+//     copy, with the "Offline · saved at" notice. Only for status 0; a real
+//     answer, even a refusal, is never replaced.
+//   - a screen that can redraw (gloobalOnFresh) and a server slower than
+//     GLOOBAL_LOCAL_COPY_FAST_MS: the phone's copy at once, "Updating…",
+//     and the screen reads again when the server's answer lands.
+// Everything else, every write included, is the server's answer or its error.
+async function gloobalApiRequest(method, path, body, options) {
+  const opts = options || {};
+  const authToken = typeof gloobalAuthToken === "function" ? gloobalAuthToken() : null;
+  if (!gloobalApiKeepsLocalCopy(method, path, authToken, opts)) {
+    return gloobalApiRequestNetwork(method, path, body, opts);
+  }
+  const live = gloobalApiRequestNetwork(method, path, body, opts);
+  if (typeof gloobalLocalCopyHasListener === "function" && gloobalLocalCopyHasListener(path)) {
+    const saved = await gloobalLocalCopyRead(path);
+    if (saved) {
+      const first = await Promise.race([
+        live.then((value) => ({ done: true, value }), (error) => ({ done: true, error })),
+        new Promise((resolve) => setTimeout(() => resolve({ done: false }), GLOOBAL_LOCAL_COPY_FAST_MS))
+      ]);
+      if (first.done) {
+        if (first.error) return gloobalApiSavedOrThrow(first.error, path, saved);
+        return first.value;
+      }
+      // The server is slow: the phone's copy now, the server's when it lands.
+      gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_UPDATING_EVENT, { path, at: saved.at });
+      live.then(
+        (value) => {
+          if (JSON.stringify(value) !== JSON.stringify(saved.data)) gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_FRESH_EVENT, { path });
+        },
+        (error) => {
+          if (error && error.status === 0) gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_EVENT, { path, at: saved.at });
+        }
+      );
+      return saved.data;
+    }
+  }
+  try {
+    return await live;
+  } catch (error) {
+    return gloobalApiSavedOrThrow(error, path, null);
+  }
+}
+
+async function gloobalApiSavedOrThrow(error, path, saved) {
+  if (error && error.status === 0) {
+    const copy = saved || await gloobalLocalCopyRead(path);
+    if (copy) {
+      gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_EVENT, { path, at: copy.at });
+      return copy.data;
+    }
+  }
+  throw error;
 }
 
 // Signed-in GETs of the account's own views only; a caller that must have

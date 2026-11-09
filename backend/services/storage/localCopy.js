@@ -203,3 +203,44 @@ function gloobalLocalCopyAnnounce(name, detail) {
     /* no-op */
   }
 }
+
+// ── PHONE FIRST, THEN THE SERVER ────────────────────────────────────────
+//
+// A screen that can redraw itself when the real answer lands subscribes
+// here with the paths it shows. For those paths only, httpClient answers
+// from the phone's copy when the server is slower than
+// GLOOBAL_LOCAL_COPY_FAST_MS, fires GLOOBAL_LOCAL_COPY_UPDATING_EVENT (the
+// app says "Updating…"), and when the server's answer arrives and differs,
+// fires GLOOBAL_LOCAL_COPY_FRESH_EVENT so the subscribed screen reads again.
+//
+// A path nobody listens for is never answered early: a screen that cannot
+// redraw would keep the old figure until it was reopened.
+var GLOOBAL_LOCAL_COPY_UPDATING_EVENT = "gloobal:savedCopyUpdating";
+var GLOOBAL_LOCAL_COPY_FRESH_EVENT = "gloobal:freshCopy";
+var GLOOBAL_LOCAL_COPY_FAST_MS = 700;
+var gloobalLocalCopyListeners = [];
+
+// Subscribe `fn` to fresh answers for paths matching `test` (a RegExp on the
+// path without its query). Several paths landing together call `fn` once.
+// Returns the unsubscribe, so it can be a useEffect's return value.
+function gloobalOnFresh(test, fn) {
+  const entry = { test, timer: null };
+  gloobalLocalCopyListeners.push(entry);
+  const onFresh = (e) => {
+    const path = e && e.detail && e.detail.path;
+    if (!path || !test.test(String(path).split("?")[0])) return;
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => fn(path), 250);
+  };
+  if (typeof window !== "undefined") window.addEventListener(GLOOBAL_LOCAL_COPY_FRESH_EVENT, onFresh);
+  return () => {
+    clearTimeout(entry.timer);
+    gloobalLocalCopyListeners = gloobalLocalCopyListeners.filter((x) => x !== entry);
+    if (typeof window !== "undefined") window.removeEventListener(GLOOBAL_LOCAL_COPY_FRESH_EVENT, onFresh);
+  };
+}
+
+function gloobalLocalCopyHasListener(path) {
+  const bare = String(path || "").split("?")[0];
+  return gloobalLocalCopyListeners.some((l) => l.test.test(bare));
+}

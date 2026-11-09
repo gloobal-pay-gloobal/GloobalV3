@@ -475,8 +475,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   useEffect12(() => {
     if (!myGloobalId) return undefined;
     let live = true;
-    GloobalApi.getBank(myGloobalId).then((b) => { if (live && b) setBankAccount(b); });
-    return () => { live = false; };
+    const load = () => GloobalApi.getBank(myGloobalId).then((b) => { if (live && b) setBankAccount(b); });
+    load();
+    // Phone first: redraw when the server's answer lands (localCopy.js).
+    const stop = gloobalOnFresh(/^\/api\/bank\/[^/]+$/, load);
+    return () => { live = false; stop(); };
   }, [myGloobalId]);
   const hasOpenedGloobalBank = bankAccount?.status === "open";
   const openBankFlow = (after = "bank") => setBankFlow({ after });
@@ -777,8 +780,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     const me = typeof gloobalCurrentSymbolId === "function" ? gloobalCurrentSymbolId() : null;
     if (!me) return undefined;
     let live = true;
-    GloobalApi.getPaylater(me).then((r) => { if (live && r) setServerPaylater(r); }).catch(() => {});
-    return () => { live = false; };
+    const load = () => GloobalApi.getPaylater(me).then((r) => { if (live && r) setServerPaylater(r); }).catch(() => {});
+    load();
+    const stop = gloobalOnFresh(/^\/api\/assets\/paylater\/[^/]+$/, load);
+    return () => { live = false; stop(); };
   }, [showPayLater]);
   const paylaterRowDate = (iso) => {
     const d = iso ? new Date(iso) : null;
@@ -2104,8 +2109,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [essentialsHeld, setEssentialsHeld] = useState83(null);
   useEffect78(() => {
     let live = true;
-    GloobalApi.getEssentials().then((r) => { if (live) setEssentialsHeld(r); });
-    return () => { live = false; };
+    const load = () => GloobalApi.getEssentials().then((r) => { if (live) setEssentialsHeld(r); });
+    load();
+    const stop = gloobalOnFresh(/^\/api\/essentials\/me$/, load);
+    return () => { live = false; stop(); };
   }, [bankBalance]);
   // The other name for the same figure, in brackets beside it, and the size
   // the pair can be printed at without wrapping. Both are needed up here

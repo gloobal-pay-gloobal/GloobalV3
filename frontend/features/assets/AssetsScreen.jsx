@@ -265,12 +265,14 @@ function AssetsSettleSheet({ symbolId, ccyCode, lens, localTotal, seedCount, onC
   useEffect53(() => {
     let alive = true;
     if (!symbolId || typeof GloobalApi === "undefined") return undefined;
-    Promise.all([GloobalApi.getAssets(symbolId), GloobalApi.getPaylater(symbolId)]).then(([a, p]) => {
+    const load = () => Promise.all([GloobalApi.getAssets(symbolId), GloobalApi.getPaylater(symbolId)]).then(([a, p]) => {
       if (!alive) return;
       if (a) setServer(a);
       if (p) setDues(Number(p.pendingDues) || 0);
     });
-    return () => { alive = false; };
+    load();
+    const stop = gloobalOnFresh(/^\/api\/assets\/(paylater\/)?[^/]+$/, load);
+    return () => { alive = false; stop(); };
   }, [symbolId]);
   const amount = server ? server.totalClaimable : localTotal;
   const count = server ? server.seeds.length : seedCount;

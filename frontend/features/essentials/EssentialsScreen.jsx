@@ -105,8 +105,10 @@ function EssentialsScreen({ onClose, dialCountry, ccy, ccyCode = "USD", iHaveEno
   const [summary, setSummary] = useState45(null);
   useEffect79(() => {
     let live = true;
-    GloobalApi.getEssentials().then((r) => { if (live) setSummary(r); });
-    return () => { live = false; };
+    const load = () => GloobalApi.getEssentials().then((r) => { if (live) setSummary(r); });
+    load();
+    const stop = gloobalOnFresh(/^\/api\/essentials\/me$/, load);
+    return () => { live = false; stop(); };
   }, []);
   const baseline = summary && Number(summary.dailyLimit) > 0 ? { ...localBaseline, dailyTotal: Number(summary.dailyLimit) } : localBaseline;
   const poolRemainingToday = summary && Number(summary.dailyLimit) > 0 ? Number(summary.leftToday) || 0 : localRemaining;

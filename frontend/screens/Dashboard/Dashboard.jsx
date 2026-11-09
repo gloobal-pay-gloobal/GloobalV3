@@ -255,30 +255,41 @@ function BalanceError({ onRetry }) {
 }
 
 // ── THE BALANCE, IN TWO HALVES (0208) ───────────────────────────────────
-// Only once something has been used from Essentials: how much can go to a
-// bank, and how much stays in GLOOBAL because it was already used. One line,
-// tappable for the rest. It had a bar, two labelled figures and a sentence
-// repeating one of them; the two figures are the whole message, and the
-// Essentials screen (onOpen) explains the rule. Hidden with the balance.
-function BalanceEssentialsSplit({ summary, balance, ccyCode, lens, onOpen }) {
+// Only once something has been used from Essentials: one bar. The left
+// part is what can go out to a bank, the right part is what stays in
+// GLOOBAL because it was already used from Essentials. Each part carries
+// its share as a percentage; the figures themselves live on the Essentials
+// screen, which the arrow opens and which explains the rule. Hidden with
+// the balance.
+function BalanceEssentialsSplit({ summary, balance, onOpen }) {
   const held = summary && Number(summary.held) > 0 ? Number(summary.held) : 0;
   if (!held) return null;
   const bal = Math.max(0, Number(balance) || 0);
-  const free = Math.max(0, Math.round((bal - held) * 100) / 100);
   const stays = Math.min(held, bal);
-  const fig = (v) => geuLensBarMoney(v, ccyCode, lens, ccyCode);
+  const free = Math.max(0, bal - stays);
+  // Whole percentages that add to 100. A side that holds something but
+  // rounds to 0 is written "<1%", never a false 1%; the other side then
+  // says ">99%".
+  const rawStays = bal > 0 ? (stays / bal) * 100 : 100;
+  const staysPct = Math.round(rawStays);
+  const freePct = 100 - staysPct;
+  const staysLabel = stays > 0 && staysPct < 1 ? "<1%" : free > 0 && staysPct > 99 ? ">99%" : `${staysPct}%`;
+  const freeLabel = free > 0 && freePct < 1 ? "<1%" : stays > 0 && freePct > 99 ? ">99%" : `${freePct}%`;
+  // The painted widths leave each side enough room for its label.
+  const freeW = Math.min(82, Math.max(18, freePct));
   return <button
     type="button"
     onClick={onOpen}
     className="v2-tap"
     data-testid="balance-essentials-split"
-    style={{ marginTop: 12, width: "100%", display: "flex", alignItems: "center", gap: 10, border: "none", borderRadius: 12, padding: "9px 12px", background: "rgba(255,255,255,0.14)", color: "inherit", fontFamily: "inherit", textAlign: "left", cursor: "pointer" }}
+    aria-label={`${freeLabel} can go to your bank, ${staysLabel} stays in GLOOBAL. How this works`}
+    style={{ marginTop: 12, width: "100%", display: "flex", alignItems: "center", gap: 10, border: "none", padding: 0, background: "transparent", color: "inherit", fontFamily: "inherit", cursor: "pointer" }}
   >
-    <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-      <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.85, whiteSpace: "nowrap" }}>To your bank <b data-testid="balance-free" style={{ fontWeight: 900, opacity: 1 }}>{fig(free)}</b></span>
-      <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.85, whiteSpace: "nowrap" }}>Stays in GLOOBAL <b data-testid="balance-stays" style={{ fontWeight: 900, opacity: 1 }}>{fig(stays)}</b></span>
+    <span style={{ flex: 1, minWidth: 0, display: "flex", height: 26, borderRadius: 999, overflow: "hidden" }}>
+      <span data-testid="balance-free" data-pct={freePct} style={{ width: `${freeW}%`, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, background: "#FED7AA", color: "#7C2D12", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden" }}>{`${freeLabel} to bank`}</span>
+      <span data-testid="balance-stays" data-pct={staysPct} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, background: "#67E8F9", color: "#164E63", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden" }}>{`${staysLabel} stays`}</span>
     </span>
-    <span aria-hidden="true" style={{ fontSize: 16, fontWeight: 800, opacity: 0.8 }}>{"\u203A"}</span>
+    <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, flexShrink: 0 }}>{"\u203A"}</span>
   </button>;
 }
 

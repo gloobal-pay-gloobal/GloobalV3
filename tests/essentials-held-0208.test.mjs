@@ -58,8 +58,11 @@ describe("the app", () => {
   test("the Home card splits the balance once something was used, hidden with it", () => {
     const d = code("frontend/screens/Dashboard/Dashboard.jsx");
     assert.match(d, /\{balanceVisible && balanceStatus === "ready" && <BalanceEssentialsSplit /);
-    assert.match(d, /To your bank/);
-    assert.match(d, /Stays in GLOOBAL/);
+    // One bar: the share that can go out, the share that stays, an arrow to
+    // the Essentials screen that explains it.
+    assert.match(d, /to bank`\}/);
+    assert.match(d, /stays`\}/);
+    assert.match(d, /"<1%"/, "a tiny share is written <1%, never rounded to a false 1%");
     assert.match(d, /if \(!held\) return null;/);
   });
   test("send to bank shows the sum, the reason, and stops before the PIN", () => {

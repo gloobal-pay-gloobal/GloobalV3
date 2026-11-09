@@ -57,6 +57,8 @@ const SYMBOLS = (() => {
 // is what stops "250.00 CHF " arriving with a stray gap on the end.
 function currencySuffix(currency) {
   const code = String(currency || '').toUpperCase();
+  // The coin's stored code prints as its shown name (lib/coinTicker.js).
+  if (code === GEU_CODE) return ` ${GEU_TICKER}`;
   const symbol = String(SYMBOLS.get(code) || code || '').trim();
   if (!symbol) return '';
   return /[A-Za-z]/.test(symbol) ? ` ${symbol}` : symbol;
@@ -86,10 +88,12 @@ function formatBannerMoney(amount, currency) {
 //
 // GEU is never written without the currency beside it — that is the rule
 // the whole lens exists to keep.
-var GEU_TICKER = 'GEU';
+// The stored code is GEU; the name people read is GLEU (lib/coinTicker.js).
+var GEU_TICKER = require('./coinTicker').COIN_TICKER;
+var GEU_CODE = require('./coinTicker').COIN_CURRENCY;
 function realCode(currency) {
   const code = String(currency || '').trim().toUpperCase();
-  return /^[A-Z]{3}$/.test(code) && code !== GEU_TICKER ? code : '';
+  return /^[A-Z]{3,4}$/.test(code) && code !== GEU_CODE && code !== GEU_TICKER ? code : '';
 }
 function formatMoneyPair(amount, currency, { own = true } = {}) {
   const code = realCode(currency);

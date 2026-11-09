@@ -5,11 +5,11 @@
 // ── What there was ───────────────────────────────────────────────────────
 //
 // A toast. `handleMintCoin` read one field off the server's response —
-// `minted` — showed "Bought 12.50 GEU" and discarded the rest: the reference
+// `minted` — showed "Bought 12.50 GLEU" and discarded the rest: the reference
 // id, the fiat that actually left the bank, the currency it left in, and the
 // rate it converted at. So the one movement in this app that is literally a
 // currency exchange was the only one with no record anybody could open, and
-// the Coin Activity row beside it read "Minted from balance · 12.50 GEU",
+// the Coin Activity row beside it read "Minted from balance · 12.50 GLEU",
 // which answers neither what it cost nor at what rate.
 //
 // ── The defect this suite exists to stop ─────────────────────────────────
@@ -18,9 +18,9 @@
 // same field name:
 //
 //   mint    geuRateFor(accountCurrency, reserveCurrency)
-//           coinAmount = fiatAmount * geuRate     -> GEU per 1 fiat
+//           coinAmount = fiatAmount * geuRate     -> GLEU per 1 fiat
 //   redeem  geuRateFor(reserveCurrency, accountCurrency)
-//           fiatAmount = coinAmount * redeemRate  -> fiat per 1 GEU
+//           fiatAmount = coinAmount * redeemRate  -> fiat per 1 GLEU
 //
 // Both are correct for the arithmetic they were computed for. Only the name
 // is shared. A reader that assumed one meaning would print an inverted rate
@@ -48,14 +48,16 @@ const API = "backend/services/api/gloobalApi.js";
 // it reaches for supplied as stubs.
 function loadCoinReceipt() {
   const src = readSource(MODULE);
+  // COIN_CURRENCY / COIN_TICKER: the stored code and the shown name
+  // (backend/data/currencies.js), which the rate sentence reaches for.
   const factory = new Function(
-    "formatClockTime",
+    "formatClockTime", "COIN_CURRENCY", "COIN_TICKER",
     `${src}; return { coinReceiptFrom, coinReceiptsFrom, coinRateSentence, formatCoinRate, COIN_RESERVE_NAME, COIN_RECEIPT_TITLES };`
   );
   return factory((d) => {
     const pad = (n) => String(n).padStart(2, "0");
     return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
-  });
+  }, "GEU", "GLEU");
 }
 
 const M = loadCoinReceipt();
@@ -86,7 +88,7 @@ const VIEWER = {
   countryFlag: "🇵🇰"
 };
 
-// A buy: 5,000 PKR out, 1,750 GEU in, at 0.35 GEU per rupee.
+// A buy: 5,000 PKR out, 1,750 GLEU in, at 0.35 GLEU per rupee.
 const BUY = {
   id: "t1",
   referenceId: MINT_REF,
@@ -104,7 +106,7 @@ const BUY = {
   createdAt: "2026-09-12T14:07:32.000Z"
 };
 
-// A sell: 400 GEU out, 1,142.86 PKR in, at 2.857143 rupees per GEU.
+// A sell: 400 GLEU out, 1,142.86 PKR in, at 2.857143 rupees per GLEU.
 const SELL = {
   id: "t2",
   referenceId: REDEEM_REF,
@@ -158,7 +160,7 @@ describe("the three things asked for are on it", () => {
   test("and how much they bought, in both units", () => {
     const r = M.coinReceiptFrom(BUY, VIEWER);
     assert.equal(r.amount, 1750);
-    assert.equal(r.currencyCode, "GEU");
+    assert.equal(r.currencyCode, "GEU"); // the stored code; the receipt prints GLEU
     assert.equal(r.fiatAmount, 5000);
     assert.equal(r.fiatCurrencyCode, "PKR");
   });
@@ -175,29 +177,29 @@ describe("the three things asked for are on it", () => {
 
 describe("the rate is printed in the direction it was recorded", () => {
   test("a buy reads coin-per-fiat", () => {
-    assert.equal(M.coinRateSentence(M.coinReceiptFrom(BUY, VIEWER)), "1 PKR = 0.35 GEU");
+    assert.equal(M.coinRateSentence(M.coinReceiptFrom(BUY, VIEWER)), "1 PKR = 0.35 GLEU");
   });
 
   test("a sell reads fiat-per-coin", () => {
-    assert.equal(M.coinRateSentence(M.coinReceiptFrom(SELL, VIEWER)), "1 GEU = 2.857143 PKR");
+    assert.equal(M.coinRateSentence(M.coinReceiptFrom(SELL, VIEWER)), "1 GLEU = 2.857143 PKR");
   });
 
   test("neither is inverted to match the other", () => {
     // This is the assertion the whole file is built around. If a future
     // change normalises both into one house direction, the sell's sentence
-    // becomes "1 PKR = 0.35 GEU" — a number that does not reproduce 400 GEU
+    // becomes "1 PKR = 0.35 GLEU" — a number that does not reproduce 400 GLEU
     // -> 1,142.86 PKR, because it is 1/2.857143 rounded.
     const sell = M.coinReceiptFrom(SELL, VIEWER);
     assert.equal(sell.rate, 2.857143, "the sell's recorded rate was altered");
     assert.equal(sell.rateBasis, "fiat-per-coin");
     // And the recorded rate still reconciles the two recorded amounts:
-    // 400 GEU at 2.857143 PKR each is the 1,142.86 PKR that arrived.
+    // 400 GLEU at 2.857143 PKR each is the 1,142.86 PKR that arrived.
     assert.ok(
       Math.abs(sell.amount * sell.rate - sell.fiatAmount) < 0.01,
       "the recorded rate no longer reproduces the recorded amounts"
     );
     // Whereas the inverted rate does not, which is the reason not to invert:
-    // 400 GEU at 1/0.35 would be 1,142.857…, but 1/2.857143 rounded to six
+    // 400 GLEU at 1/0.35 would be 1,142.857…, but 1/2.857143 rounded to six
     // places and multiplied back does not return 5,000 either.
     const inverted = Number((1 / sell.rate).toFixed(6));
     assert.ok(
@@ -224,11 +226,11 @@ describe("the rate is printed in the direction it was recorded", () => {
 
   test("a 1:1 peg reads as 1, not 1.000000", () => {
     const peg = { ...BUY, geuRate: 1, fiatCurrency: "INR" };
-    assert.equal(M.coinRateSentence(M.coinReceiptFrom(peg, VIEWER)), "1 INR = 1 GEU");
+    assert.equal(M.coinRateSentence(M.coinReceiptFrom(peg, VIEWER)), "1 INR = 1 GLEU");
   });
 
   test("but a small rate keeps the places it needs", () => {
-    // Two places would round a GEU rate against IDR or VND to 0.00 — a rate
+    // Two places would round a GLEU rate against IDR or VND to 0.00 — a rate
     // of zero on a receipt whose amounts are plainly not zero.
     assert.equal(M.formatCoinRate(0.000061), "0.000061");
   });
@@ -488,7 +490,7 @@ describe("the receipt is not labelled as a payment", () => {
 // because a Transaction row records ids and not people.
 //
 // Both were about a buy and a sell, and neither can happen any more. The
-// coin write paths are deleted: GEU is a display lens over money somebody
+// coin write paths are deleted: GLEU is a display lens over money somebody
 // already holds, so nothing mints, redeems or transfers a coin, and there
 // is no Coin screen to build a receipt on.
 //

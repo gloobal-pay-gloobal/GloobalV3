@@ -76,7 +76,7 @@ describe("finding the answer", () => {
     answers("sned money", "send-how");
     answers("withdrawl", "bank-withdraw");
     answers("paisa kaise bhejna hai", "send-how");
-    answers("GEU kya hai", "geu-what");
+    answers("GLEU kya hai", "geu-what");
   });
   test("country names mean another country", () => {
     answers("america paise bhejne hai", "send-abroad");

@@ -185,7 +185,10 @@ function coinReceiptStamp(createdAt) {
 // that an exchange took place.
 function coinRateSentence(receipt) {
   if (!receipt || receipt.rate == null || !receipt.rateBasis) return null;
-  const coin = receipt.currencyCode || "GEU";
+  // The sentence names the unit as people read it, whatever code the row
+  // stores (currencies.js: GEU stored, GLEU shown).
+  const stored = receipt.currencyCode || COIN_CURRENCY;
+  const coin = String(stored).toUpperCase() === COIN_CURRENCY ? COIN_TICKER : stored;
   const fiat = receipt.fiatCurrencyCode;
   if (!fiat) return null;
   // Six places, because a GEU rate against a currency like IDR or VND is a

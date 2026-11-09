@@ -30,6 +30,12 @@
 // asserts the two agree, which is the only mechanism available across that
 // boundary.
 const COIN_CURRENCY = 'GEU';
+// The NAME people read and hear: GLEU, "Gloobal Local Energy Unit", said
+// like "glue" because it sticks to local units. The stored code above stays
+// GEU — every row ever written carries it. Anything the server writes for a
+// person (a notification, a guide answer) prints COIN_TICKER, never the code.
+const COIN_TICKER = 'GLEU';
+const COIN_TICKER_LONG = 'Gloobal Local Energy Unit';
 
 // ── WHAT THE OTHER SIDE OF A BUY OR A SELL IS CALLED ─────────────────────
 //
@@ -50,4 +56,4 @@ const COIN_CURRENCY = 'GEU';
 // the reason this string matches that one exactly.
 const COIN_RESERVE_NAME = 'Gloobal Reserve';
 
-module.exports = { COIN_CURRENCY, COIN_RESERVE_NAME };
+module.exports = { COIN_CURRENCY, COIN_TICKER, COIN_TICKER_LONG, COIN_RESERVE_NAME };

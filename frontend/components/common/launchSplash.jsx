@@ -521,9 +521,9 @@ function LaunchSplash({ onFinish }) {
     }}
   ><span
     style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkFaint }}
-  ><GloobalWordmark /> Energy Unit</span><span
+  ><GloobalWordmark /> Local Energy Unit · {COIN_TICKER}</span><span
     style={{ fontSize: 21, fontWeight: 800, fontFamily: T.fontDisplay, color: T.ink, letterSpacing: -0.5, lineHeight: 1.15 }}
-  >Local energy<span style={{ opacity: 0.35, margin: "0 7px" }}>·</span>Global use</span>{
+  >Sticks to local units<span style={{ opacity: 0.35, margin: "0 7px" }}>·</span>said “{COIN_TICKER_SAID}”</span>{
     /* "for you" is doing real work in that sentence. It is what marks
        the unit as the reader's own rather than a universal rate, which
        is the exact misreading the old line invited. */

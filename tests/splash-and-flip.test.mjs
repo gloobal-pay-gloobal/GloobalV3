@@ -389,7 +389,10 @@ describe("the splash is made of the product, not of graphics about it", () => {
       "the splash is reading the old hardcoded peg currency again");
     assert.ok(!/Gloobal Coin/i.test(live),
       "the splash names a product that no longer exists");
-    assert.match(splash, />Local energy<span style=\{\{ opacity: 0\.35, margin: "0 7px" \}\}>·<\/span>Global use</,
+    // The card names the unit (GLEU, Gloobal Local Energy Unit), what it
+    // does (sticks to local units) and how it is said ("glue").
+    assert.match(splash, /Local Energy Unit · \{COIN_TICKER\}/, "the unit card no longer names the unit");
+    assert.match(splash, />Sticks to local units<span style=\{\{ opacity: 0\.35, margin: "0 7px" \}\}>·<\/span>said “\{COIN_TICKER_SAID\}”</,
       "the unit card no longer says what the unit is");
   });
 

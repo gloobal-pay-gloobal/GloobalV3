@@ -177,7 +177,7 @@ describe("every transaction list shows the time, not just the date", () => {
     ["frontend/screens/Banks/GloobalBankScreen.jsx", "Gloobal Bank recent"],
     ["frontend/screens/SendMoney/SendMoney.jsx", "Send Money recent"]
     // Coin Activity was the fifth list, on the Coin screen. That screen is
-    // deleted — GEU is a display lens, not a balance with a ledger of its
+    // deleted — GLEU is a display lens, not a balance with a ledger of its
     // own — and the coin movements it listed are in History with every
     // other movement, which is the first entry above.
   ];

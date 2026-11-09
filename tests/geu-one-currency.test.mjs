@@ -111,9 +111,12 @@ describe("Gloobal Coin is stored as GEU, not GC", () => {
     // name moved to backend/data/currencies.js — derived from COIN_TICKER
     // rather than written out again, which is a stronger arrangement than
     // the one it replaced: there is no second literal left to drift.
+    // Since the rename, the stored code and the shown name are two
+    // constants (tests/gleu-name.test.mjs): GEU is what is stored, GLEU is
+    // what is printed. This guard is about what is STORED.
     const currencies = readSource("backend/data/currencies.js");
-    assert.match(currencies, /var COIN_TICKER = "GEU";/);
-    assert.match(currencies, /var COIN_CURRENCY = COIN_TICKER;/);
+    assert.match(currencies, /var COIN_CURRENCY = "GEU";/);
+    assert.match(currencies, /var COIN_TICKER = "GLEU";/);
   });
 
   test("and so do the ledger accounts the coin is held in", () => {

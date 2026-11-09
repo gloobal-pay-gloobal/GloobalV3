@@ -138,8 +138,8 @@ describe("the amount box is the payee's currency and the Send button is the paye
       const boxSymbol = marker.all;
       assert.equal(marker.trail, receiver.currency,
         `the amount box must name ${receiver.currency} after the bar (the picked name, lens off); it carried "${boxSymbol}"`);
-      assert.equal(marker.lead, "GEU",
-        `the amount box must carry GEU before the bar, lens off; it carried "${boxSymbol}"`);
+      assert.equal(marker.lead, "GLEU",
+        `the amount box must carry GLEU before the bar, lens off; it carried "${boxSymbol}"`);
       // The picked name is the bright one; the other is dimmed.
       assert.ok(marker.trailOpacity === 1 && marker.leadOpacity < 1,
         `the picked name must be bright and the other dimmed: "${boxSymbol}" ` +
@@ -204,8 +204,8 @@ describe("the amount box is the payee's currency and the Send button is the paye
       // symbol. This is the payer's own money, so its other name is the unit
       // — if a real currency ever sits there too, two tenders are being
       // claimed for one figure on the screen where money leaves.
-      assert.equal(onNumber.replace(/^[\d.,\s]+/, "").trim(), "GEU",
-        `the Send button's other name must be GEU; it read "${buttonText}"`);
+      assert.equal(onNumber.replace(/^[\d.,\s]+/, "").trim(), "GLEU",
+        `the Send button's other name must be GLEU; it read "${buttonText}"`);
       if (sender.currency !== receiver.currency) {
         assert.notEqual(
           suffix,

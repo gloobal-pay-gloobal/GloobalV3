@@ -71,6 +71,11 @@ function fmt(n, currency) {
 // Trimming here is what stops "20.00 CHF " arriving with a stray gap at the
 // end, which is invisible in a diff and visible on a receipt.
 function currencySuffix(currency) {
+  // The coin's stored code prints as its shown name (currencies.js: GEU is
+  // stored, GLEU is read).
+  if (typeof COIN_CURRENCY === "string" && String(currency || "").toUpperCase() === COIN_CURRENCY) {
+    return ` ${COIN_TICKER}`;
+  }
   const symbol = String(CURRENCY_SYMBOL[currency] || currency || "").trim();
   if (!symbol) return "";
   return /[A-Za-z]/.test(symbol) ? ` ${symbol}` : symbol;

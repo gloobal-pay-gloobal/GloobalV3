@@ -207,7 +207,7 @@ test("the screens are in the build and the API has every call", () => {
   assert.match(ui, /needsNote = reason === "other"/);
 });
 
-test("every money figure on the complaint screens carries its GEU pair", () => {
+test("every money figure on the complaint screens carries its GLEU pair", () => {
   assert.doesNotMatch(ui, /\bfmt\(|\bfmtMoney\(/);
   assert.match(ui, /amountText: c\.amountText \|\| geuLensBarMoney\(Number\(c\.amount\) \|\| 0, c\.currency \|\| "", lens, ownCurrency\)/);
   assert.match(ui, /returnAmountText: c\.returnAmountText \|\| geuLensBarMoney\(Number\(c\.returnAmount\) \|\| 0, c\.returnCurrency/);

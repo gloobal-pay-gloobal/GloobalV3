@@ -255,42 +255,80 @@ function BalanceError({ onRetry }) {
 }
 
 // ── THE BALANCE, IN TWO HALVES (0208) ───────────────────────────────────
-// Only once something has been used from Essentials: one bar. The left
-// part is what can go out to a bank, the right part is what stays in
-// GLOOBAL because it was already used from Essentials. Each part carries
-// its share as a percentage; the figures themselves live on the Essentials
-// screen, which the arrow opens and which explains the rule. Hidden with
-// the balance.
-function BalanceEssentialsSplit({ summary, balance, onOpen }) {
+// Only once something has been used from Essentials. One thin bar: the
+// left part is the share that can go out to a bank, the right part is the
+// share that stays in GLOOBAL because it was already used from Essentials.
+// The percentages sit above the bar, the words below it, and the arrow
+// opens BalanceSplitExplainer, which says why with this account's own
+// figures. Hidden with the balance.
+function balanceSplitShares(summary, balance) {
   const held = summary && Number(summary.held) > 0 ? Number(summary.held) : 0;
-  if (!held) return null;
   const bal = Math.max(0, Number(balance) || 0);
   const stays = Math.min(held, bal);
-  const free = Math.max(0, bal - stays);
+  const free = Math.max(0, Math.round((bal - stays) * 100) / 100);
   // Whole percentages that add to 100. A side that holds something but
-  // rounds to 0 is written "<1%", never a false 1%; the other side then
-  // says ">99%".
-  const rawStays = bal > 0 ? (stays / bal) * 100 : 100;
-  const staysPct = Math.round(rawStays);
+  // rounds to 0 is written "<1%", never a false 1%; the other then ">99%".
+  const staysPct = bal > 0 ? Math.round((stays / bal) * 100) : 100;
   const freePct = 100 - staysPct;
   const staysLabel = stays > 0 && staysPct < 1 ? "<1%" : free > 0 && staysPct > 99 ? ">99%" : `${staysPct}%`;
   const freeLabel = free > 0 && freePct < 1 ? "<1%" : stays > 0 && freePct > 99 ? ">99%" : `${freePct}%`;
-  // The painted widths leave each side enough room for its label.
-  const freeW = Math.min(82, Math.max(18, freePct));
+  return { held, bal, stays, free, staysPct, freePct, staysLabel, freeLabel };
+}
+
+function BalanceEssentialsSplit({ summary, balance, onOpen }) {
+  const sh = balanceSplitShares(summary, balance);
+  if (!sh.held) return null;
+  // The painted width keeps the thinner side visible even at <1%.
+  const freeW = Math.min(94, Math.max(6, sh.freePct));
+  const cap = { fontSize: 11, fontWeight: 700, opacity: 0.85, whiteSpace: "nowrap" };
   return <button
     type="button"
     onClick={onOpen}
     className="v2-tap"
     data-testid="balance-essentials-split"
-    aria-label={`${freeLabel} can go to your bank, ${staysLabel} stays in GLOOBAL. How this works`}
-    style={{ marginTop: 12, width: "100%", display: "flex", alignItems: "center", gap: 10, border: "none", padding: 0, background: "transparent", color: "inherit", fontFamily: "inherit", cursor: "pointer" }}
+    aria-label={`${sh.freeLabel} can go to your bank, ${sh.staysLabel} stays in GLOOBAL. Why`}
+    style={{ marginTop: 12, width: "100%", display: "flex", alignItems: "center", gap: 10, border: "none", padding: 0, background: "transparent", color: "inherit", fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}
   >
-    <span style={{ flex: 1, minWidth: 0, display: "flex", height: 26, borderRadius: 999, overflow: "hidden" }}>
-      <span data-testid="balance-free" data-pct={freePct} style={{ width: `${freeW}%`, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, background: "#FED7AA", color: "#7C2D12", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden" }}>{`${freeLabel} to bank`}</span>
-      <span data-testid="balance-stays" data-pct={staysPct} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, background: "#67E8F9", color: "#164E63", fontSize: 11, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden" }}>{`${staysLabel} stays`}</span>
+    <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
+      <span style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 900 }}><b data-testid="balance-free" data-pct={sh.freePct}>{sh.freeLabel}</b><b data-testid="balance-stays" data-pct={sh.staysPct}>{sh.staysLabel}</b></span>
+      <span style={{ display: "flex", height: 8, borderRadius: 999, overflow: "hidden", background: "rgba(255,255,255,0.2)" }}><i style={{ display: "block", width: `${freeW}%`, background: "#FED7AA" }} /><i style={{ display: "block", flex: 1, background: "#67E8F9" }} /></span>
+      <span style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><span style={cap}>can go to your bank</span><span style={cap}>stays in GLOOBAL</span></span>
     </span>
     <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, flexShrink: 0 }}>{"\u203A"}</span>
   </button>;
+}
+
+// ── WHY PART OF THE BALANCE STAYS ───────────────────────────────────────
+// What the arrow on the bar opens. The rule in the account's own figures:
+// money that came in through Essentials can be spent anywhere on GLOOBAL
+// but does not leave to another bank, because Essentials is GLOOBAL's own
+// money lent for the day's needs, not a bank deposit. Three lines of
+// figures, the rule in a sentence, and the way to the Essentials screen.
+function BalanceSplitExplainer({ summary, balance, ccyCode, lens, onClose, onOpenEssentials }) {
+  const sh = balanceSplitShares(summary, balance);
+  const fig = (v) => geuLensBarMoney(v, ccyCode, lens, ccyCode);
+  const row = (k, v, color, strong) => <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "11px 14px", borderTop: `1px solid ${T.line}`, fontSize: strong ? 14 : 13, fontWeight: strong ? 900 : 700, color: strong ? T.ink : T.inkSoft }}><span>{k}</span><b style={{ color: color || T.ink, fontWeight: 900, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{v}</b></div>;
+  const freeW = Math.min(94, Math.max(6, sh.freePct));
+  return <div data-testid="balance-split-explainer" style={{ position: "fixed", inset: 0, zIndex: 300, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><AppSymbolBg zIndex={-1} /><ProductScreenHeader title="Your balance, in two parts" onBack={onClose} /><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "16px 14px 14px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 900, color: T.ink }}><span>{sh.freeLabel}</span><span>{sh.staysLabel}</span></div>
+      <div style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", margin: "8px 0 6px", background: `${T.inkFaint}33` }}><i style={{ display: "block", width: `${freeW}%`, background: "#FDBA74" }} /><i style={{ display: "block", flex: 1, background: "#22D3EE" }} /></div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, fontWeight: 700, color: T.inkSoft }}><span><i style={{ display: "inline-block", width: 8, height: 8, borderRadius: 3, background: "#FDBA74", marginRight: 5 }} />Can go to your bank</span><span>Stays in GLOOBAL<i style={{ display: "inline-block", width: 8, height: 8, borderRadius: 3, background: "#22D3EE", marginLeft: 5 }} /></span></div>
+    </div>
+    <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden" }}>
+      <div style={{ padding: "11px 14px", fontSize: 11, fontWeight: 800, letterSpacing: 0.9, textTransform: "uppercase", color: T.inkFaint }}>Your figures</div>
+      {row("In your GLOOBAL Bank", fig(sh.bal))}
+      {row("Used from Essentials so far", `− ${fig(sh.held)}`, "#0E7490")}
+      {row("Can go to your bank", fig(sh.free), sh.free > 0 ? "#C2410C" : T.inkFaint, true)}
+    </div>
+    <div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "14px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Why part of it stays</div>
+      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: T.inkSoft, lineHeight: 1.55 }}>Essentials is <GloobalWordmark />'s own money, put into your account for the day's needs: a recharge, a bill, food. It is not a deposit you made.</p>
+      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: T.inkSoft, lineHeight: 1.55 }}>So whatever you have used from Essentials stays inside <GloobalWordmark />. You can pay <b style={{ color: T.ink }}>anyone or any shop</b> with it, any time. It just does not go out to another bank.</p>
+      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: T.inkSoft, lineHeight: 1.55 }}>Everything else in your balance is yours to move: to your bank, to anyone, anywhere.</p>
+    </div>
+    <button type="button" onClick={onOpenEssentials} className="v2-tap" data-testid="balance-split-open-essentials" style={{ height: 46, borderRadius: 14, border: "none", background: T.gradButton, color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>Open My Essentials</button>
+  </div></div>;
 }
 
 function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, onLiveProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "", themeKey = "day", onPickTheme }) {
@@ -452,6 +490,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const requestCloseAssets = useBackClose(showAssets, () => setShowAssets(false));
   const [showEssentials, setShowEssentials] = useState14(false);
   const requestCloseEssentials = useBackClose(showEssentials, () => setShowEssentials(false));
+  // Why part of the balance stays in GLOOBAL (BalanceSplitExplainer), from
+  // the bar under the balance.
+  const [showBalanceSplit, setShowBalanceSplit] = useState14(false);
+  const requestCloseBalanceSplit = useBackClose(showBalanceSplit, () => setShowBalanceSplit(false));
   // Set when the "Unlock Gloobal Bank" banner inside Essentials sends
   // the person to Bank info — closing Bank info then reopens
   // Essentials automatically, so the onboarding step feels like one
@@ -3112,7 +3154,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       cursor: "pointer",
       flexShrink: 0
     }}
-  ><EyeIcon open={balanceVisible} /></button>}</div>{balanceVisible && balanceStatus === "ready" && <BalanceEssentialsSplit summary={essentialsHeld} balance={bankBalance} ccyCode={ccyCode} lens={displayLens} onOpen={() => setShowEssentials(true)} />}{
+  ><EyeIcon open={balanceVisible} /></button>}</div>{balanceVisible && balanceStatus === "ready" && <BalanceEssentialsSplit summary={essentialsHeld} balance={bankBalance} onOpen={() => setShowBalanceSplit(true)} />}{
     /* Spending mini chart — sits below its own divider so it
        reads as a distinct footer section of the wallet card
        rather than competing with the balance above it. */
@@ -4609,7 +4651,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     ccyCode={ccyCode}
     lens={displayLens}
     onClose={() => setSettleDone(null)}
-  />}{showEssentials && <EssentialsScreen
+  />}{showBalanceSplit && <ScreenErrorBoundary name="Your balance" onClose={requestCloseBalanceSplit}><BalanceSplitExplainer
+    summary={essentialsHeld} balance={bankBalance} ccyCode={ccyCode} lens={displayLens}
+    onClose={requestCloseBalanceSplit}
+    onOpenEssentials={() => { setShowBalanceSplit(false); setShowEssentials(true); }}
+  /></ScreenErrorBoundary>}{showEssentials && <EssentialsScreen
     onClose={requestCloseEssentials}
     dialCountry={dialCountry}
     ccy={ccy} ccyCode={ccyCode}

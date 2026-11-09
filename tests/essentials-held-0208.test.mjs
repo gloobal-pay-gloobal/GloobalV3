@@ -60,10 +60,17 @@ describe("the app", () => {
     assert.match(d, /\{balanceVisible && balanceStatus === "ready" && <BalanceEssentialsSplit /);
     // One bar: the share that can go out, the share that stays, an arrow to
     // the Essentials screen that explains it.
-    assert.match(d, /to bank`\}/);
-    assert.match(d, /stays`\}/);
+    assert.match(d, /can go to your bank/);
+    assert.match(d, /stays in GLOOBAL/);
     assert.match(d, /"<1%"/, "a tiny share is written <1%, never rounded to a false 1%");
-    assert.match(d, /if \(!held\) return null;/);
+    // The arrow opens the explanation, not the grants list; the explanation
+    // carries the account's figures and the way on to My Essentials.
+    assert.match(d, /onOpen=\{\(\) => setShowBalanceSplit\(true\)\}/);
+    assert.match(d, /function BalanceSplitExplainer/);
+    assert.match(d, /Why part of it stays/);
+    assert.match(d, /Used from Essentials so far/);
+    assert.match(d, /data-testid="balance-split-open-essentials"/);
+    assert.match(d, /if \(!sh\.held\) return null;/, "nothing is drawn until something was used");
   });
   test("send to bank shows the sum, the reason, and stops before the PIN", () => {
     const b = code("frontend/features/bank/bankMoney.jsx");

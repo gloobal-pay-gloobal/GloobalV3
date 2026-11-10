@@ -2016,6 +2016,9 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     else if (deepLinkTarget === "receive") setShowReceive(true);
     else if (deepLinkTarget === "creatorSetup") openCreatorSetup();
     else if (deepLinkTarget === "security") { setActiveTab("profile"); setProfileDetail("Security"); }
+    // Help & Support — Ask GLOOBAL sits at the top of it, the team's chat
+    // below. One door, from the map as from the Profile list.
+    else if (deepLinkTarget === "help") { setActiveTab("profile"); setProfileDetail("Help & Support"); }
     // My shop: see openMyShop.
     else if (deepLinkTarget === "myshop") openMyShop();
     else if (deepLinkTarget === "complaints") setShowComplaints(true);
@@ -3703,7 +3706,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        because there is already an "About" row in this list and two rows
        starting with that word is a menu nobody can scan. */
   }{PROFILE_ROWS.slice(0, 1)
-    .concat(["Creator Profile"], shareRole === "merchant" ? ["My shops"] : [], PROFILE_ROWS.slice(1, 4), ["Complaints & reports", "Ask GLOOBAL"], PROFILE_ROWS.slice(4)).map((label, i) => {
+    .concat(["Creator Profile"], shareRole === "merchant" ? ["My shops"] : [], PROFILE_ROWS.slice(1, 4), ["Complaints & reports"], PROFILE_ROWS.slice(4)).map((label, i) => {
     // The theme's own family, very faint: one soft tint per row instead of
     // the eight-colour stripe the shared list drew in every theme.
     const rowColor = gloobalFamilyColor(i);
@@ -3713,11 +3716,10 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       // "Notifications" is the one row with a real screen behind it — the
       // server-held list, rendered from App.jsx so a push click can open
       // the same sheet. The rest still open their placeholder detail view.
+      // (Ask GLOOBAL had a row of its own here; it was the same thing as
+      // Help & Support, whose screen opens on the Ask box, so it went.)
       onClick={() => (label === "Notifications"
         ? window.dispatchEvent(new Event("gloobal:openNotifications"))
-        : label === "Ask GLOOBAL"
-          // 0238: straight into Ask GLOOBAL, full screen.
-          ? window.dispatchEvent(new CustomEvent("gloobal:ask", { detail: { mode: "page" } }))
         : label === "Complaints & reports"
           ? setShowComplaints(true)
           : label === "My shops"

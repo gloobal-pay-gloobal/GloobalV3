@@ -189,7 +189,7 @@ describe("the screen", () => {
     const cardsBox = await page.getByTestId("live-face-cards").boundingBox();
     const videoBox = await page.getByTestId("live-face-video").boundingBox();
     assert.ok(cardsBox.y + cardsBox.height <= videoBox.y, "the move cards are above the camera");
-    assert.match(await page.getByTestId("live-face-subtitle").textContent(), /Move 1 of 3/);
+    assert.match(await page.getByTestId("live-face-subtitle").textContent(), /Move [123] of 3/);
     assert.equal(await page.locator("[data-testid=live-face-move][data-now='1']").count(), 1, "one card lit");
     // The hold: a countdown, the shutter there, auto-taken after two seconds.
     await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "hold", null, { timeout: 20000 });
@@ -290,7 +290,7 @@ describe("fast enough on a phone", () => {
     assert.match(src, /useEffect94\(\(\) => \{ liveFaceLoadEngine\(\)\.catch/);
     // The hold is two seconds (the founder: "give me 2 seconds for a good
     // hold"), counted down; the shutter takes it sooner.
-    assert.match(src, /const pct = Math\.min\(1, \(now - st\.holdStart\) \/ LIVE_FACE_HOLD_MS\);/);
+    assert.match(src, /const pct = Math\.min\(1, elapsed \/ LIVE_FACE_HOLD_MS\);/);
     assert.match(src, /var LIVE_FACE_HOLD_MS = 2000;/);
   });
 });

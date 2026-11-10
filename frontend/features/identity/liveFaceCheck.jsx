@@ -177,6 +177,7 @@ function liveFaceFrameHint(faces, w, h) {
 }
 
 var LIVE_FACE_HINTS = {
+  face: ["Look at the camera", "कैमरे की ओर देखिए"],
   none: ["Bring your face into the circle", "चेहरा गोले में लाइए"],
   many: ["Only you in the frame, please", "फ़्रेम में सिर्फ़ आप रहें"],
   closer: ["Move a little closer", "थोड़ा पास आइए"],
@@ -523,23 +524,36 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
     }
 
     if (st.stage === "hold") {
-      // 0254: no longer "as still as at the start" — on a real phone that
-      // kept people on "Look straight at the camera" indefinitely. A face in
-      // the circle is enough; the photo is the best of the frames, and the
-      // Take photo button takes it at once.
+      // The hold, on a real phone: the heavy models run on these frames and
+      // each one can take a second, so the clock can't be "frames seen". It
+      // runs on wall time from the moment the face is back, facing the
+      // camera (a timer in the component draws the countdown), and the
+      // photo is the best frame from the second half of it, when the face
+      // has settled — not the first frame after the last move.
       if (!pose) {
+        st.holdStart = 0;
+        setHoldPct(0);
         setHint(problem || "none");
         return;
       }
-      setHint(null);
-      if (!st.holdStart) st.holdStart = now;
-      st.hold.push({ embedding: face.embedding, real: face.real, live: face.live });
-      if (!st.best || face.score > st.best.score) {
-        st.best = { score: face.score, photo: liveFaceCrop(frame, face.box) };
+      // Back to the centre first: the countdown starts facing the camera.
+      if (!st.holdStart) {
+        if (!liveFaceStill(pose, st.base, 2.5)) { setHint("face"); return; }
+        st.holdStart = now;
       }
-      const pct = Math.min(1, (now - st.holdStart) / LIVE_FACE_HOLD_MS);
+      setHint(null);
+      const elapsed = now - st.holdStart;
+      const settled = elapsed >= LIVE_FACE_HOLD_MS * 0.4;
+      st.hold.push({ embedding: face.embedding, real: face.real, live: face.live, settled });
+      // The photo: the best settled frame; any frame only if the shutter
+      // came before one landed.
+      if (!st.best || (settled && !st.best.settled) || (settled === Boolean(st.best.settled) && face.score > st.best.score)) {
+        st.best = { score: face.score, settled, photo: liveFaceCrop(frame, face.box) };
+      }
+      const pct = Math.min(1, elapsed / LIVE_FACE_HOLD_MS);
       setHoldPct(pct);
-      if ((pct >= 1 || st.shutter) && st.hold.some((h) => h.embedding)) finish(engine);
+      const ready = st.hold.some((h) => h.embedding && h.settled);
+      if ((pct >= 1 && ready) || (st.shutter && st.hold.some((h) => h.embedding))) finish(engine);
     }
   };
 
@@ -547,6 +561,19 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
   // mirrored into a ref.
   const turnsRef = useRef56(turns);
   turnsRef.current = turns;
+
+  // The countdown ticks on wall time, not on frames: on a phone the frames
+  // of the hold are a second apart, and a ring that only moved with them
+  // looked like no hold at all.
+  useEffect94(() => {
+    if (phase !== "hold") return undefined;
+    const t = setInterval(() => {
+      const st = stateRef.current;
+      if (!st.holdStart) return;
+      setHoldPct(Math.min(1, (Date.now() - st.holdStart) / LIVE_FACE_HOLD_MS));
+    }, 50);
+    return () => clearInterval(t);
+  }, [phase]);
 
   const finish = async (engine) => {
     const st = stateRef.current;

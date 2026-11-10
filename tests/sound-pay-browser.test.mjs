@@ -68,7 +68,7 @@ test("the payer listens: the receiver's card opens, and Pay brings the amount to
     seed = (seed * 16807) % 2147483647;
     mic[i] = (i >= lead.length ? clean[i - lead.length] * 0.35 : 0) + (seed / 2147483647 - 0.5) * 0.05;
   }
-  const { page, context, errors } = await openPage({ account: A });
+  const { page, context, errors, api } = await openPage({ account: A });
   await context.addInitScript(({ samples, rate }) => {
     const real = navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null;
     window.__micAsked = 0;
@@ -101,6 +101,11 @@ test("the payer listens: the receiver's card opens, and Pay brings the amount to
   await page.waitForFunction((name) => document.body.innerText.includes(name) &&
     Array.from(document.querySelectorAll("button")).some((b) => b.textContent.trim() === "Pay"), B.fullName, { timeout: 30000 });
   assert.equal(await page.evaluate(() => window.__micAsked), 1);
+  // The card is the server's answer for the heard ID (name looked up, not
+  // carried in the sound), with the asked amount on it.
+  assert.ok(api.calls.some((c) => c.method === "GET" && c.path === "/api/users/resolve" && decodeURIComponent(c.query).includes(B.symbolId)), "the heard ID was looked up on the server");
+  assert.match(await page.evaluate(() => document.body.innerText), /250/);
+  if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + "-heard-card.png" });
   await tap(page.getByRole("button", { name: "Pay", exact: true }));
   await page.waitForFunction(() => [...document.querySelectorAll("input")].some((i) => /^250(\.00)?$/.test(i.value)) || /250\.00/.test(document.body.innerText), null, { timeout: 20000 });
   assert.deepEqual(errors, []);

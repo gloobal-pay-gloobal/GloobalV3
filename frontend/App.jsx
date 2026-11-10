@@ -1497,6 +1497,8 @@ function GloobalId() {
   // An amount heard with an ID over sound (soundPay.js), carried to Send.
   // A camera scan carries none, so it clears it.
   const soundPayAmountRef = useRef13("");
+  // The amount the other phone asked for by sound, shown on the card.
+  const [scanAskedAmount, setScanAskedAmount] = useState19("");
   const handleSoundHeard = (heard) => {
     const url = soundPayToUrl(heard);
     if (!url) return;
@@ -1510,6 +1512,7 @@ function GloobalId() {
   const handleQrScanned = async (rawCode, fromSound = null) => {
     if (scanBusyRef.current || scanRetry) return;
     soundPayAmountRef.current = (fromSound && fromSound.amount) || "";
+    setScanAskedAmount(soundPayAmountRef.current);
     setScanError(null);
     const parsed = parseGloobalPayPayload(rawCode);
     if (!parsed) {
@@ -5255,7 +5258,13 @@ function GloobalId() {
     background: T.surface, borderRadius: 999,
     padding: "7px 14px", marginBottom: 18,
     fontSize: 13, color: T.inkSoft
-  }}><ColoredGloobalId id={scanPayee.gloobalId} /></div></>;
+  }}><ColoredGloobalId id={scanPayee.gloobalId} /></div>{
+    /* Heard by sound with an amount: the request itself, on the card, so
+       the payer sees what they are about to pay before tapping Pay. */
+  }{scanAskedAmount && <div data-testid="scan-asked-amount" style={{ display: "inline-flex", alignItems: "baseline", gap: 6, background: "rgba(255,255,255,0.18)", borderRadius: 16, padding: "10px 18px", marginBottom: 18, color: scanDetailsShown ? scanBackdropFor(scanPayee.gloobalId).from : "#fff" }}>
+    <span style={{ fontSize: 12.5, fontWeight: 700, opacity: 0.85 }}>Asking for</span>
+    <span style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{fmtMoney(Number(scanAskedAmount), COUNTRY_CURRENCY[String(scanPayee.countryIso || dialCountry.iso || "").toUpperCase()] || "INR")}</span>
+  </div>}</>;
   })()}<button
     onClick={handleSendToScanned}
     className="v2-tap"

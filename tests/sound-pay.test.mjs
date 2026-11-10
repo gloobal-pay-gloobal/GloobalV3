@@ -81,3 +81,16 @@ test("silence and plain noise are never heard as anyone", () => {
   assert.deepEqual(hear(s, rate), []);
   assert.deepEqual(hear(new Float32Array(rate * 3), rate), []);
 });
+
+test("the sound carries the CURRENT ID: the sheet reads the same state an ID change writes", () => {
+  // App: an ID change sets secureId; the Dashboard gets it as myGloobalId;
+  // the Earn sheet plays myGloobalId. No copy of the old ID in between.
+  const app = fs.readFileSync(new URL("../frontend/App.jsx", import.meta.url), "utf8");
+  const dash = fs.readFileSync(new URL("../frontend/screens/Dashboard/Dashboard.jsx", import.meta.url), "utf8");
+  assert.match(app, /const handleGloobalIdChanged = \(newSymbolId\) => \{[\s\S]{0,400}setSecureId\(newSymbolId\);/);
+  assert.match(app, /myGloobalId=\{secureId\}/);
+  assert.match(dash, /<EarnSheet\s+gloobalId=\{myGloobalId\}/);
+  // And the payer never trusts the sound for a name: the heard ID goes down
+  // the QR path, which looks the ID up on the server.
+  assert.match(app, /const handleSoundHeard = \(heard\) => \{[\s\S]{0,500}handleQrScanned\(url, \{ amount: heard\.amount \|\| "" \}\);/);
+});

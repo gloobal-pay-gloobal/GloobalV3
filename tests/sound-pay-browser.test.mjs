@@ -32,7 +32,8 @@ test("the receiver plays its ID and the amount, and the sound decodes to exactly
     window.__played = [];
     const start = AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start = function (...args) {
-      if (this.buffer) window.__played.push({ rate: this.buffer.sampleRate, data: Array.from(this.buffer.getChannelData(0)) });
+      // Skip the one-sample silent buffer soundPayUnlock plays on the tap.
+      if (this.buffer && this.buffer.length > 1) window.__played.push({ rate: this.buffer.sampleRate, data: Array.from(this.buffer.getChannelData(0)) });
       return start.apply(this, args);
     };
   });
@@ -99,6 +100,57 @@ test("the payer listens: the receiver's card opens, and Pay brings the amount to
   assert.equal(await page.evaluate(() => window.__micAsked), 1);
   await tap(page.getByRole("button", { name: "Pay", exact: true }));
   await page.waitForFunction(() => [...document.querySelectorAll("input")].some((i) => /^250(\.00)?$/.test(i.value)) || /250\.00/.test(document.body.innerText), null, { timeout: 20000 });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("the self-test: one phone plays and hears its own ID, and says so; a meter shows while listening", async () => {
+  // The fake microphone hears A's own chirp (quiet, under noise), the way
+  // the phone's mic hears its own speaker.
+  const rate = 48000;
+  const clean = S.soundPaySamples(S.soundPayEncode({ gloobalId: A.symbolId, side: "person", amount: "" }), rate);
+  const lead = new Float32Array(rate * 1.5);
+  const mic = new Float32Array(lead.length + clean.length);
+  let seed = 11;
+  for (let i = 0; i < mic.length; i += 1) {
+    seed = (seed * 16807) % 2147483647;
+    mic[i] = (i >= lead.length ? clean[i - lead.length] * 0.2 : 0) + (seed / 2147483647 - 0.5) * 0.03;
+  }
+  const { page, context, errors } = await openPage({ account: A });
+  await context.addInitScript(({ samples, rate }) => {
+    navigator.mediaDevices.getUserMedia = async (c) => {
+      if (c && c.audio && !c.video) {
+        const ctx = new AudioContext({ sampleRate: rate });
+        await ctx.resume();
+        const buf = ctx.createBuffer(1, samples.length, rate);
+        buf.copyToChannel(Float32Array.from(samples), 0);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const dest = ctx.createMediaStreamDestination();
+        src.connect(dest);
+        src.start();
+        return dest.stream;
+      }
+      throw new DOMException("no camera", "NotAllowedError");
+    };
+  }, { samples: Array.from(mic), rate });
+  await page.reload();
+  await page.waitForSelector("#root *", { timeout: 15000 });
+  await login(page, A);
+  await page.waitForTimeout(1500);
+  await tap(page.getByTestId("earn-orb"));
+  await tap(page.getByTestId("sound-pay-selftest"));
+  await page.getByTestId("sound-pay-selftest-result").waitFor({ timeout: 20000 });
+  const r = page.getByTestId("sound-pay-selftest-result");
+  assert.equal(await r.getAttribute("data-ok"), "1", await r.innerText());
+  assert.match(await r.innerText(), /hears its own ID/);
+
+  // The Listen button on Scan shows a meter while it listens.
+  await page.getByRole("button", { name: "Close", exact: true }).last().evaluate((n) => n.click());
+  await page.getByTestId("earn-sheet").waitFor({ state: "detached", timeout: 8000 });
+  await tap(page.getByRole("button", { name: "Scanner", exact: true }));
+  await tap(page.getByTestId("sound-pay-listen"));
+  await page.getByTestId("sound-pay-meter").waitFor({ timeout: 8000 });
   assert.deepEqual(errors, []);
   await context.close();
 });

@@ -41,10 +41,11 @@ function SoundPayPlayPanel({ gloobalId, side, onToast, startOpen = false }) {
   }
   const play = async () => {
     if (playing) return;
+    soundPayUnlock(); // inside the tap: a browser only starts audio from one
     setPlaying(true);
     try {
       const ok = await soundPayPlay({ gloobalId, side, amount });
-      if (!ok) onToast?.("This phone can't play the sound");
+      if (!ok) onToast?.("This phone can't play the sound. Turn the volume up and tap Play again.");
     } catch (e) {
       onToast?.("Couldn't play the sound");
     } finally {
@@ -70,13 +71,35 @@ function SoundPayPlayPanel({ gloobalId, side, onToast, startOpen = false }) {
     onClick={play}
     disabled={playing}
     style={{ marginTop: 12, width: "100%", height: 46, borderRadius: 14, border: "none", cursor: playing ? "default" : "pointer", background: T.gradButton, color: "#fff", fontSize: 14.5, fontWeight: 800, fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, opacity: playing ? 0.85 : 1 }}
-  >{playing ? <><SoundWaves on color="#fff" />Playing…</> : <><SoundPlayIcon size={17} color="#fff" />{amount ? `Play · ${amount}` : "Play"}</>}</button></div>;
+  >{playing ? <><SoundWaves on color="#fff" />Playing…</> : <><SoundPlayIcon size={17} color="#fff" />{amount ? `Play · ${amount}` : "Play"}</>}</button><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint, textAlign: "center", marginTop: 8 }}>Volume up{soundPayIsApple() ? " · silent switch off" : ""} · phones within arm's reach</div></div>;
 }
 
 // On the Scan screen. Listens until heard, stopped, or 20 seconds pass.
+var SOUND_PAY_LISTEN_ERRORS = {
+  no_microphone: "This phone can't listen from a web page",
+  audio_locked: "Tap Listen to start listening",
+  mic_lost: "The microphone was taken away. Tap Listen again.",
+  NotAllowedError: "Allow the microphone to listen for a phone nearby",
+  NotFoundError: "No microphone on this phone"
+};
+function soundPayListenMessage(e) {
+  return SOUND_PAY_LISTEN_ERRORS[(e && (e.message || e.name)) || ""] || SOUND_PAY_LISTEN_ERRORS[e && e.name] || "Couldn't listen. Tap Listen again.";
+}
+// After 20 s of nothing: say what the microphone DID hear, so the two
+// people know whether to move closer, turn the volume up, or tap Play.
+function soundPayNothingHeard(stats) {
+  if (!stats || !stats.blocks) return "Didn't hear a GLOOBAL phone. Ask them to tap Play again.";
+  if (stats.loud < stats.blocks * 0.05) return "Heard nothing at all. Is their volume up? Bring the phones closer and ask them to tap Play.";
+  if (!stats.tones) return "Heard sound, but not a GLOOBAL phone. Bring the phones closer and ask them to tap Play again.";
+  return "Heard GLOOBAL tones but not the whole ID. Hold the phones still, closer, and ask them to tap Play again.";
+}
+
 function SoundPayListenButton({ onHeard, onToast, disabled, autoStart = false }) {
   const [listening, setListening] = useState99(false);
+  const [meter, setMeter] = useState99(0); // 0..1, what the mic hears right now
+  const [hearingTone, setHearingTone] = useState99(false);
   const sessionRef = useRef57(null);
+  const meterAtRef = useRef57(0);
   useEffect96(() => () => { if (sessionRef.current) sessionRef.current.stop(); }, []);
   // From the Earn orb's "Pay" (Dashboard): the person has already said
   // "listen", so listening starts as the screen opens, with no second tap.
@@ -86,18 +109,32 @@ function SoundPayListenButton({ onHeard, onToast, disabled, autoStart = false })
       if (sessionRef.current) sessionRef.current.stop();
       return;
     }
-    const session = soundPayListen({ timeoutMs: 20000 });
+    soundPayUnlock(); // inside the tap, where a browser lets audio start
+    const session = soundPayListen({
+      timeoutMs: 20000,
+      onLevel: ({ level, tone }) => {
+        // Redraw at most every 100 ms: a bar that grows with the sound, and
+        // a mark when it is one of OUR tones.
+        const now = Date.now();
+        if (now - meterAtRef.current < 100) return;
+        meterAtRef.current = now;
+        setMeter(Math.min(1, Math.log10(1 + level * 300) / 2.5));
+        setHearingTone(tone >= 0);
+      }
+    });
     sessionRef.current = session;
     setListening(true);
     try {
       const heard = await session.done;
       if (heard) onHeard(heard);
-      else onToast?.("Didn't hear a GLOOBAL phone. Ask them to tap Play again.");
+      else if (sessionRef.current === session) onToast?.(soundPayNothingHeard(session.stats()));
     } catch (e) {
-      onToast?.("Allow the microphone to listen for a phone nearby");
+      onToast?.(soundPayListenMessage(e));
     } finally {
       sessionRef.current = null;
       setListening(false);
+      setMeter(0);
+      setHearingTone(false);
     }
   };
   return <button
@@ -107,7 +144,36 @@ function SoundPayListenButton({ onHeard, onToast, disabled, autoStart = false })
     onClick={toggle}
     disabled={disabled}
     style={{ pointerEvents: "auto", height: 40, padding: "0 16px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.35)", background: listening ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.45)", color: listening ? "#111" : "#fff", fontSize: 13.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
-  >{listening ? <><SoundWaves on color="#111" />Listening… tap to stop</> : <><SoundEarIcon size={14} color="#fff" />Listen for a phone nearby</>}</button>;
+  >{listening ? <><SoundWaves on color="#111" />Listening… tap to stop<span data-testid="sound-pay-meter" data-tone={hearingTone ? "1" : "0"} aria-hidden="true" style={{ width: 34, height: 6, borderRadius: 6, background: "rgba(0,0,0,0.12)", overflow: "hidden", display: "inline-block" }}><span style={{ display: "block", height: "100%", width: `${Math.round(meter * 100)}%`, background: hearingTone ? "#16a34a" : "#6b7280", transition: "width 100ms linear" }} /></span></> : <><SoundEarIcon size={14} color="#fff" />Listen for a phone nearby</>}</button>;
+}
+
+// "Does sound pay work on THIS phone?" — plays and listens on the one
+// phone. Lives in the Earn sheet so anyone can check before trying it with
+// someone else, and so a report ("it didn't work") comes with a reason.
+function SoundPaySelfTest({ gloobalId, side }) {
+  const [state, setState] = useState99(null); // null | "running" | { ok, text }
+  const run = async () => {
+    if (state === "running") return;
+    soundPayUnlock();
+    setState("running");
+    const r = await soundPaySelfTest({ gloobalId, side });
+    let text;
+    if (r.ok) text = "This phone hears its own ID. Sound pay works here.";
+    else if (r.error === "audio_locked") text = "Audio is locked. Tap Test again.";
+    else if (r.error === "no_microphone" || r.error === "NotAllowedError" || r.error === "NotFoundError") text = soundPayListenMessage({ message: r.error });
+    else if (r.error === "mic_lost") text = "The microphone was taken away mid-test (the camera or another app). Close other apps and test again.";
+    else if (r.error === "no_speaker") text = "Couldn't play the sound. Turn the volume up and test again.";
+    else if (!r.stats || r.stats.loud < r.stats.blocks * 0.05) text = `Played, but the microphone heard nothing (peak ${(20 * Math.log10(Math.max(r.stats && r.stats.peak || 1e-6, 1e-6))).toFixed(0)} dB). Turn the volume up${soundPayIsApple() ? ", switch off silent," : ""} and test again.`;
+    else if (!r.stats.tones) text = "The microphone heard sound but none of the GLOOBAL tones. Turn the volume up and test again.";
+    else text = "Heard the tones but not the whole ID. Try again in a quieter spot.";
+    setState({ ok: r.ok, text });
+  };
+  return <div style={{ marginTop: 12, textAlign: "center" }}>
+    <button type="button" data-testid="sound-pay-selftest" onClick={run} disabled={state === "running"} style={{ border: "none", background: "transparent", color: T.accent, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", padding: "6px 10px" }}>
+      {state === "running" ? "Testing… (listen for the chirp)" : "Test sound pay on this phone"}
+    </button>
+    {state && state !== "running" && <div data-testid="sound-pay-selftest-result" data-ok={state.ok ? "1" : "0"} style={{ fontSize: 12, fontWeight: 600, color: state.ok ? "#16a34a" : T.inkSoft, lineHeight: 1.4, padding: "0 6px" }}>{state.text}</div>}
+  </div>;
 }
 
 // ── EARN: THE ORB IN THE MIDDLE OF THE FOUR (personal side) ─────────────
@@ -154,8 +220,9 @@ function EarnSheet({ gloobalId, side, onClose, onPay, onToast }) {
         ? <div style={{ marginTop: 14 }}><SoundPayPlayPanel gloobalId={gloobalId} side={side} onToast={onToast} startOpen /></div>
         : <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
           {big("earn-receive", SoundPlayIcon, "Get paid", "Play my ID for the phone next to me", () => setMode("receive"), "rgba(34,197,94,0.14)")}
-          {big("earn-pay", SoundEarIcon, "Pay", "Listen for their phone, then pay", onPay, "rgba(239,68,68,0.12)")}
+          {big("earn-pay", SoundEarIcon, "Pay", "Listen for their phone, then pay", () => { soundPayUnlock(); onPay(); }, "rgba(239,68,68,0.12)")}
         </div>}
+      {mode !== "receive" && <SoundPaySelfTest gloobalId={gloobalId} side={side} />}
     </div>
   </div>;
 }

@@ -156,7 +156,7 @@ function soundPaySamples(values, sampleRate = SOUND_PAY_RATE_HINT, { plays = SOU
 // clearly stands out from the rest and from silence. A tone counts once it
 // has held for three blocks; START opens a frame, END closes it, and the
 // frame is decoded. `onHeard` is called with { gloobalId, side, amount }.
-function soundPayListener(sampleRate, onHeard) {
+function soundPayListener(sampleRate, onHeard, onLevel) {
   const block = Math.max(256, Math.round(sampleRate * 0.01));
   const coeffs = Array.from({ length: SOUND_PAY_TONES }, (_, i) => 2 * Math.cos((2 * Math.PI * soundPayFreq(i)) / sampleRate));
   let buf = new Float32Array(block);
@@ -171,7 +171,10 @@ function soundPayListener(sampleRate, onHeard) {
     let energy = 0;
     for (let i = 0; i < block; i += 1) energy += buf[i] * buf[i];
     energy /= block;
-    if (energy < 1e-6) return -1;
+    lastEnergy = energy;
+    // −80 dBFS. With auto-gain off, a phone a metre away can arrive near
+    // −60 dBFS; the old floor (−60) threw those blocks away as silence.
+    if (energy < 1e-8) return -1;
     let best = -1;
     let bestP = 0;
     let second = 0;
@@ -208,8 +211,14 @@ function soundPayListener(sampleRate, onHeard) {
     if (frame.length > 1 + 12 + SOUND_PAY_MAX_AMOUNT_CHARS + 2) frame = null;
   };
 
+  let lastEnergy = 0;
+  let blocks = 0;
   const step = () => {
     const sym = blockSymbol();
+    // Every 5th block (50 ms): how loud, and which tone if any — for the
+    // meter under "Listening…", so a phone that hears nothing says so.
+    blocks += 1;
+    if (onLevel && blocks % 5 === 0) onLevel({ level: Math.sqrt(lastEnergy), tone: sym });
     if (sym === run) {
       runLen += 1;
     } else {
@@ -238,6 +247,19 @@ function soundPayListener(sampleRate, onHeard) {
 }
 
 // ── THE PHONE'S SPEAKER AND MICROPHONE ──────────────────────────────────
+//
+// What goes wrong on a real phone is rarely the signal; it is the browser:
+//
+//   - A browser will not start audio until the page has had a tap. The
+//     AudioContext is made and resumed INSIDE the tap (soundPayUnlock, from
+//     the Play / Pay / Listen buttons), never later from an effect.
+//   - On iPhone the hardware sample rate changes when the microphone opens,
+//     and an AudioContext made before that goes silent. Listening makes a
+//     fresh context AFTER getUserMedia, and closes it when done.
+//   - On iPhone the silent switch mutes Web Audio but not <audio> elements,
+//     so playback goes through an <audio> element there.
+//   - A microphone track the system takes away (another app, the camera on
+//     an older iPhone) ends silently; that is reported, not waited on.
 
 var soundPayAudioContext = null;
 function soundPayContext() {
@@ -247,64 +269,161 @@ function soundPayContext() {
   return soundPayAudioContext;
 }
 
-// Plays the ID (and amount). Resolves when the last play has finished, or
-// false if this phone cannot play sound from a web page.
+function soundPayIsApple() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
+// Call from a tap handler. Makes the context, resumes it and plays one
+// silent sample, which is what unlocks audio on iPhone and Android alike.
+// Also readies the <audio> element used for playback on iPhone.
+var soundPayMediaEl = null;
+function soundPayUnlock() {
+  const ctx = soundPayContext();
+  if (!ctx) return null;
+  try {
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const b = ctx.createBuffer(1, 1, ctx.sampleRate);
+    const src = ctx.createBufferSource();
+    src.buffer = b;
+    src.connect(ctx.destination);
+    src.start(0);
+  } catch (e) { /* best effort */ }
+  if (soundPayIsApple() && typeof document !== "undefined" && !soundPayMediaEl) {
+    try {
+      const el = document.createElement("audio");
+      el.setAttribute("playsinline", "");
+      el.autoplay = true;
+      el.muted = false;
+      soundPayMediaEl = el;
+    } catch (e) { /* no element */ }
+  }
+  return ctx;
+}
+
+// Waits (up to `ms`) for the context to actually run.
+async function soundPayRunning(ctx, ms = 1500) {
+  if (ctx.state === "running") return true;
+  try { await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, ms))]); } catch (e) { /* locked */ }
+  if (ctx.state === "running") return true;
+  await new Promise((r) => setTimeout(r, 150));
+  return ctx.state === "running";
+}
+
+// Plays the ID (and amount). Resolves true when the last play has finished,
+// or false if this phone cannot play sound from a web page (or audio is
+// still locked: no tap has reached it yet).
 async function soundPayPlay({ gloobalId, side, amount }) {
   const values = soundPayEncode({ gloobalId, side, amount });
-  const ctx = soundPayContext();
+  const ctx = soundPayUnlock();
   if (!values || !ctx) return false;
-  if (ctx.state === "suspended") await ctx.resume();
+  if (!(await soundPayRunning(ctx))) return false;
   const samples = soundPaySamples(values, ctx.sampleRate);
   const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate);
   buffer.copyToChannel(samples, 0);
   const src = ctx.createBufferSource();
   src.buffer = buffer;
-  src.connect(ctx.destination);
+  let viaElement = false;
+  if (soundPayMediaEl && typeof ctx.createMediaStreamDestination === "function") {
+    // iPhone: through an <audio> element, which the silent switch does
+    // not mute. If the element will not play, fall back to the speaker
+    // output directly.
+    try {
+      const dest = ctx.createMediaStreamDestination();
+      src.connect(dest);
+      soundPayMediaEl.srcObject = dest.stream;
+      await soundPayMediaEl.play();
+      viaElement = true;
+    } catch (e) {
+      try { src.disconnect(); } catch (e2) { /* nothing connected */ }
+    }
+  }
+  if (!viaElement) src.connect(ctx.destination);
   return new Promise((resolve) => {
-    src.onended = () => resolve(true);
+    src.onended = () => {
+      if (viaElement) { try { soundPayMediaEl.pause(); soundPayMediaEl.srcObject = null; } catch (e) { /* gone */ } }
+      resolve(true);
+    };
     src.start();
   });
 }
 
 // Listens on the microphone until an ID is heard or `timeoutMs` passes.
-// Returns { stop, done }, where done resolves to the heard
-// { gloobalId, side, amount }, or null (timed out / stopped), and rejects if
-// the microphone could not be opened.
-function soundPayListen({ timeoutMs = 20000 } = {}) {
+// Returns { stop, done, level }, where done resolves to the heard
+// { gloobalId, side, amount }, or null (timed out / stopped), and rejects
+// with Error("no_microphone" | "audio_locked" | "mic_lost") when it could
+// not listen at all. `onLevel({ level, tone })` is called every 50 ms while
+// listening; `stats()` says what was heard overall.
+function soundPayListen({ timeoutMs = 20000, onLevel } = {}) {
   let stopFn = () => {};
+  const stats = { blocks: 0, loud: 0, tones: 0, peak: 0 };
   const done = (async () => {
-    const ctx = soundPayContext();
-    if (!ctx || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("no_microphone");
-    if (ctx.state === "suspended") await ctx.resume();
+    if (typeof navigator === "undefined" || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("no_microphone");
     // Echo cancelling, noise suppression and automatic gain are made for
     // voices and treat a steady tone as noise to remove; all three off.
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     });
-    return new Promise((resolve) => {
+    // A FRESH context, made after the microphone is open (iPhone changes
+    // the hardware rate when it opens; the shared context would go quiet).
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    if (!(await soundPayRunning(ctx))) {
+      stream.getTracks().forEach((t) => t.stop());
+      try { ctx.close(); } catch (e) { /* already */ }
+      throw new Error("audio_locked");
+    }
+    return new Promise((resolve, reject) => {
       const source = ctx.createMediaStreamSource(stream);
       const node = ctx.createScriptProcessor(2048, 1, 1);
       const sink = ctx.createGain();
       sink.gain.value = 0;
       let finished = false;
-      const finish = (result) => {
+      const finish = (result, error) => {
         if (finished) return;
         finished = true;
         clearTimeout(timer);
         try { node.disconnect(); source.disconnect(); sink.disconnect(); } catch (e) { /* already gone */ }
         stream.getTracks().forEach((t) => t.stop());
-        resolve(result);
+        try { ctx.close(); } catch (e) { /* already */ }
+        if (error) reject(error); else resolve(result);
       };
-      const listener = soundPayListener(ctx.sampleRate, (heard) => finish(heard));
+      const listener = soundPayListener(ctx.sampleRate, (heard) => finish(heard), (lv) => {
+        stats.blocks += 1;
+        if (lv.level > 0.002) stats.loud += 1;
+        if (lv.tone >= 0) stats.tones += 1;
+        if (lv.level > stats.peak) stats.peak = lv.level;
+        if (onLevel) onLevel(lv);
+      });
       node.onaudioprocess = (e) => listener.push(e.inputBuffer.getChannelData(0));
       source.connect(node);
       // A ScriptProcessor only runs while connected to the output; through
       // a silent gain so nothing is heard.
       node.connect(sink);
       sink.connect(ctx.destination);
+      // The system took the microphone away (another app, or the camera on
+      // an older iPhone): say so rather than listen to nothing.
+      stream.getTracks().forEach((t) => { t.onended = () => finish(null, new Error("mic_lost")); });
       const timer = setTimeout(() => finish(null), timeoutMs);
       stopFn = () => finish(null);
     });
   })();
-  return { stop: () => stopFn(), done };
+  return { stop: () => stopFn(), done, stats: () => stats };
+}
+
+// One phone, speaker to its own microphone: the whole chain on the device
+// in hand, so "does this phone's sound pay work?" has an answer without a
+// second phone. Resolves { ok, heard, stats, error }.
+async function soundPaySelfTest({ gloobalId, side = "either" } = {}) {
+  const session = soundPayListen({ timeoutMs: 9000 });
+  let error = null;
+  // Give the microphone a moment to open before playing.
+  const played = new Promise((r) => setTimeout(r, 700)).then(() => soundPayPlay({ gloobalId, side, amount: "" }));
+  let heard = null;
+  try { heard = await session.done; } catch (e) { error = e && e.message; }
+  const didPlay = await played;
+  if (!didPlay && !error) error = "no_speaker";
+  const stats = session.stats();
+  return { ok: Boolean(heard && heard.gloobalId === gloobalId), heard, stats, error };
 }

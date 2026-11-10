@@ -127,7 +127,27 @@ function soundPayToUrl(heard) {
 
 // The signal as audio samples, played SOUND_PAY_PLAYS times. One generator
 // for the speaker and for the tests, so what is tested is what is played.
-function soundPaySamples(values, sampleRate = SOUND_PAY_RATE_HINT, { plays = SOUND_PAY_PLAYS, volume = 0.6 } = {}) {
+// The decoder's knobs, tunable so the range can be measured (tests/sound-pay-range):
+//   BLOCK_MS  how long each analysis block is; longer = more energy per
+//             decision (+3 dB per doubling), fewer decisions per tone
+//   CLEAR     how far the winning tone's power must stand above the
+//             runner-up's; the CRC and the START/END frame catch a wrong
+//             symbol that slips past a smaller margin
+//   SHARE     the share of the block's energy the winner must carry
+// Range (tests/sound-pay-range.mjs, a simulated room): from the first
+// settings (volume 0.6, margin 4×, three blocks in a row, auto-gain off)
+// to these (0.95, 2.5×, a 3-of-6 vote, auto-gain on) the quietest signal
+// that still decodes went from −42 to −56 dBFS: 14 dB, about three to
+// four times the distance. Longer tones and longer blocks did not help.
+var SOUND_PAY_BLOCK_MS = 10;
+var SOUND_PAY_CLEAR = 2.5;
+var SOUND_PAY_SHARE = 0.04;
+var SOUND_PAY_VOLUME = 0.95;
+//   VOTE / VOTE_WINDOW  a tone counts once it has won VOTE of the last
+//             VOTE_WINDOW blocks (0 = three in a row, the older rule)
+var SOUND_PAY_VOTE = 3;
+var SOUND_PAY_VOTE_WINDOW = 6;
+function soundPaySamples(values, sampleRate = SOUND_PAY_RATE_HINT, { plays = SOUND_PAY_PLAYS, volume = SOUND_PAY_VOLUME } = {}) {
   const tone = Math.round((SOUND_PAY_TONE_MS / 1000) * sampleRate);
   const gap = Math.round((SOUND_PAY_GAP_MS / 1000) * sampleRate);
   const between = Math.round((SOUND_PAY_PLAY_GAP_MS / 1000) * sampleRate);
@@ -157,13 +177,14 @@ function soundPaySamples(values, sampleRate = SOUND_PAY_RATE_HINT, { plays = SOU
 // has held for three blocks; START opens a frame, END closes it, and the
 // frame is decoded. `onHeard` is called with { gloobalId, side, amount }.
 function soundPayListener(sampleRate, onHeard, onLevel) {
-  const block = Math.max(256, Math.round(sampleRate * 0.01));
+  const block = Math.max(256, Math.round(sampleRate * (SOUND_PAY_BLOCK_MS / 1000)));
   const coeffs = Array.from({ length: SOUND_PAY_TONES }, (_, i) => 2 * Math.cos((2 * Math.PI * soundPayFreq(i)) / sampleRate));
   let buf = new Float32Array(block);
   let fill = 0;
   let run = -1;
   let runLen = 0;
   let accepted = -1;
+  const recent = [];
   let frame = null;
   const power = new Float64Array(SOUND_PAY_TONES);
 
@@ -193,8 +214,8 @@ function soundPayListener(sampleRate, onHeard, onLevel) {
     }
     // The winner has to stand clear of the runner-up and carry a fair share
     // of the block's energy; otherwise it is noise or a gap.
-    if (best < 0 || bestP < second * 4) return -1;
-    if (bestP / (block * block) < energy * 0.08) return -1;
+    if (best < 0 || bestP < second * SOUND_PAY_CLEAR) return -1;
+    if (bestP / (block * block) < energy * SOUND_PAY_SHARE) return -1;
     return best;
   };
 
@@ -219,6 +240,20 @@ function soundPayListener(sampleRate, onHeard, onLevel) {
     // meter under "Listening…", so a phone that hears nothing says so.
     blocks += 1;
     if (onLevel && blocks % 5 === 0) onLevel({ level: Math.sqrt(lastEnergy), tone: sym });
+    if (SOUND_PAY_VOTE_WINDOW > 0) {
+      // A vote over the last few blocks: a tone counts once it has won
+      // SOUND_PAY_VOTE of the last SOUND_PAY_VOTE_WINDOW blocks, in any
+      // order. A faint tone that noise knocks out for one block in the
+      // middle still counts, where three-in-a-row would have lost it.
+      recent.push(sym);
+      if (recent.length > SOUND_PAY_VOTE_WINDOW) recent.shift();
+      if (sym >= 0 && sym !== accepted) {
+        let n = 0;
+        for (let i = 0; i < recent.length; i += 1) if (recent[i] === sym) n += 1;
+        if (n >= SOUND_PAY_VOTE) { accepted = sym; accept(sym); }
+      }
+      return;
+    }
     if (sym === run) {
       runLen += 1;
     } else {
@@ -360,10 +395,13 @@ function soundPayListen({ timeoutMs = 20000, onLevel } = {}) {
   const stats = { blocks: 0, loud: 0, tones: 0, peak: 0 };
   const done = (async () => {
     if (typeof navigator === "undefined" || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("no_microphone");
-    // Echo cancelling, noise suppression and automatic gain are made for
-    // voices and treat a steady tone as noise to remove; all three off.
+    // Echo cancelling and noise suppression are made for voices and treat
+    // a steady tone as noise to remove: both off. Automatic gain is ON: it
+    // lifts a faint chirp from a phone a few metres away (worth ~6 dB in
+    // the room simulation), and the decoder's margin tests are relative,
+    // so the louder noise floor it brings costs nothing.
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true }
     });
     // A FRESH context, made after the microphone is open (iPhone changes
     // the hardware rate when it opens; the shared context would go quiet).

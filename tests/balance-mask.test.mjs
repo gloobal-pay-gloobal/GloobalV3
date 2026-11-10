@@ -116,7 +116,7 @@ describe("the mask cannot be read", () => {
 
   test("no drawing mentions money, and none of them has a second face", () => {
     for (const [name, art] of drawings()) {
-      assert.doesNotMatch(art, /balance|amount|total|spend|budget|rupee|GLEU/i,
+      assert.doesNotMatch(art, /balance|amount|total|spend|budget|rupee|\bCEL\b|GLEU/i,
         `the ${name} drawing refers to something about the account`);
       // A character drawn two ways — one cheerful, one not — is the leak
       // arriving by the back door. Each branch returns exactly one picture.

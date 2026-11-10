@@ -119,7 +119,7 @@ describe("a share leg reaches history", () => {
     // The line grew a branch above it: a coin mint and a coin redeem both
     // write fromUserId = the holder and toUserId = null, so fromUserId
     // cannot tell a BUY from a SELL and reported both as 'sent' — a purchase
-    // showed as GLEU leaving an account that had just gained it. Those read
+    // showed as CEL leaving an account that had just gained it. Those read
     // their direction from `type` instead. A share leg is unaffected: it has
     // two real accounts, and fromUserId is the answer.
     assert.match(server, /isSender \? 'sent' : 'received'/);

@@ -145,11 +145,10 @@ var DAILY_SPENDING_PALETTES = {
 // and a mismatch between them shows as a wrap nobody expected.
 var SPENDING_FIGURE_ROOM_PAIR = 133;
 var SPENDING_FIGURE_ROOM_SOLO = 276;
-// 10, not 11: the unit's name is GLEU now, one letter longer than GEU, and
-// at 11px a seven-figure week with its name no longer fits in 133px. One
-// point smaller keeps the number whole; a wrapped number is not readable at
-// any size.
-var SPENDING_FIGURE_MIN = 10;
+// 11 again: the unit's name is CEL, three letters like GEU. (It was 10 while
+// the name was GLEU: at 11px a seven-figure week with a four-letter name
+// did not fit in 133px.)
+var SPENDING_FIGURE_MIN = 11;
 
 function DailySpendingChart({ weeks, totals, focusDirection = null, palette = "dark", trailing = null, leading = null, currencyCode, lens = null }) {
   // One formatter for every figure below, so a total and a day's callout

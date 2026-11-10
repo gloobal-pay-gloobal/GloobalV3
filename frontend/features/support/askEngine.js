@@ -68,7 +68,7 @@ var ASK_SYN = [
   ["wrong", ["wrong", "galat", "glat", "गलत", "தவற"]],
   ["history", ["history", "histry", "receipt", "reciept", "statement", "रसीद", "हिस्ट्री", "ரசீத", "வரலாற"]],
   ["essentials", ["essential", "esential", "ज़रूर", "जरूर", "எசென்ஷ"]],
-  ["geu", ["gleu", "glue", "geu", "gue"]],
+  ["geu", ["cel", "gleu", "glue", "geu", "gue"]],
   ["notify", ["notif", "alert", "सूचना", "नोटिफ", "அறிவிப்ப"]],
   ["pin", ["pin", "पिन", "பின"]],
   ["receive", ["receiv", "reciev", "milt", "milega", "मिलेग", "मिलत", "பெற"]],

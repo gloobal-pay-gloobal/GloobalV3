@@ -175,7 +175,7 @@ function gloobalNotifWhoLabel(meta, row) {
 
 // ── THE UNIT, WRITTEN OUT ────────────────────────────────────────────────
 //
-// "Indian Rupee", "US Dollar", "Gloobal Energy Unit". The code is on the
+// "Indian Rupee", "US Dollar", "Circular Energy Loop". The code is on the
 // page beside it; this is the gloss.
 //
 // Why it is needed at all, when the headline already carries a symbol: the

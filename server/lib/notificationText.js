@@ -88,7 +88,7 @@ function formatBannerMoney(amount, currency) {
 //
 // GEU is never written without the currency beside it — that is the rule
 // the whole lens exists to keep.
-// The stored code is GEU; the name people read is GLEU (lib/coinTicker.js).
+// The stored code is GEU; the name people read is CEL (lib/coinTicker.js).
 var GEU_TICKER = require('./coinTicker').COIN_TICKER;
 var GEU_CODE = require('./coinTicker').COIN_CURRENCY;
 function realCode(currency) {

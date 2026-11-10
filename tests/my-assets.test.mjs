@@ -108,7 +108,7 @@ describe("each seed carries its own chain, end to end", () => {
     // The chain was paid → worth now → paid. The third was the SAME
     // NUMBER as the first, on the same line, a few centimetres away. It
     // survived while a figure was "250.00₹"; once every figure carried
-    // its other name it became "250.00₹ │ GLEU" three times over, the row
+    // its other name it became "250.00₹ │ CEL" three times over, the row
     // ran out of width, and the repeat was ellipsized to "250.0…" —
     // taking the space and no longer stating the number.
     //

@@ -72,7 +72,7 @@ function fmt(n, currency) {
 // end, which is invisible in a diff and visible on a receipt.
 function currencySuffix(currency) {
   // The coin's stored code prints as its shown name (currencies.js: GEU is
-  // stored, GLEU is read).
+  // stored, CEL is read).
   if (typeof COIN_CURRENCY === "string" && String(currency || "").toUpperCase() === COIN_CURRENCY) {
     return ` ${COIN_TICKER}`;
   }

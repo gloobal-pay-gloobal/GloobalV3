@@ -65,7 +65,7 @@ var GEU_LENS_TOGGLE_MS = 220;
 var GEU_LENS_BORDER = 1;
 var GEU_LENS_PILL_PAD = 3;
 var GEU_LENS_DISC = 24;
-var GEU_LENS_CODE_W = 50; // room for "GLEU", one letter wider than GEU
+var GEU_LENS_CODE_W = 44; // room for "CEL" (50 while the name was GLEU)
 var GEU_LENS_PILL_H = GEU_LENS_DISC + GEU_LENS_PILL_PAD * 2 + GEU_LENS_BORDER * 2;
 var GEU_LENS_PILL_W = GEU_LENS_DISC + GEU_LENS_CODE_W + GEU_LENS_PILL_PAD * 3 + GEU_LENS_BORDER * 2;
 

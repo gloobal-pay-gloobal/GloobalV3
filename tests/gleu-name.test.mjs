@@ -1,10 +1,11 @@
 // tests/gleu-name.test.mjs
 //
-// GLEU is the name people read; GEU is the code that is stored.
+// CEL (Circular Energy Loop) is the name people read; GEU is the code that
+// is stored. (The name was GLEU, "said glue", for a day before it.)
 //
 //   - The stored code is still "GEU" on both sides (the browser bundle and
 //     the server), so no row, balance or ledger account changes.
-//   - Everything printed says GLEU: fmtMoney on a coin row, the lens pair,
+//   - Everything printed says CEL: fmtMoney on a coin row, the lens pair,
 //     the server's notification text, the guide's answer.
 //   - No screen prints the stored code by hand.
 //
@@ -23,35 +24,37 @@ const browser = loadDomain(["COIN_CURRENCY", "COIN_TICKER", "COIN_TICKER_LONG", 
 
 test("one code stored, one name shown, on both sides", () => {
   assert.equal(browser.COIN_CURRENCY, "GEU", "the stored code did not change");
-  assert.equal(browser.COIN_TICKER, "GLEU");
-  assert.equal(browser.COIN_TICKER_LONG, "Gloobal Local Energy Unit");
-  assert.equal(browser.COIN_TICKER_SAID, "glue");
+  assert.equal(browser.COIN_TICKER, "CEL");
+  assert.equal(browser.COIN_TICKER_LONG, "Circular Energy Loop");
+  assert.equal(browser.COIN_TICKER_SAID, "cell");
   const server = require("../server/lib/coinTicker.js");
   assert.equal(server.COIN_CURRENCY, browser.COIN_CURRENCY, "the two programs store the same code");
   assert.equal(server.COIN_TICKER, browser.COIN_TICKER, "and show the same name");
   assert.equal(server.COIN_TICKER_LONG, browser.COIN_TICKER_LONG);
 });
 
-test("a coin row prints GLEU, never its stored code", () => {
-  assert.equal(browser.fmtMoney(250, "GEU"), "250.00 GLEU");
-  assert.equal(browser.fmtMoney(250, "geu"), "250.00 GLEU");
+test("a coin row prints CEL, never its stored code", () => {
+  assert.equal(browser.fmtMoney(250, "GEU"), "250.00 CEL");
+  assert.equal(browser.fmtMoney(250, "geu"), "250.00 CEL");
   assert.equal(browser.currencySuffix("INR"), "₹", "other currencies as before");
   const notes = require("../server/lib/notificationText.js");
-  assert.equal(notes.formatBannerMoney(1200, "GEU"), "1,200.00 GLEU");
-  assert.match(notes.formatMoneyPair(250, "INR"), /^250\.00 GLEU │ ₹$/);
-  assert.match(notes.formatSpokenMoneyPair(250, "INR"), /^250\.00 GLEU, ₹$/);
+  assert.equal(notes.formatBannerMoney(1200, "GEU"), "1,200.00 CEL");
+  assert.match(notes.formatMoneyPair(250, "INR"), /^250\.00 CEL │ ₹$/);
+  assert.match(notes.formatSpokenMoneyPair(250, "INR"), /^250\.00 CEL, ₹$/);
 });
 
-test("the guide and Ask GLOOBAL say GLEU, and still understand someone asking about GEU", () => {
+test("the guide and Ask GLOOBAL say CEL, and still understand someone asking about GLEU or GEU", () => {
   const guide = src("server/lib/guideCards.js");
-  assert.match(guide, /q: "What is GLEU\?"/);
-  assert.match(guide, /GLEU is the Gloobal Local Energy Unit, said like \\"glue\\"/);
-  assert.match(guide, /asks: \["GLEU", "gleu", "glue", "what is geu"/, "the old name still finds the card");
+  assert.match(guide, /q: "What is CEL\?"/);
+  assert.match(guide, /CEL is the Circular Energy Loop: your own money, going round your community/);
+  assert.match(guide, /asks: \["CEL", "cel", "what is cel", "circular energy loop", "GLEU", "gleu", "glue", "what is geu"/, "the old names still find the card");
+  assert.doesNotMatch(guide, /Gloobal Local Unit|\bGLU\b/);
+  assert.doesNotMatch(guide, /Local Energy Unit/);
   assert.doesNotMatch(guide, /"GEU is another name/, "no answer still calls it GEU");
   const ask = src("frontend/features/support/askGloobal.jsx");
-  assert.match(ask, /topic_geu: "What is GLEU"/);
+  assert.match(ask, /topic_geu: "What is CEL"/);
   assert.doesNotMatch(ask, /topic_geu: "GEU /);
-  assert.match(src("frontend/features/support/askEngine.js"), /\["geu", \["gleu", "glue", "geu", "gue"\]\]/);
+  assert.match(src("frontend/features/support/askEngine.js"), /\["geu", \["cel", "gleu", "glue", "geu", "gue"\]\]/);
 });
 
 test("no screen prints the stored code or the old long name by hand", () => {

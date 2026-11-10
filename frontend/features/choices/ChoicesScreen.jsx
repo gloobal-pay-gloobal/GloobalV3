@@ -475,7 +475,7 @@ function ChoicesScreen({ onClose, history, ccyCode, onPay, onScan, embedded, onT
   />{
     /* ENERGY, NOT SPENDING.
 
-       GLEU is the Gloobal Local Energy Unit, so money leaving is energy used
+       CEL, the Circular Energy Loop, is framed as energy: money leaving is energy used
        and money arriving is energy created. Saying "Total spent" over a
        figure denominated in GEU asked a person to hold two vocabularies
        for one number. */

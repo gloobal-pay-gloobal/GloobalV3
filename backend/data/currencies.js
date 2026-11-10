@@ -227,10 +227,14 @@ var RATES = {
 // docs/GEU_GROWTH_DESIGN.md, because growth is deferred rather than
 // rejected — and when it arrives it belongs to THIS unit, not to a second
 // one alongside it.
-// ── GLEU: THE NAME PEOPLE SEE, AND GEU: THE CODE THAT IS STORED ──────────
+// ── CEL: THE NAME PEOPLE SEE, AND GEU: THE CODE THAT IS STORED ───────────
 //
-// The unit is GLEU, "Gloobal Local Energy Unit" — said like "glue", because
-// it sticks to local units: 1 GLEU is 1 of your own money. (GEU was said
+// The unit is CEL, the "Circular Energy Loop": money that goes round the
+// community, 1 CEL is 1 of your own money. Read as cell (stored energy),
+// shell (the first money, cowries) or sell; no "said like" line, so all
+// three stay open. Chosen by the founder on 10 Nov 2026; for a day before
+// it the name was GLEU, "Gloobal Local Energy Unit", which needed "said
+// glue" printed under it. CEL is no ISO 4217 code. (GEU was said
 // like "goo", which is not a word anyone wants near their money.)
 //
 // What is STORED does not change. Every coin row ever written carries the
@@ -240,16 +244,16 @@ var RATES = {
 // it. So:
 //
 //   COIN_CURRENCY  "GEU"   the code: what is stored, sent and compared.
-//   COIN_TICKER    "GLEU"  the name: what is printed, spoken and read.
+//   COIN_TICKER    "CEL"   the name: what is printed, spoken and read.
 //
 // currencySuffix (backend/utils/format.js) turns the code into the name, so
-// a screen that prints fmtMoney(amount, row.currency) shows GLEU without
+// a screen that prints fmtMoney(amount, row.currency) shows CEL without
 // knowing the row says GEU. Nothing shown to a person may print
 // COIN_CURRENCY; tests/gleu-name.test.mjs checks.
 var COIN_CURRENCY = "GEU";
-var COIN_TICKER = "GLEU";
-var COIN_TICKER_LONG = "Gloobal Local Energy Unit";
-var COIN_TICKER_SAID = "glue";
+var COIN_TICKER = "CEL";
+var COIN_TICKER_LONG = "Circular Energy Loop";
+var COIN_TICKER_SAID = "cell";
 
 // The same string, under the name the browser-side ledger accounts are
 // denominated in. It was declared in backend/domain/coin/CoinService.js,

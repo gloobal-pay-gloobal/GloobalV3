@@ -30,12 +30,12 @@
 // asserts the two agree, which is the only mechanism available across that
 // boundary.
 const COIN_CURRENCY = 'GEU';
-// The NAME people read and hear: GLEU, "Gloobal Local Energy Unit", said
-// like "glue" because it sticks to local units. The stored code above stays
+// The NAME people read and hear: CEL, the "Circular Energy Loop" (GLEU for
+// a day before it, 9–10 Nov 2026). The stored code above stays
 // GEU — every row ever written carries it. Anything the server writes for a
 // person (a notification, a guide answer) prints COIN_TICKER, never the code.
-const COIN_TICKER = 'GLEU';
-const COIN_TICKER_LONG = 'Gloobal Local Energy Unit';
+const COIN_TICKER = 'CEL';
+const COIN_TICKER_LONG = 'Circular Energy Loop';
 
 // ── WHAT THE OTHER SIDE OF A BUY OR A SELL IS CALLED ─────────────────────
 //

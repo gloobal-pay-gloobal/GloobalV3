@@ -159,7 +159,7 @@ const fmt = (n, places) =>
 // sign — "You sent 500.00 GEU │ ₹ to …" (0228: the money's own name, the
 // one the local lens picks, after the bar).
 const { currencySuffix } = require(join(BACKEND, "lib/notificationText"));
-const pair = (n, places, ccy) => `${fmt(n, places)} GLEU \u2502 ${currencySuffix(ccy).trim()}`;
+const pair = (n, places, ccy) => `${fmt(n, places)} CEL \u2502 ${currencySuffix(ccy).trim()}`;
 
 const N_KEYS = ["id", "type", "title", "message", "readAt", "createdAt", "metadata"].sort().join(",");
 const META_KEYS = [
@@ -273,7 +273,7 @@ async function run() {
     senderPlaces: 2, receiverPlaces: 0,
   });
   const jpy = (await notificationsFor("J"))[0];
-  check("the JPY message carries no decimal places", Boolean(jpy) && /You received 1,500 GLEU \u2502 ¥ from/.test(jpy.message), jpy?.message);
+  check("the JPY message carries no decimal places", Boolean(jpy) && /You received 1,500 CEL \u2502 ¥ from/.test(jpy.message), jpy?.message);
 
   console.log("\n5. the unique index is the backstop");
   const existing = (await notificationsFor("A"))[0];

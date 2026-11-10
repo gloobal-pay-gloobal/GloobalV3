@@ -186,7 +186,7 @@ function coinReceiptStamp(createdAt) {
 function coinRateSentence(receipt) {
   if (!receipt || receipt.rate == null || !receipt.rateBasis) return null;
   // The sentence names the unit as people read it, whatever code the row
-  // stores (currencies.js: GEU stored, GLEU shown).
+  // stores (currencies.js: GEU stored, CEL shown).
   const stored = receipt.currencyCode || COIN_CURRENCY;
   const coin = String(stored).toUpperCase() === COIN_CURRENCY ? COIN_TICKER : stored;
   const fiat = receipt.fiatCurrencyCode;

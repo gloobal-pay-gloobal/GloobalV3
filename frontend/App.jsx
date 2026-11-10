@@ -1177,6 +1177,9 @@ function GloobalId() {
   const bankBalance = useBankBalance();
   const { executeTransaction, settleEssentialsToBank, settleReferralToBank, applyEssentialsPoolSubsidy, reconcileBankBalance, reconcilePaylaterDue, hydrateGrantsFromServer, resetForAccountSwitch } = useTransactionActions();
   const [showScanScreen, setShowScanScreen] = useState19(false);
+  // Opened from the Earn orb's "Pay": the Scan screen with listening for a
+  // nearby phone already on (soundPayUi.jsx), so there is no second tap.
+  const [scanListenOnOpen, setScanListenOnOpen] = useState19(false);
   // Backdrop color behind the QR/scan area — same "pick one random
   // hero color per session" pattern as the Bank/Coin/About Us info
   // screens, so the scanner isn't locked to a single fixed tint.
@@ -4781,7 +4784,8 @@ function GloobalId() {
     }}
     onOpenBank={() => setActiveScreen("bank")}
     onOpenCoverage={() => setActiveScreen("coverage")}
-    onOpenScan={() => setShowScanScreen(true)}
+    onOpenScan={() => { setScanListenOnOpen(false); setShowScanScreen(true); }}
+    onOpenListen={() => { setScanListenOnOpen(true); setShowScanScreen(true); }}
     myGloobalId={secureId}
     creatorId={creatorId}
     myName={documentedName}
@@ -4977,7 +4981,7 @@ function GloobalId() {
       Point at any <GloobalWordmark /> code
     </div></div>}{!scanPayee && !scanResolving && <div
     style={{ position: "absolute", left: 0, right: 0, top: "calc(78px + env(safe-area-inset-top, 0px))", zIndex: 2, display: "flex", justifyContent: "center", pointerEvents: "none" }}
-  ><SoundPayListenButton onHeard={handleSoundHeard} onToast={showToast} disabled={Boolean(scanRetry)} /></div>}<input
+  ><SoundPayListenButton onHeard={handleSoundHeard} onToast={showToast} disabled={Boolean(scanRetry)} autoStart={scanListenOnOpen} /></div>}<input
       ref={scanGalleryInputRef}
       type="file"
       accept="image/*"

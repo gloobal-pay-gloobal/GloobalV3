@@ -53,6 +53,14 @@ function SavedCopyBanner() {
       window.removeEventListener(GLOOBAL_ACCOUNT_SWITCH_EVENT, onLive);
     };
   }, []);
+  // "Updating…" is a promise that the server's answer is on its way. If
+  // nothing has arrived in 75 s (a 45 s request, a retry, and room), the
+  // promise is broken: say so, as "Offline", rather than keep promising.
+  useEffect95(() => {
+    if (!state || state.mode !== "updating") return undefined;
+    const t = setTimeout(() => setState((prev) => (prev && prev.mode === "updating" ? { ...prev, mode: "offline" } : prev)), 75000);
+    return () => clearTimeout(t);
+  }, [state && state.mode]);
   if (!state) return null;
   const offline = state.mode === "offline";
   return (

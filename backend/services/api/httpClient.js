@@ -306,14 +306,24 @@ async function gloobalApiRequest(method, path, body, options) {
       }
       // The server is slow: the phone's copy now, the server's when it lands.
       gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_UPDATING_EVENT, { path, at: saved.at });
-      live.then(
-        (value) => {
-          if (JSON.stringify(value) !== JSON.stringify(saved.data)) gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_FRESH_EVENT, { path });
-        },
-        (error) => {
-          if (error && error.status === 0) gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_EVENT, { path, at: saved.at });
-        }
-      );
+      const landed = (value) => {
+        // The network step already said "live" when it saved the answer;
+        // that is what clears "Updating…" — whether or not the figure
+        // changed. (It used to clear only on a changed figure, so a balance
+        // that was the same as the saved copy left the pill up for good.)
+        if (JSON.stringify(value) !== JSON.stringify(saved.data)) gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_FRESH_EVENT, { path });
+      };
+      live.then(landed, (error) => {
+        if (!error || error.status !== 0) return;
+        // No answer in 45 s is what Render looks like while it wakes from
+        // sleep: the request that woke it is lost, the next one is quick.
+        // One retry, a moment later, before calling it offline.
+        setTimeout(() => {
+          gloobalApiRequestNetwork(method, path, body, opts).then(landed, (again) => {
+            if (again && again.status === 0) gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_EVENT, { path, at: saved.at });
+          });
+        }, 1500);
+      });
       return saved.data;
     }
   }

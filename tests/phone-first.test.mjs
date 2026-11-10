@@ -63,6 +63,27 @@ test("a slow server: the saved balance at once with Updating…, then the server
   slow = false;
 });
 
+test("a slow server whose figure has NOT changed still clears Updating… when it answers", async () => {
+  const { page, context } = await openPage({ account: A });
+  await login(page, A);
+  await page.waitForTimeout(2000);
+  await revealBalance(page, A);
+  await waitFigure(page, null, 15000);
+  await page.waitForTimeout(1500);
+  await context.route(`${API_ORIGIN}/api/**`, async (route) => {
+    const r = route.request();
+    if (r.method() === "GET" && /\/api\/(profile|bank|assets)\//.test(new URL(r.url()).pathname)) await new Promise((res) => setTimeout(res, 4000));
+    await route.fallback();
+  });
+  await page.reload();
+  await login(page, A);
+  await revealBalance(page, A);
+  await page.waitForFunction(() => document.querySelector("[data-testid=saved-copy-banner]")?.dataset.mode === "updating", null, { timeout: 8000 });
+  // The server answers with the same figure as the phone had: the pill
+  // must still go away. (It used to stay up for good in this case.)
+  await page.waitForFunction(() => !document.querySelector("[data-testid=saved-copy-banner]"), null, { timeout: 15000 });
+});
+
 test("a fast server: no saved copy shown, no notice", async () => {
   const { page } = await openPage({ account: A });
   await login(page, A);

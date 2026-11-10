@@ -331,7 +331,7 @@ function BalanceSplitExplainer({ summary, balance, ccyCode, lens, onClose, onOpe
   </div></div>;
 }
 
-function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, onLiveProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "", themeKey = "day", onPickTheme }) {
+function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPayPerson, onOpenBank, onOpenCoverage, onOpenScan, onOpenListen, myGloobalId, creatorId, myName, openHistoryDirection, onConsumeOpenHistory, deepLinkTarget, onConsumeDeepLink, profilePhoto, onChangeProfilePhoto, onLiveProfilePhoto, sendHistory, receivedHistory = [], bankBalance, balanceUnavailable = false, balanceStatus = "ready", onRefreshAccount, assetSeeds, onPayBusiness, paylaterHistory, accountCreatedAt, onSettleAssetsToBank, onSettleReferralToBank, pendingOpenMyShare, onConsumePendingMyShare, essentialsIHaveEnough, onToggleEssentialsIHaveEnough, onShareRoleChange, onMyShareRateChange, onGloobalIdChange, mobileNumber = "", idHistory = [], referralCode = "", securitySettings = null, onUpdateSecuritySettings, onChangePin, invitedBy = "", themeKey = "day", onPickTheme }) {
   const [balanceVisible, setBalanceVisible] = useState14(false);
   const [showBalanceBiometric, setShowBalanceBiometric] = useState14(false);
   const [balanceBiometricScanning, setBalanceBiometricScanning] = useState14(false);
@@ -860,6 +860,11 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   const [showIdTag, setShowIdTag] = useState14(false);
   const [toast, setToast] = useState14(null);
   const [showReceive, setShowReceive] = useState14(false);
+  // Earn: the orb at the centre of the four tiles on the personal side
+  // (features/nearby/soundPayUi.jsx). The sheet it opens offers "Get paid"
+  // (play my ID) and "Pay" (listen, on the Scan screen).
+  const [showEarn, setShowEarn] = useState14(false);
+  const requestCloseEarn = useBackClose(showEarn, () => setShowEarn(false));
   const requestCloseReceive = useBackClose(showReceive, () => setShowReceive(false));
   const [myShareRate, setMyShareRate] = useState14(1);
   useEffect12(() => {
@@ -3195,7 +3200,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        slowly through the app's flip colours like every other living mark
        on this screen. The Personal side has no shop button — one more
        thing that says which side you are on. */
-  }{shareRole === "merchant" && <MyShopOrb color={shopOrbColor} onClick={openMyShop} />}{
+  }{shareRole === "merchant" ? <MyShopOrb color={shopOrbColor} onClick={openMyShop} /> : <EarnOrb color={shopOrbColor} onClick={whenCreatorReady(() => setShowEarn(true))} />}{
     /* The four tiles' keyframes, rendered once for the group rather than
        once per tile. They live with the component that uses them — see the
        note in actionTileMotion.jsx about the day @keyframes finDrift lived
@@ -4655,7 +4660,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     summary={essentialsHeld} balance={bankBalance} ccyCode={ccyCode} lens={displayLens}
     onClose={requestCloseBalanceSplit}
     onOpenEssentials={() => { setShowBalanceSplit(false); setShowEssentials(true); }}
-  /></ScreenErrorBoundary>}{showEssentials && <EssentialsScreen
+  /></ScreenErrorBoundary>}{showEarn && <EarnSheet
+    gloobalId={myGloobalId}
+    side="person"
+    onClose={requestCloseEarn}
+    onPay={() => { setShowEarn(false); if (onOpenListen) onOpenListen(); else if (onOpenScan) onOpenScan(); }}
+  />}{showEssentials && <EssentialsScreen
     onClose={requestCloseEssentials}
     dialCountry={dialCountry}
     ccy={ccy} ccyCode={ccyCode}

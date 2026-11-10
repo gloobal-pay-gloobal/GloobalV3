@@ -154,6 +154,64 @@ function gloobalChimeSentence(amount, currency, language) {
     : { text: "Received " + spoken, lang: locale };
 }
 
+// ── YOUR OWN ANNOUNCEMENT ───────────────────────────────────────────────
+//
+// The founder, 10 Nov: like the soundbox on a shop counter, but the shop
+// writes what it says — "100 CEL prapt hue, aapka dhanyavaad". The line is
+// kept on this phone (localStorage); {amount} marks where the amount goes,
+// and a line with no {amount} has the amount said first. No line saved
+// means the standard sentence above.
+var GLOOBAL_PAYMENT_LINE_KEY = "gloobal.paymentLine";
+var GLOOBAL_PAYMENT_LINE_MAX = 80;
+var GLOOBAL_PAYMENT_LINE_PRESETS = [
+  "{amount} CEL prapt hue, aapka dhanyavaad",
+  "{amount} CEL प्राप्त हुए, आपका धन्यवाद",
+  "Received {amount} CEL. Thank you!",
+  "{amount} CEL aa gaye. Phir aaiyega!"
+];
+function gloobalPaymentLineLoad() {
+  try {
+    if (typeof localStorage === "undefined") return "";
+    var raw = localStorage.getItem(GLOOBAL_PAYMENT_LINE_KEY);
+    return typeof raw === "string" ? raw.slice(0, GLOOBAL_PAYMENT_LINE_MAX).trim() : "";
+  } catch (e) {
+    return "";
+  }
+}
+function gloobalPaymentLineSave(text) {
+  try {
+    var clean = String(text || "").slice(0, GLOOBAL_PAYMENT_LINE_MAX).trim();
+    if (clean) localStorage.setItem(GLOOBAL_PAYMENT_LINE_KEY, clean);
+    else localStorage.removeItem(GLOOBAL_PAYMENT_LINE_KEY);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+// The line with the amount in it. The number is said plainly ("100", or
+// "100.50"), because the line names the unit itself. Devanagari is read by
+// a Hindi voice; Latin letters (English or Hinglish) by an Indian-English
+// one, which says "prapt hue" as written.
+function gloobalPaymentLineSentence(template, amount) {
+  var whole = Math.abs(amount - Math.round(amount)) < 0.005;
+  var number = whole ? String(Math.round(amount)) : amount.toFixed(2);
+  var line = String(template || "").trim();
+  var text = /\{amount\}/i.test(line) ? line.replace(/\{amount\}/gi, number) : number + ". " + line;
+  return { text: text, lang: /[\u0900-\u097F]/.test(text) ? "hi-IN" : "en-IN" };
+}
+// What a payment of `amount` will say on this phone right now.
+function gloobalPaymentSentence(amount, currency, language) {
+  var custom = gloobalPaymentLineLoad();
+  return custom ? gloobalPaymentLineSentence(custom, amount) : gloobalChimeSentence(amount, currency, language);
+}
+// "Hear it": the chime, then the line with a sample amount. From a tap.
+function gloobalPreviewPaymentLine(template, currency) {
+  gloobalChimeUnlock();
+  var language = typeof navigator !== "undefined" ? navigator.language : "en";
+  var sentence = String(template || "").trim() ? gloobalPaymentLineSentence(template, 100) : gloobalChimeSentence(100, currency, language);
+  return gloobalPlayChimeTone().then(function () { return gloobalSpeak(sentence); });
+}
+
 function gloobalSpeak(sentence) {
   return new Promise(function (resolve) {
     try {
@@ -193,7 +251,7 @@ function gloobalPlayPaymentChime(payment) {
   var amount = Number(p.amount);
   if (!Number.isFinite(amount) || amount <= 0) return Promise.resolve(false);
   var language = p.language || (typeof navigator !== "undefined" ? navigator.language : "en");
-  var sentence = gloobalChimeSentence(amount, p.currency, language);
+  var sentence = gloobalPaymentSentence(amount, p.currency, language);
   gloobalChimeQueue = gloobalChimeQueue.then(function () {
     return gloobalPlayChimeTone().then(function () { return gloobalSpeak(sentence); });
   }).catch(function () { return false; });

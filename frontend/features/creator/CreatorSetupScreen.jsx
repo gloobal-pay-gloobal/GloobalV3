@@ -1255,6 +1255,44 @@ function creatorShareText(rate) {
 //     but made to mean the one true thing available here: whether the
 //     name is live. Green once a handle exists — people can pay you at
 //     it — and grey before that.
+// What the counter soundbox says when a payment lands: the shop's own
+// sentence (paymentChime.js). Closed, one row showing it with a sample
+// amount; open, ready lines, a box to type in, Hear it, and back to the
+// standard sentence.
+function PaymentLineRow({ onToast }) {
+  const [line, setLine] = useState53(() => gloobalPaymentLineLoad());
+  const [open, setOpen] = useState53(false);
+  const change = (text) => { setLine(text); if (!gloobalPaymentLineSave(text)) onToast?.("Couldn't save your line on this phone"); };
+  const sample = line.trim() ? gloobalPaymentLineSentence(line, 100).text : "The standard announcement";
+  const chip = (active) => ({ padding: "7px 12px", borderRadius: 999, border: `1.5px solid ${active ? T.accent : T.line}`, background: active ? "rgba(124,92,255,0.1)" : T.surface, color: active ? T.accent : T.inkSoft, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" });
+  return <div data-testid="payment-line" style={{ padding: "12px 15px 14px", borderTop: `1px solid ${T.line}` }}>
+    <button type="button" data-testid="payment-line-open" onClick={() => setOpen((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, border: "none", background: "transparent", padding: 0, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+      <Pencil4 size={18} color={T.accent} style={{ flexShrink: 0 }} />
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>When you're paid, your phone says</span>
+        <span data-testid="payment-line-sample" style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{line.trim() ? `“${sample}”` : sample}</span>
+      </span>
+      <ChevronRight9 size={17} color={T.inkFaint} style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none" }} />
+    </button>
+    {open && <div data-testid="payment-line-editor" style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>{GLOOBAL_PAYMENT_LINE_PRESETS.map((t) => <button key={t} type="button" onClick={() => change(t)} style={chip(line === t)}>{gloobalPaymentLineSentence(t, 100).text}</button>)}</div>
+      <input
+        data-testid="payment-line-input"
+        value={line}
+        maxLength={GLOOBAL_PAYMENT_LINE_MAX}
+        placeholder="Type your own, with {amount} where the amount goes"
+        onChange={(e) => change(e.target.value)}
+        style={{ width: "100%", boxSizing: "border-box", height: 42, borderRadius: 12, border: `1.5px solid ${T.line}`, background: T.bg, color: T.ink, fontSize: 14, fontWeight: 600, fontFamily: "inherit", padding: "0 12px", outline: "none" }}
+      />
+      <div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4 }}>{"{amount}"} is replaced by the amount paid. Plays while GLOOBAL is open on this phone.</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" data-testid="payment-line-preview" onClick={() => gloobalPreviewPaymentLine(line)} style={{ ...chip(true), height: 40, flex: 1 }}>Hear it with 100</button>
+        <button type="button" data-testid="payment-line-reset" onClick={() => change("")} disabled={!line.trim()} style={{ ...chip(false), height: 40, opacity: line.trim() ? 1 : 0.5 }}>Use the standard one</button>
+      </div>
+    </div>}
+  </div>;
+}
+
 function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage, onShowQr, onOpenLedger, onToast, paymentSoundOn = true, onTogglePaymentSound }) {
   // Opening this row can be the first touch of the Creator side — the
   // other being the flip itself — so it may arrive with nothing loaded.
@@ -1485,7 +1523,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
       onTogglePaymentSound();
     }} label="Sounds" />,
     !done
-  ) : null}{fact(
+  ) : null}{typeof onTogglePaymentSound === "function" && paymentSoundOn ? <PaymentLineRow onToast={onToast} /> : null}{fact(
     "id",
     Contact4,
     idShown

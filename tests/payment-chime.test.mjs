@@ -54,14 +54,18 @@ function load({ language = "en-IN", withVoice = true, withAudio = true } = {}) {
   };
   if (withAudio) window.AudioContext = FakeContext;
   const navigator = { language };
+  // The phone's own storage, where the shop's announcement line is kept.
+  const store = new Map();
+  const localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
   const factory = new Function(
-    "window", "navigator", "SpeechSynthesisUtterance", "setTimeout",
+    "window", "navigator", "SpeechSynthesisUtterance", "setTimeout", "localStorage",
     `${SOURCE}
-     return { gloobalSetPaymentSoundEnabled, gloobalPlayPaymentChime, gloobalChimeSentence, gloobalMarkChimePlayed, gloobalChimeUnlock, gloobalPlayRoleSwitchSound };`
+     return { gloobalSetPaymentSoundEnabled, gloobalPlayPaymentChime, gloobalChimeSentence, gloobalMarkChimePlayed, gloobalChimeUnlock, gloobalPlayRoleSwitchSound,
+              gloobalPaymentLineLoad, gloobalPaymentLineSave, gloobalPaymentLineSentence, gloobalPreviewPaymentLine, GLOOBAL_PAYMENT_LINE_PRESETS };`
   );
   // setTimeout shortened so the 650 ms chime wait does not slow the test.
   const fast = (fn, ms) => setTimeout(fn, Math.min(ms, 5));
-  const api = factory(window, navigator, withVoice ? FakeUtterance : undefined, fast);
+  const api = factory(window, navigator, withVoice ? FakeUtterance : undefined, fast, localStorage);
   return { api, log };
 }
 
@@ -176,4 +180,36 @@ test("the same Sounds switch silences the side switch too", () => {
 test("both flip controls on the dashboard play it on the tap", () => {
   const dash = readFileSync(join(ROOT, "frontend/screens/Dashboard/Dashboard.jsx"), "utf8");
   assert.equal((dash.match(/gloobalPlayRoleSwitchSound\(/g) || []).length, 2);
+});
+
+// ── The shop's own announcement ──────────────────────────────────────────
+test("the shop's own line is said in place of the standard sentence, with the amount where {amount} is", async () => {
+  const { api, log } = load();
+  assert.equal(api.gloobalPaymentLineLoad(), "", "no line saved: the standard sentence");
+  api.gloobalPaymentLineSave("{amount} CEL prapt hue, aapka dhanyavaad");
+  await api.gloobalPlayPaymentChime({ txnId: "L1", amount: 100, currency: "INR" });
+  assert.deepEqual(log.spoken, [{ text: "100 CEL prapt hue, aapka dhanyavaad", lang: "en-IN" }]);
+  assert.deepEqual(log.notes, [1046.5, 2093, 1568, 3136], "the chime still comes first");
+  // Paise are said; a Hindi line gets a Hindi voice.
+  api.gloobalPaymentLineSave("{amount} CEL प्राप्त हुए, आपका धन्यवाद");
+  await api.gloobalPlayPaymentChime({ txnId: "L2", amount: 100.5, currency: "INR" });
+  assert.deepEqual(log.spoken[1], { text: "100.50 CEL प्राप्त हुए, आपका धन्यवाद", lang: "hi-IN" });
+});
+
+test("a line with no {amount} has the amount said first; clearing it brings the standard sentence back", async () => {
+  const { api, log } = load();
+  assert.equal(api.gloobalPaymentLineSentence("Dhanyavaad, phir aaiyega", 250).text, "250. Dhanyavaad, phir aaiyega");
+  api.gloobalPaymentLineSave("Dhanyavaad");
+  api.gloobalPaymentLineSave("   ");
+  assert.equal(api.gloobalPaymentLineLoad(), "");
+  await api.gloobalPlayPaymentChime({ txnId: "L3", amount: 500, currency: "INR" });
+  assert.match(log.spoken[0].text, /^Received 500 Indian rupees$/);
+});
+
+test("Hear it plays the chime and the line with 100; every ready line carries the amount", async () => {
+  const { api, log } = load();
+  await api.gloobalPreviewPaymentLine("{amount} CEL aa gaye");
+  assert.equal(log.spoken[0].text, "100 CEL aa gaye");
+  assert.equal(log.notes.length, 4);
+  for (const t of api.GLOOBAL_PAYMENT_LINE_PRESETS) assert.match(t, /\{amount\}/, t);
 });

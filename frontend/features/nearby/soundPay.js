@@ -472,3 +472,108 @@ async function soundPaySelfTest({ gloobalId, side = "either" } = {}) {
   const stats = session.stats();
   return { ok: Boolean(heard && heard.gloobalId === gloobalId), heard, stats, error };
 }
+
+// ── YOUR LINE: A HUMAN VOICE BEFORE THE CHIRP ───────────────────────────
+//
+// The founder, 10 Nov: sound pay is the rare case, so make it human, not a
+// ringtone — "I tap 100 CEL and Play, and what comes is what I have
+// decided, like: arre bhai, thoda jaldi bhej". So before the chirp the
+// phone says the receiver's own line: one they picked, typed (spoken by
+// the phone's voice), or recorded in their own voice. The line is for the
+// people; the chirp after it is still what the other phone reads.
+//
+// Kept on this phone only (localStorage): { on, text, clip } where clip is
+// a recorded data: URL, at most a few seconds.
+var SOUND_PAY_LINE_KEY = "gloobal.soundPayLine";
+var SOUND_PAY_LINE_PRESETS = ["Arre bhai, thoda jaldi bhej", "Chalo, bhej do", "Paise bhej do, please", "Payment, please"];
+var SOUND_PAY_LINE_MAX_TEXT = 60;
+var SOUND_PAY_LINE_MAX_MS = 5000;
+var SOUND_PAY_LINE_MAX_CLIP = 400000; // characters of data: URL
+
+function soundPayLineLoad() {
+  const base = { on: true, text: SOUND_PAY_LINE_PRESETS[0], clip: "" };
+  try {
+    const raw = JSON.parse(localStorage.getItem(SOUND_PAY_LINE_KEY) || "null");
+    if (!raw || typeof raw !== "object") return base;
+    return {
+      on: raw.on !== false,
+      text: typeof raw.text === "string" ? raw.text.slice(0, SOUND_PAY_LINE_MAX_TEXT) : base.text,
+      clip: typeof raw.clip === "string" && raw.clip.startsWith("data:audio/") ? raw.clip : ""
+    };
+  } catch (e) {
+    return base;
+  }
+}
+function soundPayLineSave(line) {
+  try { localStorage.setItem(SOUND_PAY_LINE_KEY, JSON.stringify({ on: line.on !== false, text: String(line.text || "").slice(0, SOUND_PAY_LINE_MAX_TEXT), clip: line.clip || "" })); return true; } catch (e) { return false; }
+}
+
+// Says the line and resolves when it has finished (or cannot be said, or
+// has taken too long: the chirp must never wait on a voice that hangs).
+// Call it inside the tap, before any await, so the browser lets it sound.
+function soundPaySayLine(line) {
+  if (!line || line.on === false) return Promise.resolve(false);
+  const text = String(line.text || "").trim();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (said) => { if (!done) { done = true; clearTimeout(timer); resolve(said); } };
+    let timer = setTimeout(() => finish(false), line.clip ? SOUND_PAY_LINE_MAX_MS + 1500 : Math.min(7000, 1500 + text.length * 110));
+    try {
+      if (line.clip && typeof Audio !== "undefined") {
+        const a = new Audio(line.clip);
+        a.onended = () => finish(true);
+        a.onerror = () => finish(false);
+        const p = a.play();
+        if (p && p.catch) p.catch(() => finish(false));
+        return;
+      }
+      if (text && typeof window !== "undefined" && window.speechSynthesis && typeof SpeechSynthesisUtterance !== "undefined") {
+        const u = new SpeechSynthesisUtterance(text);
+        // Devanagari is read by a Hindi voice; Latin letters (English or
+        // Hinglish) by an Indian-English one, which says "bhai" as written.
+        u.lang = /[\u0900-\u097F]/.test(text) ? "hi-IN" : "en-IN";
+        u.rate = 1;
+        u.onend = () => finish(true);
+        u.onerror = () => finish(false);
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(u);
+        return;
+      }
+    } catch (e) { /* cannot speak here */ }
+    finish(false);
+  });
+}
+
+// Records the receiver's own voice for the line: up to five seconds.
+// Returns { stop, done } where done resolves to a data: URL, or rejects
+// (no microphone, no recorder, or a clip too large to keep).
+function soundPayRecordLine() {
+  let stopFn = () => {};
+  const done = (async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices || typeof MediaRecorder === "undefined") throw new Error("no_recorder");
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      const rec = new MediaRecorder(stream, { audioBitsPerSecond: 32000 });
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onerror = () => { stream.getTracks().forEach((t) => t.stop()); reject(new Error("record_failed")); };
+      rec.onstop = () => {
+        clearTimeout(timer);
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+        const reader = new FileReader();
+        reader.onload = () => {
+          const url = String(reader.result || "");
+          if (!url.startsWith("data:audio/") || url.length > SOUND_PAY_LINE_MAX_CLIP) reject(new Error("clip_too_large"));
+          else resolve(url);
+        };
+        reader.onerror = () => reject(new Error("record_failed"));
+        reader.readAsDataURL(blob);
+      };
+      const timer = setTimeout(() => { if (rec.state !== "inactive") rec.stop(); }, SOUND_PAY_LINE_MAX_MS);
+      stopFn = () => { if (rec.state !== "inactive") rec.stop(); };
+      rec.start();
+    });
+  })();
+  return { stop: () => stopFn(), done };
+}

@@ -221,3 +221,59 @@ test("offline: a person heard before still opens a card from the phone's copy, a
   assert.match(await page.evaluate(() => document.body.innerText), /40/);
   await context.close();
 });
+
+test("your line: the phone says it first, then plays the chirp; typed lines and off both work", async () => {
+  const { page, context } = await openPage({ account: A });
+  await context.addInitScript(() => {
+    // A voice that records what it was asked to say, and when; and the
+    // moment the chirp's buffer starts.
+    window.__said = [];
+    window.__chirpAt = [];
+    Object.defineProperty(window, "speechSynthesis", { configurable: true, value: {
+      cancel() {},
+      // (The app primes the voice with a blank utterance at login: not a line.)
+      speak(u) { if (String(u.text).trim()) window.__said.push({ text: u.text, lang: u.lang, at: performance.now() }); setTimeout(() => u.onend && u.onend(), 300); }
+    } });
+    window.SpeechSynthesisUtterance = function (text) { this.text = text; };
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...a) {
+      if (this.buffer && this.buffer.length > 1) window.__chirpAt.push(performance.now());
+      return start.apply(this, a);
+    };
+  });
+  await page.reload();
+  await page.waitForSelector("#root *", { timeout: 15000 });
+  await login(page, A);
+  await page.waitForTimeout(1200);
+  await tap(page.getByTestId("earn-orb"));
+  await tap(page.getByTestId("earn-receive"));
+  // On by default, with the founder's own example.
+  assert.equal(await page.getByTestId("sound-pay-line-text").innerText(), "“Arre bhai, thoda jaldi bhej”");
+  await tap(page.getByTestId("sound-pay-play"));
+  await page.waitForFunction(() => window.__chirpAt.length === 1, null, { timeout: 15000 });
+  let r = await page.evaluate(() => ({ said: window.__said, chirp: window.__chirpAt }));
+  assert.equal(r.said.length, 1, JSON.stringify(r.said.map((x) => x.text)));
+  assert.equal(r.said[0].text, "Arre bhai, thoda jaldi bhej");
+  assert.equal(r.said[0].lang, "en-IN");
+  assert.ok(r.chirp[0] - r.said[0].at >= 250, `the chirp started ${Math.round(r.chirp[0] - r.said[0].at)} ms after the voice began: it must wait for the line`);
+  await page.waitForFunction(() => !document.querySelector("[data-testid=sound-pay-play]").disabled, null, { timeout: 20000 });
+
+  // A typed line, in Hindi: said by a Hindi voice, and remembered.
+  await tap(page.getByTestId("sound-pay-line-open"));
+  await page.getByTestId("sound-pay-line-input").fill("जल्दी भेजो भाई");
+  await tap(page.getByTestId("sound-pay-play"));
+  await page.waitForFunction(() => window.__chirpAt.length === 2, null, { timeout: 15000 });
+  r = await page.evaluate(() => ({ said: window.__said, kept: JSON.parse(localStorage.getItem("gloobal.soundPayLine")) }));
+  assert.equal(r.said[1].text, "जल्दी भेजो भाई");
+  assert.equal(r.said[1].lang, "hi-IN");
+  assert.equal(r.kept.text, "जल्दी भेजो भाई");
+  await page.waitForFunction(() => !document.querySelector("[data-testid=sound-pay-play]").disabled, null, { timeout: 20000 });
+
+  // Off: only the chirp.
+  await tap(page.getByTestId("sound-pay-line-toggle"));
+  await tap(page.getByTestId("sound-pay-play"));
+  await page.waitForFunction(() => window.__chirpAt.length === 3, null, { timeout: 15000 });
+  assert.equal(await page.evaluate(() => window.__said.length), 2, "nothing was said with the line off");
+  if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + "-line.png" });
+  await context.close();
+});

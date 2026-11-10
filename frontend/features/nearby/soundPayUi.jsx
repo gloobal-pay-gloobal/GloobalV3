@@ -1,6 +1,6 @@
 // src/features/nearby/soundPayUi.jsx
 import { useState as useState99, useEffect as useEffect96, useRef as useRef57 } from "react";
-import { Volume2 as SoundPlayIcon, Ear as SoundEarIcon, Delete as SoundBackspace, X as SoundCloseIcon } from "lucide-react";
+import { Volume2 as SoundPlayIcon, Ear as SoundEarIcon, Delete as SoundBackspace, X as SoundCloseIcon, Mic as SoundMicIcon, Pencil as SoundPencilIcon, MessageCircle as SoundLineIcon } from "lucide-react";
 
 // ── PAY NEARBY BY SOUND: ONE DOOR, TWO SCREENS ──────────────────────────
 //
@@ -41,17 +41,25 @@ function SoundPayReceivePanel({ gloobalId, side, onToast, currencySign = "" }) {
   const [amount, setAmount] = useState99("");
   const [playing, setPlaying] = useState99(false);
   const [playedOnce, setPlayedOnce] = useState99(false);
+  // Your line: said out loud before the chirp (soundPay.js).
+  const [line, setLine] = useState99(() => soundPayLineLoad());
+  const [editLine, setEditLine] = useState99(false);
+  const [saying, setSaying] = useState99(false);
+  const changeLine = (next) => { setLine(next); soundPayLineSave(next); };
   const play = async () => {
     if (playing) return;
     soundPayUnlock(); // inside the tap: a browser only starts audio from one
     setPlaying(true);
     try {
+      // The voice first (started here, inside the tap), then the chirp.
+      if (line.on) { setSaying(true); await soundPaySayLine(line); setSaying(false); }
       const ok = await soundPayPlay({ gloobalId, side, amount });
       if (!ok) onToast?.("This phone can't play the sound. Turn the volume up and tap Play again.");
       else setPlayedOnce(true);
     } catch (e) {
       onToast?.("Couldn't play the sound");
     } finally {
+      setSaying(false);
       setPlaying(false);
     }
   };
@@ -80,15 +88,71 @@ function SoundPayReceivePanel({ gloobalId, side, onToast, currencySign = "" }) {
       style={{ flex: 1, height: 36, borderRadius: 999, border: `1.5px solid ${amount === q ? T.accent : T.line}`, background: amount === q ? "rgba(124,92,255,0.1)" : T.surface, color: amount === q ? T.accent : T.inkSoft, fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}
     >{currencySign}{q}</button>)}</div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12 }}>{SOUND_PAY_KEYS.map((k) => key(k))}</div>
+    <SoundPayLineRow line={line} onChange={changeLine} open={editLine} onToggle={() => setEditLine((v) => !v)} onToast={onToast} disabled={playing} />
     <button
       type="button"
       data-testid="sound-pay-play"
       onClick={play}
       disabled={playing}
       className="v2-tap"
-      style={{ width: "100%", height: 54, marginTop: 14, borderRadius: 16, border: "none", background: playing ? T.ink : T.gradButton, color: "#fff", fontSize: 16, fontWeight: 800, fontFamily: "inherit", cursor: playing ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
-    >{playing ? <><SoundWaves on color="#fff" />Playing… hold the phones close</> : <><SoundPlayIcon size={18} color="#fff" />{playedOnce ? "Play again" : amount ? `Play · ${currencySign}${amount}` : "Play"}</>}</button>
+      style={{ width: "100%", height: 54, marginTop: 10, borderRadius: 16, border: "none", background: playing ? T.ink : T.gradButton, color: "#fff", fontSize: 16, fontWeight: 800, fontFamily: "inherit", cursor: playing ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+    >{playing ? (saying ? <><SoundLineIcon size={18} color="#fff" />Saying your line…</> : <><SoundWaves on color="#fff" />Playing… hold the phones close</>) : <><SoundPlayIcon size={18} color="#fff" />{playedOnce ? "Play again" : amount ? `Play · ${currencySign}${amount}` : "Play"}</>}</button>
     <div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint, textAlign: "center", marginTop: 8 }}>Plays 3 times · volume up{soundPayIsApple() ? " · silent switch off" : ""} · the other phone taps Pay</div>
+  </div>;
+}
+
+// "Your line": what the phone says before the chirp. Closed, it is one row
+// showing the line; open, it is the editor: ready lines, your own words
+// (the phone's voice says them), or your own voice, recorded here.
+function SoundPayLineRow({ line, onChange, open, onToggle, onToast, disabled }) {
+  const [recording, setRecording] = useState99(false);
+  const recRef = useRef57(null);
+  useEffect96(() => () => { if (recRef.current) recRef.current.stop(); }, []);
+  const record = async () => {
+    if (recording) { if (recRef.current) recRef.current.stop(); return; }
+    const session = soundPayRecordLine();
+    recRef.current = session;
+    setRecording(true);
+    try {
+      const clip = await session.done;
+      onChange({ ...line, on: true, clip });
+    } catch (e) {
+      const m = e && (e.message || e.name);
+      onToast?.(m === "clip_too_large" ? "That recording is too long. Keep it under 5 seconds."
+        : m === "NotAllowedError" ? "Allow the microphone to record your line"
+        : "This phone can't record here. Type your line instead.");
+    } finally {
+      recRef.current = null;
+      setRecording(false);
+    }
+  };
+  const shown = line.clip ? "Your recorded voice" : (line.text || "No line");
+  const chip = (active) => ({ padding: "7px 12px", borderRadius: 999, border: `1.5px solid ${active ? T.accent : T.line}`, background: active ? "rgba(124,92,255,0.1)" : T.surface, color: active ? T.accent : T.inkSoft, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" });
+  return <div data-testid="sound-pay-line" data-on={line.on ? "1" : "0"} style={{ marginTop: 12, borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, padding: "10px 12px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ width: 34, height: 34, borderRadius: "50%", background: line.on ? "rgba(124,92,255,0.14)" : "rgba(0,0,0,0.05)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{line.clip ? <SoundMicIcon size={16} color={line.on ? T.accent : T.inkFaint} /> : <SoundLineIcon size={16} color={line.on ? T.accent : T.inkFaint} />}</span>
+      <button type="button" data-testid="sound-pay-line-open" onClick={onToggle} disabled={disabled} style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", textAlign: "left", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>
+        <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: T.inkFaint }}>{line.on ? "Your phone says, then plays" : "Your line is off"}</span>
+        <span data-testid="sound-pay-line-text" style={{ display: "block", fontSize: 14, fontWeight: 700, color: line.on ? T.ink : T.inkFaint, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{line.on ? `“${shown}”` : "Only the chirp plays"}</span>
+      </button>
+      <button type="button" aria-label={open ? "Close line editor" : "Change your line"} onClick={onToggle} disabled={disabled} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.05)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{open ? <SoundCloseIcon size={15} color={T.inkSoft} /> : <SoundPencilIcon size={14} color={T.inkSoft} />}</button>
+    </div>
+    {open && <div data-testid="sound-pay-line-editor" style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>{SOUND_PAY_LINE_PRESETS.map((t) => <button key={t} type="button" onClick={() => onChange({ on: true, text: t, clip: "" })} style={chip(line.on && !line.clip && line.text === t)}>{t}</button>)}</div>
+      <input
+        data-testid="sound-pay-line-input"
+        value={line.clip ? "" : line.text}
+        maxLength={SOUND_PAY_LINE_MAX_TEXT}
+        placeholder={line.clip ? "Type to replace your recording" : "Type your own line"}
+        onChange={(e) => onChange({ on: true, text: e.target.value, clip: "" })}
+        style={{ width: "100%", boxSizing: "border-box", height: 42, borderRadius: 12, border: `1.5px solid ${T.line}`, background: T.bg, color: T.ink, fontSize: 14, fontWeight: 600, fontFamily: "inherit", padding: "0 12px", outline: "none" }}
+      />
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" data-testid="sound-pay-line-record" onClick={record} style={{ ...chip(recording || Boolean(line.clip)), flex: 1, height: 40, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, borderColor: recording ? "#ef4444" : (line.clip ? T.accent : T.line), color: recording ? "#ef4444" : (line.clip ? T.accent : T.inkSoft) }}><SoundMicIcon size={15} color={recording ? "#ef4444" : (line.clip ? T.accent : T.inkSoft)} />{recording ? "Recording… tap to stop" : line.clip ? "Record again" : "Record my voice (5 s)"}</button>
+        <button type="button" data-testid="sound-pay-line-preview" onClick={() => soundPaySayLine({ ...line, on: true })} disabled={recording || (!line.clip && !line.text.trim())} style={{ ...chip(false), height: 40, display: "flex", alignItems: "center", gap: 6 }}><SoundPlayIcon size={15} color={T.inkSoft} />Hear it</button>
+      </div>
+      <button type="button" data-testid="sound-pay-line-toggle" onClick={() => onChange({ ...line, on: !line.on })} style={{ border: "none", background: "transparent", color: T.inkSoft, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", padding: "2px 0", textAlign: "left" }}>{line.on ? "Turn my line off (chirp only)" : "Turn my line on"}</button>
+    </div>}
   </div>;
 }
 

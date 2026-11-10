@@ -10,7 +10,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { buildOnce, openPage, teardown, login, ACCOUNTS } from "./browser-harness.mjs";
+import { buildOnce, openPage, teardown, login, ACCOUNTS, API_ORIGIN } from "./browser-harness.mjs";
 
 const read = (p) => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 const S = new Function(
@@ -173,5 +173,50 @@ test("the self-test: one phone plays and hears its own ID, and says so; a meter 
   await page.waitForTimeout(800);
   assert.equal(await page.getByTestId("sound-pay-open").count(), 0, "no Play button on the QR card");
   assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("offline: a person heard before still opens a card from the phone's copy, and the card says so", async () => {
+  // B's chirp, as the payer's microphone hears it.
+  const rate = 48000;
+  const clean = S.soundPaySamples(S.soundPayEncode({ gloobalId: B.symbolId, side: "person", amount: "40" }), rate);
+  const mic = new Float32Array(rate * 1.5 + clean.length);
+  for (let i = 0; i < clean.length; i += 1) mic[rate * 1.5 + i] = clean[i] * 0.3;
+  const { page, context, api } = await openPage({ account: A });
+  await context.addInitScript(({ samples, rate }) => {
+    navigator.mediaDevices.getUserMedia = async (c) => {
+      if (c && c.audio && !c.video) {
+        const ctx = new AudioContext({ sampleRate: rate });
+        await ctx.resume();
+        const buf = ctx.createBuffer(1, samples.length, rate);
+        buf.copyToChannel(Float32Array.from(samples), 0);
+        const src = ctx.createBufferSource(); src.buffer = buf;
+        const dest = ctx.createMediaStreamDestination(); src.connect(dest); src.start();
+        return dest.stream;
+      }
+      throw new DOMException("no camera", "NotAllowedError");
+    };
+  }, { samples: Array.from(mic), rate });
+  await page.reload();
+  await page.waitForSelector("#root *", { timeout: 15000 });
+  await login(page, A);
+  await page.waitForTimeout(1200);
+  // Once with the server up: the lookup is made and kept on the phone.
+  await tap(page.getByTestId("earn-orb"));
+  await tap(page.getByTestId("earn-pay"));
+  await page.waitForFunction((name) => document.body.innerText.includes(name), B.fullName, { timeout: 30000 });
+  assert.equal(await page.getByTestId("scan-saved-copy").count(), 0, "online: no saved-copy line");
+  await page.waitForTimeout(800);
+  // Now with no server at all.
+  await context.route(`${API_ORIGIN}/api/**`, (route) => route.abort("failed"));
+  await page.getByRole("button", { name: "Back", exact: true }).first().evaluate((n) => n.click());
+  await page.waitForTimeout(600);
+  await tap(page.getByTestId("earn-orb"));
+  await tap(page.getByTestId("earn-pay"));
+  await page.waitForFunction((name) => document.body.innerText.includes(name), B.fullName, { timeout: 30000 });
+  const line = page.getByTestId("scan-saved-copy");
+  await line.waitFor({ timeout: 5000 });
+  assert.match(await line.innerText(), /You're offline · saved copy from .* · paying needs a connection/);
+  assert.match(await page.evaluate(() => document.body.innerText), /40/);
   await context.close();
 });

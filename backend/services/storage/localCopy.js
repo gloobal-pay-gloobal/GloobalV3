@@ -87,7 +87,14 @@ var GLOOBAL_LOCAL_COPY_PATHS = [
   /^\/api\/guide$/,
   /^\/api\/coverage(\/(view|me|books|numbers))?$/,
   /^\/api\/coin\/(supply|holders)$/,
-  /^\/api\/bazaar\/(showcase|categories)$/
+  /^\/api\/bazaar\/(showcase|categories)$/,
+  // People you have looked up before (a scan, a heard chirp, a typed ID).
+  // The server is asked FIRST every time; the phone's copy is used only
+  // when the server can't be reached, and the card says so. So the
+  // shopkeeper you pay every day still has a card with no signal; a
+  // stranger does not, and no name is ever shown from a stale copy while
+  // the server is there to ask.
+  /^\/api\/users\/resolve$/
 ];
 
 // 3. LIVE ONLY. Never answered from the phone, even if a pattern above would
@@ -95,7 +102,8 @@ var GLOOBAL_LOCAL_COPY_PATHS = [
 //    before money moves or an ID is taken. (Every write, POST/PUT/PATCH/DELETE,
 //    is live only as well; that is checked before this list.)
 var GLOOBAL_LOCAL_COPY_LIVE_ONLY = [
-  /^\/api\/users\/resolve$/,          // who an ID or number belongs to, before paying
+  // /api/users/resolve is NOT here any more: see "people you have looked
+  // up before" in the kept list.
   /^\/api\/payees\/current$/,         // the payee's current ID
   /^\/api\/users\/available$/,        // is this ID free
   /^\/api\/referrals\/code\/[^/?]+$/, // is this referral code real

@@ -307,11 +307,13 @@ var GloobalApi = {
   // GET /api/users/resolve?identifier=... — by symbolId or mobile number.
   async resolveUser(identifier) {
     try {
-      const result = await gloobalApiClient.get(`/api/users/resolve?identifier=${encodeURIComponent(identifier)}`, {
-        timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS
-      });
+      const path = `/api/users/resolve?identifier=${encodeURIComponent(identifier)}`;
+      const result = await gloobalApiClient.get(path, { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS });
       if (!result.user) throw new Error("No user found.");
-      return result.user;
+      // Answered from the phone's copy (server unreachable): say so, with
+      // the copy's time, so the card can.
+      const savedAt = typeof gloobalApiServedFromCopy === "function" ? gloobalApiServedFromCopy(path) : 0;
+      return savedAt ? { ...result.user, savedAt } : result.user;
     } catch (err) {
       if (gloobalApiIsUnreachable(err)) throw new Error(GLOOBAL_API_WAKING_MESSAGE);
       throw err;

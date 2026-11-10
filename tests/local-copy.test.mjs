@@ -100,7 +100,7 @@ test("payments and other writes never come from the phone", async () => {
   assert.deepEqual(await page.evaluate(() => T.post("/api/bank/SANJEEV", {})), { err: 0 }, "a POST to a saved path is still a write");
 });
 
-test("only the account's own views are kept, and liveOnly skips the copy", async () => {
+test("only the account's own views are kept (plus people looked up before), and liveOnly skips the copy", async () => {
   const { page, server } = await rig();
   await page.evaluate(async () => {
     await T.get("/api/users/resolve?identifier=X");
@@ -115,7 +115,10 @@ test("only the account's own views are kept, and liveOnly skips the copy", async
     await T.get("/api/transactions/history/SANJEEV"),
     await T.get("/api/transactions/history/SANJEEV", { liveOnly: true }),
   ]);
-  assert.deepEqual(r[0], { err: 0 }, "someone else's lookup");
+  // A person looked up before: the server first, and the phone's copy only
+  // when the server is down (so the shopkeeper you pay daily still has a
+  // card with no signal).
+  assert.notDeepEqual(r[0], { err: 0 }, "a lookup made before is answered from the copy when offline");
   assert.equal(r[1].ok.path, "/api/coin/supply", "GLOOBAL's own page: a saved copy is fine");
   assert.equal(r[2].ok.path, "/api/transactions/history/SANJEEV");
   assert.deepEqual(r[3], { err: 0 }, "a caller that needs the live answer");
@@ -143,8 +146,9 @@ test("every read sorted: your views kept, GLOOBAL's pages kept, live questions n
     "/api/rent/links", "/api/users/ME/photo", "/api/interest/status/ME", "/api/hooman?day=2026-11-09",
     "/api/products/bank", "/api/guide?have=x", "/api/coverage/view?period=7d", "/api/coin/supply",
   ];
+  assert.equal(f("GET", "/api/users/resolve?identifier=X"), true, "kept: a person looked up before");
   const live = [
-    "/api/users/resolve?identifier=X", "/api/payees/current?gloobalId=X", "/api/users/available?symbolId=X",
+    "/api/payees/current?gloobalId=X", "/api/users/available?symbolId=X",
     "/api/referrals/code/ABC", "/api/corridor/limit?from=A&to=B", "/api/face/status/ME", "/api/profile/ME/live-photo/pending",
     "/api/bank-transfers/REF123", "/api/names/rasoi.ghar", "/api/rent/listings?q=room", "/api/bazaar?q=tea", "/api/geo/search?q=x",
     "/api/creator/resolve/shop", "/api/push/status",

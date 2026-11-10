@@ -292,6 +292,7 @@ async function gloobalApiRequest(method, path, body, options) {
   if (!gloobalApiKeepsLocalCopy(method, path, authToken, opts)) {
     return gloobalApiRequestNetwork(method, path, body, opts);
   }
+  gloobalApiCopyServed.delete(path);
   const live = gloobalApiRequestNetwork(method, path, body, opts);
   if (typeof gloobalLocalCopyHasListener === "function" && gloobalLocalCopyHasListener(path)) {
     const saved = await gloobalLocalCopyRead(path);
@@ -334,10 +335,18 @@ async function gloobalApiRequest(method, path, body, options) {
   }
 }
 
+// When a path was last answered from the phone's copy because the server
+// could not be reached: path → the copy's time. A caller that wants to say
+// "this is a saved copy" on its own screen asks gloobalApiServedFromCopy.
+var gloobalApiCopyServed = new Map();
+function gloobalApiServedFromCopy(path) {
+  return gloobalApiCopyServed.get(path) || 0;
+}
 async function gloobalApiSavedOrThrow(error, path, saved) {
   if (error && error.status === 0) {
     const copy = saved || await gloobalLocalCopyRead(path);
     if (copy) {
+      gloobalApiCopyServed.set(path, copy.at);
       gloobalLocalCopyAnnounce(GLOOBAL_LOCAL_COPY_EVENT, { path, at: copy.at });
       return copy.data;
     }

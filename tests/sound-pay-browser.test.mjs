@@ -217,6 +217,7 @@ test("offline: a person heard before still opens a card from the phone's copy, a
   const line = page.getByTestId("scan-saved-copy");
   await line.waitFor({ timeout: 5000 });
   assert.match(await line.innerText(), /You're offline · saved copy from .* · paying needs a connection/);
+  if (process.env.SHOT) { await page.waitForTimeout(600); await page.screenshot({ path: process.env.SHOT + "-offline-card.png" }); }
   assert.match(await page.evaluate(() => document.body.innerText), /40/);
   await context.close();
 });

@@ -4338,7 +4338,17 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       requestCloseReceive();
       onOpenScan();
     }}
-  />}<NavHistoryButton
+  />}{
+    /* Earn (pay or get paid by sound), beside the scanner, on BOTH sides.
+       The personal side has the Earn orb at the centre of Home; the
+       creator side has the shop orb there, so this corner is where a
+       creator reaches phone-to-phone pay — and where nobody misses it. */
+  }<NavEarnButton
+    onClick={() => {
+      requestCloseReceive();
+      setShowEarn(true);
+    }}
+  /><NavHistoryButton
     onClick={() => {
       requestCloseReceive();
       setActiveTab("profile");
@@ -4662,7 +4672,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onOpenEssentials={() => { setShowBalanceSplit(false); setShowEssentials(true); }}
   /></ScreenErrorBoundary>}{showEarn && <EarnSheet
     gloobalId={myGloobalId}
-    side="person"
+    side={shareRole === "merchant" ? "shop" : "person"}
     onClose={requestCloseEarn}
     onPay={() => { setShowEarn(false); if (onOpenListen) onOpenListen(); else if (onOpenScan) onOpenScan(); }}
   />}{showEssentials && <EssentialsScreen

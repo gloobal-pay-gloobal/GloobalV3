@@ -31,8 +31,9 @@ var NAV_GLYPH_SIZE = 18;
 // it to restyle the button's appearance; that is the whole point of the
 // file. The one exception the codebase legitimately needs is a caller
 // pinning the button to a corner, which is placement.
-function NavIconButton({ onClick, label, disabled, style, children }) {
+function NavIconButton({ onClick, label, disabled, style, testid, children }) {
   return <button
+    data-testid={testid}
     onClick={onClick}
     disabled={disabled}
     aria-label={label}
@@ -66,6 +67,17 @@ function NavIconButton({ onClick, label, disabled, style, children }) {
 // opens the scanner now goes through this, so they cannot drift again.
 function NavScanButton({ onClick, label = "Scan a GLOOBAL QR code", disabled, style }) {
   return <NavIconButton onClick={onClick} label={label} disabled={disabled} style={style}><ScannerIcon size={NAV_GLYPH_SIZE} animated color={T.ink} /></NavIconButton>;
+}
+
+// ── EARN: PAY OR GET PAID BY SOUND ──────────────────────────────────────
+//
+// The ear sits beside the scanner in the one corner every screen already
+// teaches people to look at, so phone-to-phone pay is never missed on
+// either side (founder: "put this icon near the scanner on top corner").
+// Same circle as the scanner; the glyph a step smaller than the others so
+// the ear does not read heavier than the mark beside it.
+function NavEarnButton({ onClick, label = "Pay or get paid by sound", disabled, style }) {
+  return <NavIconButton onClick={onClick} label={label} disabled={disabled} style={style} testid="nav-earn"><SoundEarIcon size={NAV_GLYPH_SIZE - 2} color={T.ink} /></NavIconButton>;
 }
 
 // A country in a header: the app's real flag picture (FlagEmoji, the one

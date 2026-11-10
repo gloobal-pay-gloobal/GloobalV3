@@ -44,3 +44,21 @@ test("the orb opens the sheet; Get paid shows the Play panel; Pay opens Scan alr
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + "-pay.png" });
   await context.close();
 });
+
+test("the creator side reaches Earn from the ear beside the scanner on the GLOOBAL ID screen", async () => {
+  const { page, context } = await openPage({ account: A });
+  await login(page, A);
+  await page.waitForTimeout(1500);
+  await tap(page.getByRole("button", { name: "Switch to Creator profile" }));
+  await page.getByTestId("my-shop-orb").waitFor({ timeout: 8000 });
+  assert.equal(await page.getByTestId("earn-orb").count(), 0, "the creator side keeps its shop orb");
+  await tap(page.getByRole("button", { name: "Receive", exact: true }).first());
+  await page.getByTestId("nav-earn").waitFor({ timeout: 8000 });
+  if (process.env.SHOT) { await page.waitForTimeout(2500); await page.screenshot({ path: process.env.SHOT + "-creator-id.png" }); }
+  await tap(page.getByTestId("nav-earn"));
+  await page.getByTestId("earn-sheet").waitFor({ timeout: 8000 });
+  await tap(page.getByTestId("earn-receive"));
+  await page.getByTestId("sound-pay-play").waitFor({ timeout: 8000 });
+  if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + "-creator-earn.png" });
+  await context.close();
+});

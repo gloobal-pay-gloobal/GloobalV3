@@ -107,7 +107,7 @@ function SoundPayListenButton({ onHeard, onToast, disabled, autoStart = false })
     onClick={toggle}
     disabled={disabled}
     style={{ pointerEvents: "auto", height: 40, padding: "0 16px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.35)", background: listening ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.45)", color: listening ? "#111" : "#fff", fontSize: 13.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
-  >{listening ? <><SoundWaves on color="#111" />Listening… tap to stop</> : <><SoundEarIcon size={16} color="#fff" />Listen for a phone nearby</>}</button>;
+  >{listening ? <><SoundWaves on color="#111" />Listening… tap to stop</> : <><SoundEarIcon size={14} color="#fff" />Listen for a phone nearby</>}</button>;
 }
 
 // ── EARN: THE ORB IN THE MIDDLE OF THE FOUR (personal side) ─────────────
@@ -143,7 +143,7 @@ function EarnSheet({ gloobalId, side, onClose, onPay, onToast }) {
     onClick={onTap}
     className="v2-tap"
     style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "18px 10px 14px", borderRadius: 18, border: "none", background: tint, color: T.ink, fontFamily: "inherit", cursor: "pointer" }}
-  ><span style={{ width: 46, height: 46, borderRadius: "50%", background: T.surface, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: T.shadowCard }}><Icon size={22} color={T.ink} /></span><span style={{ fontSize: 14.5, fontWeight: 800, fontFamily: T.fontDisplay }}>{title}</span><span style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, textAlign: "center", lineHeight: 1.35 }}>{sub}</span></button>;
+  ><span style={{ width: 46, height: 46, borderRadius: "50%", background: T.surface, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: T.shadowCard }}><Icon size={18} color={T.ink} /></span><span style={{ fontSize: 14.5, fontWeight: 800, fontFamily: T.fontDisplay }}>{title}</span><span style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft, textAlign: "center", lineHeight: 1.35 }}>{sub}</span></button>;
   return <div data-testid="earn-sheet" role="dialog" aria-label="Earn" style={{ position: "fixed", inset: 0, zIndex: 320, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
     <button type="button" aria-label="Close" onClick={onClose} style={{ position: "absolute", inset: 0, border: "none", background: "rgba(20,16,20,0.45)", cursor: "pointer" }} />
     <div style={{ position: "relative", background: T.bg, borderRadius: "24px 24px 0 0", padding: "12px 18px calc(22px + env(safe-area-inset-bottom, 0px))", boxShadow: "0 -10px 30px rgba(0,0,0,0.18)" }}>

@@ -1241,6 +1241,15 @@ export async function installApi(context, options = {}) {
       return json(200, { success: true, reserve: 0, issued: 0, heldByAccounts: 0, holders: 0, reserveCurrency: "INR", coinCurrency: "GEU", backed: true });
     }
     if (pathname.startsWith("/api/coin/")) return json(200, { success: true, balance: 0, coin: 0 });
+    // A creator whose setup is done (a handle), so the creator side's
+    // tiles open instead of stopping at the name gate — what every real
+    // creator sees once set up. The handle's first/last words mirror what
+    // the setup screen saves.
+    if (/^\/api\/creator\/[^/]+\/profile$/.test(pathname)) {
+      const id = decodeURIComponent(pathname.split("/")[3]);
+      const who = byId(id);
+      return json(200, { success: true, creator: { symbolId: id, handle: "test.creator", first: "test", last: "creator", displayName: (who && who.name) || "Test Creator", cashbackRate: 0.01 } });
+    }
     if (pathname.startsWith("/api/creator/")) return json(200, { cashbackRate: 0.01 });
 
     // The shared-receipt link, mirroring GET /t/ in server.js: a short code

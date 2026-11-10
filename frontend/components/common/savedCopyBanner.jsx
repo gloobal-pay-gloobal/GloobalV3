@@ -79,9 +79,11 @@ function SavedCopyBanner() {
       data-mode={state.mode}
       role="status"
       style={{
-        position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 8px)", left: "50%", transform: "translateX(-50%)",
+        // At the bottom, above the tab bar: at the top it sat on every
+        // screen's centred title ("GLOOBAL QR", founder 17:48).
+        position: "fixed", bottom: "calc(env(safe-area-inset-bottom, 0px) + 84px)", left: "50%", transform: "translateX(-50%)",
         zIndex: 9000, background: offline ? "#1f2937" : "rgba(31,41,55,0.85)", color: "#fff", borderRadius: 999, padding: "6px 14px 6px 6px",
-        fontSize: 12.5, fontWeight: 600, boxShadow: "0 6px 18px rgba(0,0,0,.25)", whiteSpace: "nowrap",
+        fontFamily: T.fontBody, fontSize: 12.5, fontWeight: 600, boxShadow: "0 6px 18px rgba(0,0,0,.25)", whiteSpace: "nowrap",
         display: "flex", alignItems: "center", gap: 8, pointerEvents: "none"
       }}
     >

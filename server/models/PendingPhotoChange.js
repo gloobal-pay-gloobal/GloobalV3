@@ -18,7 +18,7 @@ const pendingPhotoChangeSchema = new mongoose.Schema(
     authTag: { type: String, required: true },
     dimensions: { type: Number, required: true, min: 1 },
     model: { type: String, required: true, trim: true },
-    method: { type: String, enum: ['speech', 'turns'], default: 'turns' },
+    method: { type: String, enum: ['moves', 'turns', 'speech'], default: 'turns' },
     activateAt: { type: Date, required: true, index: true },
   },
   { timestamps: true }

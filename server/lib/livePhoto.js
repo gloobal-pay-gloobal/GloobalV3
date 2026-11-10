@@ -29,7 +29,7 @@ const { cosineSimilarity } = require('./faceMatch');
 
 const LIVE_PHOTO_PATH = /^\/api\/profile\/[^/]+\/live-photo\/?$/i;
 const LIVE_PHOTO_WAIT_MS = 24 * 60 * 60 * 1000;
-const LIVE_PHOTO_METHODS = ['speech', 'turns'];
+const LIVE_PHOTO_METHODS = ['moves', 'turns', 'speech']; // 'moves': three of six moves (current); the other two are older checks
 const FACE_MIN_DIMENSIONS = 64;
 const FACE_MAX_DIMENSIONS = 2048;
 

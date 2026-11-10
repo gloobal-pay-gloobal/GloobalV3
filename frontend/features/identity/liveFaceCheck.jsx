@@ -2,31 +2,31 @@
 //
 // ── THE LIVE PHOTO ─────────────────────────────────────────────────────────
 //
-// The founder: a person's photo is not uploaded, it is TAKEN, here, live —
-// "say words like given on screen", and "if we fail we tell them go to a
-// quiet place". Head turns for anyone who can't speak. The same check runs
-// at registration and whenever the photo is changed later.
+// The founder: a person's photo is not uploaded, it is TAKEN, here, live.
+// The same check runs at registration and whenever the photo is changed
+// later, and (without a photo) to confirm a large payment.
 //
 // What it does, in order:
 //
 //   1. Camera only. There is no gallery button anywhere in this flow.
-//   2. Three random digits on screen. The person says them; the browser's
-//      speech recogniser has to hear all three, in order, AND the mouth in
-//      the camera has to move while it does. A photo held up to the lens
-//      can't speak; a recording can't know which three digits came up.
-//      Anyone who can't speak turns their head instead: two random
-//      directions out of left, right, up and down.
-//   3. Hold still for a moment. The library's anti-spoof and liveness
-//      models score those frames, a face descriptor is taken from them, and
-//      the photo is cut from the best one. The descriptor taken now must
-//      match one taken during step 2, so the face can't be swapped midway.
+//   2. Three moves, drawn at random from six — turn left, turn right, look
+//      up, look down, blink, smile — shown as three cards above the camera
+//      so the person sees the whole sequence before it starts. Each move is
+//      read off the face mesh against the person's OWN resting face, and
+//      the head returns to the centre between turns. A photo held up to the
+//      lens can't move; a recording can't know which three came up.
+//      (Saying numbers out loud was dropped: speech recognition failed too
+//      often, and nobody should have to say numbers aloud in a shop.)
+//   3. Hold still for two seconds, with a countdown; the shutter takes it
+//      sooner. The library's anti-spoof and liveness models score those
+//      frames, a face descriptor is taken from them, and the photo is cut
+//      from the best one. The descriptor taken now must match one taken
+//      during step 2, so the face can't be swapped midway.
 //   4. "This is you": keep it or retake.
 //
 // What leaves the phone: the photo, and the descriptor (a list of numbers
 // the server stores encrypted, so the same face can't open two GLOOBAL IDs).
-// The video and the voice don't. The speech recogniser is the browser's own;
-// on Android Chrome it listens through Google, which is why the hint says
-// it needs the internet and offers head turns when it can't be used.
+// The video doesn't; no microphone is used.
 //
 // ── THE FACE LIBRARY ──────────────────────────────────────────────────────
 //
@@ -37,11 +37,11 @@
 // origin (copied out of node_modules at build, vite.config.js). Nothing is
 // fetched from a CDN.
 //
-// Everything this file decides is in the plain functions at the top
-// (digits heard, mouth movement, head direction), so they can be tested
-// without a camera. The component only feeds them frames.
+// Everything this file decides is in the plain functions at the top (head
+// direction, eyes closed, a smile), so they can be tested without a camera.
+// The component only feeds them frames.
 import { useState as useState97, useEffect as useEffect94, useRef as useRef56 } from "react";
-import { Camera as Camera7, Mic as LiveMic, Lock as Lock9, Check as Check13, RotateCcw as LiveRetry, ArrowLeft as ArrowLeft9, ArrowRight as LiveArrowRight, ArrowUp as LiveArrowUp, ArrowDown as LiveArrowDown, Loader as Loader9 } from "lucide-react";
+import { Camera as Camera7, Eye as LiveEye, Smile as LiveSmile, Lock as Lock9, Check as Check13, ArrowLeft as ArrowLeft9, ArrowRight as LiveArrowRight, ArrowUp as LiveArrowUp, ArrowDown as LiveArrowDown, Loader as Loader9 } from "lucide-react";
 
 // Which network produced a descriptor. Stored with it on the server, and
 // descriptors from different models are never compared.
@@ -49,58 +49,6 @@ var LIVE_FACE_MODEL = "human-faceres@3.3";
 var LIVE_FACE_MODEL_PATH = "/face-models/";
 
 // ── Digits ────────────────────────────────────────────────────────────────
-
-var LIVE_FACE_DEVANAGARI = "०१२३४५६७८९";
-
-// Number words a recogniser may write instead of numerals. English includes
-// the homophones en-IN recognisers really return ("to", "for", "ate").
-var LIVE_FACE_DIGIT_WORDS = {
-  zero: 0, oh: 0, one: 1, won: 1, two: 2, to: 2, too: 2, three: 3, tree: 3, free: 3,
-  four: 4, for: 4, fore: 4, five: 5, six: 6, sex: 6, seven: 7, eight: 8, ate: 8, nine: 9,
-  "शून्य": 0, "एक": 1, "दो": 2, "तीन": 3, "चार": 4, "पांच": 5, "पाँच": 5, "पंच": 5,
-  "छह": 6, "छः": 6, "छे": 6, "छै": 6, "सात": 7, "आठ": 8, "नौ": 9, "नो": 9
-};
-
-// Three different digits from 1–9. No zero: "zero", "oh" and "o" are the
-// one digit recognisers disagree about.
-function liveFaceDigits(rand = Math.random) {
-  const pool = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-  const out = [];
-  while (out.length < 3) out.push(pool.splice(Math.floor(rand() * pool.length), 1)[0]);
-  return out;
-}
-
-function liveFaceDigitText(d, lang) {
-  return lang === "hi" ? LIVE_FACE_DEVANAGARI[d] : String(d);
-}
-
-// Every digit in a transcript, in the order spoken: numerals (Latin or
-// Devanagari, and "472" counts as three) and number words.
-function liveFaceHeard(transcript) {
-  const text = String(transcript || "")
-    .toLowerCase()
-    .replace(/[०-९]/g, (c) => String(LIVE_FACE_DEVANAGARI.indexOf(c)));
-  const out = [];
-  for (const token of text.split(/[\s,.;:!?\-–—।]+/)) {
-    if (!token) continue;
-    if (/^\d+$/.test(token)) {
-      for (const c of token) out.push(Number(c));
-    } else if (Object.prototype.hasOwnProperty.call(LIVE_FACE_DIGIT_WORDS, token)) {
-      out.push(LIVE_FACE_DIGIT_WORDS[token]);
-    }
-  }
-  return out;
-}
-
-// How many of the target digits were said, in order. Extra words around
-// them ("uh, four… seven two") don't count against the person.
-function liveFaceMatchCount(target, heard) {
-  let i = 0;
-  for (const d of heard) {
-    if (i < target.length && d === target[i]) i++;
-  }
-  return i;
-}
 
 // ── The face, measured ────────────────────────────────────────────────────
 //
@@ -111,20 +59,28 @@ function liveFaceMatchCount(target, heard) {
 //   pitch  nose tip below the eye line, in face-heights. Looking UP brings
 //          the nose tip closer to the eye line, so pitch goes DOWN.
 //   mouth  gap between the inner lips, in face-heights.
-// All three are compared with the person's own resting values (the
-// baseline), never with fixed numbers: faces differ more than heads turn.
+//   eyes   how open the eyes are: the lid gap of both eyes (upper lid 159 /
+//          386 to lower lid 145 / 374), in eye-widths. Closed eyes bring it
+//          near zero.
+//   smile  the mouth's width, corner 61 to corner 291, in eye-widths. A
+//          smile widens it.
+// All are compared with the person's own resting values (the baseline),
+// never with fixed numbers: faces differ more than heads turn.
 function liveFacePose(mesh) {
-  if (!Array.isArray(mesh) || mesh.length < 264) return null;
+  if (!Array.isArray(mesh) || mesh.length < 468) return null;
   const L = mesh[33], R = mesh[263], N = mesh[1], top = mesh[10], chin = mesh[152], up = mesh[13], lo = mesh[14];
   const eyeX = (L[0] + R[0]) / 2;
   const eyeY = (L[1] + R[1]) / 2;
   const eyeW = Math.hypot(R[0] - L[0], R[1] - L[1]);
   const faceH = Math.abs(chin[1] - top[1]);
   if (!eyeW || !faceH) return null;
+  const lid = (a, b) => Math.abs(mesh[a][1] - mesh[b][1]);
   return {
     yaw: (N[0] - eyeX) / eyeW,
     pitch: (N[1] - eyeY) / faceH,
-    mouth: Math.abs(lo[1] - up[1]) / faceH
+    mouth: Math.abs(lo[1] - up[1]) / faceH,
+    eyes: (lid(159, 145) + lid(386, 374)) / 2 / eyeW,
+    smile: Math.hypot(mesh[291][0] - mesh[61][0], mesh[291][1] - mesh[61][1]) / eyeW
   };
 }
 
@@ -133,7 +89,29 @@ function liveFaceBaseline(poses) {
     const v = poses.map((p) => p[k]).sort((a, b) => a - b);
     return v[Math.floor(v.length / 2)];
   };
-  return { yaw: mid("yaw"), pitch: mid("pitch"), mouth: mid("mouth") };
+  return { yaw: mid("yaw"), pitch: mid("pitch"), mouth: mid("mouth"), eyes: mid("eyes"), smile: mid("smile") };
+}
+
+// Eyes closed: the lid gap under 45% of the person's own open gap, with the
+// head roughly where it started (looking down also narrows the gap, and is
+// its own move). A blink is seen when the eyes CLOSE and then OPEN again.
+var LIVE_FACE_EYES_CLOSED = 0.45;
+var LIVE_FACE_EYES_OPEN = 0.75;
+function liveFaceEyesClosed(pose, base) {
+  return Boolean(pose && base && base.eyes > 0) && pose.eyes < base.eyes * LIVE_FACE_EYES_CLOSED && liveFaceStill(pose, base, 2.5);
+}
+function liveFaceEyesOpen(pose, base) {
+  return Boolean(pose && base && base.eyes > 0) && pose.eyes > base.eyes * LIVE_FACE_EYES_OPEN;
+}
+
+// A smile: the mouth at least 12% wider than at rest, or clearly open (a
+// laugh), with the head roughly where it started.
+var LIVE_FACE_SMILE = 1.12;
+function liveFaceSmiling(pose, base) {
+  if (!pose || !base || !(base.smile > 0)) return false;
+  const wider = pose.smile > base.smile * LIVE_FACE_SMILE;
+  const open = pose.mouth - base.mouth > 0.05;
+  return (wider || open) && liveFaceStill(pose, base, 2.5);
 }
 
 // 0254, after the founder's first try on a real phone ("I entered this stage
@@ -163,44 +141,26 @@ function liveFaceStill(pose, base, slack = 1) {
     Math.abs(pose.pitch - base.pitch) < LIVE_FACE_STILL.pitch * slack;
 }
 
-// Did the lips move while the numbers were said? Saying three digits opens
-// the mouth several times; a still photo, or a face that only sat there
-// while somebody else spoke, doesn't.
-function liveFaceLipsMoved(mouths) {
-  if (!mouths || mouths.length < 4) return false;
-  const lo = Math.min(...mouths);
-  const hi = Math.max(...mouths);
-  const open = mouths.filter((m) => m > lo + 0.02).length;
-  return hi - lo >= 0.03 && open >= 2;
-}
-
-// The combo. The founder: "move head left, again left, again left, so
-// there can be less fake". A random run of moves, repeats allowed, with a
-// return to the centre between each — so a recorded clip would have to
-// contain this exact sequence, which was only drawn a second ago. Never all
-// the same move, which would be the one sequence a clip is likeliest to
-// already hold.
+// The moves. Three drawn at random from six, no move twice, with a return
+// to the centre between head turns — so a recorded clip would have to
+// contain this exact sequence, which was only drawn a second ago.
 var LIVE_FACE_DIRS = ["left", "right", "up", "down"];
-function liveFaceTurns(rand = Math.random, n = 3) {
+var LIVE_FACE_MOVES = [...LIVE_FACE_DIRS, "blink", "smile"];
+var LIVE_FACE_MOVE_COUNT = 3;
+function liveFaceMoves(rand = Math.random, n = LIVE_FACE_MOVE_COUNT) {
+  const pool = LIVE_FACE_MOVES.slice();
   const out = [];
-  for (let i = 0; i < n; i++) out.push(LIVE_FACE_DIRS[Math.floor(rand() * 4)]);
-  if (n > 1 && out.every((d) => d === out[0])) {
-    const others = LIVE_FACE_DIRS.filter((d) => d !== out[0]);
-    out[n - 1] = others[Math.floor(rand() * others.length)];
-  }
+  while (out.length < n && pool.length) out.push(pool.splice(Math.floor(rand() * pool.length), 1)[0]);
   return out;
 }
+// The older name, kept for the payment check's wording.
+function liveFaceTurns(rand = Math.random, n = LIVE_FACE_MOVE_COUNT) { return liveFaceMoves(rand, n); }
+function liveFaceIsTurn(move) { return LIVE_FACE_DIRS.includes(move); }
 
-// Moves in the combo: three after the spoken numbers, four for anyone
-// doing the head-turn check alone, and three for a large payment — which is
-// silent on purpose (nobody should have to speak numbers out loud in a shop)
-// and sits on top of the PIN.
-function liveFaceComboLength(method, purpose) {
-  if (purpose === "pay") return 3;
-  // 0254: shorter, for 5–10 seconds end to end — the spoken numbers carry
-  // most of the proof, so two moves follow them.
-  return method === "speech" ? 2 : 3;
-}
+// How long to hold still at the end: two seconds, counted down on the ring,
+// so the photo is a composed one and not the first usable frame. The
+// shutter takes it sooner.
+var LIVE_FACE_HOLD_MS = 2000;
 
 // Is the one face in the frame usable? Returns null when it is, or the
 // hint to show. `w`/`h` are the frame's size.
@@ -228,11 +188,18 @@ var LIVE_FACE_TURN_TEXT = {
   left: ["Turn your head left", "सिर बाएँ घुमाइए"],
   right: ["Turn your head right", "सिर दाएँ घुमाइए"],
   up: ["Look up", "ऊपर देखिए"],
-  down: ["Look down", "नीचे देखिए"]
+  down: ["Look down", "नीचे देखिए"],
+  blink: ["Close your eyes, then open", "आँखें बंद करके खोलिए"],
+  smile: ["Smile", "मुस्कुराइए"]
+};
+// The short word on each card.
+var LIVE_FACE_MOVE_WORD = {
+  left: ["Turn left", "बाएँ"], right: ["Turn right", "दाएँ"], up: ["Look up", "ऊपर"], down: ["Look down", "नीचे"],
+  blink: ["Blink", "पलक"], smile: ["Smile", "मुस्कान"]
 };
 
 // The scores a still or a screen gets from the library's two models. Kept
-// lenient: these sit after the spoken numbers, which are the real test, and
+// lenient: these sit after the moves, which are the real test, and
 // a strict cut-off fails honest people in dim rooms first.
 var LIVE_FACE_MIN_REAL = 0.4;
 var LIVE_FACE_MIN_LIVE = 0.4;
@@ -327,10 +294,6 @@ function liveFaceLoadEngine() {
   return liveFaceEnginePromise;
 }
 
-function liveFaceSpeechSupported() {
-  return typeof window !== "undefined" && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
-}
-
 function liveFaceDefaultLang() {
   try {
     const saved = localStorage.getItem("gloobal.liveFaceLang");
@@ -373,14 +336,15 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
   const [phase, setPhase] = useState97("intro");
   const [lang, setLang] = useState97(liveFaceDefaultLang);
   const [hint, setHint] = useState97(null);
-  const [digits, setDigits] = useState97(() => liveFaceDigits());
-  const [said, setSaid] = useState97(0);
-  const [listening, setListening] = useState97(false);
-  const [turns, setTurns] = useState97(() => liveFaceTurns());
+  const [turns, setTurns] = useState97(() => liveFaceMoves());
   const [turnIndex, setTurnIndex] = useState97(0);
   const [backToCenter, setBackToCenter] = useState97(false);
+  // For the blink card: the eyes have been seen closed, waiting to open.
+  const [eyesClosed, setEyesClosed] = useState97(false);
   const [holdPct, setHoldPct] = useState97(0);
-  const [method, setMethod] = useState97(purpose !== "pay" && liveFaceSpeechSupported() ? "speech" : "turns");
+  // What the server is told about how the check was done. "moves": three
+  // of the six moves. (The server still accepts the older "turns".)
+  const method = "moves";
   // A payment check's answer from the server, when it isn't a yes.
   const [payFail, setPayFail] = useState97(null);
   const [fail, setFail] = useState97(null);
@@ -393,27 +357,13 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
   const videoRef = useRef56(null);
   const streamRef = useRef56(null);
   const loopRef = useRef56({ alive: false });
-  const recRef = useRef56(null);
   const stateRef = useRef56({});
 
   const hi = lang === "hi";
-  const langRef = useRef56(lang);
-  langRef.current = lang;
   const say = (pair) => (hi ? pair[1] : pair[0]);
-
-  const stopListening = () => {
-    const rec = recRef.current;
-    recRef.current = null;
-    if (rec) {
-      rec.onresult = rec.onerror = rec.onend = null;
-      try { rec.abort(); } catch (e) { /* already stopped */ }
-    }
-    setListening(false);
-  };
 
   const stopCamera = () => {
     loopRef.current.alive = false;
-    stopListening();
     const s = streamRef.current;
     streamRef.current = null;
     if (s) s.getTracks().forEach((t) => t.stop());
@@ -431,20 +381,17 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
   };
 
   // ── Start: camera, then the engine, then the frame loop ────────────────
-  const start = async (useMethod) => {
-    const m = useMethod || method;
-    setMethod(m);
+  const start = async () => {
     setFail(null);
     setHint(null);
-    setSaid(0);
     setHoldPct(0);
     setTurnIndex(0);
-    setDigits(liveFaceDigits());
-    setTurns(liveFaceTurns(Math.random, liveFaceComboLength(m, purpose)));
+    setTurns(liveFaceMoves());
     setPayFail(null);
     setBackToCenter(false);
+    setEyesClosed(false);
     setPhase("starting");
-    stateRef.current = { method: m, poses: [], base: null, stage: "align", mouths: [], challengeEmbeddings: [], holdStart: 0, hold: [], best: null, turnHits: 0, turnIndex: 0, needCenter: false, stageStart: 0 };
+    stateRef.current = { method, poses: [], base: null, stage: "align", challengeEmbeddings: [], holdStart: 0, hold: [], best: null, turnHits: 0, turnIndex: 0, needCenter: false, eyesClosed: false, stageStart: 0, shutter: false };
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -469,57 +416,6 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
     setPhase("align");
     loopRef.current = { alive: true };
     run(engine, loopRef.current);
-  };
-
-  // ── Speech ─────────────────────────────────────────────────────────────
-  const listen = (target) => {
-    const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!Rec) return failWith("nospeech");
-    const rec = new Rec();
-    rec.lang = langRef.current === "hi" ? "hi-IN" : "en-IN";
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.maxAlternatives = 3;
-    let best = 0;
-    rec.onresult = (event) => {
-      let text = "";
-      const alts = [];
-      for (let i = 0; i < event.results.length; i++) {
-        const r = event.results[i];
-        text += " " + (r[0] ? r[0].transcript : "");
-        for (let j = 0; j < r.length; j++) alts.push(r[j].transcript);
-      }
-      const counts = [text, ...alts].map((t) => liveFaceMatchCount(target, liveFaceHeard(t)));
-      best = Math.max(best, ...counts);
-      setSaid(best);
-      if (best >= target.length) {
-        stopListening();
-        const st = stateRef.current;
-        if (!liveFaceLipsMoved(st.mouths)) return failWith("lips");
-        st.stage = "combo";
-        st.stageStart = Date.now();
-        setPhase("combo");
-      }
-    };
-    rec.onerror = (event) => {
-      const code = event && event.error;
-      if (code === "not-allowed" || code === "service-not-allowed") return failWith("mic");
-      if (code === "network") return failWith("offline");
-      if (code === "aborted") return;
-      failWith("hear");
-    };
-    rec.onend = () => {
-      // The recogniser stops by itself after a silence. Still short of the
-      // three digits means it didn't hear them.
-      if (recRef.current === rec && stateRef.current.stage === "challenge") failWith("hear");
-    };
-    recRef.current = rec;
-    try {
-      rec.start();
-      setListening(true);
-    } catch (err) {
-      failWith("hear");
-    }
   };
 
   // ── The frame loop ─────────────────────────────────────────────────────
@@ -557,7 +453,7 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
     const problem = liveFaceFrameHint(faces, frame.width, frame.height);
     const face = problem ? null : faces.find((f) => f.box[2] > frame.width * 0.12);
     const pose = face ? liveFacePose(face.mesh) : null;
-    if (face && face.embedding && (st.stage === "align" || st.stage === "challenge" || st.stage === "combo")) st.challengeEmbeddings.push(face.embedding);
+    if (face && face.embedding && (st.stage === "align" || st.stage === "combo")) st.challengeEmbeddings.push(face.embedding);
 
     if (st.stage === "align") {
       if (!pose) {
@@ -570,23 +466,9 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
       if (st.poses.length >= 3) {
         st.base = liveFaceBaseline(st.poses);
         st.stageStart = now;
-        st.mouths = [];
-        if (st.method === "speech") {
-          st.stage = "challenge";
-          setPhase("challenge");
-          listen(digitsRef.current);
-        } else {
-          st.stage = "combo";
-          setPhase("combo");
-        }
+        st.stage = "combo";
+        setPhase("combo");
       }
-      return;
-    }
-
-    if (st.stage === "challenge") {
-      setHint(pose ? null : problem || "none");
-      if (pose) st.mouths.push(pose.mouth);
-      if (now - st.stageStart > 12000) failWith("hear");
       return;
     }
 
@@ -606,24 +488,37 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
         return;
       }
       // Each move seen in two frames running; seven seconds to make it.
-      if (pose && liveFaceTurned(list[st.turnIndex], pose, st.base)) st.turnHits += 1;
-      else st.turnHits = 0;
+      const move = list[st.turnIndex];
+      if (move === "blink") {
+        // Close, then open: a closed frame arms it, an open frame after
+        // that counts. (One closed frame is enough — a blink is short and
+        // the camera is slow.)
+        if (pose && liveFaceEyesClosed(pose, st.base) && !st.eyesClosed) { st.eyesClosed = true; setEyesClosed(true); }
+        st.turnHits = st.eyesClosed && pose && liveFaceEyesOpen(pose, st.base) ? 2 : 0;
+      } else {
+        const hit = move === "smile" ? liveFaceSmiling(pose, st.base) : liveFaceTurned(move, pose, st.base);
+        if (pose && hit) st.turnHits += 1; else st.turnHits = 0;
+      }
       if (st.turnHits >= 2) {
         st.turnIndex += 1;
         st.turnHits = 0;
+        st.eyesClosed = false;
+        setEyesClosed(false);
         st.stageStart = now;
         setTurnIndex(st.turnIndex);
         if (st.turnIndex >= list.length) {
           st.stage = "hold";
           st.holdStart = 0;
           setPhase("hold");
-        } else {
+        } else if (liveFaceIsTurn(move)) {
+          // Only a head turn needs a return to the centre; after a blink or
+          // a smile the head is already there.
           st.needCenter = true;
           setBackToCenter(true);
         }
         return;
       }
-      if (now - st.stageStart > 7000) failWith("turn");
+      if (now - st.stageStart > (move === "blink" || move === "smile" ? 9000 : 7000)) failWith(move === "blink" ? "blink" : move === "smile" ? "smile" : "turn");
       return;
     }
 
@@ -642,16 +537,14 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
       if (!st.best || face.score > st.best.score) {
         st.best = { score: face.score, photo: liveFaceCrop(frame, face.box) };
       }
-      const pct = Math.min(1, (now - st.holdStart) / 800);
+      const pct = Math.min(1, (now - st.holdStart) / LIVE_FACE_HOLD_MS);
       setHoldPct(pct);
       if ((pct >= 1 || st.shutter) && st.hold.some((h) => h.embedding)) finish(engine);
     }
   };
 
-  // Digits and turns are read inside the loop, which outlives a render, so
-  // they're mirrored into refs.
-  const digitsRef = useRef56(digits);
-  digitsRef.current = digits;
+  // The moves are read inside the loop, which outlives a render, so they're
+  // mirrored into a ref.
   const turnsRef = useRef56(turns);
   turnsRef.current = turns;
 
@@ -670,7 +563,7 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
     }
     const descriptor = liveFaceAverage(st.hold.map((h) => h.embedding).filter(Boolean));
     if (!descriptor) return failWith("engine");
-    // The face at the end must be the face that spoke or turned.
+    // The face at the end must be the face that made the moves.
     const during = liveFaceAverage(st.challengeEmbeddings);
     if (during && engine.similarity(during, descriptor) < LIVE_FACE_SAME_PERSON) return failWith("swap");
     if (purpose === "pay") {
@@ -738,7 +631,7 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
   };
 
   // ── Drawing ────────────────────────────────────────────────────────────
-  const dark = phase === "checking" || phase === "starting" || phase === "align" || phase === "challenge" || phase === "combo" || phase === "hold" || phase === "fail";
+  const dark = phase === "checking" || phase === "starting" || phase === "align" || phase === "combo" || phase === "hold" || phase === "fail";
   const ink = dark ? "#fff" : T.ink;
   const soft = dark ? "rgba(255,255,255,0.68)" : T.inkSoft;
   const good = T.positive || "#0FA372";
@@ -747,9 +640,9 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
     : phase === "different" || phase === "pending" ? "Live check passed"
     : purpose === "pay" && (phase === "intro" || phase === "checking") ? (small ? "Instead of your PIN" : "Payment of ₹1 lakh or more")
     : phase === "intro" ? (purpose === "register" ? "A live check, about 10 seconds" : "A new live photo")
-    : method === "speech"
-      ? (step2 ? "3 of 3 · hold still" : phase === "combo" ? "2 of 3 · follow the arrows" : "1 of 3 · say the numbers")
-      : (step2 ? "2 of 2 · hold still" : "1 of 2 · follow the arrows");
+    : step2 ? "Hold still · 2 seconds"
+    : phase === "combo" ? `Move ${Math.min(turnIndex + 1, turns.length)} of ${turns.length}`
+    : "Three quick moves, then hold still";
   const title = purpose === "pay" ? "Confirm it's you" : phase === "review" ? "This is you" : phase === "different" || phase === "pending" ? "Change photo" : "Your photo";
 
   const button = (primary, extra = {}) => ({
@@ -758,9 +651,8 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
     fontFamily: T.fontBody, fontSize: 15.5, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center",
     justifyContent: "center", gap: 8, ...extra
   });
-  const linkBtn = { background: "none", border: "none", color: soft, fontFamily: T.fontBody, fontSize: 13.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: 8, margin: "0 auto" };
 
-  const showCamera = phase === "starting" || phase === "align" || phase === "challenge" || phase === "combo" || phase === "hold";
+  const showCamera = phase === "starting" || phase === "align" || phase === "combo" || phase === "hold";
   const ringColor = phase === "hold" ? good : hint ? "rgba(255,255,255,0.35)" : "#fff";
 
   const header = <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(14px + env(safe-area-inset-top, 0px)) 18px 8px", flexShrink: 0 }}><button
@@ -774,60 +666,69 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
     small
       ? [Lock9, "You chose the face check instead of your PIN, for payments up to ₹10,000."]
       : [Lock9, "Payments of ₹1 lakh or more need a quick face check, on top of your PIN."],
-    [Camera7, "Follow three head moves, then hold still. About 5 seconds."],
+    [Camera7, "Follow three quick moves — a turn, a blink, a smile — then hold still for two seconds."],
     [Check13, "Checked against the face on your GLOOBAL ID. No photo is saved."]
-  ].map(([Icon, text], i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0 12px" }}><Icon size={18} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} /><span style={{ fontSize: 13.5, lineHeight: 1.45, color: T.inkSoft, fontWeight: 600 }}>{text}</span></div>)}</div><div style={{ flex: 1 }} /><button data-testid="live-face-open" onClick={() => start("turns")} style={button(true, { flex: "none", width: "100%" })}><Camera7 size={18} />Start face check</button></div>;
+  ].map(([Icon, text], i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0 12px" }}><Icon size={18} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} /><span style={{ fontSize: 13.5, lineHeight: 1.45, color: T.inkSoft, fontWeight: 600 }}>{text}</span></div>)}</div><div style={{ flex: 1 }} /><button data-testid="live-face-open" onClick={() => start()} style={button(true, { flex: "none", width: "100%" })}><Camera7 size={18} />Start face check</button></div>;
 
   const checking = <div data-testid="live-face-checking" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: "#fff", fontSize: 15, fontWeight: 700 }}><Loader9 size={28} style={{ animation: "liveFaceSpin 1s linear infinite" }} />Checking it's you…</div>;
 
   const intro = <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "8px 20px calc(18px + env(safe-area-inset-bottom, 0px))", gap: 14, overflowY: "auto" }}><div style={{ background: T.surface, borderRadius: T.radiusLg, boxShadow: T.shadowCard, padding: "16px 16px 6px" }}><div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: T.inkFaint, textTransform: "uppercase", marginBottom: 6 }}>What happens</div>{[
     [Camera7, "The camera opens. No gallery, no uploads: the photo is taken here."],
-    [LiveMic, "We show three numbers to say out loud, then a few head moves to follow, so we know it's a live person."],
-    [Lock9, "Only the photo and a coded face pattern are kept, so one face can't open two GLOOBAL IDs. GLOOBAL doesn't keep your voice or the video."]
-  ].map(([Icon, text], i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0 12px" }}><Icon size={18} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} /><span style={{ fontSize: 13.5, lineHeight: 1.45, color: T.inkSoft, fontWeight: 600 }}>{text}</span></div>)}</div>{purpose === "change" && <div style={{ fontSize: 12.5, lineHeight: 1.5, color: T.inkSoft, fontWeight: 600, padding: "0 4px" }}>If the new photo looks like a different person, you'll confirm with your PIN and it goes live after 24 hours.</div>}<div style={{ flex: 1 }} /><button data-testid="live-face-open" onClick={() => start()} style={button(true, { flex: "none", width: "100%" })}><Camera7 size={18} />Open camera</button><button data-testid="live-face-cant-speak" onClick={() => start("turns")} style={linkBtn}><LiveRetry size={14} />Can't speak right now? Turn your head instead</button></div>;
-
-  const digitBox = (d, i) => {
-    const done = i < said;
-    return <div key={i} data-testid="live-face-digit" data-said={done ? "1" : "0"} style={{ width: 64, height: 72, borderRadius: 18, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.fontDisplay, fontSize: 38, fontWeight: 700, color: "#fff", background: done ? good : "rgba(255,255,255,0.08)", border: `2px solid ${done ? good : "rgba(255,255,255,0.28)"}`, transition: "background .2s" }}>{liveFaceDigitText(d, lang)}</div>;
-  };
+    [LiveSmile, "Three quick moves to follow — turn your head, blink, smile — so we know it's a live person. Nothing to say out loud."],
+    [Lock9, "Only the photo and a coded face pattern are kept, so one face can't open two GLOOBAL IDs. GLOOBAL doesn't keep the video."]
+  ].map(([Icon, text], i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0 12px" }}><Icon size={18} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} /><span style={{ fontSize: 13.5, lineHeight: 1.45, color: T.inkSoft, fontWeight: 600 }}>{text}</span></div>)}</div>{purpose === "change" && <div style={{ fontSize: 12.5, lineHeight: 1.5, color: T.inkSoft, fontWeight: 600, padding: "0 4px" }}>If the new photo looks like a different person, you'll confirm with your PIN and it goes live after 24 hours.</div>}<div style={{ display: "flex", gap: 8, justifyContent: "center" }}>{[["en", "English"], ["hi", "हिन्दी"]].map(([k, label]) => <button key={k} data-testid={`live-face-lang-${k}`} onClick={() => pickLang(k)} style={{ padding: "7px 14px", borderRadius: 999, border: `1.5px solid ${k === lang ? T.accent : T.line}`, background: k === lang ? "rgba(124,92,255,0.1)" : T.surface, color: k === lang ? T.accent : T.inkSoft, fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>)}</div><div style={{ flex: 1 }} /><button data-testid="live-face-open" onClick={() => start()} style={button(true, { flex: "none", width: "100%" })}><Camera7 size={18} />Open camera</button></div>;
 
   const turnNow = turns[Math.min(turnIndex, turns.length - 1)];
-  const TurnIcon = { left: ArrowLeft9, right: LiveArrowRight, up: LiveArrowUp, down: LiveArrowDown }[turnNow];
+  const MOVE_ICON = { left: ArrowLeft9, right: LiveArrowRight, up: LiveArrowUp, down: LiveArrowDown, blink: LiveEye, smile: LiveSmile };
+  const TurnIcon = MOVE_ICON[turnNow];
+  const moving = phase === "combo" || phase === "hold";
+  // ── The three cards, above the camera ──────────────────────────────────
+  // The whole sequence is visible before it starts, so nobody is surprised
+  // by the next move: done ones tick green, the current one lights up.
+  const cards = <div data-testid="live-face-cards" style={{ display: "flex", gap: 8, width: "100%", maxWidth: 340, marginTop: 4, flexShrink: 0 }}>{turns.map((m, i) => {
+    const done = phase === "hold" || i < turnIndex;
+    const now = phase === "combo" && i === turnIndex;
+    const Icon = MOVE_ICON[m];
+    return <div key={i} data-testid="live-face-move" data-move={m} data-done={done ? "1" : "0"} data-now={now ? "1" : "0"} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "10px 4px 9px", borderRadius: 16, background: done ? "rgba(15,163,114,0.18)" : now ? "rgba(124,92,255,0.28)" : "rgba(255,255,255,0.07)", outline: now ? "2px solid #9b86ff" : "none", color: done ? "#5fe3b1" : now ? "#fff" : "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, transition: "background 200ms" }}><span style={{ width: 36, height: 36, borderRadius: "50%", background: done ? good : now ? "#7c5cff" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>{done ? <Check13 size={18} color="#fff" /> : <Icon size={18} color="#fff" />}</span><span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{say(LIVE_FACE_MOVE_WORD[m])}</span></div>;
+  })}</div>;
+  // What to do right now, in one line under the cards.
+  const nowLine = phase === "combo"
+    ? (backToCenter ? (hi ? "वापस बीच में" : "Back to the centre") : turnNow === "blink" && eyesClosed ? (hi ? "अब खोलिए" : "Now open") : say(LIVE_FACE_TURN_TEXT[turnNow]))
+    : phase === "hold" ? (hi ? "स्थिर रहिए" : "Hold still")
+    : phase === "align" ? (hi ? "चेहरा गोले में" : "Face in the circle")
+    : "";
+  const holdLeft = Math.max(1, Math.ceil((1 - holdPct) * (LIVE_FACE_HOLD_MS / 1000)));
 
-  const camera = <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "6px 20px calc(16px + env(safe-area-inset-bottom, 0px))", minHeight: 0 }}><div style={{ position: "relative", width: "min(74vw, 290px)", aspectRatio: "3 / 4", marginTop: 6, flexShrink: 0 }}><video
+  const camera = <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "6px 20px calc(16px + env(safe-area-inset-bottom, 0px))", minHeight: 0 }}>{(moving || phase === "align") && cards}<div data-testid="live-face-turn" data-dir={phase === "combo" ? (backToCenter ? "center" : turnNow) : phase === "hold" ? "hold" : "center"} data-eyes={eyesClosed ? "closed" : "open"} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 44, marginTop: 10 }}>{phase === "combo" && !backToCenter && TurnIcon && <TurnIcon size={26} color="#fff" />}<span style={{ fontFamily: T.fontDisplay, fontSize: 23, fontWeight: 700, color: "#fff", textAlign: "center" }}>{nowLine}</span></div><div style={{ position: "relative", width: "min(62vw, 250px)", aspectRatio: "3 / 4", marginTop: 6, flexShrink: 0 }}><video
     ref={videoRef}
     muted
     playsInline
     autoPlay
     data-testid="live-face-video"
     style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%", transform: "scaleX(-1)", background: "#111" }}
-  /><svg viewBox="0 0 100 133" style={{ position: "absolute", inset: -6, width: "calc(100% + 12px)", height: "calc(100% + 12px)", pointerEvents: "none" }}><ellipse cx="50" cy="66.5" rx="48" ry="64.5" fill="none" stroke={ringColor} strokeWidth="1.6" strokeDasharray={phase === "align" || phase === "starting" ? "3 3" : "none"} />{phase === "hold" && <ellipse cx="50" cy="66.5" rx="48" ry="64.5" fill="none" stroke={good} strokeWidth="3" pathLength="100" strokeDasharray={`${holdPct * 100} 100`} transform="rotate(-90 50 66.5)" />}</svg>{phase === "starting" && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "#fff", fontSize: 13, fontWeight: 700 }}><Loader9 size={26} className="spin" style={{ animation: "liveFaceSpin 1s linear infinite" }} />Getting the camera ready</div>}</div><div data-testid="live-face-hint" style={{ minHeight: 22, marginTop: 12, fontSize: 13.5, fontWeight: 700, color: "#FFD27A", textAlign: "center" }}>{hint ? say(LIVE_FACE_HINTS[hint]) : ""}</div>{phase === "challenge" && method === "speech" && <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginTop: 4 }}><div style={{ display: "flex", gap: 12 }}>{digits.map(digitBox)}</div><div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: soft }}><LiveMic size={14} color={listening ? good : soft} />{listening ? (hi ? "सुन रहे हैं…" : "Listening…") : ""}</div><div style={{ fontFamily: T.fontDisplay, fontSize: 24, fontWeight: 700, color: "#fff", marginTop: 2 }}>{hi ? "ये नंबर बोलिए" : "Say these numbers"}</div><div style={{ fontSize: 13, fontWeight: 600, color: soft }}>{hi ? "Say these numbers" : "ये नंबर बोलिए"}</div></div>}{phase === "combo" && <div data-testid="live-face-turn" data-dir={backToCenter ? "center" : turnNow} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginTop: 4 }}><div style={{ width: 72, height: 72, borderRadius: 22, background: backToCenter ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>{backToCenter ? <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff" }} /> : TurnIcon && <TurnIcon size={38} color="#fff" />}</div><div style={{ fontFamily: T.fontDisplay, fontSize: 24, fontWeight: 700, color: "#fff" }}>{backToCenter ? (hi ? "वापस बीच में" : "Back to the centre") : say(LIVE_FACE_TURN_TEXT[turnNow])}</div><div style={{ display: "flex", gap: 6 }}>{turns.map((d, i) => <span key={i} data-testid="live-face-move" data-done={i < turnIndex ? "1" : "0"} style={{ width: 9, height: 9, borderRadius: "50%", background: i < turnIndex ? good : i === turnIndex ? "#fff" : "rgba(255,255,255,0.25)" }} />)}</div></div>}{phase === "hold" && <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, marginTop: 6 }}><div style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, color: "#fff" }}>{hi ? "स्थिर रहिए" : "Hold still"}</div><div style={{ fontSize: 13, fontWeight: 600, color: soft }}>{method === "speech" ? "Numbers heard · moves matched" : "Moves matched"}</div><button
+  /><svg viewBox="0 0 100 133" style={{ position: "absolute", inset: -6, width: "calc(100% + 12px)", height: "calc(100% + 12px)", pointerEvents: "none" }}><ellipse cx="50" cy="66.5" rx="48" ry="64.5" fill="none" stroke={ringColor} strokeWidth="1.6" strokeDasharray={phase === "align" || phase === "starting" ? "3 3" : "none"} />{phase === "hold" && <ellipse cx="50" cy="66.5" rx="48" ry="64.5" fill="none" stroke={good} strokeWidth="3" pathLength="100" strokeDasharray={`${holdPct * 100} 100`} transform="rotate(-90 50 66.5)" />}</svg>{phase === "hold" && <div data-testid="live-face-countdown" style={{ position: "absolute", left: "50%", bottom: -14, transform: "translateX(-50%)", minWidth: 34, height: 34, padding: "0 10px", borderRadius: 17, background: good, color: "#fff", fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 18px rgba(0,0,0,0.35)" }}>{holdLeft}</div>}{phase === "starting" && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "#fff", fontSize: 13, fontWeight: 700 }}><Loader9 size={26} className="spin" style={{ animation: "liveFaceSpin 1s linear infinite" }} />Getting the camera ready</div>}</div><div data-testid="live-face-hint" style={{ minHeight: 22, marginTop: 18, fontSize: 13.5, fontWeight: 700, color: "#FFD27A", textAlign: "center" }}>{hint ? say(LIVE_FACE_HINTS[hint]) : phase === "hold" ? (purpose === "pay" ? (hi ? "जाँच हो रही है…" : "Checking…") : (hi ? "फ़ोटो ले रहे हैं…" : "Taking your photo…")) : ""}</div><div style={{ flex: 1 }} />{phase === "hold" && <button
     data-testid="live-face-shutter"
     onClick={() => { stateRef.current.shutter = true; }}
     aria-label={purpose === "pay" ? "Confirm now" : "Take photo"}
-    style={{ marginTop: 14, width: 72, height: 72, borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.22)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-  ><span style={{ width: 52, height: 52, borderRadius: "50%", background: "#fff" }} /></button><div style={{ fontSize: 12, fontWeight: 700, color: soft, marginTop: 6 }}>{purpose === "pay" ? "or tap to confirm now" : "or tap to take it now"}</div></div>}<div style={{ flex: 1 }} />{phase === "challenge" && method === "speech" && <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>{[["en", "English"], ["hi", "हिन्दी"]].map(([k, label]) => <button key={k} onClick={() => { if (k !== lang) { pickLang(k); langRef.current = k; stopCamera(); start("speech"); } }} style={{ padding: "7px 14px", borderRadius: 999, border: `1.5px solid ${k === lang ? "#fff" : "rgba(255,255,255,0.25)"}`, background: k === lang ? "rgba(255,255,255,0.14)" : "transparent", color: "#fff", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>{label}</button>)}</div>}{phase === "challenge" && method === "speech" && <button data-testid="live-face-switch-turns" onClick={() => { stopCamera(); start("turns"); }} style={linkBtn}><LiveRetry size={14} />I can't say this</button>}</div>;
+    style={{ width: 72, height: 72, borderRadius: "50%", border: "4px solid #fff", background: "rgba(255,255,255,0.22)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+  ><span style={{ width: 52, height: 52, borderRadius: "50%", background: "#fff" }} /></button>}{phase === "hold" && <div style={{ fontSize: 12, fontWeight: 700, color: soft, marginTop: 6 }}>{purpose === "pay" ? "or tap to confirm now" : "or tap to take it now"}</div>}</div>;
 
   const FAIL = {
-    hear: ["Couldn't hear you clearly", "Try in a quieter place, closer to the phone."],
-    lips: ["Say them facing the camera", "We heard the numbers, but your lips didn't move with them."],
-    offline: ["Listening needs the internet", "Connect and try again, or turn your head instead."],
-    mic: ["The microphone is off", "Allow the microphone for GLOOBAL, or turn your head instead."],
-    nospeech: ["This phone can't listen here", "Turn your head instead."],
     turn: ["Didn't see that move", "Follow each arrow a little further, then come back to the centre."],
+    blink: ["Didn't see you blink", "Close your eyes fully for a moment, then open them, facing the camera."],
+    smile: ["Didn't see a smile", "A big smile, facing the camera, in good light."],
     spoof: ["That didn't look like a live face", "Use your own face, in good light, not a photo or a screen."],
     swap: ["The face changed", "Keep the same face in the circle from start to end."],
     camera: ["The camera couldn't open", "Allow the camera for GLOOBAL in your phone's settings, then try again."],
     engine: ["The face check couldn't load", "Check your internet and try again."],
     pay: [payFail && payFail.final ? "Not right now" : "That didn't match", (payFail && payFail.message) || ""]
   };
-  const failText = FAIL[fail] || FAIL.hear;
-  const offerTurns = fail === "hear" || fail === "lips" || fail === "offline" || fail === "mic" || fail === "nospeech";
-  const failScreen = <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 24px calc(18px + env(safe-area-inset-bottom, 0px))", textAlign: "center" }}><div style={{ flex: 1 }} /><div data-testid="live-face-fail" data-reason={fail || ""} style={{ fontFamily: T.fontDisplay, fontSize: 24, fontWeight: 700, color: "#fff" }}>{failText[0]}</div><div style={{ fontSize: 14, fontWeight: 600, color: soft, marginTop: 8, lineHeight: 1.5, maxWidth: 300 }}>{failText[1]}</div><div style={{ flex: 1 }} />{payFail && payFail.final ? <button data-testid="live-face-close" onClick={close} style={button(true, { flex: "none", width: "100%" })}>Close</button> : <button data-testid="live-face-retry" onClick={() => start(fail === "nospeech" ? "turns" : fail === "turn" ? "turns" : method)} style={button(true, { flex: "none", width: "100%" })}>Try again</button>}{offerTurns && fail !== "nospeech" && <button data-testid="live-face-fail-turns" onClick={() => start("turns")} style={linkBtn}><LiveRetry size={14} />Turn your head instead</button>}</div>;
+  const failText = FAIL[fail] || FAIL.turn;
+  const failScreen = <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 24px calc(18px + env(safe-area-inset-bottom, 0px))", textAlign: "center" }}><div style={{ flex: 1 }} /><div data-testid="live-face-fail" data-reason={fail || ""} style={{ fontFamily: T.fontDisplay, fontSize: 24, fontWeight: 700, color: "#fff" }}>{failText[0]}</div><div style={{ fontSize: 14, fontWeight: 600, color: soft, marginTop: 8, lineHeight: 1.5, maxWidth: 300 }}>{failText[1]}</div><div style={{ flex: 1 }} />{payFail && payFail.final ? <button data-testid="live-face-close" onClick={close} style={button(true, { flex: "none", width: "100%" })}>Close</button> : <button data-testid="live-face-retry" onClick={() => start()} style={button(true, { flex: "none", width: "100%" })}>Try again</button>}</div>;
 
   const reviewPhoto = (src, size, label) => <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}><div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", background: T.surfaceAlt || T.surface, boxShadow: T.shadowCard }}>{src && <img src={src} alt={label || "Your new photo"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}</div>{label && <span style={{ fontSize: 12.5, fontWeight: 700, color: T.inkSoft }}>{label}</span>}</div>;
 
-  const review = <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 20px calc(18px + env(safe-area-inset-bottom, 0px))", gap: 14 }}>{reviewPhoto(result && result.photo, "min(64vw, 250px)")}<span data-testid="live-face-passed" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 999, background: good, color: "#fff", fontSize: 12.5, fontWeight: 800 }}><Check13 size={14} strokeWidth={3} />Live check passed</span><div style={{ display: "flex", gap: 10, alignItems: "flex-start", background: T.surface, borderRadius: 16, padding: "12px 14px", boxShadow: T.shadowCard, width: "100%", boxSizing: "border-box" }}><Lock9 size={16} color={T.inkSoft} style={{ flexShrink: 0, marginTop: 2 }} /><span style={{ fontSize: 12.5, lineHeight: 1.5, fontWeight: 600, color: T.inkSoft }}>Only this photo is kept, downsized, with a coded face pattern. GLOOBAL didn't keep your voice or the video.</span></div><div style={{ flex: 1 }} />{saveError && <div data-testid="live-face-save-error" style={{ fontSize: 13, fontWeight: 700, color: T.negative, textAlign: "center", lineHeight: 1.45 }}>{saveError}</div>}<div style={{ display: "flex", gap: 10, width: "100%" }}><button data-testid="live-face-retake" onClick={() => start()} disabled={saving} style={button(false)}>Retake</button><button data-testid="live-face-use" onClick={() => use()} disabled={saving} style={button(true, { opacity: saving ? 0.7 : 1 })}>{saving ? "Saving…" : "Use this photo"}</button></div></div>;
+  const review = <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 20px calc(18px + env(safe-area-inset-bottom, 0px))", gap: 14 }}>{reviewPhoto(result && result.photo, "min(64vw, 250px)")}<span data-testid="live-face-passed" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 999, background: good, color: "#fff", fontSize: 12.5, fontWeight: 800 }}><Check13 size={14} strokeWidth={3} />Live check passed</span><div style={{ display: "flex", gap: 10, alignItems: "flex-start", background: T.surface, borderRadius: 16, padding: "12px 14px", boxShadow: T.shadowCard, width: "100%", boxSizing: "border-box" }}><Lock9 size={16} color={T.inkSoft} style={{ flexShrink: 0, marginTop: 2 }} /><span style={{ fontSize: 12.5, lineHeight: 1.5, fontWeight: 600, color: T.inkSoft }}>Only this photo is kept, downsized, with a coded face pattern. GLOOBAL didn't keep the video.</span></div><div style={{ flex: 1 }} />{saveError && <div data-testid="live-face-save-error" style={{ fontSize: 13, fontWeight: 700, color: T.negative, textAlign: "center", lineHeight: 1.45 }}>{saveError}</div>}<div style={{ display: "flex", gap: 10, width: "100%" }}><button data-testid="live-face-retake" onClick={() => start()} disabled={saving} style={button(false)}>Retake</button><button data-testid="live-face-use" onClick={() => use()} disabled={saving} style={button(true, { opacity: saving ? 0.7 : 1 })}>{saving ? "Saving…" : "Use this photo"}</button></div></div>;
 
   const different = <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "14px 20px calc(18px + env(safe-area-inset-bottom, 0px))", gap: 16 }}><div style={{ display: "flex", alignItems: "center", gap: 16 }}>{reviewPhoto(current, 112, "Now")}<span style={{ color: T.inkFaint, fontSize: 18 }}>→</span>{reviewPhoto(result && result.photo, 112, "New")}</div><div data-testid="live-face-different" style={{ background: "#FFF6E5", border: "1px solid #F3D9A6", borderRadius: 16, padding: "12px 14px", width: "100%", boxSizing: "border-box" }}><div style={{ fontSize: 14, fontWeight: 800, color: "#9A5A00" }}>This looks like a different person</div><div style={{ fontSize: 12.5, lineHeight: 1.5, fontWeight: 600, color: "#7A5A2A", marginTop: 4 }}>To keep your account safe, the new photo goes live in 24 hours. You'll get a notification, and you can cancel it any time before then.</div></div><div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: T.inkSoft }}><Lock9 size={14} />Confirm with your PIN to continue</div><input
     data-testid="live-face-pin"

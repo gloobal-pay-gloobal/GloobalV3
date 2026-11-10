@@ -77,7 +77,7 @@ async function sendTo(page, amount, { faceStep, noPin = false } = {}) {
 
 async function open(options) {
   const opened = await openPage({ account: A, permissions: ["geolocation"], geolocation: { latitude: 28.61, longitude: 77.2 }, ...options });
-  await opened.context.addInitScript(liveFaceFake({ speech: false }));
+  await opened.context.addInitScript(liveFaceFake());
   await opened.page.reload();
   await opened.page.waitForSelector("#root *");
   await login(opened.page, A);

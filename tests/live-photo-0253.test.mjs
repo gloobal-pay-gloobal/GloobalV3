@@ -1,15 +1,16 @@
 // tests/live-photo-0253.test.mjs
 //
-// The live photo: the founder's "camera only", "say the numbers on screen",
-// "if we fail we tell them go to a quiet place", head turns for anyone who
-// can't speak, and the combo — "move head left, again left, again left, so
-// there can be less fake".
+// The live photo: the founder's "camera only", and three moves drawn from
+// six — turn left, turn right, look up, look down, blink, smile — shown as
+// cards above the camera, then a two-second hold. (Saying numbers out loud
+// was dropped: speech recognition failed too often, and nobody should have
+// to say numbers aloud in a shop.)
 //
 // Three layers:
-//   1. The rules, as plain functions (digits heard, moves seen, lips moved).
+//   1. The rules, as plain functions (moves seen, eyes closed, a smile).
 //   2. The wiring, from source: no gallery anywhere a face is set, the
-//      microphone allowed, the face models served from our own origin.
-//   3. The screen, in a browser, with a scripted face and voice
+//      face models served from our own origin.
+//   3. The screen, in a browser, with a scripted face
 //      (tests/live-face-fake.mjs): what a person sees and what reaches the
 //      server, for a pass, each kind of failure, and a different face.
 import { test, describe, before, after } from "node:test";
@@ -28,42 +29,17 @@ const pure = (() => {
   const body = src.slice(0, src.indexOf("function LiveFaceCheck(")).replace(/^import .*$/gm, "");
   const ctx = { Math, Array, Object, String, Number, localStorage: { getItem: () => null }, navigator: { language: "en-IN" } };
   vm.createContext(ctx);
-  vm.runInContext(body + "\n;this.api = { liveFaceDigits, liveFaceHeard, liveFaceMatchCount, liveFacePose, liveFaceBaseline, liveFaceTurned, liveFaceStill, liveFaceLipsMoved, liveFaceTurns, liveFaceComboLength, liveFaceFrameHint, liveFaceDigitText };", ctx);
+  vm.runInContext(body + "\n;this.api = { liveFacePose, liveFaceBaseline, liveFaceTurned, liveFaceStill, liveFaceEyesClosed, liveFaceEyesOpen, liveFaceSmiling, liveFaceMoves, liveFaceIsTurn, LIVE_FACE_MOVES, LIVE_FACE_HOLD_MS, liveFaceFrameHint };", ctx);
   return ctx.api;
 })();
 
 describe("the rules", () => {
-  test("three different digits, never zero", () => {
-    for (let i = 0; i < 300; i++) {
-      const d = pure.liveFaceDigits();
-      assert.equal(d.length, 3);
-      assert.equal(new Set(d).size, 3);
-      assert.ok(d.every((n) => n >= 1 && n <= 9));
-    }
-  });
-
-  test("digits are heard as numerals, Devanagari numerals, Hindi words and English words", () => {
-    assert.deepEqual([...pure.liveFaceHeard("4 7 2")], [4, 7, 2]);
-    assert.deepEqual([...pure.liveFaceHeard("472")], [4, 7, 2]);
-    assert.deepEqual([...pure.liveFaceHeard("४ ७ २")], [4, 7, 2]);
-    assert.deepEqual([...pure.liveFaceHeard("चार सात दो")], [4, 7, 2]);
-    assert.deepEqual([...pure.liveFaceHeard("Four, seven, two.")], [4, 7, 2]);
-    assert.deepEqual([...pure.liveFaceHeard("for seven to")], [4, 7, 2], "en-IN homophones");
-    assert.deepEqual([...pure.liveFaceHeard("पाँच छह नौ")], [5, 6, 9]);
-    assert.equal(pure.liveFaceDigitText(4, "hi"), "४");
-    assert.equal(pure.liveFaceDigitText(4, "en"), "4");
-  });
-
-  test("the three must come in order; words around them don't count against the person", () => {
-    assert.equal(pure.liveFaceMatchCount([4, 7, 2], [9, 4, 1, 7, 2]), 3);
-    assert.equal(pure.liveFaceMatchCount([4, 7, 2], [2, 7, 4]), 1);
-    assert.equal(pure.liveFaceMatchCount([4, 7, 2], [4, 7]), 2);
-  });
-
-  const mesh = ({ yaw = 0.09, pitch = 0.27, mouth = 0.01 } = {}) => {
+  const mesh = ({ yaw = 0.09, pitch = 0.27, mouth = 0.01, lid = 14, mouthW = 70 } = {}) => {
     const m = Array.from({ length: 468 }, () => [0, 0, 0]);
     m[33] = [250, 200, 0]; m[263] = [390, 200, 0]; m[10] = [320, 100, 0]; m[152] = [320, 400, 0];
     m[1] = [320 + yaw * 140, 200 + pitch * 300, 0]; m[13] = [320, 330, 0]; m[14] = [320, 330 + mouth * 300, 0];
+    m[159] = [270, 200 - lid / 2, 0]; m[145] = [270, 200 + lid / 2, 0]; m[386] = [370, 200 - lid / 2, 0]; m[374] = [370, 200 + lid / 2, 0];
+    m[61] = [320 - mouthW / 2, 330, 0]; m[291] = [320 + mouthW / 2, 330, 0];
     return m;
   };
 
@@ -83,28 +59,32 @@ describe("the rules", () => {
     assert.ok(pure.liveFaceStill(at({ yaw: 0.17 }), base, 1.6), "back to the centre is looser than the photo");
   });
 
-  test("the combo: random moves, repeats allowed, never all the same; 2 after speech, 3 alone, 3 to pay", () => {
-    assert.equal(pure.liveFaceComboLength("speech"), 2);
-    assert.equal(pure.liveFaceComboLength("turns"), 3);
-    assert.equal(pure.liveFaceComboLength("turns", "pay"), 3);
-    let repeats = 0;
-    for (let i = 0; i < 2000; i++) {
-      const c = pure.liveFaceTurns(Math.random, 3);
-      assert.equal(c.length, 3);
-      assert.ok(new Set(c).size > 1, `all the same: ${c}`);
-      if (c[0] === c[1] || c[1] === c[2]) repeats++;
-    }
-    assert.ok(repeats > 100, "\"left, again left\" must be possible");
-    // The founder's own example survives the not-all-same rule.
-    const seq = [0, 0, 0.99];
-    let k = 0;
-    assert.deepEqual([...pure.liveFaceTurns(() => seq[k++] ?? 0, 3)].slice(0, 2), ["left", "left"]);
+  test("blink and smile are measured against the person's own resting face", () => {
+    const base = pure.liveFaceBaseline([pure.liveFacePose(mesh()), pure.liveFacePose(mesh()), pure.liveFacePose(mesh())]);
+    const at = (o) => pure.liveFacePose(mesh(o));
+    assert.ok(pure.liveFaceEyesClosed(at({ lid: 3 }), base), "lids 3 px apart, from 14: closed");
+    assert.ok(!pure.liveFaceEyesClosed(at({ lid: 10 }), base), "a squint is not a blink");
+    assert.ok(!pure.liveFaceEyesClosed(at({ lid: 3, yaw: 0.3 }), base), "closed eyes while turned away don't count");
+    assert.ok(pure.liveFaceEyesOpen(at({ lid: 14 }), base));
+    assert.ok(!pure.liveFaceEyesOpen(at({ lid: 8 }), base), "half open is not open yet");
+    assert.ok(pure.liveFaceSmiling(at({ mouthW: 82 }), base), "the mouth 17% wider: a smile");
+    assert.ok(!pure.liveFaceSmiling(at({ mouthW: 74 }), base), "6% wider: talking, not smiling");
+    assert.ok(pure.liveFaceSmiling(at({ mouth: 0.08 }), base), "an open laugh counts");
+    assert.ok(!pure.liveFaceSmiling(at({ mouthW: 82, yaw: 0.3 }), base), "not while turned away");
   });
 
-  test("lips: a still mouth fails, a speaking one passes", () => {
-    assert.ok(!pure.liveFaceLipsMoved([0.01, 0.011, 0.01, 0.012, 0.01]));
-    assert.ok(pure.liveFaceLipsMoved([0.01, 0.06, 0.02, 0.07, 0.01, 0.05]));
-    assert.ok(!pure.liveFaceLipsMoved([0.01, 0.06]), "too few frames to judge");
+  test("the moves: three of six, no move twice, every move possible; two seconds of hold", () => {
+    assert.deepEqual([...pure.LIVE_FACE_MOVES], ["left", "right", "up", "down", "blink", "smile"]);
+    assert.equal(pure.LIVE_FACE_HOLD_MS, 2000);
+    const seen = new Set();
+    for (let i = 0; i < 2000; i++) {
+      const c = pure.liveFaceMoves();
+      assert.equal(c.length, 3);
+      assert.equal(new Set(c).size, 3, `a move twice: ${c}`);
+      c.forEach((m) => seen.add(m));
+    }
+    assert.equal(seen.size, 6, "every one of the six comes up");
+    assert.ok(pure.liveFaceIsTurn("left") && !pure.liveFaceIsTurn("blink") && !pure.liveFaceIsTurn("smile"));
   });
 
   test("framing hints: no face, two faces, too far, off-centre", () => {
@@ -139,7 +119,7 @@ describe("the wiring", () => {
     assert.ok(reg.indexOf("findVerifiedRegistrationOtp") < reg.indexOf("findOnOtherAccount"), "only after the OTP");
   });
 
-  test("the microphone is allowed for this site; the camera too; nothing else widened", () => {
+  test("the camera is allowed for this site; nothing else widened", () => {
     const toml = fs.readFileSync(path.join(ROOT, "netlify.toml"), "utf8");
     assert.match(toml, /Permissions-Policy\s*=\s*"camera=\(self\), microphone=\(self\), geolocation=\(self\), payment=\(self\)"/);
     assert.match(toml, /script-src 'self';/, "no new script origin, no eval");
@@ -163,9 +143,11 @@ describe("the wiring", () => {
   });
 
   test("the words on screen promise only what is true", () => {
-    assert.match(src, /GLOOBAL doesn't keep your voice or the video/);
+    assert.match(src, /GLOOBAL doesn't keep the video/);
     assert.match(src, /a coded face pattern/, "the descriptor is kept, and the screen says so");
-    assert.match(src, /Try in a quieter place, closer to the phone\./);
+    assert.match(src, /Nothing to say out loud/);
+    assert.doesNotMatch(src, /SpeechRecognition/, "no speech recogniser anywhere in the flow");
+    assert.doesNotMatch(src, /audio: true/, "no microphone");
   });
 });
 
@@ -193,24 +175,38 @@ async function openLiveCheck(fake = {}, options = {}) {
 const phaseOf = (page) => page.evaluate(() => document.querySelector("[data-testid=live-face-check]")?.dataset.phase || null);
 
 describe("the screen", () => {
-  test("say the numbers, follow three moves, hold still: the photo is saved through the live route", async () => {
+  test("three cards above the camera, each move followed, a two-second hold, the photo saved through the live route", async () => {
     const { page, context, api, errors } = await openLiveCheck();
     assert.match(await page.textContent("[data-testid=live-face-check]"), /No gallery, no uploads/);
+    assert.match(await page.textContent("[data-testid=live-face-check]"), /Nothing to say out loud/);
     await page.getByTestId("live-face-open").click();
-    await page.waitForFunction(() => document.querySelectorAll("[data-testid=live-face-digit]").length === 3, null, { timeout: 20000 });
-    assert.match(await page.getByTestId("live-face-subtitle").textContent(), /1 of 3 · say the numbers/);
     await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "combo", null, { timeout: 20000 });
-    assert.equal(await page.locator("[data-testid=live-face-move]").count(), 2, "two moves after the numbers");
-    assert.match(await page.getByTestId("live-face-subtitle").textContent(), /2 of 3 · follow the arrows/);
+    const moves = await page.locator("[data-testid=live-face-move]").evaluateAll((els) => els.map((e) => e.dataset.move));
+    assert.equal(moves.length, 3, "three cards");
+    assert.equal(new Set(moves).size, 3);
+    assert.ok(moves.every((m) => ["left", "right", "up", "down", "blink", "smile"].includes(m)), moves.join(","));
+    // The cards sit above the camera.
+    const cardsBox = await page.getByTestId("live-face-cards").boundingBox();
+    const videoBox = await page.getByTestId("live-face-video").boundingBox();
+    assert.ok(cardsBox.y + cardsBox.height <= videoBox.y, "the move cards are above the camera");
+    assert.match(await page.getByTestId("live-face-subtitle").textContent(), /Move 1 of 3/);
+    assert.equal(await page.locator("[data-testid=live-face-move][data-now='1']").count(), 1, "one card lit");
+    // The hold: a countdown, the shutter there, auto-taken after two seconds.
+    await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "hold", null, { timeout: 20000 });
+    const holdAt = Date.now();
+    assert.equal(await page.locator("[data-testid=live-face-move][data-done='1']").count(), 3, "all three ticked");
+    assert.ok(await page.getByTestId("live-face-countdown").isVisible(), "a countdown on the ring");
+    assert.ok(await page.getByTestId("live-face-shutter").isVisible(), "the shutter is live during the hold");
     assert.equal(await takeLivePhoto(page, { open: false }), "review");
+    const held = Date.now() - holdAt;
+    assert.ok(held >= 1800, `held for ${held} ms, not a micro hold`);
     assert.match(await page.textContent("[data-testid=live-face-check]"), /Live check passed/);
-    assert.equal(await page.evaluate(() => window.__recLang), "en-IN");
     await page.getByTestId("live-face-use").click();
     await page.getByTestId("live-face-check").waitFor({ state: "detached", timeout: 15000 });
     assert.equal(api.state.livePhotoPosts, 1);
     assert.match(api.state.photos[A.symbolId] || "", /^data:image\/jpeg;base64,/);
     const posted = api.calls.find((c) => /live-photo$/.test(c.path));
-    assert.equal(posted.body.method, "speech");
+    assert.equal(posted.body.method, "moves");
     assert.equal(posted.body.model, "human-faceres@3.3");
     assert.ok(Array.isArray(posted.body.descriptor) && posted.body.descriptor.length >= 64);
     assert.ok(!api.calls.some((c) => c.method === "PUT" && /\/photo$/.test(c.path)), "the photo was uploaded a second time through the old route");
@@ -218,45 +214,12 @@ describe("the screen", () => {
     await context.close();
   });
 
-  test("no speech on this phone: the check is three head moves, and it passes", async () => {
-    const { page, context, api } = await openLiveCheck({ speech: false });
-    await page.getByTestId("live-face-open").click();
-    await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "combo", null, { timeout: 20000 });
-    assert.equal(await page.locator("[data-testid=live-face-move]").count(), 3);
-    assert.match(await page.getByTestId("live-face-subtitle").textContent(), /1 of 2 · follow the arrows/);
-    assert.equal(await takeLivePhoto(page, { open: false }), "review");
-    await page.getByTestId("live-face-use").click();
-    await page.getByTestId("live-face-check").waitFor({ state: "detached", timeout: 15000 });
-    assert.equal(api.calls.find((c) => /live-photo$/.test(c.path)).body.method, "turns");
-    await context.close();
-  });
-
-  test("numbers heard but the lips never moved: refused, and head moves are offered", async () => {
-    const { page, context, api } = await openLiveCheck({ lips: false });
+  test("a face that won't follow the cards (a photo, a clip) doesn't pass", async () => {
+    const { page, context, api } = await openLiveCheck({ follow: false });
     assert.equal(await takeLivePhoto(page), "fail");
-    assert.equal(await page.getByTestId("live-face-fail").getAttribute("data-reason"), "lips");
+    assert.ok(["turn", "blink", "smile"].includes(await page.getByTestId("live-face-fail").getAttribute("data-reason")));
     assert.equal(api.state.livePhotoPosts || 0, 0);
-    await page.getByTestId("live-face-fail-turns").click();
-    assert.equal(await takeLivePhoto(page, { open: false }), "review");
-    await context.close();
-  });
-
-  test("nothing heard: 'Try in a quieter place', Try again, or turn your head", async () => {
-    const { page, context } = await openLiveCheck({ spoken: false });
-    assert.equal(await takeLivePhoto(page), "fail");
-    const text = await page.textContent("[data-testid=live-face-check]");
-    assert.match(text, /Couldn't hear you clearly/);
-    assert.match(text, /Try in a quieter place, closer to the phone\./);
     assert.ok(await page.getByTestId("live-face-retry").isVisible());
-    assert.ok(await page.getByTestId("live-face-fail-turns").isVisible());
-    await context.close();
-  });
-
-  test("a face that won't follow the arrows (a photo, a clip) doesn't pass", async () => {
-    const { page, context, api } = await openLiveCheck({ speech: false, follow: false });
-    assert.equal(await takeLivePhoto(page), "fail");
-    assert.equal(await page.getByTestId("live-face-fail").getAttribute("data-reason"), "turn");
-    assert.equal(api.state.livePhotoPosts || 0, 0);
     await context.close();
   });
 
@@ -293,18 +256,15 @@ describe("the screen", () => {
     await context.close();
   });
 
-  test("Hindi: the digits are shown in Devanagari and listened for in hi-IN", async () => {
+  test("Hindi: picked on the intro, the cards and the instruction are in Hindi", async () => {
     const { page, context } = await openLiveCheck();
-    await page.evaluate(() => localStorage.setItem("gloobal.liveFaceLang", "hi"));
-    await page.getByTestId("live-face-back").click();
-    await page.getByRole("button", { name: /^(Change your photo|Add a photo)$/ }).click({ force: true });
+    await page.getByTestId("live-face-lang-hi").click();
     await page.getByTestId("live-face-open").click();
-    await page.waitForFunction(() => document.querySelectorAll("[data-testid=live-face-digit]").length === 3, null, { timeout: 20000 });
-    const digits = await page.locator("[data-testid=live-face-digit]").allTextContents();
-    assert.ok(digits.every((d) => /^[१-९]$/.test(d)), digits.join(","));
-    assert.match(await page.textContent("[data-testid=live-face-check]"), /ये नंबर बोलिए/);
+    await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "combo", null, { timeout: 20000 });
+    const words = await page.locator("[data-testid=live-face-move]").allTextContents();
+    assert.ok(words.every((w) => /[\u0900-\u097F]/.test(w)), words.join(","));
     assert.equal(await takeLivePhoto(page, { open: false }), "review");
-    assert.equal(await page.evaluate(() => window.__recLang), "hi-IN");
+    assert.equal(await page.evaluate(() => localStorage.getItem("gloobal.liveFaceLang")), "hi");
     await context.close();
   });
 });
@@ -313,7 +273,7 @@ describe("the screen", () => {
 // 5–10 seconds the founder asked for, and keep a Take photo button there.
 describe("fast enough on a phone", () => {
   test("a person who sits a little off-centre still gets their photo, and the shutter takes it at once", async () => {
-    const { page, context } = await openLiveCheck({ speech: false });
+    const { page, context } = await openLiveCheck();
     await page.getByTestId("live-face-open").click();
     const started = Date.now();
     await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "hold", null, { timeout: 20000 });
@@ -328,6 +288,9 @@ describe("fast enough on a phone", () => {
   test("the heavy models run only at the start and for the photo; the models load while the intro is read", () => {
     assert.match(src, /faces = await engine\.detect\(work, stage === "align" \|\| stage === "hold"\);/);
     assert.match(src, /useEffect94\(\(\) => \{ liveFaceLoadEngine\(\)\.catch/);
-    assert.match(src, /const pct = Math\.min\(1, \(now - st\.holdStart\) \/ 800\);/);
+    // The hold is two seconds (the founder: "give me 2 seconds for a good
+    // hold"), counted down; the shutter takes it sooner.
+    assert.match(src, /const pct = Math\.min\(1, \(now - st\.holdStart\) \/ LIVE_FACE_HOLD_MS\);/);
+    assert.match(src, /var LIVE_FACE_HOLD_MS = 2000;/);
   });
 });

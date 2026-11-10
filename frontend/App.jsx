@@ -5264,9 +5264,12 @@ function GloobalId() {
   }}><ColoredGloobalId id={scanPayee.gloobalId} /></div>{
     /* Heard by sound with an amount: the request itself, on the card, so
        the payer sees what they are about to pay before tapping Pay. */
-  }{scanPayee.savedAt ? <div data-testid="scan-saved-copy" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(0,0,0,0.28)", color: "#fff", borderRadius: 999, padding: "7px 14px", marginBottom: 14, fontSize: 12, fontWeight: 700 }}>
-    <span style={{ width: 8, height: 8, borderRadius: 8, background: "#f59e0b" }} />
-    You're offline · saved copy from {savedCopyTimeLabel(scanPayee.savedAt)} · paying needs a connection
+  }{scanPayee.savedAt ? <div data-testid="scan-saved-copy" style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(0,0,0,0.28)", color: "#fff", borderRadius: 16, padding: "10px 14px 10px 10px", marginBottom: 14, textAlign: "left", maxWidth: 300 }}>
+    <OfflineMark size={30} />
+    <span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+      <span style={{ fontSize: 13, fontWeight: 800 }}>You're offline</span>
+      <span style={{ fontSize: 11.5, fontWeight: 600, opacity: 0.8 }}>Saved copy from {savedCopyTimeLabel(scanPayee.savedAt)} · paying needs a connection</span>
+    </span>
   </div> : null}{scanAskedAmount && <div data-testid="scan-asked-amount" style={{ display: "inline-flex", alignItems: "baseline", gap: 6, background: "rgba(255,255,255,0.18)", borderRadius: 16, padding: "10px 18px", marginBottom: 18, color: scanDetailsShown ? scanBackdropFor(scanPayee.gloobalId).from : "#fff" }}>
     <span style={{ fontSize: 12.5, fontWeight: 700, opacity: 0.85 }}>Asking for</span>
     <span style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{fmtMoney(Number(scanAskedAmount), COUNTRY_CURRENCY[String(scanPayee.countryIso || dialCountry.iso || "").toUpperCase()] || "INR")}</span>

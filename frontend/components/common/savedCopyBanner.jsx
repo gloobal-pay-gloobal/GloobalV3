@@ -1,5 +1,6 @@
 // src/components/common/savedCopyBanner.jsx
 import { useState as useState98, useEffect as useEffect95 } from "react";
+import { WifiOff as OfflineWifiOff, RefreshCw as OfflineRefresh } from "lucide-react";
 
 // ── "THIS IS THE PHONE'S SAVED COPY" ────────────────────────────────────
 //
@@ -23,6 +24,15 @@ function savedCopyTimeLabel(at) {
   } catch (e) {
     return "";
   }
+}
+
+// The offline mark: a crossed-out signal in an amber disc. Used by the pill
+// at the top and by any card that is showing the phone's saved copy, so
+// "offline" looks the same everywhere. (It was a bare amber dot, which read
+// as a status light, not as "no connection".)
+function OfflineMark({ size = 22, updating = false }) {
+  const Icon = updating ? OfflineRefresh : OfflineWifiOff;
+  return <span aria-hidden="true" style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, background: updating ? "#3b82f6" : "#f59e0b", display: "inline-flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 3px rgba(255,255,255,0.12)" }}><Icon size={Math.round(size * 0.58)} color="#fff" strokeWidth={2.6} /></span>;
 }
 
 function SavedCopyBanner() {
@@ -70,12 +80,12 @@ function SavedCopyBanner() {
       role="status"
       style={{
         position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 8px)", left: "50%", transform: "translateX(-50%)",
-        zIndex: 9000, background: offline ? "#1f2937" : "rgba(31,41,55,0.85)", color: "#fff", borderRadius: 999, padding: "7px 14px",
+        zIndex: 9000, background: offline ? "#1f2937" : "rgba(31,41,55,0.85)", color: "#fff", borderRadius: 999, padding: "6px 14px 6px 6px",
         fontSize: 12.5, fontWeight: 600, boxShadow: "0 6px 18px rgba(0,0,0,.25)", whiteSpace: "nowrap",
         display: "flex", alignItems: "center", gap: 8, pointerEvents: "none"
       }}
     >
-      <span style={{ width: 8, height: 8, borderRadius: 8, background: offline ? "#f59e0b" : "#60a5fa" }} />
+      <OfflineMark size={20} updating={!offline} />
       {offline ? `Offline · saved at ${savedCopyTimeLabel(state.at)}` : "Updating…"}
     </div>
   );

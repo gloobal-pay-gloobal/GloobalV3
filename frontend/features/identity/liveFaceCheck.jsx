@@ -95,8 +95,8 @@ function liveFaceBaseline(poses) {
 // Eyes closed: the lid gap under 45% of the person's own open gap, with the
 // head roughly where it started (looking down also narrows the gap, and is
 // its own move). A blink is seen when the eyes CLOSE and then OPEN again.
-var LIVE_FACE_EYES_CLOSED = 0.45;
-var LIVE_FACE_EYES_OPEN = 0.75;
+var LIVE_FACE_EYES_CLOSED = 0.6;
+var LIVE_FACE_EYES_OPEN = 0.8;
 function liveFaceEyesClosed(pose, base) {
   return Boolean(pose && base && base.eyes > 0) && pose.eyes < base.eyes * LIVE_FACE_EYES_CLOSED && liveFaceStill(pose, base, 2.5);
 }
@@ -190,7 +190,7 @@ var LIVE_FACE_TURN_TEXT = {
   right: ["Turn your head right", "सिर दाएँ घुमाइए"],
   up: ["Look up", "ऊपर देखिए"],
   down: ["Look down", "नीचे देखिए"],
-  blink: ["Close your eyes, then open", "आँखें बंद करके खोलिए"],
+  blink: ["Close your eyes and keep them closed", "आँखें बंद रखिए"],
   smile: ["Smile", "मुस्कुराइए"]
 };
 // The short word on each card.
@@ -494,7 +494,10 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
         // Close, then open: a closed frame arms it, an open frame after
         // that counts. (One closed frame is enough — a blink is short and
         // the camera is slow.)
-        if (pose && liveFaceEyesClosed(pose, st.base) && !st.eyesClosed) { st.eyesClosed = true; setEyesClosed(true); }
+        if (pose && liveFaceEyesClosed(pose, st.base)) {
+          st.closedFrames = (st.closedFrames || 0) + 1;
+          if (st.closedFrames >= 2 && !st.eyesClosed) { st.eyesClosed = true; setEyesClosed(true); }
+        }
         st.turnHits = st.eyesClosed && pose && liveFaceEyesOpen(pose, st.base) ? 2 : 0;
       } else {
         const hit = move === "smile" ? liveFaceSmiling(pose, st.base) : liveFaceTurned(move, pose, st.base);
@@ -504,6 +507,7 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
         st.turnIndex += 1;
         st.turnHits = 0;
         st.eyesClosed = false;
+        st.closedFrames = 0;
         setEyesClosed(false);
         st.stageStart = now;
         setTurnIndex(st.turnIndex);
@@ -712,15 +716,29 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
   // ── The three cards, above the camera ──────────────────────────────────
   // The whole sequence is visible before it starts, so nobody is surprised
   // by the next move: done ones tick green, the current one lights up.
-  const cards = <div data-testid="live-face-cards" style={{ display: "flex", gap: 8, width: "100%", maxWidth: 340, marginTop: 4, flexShrink: 0 }}>{turns.map((m, i) => {
-    const done = phase === "hold" || i < turnIndex;
-    const now = phase === "combo" && i === turnIndex;
-    const Icon = MOVE_ICON[m];
-    return <div key={i} data-testid="live-face-move" data-move={m} data-done={done ? "1" : "0"} data-now={now ? "1" : "0"} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "10px 4px 9px", borderRadius: 16, background: done ? "rgba(15,163,114,0.18)" : now ? "rgba(124,92,255,0.28)" : "rgba(255,255,255,0.07)", outline: now ? "2px solid #9b86ff" : "none", color: done ? "#5fe3b1" : now ? "#fff" : "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: 700, transition: "background 200ms" }}><span style={{ width: 36, height: 36, borderRadius: "50%", background: done ? good : now ? "#7c5cff" : "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>{done ? <Check13 size={18} color="#fff" /> : <Icon size={18} color="#fff" />}</span><span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{say(LIVE_FACE_MOVE_WORD[m])}</span></div>;
-  })}</div>;
+  const cards = <div data-testid="live-face-cards" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, width: "100%", marginTop: 4, flexShrink: 0 }}>
+    <div style={{ display: "flex", gap: 8 }}>{turns.map((m, i) => {
+      const done = phase === "hold" || i < turnIndex;
+      const now = phase === "combo" && i === turnIndex;
+      return <span key={i} data-testid="live-face-dot" data-move={m} data-done={done ? "1" : "0"} data-now={now ? "1" : "0"} style={{ width: now ? 22 : 8, height: 8, borderRadius: 8, background: done ? good : now ? "#9b86ff" : "rgba(255,255,255,0.25)", transition: "width 200ms, background 200ms" }} />;
+    })}</div>
+    {(() => {
+      const i = Math.min(turnIndex, turns.length - 1);
+      const m = turns[i];
+      const Icon = MOVE_ICON[m];
+      const allDone = phase === "hold";
+      return <div data-testid="live-face-move" data-move={m} data-done={allDone ? "1" : "0"} data-now={phase === "combo" ? "1" : "0"} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px 12px 12px", borderRadius: 18, background: allDone ? "rgba(15,163,114,0.18)" : "rgba(124,92,255,0.22)", outline: allDone ? "none" : "2px solid #9b86ff", color: "#fff", minWidth: 200, justifyContent: "center" }}>
+        <span style={{ width: 44, height: 44, borderRadius: "50%", background: allDone ? good : "#7c5cff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{allDone ? <Check13 size={22} color="#fff" /> : <Icon size={22} color="#fff" />}</span>
+        <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,0.65)", letterSpacing: 0.3 }}>{allDone ? (hi ? "सब हो गया" : "All done") : `${i + 1} of ${turns.length}`}</span>
+          <span style={{ fontFamily: T.fontDisplay, fontSize: 18, fontWeight: 800 }}>{allDone ? (hi ? "अब स्थिर रहिए" : "Now hold still") : say(LIVE_FACE_MOVE_WORD[m])}</span>
+        </span>
+      </div>;
+    })()}
+  </div>;
   // What to do right now, in one line under the cards.
   const nowLine = phase === "combo"
-    ? (backToCenter ? (hi ? "वापस बीच में" : "Back to the centre") : turnNow === "blink" && eyesClosed ? (hi ? "अब खोलिए" : "Now open") : say(LIVE_FACE_TURN_TEXT[turnNow]))
+    ? (backToCenter ? (hi ? "वापस बीच में" : "Back to the centre") : turnNow === "blink" && eyesClosed ? (hi ? "अब आँखें खोलिए" : "Now open your eyes") : say(LIVE_FACE_TURN_TEXT[turnNow]))
     : phase === "hold" ? (hi ? "स्थिर रहिए" : "Hold still")
     : phase === "align" ? (hi ? "चेहरा गोले में" : "Face in the circle")
     : "";
@@ -733,7 +751,7 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
     autoPlay
     data-testid="live-face-video"
     style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%", transform: "scaleX(-1)", background: "#111" }}
-  /><svg viewBox="0 0 100 133" style={{ position: "absolute", inset: -6, width: "calc(100% + 12px)", height: "calc(100% + 12px)", pointerEvents: "none" }}><ellipse cx="50" cy="66.5" rx="48" ry="64.5" fill="none" stroke={ringColor} strokeWidth="1.6" strokeDasharray={phase === "align" || phase === "starting" ? "3 3" : "none"} />{phase === "hold" && <ellipse cx="50" cy="66.5" rx="48" ry="64.5" fill="none" stroke={good} strokeWidth="3" pathLength="100" strokeDasharray={`${holdPct * 100} 100`} transform="rotate(-90 50 66.5)" />}</svg>{phase === "hold" && <div data-testid="live-face-countdown" style={{ position: "absolute", left: "50%", bottom: -14, transform: "translateX(-50%)", minWidth: 34, height: 34, padding: "0 10px", borderRadius: 17, background: good, color: "#fff", fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 18px rgba(0,0,0,0.35)" }}>{holdLeft}</div>}{phase === "starting" && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "#fff", fontSize: 13, fontWeight: 700 }}><Loader9 size={26} className="spin" style={{ animation: "liveFaceSpin 1s linear infinite" }} />Getting the camera ready</div>}</div><div data-testid="live-face-hint" style={{ minHeight: 22, marginTop: 18, fontSize: 13.5, fontWeight: 700, color: "#FFD27A", textAlign: "center" }}>{hint ? say(LIVE_FACE_HINTS[hint]) : phase === "hold" ? (purpose === "pay" ? (hi ? "जाँच हो रही है…" : "Checking…") : (hi ? "फ़ोटो ले रहे हैं…" : "Taking your photo…")) : ""}</div><div style={{ flex: 1 }} />{phase === "hold" && <button
+  /><svg viewBox="0 0 100 133" style={{ position: "absolute", inset: -6, width: "calc(100% + 12px)", height: "calc(100% + 12px)", pointerEvents: "none" }}><ellipse cx="50" cy="66.5" rx="48" ry="64.5" fill="none" stroke={ringColor} strokeWidth="1.6" strokeDasharray={phase === "align" || phase === "starting" ? "3 3" : "none"} />{phase === "hold" && <ellipse cx="50" cy="66.5" rx="48" ry="64.5" fill="none" stroke={good} strokeWidth="3" pathLength="100" strokeDasharray={`${holdPct * 100} 100`} strokeDashoffset="-75" strokeLinecap="round" />}</svg>{phase === "hold" && <div data-testid="live-face-countdown" style={{ position: "absolute", left: "50%", bottom: -14, transform: "translateX(-50%)", minWidth: 34, height: 34, padding: "0 10px", borderRadius: 17, background: good, color: "#fff", fontFamily: T.fontDisplay, fontSize: 17, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 18px rgba(0,0,0,0.35)" }}>{holdLeft}</div>}{phase === "starting" && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, color: "#fff", fontSize: 13, fontWeight: 700 }}><Loader9 size={26} className="spin" style={{ animation: "liveFaceSpin 1s linear infinite" }} />Getting the camera ready</div>}</div><div data-testid="live-face-hint" style={{ minHeight: 22, marginTop: 18, fontSize: 13.5, fontWeight: 700, color: "#FFD27A", textAlign: "center" }}>{hint ? say(LIVE_FACE_HINTS[hint]) : phase === "hold" ? (purpose === "pay" ? (hi ? "जाँच हो रही है…" : "Checking…") : (hi ? "फ़ोटो ले रहे हैं…" : "Taking your photo…")) : ""}</div><div style={{ flex: 1 }} />{phase === "hold" && <button
     data-testid="live-face-shutter"
     onClick={() => { stateRef.current.shutter = true; }}
     aria-label={purpose === "pay" ? "Confirm now" : "Take photo"}
@@ -742,7 +760,7 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
 
   const FAIL = {
     turn: ["Didn't see that move", "Follow each arrow a little further, then come back to the centre."],
-    blink: ["Didn't see you blink", "Close your eyes fully for a moment, then open them, facing the camera."],
+    blink: ["Didn't see your eyes close", "Close your eyes and keep them closed until it says open, facing the camera."],
     smile: ["Didn't see a smile", "A big smile, facing the camera, in good light."],
     spoof: ["That didn't look like a live face", "Use your own face, in good light, not a photo or a screen."],
     swap: ["The face changed", "Keep the same face in the circle from start to end."],

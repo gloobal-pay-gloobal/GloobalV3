@@ -175,14 +175,15 @@ async function openLiveCheck(fake = {}, options = {}) {
 const phaseOf = (page) => page.evaluate(() => document.querySelector("[data-testid=live-face-check]")?.dataset.phase || null);
 
 describe("the screen", () => {
-  test("three cards above the camera, each move followed, a two-second hold, the photo saved through the live route", async () => {
+  test("one move card at a time above the camera (three dots), each move followed, a two-second hold, the photo saved through the live route", async () => {
     const { page, context, api, errors } = await openLiveCheck();
     assert.match(await page.textContent("[data-testid=live-face-check]"), /No gallery, no uploads/);
     assert.match(await page.textContent("[data-testid=live-face-check]"), /Nothing to say out loud/);
     await page.getByTestId("live-face-open").click();
     await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "combo", null, { timeout: 20000 });
-    const moves = await page.locator("[data-testid=live-face-move]").evaluateAll((els) => els.map((e) => e.dataset.move));
-    assert.equal(moves.length, 3, "three cards");
+    const moves = await page.locator("[data-testid=live-face-dot]").evaluateAll((els) => els.map((e) => e.dataset.move));
+    assert.equal(moves.length, 3, "three dots, one per move");
+    assert.equal(await page.locator("[data-testid=live-face-move]").count(), 1, "one card: the current move only");
     assert.equal(new Set(moves).size, 3);
     assert.ok(moves.every((m) => ["left", "right", "up", "down", "blink", "smile"].includes(m)), moves.join(","));
     // The cards sit above the camera.
@@ -190,11 +191,12 @@ describe("the screen", () => {
     const videoBox = await page.getByTestId("live-face-video").boundingBox();
     assert.ok(cardsBox.y + cardsBox.height <= videoBox.y, "the move cards are above the camera");
     assert.match(await page.getByTestId("live-face-subtitle").textContent(), /Move [123] of 3/);
-    assert.equal(await page.locator("[data-testid=live-face-move][data-now='1']").count(), 1, "one card lit");
+    assert.equal(await page.locator("[data-testid=live-face-dot][data-now='1']").count(), 1, "one dot lit");
     // The hold: a countdown, the shutter there, auto-taken after two seconds.
     await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "hold", null, { timeout: 20000 });
     const holdAt = Date.now();
-    assert.equal(await page.locator("[data-testid=live-face-move][data-done='1']").count(), 3, "all three ticked");
+    assert.equal(await page.locator("[data-testid=live-face-dot][data-done='1']").count(), 3, "all three dots done");
+    assert.match(await page.locator("[data-testid=live-face-move]").innerText(), /All done/);
     assert.ok(await page.getByTestId("live-face-countdown").isVisible(), "a countdown on the ring");
     assert.ok(await page.getByTestId("live-face-shutter").isVisible(), "the shutter is live during the hold");
     assert.equal(await takeLivePhoto(page, { open: false }), "review");
@@ -261,8 +263,8 @@ describe("the screen", () => {
     await page.getByTestId("live-face-lang-hi").click();
     await page.getByTestId("live-face-open").click();
     await page.waitForFunction(() => document.querySelector("[data-testid=live-face-check]").dataset.phase === "combo", null, { timeout: 20000 });
-    const words = await page.locator("[data-testid=live-face-move]").allTextContents();
-    assert.ok(words.every((w) => /[\u0900-\u097F]/.test(w)), words.join(","));
+    const word = await page.locator("[data-testid=live-face-move]").innerText();
+    assert.ok(/[\u0900-\u097F]/.test(word), word);
     assert.equal(await takeLivePhoto(page, { open: false }), "review");
     assert.equal(await page.evaluate(() => localStorage.getItem("gloobal.liveFaceLang")), "hi");
     await context.close();

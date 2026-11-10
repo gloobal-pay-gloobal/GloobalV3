@@ -96,7 +96,7 @@ test("over the line: the face check runs on top of the PIN, then the same paymen
       assert.match(words, /₹1 lakh or more need a quick face check, on top of your PIN/);
       assert.match(words, /No photo is saved/);
       await p.getByTestId("live-face-open").click();
-      await p.waitForFunction(() => document.querySelectorAll("[data-testid=live-face-move]").length === 3, null, { timeout: 20000 });
+      await p.waitForFunction(() => document.querySelectorAll("[data-testid=live-face-dot]").length === 3, null, { timeout: 20000 });
       await p.getByTestId("live-face-check").waitFor({ state: "detached", timeout: 30000 });
     }
   });

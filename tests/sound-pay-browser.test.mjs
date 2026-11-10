@@ -1,7 +1,7 @@
 // tests/sound-pay-browser.test.mjs
 //
 // Pay nearby by sound in the real app:
-//   1. The receiver's QR card: "Play my ID", 250 on the pad, Play. The exact
+//   1. The receiver's Earn sheet: Get paid, 250 on the pad, Play. The exact
 //      sound the app plays is captured and decoded: it names the receiver,
 //      as a person, for 250.
 //   2. The payer's Scan screen: the microphone is fed that kind of chirp with
@@ -40,8 +40,9 @@ test("the receiver plays its ID and the amount, and the sound decodes to exactly
   await page.reload();
   await page.waitForSelector("#root *", { timeout: 15000 });
   await login(page, B);
-  await tap(page.getByRole("button", { name: "Receive", exact: true }));
-  await tap(page.getByTestId("sound-pay-open"));
+  await page.waitForTimeout(1200);
+  await tap(page.getByTestId("earn-orb"));
+  await tap(page.getByTestId("earn-receive"));
   for (const k of ["2", "5", "0"]) await tap(page.getByRole("button", { name: `Amount ${k}`, exact: true }));
   assert.equal(await page.getByTestId("sound-pay-amount").innerText(), "250");
   await tap(page.getByTestId("sound-pay-play"));
@@ -92,8 +93,10 @@ test("the payer listens: the receiver's card opens, and Pay brings the amount to
   await page.reload();
   await page.waitForSelector("#root *", { timeout: 15000 });
   await login(page, A);
-  await tap(page.getByRole("button", { name: "Scanner", exact: true }));
-  await tap(page.getByTestId("sound-pay-listen"));
+  await page.waitForTimeout(1200);
+  await tap(page.getByTestId("earn-orb"));
+  await tap(page.getByTestId("earn-pay"));
+  await page.getByTestId("sound-listen-screen").waitFor({ timeout: 8000 });
   // The same card a QR scan opens: the receiver's name and a Pay button.
   await page.waitForFunction((name) => document.body.innerText.includes(name) &&
     Array.from(document.querySelectorAll("button")).some((b) => b.textContent.trim() === "Pay"), B.fullName, { timeout: 30000 });
@@ -145,12 +148,25 @@ test("the self-test: one phone plays and hears its own ID, and says so; a meter 
   assert.equal(await r.getAttribute("data-ok"), "1", await r.innerText());
   assert.match(await r.innerText(), /hears its own ID/);
 
-  // The Listen button on Scan shows a meter while it listens.
+  // The listening screen shows a meter and a count while it listens, and
+  // Cancel closes it.
   await page.getByRole("button", { name: "Close", exact: true }).last().evaluate((n) => n.click());
   await page.getByTestId("earn-sheet").waitFor({ state: "detached", timeout: 8000 });
-  await tap(page.getByRole("button", { name: "Scanner", exact: true }));
-  await tap(page.getByTestId("sound-pay-listen"));
+  await tap(page.getByTestId("earn-orb"));
+  await tap(page.getByTestId("earn-pay"));
   await page.getByTestId("sound-pay-meter").waitFor({ timeout: 8000 });
+  assert.match(await page.getByTestId("sound-listen-left").innerText(), /^(20|19|18) s$/);
+  await tap(page.getByTestId("sound-listen-cancel"));
+  await page.getByTestId("sound-listen-screen").waitFor({ state: "detached", timeout: 8000 });
+  // The two old doors are gone: no Listen on Scan, no Play on the QR card.
+  await tap(page.getByRole("button", { name: "Scanner", exact: true }));
+  await page.waitForTimeout(800);
+  assert.equal(await page.getByTestId("sound-pay-listen").count(), 0, "no Listen button on the Scan screen");
+  await page.getByRole("button", { name: "Back", exact: true }).first().evaluate((n) => n.click()).catch(() => {});
+  await page.waitForTimeout(500);
+  await tap(page.getByRole("button", { name: "Receive", exact: true }));
+  await page.waitForTimeout(800);
+  assert.equal(await page.getByTestId("sound-pay-open").count(), 0, "no Play button on the QR card");
   assert.deepEqual(errors, []);
   await context.close();
 });

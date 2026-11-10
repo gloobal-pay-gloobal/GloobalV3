@@ -4675,6 +4675,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
   /></ScreenErrorBoundary>}{showEarn && <EarnSheet
     gloobalId={myGloobalId}
     side={shareRole === "merchant" ? "shop" : "person"}
+    currencySign={currencySuffix(collectionCurrency)}
     onClose={requestCloseEarn}
     onPay={() => { setShowEarn(false); if (onOpenListen) onOpenListen(); else if (onOpenScan) onOpenScan(); }}
   />}{showEssentials && <EssentialsScreen

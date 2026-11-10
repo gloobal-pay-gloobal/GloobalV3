@@ -368,11 +368,18 @@ function soundPayListen({ timeoutMs = 20000, onLevel } = {}) {
     // A FRESH context, made after the microphone is open (iPhone changes
     // the hardware rate when it opens; the shared context would go quiet).
     const Ctx = window.AudioContext || window.webkitAudioContext;
-    const ctx = new Ctx();
+    let ctx = new Ctx();
+    let shared = false;
     if (!(await soundPayRunning(ctx))) {
-      stream.getTracks().forEach((t) => t.stop());
+      // Made outside a tap, a new context can stay locked. The shared one
+      // was unlocked by the tap that brought us here: use that instead.
       try { ctx.close(); } catch (e) { /* already */ }
-      throw new Error("audio_locked");
+      ctx = soundPayContext();
+      shared = true;
+      if (!ctx || !(await soundPayRunning(ctx, 800))) {
+        stream.getTracks().forEach((t) => t.stop());
+        throw new Error("audio_locked");
+      }
     }
     return new Promise((resolve, reject) => {
       const source = ctx.createMediaStreamSource(stream);
@@ -386,7 +393,7 @@ function soundPayListen({ timeoutMs = 20000, onLevel } = {}) {
         clearTimeout(timer);
         try { node.disconnect(); source.disconnect(); sink.disconnect(); } catch (e) { /* already gone */ }
         stream.getTracks().forEach((t) => t.stop());
-        try { ctx.close(); } catch (e) { /* already */ }
+        if (!shared) { try { ctx.close(); } catch (e) { /* already */ } }
         if (error) reject(error); else resolve(result);
       };
       const listener = soundPayListener(ctx.sampleRate, (heard) => finish(heard), (lv) => {

@@ -2,12 +2,20 @@
 import { useState as useState99, useEffect as useEffect96, useRef as useRef57 } from "react";
 import { Volume2 as SoundPlayIcon, Ear as SoundEarIcon, Delete as SoundBackspace, X as SoundCloseIcon } from "lucide-react";
 
-// ── PAY NEARBY BY SOUND: THE TWO BUTTONS ────────────────────────────────
+// ── PAY NEARBY BY SOUND: ONE DOOR, TWO SCREENS ──────────────────────────
 //
-// "Play my ID" on the QR card: the receiver sets an amount if they want one
-// (on the app's own pad, never the phone's keyboard) and plays.
-// "Listen" on the Scan screen: the payer's phone hears it and the heard ID
-// goes down the same path a scanned QR does. The signal is soundPay.js.
+// The ear (NavEarnButton beside the scanner, and the Earn orb on Home)
+// opens the Earn sheet: Get paid / Pay. Nothing else in the app starts
+// sound pay — the Scan screen's Listen button and the QR card's Play
+// button were two more doors to the same room, and went (founder, 11:25).
+//
+//   Get paid   the amount screen (SoundPayReceivePanel): a big figure, quick
+//              amounts, the app's own pad, Play. "Any amount" if left blank.
+//   Pay        the listening screen (SoundListenScreen): full screen, rings
+//              that move with what the microphone hears, 20 s, Cancel. The
+//              heard ID goes down the same path a scanned QR does.
+//
+// The signal is soundPay.js.
 
 var SOUND_PAY_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "back"];
 
@@ -26,19 +34,13 @@ function SoundWaves({ on, color }) {
   />)}<style>{"@keyframes gloobalSoundWave{0%,100%{transform:scaleY(.5)}50%{transform:scaleY(1.4)}}"}</style></span>;
 }
 
-// On the QR card. Closed it is one button; open it is the amount and Play.
-function SoundPayPlayPanel({ gloobalId, side, onToast, startOpen = false }) {
-  const [open, setOpen] = useState99(Boolean(startOpen));
+// The amount screen, inside the Earn sheet. The amount is optional: left
+// blank, the payer types it on their side.
+var SOUND_PAY_QUICK_AMOUNTS = ["50", "100", "200", "500"];
+function SoundPayReceivePanel({ gloobalId, side, onToast, currencySign = "" }) {
   const [amount, setAmount] = useState99("");
   const [playing, setPlaying] = useState99(false);
-  if (!open) {
-    return <button
-      type="button"
-      data-testid="sound-pay-open"
-      onClick={() => setOpen(true)}
-      style={{ width: "100%", height: 44, borderRadius: 14, border: `1px solid ${T.line}`, background: T.surface, color: T.ink, fontSize: 14, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-    ><SoundPlayIcon size={16} aria-hidden="true" />Play my ID for a phone nearby</button>;
-  }
+  const [playedOnce, setPlayedOnce] = useState99(false);
   const play = async () => {
     if (playing) return;
     soundPayUnlock(); // inside the tap: a browser only starts audio from one
@@ -46,35 +48,50 @@ function SoundPayPlayPanel({ gloobalId, side, onToast, startOpen = false }) {
     try {
       const ok = await soundPayPlay({ gloobalId, side, amount });
       if (!ok) onToast?.("This phone can't play the sound. Turn the volume up and tap Play again.");
+      else setPlayedOnce(true);
     } catch (e) {
       onToast?.("Couldn't play the sound");
     } finally {
       setPlaying(false);
     }
   };
-  // Inside the Earn sheet (startOpen) the sheet has the close; the panel's
-  // own would be a second one for the same thing.
-  return <div data-testid="sound-pay-panel" style={{ width: "100%", borderRadius: 18, border: `1px solid ${T.line}`, background: T.bg, padding: "12px 12px 14px", boxSizing: "border-box" }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><SoundPlayIcon size={16} color={T.accent} aria-hidden="true" /><span style={{ flex: 1, fontSize: 13.5, fontWeight: 800, color: T.ink }}>Play my ID</span>{!startOpen && <button
-    type="button"
-    aria-label="Close"
-    onClick={() => { setOpen(false); setAmount(""); }}
-    style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-  ><SoundCloseIcon size={16} color={T.inkSoft} /></button>}</div><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 4, lineHeight: 1.45 }}>The other phone taps <b>Listen</b> on its Scan screen. They still confirm the payment themselves.</div><div data-testid="sound-pay-amount" style={{ marginTop: 10, textAlign: "center", fontSize: 26, fontWeight: 800, fontFamily: T.fontDisplay, color: amount ? T.ink : T.inkFaint }}>{amount || "Any amount"}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginTop: 8 }}>{SOUND_PAY_KEYS.map((k) => <button
+  const key = (k, label, wide) => <button
     key={k}
     type="button"
     aria-label={k === "back" ? "Delete" : `Amount ${k}`}
     onClick={() => setAmount((cur) => soundPayTypeKey(cur, k))}
-    style={{ height: 40, borderRadius: 12, border: "none", background: T.surface, boxShadow: T.shadowCard, color: T.ink, fontSize: 17, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-  >{k === "back" ? <SoundBackspace size={17} color={T.inkSoft} /> : k}</button>)}</div><button
-    type="button"
-    data-testid="sound-pay-play"
-    onClick={play}
-    disabled={playing}
-    style={{ marginTop: 12, width: "100%", height: 46, borderRadius: 14, border: "none", cursor: playing ? "default" : "pointer", background: T.gradButton, color: "#fff", fontSize: 14.5, fontWeight: 800, fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, opacity: playing ? 0.85 : 1 }}
-  >{playing ? <><SoundWaves on color="#fff" />Playing…</> : <><SoundPlayIcon size={17} color="#fff" />{amount ? `Play · ${amount}` : "Play"}</>}</button><div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint, textAlign: "center", marginTop: 8 }}>Volume up{soundPayIsApple() ? " · silent switch off" : ""} · phones within arm's reach</div></div>;
+    className="v2-tap"
+    style={{ height: 50, borderRadius: 14, border: "none", background: T.surface, boxShadow: T.shadowCard, color: k === "back" ? T.inkSoft : T.ink, fontSize: 20, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gridColumn: wide ? "span 1" : undefined }}
+  >{k === "back" ? <SoundBackspace size={19} color={T.inkSoft} /> : label || k}</button>;
+  return <div data-testid="sound-pay-panel" style={{ width: "100%" }}>
+    {/* The figure: what the other phone will be asked for. */}
+    <div style={{ textAlign: "center", padding: "8px 0 4px" }}>
+      <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, minHeight: 52 }}>
+        {amount && currencySign && <span style={{ fontSize: 24, fontWeight: 700, color: T.inkSoft }}>{currencySign}</span>}
+        <span data-testid="sound-pay-amount" style={{ fontFamily: T.fontDisplay, fontSize: amount ? 44 : 26, fontWeight: 800, color: amount ? T.ink : T.inkFaint, letterSpacing: amount ? -1 : 0, lineHeight: 1.1 }}>{amount || "Any amount"}</span>
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 2 }}>{amount ? "They'll see this amount, ready to pay" : "Leave blank and they type the amount"}</div>
+    </div>
+    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>{SOUND_PAY_QUICK_AMOUNTS.map((q) => <button
+      key={q}
+      type="button"
+      data-testid={`sound-pay-quick-${q}`}
+      onClick={() => setAmount(q)}
+      style={{ flex: 1, height: 36, borderRadius: 999, border: `1.5px solid ${amount === q ? T.accent : T.line}`, background: amount === q ? "rgba(124,92,255,0.1)" : T.surface, color: amount === q ? T.accent : T.inkSoft, fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}
+    >{currencySign}{q}</button>)}</div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12 }}>{SOUND_PAY_KEYS.map((k) => key(k))}</div>
+    <button
+      type="button"
+      data-testid="sound-pay-play"
+      onClick={play}
+      disabled={playing}
+      className="v2-tap"
+      style={{ width: "100%", height: 54, marginTop: 14, borderRadius: 16, border: "none", background: playing ? T.ink : T.gradButton, color: "#fff", fontSize: 16, fontWeight: 800, fontFamily: "inherit", cursor: playing ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+    >{playing ? <><SoundWaves on color="#fff" />Playing… hold the phones close</> : <><SoundPlayIcon size={18} color="#fff" />{playedOnce ? "Play again" : amount ? `Play · ${currencySign}${amount}` : "Play"}</>}</button>
+    <div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint, textAlign: "center", marginTop: 8 }}>Plays 3 times · volume up{soundPayIsApple() ? " · silent switch off" : ""} · the other phone taps Pay</div>
+  </div>;
 }
 
-// On the Scan screen. Listens until heard, stopped, or 20 seconds pass.
 var SOUND_PAY_LISTEN_ERRORS = {
   no_microphone: "This phone can't listen from a web page",
   audio_locked: "Tap Listen to start listening",
@@ -94,27 +111,30 @@ function soundPayNothingHeard(stats) {
   return "Heard GLOOBAL tones but not the whole ID. Hold the phones still, closer, and ask them to tap Play again.";
 }
 
-function SoundPayListenButton({ onHeard, onToast, disabled, autoStart = false }) {
-  const [listening, setListening] = useState99(false);
-  const [meter, setMeter] = useState99(0); // 0..1, what the mic hears right now
+// The listening screen. Full screen, because this is the whole task for the
+// next few seconds: hold the phone near theirs and wait. Three rings move
+// with what the microphone hears (grey: sound, green: our tones), the
+// count runs from 20, and the heard ID goes to onHeard.
+var SOUND_LISTEN_SECONDS = 20;
+function SoundListenScreen({ onHeard, onClose, onToast }) {
+  const [state, setState] = useState99("listening"); // listening | heard | nothing | error
+  const [message, setMessage] = useState99("");
+  const [meter, setMeter] = useState99(0);
   const [hearingTone, setHearingTone] = useState99(false);
+  const [left, setLeft] = useState99(SOUND_LISTEN_SECONDS);
   const sessionRef = useRef57(null);
   const meterAtRef = useRef57(0);
-  useEffect96(() => () => { if (sessionRef.current) sessionRef.current.stop(); }, []);
-  // From the Earn orb's "Pay" (Dashboard): the person has already said
-  // "listen", so listening starts as the screen opens, with no second tap.
-  useEffect96(() => { if (autoStart && !disabled) toggle(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const toggle = async () => {
-    if (listening) {
-      if (sessionRef.current) sessionRef.current.stop();
-      return;
-    }
-    soundPayUnlock(); // inside the tap, where a browser lets audio start
+  const aliveRef = useRef57(true);
+
+  const start = async () => {
+    soundPayUnlock(); // when tapped (Try again); the sheet's Pay tap did it the first time
+    setState("listening");
+    setLeft(SOUND_LISTEN_SECONDS);
+    setMeter(0);
+    setHearingTone(false);
     const session = soundPayListen({
-      timeoutMs: 20000,
+      timeoutMs: SOUND_LISTEN_SECONDS * 1000,
       onLevel: ({ level, tone }) => {
-        // Redraw at most every 100 ms: a bar that grows with the sound, and
-        // a mark when it is one of OUR tones.
         const now = Date.now();
         if (now - meterAtRef.current < 100) return;
         meterAtRef.current = now;
@@ -123,28 +143,64 @@ function SoundPayListenButton({ onHeard, onToast, disabled, autoStart = false })
       }
     });
     sessionRef.current = session;
-    setListening(true);
     try {
       const heard = await session.done;
-      if (heard) onHeard(heard);
-      else if (sessionRef.current === session) onToast?.(soundPayNothingHeard(session.stats()));
+      if (!aliveRef.current || sessionRef.current !== session) return;
+      if (heard) { setState("heard"); setTimeout(() => { if (aliveRef.current) onHeard(heard); }, 500); }
+      else { setState("nothing"); setMessage(soundPayNothingHeard(session.stats())); }
     } catch (e) {
-      onToast?.(soundPayListenMessage(e));
-    } finally {
-      sessionRef.current = null;
-      setListening(false);
-      setMeter(0);
-      setHearingTone(false);
+      if (!aliveRef.current) return;
+      setState("error");
+      setMessage(soundPayListenMessage(e));
     }
   };
-  return <button
-    type="button"
-    data-testid="sound-pay-listen"
-    data-listening={listening ? "1" : "0"}
-    onClick={toggle}
-    disabled={disabled}
-    style={{ pointerEvents: "auto", height: 40, padding: "0 16px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.35)", background: listening ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.45)", color: listening ? "#111" : "#fff", fontSize: 13.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
-  >{listening ? <><SoundWaves on color="#111" />Listening… tap to stop<span data-testid="sound-pay-meter" data-tone={hearingTone ? "1" : "0"} aria-hidden="true" style={{ width: 34, height: 6, borderRadius: 6, background: "rgba(0,0,0,0.12)", overflow: "hidden", display: "inline-block" }}><span style={{ display: "block", height: "100%", width: `${Math.round(meter * 100)}%`, background: hearingTone ? "#16a34a" : "#6b7280", transition: "width 100ms linear" }} /></span></> : <><SoundEarIcon size={14} color="#fff" />Listen for a phone nearby</>}</button>;
+  useEffect96(() => {
+    aliveRef.current = true;
+    start();
+    return () => { aliveRef.current = false; if (sessionRef.current) sessionRef.current.stop(); };
+  }, []);
+  useEffect96(() => {
+    if (state !== "listening") return undefined;
+    const t = setInterval(() => setLeft((n) => Math.max(0, n - 1)), 1000);
+    return () => clearInterval(t);
+  }, [state]);
+
+  const listening = state === "listening";
+  const ringColor = state === "heard" ? "#16a34a" : hearingTone ? "#22c55e" : "rgba(255,255,255,0.55)";
+  const ring = (i) => {
+    const base = 150 + i * 60;
+    const grow = listening ? meter * (30 + i * 18) : 0;
+    return <span key={i} aria-hidden="true" style={{ position: "absolute", width: base + grow, height: base + grow, borderRadius: "50%", border: `${i === 0 ? 2.5 : 1.5}px solid ${ringColor}`, opacity: listening ? 0.9 - i * 0.25 : 0.35, transition: "width 120ms ease-out, height 120ms ease-out, border-color 200ms" }} />;
+  };
+  return <div data-testid="sound-listen-screen" role="dialog" aria-label="Listening for a phone nearby" style={{ position: "fixed", inset: 0, zIndex: 330, background: "radial-gradient(ellipse at 50% 35%, #2a2140 0%, #14101c 70%)", color: "#fff", display: "flex", flexDirection: "column", paddingTop: "env(safe-area-inset-top, 0px)" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px 0" }}>
+      <button type="button" aria-label="Back" onClick={onClose} style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><SoundCloseIcon size={18} color="#fff" /></button>
+      <span style={{ fontSize: 15, fontWeight: 800, fontFamily: T.fontDisplay }}>Pay by sound</span>
+    </div>
+    <div data-testid="sound-pay-listen" data-listening={listening ? "1" : "0"} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 0, padding: "0 28px" }}>
+      <div style={{ position: "relative", width: 290, height: 290, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {[2, 1, 0].map(ring)}
+        <span style={{ width: 96, height: 96, borderRadius: "50%", background: state === "heard" ? "#16a34a" : T.gradButton, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 40px rgba(124,92,255,0.45)" }}>
+          <SoundEarIcon size={40} color="#fff" />
+        </span>
+        <span data-testid="sound-pay-meter" data-tone={hearingTone ? "1" : "0"} aria-hidden="true" style={{ position: "absolute", bottom: 8, width: 70, height: 5, borderRadius: 5, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${Math.round(meter * 100)}%`, background: hearingTone ? "#22c55e" : "rgba(255,255,255,0.7)", transition: "width 100ms linear" }} /></span>
+      </div>
+      <div style={{ fontFamily: T.fontDisplay, fontSize: 24, fontWeight: 800, textAlign: "center", marginTop: 6 }}>
+        {state === "listening" ? "Listening…" : state === "heard" ? "Heard it" : state === "nothing" ? "Didn't catch it" : "Couldn't listen"}
+      </div>
+      <div style={{ fontSize: 13.5, fontWeight: 600, color: "rgba(255,255,255,0.72)", textAlign: "center", lineHeight: 1.5, marginTop: 8, maxWidth: 320 }}>
+        {state === "listening"
+          ? <>Hold your phone close to theirs. Ask them to tap <b>Get paid → Play</b>.</>
+          : state === "heard" ? "Opening their card…"
+          : message}
+      </div>
+      {listening && <div data-testid="sound-listen-left" style={{ marginTop: 14, fontSize: 12.5, fontWeight: 800, color: "rgba(255,255,255,0.55)", letterSpacing: 0.4 }}>{left} s</div>}
+    </div>
+    <div style={{ padding: "0 20px calc(22px + env(safe-area-inset-bottom, 0px))", display: "flex", gap: 10 }}>
+      {(state === "nothing" || state === "error") && <button type="button" data-testid="sound-listen-retry" onClick={start} className="v2-tap" style={{ flex: 1, height: 52, borderRadius: 16, border: "none", background: T.gradButton, color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>Listen again</button>}
+      <button type="button" data-testid="sound-listen-cancel" onClick={onClose} style={{ flex: 1, height: 52, borderRadius: 16, border: "1.5px solid rgba(255,255,255,0.25)", background: "transparent", color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>{listening ? "Cancel" : "Close"}</button>
+    </div>
+  </div>;
 }
 
 // "Does sound pay work on THIS phone?" — plays and listens on the one
@@ -201,7 +257,7 @@ function EarnOrb({ color, onClick }) {
   ><SoundPlayIcon size={23} color="#fff" strokeWidth={2.1} /></button>;
 }
 
-function EarnSheet({ gloobalId, side, onClose, onPay, onToast }) {
+function EarnSheet({ gloobalId, side, onClose, onPay, onToast, currencySign = "" }) {
   const [mode, setMode] = useState99(null); // null | "receive"
   const big = (testid, Icon, title, sub, onTap, tint) => <button
     type="button"
@@ -217,7 +273,7 @@ function EarnSheet({ gloobalId, side, onClose, onPay, onToast }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 17, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, flex: 1 }}>{mode === "receive" ? "Get paid" : "Phone to phone"}</span><button type="button" aria-label="Close" onClick={onClose} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: T.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><SoundCloseIcon size={16} color={T.inkSoft} /></button></div>
       <div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, marginTop: 4, lineHeight: 1.45 }}>{mode === "receive" ? "Your phone plays your ID as a short sound. The other phone taps Pay and hears it." : "Hold the two phones near each other. No scanning, no typing."}</div>
       {mode === "receive"
-        ? <div style={{ marginTop: 14 }}><SoundPayPlayPanel gloobalId={gloobalId} side={side} onToast={onToast} startOpen /></div>
+        ? <div style={{ marginTop: 10 }}><SoundPayReceivePanel gloobalId={gloobalId} side={side} onToast={onToast} currencySign={currencySign} /></div>
         : <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
           {big("earn-receive", SoundPlayIcon, "Get paid", "Play my ID for the phone next to me", () => setMode("receive"), "rgba(34,197,94,0.14)")}
           {big("earn-pay", SoundEarIcon, "Pay", "Listen for their phone, then pay", () => { soundPayUnlock(); onPay(); }, "rgba(239,68,68,0.12)")}

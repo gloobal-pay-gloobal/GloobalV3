@@ -1179,7 +1179,8 @@ function GloobalId() {
   const [showScanScreen, setShowScanScreen] = useState19(false);
   // Opened from the Earn orb's "Pay": the Scan screen with listening for a
   // nearby phone already on (soundPayUi.jsx), so there is no second tap.
-  const [scanListenOnOpen, setScanListenOnOpen] = useState19(false);
+  // The listening screen (pay by sound), opened from the Earn sheet.
+  const [showListenScreen, setShowListenScreen] = useState19(false);
   // Backdrop color behind the QR/scan area — same "pick one random
   // hero color per session" pattern as the Bank/Coin/About Us info
   // screens, so the scanner isn't locked to a single fixed tint.
@@ -1499,9 +1500,11 @@ function GloobalId() {
   const handleSoundHeard = (heard) => {
     const url = soundPayToUrl(heard);
     if (!url) return;
-    // Into the scan view first, as a gallery scan does: the resolving state,
-    // the payee card and any error are all drawn on that side.
+    // Into the scan view, as a gallery scan does: the resolving state, the
+    // payee card and any error are all drawn on that side.
+    setShowListenScreen(false);
     setScanCameraAccessGranted(true);
+    setShowScanScreen(true);
     handleQrScanned(url, { amount: heard.amount || "" });
   };
   const handleQrScanned = async (rawCode, fromSound = null) => {
@@ -4784,8 +4787,8 @@ function GloobalId() {
     }}
     onOpenBank={() => setActiveScreen("bank")}
     onOpenCoverage={() => setActiveScreen("coverage")}
-    onOpenScan={() => { setScanListenOnOpen(false); setShowScanScreen(true); }}
-    onOpenListen={() => { setScanListenOnOpen(true); setShowScanScreen(true); }}
+    onOpenScan={() => setShowScanScreen(true)}
+    onOpenListen={() => setShowListenScreen(true)}
     myGloobalId={secureId}
     creatorId={creatorId}
     myName={documentedName}
@@ -4841,7 +4844,11 @@ function GloobalId() {
     /* Scan to pay. The camera reads a Gloobal QR (a static pay link), the
        server names the account behind it, and Send Money takes the amount.
        Nothing is paid from this screen. */
-  }{showScanScreen && (() => {
+  }{showListenScreen && <SoundListenScreen
+    onClose={() => setShowListenScreen(false)}
+    onHeard={handleSoundHeard}
+    onToast={showToast}
+  />}{showScanScreen && (() => {
     const closeScanScreen = () => {
       setShowScanScreen(false);
       setScanPayee(null);
@@ -4979,9 +4986,7 @@ function GloobalId() {
     style={{ fontSize: 12.5, color: "rgba(255,255,255,0.92)", textAlign: "center", lineHeight: 1.5, fontWeight: 600, textShadow: "0 1px 6px rgba(0,0,0,0.6)" }}
   >
       Point at any <GloobalWordmark /> code
-    </div></div>}{!scanPayee && !scanResolving && <div
-    style={{ position: "absolute", left: 0, right: 0, top: "calc(78px + env(safe-area-inset-top, 0px))", zIndex: 2, display: "flex", justifyContent: "center", pointerEvents: "none" }}
-  ><SoundPayListenButton onHeard={handleSoundHeard} onToast={showToast} disabled={Boolean(scanRetry)} autoStart={scanListenOnOpen} /></div>}<input
+    </div></div>}<input
       ref={scanGalleryInputRef}
       type="file"
       accept="image/*"

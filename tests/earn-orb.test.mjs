@@ -2,7 +2,7 @@
 //
 // Earn: the orb at the centre of the four Home tiles on the personal side
 // (soundPayUi.jsx). Tap → a sheet with Get paid / Pay. Get paid plays the
-// ID; Pay opens the Scan screen already listening for a nearby phone.
+// ID; Pay opens the listening screen.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { buildOnce, openPage, teardown, login, ACCOUNTS } from "./browser-harness.mjs";
@@ -12,7 +12,7 @@ before(async () => { await buildOnce(); });
 after(async () => { await teardown(); });
 const tap = async (l) => { await l.waitFor({ timeout: 15000 }); await l.evaluate((n) => n.click()); };
 
-test("the orb opens the sheet; Get paid shows the Play panel; Pay opens Scan already listening", async () => {
+test("the orb opens the sheet; Get paid shows the amount screen; Pay opens the listening screen", async () => {
   const { page, context } = await openPage({ account: A });
   // A microphone that hears silence, so "listening" can start without a device.
   await context.addInitScript(() => {

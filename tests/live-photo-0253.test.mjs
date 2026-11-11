@@ -1,7 +1,7 @@
 // tests/live-photo-0253.test.mjs
 //
 // The live photo: the founder's "camera only", and three moves drawn from
-// six — turn left, turn right, look up, look down, blink, smile — shown as
+// seven — turn left, turn right, look up, look down, smile, open mouth, tilt — shown as
 // cards above the camera, then a two-second hold. (Saying numbers out loud
 // was dropped: speech recognition failed too often, and nobody should have
 // to say numbers aloud in a shop.)
@@ -29,7 +29,7 @@ const pure = (() => {
   const body = src.slice(0, src.indexOf("function LiveFaceCheck(")).replace(/^import .*$/gm, "");
   const ctx = { Math, Array, Object, String, Number, localStorage: { getItem: () => null }, navigator: { language: "en-IN" } };
   vm.createContext(ctx);
-  vm.runInContext(body + "\n;this.api = { liveFacePose, liveFaceBaseline, liveFaceTurned, liveFaceStill, liveFaceEyesClosed, liveFaceEyesOpen, liveFaceSmiling, liveFaceMoves, liveFaceIsTurn, LIVE_FACE_MOVES, LIVE_FACE_HOLD_MS, liveFaceFrameHint };", ctx);
+  vm.runInContext(body + "\n;this.api = { liveFacePose, liveFaceBaseline, liveFaceTurned, liveFaceStill, liveFaceSmiling, liveFaceMouthOpen, liveFaceTilted, liveFaceRested, liveFaceNeedsRest, liveFaceMoves, liveFaceIsTurn, LIVE_FACE_MOVES, LIVE_FACE_HOLD_MS, liveFaceFrameHint };", ctx);
   return ctx.api;
 })();
 
@@ -59,22 +59,31 @@ describe("the rules", () => {
     assert.ok(pure.liveFaceStill(at({ yaw: 0.17 }), base, 1.6), "back to the centre is looser than the photo");
   });
 
-  test("blink and smile are measured against the person's own resting face", () => {
+  test("smile, open mouth and tilt are measured against the person's own resting face", () => {
     const base = pure.liveFaceBaseline([pure.liveFacePose(mesh()), pure.liveFacePose(mesh()), pure.liveFacePose(mesh())]);
     const at = (o) => pure.liveFacePose(mesh(o));
-    assert.ok(pure.liveFaceEyesClosed(at({ lid: 3 }), base), "lids 3 px apart, from 14: closed");
-    assert.ok(!pure.liveFaceEyesClosed(at({ lid: 10 }), base), "a squint is not a blink");
-    assert.ok(!pure.liveFaceEyesClosed(at({ lid: 3, yaw: 0.3 }), base), "closed eyes while turned away don't count");
-    assert.ok(pure.liveFaceEyesOpen(at({ lid: 14 }), base));
-    assert.ok(!pure.liveFaceEyesOpen(at({ lid: 8 }), base), "half open is not open yet");
     assert.ok(pure.liveFaceSmiling(at({ mouthW: 82 }), base), "the mouth 17% wider: a smile");
     assert.ok(!pure.liveFaceSmiling(at({ mouthW: 74 }), base), "6% wider: talking, not smiling");
     assert.ok(pure.liveFaceSmiling(at({ mouth: 0.08 }), base), "an open laugh counts");
     assert.ok(!pure.liveFaceSmiling(at({ mouthW: 82, yaw: 0.3 }), base), "not while turned away");
+    // Open mouth: a wide "aah", not talking, and not while turned away.
+    assert.ok(pure.liveFaceMouthOpen(at({ mouth: 0.12 }), base));
+    assert.ok(!pure.liveFaceMouthOpen(at({ mouth: 0.05 }), base), "talking is not an open mouth");
+    assert.ok(!pure.liveFaceMouthOpen(at({ mouth: 0.12, yaw: 0.3 }), base));
+    // Tilt: the eye line leaning ten degrees or more, either way.
+    const lean = (deg) => { const m = mesh(); const r = deg * Math.PI / 180; for (const pt of m) { const x = pt[0] - 320, y = pt[1] - 250; pt[0] = 320 + x * Math.cos(r) - y * Math.sin(r); pt[1] = 250 + x * Math.sin(r) + y * Math.cos(r); } return pure.liveFacePose(m); };
+    assert.ok(pure.liveFaceTilted(lean(14), base) && pure.liveFaceTilted(lean(-14), base), "either shoulder");
+    assert.ok(!pure.liveFaceTilted(lean(5), base), "a small lean is not a tilt");
+    assert.ok(!pure.liveFaceTilted(at({ yaw: 0.3 }), base), "a turn is not a tilt");
+    // Back at rest: centred, level, mouth closed.
+    assert.ok(pure.liveFaceRested(at({}), base));
+    assert.ok(!pure.liveFaceRested(at({ mouth: 0.12 }), base), "mouth still open");
+    assert.ok(!pure.liveFaceRested(lean(14), base), "still leaning");
+    assert.equal(typeof pure.liveFaceEyesClosed, "undefined", "the blink is gone");
   });
 
-  test("the moves: three of six, no move twice, every move possible; two seconds of hold", () => {
-    assert.deepEqual([...pure.LIVE_FACE_MOVES], ["left", "right", "up", "down", "blink", "smile"]);
+  test("the moves: three of seven, no move twice, every move possible; two seconds of hold", () => {
+    assert.deepEqual([...pure.LIVE_FACE_MOVES], ["left", "right", "up", "down", "smile", "mouth", "tilt"]);
     assert.equal(pure.LIVE_FACE_HOLD_MS, 2000);
     const seen = new Set();
     for (let i = 0; i < 2000; i++) {
@@ -83,8 +92,9 @@ describe("the rules", () => {
       assert.equal(new Set(c).size, 3, `a move twice: ${c}`);
       c.forEach((m) => seen.add(m));
     }
-    assert.equal(seen.size, 6, "every one of the six comes up");
-    assert.ok(pure.liveFaceIsTurn("left") && !pure.liveFaceIsTurn("blink") && !pure.liveFaceIsTurn("smile"));
+    assert.equal(seen.size, 7, "every one of the seven comes up");
+    assert.ok(pure.liveFaceIsTurn("left") && !pure.liveFaceIsTurn("tilt") && !pure.liveFaceIsTurn("smile"));
+    assert.ok(pure.liveFaceNeedsRest("mouth") && pure.liveFaceNeedsRest("tilt") && pure.liveFaceNeedsRest("left") && !pure.liveFaceNeedsRest("smile"));
   });
 
   test("framing hints: no face, two faces, too far, off-centre", () => {
@@ -185,7 +195,7 @@ describe("the screen", () => {
     assert.equal(moves.length, 3, "three dots, one per move");
     assert.equal(await page.locator("[data-testid=live-face-move]").count(), 1, "one card: the current move only");
     assert.equal(new Set(moves).size, 3);
-    assert.ok(moves.every((m) => ["left", "right", "up", "down", "blink", "smile"].includes(m)), moves.join(","));
+    assert.ok(moves.every((m) => ["left", "right", "up", "down", "smile", "mouth", "tilt"].includes(m)), moves.join(","));
     // The cards sit above the camera.
     const cardsBox = await page.getByTestId("live-face-cards").boundingBox();
     const videoBox = await page.getByTestId("live-face-video").boundingBox();
@@ -219,7 +229,7 @@ describe("the screen", () => {
   test("a face that won't follow the cards (a photo, a clip) doesn't pass", async () => {
     const { page, context, api } = await openLiveCheck({ follow: false });
     assert.equal(await takeLivePhoto(page), "fail");
-    assert.ok(["turn", "blink", "smile"].includes(await page.getByTestId("live-face-fail").getAttribute("data-reason")));
+    assert.ok(["turn", "smile", "mouth", "tilt"].includes(await page.getByTestId("live-face-fail").getAttribute("data-reason")));
     assert.equal(api.state.livePhotoPosts || 0, 0);
     assert.ok(await page.getByTestId("live-face-retry").isVisible());
     await context.close();

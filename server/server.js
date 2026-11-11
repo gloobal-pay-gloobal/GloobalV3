@@ -2918,6 +2918,7 @@ app.get('/api/coverage/me', lookupLimit, requireAuth, async (req, res) => {
 //   place. The one Coverage route with per-person figures, which is why it
 //   needs a token and the public ones above do not. The rules are in
 //   lib/liquidityBoard.js.
+// GET /api/coverage/liquidity/photos  (signed in): see the route below.
 // PUT /api/coverage/liquidity/visibility { hidden }  (signed in)
 //   Takes this account off the public board, or puts it back.
 const liquidityBoard = require('./lib/liquidityBoard');
@@ -2941,15 +2942,45 @@ async function liquidityRanked(currency) {
   liquidityRankCache.set(currency, { at: Date.now(), ranked });
   return ranked;
 }
+// What a member's photo is asked for by on the board: a keyed digest of the
+// account's internal id. It says nothing about the GLOOBAL ID, cannot be
+// turned back into one, and is the same on every page so the app can keep
+// a photo it already has.
+const liquidityPhotoKey = (id) => crypto.createHmac('sha256', AUTH_TOKEN_SECRET).update(`liquidity-photo:${id}`).digest('hex').slice(0, 20);
 app.get('/api/coverage/liquidity', lookupLimit, requireAuth, async (req, res) => {
   try {
     const mine = liquidityBoard.currencyOf(req.authUser.countryIso) || 'INR';
     const currency = String(req.query.currency || mine).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || mine;
     const ranked = await liquidityRanked(currency);
-    return res.json(liquidityBoard.pageLiquidity(ranked, { meId: String(req.authUser._id), offset: req.query.offset, limit: req.query.limit }));
+    return res.json(liquidityBoard.pageLiquidity(ranked, { meId: String(req.authUser._id), offset: req.query.offset, limit: req.query.limit, photoKey: liquidityPhotoKey }));
   } catch (error) {
     console.error('liquidity board error:', error);
     return res.status(500).json({ success: false, message: 'Could not load the liquidity board just now.' });
+  }
+});
+// GET /api/coverage/liquidity/photos?currency=INR&keys=a,b,c  (signed in)
+//   The profile photos of up to twelve members on the board, by the photo
+//   keys the board's rows carry. Only for members the viewer can see there:
+//   a hidden member's key gets nothing. { photos: { key: dataUrl | null } }
+app.get('/api/coverage/liquidity/photos', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const mine = liquidityBoard.currencyOf(req.authUser.countryIso) || 'INR';
+    const currency = String(req.query.currency || mine).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || mine;
+    const keys = String(req.query.keys || '').split(',');
+    const ranked = await liquidityRanked(currency);
+    const owners = liquidityBoard.liquidityPhotoOwners(ranked, { meId: String(req.authUser._id), keys, photoKey: liquidityPhotoKey });
+    const ids = Object.values(owners);
+    const stored = ids.length ? await ProfilePhoto.find({ userId: { $in: ids } }).select('userId dataUrl').lean() : [];
+    const byUser = new Map(stored.map((p) => [String(p.userId), p.dataUrl]));
+    const photos = {};
+    for (const k of keys.map((v) => String(v || '').trim()).filter(Boolean).slice(0, liquidityBoard.LIQUIDITY_PHOTO_BATCH)) {
+      photos[k] = owners[k] ? (byUser.get(owners[k]) || null) : null;
+    }
+    res.set('Cache-Control', 'private, max-age=300');
+    return res.json({ success: true, photos });
+  } catch (error) {
+    console.error('liquidity photos error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load those photos just now.' });
   }
 });
 app.put('/api/coverage/liquidity/visibility', writeLimit, requireAuth, async (req, res) => {
@@ -8490,7 +8521,7 @@ app.post('/api/face/enroll', writeLimit, requireAuth, requireSelf('symbolId'), a
     // though it is advisory on verify.
     if (!payload.livenessPassed) {
       return res.status(400).json({
-        message: 'Enrolment needs a live capture. Blink when prompted and try again.',
+        message: 'Enrolment needs a live capture. Follow the moves on screen and try again.',
       });
     }
 
@@ -8583,7 +8614,7 @@ app.post('/api/face/verify', credentialLimit, requireAuth, requireSelf('symbolId
       return res.status(400).json({
         verified: false,
         reason: 'liveness',
-        message: 'Could not confirm a live face. Blink when prompted and try again.',
+        message: 'Could not confirm a live face. Follow the moves on screen and try again.',
       });
     }
 

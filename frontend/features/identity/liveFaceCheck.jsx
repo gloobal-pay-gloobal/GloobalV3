@@ -9,8 +9,9 @@
 // What it does, in order:
 //
 //   1. Camera only. There is no gallery button anywhere in this flow.
-//   2. Three moves, drawn at random from six — turn left, turn right, look
-//      up, look down, blink, smile — shown as three cards above the camera
+//   2. Three moves, drawn at random from seven — turn left, turn right,
+//      look up, look down, smile, open your mouth, tilt your head — shown
+//      as three cards above the camera
 //      so the person sees the whole sequence before it starts. Each move is
 //      read off the face mesh against the person's OWN resting face, and
 //      the head returns to the centre between turns. A photo held up to the
@@ -41,7 +42,7 @@
 // direction, eyes closed, a smile), so they can be tested without a camera.
 // The component only feeds them frames.
 import { useState as useState97, useEffect as useEffect94, useRef as useRef56 } from "react";
-import { Camera as Camera7, Eye as LiveEye, Smile as LiveSmile, Lock as Lock9, Check as Check13, ArrowLeft as ArrowLeft9, ArrowRight as LiveArrowRight, ArrowUp as LiveArrowUp, ArrowDown as LiveArrowDown, Loader as Loader9 } from "lucide-react";
+import { Camera as Camera7, Smile as LiveSmile, Laugh as LiveLaugh, RotateCw as LiveTilt, Lock as Lock9, Check as Check13, ArrowLeft as ArrowLeft9, ArrowRight as LiveArrowRight, ArrowUp as LiveArrowUp, ArrowDown as LiveArrowDown, Loader as Loader9 } from "lucide-react";
 
 // Which network produced a descriptor. Stored with it on the server, and
 // descriptors from different models are never compared.
@@ -80,6 +81,9 @@ function liveFacePose(mesh) {
     pitch: (N[1] - eyeY) / faceH,
     mouth: Math.abs(lo[1] - up[1]) / faceH,
     eyes: (lid(159, 145) + lid(386, 374)) / 2 / eyeW,
+    // How far the head leans to one side: the slope of the line through the
+    // eyes, in degrees. Level eyes are 0.
+    roll: Math.atan2(R[1] - L[1], R[0] - L[0]) * 180 / Math.PI,
     smile: Math.hypot(mesh[291][0] - mesh[61][0], mesh[291][1] - mesh[61][1]) / eyeW
   };
 }
@@ -89,19 +93,32 @@ function liveFaceBaseline(poses) {
     const v = poses.map((p) => p[k]).sort((a, b) => a - b);
     return v[Math.floor(v.length / 2)];
   };
-  return { yaw: mid("yaw"), pitch: mid("pitch"), mouth: mid("mouth"), eyes: mid("eyes"), smile: mid("smile") };
+  return { yaw: mid("yaw"), pitch: mid("pitch"), mouth: mid("mouth"), eyes: mid("eyes"), smile: mid("smile"), roll: mid("roll") };
 }
 
-// Eyes closed: the lid gap under 45% of the person's own open gap, with the
-// head roughly where it started (looking down also narrows the gap, and is
-// its own move). A blink is seen when the eyes CLOSE and then OPEN again.
-var LIVE_FACE_EYES_CLOSED = 0.6;
-var LIVE_FACE_EYES_OPEN = 0.8;
-function liveFaceEyesClosed(pose, base) {
-  return Boolean(pose && base && base.eyes > 0) && pose.eyes < base.eyes * LIVE_FACE_EYES_CLOSED && liveFaceStill(pose, base, 2.5);
+// (A blink was one of the moves until the founder's phone showed it could
+// not be read reliably: the gap between the lids is a few pixels on a front
+// camera, and glasses, small eyes and dim light all hide it. The two moves
+// below replaced it. Both are large movements of the whole face.)
+//
+// Mouth open: the gap between the lips at least 7% of the face's height
+// more than at rest (a yawn-sized "aah", well past talking), with the head
+// roughly where it started.
+var LIVE_FACE_MOUTH_OPEN = 0.07;
+function liveFaceMouthOpen(pose, base) {
+  return Boolean(pose && base) && pose.mouth - base.mouth > LIVE_FACE_MOUTH_OPEN && liveFaceStill(pose, base, 2.5);
 }
-function liveFaceEyesOpen(pose, base) {
-  return Boolean(pose && base && base.eyes > 0) && pose.eyes > base.eyes * LIVE_FACE_EYES_OPEN;
+// Head tilted: the line through the eyes leaning at least ten degrees from
+// where it rested, to either side (cameras disagree on mirroring, so the
+// side is never asked for).
+var LIVE_FACE_TILT_DEG = 10;
+function liveFaceTilted(pose, base) {
+  return Boolean(pose && base) && Math.abs(pose.roll - base.roll) > LIVE_FACE_TILT_DEG;
+}
+// Back at rest between moves: head to the centre, eyes level again, mouth
+// closed. Without this an open mouth would also pass as the next "smile".
+function liveFaceRested(pose, base) {
+  return liveFaceStill(pose, base, 2.5) && Math.abs(pose.roll - base.roll) < LIVE_FACE_TILT_DEG * 0.6 && pose.mouth - base.mouth < LIVE_FACE_MOUTH_OPEN * 0.5;
 }
 
 // A smile: the mouth at least 12% wider than at rest, or clearly open (a
@@ -141,11 +158,11 @@ function liveFaceStill(pose, base, slack = 1) {
     Math.abs(pose.pitch - base.pitch) < LIVE_FACE_STILL.pitch * slack;
 }
 
-// The moves. Three drawn at random from six, no move twice, with a return
-// to the centre between head turns — so a recorded clip would have to
+// The moves. Three drawn at random from seven, no move twice, with a return
+// to rest after every move but the smile — so a recorded clip would have to
 // contain this exact sequence, which was only drawn a second ago.
 var LIVE_FACE_DIRS = ["left", "right", "up", "down"];
-var LIVE_FACE_MOVES = [...LIVE_FACE_DIRS, "blink", "smile"];
+var LIVE_FACE_MOVES = [...LIVE_FACE_DIRS, "smile", "mouth", "tilt"];
 var LIVE_FACE_MOVE_COUNT = 3;
 function liveFaceMoves(rand = Math.random, n = LIVE_FACE_MOVE_COUNT) {
   const pool = LIVE_FACE_MOVES.slice();
@@ -156,6 +173,8 @@ function liveFaceMoves(rand = Math.random, n = LIVE_FACE_MOVE_COUNT) {
 // The older name, kept for the payment check's wording.
 function liveFaceTurns(rand = Math.random, n = LIVE_FACE_MOVE_COUNT) { return liveFaceMoves(rand, n); }
 function liveFaceIsTurn(move) { return LIVE_FACE_DIRS.includes(move); }
+// After these the face has to come back to rest before the next move.
+function liveFaceNeedsRest(move) { return move !== "smile"; }
 
 // How long to hold still at the end: two seconds, counted down on the ring,
 // so the photo is a composed one and not the first usable frame. The
@@ -190,13 +209,14 @@ var LIVE_FACE_TURN_TEXT = {
   right: ["Turn your head right", "सिर दाएँ घुमाइए"],
   up: ["Look up", "ऊपर देखिए"],
   down: ["Look down", "नीचे देखिए"],
-  blink: ["Close your eyes and keep them closed", "आँखें बंद रखिए"],
-  smile: ["Smile", "मुस्कुराइए"]
+  smile: ["Smile", "मुस्कुराइए"],
+  mouth: ["Open your mouth wide", "मुँह पूरा खोलिए"],
+  tilt: ["Tilt your head to one side", "सिर एक तरफ़ झुकाइए"]
 };
 // The short word on each card.
 var LIVE_FACE_MOVE_WORD = {
   left: ["Turn left", "बाएँ"], right: ["Turn right", "दाएँ"], up: ["Look up", "ऊपर"], down: ["Look down", "नीचे"],
-  blink: ["Blink", "पलक"], smile: ["Smile", "मुस्कान"]
+  smile: ["Smile", "मुस्कान"], mouth: ["Open mouth", "मुँह खोलें"], tilt: ["Tilt head", "सिर झुकाएँ"]
 };
 
 // The scores a still or a screen gets from the library's two models. Kept
@@ -340,11 +360,9 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
   const [turns, setTurns] = useState97(() => liveFaceMoves());
   const [turnIndex, setTurnIndex] = useState97(0);
   const [backToCenter, setBackToCenter] = useState97(false);
-  // For the blink card: the eyes have been seen closed, waiting to open.
-  const [eyesClosed, setEyesClosed] = useState97(false);
   const [holdPct, setHoldPct] = useState97(0);
   // What the server is told about how the check was done. "moves": three
-  // of the six moves. (The server still accepts the older "turns".)
+  // of the seven moves. (The server still accepts the older "turns".)
   const method = "moves";
   // A payment check's answer from the server, when it isn't a yes.
   const [payFail, setPayFail] = useState97(null);
@@ -390,9 +408,8 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
     setTurns(liveFaceMoves());
     setPayFail(null);
     setBackToCenter(false);
-    setEyesClosed(false);
     setPhase("starting");
-    stateRef.current = { method, poses: [], base: null, stage: "align", challengeEmbeddings: [], holdStart: 0, hold: [], best: null, turnHits: 0, turnIndex: 0, needCenter: false, eyesClosed: false, stageStart: 0, shutter: false };
+    stateRef.current = { method, poses: [], base: null, stage: "align", challengeEmbeddings: [], holdStart: 0, hold: [], best: null, turnHits: 0, turnIndex: 0, needCenter: false, stageStart: 0, shutter: false };
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -479,10 +496,12 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
       // Between moves: come back to the centre first, so "left, left" is two
       // turns and not one held turn counted twice.
       if (st.needCenter) {
-        if (pose && liveFaceStill(pose, st.base, 2.5)) {
+        if (pose && liveFaceRested(pose, st.base)) {
           st.needCenter = false;
           st.stageStart = now;
           setBackToCenter(false);
+          // The last move was one that ends away from rest: now the photo.
+          if (st.turnIndex >= list.length) { st.stage = "hold"; st.holdStart = 0; setPhase("hold"); }
         } else if (now - st.stageStart > 6000) {
           failWith("turn");
         }
@@ -490,40 +509,35 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
       }
       // Each move seen in two frames running; seven seconds to make it.
       const move = list[st.turnIndex];
-      if (move === "blink") {
-        // Close, then open: a closed frame arms it, an open frame after
-        // that counts. (One closed frame is enough — a blink is short and
-        // the camera is slow.)
-        if (pose && liveFaceEyesClosed(pose, st.base)) {
-          st.closedFrames = (st.closedFrames || 0) + 1;
-          if (st.closedFrames >= 2 && !st.eyesClosed) { st.eyesClosed = true; setEyesClosed(true); }
-        }
-        st.turnHits = st.eyesClosed && pose && liveFaceEyesOpen(pose, st.base) ? 2 : 0;
-      } else {
-        const hit = move === "smile" ? liveFaceSmiling(pose, st.base) : liveFaceTurned(move, pose, st.base);
-        if (pose && hit) st.turnHits += 1; else st.turnHits = 0;
-      }
+      const hit = move === "smile" ? liveFaceSmiling(pose, st.base)
+        : move === "mouth" ? liveFaceMouthOpen(pose, st.base)
+        : move === "tilt" ? liveFaceTilted(pose, st.base)
+        : liveFaceTurned(move, pose, st.base);
+      if (pose && hit) st.turnHits += 1; else st.turnHits = 0;
       if (st.turnHits >= 2) {
         st.turnIndex += 1;
         st.turnHits = 0;
-        st.eyesClosed = false;
-        st.closedFrames = 0;
-        setEyesClosed(false);
         st.stageStart = now;
         setTurnIndex(st.turnIndex);
-        if (st.turnIndex >= list.length) {
+        const last = st.turnIndex >= list.length;
+        if (last && (move === "mouth" || move === "tilt")) {
+          // The photo must not be of an open mouth or a leaning head: back
+          // to rest first, then the hold.
+          st.needCenter = true;
+          setBackToCenter(true);
+        } else if (last) {
           st.stage = "hold";
           st.holdStart = 0;
           setPhase("hold");
-        } else if (liveFaceIsTurn(move)) {
-          // Only a head turn needs a return to the centre; after a blink or
-          // a smile the head is already there.
+        } else if (liveFaceNeedsRest(move)) {
+          // Back to rest first: head to the centre, eyes level, mouth
+          // closed. (A smile leaves the face where the next move starts.)
           st.needCenter = true;
           setBackToCenter(true);
         }
         return;
       }
-      if (now - st.stageStart > (move === "blink" || move === "smile" ? 9000 : 7000)) failWith(move === "blink" ? "blink" : move === "smile" ? "smile" : "turn");
+      if (now - st.stageStart > (liveFaceIsTurn(move) ? 7000 : 9000)) failWith(move === "smile" || move === "mouth" || move === "tilt" ? move : "turn");
       return;
     }
 
@@ -697,7 +711,7 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
     small
       ? [Lock9, "You chose the face check instead of your PIN, for payments up to ₹10,000."]
       : [Lock9, "Payments of ₹1 lakh or more need a quick face check, on top of your PIN."],
-    [Camera7, "Follow three quick moves — a turn, a blink, a smile — then hold still for two seconds."],
+    [Camera7, "Follow three quick moves — a turn, a smile, a tilt of the head — then hold still for two seconds."],
     [Check13, "Checked against the face on your GLOOBAL ID. No photo is saved."]
   ].map(([Icon, text], i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0 12px" }}><Icon size={18} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} /><span style={{ fontSize: 13.5, lineHeight: 1.45, color: T.inkSoft, fontWeight: 600 }}>{text}</span></div>)}</div><div style={{ flex: 1 }} /><button data-testid="live-face-open" onClick={() => start()} style={button(true, { flex: "none", width: "100%" })}><Camera7 size={18} />Start face check</button></div>;
 
@@ -705,12 +719,12 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
 
   const intro = <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "8px 20px calc(18px + env(safe-area-inset-bottom, 0px))", gap: 14, overflowY: "auto" }}><div style={{ background: T.surface, borderRadius: T.radiusLg, boxShadow: T.shadowCard, padding: "16px 16px 6px" }}><div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.5, color: T.inkFaint, textTransform: "uppercase", marginBottom: 6 }}>What happens</div>{[
     [Camera7, "The camera opens. No gallery, no uploads: the photo is taken here."],
-    [LiveSmile, "Three quick moves to follow — turn your head, blink, smile — so we know it's a live person. Nothing to say out loud."],
+    [LiveSmile, "Three quick moves to follow — turn your head, smile, open your mouth — so we know it's a live person. Nothing to say out loud."],
     [Lock9, "Only the photo and a coded face pattern are kept, so one face can't open two GLOOBAL IDs. GLOOBAL doesn't keep the video."]
   ].map(([Icon, text], i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0 12px" }}><Icon size={18} color={T.accent} style={{ flexShrink: 0, marginTop: 1 }} /><span style={{ fontSize: 13.5, lineHeight: 1.45, color: T.inkSoft, fontWeight: 600 }}>{text}</span></div>)}</div>{purpose === "change" && <div style={{ fontSize: 12.5, lineHeight: 1.5, color: T.inkSoft, fontWeight: 600, padding: "0 4px" }}>If the new photo looks like a different person, you'll confirm with your PIN and it goes live after 24 hours.</div>}<div style={{ display: "flex", gap: 8, justifyContent: "center" }}>{[["en", "English"], ["hi", "हिन्दी"]].map(([k, label]) => <button key={k} data-testid={`live-face-lang-${k}`} onClick={() => pickLang(k)} style={{ padding: "7px 14px", borderRadius: 999, border: `1.5px solid ${k === lang ? T.accent : T.line}`, background: k === lang ? "rgba(124,92,255,0.1)" : T.surface, color: k === lang ? T.accent : T.inkSoft, fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>)}</div><div style={{ flex: 1 }} /><button data-testid="live-face-open" onClick={() => start()} style={button(true, { flex: "none", width: "100%" })}><Camera7 size={18} />Open camera</button></div>;
 
   const turnNow = turns[Math.min(turnIndex, turns.length - 1)];
-  const MOVE_ICON = { left: ArrowLeft9, right: LiveArrowRight, up: LiveArrowUp, down: LiveArrowDown, blink: LiveEye, smile: LiveSmile };
+  const MOVE_ICON = { left: ArrowLeft9, right: LiveArrowRight, up: LiveArrowUp, down: LiveArrowDown, smile: LiveSmile, mouth: LiveLaugh, tilt: LiveTilt };
   const TurnIcon = MOVE_ICON[turnNow];
   const moving = phase === "combo" || phase === "hold";
   // ── The three cards, above the camera ──────────────────────────────────
@@ -738,13 +752,13 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
   </div>;
   // What to do right now, in one line under the cards.
   const nowLine = phase === "combo"
-    ? (backToCenter ? (hi ? "वापस बीच में" : "Back to the centre") : turnNow === "blink" && eyesClosed ? (hi ? "अब आँखें खोलिए" : "Now open your eyes") : say(LIVE_FACE_TURN_TEXT[turnNow]))
+    ? (backToCenter ? (hi ? "वापस सीधे" : "Back to normal") : say(LIVE_FACE_TURN_TEXT[turnNow]))
     : phase === "hold" ? (hi ? "स्थिर रहिए" : "Hold still")
     : phase === "align" ? (hi ? "चेहरा गोले में" : "Face in the circle")
     : "";
   const holdLeft = Math.max(1, Math.ceil((1 - holdPct) * (LIVE_FACE_HOLD_MS / 1000)));
 
-  const camera = <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "6px 20px calc(16px + env(safe-area-inset-bottom, 0px))", minHeight: 0 }}>{(moving || phase === "align") && cards}<div data-testid="live-face-turn" data-dir={phase === "combo" ? (backToCenter ? "center" : turnNow) : phase === "hold" ? "hold" : "center"} data-eyes={eyesClosed ? "closed" : "open"} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 44, marginTop: 10 }}>{phase === "combo" && !backToCenter && TurnIcon && <TurnIcon size={26} color="#fff" />}<span style={{ fontFamily: T.fontDisplay, fontSize: 23, fontWeight: 700, color: "#fff", textAlign: "center" }}>{nowLine}</span></div><div style={{ position: "relative", width: "min(62vw, 250px)", aspectRatio: "3 / 4", marginTop: 6, flexShrink: 0 }}><video
+  const camera = <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "6px 20px calc(16px + env(safe-area-inset-bottom, 0px))", minHeight: 0 }}>{(moving || phase === "align") && cards}<div data-testid="live-face-turn" data-dir={phase === "combo" ? (backToCenter ? "center" : turnNow) : phase === "hold" ? "hold" : "center"} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 44, marginTop: 10 }}>{phase === "combo" && !backToCenter && TurnIcon && <TurnIcon size={26} color="#fff" />}<span style={{ fontFamily: T.fontDisplay, fontSize: 23, fontWeight: 700, color: "#fff", textAlign: "center" }}>{nowLine}</span></div><div style={{ position: "relative", width: "min(62vw, 250px)", aspectRatio: "3 / 4", marginTop: 6, flexShrink: 0 }}><video
     ref={videoRef}
     muted
     playsInline
@@ -760,7 +774,8 @@ function LiveFaceCheck({ purpose = "register", current, onUse, onClose, onSaved,
 
   const FAIL = {
     turn: ["Didn't see that move", "Follow each arrow a little further, then come back to the centre."],
-    blink: ["Didn't see your eyes close", "Close your eyes and keep them closed until it says open, facing the camera."],
+    mouth: ["Didn't see your mouth open", "Open your mouth wide, like saying \"aah\", facing the camera."],
+    tilt: ["Didn't see your head tilt", "Lean your head towards one shoulder, then bring it back up."],
     smile: ["Didn't see a smile", "A big smile, facing the camera, in good light."],
     spoof: ["That didn't look like a live face", "Use your own face, in good light, not a photo or a screen."],
     swap: ["The face changed", "Keep the same face in the circle from start to end."],

@@ -7,7 +7,7 @@
 //   face     window.__GLOOBAL_FACE_ENGINE__ stands in for the face library
 //            (liveFaceLoadEngine checks for it). It returns one face whose
 //            mesh FOLLOWS the card on screen: it reads the move the check is
-//            asking for (data-dir) and turns, blinks or smiles. Switch
+//            asking for (data-dir) and turns, smiles, opens its mouth or tilts. Switch
 //            `follow` off to play a photo.
 //
 // What this is NOT: a test of the face library. tests/live-photo-0253 checks
@@ -35,7 +35,6 @@ export function liveFaceFake({ follow = true } = {}) {
         const phase = root && root.dataset.phase;
         const turn = document.querySelector("[data-testid=live-face-turn]");
         const dir = cfg.follow && turn ? turn.dataset.dir : "center";
-        const eyesWereClosed = turn && turn.dataset.eyes === "closed";
         let yaw = 0.09, pitch = 0.27, mouth = 0.01;
         // Eye-widths: 140 px. Lids 14 px apart at rest (0.1), mouth corners
         // 70 px apart (0.5).
@@ -44,8 +43,9 @@ export function liveFaceFake({ follow = true } = {}) {
         if (dir === "right") yaw -= 0.2;
         if (dir === "up") pitch -= 0.1;
         if (dir === "down") pitch += 0.1;
-        // Blink: eyes shut until the screen has seen them shut, then open.
-        if (dir === "blink" && !eyesWereClosed) lid = 2;
+        if (dir === "mouth") mouth = 0.12;
+        // Tilt: the whole mesh turned 14 degrees about the middle of the face.
+        const lean = dir === "tilt" ? 14 * Math.PI / 180 : 0;
         if (dir === "smile") mouthW = 90;
         const m = Array.from({ length: 468 }, () => [0, 0, 0]);
         m[33] = [250, 200, 0]; m[263] = [390, 200, 0]; m[10] = [320, 100, 0]; m[152] = [320, 400, 0];
@@ -54,6 +54,7 @@ export function liveFaceFake({ follow = true } = {}) {
         m[159] = [270, 200 - lid / 2, 0]; m[145] = [270, 200 + lid / 2, 0];
         m[386] = [370, 200 - lid / 2, 0]; m[374] = [370, 200 + lid / 2, 0];
         m[61] = [320 - mouthW / 2, 330, 0]; m[291] = [320 + mouthW / 2, 330, 0];
+        if (lean) for (const pt of m) { const x = pt[0] - 320, y = pt[1] - 250; pt[0] = 320 + x * Math.cos(lean) - y * Math.sin(lean); pt[1] = 250 + x * Math.sin(lean) + y * Math.cos(lean); }
         window.__faceFrames = (window.__faceFrames || 0) + 1;
         return [{ box: [170, 90, 300, 300], mesh: m, score: 0.95, embedding: Array.from({ length: 128 }, (_, i) => Math.sin(i)), real: 0.9, live: 0.9 }];
       },

@@ -14,8 +14,8 @@ import { ChevronLeft as LiqBack, Landmark as LiqBank, Crown as LiqCrown, EyeOff 
 //
 //   1. The GLOOBAL bank: everything every member holds, as one figure, over
 //      the three who hold the most.
-//   2. Your bank: what you hold, your place, your share, how many are
-//      behind you, how far the next place is, and the switch that takes
+//   2. Your bank: what you hold, your place, your share,
+//      how far the next place is, and the switch that takes
 //      you off the public board (or puts you back).
 //   3. The board: every listed member, largest first, read a page at a
 //      time as the list is scrolled. Three jumps: the top, your place, the
@@ -200,7 +200,7 @@ function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
             <span style={{ position: "absolute", top: -4, left: `calc(${me.aheadOf}% - 8px)`, width: 16, height: 16, borderRadius: "50%", background: "#fff", border: `3px solid ${T.accent}`, boxSizing: "border-box" }} />
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            {[[`${me.share}%`, "of total"], [`${me.aheadOf}%`, "of members are behind you"], [me.toNext > 0 ? liquidityMoney(me.toNext, cur) : "—", me.toNext > 0 ? `to reach #${(me.rank - 1).toLocaleString()}` : "you hold the most"]].map(([big, small]) => <span key={small} style={{ flex: 1, minWidth: 0, borderRadius: 12, background: T.bg, padding: "8px 8px 7px", textAlign: "center" }}>
+            {[[`${me.share}%`, "of total"], [me.toNext > 0 ? liquidityMoney(me.toNext, cur) : "—", me.toNext > 0 ? `to reach #${(me.rank - 1).toLocaleString()}` : "you hold the most"]].map(([big, small]) => <span key={small} style={{ flex: 1, minWidth: 0, borderRadius: 12, background: T.bg, padding: "8px 8px 7px", textAlign: "center" }}>
               <b style={{ display: "block", fontSize: 14, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{big}</b>
               <span style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.25, marginTop: 2 }}>{small}</span>
             </span>)}

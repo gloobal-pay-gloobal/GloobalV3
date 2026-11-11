@@ -643,15 +643,17 @@ var GloobalApi = {
   // Our numbers (0197): the totals behind Coverage, in the app only.
   // GLOOBAL Coverage → Liquidity: the total GLOOBAL bank, the top holders
   // by name, and this account's place. Signed in. null when unreadable.
-  async getLiquidityBoard(currency = "INR") {
+  // A page at a time: `offset` is the first place wanted (0 = the top).
+  async getLiquidityBoard(currency = "INR", offset = 0, limit = 50) {
     try {
-      const result = await gloobalApiClient.get(`/api/coverage/liquidity?currency=${encodeURIComponent(String(currency || "INR").toUpperCase())}`, { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS, liveOnly: true });
+      const q = new URLSearchParams({ currency: String(currency || "INR").toUpperCase(), offset: String(Math.max(0, Math.floor(offset) || 0)), limit: String(limit) });
+      const result = await gloobalApiClient.get(`/api/coverage/liquidity?${q.toString()}`, { timeoutMs: GLOOBAL_API_COLD_START_TIMEOUT_MS, liveOnly: true });
       return result && result.success ? result : null;
     } catch (e) {
       return null;
     }
   },
-  // Takes this account's name off the liquidity board, or puts it back.
+  // Takes this account off the public liquidity board, or puts it back.
   async setLiquidityHidden(hidden) {
     try {
       const result = await gloobalApiClient.put("/api/coverage/liquidity/visibility", { hidden: Boolean(hidden) });

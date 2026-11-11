@@ -13,15 +13,24 @@
 //     the viewer is reading Coverage in.
 //   - Only the GLOOBAL balance counts. Not assets, not shares.
 //
-// One thing was added to those decisions: a member can take their NAME off
-// the board (`liquidityHidden`). Their row stays, as "Hidden member", with
-// its amount, so the ranking is still whole. Names are shown unless a
-// member says otherwise, which is what the founder chose; the switch is
-// there because a list of who holds how much, with no way out of it, is
-// the kind of list people are harmed by.
+// A member can take themselves off the board (`liquidityHidden`): they are
+// then not listed to anyone, and the places on the public board are counted
+// among the members who are listed. Their money still counts in the total
+// GLOOBAL bank, and they still see their own card, with the place they
+// would hold. Members are shown unless they say otherwise, which is what
+// the founder chose; the switch is there because a list of who holds how
+// much, with no way out of it, is the kind of list people are harmed by.
 //
-// Everything decided here is in buildLiquidityBoard, a plain function of
-// its inputs, so it is tested without a database (tests/liquidity-board).
+// The board is read a page at a time (`offset`, `limit`), so the list can
+// be scrolled to its last place however long it is. rankLiquidity does the
+// converting and sorting once; pageLiquidity cuts a page out of it. Today
+// the route ranks every member in memory and keeps that for thirty seconds,
+// which is right for thousands of members. For millions the same two
+// functions stay, but the ranking has to come from a stored, indexed
+// amount per member instead of a sort on every refresh.
+//
+// Everything decided here is in plain functions of their inputs, so it is
+// tested without a database (tests/liquidity-board).
 
 const { COUNTRY_CURRENCY } = require('../data/countryCurrencyMap');
 
@@ -35,13 +44,17 @@ function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+const LIQUIDITY_PAGE = 50;
+const LIQUIDITY_PAGE_MAX = 100;
+
 // users: [{ id, fullName, countryIso, balance, hidden }]
 // rates: { CUR: number }  one unit of CUR in `currency`; a currency with
 //        no rate is left out of the ranking and counted in `unconverted`,
 //        never guessed at.
-function buildLiquidityBoard({ users = [], rates = {}, currency = 'INR', meId = '', top = LIQUIDITY_TOP } = {}) {
+// Returns everything that does not depend on who is looking.
+function rankLiquidity({ users = [], rates = {}, currency = 'INR' } = {}) {
   const target = String(currency || 'INR').toUpperCase();
-  const rows = [];
+  const all = [];
   let unconverted = 0;
   for (const u of users) {
     const own = currencyOf(u.countryIso);
@@ -51,7 +64,7 @@ function buildLiquidityBoard({ users = [], rates = {}, currency = 'INR', meId = 
       if (balance > 0) unconverted += 1;
       continue;
     }
-    rows.push({
+    all.push({
       id: String(u.id),
       name: String(u.fullName || '').trim(),
       hidden: Boolean(u.hidden),
@@ -61,50 +74,86 @@ function buildLiquidityBoard({ users = [], rates = {}, currency = 'INR', meId = 
       amount: balance * rate,
     });
   }
-  // Largest first; equal amounts in a fixed order, so a rank never flickers.
-  rows.sort((a, b) => (b.amount - a.amount) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const total = rows.reduce((s, r) => s + r.amount, 0);
-  const holders = rows.filter((r) => r.amount > 0).length;
+  // Largest first; equal amounts in a fixed order, so a place never flickers.
+  all.sort((a, b) => (b.amount - a.amount) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // The public board: members who have not hidden themselves.
+  const listed = all.filter((r) => !r.hidden);
+  const total = all.reduce((s, r) => s + r.amount, 0);
+  return {
+    currency: target,
+    all,
+    listed,
+    total,
+    holders: all.filter((r) => r.amount > 0).length,
+    hiddenCount: all.length - listed.length,
+    unconverted,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+// One page of the public board, and the viewer's own card.
+function pageLiquidity(ranked, { meId = '', offset = 0, limit = LIQUIDITY_PAGE } = {}) {
+  const { all, listed, total } = ranked;
   const share = (amount) => (total > 0 ? Math.round((amount / total) * 10000) / 100 : 0);
   const me = String(meId || '');
-  const publicRow = (r, i) => ({
+  const size = Math.max(1, Math.min(LIQUIDITY_PAGE_MAX, Math.floor(Number(limit)) || LIQUIDITY_PAGE));
+  const from = Math.max(0, Math.min(Math.floor(Number(offset)) || 0, Math.max(0, listed.length - 1)));
+  const row = (r, i) => ({
     rank: i + 1,
-    // A hidden member's name is not sent at all, except to themselves.
-    name: r.hidden && r.id !== me ? '' : r.name,
-    hidden: r.hidden,
+    name: r.name,
     countryIso: r.countryIso,
     amount: round2(r.amount),
     share: share(r.amount),
     me: r.id === me,
   });
-  const board = rows.slice(0, Math.max(1, top)).filter((r) => r.amount > 0).map(publicRow);
-  const myIndex = rows.findIndex((r) => r.id === me);
+  const rows = listed.slice(from, from + size).map((r, i) => row(r, from + i));
+  const mineRow = all.find((r) => r.id === me) || null;
   let mine = null;
-  if (myIndex >= 0) {
-    const r = rows[myIndex];
-    const above = myIndex > 0 ? rows[myIndex - 1] : null;
-    // Of the people who hold anything, how many hold less than this one.
-    const below = rows.filter((x) => x.amount > 0 && x.amount < r.amount).length;
+  if (mineRow) {
+    // A listed member's place is their place on the board. A hidden member
+    // is told the place they would hold: one more than the listed members
+    // who hold more.
+    const listedIndex = listed.findIndex((r) => r.id === me);
+    const rank = listedIndex >= 0 ? listedIndex + 1 : listed.filter((r) => r.amount > mineRow.amount).length + 1;
+    const above = listedIndex > 0 ? listed[listedIndex - 1] : (listedIndex < 0 ? [...listed].reverse().find((r) => r.amount > mineRow.amount) : null);
+    const others = listed.filter((r) => r.id !== me);
+    const behind = others.filter((r) => r.amount < mineRow.amount).length;
     mine = {
-      ...publicRow(r, myIndex),
-      ownCurrency: r.ownCurrency,
-      ownAmount: r.ownAmount,
-      aheadOf: holders > 1 ? Math.round((below / (holders - (r.amount > 0 ? 1 : 0) || 1)) * 100) : (r.amount > 0 ? 100 : 0),
-      toNext: above ? round2(above.amount - r.amount) : 0,
+      rank,
+      name: mineRow.name,
+      hidden: mineRow.hidden,
+      countryIso: mineRow.countryIso,
+      amount: round2(mineRow.amount),
+      share: share(mineRow.amount),
+      me: true,
+      ownCurrency: mineRow.ownCurrency,
+      ownAmount: mineRow.ownAmount,
+      // Of the other members on the board, how many hold less.
+      aheadOf: others.length ? Math.round((behind / others.length) * 100) : 0,
+      toNext: above ? round2(above.amount - mineRow.amount) : 0,
     };
   }
+  const topCount = Math.min(LIQUIDITY_TOP, listed.length);
   return {
     success: true,
-    currency: target,
+    currency: ranked.currency,
     total: round2(total),
-    holders,
-    members: rows.length,
-    unconverted,
-    top: board,
+    holders: ranked.holders,
+    listed: listed.length,
+    hiddenCount: ranked.hiddenCount,
+    unconverted: ranked.unconverted,
+    offset: from,
+    rows,
+    nextOffset: from + rows.length < listed.length ? from + rows.length : null,
     me: mine,
-    topShare: share(board.reduce((s, r) => s + r.amount, 0)),
-    generatedAt: new Date().toISOString(),
+    topCount,
+    topShare: share(listed.slice(0, topCount).reduce((s, r) => s + r.amount, 0)),
+    generatedAt: ranked.generatedAt,
   };
 }
 
-module.exports = { buildLiquidityBoard, currencyOf, LIQUIDITY_TOP };
+function buildLiquidityBoard({ users, rates, currency, meId, offset, limit } = {}) {
+  return pageLiquidity(rankLiquidity({ users, rates, currency }), { meId, offset, limit });
+}
+
+module.exports = { buildLiquidityBoard, rankLiquidity, pageLiquidity, currencyOf, LIQUIDITY_TOP, LIQUIDITY_PAGE, LIQUIDITY_PAGE_MAX };

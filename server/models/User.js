@@ -116,7 +116,8 @@ const userSchema = new mongoose.Schema({
   // a mass $unset across every account is a write over real documents to
   // tidy a field nothing reads.
   // GLOOBAL Coverage → Liquidity shows who holds the most, by name. A
-  // member can take their name off that board; their row stays, unnamed
+  // member can take themselves off that board: they are then listed to
+  // nobody, though their balance still counts in the total
   // (lib/liquidityBoard.js). Shown unless they say otherwise.
   liquidityHidden: {
     type: Boolean,

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 const require = createRequire(import.meta.url);
-const { buildLiquidityBoard, currencyOf } = require("../lib/liquidityBoard.js");
+const { buildLiquidityBoard, rankLiquidity, pageLiquidity, currencyOf } = require("../lib/liquidityBoard.js");
 
 const users = [
   { id: "a", fullName: "Asha Raman", countryIso: "IN", balance: 50000 },
@@ -20,72 +20,83 @@ const users = [
 ];
 const rates = { CHF: 100 };
 
-test("one board for the world: balances converted, largest first, with each one's share of the total", () => {
+test("one board for the world: balances converted, largest first, with each one's share of the total; hidden members are not listed", () => {
   const b = buildLiquidityBoard({ users, rates, currency: "INR", meId: "b" });
   assert.equal(b.currency, "INR");
-  assert.equal(b.total, 200000, "50,000 + 20,000 + 1,000 CHF at 100 + 30,000");
+  assert.equal(b.total, 200000, "50,000 + 20,000 + 1,000 CHF at 100 + 30,000: the hidden member's money still counts");
   assert.equal(b.holders, 4, "the one with nothing is a member, not a holder");
-  assert.equal(b.members, 5);
-  assert.deepEqual(b.top.map((r) => [r.rank, r.name, r.amount, r.share]), [
+  assert.equal(b.listed, 4, "five members, one hidden");
+  assert.equal(b.hiddenCount, 1);
+  assert.deepEqual(b.rows.map((r) => [r.rank, r.name, r.amount, r.share]), [
     [1, "Lena Keller", 100000, 50],
     [2, "Asha Raman", 50000, 25],
-    [3, "", 30000, 15],
-    [4, "Ravi Menon", 20000, 10],
+    [3, "Ravi Menon", 20000, 10],
+    [4, "Zero Zoya", 0, 0],
   ]);
-  assert.equal(b.top.find((r) => r.me).name, "Ravi Menon");
+  assert.equal(b.rows.find((r) => r.me).name, "Ravi Menon");
+  assert.ok(!JSON.stringify(b.rows).includes("Hidden Hari"));
 });
 
-test("where I stand: my rank, my own money in my own currency, who I am ahead of, and the gap to the next place", () => {
+test("where I stand: my place, my own money in my own currency, who I am ahead of, and the gap to the next place", () => {
   const b = buildLiquidityBoard({ users, rates, currency: "INR", meId: "b" });
-  assert.equal(b.me.rank, 4);
+  assert.equal(b.me.rank, 3);
   assert.equal(b.me.ownAmount, 20000);
   assert.equal(b.me.ownCurrency, "INR");
   assert.equal(b.me.share, 10);
-  assert.equal(b.me.toNext, 10000, "30,000 is next");
-  assert.equal(b.me.aheadOf, 0, "last of the four who hold anything");
+  assert.equal(b.me.toNext, 30000, "Asha, at 50,000, is the next listed place");
+  assert.equal(b.me.aheadOf, 33, "ahead of one of the three others on the board");
   const top = buildLiquidityBoard({ users, rates, currency: "INR", meId: "c" });
   assert.equal(top.me.rank, 1);
   assert.equal(top.me.ownAmount, 1000);
   assert.equal(top.me.ownCurrency, "CHF");
   assert.equal(top.me.aheadOf, 100);
   assert.equal(top.me.toNext, 0);
-  // Someone with nothing still gets their place, after everyone who holds.
-  const zero = buildLiquidityBoard({ users, rates, currency: "INR", meId: "e" });
-  assert.equal(zero.me.rank, 5);
-  assert.equal(zero.me.aheadOf, 0);
 });
 
-test("a hidden member's name is not sent to anyone else, but is to themselves; their amount still ranks", () => {
+test("a hidden member is listed to nobody, not even as an unnamed row; they still see their own card and the place they would hold", () => {
   const others = buildLiquidityBoard({ users, rates, currency: "INR", meId: "a" });
-  const row = others.top[2];
-  assert.equal(row.name, "");
-  assert.equal(row.hidden, true);
-  assert.equal(row.amount, 30000);
   assert.ok(!JSON.stringify(others).includes("Hidden Hari"), "the name is nowhere in what others receive");
+  assert.ok(!others.rows.some((r) => r.amount === 30000), "nor their amount");
   const self = buildLiquidityBoard({ users, rates, currency: "INR", meId: "d" });
-  assert.equal(self.me.name, "Hidden Hari");
   assert.equal(self.me.hidden, true);
+  assert.equal(self.me.amount, 30000);
+  assert.equal(self.me.rank, 3, "two listed members hold more");
+  assert.equal(self.me.toNext, 20000);
+  assert.ok(!self.rows.some((r) => r.me), "and they are not in their own copy of the list either");
 });
 
 test("a currency with no rate is left out and counted, never guessed; the same board in another currency", () => {
   const noRate = buildLiquidityBoard({ users, rates: {}, currency: "INR", meId: "a" });
   assert.equal(noRate.unconverted, 1);
   assert.equal(noRate.total, 100000);
-  assert.equal(noRate.top[0].name, "Asha Raman");
+  assert.equal(noRate.rows[0].name, "Asha Raman");
   const chf = buildLiquidityBoard({ users, rates: { INR: 0.01 }, currency: "CHF", meId: "a" });
   assert.equal(chf.total, 2000);
-  assert.equal(chf.top[0].amount, 1000);
+  assert.equal(chf.rows[0].amount, 1000);
   assert.equal(chf.me.amount, 500);
   assert.equal(chf.me.ownAmount, 50000);
   assert.equal(currencyOf("in"), "INR");
 });
 
-test("the top is twenty rows; the route needs a token and never caches per person", () => {
-  const many = Array.from({ length: 60 }, (_, i) => ({ id: `u${String(i).padStart(2, "0")}`, fullName: `P${i}`, countryIso: "IN", balance: 1000 + i }));
-  const b = buildLiquidityBoard({ users: many, rates: {}, currency: "INR", meId: "u00" });
-  assert.equal(b.top.length, 20);
-  assert.equal(b.me.rank, 60);
-  assert.equal(b.me.aheadOf, 0);
+test("a page at a time, to the last place: offset and limit, the next offset, and null at the end", () => {
+  const many = Array.from({ length: 230 }, (_, i) => ({ id: `u${String(i).padStart(3, "0")}`, fullName: `P${i}`, countryIso: "IN", balance: 5000 - i }));
+  const ranked = rankLiquidity({ users: many, rates: {}, currency: "INR" });
+  const first = pageLiquidity(ranked, { meId: "u229" });
+  assert.equal(first.rows.length, 50);
+  assert.equal(first.rows[0].rank, 1);
+  assert.equal(first.nextOffset, 50);
+  assert.equal(first.topCount, 20);
+  assert.equal(first.me.rank, 230, "my place comes with every page, wherever the page is");
+  const mid = pageLiquidity(ranked, { meId: "u229", offset: 100, limit: 25 });
+  assert.deepEqual([mid.rows[0].rank, mid.rows.at(-1).rank, mid.nextOffset], [101, 125, 125]);
+  const last = pageLiquidity(ranked, { meId: "u229", offset: 200 });
+  assert.equal(last.rows.length, 30);
+  assert.equal(last.rows.at(-1).rank, 230);
+  assert.equal(last.rows.at(-1).me, true);
+  assert.equal(last.nextOffset, null, "the bottom of the board");
+  // A page is never more than a hundred rows, and an offset past the end is the last row.
+  assert.equal(pageLiquidity(ranked, { limit: 5000 }).rows.length, 100);
+  assert.equal(pageLiquidity(ranked, { offset: 999999 }).rows[0].rank, 230);
   const src = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
   assert.match(src, /app\.get\('\/api\/coverage\/liquidity', lookupLimit, requireAuth,/, "per-person figures: signed in only");
   assert.match(src, /app\.put\('\/api\/coverage\/liquidity\/visibility', writeLimit, requireAuth,/);

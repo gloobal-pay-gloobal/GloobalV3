@@ -27,10 +27,19 @@ import { ChevronLeft as LiqBack, Landmark as LiqBank, Crown as LiqCrown, EyeOff 
 var LIQUIDITY_PAGE_ROWS = 50;
 var LIQUIDITY_AVATAR_COLORS = ["#7C5CFF", "#0FA372", "#E86A17", "#2F6FEB", "#D6336C", "#0B7285", "#9C36B5", "#C2410C"];
 
-function liquidityMoney(amount, currency) {
-  const n = Number(amount) || 0;
-  // Whole units on a ranking: paise only add noise at these sizes.
-  return fmtMoney(Math.round(n), currency).replace(/\.00(?=\D|$)/, "");
+function liquidityMoney(amount) {
+  // Whole units on a ranking: decimals only add noise at these sizes. The
+  // board is read in CEL: one CEL is one unit of the reader's own money, so
+  // the digits are the converted figure and only the label is the coin's.
+  return `${Math.round(Number(amount) || 0).toLocaleString("en-US")} ${typeof COIN_TICKER === "string" ? COIN_TICKER : "CEL"}`;
+}
+// A flag sits centred in its own small circle, so every country takes the
+// same round space beside a name whatever the shape of its flag.
+function LiquidityFlag({ iso, size = 18 }) {
+  if (!iso) return null;
+  // The flag is drawn larger than the circle and clipped by it, so the
+  // circle is filled edge to edge with the middle of the flag.
+  return <span aria-hidden="true" data-testid="liquidity-flag" style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, position: "relative", overflow: "hidden", boxShadow: `0 0 0 1px ${T.line}` }}><span style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", fontSize: Math.round(size * 1.45), lineHeight: 1 }}>{isoToFlag(iso)}</span></span>;
 }
 function liquidityInitials(name) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
@@ -130,12 +139,12 @@ function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <b style={{ fontSize: 13.5, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name || "Member"}</b>
-          {r.countryIso ? <span aria-hidden="true" style={{ fontSize: 13 }}>{isoToFlag(r.countryIso)}</span> : null}
+          <LiquidityFlag iso={r.countryIso} />
           {r.me ? <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: T.accent, borderRadius: 999, padding: "2px 7px" }}>You</span> : null}
         </span>
-        <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 2 }}>{r.share}% of the bank</span>
+        <span style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.inkFaint, marginTop: 2 }}>{r.share}% of total</span>
       </span>
-      <b style={{ fontSize: 13.5, color: T.ink, whiteSpace: "nowrap", fontFamily: T.fontDisplay }}>{liquidityMoney(r.amount, cur)}</b>
+      <b style={{ fontSize: 13.5, color: T.ink, whiteSpace: "nowrap", fontFamily: T.fontDisplay }}>{liquidityMoney(r.amount).replace(/ \D+$/, "")}<span style={{ fontSize: 10, fontWeight: 800, color: T.inkFaint, marginLeft: 3 }}>{typeof COIN_TICKER === "string" ? COIN_TICKER : "CEL"}</span></b>
     </div>;
   };
   // The three who hold the most, as a podium: 2nd, 1st, 3rd.
@@ -191,7 +200,7 @@ function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
             <span style={{ position: "absolute", top: -4, left: `calc(${me.aheadOf}% - 8px)`, width: 16, height: 16, borderRadius: "50%", background: "#fff", border: `3px solid ${T.accent}`, boxSizing: "border-box" }} />
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            {[[`${me.share}%`, "of the GLOOBAL bank"], [`${me.aheadOf}%`, "of members are behind you"], [me.toNext > 0 ? liquidityMoney(me.toNext, cur) : "—", me.toNext > 0 ? `to reach #${(me.rank - 1).toLocaleString()}` : "you hold the most"]].map(([big, small]) => <span key={small} style={{ flex: 1, minWidth: 0, borderRadius: 12, background: T.bg, padding: "8px 8px 7px", textAlign: "center" }}>
+            {[[`${me.share}%`, "of total"], [`${me.aheadOf}%`, "of members are behind you"], [me.toNext > 0 ? liquidityMoney(me.toNext, cur) : "—", me.toNext > 0 ? `to reach #${(me.rank - 1).toLocaleString()}` : "you hold the most"]].map(([big, small]) => <span key={small} style={{ flex: 1, minWidth: 0, borderRadius: 12, background: T.bg, padding: "8px 8px 7px", textAlign: "center" }}>
               <b style={{ display: "block", fontSize: 14, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{big}</b>
               <span style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.25, marginTop: 2 }}>{small}</span>
             </span>)}
@@ -212,14 +221,14 @@ function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
           {chip("last", "Last place", LiqBottom, false)}
         </div>
         <div data-testid="liquidity-list" style={{ borderRadius: 20, background: T.surface, boxShadow: T.shadowCard, overflow: "hidden", flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "13px 14px 11px" }}><b style={{ flex: 1, fontSize: 13.5, color: T.ink }}>{head.listed.toLocaleString()} {head.listed === 1 ? "member" : "members"} on the board</b><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>in {cur}</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "13px 14px 11px" }}><b style={{ flex: 1, fontSize: 13.5, color: T.ink }}>{head.listed.toLocaleString()} {head.listed === 1 ? "member" : "members"} on the board</b><span style={{ fontSize: 11.5, fontWeight: 700, color: T.inkFaint }}>1 {typeof COIN_TICKER === "string" ? COIN_TICKER : "CEL"} = 1 {cur}</span></div>
           {start > 0 ? <button data-testid="liquidity-earlier" onClick={() => { const from = Math.max(0, start - LIQUIDITY_PAGE_ROWS); load(from, "prepend", start - from); }} disabled={Boolean(busy)} style={{ width: "100%", border: "none", borderTop: `1px solid ${T.line}`, background: "transparent", padding: "11px 0", fontSize: 12.5, fontWeight: 800, color: T.accent, fontFamily: "inherit", cursor: "pointer" }}>{busy === "earlier" ? "Loading…" : `Show places ${(Math.max(0, start - LIQUIDITY_PAGE_ROWS) + 1).toLocaleString()} to ${start.toLocaleString()}`}</button> : null}
           {rows.length ? rows.map(row) : <div style={{ padding: "18px 14px", fontSize: 13, fontWeight: 600, color: T.inkSoft, borderTop: `1px solid ${T.line}` }}>Nobody is on the board yet.</div>}
           {next != null ? <div data-testid="liquidity-more" style={{ padding: "13px 0", textAlign: "center", fontSize: 12.5, fontWeight: 700, color: T.inkFaint, borderTop: `1px solid ${T.line}` }}>{failed ? <button onClick={() => load(next, "append")} style={{ border: "none", background: "transparent", color: T.accent, fontWeight: 800, fontFamily: "inherit", fontSize: 12.5, cursor: "pointer" }}>Couldn't load more. Tap to try again.</button> : "Loading more…"}</div>
             : rows.length ? <div data-testid="liquidity-end" style={{ padding: "13px 0", textAlign: "center", fontSize: 12, fontWeight: 700, color: T.inkFaint, borderTop: `1px solid ${T.line}` }}>The last place · that's everyone on the board</div> : null}
         </div>
         <div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.5, textAlign: "center", padding: "0 10px", flexShrink: 0 }}>
-          GLOOBAL balances only, converted to {cur} at today's rates. Members only.
+          GLOOBAL balances only, converted at today's rates and shown in CEL (1 CEL = 1 {cur}). Members only.
           {head.hiddenCount ? <span style={{ display: "block" }}><LiqEyeOff size={11} style={{ verticalAlign: "-1px", marginRight: 4 }} />{head.hiddenCount.toLocaleString()} {head.hiddenCount === 1 ? "member has" : "members have"} hidden themselves; their balances still count in the total.</span> : null}
           {head.unconverted ? <span style={{ display: "block" }}>{head.unconverted} {head.unconverted === 1 ? "balance is" : "balances are"} left out: no rate for their currency today.</span> : null}
         </div>

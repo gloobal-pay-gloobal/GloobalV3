@@ -47,11 +47,11 @@ test("the total and the podium; scrolling loads the board page by page; jumps to
   const ranks = () => page.locator("[data-testid=liquidity-row]").evaluateAll((els) => els.map((e) => Number(e.dataset.rank)));
 
   // 1. The bank, over the three who hold the most (2nd, 1st, 3rd).
-  assert.match(await text("liquidity-total"), /TOTAL GLOOBAL BANK [\d,]+₹ Held by 230 members · the top 20 hold [\d.]+%/);
+  assert.match(await text("liquidity-total"), /TOTAL GLOOBAL BANK [\d,]+ CEL Held by 230 members · the top 20 hold [\d.]+%/);
   assert.deepEqual(await page.locator("[data-testid=liquidity-podium]").evaluateAll((els) => els.map((e) => e.dataset.rank)), ["2", "1", "3"]);
   // 2. My bank and place.
   const mine = await text("liquidity-me");
-  assert.match(mine, /YOUR BANK 261,000₹ YOUR PLACE #\d+ of 230/);
+  assert.match(mine, /YOUR BANK 261,000 CEL YOUR PLACE #\d+ of 230/);
   const myRank = Number(mine.match(/#(\d+)/)[1]);
   assert.match(mine, /Show me on the public board Other members see your name, balance and place\./);
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + "-top.png" });

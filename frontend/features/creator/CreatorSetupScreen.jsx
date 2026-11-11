@@ -1262,15 +1262,39 @@ function creatorShareText(rate) {
 function PaymentLineRow({ onToast }) {
   const [line, setLine] = useState53(() => gloobalPaymentLineLoad());
   const [open, setOpen] = useState53(false);
+  const [clip, setClip] = useState53(() => gloobalPaymentClipLoad());
+  const [recording, setRecording] = useState53(false);
+  const [busy, setBusy] = useState53(false);
+  const recRef = useRef30(null);
+  const fileRef = useRef30(null);
+  useEffect50(() => () => { if (recRef.current) recRef.current.stop(); }, []);
   const change = (text) => { setLine(text); if (!gloobalPaymentLineSave(text)) onToast?.("Couldn't save your line on this phone"); };
-  const sample = line.trim() ? gloobalPaymentLineSentence(line, 100).text : "The standard announcement";
+  const keepClip = (url) => {
+    if (!gloobalPaymentClipSave(url)) { onToast?.("No room to keep that clip on this phone"); return; }
+    setClip(url);
+  };
+  const record = async () => {
+    if (recording) { if (recRef.current) recRef.current.stop(); return; }
+    const session = soundPayRecordLine();
+    recRef.current = session;
+    setRecording(true);
+    try { keepClip(await session.done); } catch (e) { onToast?.(soundPayClipError(e)); } finally { recRef.current = null; setRecording(false); }
+  };
+  const upload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    try { keepClip(await soundPayClipFromFile(file)); } catch (err) { onToast?.(soundPayClipError(err)); } finally { setBusy(false); }
+  };
+  const sample = clip ? "Your audio clip, then the amount" : line.trim() ? gloobalPaymentLineSentence(line, 100).text : "The standard announcement";
   const chip = (active) => ({ padding: "7px 12px", borderRadius: 999, border: `1.5px solid ${active ? T.accent : T.line}`, background: active ? "rgba(124,92,255,0.1)" : T.surface, color: active ? T.accent : T.inkSoft, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" });
   return <div data-testid="payment-line" style={{ padding: "12px 15px 14px", borderTop: `1px solid ${T.line}` }}>
     <button type="button" data-testid="payment-line-open" onClick={() => setOpen((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, border: "none", background: "transparent", padding: 0, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
       <Pencil4 size={18} color={T.accent} style={{ flexShrink: 0 }} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>When you're paid, your phone says</span>
-        <span data-testid="payment-line-sample" style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{line.trim() ? `“${sample}”` : sample}</span>
+        <span data-testid="payment-line-sample" style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{!clip && line.trim() ? `“${sample}”` : sample}</span>
       </span>
       <ChevronRight9 size={17} color={T.inkFaint} style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none" }} />
     </button>
@@ -1285,9 +1309,17 @@ function PaymentLineRow({ onToast }) {
         style={{ width: "100%", boxSizing: "border-box", height: 42, borderRadius: 12, border: `1.5px solid ${T.line}`, background: T.bg, color: T.ink, fontSize: 14, fontWeight: 600, fontFamily: "inherit", padding: "0 12px", outline: "none" }}
       />
       <div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4 }}>{"{amount}"} is replaced by the amount paid. Plays while GLOOBAL is open on this phone.</div>
+      {/* Or their own sound in place of the words: five seconds at most. */}
+      <div style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft }}>{clip ? "Playing your audio clip in place of the words" : "Or play your own audio clip (5 seconds at most)"}</div>
       <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" data-testid="payment-line-preview" onClick={() => gloobalPreviewPaymentLine(line)} style={{ ...chip(true), height: 40, flex: 1 }}>Hear it with 100</button>
-        <button type="button" data-testid="payment-line-reset" onClick={() => change("")} disabled={!line.trim()} style={{ ...chip(false), height: 40, opacity: line.trim() ? 1 : 0.5 }}>Use the standard one</button>
+        <button type="button" data-testid="payment-clip-record" onClick={record} disabled={busy} style={{ ...chip(recording), height: 40, flex: 1, borderColor: recording ? "#ef4444" : T.line, color: recording ? "#ef4444" : T.inkSoft }}>{recording ? "Recording… tap to stop" : "Record (5 s)"}</button>
+        <button type="button" data-testid="payment-clip-upload" onClick={() => fileRef.current && fileRef.current.click()} disabled={recording || busy} style={{ ...chip(false), height: 40, flex: 1 }}>{busy ? "Adding…" : "Upload clip"}</button>
+        {clip && <button type="button" data-testid="payment-clip-remove" onClick={() => keepClip("")} style={{ ...chip(false), height: 40 }}>Remove</button>}
+        <input ref={fileRef} data-testid="payment-clip-file" type="file" accept="audio/*" onChange={upload} style={{ display: "none" }} />
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" data-testid="payment-line-preview" onClick={() => gloobalPreviewPaymentLine(line)} disabled={recording} style={{ ...chip(true), height: 40, flex: 1 }}>Hear it with 100</button>
+        <button type="button" data-testid="payment-line-reset" onClick={() => { change(""); keepClip(""); }} disabled={!line.trim() && !clip} style={{ ...chip(false), height: 40, opacity: line.trim() || clip ? 1 : 0.5 }}>Use the standard one</button>
       </div>
     </div>}
   </div>;

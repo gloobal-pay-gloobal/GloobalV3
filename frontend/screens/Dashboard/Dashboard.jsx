@@ -3203,7 +3203,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        slowly through the app's flip colours like every other living mark
        on this screen. The Personal side has no shop button — one more
        thing that says which side you are on. */
-  }{shareRole === "merchant" ? <MyShopOrb color={shopOrbColor} onClick={openMyShop} /> : <EarnOrb color={shopOrbColor} onClick={whenCreatorReady(() => setShowEarn(true))} />}{
+  }{shareRole === "merchant" && <MyShopOrb color={shopOrbColor} onClick={openMyShop} />}{
     /* The four tiles' keyframes, rendered once for the group rather than
        once per tile. They live with the component that uses them — see the
        note in actionTileMotion.jsx about the day @keyframes finDrift lived
@@ -3706,7 +3706,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
        because there is already an "About" row in this list and two rows
        starting with that word is a menu nobody can scan. */
   }{PROFILE_ROWS.slice(0, 1)
-    .concat(["Creator Profile"], shareRole === "merchant" ? ["My shops"] : [], PROFILE_ROWS.slice(1, 4), ["Complaints & reports"], PROFILE_ROWS.slice(4)).map((label, i) => {
+    .concat(["Creator Profile"], shareRole === "merchant" ? ["My shops"] : [], PROFILE_ROWS.slice(1, 4), ["Sound pay", "Complaints & reports"], PROFILE_ROWS.slice(4)).map((label, i) => {
     // The theme's own family, very faint: one soft tint per row instead of
     // the eight-colour stripe the shared list drew in every theme.
     const rowColor = gloobalFamilyColor(i);
@@ -3720,6 +3720,12 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
       // Help & Support, whose screen opens on the Ask box, so it went.)
       onClick={() => (label === "Notifications"
         ? window.dispatchEvent(new Event("gloobal:openNotifications"))
+        // Sound pay (pay or get paid by a phone nearby). It was an orb at
+        // the centre of Home for a day; the founder moved it here: it is
+        // the rare case, and the centre is not its place. The ear beside
+        // the scanner still opens the same sheet.
+        : label === "Sound pay"
+          ? setShowEarn(true)
         : label === "Complaints & reports"
           ? setShowComplaints(true)
           : label === "My shops"
@@ -3740,7 +3746,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     ><span style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{label}</span><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>{label === "My shops" && shopsInfo && shopsInfo.shops && <span
       data-testid="profile-my-shops-count"
       style={{ fontSize: 11.5, fontWeight: 800, color: T.inkFaint }}
-    >{`${shopsInfo.shops.length} of ${Number(shopsInfo.max) || 5}`}</span>}{label === "Complaints & reports" && complaintsNeedingMe > 0 && <span
+    >{`${shopsInfo.shops.length} of ${Number(shopsInfo.max) || 5}`}</span>}{label === "Sound pay" && <SoundPlayIcon size={16} color={T.inkFaint} />}{label === "Complaints & reports" && complaintsNeedingMe > 0 && <span
       data-complaints-badge
       style={{ minWidth: 20, height: 20, borderRadius: 10, background: T.negative, color: "#fff", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}
     >{complaintsNeedingMe}</span>}<ChevronRightIcon /></span></button>;

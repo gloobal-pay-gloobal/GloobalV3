@@ -1,11 +1,11 @@
 // src/features/nearby/soundPayUi.jsx
 import { useState as useState99, useEffect as useEffect96, useRef as useRef57 } from "react";
-import { Volume2 as SoundPlayIcon, Ear as SoundEarIcon, Delete as SoundBackspace, X as SoundCloseIcon, Mic as SoundMicIcon, Pencil as SoundPencilIcon, MessageCircle as SoundLineIcon } from "lucide-react";
+import { Volume2 as SoundPlayIcon, Ear as SoundEarIcon, Delete as SoundBackspace, X as SoundCloseIcon, Mic as SoundMicIcon, Upload as SoundUploadIcon, Pencil as SoundPencilIcon, MessageCircle as SoundLineIcon } from "lucide-react";
 
 // ── PAY NEARBY BY SOUND: ONE DOOR, TWO SCREENS ──────────────────────────
 //
-// The ear (NavEarnButton beside the scanner, and the Earn orb on Home)
-// opens the Earn sheet: Get paid / Pay. Nothing else in the app starts
+// The ear (NavEarnButton beside the scanner) and the "Sound pay" row in the
+// Profile list open the Earn sheet: Get paid / Pay. Nothing else in the app starts
 // sound pay — the Scan screen's Listen button and the QR card's Play
 // button were two more doors to the same room, and went (founder, 11:25).
 //
@@ -126,7 +126,24 @@ function SoundPayLineRow({ line, onChange, open, onToggle, onToast, disabled }) 
       setRecording(false);
     }
   };
-  const shown = line.clip ? "Your recorded voice" : (line.text || "No line");
+  const fileRef = useRef57(null);
+  const [loadingClip, setLoadingClip] = useState99(false);
+  // An audio file from the phone: cut to its first five seconds and kept.
+  const upload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setLoadingClip(true);
+    try {
+      const clip = await soundPayClipFromFile(file);
+      onChange({ ...line, on: true, clip });
+    } catch (err) {
+      onToast?.(soundPayClipError(err));
+    } finally {
+      setLoadingClip(false);
+    }
+  };
+  const shown = line.clip ? "Your audio clip" : (line.text || "No line");
   const chip = (active) => ({ padding: "7px 12px", borderRadius: 999, border: `1.5px solid ${active ? T.accent : T.line}`, background: active ? "rgba(124,92,255,0.1)" : T.surface, color: active ? T.accent : T.inkSoft, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" });
   return <div data-testid="sound-pay-line" data-on={line.on ? "1" : "0"} style={{ marginTop: 12, borderRadius: 16, background: T.surface, boxShadow: T.shadowCard, padding: "10px 12px" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -143,12 +160,14 @@ function SoundPayLineRow({ line, onChange, open, onToggle, onToast, disabled }) 
         data-testid="sound-pay-line-input"
         value={line.clip ? "" : line.text}
         maxLength={SOUND_PAY_LINE_MAX_TEXT}
-        placeholder={line.clip ? "Type to replace your recording" : "Type your own line"}
+        placeholder={line.clip ? "Type to replace your audio clip" : "Type your own line"}
         onChange={(e) => onChange({ on: true, text: e.target.value, clip: "" })}
         style={{ width: "100%", boxSizing: "border-box", height: 42, borderRadius: 12, border: `1.5px solid ${T.line}`, background: T.bg, color: T.ink, fontSize: 14, fontWeight: 600, fontFamily: "inherit", padding: "0 12px", outline: "none" }}
       />
       <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" data-testid="sound-pay-line-record" onClick={record} style={{ ...chip(recording || Boolean(line.clip)), flex: 1, height: 40, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, borderColor: recording ? "#ef4444" : (line.clip ? T.accent : T.line), color: recording ? "#ef4444" : (line.clip ? T.accent : T.inkSoft) }}><SoundMicIcon size={15} color={recording ? "#ef4444" : (line.clip ? T.accent : T.inkSoft)} />{recording ? "Recording… tap to stop" : line.clip ? "Record again" : "Record my voice (5 s)"}</button>
+        <button type="button" data-testid="sound-pay-line-record" onClick={record} style={{ ...chip(recording || Boolean(line.clip)), flex: 1, height: 40, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, borderColor: recording ? "#ef4444" : (line.clip ? T.accent : T.line), color: recording ? "#ef4444" : (line.clip ? T.accent : T.inkSoft) }}><SoundMicIcon size={15} color={recording ? "#ef4444" : (line.clip ? T.accent : T.inkSoft)} />{recording ? "Recording… tap to stop" : "Record (5 s)"}</button>
+        <button type="button" data-testid="sound-pay-line-upload" onClick={() => fileRef.current && fileRef.current.click()} disabled={recording || loadingClip} style={{ ...chip(false), flex: 1, height: 40, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><SoundUploadIcon size={15} color={T.inkSoft} />{loadingClip ? "Adding…" : "Upload clip"}</button>
+        <input ref={fileRef} data-testid="sound-pay-line-file" type="file" accept="audio/*" onChange={upload} style={{ display: "none" }} />
         <button type="button" data-testid="sound-pay-line-preview" onClick={() => soundPaySayLine({ ...line, on: true })} disabled={recording || (!line.clip && !line.text.trim())} style={{ ...chip(false), height: 40, display: "flex", alignItems: "center", gap: 6 }}><SoundPlayIcon size={15} color={T.inkSoft} />Hear it</button>
       </div>
       <button type="button" data-testid="sound-pay-line-toggle" onClick={() => onChange({ ...line, on: !line.on })} style={{ border: "none", background: "transparent", color: T.inkSoft, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", padding: "2px 0", textAlign: "left" }}>{line.on ? "Turn my line off (chirp only)" : "Turn my line on"}</button>
@@ -296,31 +315,14 @@ function SoundPaySelfTest({ gloobalId, side }) {
   </div>;
 }
 
-// ── EARN: THE ORB IN THE MIDDLE OF THE FOUR (personal side) ─────────────
+// ── THE SOUND PAY SHEET ─────────────────────────────────────────────────
 //
-// The creator side has a shop orb at the centre of Send / Add Bank /
-// Scanner / Receive. The personal side has this one: Earn. Tap it and a
-// small sheet offers the two things two phones near each other can do
-// without typing anything: RECEIVE (play my ID, with an amount if I want)
-// and PAY (listen for the other phone, then pay it). Pay hands off to the
-// Scan screen with listening already on.
-function EarnOrb({ color, onClick }) {
-  return <button
-    type="button"
-    onClick={onClick}
-    aria-label="Earn: pay or get paid by a phone nearby"
-    data-testid="earn-orb"
-    className="v2-tap"
-    style={{
-      position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 4,
-      width: 54, height: 54, borderRadius: "50%", border: "none", padding: 0, cursor: "pointer",
-      background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-      boxShadow: `0 0 0 5px ${T.bg}, 0 10px 24px rgba(0,0,0,0.22)`,
-      transition: "background 0.9s ease, transform 0.15s ease"
-    }}
-  ><SoundPlayIcon size={23} color="#fff" strokeWidth={2.1} /></button>;
-}
-
+// Opened from the "Sound pay" row in the Profile list and from the ear
+// beside the scanner. (For a day it was an orb at the centre of the four
+// Home tiles on the personal side; the founder moved it out: it is the
+// rare case, and the centre is not its place.) Two choices, for two
+// phones near each other: GET PAID (play my ID, with an amount if I want)
+// and PAY (the listening screen, then the same card a scanned QR opens).
 function EarnSheet({ gloobalId, side, onClose, onPay, onToast, currencySign = "" }) {
   const [mode, setMode] = useState99(null); // null | "receive"
   const big = (testid, Icon, title, sub, onTap, tint) => <button

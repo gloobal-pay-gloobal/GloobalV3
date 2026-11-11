@@ -199,6 +199,59 @@ function gloobalPaymentLineSentence(template, amount) {
   var text = /\{amount\}/i.test(line) ? line.replace(/\{amount\}/gi, number) : number + ". " + line;
   return { text: text, lang: /[\u0900-\u097F]/.test(text) ? "hi-IN" : "en-IN" };
 }
+// Or an audio clip in place of the words: the shop's own voice or jingle,
+// five seconds at most (recorded or uploaded in the Creator profile, cut
+// to length by soundPayClipFromFile / soundPayRecordLine). A clip cannot
+// say a number, so the amount is spoken straight after it: the soundbox's
+// one job is that the shopkeeper hears how much came.
+var GLOOBAL_PAYMENT_CLIP_KEY = "gloobal.paymentClip";
+var GLOOBAL_PAYMENT_CLIP_MAX_MS = 5000;
+function gloobalPaymentClipLoad() {
+  try {
+    if (typeof localStorage === "undefined") return "";
+    var raw = localStorage.getItem(GLOOBAL_PAYMENT_CLIP_KEY);
+    return typeof raw === "string" && raw.indexOf("data:audio/") === 0 ? raw : "";
+  } catch (e) {
+    return "";
+  }
+}
+function gloobalPaymentClipSave(url) {
+  try {
+    if (url) localStorage.setItem(GLOOBAL_PAYMENT_CLIP_KEY, String(url));
+    else localStorage.removeItem(GLOOBAL_PAYMENT_CLIP_KEY);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+// Plays the clip; resolves when it ends, fails, or five seconds have gone.
+function gloobalPlayClip(url) {
+  return new Promise(function (resolve) {
+    var done = false;
+    var audio = null;
+    var finish = function (ok) {
+      if (done) return;
+      done = true;
+      try { if (audio) audio.pause(); } catch (e) { /* already stopped */ }
+      resolve(ok);
+    };
+    try {
+      if (!url || typeof Audio === "undefined") return resolve(false);
+      audio = new Audio(url);
+      audio.onended = function () { finish(true); };
+      audio.onerror = function () { finish(false); };
+      setTimeout(function () { finish(true); }, GLOOBAL_PAYMENT_CLIP_MAX_MS + 300);
+      var p = audio.play();
+      if (p && p.catch) p.catch(function () { finish(false); });
+    } catch (e) {
+      finish(false);
+    }
+  });
+}
+function gloobalPaymentAmountOnly(amount) {
+  return gloobalPaymentLineSentence("{amount} " + (typeof COIN_TICKER !== "undefined" ? COIN_TICKER : "CEL"), amount);
+}
+
 // What a payment of `amount` will say on this phone right now.
 function gloobalPaymentSentence(amount, currency, language) {
   var custom = gloobalPaymentLineLoad();
@@ -208,6 +261,8 @@ function gloobalPaymentSentence(amount, currency, language) {
 function gloobalPreviewPaymentLine(template, currency) {
   gloobalChimeUnlock();
   var language = typeof navigator !== "undefined" ? navigator.language : "en";
+  var clip = gloobalPaymentClipLoad();
+  if (clip) return gloobalPlayChimeTone().then(function () { return gloobalPlayClip(clip); }).then(function () { return gloobalSpeak(gloobalPaymentAmountOnly(100)); });
   var sentence = String(template || "").trim() ? gloobalPaymentLineSentence(template, 100) : gloobalChimeSentence(100, currency, language);
   return gloobalPlayChimeTone().then(function () { return gloobalSpeak(sentence); });
 }
@@ -252,8 +307,12 @@ function gloobalPlayPaymentChime(payment) {
   if (!Number.isFinite(amount) || amount <= 0) return Promise.resolve(false);
   var language = p.language || (typeof navigator !== "undefined" ? navigator.language : "en");
   var sentence = gloobalPaymentSentence(amount, p.currency, language);
+  var clip = gloobalPaymentClipLoad();
   gloobalChimeQueue = gloobalChimeQueue.then(function () {
-    return gloobalPlayChimeTone().then(function () { return gloobalSpeak(sentence); });
+    return gloobalPlayChimeTone().then(function () {
+      if (!clip) return gloobalSpeak(sentence);
+      return gloobalPlayClip(clip).then(function () { return gloobalSpeak(gloobalPaymentAmountOnly(amount)); });
+    });
   }).catch(function () { return false; });
   return gloobalChimeQueue;
 }

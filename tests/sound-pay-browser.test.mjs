@@ -1,7 +1,7 @@
 // tests/sound-pay-browser.test.mjs
 //
 // Pay nearby by sound in the real app:
-//   1. The receiver's Earn sheet: Get paid, 250 on the pad, Play. The exact
+//   1. The receiver's sound pay sheet: Get paid, 250 on the pad, Play. The exact
 //      sound the app plays is captured and decoded: it names the receiver,
 //      as a person, for 250.
 //   2. The payer's Scan screen: the microphone is fed that kind of chirp with
@@ -21,6 +21,13 @@ const A = ACCOUNTS.india;
 const B = ACCOUNTS.india2;
 
 before(async () => { await buildOnce(); });
+// The sound pay sheet, by the ear beside the scanner on the GLOOBAL ID screen.
+const openEarn = async (page) => {
+  await page.getByRole("button", { name: "Receive", exact: true }).first().evaluate((n) => n.click());
+  const ear = page.getByTestId("nav-earn");
+  await ear.waitFor({ timeout: 15000 });
+  await ear.evaluate((n) => n.click());
+};
 after(async () => { await teardown(); });
 
 const tap = async (locator) => { await locator.waitFor({ timeout: 20000 }); await locator.evaluate((n) => n.click()); };
@@ -41,7 +48,7 @@ test("the receiver plays its ID and the amount, and the sound decodes to exactly
   await page.waitForSelector("#root *", { timeout: 15000 });
   await login(page, B);
   await page.waitForTimeout(1200);
-  await tap(page.getByTestId("earn-orb"));
+  await openEarn(page);
   await tap(page.getByTestId("earn-receive"));
   for (const k of ["2", "5", "0"]) await tap(page.getByRole("button", { name: `Amount ${k}`, exact: true }));
   assert.equal(await page.getByTestId("sound-pay-amount").innerText(), "250");
@@ -94,7 +101,7 @@ test("the payer listens: the receiver's card opens, and Pay brings the amount to
   await page.waitForSelector("#root *", { timeout: 15000 });
   await login(page, A);
   await page.waitForTimeout(1200);
-  await tap(page.getByTestId("earn-orb"));
+  await openEarn(page);
   await tap(page.getByTestId("earn-pay"));
   await page.getByTestId("sound-listen-screen").waitFor({ timeout: 8000 });
   // The same card a QR scan opens: the receiver's name and a Pay button.
@@ -146,7 +153,7 @@ test("the self-test: one phone plays and hears its own ID, and says so; a meter 
   await page.waitForSelector("#root *", { timeout: 15000 });
   await login(page, A);
   await page.waitForTimeout(1500);
-  await tap(page.getByTestId("earn-orb"));
+  await openEarn(page);
   await tap(page.getByTestId("sound-pay-selftest"));
   await page.getByTestId("sound-pay-selftest-result").waitFor({ timeout: 20000 });
   const r = page.getByTestId("sound-pay-selftest-result");
@@ -157,7 +164,7 @@ test("the self-test: one phone plays and hears its own ID, and says so; a meter 
   // Cancel closes it.
   await page.getByRole("button", { name: "Close", exact: true }).last().evaluate((n) => n.click());
   await page.getByTestId("earn-sheet").waitFor({ state: "detached", timeout: 8000 });
-  await tap(page.getByTestId("earn-orb"));
+  await openEarn(page);
   await tap(page.getByTestId("earn-pay"));
   await page.getByTestId("sound-pay-meter").waitFor({ timeout: 8000 });
   assert.match(await page.getByTestId("sound-listen-left").innerText(), /^(20|19|18) s$/);
@@ -202,7 +209,7 @@ test("offline: a person heard before still opens a card from the phone's copy, a
   await login(page, A);
   await page.waitForTimeout(1200);
   // Once with the server up: the lookup is made and kept on the phone.
-  await tap(page.getByTestId("earn-orb"));
+  await openEarn(page);
   await tap(page.getByTestId("earn-pay"));
   await page.waitForFunction((name) => document.body.innerText.includes(name), B.fullName, { timeout: 30000 });
   assert.equal(await page.getByTestId("scan-saved-copy").count(), 0, "online: no saved-copy line");
@@ -211,7 +218,7 @@ test("offline: a person heard before still opens a card from the phone's copy, a
   await context.route(`${API_ORIGIN}/api/**`, (route) => route.abort("failed"));
   await page.getByRole("button", { name: "Back", exact: true }).first().evaluate((n) => n.click());
   await page.waitForTimeout(600);
-  await tap(page.getByTestId("earn-orb"));
+  await openEarn(page);
   await tap(page.getByTestId("earn-pay"));
   await page.waitForFunction((name) => document.body.innerText.includes(name), B.fullName, { timeout: 30000 });
   const line = page.getByTestId("scan-saved-copy");
@@ -245,7 +252,7 @@ test("your line: the phone says it first, then plays the chirp; typed lines and 
   await page.waitForSelector("#root *", { timeout: 15000 });
   await login(page, A);
   await page.waitForTimeout(1200);
-  await tap(page.getByTestId("earn-orb"));
+  await openEarn(page);
   await tap(page.getByTestId("earn-receive"));
   // On by default, with the founder's own example.
   assert.equal(await page.getByTestId("sound-pay-line-text").innerText(), "“Arre bhai, thoda jaldi bhej”");
@@ -275,5 +282,39 @@ test("your line: the phone says it first, then plays the chirp; typed lines and 
   await page.waitForFunction(() => window.__chirpAt.length === 3, null, { timeout: 15000 });
   assert.equal(await page.evaluate(() => window.__said.length), 2, "nothing was said with the line off");
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + "-line.png" });
+  await context.close();
+});
+
+test("your line from an uploaded file: cut to its first five seconds, kept on the phone, played before the chirp", async () => {
+  // An eight-second tone as a WAV file, the way a phone's file picker hands one over.
+  const rate = 16000, secs = 8, n = rate * secs;
+  const wav = Buffer.alloc(44 + n * 2);
+  wav.write("RIFF", 0); wav.writeUInt32LE(36 + n * 2, 4); wav.write("WAVEfmt ", 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(rate, 24); wav.writeUInt32LE(rate * 2, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i += 1) wav.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 440 * i / rate) * 12000), 44 + i * 2);
+  const { page, context } = await openPage({ account: A });
+  await context.addInitScript(() => {
+    window.__clipPlayed = [];
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () { window.__clipPlayed.push(String(this.src).slice(0, 22)); setTimeout(() => this.onended && this.onended(), 200); return Promise.resolve(); };
+  });
+  await page.reload();
+  await page.waitForSelector("#root *", { timeout: 15000 });
+  await login(page, A);
+  await page.waitForTimeout(1200);
+  await openEarn(page);
+  await tap(page.getByTestId("earn-receive"));
+  await tap(page.getByTestId("sound-pay-line-open"));
+  await page.getByTestId("sound-pay-line-file").setInputFiles({ name: "jingle.wav", mimeType: "audio/wav", buffer: wav });
+  await page.waitForFunction(() => { try { return JSON.parse(localStorage.getItem("gloobal.soundPayLine")).clip.length > 1000; } catch (e) { return false; } }, null, { timeout: 15000 });
+  const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("gloobal.soundPayLine")));
+  assert.ok(kept.clip.startsWith("data:audio/wav;base64,"));
+  // Five seconds at 22.05 kHz, 16-bit, one channel, plus the 44-byte header.
+  const bytes = Buffer.from(kept.clip.split(",")[1], "base64").length;
+  assert.equal(bytes, 44 + 5 * 22050 * 2, "exactly five seconds were kept from the eight");
+  assert.equal(await page.getByTestId("sound-pay-line-text").innerText(), "“Your audio clip”");
+  await tap(page.getByTestId("sound-pay-play"));
+  await page.waitForFunction(() => window.__clipPlayed.length === 1, null, { timeout: 10000 });
+  assert.deepEqual(await page.evaluate(() => window.__clipPlayed), ["data:audio/wav;base64,"]);
   await context.close();
 });

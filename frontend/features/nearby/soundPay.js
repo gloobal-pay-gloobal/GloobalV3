@@ -577,3 +577,63 @@ function soundPayRecordLine() {
   })();
   return { stop: () => stopFn(), done };
 }
+
+// An audio file picked from the phone, made into a clip we can keep: its
+// first five seconds, one channel, 22.05 kHz, as a WAV data: URL (about
+// 290 KB at most). A whole song can be chosen; only its start is kept, so
+// what is stored and played is never more than five seconds.
+var SOUND_PAY_CLIP_RATE = 22050;
+function soundPayWavDataUrl(samples, rate) {
+  const n = samples.length;
+  const bytes = new Uint8Array(44 + n * 2);
+  const v = new DataView(bytes.buffer);
+  const tag = (o, t) => { for (let i = 0; i < t.length; i += 1) bytes[o + i] = t.charCodeAt(i); };
+  tag(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); tag(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); tag(36, "data"); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i += 1) v.setInt16(44 + i * 2, Math.round(Math.max(-1, Math.min(1, samples[i])) * 32767), true);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+  return "data:audio/wav;base64," + btoa(bin);
+}
+async function soundPayClipFromFile(file) {
+  if (!file || (file.type && !/^audio\//.test(file.type) && !/^video\/(mp4|webm|ogg)/.test(file.type))) throw new Error("not_audio");
+  if (file.size > 30 * 1024 * 1024) throw new Error("file_too_large");
+  const ctx = soundPayContext();
+  if (!ctx) throw new Error("no_audio");
+  let decoded;
+  try {
+    const data = await file.arrayBuffer();
+    decoded = await new Promise((resolve, reject) => { const p = ctx.decodeAudioData(data, resolve, reject); if (p && p.catch) p.catch(reject); });
+  } catch (e) {
+    throw new Error("not_audio");
+  }
+  const seconds = Math.min(SOUND_PAY_LINE_MAX_MS / 1000, decoded.duration);
+  const out = new Float32Array(Math.floor(seconds * SOUND_PAY_CLIP_RATE));
+  const step = decoded.sampleRate / SOUND_PAY_CLIP_RATE;
+  const channels = [];
+  for (let c = 0; c < decoded.numberOfChannels; c += 1) channels.push(decoded.getChannelData(c));
+  let peak = 0;
+  for (let i = 0; i < out.length; i += 1) {
+    // Average the source samples this output sample covers (a plain
+    // low-pass, enough for speech and a jingle), across the channels.
+    const from = Math.floor(i * step), to = Math.max(from + 1, Math.floor((i + 1) * step));
+    let sum = 0, count = 0;
+    for (let c = 0; c < channels.length; c += 1) for (let k = from; k < to && k < channels[c].length; k += 1) { sum += channels[c][k]; count += 1; }
+    out[i] = count ? sum / count : 0;
+    if (Math.abs(out[i]) > peak) peak = Math.abs(out[i]);
+  }
+  if (!out.length || peak < 0.001) throw new Error("silent_clip");
+  // A short fade at the cut, so five seconds of a longer file does not end on a click.
+  const fade = Math.min(out.length, Math.round(0.04 * SOUND_PAY_CLIP_RATE));
+  for (let i = 0; i < fade; i += 1) out[out.length - 1 - i] *= i / fade;
+  return soundPayWavDataUrl(out, SOUND_PAY_CLIP_RATE);
+}
+function soundPayClipError(e) {
+  const m = e && (e.message || e.name);
+  return m === "not_audio" ? "That file isn't audio this phone can read. Try an MP3 or a voice note."
+    : m === "file_too_large" ? "That file is too big. Pick a shorter one."
+    : m === "silent_clip" ? "That clip is silent."
+    : m === "clip_too_large" ? "That recording is too long. Keep it under 5 seconds."
+    : m === "NotAllowedError" ? "Allow the microphone to record"
+    : "Couldn't add that clip on this phone.";
+}

@@ -17,7 +17,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = readFileSync(join(ROOT, "frontend/features/creator/paymentChime.js"), "utf8");
 
 function load({ language = "en-IN", withVoice = true, withAudio = true } = {}) {
-  const log = { notes: [], slides: [], spoken: [], listeners: {} };
+  const log = { notes: [], slides: [], spoken: [], clips: [], listeners: {} };
   class FakeParam {
     setValueAtTime() {}
     exponentialRampToValueAtTime() {}
@@ -57,15 +57,22 @@ function load({ language = "en-IN", withVoice = true, withAudio = true } = {}) {
   // The phone's own storage, where the shop's announcement line is kept.
   const store = new Map();
   const localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  // A player for the shop's audio clip: records what it was given.
+  class FakeAudio {
+    constructor(src) { this.src = src; }
+    play() { log.clips.push(this.src); setTimeout(() => this.onended && this.onended(), 1); return Promise.resolve(); }
+    pause() {}
+  }
   const factory = new Function(
-    "window", "navigator", "SpeechSynthesisUtterance", "setTimeout", "localStorage",
+    "window", "navigator", "SpeechSynthesisUtterance", "setTimeout", "localStorage", "Audio",
     `${SOURCE}
      return { gloobalSetPaymentSoundEnabled, gloobalPlayPaymentChime, gloobalChimeSentence, gloobalMarkChimePlayed, gloobalChimeUnlock, gloobalPlayRoleSwitchSound,
-              gloobalPaymentLineLoad, gloobalPaymentLineSave, gloobalPaymentLineSentence, gloobalPreviewPaymentLine, GLOOBAL_PAYMENT_LINE_PRESETS };`
+              gloobalPaymentLineLoad, gloobalPaymentLineSave, gloobalPaymentLineSentence, gloobalPreviewPaymentLine, GLOOBAL_PAYMENT_LINE_PRESETS,
+              gloobalPaymentClipLoad, gloobalPaymentClipSave };`
   );
   // setTimeout shortened so the 650 ms chime wait does not slow the test.
   const fast = (fn, ms) => setTimeout(fn, Math.min(ms, 5));
-  const api = factory(window, navigator, withVoice ? FakeUtterance : undefined, fast, localStorage);
+  const api = factory(window, navigator, withVoice ? FakeUtterance : undefined, fast, localStorage, FakeAudio);
   return { api, log };
 }
 
@@ -212,4 +219,21 @@ test("Hear it plays the chime and the line with 100; every ready line carries th
   assert.equal(log.spoken[0].text, "100 CEL aa gaye");
   assert.equal(log.notes.length, 4);
   for (const t of api.GLOOBAL_PAYMENT_LINE_PRESETS) assert.match(t, /\{amount\}/, t);
+});
+
+test("an audio clip in place of the words: chime, the clip, then the amount; removing it brings the words back", async () => {
+  const { api, log } = load();
+  api.gloobalPaymentLineSave("{amount} CEL prapt hue");
+  assert.equal(api.gloobalPaymentClipSave("data:audio/wav;base64,AAAA"), true);
+  await api.gloobalPlayPaymentChime({ txnId: "C1", amount: 100, currency: "INR" });
+  assert.equal(log.notes.length, 4, "the chime first");
+  assert.deepEqual(log.clips, ["data:audio/wav;base64,AAAA"], "then the shop's clip");
+  assert.deepEqual(log.spoken, [{ text: "100 CEL", lang: "en-IN" }], "then the amount, which a clip cannot say");
+  // Only an audio data: URL is ever played.
+  api.gloobalPaymentClipSave("https://example.com/x.mp3");
+  assert.equal(api.gloobalPaymentClipLoad(), "");
+  api.gloobalPaymentClipSave("");
+  await api.gloobalPlayPaymentChime({ txnId: "C2", amount: 20, currency: "INR" });
+  assert.equal(log.clips.length, 1);
+  assert.equal(log.spoken[1].text, "20 CEL prapt hue");
 });

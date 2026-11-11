@@ -1,8 +1,9 @@
 // tests/earn-orb.test.mjs
 //
-// Earn: the orb at the centre of the four Home tiles on the personal side
-// (soundPayUi.jsx). Tap → a sheet with Get paid / Pay. Get paid plays the
-// ID; Pay opens the listening screen.
+// Sound pay's way in (soundPayUi.jsx). It was an orb at the centre of the
+// four Home tiles for a day; now it is a "Sound pay" row in the Profile
+// list, and the ear beside the scanner on the GLOOBAL ID screen. Either
+// opens the sheet: Get paid plays the ID; Pay opens the listening screen.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { buildOnce, openPage, teardown, login, ACCOUNTS } from "./browser-harness.mjs";
@@ -12,7 +13,7 @@ before(async () => { await buildOnce(); });
 after(async () => { await teardown(); });
 const tap = async (l) => { await l.waitFor({ timeout: 15000 }); await l.evaluate((n) => n.click()); };
 
-test("the orb opens the sheet; Get paid shows the amount screen; Pay opens the listening screen", async () => {
+test("no orb at the centre of Home; the Profile list's Sound pay row opens the sheet; Get paid shows the amount screen; Pay opens the listening screen", async () => {
   const { page, context } = await openPage({ account: A });
   // A microphone that hears silence, so "listening" can start without a device.
   await context.addInitScript(() => {
@@ -26,7 +27,12 @@ test("the orb opens the sheet; Get paid shows the amount screen; Pay opens the l
   await login(page, A);
   await page.waitForTimeout(1500);
   assert.equal(await page.getByTestId("my-shop-orb").count(), 0, "the personal side has no shop orb");
-  await tap(page.getByTestId("earn-orb"));
+  assert.equal(await page.getByTestId("earn-orb").count(), 0, "and no sound pay orb at the centre any more");
+  const openFromProfile = async () => {
+    await tap(page.getByRole("button", { name: "Profile", exact: true }));
+    await tap(page.getByRole("button", { name: "Sound pay", exact: true }));
+  };
+  await openFromProfile();
   await page.getByTestId("earn-sheet").waitFor({ timeout: 8000 });
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + "-sheet.png" });
 
@@ -38,7 +44,7 @@ test("the orb opens the sheet; Get paid shows the amount screen; Pay opens the l
   // Back to the two choices and on to Pay.
   await page.getByRole("button", { name: "Close", exact: true }).last().evaluate((n) => n.click());
   await page.getByTestId("earn-sheet").waitFor({ state: "detached", timeout: 8000 });
-  await tap(page.getByTestId("earn-orb"));
+  await openFromProfile();
   await tap(page.getByTestId("earn-pay"));
   await page.waitForFunction(() => document.querySelector("[data-testid=sound-pay-listen]")?.dataset.listening === "1", null, { timeout: 15000 });
   if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT + "-pay.png" });

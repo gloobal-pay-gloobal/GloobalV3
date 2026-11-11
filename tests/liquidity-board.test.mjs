@@ -12,10 +12,13 @@ import { createRequire } from "node:module";
 import { buildOnce, openPage, teardown, login, ACCOUNTS, API_ORIGIN } from "./browser-harness.mjs";
 
 const require = createRequire(import.meta.url);
-const { rankLiquidity, pageLiquidity } = require("../server/lib/liquidityBoard.js");
+const { rankLiquidity, pageLiquidity, liquidityPhotoOwners } = require("../server/lib/liquidityBoard.js");
 const A = ACCOUNTS.india;
 before(async () => { await buildOnce(); });
 after(async () => { await teardown(); });
+const photoKey = (id) => `k-${id}`;
+// A small drawn portrait stands in for a profile photo.
+const PHOTO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAB1klEQVR42u3bsVHEQAyFYZ+GEsjphZyMiBYYMsogY64FIjJyWiAlJSGiCBrAxvaunlbyvymMJX08mfPd3Onj83vizB+DACCAAAIIIIAAAojz17kYoYn72+u5H51f32N7O0U9aiygDIUVALSDJpBJCtRIE8JkGXW6Xy0eyGMejZEl1ZEZWV4dzfUtdfeCKpZdx7sWjxpBQMr4uFYkQQANCKTfL7+6JAgggKbUb3dcfr15z/BzdZM1QQId7yqsGEDDAmn2y7sWCQIIIIAAAggggADK9Qwpq0WCABoZSLNlid8PIkEADb9l3te31PcIwT2OFRsDyONPrfkXaUlf7MpepktXrNdUyocY9T2ofTalzhT4VYQdn0OIaYKBNjGF0AwBtCwV6DIc0MT3xebO0/PL8i88PtwdK0H/igzlpQNqdImSUgB1p1Ey+QK50miYvIBkNN5MVkbHqa6V0XGq3nPFYmmc1s1K6nTsx0rqdOzKqur06s0K63Tp0GrrtPdp5XUau+VzMR+gXPFp6dkOorO7c1asN1De+Ozr3w6ls2MKVqwfUI34bJ2FBHUCqhSfTRORIIAEQPX2a/1cJAggb6Cq+7VyOhLEigEE0MBAte/Qa2YkQaxY2/kFuVy8U1tanJsAAAAASUVORK5CYII=";
 const tap = async (l) => { await l.waitFor({ timeout: 15000 }); await l.evaluate((n) => n.click()); };
 
 const FIRST = ["Lena", "Ravi", "Amara", "Kenji", "Sofia", "Omar", "Mei", "Diego", "Priya", "Noah"];
@@ -29,14 +32,23 @@ const members = (meHidden) => {
 
 test("the total and the podium; scrolling loads the board page by page; jumps to my place and the last place; hiding takes me off the list", async () => {
   const { page, context } = await openPage({ account: A });
-  let hidden = false; const puts = []; const offsets = [];
+  let hidden = false; const puts = []; const offsets = []; const photoAsks = [];
   await context.route(`${API_ORIGIN}/api/coverage/liquidity**`, async (route) => {
     const r = route.request(); const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*" };
     if (r.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
     if (r.method() === "PUT") { hidden = JSON.parse(r.postData() || "{}").hidden === true; puts.push(hidden); return route.fulfill({ status: 200, contentType: "application/json", headers: cors, body: JSON.stringify({ success: true, hidden }) }); }
-    const q = new URL(r.url()).searchParams; offsets.push(Number(q.get("offset")));
+    const q = new URL(r.url()).searchParams;
+    if (new URL(r.url()).pathname.endsWith("/photos")) {
+      // Every third member has a photo; the board asks by photo key only.
+      const ranked = rankLiquidity({ users: members(hidden), rates: { CHF: 100 }, currency: "INR" });
+      const keys = q.get("keys").split(","); photoAsks.push(keys);
+      const owners = liquidityPhotoOwners(ranked, { meId: "me", keys, photoKey });
+      const photos = {}; for (const k of keys) photos[k] = owners[k] && (owners[k] === "me" || Number(owners[k].slice(1)) % 3 === 0) ? PHOTO : null;
+      return route.fulfill({ status: 200, contentType: "application/json", headers: cors, body: JSON.stringify({ success: true, photos }) });
+    }
+    offsets.push(Number(q.get("offset")));
     const ranked = rankLiquidity({ users: members(hidden), rates: { CHF: 100 }, currency: "INR" });
-    return route.fulfill({ status: 200, contentType: "application/json", headers: cors, body: JSON.stringify(pageLiquidity(ranked, { meId: "me", offset: q.get("offset"), limit: q.get("limit") })) });
+    return route.fulfill({ status: 200, contentType: "application/json", headers: cors, body: JSON.stringify(pageLiquidity(ranked, { meId: "me", offset: q.get("offset"), limit: q.get("limit"), photoKey })) });
   });
   await login(page, A);
   await page.waitForTimeout(1500);
@@ -49,6 +61,14 @@ test("the total and the podium; scrolling loads the board page by page; jumps to
   // 1. The bank, over the three who hold the most (2nd, 1st, 3rd).
   assert.match(await text("liquidity-total"), /TOTAL GLOOBAL BANK [\d,]+ CEL Held by 230 members · the top 20 hold [\d.]+%/);
   assert.deepEqual(await page.locator("[data-testid=liquidity-podium]").evaluateAll((els) => els.map((e) => e.dataset.rank)), ["2", "1", "3"]);
+  // Photos: the first place has one and shows it; the second has none and
+  // keeps its initials. Asked for by photo key, a dozen at most per call,
+  // and only for avatars on screen, not for all fifty rows of the page.
+  await page.waitForFunction(() => document.querySelector("[data-testid=liquidity-row][data-rank='1'] [data-testid=liquidity-avatar]").dataset.photo === "1", null, { timeout: 10000 });
+  assert.equal(await page.locator("[data-testid=liquidity-row][data-rank='2'] [data-testid=liquidity-avatar]").getAttribute("data-photo"), "0");
+  assert.equal(await page.locator("[data-testid=liquidity-podium][data-rank='1'] [data-testid=liquidity-avatar]").getAttribute("data-photo"), "1");
+  assert.ok(photoAsks.every((keys) => keys.length <= 12 && keys.every((k) => k.startsWith("k-"))), "asked by photo key, twelve at most");
+  assert.ok(photoAsks.flat().length < 30, `only the avatars on screen are asked for (asked ${photoAsks.flat().length})`);
   // 2. My bank and place.
   const mine = await text("liquidity-me");
   assert.match(mine, /YOUR BANK 261,000 CEL YOUR PLACE #\d+ of 230/);

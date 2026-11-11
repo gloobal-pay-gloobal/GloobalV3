@@ -50,8 +50,59 @@ function liquidityColor(name) {
   for (const ch of String(name || "")) h = (h * 31 + ch.codePointAt(0)) % 9973;
   return LIQUIDITY_AVATAR_COLORS[h % LIQUIDITY_AVATAR_COLORS.length];
 }
-function LiquidityAvatar({ name, size = 36, ring }) {
-  return <span aria-hidden="true" style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "grid", placeItems: "center", background: liquidityColor(name), color: "#fff", fontSize: Math.round(size * 0.36), fontWeight: 800, boxShadow: ring ? `0 0 0 3px ${ring}` : "none" }}>{liquidityInitials(name)}</span>;
+// ── Photos ───────────────────────────────────────────────────────────────
+// A member's profile photo, asked for by the photo key on their row (never
+// by GLOOBAL ID). Asked for only once the avatar is on screen, a dozen at a
+// time, and kept for as long as the app is open, so a board scrolled a long
+// way never fetches a face it did not show.
+var LIQUIDITY_PHOTO_CACHE = new Map();      // key → dataUrl | null
+var LIQUIDITY_PHOTO_WAITERS = new Map();    // key → [callbacks]
+var LIQUIDITY_PHOTO_QUEUE = [];
+var LIQUIDITY_PHOTO_TIMER = null;
+var LIQUIDITY_PHOTO_CURRENCY = "INR";
+function liquidityPhotoFlush() {
+  LIQUIDITY_PHOTO_TIMER = null;
+  const batch = LIQUIDITY_PHOTO_QUEUE.splice(0, 12);
+  if (!batch.length) return;
+  GloobalApi.getLiquidityPhotos(LIQUIDITY_PHOTO_CURRENCY, batch).then((photos) => {
+    for (const key of batch) {
+      const got = photos && typeof photos[key] === "string" && photos[key].startsWith("data:image/") ? photos[key] : null;
+      // A read that failed altogether is not remembered, so it is tried again.
+      if (photos && key in photos) LIQUIDITY_PHOTO_CACHE.set(key, got);
+      const waiting = LIQUIDITY_PHOTO_WAITERS.get(key) || [];
+      LIQUIDITY_PHOTO_WAITERS.delete(key);
+      waiting.forEach((fn) => fn(got));
+    }
+    if (LIQUIDITY_PHOTO_QUEUE.length) LIQUIDITY_PHOTO_TIMER = setTimeout(liquidityPhotoFlush, 60);
+  });
+}
+function liquidityPhotoAsk(key, done) {
+  if (LIQUIDITY_PHOTO_CACHE.has(key)) { done(LIQUIDITY_PHOTO_CACHE.get(key)); return; }
+  const waiting = LIQUIDITY_PHOTO_WAITERS.get(key);
+  if (waiting) { waiting.push(done); return; }
+  LIQUIDITY_PHOTO_WAITERS.set(key, [done]);
+  LIQUIDITY_PHOTO_QUEUE.push(key);
+  if (!LIQUIDITY_PHOTO_TIMER) LIQUIDITY_PHOTO_TIMER = setTimeout(liquidityPhotoFlush, 120);
+}
+// The photo when the member has one; their initials on a colour until it
+// arrives, and for good when they have none.
+function LiquidityAvatar({ name, size = 36, ring, photoKey }) {
+  const ref = useRef58(null);
+  const [photo, setPhoto] = useState101(() => (photoKey && LIQUIDITY_PHOTO_CACHE.get(photoKey)) || null);
+  useEffect98(() => {
+    if (!photoKey) { setPhoto(null); return undefined; }
+    if (LIQUIDITY_PHOTO_CACHE.has(photoKey)) { setPhoto(LIQUIDITY_PHOTO_CACHE.get(photoKey)); return undefined; }
+    let alive = true;
+    const ask = () => liquidityPhotoAsk(photoKey, (got) => { if (alive) setPhoto(got); });
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver !== "function") { ask(); return () => { alive = false; }; }
+    const seen = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { seen.disconnect(); ask(); }
+    }, { rootMargin: "200px" });
+    seen.observe(node);
+    return () => { alive = false; seen.disconnect(); };
+  }, [photoKey]);
+  return <span ref={ref} aria-hidden="true" data-testid="liquidity-avatar" data-photo={photo ? "1" : "0"} style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "grid", placeItems: "center", overflow: "hidden", background: liquidityColor(name), color: "#fff", fontSize: Math.round(size * 0.36), fontWeight: 800, boxShadow: ring ? `0 0 0 3px ${ring}` : "none" }}>{photo ? <img src={photo} alt="" onError={() => setPhoto(null)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : liquidityInitials(name)}</span>;
 }
 
 function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
@@ -97,6 +148,7 @@ function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
   useEffect98(() => { const f = afterLoadRef.current; afterLoadRef.current = null; if (f) f(); }, [rows]);
 
   const cur = head ? head.currency : String(currency || "INR").toUpperCase();
+  LIQUIDITY_PHOTO_CURRENCY = cur;
   const me = head && head.me;
   const jump = (to) => {
     if (!head) return;
@@ -135,7 +187,7 @@ function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
     const m = medal(r.rank);
     return <div key={r.rank} data-testid="liquidity-row" data-rank={r.rank} data-me={r.me ? "1" : "0"} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderTop: `1px solid ${T.line}`, background: r.me ? "rgba(124,92,255,0.09)" : "transparent" }}>
       <span style={{ width: 34, flexShrink: 0, display: "grid", placeItems: "center" }}>{m ? <b style={{ width: 26, height: 26, borderRadius: "50%", display: "grid", placeItems: "center", background: m, color: "#fff", fontSize: 14, fontWeight: 900, fontFamily: T.fontDisplay }}>{r.rank}</b> : <span style={{ fontSize: r.rank > 9999 ? 10.5 : 12.5, fontWeight: 700, color: T.inkFaint, fontFamily: T.fontDisplay }}>{r.rank.toLocaleString()}</span>}</span>
-      <LiquidityAvatar name={r.name} size={36} ring={m} />
+      <LiquidityAvatar name={r.name} size={36} ring={m} photoKey={r.photoKey} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <b style={{ fontSize: 13.5, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name || "Member"}</b>
@@ -150,7 +202,7 @@ function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
   // The three who hold the most, as a podium: 2nd, 1st, 3rd.
   const podiumCol = (r, height) => r ? <div key={r.rank} data-testid="liquidity-podium" data-rank={r.rank} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
     {r.rank === 1 ? <LiqCrown size={18} color="#FFD75E" /> : <span style={{ height: 18 }} />}
-    <LiquidityAvatar name={r.name} size={r.rank === 1 ? 52 : 42} ring="rgba(255,255,255,0.55)" />
+    <LiquidityAvatar name={r.name} size={r.rank === 1 ? 52 : 42} ring="rgba(255,255,255,0.55)" photoKey={r.photoKey} />
     <b style={{ fontSize: 12, color: "#fff", maxWidth: "100%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{String(r.name || "Member").split(/\s+/)[0]}{r.me ? " (you)" : ""}</b>
     <span style={{ width: "100%", height, borderRadius: "12px 12px 0 0", background: "rgba(255,255,255,0.16)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "0 4px", boxSizing: "border-box" }}>
       <b data-testid="liquidity-podium-rank" style={{ fontFamily: T.fontDisplay, fontSize: r.rank === 1 ? 34 : 27, fontWeight: 900, lineHeight: 1, color: r.rank === 1 ? "#FFD75E" : r.rank === 2 ? "#E6EAF2" : "#F0B07A", textShadow: "0 2px 6px rgba(30,10,90,0.35)" }}>{r.rank}</b>
@@ -181,7 +233,7 @@ function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
         {/* 2. Your bank */}
         {me ? <div data-testid="liquidity-me" style={{ borderRadius: 20, padding: "16px 16px 6px", background: T.surface, boxShadow: T.shadowCard, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <LiquidityAvatar name={me.name} size={46} />
+            <LiquidityAvatar name={me.name} size={46} photoKey={me.photoKey} />
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: "block", fontSize: 11.5, fontWeight: 800, letterSpacing: 0.4, color: T.inkFaint }}>YOUR BANK</span>
               <b style={{ display: "block", fontFamily: T.fontDisplay, fontSize: 24, color: T.ink, letterSpacing: -0.5 }}>{liquidityMoney(me.ownAmount, me.ownCurrency)}</b>

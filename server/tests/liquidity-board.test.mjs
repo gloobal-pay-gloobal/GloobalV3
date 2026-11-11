@@ -101,3 +101,22 @@ test("a page at a time, to the last place: offset and limit, the next offset, an
   assert.match(src, /app\.get\('\/api\/coverage\/liquidity', lookupLimit, requireAuth,/, "per-person figures: signed in only");
   assert.match(src, /app\.put\('\/api\/coverage\/liquidity\/visibility', writeLimit, requireAuth,/);
 });
+
+test("photos are asked for by a key that is not the GLOOBAL ID, a dozen at a time, and a hidden member's key resolves to nobody but themselves", () => {
+  const { liquidityPhotoOwners } = require("../lib/liquidityBoard.js");
+  const photoKey = (id) => `key-${id}`;
+  const ranked = rankLiquidity({ users, rates, currency: "INR" });
+  const page = pageLiquidity(ranked, { meId: "b", photoKey });
+  assert.deepEqual(page.rows.map((r) => r.photoKey), ["key-c", "key-a", "key-b", "key-e"]);
+  assert.equal(page.me.photoKey, "key-b");
+  assert.equal(pageLiquidity(ranked, { meId: "b" }).rows[0].photoKey, "", "no key maker, no keys");
+  // Listed members resolve; the hidden one and an unknown key do not.
+  assert.deepEqual(liquidityPhotoOwners(ranked, { meId: "b", keys: ["key-a", "key-d", "key-zz", "key-a", ""], photoKey }), { "key-a": "a" });
+  // The hidden member still sees their own photo on their own card.
+  assert.deepEqual(liquidityPhotoOwners(ranked, { meId: "d", keys: ["key-d"], photoKey }), { "key-d": "d" });
+  // Twelve at most, whatever is asked.
+  const many = rankLiquidity({ users: Array.from({ length: 40 }, (_, i) => ({ id: `u${i}`, fullName: `M ${i}`, countryIso: "IN", balance: 100 + i })), rates: {}, currency: "INR" });
+  assert.equal(Object.keys(liquidityPhotoOwners(many, { keys: Array.from({ length: 40 }, (_, i) => `key-u${i}`), photoKey })).length, 12);
+  const src = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
+  assert.match(src, /app\.get\('\/api\/coverage\/liquidity\/photos', lookupLimit, requireAuth,/);
+});

@@ -653,6 +653,17 @@ var GloobalApi = {
       return null;
     }
   },
+  // The profile photos of up to twelve members on the liquidity board, by
+  // the photo keys its rows carry. { key: dataUrl | null }; {} when unreadable.
+  async getLiquidityPhotos(currency, keys) {
+    try {
+      const q = new URLSearchParams({ currency: String(currency || "INR").toUpperCase(), keys: (keys || []).join(",") });
+      const result = await gloobalApiClient.get(`/api/coverage/liquidity/photos?${q.toString()}`, { liveOnly: true });
+      return result && result.success && result.photos ? result.photos : {};
+    } catch (e) {
+      return {};
+    }
+  },
   // Takes this account off the public liquidity board, or puts it back.
   async setLiquidityHidden(hidden) {
     try {

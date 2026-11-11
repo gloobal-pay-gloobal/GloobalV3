@@ -92,12 +92,13 @@ function rankLiquidity({ users = [], rates = {}, currency = 'INR' } = {}) {
 }
 
 // One page of the public board, and the viewer's own card.
-function pageLiquidity(ranked, { meId = '', offset = 0, limit = LIQUIDITY_PAGE } = {}) {
+function pageLiquidity(ranked, { meId = '', offset = 0, limit = LIQUIDITY_PAGE, photoKey = null } = {}) {
   const { all, listed, total } = ranked;
   const share = (amount) => (total > 0 ? Math.round((amount / total) * 10000) / 100 : 0);
   const me = String(meId || '');
   const size = Math.max(1, Math.min(LIQUIDITY_PAGE_MAX, Math.floor(Number(limit)) || LIQUIDITY_PAGE));
   const from = Math.max(0, Math.min(Math.floor(Number(offset)) || 0, Math.max(0, listed.length - 1)));
+  const key = (id) => (typeof photoKey === 'function' ? String(photoKey(id) || '') : '');
   const row = (r, i) => ({
     rank: i + 1,
     name: r.name,
@@ -105,6 +106,9 @@ function pageLiquidity(ranked, { meId = '', offset = 0, limit = LIQUIDITY_PAGE }
     amount: round2(r.amount),
     share: share(r.amount),
     me: r.id === me,
+    // What the app asks for this member's photo by. Never their GLOOBAL ID:
+    // a place on the board is not an address to pay or to look someone up.
+    photoKey: key(r.id),
   });
   const rows = listed.slice(from, from + size).map((r, i) => row(r, from + i));
   const mineRow = all.find((r) => r.id === me) || null;
@@ -126,6 +130,7 @@ function pageLiquidity(ranked, { meId = '', offset = 0, limit = LIQUIDITY_PAGE }
       amount: round2(mineRow.amount),
       share: share(mineRow.amount),
       me: true,
+      photoKey: key(mineRow.id),
       ownCurrency: mineRow.ownCurrency,
       ownAmount: mineRow.ownAmount,
       // Of the other members on the board, how many hold less.
@@ -156,4 +161,26 @@ function buildLiquidityBoard({ users, rates, currency, meId, offset, limit } = {
   return pageLiquidity(rankLiquidity({ users, rates, currency }), { meId, offset, limit });
 }
 
-module.exports = { buildLiquidityBoard, rankLiquidity, pageLiquidity, currencyOf, LIQUIDITY_TOP, LIQUIDITY_PAGE, LIQUIDITY_PAGE_MAX };
+// Whose photos a viewer may be shown, for the keys they ask about. A key
+// resolves only to a member the viewer can already see on the board: a
+// listed member, or the viewer themselves. A hidden member's key resolves
+// to nobody, so hiding takes the face off the board along with the name.
+const LIQUIDITY_PHOTO_BATCH = 12;
+function liquidityPhotoOwners(ranked, { meId = '', keys = [], photoKey } = {}) {
+  const wanted = [...new Set((Array.isArray(keys) ? keys : []).map((k) => String(k || '').trim()).filter(Boolean))].slice(0, LIQUIDITY_PHOTO_BATCH);
+  const out = {};
+  if (!wanted.length || typeof photoKey !== 'function') return out;
+  if (!ranked.photoKeyIndex) {
+    const index = new Map();
+    for (const r of ranked.all) index.set(String(photoKey(r.id)), r);
+    Object.defineProperty(ranked, 'photoKeyIndex', { value: index, enumerable: false });
+  }
+  const me = String(meId || '');
+  for (const k of wanted) {
+    const r = ranked.photoKeyIndex.get(k);
+    if (r && (!r.hidden || r.id === me)) out[k] = r.id;
+  }
+  return out;
+}
+
+module.exports = { buildLiquidityBoard, rankLiquidity, pageLiquidity, currencyOf, LIQUIDITY_TOP, LIQUIDITY_PAGE, LIQUIDITY_PAGE_MAX, LIQUIDITY_PHOTO_BATCH, liquidityPhotoOwners };

@@ -408,6 +408,9 @@ const FRONTEND_MODULES = [
   "features/coverage/coverageCharts.jsx",
   "features/coverage/CoverageDashboard.jsx",
   "features/coverage/OurNumbers.jsx",
+  // GLOOBAL Coverage → Liquidity: the total GLOOBAL bank, who holds the
+  // most, and where you stand (server/lib/liquidityBoard.js).
+  "features/coverage/LiquidityBoard.jsx",
   "screens/Coverage/GloobalCoverageScreen.jsx",
   "adapters/diagnostics/useDiagnostics.js",
   "screens/DevTools/DiagnosticsScreen.jsx",

@@ -243,11 +243,16 @@ function CoverageDashboard({ currency = "INR", signedIn = false, onOpenProjects,
   // stay reachable while the figures load, or when they could not.
   const links = <>
     <CoverageCard onClick={onOpenProjects} label="Hooman Projects" style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "grid", placeItems: "center", flexShrink: 0 }}><CovProjects size={17} color={T.accent} /></span><b style={{ flex: 1, fontSize: 13.5, color: T.ink }}>H<SingleOMark before="" after="" /><SingleOMark before="" after="" />man Projects</b><CovChevron size={16} color={T.inkFaint} /></CoverageCard>
+    {signedIn ? <CoverageCard onClick={() => setScreen("liquidity")} label="Liquidity" style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "grid", placeItems: "center", flexShrink: 0 }}><LiqBank size={17} color={T.accent} /></span><span style={{ flex: 1 }}><b data-testid="coverage-liquidity" style={{ display: "block", fontSize: 13.5, color: T.ink }}>Liquidity</b><span style={{ fontSize: 11.5, fontWeight: 600, color: T.inkSoft }}>Total GLOOBAL bank, who holds the most, and your place</span></span><CovChevron size={16} color={T.inkFaint} /></CoverageCard> : null}
     {onOpenMyShare ? <CoverageCard onClick={onOpenMyShare} label="Creator Share" style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}><span style={{ width: 34, height: 34, borderRadius: 11, background: T.accentSoft, display: "grid", placeItems: "center", flexShrink: 0 }}><CovPie size={17} color={T.accent} /></span><b style={{ flex: 1, fontSize: 13.5, color: T.ink }}>Creator Share</b><CovChevron size={16} color={T.inkFaint} /></CoverageCard> : null}
   </>;
 
+  // ── LIQUIDITY ── who holds what, and where you stand. Signed in only:
+  // it is the one Coverage screen with per-person figures. Its own read,
+  // so it opens even when the dashboard's figures could not load.
+  const liquidity = screen === "liquidity" && signedIn ? <LiquidityBoardScreen currency={cur} onBack={() => setScreen("")} /> : null;
   if (!view) {
-    return <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "0 18px 24px" }}><div role="status" style={{ padding: "32px 0 8px", textAlign: "center", color: T.inkSoft, fontSize: 13, fontWeight: 600 }}>{failed ? "Couldn't load the numbers just now." : "Loading GLOOBAL Coverage…"}{failed ? <button onClick={() => setRetry((n) => n + 1)} style={{ display: "block", margin: "12px auto 0", padding: "8px 16px", borderRadius: 999, border: `1.5px solid ${T.line}`, background: T.surface, color: T.ink, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>Try again</button> : null}</div>{links}</div>;
+    return <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "0 18px 24px" }}>{liquidity}<div role="status" style={{ padding: "32px 0 8px", textAlign: "center", color: T.inkSoft, fontSize: 13, fontWeight: 600 }}>{failed ? "Couldn't load the numbers just now." : "Loading GLOOBAL Coverage…"}{failed ? <button onClick={() => setRetry((n) => n + 1)} style={{ display: "block", margin: "12px auto 0", padding: "8px 16px", borderRadius: 999, border: `1.5px solid ${T.line}`, background: T.surface, color: T.ink, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>Try again</button> : null}</div>{links}</div>;
   }
 
   const k = view.kpis;
@@ -448,5 +453,5 @@ function CoverageDashboard({ currency = "INR", signedIn = false, onOpenProjects,
   // gone. See features/coverage/OurNumbers.jsx.
   const open = screen === "open" && signedIn ? <OurNumbersScreen currency={cur} onBack={() => setScreen("")} /> : null;
 
-  return <>{home}{analyse}{split}{trust}{countries}{country}{impactScreen}{open}</>;
+  return <>{home}{analyse}{split}{trust}{countries}{country}{impactScreen}{open}{liquidity}</>;
 }

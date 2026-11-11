@@ -115,6 +115,13 @@ const userSchema = new mongoose.Schema({
   // Mongo costs nothing and is a truthful record that the field was there;
   // a mass $unset across every account is a write over real documents to
   // tidy a field nothing reads.
+  // GLOOBAL Coverage → Liquidity shows who holds the most, by name. A
+  // member can take their name off that board; their row stays, unnamed
+  // (lib/liquidityBoard.js). Shown unless they say otherwise.
+  liquidityHidden: {
+    type: Boolean,
+    default: false
+  },
   // The direct person who invited them
   referredBy: {
     type: String,

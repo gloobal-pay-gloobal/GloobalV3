@@ -2898,6 +2898,54 @@ app.get('/api/coverage/me', lookupLimit, requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/coverage/liquidity?currency=INR  (signed in)
+//   How much is in the GLOOBAL bank now, who holds the most, and where this
+//   account stands. The one Coverage route with per-person figures, which
+//   is why it needs a token and the public ones above do not. The rules
+//   are in lib/liquidityBoard.js.
+// PUT /api/coverage/liquidity/visibility { hidden }  (signed in)
+//   Takes this account's name off the board, or puts it back.
+const liquidityBoard = require('./lib/liquidityBoard');
+let liquidityRowsCache = { at: 0, rows: null };
+async function liquidityRows() {
+  // Every member's balance is read for each view; thirty seconds of reuse
+  // keeps a busy screen from doing that on every open.
+  if (liquidityRowsCache.rows && Date.now() - liquidityRowsCache.at < 30000) return liquidityRowsCache.rows;
+  const docs = await User.find({}, { fullName: 1, countryIso: 1, balance: 1, liquidityHidden: 1 }).lean();
+  const rows = docs.map((d) => ({ id: String(d._id), fullName: d.fullName, countryIso: d.countryIso, balance: d.balance, hidden: d.liquidityHidden === true }));
+  liquidityRowsCache = { at: Date.now(), rows };
+  return rows;
+}
+app.get('/api/coverage/liquidity', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const mine = liquidityBoard.currencyOf(req.authUser.countryIso) || 'INR';
+    const currency = String(req.query.currency || mine).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || mine;
+    const users = await liquidityRows();
+    // One rate per currency on the board. A currency with no rate is left
+    // out and counted, never guessed (the rule lib/fxRates.js keeps).
+    const rates = {};
+    const wanted = [...new Set(users.map((u) => liquidityBoard.currencyOf(u.countryIso)).filter((c) => c && c !== currency))];
+    await Promise.all(wanted.map(async (c) => {
+      try { const r = await getRate(c, currency); if (r && r.rate > 0) rates[c] = r.rate; } catch (e) { /* left out */ }
+    }));
+    return res.json(liquidityBoard.buildLiquidityBoard({ users, rates, currency, meId: String(req.authUser._id) }));
+  } catch (error) {
+    console.error('liquidity board error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load the liquidity board just now.' });
+  }
+});
+app.put('/api/coverage/liquidity/visibility', writeLimit, requireAuth, async (req, res) => {
+  try {
+    const hidden = req.body && req.body.hidden === true;
+    await User.updateOne({ _id: req.authUser._id }, { $set: { liquidityHidden: hidden } });
+    liquidityRowsCache = { at: 0, rows: null };
+    return res.json({ success: true, hidden });
+  } catch (error) {
+    console.error('liquidity visibility error:', error);
+    return res.status(500).json({ success: false, message: 'Could not change that just now.' });
+  }
+});
+
 // GET /api/creator-share/overview?currency=INR — what people are sharing
 // with each other (0194). Public; with a token it also carries `me`.
 app.get('/api/creator-share/overview', lookupLimit, async (req, res) => {

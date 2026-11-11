@@ -134,7 +134,7 @@ function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
   const row = (r) => {
     const m = medal(r.rank);
     return <div key={r.rank} data-testid="liquidity-row" data-rank={r.rank} data-me={r.me ? "1" : "0"} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", borderTop: `1px solid ${T.line}`, background: r.me ? "rgba(124,92,255,0.09)" : "transparent" }}>
-      <span style={{ width: 34, textAlign: "center", flexShrink: 0, fontSize: r.rank > 9999 ? 10.5 : 12.5, fontWeight: 800, color: m || T.inkFaint, fontFamily: T.fontDisplay }}>{r.rank.toLocaleString()}</span>
+      <span style={{ width: 34, flexShrink: 0, display: "grid", placeItems: "center" }}>{m ? <b style={{ width: 26, height: 26, borderRadius: "50%", display: "grid", placeItems: "center", background: m, color: "#fff", fontSize: 14, fontWeight: 900, fontFamily: T.fontDisplay }}>{r.rank}</b> : <span style={{ fontSize: r.rank > 9999 ? 10.5 : 12.5, fontWeight: 700, color: T.inkFaint, fontFamily: T.fontDisplay }}>{r.rank.toLocaleString()}</span>}</span>
       <LiquidityAvatar name={r.name} size={36} ring={m} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -153,8 +153,7 @@ function LiquidityBoardScreen({ currency = "INR", onBack, onToast }) {
     <LiquidityAvatar name={r.name} size={r.rank === 1 ? 52 : 42} ring="rgba(255,255,255,0.55)" />
     <b style={{ fontSize: 12, color: "#fff", maxWidth: "100%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{String(r.name || "Member").split(/\s+/)[0]}{r.me ? " (you)" : ""}</b>
     <span style={{ width: "100%", height, borderRadius: "12px 12px 0 0", background: "rgba(255,255,255,0.16)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "0 4px", boxSizing: "border-box" }}>
-      <b style={{ fontFamily: T.fontDisplay, fontSize: 17, color: "#fff" }}>{r.rank}</b>
-      <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.9)", whiteSpace: "nowrap" }}>{liquidityMoney(r.amount, cur)}</span>
+      <b data-testid="liquidity-podium-rank" style={{ fontFamily: T.fontDisplay, fontSize: r.rank === 1 ? 34 : 27, fontWeight: 900, lineHeight: 1, color: r.rank === 1 ? "#FFD75E" : r.rank === 2 ? "#E6EAF2" : "#F0B07A", textShadow: "0 2px 6px rgba(30,10,90,0.35)" }}>{r.rank}</b>
     </span>
   </div> : <div key={`e${height}`} style={{ flex: 1 }} />;
   const chip = (id, label, Icon, disabled) => <button key={id} data-testid={`liquidity-jump-${id}`} onClick={() => jump(id)} disabled={disabled || Boolean(busy)} style={{ flex: 1, height: 38, borderRadius: 999, border: `1.5px solid ${view === id ? T.accent : T.line}`, background: view === id ? "rgba(124,92,255,0.1)" : T.surface, color: disabled ? T.inkFaint : view === id ? T.accent : T.inkSoft, fontSize: 12.5, fontWeight: 800, fontFamily: "inherit", cursor: disabled ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: disabled ? 0.55 : 1 }}><Icon size={14} />{label}</button>;

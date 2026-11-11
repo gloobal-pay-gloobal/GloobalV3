@@ -12,6 +12,7 @@ const Transaction = require('./models/Transaction');
 const LedgerEntry = require('./models/LedgerEntry');
 const Referral = require('./models/Referral');
 const ReferralEarning = require('./models/ReferralEarning');
+const { resolveReferrer } = require('./lib/defaultReferrer');
 // Three levels deep: 1% of a Creator Share to whoever invited the payer,
 // 0.5% to whoever invited them, 0.25% one further up. Paid by Gloobal; the
 // payer's own share is never touched. See models/ReferralEarning.js.
@@ -2475,16 +2476,24 @@ app.post('/api/register-symbol', registerLimit, async (req, res) => {
     // the new user actually exists and has an _id to point at.
     let referrerUser = null;
 
-    if (cleanReferrer) {
-      referrerUser = await User.findOne({ symbolId: cleanReferrer });
+    // A referral the person typed wins. With none (the step was skipped, or
+    // the code matched nobody) the account joins under the default referrer,
+    // when the server names one: see lib/defaultReferrer.js.
+    const referrerChoice = await resolveReferrer({
+      supplied: cleanReferrer,
+      newSymbolId: cleanSymbolId,
+      find: (ref) => User.findOne({ symbolId: ref }),
+      findDefault: (ref) => User.findOne({ $or: [{ symbolId: ref }, { referralCode: ref.toUpperCase() }] })
+    });
+    referrerUser = referrerChoice.user;
+    const referralByDefault = referrerChoice.byDefault;
 
-      if (referrerUser) {
-        validReferrerId = referrerUser.symbolId;
-        referralChain = [
-          referrerUser.symbolId,
-          ...(Array.isArray(referrerUser.referralChain) ? referrerUser.referralChain : [])
-        ].slice(0, 3);
-      }
+    if (referrerUser) {
+      validReferrerId = referrerUser.symbolId;
+      referralChain = [
+        referrerUser.symbolId,
+        ...(Array.isArray(referrerUser.referralChain) ? referrerUser.referralChain : [])
+      ].slice(0, 3);
     }
 
     // The ID trail starts here, not at the first rename. Without this
@@ -2521,26 +2530,30 @@ app.post('/api/register-symbol', registerLimit, async (req, res) => {
     let referralApplied = false;
     let referralWarning = null;
 
-    if (cleanReferrer) {
-      if (referrerUser) {
-        try {
-          await Referral.create({
-            referrerId: referrerUser._id,
-            referredId: newUser._id,
-            referrerSymbolId: referrerUser.symbolId,
-            referredSymbolId: newUser.symbolId,
-            status: 'completed'
-          });
-          referralApplied = true;
-          await notifyReferralJoin(referrerUser, newUser);
-        } catch (referralError) {
-          console.warn('Referral save skipped:', referralError.message);
-          referralWarning = 'Your referral code could not be recorded, but your Gloobal ID was created.';
-        }
-      } else {
-        console.warn(`Referral code did not match any user: ${cleanReferrer}`);
-        referralWarning = 'That referral code does not match any Gloobal ID, so no referrer was recorded.';
+    if (referrerUser) {
+      try {
+        await Referral.create({
+          referrerId: referrerUser._id,
+          referredId: newUser._id,
+          referrerSymbolId: referrerUser.symbolId,
+          referredSymbolId: newUser.symbolId,
+          status: 'completed'
+        });
+        // "Applied" means the person's own code went through. A default
+        // referrer is reported separately, and is not sent a join alert for
+        // every sign-up that skipped the step.
+        referralApplied = !referralByDefault;
+        if (!referralByDefault) await notifyReferralJoin(referrerUser, newUser);
+      } catch (referralError) {
+        console.warn('Referral save skipped:', referralError.message);
+        if (cleanReferrer) referralWarning = 'Your referral code could not be recorded, but your Gloobal ID was created.';
       }
+    }
+    if (referrerChoice.missed) {
+      console.warn(`Referral code did not match any user: ${cleanReferrer}`);
+      referralWarning = referralByDefault
+        ? `That referral code does not match any Gloobal ID, so you joined under ${referrerUser.fullName || 'GLOOBAL'} instead.`
+        : 'That referral code does not match any Gloobal ID, so no referrer was recorded.';
     }
 
     await consumeOtp(verifiedRegistrationOtp);
@@ -2553,6 +2566,7 @@ app.post('/api/register-symbol', registerLimit, async (req, res) => {
     return res.status(201).json({
       message: 'Secure ID registered successfully.',
       referralApplied,
+      referralDefault: referralByDefault,
       referralWarning,
       // The registration OTP is consumed just above, so this token is the only
       // credential the caller carries out of here — and POST /api/pin/set, the

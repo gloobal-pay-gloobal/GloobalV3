@@ -5145,6 +5145,7 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     onOpenLedger={() => setShowCreatorLedger(true)}
     paymentSoundOn={paymentSoundOn}
     onTogglePaymentSound={() => flipSecurity("paymentSound", !paymentSoundOn)}
+    currency={ccyCode}
     onToast={showToast2}
     onOpenPage={async () => {
       // Read back through the same route a buyer uses, so the owner sees

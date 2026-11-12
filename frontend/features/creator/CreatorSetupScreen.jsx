@@ -1255,77 +1255,231 @@ function creatorShareText(rate) {
 //     but made to mean the one true thing available here: whether the
 //     name is live. Green once a handle exists — people can pay you at
 //     it — and grey before that.
-// What the counter soundbox says when a payment lands: the shop's own
-// sentence (paymentChime.js). Closed, one row showing it with a sample
-// amount; open, ready lines, a box to type in, Hear it, and back to the
-// standard sentence.
-function PaymentLineRow({ onToast }) {
-  const [line, setLine] = useState53(() => gloobalPaymentLineLoad());
-  const [open, setOpen] = useState53(false);
-  const [clip, setClip] = useState53(() => gloobalPaymentClipLoad());
+// What the counter soundbox says when a payment lands (paymentChime.js).
+//
+// On the profile it is one row: what the phone will do, and a chevron. The
+// row opens the Payment sound screen, which is where it is chosen:
+//
+//   * a card at the top that shows exactly what will be heard, with a play
+//     button and three sample amounts to try it with;
+//   * three ways — speak a line, play my own audio clip, or the chime only;
+//   * for a spoken line: the line, three ready ones, the voice and the speed;
+//   * for a clip: record, upload, remove, and whether the amount is said after.
+//
+// Nothing is kept until Save, so trying things changes nothing a customer
+// hears. It replaced a fold-out with chips and a box asking for "{amount}".
+function PaymentSoundText({ template, amount, pill }) {
+  const line = String(template || "").trim();
+  const parts = /\{amount\}/i.test(line) ? line.split(/\{amount\}/i) : ["", ". " + line];
+  return <>{parts.map((part, i) => <span key={i}>{i > 0 && <span style={pill}>{amount}</span>}{part}</span>)}</>;
+}
+var PAYMENT_SOUND_TRY = [10, 100, 2500];
+function PaymentSoundScreen({ onBack, onToast, currency }) {
+  const [draft, setDraft] = useState53(() => ({ ...gloobalPaymentSoundPrefs(), line: gloobalPaymentLineLoad(), clip: gloobalPaymentClipLoad() }));
+  const [amount, setAmount] = useState53(100);
+  const [playing, setPlaying] = useState53(false);
   const [recording, setRecording] = useState53(false);
   const [busy, setBusy] = useState53(false);
+  const [clipSeconds, setClipSeconds] = useState53(0);
   const recRef = useRef30(null);
   const fileRef = useRef30(null);
-  useEffect50(() => () => { if (recRef.current) recRef.current.stop(); }, []);
-  const change = (text) => { setLine(text); if (!gloobalPaymentLineSave(text)) onToast?.("Couldn't save your line on this phone"); };
-  const keepClip = (url) => {
-    if (!gloobalPaymentClipSave(url)) { onToast?.("No room to keep that clip on this phone"); return; }
-    setClip(url);
+  const aliveRef = useRef30(true);
+  useEffect50(() => () => {
+    aliveRef.current = false;
+    if (recRef.current) recRef.current.stop();
+    try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) { /* nothing speaking */ }
+  }, []);
+  // How long the clip is, for the card. A recording straight off the
+  // microphone often reports no length at all, and then none is shown.
+  useEffect50(() => {
+    setClipSeconds(0);
+    if (!draft.clip || typeof Audio === "undefined") return;
+    let live = true;
+    try {
+      const a = new Audio();
+      a.preload = "metadata";
+      a.onloadedmetadata = () => { if (live && Number.isFinite(a.duration) && a.duration > 0) setClipSeconds(Math.min(5, a.duration)); };
+      a.src = draft.clip;
+    } catch (e) { /* no length shown */ }
+    return () => { live = false; };
+  }, [draft.clip]);
+  const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
+  const hear = (over) => {
+    if (playing || recording) return;
+    setPlaying(true);
+    gloobalPreviewPaymentSound({ ...draft, ...(over || {}) }, amount, currency).then(() => {}, () => {}).then(() => { if (aliveRef.current) setPlaying(false); });
   };
   const record = async () => {
     if (recording) { if (recRef.current) recRef.current.stop(); return; }
     const session = soundPayRecordLine();
     recRef.current = session;
     setRecording(true);
-    try { keepClip(await session.done); } catch (e) { onToast?.(soundPayClipError(e)); } finally { recRef.current = null; setRecording(false); }
+    try { const url = await session.done; if (aliveRef.current) set({ clip: url, mode: "clip" }); }
+    catch (e) { onToast?.(soundPayClipError(e)); }
+    finally { recRef.current = null; if (aliveRef.current) setRecording(false); }
   };
   const upload = async (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!file) return;
     setBusy(true);
-    try { keepClip(await soundPayClipFromFile(file)); } catch (err) { onToast?.(soundPayClipError(err)); } finally { setBusy(false); }
+    try { const url = await soundPayClipFromFile(file); if (aliveRef.current) set({ clip: url, mode: "clip" }); }
+    catch (err) { onToast?.(soundPayClipError(err)); }
+    finally { if (aliveRef.current) setBusy(false); }
   };
-  const sample = clip ? "Your audio clip, then the amount" : line.trim() ? gloobalPaymentLineSentence(line, 100).text : "The standard announcement";
-  const chip = (active) => ({ padding: "7px 12px", borderRadius: 999, border: `1.5px solid ${active ? T.accent : T.line}`, background: active ? "rgba(124,92,255,0.1)" : T.surface, color: active ? T.accent : T.inkSoft, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" });
+  const save = () => {
+    if (draft.mode === "clip" && !draft.clip) { onToast?.("Record or upload a clip first"); return; }
+    if (!gloobalPaymentClipSave(draft.clip)) { onToast?.("No room to keep that clip on this phone"); return; }
+    if (!gloobalPaymentLineSave(draft.line) || !gloobalPaymentSoundPrefsSave(draft)) { onToast?.("Couldn't save on this phone"); return; }
+    onToast?.("Payment sound saved");
+    onBack();
+  };
+  const shown = amount.toLocaleString("en-IN");
+  const ticker = typeof COIN_TICKER !== "undefined" ? COIN_TICKER : "CEL";
+  const typed = draft.line.trim();
+  const heroPill = { display: "inline-block", padding: "0 8px", margin: "0 3px 0 0", borderRadius: 9, background: "rgba(255,255,255,0.24)" };
+  const inkPill = { display: "inline-block", padding: "1px 8px", margin: "0 4px 0 0", borderRadius: 8, background: T.accentSoft, color: T.accent, fontWeight: 800, fontSize: 12.5 };
+  const card = { background: T.surface, borderRadius: 20, padding: "14px 14px 16px", boxShadow: T.shadowCard, display: "flex", flexDirection: "column", gap: 10 };
+  const caps = { fontSize: 10.5, fontWeight: 800, letterSpacing: "0.09em", color: T.inkSoft, textTransform: "uppercase" };
+  const pick = (active) => ({ flex: 1, height: 40, borderRadius: 12, border: `1.5px solid ${active ? T.accent : T.line}`, background: active ? T.accentSoft : T.surface, color: active ? T.accent : T.inkSoft, fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" });
+  const MODES = [["line", "Speak a line"], ["clip", "My audio clip"], ["chime", "Chime only"]];
+  const bars = [8, 16, 26, 14, 22, 12, 30, 16, 10, 24, 14, 26, 8, 18, 12, 6];
+  return <div data-testid="payment-sound-screen" style={{ position: "fixed", inset: 0, zIndex: 700, background: T.bg, display: "flex", flexDirection: "column", fontFamily: T.fontBody }}>
+    <style>{`@keyframes paymentSoundBar { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
+      @media (prefers-reduced-motion: reduce) { .payment-sound-bar { animation: none !important; } }`}</style>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 12px", flexShrink: 0 }}>
+      <NavBackButton onClick={onBack} />
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>Payment sound</span>
+        <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft }}>What your phone says when you're paid</span>
+      </span>
+    </div>
+    {/* The card and the three ways stay put while the choices under them
+        scroll, so what will be heard is always in view as it is changed. */}
+    <div style={{ flexShrink: 0, padding: "2px 16px 12px", display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* What will be heard, and a way to hear it. */}
+      <div data-testid="payment-sound-hero" style={{ position: "relative", overflow: "hidden", borderRadius: 22, padding: "16px 18px 18px", background: T.gradButton, color: "#fff", boxShadow: T.shadowRaised, flexShrink: 0 }}>
+        <span aria-hidden="true" style={{ position: "absolute", right: -70, top: -70, width: 230, height: 230, borderRadius: "50%", border: "22px solid rgba(255,255,255,0.08)", pointerEvents: "none" }} />
+        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", opacity: 0.85 }}>{draft.mode === "line" ? "YOUR PHONE WILL SAY" : "YOUR PHONE WILL PLAY"}</div>
+        <div data-testid="payment-sound-says" style={{ position: "relative", marginTop: 6, fontSize: 21, lineHeight: 1.3, fontWeight: 800, fontFamily: T.fontDisplay, overflowWrap: "anywhere" }}>
+          {draft.mode === "chime" ? "The chime only"
+            : draft.mode === "clip" ? (draft.clip ? `Your clip${clipSeconds ? ` · ${clipSeconds.toFixed(1)} s` : ""}` : "No clip yet")
+            : typed ? <PaymentSoundText template={typed} amount={shown} pill={heroPill} />
+            : "The standard announcement"}
+        </div>
+        <div style={{ position: "relative", marginTop: 3, fontSize: 13, fontWeight: 700, opacity: 0.9, minHeight: 18 }}>
+          {draft.mode === "chime" ? "Two notes, and no words"
+            : draft.mode === "clip" ? (!draft.clip ? "Record or upload one below" : draft.clipAmount ? <>then says “<span style={heroPill}>{shown}</span>{ticker}”</> : "and nothing after it")
+            : typed ? "" : "“Received”, then the amount in your currency"}
+        </div>
+        <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+          <button type="button" data-testid="payment-line-preview" aria-label={`Hear it with ${shown}`} onClick={() => hear()} disabled={playing || recording} className="v2-tap" style={{ width: 52, height: 52, flexShrink: 0, borderRadius: "50%", border: "none", background: "#fff", color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", opacity: playing || recording ? 0.75 : 1, padding: 0 }}>
+            <RpPlay size={22} fill="currentColor" style={{ marginLeft: 3 }} />
+          </button>
+          <span aria-hidden="true" style={{ flex: 1, minWidth: 0, height: 32, display: "flex", alignItems: "center", gap: 4, overflow: "hidden" }}>{bars.map((h, i) => <span key={i} className="payment-sound-bar" style={{ flex: "1 1 0", maxWidth: 12, height: h, borderRadius: 4, background: "rgba(255,255,255,0.55)", animation: playing ? `paymentSoundBar ${0.5 + (i % 4) * 0.12}s ease-in-out ${i * 0.04}s infinite` : "none" }} />)}</span>
+        </div>
+        <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 12, fontWeight: 700 }}>
+          <span style={{ opacity: 0.9 }}>Try with</span>
+          {PAYMENT_SOUND_TRY.map((n) => <button key={n} type="button" data-testid={`payment-sound-try-${n}`} aria-pressed={amount === n} onClick={() => setAmount(n)} style={{ height: 26, padding: "0 11px", borderRadius: 999, border: "none", background: amount === n ? "#fff" : "rgba(255,255,255,0.2)", color: amount === n ? T.accent : "#fff", fontSize: 12, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>{n.toLocaleString("en-IN")}</button>)}
+        </div>
+      </div>
+      {/* The three ways. */}
+      <div role="tablist" style={{ display: "flex", gap: 4, padding: 4, borderRadius: 14, background: T.surfaceAlt, flexShrink: 0 }}>
+        {MODES.map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={draft.mode === key} data-testid={`payment-sound-mode-${key}`} onClick={() => set({ mode: key })} style={{ flex: 1, height: 36, borderRadius: 11, border: "none", background: draft.mode === key ? T.surface : "transparent", boxShadow: draft.mode === key ? T.shadowCard : "none", color: draft.mode === key ? T.accent : T.inkSoft, fontSize: 12.5, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>)}
+      </div>
+    </div>
+    <div data-testid="payment-sound-choices" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "0 16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+      {draft.mode === "line" && <>
+        <div style={card}>
+          <span style={caps}>Your line</span>
+          <input
+            data-testid="payment-line-input"
+            value={draft.line}
+            maxLength={GLOOBAL_PAYMENT_LINE_MAX}
+            placeholder="Leave empty for the standard announcement"
+            onChange={(e) => set({ line: e.target.value })}
+            style={{ width: "100%", boxSizing: "border-box", height: 46, borderRadius: 13, border: `1.5px solid ${T.line}`, background: T.bg, color: T.ink, fontSize: 15, fontWeight: 700, fontFamily: "inherit", padding: "0 13px", outline: "none" }}
+          />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.4 }}>
+            {!/\{amount\}/i.test(draft.line) && <button type="button" data-testid="payment-line-add-amount" onClick={() => set({ line: ("{amount} " + draft.line).slice(0, GLOOBAL_PAYMENT_LINE_MAX) })} style={{ ...inkPill, border: "none", cursor: "pointer", fontFamily: "inherit", padding: "4px 10px", margin: 0 }}>+ Amount</button>}
+            <span>{/\{amount\}/i.test(draft.line) ? "{amount} is replaced by what you were paid." : typed ? "With no {amount} in the line, the amount is said first." : "Type anything you like, in any language."}</span>
+          </div>
+        </div>
+        <div style={{ ...card, gap: 0 }}>
+          <span style={{ ...caps, marginBottom: 4 }}>Or pick a ready line</span>
+          {GLOOBAL_PAYMENT_LINE_PRESETS.map((t, i) => {
+            const on = typed === t;
+            return <div key={t} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
+              <button type="button" data-testid={`payment-line-preset-${i}`} aria-pressed={on} onClick={() => set({ line: t })} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, border: "none", background: "transparent", padding: 0, textAlign: "left", fontFamily: "inherit", cursor: "pointer" }}>
+                <span aria-hidden="true" style={{ width: 18, height: 18, flexShrink: 0, borderRadius: "50%", boxSizing: "border-box", border: on ? `5.5px solid ${T.accent}` : `1.5px solid ${T.inkFaint}`, background: T.surface }} />
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, lineHeight: 1.45 }}><PaymentSoundText template={t} amount="Amount" pill={inkPill} /></span>
+              </button>
+              <button type="button" aria-label="Hear this line" onClick={() => hear({ mode: "line", line: t })} disabled={playing} style={{ width: 32, height: 32, flexShrink: 0, borderRadius: "50%", border: "none", background: T.accentSoft, color: T.accent, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}><RpPlay size={13} fill="currentColor" style={{ marginLeft: 2 }} /></button>
+            </div>;
+          })}
+        </div>
+        <div style={card}>
+          <span style={caps}>Voice</span>
+          <div style={{ display: "flex", gap: 8 }}>{[["hi", "Hindi"], ["en", "English"], ["auto", "Automatic"]].map(([key, label]) => <button key={key} type="button" data-testid={`payment-sound-voice-${key}`} aria-pressed={draft.voice === key} onClick={() => set({ voice: key })} style={pick(draft.voice === key)}>{label}</button>)}</div>
+          <span style={{ ...caps, marginTop: 4 }}>Speed</span>
+          <div style={{ display: "flex", gap: 8 }}>{[["slow", "Slow"], ["normal", "Normal"], ["fast", "Fast"]].map(([key, label]) => <button key={key} type="button" data-testid={`payment-sound-speed-${key}`} aria-pressed={draft.speed === key} onClick={() => set({ speed: key })} style={pick(draft.speed === key)}>{label}</button>)}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4 }}>Spoken by this phone's own voice. Automatic picks Hindi for Hindi letters and English otherwise.</div>
+        </div>
+      </>}
+      {draft.mode === "clip" && <>
+        <div style={{ ...card, alignItems: "center", textAlign: "center" }}>
+          <span style={{ ...caps, alignSelf: "flex-start" }}>Record your own voice</span>
+          <button type="button" data-testid="payment-clip-record" aria-label={recording ? "Stop recording" : "Record"} onClick={record} disabled={busy} className="v2-tap" style={{ width: 96, height: 96, borderRadius: "50%", border: "none", background: recording ? "#ef4444" : T.gradButton, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: `0 0 0 10px ${recording ? "rgba(239,68,68,0.16)" : T.accentSoft}`, margin: "10px 0 8px", padding: 0 }}>
+            {recording ? <span style={{ width: 26, height: 26, borderRadius: 6, background: "#fff" }} /> : <SoundMicIcon size={34} />}
+          </button>
+          <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{recording ? "Recording… tap to stop" : draft.clip ? "Tap to record again" : "Tap to record"}</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>5 seconds at most · say anything you like</span>
+          <div style={{ display: "flex", gap: 8, width: "100%", marginTop: 6 }}>
+            <button type="button" data-testid="payment-clip-upload" onClick={() => fileRef.current && fileRef.current.click()} disabled={recording || busy} style={pick(false)}>{busy ? "Adding…" : "Upload a clip"}</button>
+            <button type="button" data-testid="payment-clip-remove" onClick={() => set({ clip: "" })} disabled={!draft.clip || recording} style={{ ...pick(false), opacity: draft.clip ? 1 : 0.45 }}>Remove clip</button>
+            <input ref={fileRef} data-testid="payment-clip-file" type="file" accept="audio/*" onChange={upload} style={{ display: "none" }} />
+          </div>
+        </div>
+        <div style={{ ...card, flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", fontSize: 14, fontWeight: 800, color: T.ink }}>Say the amount after the clip</span>
+            <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 2 }}>“…{shown} {ticker}”, so you still hear how much</span>
+          </span>
+          <ProfileToggle on={draft.clipAmount} onToggle={() => set({ clipAmount: !draft.clipAmount })} />
+        </div>
+      </>}
+      {draft.mode === "chime" && <div style={card}>
+        <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>Just the two notes</span>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5 }}>Your phone plays the chime and says nothing. The amount is still on the screen and in the notification.</span>
+      </div>}
+    </div>
+    <div style={{ flexShrink: 0, padding: "10px 16px calc(14px + env(safe-area-inset-bottom, 0px))", background: T.bg, borderTop: `1px solid ${T.line}` }}>
+      <button type="button" data-testid="payment-sound-save" onClick={save} disabled={recording || busy} className="v2-tap" style={{ width: "100%", height: 52, borderRadius: 16, border: "none", background: T.gradButton, color: "#fff", fontSize: 15, fontWeight: 800, fontFamily: "inherit", cursor: "pointer" }}>Save</button>
+    </div>
+  </div>;
+}
+function PaymentLineRow({ onToast, currency }) {
+  const [open, setOpen] = useState53(false);
+  // Read again each time the screen closes, since Save is what changes it.
+  const how = gloobalPaymentSoundPrefs();
+  const line = gloobalPaymentLineLoad();
+  const sample = how.mode === "chime" ? "Chime only"
+    : how.mode === "clip" ? (how.clipAmount ? "Your audio clip, then the amount" : "Your audio clip")
+    : line ? `“${gloobalPaymentLineSentence(line, 100).text}”` : "The standard announcement";
   return <div data-testid="payment-line" style={{ padding: "12px 15px 14px", borderTop: `1px solid ${T.line}` }}>
-    <button type="button" data-testid="payment-line-open" onClick={() => setOpen((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, border: "none", background: "transparent", padding: 0, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+    <button type="button" data-testid="payment-line-open" onClick={() => setOpen(true)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 13, border: "none", background: "transparent", padding: 0, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
       <Pencil4 size={18} color={T.accent} style={{ flexShrink: 0 }} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>When you're paid, your phone says</span>
-        <span data-testid="payment-line-sample" style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{!clip && line.trim() ? `“${sample}”` : sample}</span>
+        <span data-testid="payment-line-sample" style={{ display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sample}</span>
       </span>
-      <ChevronRight9 size={17} color={T.inkFaint} style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none" }} />
+      <ChevronRight9 size={17} color={T.inkFaint} style={{ flexShrink: 0 }} />
     </button>
-    {open && <div data-testid="payment-line-editor" style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>{GLOOBAL_PAYMENT_LINE_PRESETS.map((t) => <button key={t} type="button" onClick={() => change(t)} style={chip(line === t)}>{gloobalPaymentLineSentence(t, 100).text}</button>)}</div>
-      <input
-        data-testid="payment-line-input"
-        value={line}
-        maxLength={GLOOBAL_PAYMENT_LINE_MAX}
-        placeholder="Type your own, with {amount} where the amount goes"
-        onChange={(e) => change(e.target.value)}
-        style={{ width: "100%", boxSizing: "border-box", height: 42, borderRadius: 12, border: `1.5px solid ${T.line}`, background: T.bg, color: T.ink, fontSize: 14, fontWeight: 600, fontFamily: "inherit", padding: "0 12px", outline: "none" }}
-      />
-      <div style={{ fontSize: 11.5, fontWeight: 600, color: T.inkFaint, lineHeight: 1.4 }}>{"{amount}"} is replaced by the amount paid. Plays while GLOOBAL is open on this phone.</div>
-      {/* Or their own sound in place of the words: five seconds at most. */}
-      <div style={{ fontSize: 12, fontWeight: 700, color: T.inkSoft }}>{clip ? "Playing your audio clip in place of the words" : "Or play your own audio clip (5 seconds at most)"}</div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" data-testid="payment-clip-record" onClick={record} disabled={busy} style={{ ...chip(recording), height: 40, flex: 1, borderColor: recording ? "#ef4444" : T.line, color: recording ? "#ef4444" : T.inkSoft }}>{recording ? "Recording… tap to stop" : "Record (5 s)"}</button>
-        <button type="button" data-testid="payment-clip-upload" onClick={() => fileRef.current && fileRef.current.click()} disabled={recording || busy} style={{ ...chip(false), height: 40, flex: 1 }}>{busy ? "Adding…" : "Upload clip"}</button>
-        {clip && <button type="button" data-testid="payment-clip-remove" onClick={() => keepClip("")} style={{ ...chip(false), height: 40 }}>Remove</button>}
-        <input ref={fileRef} data-testid="payment-clip-file" type="file" accept="audio/*" onChange={upload} style={{ display: "none" }} />
-      </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" data-testid="payment-line-preview" onClick={() => gloobalPreviewPaymentLine(line)} disabled={recording} style={{ ...chip(true), height: 40, flex: 1 }}>Hear it with 100</button>
-        <button type="button" data-testid="payment-line-reset" onClick={() => { change(""); keepClip(""); }} disabled={!line.trim() && !clip} style={{ ...chip(false), height: 40, opacity: line.trim() || clip ? 1 : 0.5 }}>Use the standard one</button>
-      </div>
-    </div>}
+    {open && typeof document !== "undefined" && gloobalMapPortal(<PaymentSoundScreen onBack={() => setOpen(false)} onToast={onToast} currency={currency} />, document.body)}
   </div>;
 }
 
-function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage, onShowQr, onOpenLedger, onToast, paymentSoundOn = true, onTogglePaymentSound }) {
+function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage, onShowQr, onOpenLedger, onToast, paymentSoundOn = true, onTogglePaymentSound, currency }) {
   // Opening this row can be the first touch of the Creator side — the
   // other being the flip itself — so it may arrive with nothing loaded.
   useEffect50(() => {
@@ -1555,7 +1709,7 @@ function CreatorProfilePanel({ creator, myGloobalId, onLoad, onEdit, onOpenPage,
       onTogglePaymentSound();
     }} label="Sounds" />,
     !done
-  ) : null}{typeof onTogglePaymentSound === "function" && paymentSoundOn ? <PaymentLineRow onToast={onToast} /> : null}{fact(
+  ) : null}{typeof onTogglePaymentSound === "function" && paymentSoundOn ? <PaymentLineRow onToast={onToast} currency={currency} /> : null}{fact(
     "id",
     Contact4,
     idShown

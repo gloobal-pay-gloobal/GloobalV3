@@ -252,6 +252,74 @@ function gloobalPaymentAmountOnly(amount) {
   return gloobalPaymentLineSentence("{amount} " + (typeof COIN_TICKER !== "undefined" ? COIN_TICKER : "CEL"), amount);
 }
 
+// ── HOW IT IS SAID ──────────────────────────────────────────────────────
+//
+// The Payment sound screen's other choices, kept on this phone beside the
+// line and the clip:
+//   mode        "line" (speak the words), "clip" (the shop's audio), or
+//               "chime" (the two notes and nothing else)
+//   voice       "auto" (the voice that suits the line's letters), "hi", "en"
+//   speed       "slow" | "normal" | "fast"
+//   clipAmount  after a clip, say "…100 CEL" (on unless switched off)
+// Nothing saved means what the app did before this screen existed: the clip
+// if there is one, otherwise the words, voice by the letters, amount said.
+var GLOOBAL_PAYMENT_SOUND_KEY = "gloobal.paymentSound";
+var GLOOBAL_PAYMENT_SPEEDS = { slow: 0.78, normal: 0.95, fast: 1.2 };
+function gloobalPaymentSoundPrefs() {
+  var saved = {};
+  try {
+    if (typeof localStorage !== "undefined") saved = JSON.parse(localStorage.getItem(GLOOBAL_PAYMENT_SOUND_KEY) || "{}") || {};
+  } catch (e) {
+    saved = {};
+  }
+  var hasClip = !!gloobalPaymentClipLoad();
+  var mode = saved.mode === "chime" ? "chime" : saved.mode === "line" ? "line" : saved.mode === "clip" ? "clip" : hasClip ? "clip" : "line";
+  if (mode === "clip" && !hasClip) mode = "line";
+  return {
+    mode: mode,
+    voice: saved.voice === "hi" || saved.voice === "en" ? saved.voice : "auto",
+    speed: GLOOBAL_PAYMENT_SPEEDS[saved.speed] ? saved.speed : "normal",
+    clipAmount: saved.clipAmount !== false
+  };
+}
+function gloobalPaymentSoundPrefsSave(prefs) {
+  try {
+    var p = prefs || {};
+    localStorage.setItem(GLOOBAL_PAYMENT_SOUND_KEY, JSON.stringify({
+      mode: p.mode === "chime" || p.mode === "clip" ? p.mode : "line",
+      voice: p.voice === "hi" || p.voice === "en" ? p.voice : "auto",
+      speed: GLOOBAL_PAYMENT_SPEEDS[p.speed] ? p.speed : "normal",
+      clipAmount: p.clipAmount !== false
+    }));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+// One announcement, played the way `how` says: the chime, then the words,
+// or the clip (and the amount), or nothing more. `how` is the saved choice
+// for a real payment and the unsaved draft for "hear it" on the screen.
+function gloobalPlayPaymentSound(how, amount, currency, language) {
+  var h = how || {};
+  var say = { voice: h.voice, speed: h.speed };
+  return gloobalPlayChimeTone().then(function () {
+    if (h.mode === "chime") return true;
+    if (h.mode === "clip" && h.clip) {
+      return gloobalPlayClip(h.clip).then(function (ok) {
+        return h.clipAmount === false ? ok : gloobalSpeak(gloobalPaymentAmountOnly(amount), say);
+      });
+    }
+    var line = String(h.line || "").trim();
+    return gloobalSpeak(line ? gloobalPaymentLineSentence(line, amount) : gloobalChimeSentence(amount, currency, language), say);
+  });
+}
+// "Hear it" on the Payment sound screen: the draft as it stands, from a tap.
+function gloobalPreviewPaymentSound(draft, amount, currency) {
+  gloobalChimeUnlock();
+  try { if (typeof window !== "undefined" && window.speechSynthesis && window.speechSynthesis.cancel) window.speechSynthesis.cancel(); } catch (e) { /* nothing was speaking */ }
+  return gloobalPlayPaymentSound(draft, amount || 100, currency, typeof navigator !== "undefined" ? navigator.language : "en");
+}
+
 // What a payment of `amount` will say on this phone right now.
 function gloobalPaymentSentence(amount, currency, language) {
   var custom = gloobalPaymentLineLoad();
@@ -267,15 +335,18 @@ function gloobalPreviewPaymentLine(template, currency) {
   return gloobalPlayChimeTone().then(function () { return gloobalSpeak(sentence); });
 }
 
-function gloobalSpeak(sentence) {
+function gloobalSpeak(sentence, how) {
   return new Promise(function (resolve) {
     try {
       if (typeof window === "undefined" || !window.speechSynthesis || typeof SpeechSynthesisUtterance === "undefined") {
         return resolve(false);
       }
+      // The shop's choice of voice wins over the one the letters suggest.
+      var want = how && how.voice === "hi" ? "hi-IN" : how && how.voice === "en" ? "en-IN" : sentence.lang;
+      sentence = { text: sentence.text, lang: want };
       var u = new SpeechSynthesisUtterance(sentence.text);
       u.lang = sentence.lang;
-      u.rate = 0.95;
+      u.rate = (how && GLOOBAL_PAYMENT_SPEEDS[how.speed]) || 0.95;
       u.volume = 1;
       var voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
       var match = voices.filter(function (v) { return v.lang && v.lang.toLowerCase() === sentence.lang.toLowerCase(); })[0] ||
@@ -306,13 +377,11 @@ function gloobalPlayPaymentChime(payment) {
   var amount = Number(p.amount);
   if (!Number.isFinite(amount) || amount <= 0) return Promise.resolve(false);
   var language = p.language || (typeof navigator !== "undefined" ? navigator.language : "en");
-  var sentence = gloobalPaymentSentence(amount, p.currency, language);
-  var clip = gloobalPaymentClipLoad();
+  var how = gloobalPaymentSoundPrefs();
+  how.line = gloobalPaymentLineLoad();
+  how.clip = gloobalPaymentClipLoad();
   gloobalChimeQueue = gloobalChimeQueue.then(function () {
-    return gloobalPlayChimeTone().then(function () {
-      if (!clip) return gloobalSpeak(sentence);
-      return gloobalPlayClip(clip).then(function () { return gloobalSpeak(gloobalPaymentAmountOnly(amount)); });
-    });
+    return gloobalPlayPaymentSound(how, amount, p.currency, language);
   }).catch(function () { return false; });
   return gloobalChimeQueue;
 }

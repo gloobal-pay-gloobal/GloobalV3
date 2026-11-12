@@ -17,7 +17,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE = readFileSync(join(ROOT, "frontend/features/creator/paymentChime.js"), "utf8");
 
 function load({ language = "en-IN", withVoice = true, withAudio = true } = {}) {
-  const log = { notes: [], slides: [], spoken: [], clips: [], listeners: {} };
+  const log = { notes: [], slides: [], spoken: [], rates: [], clips: [], listeners: {} };
   class FakeParam {
     setValueAtTime() {}
     exponentialRampToValueAtTime() {}
@@ -46,7 +46,7 @@ function load({ language = "en-IN", withVoice = true, withAudio = true } = {}) {
       ? {
         getVoices: () => [],
         speak: (u) => {
-          if (u.text.trim()) log.spoken.push({ text: u.text, lang: u.lang });
+          if (u.text.trim()) { log.spoken.push({ text: u.text, lang: u.lang }); log.rates.push(u.rate); }
           setTimeout(() => u.onend && u.onend(), 1);
         },
       }
@@ -68,7 +68,8 @@ function load({ language = "en-IN", withVoice = true, withAudio = true } = {}) {
     `${SOURCE}
      return { gloobalSetPaymentSoundEnabled, gloobalPlayPaymentChime, gloobalChimeSentence, gloobalMarkChimePlayed, gloobalChimeUnlock, gloobalPlayRoleSwitchSound,
               gloobalPaymentLineLoad, gloobalPaymentLineSave, gloobalPaymentLineSentence, gloobalPreviewPaymentLine, GLOOBAL_PAYMENT_LINE_PRESETS,
-              gloobalPaymentClipLoad, gloobalPaymentClipSave };`
+              gloobalPaymentClipLoad, gloobalPaymentClipSave,
+              gloobalPaymentSoundPrefs, gloobalPaymentSoundPrefsSave, gloobalPreviewPaymentSound };`
   );
   // setTimeout shortened so the 650 ms chime wait does not slow the test.
   const fast = (fn, ms) => setTimeout(fn, Math.min(ms, 5));
@@ -236,4 +237,70 @@ test("an audio clip in place of the words: chime, the clip, then the amount; rem
   await api.gloobalPlayPaymentChime({ txnId: "C2", amount: 20, currency: "INR" });
   assert.equal(log.clips.length, 1);
   assert.equal(log.spoken[1].text, "20 CEL prapt hue");
+});
+
+// ── The Payment sound screen's choices ───────────────────────────────────
+test("nothing chosen yet behaves as before: the words, or the clip if there is one", () => {
+  const { api } = load();
+  assert.deepEqual(api.gloobalPaymentSoundPrefs(), { mode: "line", voice: "auto", speed: "normal", clipAmount: true });
+  api.gloobalPaymentClipSave("data:audio/wav;base64,AAAA");
+  assert.equal(api.gloobalPaymentSoundPrefs().mode, "clip");
+  // A saved "clip" with the clip since removed falls back to the words.
+  api.gloobalPaymentSoundPrefsSave({ mode: "clip" });
+  api.gloobalPaymentClipSave("");
+  assert.equal(api.gloobalPaymentSoundPrefs().mode, "line");
+});
+
+test("chime only: the two notes and not a word, even with a line and a clip saved", async () => {
+  const { api, log } = load();
+  api.gloobalPaymentLineSave("{amount} CEL aa gaye");
+  api.gloobalPaymentClipSave("data:audio/wav;base64,AAAA");
+  api.gloobalPaymentSoundPrefsSave({ mode: "chime" });
+  await api.gloobalPlayPaymentChime({ txnId: "M1", amount: 100, currency: "INR" });
+  assert.equal(log.notes.length, 4);
+  assert.equal(log.spoken.length + log.clips.length, 0);
+});
+
+test("the chosen voice and speed are what the line is spoken with", async () => {
+  const { api, log } = load();
+  api.gloobalPaymentLineSave("{amount} CEL aa gaye");
+  api.gloobalPaymentSoundPrefsSave({ mode: "line", voice: "hi", speed: "slow" });
+  await api.gloobalPlayPaymentChime({ txnId: "M2", amount: 100, currency: "INR" });
+  assert.deepEqual(log.spoken, [{ text: "100 CEL aa gaye", lang: "hi-IN" }]);
+  assert.ok(log.rates[0] < 0.9, "slow is slower than normal");
+  api.gloobalPaymentSoundPrefsSave({ mode: "line", voice: "auto", speed: "fast" });
+  await api.gloobalPlayPaymentChime({ txnId: "M3", amount: 100, currency: "INR" });
+  assert.equal(log.spoken[1].lang, "en-IN");
+  assert.ok(log.rates[1] > 1);
+});
+
+test("a clip with 'say the amount' off plays the clip alone; 'words' ignores a kept clip", async () => {
+  const { api, log } = load();
+  api.gloobalPaymentClipSave("data:audio/wav;base64,AAAA");
+  api.gloobalPaymentSoundPrefsSave({ mode: "clip", clipAmount: false });
+  await api.gloobalPlayPaymentChime({ txnId: "M4", amount: 100, currency: "INR" });
+  assert.equal(log.clips.length, 1);
+  assert.equal(log.spoken.length, 0);
+  api.gloobalPaymentSoundPrefsSave({ mode: "line" });
+  await api.gloobalPlayPaymentChime({ txnId: "M5", amount: 100, currency: "INR" });
+  assert.equal(log.clips.length, 1);
+  assert.match(log.spoken[0].text, /^Received 100 Indian rupees$/);
+});
+
+test("the screen's play button hears the unsaved draft, with the amount picked, and saves nothing", async () => {
+  const { api, log } = load();
+  await api.gloobalPreviewPaymentSound({ mode: "line", line: "{amount} CEL aa gaye", voice: "auto", speed: "normal" }, 2500, "INR");
+  assert.deepEqual(log.spoken, [{ text: "2500 CEL aa gaye", lang: "en-IN" }]);
+  assert.equal(api.gloobalPaymentLineLoad(), "");
+});
+
+test("the profile row opens a Payment sound screen that keeps nothing until Save", () => {
+  const panel = readFileSync(join(ROOT, "frontend/features/creator/CreatorSetupScreen.jsx"), "utf8");
+  assert.match(panel, /function PaymentSoundScreen\(\{ onBack, onToast, currency \}\)/);
+  assert.match(panel, /gloobalMapPortal\(<PaymentSoundScreen /);
+  const screen = panel.slice(panel.indexOf("function PaymentSoundScreen("), panel.indexOf("function PaymentLineRow("));
+  for (const id of ["payment-sound-mode-", "payment-sound-try-", "payment-sound-voice-", "payment-sound-speed-", "payment-clip-record", "payment-clip-upload", "payment-sound-save"]) assert.ok(screen.includes(id), id);
+  const saves = screen.slice(screen.indexOf("const save = () => {"), screen.indexOf("const shown ="));
+  assert.equal((screen.match(/gloobalPaymentLineSave\(/g) || []).length, 1, "the line is saved in one place");
+  assert.match(saves, /gloobalPaymentClipSave\(draft\.clip\)[\s\S]*gloobalPaymentLineSave\(draft\.line\)[\s\S]*gloobalPaymentSoundPrefsSave\(draft\)/);
 });

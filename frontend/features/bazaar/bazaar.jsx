@@ -23,7 +23,8 @@ import {
   LocateFixed as LocateFixed2, Loader as Loader7, Flame as BzFlame, SearchX as BzSearchOff, ChevronRight as ChevronRight10,
   History as BzRecent, Star as BzStar,
   Gift as BzFestive, Search as BzSuggest, SlidersHorizontal as BzFilter, X as BzX,
-  List as BzList, Map as BzMapIcon, ChevronDown as BzMore, Undo2 as BzShareBack
+  List as BzList, Map as BzMapIcon, ChevronDown as BzMore, Undo2 as BzShareBack,
+  Tag as BzItemIcon, ImageOff as BzNoPhoto
 } from "lucide-react";
 
 // The same fourteen, in the same order, as server/lib/bazaar.js. The order
@@ -311,6 +312,130 @@ function bazaarRecentAdd(recent, { query, shop }) {
 }
 
 // ── THE SECTION ON PAY & SERVICES ───────────────────────────────────────
+// ── SEARCH BY ITEM (Nov 2026) ────────────────────────────────────────────
+//
+// The shop list answers "which shops?". With a word typed, the person can
+// flip to Items and get "which samosas?": one row per thing for sale, with
+// its price, who sells it and how far, so two shops' prices for the same
+// thing sit side by side. A row opens the shop, where it can be bought.
+//
+// Pictures are asked for only when a row is on screen, eight at a time, and
+// kept while the app is open.
+var BAZAAR_ITEM_PHOTO_CACHE = new Map();   // item id → dataUrl | null
+var BAZAAR_ITEM_PHOTO_WAITERS = new Map();
+var BAZAAR_ITEM_PHOTO_QUEUE = [];
+var BAZAAR_ITEM_PHOTO_TIMER = null;
+function bazaarItemPhotoFlush() {
+  BAZAAR_ITEM_PHOTO_TIMER = null;
+  const batch = BAZAAR_ITEM_PHOTO_QUEUE.splice(0, 8);
+  if (!batch.length) return;
+  GloobalApi.bazaarItemPhotos(batch).then((photos) => {
+    for (const id of batch) {
+      const got = photos && typeof photos[id] === "string" && photos[id].startsWith("data:image/") ? photos[id] : null;
+      // A read that failed altogether is not remembered, so it is tried again.
+      if (photos && id in photos) BAZAAR_ITEM_PHOTO_CACHE.set(id, got);
+      const waiting = BAZAAR_ITEM_PHOTO_WAITERS.get(id) || [];
+      BAZAAR_ITEM_PHOTO_WAITERS.delete(id);
+      waiting.forEach((fn) => fn(got));
+    }
+    if (BAZAAR_ITEM_PHOTO_QUEUE.length) BAZAAR_ITEM_PHOTO_TIMER = setTimeout(bazaarItemPhotoFlush, 60);
+  });
+}
+function bazaarItemPhotoAsk(id, done) {
+  if (BAZAAR_ITEM_PHOTO_CACHE.has(id)) { done(BAZAAR_ITEM_PHOTO_CACHE.get(id)); return; }
+  const waiting = BAZAAR_ITEM_PHOTO_WAITERS.get(id);
+  if (waiting) { waiting.push(done); return; }
+  BAZAAR_ITEM_PHOTO_WAITERS.set(id, [done]);
+  BAZAAR_ITEM_PHOTO_QUEUE.push(id);
+  if (!BAZAAR_ITEM_PHOTO_TIMER) BAZAAR_ITEM_PHOTO_TIMER = setTimeout(bazaarItemPhotoFlush, 120);
+}
+function BazaarItemPhoto({ item, size = 54 }) {
+  const ref = useRef35(null);
+  const [photo, setPhoto] = useState62(() => BAZAAR_ITEM_PHOTO_CACHE.get(item.id) || null);
+  useEffect59(() => {
+    if (!item.hasPhoto) { setPhoto(null); return undefined; }
+    if (BAZAAR_ITEM_PHOTO_CACHE.has(item.id)) { setPhoto(BAZAAR_ITEM_PHOTO_CACHE.get(item.id)); return undefined; }
+    let alive = true;
+    const ask = () => bazaarItemPhotoAsk(item.id, (got) => { if (alive) setPhoto(got); });
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver !== "function") { ask(); return () => { alive = false; }; }
+    const seen = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { seen.disconnect(); ask(); }
+    }, { rootMargin: "200px" });
+    seen.observe(node);
+    return () => { alive = false; seen.disconnect(); };
+  }, [item.id, item.hasPhoto]);
+  return <span ref={ref} aria-hidden="true" data-testid="bazaar-item-photo" data-photo={photo ? "1" : "0"} style={{
+    width: size, height: size, borderRadius: 14, flexShrink: 0, overflow: "hidden", display: "grid", placeItems: "center",
+    background: T.surfaceSunk || T.accentSoft, color: T.inkFaint
+  }}>{photo
+    ? <img src={photo} alt="" onError={() => setPhoto(null)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+    : <BzItemIcon size={20} />}</span>;
+}
+
+function BazaarItemList({ items, busy, failed, fuzzy, query, near, sort, onSort, onOpen }) {
+  const lens = typeof useGeuLens === "function" ? useGeuLens() : null;
+  const clean = String(query).replace(/\./g, " ").trim();
+  const sortChip = (key, label) => <button
+    key={key}
+    type="button"
+    onClick={() => onSort(key)}
+    aria-pressed={sort === key}
+    data-testid={`bazaar-item-sort-${key}`}
+    className="v2-tap"
+    style={{
+      height: 30, padding: "0 12px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800,
+      background: sort === key ? T.accentSoft : T.surface, color: sort === key ? T.accent : T.inkSoft,
+      boxShadow: sort === key ? "none" : `inset 0 0 0 1px ${T.line}`
+    }}
+  >{label}</button>;
+  return <div data-testid="bazaar-items"><div style={{
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, margin: "2px 2px 8px"
+  }}><span style={{
+    fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4
+  }}>Items on GLOOBAL{items ? <span style={{ color: T.inkFaint }}>{` · ${items.length}`}</span> : null}</span><span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>{busy ? <Loader7 size={13} color={T.inkFaint} style={{ animation: "spin 0.9s linear infinite" }} /> : null}{sortChip("best", near ? "Nearest" : "Best match")}{sortChip("price", "Lowest price")}</span></div>{
+    fuzzy ? <div role="status" style={{
+      display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px", padding: "9px 12px", borderRadius: 12,
+      background: T.surface, boxShadow: `inset 0 0 0 1px ${T.line}`, fontSize: 12, fontWeight: 700, color: T.inkSoft
+    }}><BzSuggest size={14} color={T.accent} />Showing close spellings of “{clean}”</div> : null
+  }<div style={{ background: T.surface, borderRadius: 18, boxShadow: T.shadowCard, overflow: "hidden" }}>{
+    items === null
+      ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Looking for “{clean}”…</div>
+      : failed && items.length === 0
+        ? <div style={{ padding: "20px 16px", textAlign: "center", fontSize: 12.5, color: T.inkFaint }}>Couldn't search items just now.</div>
+        : items.length === 0
+          ? <div data-testid="bazaar-items-none" style={{ padding: "20px 16px", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{near ? `Nobody in this circle lists “${clean}”` : `Nobody lists “${clean}” yet`}</div><div style={{
+            fontSize: 11.5, color: T.inkFaint, marginTop: 3, lineHeight: 1.45
+          }}>{near ? "Try a bigger distance, or switch Near me off." : "Try another word, or look under Shops."}</div></div>
+          : items.map((it, i) => {
+            const dist = it.shop.distanceM ? bazaarDistanceLabel(it.shop.distanceM) : "";
+            const openLine = openHoursLabel(it.shop.hours, new Date());
+            return <button
+              key={it.id}
+              type="button"
+              onClick={() => onOpen(it.shop)}
+              className="v2-row"
+              data-testid="bazaar-item-row"
+              data-sold-out={it.soldOut ? "1" : "0"}
+              style={{
+                display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", opacity: it.soldOut ? 0.6 : 1,
+                padding: "10px 14px", border: "none", background: "none", cursor: "pointer", fontFamily: "inherit",
+                borderTop: i === 0 ? "none" : `1px solid ${T.line}`
+              }}
+            ><BazaarItemPhoto item={it} /><span style={{ flex: 1, minWidth: 0 }}><span style={{
+              display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 700, color: T.ink
+            }}><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.title}</span>{it.soldOut
+              ? <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, color: T.negative, background: T.negativeSoft, borderRadius: 999, padding: "2px 8px" }}>Sold out</span>
+              : it.badge ? <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 800, color: T.accent, background: T.accentSoft, borderRadius: 999, padding: "2px 8px" }}>{it.badge}</span> : null}</span><span style={{
+              display: "block", fontSize: 12, fontWeight: 600, color: T.inkSoft, marginTop: 2,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+            }}>{creatorDisplayName(it.shop)}{dist ? ` · ${dist}` : ""}{openLine.open !== null ? <span style={{
+              fontWeight: 800, color: openLine.open ? "#178A4C" : T.inkFaint
+            }}>{" · " + (openLine.open ? "Open" : "Closed")}</span> : null}</span></span><span style={{ flexShrink: 0, textAlign: "right", color: T.ink }}><GeuFigure amount={it.price} currency={it.currency} lens={lens} own={geuLensOwnCurrency() || it.currency} size={13.5} /></span><ChevronRight10 size={15} color={T.inkFaint} /></button>;
+          })
+  }</div></div>;
+}
+
 function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", ownerKey = "", onOpen, onPay, onQuery, onToast, filterOpen = false, onFilterClose, onActiveChange }) {
   const [recent, setRecent] = useState62(() => bazaarRecentLoad(ownerKey));
   // Every way out of this section to a shop goes through here, so a shop
@@ -358,6 +483,13 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
   const [festivalOn, setFestivalOn] = useState62(false);
   const [fuzzy, setFuzzy] = useState62(false);
   const [suggest, setSuggest] = useState62(null);
+  // Search by item (Nov 2026): what the list under a typed word shows.
+  const [find, setFind] = useState62("shops");
+  const [items, setItems] = useState62(null);
+  const [itemsBusy, setItemsBusy] = useState62(false);
+  const [itemsFailed, setItemsFailed] = useState62(false);
+  const [itemSort, setItemSort] = useState62("best");
+  const itemSeq = useRef35(0);
   const seq = useRef35(0);
 
   const near = nearOn && here ? { lat: here.lat, lng: here.lng, radiusKm: radius } : null;
@@ -414,6 +546,32 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
     }, query ? 300 : 0);
     return () => clearTimeout(timer);
   }, [query, category, nearKey, country, openNow, sub, sort, minRating, maxPrice, minShare, festivalOn, word ? word.key : "", mapOn]);
+
+  // Items for the typed word, when the person has flipped to Items.
+  // Debounced and sequence-guarded like the shop search above it.
+  const itemsMode = find === "items" && [...String(query || "").trim()].length >= 2;
+  useEffect59(() => {
+    if (!itemsMode) { setItems(null); return undefined; }
+    const mine = itemSeq.current + 1;
+    itemSeq.current = mine;
+    setItemsBusy(true);
+    const timer = setTimeout(async () => {
+      try {
+        const list = await GloobalApi.bazaarItems({ q: query, near, country, openNow, maxPrice, sort: itemSort });
+        if (itemSeq.current !== mine) return;
+        setItems(list);
+        setItemsFailed(false);
+      } catch (e) {
+        if (itemSeq.current !== mine) return;
+        setItems((have) => have || []);
+        setItemsFailed(true);
+      }
+      setItemsBusy(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [itemsMode, query, nearKey, country, openNow, maxPrice, itemSort]);
+  // An emptied box goes back to shops.
+  useEffect59(() => { if (!query) setFind("shops"); }, [query]);
 
   // ── MADE NEAR YOU (0186) ──────────────────────────────────────────────
   // The words three or more Other creators share where the searcher is.
@@ -631,11 +789,32 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
       style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", border: "none", background: "none", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
     ><BusinessMark name={sh.handle || ""} logo={null} size={24} radius={8} /><span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{creatorDisplayName(sh)}</span><span style={{ fontSize: 10.5, fontWeight: 700, color: T.inkFaint }}>Shop</span></button>)}</div> : null
   }{
-    fuzzy ? <div role="status" style={{
+    fuzzy && !itemsMode ? <div role="status" style={{
       display: "flex", alignItems: "center", gap: 8, margin: "0 0 10px", padding: "9px 12px", borderRadius: 12,
       background: T.surface, boxShadow: `inset 0 0 0 1px ${T.line}`, fontSize: 12, fontWeight: 700, color: T.inkSoft
     }}><BzSuggest size={14} color={T.accent} />Showing close spellings of “{String(query).replace(/\./g, " ")}”</div> : null
-  }<div style={{
+  }{
+    /* ── SHOPS OR ITEMS (Nov 2026) ───────────────────────────────────
+       Offered once a word is typed: the same word, read as a shop's name
+       or as a thing for sale. */
+    [...String(query || "").trim()].length >= 2 ? <div role="tablist" aria-label="Search in" data-testid="bazaar-find" style={{
+      display: "flex", gap: 4, padding: 4, margin: "0 0 10px", borderRadius: 14, background: `rgba(${T.inkRgb},0.06)`
+    }}>{[["shops", "Shops", BzOther], ["items", "Items", BzItemIcon]].map(([key, label, Icon]) => <button
+      key={key}
+      type="button"
+      role="tab"
+      aria-selected={find === key}
+      data-testid={`bazaar-find-${key}`}
+      onClick={() => setFind(key)}
+      className="v2-tap"
+      style={{
+        flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, height: 36, border: "none", borderRadius: 11,
+        cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800,
+        background: find === key ? T.surface : "transparent", color: find === key ? T.ink : T.inkSoft,
+        boxShadow: find === key ? `0 1px 4px rgba(${T.inkRgb},0.12)` : "none"
+      }}
+    ><Icon size={14} />{label}</button>)}</div> : null
+  }{itemsMode ? <BazaarItemList items={items} busy={itemsBusy} failed={itemsFailed} fuzzy={Boolean(items && items.fuzzy)} query={query} near={near} sort={itemSort} onSort={setItemSort} onOpen={openShop} /> : <><div style={{
     display: "flex", alignItems: "center", justifyContent: "space-between", margin: "2px 2px 8px"
   }}><span style={{
     fontSize: 11, fontWeight: 800, color: T.inkSoft, textTransform: "uppercase", letterSpacing: 0.4
@@ -685,7 +864,7 @@ function BazaarSection({ query = "", countryIso = "", excludeSymbolId = "", owne
               fontWeight: 800, color: openLine.open ? "#178A4C" : T.inkFaint
             }}>{(kind || dist ? " · " : "") + (openLine.open ? "Open" : "Closed")}</span> : null}</span></span><BazaarShareTag pct={s.sharePct} /><ChevronRight10 size={15} color={T.inkFaint} /></button>;
           })
-  }</div>}{
+  }</div>}</>}{
     /* ── THE FILTER SHEET (0184) ──────────────────────────────────────
        Opened from the corner of Pay & Services. Everything that used to
        be four chips, a category row, a sub-category row, a sort panel and

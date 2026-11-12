@@ -2141,6 +2141,33 @@ var GloobalApi = {
     return shops;
   },
 
+  // Bazaar searched by item: one row per thing for sale that matches, with
+  // its price, its shop and how far the shop is. [] with .fuzzy, like
+  // bazaarSearch; throws when the server cannot be reached.
+  async bazaarItems({ q = "", near = null, country = "", openNow = false, maxPrice = 0, sort = "" } = {}) {
+    const p = new URLSearchParams();
+    p.set("q", q);
+    if (country) p.set("country", country);
+    if (openNow) p.set("open", "1");
+    if (maxPrice > 0) p.set("maxPrice", String(maxPrice));
+    if (sort && sort !== "best") p.set("sort", sort);
+    if (near) { p.set("lat", String(near.lat)); p.set("lng", String(near.lng)); p.set("radiusKm", String(near.radiusKm)); }
+    const result = await gloobalApiClient.get(`/api/bazaar/items?${p.toString()}`);
+    const items = Array.isArray(result && result.items) ? result.items : [];
+    items.fuzzy = Boolean(result && result.fuzzy);
+    return items;
+  },
+  // The first picture of up to eight of those items. { id: dataUrl | null };
+  // {} when unreadable.
+  async bazaarItemPhotos(ids) {
+    try {
+      const result = await gloobalApiClient.get(`/api/bazaar/items/photos?ids=${encodeURIComponent((ids || []).join(","))}`);
+      return result && result.success && result.photos ? result.photos : {};
+    } catch (e) {
+      return {};
+    }
+  },
+
   // The first-flip splash (0199): real shops and three counts, or null when
   // the server cannot be reached, so the splash draws its examples.
   async bazaarShowcase() {

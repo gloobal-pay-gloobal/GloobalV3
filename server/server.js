@@ -59,6 +59,7 @@ const { getRate } = require('./lib/fxRates');
 const bazaar = require('./lib/bazaar');
 const reservedBrands = require('./lib/reservedBrands');
 const searchKey = require('./lib/searchKey');
+const bazaarItems = require('./lib/bazaarItems');
 const openHours = require('./lib/openHours');
 const { loadCurrencyDecimals, decimalsFor } = require('./lib/currencyDecimals');
 // A coin movement, normalised. Required up here rather than down in the
@@ -5723,6 +5724,102 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Bazaar search error:', error);
     return res.status(500).json({ success: false, message: 'Could not search right now.' });
+  }
+});
+
+// GET /api/bazaar/items?q=samosa&lat=..&lng=..&radiusKm=2&country=IN
+//   &maxPrice=100&open=1&sort=best|price|near
+// Bazaar searched by ITEM: one row per thing for sale that matches, with its
+// price, the shop selling it and how far the shop is. Same shops the shop
+// search would consider (listed, not hidden, this country or this circle);
+// see lib/bazaarItems.js. Photos come separately, a few at a time.
+app.get('/api/bazaar/items', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const q = bazaar.bazaarQuery(req.query.q);
+    const rawQ = String(req.query.q || '').trim().slice(0, 40);
+    if ([...rawQ].length < 2 || !q) return res.json({ success: true, items: [], fuzzy: false });
+    const near = bazaar.bazaarNear(req.query);
+    if ((req.query.lat !== undefined || req.query.radiusKm !== undefined) && !near) {
+      return res.status(400).json({ success: false, code: 'invalid_near', message: 'Pick a distance from the list.' });
+    }
+    const maxPrice = Number(req.query.maxPrice);
+    const priceCap = Number.isFinite(maxPrice) && maxPrice > 0 && maxPrice <= 1e6 ? maxPrice : 0;
+    const countryIso = /^[A-Z]{2}$/.test(String(req.query.country || '')) ? String(req.query.country) : '';
+    const openNow = req.query.open === '1';
+    await bazaarEnsureKeys();
+    const base = { q, rawQ, near, countryIso, openNow, maxPrice: priceCap };
+    const shape = { ownerSymbolId: 1, title: 1, price: 1, currency: 1, soldOut: 1, badge: 1, searchKey: 1,
+      // Whether there is a picture, without reading the picture.
+      hasPhoto: { $or: [{ $gt: [{ $strLenCP: { $ifNull: ['$photo', ''] } }, 0] }, { $gt: [{ $size: { $ifNull: ['$photos', []] } }, 0] }] } };
+    const priceMatch = priceCap > 0 ? { price: { $lte: priceCap } } : {};
+
+    // The same two ways an item is matched in the shop search: its loose
+    // key (any spelling, any script) and its title as typed.
+    const keyRe = searchKey.searchKeyRegex(searchKey.searchKeyQuery(rawQ));
+    const words = rawQ.split(/[\s.]+/).filter(Boolean).slice(0, 4).map((w) => bazaar.bazaarEscapeRegex(w.slice(0, 40)));
+    const titleRe = words.length ? new RegExp(`(^|\\s)${words.join('.*')}`, 'i') : null;
+    const itemOr = [];
+    if (keyRe) itemOr.push({ searchKey: keyRe });
+    if (titleRe) itemOr.push({ title: titleRe });
+
+    let shops = await bazaarCandidates(base);
+    let items = shops.length && itemOr.length
+      ? await CreatorItem.aggregate([{ $match: { ownerSymbolId: { $in: shops.map((r) => r.symbolId) }, $or: itemOr, ...priceMatch } }, { $limit: 600 }, { $project: shape }])
+      : [];
+    // Typo-proof, as the shop search is: nothing spelled like that, so the
+    // near spellings ("smosa" finds samosa).
+    let fuzzy = false;
+    if (!items.length) {
+      const fuzzyOwners = await bazaarFuzzyOwners(rawQ, near ? '' : countryIso);
+      if (fuzzyOwners.owners.size) {
+        shops = await bazaarCandidates({ ...base, fuzzyOwners });
+        const typed = searchKey.searchKeyQuery(rawQ).filter((w) => w.length >= 3);
+        const all = shops.length
+          ? await CreatorItem.aggregate([{ $match: { ownerSymbolId: { $in: shops.map((r) => r.symbolId) }, searchKey: { $type: 'string', $ne: '' }, ...priceMatch } }, { $limit: 3000 }, { $project: shape }])
+          : [];
+        items = all.filter((it) => {
+          const have = String(it.searchKey || '').split(' ').filter(Boolean);
+          return typed.length > 0 && typed.every((t) => have.some((w) => bazaarNearlyMatchesWord(t, w)));
+        });
+        fuzzy = items.length > 0;
+      }
+    }
+    const sort = bazaarItems.BAZAAR_ITEM_SORTS.includes(String(req.query.sort)) ? String(req.query.sort) : 'best';
+    const rows = bazaarItems.rankBazaarItems(items, shops, { sort, near: Boolean(near), typed: rawQ, roundDistance: bazaar.bazaarRoundDistance });
+    return res.json({ success: true, items: rows, fuzzy });
+  } catch (error) {
+    console.error('Bazaar item search error:', error);
+    return res.status(500).json({ success: false, message: 'Could not search right now.' });
+  }
+});
+
+// GET /api/bazaar/items/photos?ids=a,b,c — the first picture of up to eight
+// items, for the cards of an item search as they scroll into view. Only for
+// items of a shop that is listed and not hidden. { photos: { id: dataUrl | null } }
+app.get('/api/bazaar/items/photos', lookupLimit, requireAuth, async (req, res) => {
+  try {
+    const ids = bazaarItems.photoIds(req.query.ids);
+    const photos = {};
+    for (const id of ids) photos[id] = null;
+    if (ids.length) {
+      const found = await CreatorItem.find({ _id: { $in: ids } }).select('ownerSymbolId photo photos').lean();
+      const owners = await User.find({
+        symbolId: { $in: found.map((f) => f.ownerSymbolId) },
+        'creatorProfile.handle': { $type: 'string', $ne: '' },
+        'creatorProfile.listed': { $ne: false }, 'creatorProfile.hiddenByGloobal': { $ne: true }
+      }).select('symbolId').lean();
+      const shown = new Set(owners.map((o) => o.symbolId));
+      for (const f of found) {
+        if (!shown.has(f.ownerSymbolId)) continue;
+        const first = f.photo || (Array.isArray(f.photos) && f.photos[0]) || '';
+        photos[String(f._id)] = typeof first === 'string' && first.startsWith('data:image/') ? first : null;
+      }
+    }
+    res.set('Cache-Control', 'private, max-age=300');
+    return res.json({ success: true, photos });
+  } catch (error) {
+    console.error('Bazaar item photos error:', error);
+    return res.status(500).json({ success: false, message: 'Could not load those pictures just now.' });
   }
 });
 

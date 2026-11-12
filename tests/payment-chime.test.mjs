@@ -196,12 +196,12 @@ test("the shop's own line is said in place of the standard sentence, with the am
   assert.equal(api.gloobalPaymentLineLoad(), "", "no line saved: the standard sentence");
   api.gloobalPaymentLineSave("{amount} CEL prapt hue, aapka dhanyavaad");
   await api.gloobalPlayPaymentChime({ txnId: "L1", amount: 100, currency: "INR" });
-  assert.deepEqual(log.spoken, [{ text: "100 CEL prapt hue, aapka dhanyavaad", lang: "en-IN" }]);
+  assert.deepEqual(log.spoken, [{ text: "100 Cell prapt hue, aapka dhanyavaad", lang: "en-IN" }]);
   assert.deepEqual(log.notes, [1046.5, 2093, 1568, 3136], "the chime still comes first");
   // Paise are said; a Hindi line gets a Hindi voice.
   api.gloobalPaymentLineSave("{amount} CEL प्राप्त हुए, आपका धन्यवाद");
   await api.gloobalPlayPaymentChime({ txnId: "L2", amount: 100.5, currency: "INR" });
-  assert.deepEqual(log.spoken[1], { text: "100.50 CEL प्राप्त हुए, आपका धन्यवाद", lang: "hi-IN" });
+  assert.deepEqual(log.spoken[1], { text: "100.50 सेल प्राप्त हुए, आपका धन्यवाद", lang: "hi-IN" });
 });
 
 test("a line with no {amount} has the amount said first; clearing it brings the standard sentence back", async () => {
@@ -217,7 +217,7 @@ test("a line with no {amount} has the amount said first; clearing it brings the 
 test("Hear it plays the chime and the line with 100; every ready line carries the amount", async () => {
   const { api, log } = load();
   await api.gloobalPreviewPaymentLine("{amount} CEL aa gaye");
-  assert.equal(log.spoken[0].text, "100 CEL aa gaye");
+  assert.equal(log.spoken[0].text, "100 Cell aa gaye");
   assert.equal(log.notes.length, 4);
   for (const t of api.GLOOBAL_PAYMENT_LINE_PRESETS) assert.match(t, /\{amount\}/, t);
 });
@@ -229,14 +229,14 @@ test("an audio clip in place of the words: chime, the clip, then the amount; rem
   await api.gloobalPlayPaymentChime({ txnId: "C1", amount: 100, currency: "INR" });
   assert.equal(log.notes.length, 4, "the chime first");
   assert.deepEqual(log.clips, ["data:audio/wav;base64,AAAA"], "then the shop's clip");
-  assert.deepEqual(log.spoken, [{ text: "100 CEL", lang: "en-IN" }], "then the amount, which a clip cannot say");
+  assert.deepEqual(log.spoken, [{ text: "100 Cell", lang: "en-IN" }], "then the amount, which a clip cannot say");
   // Only an audio data: URL is ever played.
   api.gloobalPaymentClipSave("https://example.com/x.mp3");
   assert.equal(api.gloobalPaymentClipLoad(), "");
   api.gloobalPaymentClipSave("");
   await api.gloobalPlayPaymentChime({ txnId: "C2", amount: 20, currency: "INR" });
   assert.equal(log.clips.length, 1);
-  assert.equal(log.spoken[1].text, "20 CEL prapt hue");
+  assert.equal(log.spoken[1].text, "20 Cell prapt hue");
 });
 
 // ── The Payment sound screen's choices ───────────────────────────────────
@@ -266,7 +266,7 @@ test("the chosen voice and speed are what the line is spoken with", async () => 
   api.gloobalPaymentLineSave("{amount} CEL aa gaye");
   api.gloobalPaymentSoundPrefsSave({ mode: "line", voice: "hi", speed: "slow" });
   await api.gloobalPlayPaymentChime({ txnId: "M2", amount: 100, currency: "INR" });
-  assert.deepEqual(log.spoken, [{ text: "100 CEL aa gaye", lang: "hi-IN" }]);
+  assert.deepEqual(log.spoken, [{ text: "100 Cell aa gaye", lang: "hi-IN" }]);
   assert.ok(log.rates[0] < 0.9, "slow is slower than normal");
   api.gloobalPaymentSoundPrefsSave({ mode: "line", voice: "auto", speed: "fast" });
   await api.gloobalPlayPaymentChime({ txnId: "M3", amount: 100, currency: "INR" });
@@ -290,7 +290,7 @@ test("a clip with 'say the amount' off plays the clip alone; 'words' ignores a k
 test("the screen's play button hears the unsaved draft, with the amount picked, and saves nothing", async () => {
   const { api, log } = load();
   await api.gloobalPreviewPaymentSound({ mode: "line", line: "{amount} CEL aa gaye", voice: "auto", speed: "normal" }, 2500, "INR");
-  assert.deepEqual(log.spoken, [{ text: "2500 CEL aa gaye", lang: "en-IN" }]);
+  assert.deepEqual(log.spoken, [{ text: "2500 Cell aa gaye", lang: "en-IN" }]);
   assert.equal(api.gloobalPaymentLineLoad(), "");
 });
 
@@ -303,4 +303,13 @@ test("the profile row opens a Payment sound screen that keeps nothing until Save
   const saves = screen.slice(screen.indexOf("const save = () => {"), screen.indexOf("const shown ="));
   assert.equal((screen.match(/gloobalPaymentLineSave\(/g) || []).length, 1, "the line is saved in one place");
   assert.match(saves, /gloobalPaymentClipSave\(draft\.clip\)[\s\S]*gloobalPaymentLineSave\(draft\.line\)[\s\S]*gloobalPaymentSoundPrefsSave\(draft\)/);
+});
+
+test("CEL is said as a word, never spelled out; what is shown stays CEL", async () => {
+  const { api, log } = load();
+  assert.equal(api.gloobalPaymentLineSentence("{amount} CEL aa gaye", 100).text, "100 CEL aa gaye", "the shown text is untouched");
+  api.gloobalPaymentLineSave("Received {amount} cel. EXCEL and CELL stay as they are, CEL!");
+  await api.gloobalPlayPaymentChime({ txnId: "W1", amount: 5, currency: "INR" });
+  assert.equal(log.spoken[0].text, "Received 5 Cell. EXCEL and CELL stay as they are, Cell!");
+  assert.ok(!/\bCEL\b/.test(log.spoken.map((x) => x.text).join(" ")), "the three capitals never reach the voice");
 });

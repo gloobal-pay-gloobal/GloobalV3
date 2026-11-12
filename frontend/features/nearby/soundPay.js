@@ -528,7 +528,9 @@ function soundPaySayLine(line) {
         return;
       }
       if (text && typeof window !== "undefined" && window.speechSynthesis && typeof SpeechSynthesisUtterance !== "undefined") {
-        const u = new SpeechSynthesisUtterance(text);
+        // CEL is said as a word, not spelled (gloobalSpokenText, paymentChime.js).
+        const hindiLine = /[\u0900-\u097F]/.test(text);
+        const u = new SpeechSynthesisUtterance(typeof gloobalSpokenText === "function" ? gloobalSpokenText(text, hindiLine ? "hi-IN" : "en-IN") : text);
         // Devanagari is read by a Hindi voice; Latin letters (English or
         // Hinglish) by an Indian-English one, which says "bhai" as written.
         u.lang = /[\u0900-\u097F]/.test(text) ? "hi-IN" : "en-IN";

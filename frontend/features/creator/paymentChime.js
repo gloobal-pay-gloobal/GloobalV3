@@ -335,6 +335,14 @@ function gloobalPreviewPaymentLine(template, currency) {
   return gloobalPlayChimeTone().then(function () { return gloobalSpeak(sentence); });
 }
 
+// CEL is a word, said "sel" — never the letters C, E, L, which is what a
+// phone's voice does with three capitals. So the spoken text (only that;
+// what is shown stays CEL) carries a spelling the voice reads as a word:
+// "Cell" for a Latin-letter voice, "सेल" inside a Hindi sentence.
+function gloobalSpokenText(text, lang) {
+  var hindi = String(lang || "").toLowerCase().indexOf("hi") === 0 && /[\u0900-\u097F]/.test(text);
+  return String(text || "").replace(/(^|[^A-Za-z])CEL(?![A-Za-z])/gi, function (m, before) { return before + (hindi ? "सेल" : "Cell"); });
+}
 function gloobalSpeak(sentence, how) {
   return new Promise(function (resolve) {
     try {
@@ -343,7 +351,7 @@ function gloobalSpeak(sentence, how) {
       }
       // The shop's choice of voice wins over the one the letters suggest.
       var want = how && how.voice === "hi" ? "hi-IN" : how && how.voice === "en" ? "en-IN" : sentence.lang;
-      sentence = { text: sentence.text, lang: want };
+      sentence = { text: gloobalSpokenText(sentence.text, want), lang: want };
       var u = new SpeechSynthesisUtterance(sentence.text);
       u.lang = sentence.lang;
       u.rate = (how && GLOOBAL_PAYMENT_SPEEDS[how.speed]) || 0.95;

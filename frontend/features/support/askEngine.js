@@ -371,4 +371,8 @@ function askPlain(text) { return String(text || "").replace(/\*\*/g, ""); }
 // Written in each voice's own letters, because a voice for another language
 // can stumble over a Latin word.
 var ASK_SPOKEN_NAME = { hi: "ग्लोबल", mr: "ग्लोबल", ta: "குளோபல்", bn: "গ্লোবাল", te: "గ్లోబల్", gu: "ગ્લોબલ", kn: "ಗ್ಲೋಬಲ್", ml: "ഗ്ലോബൽ", pa: "ਗਲੋਬਲ", ur: "گلوبل", ar: "جلوبال", ru: "Глобал", ja: "グローバル", ko: "글로벌" };
-function askSpoken(text, lang) { return askPlain(text).replace(/gloobal/gi, ASK_SPOKEN_NAME[lang] || "Global"); }
+// CEL is said as a word, not spelled (gloobalSpokenText, paymentChime.js).
+function askSpoken(text, lang) {
+  const said = askPlain(text).replace(/gloobal/gi, ASK_SPOKEN_NAME[lang] || "Global");
+  return typeof gloobalSpokenText === "function" ? gloobalSpokenText(said, lang) : said;
+}

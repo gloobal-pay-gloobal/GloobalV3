@@ -9333,6 +9333,24 @@ require('./lib/guide').createGuide({
 {
   const staffAlerts = require('./lib/staffAlerts').createStaffAlerts({ staff: admin, pushService, lookupLimit, writeLimit, adminToday: admin.today });
   require('./lib/staffOps').createStaffOps({ staff: admin, lookupLimit, writeLimit, alertsStatus: staffAlerts.status }).mount(app);
+  // GET /api/admin/liquidity?currency=INR  (Admin, Finance)
+  //   Where members' balances sit: the true order, hidden members included
+  //   and marked, how concentrated it is, and the split by country. The
+  //   app's own board is /api/coverage/liquidity; see lib/liquidityBoard.js.
+  app.get('/api/admin/liquidity', lookupLimit, admin.requireStaff(['admin', 'finance'], 'view.liquidity'), async (req, res) => {
+    try {
+      const currency = String(req.query.currency || 'INR').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'INR';
+      const view = liquidityBoard.staffLiquidity(await liquidityRanked(currency));
+      // The GLOOBAL ID of each listed member, so a row opens in Look up.
+      const ids = await User.find({ _id: { $in: view.rows.map((r) => r.id) } }, 'symbolId').lean();
+      const symbolOf = new Map(ids.map((u) => [String(u._id), u.symbolId]));
+      view.rows = view.rows.map(({ id, ...r }) => ({ ...r, symbolId: symbolOf.get(id) || '' }));
+      return res.json({ success: true, ...view });
+    } catch (error) {
+      console.error('admin liquidity error:', error);
+      return res.status(500).json({ success: false, message: 'Could not load that just now.' });
+    }
+  });
   staffAlerts.mount(app);
   staffAlerts.start();
 }

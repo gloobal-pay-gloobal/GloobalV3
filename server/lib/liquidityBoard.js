@@ -183,4 +183,43 @@ function liquidityPhotoOwners(ranked, { meId = '', keys = [], photoKey } = {}) {
   return out;
 }
 
-module.exports = { buildLiquidityBoard, rankLiquidity, pageLiquidity, currencyOf, LIQUIDITY_TOP, LIQUIDITY_PAGE, LIQUIDITY_PAGE_MAX, LIQUIDITY_PHOTO_BATCH, liquidityPhotoOwners };
+// The staff view (GLOOBAL Admin → Liquidity, for Admin and Finance): the
+// true order with nobody left out. A member who hid from the public board
+// is still here, marked, because staff read balances already and the point
+// of this screen is where the money actually sits. Also how concentrated it
+// is, and how it splits by country.
+const LIQUIDITY_STAFF_ROWS = 100;
+function staffLiquidity(ranked, { limit = LIQUIDITY_STAFF_ROWS } = {}) {
+  const { all, total } = ranked;
+  const share = (amount) => (total > 0 ? Math.round((amount / total) * 10000) / 100 : 0);
+  const size = Math.max(1, Math.min(500, Math.floor(Number(limit)) || LIQUIDITY_STAFF_ROWS));
+  const sumTop = (n) => all.slice(0, n).reduce((s, r) => s + r.amount, 0);
+  const byCountry = new Map();
+  for (const r of all) {
+    if (!(r.amount > 0)) continue;
+    const c = byCountry.get(r.countryIso) || { iso: r.countryIso, currency: r.ownCurrency, amount: 0, ownAmount: 0, holders: 0 };
+    c.amount += r.amount; c.ownAmount += r.ownAmount; c.holders += 1;
+    byCountry.set(r.countryIso, c);
+  }
+  return {
+    currency: ranked.currency,
+    total: round2(total),
+    members: all.length,
+    holders: ranked.holders,
+    empty: all.length - ranked.holders,
+    hiddenCount: ranked.hiddenCount,
+    hiddenAmount: round2(all.filter((r) => r.hidden).reduce((s, r) => s + r.amount, 0)),
+    unconverted: ranked.unconverted,
+    concentration: { top1: share(sumTop(1)), top10: share(sumTop(10)), top100: share(sumTop(100)) },
+    countries: [...byCountry.values()].sort((a, b) => b.amount - a.amount)
+      .map((c) => ({ iso: c.iso, currency: c.currency, amount: round2(c.amount), ownAmount: round2(c.ownAmount), holders: c.holders, share: share(c.amount) })),
+    rows: all.slice(0, size).map((r, i) => ({
+      rank: i + 1, id: r.id, name: r.name || 'GLOOBAL member', countryIso: r.countryIso,
+      amount: round2(r.amount), share: share(r.amount), hidden: r.hidden,
+      ownCurrency: r.ownCurrency, ownAmount: r.ownAmount,
+    })),
+    generatedAt: ranked.generatedAt,
+  };
+}
+
+module.exports = { buildLiquidityBoard, rankLiquidity, pageLiquidity, currencyOf, LIQUIDITY_TOP, LIQUIDITY_PAGE, LIQUIDITY_PAGE_MAX, LIQUIDITY_PHOTO_BATCH, liquidityPhotoOwners, LIQUIDITY_STAFF_ROWS, staffLiquidity };

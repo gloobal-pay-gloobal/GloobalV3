@@ -120,3 +120,21 @@ test("photos are asked for by a key that is not the GLOOBAL ID, a dozen at a tim
   const src = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
   assert.match(src, /app\.get\('\/api\/coverage\/liquidity\/photos', lookupLimit, requireAuth,/);
 });
+
+test("the staff view: the true order with hidden members marked, concentration, and the split by country", () => {
+  const { staffLiquidity } = require("../lib/liquidityBoard.js");
+  const view = staffLiquidity(rankLiquidity({ users, rates, currency: "INR" }));
+  assert.equal(view.currency, "INR");
+  assert.equal(view.members, view.rows.length, "everyone is listed, hidden or not");
+  assert.ok(view.rows.some((r) => r.hidden) && view.hiddenCount >= 1, "the hidden member is here, marked");
+  assert.deepEqual(view.rows.map((r) => r.rank), view.rows.map((_, i) => i + 1));
+  for (let i = 1; i < view.rows.length; i += 1) assert.ok(view.rows[i - 1].amount >= view.rows[i].amount, "largest first");
+  assert.ok(Math.abs(view.rows.reduce((s, r) => s + r.amount, 0) - view.total) < 0.05, "the rows add up to the total");
+  assert.ok(Math.abs(view.countries.reduce((s, c) => s + c.amount, 0) - view.total) < 0.05, "so do the countries");
+  assert.equal(view.concentration.top100, 100);
+  assert.equal(view.concentration.top1, view.rows[0].share);
+  assert.equal(view.hiddenAmount, view.rows.filter((r) => r.hidden).reduce((s, r) => s + r.amount, 0));
+  assert.equal(staffLiquidity(rankLiquidity({ users, rates, currency: "INR" }), { limit: 2 }).rows.length, 2);
+  const src = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
+  assert.match(src, /app\.get\('\/api\/admin\/liquidity', lookupLimit, admin\.requireStaff\(\['admin', 'finance'\], 'view\.liquidity'\)/);
+});

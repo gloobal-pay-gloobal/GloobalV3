@@ -21,6 +21,7 @@
 // them alerts are still kept and shown on the Alerts screen.
 
 const mongoose = require('mongoose');
+const { COIN_TICKER } = require('./coinTicker'); // the unit's name staff read (CEL)
 const Transaction = require('../models/Transaction');
 const Complaint = require('../models/Complaint');
 const RefundRequest = require('../models/RefundRequest');
@@ -67,7 +68,7 @@ const localNow = (tz) => new Date(Date.now() + tzMinutes(tz) * 60000);
 const dayKey = (d = new Date()) => d.toISOString().slice(0, 10);
 // GEU on every figure, as the app writes it in a notification: rupees as
 // "X₹ │ GEU", any other money by its code ("X USD").
-const money = (n, c) => { const v = Math.round(Math.abs(Number(n)) * 100) / 100; const sign = Number(n) < 0 ? '−' : ''; const code = String(c || 'INR').toUpperCase(); return code === 'INR' || code === '₹' ? `${sign}${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })} GEU │ ₹` : `${sign}${v.toLocaleString('en-US', { maximumFractionDigits: 2 })} GEU │ ${code}`; }; // 0228: the money's name after the bar
+const money = (n, c) => { const v = Math.round(Math.abs(Number(n)) * 100) / 100; const sign = Number(n) < 0 ? '−' : ''; const code = String(c || 'INR').toUpperCase(); return code === 'INR' || code === '₹' ? `${sign}${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })} ${COIN_TICKER} │ ₹` : `${sign}${v.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${COIN_TICKER} │ ${code}`; }; // 0228: the money's name after the bar
 
 function createStaffAlerts({ staff, pushService, lookupLimit, writeLimit, adminToday }) {
   const kindsFor = (role) => Object.keys(KINDS).filter((k) => KINDS[k].roles.includes(role));

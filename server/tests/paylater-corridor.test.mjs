@@ -123,7 +123,7 @@ async function main() {
   console.log("\n3. Over the limit");
   r = await send("P", P, A1, 2000);
   check("$2,000 is refused with the corridor_limit code", r.status === 503 && r.body?.code === "corridor_limit", j(r.body));
-  check("naming the country and the most that can be sent, in rupees with GEU (0224)", /United States/.test(r.body?.message || "") && /You can send up to 85,5\d\d\.\d\d GEU │ ₹/.test(r.body?.message || ""), r.body?.message);
+  check("naming the country and the most that can be sent, in rupees with GEU (0224)", /United States/.test(r.body?.message || "") && /You can send up to 85,5\d\d\.\d\d CEL │ ₹/.test(r.body?.message || ""), r.body?.message);
   check("nothing left the payer", (await User.findOne({ symbolId: P.id }).lean()).balance === 5000000 - 100 * RATE, "");
 
   console.log("\n4. The other direction repays it");

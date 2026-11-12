@@ -20,6 +20,10 @@ const hellooConversationSchema = new mongoose.Schema(
       from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
       kind: { type: String, default: '' },
       preview: { type: String, default: '', maxlength: 160 },
+      // What the sender paid to reach the receiver with this message, when
+      // it was a paid one: the chat list marks it ("Paid you 2.00").
+      paidAmount: { type: Number, default: 0 },
+      paidCurrency: { type: String, default: '' },
     },
     reads: [
       {

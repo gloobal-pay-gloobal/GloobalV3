@@ -435,6 +435,12 @@ async function run() {
   check("C pays B ₹2 for a message on GLOOBAL", reachPaid.status < 300 && Boolean(ref1), `status=${reachPaid.status} ${j(reachPaid.body?.message)}`);
   const paidMsg = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-4", kind: "text", text: "Hi Bala, I'm Chandra", reachRef: ref1 } });
   check("with it, C's message goes, marked paid ₹2", paidMsg.status === 201 && paidMsg.body.message.paid?.amount === 2 && paidMsg.body.message.paid.currency === "INR", j(paidMsg.body));
+  {
+    // The chat list marks a chat whose last message was paid for (12 Nov).
+    const listB = await call("GET", "/api/helloo/chats", { token: tokens.B });
+    const rowB = (listB.body?.chats || []).find((c) => c.id === chatCB);
+    check("B's chat list says the last message paid to reach them", rowB?.last?.paid?.amount > 0 && typeof rowB.last.paid.currency === "string" && rowB.last.paid.currency.length === 3, j(rowB?.last));
+  }
   const reuse = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-5", kind: "text", text: "again", reachRef: ref1 } });
   check("the same payment cannot pay for a second message", reuse.status === 402);
   const asPayment = await call("POST", `/api/helloo/chats/${chatCB}/messages`, { token: tokens.C, body: { clientId: "cb-6", kind: "payment", referenceId: ref1 } });

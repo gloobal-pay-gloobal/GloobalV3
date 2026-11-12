@@ -266,7 +266,10 @@ function createHelloo(deps) {
       person: people.get(String(otherId)) || { accountId: String(otherId), name: '', gloobalId: '' },
       lastAt: conversation.lastMessageAt || conversation.createdAt,
       last: conversation.last?.kind
-        ? { from: String(conversation.last.from), kind: conversation.last.kind, preview: conversation.last.preview }
+        ? {
+            from: String(conversation.last.from), kind: conversation.last.kind, preview: conversation.last.preview,
+            ...(conversation.last.paidAmount > 0 ? { paid: { amount: conversation.last.paidAmount, currency: conversation.last.paidCurrency } } : {}),
+          }
         : null,
       unread: unread || 0,
       online: sockets.has(String(otherId)),
@@ -805,7 +808,11 @@ function createHelloo(deps) {
           {
             $set: {
               lastMessageAt: message.createdAt,
-              last: { from: me._id, kind: message.kind, preview: previewOf(message) },
+              last: {
+                from: me._id, kind: message.kind, preview: previewOf(message),
+                paidAmount: message.paid?.referenceId ? message.paid.amount : 0,
+                paidCurrency: message.paid?.referenceId ? message.paid.currency : '',
+              },
               'reads.$[mine].at': message.createdAt,
             },
           },

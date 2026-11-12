@@ -73,10 +73,16 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
   const momentumRef = useRef3(null);
   const suppressClickRef = useRef3(false);
   const [logoFlips, setLogoFlips] = useState5(0);
-  // 0241: the back is the app's logo — the white-square stamp, its mark
-  // in the logo colour of the hour (the same five, the same two-hour walk
-  // as the icon on Home), instead of a random wash with the old "g".
-  const logoInk = useGloobalLogoColor();
+  // The back is the app's logo: the mark in WHITE on a full-strength
+  // colour, a different one each time the dial turns over (never the same
+  // twice running). It was the mark in the colour of the hour on a white
+  // disc, which read as "just a logo on white" beside the coloured keys.
+  const [logoBackColor, setLogoBackColor] = useState5(() => randomLogoFlipColor());
+  useEffect5(() => {
+    // Picked as the turn STARTS (odd = logo side coming up), while that
+    // face is still pointing away, so the colour never changes on screen.
+    if (logoFlips % 2 === 1) setLogoBackColor((prev) => randomLogoFlipColor(prev));
+  }, [logoFlips]);
   const [crossColor, setCrossColor] = useState5(() => randomLogoFlipColor());
   useEffect5(() => {
     const interval = setInterval(() => {
@@ -483,9 +489,9 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      background: "#FFFFFF",
-      border: `1px solid rgba(${T.accentRgb},0.18)`,
-      boxShadow: `0 0 0 3px rgba(${T.accentRgb},0.32), 0 12px 28px rgba(${T.accentDeepRgb},0.2)`,
+      background: logoBackColor,
+      border: "1px solid rgba(255,255,255,0.55)",
+      boxShadow: `0 0 0 3px ${logoBackColor}52, 0 12px 28px ${logoBackColor}55`,
       transform: "rotateY(180deg)",
       backfaceVisibility: "hidden",
       WebkitBackfaceVisibility: "hidden",
@@ -498,7 +504,7 @@ function SymbolDialPad({ value, onChange, length, showLogo = true, soundWhileTyp
     height={logoSize * 0.78}
     aria-hidden="true"
     style={{ userSelect: "none" }}
-  ><path fill={logoInk.hex} fillRule="evenodd" d={GLOOBAL_LOGO_MARK_PATH} style={{ transition: "fill 0.6s ease" }} /></svg></div>}</div></div></div>;
+  ><path fill="#FFFFFF" fillRule="evenodd" d={GLOOBAL_LOGO_MARK_PATH} /></svg></div>}</div></div></div>;
 }
 // ── WHAT THE PAD SHOWS, AND WHEN IT SENDS ──────────────────────────────
 //

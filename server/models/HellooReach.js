@@ -23,6 +23,9 @@ const hellooReachSchema = new mongoose.Schema(
     people: { type: groupSchema, default: () => ({}) },
     business: { type: groupSchema, default: () => ({}) },
     allowed: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    // Privacy (Me → Privacy): nobody is told when this person is online or
+    // when they were last seen.
+    hideLastSeen: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

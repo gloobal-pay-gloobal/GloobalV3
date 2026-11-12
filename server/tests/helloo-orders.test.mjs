@@ -79,3 +79,13 @@ test("the server: orders are never charged a reach price, only the shop answers,
   const model = fs.readFileSync(new URL("../models/HellooMessage.js", import.meta.url), "utf8");
   assert.match(model, /partialFilterExpression: \{ kind: 'order' \}, name: 'order_payment_once'/);
 });
+
+test("privacy: a person who hides their presence is never reported online or last seen, and never announced", () => {
+  const src = fs.readFileSync(new URL("../lib/helloo.js", import.meta.url), "utf8");
+  assert.match(src, /if \(await presenceHidden\(userId\)\) return \{ online: false, lastSeenAt: null, hidden: true \};\s*\n\s*if \(sockets\.has/, "checked before the live socket is looked at");
+  assert.match(src, /if \(await presenceHidden\(userId\)\) return;\s*\n\s*const blocks = await HellooBlock\.find/, "announcePresence stops first");
+  assert.match(src, /if \(hidingChanged\) set\.hideLastSeen = req\.body\.hideLastSeen;/);
+  assert.match(src, /hideLastSeen: Boolean\(reach\.hideLastSeen\),\s*\n\s*month:/, "the app is told the setting");
+  const model = fs.readFileSync(new URL("../models/HellooReach.js", import.meta.url), "utf8");
+  assert.match(model, /hideLastSeen: \{ type: Boolean, default: false \}/);
+});

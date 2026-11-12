@@ -32,6 +32,7 @@
 // Pay to reach (your attention, your price):
 //   GET  /api/helloo/reach                 your prices, allowed people, earnings
 //   PUT  /api/helloo/reach                 { people, business: { price 0–7, closed } }
+//                                          and/or { hideLastSeen } (Me → Privacy)
 //   POST /api/helloo/reach/allow           { accountId, allowed }
 //   GET  /api/helloo/people/:id/reach      what YOU pay to message them, if anything
 //   POST /api/helloo/asks                  { to, text, kind } — a free request
@@ -372,7 +373,16 @@ function createHelloo(deps) {
     return { referenceId: txn.referenceId, amount, currency };
   }
 
+  // Has this person switched off "show when I'm online" (Me → Privacy)?
+  async function presenceHidden(userId) {
+    const row = await HellooReach.findOne({ userId }).select('hideLastSeen').lean();
+    return Boolean(row && row.hideLastSeen);
+  }
+
   async function presenceOf(userId) {
+    // Hidden: neither online nor last seen, and the app is told so it can
+    // show nothing rather than "offline".
+    if (await presenceHidden(userId)) return { online: false, lastSeenAt: null, hidden: true };
     if (sockets.has(String(userId))) return { online: true, lastSeenAt: null };
     const row = await HellooPresence.findOne({ userId }).lean();
     return { online: false, lastSeenAt: row?.lastSeenAt || null };
@@ -386,6 +396,8 @@ function createHelloo(deps) {
       const chats = await HellooConversation.find({ members: userId }).select('members').limit(300).lean();
       const others = chats.map((c) => c.members.find((m) => !sameId(m, userId))).filter((m) => m && sockets.has(String(m)));
       if (!others.length) return;
+      // Someone who hides their presence is never announced.
+      if (await presenceHidden(userId)) return;
       const blocks = await HellooBlock.find({ $or: [{ userId, blockedId: { $in: others } }, { userId: { $in: others }, blockedId: userId }] }).lean();
       const cut = new Set(blocks.map((b) => String(sameId(b.userId, userId) ? b.blockedId : b.userId)));
       for (const other of others) {
@@ -1125,6 +1137,7 @@ function createHelloo(deps) {
           people: groupOut(reach.people),
           business: groupOut(reach.business),
           allowed: allowedIds.map((id) => people.get(String(id))).filter(Boolean).reverse(),
+          hideLastSeen: Boolean(reach.hideLastSeen),
           month: { earned: earned.total, gaveBack: earned.gaveBack, payers: earned.rows.length, turnedAway },
         });
       } catch (error) {
@@ -1148,13 +1161,27 @@ function createHelloo(deps) {
           }
           if (typeof g.closed === 'boolean') set[`${key}.closed`] = g.closed;
         }
+        // Privacy: { hideLastSeen: true | false }, on its own or with prices.
+        const hidingChanged = typeof req.body?.hideLastSeen === 'boolean';
+        if (hidingChanged) set.hideLastSeen = req.body.hideLastSeen;
         if (!Object.keys(set).length) return res.status(400).json({ success: false, message: 'Nothing to change.' });
         const reach = await HellooReach.findOneAndUpdate(
           { userId: req.authUser._id },
           { $set: set, $setOnInsert: { userId: req.authUser._id } },
           { upsert: true, returnDocument: 'after', lean: true }
         );
-        return res.json({ success: true, people: groupOut(reach.people), business: groupOut(reach.business) });
+        // Switched off: the people in their chats see them leave at once.
+        // Switched back on: they are announced as they are now.
+        if (hidingChanged) {
+          const me = req.authUser._id;
+          if (reach.hideLastSeen) {
+            const chats = await HellooConversation.find({ members: me }).select('members').limit(300).lean();
+            for (const c of chats) { const other = c.members.find((m) => !sameId(m, me)); if (other && sockets.has(String(other))) emit(other, { type: 'presence', accountId: String(me), online: false, lastSeenAt: null, hidden: true }); }
+          } else {
+            announcePresence(me, sockets.has(String(me)), null);
+          }
+        }
+        return res.json({ success: true, people: groupOut(reach.people), business: groupOut(reach.business), hideLastSeen: Boolean(reach.hideLastSeen) });
       } catch (error) {
         console.error('Helloo reach save error:', error);
         return res.status(500).json({ success: false, message: 'Could not save your prices right now.' });

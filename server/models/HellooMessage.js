@@ -19,7 +19,7 @@ const hellooMessageSchema = new mongoose.Schema(
   {
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooConversation', required: true },
     from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'call'], required: true },
+    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'call', 'order'], required: true },
     clientId: { type: String, required: true, maxlength: 80 },
     text: { type: String, default: '', maxlength: 4000 },
     voice: {
@@ -42,6 +42,17 @@ const hellooMessageSchema = new mongoose.Schema(
       from: { type: mongoose.Schema.Types.ObjectId, default: null },
       kind: { type: String, default: '' },
       preview: { type: String, default: '' },
+    },
+    // An order from the shop's GLOOBAL Bazaar price list, paid for when it
+    // was placed (lib/hellooOrders.js). `payment` holds the transfer; this
+    // holds what was bought and the shop's answer.
+    order: {
+      items: [{ _id: false, itemId: { type: String, default: '' }, title: { type: String, default: '' }, qty: { type: Number, default: 1 }, price: { type: Number, default: 0 } }],
+      total: { type: Number, default: 0 },
+      currency: { type: String, default: '' },
+      note: { type: String, default: '', maxlength: 120 },
+      status: { type: String, default: '' },
+      statusAt: { type: Date, default: null },
     },
     // "Delete for me": hidden from these members only.
     hiddenFor: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
@@ -87,6 +98,12 @@ hellooMessageSchema.index({ conversationId: 1, from: 1, clientId: 1 }, { unique:
 hellooMessageSchema.index(
   { conversationId: 1, 'payment.referenceId': 1 },
   { unique: true, partialFilterExpression: { kind: 'payment' } }
+);
+
+// A payment pays for one order only.
+hellooMessageSchema.index(
+  { 'payment.referenceId': 1 },
+  { unique: true, partialFilterExpression: { kind: 'order' }, name: 'order_payment_once' }
 );
 
 // A reach payment pays for one message only.

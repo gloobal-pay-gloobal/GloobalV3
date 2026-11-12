@@ -19,6 +19,9 @@
 //   POST /api/helloo/chats/:id/prefs       { muted?, pinned? } — your own settings
 //   POST /api/helloo/chats/:id/clear       clear (or delete) the chat for you only
 //   POST /api/helloo/messages/:id/delete   { everyone } — for you, or for both
+//   POST /api/helloo/messages/:id/order    { status } — the shop answers an order
+//                                          (an order is a message of kind "order":
+//                                          { order: { items: [{ id, qty }], note }, referenceId })
 //   GET  /api/helloo/voice/:messageId      one voice note's audio (or a photo)
 //   GET  /api/helloo/media/:messageId      the same, by its general name
 //   GET  /api/helloo/people/:id/presence   online now, or when last seen
@@ -68,6 +71,8 @@ const HellooReach = require('../models/HellooReach');
 const HellooAsk = require('../models/HellooAsk');
 
 const HellooCall = require('../models/HellooCall');
+const CreatorItem = require('../models/CreatorItem');
+const hellooOrders = require('./hellooOrders');
 
 const REACH_MAX = 7;
 const RING_MS = 45 * 1000;
@@ -102,6 +107,7 @@ function previewOf(message) {
   if (message.kind === 'photo') return message.text ? `Photo · ${String(message.text).replace(/\s+/g, ' ').trim().slice(0, 140)}` : 'Photo';
   if (message.kind === 'voice') return `Voice note · ${Math.max(1, Math.round(message.voice?.seconds || 0))}s`;
   if (message.kind === 'payment') return 'Payment on GLOOBAL';
+  if (message.kind === 'order') return hellooOrders.orderPreview(message.order);
   return String(message.text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
 }
 
@@ -209,7 +215,18 @@ function createHelloo(deps) {
       out.photo = { width: m.photo?.width || 0, height: m.photo?.height || 0, mime: m.photo?.mime || '' };
     }
     if (m.kind === 'voice') out.voice = { seconds: m.voice?.seconds || 0, mime: m.voice?.mime || '' };
-    if (m.kind === 'payment') {
+    if (m.kind === 'order') {
+      out.order = {
+        items: (m.order?.items || []).map((l) => ({ id: l.itemId, title: l.title, qty: l.qty, price: l.price })),
+        total: m.order?.total || 0,
+        currency: m.order?.currency || '',
+        note: m.order?.note || '',
+        status: m.order?.status || 'placed',
+        statusAt: m.order?.statusAt || m.createdAt,
+        shop: m.payment?.toUserId ? String(m.payment.toUserId) : '',
+      };
+    }
+    if (m.kind === 'payment' || m.kind === 'order') {
       out.payment = {
         referenceId: m.payment?.referenceId || '',
         amount: m.payment?.amount || 0,
@@ -696,7 +713,7 @@ function createHelloo(deps) {
         let audio = null;
 
         // Your price, their choice. Money sent in the chat is never charged.
-        if (kind !== 'payment') {
+        if (kind !== 'payment' && kind !== 'order') {
           const rule = await reachRule(otherId, me._id);
           if (!rule.free) {
             if (rule.closed) {
@@ -773,6 +790,39 @@ function createHelloo(deps) {
             note: txn.note || '',
             toUserId: otherId,
           };
+        } else if (kind === 'order') {
+          // An order from the shop's Bazaar price list, paid for already
+          // (lib/hellooOrders.js). The app sends ids and quantities; the
+          // lines and the total are priced here, from the list as it is now.
+          const shop = await User.findById(otherId).select('symbolId creatorProfile.handle creatorProfile.hiddenByGloobal').lean();
+          if (!shop || !shop.creatorProfile || !shop.creatorProfile.handle || shop.creatorProfile.hiddenByGloobal) {
+            return res.status(400).json({ success: false, code: 'not_a_shop', message: 'Orders can be placed with a shop on GLOOBAL बाज़ार.' });
+          }
+          const lines = Array.isArray(body.order && body.order.items) ? body.order.items.slice(0, hellooOrders.ORDER_MAX_LINES + 1) : [];
+          const ids = lines.map((l) => String((l && l.id) || '')).filter((id) => /^[a-f0-9]{24}$/i.test(id));
+          const items = ids.length ? await CreatorItem.find({ _id: { $in: ids }, ownerSymbolId: shop.symbolId }).select('title price currency soldOut').lean() : [];
+          const built = hellooOrders.buildOrder({ lines, items, note: body.order && body.order.note });
+          if (!built.ok) return res.status(built.code === 'sold_out' || built.code === 'item_gone' ? 409 : 400).json({ success: false, code: built.code, message: built.message, itemId: built.itemId });
+          const referenceId = String(body.referenceId || '').trim();
+          const txn = referenceId ? await Transaction.findOne({ referenceId }).lean() : null;
+          const problem = hellooOrders.orderPaymentProblem({ txn, order: built.order, buyerId: me._id, shopId: otherId, sameId });
+          if (problem) return res.status(400).json({ success: false, code: problem.code, message: problem.message });
+          if (await HellooMessage.exists({ $or: [{ 'payment.referenceId': referenceId }, { 'paid.referenceId': referenceId }] })) {
+            return res.status(400).json({ success: false, code: 'payment_not_found', message: 'That payment is already in a chat.' });
+          }
+          const meta = txn.metadata || {};
+          doc.order = Object.assign({}, built.order, { statusAt: new Date() });
+          doc.payment = {
+            purpose: 'order',
+            percent: 0,
+            referenceId,
+            amount: meta.sourceAmount || txn.amount,
+            currency: meta.sourceCurrency || txn.currency,
+            destAmount: meta.destinationAmount || txn.amount,
+            destCurrency: meta.destinationCurrency || txn.currency,
+            note: txn.note || '',
+            toUserId: otherId,
+          };
         } else {
           return res.status(400).json({ success: false, message: 'Unknown message type.' });
         }
@@ -786,8 +836,8 @@ function createHelloo(deps) {
           // already posted: answer with what is stored.
           const again =
             (await HellooMessage.findOne({ conversationId: conversation._id, from: me._id, clientId }).lean()) ||
-            (kind === 'payment'
-              ? await HellooMessage.findOne({ conversationId: conversation._id, kind: 'payment', 'payment.referenceId': doc.payment.referenceId }).lean()
+            (kind === 'payment' || kind === 'order'
+              ? await HellooMessage.findOne({ conversationId: conversation._id, kind, 'payment.referenceId': doc.payment.referenceId }).lean()
               : null);
           if (!again) throw error;
           return res.json({ success: true, message: messageOut(again), duplicate: true });
@@ -927,7 +977,7 @@ function createHelloo(deps) {
         }
         if (req.body?.everyone) {
           if (!sameId(message.from, me)) return res.status(403).json({ success: false, code: 'not_yours', message: 'Only the person who sent it can delete it for everyone.' });
-          if (message.kind === 'payment') return res.status(400).json({ success: false, code: 'payment_kept', message: 'A payment stays in the chat. You can delete it for yourself.' });
+          if (message.kind === 'payment' || message.kind === 'order') return res.status(400).json({ success: false, code: 'payment_kept', message: 'A payment stays in the chat. You can delete it for yourself.' });
           if (Date.now() - new Date(message.createdAt).getTime() > DELETE_FOR_EVERYONE_MS) {
             return res.status(400).json({ success: false, code: 'too_old', message: 'Messages older than two days can only be deleted for you.' });
           }
@@ -951,6 +1001,42 @@ function createHelloo(deps) {
       } catch (error) {
         console.error('Helloo delete error:', error);
         return res.status(500).json({ success: false, message: 'Could not delete that right now.' });
+      }
+    });
+
+    // POST /api/helloo/messages/:id/order { status } — the shop answers an
+    // order: received | ready_soon | ready | sold_out. Only the shop (the
+    // member who did not place it), only forward; see lib/hellooOrders.js.
+    app.post('/api/helloo/messages/:id/order', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const id = oid(req.params.id);
+        const message = id ? await HellooMessage.findById(id).lean() : null;
+        const conversation = message ? await HellooConversation.findById(message.conversationId).lean() : null;
+        if (!message || message.kind !== 'order' || message.deletedAt || !conversation || !conversation.members.some((m) => sameId(m, me))) {
+          return res.status(404).json({ success: false, message: 'That order is not here.' });
+        }
+        if (sameId(message.from, me)) return res.status(403).json({ success: false, code: 'not_the_shop', message: 'The shop answers the order.' });
+        const to = String(req.body?.status || '');
+        const move = hellooOrders.orderStatusMove(message.order?.status || 'placed', to);
+        if (!move.ok) return res.status(400).json({ success: false, code: move.code, message: move.message });
+        const statusAt = new Date();
+        // Guarded on the status it was read with, so two taps cannot both win.
+        const done = await HellooMessage.findOneAndUpdate(
+          { _id: id, 'order.status': message.order?.status || 'placed' },
+          { $set: { 'order.status': to, 'order.statusAt': statusAt } },
+          { new: true }
+        ).lean();
+        if (!done) return res.status(409).json({ success: false, code: 'order_status', message: 'The order changed just now. Look again.' });
+        if (conversation.lastMessageAt && new Date(conversation.lastMessageAt).getTime() === new Date(message.createdAt).getTime()) {
+          await HellooConversation.updateOne({ _id: conversation._id }, { $set: { 'last.preview': previewOf(done) } });
+        }
+        const out = messageOut(done);
+        for (const member of conversation.members) emit(member, { type: 'update', message: out });
+        return res.json({ success: true, message: out });
+      } catch (error) {
+        console.error('Helloo order status error:', error);
+        return res.status(500).json({ success: false, message: 'Could not update the order right now.' });
       }
     });
 

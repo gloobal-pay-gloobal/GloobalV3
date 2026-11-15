@@ -241,9 +241,11 @@ var CREATOR_SETUP_STEPS = [
   { key: "share", title: "Creator Share", row: "Creator Share" }
 ];
 
-// The ready looks offered in setup. Each sets every dial at once, the same
-// way the Look screen's Style does; the full set stays on that screen.
-var CREATOR_SETUP_LOOKS = ["chai", "mithai", "kirana", "pharmacy", "dhaba", "boutique"];
+// The looks offered at setup: the app's twenty, the same list as Look's
+// Style and Appearance (it was six shop-only presets). A function, because
+// shopTheme.js is concatenated after this file and its list is not built
+// yet when this one loads.
+function creatorSetupLooks() { return SHOP_THEME_KEYS; }
 
 // Creator Share's quick picks. Whole numbers to tap, and a slider beside
 // them for anything in between, to 0.01 — what My Share has always taken.
@@ -381,7 +383,7 @@ function CreatorSetupScreen({
     whatsapp: Boolean(contacts.whatsapp), phone: Boolean(contacts.phone), instagram: Boolean(contacts.instagram)
   }));
   // The ready look picked in step four, if any.
-  const [lookKey, setLookKey] = useState53((creator && creator.shop && creator.shop.theme) || "");
+  const [lookKey, setLookKey] = useState53((creator && creator.shop && creator.shop.theme && shopThemeKey(creator.shop.theme)) || "");
   // Creator Share, as a percentage.
   const [rate, setRate] = useState53(() => Math.min(7, Math.max(0, Number(shareRate) || 0)));
   // Every face is drawn in the person's name — the three tiles, the live
@@ -472,7 +474,7 @@ function CreatorSetupScreen({
   // The card is painted from the same resolver the shop page uses, so the
   // setup screen and the page it sets up look like one thing. A look picked
   // in step four shows here at once, in the font chosen in step one.
-  const lookBase = lookKey && SHOP_THEMES[lookKey] ? creatorSetupLookDials(lookKey) : ((creator && creator.shop) || {});
+  const lookBase = lookKey && SHOP_THEMES[lookKey] ? creatorSetupLookDials(lookKey, creator && creator.shop) : ((creator && creator.shop) || {});
   const look = resolveShopTheme(Object.assign({}, (creator && creator.shop) || {}, lookBase, { font }));
   const fontFace = SHOP_FONTS[font] || SHOP_FONTS.grotesk;
   const shownName = enough ? (twoParts ? `${first.trim()} ${last.trim()}` : first.trim()) : "Your shop";
@@ -591,7 +593,7 @@ function CreatorSetupScreen({
     if (k === "look") {
       return {
         patch: { scanNote: scanNote.trim(), scanNoteStyle },
-        shop: lookKey && SHOP_THEMES[lookKey] ? Object.assign(creatorSetupLookDials(lookKey), { font }) : null
+        shop: lookKey && SHOP_THEMES[lookKey] ? Object.assign(creatorSetupLookDials(lookKey, creator && creator.shop), { font }) : null
       };
     }
     return null;
@@ -911,7 +913,7 @@ function CreatorSetupScreen({
   /></label>)}<div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45, margin: "10px 2px 0" }}>Anybody who opens your shop page sees these as buttons. Leave any empty to hide it.</div></>)}</> : null}{
 
   /* ── 4. LOOK ──────────────────────────────────────────────────────── */
-  step === "look" ? <>{section("Pick a look", PaletteSu, <><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{CREATOR_SETUP_LOOKS.map((key) => {
+  step === "look" ? <>{section("Pick a look", PaletteSu, <><div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{creatorSetupLooks().map((key) => {
     const t = SHOP_THEMES[key];
     const l = resolveShopTheme({ theme: key });
     const on = lookKey === key;
@@ -1200,16 +1202,23 @@ function CreatorSetupScreen({
   /></div>;
 }
 
-// Every dial a ready look sets, the same replacement Look's Style makes:
-// picking "Chai Stall" gives Chai Stall, not Chai Stall's colour on
-// whatever corners were there before.
-function creatorSetupLookDials(key) {
-  const base = SHOP_THEMES[key] || SHOP_THEMES.gloobal;
+// What picking a look in setup saves. A look is a colour and a page; the
+// shop's own dials (font, corners, cards…) stay as the owner has them, and
+// take the usual starting values on a shop that has none yet. A shop that
+// already wears this look keeps its own colour too, so going back through
+// setup and pressing Save changes nothing it did not show.
+function creatorSetupLookDials(key, current) {
+  const base = SHOP_THEMES[key] || SHOP_THEMES[SHOP_THEME_DEFAULT];
+  const cur = current && typeof current === "object" ? current : {};
+  const was = cur.theme ? shopThemeBase(cur.theme) : base;
+  const keep = (field, fallback) => (cur[field] != null && cur[field] !== "" ? cur[field] : was[field] || fallback);
+  const same = cur.theme && shopThemeKey(cur.theme) === key;
   return {
-    theme: key, color: base.color, font: base.font, corners: base.corners,
-    cards: base.cards, density: base.density, photoShape: base.photoShape, dark: base.dark,
-    layout: base.layout || "list", buttons: base.buttons || "filled", heroStyle: base.heroStyle || "gradient",
-    coverStyle: base.coverStyle || "photo", pattern: base.pattern || "dots"
+    theme: key, color: same && cur.color ? cur.color : base.color, dark: same ? Boolean(keep("dark", false)) : false,
+    font: keep("font", base.font), corners: keep("corners", base.corners),
+    cards: keep("cards", base.cards), density: keep("density", base.density), photoShape: keep("photoShape", base.photoShape),
+    layout: keep("layout", "list"), buttons: keep("buttons", "filled"), heroStyle: keep("heroStyle", "gradient"),
+    coverStyle: keep("coverStyle", "photo"), pattern: keep("pattern", "dots")
   };
 }
 

@@ -27,12 +27,30 @@
 // colour, a profile saved before this feature existed all resolve to
 // GLOOBAL_SHOP_THEME, which is the purple the app already is.
 
-var SHOP_THEME_KEYS = ["gloobal", "street", "studio", "market", "night", "chai", "mithai", "boutique", "pharmacy", "dhaba", "kirana", "minimal"];
+// ── ONE SET OF THEMES, FOR ALL THREE PLACES ─────────────────────────────
+//
+// A shop's theme is one of the app's own twenty looks (constants/theme.js):
+// the same list a person picks from for their Personal side and their
+// Creator side. There used to be a second list here that existed nowhere
+// else — Street, Studio, Chai Stall, Mithai and eight more — so "theme"
+// meant one thing in Appearance and another on a shop page.
+//
+// A look gives a shop its COLOUR and its page (the look's own paper, ink
+// and lines). The shop-only dials — own colour, font, corners, cards,
+// density, photo shape, layout, buttons, cover — are still the owner's to
+// set afterwards, and picking a theme no longer resets them.
+//
+// The twelve retired themes are kept below for one reason: a shop saved
+// under one of them still has that theme's dials wherever its owner never
+// set their own, and it opens under the nearest look (SHOP_THEME_RETIRED).
+var SHOP_THEME_DEFAULT = "day.personal";
+var SHOP_THEME_RETIRED = {
+  gloobal: "day.personal", street: "rajasthan.creator", studio: "monsoon.personal", market: "peacock.creator",
+  night: "day.creator", chai: "chai.personal", mithai: "lotus.personal", boutique: "chai.personal",
+  pharmacy: "jamun.creator", dhaba: "rajasthan.creator", kirana: "chai.creator", minimal: "monsoon.personal"
+};
 
-// The four presets. Each is a whole look in one tap — and every field in it
-// is separately overridable afterwards, which is the point of D: a preset is
-// a starting position, not a cage.
-var SHOP_THEMES = {
+var SHOP_THEMES_RETIRED_DIALS = {
   gloobal: {
     name: "GLOOBAL",
     note: "The app's own look",
@@ -139,6 +157,26 @@ var SHOP_THEMES = {
 // The four style dials added with the ready themes. The first value of
 // each is what a shop saved before they existed gets, which is exactly
 // how such a shop already looked.
+// The twenty, built from the app's themes so the two can never drift:
+// { "day.personal": { name: "Violet", note: "Day", color, look, …dials } }.
+var SHOP_THEMES = {};
+var SHOP_THEME_KEYS = [];
+gloobalLooks().forEach(function (look) {
+  SHOP_THEME_KEYS.push(look.id);
+  SHOP_THEMES[look.id] = {
+    name: look.name,
+    note: GLOOBAL_THEMES[look.theme].name,
+    color: String(GLOOBAL_THEMES[look.theme][look.side].accent).toUpperCase(),
+    look: look.id,
+    font: "grotesk", corners: "round", cards: "raised", density: "cosy", photoShape: "rounded", dark: false
+  };
+});
+// The look a stored theme stands for: itself, the nearest look for a
+// retired one, the app's own for anything else.
+function shopThemeKey(value) {
+  return SHOP_THEMES[value] ? value : SHOP_THEME_RETIRED[value] || SHOP_THEME_DEFAULT;
+}
+
 var SHOP_BUTTON_STYLES = { filled: { name: "Filled" }, outline: { name: "Outline" }, soft: { name: "Soft" } };
 var SHOP_HERO_STYLES = { gradient: { name: "Gradient" }, solid: { name: "Solid" }, glass: { name: "Glass" }, minimal: { name: "Minimal" } };
 var SHOP_COVER_STYLES = { photo: { name: "Photo" }, gradient: { name: "Colour" }, pattern: { name: "Pattern" } };
@@ -321,8 +359,13 @@ function shopHeroInk(color) {
   return { from, to: shopHexMix(from, "#000000", 0.3), glow: `${from}55` };
 }
 
+// A theme's starting dials. A retired theme keeps its own (font, corners,
+// dark and the rest) under its new look's colour, so a shop saved as
+// "Chai Stall" still has Chai Stall's round photos and Baloo type.
 function shopThemeBase(key) {
-  return SHOP_THEMES[key] || SHOP_THEMES.gloobal;
+  const look = SHOP_THEMES[shopThemeKey(key)];
+  const old = SHOP_THEMES_RETIRED_DIALS[key];
+  return old && !SHOP_THEMES[key] ? Object.assign({}, old, { name: look.name, note: look.note, color: look.color, look: look.look }) : look;
 }
 
 // A stored colour is only honoured if it is one of ours.
@@ -333,6 +376,8 @@ function shopThemeBase(key) {
 function shopThemeColor(value, fallback) {
   const raw = typeof value === "string" ? value.trim().toUpperCase() : "";
   for (const c of SHOP_COLORS) if (c.toUpperCase() === raw) return c;
+  // …or the colour of one of the twenty looks, which is what a theme sets.
+  for (const k of SHOP_THEME_KEYS) if (SHOP_THEMES[k].color === raw) return raw;
   return fallback;
 }
 
@@ -343,8 +388,10 @@ function shopThemeColor(value, fallback) {
 // as the app's own look rather than as a hole.
 function resolveShopTheme(shop) {
   const s = shop && typeof shop === "object" ? shop : {};
-  const key = SHOP_THEME_KEYS.indexOf(s.theme) >= 0 ? s.theme : "gloobal";
-  const base = shopThemeBase(key);
+  const key = shopThemeKey(s.theme);
+  const base = shopThemeBase(s.theme);
+  // The look's own palette, for the page: its paper, ink and lines.
+  const pal = gloobalLookPalette(key, key.split(".")[1]);
 
   const color = shopThemeColor(s.color, base.color);
   const fontKey = SHOP_FONTS[s.font] ? s.font : base.font;
@@ -388,12 +435,17 @@ function resolveShopTheme(shop) {
     // colour: a light shop gets a pale tint of it instead of the app's
     // lavender, a dark shop a near-black leaning toward it. Cards stay
     // white on a light page so prices sit on the same ground everywhere.
-    page: dark ? shopHexMix("#120E0C", color, 0.09) : shopHexMix("#FFFFFF", color, 0.07),
-    surface: dark ? shopHexMix("#221B17", color, 0.08) : T.surface,
-    ink: dark ? "#F3EBE1" : T.ink,
-    inkSoft: dark ? "#C3B5A5" : T.inkSoft,
-    inkFaint: dark ? "#9A8B7B" : T.inkFaint,
-    line: dark ? shopHexMix("#2E2620", color, 0.16) : shopHexMix(T.line, color, 0.18)
+    //
+    // Under the theme's own colour the page IS the look — the same paper,
+    // ink and lines that look has in the app. An owner's own colour tints
+    // the paper and lines toward itself instead, as it always did.
+    look: key,
+    page: dark ? shopHexMix("#120E0C", color, 0.09) : color === base.color ? pal.bg : shopHexMix("#FFFFFF", color, 0.07),
+    surface: dark ? shopHexMix("#221B17", color, 0.08) : pal.surface,
+    ink: dark ? "#F3EBE1" : pal.ink,
+    inkSoft: dark ? "#C3B5A5" : pal.inkSoft,
+    inkFaint: dark ? "#9A8B7B" : pal.inkFaint,
+    line: dark ? shopHexMix("#2E2620", color, 0.16) : color === base.color ? pal.line : shopHexMix(pal.line, color, 0.18)
   };
 }
 

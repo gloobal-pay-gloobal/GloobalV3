@@ -6316,10 +6316,22 @@ app.get('/api/creator/resolve/:handle', lookupLimit, requireAuth, async (req, re
 var CREATOR_SHOP_COLORS = [
   '#C2663A', '#B2473F', '#9A6A2F', '#4F7A46',
   '#2F7A74', '#2E5E9E', '#4A4BA8', '#7C3AED',
-  '#A3327E', '#5A4636', '#36414E', '#1F6B4B'
+  '#A3327E', '#5A4636', '#36414E', '#1F6B4B',
+  // The colours of the app's twenty looks, which is what a shop theme sets
+  // now (frontend/constants/theme.js; the test keeps the two lists equal).
+  '#6D3AE8', '#D98A00', '#C2185B', '#2E7D32', '#E8701E', '#1F4FA3', '#0E7C86', '#E8553F',
+  '#A2401C', '#5F7A1E', '#2F3E9E', '#C0582B', '#1546A6', '#0B7A55', '#7B4A2A', '#4F7A3A',
+  '#5E2A84', '#12897A', '#2F5D8C', '#D4A000'
 ];
+// A shop's theme is one of the app's twenty looks ("<theme>.<side>"), the
+// same set as the Personal and Creator sides. The twelve names before them
+// are the retired shop-only themes: still accepted, because shops saved
+// under them exist and older copies of the app still send them; the app
+// shows each as its nearest look. 'gloobal' stays first as the fallback.
+var CREATOR_SHOP_LOOK_THEMES = ['day', 'lotus', 'tiranga', 'ocean', 'mehendi', 'rajasthan', 'peacock', 'chai', 'jamun', 'monsoon'];
 var CREATOR_SHOP_ENUMS = {
-  theme: ['gloobal', 'street', 'studio', 'market', 'night', 'chai', 'mithai', 'boutique', 'pharmacy', 'dhaba', 'kirana', 'minimal'],
+  theme: ['gloobal', 'street', 'studio', 'market', 'night', 'chai', 'mithai', 'boutique', 'pharmacy', 'dhaba', 'kirana', 'minimal']
+    .concat(CREATOR_SHOP_LOOK_THEMES.reduce((all, k) => all.concat([`${k}.personal`, `${k}.creator`]), [])),
   font: ['grotesk', 'fraunces', 'inter', 'mono', 'mukta', 'tiro', 'baloo', 'poppins', 'hind', 'rozha', 'yatra', 'kalam', 'teko'],
   corners: ['sharp', 'soft', 'round', 'leaf'],
   cards: ['raised', 'flat', 'outline', 'plain'],

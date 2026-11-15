@@ -20,6 +20,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "./harness.mjs";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const theme = () => readSource("frontend/features/creator/shopTheme.js");
 const page = () => readSource("frontend/features/creator/CreatorPage.jsx");
@@ -75,7 +78,7 @@ test("every setting falls back, so an old profile still renders", () => {
   // A profile written before this feature existed has no `shop` block at
   // all. It must land on the app's own look, not on undefined.
   assert.match(fn, /const s = shop && typeof shop === "object" \? shop : \{\};/);
-  assert.match(fn, /SHOP_THEME_KEYS\.indexOf\(s\.theme\) >= 0 \? s\.theme : "gloobal"/);
+  assert.match(fn, /const key = shopThemeKey\(s\.theme\);/);
   for (const field of ["font", "corners", "density", "photo"]) {
     assert.match(fn, new RegExp(`\\|\\| SHOP_(FONTS|CORNERS|DENSITY|PHOTO_SHAPES)\\[base\\.`),
       `${field} must fall back to the preset`);
@@ -91,12 +94,14 @@ test("a blank announcement is the same as no announcement", () => {
   assert.match(page(), /\{announce \? <div style=\{\{/, "the page draws it only when there is one");
 });
 
-test("picking a theme replaces the dials rather than merging over them", () => {
-  // Keeping whatever corners somebody had set means tapping "Studio" gives
-  // a thing that is not Studio, and the preset stops meaning anything.
-  const fn = editor().slice(editor().indexOf("const applyTheme"));
-  for (const field of ["color", "font", "corners", "cards", "density", "photoShape"]) {
-    assert.match(fn.slice(0, 700), new RegExp(`${field}: base\\.`), `${field} is taken from the preset`);
+test("picking a theme sets the colour and leaves the shop's own dials alone", () => {
+  // The themes are the app's looks: a colour and a page. Font, corners,
+  // cards and the rest are the owner's, and a pick no longer resets them.
+  const src = editor();
+  const fn = src.slice(src.indexOf("const applyTheme"), src.indexOf("const save = async"));
+  assert.match(fn, /set\(\{ theme: key, color: base\.color, dark: false \}\);/);
+  for (const field of ["font", "corners", "cards", "density", "photoShape"]) {
+    assert.ok(!new RegExp(`${field}:`).test(fn), `${field} is not touched by a theme pick`);
   }
 });
 
@@ -125,8 +130,9 @@ test("a dark theme moves the page, not the money", () => {
   const fn = src.slice(src.indexOf("function resolveShopTheme"), src.indexOf("function shopCardStyle"));
   // The page is washed with the shop's own colour ("Shop's own colour"),
   // dark or light — it used to be a fixed #17120F / T.bg.
-  assert.match(fn, /page: dark \? shopHexMix\("#120E0C", color, 0\.09\) : shopHexMix\("#FFFFFF", color, 0\.07\)/);
-  assert.match(fn, /ink: dark \? "#F3EBE1" : T\.ink/);
+  // Under the theme's own colour a light page is the look's own paper.
+  assert.match(fn, /page: dark \? shopHexMix\("#120E0C", color, 0\.09\) : color === base\.color \? pal\.bg : shopHexMix\("#FFFFFF", color, 0\.07\)/);
+  assert.match(fn, /ink: dark \? "#F3EBE1" : pal\.ink/);
   // The one surface that must stay readable on either ground.
   assert.ok(!/payButton|cartTotal/.test(fn), "resolveShopTheme produces nothing for money surfaces");
 });
@@ -303,4 +309,96 @@ test("the shop's actions are one icon row and Selling/Buying is one switch", () 
   assert.match(pg, /THE ICON ROW/);
   assert.match(pg, /role="tablist" aria-label="Your shop"/);
   assert.match(pg, /role="tab"\s+aria-selected=\{tab === t\}/);
+});
+
+// ── ONE SET OF THEMES FOR PERSONAL, CREATOR AND THE SHOP ─────────────────
+//
+// The founder: "personal side theme, creator side theme and shop theme are
+// different things, so we need one set for all." These run the real code.
+const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
+function loadThemes() {
+  const r = (p) => readFileSync(join(REPO, p), "utf8");
+  return new Function(`${r("frontend/constants/theme.js")}\n${r("frontend/features/creator/shopTheme.js")}
+    return { SHOP_THEMES, SHOP_THEME_KEYS, SHOP_THEME_RETIRED, SHOP_COLORS, resolveShopTheme, shopThemeKey, gloobalLooks, GLOOBAL_THEMES };`)();
+}
+
+test("a shop's themes ARE the app's twenty looks, in the same order, by the same names", () => {
+  const api = loadThemes();
+  const looks = api.gloobalLooks();
+  assert.equal(looks.length, 20);
+  assert.deepEqual(api.SHOP_THEME_KEYS, looks.map((l) => l.id));
+  for (const l of looks) {
+    const t = api.SHOP_THEMES[l.id];
+    assert.equal(t.name, l.name);
+    assert.equal(t.color, api.GLOOBAL_THEMES[l.theme][l.side].accent.toUpperCase());
+  }
+});
+
+test("a shop under a look wears that look's colour, paper, ink and lines", () => {
+  const api = loadThemes();
+  const pal = api.GLOOBAL_THEMES.lotus.creator;
+  const t = api.resolveShopTheme({ theme: "lotus.creator" });
+  assert.equal(t.key, "lotus.creator");
+  assert.equal(t.name, "Leaf green");
+  assert.equal(t.color, pal.accent.toUpperCase());
+  assert.equal(t.page, pal.bg);
+  assert.equal(t.ink, pal.ink);
+  assert.equal(t.line, pal.line);
+  assert.equal(t.dark, false);
+});
+
+test("the shop's own dials still apply on top of a look", () => {
+  const api = loadThemes();
+  const own = api.SHOP_COLORS[0];
+  const t = api.resolveShopTheme({ theme: "day.personal", color: own, font: "baloo", corners: "leaf", cards: "outline", dark: true });
+  assert.equal(t.color, own, "the owner's own colour wins over the look's");
+  assert.equal(t.fontKey, "baloo");
+  assert.equal(t.corners.name, "Leaf");
+  assert.equal(t.cards, "outline");
+  assert.equal(t.dark, true);
+  // A light shop with its own colour is tinted toward that colour, not the look's paper.
+  const light = api.resolveShopTheme({ theme: "day.personal", color: own });
+  assert.notEqual(light.page, api.GLOOBAL_THEMES.day.personal.bg);
+});
+
+test("every retired shop theme opens as a real look and keeps its own dials", () => {
+  const api = loadThemes();
+  const old = ["gloobal", "street", "studio", "market", "night", "chai", "mithai", "boutique", "pharmacy", "dhaba", "kirana", "minimal"];
+  assert.deepEqual(Object.keys(api.SHOP_THEME_RETIRED).sort(), old.slice().sort());
+  for (const k of old) assert.ok(api.SHOP_THEMES[api.SHOP_THEME_RETIRED[k]], `${k} maps to a look`);
+  // A shop saved as Chai Stall with nothing else set: Masala chai's colour,
+  // Chai Stall's round photos and Baloo type.
+  const chai = api.resolveShopTheme({ theme: "chai" });
+  assert.equal(chai.key, "chai.personal");
+  assert.equal(chai.fontKey, "baloo");
+  assert.equal(chai.photo.name, "Circle");
+  // One whose owner had saved the old colour keeps showing that colour.
+  assert.equal(api.resolveShopTheme({ theme: "chai", color: "#C2663A" }).color, "#C2663A");
+  // The two that were dark stay dark.
+  assert.equal(api.resolveShopTheme({ theme: "night" }).dark, true);
+  // Nothing saved at all, or rubbish: the app's own look.
+  assert.equal(api.resolveShopTheme(null).key, "day.personal");
+  assert.equal(api.resolveShopTheme({ theme: "<script>" }).key, "day.personal");
+});
+
+test("the server and the database accept exactly the same twenty looks and their colours", () => {
+  const api = loadThemes();
+  const srv = server();
+  const model = readSource("server/models/User.js");
+  const order = srv.match(/var CREATOR_SHOP_LOOK_THEMES = \[([^\]]+)\]/)[1].split(",").map((k) => k.trim().replace(/'/g, ""));
+  const ids = order.flatMap((k) => [`${k}.personal`, `${k}.creator`]);
+  assert.deepEqual(ids, api.SHOP_THEME_KEYS);
+  const palette = srv.slice(srv.indexOf("var CREATOR_SHOP_COLORS = ["), srv.indexOf("];", srv.indexOf("var CREATOR_SHOP_COLORS = [")));
+  for (const id of api.SHOP_THEME_KEYS) {
+    assert.ok(model.includes(`'${id}'`), `the model allows ${id}`);
+    assert.ok(palette.includes(`'${api.SHOP_THEMES[id].color}'`), `the server allows ${id}'s colour`);
+  }
+});
+
+test("setup offers the same twenty and keeps a shop's own dials when a look is picked", () => {
+  const setup = readSource("frontend/features/creator/CreatorSetupScreen.jsx");
+  assert.match(setup, /function creatorSetupLooks\(\) \{ return SHOP_THEME_KEYS; \}/);
+  assert.match(setup, /creatorSetupLooks\(\)\.map\(\(key\) =>/);
+  assert.match(setup, /creatorSetupLookDials\(lookKey, creator && creator\.shop\)/);
+  assert.match(setup, /font: keep\("font", base\.font\), corners: keep\("corners", base\.corners\)/);
 });

@@ -33,10 +33,8 @@ test("four rows and More (0200), Undo, and a prompt before losing changes", () =
   assert.match(e, /navigator\.vibrate\(8\)/);
 });
 
-test("twelve themes, each setting every dial", () => {
+test("the retired shop themes keep every dial, and the server still accepts them", () => {
   const t = theme();
-  const keys = t.match(/var SHOP_THEME_KEYS = \[([^\]]+)\]/)[1].split(",").map((k) => k.trim().replace(/"/g, ""));
-  assert.equal(keys.length, 12);
   for (const k of ["chai", "mithai", "boutique", "pharmacy", "dhaba", "kirana", "minimal"]) {
     const at = t.indexOf(`  ${k}: {`);
     assert.ok(at > 0, `${k} preset`);
@@ -44,7 +42,9 @@ test("twelve themes, each setting every dial", () => {
     for (const f of ["buttons", "heroStyle", "coverStyle", "pattern", "layout"]) assert.match(block, new RegExp(`${f}: "`), `${k}.${f}`);
   }
   const srv = readSource("server/server.js");
-  for (const k of keys) assert.match(srv, new RegExp(`theme: \\[[^\\]]*'${k}'`), `server accepts ${k}`);
+  for (const k of ["gloobal", "street", "studio", "market", "night", "chai", "mithai", "boutique", "pharmacy", "dhaba", "kirana", "minimal"]) {
+    assert.match(srv, new RegExp(`theme: \\[[^\\]]*'${k}'`), `server accepts ${k}`);
+  }
 });
 
 test("the four new dials are accepted by the server and default to the old look", () => {

@@ -489,7 +489,18 @@ const userSchema = new mongoose.Schema({
     // Every field is optional and every reader falls back, so a profile
     // written before this existed renders as the app's own look.
     shop: {
-      theme: { type: String, enum: ['gloobal', 'street', 'studio', 'market', 'night', 'chai', 'mithai', 'boutique', 'pharmacy', 'dhaba', 'kirana', 'minimal'], default: 'gloobal' },
+      // The app's twenty looks ("<theme>.<side>"), the same set as the
+      // Personal and Creator sides, after the twelve retired shop-only
+      // themes, which stay valid because shops saved under them exist.
+      theme: {
+        type: String,
+        enum: ['gloobal', 'street', 'studio', 'market', 'night', 'chai', 'mithai', 'boutique', 'pharmacy', 'dhaba', 'kirana', 'minimal',
+          'day.personal', 'day.creator', 'lotus.personal', 'lotus.creator', 'tiranga.personal', 'tiranga.creator',
+          'ocean.personal', 'ocean.creator', 'mehendi.personal', 'mehendi.creator', 'rajasthan.personal', 'rajasthan.creator',
+          'peacock.personal', 'peacock.creator', 'chai.personal', 'chai.creator', 'jamun.personal', 'jamun.creator',
+          'monsoon.personal', 'monsoon.creator'],
+        default: 'gloobal'
+      },
       // Validated against the fixed palette on the way in AND on the way
       // out, because this string ends up inside a style attribute.
       color: { type: String, default: '' },

@@ -287,20 +287,16 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
   useEffect57(() => { Object.keys(SHOP_FONTS).forEach(ensureShopFont); }, []);
   const theme = resolveShopTheme(draft);
 
-  // Picking a theme REPLACES the dials rather than merging over them.
+  // Picking a theme sets the COLOUR and nothing else.
   //
-  // The alternative — keeping whatever corners somebody had set — means
-  // tapping "Studio" gives a thing that is not Studio, and the preset stops
-  // meaning anything. Everything stays editable immediately afterwards, and
-  // Undo puts the previous look back in one tap.
+  // The themes are the app's twenty looks now, and a look is a colour and
+  // a page; the font, corners, cards and the rest are the shop's own dials
+  // and stay where the owner left them. (When the list was twelve shop
+  // presets, each with its own dials, a pick replaced the lot.) Undo still
+  // puts the previous look back in one tap.
   const applyTheme = (key) => {
-    const base = SHOP_THEMES[key] || SHOP_THEMES.gloobal;
-    set({
-      theme: key, color: base.color, font: base.font, corners: base.corners,
-      cards: base.cards, density: base.density, photoShape: base.photoShape, dark: base.dark,
-      layout: base.layout || "list", buttons: base.buttons || "filled", heroStyle: base.heroStyle || "gradient",
-      coverStyle: base.coverStyle || "photo", pattern: base.pattern || "dots"
-    });
+    const base = SHOP_THEMES[key] || SHOP_THEMES[SHOP_THEME_DEFAULT];
+    set({ theme: key, color: base.color, dark: false });
   };
 
   const save = async () => {
@@ -370,7 +366,7 @@ function ShopThemeEditor({ shop, cover, symbolId, creator = null, ccyCode = "USD
     style: <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>{SHOP_THEME_KEYS.map((key) => {
       const t = SHOP_THEMES[key];
       const look = resolveShopTheme({ theme: key });
-      const on = draft.theme === key;
+      const on = shopThemeKey(draft.theme) === key;
       const ground = (t.coverStyle === "pattern") ? shopPatternCss(t.pattern, look.color, look.dark)
         : `linear-gradient(140deg, ${look.hero.from}, ${look.hero.to})`;
       return <button

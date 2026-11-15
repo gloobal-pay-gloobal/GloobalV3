@@ -163,12 +163,81 @@ function createHelloo(deps) {
         name: user.fullName || '',
         countryIso: accountCountryIso(user),
         handle: user.creatorProfile?.handle || null,
+        // The shop's own name, whether this account IS a shop (one of an
+        // owner's further shops: nobody's personal account), and when the
+        // shop takes calls. faced() below decides which of these a viewer
+        // is given.
+        shopName: shopNameOf(user),
+        shopOnly: Boolean(user.shopOwnerId),
+        calls: user.creatorProfile?.handle ? callsOut(user.creatorProfile.calls) : null,
       },
       extra || {}
     );
   }
 
-  const CARD_FIELDS = '_id symbolId fullName countryIso mobileNumber creatorProfile.handle';
+  const CARD_FIELDS = '_id symbolId fullName countryIso mobileNumber shopOwnerId creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.calls';
+
+  // ── FACES ───────────────────────────────────────────────────────────
+  //
+  // One GLOOBAL account can be met in Helloo as a person or as a shop it
+  // runs. Its further shops are accounts of their own (User.shopOwnerId),
+  // so they are always shops. Its FIRST shop is the account itself, so
+  // each chat says, per member, which side it is on: reads[].side.
+  //
+  // What the other person is given follows the side: a shop is its shop
+  // name and handle and never the owner's own name; a person is their name
+  // and never the shop's handle.
+  function shopNameOf(user) {
+    const cp = user.creatorProfile || {};
+    return [cp.handleFirst, cp.handleLast].filter(Boolean).join(' ') || cp.handle || '';
+  }
+  // 'shop' | 'self' for a member of a chat (or of none: pass null).
+  function sideOf(conversation, userId, rawCard) {
+    if (!rawCard || !rawCard.handle) return 'self';
+    if (rawCard.shopOnly) return 'shop';
+    const stored = conversation ? stateOf(conversation, userId).side : '';
+    return stored === 'self' ? 'self' : 'shop';
+  }
+  function faced(rawCard, side) {
+    if (!rawCard) return rawCard;
+    const out = Object.assign({}, rawCard);
+    delete out.shopOnly;
+    if (rawCard.handle && (rawCard.shopOnly || side !== 'self')) {
+      out.name = rawCard.shopName || rawCard.handle;
+      return out;
+    }
+    out.handle = null;
+    out.shopName = '';
+    out.calls = null;
+    return out;
+  }
+  // The other member of a chat, as the viewer is to see them.
+  function personIn(conversation, otherId, people) {
+    const raw = (people.raw || people).get(String(otherId));
+    if (!raw) return { accountId: String(otherId), name: '', gloobalId: '' };
+    return faced(raw, sideOf(conversation, otherId, raw));
+  }
+
+  // When a shop takes calls: always, never, or between two times of its
+  // own day. `tz` is the shop's offset from UTC in minutes, kept when the
+  // hours are set so "10:00" means ten in the morning where the shop is.
+  const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+  function callsOut(raw) {
+    const mode = raw && ['always', 'off', 'hours'].includes(raw.mode) ? raw.mode : 'always';
+    const from = raw && HHMM.test(raw.from || '') ? raw.from : '10:00';
+    const to = raw && HHMM.test(raw.to || '') ? raw.to : '18:00';
+    const tz = raw && Number.isFinite(Number(raw.tz)) ? Math.max(-840, Math.min(840, Math.round(Number(raw.tz)))) : 330;
+    let open = mode === 'always';
+    if (mode === 'hours') {
+      const local = new Date(Date.now() + tz * 60000);
+      const now = local.getUTCHours() * 60 + local.getUTCMinutes();
+      const mins = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
+      const a = mins(from); const b = mins(to);
+      // 22:00–02:00 runs over midnight.
+      open = a === b ? true : a < b ? now >= a && now < b : now >= a || now < b;
+    }
+    return { mode, from, to, tz, open };
+  }
 
   async function cardsFor(ids) {
     const unique = [...new Set(ids.map(String))].map(oid).filter(Boolean);
@@ -178,7 +247,25 @@ function createHelloo(deps) {
       ProfilePhoto.find({ userId: { $in: unique } }).select('userId').lean(),
     ]);
     const withPhoto = new Set(photos.map((p) => String(p.userId)));
-    return new Map(users.map((u) => [String(u._id), card(u, { hasPhoto: withPhoto.has(String(u._id)) })]));
+    const raw = new Map(users.map((u) => [String(u._id), card(u, { hasPhoto: withPhoto.has(String(u._id)) })]));
+    // Outside a chat, an account with a shop is met as its shop.
+    const people = new Map([...raw].map(([id, c]) => [id, faced(c, 'shop')]));
+    people.raw = raw;
+    return people;
+  }
+
+  // A shop's notifications go to the phone of the account that runs it.
+  const pushOwnerCache = new Map();
+  async function pushTo(userId, payload, opts) {
+    const key = String(userId);
+    let target = pushOwnerCache.get(key);
+    if (target === undefined) {
+      const u = await User.findById(userId).select('shopOwnerId').lean();
+      target = u && u.shopOwnerId ? String(u.shopOwnerId) : key;
+      pushOwnerCache.set(key, target);
+      if (pushOwnerCache.size > 5000) pushOwnerCache.delete(pushOwnerCache.keys().next().value);
+    }
+    return pushService.sendPushToUser(target, payload, opts);
   }
 
   // ── Live sockets ──────────────────────────────────────────────────────
@@ -187,7 +274,9 @@ function createHelloo(deps) {
   function emit(userId, event) {
     const set = sockets.get(String(userId));
     if (!set || set.size === 0) return 0;
-    const json = JSON.stringify(event);
+    // `as` names the account the event is for: an owner's phone hears its
+    // shops' events too, and has to know whose they are.
+    const json = JSON.stringify(Object.assign({ as: String(userId) }, event));
     let sent = 0;
     for (const ws of set) {
       if (ws.readyState === 1) {
@@ -304,7 +393,9 @@ function createHelloo(deps) {
       savedName: typeof mine.savedName === 'string' ? mine.savedName : '',
       private: Boolean(mine.private),
       offHome: Boolean(mine.offHome),
-      person: people.get(String(otherId)) || { accountId: String(otherId), name: '', gloobalId: '' },
+      // Which of your sides this chat is on: 'shop' or 'self'.
+      side: sideOf(conversation, meId, (people.raw || people).get(String(meId))),
+      person: personIn(conversation, otherId, people),
       lastAt: conversation.lastMessageAt || conversation.createdAt,
       last: conversation.last?.kind
         ? {
@@ -329,8 +420,11 @@ function createHelloo(deps) {
     return conversation;
   }
 
-  async function openChat(meId, otherId) {
+  // `sides` (optional): { mine, theirs } — 'shop' | 'self' — kept only when
+  // the chat is new. An existing chat stays on the sides it is on.
+  async function openChat(meId, otherId, sides) {
     const pairKey = pairKeyOf(meId, otherId);
+    const side = (v) => (v === 'shop' || v === 'self' ? v : '');
     try {
       return await HellooConversation.findOneAndUpdate(
         { pairKey },
@@ -338,7 +432,7 @@ function createHelloo(deps) {
           $setOnInsert: {
             pairKey,
             members: [meId, otherId],
-            reads: [{ userId: meId, at: null }, { userId: otherId, at: null }],
+            reads: [{ userId: meId, at: null, side: side(sides && sides.mine) }, { userId: otherId, at: null, side: side(sides && sides.theirs) }],
           },
         },
         { upsert: true, returnDocument: 'after', lean: true }
@@ -360,11 +454,12 @@ function createHelloo(deps) {
 
   // What `senderId` must do to message `receiverId`: free, pay a price, or
   // only ask. Payments (money sent in the chat) are never charged.
-  async function reachRule(receiverId, senderId) {
+  async function reachRule(receiverId, senderId, senderSide) {
     const reach = await HellooReach.findOne({ userId: receiverId }).lean();
     if (!reach || (reach.allowed || []).some((a) => sameId(a, senderId))) return { free: true };
     const sender = await User.findById(senderId).select('creatorProfile.handle').lean();
-    const kind = sender?.creatorProfile?.handle ? 'business' : 'people';
+    // Someone writing from their personal side is a person, shop or not.
+    const kind = sender?.creatorProfile?.handle && senderSide !== 'self' ? 'business' : 'people';
     const group = groupOut(reach[kind]);
     if (group.closed) return { free: false, closed: true, kind, price: 0, currency: await currencyOf(receiverId) };
     if (group.price <= 0) return { free: true };
@@ -435,8 +530,9 @@ function createHelloo(deps) {
   // chat and neither has blocked the other. Membership is remembered for a
   // few minutes so a burst of keystrokes is not a burst of queries.
   const memberCache = new Map(); // chatId -> { members, at }
-  async function relayTyping(userId, chatId) {
+  async function relayTyping(ownerId, chatId, shopIds) {
     if (!oid(chatId)) return;
+    let userId = ownerId;
     let entry = memberCache.get(chatId);
     if (!entry || Date.now() - entry.at > 5 * 60 * 1000) {
       const c = await HellooConversation.findById(chatId).select('members').lean();
@@ -445,7 +541,9 @@ function createHelloo(deps) {
       memberCache.set(chatId, entry);
       if (memberCache.size > 5000) memberCache.delete(memberCache.keys().next().value);
     }
-    if (!entry.members.includes(String(userId))) return;
+    // The owner may be typing as one of their shops.
+    if (!entry.members.includes(String(userId))) userId = (shopIds || []).find((id) => entry.members.includes(id));
+    if (!userId) return;
     const other = entry.members.find((m) => m !== String(userId));
     if (!other || !sockets.has(other)) return;
     const blocks = await blockState(userId, other);
@@ -461,7 +559,7 @@ function createHelloo(deps) {
     return list;
   }
 
-  function callOut(call, viewerId, people) {
+  function callOut(call, viewerId, people, conversation) {
     const outgoing = sameId(call.callerId, viewerId);
     const otherId = outgoing ? call.calleeId : call.callerId;
     return {
@@ -473,7 +571,9 @@ function createHelloo(deps) {
       at: call.createdAt,
       answeredAt: call.answeredAt || null,
       seconds: call.seconds || 0,
-      person: people.get(String(otherId)) || { accountId: String(otherId), name: '', gloobalId: '' },
+      // Which of the viewer's sides the call is on.
+      side: sideOf(conversation || null, viewerId, (people.raw || people).get(String(viewerId))),
+      person: personIn(conversation || null, otherId, people),
     };
   }
 
@@ -494,6 +594,7 @@ function createHelloo(deps) {
     );
     if (!done) return null;
     const people = await cardsFor([done.callerId, done.calleeId]);
+    const chat = done.conversationId ? await HellooConversation.findById(done.conversationId).select('reads members').lean() : null;
     if (done.conversationId) {
       try {
         const message = (await HellooMessage.create({
@@ -508,23 +609,23 @@ function createHelloo(deps) {
         if (error?.code !== 11000) console.error('Helloo call message failed (non-fatal):', error.message);
       }
     }
-    emit(done.callerId, { type: 'call-update', call: callOut(done, done.callerId, people) });
-    emit(done.calleeId, { type: 'call-update', call: callOut(done, done.calleeId, people) });
+    emit(done.callerId, { type: 'call-update', call: callOut(done, done.callerId, people, chat) });
+    emit(done.calleeId, { type: 'call-update', call: callOut(done, done.calleeId, people, chat) });
     if (status === 'missed' && pushService.isPushEnabled() && !sockets.has(String(done.calleeId)) && !(await hellooIsPrivateFor(done.calleeId, done.callerId))) {
-      const caller = people.get(String(done.callerId));
-      pushService.sendPushToUser(done.calleeId, {
+      const caller = personIn(chat, done.callerId, people);
+      pushTo(done.calleeId, {
         v: 1, app: 'helloo', category: 'transactional', type: 'helloo_missed_call', callId: String(done._id),
         title: caller ? caller.name : 'Helloo', body: done.video ? 'Missed video call' : 'Missed voice call',
         url: '/?calls=1', tag: `helloo-call-${String(done._id)}`, timestamp: Date.now(),
       }, { category: 'transactional', app: 'helloo' }).catch(() => {});
     }
-    return callOut(done, byId || done.callerId, people);
+    return callOut(done, byId || done.callerId, people, chat);
   }
 
   // The handshake between two phones: passed to the other person's sockets
   // only while the call is live, only by one of its two people.
   const liveCalls = new Map(); // callId -> { a, b, at }
-  async function relaySignal(userId, callId, data) {
+  async function relaySignal(userId, callId, data, shopIds) {
     if (!oid(callId) || !data || typeof data !== 'object') return;
     let entry = liveCalls.get(callId);
     if (!entry || Date.now() - entry.at > 60 * 1000) {
@@ -534,9 +635,26 @@ function createHelloo(deps) {
       liveCalls.set(callId, entry);
       if (liveCalls.size > 2000) liveCalls.delete(liveCalls.keys().next().value);
     }
-    const me = String(userId);
+    let me = String(userId);
+    // The owner may be on the call as one of their shops.
+    if (me !== entry.a && me !== entry.b) me = (shopIds || []).find((id) => id === entry.a || id === entry.b) || me;
     if (me !== entry.a && me !== entry.b) return;
     emit(me === entry.a ? entry.b : entry.a, { type: 'signal', callId: String(callId), data });
+  }
+
+  // The name a member goes by on the side they are on.
+  function nameOn(user, side) {
+    const cp = (user && user.creatorProfile) || {};
+    if (cp.handle && (user.shopOwnerId || side !== 'self')) return shopNameOf(user) || 'Helloo';
+    return (user && user.fullName) || 'Helloo';
+  }
+  const storedSide = (conversation, userId) => (conversation ? stateOf(conversation, userId).side : '') || '';
+  // The chats a set of calls belong to, for the faces their people wear.
+  async function chatsOfCalls(calls) {
+    const ids = [...new Set(calls.map((c) => c.conversationId).filter(Boolean).map(String))];
+    if (!ids.length) return new Map();
+    const rows = await HellooConversation.find({ _id: { $in: ids } }).select('reads members').lean();
+    return new Map(rows.map((r) => [String(r._id), r]));
   }
 
   async function notifyNewMessage(conversation, message, sender) {
@@ -551,7 +669,7 @@ function createHelloo(deps) {
     const theirs = stateOf(conversation, otherId);
     if (theirs.muted || theirs.private) return;
     try {
-      await pushService.sendPushToUser(
+      await pushTo(
         otherId,
         {
           v: 1,
@@ -559,9 +677,9 @@ function createHelloo(deps) {
           category: 'transactional',
           type: 'helloo_message',
           chatId: String(conversation._id),
-          title: sender.fullName || 'Helloo',
+          title: nameOn(sender, storedSide(conversation, sender._id)),
           body: previewOf(message),
-          url: `/?chat=${encodeURIComponent(String(conversation._id))}`,
+          url: `/?chat=${encodeURIComponent(String(conversation._id))}&as=${theirs.side === 'self' ? 'self' : encodeURIComponent(String(otherId))}`,
           tag: `helloo-chat-${String(conversation._id)}`,
           timestamp: Date.now(),
         },
@@ -573,7 +691,101 @@ function createHelloo(deps) {
   }
 
   // ── Routes ────────────────────────────────────────────────────────────
-  function mount(app, requireAuth) {
+  function mount(app, baseAuth) {
+    // ── ACTING AS A SHOP ───────────────────────────────────────────────
+    // `?as=` names the side the owner is on: "self" (personal), their own
+    // account id (their first shop), or the id of another shop they run —
+    // then the request acts AS that shop: req.authUser is the shop, and
+    // the person behind it is req.hellooOwner. Nobody signs in to a shop.
+    // Without `as` (an older Helloo) nothing is narrowed.
+    const requireAuth = (req, res, next) => baseAuth(req, res, async (err) => {
+      if (err) return next(err);
+      try {
+        const owner = req.authUser;
+        req.hellooOwner = owner;
+        req.hellooSide = '';
+        const as = String(req.query.as || '');
+        if (as === 'self') req.hellooSide = 'self';
+        else if (as && sameId(as, owner._id)) req.hellooSide = owner.creatorProfile?.handle ? 'shop' : 'self';
+        else if (as) {
+          const shop = oid(as) ? await User.findOne({ _id: as, shopOwnerId: owner._id }) : null;
+          if (!shop) return res.status(403).json({ success: false, code: 'not_your_shop', message: 'That shop is not yours.' });
+          req.authUser = shop;
+          req.hellooSide = 'shop';
+        }
+        req.hellooName = nameOn(req.authUser, req.hellooSide);
+        return next();
+      } catch (error) {
+        return next(error);
+      }
+    });
+    // Does this chat belong on the side the request is on?
+    const onMySide = (req, conversation) => {
+      if (!req.hellooSide || req.authUser.shopOwnerId || !req.authUser.creatorProfile?.handle) return true;
+      return (storedSide(conversation, req.authUser._id) === 'self' ? 'self' : 'shop') === req.hellooSide;
+    };
+
+    // ── WHO YOU CAN BE HERE ────────────────────────────────────────────
+    // Yourself, and each shop on your GLOOBAL account that has a name.
+    // `as` is what to send back as ?as= to be that one.
+    app.get('/api/helloo/faces', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const owner = req.hellooOwner;
+        const shops = await User.find({ shopOwnerId: owner._id, 'creatorProfile.handle': { $exists: true, $nin: [null, ''] } })
+          .select(CARD_FIELDS).sort({ createdAt: 1 }).lean();
+        const ownerHasShop = Boolean(owner.creatorProfile?.handle);
+        const ids = [owner._id, ...shops.map((x) => x._id)];
+        const chats = await HellooConversation.find({ members: { $in: ids }, lastMessageAt: { $ne: null } }).select('members reads last lastMessageAt').limit(600).lean();
+        // Chats with something new in them, per side. Private and muted
+        // chats are never counted.
+        const fresh = { self: 0 };
+        for (const c of chats) {
+          const mineId = c.members.find((m) => ids.some((i) => sameId(i, m)));
+          const st = stateOf(c, mineId);
+          if (st.private || st.muted || !c.last || !c.last.kind || sameId(c.last.from, mineId)) continue;
+          if (st.at && c.lastMessageAt <= st.at) continue;
+          if (st.clearedAt && c.lastMessageAt <= st.clearedAt) continue;
+          const key = sameId(mineId, owner._id) ? (ownerHasShop && st.side !== 'self' ? String(owner._id) : 'self') : String(mineId);
+          fresh[key] = (fresh[key] || 0) + 1;
+        }
+        const shopFace = (u, primary) => ({
+          as: String(u._id), kind: 'shop', primary, accountId: String(u._id), gloobalId: u.symbolId,
+          name: shopNameOf(u), handle: u.creatorProfile.handle, calls: callsOut(u.creatorProfile.calls), fresh: fresh[String(u._id)] || 0,
+        });
+        const faces = [{ as: 'self', kind: 'self', accountId: String(owner._id), gloobalId: owner.symbolId, name: owner.fullName || '', fresh: fresh.self || 0 }];
+        if (ownerHasShop) faces.push(shopFace(owner, true));
+        for (const u of shops) faces.push(shopFace(u, false));
+        return res.json({ success: true, faces });
+      } catch (error) {
+        console.error('Helloo faces error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load your shops right now.' });
+      }
+    });
+
+    // When the shop you are acting as takes calls.
+    app.put('/api/helloo/faces/calls', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const shop = req.authUser;
+        if (req.hellooSide !== 'shop' || !shop.creatorProfile?.handle) {
+          return res.status(400).json({ success: false, code: 'not_a_shop', message: 'Switch to your shop to set its calling hours.' });
+        }
+        const mode = String(req.body?.mode || '');
+        if (!['always', 'off', 'hours'].includes(mode)) return res.status(400).json({ success: false, message: 'Pick Always, Off or Set hours.' });
+        const from = String(req.body?.from || '10:00');
+        const to = String(req.body?.to || '18:00');
+        if (mode === 'hours' && (!HHMM.test(from) || !HHMM.test(to) || from === to)) {
+          return res.status(400).json({ success: false, code: 'bad_hours', message: 'Pick a start and an end time that differ.' });
+        }
+        const tz = Number.isFinite(Number(req.body?.tz)) ? Math.max(-840, Math.min(840, Math.round(Number(req.body.tz)))) : 330;
+        const calls = { mode, from: HHMM.test(from) ? from : '10:00', to: HHMM.test(to) ? to : '18:00', tz };
+        await User.updateOne({ _id: shop._id }, { $set: { 'creatorProfile.calls': calls } });
+        return res.json({ success: true, calls: callsOut(calls) });
+      } catch (error) {
+        console.error('Helloo call hours error:', error);
+        return res.status(500).json({ success: false, message: 'Could not save that right now.' });
+      }
+    });
+
     // People you have paid or been paid by on GLOOBAL, then people you have
     // chatted with. These reach each other free in Helloo, so this is the
     // list Helloo opens with — nobody has to rebuild an address book.
@@ -640,7 +852,10 @@ function createHelloo(deps) {
           return res.status(400).json({ success: false, code: 'person_is_you', message: 'That is your own GLOOBAL ID.' });
         }
         const people = await cardsFor([user._id]);
-        return res.json({ success: true, person: people.get(String(user._id)) });
+        // Found by their own mobile number, it is the person who was looked
+        // for, not their shop.
+        const byMobile = /^\+?[\d\s-]{7,}$/.test(identifier) && !user.shopOwnerId;
+        return res.json({ success: true, person: byMobile ? faced(people.raw.get(String(user._id)), 'self') : people.get(String(user._id)) });
       } catch (error) {
         console.error('Helloo lookup error:', error);
         return res.status(500).json({ success: false, message: 'Could not look that up right now.' });
@@ -672,6 +887,8 @@ function createHelloo(deps) {
           .lean())
           // A chat you deleted stays gone until somebody writes in it again.
           .filter((c) => { const cleared = stateOf(c, me).clearedAt; return !cleared || c.lastMessageAt > cleared; })
+          // Only the chats of the side you are on (personal, or your shop).
+          .filter((c) => onMySide(req, c))
           // Pinned chats first, each group newest first.
           .sort((a, b) => Number(Boolean(stateOf(b, me).pinned)) - Number(Boolean(stateOf(a, me).pinned)));
         const people = await cardsFor(conversations.flatMap((c) => c.members));
@@ -694,7 +911,15 @@ function createHelloo(deps) {
         if ((await blockState(me, other._id)).theyBlocked) {
           return res.status(403).json({ success: false, code: 'blocked_by_them', message: 'This person is not taking messages from you.' });
         }
-        const conversation = await openChat(me, other._id);
+        // A new chat starts on the side you are on, and on the side of them
+        // you opened: `face` is "self" when it was the person, not the shop.
+        const conversation = await openChat(me, other._id, { mine: req.hellooSide, theirs: req.body?.face === 'self' ? 'self' : '' });
+        if (!onMySide(req, conversation)) {
+          return res.status(409).json({
+            success: false, code: 'chat_on_other_side', side: req.hellooSide === 'self' ? 'shop' : 'self',
+            message: req.hellooSide === 'self' ? 'You already talk to them as your shop. Switch to your shop to carry on.' : 'You already talk to them personally. Switch to Personal to carry on.',
+          });
+        }
         const people = await cardsFor(conversation.members);
         return res.json({ success: true, chat: chatOut(conversation, me, people, await unreadFor(conversation, me)) });
       } catch (error) {
@@ -752,12 +977,12 @@ function createHelloo(deps) {
 
         // Your price, their choice. Money sent in the chat is never charged.
         if (kind !== 'payment' && kind !== 'order') {
-          const rule = await reachRule(otherId, me._id);
+          const rule = await reachRule(otherId, me._id, storedSide(conversation, me._id));
           if (!rule.free) {
             if (rule.closed) {
               return res.status(403).json({ success: false, code: 'reach_closed', rule, message: 'This person only takes requests. Ask first, free.' });
             }
-            const paid = await checkReachPayment(body.reachRef, me._id, otherId, rule);
+            const paid = await checkReachPayment(body.reachRef, req.hellooOwner._id, otherId, rule);
             if (!paid) {
               return res.status(402).json({ success: false, code: 'reach_payment_required', rule, message: 'This person charges to be reached. Agree to their price to send.' });
             }
@@ -803,7 +1028,7 @@ function createHelloo(deps) {
         } else if (kind === 'payment') {
           const referenceId = String(body.referenceId || '').trim();
           const txn = referenceId ? await Transaction.findOne({ referenceId }).lean() : null;
-          if (!txn || txn.status !== 'success' || !sameId(txn.fromUserId, me._id) || !sameId(txn.toUserId, otherId)) {
+          if (!txn || txn.status !== 'success' || !sameId(txn.fromUserId, req.hellooOwner._id) || !sameId(txn.toUserId, otherId)) {
             return res.status(400).json({
               success: false,
               code: 'payment_not_found',
@@ -843,7 +1068,7 @@ function createHelloo(deps) {
           if (!built.ok) return res.status(built.code === 'sold_out' || built.code === 'item_gone' ? 409 : 400).json({ success: false, code: built.code, message: built.message, itemId: built.itemId });
           const referenceId = String(body.referenceId || '').trim();
           const txn = referenceId ? await Transaction.findOne({ referenceId }).lean() : null;
-          const problem = hellooOrders.orderPaymentProblem({ txn, order: built.order, buyerId: me._id, shopId: otherId, sameId });
+          const problem = hellooOrders.orderPaymentProblem({ txn, order: built.order, buyerId: req.hellooOwner._id, shopId: otherId, sameId });
           if (problem) return res.status(400).json({ success: false, code: problem.code, message: problem.message });
           if (await HellooMessage.exists({ $or: [{ 'payment.referenceId': referenceId }, { 'paid.referenceId': referenceId }] })) {
             return res.status(400).json({ success: false, code: 'payment_not_found', message: 'That payment is already in a chat.' });
@@ -969,6 +1194,15 @@ function createHelloo(deps) {
         if (typeof req.body?.muted === 'boolean') set['reads.$[mine].muted'] = req.body.muted;
         if (typeof req.body?.pinned === 'boolean') set['reads.$[mine].pinned'] = req.body.pinned;
         if (typeof req.body?.offHome === 'boolean') set['reads.$[mine].offHome'] = req.body.offHome;
+        // Move the chat between your personal side and your first shop. The
+        // other person then sees that side's name. A further shop is only
+        // ever a shop, and an account without a shop only ever a person.
+        if (req.body?.side === 'shop' || req.body?.side === 'self') {
+          if (req.authUser.shopOwnerId || !req.authUser.creatorProfile?.handle) {
+            return res.status(400).json({ success: false, code: 'one_side_only', message: 'This chat can only be where it is.' });
+          }
+          set['reads.$[mine].side'] = req.body.side;
+        }
         // Your own name for the chat, and whether it is private. A private
         // chat is found ONLY by typing its whole saved name, so it must
         // have one (three characters or more), and a saved name must be
@@ -998,6 +1232,7 @@ function createHelloo(deps) {
           savedName,
           private: isPrivate,
           offHome: typeof req.body.offHome === 'boolean' ? req.body.offHome : Boolean(mine.offHome),
+          ...(set['reads.$[mine].side'] ? { side: set['reads.$[mine].side'] } : {}),
         });
       } catch (error) {
         console.error('Helloo prefs error:', error);
@@ -1288,9 +1523,9 @@ function createHelloo(deps) {
         const out = { id: String(ask._id), person: people.get(String(me)), kind, text, at: ask.createdAt };
         const live = emit(other, { type: 'ask', ask: out });
         if (!live && pushService.isPushEnabled()) {
-          pushService.sendPushToUser(other, {
+          pushTo(other, {
             v: 1, app: 'helloo', category: 'transactional', type: 'helloo_ask',
-            title: `${req.authUser.fullName || 'Someone'} asks to ${kind === 'call' ? 'call' : 'message'} you`,
+            title: `${req.hellooName || 'Someone'} asks to ${kind === 'call' ? 'call' : 'message'} you`,
             body: text, url: '/?requests=1', tag: `helloo-ask-${String(ask._id)}`, timestamp: Date.now(),
           }, { category: 'transactional', app: 'helloo' }).catch(() => {});
         }
@@ -1345,9 +1580,9 @@ function createHelloo(deps) {
         emit(ask.from, { type: 'message', message: out });
         emit(ask.from, { type: 'ask-answer', to: String(me), allowed: true, chatId: String(conversation._id) });
         if (!sockets.has(String(ask.from)) && pushService.isPushEnabled()) {
-          pushService.sendPushToUser(ask.from, {
+          pushTo(ask.from, {
             v: 1, app: 'helloo', category: 'transactional', type: 'helloo_message', chatId: String(conversation._id),
-            title: req.authUser.fullName || 'Helloo', body: 'Said yes to your request. You can message them free now.',
+            title: req.hellooName || 'Helloo', body: 'Said yes to your request. You can message them free now.',
             url: `/?chat=${String(conversation._id)}`, tag: `helloo-chat-${String(conversation._id)}`, timestamp: Date.now(),
           }, { category: 'transactional', app: 'helloo' }).catch(() => {});
         }
@@ -1387,7 +1622,19 @@ function createHelloo(deps) {
         const blocks = await blockState(me, other._id);
         if (blocks.iBlocked) return res.status(403).json({ success: false, code: 'you_blocked', message: 'You blocked this person. Unblock them to call.' });
         if (blocks.theyBlocked) return res.status(403).json({ success: false, code: 'blocked_by_them', message: 'This person is not taking calls from you.' });
-        const rule = await reachRule(other._id, me);
+        // A shop takes calls when it says it does: always, never, or
+        // between its hours. A person reached on their personal side is
+        // not their shop, so the shop's hours do not apply.
+        const existing = await HellooConversation.findOne({ pairKey: pairKeyOf(me, other._id) }).select('reads').lean();
+        const otherRaw = card(other);
+        if (sideOf(existing, other._id, otherRaw) === 'shop' && otherRaw.calls && !otherRaw.calls.open) {
+          const c = otherRaw.calls;
+          return res.status(403).json({
+            success: false, code: c.mode === 'off' ? 'shop_calls_off' : 'shop_calls_closed', calls: c,
+            message: c.mode === 'off' ? 'This shop does not take calls. Message it instead.' : `This shop takes calls ${c.from}–${c.to}. Message it for now.`,
+          });
+        }
+        const rule = await reachRule(other._id, me, storedSide(existing, me));
         if (!rule.free) {
           return res.status(403).json({ success: false, code: 'call_needs_allow', rule, message: 'They take calls only from people they have allowed. Message them first, or ask.' });
         }
@@ -1398,25 +1645,25 @@ function createHelloo(deps) {
           $or: [{ callerId: other._id }, { calleeId: other._id }],
           createdAt: { $gt: new Date(Date.now() - 4 * 3600e3) },
         });
-        const conversation = await openChat(me, other._id);
+        const conversation = await openChat(me, other._id, { mine: req.hellooSide, theirs: req.body?.face === 'self' ? 'self' : '' });
         const call = await HellooCall.create({ callerId: me, calleeId: other._id, conversationId: conversation._id, video: Boolean(req.body?.video) });
         const people = await cardsFor([me, other._id]);
-        const out = callOut(call.toObject(), me, people);
+        const out = callOut(call.toObject(), me, people, conversation);
         if (busy) {
           await finishCall(call._id, 'missed', null);
-          return res.status(409).json({ success: false, code: 'busy', message: `${other.fullName || 'They'} is on another call.` });
+          return res.status(409).json({ success: false, code: 'busy', message: `${out.person.name || 'They'} is on another call.` });
         }
-        const forCallee = callOut(call.toObject(), other._id, people);
+        const forCallee = callOut(call.toObject(), other._id, people, conversation);
         emit(other._id, { type: 'call-incoming', call: forCallee });
         if (pushService.isPushEnabled()) {
           // A call from a chat the callee keeps private still rings — a
           // call cannot wait to be looked for — but never says who it is.
           const hush = await hellooIsPrivateFor(other._id, me);
-          pushService.sendPushToUser(other._id, {
+          pushTo(other._id, {
             v: 1, app: 'helloo', category: 'transactional', type: 'helloo_call', callId: String(call._id),
-            title: hush ? 'Helloo' : (req.authUser.fullName || 'Helloo'),
+            title: hush ? 'Helloo' : (forCallee.person.name || 'Helloo'),
             body: call.video ? 'Incoming video call' : 'Incoming voice call',
-            url: `/?call=${String(call._id)}`, tag: `helloo-call-${String(call._id)}`, timestamp: Date.now(), requireInteraction: true,
+            url: `/?call=${String(call._id)}&as=${forCallee.side === 'self' ? 'self' : encodeURIComponent(String(other._id))}`, tag: `helloo-call-${String(call._id)}`, timestamp: Date.now(), requireInteraction: true,
           }, { category: 'transactional', app: 'helloo' }).catch(() => {});
         }
         const timer = setTimeout(() => { finishCall(call._id, 'missed', null).catch(() => {}); }, RING_MS);
@@ -1433,7 +1680,9 @@ function createHelloo(deps) {
         const me = req.authUser._id;
         const rows = await HellooCall.find({ $or: [{ callerId: me }, { calleeId: me }] }).sort({ createdAt: -1 }).limit(100).lean();
         const people = await cardsFor(rows.flatMap((r) => [r.callerId, r.calleeId]));
-        return res.json({ success: true, calls: rows.map((r) => callOut(r, me, people)) });
+        const chatOf = await chatsOfCalls(rows);
+        const mine = rows.filter((r) => { const c = chatOf.get(String(r.conversationId)); return !c || onMySide(req, c); });
+        return res.json({ success: true, calls: mine.map((r) => callOut(r, me, people, chatOf.get(String(r.conversationId)))) });
       } catch (error) {
         console.error('Helloo call log error:', error);
         return res.status(500).json({ success: false, message: 'Could not load your calls right now.' });
@@ -1446,7 +1695,7 @@ function createHelloo(deps) {
         const row = await HellooCall.findOne({ calleeId: me, status: 'ringing', createdAt: { $gt: new Date(Date.now() - RING_MS) } }).sort({ createdAt: -1 }).lean();
         if (!row) return res.json({ success: true, call: null });
         const people = await cardsFor([row.callerId, row.calleeId]);
-        return res.json({ success: true, call: callOut(row, me, people), iceServers: iceServers() });
+        return res.json({ success: true, call: callOut(row, me, people, (await chatsOfCalls([row])).get(String(row.conversationId))), iceServers: iceServers() });
       } catch (error) {
         console.error('Helloo active call error:', error);
         return res.status(500).json({ success: false, message: 'Could not check that right now.' });
@@ -1466,9 +1715,10 @@ function createHelloo(deps) {
           const done = await HellooCall.findOneAndUpdate({ _id: id, status: 'ringing' }, { $set: { status: 'answered', answeredAt: new Date() } }, { returnDocument: 'after', lean: true });
           if (!done) return res.status(409).json({ success: false, code: 'call_over', message: 'That call has ended.' });
           const people = await cardsFor([call.callerId, call.calleeId]);
-          emit(call.callerId, { type: 'call-update', call: callOut(done, call.callerId, people) });
-          emit(call.calleeId, { type: 'call-update', call: callOut(done, call.calleeId, people) });
-          return res.json({ success: true, call: callOut(done, me, people), iceServers: iceServers() });
+          const chat = (await chatsOfCalls([call])).get(String(call.conversationId));
+          emit(call.callerId, { type: 'call-update', call: callOut(done, call.callerId, people, chat) });
+          emit(call.calleeId, { type: 'call-update', call: callOut(done, call.calleeId, people, chat) });
+          return res.json({ success: true, call: callOut(done, me, people, chat), iceServers: iceServers() });
         }
         if (action === 'decline') {
           if (!isCallee) return res.status(400).json({ success: false, message: 'Only the person called can decline.' });
@@ -1581,11 +1831,11 @@ function createHelloo(deps) {
           const now = Date.now();
           if (now - (ws.lastTyping || 0) < 1000) return;
           ws.lastTyping = now;
-          relayTyping(userId, String(frame.chatId || '')).catch(() => {});
+          relayTyping(userId, String(frame.chatId || ''), ws.shopIds).catch(() => {});
           return;
         }
         if (frame?.type === 'signal' && userId) {
-          relaySignal(userId, String(frame.callId || ''), frame.data).catch(() => {});
+          relaySignal(userId, String(frame.callId || ''), frame.data, ws.shopIds).catch(() => {});
           return;
         }
         if (frame?.type !== 'auth' || userId) return;
@@ -1600,12 +1850,18 @@ function createHelloo(deps) {
         const firstSocket = !sockets.has(userId);
         if (firstSocket) sockets.set(userId, new Set());
         sockets.get(userId).add(ws);
+        // The same phone is also each shop this account runs.
+        try {
+          ws.shopIds = (await User.find({ shopOwnerId: user._id }).select('_id').lean()).map((x) => String(x._id));
+          for (const id of ws.shopIds) { if (!sockets.has(id)) sockets.set(id, new Set()); sockets.get(id).add(ws); }
+        } catch (error) { ws.shopIds = []; }
         ws.send(JSON.stringify({ type: 'ready', accountId: userId }));
         if (firstSocket) announcePresence(userId, true, null);
       });
       ws.on('close', () => {
         clearTimeout(authTimer);
         if (!userId) return;
+        for (const id of ws.shopIds || []) { const s2 = sockets.get(id); if (s2) { s2.delete(ws); if (s2.size === 0) sockets.delete(id); } }
         const set = sockets.get(userId);
         if (set) {
           set.delete(ws);
@@ -1643,7 +1899,7 @@ function createHelloo(deps) {
     return wss;
   }
 
-  return { mount, attachLive, VOICE_PATH, emit };
+  return { mount, attachLive, VOICE_PATH, emit, faces: { card, faced, sideOf, nameOn, callsOut } };
 }
 
 module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH };

@@ -367,6 +367,15 @@ const userSchema = new mongoose.Schema({
     // out of search, not found by name or ID, except by its owner.
     hiddenByGloobal: { type: Boolean, default: false },
 
+    // When this shop takes Helloo calls: always, never, or between two
+    // times of its own day (`tz`: its offset from UTC in minutes).
+    calls: {
+      mode: { type: String, enum: ['always', 'off', 'hours'], default: 'always' },
+      from: { type: String, default: '10:00' },
+      to: { type: String, default: '18:00' },
+      tz: { type: Number, default: 330 },
+    },
+
     // A second category (optional) and a sub-category of the first, from
     // the fixed lists in server/lib/bazaar.js (0141). A sweet shop that
     // bakes is in Sweets AND Bakery; "Food & Chai" narrows to "Chai".

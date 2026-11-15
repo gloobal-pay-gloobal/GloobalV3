@@ -191,7 +191,7 @@ test("picking a kind saves the Bazaar's own two fields, and only when one was ta
   assert.match(setup, /data-testid=\{`page-kind-\$\{g\.category\}-\$\{k\.sub\}`\}/);
   // The two categories for people who are not a shop exist on every side.
   const model = read("server/models/User.js");
-  assert.equal((model.match(/'creator', 'community', 'other'\]/g) || []).length, 2, "category and category2");
+  assert.equal((model.match(/'farm', 'work', 'creator', 'community', 'other'\]/g) || []).length, 2, "category and category2");
   assert.match(read("frontend/features/coverage/CoverageDashboard.jsx"), /creator: "Creators & Freelance", community: "Community & Giving"/);
 });
 
@@ -248,4 +248,32 @@ test("starter items: the owner's own price, every ticked one priced, nothing sav
   assert.match(add, /!have\.has\(String\(r\.title\)\.trim\(\)\.toLowerCase\(\)\)/, "one already listed is left alone");
   assert.match(add, /if \(!fresh\.length\) return true;/);
   assert.match(add, /current\.map\(\(i\) => \(\{[\s\S]*\}\)\)\.concat\(fresh\.map/, "existing items are kept, new ones go after");
+});
+
+// ── THE ONES WHO WILL NEVER HAVE A WEBSITE ───────────────────────────────
+//
+// The founder: "people with money can build the web page; we need to build
+// for those who can't — the small-category businesses. We don't miss them."
+test("small trades and daily workers each have a kind, findable by the word people say", () => {
+  const api = load();
+  const { cats, subs } = bazaarTables();
+  const find = (q) => api.shopKindGroups("", q, cats, subs).flatMap((g) => g.kinds.map((k) => k.label));
+  const said = {
+    mochi: "Cobbler (mochi)", kabadi: "Scrap dealer (kabadi)", dhobi: "Laundry & ironing", mali: "Gardener (mali)",
+    mistri: "Mason (raj mistri)", chakki: "Flour mill (chakki)", mazdoor: "Daily labour", bai: "Maid", chowkidar: "Security guard",
+    coolie: "Porter (coolie)", kisan: "Farmer", doodh: "Milk delivery", thela: "Street food", chabi: "Key maker", aaya: "Babysitter (aaya)",
+    toto: "E-rickshaw", murti: "Idol & statue maker", golgappa: "Street food", presswala: "Laundry & ironing", anda: "Egg & omelette cart"
+  };
+  for (const [word, kind] of Object.entries(said)) assert.ok(find(word).includes(kind), `"${word}" finds ${kind}`);
+});
+
+test("someone paid for a day's work lands on Just pay me; a farmer on Store", () => {
+  const api = load();
+  for (const sub of ["labour", "helper", "porter", "guard", "sweeper", "maid", "babysitter", "eldercare", "homecook", "gardener", "rider", "waiter"]) {
+    assert.equal(api.shopPageTypeForKind("work", sub), "pay", `work.${sub}`);
+  }
+  assert.equal(api.shopPageTypeForKind("farm", "farmer"), "store");
+  assert.equal(api.shopPageTypeForKind("farm", "tractor"), "bookings");
+  assert.equal(api.shopPageTypeForKind("fashion", "cobbler"), "services");
+  assert.deepEqual(bz.BAZAAR_CATEGORIES.slice(-5), ["farm", "work", "creator", "community", "other"]);
 });

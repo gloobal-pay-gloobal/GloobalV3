@@ -30,7 +30,7 @@ var COVERAGE_LIT = ["#A78BFA", "#5EEAD4", "#FCA5A5", "#FDE68A", "#93C5FD", "#F9A
 var COVERAGE_CATEGORY_LABEL = {
   people: "People", food: "Food & Chai", grocery: "Grocery", sweets: "Sweets & Bakery", fashion: "Fashion", beauty: "Beauty & Salon",
   health: "Health & Pharmacy", electronics: "Electronics", repair: "Repair", home: "Home services", education: "Education",
-  travel: "Travel", art: "Art & Craft", events: "Events", creator: "Creators & Freelance", community: "Community & Giving", other: "Other"
+  travel: "Travel", art: "Art & Craft", events: "Events", farm: "Farm & Fresh", work: "Daily work & Help", creator: "Creators & Freelance", community: "Community & Giving", other: "Other"
 };
 var COVERAGE_PALETTE = ["#5B34E6", "#8B5CF6", "#0E7490", "#14B8A6", "#C4B5FD", "#F59E0B"];
 

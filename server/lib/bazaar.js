@@ -25,7 +25,11 @@ var BAZAAR_CATEGORIES = [
   // People who are not a shop: someone who makes things or works for
   // themselves, and places people give to. Before these, a YouTuber, a
   // freelancer and a temple fund could only be "Other".
-  'creator', 'community', 'other'
+  // …and people with no shop at all: someone who grows or rears what they
+  // sell, and someone paid for a day's work — a mason, a maid, a porter.
+  // They are the ones least likely ever to have a page of their own
+  // anywhere else, so they get a place of their own here.
+  'farm', 'work', 'creator', 'community', 'other'
 ];
 
 // Words that mean a category, so "tailor" or "pharmacy" typed in the bar
@@ -46,6 +50,8 @@ var BAZAAR_CATEGORY_WORDS = {
   travel: ['travel', 'taxi', 'cab', 'auto', 'transport', 'tour', 'bus'],
   art: ['art', 'craft', 'handmade', 'painting', 'pottery'],
   events: ['events', 'wedding', 'shaadi', 'शादी', 'decoration', 'photographer', 'dj', 'catering'],
+  farm: ['farm', 'farmer', 'kisan', 'किसान', 'kheti', 'खेती', 'dairy', 'poultry', 'nursery', 'seeds', 'khad', 'tractor', 'mandi', 'मंडी'],
+  work: ['work', 'labour', 'labor', 'mazdoor', 'मज़दूर', 'majdoor', 'helper', 'maid', 'bai', 'guard', 'chowkidar', 'coolie', 'mali', 'माली', 'kaam', 'काम'],
   creator: ['creator', 'youtuber', 'musician', 'singer', 'writer', 'artist', 'designer', 'developer', 'freelancer', 'freelance', 'influencer', 'consultant'],
   community: ['community', 'ngo', 'temple', 'mandir', 'मंदिर', 'donation', 'daan', 'दान', 'charity', 'club', 'trust', 'fundraiser'],
   other: []
@@ -57,21 +63,23 @@ var BAZAAR_CATEGORY_WORDS = {
 // (frontend/features/bazaar/bazaar.jsx, BAZAAR_SUBCATEGORY_INFO), and a
 // test keeps the two lists the same.
 var BAZAAR_SUBCATEGORIES = {
-  food: ['chai', 'dhaba', 'fastfood', 'restaurant', 'cafe', 'tiffin', 'juice', 'streetfood', 'homekitchen', 'paan'],
-  grocery: ['kirana', 'vegetables', 'fruits', 'dairy', 'meat', 'organic', 'general', 'water'],
-  sweets: ['mithai', 'bakery', 'cakes', 'namkeen', 'icecream', 'dryfruits'],
-  fashion: ['tailor', 'clothes', 'saree', 'shoes', 'jewellery', 'kids', 'boutique', 'laundry'],
-  beauty: ['salon', 'parlour', 'barber', 'spa', 'mehendi', 'hair', 'makeup', 'nails', 'skincare', 'tattoo'],
-  health: ['pharmacy', 'clinic', 'dentist', 'lab', 'gym', 'yoga', 'doctor', 'physio', 'optical', 'ayurveda', 'vet'],
-  electronics: ['mobile', 'phonerepair', 'computer', 'appliances', 'recharge', 'internet', 'printing'],
-  repair: ['mechanic', 'bike', 'car', 'plumber', 'electrician', 'carpenter', 'ac', 'puncture', 'welding', 'painter'],
-  home: ['furniture', 'decor', 'hardware', 'cleaning', 'pestcontrol', 'movers', 'gardening', 'cook', 'rent'],
-  education: ['tuition', 'coaching', 'music', 'dance', 'books', 'stationery', 'language', 'computerclass', 'sports', 'preschool', 'driving'],
-  travel: ['taxi', 'auto', 'tours', 'hotel', 'tickets', 'bikerental', 'courier', 'guide', 'tempo'],
-  art: ['handmade', 'pottery', 'painting', 'gifts', 'photography', 'design', 'framing'],
-  events: ['wedding', 'decoration', 'catering', 'dj', 'tent', 'flowers', 'photovideo', 'pandit', 'band', 'anchor'],
+  food: ['chai', 'dhaba', 'fastfood', 'restaurant', 'cafe', 'tiffin', 'juice', 'streetfood', 'homekitchen', 'paan', 'eggcart', 'biryani', 'chinese', 'southindian'],
+  grocery: ['kirana', 'vegetables', 'fruits', 'dairy', 'meat', 'organic', 'general', 'water', 'flourmill', 'milkman', 'spices', 'pickles', 'coconut'],
+  sweets: ['mithai', 'bakery', 'cakes', 'namkeen', 'icecream', 'dryfruits', 'homebaker'],
+  fashion: ['tailor', 'clothes', 'saree', 'shoes', 'jewellery', 'kids', 'boutique', 'laundry', 'cobbler', 'embroidery', 'bangles', 'handloom', 'bags'],
+  beauty: ['salon', 'parlour', 'barber', 'spa', 'mehendi', 'hair', 'makeup', 'nails', 'skincare', 'tattoo', 'homebeauty', 'massage'],
+  health: ['pharmacy', 'clinic', 'dentist', 'lab', 'gym', 'yoga', 'doctor', 'physio', 'optical', 'ayurveda', 'vet', 'nurse', 'ambulance'],
+  electronics: ['mobile', 'phonerepair', 'computer', 'appliances', 'recharge', 'internet', 'printing', 'cyber', 'tvrepair'],
+  repair: ['mechanic', 'bike', 'car', 'plumber', 'electrician', 'carpenter', 'ac', 'puncture', 'welding', 'painter', 'cycle', 'keymaker', 'watch', 'stove', 'knife', 'mason', 'tiles', 'borewell'],
+  home: ['furniture', 'decor', 'hardware', 'cleaning', 'pestcontrol', 'movers', 'gardening', 'cook', 'rent', 'scrap', 'mattress', 'utensils'],
+  education: ['tuition', 'coaching', 'music', 'dance', 'books', 'stationery', 'language', 'computerclass', 'sports', 'preschool', 'driving', 'library', 'craftclass'],
+  travel: ['taxi', 'auto', 'tours', 'hotel', 'tickets', 'bikerental', 'courier', 'guide', 'tempo', 'erickshaw', 'rickshaw', 'driver', 'schoolvan'],
+  art: ['handmade', 'pottery', 'painting', 'gifts', 'photography', 'design', 'framing', 'idol', 'bamboo', 'toys'],
+  events: ['wedding', 'decoration', 'catering', 'dj', 'tent', 'flowers', 'photovideo', 'pandit', 'band', 'anchor', 'lights'],
+  farm: ['farmer', 'dairyfarm', 'poultry', 'fishery', 'nursery', 'seeds', 'cattlefeed', 'honey', 'flowergrower', 'mandi', 'tractor'],
+  work: ['labour', 'helper', 'porter', 'guard', 'sweeper', 'maid', 'babysitter', 'eldercare', 'homecook', 'gardener', 'rider', 'waiter'],
   creator: ['youtuber', 'musician', 'writer', 'artist', 'photographer', 'videomaker', 'designer', 'developer', 'influencer', 'podcaster', 'freelancer', 'consultant', 'astrology'],
-  community: ['ngo', 'worship', 'club', 'fundraiser', 'society', 'sportsclub'],
+  community: ['ngo', 'worship', 'club', 'fundraiser', 'society', 'sportsclub', 'shg', 'gaushala', 'school'],
   other: []
 };
 

@@ -520,6 +520,17 @@ const userSchema = new mongoose.Schema({
       pattern: { type: String, enum: ['dots', 'stripes', 'rangoli', 'grid'], default: 'dots' },
       dark: { type: Boolean, default: false },
 
+      // The kind of page ("What do people come to you for?"), the word on
+      // each item's button, what the list is called, and the parts the
+      // owner switched off. Words and layout only — never how money reads.
+      pageType: { type: String, enum: ['', 'menu', 'store', 'services', 'classes', 'portfolio', 'bookings', 'giving', 'pay'], default: '' },
+      itemButton: { type: String, enum: ['add', 'order', 'book', 'join', 'enquire', 'support', 'donate'], default: 'add' },
+      listName: { type: String, enum: ['', 'menu', 'products', 'services', 'classes', 'work', 'packages', 'causes'], default: '' },
+      hideList: { type: Boolean, default: false },
+      hideWhere: { type: Boolean, default: false },
+      hideContacts: { type: Boolean, default: false },
+      hideReviews: { type: Boolean, default: false },
+
       // One line under the name: "Chai since 2015".
       tagline: { type: String, trim: true, maxlength: 60, default: '' },
 

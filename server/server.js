@@ -6341,7 +6341,13 @@ var CREATOR_SHOP_ENUMS = {
   buttons: ['filled', 'outline', 'soft'],
   heroStyle: ['gradient', 'solid', 'glass', 'minimal'],
   coverStyle: ['photo', 'gradient', 'pattern'],
-  pattern: ['dots', 'stripes', 'rangoli', 'grid']
+  pattern: ['dots', 'stripes', 'rangoli', 'grid'],
+  // The kind of page, the word on each item's button, and what the list is
+  // called (frontend shopTheme.js, SHOP_PAGE_TYPES). The first of each is
+  // how a shop was before these existed: no type, a plain +, "What they sell".
+  pageType: ['', 'menu', 'store', 'services', 'classes', 'portfolio', 'bookings', 'giving', 'pay'],
+  itemButton: ['add', 'order', 'book', 'join', 'enquire', 'support', 'donate'],
+  listName: ['', 'menu', 'products', 'services', 'classes', 'work', 'packages', 'causes']
 };
 
 function creatorShopColor(value) {
@@ -6367,6 +6373,15 @@ function creatorShopOut(shop) {
     coverStyle: pick('coverStyle'),
     pattern: pick('pattern'),
     dark: Boolean(s.dark),
+    pageType: pick('pageType'),
+    itemButton: pick('itemButton'),
+    listName: pick('listName'),
+    // Parts of the page the owner switched off. Only a real `true` hides
+    // one, so a shop that never chose shows everything.
+    hideList: s.hideList === true,
+    hideWhere: s.hideWhere === true,
+    hideContacts: s.hideContacts === true,
+    hideReviews: s.hideReviews === true,
     tagline: typeof s.tagline === 'string' ? s.tagline : '',
     announceText: typeof s.announceText === 'string' ? s.announceText : '',
     announceColor: creatorShopColor(s.announceColor),

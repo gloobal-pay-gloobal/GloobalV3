@@ -1,6 +1,6 @@
 // src/features/creator/CreatorSetupScreen.jsx
 import { useState as useState53, useEffect as useEffect50, useRef as useRef30 } from "react";
-import { Camera as Camera6, Check as Check9, X as X12, MapPin as MapPin5, Loader as Loader5, Pencil as Pencil4, QrCode as QrCode2, Share2 as Share26, Copy as Copy5, Eye as Eye3, EyeOff as EyeOff4, Store as Store3, ShieldCheck as ShieldCheck2, ChevronRight as ChevronRight9, Contact as Contact4, ArrowLeftRight, Volume2 as VolumeOn1, VolumeX as VolumeOff1, Palette as PaletteSu, Percent as PercentSu, Sparkles as SparklesSu, MessageCircle as MessageSu, Phone as PhoneSu, Instagram as InstagramSu, Plus as PlusSu, Clock as ClockSu } from "lucide-react";
+import { Camera as Camera6, Check as Check9, X as X12, MapPin as MapPin5, Loader as Loader5, Pencil as Pencil4, QrCode as QrCode2, Share2 as Share26, Copy as Copy5, Eye as Eye3, EyeOff as EyeOff4, Store as Store3, ShieldCheck as ShieldCheck2, ChevronRight as ChevronRight9, Contact as Contact4, ArrowLeftRight, Volume2 as VolumeOn1, VolumeX as VolumeOff1, Palette as PaletteSu, Percent as PercentSu, Sparkles as SparklesSu, MessageCircle as MessageSu, Phone as PhoneSu, Instagram as InstagramSu, Plus as PlusSu, Clock as ClockSu, Utensils as UtensilsPt, ShoppingBag as ShoppingBagPt, CalendarCheck as CalendarCheckPt, GraduationCap as GraduationCapPt, Image as ImagePt, Ticket as TicketPt, HeartHandshake as HeartHandshakePt, Wallet as WalletPt, LayoutGrid as LayoutGridPt } from "lucide-react";
 
 // ── THE CREATOR SIDE INTRODUCES ITSELF ──────────────────────────────────
 //
@@ -235,6 +235,10 @@ function CreatorNameBox({ value, onChange, placeholder, label, tone, quiet = fal
 // cannot be skipped: until it exists the Creator side cannot take money.
 var CREATOR_SETUP_STEPS = [
   { key: "name", title: "Your shop name", row: "Name & logo" },
+  // "What do people come to you for?" — the kind of page, its words and
+  // its parts (shopTheme.js, SHOP_PAGE_TYPES). Second, so everything after
+  // it is asked of a page that already has a shape.
+  { key: "type", title: "Your page type", row: "Page type" },
   { key: "sell", title: "What you sell", row: "What you sell" },
   { key: "where", title: "Where & when", row: "Where & when" },
   { key: "look", title: "How it looks", row: "Look & QR message" },
@@ -382,6 +386,21 @@ function CreatorSetupScreen({
   const [reachOn, setReachOn] = useState53(() => ({
     whatsapp: Boolean(contacts.whatsapp), phone: Boolean(contacts.phone), instagram: Boolean(contacts.instagram)
   }));
+  // The kind of page, its words and its parts. `pageTouched` is whether a
+  // type was PICKED on this visit: only then are its layout dials written,
+  // so opening this step to flip one switch does not reset a shop's layout.
+  const [page, setPage] = useState53(() => {
+    const sh = (creator && creator.shop) || {};
+    return {
+      pageType: SHOP_PAGE_TYPES[sh.pageType] ? sh.pageType : "",
+      itemButton: SHOP_ITEM_BUTTONS[sh.itemButton] ? sh.itemButton : "add",
+      listName: SHOP_LIST_NAMES[sh.listName] ? sh.listName : "",
+      hideList: sh.hideList === true, hideWhere: sh.hideWhere === true,
+      hideContacts: sh.hideContacts === true, hideReviews: sh.hideReviews === true
+    };
+  });
+  const [pageTouched, setPageTouched] = useState53(false);
+  const pickPageType = (key) => { setPageTouched(true); setPage((p) => Object.assign({}, p, shopPageTypeDials(key))); };
   // The ready look picked in step four, if any.
   const [lookKey, setLookKey] = useState53((creator && creator.shop && creator.shop.theme && shopThemeKey(creator.shop.theme)) || "");
   // Creator Share, as a percentage.
@@ -475,7 +494,7 @@ function CreatorSetupScreen({
   // setup screen and the page it sets up look like one thing. A look picked
   // in step four shows here at once, in the font chosen in step one.
   const lookBase = lookKey && SHOP_THEMES[lookKey] ? creatorSetupLookDials(lookKey, creator && creator.shop) : ((creator && creator.shop) || {});
-  const look = resolveShopTheme(Object.assign({}, (creator && creator.shop) || {}, lookBase, { font }));
+  const look = resolveShopTheme(Object.assign({}, (creator && creator.shop) || {}, lookBase, pageTouched ? shopPageTypeDials(page.pageType) : {}, page, { font }));
   const fontFace = SHOP_FONTS[font] || SHOP_FONTS.grotesk;
   const shownName = enough ? (twoParts ? `${first.trim()} ${last.trim()}` : first.trim()) : "Your shop";
   const quickKeys = SHOP_FONT_QUICK.map((q) => q.key);
@@ -589,6 +608,11 @@ function CreatorSetupScreen({
       const shown = {};
       for (const key of ["whatsapp", "phone", "instagram"]) shown[key] = reachOn[key] ? String(contacts[key] || "").trim() : "";
       return { patch: { addressParts, addressPublic, hours, contacts: shown } };
+    }
+    if (k === "type") {
+      // The words and the parts always; the layout a type sets only when a
+      // type was picked just now.
+      return { patch: {}, shop: Object.assign({}, pageTouched ? shopPageTypeDials(page.pageType) : {}, page) };
     }
     if (k === "look") {
       return {
@@ -826,6 +850,52 @@ function CreatorSetupScreen({
   }}>{moreName ? `Using ${moreName}` : `${Object.keys(SHOP_FONTS).length - SHOP_FONT_QUICK.length} more, each in your name`}</span></span><ChevronRight9 size={16} color={T.inkFaint} /></button></>)}</> : null}{
 
   /* ── 2. WHAT YOU SELL ─────────────────────────────────────────────── */
+  /* ── 2. PAGE TYPE ─────────────────────────────────────────────────── */
+  step === "type" ? <><div style={{ margin: "16px 2px 2px" }}><div style={{ fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.25 }}>What do people come to you for?</div><div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45, marginTop: 4 }}>One tap shapes your page: the layout, the button and the words. You can change any of it after.</div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 9, marginTop: 12 }}>{SHOP_PAGE_TYPE_KEYS.map((key) => {
+    const t = SHOP_PAGE_TYPES[key];
+    const on = page.pageType === key;
+    const Icon = { menu: UtensilsPt, store: ShoppingBagPt, services: CalendarCheckPt, classes: GraduationCapPt, portfolio: ImagePt, bookings: TicketPt, giving: HeartHandshakePt, pay: WalletPt }[key];
+    return <button
+      key={key}
+      type="button"
+      data-testid={`page-type-${key}`}
+      aria-pressed={on}
+      onClick={() => pickPageType(key)}
+      className="v2-tap"
+      style={{
+        border: "none", cursor: "pointer", fontFamily: "inherit", textAlign: "left", padding: "11px 11px 10px", borderRadius: 16,
+        background: on ? T.accentSoft : T.surface, boxShadow: on ? `0 0 0 2px ${T.accent}, ${T.shadowCard}` : T.shadowCard
+      }}
+    ><span style={{ width: 34, height: 34, borderRadius: 11, background: t.color, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 7 }}><Icon size={18} color="#fff" /></span><span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink }}>{t.name}</span><span style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.inkSoft, lineHeight: 1.35, marginTop: 2 }}>{t.who}</span></button>;
+  })}</div>{page.pageType ? <>{
+    /* How a customer will see it: two made-up items in this page's words
+       and layout. The prices are GeuFigure, the app's own figure, exactly
+       as on the real page — a page type never touches how money reads. */
+    section("How a customer sees it", null, page.hideList
+      ? <div data-testid="page-preview" style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5 }}>No list. Your page shows your name and one button: <b style={{ color: T.ink }}>Pay {shownName}</b>.</div>
+      : <div data-testid="page-preview"><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft, marginBottom: 4 }}>{look.listName}</div><div style={look.layout === "grid" ? { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 9 } : {}}>{(SHOP_PAGE_TYPES[page.pageType].sample.length ? SHOP_PAGE_TYPES[page.pageType].sample : [["Your first item", "A short note", 100], ["Your second item", "", 250]]).map(([title, note, price], i) => {
+        const btn = <span style={{ height: 26, minWidth: 26, padding: look.itemWord ? "0 11px" : 0, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 800, flexShrink: 0, ...shopButtonStyle(look) }}>{look.itemWord || <PlusSu size={14} />}</span>;
+        const pic = <span aria-hidden="true" style={{ display: "block", flexShrink: 0, width: look.layout === "grid" ? "100%" : 42, aspectRatio: look.layout === "grid" ? String(look.photo.ratio) : "1", borderRadius: look.photo.radius === "50%" && look.layout !== "grid" ? "50%" : look.corners.photo, background: `linear-gradient(135deg, ${look.soft}, ${look.color}66)` }} />;
+        return look.layout === "grid"
+          ? <div key={i} style={{ minWidth: 0, borderRadius: look.corners.card, border: `1px solid ${T.line}`, padding: 8 }}>{pic}<span style={{ display: "block", fontSize: 12.5, fontWeight: 700, color: T.ink, marginTop: 7 }}>{title}</span><span style={{ display: "block", fontSize: 10.5, color: T.inkFaint, minHeight: 14 }}>{note}</span><span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginTop: 6 }}><GeuFigure amount={price} currency={ccy} size={11.5} />{btn}</span></div>
+          : <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>{pic}<span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 13, fontWeight: 700, color: T.ink }}>{title}</span><span style={{ display: "block", fontSize: 11, color: T.inkFaint }}>{note}</span></span><GeuFigure amount={price} currency={ccy} size={12} />{btn}</div>;
+      })}</div></div>)
+  }{section("On your page", null, <div style={{ marginTop: -12 }}>{SHOP_PAGE_PARTS.map((part) => <div key={part.key} data-testid={`page-part-${part.key}`}>{switchRow(part.name, part.note, !page[part.field], () => setPage((p) => ({ ...p, [part.field]: !p[part.field] })), part.name)}</div>)}</div>)}{page.hideList ? null : <>{section("The button on each item", null, <><div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{SHOP_ITEM_BUTTON_KEYS.map((key) => <button
+    key={key}
+    type="button"
+    data-testid={`page-button-${key}`}
+    aria-pressed={page.itemButton === key}
+    onClick={() => setPage((p) => ({ ...p, itemButton: key }))}
+    style={{ ...pick(page.itemButton === key), borderRadius: 999, padding: "8px 13px", fontSize: 12.5, fontWeight: 700 }}
+  >{key === "add" ? "+ (plain)" : SHOP_ITEM_BUTTONS[key].name}</button>)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45, margin: "10px 2px 0" }}>Only the word changes. Every one of these puts the item in the basket, and the customer pays the same way.</div></>)}{section("What you call your list", null, <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{SHOP_LIST_NAME_KEYS.map((key) => <button
+    key={key}
+    type="button"
+    data-testid={`page-list-${key}`}
+    aria-pressed={page.listName === key}
+    onClick={() => setPage((p) => ({ ...p, listName: p.listName === key ? "" : key }))}
+    style={{ ...pick(page.listName === key), borderRadius: 999, padding: "8px 13px", fontSize: 12.5, fontWeight: 700 }}
+  >{SHOP_LIST_NAMES[key].name}</button>)}</div>)}</>}</> : null}</> : null}{
+
   step === "sell" ? <>{section("", null, <>{
     /* One of fourteen, so "Food & Chai" on Pay & Services gathers every
        chai stall however each one spells chai. Optional: a shop with no
@@ -1036,15 +1106,16 @@ function CreatorSetupScreen({
   step === "hub" ? <div style={{
     marginTop: 12, background: T.surface, borderRadius: 20, overflow: "hidden", boxShadow: T.shadowCard
   }}>{CREATOR_SETUP_STEPS.map((s, i) => {
-    const Icon = { name: Pencil4, sell: Store3, where: MapPin5, look: PaletteSu, share: PercentSu }[s.key];
+    const Icon = { name: Pencil4, type: LayoutGridPt, sell: Store3, where: MapPin5, look: PaletteSu, share: PercentSu }[s.key];
     const line = {
       name: [tagline.trim() || savedAs.handle || preview].filter(Boolean).join(" · "),
+      type: page.pageType ? [SHOP_PAGE_TYPES[page.pageType].name, SHOP_ITEM_BUTTONS[page.itemButton].word ? `“${SHOP_ITEM_BUTTONS[page.itemButton].word}” button` : "", page.hideList ? "no list" : ""].filter(Boolean).join(" · ") : "Menu, Store, Services, Classes…",
       sell: [catInfo && catInfo.label, subInfo && subInfo[1], listed ? "in बाज़ार" : "not listed"].filter(Boolean).join(" · "),
       where: [addressParts && (addressParts.city || addressParts.area), hours ? "hours set" : "no hours", addressPublic ? "address shown" : "address private"].filter(Boolean).join(" · "),
       look: [lookKey && SHOP_THEMES[lookKey] ? SHOP_THEMES[lookKey].name : look.name, scanNote.trim() ? `“${scanNote.trim()}”` : ""].filter(Boolean).join(" · "),
       share: rate > 0 ? `${creatorShareText(rate)}% back on every payment` : "None"
     }[s.key];
-    const done = { name: Boolean(savedAs.handle), sell: Boolean(category), where: Boolean(hours || (addressParts && addressParts.city)), look: true, share: true }[s.key];
+    const done = { name: Boolean(savedAs.handle), type: Boolean(page.pageType), sell: Boolean(category), where: Boolean(hours || (addressParts && addressParts.city)), look: true, share: true }[s.key];
     return <button
       key={s.key}
       type="button"

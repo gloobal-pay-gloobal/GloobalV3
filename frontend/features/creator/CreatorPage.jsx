@@ -279,14 +279,19 @@ function CreatorPageItemRow({ item, qty, owner, lens, ccyCode, theme, onAdd, onR
       ><Plus7 size={14} /></button></span>
       : <button
         onClick={onAdd}
-        aria-label={`Add ${item.title}`}
+        data-testid="shop-item-add"
+        aria-label={`${theme.itemWord || "Add"} ${item.title}`}
         style={{
-          width: 28, height: 28, borderRadius: theme.corners.pill, border: "none",
+          // A plain + is a 28px disc; a word ("Book", "Donate") is the same
+          // button as a pill. Either way it adds the item to the basket.
+          width: theme.itemWord ? "auto" : 28, minWidth: 28, height: 28, padding: theme.itemWord ? "0 11px" : 0,
+          borderRadius: theme.itemWord ? 999 : theme.corners.pill, border: "none",
           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer",
+          fontSize: 11.5, fontWeight: 800, fontFamily: "inherit", whiteSpace: "nowrap",
           // The shop's chosen button style — filled, outline or soft.
           ...shopButtonStyle(theme)
         }}
-      ><Plus7 size={15} /></button>)
+      >{theme.itemWord || <Plus7 size={15} />}</button>)
   }</span></div>;
 }
 
@@ -383,9 +388,10 @@ function CreatorPageItemCard({ item, qty, owner, lens, ccyCode, theme, onAdd, on
       ><Plus7 size={13} /></button></span>
       : <button
         onClick={onAdd}
-        aria-label={`Add ${item.title}`}
-        style={ctl({ right: 6, bottom: 6, width: 32, height: 32, borderRadius: "50%", ...shopButtonStyle(theme), ...(theme.buttons === "filled" ? {} : { background: T.surface }) })}
-      ><Plus7 size={16} /></button>)}</div><span style={{
+        data-testid="shop-item-add"
+        aria-label={`${theme.itemWord || "Add"} ${item.title}`}
+        style={ctl({ right: 6, bottom: 6, width: theme.itemWord ? "auto" : 32, minWidth: 32, height: 32, padding: theme.itemWord ? "0 12px" : 0, borderRadius: theme.itemWord ? 999 : "50%", fontSize: 11.5, fontWeight: 800, fontFamily: "inherit", ...shopButtonStyle(theme), ...(theme.buttons === "filled" ? {} : { background: T.surface }) })}
+      >{theme.itemWord || <Plus7 size={16} />}</button>)}</div><span style={{
     display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
     fontSize: 13, fontWeight: 700, color: theme.ink, lineHeight: 1.3, marginTop: 8, overflowWrap: "anywhere", minHeight: 34
   }}>{item.title}</span><span style={{
@@ -442,16 +448,24 @@ function CreatorPage({
   const [reviewSummary, setReviewSummary] = useState54((creator && creator.reviews) || null);
   // Recomputed on each render; the page is rarely open across a closing
   // time, and reopening it shows the new state.
-  const openState = openHoursLabel(creator && creator.hours, new Date());
+  // The parts of the page its owner switched off (shopTheme.js,
+  // SHOP_PAGE_PARTS). Timings, contacts and reviews go for everybody, so
+  // the owner sees the page a customer sees; the list goes for customers
+  // only, because the owner still has to be able to manage it.
+  const pageParts = (creator && creator.shop) || {};
+  const hideList = pageParts.hideList === true && !isOwner;
+  const hideWhere = pageParts.hideWhere === true;
+  const hideReviews = pageParts.hideReviews === true;
+  const openState = hideWhere ? { text: "", open: false } : openHoursLabel(creator && creator.hours, new Date());
   const contacts = (creator && creator.contacts) || {};
-  const hasContacts = Boolean(contacts.whatsapp || contacts.phone || contacts.instagram);
+  const hasContacts = pageParts.hideContacts !== true && Boolean(contacts.whatsapp || contacts.phone || contacts.instagram);
   // Today's specials, in menu order, three at most.
-  const specials = (Array.isArray(creator && creator.items) ? creator.items : []).filter((i) => i.special).slice(0, 3);
+  const specials = hideList ? [] : (Array.isArray(creator && creator.items) ? creator.items : []).filter((i) => i.special).slice(0, 3);
 
   // What somebody typed in the shop's own search bar.
   const [itemQuery, setItemQuery] = useState54("");
 
-  const allItems = Array.isArray(creator && creator.items) ? creator.items : [];
+  const allItems = !hideList && Array.isArray(creator && creator.items) ? creator.items : [];
   const items = (activeCat
     ? allItems.filter((i) => String(i.category || "").trim() === activeCat)
     : allItems).filter((i) => shopItemMatches(i, itemQuery));
@@ -656,7 +670,7 @@ function CreatorPage({
   }{
     /* The stars, once there are three reviews to average — and a tap on
        them opens the reviews, which is where anybody would look next. */
-    shopReviewHasAverage(reviewSummary) ? <button
+    !hideReviews && shopReviewHasAverage(reviewSummary) ? <button
       onClick={() => setReviewsOpen(true)}
       aria-label={`Rated ${reviewSummary.average} from ${shopReviewCountLabel(reviewSummary.count)}`}
       style={{
@@ -672,7 +686,7 @@ function CreatorPage({
        set hours. A green dot when open, a grey one when not: the state is
        the dot and the word, not a colour alone. */
     openState.text ? <span style={{
-      display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, marginLeft: shopReviewHasAverage(reviewSummary) ? 6 : 0,
+      display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, marginLeft: !hideReviews && shopReviewHasAverage(reviewSummary) ? 6 : 0,
       padding: "3px 9px 3px 7px", borderRadius: 999, background: skin.chip,
       fontSize: 11.5, fontWeight: 800, color: skin.ink
     }}><span aria-hidden="true" style={{
@@ -699,8 +713,10 @@ function CreatorPage({
     marginTop: 16, paddingTop: 12, borderTop: `1px solid ${skin.line}`
   }}>{[
     { key: "share", label: "Share", Icon: Share25, onClick: onShare || (() => shareCreatorShop(creator, onToast)) },
-    { key: "feedback", label: isOwner ? "Feedback" : "Review", Icon: MessageSquare, onClick: onFeedback || (() => setReviewsOpen(true)) }
-  ].concat(isOwner && onEditLook ? [
+    // No Review button on a page whose owner switched reviews off; the
+    // owner's own Feedback (to GLOOBAL) is a different thing and stays.
+    hideReviews && !isOwner ? null : { key: "feedback", label: isOwner ? "Feedback" : "Review", Icon: MessageSquare, onClick: onFeedback || (() => setReviewsOpen(true)) }
+  ].filter(Boolean).concat(isOwner && onEditLook ? [
     // The owner's way into the look of their own shop, on the shop itself
     // rather than buried in a settings list — which is where somebody
     // standing in front of their page actually wants it.
@@ -756,9 +772,9 @@ function CreatorPage({
   }}>{[
     ["Creator name", creator.handle || "—"],
     ["GLOOBAL ID", creator.symbolId || "—"],
-    creator.addressPublic && (creator.address || creator.addressParts) ? ["Address", creatorAddressLines(creator.addressParts, creator.address)] : null,
+    !hideWhere && creator.addressPublic && (creator.address || creator.addressParts) ? ["Address", creatorAddressLines(creator.addressParts, creator.address)] : null,
     // The week, one line a day, when hours are set.
-    openHoursClean(creator.hours) ? ["Hours", openHoursClean(creator.hours).days.map((d, i) => `${OPEN_HOURS_DAYS[i]}  ${d.closed ? "Closed" : (d.open === d.close ? "24 hours" : `${openHoursClock(d.open)} – ${openHoursClock(d.close)}`)}`)] : null
+    !hideWhere && openHoursClean(creator.hours) ? ["Hours", openHoursClean(creator.hours).days.map((d, i) => `${OPEN_HOURS_DAYS[i]}  ${d.closed ? "Closed" : (d.open === d.close ? "24 hours" : `${openHoursClock(d.open)} – ${openHoursClock(d.close)}`)}`)] : null
   ].filter(Boolean).filter(([, v]) => (Array.isArray(v) ? v.length : true)).map(([k, v], i) => <div
     key={k}
     style={{
@@ -773,7 +789,7 @@ function CreatorPage({
     /* Directions, when the owner pinned the shop AND made the address
        public — the server sends the point under the same rule as the
        text, so this cannot show for a private address. */
-    creator.addressPublic && creatorAddressHasPoint(creator.addressParts) ? <a
+    !hideWhere && creator.addressPublic && creatorAddressHasPoint(creator.addressParts) ? <a
       href={creatorAddressDirectionsUrl(creator.addressParts)}
       target="_blank"
       rel="noopener noreferrer"
@@ -903,7 +919,7 @@ function CreatorPage({
   >{c || "All"}</button>)}</div> : null}</div> : null}
   {(!isOwner || tab === "Selling") && <>{
     // allItems, not items: a search with no results is not an empty shop.
-    !isOwner && allItems.length === 0
+    hideList ? null : !isOwner && allItems.length === 0
       ? <div style={{
         background: theme.surface, borderRadius: 16, padding: "26px 18px", textAlign: "center",
         boxShadow: theme.dark ? "none" : T.shadowCard, marginTop: 16
@@ -915,7 +931,7 @@ function CreatorPage({
         color: theme.inkSoft, margin: `${theme.density.sectionGap}px 0 10px`
       }}>{searching
         ? `${items.length} ${items.length === 1 ? "result" : "results"} for “${itemQuery.trim()}”`
-        : (activeCat || "What they sell")}</div>}{
+        : (activeCat || theme.listName)}</div>}{
         isOwner ? <button
           onClick={() => { setSaveError(""); setDraft({ id: null, title: "", price: "", note: "", category: "", badge: "", photos: [], soldOut: false, special: false }); }}
           style={{
@@ -923,8 +939,10 @@ function CreatorPage({
             border: `1.6px dashed ${theme.dark ? theme.line : shopHexMix("#FFFFFF", theme.color, 0.45)}`, background: theme.dark ? "none" : "rgba(255,255,255,0.55)", borderRadius: theme.corners.card, padding: 16,
             color: theme.dark ? theme.color : theme.hero.from, fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", marginBottom: 9
           }}
-        ><Plus7 size={15} />Add something you sell</button> : null
-      }{(() => {
+        ><Plus7 size={15} />{theme.listAdd}</button> : null
+      }{isOwner && pageParts.hideList === true ? <div data-testid="shop-list-hidden-note" style={{
+        fontSize: 11.5, fontWeight: 600, lineHeight: 1.45, color: theme.inkSoft, margin: "0 2px 10px"
+      }}>Your list is switched off, so customers only see Pay. Turn it on under Edit your shop → Page type.</div> : null}{(() => {
         /* One list of items, drawn as rows or as a two-column grid —
            whichever the owner picked under Look. Same props either way, so
            the two layouts cannot disagree about what an item is. */

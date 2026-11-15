@@ -177,6 +177,85 @@ function shopThemeKey(value) {
   return SHOP_THEMES[value] ? value : SHOP_THEME_RETIRED[value] || SHOP_THEME_DEFAULT;
 }
 
+// ── WHAT KIND OF PAGE THIS IS ───────────────────────────────────────────
+//
+// "What do people come to you for?" One answer shapes the page: how the
+// list is laid out, what the button on each item says, what the list is
+// called, and which parts are on. Eight kinds, which between them cover a
+// tea stall, a kirana, a salon, a tuition class, a photographer, a taxi, a
+// temple fund and a freelancer who only needs to be paid.
+//
+// A page type is a STARTING POSITION, like a theme: everything it sets is
+// the owner's to change afterwards. And it obeys the rule at the top of
+// this file — it changes words and layout, never how money reads. "Book"
+// and "Donate" are the same button as "Add": they put the item in the
+// basket, and the basket and Pay are the app's own.
+//
+// `who` is the examples line on the picker. `set` is what a pick writes
+// over the shop's dials; `hide` the parts that start switched off; `sample`
+// two made-up items ([title, note, price]) the setup preview draws.
+var SHOP_PAGE_TYPES = {
+  menu: { name: "Menu", who: "Chai, dhaba, café, tiffin, sweets, bakery", color: "#E8701E", sample: [["Masala chai", "Kadak, with ginger", 15], ["Samosa", "2 pieces", 30]],
+    set: { itemButton: "order", listName: "menu", layout: "list", photoShape: "circle", corners: "round" }, hide: [] },
+  store: { name: "Store", who: "Kirana, clothes, mobiles, hardware, books", color: "#2F5D8C", sample: [["Basmati rice", "5 kg", 620], ["Sunflower oil", "1 litre", 165]],
+    set: { itemButton: "add", listName: "products", layout: "grid", photoShape: "rounded", corners: "soft" }, hide: [] },
+  services: { name: "Services", who: "Salon, tailor, mechanic, plumber, clinic, lab", color: "#0B7A55", sample: [["Haircut", "30 min", 150], ["Facial", "45 min", 400]],
+    set: { itemButton: "book", listName: "services", layout: "list", photoShape: "circle", corners: "soft" }, hide: [] },
+  classes: { name: "Classes", who: "Tuition, coaching, music, dance, yoga, gym", color: "#5E2A84", sample: [["Maths, class 10", "Mon · Wed · Fri", 1500], ["Trial class", "1 hour", 100]],
+    set: { itemButton: "join", listName: "classes", layout: "list", photoShape: "rounded", corners: "round" }, hide: [] },
+  portfolio: { name: "Portfolio", who: "Artist, photographer, YouTuber, musician, writer", color: "#C2185B", sample: [["Wedding album", "200 edited photos", 15000], ["Buy me a chai", "Support my work", 50]],
+    set: { itemButton: "support", listName: "work", layout: "grid", photoShape: "tall", corners: "sharp" }, hide: ["where"] },
+  bookings: { name: "Bookings", who: "Taxi, tours, hotel, events, tent, DJ, tickets", color: "#D98A00", sample: [["Airport drop", "Sedan, up to 4", 900], ["Day tour", "8 hours", 2500]],
+    set: { itemButton: "book", listName: "packages", layout: "list", photoShape: "wide", corners: "soft" }, hide: [] },
+  giving: { name: "Giving", who: "NGO, temple, club, fundraiser, community", color: "#A2401C", sample: [["Feed a child", "One meal", 50], ["Temple repair fund", "Any amount helps", 500]],
+    set: { itemButton: "donate", listName: "causes", layout: "list", photoShape: "wide", corners: "round" }, hide: [] },
+  pay: { name: "Just pay me", who: "Freelancer, vendor, driver — no list, only pay", color: "#36414E", sample: [],
+    set: { itemButton: "add", listName: "", layout: "list", photoShape: "rounded", corners: "round" }, hide: ["list", "reviews"] }
+};
+var SHOP_PAGE_TYPE_KEYS = ["menu", "store", "services", "classes", "portfolio", "bookings", "giving", "pay"];
+
+// The word on each item's button. "add" is the plain + the page always
+// had; the rest are that same button wearing a word.
+var SHOP_ITEM_BUTTONS = {
+  add: { name: "Add", word: "" }, order: { name: "Order", word: "Order" }, book: { name: "Book", word: "Book" },
+  join: { name: "Join", word: "Join" }, enquire: { name: "Enquire", word: "Enquire" },
+  support: { name: "Support", word: "Support" }, donate: { name: "Donate", word: "Donate" }
+};
+var SHOP_ITEM_BUTTON_KEYS = ["add", "order", "book", "join", "enquire", "support", "donate"];
+
+// What the list is called: the heading a customer reads, and the line on
+// the owner's own "add one" button. "" is what the page said before.
+var SHOP_LIST_NAMES = {
+  "": { name: "What they sell", add: "Add something you sell" },
+  menu: { name: "Menu", add: "Add a dish to your menu" },
+  products: { name: "Products", add: "Add a product" },
+  services: { name: "Services", add: "Add a service" },
+  classes: { name: "Classes", add: "Add a class" },
+  work: { name: "My work", add: "Add a piece of your work" },
+  packages: { name: "Packages", add: "Add a package" },
+  causes: { name: "Causes", add: "Add a cause" }
+};
+var SHOP_LIST_NAME_KEYS = ["menu", "products", "services", "classes", "work", "packages", "causes"];
+
+// The parts of a page an owner can switch off. Everything is on unless it
+// was switched off, so a shop saved before this existed shows all of it.
+var SHOP_PAGE_PARTS = [
+  { key: "list", field: "hideList", name: "Your list", note: "Items with their prices" },
+  { key: "where", field: "hideWhere", name: "Timings and address", note: "Open or closed, with Directions" },
+  { key: "contacts", field: "hideContacts", name: "WhatsApp, Call and Instagram", note: "The buttons under your name" },
+  { key: "reviews", field: "hideReviews", name: "Reviews", note: "Stars and what people wrote" }
+];
+
+// Everything picking a page type writes: its words, its layout, and its
+// parts (the ones it hides off, every other one back on).
+function shopPageTypeDials(key) {
+  const t = SHOP_PAGE_TYPES[key];
+  if (!t) return {};
+  const out = Object.assign({ pageType: key }, t.set);
+  for (const part of SHOP_PAGE_PARTS) out[part.field] = t.hide.indexOf(part.key) >= 0;
+  return out;
+}
+
 var SHOP_BUTTON_STYLES = { filled: { name: "Filled" }, outline: { name: "Outline" }, soft: { name: "Soft" } };
 var SHOP_HERO_STYLES = { gradient: { name: "Gradient" }, solid: { name: "Solid" }, glass: { name: "Glass" }, minimal: { name: "Minimal" } };
 var SHOP_COVER_STYLES = { photo: { name: "Photo" }, gradient: { name: "Colour" }, pattern: { name: "Pattern" } };
@@ -439,6 +518,16 @@ function resolveShopTheme(shop) {
     // Under the theme's own colour the page IS the look — the same paper,
     // ink and lines that look has in the app. An owner's own colour tints
     // the paper and lines toward itself instead, as it always did.
+    // The kind of page, its words and its parts (SHOP_PAGE_TYPES).
+    pageType: SHOP_PAGE_TYPES[s.pageType] ? s.pageType : "",
+    itemButton: SHOP_ITEM_BUTTONS[s.itemButton] ? s.itemButton : "add",
+    itemWord: (SHOP_ITEM_BUTTONS[s.itemButton] || SHOP_ITEM_BUTTONS.add).word,
+    listName: (SHOP_LIST_NAMES[s.listName] || SHOP_LIST_NAMES[""]).name,
+    listAdd: (SHOP_LIST_NAMES[s.listName] || SHOP_LIST_NAMES[""]).add,
+    hideList: s.hideList === true,
+    hideWhere: s.hideWhere === true,
+    hideContacts: s.hideContacts === true,
+    hideReviews: s.hideReviews === true,
     look: key,
     page: dark ? shopHexMix("#120E0C", color, 0.09) : color === base.color ? pal.bg : shopHexMix("#FFFFFF", color, 0.07),
     surface: dark ? shopHexMix("#221B17", color, 0.08) : pal.surface,

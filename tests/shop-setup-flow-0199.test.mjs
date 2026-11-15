@@ -15,9 +15,9 @@ const setup = () => code("frontend/features/creator/CreatorSetupScreen.jsx");
 const splash = () => code("frontend/features/creator/shopSetupSplash.jsx");
 const dash = () => code("frontend/screens/Dashboard/Dashboard.jsx");
 
-test("five steps, in the order chosen", () => {
+test("six steps, in the order chosen (the page type is asked second)", () => {
   const keys = [...setup().matchAll(/\{ key: "(\w+)", title: "[^"]+", row: "[^"]+" \}/g)].map((m) => m[1]);
-  assert.deepEqual(keys, ["name", "sell", "where", "look", "share"]);
+  assert.deepEqual(keys, ["name", "type", "sell", "where", "look", "share"]);
 });
 
 test("only the name cannot be skipped", () => {

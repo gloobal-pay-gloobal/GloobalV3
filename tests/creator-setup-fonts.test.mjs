@@ -51,7 +51,8 @@ test("the card at the top is the shop's own colour and the chosen font", () => {
   const s = setup();
   assert.match(s, /const look = resolveShopTheme\(/);
   assert.match(s, /linear-gradient\(140deg, \$\{look\.hero\.from\} 0%, \$\{look\.hero\.to\} 100%\)/);
-  assert.match(s, /lookBase, \{ font \}\)\);/, "the chosen font is laid over the look");
+  // The font goes on last, over the look and over the page type's dials.
+  assert.match(s, /lookBase, [^\n]*page, \{ font \}\)\);/, "the chosen font is laid over the look");
   assert.match(s, /fontFamily: look\.font\.stack, fontWeight: look\.font\.weight/);
 });
 

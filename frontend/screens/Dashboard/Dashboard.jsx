@@ -4996,14 +4996,16 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     }}
     suppliers={creatorSuppliers}
     purchases={creatorPurchases}
-    onPay={({ amount, creator }) => {
+    onPay={({ amount, creator, lines }) => {
       // Hands the basket's total to the REAL Send flow — the receiver
       // filled in, the amount carried across, and the PIN, the ledger and
       // the receipt all the ordinary ones. Nothing is paid from this
       // screen; it only decides who and how much.
       setOpenCreator(null);
       requestCloseMore();
-      if (onPayCreator) onPayCreator({ creator, amount });
+      // The basket's lines go with it, so the payment can say what it
+      // was for (App.jsx, openSendToCreator).
+      if (onPayCreator) onPayCreator({ creator, amount, lines });
     }}
   /></ScreenErrorBoundary>}{assetDetail && <div style={{ position: "fixed", inset: 0, zIndex: 340, background: T.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}><div style={{ display: "flex", alignItems: "center", gap: 12, padding: "calc(18px + env(safe-area-inset-top, 0px)) 18px 14px", flexShrink: 0 }}><NavBackButton onClick={requestCloseAssetDetail} /><span style={{ fontSize: 16, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay }}>{assetDetail.row.business}</span></div><div style={{ flex: 1, minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 18px 30px", display: "flex", flexDirection: "column", gap: 16 }}><div style={{ borderRadius: T.radiusLg, background: T.surface, boxShadow: T.shadowCard, padding: "18px 18px 14px" }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft }}>Current value</div><div style={{ fontSize: 26, fontWeight: 800, color: T.positive, fontFamily: T.fontDisplay, marginTop: 3, whiteSpace: "nowrap" }}>{geuLensBarMoney(assetDetail.row.value, ccyCode, displayLens, ccyCode)}</div><div style={{ fontSize: 11.5, color: T.inkFaint, marginTop: 2 }}>{assetDetail.row.monthsAccrued === 0 ? "Just earned" : `${(assetDetail.row.monthsAccrued / 12).toFixed(1)} yr into growing toward ${geuLensBarMoney(assetDetail.target, ccyCode, displayLens, ccyCode)}`}</div>{
     /* Growth curve: cashback (t=0) compounding at 1%/month up

@@ -1350,6 +1350,16 @@ function ReceiptModal({ receipt, onClose, onDone, onRevealShare, shareTabRequest
     value={<ColoredGloobalId id={receipt.id} />}
     mono
   />}</>}{
+    /* What it was for — the basket this payment paid, as the server kept
+       it on the payment. On the payment's own tab only: the Creator Share
+       is a different movement and was not "for" anything. The lines are in
+       the payment's currency, which is the shop's. */
+    !onShareTab && Array.isArray(receipt.items) && receipt.items.length > 0 && <div data-testid="receipt-items"><ReceiptSectionLabel>For</ReceiptSectionLabel>{receipt.items.map((line, i) => <ReceiptRow
+      key={i}
+      label={Number(line.quantity) > 1 ? `${line.title} × ${line.quantity}` : line.title}
+      value={moneyCoded(Number(line.amount) || 0, receipt.currencyCode)}
+    />)}</div>
+  }{
     /* Transaction ID — twenty symbols in one row, inside a dashed box at the
        foot of the ticket. Each tab shows ITS OWN reference: the payment and
        its Creator Share are two movements between two different pairs of

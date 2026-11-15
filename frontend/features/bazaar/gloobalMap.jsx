@@ -103,6 +103,17 @@ function GloobalMapMarker({ map, lat, lng, anchor = "bottom", z = 1, children })
 // ── THE OWNER: PLACE YOUR STORE ─────────────────────────────────────────
 // The pin stays in the middle and the map moves under it, the way a cab app
 // does: a finger never covers what it's placing. The address follows.
+// ── SEARCHING FOR ANOTHER PLACE IS SWITCHED OFF ─────────────────────────
+//
+// "Search another place" (the Bazaar map's + More, and the rent filter's)
+// asks GloobalApi.geoSearch for a pin code, city or place by name. The
+// server has no route for it yet — it needs an outside place-search
+// service that has not been chosen — so every search answered "No place
+// found", which reads as the app being broken. Until that route exists the
+// buttons that open the search are not drawn. Set this to true in the same
+// change that adds GET /api/geo/search and they come back as they were.
+var GLOOBAL_PLACE_SEARCH_READY = false;
+
 function GloobalPinScreen({ start, typed, countryIso, onCancel, onConfirm, onToast }) {
   const [at, setAt] = useState96(start && Number.isFinite(Number(start.lat)) ? { lat: Number(start.lat), lng: Number(start.lng), zoom: GLOOBAL_MAP_PIN_ZOOM } : null);
   useBackClose(true, onCancel);

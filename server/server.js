@@ -5598,7 +5598,7 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], s
   else if (minShare !== null && minShare !== undefined && Number(minShare) > 0) and.push({ cashbackRate: { $gte: Number(minShare) / 100 } });
   if (and.length) match.$and = and;
   const users = await User.find(match)
-    .select('_id symbolId countryIso cashbackRate creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category creatorProfile.category2 creatorProfile.subcategory creatorProfile.otherWords creatorProfile.joinedAt creatorProfile.shop creatorProfile.hours creatorProfile.addressParts.lat creatorProfile.addressParts.lng')
+    .select('_id symbolId countryIso cashbackRate creatorProfile.handle creatorProfile.handleFirst creatorProfile.handleLast creatorProfile.category creatorProfile.category2 creatorProfile.subcategory creatorProfile.otherWords creatorProfile.joinedAt creatorProfile.shop creatorProfile.hours creatorProfile.addressParts.lat creatorProfile.addressParts.lng creatorProfile.addressParts.line1 creatorProfile.addressParts.area creatorProfile.addressParts.landmark creatorProfile.addressParts.city creatorProfile.addressParts.state creatorProfile.addressParts.pin')
     .limit(bazaar.BAZAAR_CANDIDATE_CAP)
     .lean();
   const rows = [];
@@ -5641,6 +5641,14 @@ async function bazaarCandidates({ q = '', rawQ = '', category = '', cats = [], s
       // rounded to ~11 m all the same.
       row.lat = Math.round(Number(a.lat) * 1e4) / 1e4;
       row.lng = Math.round(Number(a.lng) * 1e4) / 1e4;
+      // And the address in words, for the card under the pin. The same
+      // public address their own page shows — this branch is only reached
+      // for a shop that made it public and pinned it. The map card was
+      // built to show these lines and was never sent them.
+      row.address = {
+        line1: String(a.line1 || ''), area: String(a.area || ''), landmark: String(a.landmark || ''),
+        city: String(a.city || ''), state: String(a.state || ''), pin: String(a.pin || '')
+      };
     }
     rows.push(row);
   }
@@ -5712,6 +5720,7 @@ app.get('/api/bazaar', lookupLimit, requireAuth, async (req, res) => {
       distanceM: near ? bazaar.bazaarRoundDistance(r.distanceM) : null,
       lat: near ? r.lat : null,
       lng: near ? r.lng : null,
+      address: near ? r.address : null,
       // "Sells Samosa", when the shop was found by what it sells rather
       // than by its name.
       matchedItem: r.matchedItem || '',
@@ -10608,6 +10617,49 @@ app.get('/api/projects/:id/contributions', lookupLimit, async (req, res) => {
   }
 });
 
+// ── WHAT A PAYMENT WAS FOR ──────────────────────────────────────────────
+//
+// A customer fills a basket on a shop's page — Haircut, Facial — and pays
+// the total. Only the total used to travel: the shop saw "550 received"
+// and never what it was for. The lines now ride on the payment itself.
+//
+// On the payment and nowhere else, deliberately. There is no order that
+// exists before the money moves, so there is nothing to be unpaid, to
+// expire or to chase; a list of items exists exactly when a payment does,
+// and can never disagree with it:
+//
+//   * only on a payment made at a shop (its creator name);
+//   * only when the lines add up to the amount actually paid, to the paisa
+//     — a payer who changes the amount on the Send screen is no longer
+//     paying for that basket, and the lines are dropped rather than left
+//     describing a different sum;
+//   * at most 30 lines, names cut to 80 characters.
+//
+// A payment whose lines are refused is still a payment: this returns null
+// and the money moves as it always did. It never fails a send.
+var PAYMENT_ITEMS_MAX = 30;
+function paymentItemsClean(raw, paidAmount) {
+  if (!Array.isArray(raw) || !raw.length || raw.length > PAYMENT_ITEMS_MAX) return null;
+  const lines = [];
+  let total = 0;
+  for (const row of raw) {
+    const title = typeof (row && row.title) === 'string' ? row.title.trim().slice(0, 80) : '';
+    const quantity = Math.round(Number(row && row.quantity));
+    const amount = Number(row && row.amount);
+    if (!title || !(quantity >= 1 && quantity <= 999) || !Number.isFinite(amount) || amount < 0) return null;
+    lines.push({ title, quantity, amount: Math.round(amount * 100) / 100 });
+    total += amount;
+  }
+  if (Math.abs(total - Number(paidAmount)) > 0.011) return null;
+  return lines;
+}
+// The same lines, for a response. Null when the payment has none.
+function paymentItemsOut(metadata) {
+  const stored = metadata && metadata.items;
+  if (!Array.isArray(stored) || !stored.length) return null;
+  return stored.map((row) => ({ title: String(row.title || ''), quantity: Number(row.quantity) || 1, amount: Number(row.amount) || 0 }));
+}
+
 app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderSymbolId', 'fromSymbolId', 'symbolId'), async (req, res) => {
   try {
     // A hold set by the GLOOBAL team (0220) stops payments before anything
@@ -10684,6 +10736,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       // the ones sent by the auto-settle job.
       rentPlaceId,
       rentAuto,
+      // What this payment is FOR, when it was paid from a shop's basket:
+      // [{ title, quantity, amount }]. Kept on the payment so both receipts
+      // and the shop's history say what was bought. See paymentItemsClean.
+      items,
     } = req.body || {};
     const cleanRentPlaceId = mongoose.isValidObjectId(rentPlaceId) ? String(rentPlaceId) : '';
     // A standing instruction in place of the PIN — only ever from the
@@ -11340,6 +11396,10 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         // QR) is the Personal side. History splits on these, never mixes.
         fromCreator: fromCreator === true,
         toCreator: toCreator === true && Boolean(receiver.creatorProfile && receiver.creatorProfile.handle),
+        // What it was for: the basket's lines, when it was paid at a shop
+        // and they add up to the amount (paymentItemsClean). Null otherwise.
+        items: toCreator === true && receiver.creatorProfile && receiver.creatorProfile.handle
+          ? paymentItemsClean(items, numericAmount) : null,
         // 0242: the two parts, in the sender's own currency. Null when
         // Essentials was not chosen — the whole of debitAmount is the method.
         essentialsPart: paySplit ? paySplit.essentials : null,
@@ -12178,6 +12238,8 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       cashbackDestination: cashbackCredit > 0 ? 'assets' : null,
       // 0242: the method as recorded, and the Essentials / bank parts.
       payMethod: completedTransaction.metadata?.payMethod || null,
+      // What it was for, as kept on the payment.
+      items: paymentItemsOut(completedTransaction.metadata),
       essentialsPart: completedTransaction.metadata?.essentialsPart ?? null,
       bankPart: completedTransaction.metadata?.bankPart ?? null,
       cashbackCurrency: senderCurrency,
@@ -14928,6 +14990,9 @@ app.get('/api/transactions/history/:symbolId', lookupLimit, requireAuth, require
         // 0242: how it was paid, as recorded — and when Essentials carried
         // it, how much came from Essentials and how much from the bank.
         payMethod: transaction.metadata?.payMethod || null,
+        // What it was for, when it was paid from a shop's basket. The same
+        // lines for payer and shop; they are in the payment's own currency.
+        items: transaction.type === 'send' ? paymentItemsOut(transaction.metadata) : null,
         essentialsPart: Number.isFinite(Number(transaction.metadata?.essentialsPart)) && transaction.metadata?.essentialsPart != null
           ? Number(transaction.metadata.essentialsPart) : null,
         bankPart: Number.isFinite(Number(transaction.metadata?.bankPart)) && transaction.metadata?.bankPart != null
@@ -15222,6 +15287,9 @@ app.get('/api/transactions/:symbolId', lookupLimit, requireAuth, requireSelf('sy
         // 0242: how it was paid, as recorded — and when Essentials carried
         // it, how much came from Essentials and how much from the bank.
         payMethod: transaction.metadata?.payMethod || null,
+        // What it was for, when it was paid from a shop's basket. The same
+        // lines for payer and shop; they are in the payment's own currency.
+        items: transaction.type === 'send' ? paymentItemsOut(transaction.metadata) : null,
         essentialsPart: Number.isFinite(Number(transaction.metadata?.essentialsPart)) && transaction.metadata?.essentialsPart != null
           ? Number(transaction.metadata.essentialsPart) : null,
         bankPart: Number.isFinite(Number(transaction.metadata?.bankPart)) && transaction.metadata?.bankPart != null

@@ -392,6 +392,14 @@ function gloobalIsEssentialsDraw(entry) {
   return Boolean(entry) && entry.txnType === "disbursement" && (!entry.payoutReason || entry.payoutReason === "essentials");
 }
 
+// The basket lines to send with a payment: the receiver's, while the amount
+// being paid is still the basket's total. null otherwise.
+function gloobalBasketItemsFor(receiver, payAmount) {
+  const lines = receiver && receiver.basketLines;
+  if (!Array.isArray(lines) || !lines.length) return undefined;
+  if (Math.abs(Number(payAmount) - Number(receiver.basketTotal)) > 0.011) return undefined;
+  return lines;
+}
 function mapServerTransaction(row, viewerSymbolId) {
   // The server's own record of when this happened — the instant every list
   // sorts by (transactionOrder.js) and the instant the row's date and time
@@ -584,6 +592,9 @@ function mapServerTransaction(row, viewerSymbolId) {
     // a second mapping to keep in step with the first.
     coin: row.coin || null,
     txnId: row.referenceId || row.id || "",
+    // What it was for, when it was paid from a shop's basket: the lines the
+    // server kept on the payment, the same for the payer and the shop.
+    items: Array.isArray(row.items) && row.items.length ? row.items : null,
     // The Creator Share this payment carried, as the server recorded it.
     //
     // Hardcoded 0 before, which is why the receipt's Creator Share tab
@@ -1089,6 +1100,11 @@ function GloobalId() {
         complaintId: (receiver && receiver.complaintId) || undefined,
         // Rent for a saved place (0195): the place's page counts it.
         rentPlaceId: (receiver && receiver.rentPlaceId) || undefined,
+        // What this payment is for: the basket filled on the shop's page.
+        // Sent only while the amount is still the basket's total — once the
+        // payer changes the amount it is no longer a payment for that
+        // basket. The server checks the same thing and is the authority.
+        items: gloobalBasketItemsFor(receiver, destinationAmount ?? amount),
         // The ID this device already minted for the payment, so the record
         // MongoDB stores is the same one the sender's receipt, complaint
         // window and location report are keyed by — and, because the
@@ -1116,8 +1132,24 @@ function GloobalId() {
       // are different movements between different pairs of parties and must
       // not be identifiable by the same reference.
       const share = (result && result.shareTransaction) || null;
+      // A shop buying from another shop: the lines also go into the
+      // buyer's own "Buying" history (their purchases from this supplier).
+      // After the payment, never before — a line must not exist for money
+      // that did not move — and a failure here costs a book-keeping row,
+      // not the payment.
+      if (Array.isArray(result && result.items) && result.items.length && activeShareRole === "merchant" && receiver && receiver.creatorHandle) {
+        const lineCurrency = transaction.currency || destinationCurrency || currency || "";
+        GloobalApi.recordCreatorPurchase(senderSymbolId, {
+          supplierSymbolId: receiverSymbolId,
+          supplierHandle: receiver.creatorHandle,
+          lines: result.items.map((l) => ({ title: l.title, quantity: l.quantity, amount: l.amount, currency: lineCurrency })),
+          transactionRef: transaction.referenceId || txnId || ""
+        }).catch(() => {});
+      }
       return {
         ok: true,
+        // What it was for, as the server kept it (null when it kept none).
+        items: Array.isArray(result && result.items) && result.items.length ? result.items : null,
         transactionId: transaction.referenceId || txnId || "",
         // The short handle the payment's receipt link is addressed by (see
         // GET /t/ and Transaction.receiptCode). Carried alongside the
@@ -1854,7 +1886,10 @@ function GloobalId() {
   }, [dialCountry]);
   // A creator on the Send screen, from their own page or from Pay again on
   // a shop's receipt (which has already read the shop as it is now).
-  const openSendToCreator = (creator, amount) => {
+  // `lines` is the basket this payment is for ([{ title, quantity, amount }]),
+  // when it came from a shop's page. They ride with the receiver to the
+  // Send screen and on to the server, which keeps them on the payment.
+  const openSendToCreator = (creator, amount, lines) => {
     if (!creator) return;
     const iso = String(creator.countryIso || "").toUpperCase();
     const creatorCountry = COUNTRY_BY_ISO[iso] || dialCountry;
@@ -1869,7 +1904,10 @@ function GloobalId() {
       mobileNumber: "",
       currency: COUNTRY_CURRENCY[creatorCountry.iso] || "USD",
       registered: true,
-      prefillAmount: Number(amount) > 0 ? String(Number(amount).toFixed(2)) : ""
+      prefillAmount: Number(amount) > 0 ? String(Number(amount).toFixed(2)) : "",
+      basketLines: Array.isArray(lines) && lines.length && Number(amount) > 0
+        ? lines.map((l) => ({ title: String(l.title || ""), quantity: Number(l.quantity) || 1, amount: Number(l.amount) || 0 })) : null,
+      basketTotal: Number(amount) > 0 ? Number(amount) : 0
     });
     setActiveScreen("send");
   };
@@ -4783,7 +4821,7 @@ function GloobalId() {
     // The amount is carried as a prefill rather than paid outright,
     // because the founder's rule for this button is that the payer still
     // sees the figure on the Send screen and confirms it there.
-    onPayCreator={({ creator, amount }) => openSendToCreator(creator, amount)}
+    onPayCreator={({ creator, amount, lines }) => openSendToCreator(creator, amount, lines)}
     // The dashboard's quick-pay box: a person it found and checked goes to
     // Send exactly as a scanned QR does — same prefill, same confirm.
     onPayPerson={(payee) => {

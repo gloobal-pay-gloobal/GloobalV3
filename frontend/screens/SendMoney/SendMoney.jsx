@@ -478,6 +478,9 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
       // this payment lands (closeComplaintByReturn).
       complaintId: prefillReceiver.complaintId || null,
       rentPlaceId: prefillReceiver.rentPlaceId || null,
+      // The basket this payment is for, from the shop's page.
+      basketLines: prefillReceiver.basketLines || null,
+      basketTotal: prefillReceiver.basketTotal || 0,
       // Already masked. This value originates in GET /api/users/resolve (via
       // App.jsx's handleSendToScanned), which now masks before it answers —
       // see the note where maskMobileNumber used to be defined.
@@ -563,6 +566,8 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     // addressed by. Empty for a local simulation, which has no server row for
     // a link to lead to — that receipt keeps the long form it always had.
     let confirmedReceiptCode = "";
+    // What the payment was for, as the server kept it.
+    let confirmedItems = null;
     let confirmedShareReceiptCode = "";
     // The figures the server RECORDED for this payment — its debit, its
     // credit and its rate. Receipt display only (buildTransactionSnapshot's
@@ -667,6 +672,7 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
         // beside them, and carried only so the share sheet has a URL that
         // does not percent-encode to 180 characters.
         if (remote.receiptCode) confirmedReceiptCode = remote.receiptCode;
+        if (Array.isArray(remote.items) && remote.items.length) confirmedItems = remote.items;
         if (remote.shareReceiptCode) confirmedShareReceiptCode = remote.shareReceiptCode;
         confirmedRecorded = {
           debitAmount: remote.debitAmount,
@@ -760,6 +766,10 @@ function SendMoneyScreen({ onClose, sender, prefillReceiver = null, prefillChoic
     });
     // Paid at a shop: the row is listed under the shop's creator name and
     // the receipt carries the way into its store.
+    if (confirmedItems) {
+      historyEntry.items = confirmedItems;
+      receipt2.items = confirmedItems;
+    }
     if (bottom.creatorHandle) {
       historyEntry.creatorHandle = bottom.creatorHandle;
       historyEntry.personName = historyEntry.name;

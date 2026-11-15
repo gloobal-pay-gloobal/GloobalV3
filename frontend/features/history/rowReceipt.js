@@ -88,7 +88,12 @@ function receiptForRow(t, direction, ctx) {
     ? findSharePaymentSource(t, c.sendHistory || [], c.receiveHistory || [])
     : null;
 
-  const receipt = buildHistoryReceipt(t, direction, c.dialCountry, c.ccy, source);
+  const built = buildHistoryReceipt(t, direction, c.dialCountry, c.ccy, source);
+  // What the payment was for — the basket's lines the server kept on it —
+  // on the payer's receipt and the shop's alike. Not on a Creator Share
+  // leg, which was not "for" anything.
+  const receipt = built && Array.isArray(t.items) && t.items.length && t.kind !== "share"
+    ? Object.assign({}, built, { items: t.items }) : built;
   // Paid at a shop: the receipt offers the way into its store (0138).
   if (receipt && t.creatorHandle && direction !== "received" && t.kind !== "share") {
     return Object.assign({}, receipt, { creatorHandle: t.creatorHandle });

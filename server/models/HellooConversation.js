@@ -40,6 +40,9 @@ const hellooConversationSchema = new mongoose.Schema(
         // whole saved name is typed, and it makes no notification, count
         // or sound for them. Always has a saved name.
         private: { type: Boolean, default: false },
+        // A business's paid message is shown on this member's Helloo home
+        // (it is not personal). This keeps one business off it.
+        offHome: { type: Boolean, default: false },
         // "Clear chat" / "Delete chat": messages up to here are gone for this
         // member only. A deleted chat comes back when a new message arrives.
         clearedAt: { type: Date, default: null },

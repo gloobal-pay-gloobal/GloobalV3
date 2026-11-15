@@ -303,6 +303,7 @@ function createHelloo(deps) {
       // Your own name for this chat, and whether you made it private.
       savedName: typeof mine.savedName === 'string' ? mine.savedName : '',
       private: Boolean(mine.private),
+      offHome: Boolean(mine.offHome),
       person: people.get(String(otherId)) || { accountId: String(otherId), name: '', gloobalId: '' },
       lastAt: conversation.lastMessageAt || conversation.createdAt,
       last: conversation.last?.kind
@@ -967,6 +968,7 @@ function createHelloo(deps) {
         const mine = stateOf(conversation, req.authUser._id);
         if (typeof req.body?.muted === 'boolean') set['reads.$[mine].muted'] = req.body.muted;
         if (typeof req.body?.pinned === 'boolean') set['reads.$[mine].pinned'] = req.body.pinned;
+        if (typeof req.body?.offHome === 'boolean') set['reads.$[mine].offHome'] = req.body.offHome;
         // Your own name for the chat, and whether it is private. A private
         // chat is found ONLY by typing its whole saved name, so it must
         // have one (three characters or more), and a saved name must be
@@ -995,6 +997,7 @@ function createHelloo(deps) {
           pinned: typeof req.body.pinned === 'boolean' ? req.body.pinned : Boolean(mine.pinned),
           savedName,
           private: isPrivate,
+          offHome: typeof req.body.offHome === 'boolean' ? req.body.offHome : Boolean(mine.offHome),
         });
       } catch (error) {
         console.error('Helloo prefs error:', error);

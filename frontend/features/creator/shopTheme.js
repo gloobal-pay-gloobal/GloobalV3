@@ -294,6 +294,173 @@ function shopKindGroups(pageType, query, cats, subs) {
   return groups;
 }
 
+// ── A FIRST LIST FOR EACH KIND ──────────────────────────────────────────
+//
+// Most new shops stall at "add your first item". So each kind comes with
+// a few things that kind usually sells: [title, note, a typical price].
+// Setup offers them to tick; the owner types their OWN price for each one
+// they keep. The price here is never saved — it is only what the preview
+// shows and the hint in the empty price box (and only for a rupee account,
+// since it is a rupee figure).
+var SHOP_KIND_STARTERS = {
+  "food.chai": [["Masala chai", "Kadak, with ginger", 15], ["Cutting chai", "Half glass", 10], ["Bun maska", "", 30], ["Biscuit", "", 5]],
+  "food.dhaba": [["Dal tadka", "", 120], ["Paneer butter masala", "", 180], ["Tandoori roti", "Per piece", 15], ["Thali", "Full meal", 150]],
+  "food.fastfood": [["Veg burger", "", 60], ["French fries", "", 70], ["Veg sandwich", "", 50], ["Cold drink", "", 20]],
+  "food.restaurant": [["Veg thali", "", 180], ["Paneer tikka", "", 220], ["Butter naan", "Per piece", 40], ["Gulab jamun", "2 pieces", 60]],
+  "food.cafe": [["Cappuccino", "", 120], ["Cold coffee", "", 140], ["Sandwich", "", 150], ["Brownie", "", 110]],
+  "food.tiffin": [["Daily tiffin", "One meal", 80], ["Monthly tiffin", "Lunch, 26 days", 2000], ["Extra roti", "Per piece", 8]],
+  "food.juice": [["Mosambi juice", "Glass", 40], ["Sugarcane juice", "Glass", 20], ["Mango shake", "", 60], ["Fruit plate", "", 50]],
+  "food.streetfood": [["Pani puri", "6 pieces", 30], ["Samosa", "2 pieces", 30], ["Vada pav", "", 20], ["Momos", "8 pieces", 60]],
+  "food.homekitchen": [["Home thali", "", 120], ["Rajma chawal", "", 90], ["Paratha", "2 pieces, with curd", 70]],
+  "food.paan": [["Meetha paan", "", 20], ["Saada paan", "", 15], ["Mouth freshener", "", 10]],
+  "grocery.kirana": [["Basmati rice", "5 kg", 620], ["Atta", "10 kg", 420], ["Sunflower oil", "1 litre", 165], ["Sugar", "1 kg", 48]],
+  "grocery.vegetables": [["Tomato", "1 kg", 40], ["Onion", "1 kg", 35], ["Potato", "1 kg", 30], ["Green chilli", "100 g", 10]],
+  "grocery.fruits": [["Banana", "1 dozen", 60], ["Apple", "1 kg", 160], ["Orange", "1 kg", 80], ["Papaya", "1 piece", 50]],
+  "grocery.dairy": [["Milk", "1 litre", 60], ["Curd", "500 g", 40], ["Paneer", "200 g", 90], ["Ghee", "500 ml", 330]],
+  "grocery.meat": [["Chicken", "1 kg", 240], ["Eggs", "1 tray of 30", 200], ["Fish", "1 kg", 300], ["Mutton", "1 kg", 750]],
+  "grocery.organic": [["Organic atta", "5 kg", 350], ["Cold-pressed oil", "1 litre", 380], ["Jaggery", "1 kg", 90], ["Honey", "500 g", 300]],
+  "grocery.general": [["Soap", "", 35], ["Toothpaste", "", 60], ["Biscuits", "", 20], ["Detergent", "1 kg", 110]],
+  "grocery.water": [["Water can", "20 litres", 40], ["Gas cylinder", "Refill", 950], ["Water bottles", "Case of 12", 200]],
+  "sweets.mithai": [["Kaju katli", "250 g", 250], ["Gulab jamun", "500 g", 180], ["Rasgulla", "500 g", 170], ["Jalebi", "250 g", 80]],
+  "sweets.bakery": [["Bread", "", 40], ["Veg puff", "", 20], ["Cream bun", "", 25], ["Cookies", "250 g", 90]],
+  "sweets.cakes": [["Chocolate cake", "500 g", 400], ["Black forest", "1 kg", 700], ["Cupcakes", "Box of 6", 300], ["Custom cake", "Per kg", 900]],
+  "sweets.namkeen": [["Aloo bhujia", "250 g", 70], ["Mixture", "250 g", 70], ["Mathri", "250 g", 80], ["Chips", "", 20]],
+  "sweets.icecream": [["Vanilla cup", "", 30], ["Chocolate cone", "", 50], ["Kulfi", "", 40], ["Family pack", "700 ml", 220]],
+  "sweets.dryfruits": [["Almonds", "250 g", 260], ["Cashews", "250 g", 280], ["Raisins", "250 g", 120], ["Gift box", "", 600]],
+  "fashion.tailor": [["Blouse stitching", "", 350], ["Shirt stitching", "", 400], ["Pant stitching", "", 450], ["Alteration", "Per piece", 80]],
+  "fashion.clothes": [["Shirt", "", 600], ["Jeans", "", 900], ["Kurti", "", 500], ["T-shirt", "", 350]],
+  "fashion.saree": [["Cotton saree", "", 900], ["Silk saree", "", 3500], ["Fall and pico", "", 120], ["Blouse piece", "", 250]],
+  "fashion.shoes": [["Sports shoes", "", 1200], ["Sandals", "", 450], ["Formal shoes", "", 1500], ["Slippers", "", 200]],
+  "fashion.jewellery": [["Earrings", "", 250], ["Necklace set", "", 900], ["Bangles", "Set of 12", 300], ["Ring", "", 200]],
+  "fashion.kids": [["Kids T-shirt", "", 250], ["Frock", "", 500], ["School uniform", "Set", 800], ["Kids shoes", "", 500]],
+  "fashion.boutique": [["Designer kurti", "", 1500], ["Lehenga", "", 6000], ["Custom stitching", "", 1200], ["Dupatta", "", 400]],
+  "fashion.laundry": [["Ironing", "Per piece", 8], ["Wash and iron", "Per kg", 80], ["Dry clean, saree", "", 200], ["Dry clean, suit", "", 350]],
+  "beauty.salon": [["Haircut", "30 min", 150], ["Hair colour", "1 hour", 800], ["Facial", "45 min", 400], ["Threading", "10 min", 40]],
+  "beauty.parlour": [["Threading", "Eyebrows", 40], ["Facial", "45 min", 400], ["Waxing", "Full arms", 250], ["Bridal makeup", "Ask for a date", 8000]],
+  "beauty.barber": [["Haircut", "20 min", 80], ["Shave", "10 min", 40], ["Beard trim", "10 min", 50], ["Head massage", "15 min", 60]],
+  "beauty.spa": [["Full body massage", "60 min", 1500], ["Head and shoulder massage", "30 min", 600], ["Foot massage", "30 min", 500]],
+  "beauty.mehendi": [["Simple mehendi", "One hand", 150], ["Bridal mehendi", "Both hands and feet", 3000], ["Arabic design", "Both hands", 500]],
+  "beauty.hair": [["Haircut", "30 min", 200], ["Hair colour", "1 hour", 1200], ["Blow dry", "20 min", 300], ["Keratin treatment", "3 hours", 4000]],
+  "beauty.makeup": [["Party makeup", "1 hour", 1500], ["Bridal makeup", "Ask for a date", 10000], ["Saree draping", "", 300], ["Hairstyling", "", 500]],
+  "beauty.nails": [["Manicure", "40 min", 400], ["Pedicure", "45 min", 500], ["Gel polish", "30 min", 600], ["Nail art", "Per nail", 50]],
+  "beauty.skincare": [["Clean-up", "30 min", 300], ["Gold facial", "1 hour", 900], ["De-tan", "30 min", 400], ["Skin consultation", "", 300]],
+  "beauty.tattoo": [["Small tattoo", "Up to 2 inches", 1000], ["Custom tattoo", "Per square inch", 500], ["Piercing", "", 300]],
+  "health.pharmacy": [["Paracetamol", "Strip of 10", 20], ["ORS", "Sachet", 20], ["Bandage", "", 30], ["Hand sanitiser", "100 ml", 50]],
+  "health.clinic": [["Consultation", "", 300], ["Follow-up visit", "", 150], ["Dressing", "", 100], ["Injection", "", 50]],
+  "health.dentist": [["Check-up", "", 300], ["Cleaning", "", 800], ["Filling", "Per tooth", 1000], ["Extraction", "", 700]],
+  "health.lab": [["Blood sugar", "", 80], ["CBC", "", 250], ["Thyroid profile", "", 450], ["Full body check-up", "", 1500]],
+  "health.gym": [["Monthly membership", "", 1000], ["Quarterly membership", "", 2700], ["Personal training", "Per month", 3000], ["Day pass", "", 100]],
+  "health.yoga": [["Monthly classes", "Morning batch", 1200], ["Single class", "1 hour", 150], ["Private session", "1 hour", 600]],
+  "health.doctor": [["Consultation", "", 400], ["Follow-up visit", "", 200], ["Home visit", "", 800]],
+  "health.physio": [["Assessment", "", 400], ["Session", "45 min", 500], ["Home visit", "", 800]],
+  "health.optical": [["Eye test", "", 100], ["Frame", "", 800], ["Lenses", "Pair", 600], ["Sunglasses", "", 700]],
+  "health.ayurveda": [["Consultation", "", 300], ["Abhyanga massage", "45 min", 900], ["Chyawanprash", "500 g", 250]],
+  "health.vet": [["Consultation", "", 300], ["Vaccination", "", 500], ["Grooming", "", 600], ["Deworming", "", 150]],
+  "electronics.mobile": [["Tempered glass", "", 150], ["Back cover", "", 200], ["Charger", "", 350], ["Earphones", "", 300]],
+  "electronics.phonerepair": [["Screen replacement", "", 1500], ["Battery replacement", "", 800], ["Charging port repair", "", 400], ["Software update", "", 200]],
+  "electronics.computer": [["Laptop service", "", 500], ["Windows install", "", 400], ["Mouse", "", 300], ["Keyboard", "", 500]],
+  "electronics.appliances": [["Mixer grinder", "", 2500], ["Iron", "", 800], ["Ceiling fan", "", 1600], ["LED bulb", "", 90]],
+  "electronics.recharge": [["Mobile recharge", "Service charge", 10], ["DTH recharge", "Service charge", 10], ["New SIM", "", 50]],
+  "electronics.internet": [["Broadband, monthly", "50 Mbps", 600], ["Cable TV, monthly", "", 300], ["New connection", "Installation", 1000]],
+  "electronics.printing": [["Xerox", "Per page", 2], ["Colour print", "Per page", 10], ["Passport photos", "Set of 8", 60], ["Lamination", "", 30]],
+  "repair.mechanic": [["General service", "", 800], ["Oil change", "", 500], ["Brake check", "", 300], ["Washing", "", 150]],
+  "repair.bike": [["Bike service", "", 500], ["Oil change", "", 350], ["Chain set", "", 1200], ["Washing", "", 100]],
+  "repair.car": [["Car service", "", 3000], ["Oil change", "", 1500], ["Wheel alignment", "", 600], ["Car wash", "", 300]],
+  "repair.plumber": [["Visit charge", "", 200], ["Tap repair", "", 150], ["Pipe leak repair", "", 400], ["Tank cleaning", "", 600]],
+  "repair.electrician": [["Visit charge", "", 200], ["Fan fitting", "", 250], ["Switch board repair", "", 150], ["Wiring", "Per point", 300]],
+  "repair.carpenter": [["Visit charge", "", 200], ["Door repair", "", 400], ["Furniture polish", "", 1500], ["Lock fitting", "", 250]],
+  "repair.ac": [["AC service", "", 500], ["Gas refill", "", 2500], ["Fridge repair", "Visit", 300], ["Washing machine repair", "Visit", 300]],
+  "repair.puncture": [["Puncture, bike", "", 50], ["Puncture, car", "", 100], ["Air check", "", 10], ["Tube change", "", 250]],
+  "repair.welding": [["Gate repair", "", 500], ["Grill work", "Per square foot", 150], ["Small welding job", "", 200]],
+  "repair.painter": [["Room painting", "Per room", 3000], ["Wall putty", "Per square foot", 12], ["Touch-up", "", 800]],
+  "home.furniture": [["Chair", "", 1500], ["Table", "", 3500], ["Bed", "", 12000], ["Wardrobe", "", 15000]],
+  "home.decor": [["Curtains", "Per window", 800], ["Wall clock", "", 500], ["Photo frame", "", 300], ["Lamp", "", 900]],
+  "home.hardware": [["Cement", "Bag", 400], ["Paint", "1 litre", 350], ["Screws", "Packet", 40], ["PVC pipe", "Per length", 250]],
+  "home.cleaning": [["Home deep cleaning", "1 BHK", 2500], ["Bathroom cleaning", "", 500], ["Sofa cleaning", "Per seat", 250], ["Kitchen cleaning", "", 1200]],
+  "home.pestcontrol": [["Cockroach control", "1 BHK", 900], ["Termite treatment", "Per square foot", 8], ["Mosquito control", "", 700]],
+  "home.movers": [["House shifting", "1 BHK, in city", 5000], ["Tempo with helpers", "Per trip", 1500], ["Packing material", "", 800]],
+  "home.gardening": [["Garden visit", "2 hours", 400], ["Monthly maintenance", "", 1500], ["Plants", "Per plant", 150]],
+  "home.cook": [["Cook, monthly", "Two meals a day", 6000], ["Maid, monthly", "", 3000], ["Party cooking", "Per day", 1500]],
+  "home.rent": [["Room for rent", "Per month", 6000], ["1 BHK flat", "Per month", 12000], ["Visit and brokerage", "", 1000]],
+  "education.tuition": [["Maths, class 10", "Mon · Wed · Fri", 1500], ["Science, class 10", "Tue · Thu · Sat", 1500], ["All subjects, class 1–5", "Monthly", 1200], ["Trial class", "1 hour", 100]],
+  "education.coaching": [["Monthly fee", "", 3000], ["Test series", "", 1500], ["Doubt class", "1 hour", 300], ["Study material", "", 800]],
+  "education.music": [["Guitar class", "Monthly, 8 classes", 2000], ["Singing class", "Monthly, 8 classes", 2000], ["Trial class", "", 200]],
+  "education.dance": [["Dance class", "Monthly, 8 classes", 1500], ["Wedding choreography", "Per song", 3000], ["Trial class", "", 150]],
+  "education.books": [["School textbook", "", 250], ["Notebook", "", 50], ["Novel", "", 300], ["Guide book", "", 350]],
+  "education.stationery": [["Pen", "", 10], ["Notebook", "", 50], ["Geometry box", "", 120], ["Chart paper", "", 10]],
+  "education.language": [["Spoken English", "Monthly", 1500], ["Hindi class", "Monthly", 1200], ["Trial class", "", 100]],
+  "education.computerclass": [["Basic computer course", "3 months", 3000], ["Tally", "2 months", 4000], ["Typing", "Monthly", 600]],
+  "education.sports": [["Cricket coaching", "Monthly", 2000], ["Badminton coaching", "Monthly", 1800], ["Trial session", "", 200]],
+  "education.preschool": [["Play group", "Monthly fee", 2500], ["Nursery", "Monthly fee", 3000], ["Day care", "Monthly", 4000]],
+  "education.driving": [["Car driving course", "15 days", 5000], ["Two-wheeler course", "7 days", 2000], ["Licence help", "", 1500]],
+  "travel.taxi": [["Airport drop", "Sedan, up to 4", 900], ["Local, 8 hours", "80 km", 2000], ["Outstation", "Per km", 14]],
+  "travel.auto": [["Local ride", "Per km", 15], ["Station drop", "", 100], ["School trip, monthly", "", 1200]],
+  "travel.tours": [["Day tour", "8 hours", 2500], ["Weekend package", "2 days, per person", 6000], ["Pilgrimage trip", "Per person", 3500]],
+  "travel.hotel": [["Standard room", "Per night", 1200], ["Deluxe room", "Per night", 2000], ["Extra bed", "", 400]],
+  "travel.tickets": [["Train ticket booking", "Service charge", 50], ["Bus ticket booking", "Service charge", 30], ["Flight ticket booking", "Service charge", 200]],
+  "travel.bikerental": [["Scooter", "Per day", 400], ["Bike", "Per day", 600], ["Helmet", "Per day", 50]],
+  "travel.courier": [["Local delivery", "Up to 5 km", 60], ["Parcel, up to 1 kg", "Within the city", 80], ["Document delivery", "", 50]],
+  "travel.guide": [["City walk", "3 hours", 800], ["Full-day guide", "", 2000], ["Heritage tour", "Per person", 500]],
+  "travel.tempo": [["Tempo, local trip", "", 800], ["Truck, per day", "", 4000], ["Loading helper", "Per person", 400]],
+  "art.handmade": [["Handmade candle", "", 250], ["Crochet toy", "", 400], ["Rakhi", "", 60], ["Gift hamper", "", 900]],
+  "art.pottery": [["Clay cup", "", 80], ["Flower pot", "", 200], ["Diya", "Set of 12", 120], ["Decorative vase", "", 600]],
+  "art.painting": [["Canvas painting", "12 × 16 inches", 3000], ["Portrait sketch", "A4", 800], ["Wall painting", "Per square foot", 200]],
+  "art.gifts": [["Gift box", "", 500], ["Photo mug", "", 300], ["Greeting card", "", 60], ["Photo frame", "", 350]],
+  "art.photography": [["Portrait shoot", "1 hour", 2000], ["Passport photos", "Set of 8", 60], ["Event shoot", "Per day", 8000]],
+  "art.design": [["Logo design", "", 2500], ["Invitation card design", "", 800], ["Poster design", "", 600]],
+  "art.framing": [["Photo framing", "8 × 10 inches", 300], ["Canvas stretching", "", 500], ["Certificate frame", "", 250]],
+  "events.wedding": [["Wedding planning", "Ask for a date", 50000], ["Venue decoration", "", 25000], ["Bridal entry", "", 8000]],
+  "events.decoration": [["Birthday decoration", "", 2500], ["Balloon arch", "", 1200], ["Stage decoration", "", 8000], ["Flower decoration", "", 5000]],
+  "events.catering": [["Veg plate", "Per person", 250], ["Non-veg plate", "Per person", 400], ["Snacks and tea", "Per person", 80]],
+  "events.dj": [["DJ, 4 hours", "", 6000], ["Sound system", "Per day", 3000], ["Lights", "Per day", 2500]],
+  "events.tent": [["Tent", "Per day", 5000], ["Chairs", "Per chair", 10], ["Tables", "Per table", 80], ["Stage", "", 4000]],
+  "events.flowers": [["Garland", "", 150], ["Bouquet", "", 400], ["Car decoration", "", 2500], ["Loose flowers", "Per kg", 200]],
+  "events.photovideo": [["Wedding shoot", "Per day", 25000], ["Pre-wedding shoot", "", 15000], ["Birthday shoot", "3 hours", 5000], ["Album", "", 6000]],
+  "events.pandit": [["Griha pravesh puja", "", 3100], ["Satyanarayan katha", "", 2100], ["Wedding ceremony", "", 11000]],
+  "events.band": [["Band baja", "2 hours", 8000], ["Dhol", "Per hour", 1500], ["Ghodi", "", 5000]],
+  "events.anchor": [["Wedding anchoring", "", 8000], ["Birthday hosting", "", 3000], ["Corporate event", "", 12000]],
+  "creator.youtuber": [["Buy me a chai", "Support my channel", 50], ["Shout-out", "In a video", 500], ["Brand collaboration", "Ask for details", 10000]],
+  "creator.musician": [["Live show", "2 hours", 15000], ["Custom song", "", 5000], ["Support my music", "", 100]],
+  "creator.writer": [["Article", "Up to 1,000 words", 1500], ["Signed book", "", 400], ["Support my writing", "", 100]],
+  "creator.artist": [["Commissioned artwork", "A3", 4000], ["Art print", "A4", 500], ["Support my art", "", 100]],
+  "creator.photographer": [["Portrait shoot", "1 hour", 2500], ["Product shoot", "Per product", 500], ["Wedding album", "200 edited photos", 15000]],
+  "creator.videomaker": [["Reel edit", "Up to 60 seconds", 800], ["Wedding film", "", 20000], ["YouTube video edit", "Up to 10 min", 2000]],
+  "creator.designer": [["Logo design", "", 3000], ["Social media post", "", 400], ["Brand kit", "", 8000]],
+  "creator.developer": [["Website", "5 pages", 15000], ["Bug fix", "Per hour", 800], ["App consultation", "1 hour", 1500]],
+  "creator.influencer": [["Story mention", "", 1000], ["Reel collaboration", "", 5000], ["Product review", "", 3000]],
+  "creator.podcaster": [["Support the show", "", 100], ["Guest slot", "", 2000], ["Ad read", "Per episode", 3000]],
+  "creator.freelancer": [["Hourly work", "Per hour", 500], ["Day rate", "", 3500], ["Project advance", "", 5000]],
+  "creator.consultant": [["Consultation", "1 hour", 1500], ["Document review", "", 1000], ["Monthly retainer", "", 10000]],
+  "creator.astrology": [["Kundli reading", "30 min", 500], ["Match making", "", 700], ["Tarot reading", "", 400]],
+  "community.ngo": [["Feed a child", "One meal", 50], ["School kit", "For one child", 500], ["Monthly support", "", 1000]],
+  "community.worship": [["Daily offering", "", 51], ["Annadaan", "Feeds 10 people", 501], ["Building fund", "Any amount helps", 1100]],
+  "community.club": [["Monthly membership", "", 300], ["Annual membership", "", 3000], ["Event entry", "", 200]],
+  "community.fundraiser": [["Small help", "", 100], ["Medical support", "", 1000], ["Sponsor a day", "", 5000]],
+  "community.society": [["Monthly maintenance", "", 1500], ["Festival contribution", "", 500], ["Parking charge", "Monthly", 300]],
+  "community.sportsclub": [["Monthly fee", "", 500], ["Tournament entry", "Per team", 2000], ["Ground booking", "Per hour", 800]]
+};
+
+// The starter rows for a kind; a page type's own two samples when the
+// kind has none (or none was picked).
+function shopKindStarters(category, sub, pageType) {
+  const own = SHOP_KIND_STARTERS[`${category}.${sub}`];
+  if (own && own.length) return own;
+  const t = SHOP_PAGE_TYPES[pageType];
+  return t ? t.sample : [];
+}
+
+// The page type a kind belongs to: the first that lists it, in the order
+// the picker shows them. This is what lets a search for "hair" set the
+// type and the kind in one tap.
+function shopPageTypeForKind(category, sub) {
+  for (const key of SHOP_PAGE_TYPE_KEYS) {
+    for (const [cat, keys] of SHOP_PAGE_TYPE_KINDS[key] || []) {
+      if (cat === category && (keys === "*" || keys.indexOf(sub) >= 0)) return key;
+    }
+  }
+  return "";
+}
+
 // The word on each item's button. "add" is the plain + the page always
 // had; the rest are that same button wearing a word.
 var SHOP_ITEM_BUTTONS = {

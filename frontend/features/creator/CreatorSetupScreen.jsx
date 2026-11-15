@@ -322,6 +322,9 @@ function CreatorSetupScreen({
   onSave,
   onSaveStep,
   onSaveShare,
+  // Adds the starter items ticked in the page type step to the shop's
+  // list: (rows) => true, or the sentence saying why not.
+  onAddStarterItems,
   onSkip,
   onClose,
   onOpenPage,
@@ -405,14 +408,39 @@ function CreatorSetupScreen({
   // step only writes them when one was actually tapped here.
   const [kindQuery, setKindQuery] = useState53("");
   const [kindTouched, setKindTouched] = useState53(false);
-  const pickKind = (cat, sub) => {
-    const same = category === cat && subcategory === sub;
+  const pickPageType = (key) => { setPageTouched(true); setPage((p) => Object.assign({}, p, shopPageTypeDials(key))); };
+  // `fromSearch`: the tap came from the search results at the top, which
+  // reach across every page type — so it sets the TYPE the kind belongs
+  // to as well, and never un-picks (a search result is not a toggle).
+  const pickKind = (cat, sub, fromSearch) => {
+    const same = !fromSearch && category === cat && subcategory === sub;
     setKindTouched(true);
     setCategoryRaw(cat);
     setSubcategory(same ? "" : sub);
     if (cat === category2) setCategory2("");
+    setStarterPicks({});
+    if (fromSearch) {
+      const type = shopPageTypeForKind(cat, sub);
+      if (type && type !== page.pageType) pickPageType(type);
+      setKindQuery("");
+    }
   };
-  const pickPageType = (key) => { setPageTouched(true); setPage((p) => Object.assign({}, p, shopPageTypeDials(key))); };
+  // The starter items ticked for this kind: { title: "the price typed" }.
+  // A title is in here when its box is ticked, with "" until a price is.
+  const [starterPicks, setStarterPicks] = useState53({});
+  const starterRows = !page.hideList && category && subcategory ? (SHOP_KIND_STARTERS[`${category}.${subcategory}`] || []) : [];
+  const starterPrice = (title) => Number(String(starterPicks[title] == null ? "" : starterPicks[title]).replace(/,/g, "").trim());
+  const kindChips = (groups, fromSearch) => groups.map((g) => <div key={g.category} style={{ marginTop: 10 }}><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint, marginBottom: 6 }}>{g.label}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{g.kinds.map((k) => {
+    const on = category === g.category && subcategory === k.sub;
+    return <button
+      key={k.sub}
+      type="button"
+      data-testid={`page-kind-${g.category}-${k.sub}`}
+      aria-pressed={on}
+      onClick={() => pickKind(g.category, k.sub, fromSearch)}
+      style={{ ...pick(on), borderRadius: 999, padding: "8px 13px", fontSize: 12.5, fontWeight: 700 }}
+    >{k.label}</button>;
+  })}</div></div>);
   // The ready look picked in step four, if any.
   const [lookKey, setLookKey] = useState53((creator && creator.shop && creator.shop.theme && shopThemeKey(creator.shop.theme)) || "");
   // Creator Share, as a percentage.
@@ -652,12 +680,28 @@ function CreatorSetupScreen({
       if (!ok) setStepError("Creator Share was not changed. You can set it again from your shop.");
       return Boolean(ok);
     }
+    // Starter items ticked in the page type step: each needs the owner's
+    // own price before anything is saved, so a half-priced list never
+    // reaches customers.
+    const starters = k === "type" ? starterRows.filter(([title]) => title in starterPicks) : [];
+    if (starters.some(([title]) => !(starterPrice(title) > 0))) {
+      setStepError("Type a price for each item you ticked, or untick it.");
+      return false;
+    }
     const body = stepPatch(k);
     if (!body || !onSaveStep) return true;
     const answer = await onSaveStep(body.patch, body.shop);
     if (!answer || !answer.ok) {
       setStepError((answer && answer.message) || "Could not save that right now.");
       return false;
+    }
+    if (starters.length && onAddStarterItems) {
+      const added = await onAddStarterItems(starters.map(([title, note]) => ({ title, note, price: starterPrice(title) })));
+      if (added !== true) {
+        setStepError(typeof added === "string" && added ? added : "Your page type was saved, but the items could not be added right now.");
+        return false;
+      }
+      setStarterPicks({});
     }
     if (k === "name") setSavedAs({ handle: (answer.creator && answer.creator.handle) || preview, first: first.trim(), last: last.trim(), logo });
     return true;
@@ -866,7 +910,20 @@ function CreatorSetupScreen({
 
   /* ── 2. WHAT YOU SELL ─────────────────────────────────────────────── */
   /* ── 2. PAGE TYPE ─────────────────────────────────────────────────── */
-  step === "type" ? <><div style={{ margin: "16px 2px 2px" }}><div style={{ fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.25 }}>What do people come to you for?</div><div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45, marginTop: 4 }}>One tap shapes your page: the layout, the button and the words. You can change any of it after.</div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 9, marginTop: 12 }}>{SHOP_PAGE_TYPE_KEYS.map((key) => {
+  step === "type" ? <><div style={{ margin: "16px 2px 2px" }}><div style={{ fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: T.fontDisplay, lineHeight: 1.25 }}>What do people come to you for?</div><div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45, marginTop: 4 }}>One tap shapes your page: the layout, the button and the words. You can change any of it after.</div></div><input
+    data-testid="page-kind-search"
+    value={kindQuery}
+    onChange={(e) => setKindQuery(e.target.value)}
+    placeholder="Search what you do — hair, taxi, tuition…"
+    maxLength={30}
+    style={{ ...fieldBox, padding: "11px 14px", fontSize: 14, marginTop: 12 }}
+  />{kindQuery.trim() ? (() => {
+    /* Typed words search every kind anywhere — its name, its category and
+       the other words people use for it. One tap on a result sets the page
+       type AND the kind. */
+    const found = shopKindGroups("", kindQuery, BAZAAR_CATEGORY_INFO, BAZAAR_SUBCATEGORY_INFO);
+    return <div data-testid="page-kind-results" style={{ background: T.surface, borderRadius: 18, padding: "4px 14px 14px", marginTop: 10, boxShadow: T.shadowCard }}>{found.length ? kindChips(found, true) : <div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5, marginTop: 10 }}>Nothing close to “{kindQuery.trim()}”. Try another word, or clear the search and pick a page type below — you can describe your shop in your own two words under <b style={{ color: T.ink }}>What you sell → Other</b>.</div>}</div>;
+  })() : <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 9, marginTop: 12 }}>{SHOP_PAGE_TYPE_KEYS.map((key) => {
     const t = SHOP_PAGE_TYPES[key];
     const on = page.pageType === key;
     const Icon = { menu: UtensilsPt, store: ShoppingBagPt, services: CalendarCheckPt, classes: GraduationCapPt, portfolio: ImagePt, bookings: TicketPt, giving: HeartHandshakePt, pay: WalletPt }[key];
@@ -882,38 +939,45 @@ function CreatorSetupScreen({
         background: on ? T.accentSoft : T.surface, boxShadow: on ? `0 0 0 2px ${T.accent}, ${T.shadowCard}` : T.shadowCard
       }}
     ><span style={{ width: 34, height: 34, borderRadius: 11, background: t.color, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 7 }}><Icon size={18} color="#fff" /></span><span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink }}>{t.name}</span><span style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.inkSoft, lineHeight: 1.35, marginTop: 2 }}>{t.who}</span></button>;
-  })}</div>{page.pageType ? <>{
+  })}</div>}{page.pageType && !kindQuery.trim() ? <>{
     /* Which one, exactly. The type's own kinds, grouped by category; or,
        once something is typed, every kind anywhere that is near the words
        — "hair" brings the stylist, the salon, the barber and the parlour. */
     section("Which one is closest?", null, (() => {
-      const groups = shopKindGroups(page.pageType, kindQuery, BAZAAR_CATEGORY_INFO, BAZAAR_SUBCATEGORY_INFO);
-      return <div data-testid="page-kinds"><input
-        data-testid="page-kind-search"
-        value={kindQuery}
-        onChange={(e) => setKindQuery(e.target.value)}
-        placeholder="Search — hair, taxi, tuition, temple…"
-        maxLength={30}
-        style={{ ...fieldBox, padding: "10px 13px", fontSize: 14 }}
-      />{groups.length ? groups.map((g) => <div key={g.category} style={{ marginTop: 10 }}><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint, marginBottom: 6 }}>{g.label}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{g.kinds.map((k) => {
-        const on = category === g.category && subcategory === k.sub;
-        return <button
-          key={k.sub}
-          type="button"
-          data-testid={`page-kind-${g.category}-${k.sub}`}
-          aria-pressed={on}
-          onClick={() => pickKind(g.category, k.sub)}
-          style={{ ...pick(on), borderRadius: 999, padding: "8px 13px", fontSize: 12.5, fontWeight: 700 }}
-        >{k.label}</button>;
-      })}</div></div>) : <div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5, marginTop: 10 }}>Nothing close to “{kindQuery.trim()}”. Try another word, or skip this — you can describe your shop in your own two words under <b style={{ color: T.ink }}>What you sell → Other</b>.</div>}<div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45, margin: "12px 2px 0" }}>This is also where people find you in Pay &amp; Services.</div></div>;
+      const groups = shopKindGroups(page.pageType, "", BAZAAR_CATEGORY_INFO, BAZAAR_SUBCATEGORY_INFO);
+      return <div data-testid="page-kinds" style={{ marginTop: -10 }}>{kindChips(groups, false)}<div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45, margin: "12px 2px 0" }}>This is also where people find you in Pay &amp; Services.</div></div>;
     })())
+  }{
+    /* A first list for this kind. Tick what you sell and type YOUR price;
+       the figure in the empty box is only a typical one, shown for a rupee
+       account. Nothing is added until Save, and only ticked rows are. */
+    starterRows.length ? section("Start your list", null, <div data-testid="page-starters" style={{ marginTop: -8 }}><div style={{ fontSize: 12, fontWeight: 600, color: T.inkSoft, lineHeight: 1.45, marginBottom: 4 }}>Tick what you offer and type your price. You can add photos and more items on your page later.</div>{starterRows.map(([title, note, typical], i) => {
+      const on = title in starterPicks;
+      return <div key={title} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}><button
+        type="button"
+        role="checkbox"
+        aria-checked={on}
+        aria-label={title}
+        data-testid={`page-starter-${i}`}
+        onClick={() => setStarterPicks((p) => { const n = { ...p }; if (title in n) delete n[title]; else n[title] = ""; return n; })}
+        style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, border: "none", background: "transparent", padding: 0, textAlign: "left", fontFamily: "inherit", cursor: "pointer" }}
+      ><span aria-hidden="true" style={{ width: 22, height: 22, flexShrink: 0, borderRadius: 7, boxSizing: "border-box", border: on ? "none" : `1.5px solid ${T.inkFaint}`, background: on ? T.accent : T.surface, display: "flex", alignItems: "center", justifyContent: "center" }}>{on ? <Check9 size={14} color="#fff" strokeWidth={3} /> : null}</span><span style={{ minWidth: 0 }}><span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink }}>{title}</span>{note ? <span style={{ display: "block", fontSize: 11, color: T.inkFaint }}>{note}</span> : null}</span></button>{on ? <input
+        data-testid={`page-starter-price-${i}`}
+        value={starterPicks[title]}
+        onChange={(e) => { const v = e.target.value.replace(/[^0-9.]/g, "").slice(0, 9); setStarterPicks((p) => ({ ...p, [title]: v })); }}
+        inputMode="decimal"
+        aria-label={`Price of ${title}${ccy ? ` in ${ccy}` : ""}`}
+        placeholder={ccy === "INR" ? String(typical) : "Price"}
+        style={{ ...fieldBox, width: 92, flexShrink: 0, padding: "8px 10px", fontSize: 14, textAlign: "right" }}
+      /> : null}</div>;
+    })}{ccy ? <div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45, margin: "8px 2px 0" }}>Prices are in {ccy}, like the rest of your list.</div> : null}</div>) : null
   }{
     /* How a customer will see it: two made-up items in this page's words
        and layout. The prices are GeuFigure, the app's own figure, exactly
        as on the real page — a page type never touches how money reads. */
     section("How a customer sees it", null, page.hideList
       ? <div data-testid="page-preview" style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5 }}>No list. Your page shows your name and one button: <b style={{ color: T.ink }}>Pay {shownName}</b>.</div>
-      : <div data-testid="page-preview"><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft, marginBottom: 4 }}>{look.listName}</div><div style={look.layout === "grid" ? { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 9 } : {}}>{(SHOP_PAGE_TYPES[page.pageType].sample.length ? SHOP_PAGE_TYPES[page.pageType].sample : [["Your first item", "A short note", 100], ["Your second item", "", 250]]).map(([title, note, price], i) => {
+      : <div data-testid="page-preview"><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.7, textTransform: "uppercase", color: T.inkSoft, marginBottom: 4 }}>{look.listName}</div><div style={look.layout === "grid" ? { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 9 } : {}}>{((rows) => (rows.length ? rows : [["Your first item", "A short note", 100], ["Your second item", "", 250]]))(shopKindStarters(category, subcategory, page.pageType).slice(0, 2)).map(([title, note, price], i) => {
         const btn = <span style={{ height: 26, minWidth: 26, padding: look.itemWord ? "0 11px" : 0, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 800, flexShrink: 0, ...shopButtonStyle(look) }}>{look.itemWord || <PlusSu size={14} />}</span>;
         const pic = <span aria-hidden="true" style={{ display: "block", flexShrink: 0, width: look.layout === "grid" ? "100%" : 42, aspectRatio: look.layout === "grid" ? String(look.photo.ratio) : "1", borderRadius: look.photo.radius === "50%" && look.layout !== "grid" ? "50%" : look.corners.photo, background: `linear-gradient(135deg, ${look.soft}, ${look.color}66)` }} />;
         return look.layout === "grid"

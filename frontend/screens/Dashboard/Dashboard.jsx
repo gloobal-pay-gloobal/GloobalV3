@@ -4772,6 +4772,26 @@ function DashboardScreen({ dialCountry, onLogout, onOpenSend, onPayCreator, onPa
     creator={creatorProfile}
     onSave={saveCreatorProfile}
     onSaveStep={saveCreatorStep}
+    onAddStarterItems={async (rows) => {
+      // The starter items ticked in setup, added to the END of the shop's
+      // list. The route replaces the whole list, so the list is read
+      // first and sent back with the new rows after it; one whose name is
+      // already there is left alone, so saving the step twice adds nothing.
+      try {
+        const current = await GloobalApi.getCreatorItems(creatorSymbol);
+        const have = new Set(current.map((i) => String(i.title || "").trim().toLowerCase()));
+        const fresh = (Array.isArray(rows) ? rows : []).filter((r) => r && r.title && !have.has(String(r.title).trim().toLowerCase()));
+        if (!fresh.length) return true;
+        const next = current.map((i) => ({
+          title: i.title, price: i.price, note: i.note, photos: i.photos || (i.photo ? [i.photo] : []),
+          category: i.category, badge: i.badge, soldOut: i.soldOut, special: Boolean(i.special)
+        })).concat(fresh.map((r) => ({ title: String(r.title), price: Number(r.price), note: String(r.note || ""), photos: [], category: "", badge: "", soldOut: false, special: false })));
+        await GloobalApi.saveCreatorItems(creatorSymbol, next, current);
+        return true;
+      } catch (e) {
+        return (e && e.body && typeof e.body.message === "string" && e.body.message) ? e.body.message : "Your page type was saved, but the items could not be added right now.";
+      }
+    }}
     onSaveShare={saveShareFromSetup}
     startStep={creatorSetupStart}
     shareRate={myShareRate}

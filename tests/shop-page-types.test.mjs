@@ -21,7 +21,7 @@ const read = (p) => readFileSync(join(REPO, p), "utf8");
 function load() {
   return new Function(`${read("frontend/constants/theme.js")}\n${read("frontend/features/creator/shopTheme.js")}
     return { SHOP_PAGE_TYPES, SHOP_PAGE_TYPE_KEYS, SHOP_ITEM_BUTTONS, SHOP_ITEM_BUTTON_KEYS, SHOP_LIST_NAMES, SHOP_LIST_NAME_KEYS,
-             SHOP_PAGE_TYPE_KINDS, SHOP_KIND_WORDS, shopKindGroups,
+             SHOP_PAGE_TYPE_KINDS, SHOP_KIND_WORDS, shopKindGroups, SHOP_KIND_STARTERS, shopKindStarters, shopPageTypeForKind,
              SHOP_PAGE_PARTS, SHOP_LAYOUTS, SHOP_PHOTO_SHAPES, SHOP_CORNERS, SHOP_THEME_FORBIDDEN, shopPageTypeDials, resolveShopTheme };`)();
 }
 
@@ -187,10 +187,65 @@ test("a salon owner sees the hair kinds; typing a word finds everything near it"
 test("picking a kind saves the Bazaar's own two fields, and only when one was tapped", () => {
   const setup = read("frontend/features/creator/CreatorSetupScreen.jsx");
   assert.match(setup, /patch: kindTouched && category \? \{ category, subcategory: subcategory \|\| "" \} : \{\},/);
-  assert.match(setup, /shopKindGroups\(page\.pageType, kindQuery, BAZAAR_CATEGORY_INFO, BAZAAR_SUBCATEGORY_INFO\)/);
+  assert.match(setup, /shopKindGroups\(page\.pageType, "", BAZAAR_CATEGORY_INFO, BAZAAR_SUBCATEGORY_INFO\)/);
   assert.match(setup, /data-testid=\{`page-kind-\$\{g\.category\}-\$\{k\.sub\}`\}/);
   // The two categories for people who are not a shop exist on every side.
   const model = read("server/models/User.js");
   assert.equal((model.match(/'creator', 'community', 'other'\]/g) || []).length, 2, "category and category2");
   assert.match(read("frontend/features/coverage/CoverageDashboard.jsx"), /creator: "Creators & Freelance", community: "Community & Giving"/);
+});
+
+// ── A FIRST LIST, AND SEARCH FIRST ───────────────────────────────────────
+test("every kind has a starter list of real rows, and belongs to a page type", () => {
+  const api = load();
+  for (const [cat, subs] of Object.entries(bz.BAZAAR_SUBCATEGORIES)) {
+    for (const sub of subs) {
+      const rows = api.SHOP_KIND_STARTERS[`${cat}.${sub}`];
+      assert.ok(rows && rows.length >= 3, `${cat}.${sub} has at least three starters`);
+      for (const [title, note, price] of rows) {
+        assert.ok(title && title.length <= 40 && typeof note === "string" && price > 0, `${cat}.${sub}: ${title}`);
+      }
+      assert.equal(new Set(rows.map((r) => r[0].toLowerCase())).size, rows.length, `${cat}.${sub} has no repeated title`);
+      assert.ok(api.SHOP_PAGE_TYPES[api.shopPageTypeForKind(cat, sub)], `${cat}.${sub} belongs to a page type`);
+    }
+  }
+  for (const id of Object.keys(api.SHOP_KIND_STARTERS)) assert.ok(bz.bazaarSubcategoryValid(...id.split(".")), `starters for a kind that exists: ${id}`);
+});
+
+test("the preview and the starters are the kind's own; a type's samples when no kind is picked", () => {
+  const api = load();
+  assert.deepEqual(api.shopKindStarters("beauty", "hair", "services").map((r) => r[0]), ["Haircut", "Hair colour", "Blow dry", "Keratin treatment"]);
+  assert.equal(api.shopKindStarters("repair", "plumber", "services")[0][0], "Visit charge", "a plumber is not shown a haircut");
+  assert.deepEqual(api.shopKindStarters("", "", "menu"), api.SHOP_PAGE_TYPES.menu.sample);
+  assert.equal(api.shopPageTypeForKind("beauty", "hair"), "services");
+  assert.equal(api.shopPageTypeForKind("community", "ngo"), "giving");
+  assert.equal(api.shopPageTypeForKind("creator", "youtuber"), "portfolio");
+  assert.equal(api.shopPageTypeForKind("nope", "nope"), "");
+});
+
+test("search is first, and a result sets the page type and the kind in one tap", () => {
+  const setup = read("frontend/features/creator/CreatorSetupScreen.jsx");
+  const step = setup.slice(setup.indexOf('step === "type" ? <>'), setup.indexOf('step === "sell" ? <>'));
+  assert.ok(step.indexOf('data-testid="page-kind-search"') < step.indexOf("SHOP_PAGE_TYPE_KEYS.map"), "the search box is above the eight types");
+  assert.match(step, /shopKindGroups\("", kindQuery, BAZAAR_CATEGORY_INFO, BAZAAR_SUBCATEGORY_INFO\)/, "search reaches every type");
+  assert.match(step, /kindChips\(found, true\)/);
+  assert.match(setup, /const type = shopPageTypeForKind\(cat, sub\);\s*if \(type && type !== page\.pageType\) pickPageType\(type\);\s*setKindQuery\(""\);/);
+});
+
+test("starter items: the owner's own price, every ticked one priced, nothing saved twice", () => {
+  const setup = read("frontend/features/creator/CreatorSetupScreen.jsx");
+  // The typical price is a hint in the empty box, for a rupee account only — never a value.
+  assert.match(setup, /placeholder=\{ccy === "INR" \? String\(typical\) : "Price"\}/);
+  assert.match(setup, /if \(title in n\) delete n\[title\]; else n\[title\] = "";/, "a tick starts with no price");
+  assert.match(setup, /if \(starters\.some\(\(\[title\]\) => !\(starterPrice\(title\) > 0\)\)\) \{\s*setStepError\("Type a price for each item you ticked, or untick it\."\);\s*return false;/);
+  // Checked before the step is saved, added after it.
+  const commit = setup.slice(setup.indexOf("const commit = async (k) => {"), setup.indexOf("const go = async () => {"));
+  assert.ok(commit.indexOf("Type a price for each item") < commit.indexOf("await onSaveStep(body.patch, body.shop)"));
+  assert.ok(commit.indexOf("await onSaveStep(body.patch, body.shop)") < commit.indexOf("await onAddStarterItems("));
+  const dash = read("frontend/screens/Dashboard/Dashboard.jsx");
+  const add = dash.slice(dash.indexOf("onAddStarterItems={async (rows) => {"), dash.indexOf("onSaveShare={saveShareFromSetup}"));
+  assert.match(add, /const current = await GloobalApi\.getCreatorItems\(creatorSymbol\);/, "the list is read first: the route replaces all of it");
+  assert.match(add, /!have\.has\(String\(r\.title\)\.trim\(\)\.toLowerCase\(\)\)/, "one already listed is left alone");
+  assert.match(add, /if \(!fresh\.length\) return true;/);
+  assert.match(add, /current\.map\(\(i\) => \(\{[\s\S]*\}\)\)\.concat\(fresh\.map/, "existing items are kept, new ones go after");
 });

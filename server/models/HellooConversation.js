@@ -33,6 +33,13 @@ const hellooConversationSchema = new mongoose.Schema(
         // This member's own settings for the chat. Nobody else sees them.
         muted: { type: Boolean, default: false },
         pinned: { type: Boolean, default: false },
+        // What THIS member calls the chat: "Papa", "()+", anything. Their
+        // own word for it; the other person never sees it.
+        savedName: { type: String, default: '', maxlength: 40 },
+        // A private chat: on this member's Helloo it appears only when its
+        // whole saved name is typed, and it makes no notification, count
+        // or sound for them. Always has a saved name.
+        private: { type: Boolean, default: false },
         // "Clear chat" / "Delete chat": messages up to here are gone for this
         // member only. A deleted chat comes back when a new message arrives.
         clearedAt: { type: Date, default: null },

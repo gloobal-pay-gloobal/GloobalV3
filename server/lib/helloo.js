@@ -96,6 +96,14 @@ const oid = (value) => (mongoose.isValidObjectId(value) ? new mongoose.Types.Obj
 const sameId = (a, b) => String(a) === String(b);
 const pairKeyOf = (a, b) => [String(a), String(b)].sort().join(':');
 
+// A saved name as it is kept: trimmed, single-spaced, 40 characters at
+// most. It may be letters, numbers or symbols — "()+", "hakuna matata".
+const HELLOO_SAVED_NAME_MAX = 40;
+const HELLOO_PRIVATE_NAME_MIN = 3;
+const hellooSavedName = (value) => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, HELLOO_SAVED_NAME_MAX) : '');
+// Two names are the same name when they differ only in letter case.
+const hellooNameKey = (value) => hellooSavedName(value).toLowerCase();
+
 function previewOf(message) {
   if (message.deletedAt) return 'This message was deleted';
   if (message.kind === 'call') {
@@ -273,6 +281,17 @@ function createHelloo(deps) {
     };
   }
 
+  // Does `userId` keep their chat with `otherId` private? Used to keep a
+  // call's notification from naming the caller.
+  async function hellooIsPrivateFor(userId, otherId) {
+    try {
+      const conversation = await HellooConversation.findOne({ pairKey: pairKeyOf(userId, otherId) }).select('reads').lean();
+      return Boolean(conversation && stateOf(conversation, userId).private);
+    } catch (error) {
+      return false;
+    }
+  }
+
   function chatOut(conversation, meId, people, unread) {
     const otherId = (conversation.members || []).find((m) => !sameId(m, meId)) || meId;
     const other = (conversation.reads || []).find((r) => sameId(r.userId, otherId));
@@ -281,6 +300,9 @@ function createHelloo(deps) {
       id: String(conversation._id),
       muted: Boolean(mine.muted),
       pinned: Boolean(mine.pinned),
+      // Your own name for this chat, and whether you made it private.
+      savedName: typeof mine.savedName === 'string' ? mine.savedName : '',
+      private: Boolean(mine.private),
       person: people.get(String(otherId)) || { accountId: String(otherId), name: '', gloobalId: '' },
       lastAt: conversation.lastMessageAt || conversation.createdAt,
       last: conversation.last?.kind
@@ -487,7 +509,7 @@ function createHelloo(deps) {
     }
     emit(done.callerId, { type: 'call-update', call: callOut(done, done.callerId, people) });
     emit(done.calleeId, { type: 'call-update', call: callOut(done, done.calleeId, people) });
-    if (status === 'missed' && pushService.isPushEnabled() && !sockets.has(String(done.calleeId))) {
+    if (status === 'missed' && pushService.isPushEnabled() && !sockets.has(String(done.calleeId)) && !(await hellooIsPrivateFor(done.calleeId, done.callerId))) {
       const caller = people.get(String(done.callerId));
       pushService.sendPushToUser(done.calleeId, {
         v: 1, app: 'helloo', category: 'transactional', type: 'helloo_missed_call', callId: String(done._id),
@@ -523,7 +545,10 @@ function createHelloo(deps) {
     emit(sender._id, { type: 'message', message: out });
     const live = emit(otherId, { type: 'message', message: out });
     if (live > 0 || !pushService.isPushEnabled()) return;
-    if (stateOf(conversation, otherId).muted) return;
+    // A muted chat sends no notification — and a PRIVATE one never does:
+    // "no notification or any kind of disturbance" is what private means.
+    const theirs = stateOf(conversation, otherId);
+    if (theirs.muted || theirs.private) return;
     try {
       await pushService.sendPushToUser(
         otherId,
@@ -939,15 +964,37 @@ function createHelloo(deps) {
         const conversation = await memberChat(req, res);
         if (!conversation) return undefined;
         const set = {};
+        const mine = stateOf(conversation, req.authUser._id);
         if (typeof req.body?.muted === 'boolean') set['reads.$[mine].muted'] = req.body.muted;
         if (typeof req.body?.pinned === 'boolean') set['reads.$[mine].pinned'] = req.body.pinned;
+        // Your own name for the chat, and whether it is private. A private
+        // chat is found ONLY by typing its whole saved name, so it must
+        // have one (three characters or more), and a saved name must be
+        // yours alone — one word can never open two chats.
+        let savedName = typeof mine.savedName === 'string' ? mine.savedName : '';
+        let isPrivate = Boolean(mine.private);
+        if (typeof req.body?.savedName === 'string') savedName = hellooSavedName(req.body.savedName);
+        if (typeof req.body?.private === 'boolean') isPrivate = req.body.private;
+        if (typeof req.body?.savedName === 'string' || typeof req.body?.private === 'boolean') {
+          if (isPrivate && savedName.length < HELLOO_PRIVATE_NAME_MIN) {
+            return res.status(400).json({ success: false, code: 'private_needs_name', message: `A private chat needs a saved name of ${HELLOO_PRIVATE_NAME_MIN} characters or more.` });
+          }
+          if (savedName) {
+            const others = await HellooConversation.find({ _id: { $ne: conversation._id }, members: req.authUser._id }).select('reads').lean();
+            const taken = others.some((c) => hellooNameKey(stateOf(c, req.authUser._id).savedName) === hellooNameKey(savedName));
+            if (taken) return res.status(409).json({ success: false, code: 'name_taken', message: 'You already use that name for another chat.' });
+          }
+          set['reads.$[mine].savedName'] = savedName;
+          set['reads.$[mine].private'] = isPrivate;
+        }
         if (!Object.keys(set).length) return res.status(400).json({ success: false, message: 'Nothing to change.' });
         await HellooConversation.updateOne({ _id: conversation._id }, { $set: set }, { arrayFilters: [{ 'mine.userId': req.authUser._id }] });
-        const mine = stateOf(conversation, req.authUser._id);
         return res.json({
           success: true,
           muted: typeof req.body.muted === 'boolean' ? req.body.muted : Boolean(mine.muted),
           pinned: typeof req.body.pinned === 'boolean' ? req.body.pinned : Boolean(mine.pinned),
+          savedName,
+          private: isPrivate,
         });
       } catch (error) {
         console.error('Helloo prefs error:', error);
@@ -1359,9 +1406,12 @@ function createHelloo(deps) {
         const forCallee = callOut(call.toObject(), other._id, people);
         emit(other._id, { type: 'call-incoming', call: forCallee });
         if (pushService.isPushEnabled()) {
+          // A call from a chat the callee keeps private still rings — a
+          // call cannot wait to be looked for — but never says who it is.
+          const hush = await hellooIsPrivateFor(other._id, me);
           pushService.sendPushToUser(other._id, {
             v: 1, app: 'helloo', category: 'transactional', type: 'helloo_call', callId: String(call._id),
-            title: req.authUser.fullName || 'Helloo',
+            title: hush ? 'Helloo' : (req.authUser.fullName || 'Helloo'),
             body: call.video ? 'Incoming video call' : 'Incoming voice call',
             url: `/?call=${String(call._id)}`, tag: `helloo-call-${String(call._id)}`, timestamp: Date.now(), requireInteraction: true,
           }, { category: 'transactional', app: 'helloo' }).catch(() => {});

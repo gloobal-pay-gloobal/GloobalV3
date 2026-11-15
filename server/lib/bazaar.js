@@ -21,7 +21,11 @@
 
 var BAZAAR_CATEGORIES = [
   'food', 'grocery', 'sweets', 'fashion', 'beauty', 'health', 'electronics',
-  'repair', 'home', 'education', 'travel', 'art', 'events', 'other'
+  'repair', 'home', 'education', 'travel', 'art', 'events',
+  // People who are not a shop: someone who makes things or works for
+  // themselves, and places people give to. Before these, a YouTuber, a
+  // freelancer and a temple fund could only be "Other".
+  'creator', 'community', 'other'
 ];
 
 // Words that mean a category, so "tailor" or "pharmacy" typed in the bar
@@ -42,6 +46,8 @@ var BAZAAR_CATEGORY_WORDS = {
   travel: ['travel', 'taxi', 'cab', 'auto', 'transport', 'tour', 'bus'],
   art: ['art', 'craft', 'handmade', 'painting', 'pottery'],
   events: ['events', 'wedding', 'shaadi', 'शादी', 'decoration', 'photographer', 'dj', 'catering'],
+  creator: ['creator', 'youtuber', 'musician', 'singer', 'writer', 'artist', 'designer', 'developer', 'freelancer', 'freelance', 'influencer', 'consultant'],
+  community: ['community', 'ngo', 'temple', 'mandir', 'मंदिर', 'donation', 'daan', 'दान', 'charity', 'club', 'trust', 'fundraiser'],
   other: []
 };
 
@@ -51,19 +57,21 @@ var BAZAAR_CATEGORY_WORDS = {
 // (frontend/features/bazaar/bazaar.jsx, BAZAAR_SUBCATEGORY_INFO), and a
 // test keeps the two lists the same.
 var BAZAAR_SUBCATEGORIES = {
-  food: ['chai', 'dhaba', 'fastfood', 'restaurant', 'cafe', 'tiffin', 'juice'],
-  grocery: ['kirana', 'vegetables', 'fruits', 'dairy', 'meat', 'organic'],
-  sweets: ['mithai', 'bakery', 'cakes', 'namkeen', 'icecream'],
-  fashion: ['tailor', 'clothes', 'saree', 'shoes', 'jewellery', 'kids'],
-  beauty: ['salon', 'parlour', 'barber', 'spa', 'mehendi'],
-  health: ['pharmacy', 'clinic', 'dentist', 'lab', 'gym', 'yoga'],
-  electronics: ['mobile', 'phonerepair', 'computer', 'appliances', 'recharge'],
-  repair: ['mechanic', 'bike', 'car', 'plumber', 'electrician', 'carpenter'],
-  home: ['furniture', 'decor', 'hardware', 'cleaning', 'pestcontrol'],
-  education: ['tuition', 'coaching', 'music', 'dance', 'books', 'stationery'],
-  travel: ['taxi', 'auto', 'tours', 'hotel', 'tickets'],
-  art: ['handmade', 'pottery', 'painting', 'gifts', 'photography'],
-  events: ['wedding', 'decoration', 'catering', 'dj', 'tent', 'flowers'],
+  food: ['chai', 'dhaba', 'fastfood', 'restaurant', 'cafe', 'tiffin', 'juice', 'streetfood', 'homekitchen', 'paan'],
+  grocery: ['kirana', 'vegetables', 'fruits', 'dairy', 'meat', 'organic', 'general', 'water'],
+  sweets: ['mithai', 'bakery', 'cakes', 'namkeen', 'icecream', 'dryfruits'],
+  fashion: ['tailor', 'clothes', 'saree', 'shoes', 'jewellery', 'kids', 'boutique', 'laundry'],
+  beauty: ['salon', 'parlour', 'barber', 'spa', 'mehendi', 'hair', 'makeup', 'nails', 'skincare', 'tattoo'],
+  health: ['pharmacy', 'clinic', 'dentist', 'lab', 'gym', 'yoga', 'doctor', 'physio', 'optical', 'ayurveda', 'vet'],
+  electronics: ['mobile', 'phonerepair', 'computer', 'appliances', 'recharge', 'internet', 'printing'],
+  repair: ['mechanic', 'bike', 'car', 'plumber', 'electrician', 'carpenter', 'ac', 'puncture', 'welding', 'painter'],
+  home: ['furniture', 'decor', 'hardware', 'cleaning', 'pestcontrol', 'movers', 'gardening', 'cook', 'rent'],
+  education: ['tuition', 'coaching', 'music', 'dance', 'books', 'stationery', 'language', 'computerclass', 'sports', 'preschool', 'driving'],
+  travel: ['taxi', 'auto', 'tours', 'hotel', 'tickets', 'bikerental', 'courier', 'guide', 'tempo'],
+  art: ['handmade', 'pottery', 'painting', 'gifts', 'photography', 'design', 'framing'],
+  events: ['wedding', 'decoration', 'catering', 'dj', 'tent', 'flowers', 'photovideo', 'pandit', 'band', 'anchor'],
+  creator: ['youtuber', 'musician', 'writer', 'artist', 'photographer', 'videomaker', 'designer', 'developer', 'influencer', 'podcaster', 'freelancer', 'consultant', 'astrology'],
+  community: ['ngo', 'worship', 'club', 'fundraiser', 'society', 'sportsclub'],
   other: []
 };
 

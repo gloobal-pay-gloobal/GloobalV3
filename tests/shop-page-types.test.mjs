@@ -21,6 +21,7 @@ const read = (p) => readFileSync(join(REPO, p), "utf8");
 function load() {
   return new Function(`${read("frontend/constants/theme.js")}\n${read("frontend/features/creator/shopTheme.js")}
     return { SHOP_PAGE_TYPES, SHOP_PAGE_TYPE_KEYS, SHOP_ITEM_BUTTONS, SHOP_ITEM_BUTTON_KEYS, SHOP_LIST_NAMES, SHOP_LIST_NAME_KEYS,
+             SHOP_PAGE_TYPE_KINDS, SHOP_KIND_WORDS, shopKindGroups,
              SHOP_PAGE_PARTS, SHOP_LAYOUTS, SHOP_PHOTO_SHAPES, SHOP_CORNERS, SHOP_THEME_FORBIDDEN, shopPageTypeDials, resolveShopTheme };`)();
 }
 
@@ -127,8 +128,69 @@ test("setup asks it second, and only writes a type's layout when a type was pick
   const setup = read("frontend/features/creator/CreatorSetupScreen.jsx");
   const steps = setup.slice(setup.indexOf("var CREATOR_SETUP_STEPS = ["), setup.indexOf("];", setup.indexOf("var CREATOR_SETUP_STEPS = [")));
   assert.deepEqual(steps.match(/key: "(\w+)"/g).map((k) => k.slice(6, -1)), ["name", "type", "sell", "where", "look", "share"]);
-  assert.match(setup, /return \{ patch: \{\}, shop: Object\.assign\(\{\}, pageTouched \? shopPageTypeDials\(page\.pageType\) : \{\}, page\) \};/);
+  assert.match(setup, /shop: Object\.assign\(\{\}, pageTouched \? shopPageTypeDials\(page\.pageType\) : \{\}, page\)/);
   assert.match(setup, /data-testid=\{`page-type-\$\{key\}`\}/);
   // The preview's prices are the app's own figure.
   assert.match(setup, /<GeuFigure amount=\{price\} currency=\{ccy\} size=\{12\} \/>/);
+});
+
+// ── WHICH ONE, EXACTLY ───────────────────────────────────────────────────
+//
+// The founder: "if someone chose the category of hair, show them the list
+// of choices in that category … with similar or around names."
+import vm from "node:vm";
+import { createRequire } from "node:module";
+const bz = createRequire(import.meta.url)("../server/lib/bazaar.js");
+function bazaarTables() {
+  const s = read("frontend/features/bazaar/bazaar.jsx");
+  const ctx = vm.createContext({});
+  vm.runInContext(s.slice(s.indexOf("var BAZAAR_SUBCATEGORY_INFO"), s.indexOf("function bazaarSubcategoryLabel")), ctx);
+  const subs = JSON.parse(JSON.stringify(vm.runInContext("BAZAAR_SUBCATEGORY_INFO", ctx)));
+  const cats = [...s.slice(s.indexOf("var BAZAAR_CATEGORY_INFO = ["), s.indexOf("];", s.indexOf("var BAZAAR_CATEGORY_INFO = ["))).matchAll(/key: "(\w+)", label: "([^"]+)"/g)].map((m) => ({ key: m[1], label: m[2] }));
+  return { cats, subs };
+}
+
+test("every kind a page type offers is a real category and sub-category the server accepts", () => {
+  const api = load();
+  const { cats, subs } = bazaarTables();
+  assert.deepEqual(cats.map((c) => c.key), bz.BAZAAR_CATEGORIES, "the app and the server list the same categories in the same order");
+  for (const key of api.SHOP_PAGE_TYPE_KEYS) {
+    const lists = api.SHOP_PAGE_TYPE_KINDS[key];
+    assert.ok(lists && lists.length, `${key} offers kinds`);
+    for (const [cat, keys] of lists) {
+      assert.ok(bz.BAZAAR_CATEGORIES.includes(cat), `${key}: ${cat}`);
+      if (keys !== "*") for (const sub of keys) assert.ok(bz.bazaarSubcategoryValid(cat, sub), `${key}: ${cat}.${sub}`);
+    }
+    assert.ok(api.shopKindGroups(key, "", cats, subs).length >= 1);
+  }
+  for (const id of Object.keys(api.SHOP_KIND_WORDS)) {
+    const [cat, sub] = id.split(".");
+    assert.ok(bz.bazaarSubcategoryValid(cat, sub), `words for a kind that exists: ${id}`);
+  }
+});
+
+test("a salon owner sees the hair kinds; typing a word finds everything near it", () => {
+  const api = load();
+  const { cats, subs } = bazaarTables();
+  const names = (groups) => groups.flatMap((g) => g.kinds.map((k) => k.label));
+  const services = api.shopKindGroups("services", "", cats, subs);
+  assert.equal(services[0].label, "Beauty & Salon");
+  for (const n of ["Salon", "Parlour", "Barber", "Hair stylist", "Makeup artist", "Nails"]) assert.ok(names(services).includes(n), n);
+  // Search reaches across page types and categories.
+  assert.deepEqual(names(api.shopKindGroups("store", "hair", cats, subs)), ["Salon", "Parlour", "Barber", "Hair stylist"]);
+  assert.ok(names(api.shopKindGroups("menu", "nai", cats, subs)).includes("Barber"), "the Hindi word finds the barber");
+  assert.ok(names(api.shopKindGroups("menu", "temple", cats, subs)).includes("Place of worship"));
+  assert.ok(names(api.shopKindGroups("menu", "youtube", cats, subs)).includes("YouTuber"));
+  assert.deepEqual(api.shopKindGroups("menu", "zzzz", cats, subs), []);
+});
+
+test("picking a kind saves the Bazaar's own two fields, and only when one was tapped", () => {
+  const setup = read("frontend/features/creator/CreatorSetupScreen.jsx");
+  assert.match(setup, /patch: kindTouched && category \? \{ category, subcategory: subcategory \|\| "" \} : \{\},/);
+  assert.match(setup, /shopKindGroups\(page\.pageType, kindQuery, BAZAAR_CATEGORY_INFO, BAZAAR_SUBCATEGORY_INFO\)/);
+  assert.match(setup, /data-testid=\{`page-kind-\$\{g\.category\}-\$\{k\.sub\}`\}/);
+  // The two categories for people who are not a shop exist on every side.
+  const model = read("server/models/User.js");
+  assert.equal((model.match(/'creator', 'community', 'other'\]/g) || []).length, 2, "category and category2");
+  assert.match(read("frontend/features/coverage/CoverageDashboard.jsx"), /creator: "Creators & Freelance", community: "Community & Giving"/);
 });

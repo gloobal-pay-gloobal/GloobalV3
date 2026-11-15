@@ -19,7 +19,7 @@ import { useState as useState62, useEffect as useEffect59, useRef as useRef35 } 
 import {
   UtensilsCrossed as BzFood, ShoppingBasket as BzGrocery, Cake as BzSweets, Shirt as BzFashion, Scissors as BzBeauty,
   Pill as BzHealth, Smartphone as BzElectronics, Wrench as BzRepair, Hammer as BzHome, GraduationCap as BzEducation,
-  Bus as BzTravel, Palette as BzArt, PartyPopper as BzEvents, Store as BzOther,
+  Bus as BzTravel, Palette as BzArt, PartyPopper as BzEvents, Store as BzOther, Clapperboard as BzCreator, HeartHandshake as BzCommunity,
   LocateFixed as LocateFixed2, Loader as Loader7, Flame as BzFlame, SearchX as BzSearchOff, ChevronRight as ChevronRight10,
   History as BzRecent, Star as BzStar,
   Gift as BzFestive, Search as BzSuggest, SlidersHorizontal as BzFilter, X as BzX,
@@ -27,7 +27,7 @@ import {
   Tag as BzItemIcon, ImageOff as BzNoPhoto
 } from "lucide-react";
 
-// The same fourteen, in the same order, as server/lib/bazaar.js. The order
+// The same sixteen, in the same order, as server/lib/bazaar.js. The order
 // here is only the setup screen's; Pay & Services orders them by payments.
 var BAZAAR_CATEGORY_INFO = [
   { key: "food", label: "Food & Chai", Icon: BzFood },
@@ -43,6 +43,8 @@ var BAZAAR_CATEGORY_INFO = [
   { key: "travel", label: "Travel & Transport", Icon: BzTravel },
   { key: "art", label: "Art & Craft", Icon: BzArt },
   { key: "events", label: "Events", Icon: BzEvents },
+  { key: "creator", label: "Creators & Freelance", Icon: BzCreator },
+  { key: "community", label: "Community & Giving", Icon: BzCommunity },
   { key: "other", label: "Other", Icon: BzOther }
 ];
 
@@ -50,19 +52,21 @@ var BAZAAR_CATEGORY_INFO = [
 // The second step under each category (0141). Same keys, same order as
 // server/lib/bazaar.js BAZAAR_SUBCATEGORIES — a test keeps them equal.
 var BAZAAR_SUBCATEGORY_INFO = {
-  food: [["chai", "Chai"], ["dhaba", "Dhaba"], ["fastfood", "Fast food"], ["restaurant", "Restaurant"], ["cafe", "Café"], ["tiffin", "Tiffin"], ["juice", "Juice"]],
-  grocery: [["kirana", "Kirana"], ["vegetables", "Vegetables"], ["fruits", "Fruits"], ["dairy", "Dairy"], ["meat", "Meat & fish"], ["organic", "Organic"]],
-  sweets: [["mithai", "Mithai"], ["bakery", "Bakery"], ["cakes", "Cakes"], ["namkeen", "Namkeen"], ["icecream", "Ice cream"]],
-  fashion: [["tailor", "Tailor"], ["clothes", "Clothes"], ["saree", "Saree"], ["shoes", "Shoes"], ["jewellery", "Jewellery"], ["kids", "Kids"]],
-  beauty: [["salon", "Salon"], ["parlour", "Parlour"], ["barber", "Barber"], ["spa", "Spa"], ["mehendi", "Mehendi"]],
-  health: [["pharmacy", "Pharmacy"], ["clinic", "Clinic"], ["dentist", "Dentist"], ["lab", "Lab tests"], ["gym", "Gym"], ["yoga", "Yoga"]],
-  electronics: [["mobile", "Mobiles"], ["phonerepair", "Phone repair"], ["computer", "Computers"], ["appliances", "Appliances"], ["recharge", "Recharge"]],
-  repair: [["mechanic", "Mechanic"], ["bike", "Bike"], ["car", "Car"], ["plumber", "Plumber"], ["electrician", "Electrician"], ["carpenter", "Carpenter"]],
-  home: [["furniture", "Furniture"], ["decor", "Decor"], ["hardware", "Hardware"], ["cleaning", "Cleaning"], ["pestcontrol", "Pest control"]],
-  education: [["tuition", "Tuition"], ["coaching", "Coaching"], ["music", "Music"], ["dance", "Dance"], ["books", "Books"], ["stationery", "Stationery"]],
-  travel: [["taxi", "Taxi"], ["auto", "Auto"], ["tours", "Tours"], ["hotel", "Hotel"], ["tickets", "Tickets"]],
-  art: [["handmade", "Handmade"], ["pottery", "Pottery"], ["painting", "Painting"], ["gifts", "Gifts"], ["photography", "Photography"]],
-  events: [["wedding", "Wedding"], ["decoration", "Decoration"], ["catering", "Catering"], ["dj", "DJ"], ["tent", "Tent"], ["flowers", "Flowers"]],
+  food: [["chai", "Chai"], ["dhaba", "Dhaba"], ["fastfood", "Fast food"], ["restaurant", "Restaurant"], ["cafe", "Café"], ["tiffin", "Tiffin"], ["juice", "Juice"], ["streetfood", "Street food"], ["homekitchen", "Home kitchen"], ["paan", "Paan"]],
+  grocery: [["kirana", "Kirana"], ["vegetables", "Vegetables"], ["fruits", "Fruits"], ["dairy", "Dairy"], ["meat", "Meat & fish"], ["organic", "Organic"], ["general", "General store"], ["water", "Water & gas"]],
+  sweets: [["mithai", "Mithai"], ["bakery", "Bakery"], ["cakes", "Cakes"], ["namkeen", "Namkeen"], ["icecream", "Ice cream"], ["dryfruits", "Dry fruits"]],
+  fashion: [["tailor", "Tailor"], ["clothes", "Clothes"], ["saree", "Saree"], ["shoes", "Shoes"], ["jewellery", "Jewellery"], ["kids", "Kids"], ["boutique", "Boutique"], ["laundry", "Laundry & ironing"]],
+  beauty: [["salon", "Salon"], ["parlour", "Parlour"], ["barber", "Barber"], ["spa", "Spa"], ["mehendi", "Mehendi"], ["hair", "Hair stylist"], ["makeup", "Makeup artist"], ["nails", "Nails"], ["skincare", "Skin care"], ["tattoo", "Tattoo"]],
+  health: [["pharmacy", "Pharmacy"], ["clinic", "Clinic"], ["dentist", "Dentist"], ["lab", "Lab tests"], ["gym", "Gym"], ["yoga", "Yoga"], ["doctor", "Doctor"], ["physio", "Physiotherapy"], ["optical", "Optician"], ["ayurveda", "Ayurveda"], ["vet", "Vet & pets"]],
+  electronics: [["mobile", "Mobiles"], ["phonerepair", "Phone repair"], ["computer", "Computers"], ["appliances", "Appliances"], ["recharge", "Recharge"], ["internet", "Internet & cable"], ["printing", "Print & xerox"]],
+  repair: [["mechanic", "Mechanic"], ["bike", "Bike"], ["car", "Car"], ["plumber", "Plumber"], ["electrician", "Electrician"], ["carpenter", "Carpenter"], ["ac", "AC & fridge"], ["puncture", "Puncture"], ["welding", "Welding"], ["painter", "Painter"]],
+  home: [["furniture", "Furniture"], ["decor", "Decor"], ["hardware", "Hardware"], ["cleaning", "Cleaning"], ["pestcontrol", "Pest control"], ["movers", "Packers & movers"], ["gardening", "Gardening"], ["cook", "Cook & maid"], ["rent", "Rent & property"]],
+  education: [["tuition", "Tuition"], ["coaching", "Coaching"], ["music", "Music"], ["dance", "Dance"], ["books", "Books"], ["stationery", "Stationery"], ["language", "Languages"], ["computerclass", "Computer class"], ["sports", "Sports coaching"], ["preschool", "Play school"], ["driving", "Driving school"]],
+  travel: [["taxi", "Taxi"], ["auto", "Auto"], ["tours", "Tours"], ["hotel", "Hotel"], ["tickets", "Tickets"], ["bikerental", "Bike rental"], ["courier", "Courier & delivery"], ["guide", "Guide"], ["tempo", "Tempo & truck"]],
+  art: [["handmade", "Handmade"], ["pottery", "Pottery"], ["painting", "Painting"], ["gifts", "Gifts"], ["photography", "Photography"], ["design", "Design"], ["framing", "Framing"]],
+  events: [["wedding", "Wedding"], ["decoration", "Decoration"], ["catering", "Catering"], ["dj", "DJ"], ["tent", "Tent"], ["flowers", "Flowers"], ["photovideo", "Photo & video"], ["pandit", "Pandit & puja"], ["band", "Band & dhol"], ["anchor", "Anchor & host"]],
+  creator: [["youtuber", "YouTuber"], ["musician", "Musician"], ["writer", "Writer"], ["artist", "Artist"], ["photographer", "Photographer"], ["videomaker", "Video maker"], ["designer", "Designer"], ["developer", "Developer"], ["influencer", "Influencer"], ["podcaster", "Podcaster"], ["freelancer", "Freelancer"], ["consultant", "Consultant"], ["astrology", "Astrology"]],
+  community: [["ngo", "NGO"], ["worship", "Place of worship"], ["club", "Club"], ["fundraiser", "Fundraiser"], ["society", "Housing society"], ["sportsclub", "Sports club"]],
   other: []
 };
 

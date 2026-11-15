@@ -400,6 +400,18 @@ function CreatorSetupScreen({
     };
   });
   const [pageTouched, setPageTouched] = useState53(false);
+  // "Which one is closest?" under the type: a Bazaar category and
+  // sub-category, the same two "What you sell" saves. `kindTouched` so the
+  // step only writes them when one was actually tapped here.
+  const [kindQuery, setKindQuery] = useState53("");
+  const [kindTouched, setKindTouched] = useState53(false);
+  const pickKind = (cat, sub) => {
+    const same = category === cat && subcategory === sub;
+    setKindTouched(true);
+    setCategoryRaw(cat);
+    setSubcategory(same ? "" : sub);
+    if (cat === category2) setCategory2("");
+  };
   const pickPageType = (key) => { setPageTouched(true); setPage((p) => Object.assign({}, p, shopPageTypeDials(key))); };
   // The ready look picked in step four, if any.
   const [lookKey, setLookKey] = useState53((creator && creator.shop && creator.shop.theme && shopThemeKey(creator.shop.theme)) || "");
@@ -612,7 +624,10 @@ function CreatorSetupScreen({
     if (k === "type") {
       // The words and the parts always; the layout a type sets only when a
       // type was picked just now.
-      return { patch: {}, shop: Object.assign({}, pageTouched ? shopPageTypeDials(page.pageType) : {}, page) };
+      return {
+        patch: kindTouched && category ? { category, subcategory: subcategory || "" } : {},
+        shop: Object.assign({}, pageTouched ? shopPageTypeDials(page.pageType) : {}, page)
+      };
     }
     if (k === "look") {
       return {
@@ -868,6 +883,31 @@ function CreatorSetupScreen({
       }}
     ><span style={{ width: 34, height: 34, borderRadius: 11, background: t.color, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 7 }}><Icon size={18} color="#fff" /></span><span style={{ display: "block", fontSize: 13.5, fontWeight: 800, color: T.ink }}>{t.name}</span><span style={{ display: "block", fontSize: 11, fontWeight: 600, color: T.inkSoft, lineHeight: 1.35, marginTop: 2 }}>{t.who}</span></button>;
   })}</div>{page.pageType ? <>{
+    /* Which one, exactly. The type's own kinds, grouped by category; or,
+       once something is typed, every kind anywhere that is near the words
+       — "hair" brings the stylist, the salon, the barber and the parlour. */
+    section("Which one is closest?", null, (() => {
+      const groups = shopKindGroups(page.pageType, kindQuery, BAZAAR_CATEGORY_INFO, BAZAAR_SUBCATEGORY_INFO);
+      return <div data-testid="page-kinds"><input
+        data-testid="page-kind-search"
+        value={kindQuery}
+        onChange={(e) => setKindQuery(e.target.value)}
+        placeholder="Search — hair, taxi, tuition, temple…"
+        maxLength={30}
+        style={{ ...fieldBox, padding: "10px 13px", fontSize: 14 }}
+      />{groups.length ? groups.map((g) => <div key={g.category} style={{ marginTop: 10 }}><div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 0.6, textTransform: "uppercase", color: T.inkFaint, marginBottom: 6 }}>{g.label}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{g.kinds.map((k) => {
+        const on = category === g.category && subcategory === k.sub;
+        return <button
+          key={k.sub}
+          type="button"
+          data-testid={`page-kind-${g.category}-${k.sub}`}
+          aria-pressed={on}
+          onClick={() => pickKind(g.category, k.sub)}
+          style={{ ...pick(on), borderRadius: 999, padding: "8px 13px", fontSize: 12.5, fontWeight: 700 }}
+        >{k.label}</button>;
+      })}</div></div>) : <div style={{ fontSize: 12.5, fontWeight: 600, color: T.inkSoft, lineHeight: 1.5, marginTop: 10 }}>Nothing close to “{kindQuery.trim()}”. Try another word, or skip this — you can describe your shop in your own two words under <b style={{ color: T.ink }}>What you sell → Other</b>.</div>}<div style={{ fontSize: 11.5, color: T.inkFaint, lineHeight: 1.45, margin: "12px 2px 0" }}>This is also where people find you in Pay &amp; Services.</div></div>;
+    })())
+  }{
     /* How a customer will see it: two made-up items in this page's words
        and layout. The prices are GeuFigure, the app's own figure, exactly
        as on the real page — a page type never touches how money reads. */
@@ -1109,7 +1149,7 @@ function CreatorSetupScreen({
     const Icon = { name: Pencil4, type: LayoutGridPt, sell: Store3, where: MapPin5, look: PaletteSu, share: PercentSu }[s.key];
     const line = {
       name: [tagline.trim() || savedAs.handle || preview].filter(Boolean).join(" · "),
-      type: page.pageType ? [SHOP_PAGE_TYPES[page.pageType].name, SHOP_ITEM_BUTTONS[page.itemButton].word ? `“${SHOP_ITEM_BUTTONS[page.itemButton].word}” button` : "", page.hideList ? "no list" : ""].filter(Boolean).join(" · ") : "Menu, Store, Services, Classes…",
+      type: page.pageType ? [SHOP_PAGE_TYPES[page.pageType].name, subInfo ? subInfo[1] : "", SHOP_ITEM_BUTTONS[page.itemButton].word ? `“${SHOP_ITEM_BUTTONS[page.itemButton].word}” button` : "", page.hideList ? "no list" : ""].filter(Boolean).join(" · ") : "Menu, Store, Services, Classes…",
       sell: [catInfo && catInfo.label, subInfo && subInfo[1], listed ? "in बाज़ार" : "not listed"].filter(Boolean).join(" · "),
       where: [addressParts && (addressParts.city || addressParts.area), hours ? "hours set" : "no hours", addressPublic ? "address shown" : "address private"].filter(Boolean).join(" · "),
       look: [lookKey && SHOP_THEMES[lookKey] ? SHOP_THEMES[lookKey].name : look.name, scanNote.trim() ? `“${scanNote.trim()}”` : ""].filter(Boolean).join(" · "),

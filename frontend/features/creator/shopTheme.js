@@ -214,6 +214,86 @@ var SHOP_PAGE_TYPES = {
 };
 var SHOP_PAGE_TYPE_KEYS = ["menu", "store", "services", "classes", "portfolio", "bookings", "giving", "pay"];
 
+// ── WHICH ONE, EXACTLY ──────────────────────────────────────────────────
+//
+// A page type is broad: "Services" is a salon and a plumber. So under the
+// type the setup asks which one is closest, from the Bazaar's own
+// categories and sub-categories (bazaar.jsx) — the same two things "What
+// you sell" saves, so the answer is also where the shop is found in Pay &
+// Services. Nothing new is stored for it.
+//
+// Each type lists the categories it draws from, and which of their
+// sub-categories ("*" for all of them). The order is the order shown.
+var SHOP_PAGE_TYPE_KINDS = {
+  menu: [["food", "*"], ["sweets", "*"]],
+  store: [["grocery", "*"], ["fashion", ["clothes", "saree", "shoes", "jewellery", "kids", "boutique"]],
+    ["electronics", ["mobile", "computer", "appliances"]], ["home", ["furniture", "decor", "hardware"]],
+    ["education", ["books", "stationery"]], ["art", ["handmade", "pottery", "gifts", "framing"]], ["health", ["pharmacy", "optical"]]],
+  services: [["beauty", "*"], ["fashion", ["tailor", "laundry"]], ["repair", "*"],
+    ["home", ["cleaning", "pestcontrol", "movers", "gardening", "cook"]],
+    ["health", ["clinic", "doctor", "dentist", "lab", "physio", "ayurveda", "vet"]],
+    ["electronics", ["phonerepair", "internet", "printing", "recharge"]]],
+  classes: [["education", ["tuition", "coaching", "music", "dance", "language", "computerclass", "sports", "preschool", "driving"]], ["health", ["gym", "yoga"]]],
+  portfolio: [["creator", "*"], ["art", ["painting", "photography", "design", "handmade"]]],
+  bookings: [["travel", "*"], ["events", "*"], ["home", ["rent"]]],
+  giving: [["community", "*"]],
+  pay: [["creator", ["freelancer", "consultant", "developer", "designer", "writer"]], ["travel", ["taxi", "auto", "tempo", "courier"]], ["repair", ["plumber", "electrician", "carpenter", "painter"]]]
+};
+
+// Words people say for a kind that are not its name, so typing "hair"
+// finds the barber and the salon as well as the hair stylist, and "nai"
+// finds the barber. Keyed "<category>.<sub>"; lower case.
+var SHOP_KIND_WORDS = {
+  "beauty.salon": "hair haircut unisex beauty", "beauty.parlour": "beauty parlor ladies facial threading waxing hair",
+  "beauty.barber": "hair haircut shave nai gents saloon", "beauty.hair": "hair haircut hairdresser colour color styling keratin",
+  "beauty.makeup": "bridal mua beauty", "beauty.nails": "manicure pedicure nail art", "beauty.skincare": "facial skin clinic derma",
+  "beauty.mehendi": "henna bridal", "beauty.spa": "massage", "beauty.tattoo": "piercing ink",
+  "fashion.tailor": "darzi stitching alteration boutique", "fashion.laundry": "dhobi dry clean press ironing", "fashion.boutique": "designer clothes ladies",
+  "food.chai": "tea tapri", "food.streetfood": "chaat pani puri momos thela vada pav", "food.homekitchen": "cloud kitchen home food tiffin", "food.tiffin": "dabba mess meals",
+  "grocery.kirana": "general store provision ration", "grocery.water": "gas cylinder water can",
+  "health.doctor": "clinic physician", "health.physio": "physiotherapist", "health.optical": "spectacles glasses eye chashma", "health.vet": "pet animal dog",
+  "health.gym": "fitness trainer", "health.yoga": "meditation fitness",
+  "repair.mechanic": "garage mistri service", "repair.ac": "fridge washing machine appliance", "repair.puncture": "tyre", "repair.electrician": "wiring light",
+  "home.cook": "maid bai househelp", "home.movers": "shifting transport", "home.rent": "pg flat room broker property",
+  "education.tuition": "teacher home tutor classes", "education.coaching": "institute exam classes", "education.language": "english spoken",
+  "education.music": "guitar singing tabla", "education.driving": "car learning",
+  "travel.taxi": "cab driver car", "travel.auto": "rickshaw driver", "travel.tempo": "truck loading transport", "travel.courier": "delivery parcel",
+  "events.photovideo": "photographer videographer wedding shoot", "events.pandit": "puja priest", "events.band": "dhol baja", "events.catering": "halwai food",
+  "art.photography": "photographer photo studio", "art.design": "graphic logo",
+  "creator.youtuber": "youtube channel vlogger video", "creator.musician": "singer band music artist", "creator.writer": "author poet blogger",
+  "creator.photographer": "photo shoot", "creator.videomaker": "editor reels film", "creator.designer": "graphic ui logo", "creator.developer": "coder programmer software app website",
+  "creator.influencer": "instagram reels", "creator.freelancer": "self employed gig", "creator.consultant": "advisor ca lawyer coach", "creator.astrology": "jyotish kundli tarot",
+  "community.ngo": "charity trust foundation donation", "community.worship": "temple mandir mosque masjid church gurudwara donation",
+  "community.fundraiser": "donation help medical", "community.society": "rwa apartment maintenance", "community.club": "group association", "community.sportsclub": "cricket football team"
+};
+
+// The kinds to offer: for a page type, its own (grouped by category); for
+// words typed in the search box, every kind anywhere whose name, category
+// or other words contain them — "similar and around", not just one list.
+// `cats` is [{ key, label }], `subs` is { category: [[key, label]] }: the
+// Bazaar's two tables, passed in so this file needs nothing from that one.
+function shopKindGroups(pageType, query, cats, subs) {
+  const q = String(query || "").trim().toLowerCase();
+  const groups = [];
+  const push = (cat, keys) => {
+    const info = (cats || []).find((c) => c.key === cat);
+    const rows = ((subs || {})[cat] || []).filter(([k]) => keys === "*" || keys.indexOf(k) >= 0);
+    if (info && rows.length) groups.push({ category: cat, label: info.label, kinds: rows.map(([k, label]) => ({ sub: k, label: label })) });
+  };
+  if (!q) {
+    for (const [cat, keys] of SHOP_PAGE_TYPE_KINDS[pageType] || []) push(cat, keys);
+    return groups;
+  }
+  for (const info of cats || []) {
+    const rows = ((subs || {})[info.key] || []).filter(([k, label]) => {
+      const hay = `${label} ${info.label} ${SHOP_KIND_WORDS[`${info.key}.${k}`] || ""}`.toLowerCase();
+      return q.split(/\s+/).every((word) => hay.indexOf(word) >= 0);
+    });
+    if (rows.length) groups.push({ category: info.key, label: info.label, kinds: rows.map(([k, label]) => ({ sub: k, label: label })) });
+  }
+  return groups;
+}
+
 // The word on each item's button. "add" is the plain + the page always
 // had; the rest are that same button wearing a word.
 var SHOP_ITEM_BUTTONS = {

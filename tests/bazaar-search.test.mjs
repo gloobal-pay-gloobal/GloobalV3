@@ -52,7 +52,7 @@ test("categories go by what was paid, empties last but kept", () => {
   const order = bz.bazaarCategoryOrder(rows, vol);
   assert.equal(order[0].key, "grocery");
   assert.equal(order[1].key, "food");
-  assert.equal(order.length, 14);
+  assert.equal(order.length, 16, "every category, the two for people who are not a shop included");
   assert.ok(!("d1" in order[0]) && !("d7" in order[0]), "no volume leaves the server");
 });
 

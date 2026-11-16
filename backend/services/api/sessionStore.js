@@ -33,12 +33,67 @@ var GLOOBAL_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1e3;
 // localStorage throws in Safari private mode and when storage is disabled,
 // so every access is guarded — a storage failure degrades to "no persisted
 // session", never a crash.
-function gloobalSessionReadRaw() {
+// ── A NEWER SIGN-IN IS NEVER REPLACED BY AN OLDER ONE ──────────────────
+//
+// Every copy of the app open in one browser — tabs, the installed app —
+// shares this one stored session. A copy left open from days ago, still
+// running older code, can write ITS session back over the one somebody has
+// just signed in with: they sign in, the old copy puts last week's sign-in
+// back, the server refuses it as expired, and they are signed out again —
+// whichever account they use, on that one phone only (seen 16 Nov).
+//
+// So this page holds the newest session it has had, and when it reads
+// storage and finds an OLDER sign-in there (by the token's own issue time),
+// or the token gone without this code having signed out, it puts its own
+// back. A newer sign-in in storage — another tab signing in, another
+// account — always wins. A sign-out made by this code is marked
+// (GLOOBAL_SIGNED_OUT_KEY) so it is respected by every copy that has it.
+// An expired session is never put back.
+var GLOOBAL_SIGNED_OUT_KEY = "gloobal.signedOutAt";
+var gloobalHeldSession = null;
+function gloobalTokenClaims(token) {
   try {
-    const raw = window.localStorage.getItem(GLOOBAL_SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const payload = String(token || "").split(".")[0];
+    if (!payload) return null;
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(b64 + "===".slice((b64.length + 3) % 4)));
+    return claims && typeof claims === "object" ? claims : null;
   } catch (e) {
     return null;
+  }
+}
+function gloobalSignedOutAt() {
+  try { return Number(window.localStorage.getItem(GLOOBAL_SIGNED_OUT_KEY)) || 0; } catch (e) { return 0; }
+}
+function gloobalSessionReadRaw() {
+  let parsed = null;
+  try {
+    const raw = window.localStorage.getItem(GLOOBAL_SESSION_KEY);
+    parsed = raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return gloobalHeldSession;
+  }
+  const held = gloobalHeldSession;
+  const heldClaims = held && held.token ? gloobalTokenClaims(held.token) : null;
+  const stored = parsed && parsed.token;
+  if (heldClaims && stored !== held.token) {
+    const storedClaims = stored ? gloobalTokenClaims(stored) : null;
+    const heldIat = Number(heldClaims.iat) || 0;
+    const heldLive = typeof heldClaims.exp === "number" && heldClaims.exp > Date.now();
+    const older = stored ? (Number(storedClaims && storedClaims.iat) || 0) < heldIat : gloobalSignedOutAt() < heldIat;
+    if (older && heldLive) {
+      try { window.localStorage.setItem(GLOOBAL_SESSION_KEY, JSON.stringify(held)); } catch (e) { /* the page still has it */ }
+      return held;
+    }
+  }
+  gloobalHeldSession = parsed && parsed.token ? parsed : null;
+  return parsed;
+}
+// What was just written by this code: from here on, the session to keep.
+function gloobalSessionHold(blob) {
+  gloobalHeldSession = blob && blob.token ? blob : null;
+  if (blob && !blob.token) {
+    try { window.localStorage.setItem(GLOOBAL_SIGNED_OUT_KEY, String(Date.now())); } catch (e) { /* ignore */ }
   }
 }
 
@@ -158,6 +213,10 @@ function gloobalSessionSave(user, phoneNumber, biometricEnrolled) {
         biometricEnrolled: enrolled
       })
     );
+    // What this save wrote is now the session this page keeps (see
+    // gloobalSessionReadRaw). Read back rather than rebuilt, so it is
+    // exactly what is stored.
+    gloobalSessionHold(JSON.parse(window.localStorage.getItem(GLOOBAL_SESSION_KEY) || "null"));
   } catch (e) {
     // Storage unavailable — the app still works this session, it just won't
     // survive the next reload. Nothing to recover from.
@@ -253,11 +312,10 @@ function gloobalSessionLoad() {
 // signing out cannot clear one and leave the other behind.
 function gloobalAuthTokenSave(token) {
   const parsed = gloobalSessionReadRaw();
+  const blob = Object.assign({ savedAt: Date.now() }, parsed || {}, { token: token || null });
+  gloobalSessionHold(blob);
   try {
-    window.localStorage.setItem(
-      GLOOBAL_SESSION_KEY,
-      JSON.stringify(Object.assign({ savedAt: Date.now() }, parsed || {}, { token: token || null }))
-    );
+    window.localStorage.setItem(GLOOBAL_SESSION_KEY, JSON.stringify(blob));
   } catch (e) {
     // No storage. The app still works for this page view — gloobalApiRequest
     // reads the token per call and will simply find none after a reload,
@@ -427,6 +485,7 @@ function gloobalNotifyAccountSwitched(newSymbolId) {
 }
 
 function gloobalSessionClear() {
+  gloobalSessionHold({ token: null });
   try {
     window.localStorage.removeItem(GLOOBAL_SESSION_KEY);
   } catch (e) {

@@ -65,3 +65,22 @@ test('calling hours: always, off, and between two times of the shop own day', (t
   assert.equal(faces.callsOut({ mode: 'hours', from: '22:00', to: '02:00', tz: 330 }).open, false);
   assert.equal(faces.callsOut({ mode: 'hours', from: 'x', to: '25:00', tz: 330 }).from, '10:00');
 });
+
+test('a shop wears its logo; a person their photo, or the emoji they chose, never both', () => {
+  const raw = faces.card(owner, { hasPhoto: false, emoji: '🦊', hasLogo: true });
+  const shop = faces.faced(raw, 'shop');
+  assert.equal(shop.logo, true); assert.equal(shop.hasPhoto, true); assert.equal(shop.emoji, null);
+  const self = faces.faced(raw, 'self');
+  assert.equal(self.logo, false); assert.equal(self.hasPhoto, false); assert.equal(self.emoji, '🦊');
+  assert.ok(!('hasLogo' in shop) && !('hasLogo' in self));
+});
+
+test('the picture choice: photo, hidden, or one emoji', () => {
+  assert.deepEqual(faces.pictureOut(undefined), { mode: 'photo', emoji: '' });
+  assert.deepEqual(faces.pictureOut({ mode: 'hidden' }), { mode: 'hidden', emoji: '' });
+  assert.deepEqual(faces.pictureOut({ mode: 'emoji', emoji: '🦊' }), { mode: 'emoji', emoji: '🦊' });
+  assert.deepEqual(faces.pictureOut({ mode: 'emoji', emoji: '👩🏽‍🚀' }), { mode: 'emoji', emoji: '👩🏽‍🚀' });
+  // Not an emoji: nothing is shown rather than somebody's text.
+  assert.deepEqual(faces.pictureOut({ mode: 'emoji', emoji: 'SBI' }), { mode: 'hidden', emoji: '' });
+  assert.deepEqual(faces.pictureOut({ mode: 'emoji', emoji: '' }), { mode: 'hidden', emoji: '' });
+});

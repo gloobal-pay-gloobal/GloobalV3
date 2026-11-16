@@ -68,6 +68,7 @@ const HellooMessage = require('../models/HellooMessage');
 const HellooVoice = require('../models/HellooVoice');
 const HellooBlock = require('../models/HellooBlock');
 const HellooPresence = require('../models/HellooPresence');
+const CreatorLogo = require('../models/CreatorLogo');
 const HellooReach = require('../models/HellooReach');
 const HellooAsk = require('../models/HellooAsk');
 
@@ -204,8 +205,15 @@ function createHelloo(deps) {
     delete out.shopOnly;
     if (rawCard.handle && (rawCard.shopOnly || side !== 'self')) {
       out.name = rawCard.shopName || rawCard.handle;
+      // A shop wears its logo — never the owner's photo or emoji.
+      out.hasPhoto = Boolean(rawCard.hasLogo);
+      out.logo = Boolean(rawCard.hasLogo);
+      out.emoji = null;
+      delete out.hasLogo;
       return out;
     }
+    delete out.hasLogo;
+    out.logo = false;
     out.handle = null;
     out.shopName = '';
     out.calls = null;
@@ -216,6 +224,15 @@ function createHelloo(deps) {
     const raw = (people.raw || people).get(String(otherId));
     if (!raw) return { accountId: String(otherId), name: '', gloobalId: '' };
     return faced(raw, sideOf(conversation, otherId, raw));
+  }
+
+  // What stands for a person where their photo would be: the photo, nothing
+  // (their initials), or one emoji they chose.
+  const EMOJI = /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[\u200d\ufe0f\u{1F3FB}-\u{1F3FF}])+$/u;
+  function pictureOut(raw) {
+    const mode = raw && ['photo', 'hidden', 'emoji'].includes(raw.mode) ? raw.mode : 'photo';
+    const emoji = raw && typeof raw.emoji === 'string' && raw.emoji.length <= 16 && EMOJI.test(raw.emoji) ? raw.emoji : '';
+    return mode === 'emoji' && !emoji ? { mode: 'hidden', emoji: '' } : { mode, emoji };
   }
 
   // When a shop takes calls: always, never, or between two times of its
@@ -242,12 +259,22 @@ function createHelloo(deps) {
   async function cardsFor(ids) {
     const unique = [...new Set(ids.map(String))].map(oid).filter(Boolean);
     if (unique.length === 0) return new Map();
-    const [users, photos] = await Promise.all([
+    const [users, photos, logos, pictures] = await Promise.all([
       User.find({ _id: { $in: unique } }).select(CARD_FIELDS).lean(),
       ProfilePhoto.find({ userId: { $in: unique } }).select('userId').lean(),
+      CreatorLogo.find({ userId: { $in: unique } }).select('userId').lean(),
+      HellooReach.find({ userId: { $in: unique } }).select('userId picture').lean(),
     ]);
     const withPhoto = new Set(photos.map((p) => String(p.userId)));
-    const raw = new Map(users.map((u) => [String(u._id), card(u, { hasPhoto: withPhoto.has(String(u._id)) })]));
+    const withLogo = new Set(logos.map((p) => String(p.userId)));
+    // A person may keep their photo to themselves, or show an emoji in its
+    // place (Me -> Privacy). Then nobody is told there is a photo at all.
+    const pictureOf = new Map(pictures.map((r) => [String(r.userId), pictureOut(r.picture)]));
+    const raw = new Map(users.map((u) => {
+      const id = String(u._id);
+      const pic = pictureOf.get(id) || pictureOut(null);
+      return [id, card(u, { hasPhoto: pic.mode === 'photo' && withPhoto.has(id), emoji: pic.mode === 'emoji' ? pic.emoji : null, hasLogo: withLogo.has(id) })];
+    }));
     // Outside a chat, an account with a shop is met as its shop.
     const people = new Map([...raw].map(([id, c]) => [id, faced(c, 'shop')]));
     people.raw = raw;
@@ -867,11 +894,21 @@ function createHelloo(deps) {
     app.post('/api/helloo/photos', hellooRead, requireAuth, async (req, res) => {
       try {
         const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).slice(0, 40).map(oid).filter(Boolean);
-        const rows = ids.length ? await ProfilePhoto.find({ userId: { $in: ids } }).select('userId dataUrl').lean() : [];
+        const [rows, logoRows, kept] = ids.length ? await Promise.all([
+          ProfilePhoto.find({ userId: { $in: ids } }).select('userId dataUrl').lean(),
+          CreatorLogo.find({ userId: { $in: ids } }).select('userId dataUrl').lean(),
+          HellooReach.find({ userId: { $in: ids }, 'picture.mode': { $in: ['hidden', 'emoji'] } }).select('userId').lean(),
+        ]) : [[], [], []];
+        // A photo its owner hides is not sent to anyone but its owner.
+        const hiddenIds = new Set(kept.map((r) => String(r.userId)));
+        const mine = String(req.hellooOwner._id);
         const photos = {};
-        for (const r of rows) photos[String(r.userId)] = r.dataUrl || null;
+        for (const r of rows) { const id = String(r.userId); if (!hiddenIds.has(id) || id === mine) photos[id] = r.dataUrl || null; }
+        // A shop's own mark, for wherever it is met as a shop.
+        const logos = {};
+        for (const r of logoRows) logos[String(r.userId)] = r.dataUrl || null;
         res.set('Cache-Control', 'private, max-age=300');
-        return res.json({ success: true, photos });
+        return res.json({ success: true, photos, logos });
       } catch (error) {
         console.error('Helloo photos error:', error);
         return res.status(500).json({ success: false, message: 'Could not load photos right now.' });
@@ -1423,6 +1460,7 @@ function createHelloo(deps) {
           business: groupOut(reach.business),
           allowed: allowedIds.map((id) => people.get(String(id))).filter(Boolean).reverse(),
           hideLastSeen: Boolean(reach.hideLastSeen),
+          picture: pictureOut(reach.picture),
           month: { earned: earned.total, gaveBack: earned.gaveBack, payers: earned.rows.length, turnedAway },
         });
       } catch (error) {
@@ -1449,6 +1487,14 @@ function createHelloo(deps) {
         // Privacy: { hideLastSeen: true | false }, on its own or with prices.
         const hidingChanged = typeof req.body?.hideLastSeen === 'boolean';
         if (hidingChanged) set.hideLastSeen = req.body.hideLastSeen;
+        // Privacy: { picture: { mode: "photo" | "hidden" | "emoji", emoji } }.
+        if (req.body?.picture && typeof req.body.picture === 'object') {
+          const mode = String(req.body.picture.mode || '');
+          const emoji = String(req.body.picture.emoji || '');
+          if (!['photo', 'hidden', 'emoji'].includes(mode)) return res.status(400).json({ success: false, message: 'Pick Photo, Hidden or Emoji.' });
+          if (mode === 'emoji' && (!emoji || emoji.length > 16 || !EMOJI.test(emoji))) return res.status(400).json({ success: false, code: 'bad_emoji', message: 'Pick one emoji.' });
+          set.picture = { mode, emoji: mode === 'emoji' ? emoji : '' };
+        }
         if (!Object.keys(set).length) return res.status(400).json({ success: false, message: 'Nothing to change.' });
         const reach = await HellooReach.findOneAndUpdate(
           { userId: req.authUser._id },
@@ -1466,7 +1512,7 @@ function createHelloo(deps) {
             announcePresence(me, sockets.has(String(me)), null);
           }
         }
-        return res.json({ success: true, people: groupOut(reach.people), business: groupOut(reach.business), hideLastSeen: Boolean(reach.hideLastSeen) });
+        return res.json({ success: true, people: groupOut(reach.people), business: groupOut(reach.business), hideLastSeen: Boolean(reach.hideLastSeen), picture: pictureOut(reach.picture) });
       } catch (error) {
         console.error('Helloo reach save error:', error);
         return res.status(500).json({ success: false, message: 'Could not save your prices right now.' });
@@ -1899,7 +1945,7 @@ function createHelloo(deps) {
     return wss;
   }
 
-  return { mount, attachLive, VOICE_PATH, emit, faces: { card, faced, sideOf, nameOn, callsOut } };
+  return { mount, attachLive, VOICE_PATH, emit, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut } };
 }
 
 module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH };

@@ -26,6 +26,12 @@ const hellooReachSchema = new mongoose.Schema(
     // Privacy (Me → Privacy): nobody is told when this person is online or
     // when they were last seen.
     hideLastSeen: { type: Boolean, default: false },
+    // What stands for this person where their photo would be: the photo,
+    // nothing (their initials), or one emoji they chose.
+    picture: {
+      mode: { type: String, enum: ['photo', 'hidden', 'emoji'], default: 'photo' },
+      emoji: { type: String, default: '', maxlength: 16 },
+    },
   },
   { timestamps: true }
 );

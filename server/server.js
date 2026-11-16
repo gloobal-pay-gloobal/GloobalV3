@@ -1104,12 +1104,48 @@ const authenticatedUser = async (req) => {
   return user;
 };
 
+// WHY a token was refused, for the 401 and for the log. Only ever run on the
+// refusal path, so it costs nothing on a request that is let through.
+// It names a category, never a secret: "expired", "revoked" (the account's
+// PIN was changed or reset after this token was issued), "no_account",
+// "bad_signature", "malformed", "no_token".
+const authFailureReason = async (req) => {
+  try {
+    const token = bearerFrom(req);
+    if (!token) return { reason: 'no_token' };
+    const [payload, signature] = token.split('.');
+    if (!payload || !signature) return { reason: 'malformed' };
+    const given = Buffer.from(signature);
+    const want = Buffer.from(signAuthPayload(payload));
+    if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) return { reason: 'bad_signature' };
+    let claims = null;
+    try { claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch (error) { return { reason: 'malformed' }; }
+    if (!claims || typeof claims.exp !== 'number') return { reason: 'malformed' };
+    if (claims.exp < Date.now()) return { reason: 'expired', iat: claims.iat, exp: claims.exp };
+    const user = await User.findById(claims.sub).select('credentialsInvalidatedAt').lean();
+    if (!user) return { reason: 'no_account' };
+    const stamp = user.credentialsInvalidatedAt ? new Date(user.credentialsInvalidatedAt).getTime() : 0;
+    if (stamp && typeof claims.iat === 'number' && claims.iat < stamp) return { reason: 'revoked', iat: claims.iat, stamp };
+    return { reason: 'unknown' };
+  } catch (error) {
+    return { reason: 'unknown' };
+  }
+};
+
 const requireAuth = async (req, res, next) => {
   const user = await authenticatedUser(req);
 
   if (!user) {
+    const why = await authFailureReason(req);
+    // One line in the log per refusal that carried a token: the times are
+    // there because "revoked" with a stamp in the future, or "expired" on a
+    // token minutes old, is a clock problem and not the person's.
+    if (why.reason !== 'no_token') {
+      console.warn(`Auth refused: ${why.reason} ${req.method} ${req.path} now=${Date.now()}${why.iat ? ` iat=${why.iat}` : ''}${why.exp ? ` exp=${why.exp}` : ''}${why.stamp ? ` stamp=${why.stamp}` : ''}`);
+    }
     return res.status(401).json({
       success: false,
+      reason: why.reason,
       // Names the reason for the 401, because status alone cannot carry it.
       // POST /api/pin/verify, /api/pin/change and /api/login all answer 401
       // for a wrong PIN in the BODY while the bearer token in the header is

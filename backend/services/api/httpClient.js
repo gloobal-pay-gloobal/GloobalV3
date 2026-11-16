@@ -163,7 +163,12 @@ async function gloobalApiRequestNetwork(method, path, body, options) {
     // ever let happen.
     if (authToken && !opts.anonymous && typeof gloobalAuthTokenSave === "function") {
       const refreshed = res.headers.get(GLOOBAL_API_TOKEN_REFRESH_HEADER);
-      if (refreshed && refreshed !== authToken) gloobalAuthTokenSave(refreshed);
+      // Only while the token this request went out with is still the one in
+      // hand. An answer that comes back after somebody else has signed in on
+      // this phone would otherwise put the PREVIOUS account's fresh token
+      // over the new session's.
+      const stillMine = typeof gloobalAuthToken !== "function" || gloobalAuthToken() === authToken;
+      if (refreshed && refreshed !== authToken && stillMine) gloobalAuthTokenSave(refreshed);
     }
 
     if (!res.ok) {
@@ -244,11 +249,23 @@ async function gloobalApiRequestNetwork(method, path, body, options) {
       // removing it is a separate change from fixing the rule.
       const tokenRejected =
         res.status === 401 && Boolean(parsed) && parsed.code === "auth_token_invalid";
-      if (tokenRejected && authToken && typeof gloobalAuthTokenClear === "function") {
+      // ── A LATE "NO" TO AN OLD TOKEN IS NOT A "NO" TO THE NEW ONE ────────
+      //
+      // The refusal is about the token THIS request carried. Requests sent
+      // on an old session can still be in the air when the person signs in
+      // again (the free server takes up to a minute to wake, so they queue),
+      // and each of them comes back 401. This used to clear whatever token
+      // was in storage by then — the one the sign-in had just earned — and
+      // announce a sign-out: signed in, and thrown out the same moment.
+      // So the session ends only if the refused token is still the one held.
+      const refusedIsCurrent = typeof gloobalAuthToken !== "function" || gloobalAuthToken() === authToken;
+      if (tokenRejected && authToken && refusedIsCurrent && typeof gloobalAuthTokenClear === "function") {
         gloobalAuthTokenClear();
         if (typeof gloobalLocalCopyClear === "function") gloobalLocalCopyClear();
         if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent(GLOOBAL_SESSION_EXPIRED_EVENT));
+          // `detail` says which call was refused and why the server says so
+          // (requireAuth's `reason`), so a sign-out can be explained.
+          window.dispatchEvent(new CustomEvent(GLOOBAL_SESSION_EXPIRED_EVENT, { detail: { path, reason: (parsed && parsed.reason) || "" } }));
         }
       }
       const message = (parsed && parsed.message) || `Request to ${path} failed with ${res.status}`;

@@ -25,7 +25,7 @@
 //    cost. The server enforces this; the UI simply never draws the tab for
 //    anyone else.
 import { useState as useState54, useEffect as useEffect51 } from "react";
-import { Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare, Navigation as Navigation2, Search as Search9, X as X17, MessageCircle as MessageCircle2, Phone as Phone3, AtSign as AtSign2, Sparkles as Sparkles2 } from "lucide-react";
+import { MessageCircle as ShopMessageIcon, Palette as Palette2, Star as Star2, Share2 as Share25, Plus as Plus7, Minus as Minus2, Pencil as Pencil3, ChevronRight as ChevronRight8, Eye as Eye2, MessageSquare, Navigation as Navigation2, Search as Search9, X as X17, MessageCircle as MessageCircle2, Phone as Phone3, AtSign as AtSign2, Sparkles as Sparkles2 } from "lucide-react";
 
 var CREATOR_PAGE_TABS = ["Selling", "Buying"];
 
@@ -429,6 +429,8 @@ function CreatorPage({
 }) {
   const [basket, setBasket] = useState54({});
   const [detailsOpen, setDetailsOpen] = useState54(false);
+  // A message to this shop: the same chat as in Helloo, opened right here.
+  const [chatOpen, setChatOpen] = useState54(false);
   const [tab, setTab] = useState54("Selling");
   // The item being added or edited, as a DRAFT. Nothing is written until
   // Save, so backing out of the sheet leaves the list exactly as it was.
@@ -712,6 +714,8 @@ function CreatorPage({
     display: "flex", justifyContent: "space-around", gap: 6, position: "relative",
     marginTop: 16, paddingTop: 12, borderTop: `1px solid ${skin.line}`
   }}>{[
+    // Message the shop: the chat is a Helloo chat, so it is in Helloo too.
+    !isOwner && !preview && creator && creator.symbolId ? { key: "message", label: "Message", Icon: ShopMessageIcon, onClick: () => setChatOpen(true) } : null,
     { key: "share", label: "Share", Icon: Share25, onClick: onShare || (() => shareCreatorShop(creator, onToast)) },
     // No Review button on a page whose owner switched reviews off; the
     // owner's own Feedback (to GLOOBAL) is a different thing and stays.
@@ -1188,6 +1192,8 @@ function CreatorPage({
     theme={theme}
     onClose={() => setInsightsOpen(false)}
   /> : null}
+
+  {chatOpen ? <RentChatSheet withSymbolId={creator.symbolId} name={creatorDisplayName(creator)} opening="" onClose={() => setChatOpen(false)} /> : null}
 
   {reviewsOpen ? <ShopReviewsSheet
     creator={creator}

@@ -33,7 +33,7 @@
 //
 // Pay to reach (your attention, your price):
 //   GET  /api/helloo/reach                 your prices, allowed people, earnings
-//   PUT  /api/helloo/reach                 { people, business: { price 0–7, closed } }
+//   PUT  /api/helloo/reach                 { people, business: { price 0–7 in 0.10s, closed } }
 //                                          and/or { hideLastSeen } (Me → Privacy)
 //   PUT  /api/helloo/reach/people/:id      { mode: free | pay | never, price? } — just for one person
 //   POST /api/helloo/reach/allow           { accountId, allowed }
@@ -80,6 +80,11 @@ const CreatorItem = require('../models/CreatorItem');
 const hellooOrders = require('./hellooOrders');
 
 const REACH_MAX = 7;
+// A price is set on a slider in tenths: 0.10, 0.20 … 7.00 of the owner's
+// own currency. Anything else is refused, never rounded into something
+// the owner did not pick.
+const reachTenths = (v) => Math.round(Number(v) * 10) / 10;
+const isReachPrice = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= REACH_MAX && Math.abs(v * 10 - Math.round(v * 10)) < 1e-6;
 const RING_MS = 45 * 1000;
 const REACH_PAYMENT_FRESH_MS = 60 * 60 * 1000;
 const ASKS_PER_DAY = 10;
@@ -517,7 +522,7 @@ function createHelloo(deps) {
     return (user && (await localCurrencyFor(accountCountryIso(user)))) || 'INR';
   }
 
-  const groupOut = (g) => ({ price: Math.max(0, Math.min(REACH_MAX, Math.round(Number(g?.price) || 0))), closed: Boolean(g?.closed) });
+  const groupOut = (g) => ({ price: Math.max(0, Math.min(REACH_MAX, reachTenths(Number(g?.price) || 0))), closed: Boolean(g?.closed) });
 
   // What `senderId` must do to message `receiverId`: free, pay a price, or
   // only ask. Payments (money sent in the chat) are never charged.
@@ -527,7 +532,7 @@ function createHelloo(deps) {
     // Set just for this sender: never, or a price of their own.
     if ((reach.never || []).some((a) => sameId(a, senderId))) return { free: false, closed: true, never: true, kind: 'people', price: 0, currency: await currencyOf(receiverId) };
     const own = (reach.prices || []).find((p) => sameId(p.userId, senderId));
-    if (own && own.price > 0) return { free: false, closed: false, kind: 'people', price: Math.min(REACH_MAX, Math.round(own.price)), own: true, currency: await currencyOf(receiverId) };
+    if (own && own.price > 0) return { free: false, closed: false, kind: 'people', price: Math.min(REACH_MAX, reachTenths(own.price)), own: true, currency: await currencyOf(receiverId) };
     const sender = await User.findById(senderId).select('creatorProfile.handle').lean();
     // Someone writing from their personal side is a person, shop or not.
     const kind = sender?.creatorProfile?.handle && senderSide !== 'self' ? 'business' : 'people';
@@ -1583,10 +1588,10 @@ function createHelloo(deps) {
           if (!g || typeof g !== 'object') continue;
           if (g.price !== undefined) {
             const price = Number(g.price);
-            if (!Number.isInteger(price) || price < 0 || price > REACH_MAX) {
-              return res.status(400).json({ success: false, message: `A price is a whole number from 0 to ${REACH_MAX}.` });
+            if (!isReachPrice(price)) {
+              return res.status(400).json({ success: false, message: `A price is from 0 to ${REACH_MAX}, in steps of 0.10.` });
             }
-            set[`${key}.price`] = price;
+            set[`${key}.price`] = reachTenths(price);
           }
           if (typeof g.closed === 'boolean') set[`${key}.closed`] = g.closed;
         }
@@ -1640,7 +1645,7 @@ function createHelloo(deps) {
 
     // Who can reach me, just for one person: { mode: "free" | "pay" | "never",
     // price? } — free puts them on the allowed list, never on the never
-    // list, pay takes them off both, with a price of their own (1–7) or
+    // list, pay takes them off both, with a price of their own (0.10–7) or
     // the usual one (price 0 or none).
     app.put('/api/helloo/reach/people/:id', hellooWrite, requireAuth, async (req, res) => {
       try {
@@ -1652,7 +1657,8 @@ function createHelloo(deps) {
         let price = 0;
         if (mode === 'pay' && req.body?.price !== undefined && req.body?.price !== null) {
           price = Number(req.body.price);
-          if (!Number.isInteger(price) || price < 0 || price > REACH_MAX) return res.status(400).json({ success: false, message: `A price is a whole number from 0 to ${REACH_MAX}.` });
+          if (!isReachPrice(price)) return res.status(400).json({ success: false, message: `A price is from 0 to ${REACH_MAX}, in steps of 0.10.` });
+          price = reachTenths(price);
         }
         await HellooReach.updateOne({ userId: me }, { $pull: { allowed: other, never: other, prices: { userId: other } }, $setOnInsert: { userId: me } }, { upsert: true });
         if (mode === 'free') await HellooReach.updateOne({ userId: me }, { $addToSet: { allowed: other } });

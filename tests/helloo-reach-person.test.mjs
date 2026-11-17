@@ -9,7 +9,7 @@ let row = null;
 const query = (val) => ({ lean: () => query(val), select: () => query(val), then: (a, b) => Promise.resolve(val).then(a, b) });
 const reachPath = require.resolve('./models/HellooReach');
 require.cache[reachPath] = { id: reachPath, filename: reachPath, loaded: true, exports: { findOne: () => query(row) } };
-const users = { me: { _id: 'me', countryIso: 'IN' }, anita: { _id: 'anita', creatorProfile: {} } };
+const users = { me: { _id: 'me', countryIso: 'IN' }, anita: { _id: 'anita', creatorProfile: {} }, someone: { _id: 'someone', creatorProfile: {} } };
 const User = { findById: (id) => query(users[String(id)]) };
 const limit = () => (req, res, next) => next();
 const { chats } = require('./lib/helloo.js').createHelloo({
@@ -43,4 +43,12 @@ test('Pays per message at a price of their own, even when everybody else is free
   const rule = await chats.reachRule('me', 'anita', 'self');
   assert.equal(rule.free, false); assert.equal(rule.price, 5); assert.equal(rule.own, true);
   assert.deepEqual(await chats.reachFor('me', 'anita'), { reachMode: 'pay', reachPrice: 5, reachOwnPrice: true, reachCurrency: 'INR' });
+});
+
+test('a price can be a tenth: 0.30 just for one person', async () => {
+  row = { userId: 'me', people: { price: 0.5 }, allowed: [], never: [], prices: [{ userId: 'anita', price: 0.3 }] };
+  const rule = await chats.reachRule('me', 'anita', 'self');
+  assert.equal(rule.price, 0.3);
+  const usual = await chats.reachRule('me', 'someone', 'self');
+  assert.equal(usual.price, 0.5);
 });

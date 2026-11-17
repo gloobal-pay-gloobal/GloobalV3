@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 //
 //   people    — what somebody who is not allowed pays per message
 //   business  — the same for a sender with a GLOOBAL shop (a creator handle)
-//   price     — whole units of the owner's own currency, 0 (free) to 7
+//   price     — the owner's own currency, 0 (free) to 7, in steps of 0.10
 //   closed    — nobody in that group can message at all; they can only Ask
 //   allowed   — reach this person free: the people they tapped Allow on,
 //               accepted an Ask from, or wrote to first
@@ -27,7 +27,7 @@ const hellooReachSchema = new mongoose.Schema(
     // their own price instead of the group's (`prices`). Free for one
     // person is `allowed` above. A person is in at most one of the three.
     never: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    prices: [{ _id: false, userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, price: { type: Number, min: 1, max: 7 } }],
+    prices: [{ _id: false, userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, price: { type: Number, min: 0.1, max: 7 } }],
     // Privacy (Me → Privacy): nobody is told when this person is online or
     // when they were last seen.
     hideLastSeen: { type: Boolean, default: false },

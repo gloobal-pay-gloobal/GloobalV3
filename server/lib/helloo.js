@@ -27,6 +27,8 @@
 //   GET  /api/helloo/people/:id/presence   online now, or when last seen
 //   GET  /api/helloo/people/:id/together   time on calls, calls, messages, money between you
 //   GET  /api/helloo/people/:id/shops      the shops they show on their personal profile
+//   POST /api/helloo/chats/:id/release      { pin } — a private chat you both keep, once, for them
+//   POST /api/helloo/chats/:id/release/open { pin } — open one released for you (ten minutes)
 //   POST /api/helloo/contacts/hide         { accountId, hidden } — out of your contacts until you pay or chat again
 //   PUT  /api/helloo/faces/show            { show } — the shop you are acting as, on your personal profile
 //   POST /api/helloo/block                 { accountId, blocked }
@@ -167,6 +169,7 @@ function createHelloo(deps) {
     rateLimit,
     windowMs,
     allowedOrigins,
+    checkPin,
   } = deps;
 
   // Helloo is chatty by nature — a conversation is dozens of small writes — so
@@ -432,6 +435,22 @@ function createHelloo(deps) {
     }
   }
 
+  // A release, as each side sees it: the one who forgot sees only that a
+  // chat is waiting for them (never a name); the one who released sees
+  // whether it was opened.
+  const RELEASE_OPEN_MS = 10 * 60 * 1000;
+  const RELEASE_GAP_MS = 24 * 60 * 60 * 1000;
+  function releaseOut(conversation, meId, now = Date.now()) {
+    const r = conversation.release;
+    if (!r || !r.at) return {};
+    const live = !r.openedAt && r.expiresAt && new Date(r.expiresAt).getTime() > now;
+    if (sameId(r.for, meId) && live) return { released: { expiresAt: r.expiresAt } };
+    if (sameId(r.by, meId) && now - new Date(r.at).getTime() < RELEASE_GAP_MS) {
+      return { releaseState: { state: r.openedAt ? 'opened' : live ? 'waiting' : 'expired', at: r.at } };
+    }
+    return {};
+  }
+
   function chatOut(conversation, meId, people, unread) {
     const otherId = (conversation.members || []).find((m) => !sameId(m, meId)) || meId;
     const other = (conversation.reads || []).find((r) => sameId(r.userId, otherId));
@@ -444,6 +463,7 @@ function createHelloo(deps) {
       savedName: typeof mine.savedName === 'string' ? mine.savedName : '',
       private: Boolean(mine.private),
       offHome: Boolean(mine.offHome),
+      ...releaseOut(conversation, meId),
       // Which of your sides this chat is on: 'shop' or 'self'.
       side: sideOf(conversation, meId, (people.raw || people).get(String(meId))),
       person: personIn(conversation, otherId, people),
@@ -916,6 +936,57 @@ function createHelloo(deps) {
     // list Helloo opens with — nobody has to rebuild an address book.
     // Take somebody out of your contacts (hidden: true), or put them back.
     // Nothing else changes: the payments stay in GLOOBAL, the chat stays.
+    // Release a private chat once for the other person, who forgot its
+    // name. Only when BOTH keep it private; your PIN; once a day.
+    app.post('/api/helloo/chats/:id/release', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const conversation = await HellooConversation.findOne({ _id: oid(req.params.id), members: me }).lean();
+        if (!conversation) return res.status(404).json({ success: false, message: 'That chat is not here.' });
+        const other = conversation.members.find((m) => !sameId(m, me));
+        if (!other || !stateOf(conversation, me).private || !stateOf(conversation, other).private) {
+          return res.status(400).json({ success: false, code: 'both_private_needed', message: 'Only a chat you both keep private can be released.' });
+        }
+        const r = conversation.release;
+        if (r && r.at && Date.now() - new Date(r.at).getTime() < RELEASE_GAP_MS) {
+          return res.status(429).json({ success: false, code: 'release_once_a_day', message: 'This chat was released in the last 24 hours. Try again tomorrow.' });
+        }
+        if (typeof checkPin !== 'function') return res.status(503).json({ success: false, message: 'Not available right now.' });
+        const pin = await checkPin(req.authUser, String(req.body?.pin || ''));
+        if (!pin.ok) return res.status(pin.status || 401).json({ success: false, code: 'bad_pin', message: pin.message || 'That PIN is not right.', retryAfterSeconds: pin.retryAfterSeconds });
+        const now = new Date();
+        const release = { by: me, for: other, at: now, expiresAt: new Date(now.getTime() + RELEASE_OPEN_MS), openedAt: null };
+        await HellooConversation.updateOne({ _id: conversation._id }, { $set: { release } });
+        emit(other, { type: 'release', chatId: String(conversation._id) });
+        return res.json({ success: true, ...releaseOut(Object.assign({}, conversation, { release }), me) });
+      } catch (error) {
+        console.error('Helloo release error:', error);
+        return res.status(500).json({ success: false, message: 'Could not release it right now.' });
+      }
+    });
+
+    // Open a chat released for you: your PIN, within its ten minutes, once.
+    app.post('/api/helloo/chats/:id/release/open', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const conversation = await HellooConversation.findOne({ _id: oid(req.params.id), members: me }).lean();
+        const r = conversation && conversation.release;
+        if (!r || !sameId(r.for, me) || r.openedAt || !r.expiresAt || new Date(r.expiresAt).getTime() <= Date.now()) {
+          return res.status(410).json({ success: false, code: 'release_gone', message: 'This release has ended. Ask them to release it again.' });
+        }
+        if (typeof checkPin !== 'function') return res.status(503).json({ success: false, message: 'Not available right now.' });
+        const pin = await checkPin(req.authUser, String(req.body?.pin || ''));
+        if (!pin.ok) return res.status(pin.status || 401).json({ success: false, code: 'bad_pin', message: pin.message || 'That PIN is not right.', retryAfterSeconds: pin.retryAfterSeconds });
+        await HellooConversation.updateOne({ _id: conversation._id, 'release.openedAt': null }, { $set: { 'release.openedAt': new Date() } });
+        const other = conversation.members.find((m) => !sameId(m, me));
+        if (other) emit(other, { type: 'release', chatId: String(conversation._id) });
+        return res.json({ success: true, id: String(conversation._id) });
+      } catch (error) {
+        console.error('Helloo release open error:', error);
+        return res.status(500).json({ success: false, message: 'Could not open it right now.' });
+      }
+    });
+
     app.post('/api/helloo/contacts/hide', hellooWrite, requireAuth, async (req, res) => {
       try {
         const me = req.authUser._id;
@@ -2111,7 +2182,7 @@ function createHelloo(deps) {
     return wss;
   }
 
-  return { mount, attachLive, VOICE_PATH, emit, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut }, chats: { openChat, reachRule, reachFor } };
+  return { mount, attachLive, VOICE_PATH, emit, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut }, chats: { openChat, reachRule, reachFor, releaseOut } };
 }
 
 module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH };

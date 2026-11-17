@@ -1447,6 +1447,8 @@ const helloo = createHelloo({
   rateLimit,
   windowMs: WINDOW_MS,
   allowedOrigins: ALLOWED_ORIGINS,
+  // The GLOOBAL PIN, lockout included — for releasing a private chat.
+  checkPin: (user, pin) => livePhotoCheckPin(user, pin),
 });
 helloo.mount(app, requireAuth);
 

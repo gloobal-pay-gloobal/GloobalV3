@@ -25,6 +25,17 @@ const hellooConversationSchema = new mongoose.Schema(
       paidAmount: { type: Number, default: 0 },
       paidCurrency: { type: String, default: '' },
     },
+    // A private chat released once for somebody who forgot its name: both
+    // kept it private; `by` (who remembers) let `for` (who forgot) see it
+    // once, for ten minutes, after their PIN. One release a day per chat.
+    release: {
+      _id: false,
+      by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      for: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      at: { type: Date, default: null },
+      expiresAt: { type: Date, default: null },
+      openedAt: { type: Date, default: null },
+    },
     reads: [
       {
         _id: false,

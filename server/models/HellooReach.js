@@ -23,6 +23,11 @@ const hellooReachSchema = new mongoose.Schema(
     people: { type: groupSchema, default: () => ({}) },
     business: { type: groupSchema, default: () => ({}) },
     allowed: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    // Just for one person: they can never message (`never`), or they pay
+    // their own price instead of the group's (`prices`). Free for one
+    // person is `allowed` above. A person is in at most one of the three.
+    never: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    prices: [{ _id: false, userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, price: { type: Number, min: 1, max: 7 } }],
     // Privacy (Me → Privacy): nobody is told when this person is online or
     // when they were last seen.
     hideLastSeen: { type: Boolean, default: false },

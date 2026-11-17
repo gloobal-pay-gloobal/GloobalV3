@@ -375,6 +375,9 @@ const userSchema = new mongoose.Schema({
       to: { type: String, default: '18:00' },
       tz: { type: Number, default: 330 },
     },
+    // Whether this shop is shown on its owner's personal Helloo profile.
+    // Off unless the owner turns it on: a shop does not reveal who runs it.
+    showOnProfile: { type: Boolean, default: false },
 
     // A second category (optional) and a sub-category of the first, from
     // the fixed lists in server/lib/bazaar.js (0141). A sweet shop that

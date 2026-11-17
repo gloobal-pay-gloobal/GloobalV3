@@ -27,6 +27,9 @@ const hellooReachSchema = new mongoose.Schema(
     // their own price instead of the group's (`prices`). Free for one
     // person is `allowed` above. A person is in at most one of the three.
     never: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    // People taken out of this person's Helloo contacts, and when. They
+    // come back by themselves after a new payment or chat with them.
+    hiddenContacts: [{ _id: false, userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, at: { type: Date, default: Date.now } }],
     prices: [{ _id: false, userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, price: { type: Number, min: 0.1, max: 7 } }],
     // Privacy (Me → Privacy): nobody is told when this person is online or
     // when they were last seen.

@@ -27,6 +27,7 @@
 //   GET  /api/helloo/people/:id/presence   online now, or when last seen
 //   GET  /api/helloo/people/:id/together   time on calls, calls, messages, money between you
 //   GET  /api/helloo/people/:id/shops      the shops they show on their personal profile
+//   POST /api/helloo/contacts/hide         { accountId, hidden } — out of your contacts until you pay or chat again
 //   PUT  /api/helloo/faces/show            { show } — the shop you are acting as, on your personal profile
 //   POST /api/helloo/block                 { accountId, blocked }
 //   GET  /api/helloo/blocked               the people you have blocked
@@ -913,6 +914,23 @@ function createHelloo(deps) {
     // People you have paid or been paid by on GLOOBAL, then people you have
     // chatted with. These reach each other free in Helloo, so this is the
     // list Helloo opens with — nobody has to rebuild an address book.
+    // Take somebody out of your contacts (hidden: true), or put them back.
+    // Nothing else changes: the payments stay in GLOOBAL, the chat stays.
+    app.post('/api/helloo/contacts/hide', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const me = req.authUser._id;
+        const other = oid(req.body?.accountId);
+        if (!other || sameId(other, me)) return res.status(400).json({ success: false, message: 'Pick somebody.' });
+        const hidden = req.body?.hidden !== false;
+        await HellooReach.updateOne({ userId: me }, { $pull: { hiddenContacts: { userId: other } }, $setOnInsert: { userId: me } }, { upsert: true });
+        if (hidden) await HellooReach.updateOne({ userId: me }, { $push: { hiddenContacts: { $each: [{ userId: other, at: new Date() }], $slice: -2000 } } });
+        return res.json({ success: true, hidden });
+      } catch (error) {
+        console.error('Helloo hide contact error:', error);
+        return res.status(500).json({ success: false, message: 'Could not change that right now.' });
+      }
+    });
+
     app.get('/api/helloo/contacts', hellooRead, requireAuth, async (req, res) => {
       try {
         const me = req.authUser._id;
@@ -953,6 +971,12 @@ function createHelloo(deps) {
           }
         }
 
+        // Taken out of contacts: gone until a payment or chat after that.
+        const reach = await HellooReach.findOne({ userId: me }).select('hiddenContacts').lean();
+        for (const h of (reach && reach.hiddenContacts) || []) {
+          const extra = seen.get(String(h.userId));
+          if (extra && !(extra.lastAt && new Date(extra.lastAt) > new Date(h.at))) seen.delete(String(h.userId));
+        }
         const people = await cardsFor([...seen.keys()]);
         const contacts = [...seen.entries()]
           .map(([id, extra]) => (people.get(id) ? Object.assign({}, people.get(id), extra) : null))

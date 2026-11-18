@@ -54,6 +54,9 @@ const hellooConversationSchema = new mongoose.Schema(
         // A business's paid message is shown on this member's Helloo home
         // (it is not personal). This keeps one business off it.
         offHome: { type: Boolean, default: false },
+        // This member's own colours for the chat (a GLOOBAL theme key such as
+        // 'g-lotus'), or empty to follow their app colours. Theirs alone.
+        theme: { type: String, default: '', maxlength: 24 },
         // Which of this member's sides the chat is on, when their account
         // is both a person and a shop: 'shop' or 'self'. Empty means the
         // shop when the account has one (as before sides existed).

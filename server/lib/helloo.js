@@ -16,7 +16,7 @@
 //   GET  /api/helloo/chats/:id/messages    a page of messages, newest last
 //   POST /api/helloo/chats/:id/messages    send text, a voice note or a payment
 //   POST /api/helloo/chats/:id/read        mark everything up to now as read
-//   POST /api/helloo/chats/:id/prefs       { muted?, pinned? } — your own settings
+//   POST /api/helloo/chats/:id/prefs       { muted?, pinned?, theme? } — your own settings
 //   POST /api/helloo/chats/:id/clear       clear (or delete) the chat for you only
 //   POST /api/helloo/messages/:id/delete   { everyone } — for you, or for both
 //   POST /api/helloo/messages/:id/order    { status } — the shop answers an order
@@ -463,6 +463,8 @@ function createHelloo(deps) {
       savedName: typeof mine.savedName === 'string' ? mine.savedName : '',
       private: Boolean(mine.private),
       offHome: Boolean(mine.offHome),
+      // Your own colours for this chat, or '' for your app colours.
+      theme: typeof mine.theme === 'string' ? mine.theme : '',
       ...releaseOut(conversation, meId),
       // Which of your sides this chat is on: 'shop' or 'self'.
       side: sideOf(conversation, meId, (people.raw || people).get(String(meId))),
@@ -1426,6 +1428,14 @@ function createHelloo(deps) {
         if (typeof req.body?.muted === 'boolean') set['reads.$[mine].muted'] = req.body.muted;
         if (typeof req.body?.pinned === 'boolean') set['reads.$[mine].pinned'] = req.body.pinned;
         if (typeof req.body?.offHome === 'boolean') set['reads.$[mine].offHome'] = req.body.offHome;
+        // A chat's own colours: a GLOOBAL theme key ('g-' and its name), or
+        // '' to follow the app. Only the shape is checked: the app ignores a
+        // key it does not know, so an old or unknown one shows app colours.
+        if (typeof req.body?.theme === 'string') {
+          const theme = req.body.theme.trim();
+          if (theme && !/^g-[a-z]{2,20}$/.test(theme)) return res.status(400).json({ success: false, code: 'bad_theme', message: 'Those colours are not available.' });
+          set['reads.$[mine].theme'] = theme;
+        }
         // Move the chat between your personal side and your first shop. The
         // other person then sees that side's name. A further shop is only
         // ever a shop, and an account without a shop only ever a person.
@@ -1475,6 +1485,7 @@ function createHelloo(deps) {
           savedName,
           private: isPrivate,
           offHome: typeof req.body.offHome === 'boolean' ? req.body.offHome : Boolean(mine.offHome),
+          theme: typeof set['reads.$[mine].theme'] === 'string' ? set['reads.$[mine].theme'] : (typeof mine.theme === 'string' ? mine.theme : ''),
           ...(set['reads.$[mine].side'] ? { side: set['reads.$[mine].side'] } : {}),
         });
       } catch (error) {

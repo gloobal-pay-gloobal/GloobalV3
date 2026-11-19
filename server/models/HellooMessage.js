@@ -26,7 +26,19 @@ const hellooMessageSchema = new mongoose.Schema(
     // How long a photo or clip stays: 'keep' (in the chat, may be saved),
     // 'once' (gone after the other person opens it), 'day' (gone after 24
     // hours). Empty on older messages, which behave as 'keep'.
-    view: { mode: { type: String, default: '' }, openedAt: { type: Date, default: null }, expiresAt: { type: Date, default: null } },
+    view: { mode: { type: String, default: '' }, openedAt: { type: Date, default: null }, expiresAt: { type: Date, default: null },
+      // Whether the sender let it be saved to the other phone. Off unless
+      // they turn it on: a private picture stays inside Helloo.
+      save: { type: Boolean, default: false } },
+    // Every time the other person's phone asked for the bytes (the last 50),
+    // and how many times in all: the sender sees it was opened, and when.
+    opens: { type: [{ by: mongoose.Schema.Types.ObjectId, at: Date, _id: false }], default: [] },
+    openCount: { type: Number, default: 0 },
+    // Taken back by the sender: the bytes are deleted and it opens for nobody.
+    takenBackAt: { type: Date, default: null },
+    // The country this media belongs to: the sender's. It is stored there
+    // and nowhere else; the other side only ever watches it.
+    country: { type: String, default: '', uppercase: true, maxlength: 2 },
     // The look the sender picked (a named filter the app draws); and who
     // saved it to their phone, so the sender is told.
     fx: { type: String, default: '', maxlength: 20 },

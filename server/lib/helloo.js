@@ -388,7 +388,12 @@ function createHelloo(deps) {
     if (m.kind === 'photo' || m.kind === 'video') {
       // How long it stays, whether it has been opened, and whether the
       // other person saved it. Never the bytes: those are asked for.
-      out.view = { mode: m.view?.mode || 'keep', opened: Boolean(m.view?.openedAt), expiresAt: m.view?.expiresAt || null };
+      // A photo from before these rules has no mode at all: it could always
+      // be saved, and still can.
+      out.view = { mode: m.view?.mode || 'keep', opened: Boolean(m.view?.openedAt), expiresAt: m.view?.expiresAt || null, save: m.view?.mode ? m.view.save === true : true };
+      out.opens = m.openCount || 0;
+      out.lastOpenAt = (m.opens || []).length ? m.opens[m.opens.length - 1].at : null;
+      out.takenBack = Boolean(m.takenBackAt);
       out.fx = m.fx || '';
       out.saved = (m.savedBy || []).length > 0;
     }
@@ -1286,8 +1291,9 @@ function createHelloo(deps) {
           if (caption.length > TEXT_MAX) return res.status(400).json({ success: false, message: `A caption can be up to ${TEXT_MAX} characters.` });
           doc.text = caption;
           doc.photo = { width: Math.max(0, Math.round(Number(body.width) || 0)), height: Math.max(0, Math.round(Number(body.height) || 0)), mime, bytes: audio.length };
-          if (VIEW_MODES.includes(body.view)) doc.view = { mode: body.view, openedAt: null, expiresAt: body.view === 'day' ? new Date(Date.now() + 864e5) : null };
+          { const mode = VIEW_MODES.includes(body.view) ? body.view : 'keep'; doc.view = { mode, openedAt: null, expiresAt: mode === 'day' ? new Date(Date.now() + 864e5) : null, save: mode === 'keep' && body.allowSave === true }; }
           if (FX_NAMES.includes(body.fx)) doc.fx = body.fx;
+          doc.country = String(accountCountryIso(me) || '').slice(0, 2);
         } else if (kind === 'video') {
           const mime = String(body.mime || '').split(';')[0].trim().toLowerCase();
           const seconds = Number(body.seconds);
@@ -1302,8 +1308,9 @@ function createHelloo(deps) {
           doc.text = caption;
           doc.video = { seconds: Math.round(seconds * 10) / 10, width: Math.max(0, Math.round(Number(body.width) || 0)), height: Math.max(0, Math.round(Number(body.height) || 0)), mime, bytes: audio.length };
           const mode = VIEW_MODES.includes(body.view) ? body.view : 'keep';
-          doc.view = { mode, openedAt: null, expiresAt: mode === 'day' ? new Date(Date.now() + 864e5) : null };
+          doc.view = { mode, openedAt: null, expiresAt: mode === 'day' ? new Date(Date.now() + 864e5) : null, save: mode === 'keep' && body.allowSave === true };
           if (FX_NAMES.includes(body.fx)) doc.fx = body.fx;
+          doc.country = String(accountCountryIso(me) || '').slice(0, 2);
         } else if (kind === 'payment') {
           const referenceId = String(body.referenceId || '').trim();
           const txn = referenceId ? await Transaction.findOne({ referenceId }).lean() : null;
@@ -1453,7 +1460,7 @@ function createHelloo(deps) {
     app.get(['/api/helloo/voice/:messageId', '/api/helloo/media/:messageId'], hellooRead, requireAuth, async (req, res) => {
       try {
         const id = oid(req.params.messageId);
-        const message = id ? await HellooMessage.findById(id).select('conversationId kind deletedAt hiddenFor from view').lean() : null;
+        const message = id ? await HellooMessage.findById(id).select('conversationId kind deletedAt hiddenFor from view takenBackAt').lean() : null;
         const conversation = message ? await HellooConversation.findById(message.conversationId).select('members').lean() : null;
         const seen = message && !message.deletedAt && !(message.hiddenFor || []).some((u) => sameId(u, req.authUser._id));
         if (!message || !seen || !['voice', 'photo', 'video'].includes(message.kind) || !conversation || !conversation.members.some((m) => sameId(m, req.authUser._id))) {
@@ -1463,6 +1470,10 @@ function createHelloo(deps) {
         // that is over — the bytes themselves are deleted, not just hidden.
         const mode = (message.view && message.view.mode) || 'keep';
         const mine = sameId(message.from, req.authUser._id);
+        if (message.takenBackAt) return res.status(410).json({ success: false, code: 'gone', message: 'They took that back.' });
+        // Written down every time the other person's phone asks for it.
+        const isSnap = message.kind === 'photo' || message.kind === 'video';
+        if (isSnap && !mine) await HellooMessage.updateOne({ _id: id }, { $inc: { openCount: 1 }, $push: { opens: { $each: [{ by: req.authUser._id, at: new Date() }], $slice: -50 } } });
         if (mode === 'day' && message.view.expiresAt && new Date(message.view.expiresAt).getTime() < Date.now()) {
           await HellooVoice.deleteOne({ messageId: id });
           return res.status(410).json({ success: false, code: 'gone', message: 'That is gone now.' });
@@ -1479,11 +1490,45 @@ function createHelloo(deps) {
           res.set('Cache-Control', 'no-store');
           return res.json({ success: true, mime: voice.mime, audio: Buffer.from(voice.data.buffer || voice.data).toString('base64'), once: true });
         }
-        res.set('Cache-Control', mode === 'keep' ? 'private, max-age=86400' : 'no-store');
+        // A photo or clip is never left in the phone's cache; a voice note may be.
+        res.set('Cache-Control', isSnap ? 'no-store' : 'private, max-age=86400');
         return res.json({ success: true, mime: voice.mime, audio: Buffer.from(voice.data.buffer || voice.data).toString('base64') });
       } catch (error) {
         console.error('Helloo voice error:', error);
         return res.status(500).json({ success: false, message: 'Could not load that voice note right now.' });
+      }
+    });
+
+    // Take it back: the sender's photo or clip is deleted for good and opens
+    // for nobody, however long ago it was sent.
+    app.post('/api/helloo/messages/:id/takeback', hellooWrite, requireAuth, async (req, res) => {
+      try {
+        const id = oid(req.params.id);
+        const me = req.authUser._id;
+        const message = id ? await HellooMessage.findById(id).select('conversationId kind deletedAt from takenBackAt').lean() : null;
+        if (!message || message.deletedAt || !['photo', 'video'].includes(message.kind) || !sameId(message.from, me)) return res.status(404).json({ success: false, message: 'That is not yours to take back.' });
+        if (!message.takenBackAt) {
+          await HellooMessage.updateOne({ _id: id }, { $set: { takenBackAt: new Date() } });
+          await HellooVoice.deleteOne({ messageId: id });
+          const conversation = await HellooConversation.findById(message.conversationId).select('members').lean();
+          for (const m of (conversation && conversation.members) || []) if (!sameId(m, me)) emit(m, { type: 'media-gone', chatId: String(message.conversationId), id: String(id) });
+        }
+        return res.json({ success: true, takenBack: true });
+      } catch (error) {
+        console.error('Helloo take back error:', error);
+        return res.status(500).json({ success: false, message: 'Could not take that back right now.' });
+      }
+    });
+    // When the other person opened your photo or clip: the times, newest first.
+    app.get('/api/helloo/messages/:id/opens', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const id = oid(req.params.id);
+        const message = id ? await HellooMessage.findById(id).select('kind from opens openCount').lean() : null;
+        if (!message || !['photo', 'video'].includes(message.kind) || !sameId(message.from, req.authUser._id)) return res.status(404).json({ success: false, message: 'That is not yours.' });
+        return res.json({ success: true, count: message.openCount || 0, opens: (message.opens || []).map((o) => o.at).reverse() });
+      } catch (error) {
+        console.error('Helloo opens error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load that right now.' });
       }
     });
 
@@ -1498,7 +1543,7 @@ function createHelloo(deps) {
         if (!message || message.deletedAt || !['photo', 'video'].includes(message.kind) || !conversation || !conversation.members.some((m) => sameId(m, me))) {
           return res.status(404).json({ success: false, message: 'That is not here any more.' });
         }
-        if (((message.view && message.view.mode) || 'keep') !== 'keep') return res.status(403).json({ success: false, code: 'not_to_save', message: 'That was not sent to be saved.' });
+        if (message.view && message.view.mode && !(message.view.mode === 'keep' && message.view.save === true)) return res.status(403).json({ success: false, code: 'not_to_save', message: 'That was not sent to be saved.' });
         if (sameId(message.from, me)) return res.json({ success: true, saved: (message.savedBy || []).length > 0 });
         const first = !(message.savedBy || []).some((u) => sameId(u, me));
         if (first) {

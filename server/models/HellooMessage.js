@@ -19,7 +19,10 @@ const hellooMessageSchema = new mongoose.Schema(
   {
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'HellooConversation', required: true },
     from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'call', 'order'], required: true },
+    kind: { type: String, enum: ['text', 'voice', 'payment', 'photo', 'call', 'order', 'sticker'], required: true },
+    // A sticker is only its name: the picture is drawn by the app, so
+    // nothing is uploaded and nothing here can carry a file.
+    sticker: { id: { type: String, default: '', maxlength: 40 } },
     clientId: { type: String, required: true, maxlength: 80 },
     text: { type: String, default: '', maxlength: 4000 },
     voice: {

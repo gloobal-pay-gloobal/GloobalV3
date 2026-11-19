@@ -143,6 +143,7 @@ function previewOf(message) {
   if (message.kind === 'photo') return message.text ? `Photo · ${String(message.text).replace(/\s+/g, ' ').trim().slice(0, 140)}` : 'Photo';
   if (message.kind === 'voice') return `Voice note · ${Math.max(1, Math.round(message.voice?.seconds || 0))}s`;
   if (message.kind === 'payment') return 'Payment on GLOOBAL';
+  if (message.kind === 'sticker') return 'Sticker';
   if (message.kind === 'order') return hellooOrders.orderPreview(message.order);
   return String(message.text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
 }
@@ -361,6 +362,7 @@ function createHelloo(deps) {
     }
     if (m.paid?.referenceId) out.paid = { amount: m.paid.amount, currency: m.paid.currency };
     if (m.kind === 'text') out.text = m.text;
+    if (m.kind === 'sticker') out.sticker = { id: m.sticker?.id || '' };
     if (m.kind === 'call') out.call = { id: m.call?.id ? String(m.call.id) : '', video: Boolean(m.call?.video), status: m.call?.status || '', seconds: m.call?.seconds || 0 };
     if (m.kind === 'photo') {
       out.text = m.text || '';
@@ -1320,6 +1322,13 @@ function createHelloo(deps) {
             note: txn.note || '',
             toUserId: otherId,
           };
+        } else if (kind === 'sticker') {
+          // Only a name from the app's own packs: lower-case letters,
+          // digits and dashes. The app draws it; an unknown name shows as
+          // a plain "Sticker".
+          const stickerId = String(body.stickerId || '');
+          if (!/^[a-z0-9-]{1,40}$/.test(stickerId)) return res.status(400).json({ success: false, code: 'bad_sticker', message: 'That sticker cannot be sent.' });
+          doc.sticker = { id: stickerId };
         } else {
           return res.status(400).json({ success: false, message: 'Unknown message type.' });
         }

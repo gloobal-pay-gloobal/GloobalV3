@@ -192,6 +192,7 @@ const NameHistory = require('./models/NameHistory');
 const PushSubscription = require('./models/PushSubscription');
 const pushService = require('./services/pushService');
 const { createHelloo, HELLOO_VOICE_PATH } = require('./lib/helloo');
+const { createSocial, SOCIAL_MEDIA_PATH } = require('./lib/social');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
 // My Choices — the labels an account puts on its own payments. The model
@@ -440,6 +441,9 @@ app.use((req, res, next) => {
   // A Helloo message can be a voice note; that route reads its own body
   // with a larger cap (lib/helloo.js) and checks the audio itself.
   if (req.method === 'POST' && HELLOO_VOICE_PATH.test(req.path)) return next();
+  // A social post's picture or short video (lib/social.js) — up to 8 MB,
+  // read after sign-in and checked by its own first bytes.
+  if (req.method === 'POST' && SOCIAL_MEDIA_PATH.test(req.path)) return next();
   return globalJsonParser(req, res, next);
 });
 
@@ -1451,6 +1455,9 @@ const helloo = createHelloo({
   checkPin: (user, pin) => livePhotoCheckPin(user, pin),
 });
 helloo.mount(app, requireAuth);
+
+// GLOOBAL Social — posts, follows, likes, comments (lib/social.js).
+createSocial({ User, rateLimit, windowMs: WINDOW_MS }).mount(app, requireAuth);
 
 app.post('/api/otp/send', otpLimit, otpAccountLimit, async (req, res) => {
   try {

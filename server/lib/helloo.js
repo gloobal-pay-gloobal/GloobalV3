@@ -43,7 +43,7 @@
 //   GET  /api/helloo/people/:id/reach      what YOU pay to message them, if anything
 //   POST /api/helloo/asks                  { to, text, kind } — a free request
 //   GET  /api/helloo/asks                  requests waiting for you
-//   POST /api/helloo/asks/:id              { action: allow | decline }
+//   POST /api/helloo/asks/:id              { action: allow | decline | paid, price? }
 //   GET  /api/helloo/earnings?month=       what people paid to reach you, by person
 //
 // Calls (voice and video, phone to phone over WebRTC):
@@ -1852,8 +1852,23 @@ function createHelloo(deps) {
         const id = oid(req.params.id);
         const ask = id ? await HellooAsk.findOne({ _id: id, to: me, status: 'pending' }).lean() : null;
         if (!ask) return res.status(404).json({ success: false, message: 'That request is not waiting any more.' });
-        const action = req.body?.action === 'allow' ? 'allow' : 'decline';
+        const action = req.body?.action === 'allow' ? 'allow' : req.body?.action === 'paid' ? 'paid' : 'decline';
+        // "Paid": not free, but not no — this one person may write by paying
+        // a price set just for them (1 to the most a message can cost).
+        let paidPrice = 0;
+        if (action === 'paid') {
+          paidPrice = Number(req.body?.price);
+          if (!isReachPrice(paidPrice) || paidPrice <= 0) return res.status(400).json({ success: false, code: 'bad_price', message: `A price is from 0.10 to ${REACH_MAX}, in steps of 0.10.` });
+          paidPrice = reachTenths(paidPrice);
+        }
         await HellooAsk.updateOne({ _id: id }, { $set: { status: action === 'allow' ? 'allowed' : 'declined', answeredAt: new Date() } });
+        if (action === 'paid') {
+          await HellooReach.updateOne({ userId: me }, { $pull: { allowed: ask.from, never: ask.from, prices: { userId: ask.from } }, $setOnInsert: { userId: me } }, { upsert: true });
+          await HellooReach.updateOne({ userId: me }, { $push: { prices: { userId: ask.from, price: paidPrice } } });
+          const currency = await currencyOf(me);
+          emit(ask.from, { type: 'ask-answer', to: String(me), allowed: false, paid: true, price: paidPrice, currency });
+          return res.json({ success: true, status: 'paid', price: paidPrice, currency });
+        }
         if (action === 'decline') {
           emit(ask.from, { type: 'ask-answer', to: String(me), allowed: false });
           return res.json({ success: true, status: 'declined' });

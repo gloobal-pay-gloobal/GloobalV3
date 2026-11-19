@@ -22,6 +22,7 @@
 //   POST /api/helloo/messages/:id/order    { status } — the shop answers an order
 //                                          (an order is a message of kind "order":
 //                                          { order: { items: [{ id, qty }], note }, referenceId })
+//   GET  /api/helloo/chats/:id/media?kind=  the chat's photos, clips and voice notes still open to see
 //   GET  /api/helloo/voice/:messageId      one voice note's audio (or a photo)
 //   GET  /api/helloo/media/:messageId      the same, by its general name
 //   GET  /api/helloo/people/:id/presence   online now, or when last seen
@@ -1200,6 +1201,27 @@ function createHelloo(deps) {
       } catch (error) {
         console.error('Helloo open chat error:', error);
         return res.status(500).json({ success: false, message: 'Could not open that chat right now.' });
+      }
+    });
+
+    // The photos, clips and voice notes of one chat, newest first, for the
+    // profile's Media. Only what can still be opened: nothing sent to be
+    // seen once, nothing taken back, nothing whose day is over.
+    app.get('/api/helloo/chats/:id/media', hellooRead, requireAuth, async (req, res) => {
+      try {
+        const conversation = await memberChat(req, res);
+        if (!conversation) return undefined;
+        const kinds = ['photo', 'video', 'voice'];
+        const kind = kinds.includes(String(req.query.kind || '')) ? [String(req.query.kind)] : kinds;
+        const filter = Object.assign(visibleFilter(conversation, req.authUser._id), { kind: { $in: kind }, takenBackAt: null, 'view.mode': { $ne: 'once' } });
+        const rows = await HellooMessage.find(filter).sort({ createdAt: -1, _id: -1 }).limit(120).lean();
+        const now = Date.now();
+        const live = rows.filter((m) => !(m.view && m.view.mode === 'day' && m.view.expiresAt && new Date(m.view.expiresAt).getTime() < now));
+        const count = (k) => live.filter((m) => m.kind === k).length;
+        return res.json({ success: true, media: live.map(messageOut), counts: { photo: count('photo'), video: count('video'), voice: count('voice') } });
+      } catch (error) {
+        console.error('Helloo chat media error:', error);
+        return res.status(500).json({ success: false, message: 'Could not load the media right now.' });
       }
     });
 

@@ -1213,7 +1213,7 @@ function createHelloo(deps) {
         if (!conversation) return undefined;
         const kinds = ['photo', 'video', 'voice'];
         const kind = kinds.includes(String(req.query.kind || '')) ? [String(req.query.kind)] : kinds;
-        const filter = Object.assign(visibleFilter(conversation, req.authUser._id), { kind: { $in: kind }, takenBackAt: null, 'view.mode': { $ne: 'once' } });
+        const filter = Object.assign(visibleFilter(conversation, req.authUser._id), { kind: { $in: kind }, deletedAt: null, takenBackAt: null, 'view.mode': { $ne: 'once' } });
         const rows = await HellooMessage.find(filter).sort({ createdAt: -1, _id: -1 }).limit(120).lean();
         const now = Date.now();
         const live = rows.filter((m) => !(m.view && m.view.mode === 'day' && m.view.expiresAt && new Date(m.view.expiresAt).getTime() < now));

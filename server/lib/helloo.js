@@ -571,6 +571,19 @@ function createHelloo(deps) {
   }
 
   // ── Pay to reach ──────────────────────────────────────────────────────
+  // Where a photo or clip belongs, written on it when it is sent: the
+  // sender's country, every country it is kept in, and who it went to.
+  async function mediaHome(sender, otherId) {
+    const home = String(accountCountryIso(sender) || '').toUpperCase().slice(0, 2);
+    const other = otherId ? await User.findById(otherId).select('symbolId countryIso mobileNumber').lean() : null;
+    const theirs = other ? String(accountCountryIso(other) || '').toUpperCase().slice(0, 2) : '';
+    return {
+      country: home,
+      countries: [...new Set([home, theirs].filter(Boolean))],
+      sharedWith: other ? [{ userId: other._id, gloobalId: other.symbolId || '', country: theirs }] : [],
+    };
+  }
+
   async function currencyOf(userOrId) {
     const user = userOrId && userOrId.symbolId ? userOrId : await User.findById(userOrId).select('countryIso symbolId').lean();
     return (user && (await localCurrencyFor(accountCountryIso(user)))) || 'INR';
@@ -1293,7 +1306,7 @@ function createHelloo(deps) {
           doc.photo = { width: Math.max(0, Math.round(Number(body.width) || 0)), height: Math.max(0, Math.round(Number(body.height) || 0)), mime, bytes: audio.length };
           { const mode = VIEW_MODES.includes(body.view) ? body.view : 'keep'; doc.view = { mode, openedAt: null, expiresAt: mode === 'day' ? new Date(Date.now() + 864e5) : null, save: mode === 'keep' && body.allowSave === true }; }
           if (FX_NAMES.includes(body.fx)) doc.fx = body.fx;
-          doc.country = String(accountCountryIso(me) || '').slice(0, 2);
+          Object.assign(doc, await mediaHome(me, otherId));
         } else if (kind === 'video') {
           const mime = String(body.mime || '').split(';')[0].trim().toLowerCase();
           const seconds = Number(body.seconds);
@@ -1310,7 +1323,7 @@ function createHelloo(deps) {
           const mode = VIEW_MODES.includes(body.view) ? body.view : 'keep';
           doc.view = { mode, openedAt: null, expiresAt: mode === 'day' ? new Date(Date.now() + 864e5) : null, save: mode === 'keep' && body.allowSave === true };
           if (FX_NAMES.includes(body.fx)) doc.fx = body.fx;
-          doc.country = String(accountCountryIso(me) || '').slice(0, 2);
+          Object.assign(doc, await mediaHome(me, otherId));
         } else if (kind === 'payment') {
           const referenceId = String(body.referenceId || '').trim();
           const txn = referenceId ? await Transaction.findOne({ referenceId }).lean() : null;

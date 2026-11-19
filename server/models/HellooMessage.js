@@ -36,9 +36,16 @@ const hellooMessageSchema = new mongoose.Schema(
     openCount: { type: Number, default: 0 },
     // Taken back by the sender: the bytes are deleted and it opens for nobody.
     takenBackAt: { type: Date, default: null },
-    // The country this media belongs to: the sender's. It is stored there
-    // and nowhere else; the other side only ever watches it.
+    // Where this media belongs. `country` is the sender's own. `countries`
+    // is every country it is kept in: the sender's and, when the chat
+    // crosses a border, the receiver's too — so each country holds what its
+    // own people sent and received, and neither needs the other's vault.
+    // `sharedWith` says exactly who it went to: which GLOOBAL ID, in which
+    // country. Nobody looks without a reason; when there is one, this is
+    // what says whose it is and where it may be read.
     country: { type: String, default: '', uppercase: true, maxlength: 2 },
+    countries: { type: [String], default: [] },
+    sharedWith: { type: [{ userId: mongoose.Schema.Types.ObjectId, gloobalId: String, country: String, _id: false }], default: [] },
     // The look the sender picked (a named filter the app draws); and who
     // saved it to their phone, so the sender is told.
     fx: { type: String, default: '', maxlength: 20 },

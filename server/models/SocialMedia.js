@@ -9,6 +9,8 @@ const socialMediaSchema = new mongoose.Schema(
   {
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     post: { type: mongoose.Schema.Types.ObjectId, ref: 'SocialPost', default: null, index: true },
+    // Or the ad it is shown in (lib/ads.js). One or the other, never both.
+    ad: { type: mongoose.Schema.Types.ObjectId, ref: 'AdCampaign', default: null },
     kind: { type: String, enum: ['photo', 'video'], required: true },
     mime: { type: String, required: true },
     size: { type: Number, required: true },

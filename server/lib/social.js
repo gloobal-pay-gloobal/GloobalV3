@@ -139,7 +139,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         if (what.kind === 'photo' && buf.length > PHOTO_MAX) return res.status(413).json({ success: false, code: 'too_big', message: 'That picture is too big.' });
         if (what.kind === 'video' && buf.length > VIDEO_MAX) return res.status(413).json({ success: false, code: 'too_big', message: 'Videos can be up to 8 MB for now.' });
         // Uploads nobody used within a day are cleared as new ones arrive.
-        SocialMedia.deleteMany({ owner: req.authUser._id, post: null, createdAt: { $lt: new Date(Date.now() - 864e5) } }).catch(() => {});
+        SocialMedia.deleteMany({ owner: req.authUser._id, post: null, ad: null, createdAt: { $lt: new Date(Date.now() - 864e5) } }).catch(() => {});
         const m = await SocialMedia.create({ owner: req.authUser._id, kind: what.kind, mime: what.mime, size: buf.length, data: buf });
         return res.json({ success: true, id: String(m._id), kind: what.kind, url: mediaUrl(m._id) });
       } catch (error) { return fail(res, 'media upload', error); }
@@ -151,7 +151,8 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '', people = nul
         const id = oid(req.params.id);
         const m = id ? await SocialMedia.findById(id).lean() : null;
         const post = m && m.post ? await SocialPost.findById(m.post).select('removedAt').lean() : null;
-        if (!m || !post || post.removedAt) return res.status(404).json({ success: false, message: 'Not here any more.' });
+        // Served while it belongs to a live post, or to an ad.
+        if (!m || !((post && !post.removedAt) || m.ad)) return res.status(404).json({ success: false, message: 'Not here any more.' });
         const buf = Buffer.from(m.data.buffer || m.data);
         res.set('Content-Type', m.mime);
         res.set('Cache-Control', 'public, max-age=31536000, immutable');

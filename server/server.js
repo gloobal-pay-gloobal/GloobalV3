@@ -193,6 +193,7 @@ const PushSubscription = require('./models/PushSubscription');
 const pushService = require('./services/pushService');
 const { createHelloo, HELLOO_VOICE_PATH } = require('./lib/helloo');
 const { createSocial, SOCIAL_MEDIA_PATH } = require('./lib/social');
+const adsLib = require('./lib/ads');
 const HoomanAnswer = require('./models/HoomanAnswer');
 const HoomanProfile = require('./models/HoomanProfile');
 // My Choices — the labels an account puts on its own payments. The model
@@ -1458,6 +1459,16 @@ helloo.mount(app, requireAuth);
 
 // GLOOBAL Social — posts, follows, likes, comments (lib/social.js).
 createSocial({ User, rateLimit, windowMs: WINDOW_MS, people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
+
+// GLOOBAL Ads & Earn (lib/ads.js): each full view is one ordinary payment,
+// advertiser → viewer, through the send route below, under a standing
+// instruction the advertiser gave with their PIN.
+adsLib.createAds({
+  User, rateLimit, windowMs: WINDOW_MS,
+  currencyOf: async (user) => (await localCurrencyFor(accountCountryIso(user))) || 'INR',
+  checkPin: (user, pin) => livePhotoCheckPin(user, pin),
+  people: { cardsFor: helloo.cardsFor },
+}).mount(app, requireAuth);
 
 app.post('/api/otp/send', otpLimit, otpAccountLimit, async (req, res) => {
   try {
@@ -10797,6 +10808,16 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     } catch (mandateError) {
       return res.status(403).json({ success: false, message: `Rent could not be sent by itself: ${mandateError.message}.` });
     }
+    // The other standing instruction: an ad paying one person who watched
+    // it in full (lib/ads.js). Same shape — loopback only, signed, and
+    // checked against sender, payee and amount below.
+    let adMandate = null;
+    try {
+      adMandate = rentMandate ? null : await adsLib.readAdMandate(req);
+    } catch (mandateError) {
+      return res.status(403).json({ success: false, message: `The ad could not pay: ${mandateError.message}.` });
+    }
+    const standing = rentMandate || adMandate;
 
     const senderIdentifier = String(senderSymbolId || fromSymbolId || symbolId || '').trim();
     const receiverIdentifier = String(receiverSymbolId || toSymbolId || to || '').trim();
@@ -10877,7 +10898,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // check sends none. Whether THIS payment may go without one is decided
     // below, once the amount is known (paymentFace.authorize), and an account
     // still on the PIN gets the same refusal there as it got here.
-    if (!rentMandate && cleanPin && !isValidPinFormat(cleanPin)) {
+    if (!standing && cleanPin && !isValidPinFormat(cleanPin)) {
       return res.status(400).json({
         success: false,
         message: 'PIN must be 4 to 6 digits.',
@@ -10946,6 +10967,14 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
       const amountForMandate = Number(hasSourceAmount ? sourceAmount : amount);
       if (!rent.mandateCovers(rentMandate, { senderId: sender._id, receiverSymbolId: receiver.symbolId, amount: amountForMandate })) {
         return res.status(403).json({ success: false, message: 'Rent could not be sent by itself: the instruction does not match this payment.' });
+      }
+    } else if (adMandate) {
+      // Exactly this advertiser, this viewer, this viewer's price, in one
+      // currency — or nothing moves.
+      const amountForMandate = Number(hasSourceAmount ? sourceAmount : amount);
+      const [fromCur, toCur] = await Promise.all([localCurrencyFor(accountCountryIso(sender)), localCurrencyFor(accountCountryIso(receiver))]);
+      if (!adsLib.adMandateCovers(adMandate, { senderId: sender._id, receiverId: receiver._id, amount: amountForMandate, senderCurrency: fromCur, receiverCurrency: toCur })) {
+        return res.status(403).json({ success: false, message: 'The ad could not pay: the instruction does not match this payment.' });
       }
     } else if (cleanPin) {
       const pinRecord = await Pin.findOne({ userId: sender._id });
@@ -11124,7 +11153,7 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
     // PIN: the phone's fingerprint / Face ID (any amount under ₹1 lakh), or
     // the GLOOBAL face check (up to ₹10,000, ₹25,000 a day).
     let paymentAuth = { method: 'mandate', inr: null };
-    if (!rentMandate) {
+    if (!standing) {
       const decided = await paymentFace.authorize({
         user: sender,
         pinVerified: Boolean(cleanPin),
@@ -11429,6 +11458,8 @@ app.post('/api/transactions/send', writeLimit, requireAuth, requireSelf('senderS
         idempotencyKey: cleanIdempotencyKey || null,
         rentPlaceId: cleanRentPlaceId || null,
         rentAuto: Boolean(rentMandate),
+        adAuto: Boolean(adMandate),
+        adCampaignId: adMandate ? String(adMandate.campaign._id) : null,
         senderMatchedBy: senderResolved.matchedBy,
         receiverMatchedBy: receiverResolved.matchedBy,
         senderInput: senderIdentifier,
@@ -15535,6 +15566,7 @@ const httpServer = app.listen(PORT, () => {
 });
 // Rent that pays by itself: once an hour, through the send route.
 rent.configureRent({ AUTH_TOKEN_SECRET, PORT, issueAuthToken });
+adsLib.configureAds({ AUTH_TOKEN_SECRET, PORT, issueAuthToken });
 rent.startRentAutoSettle();
 // Helloo's live channel shares this port: Render exposes one, and a
 // WebSocket upgrade is just another request on it.

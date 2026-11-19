@@ -2193,7 +2193,7 @@ function createHelloo(deps) {
     return wss;
   }
 
-  return { mount, attachLive, VOICE_PATH, emit, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut }, chats: { openChat, reachRule, reachFor, releaseOut } };
+  return { mount, attachLive, VOICE_PATH, emit, cardsFor, faces: { card, faced, sideOf, nameOn, callsOut, pictureOut }, chats: { openChat, reachRule, reachFor, releaseOut } };
 }
 
 module.exports = { createHelloo, HELLOO_VOICE_PATH: VOICE_PATH };

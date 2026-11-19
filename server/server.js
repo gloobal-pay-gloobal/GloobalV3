@@ -1457,7 +1457,7 @@ const helloo = createHelloo({
 helloo.mount(app, requireAuth);
 
 // GLOOBAL Social — posts, follows, likes, comments (lib/social.js).
-createSocial({ User, rateLimit, windowMs: WINDOW_MS }).mount(app, requireAuth);
+createSocial({ User, rateLimit, windowMs: WINDOW_MS, people: { cardsFor: helloo.cardsFor, faced: helloo.faces.faced } }).mount(app, requireAuth);
 
 app.post('/api/otp/send', otpLimit, otpAccountLimit, async (req, res) => {
   try {

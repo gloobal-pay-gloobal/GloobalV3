@@ -53,7 +53,9 @@ function sniff(buf) {
   return null;
 }
 
-function createSocial({ User, rateLimit, windowMs, publicBase = '' }) {
+function createSocial({ User, rateLimit, windowMs, publicBase = '', people = null }) {
+  // people: Helloo's card maker ({ cardsFor, faced }), so a face here is the
+  // same as in a chat — photo or emoji as the person chose, a shop's logo.
   const socialRead = rateLimit({ name: 'social-read', max: 600, windowMs });
   const socialWrite = rateLimit({ name: 'social-write', max: 120, windowMs });
   const socialUpload = rateLimit({ name: 'social-upload', max: 40, windowMs });
@@ -64,6 +66,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '' }) {
   // the owner's name.
   function cardOf(u, side) {
     if (!u) return null;
+    if (u.hellooCard) return Object.assign(people.faced(u.hellooCard, side === 'shop' ? 'shop' : 'self'), { side: side === 'shop' && u.hellooCard.handle ? 'shop' : 'self' });
     const handle = (u.creatorProfile && u.creatorProfile.handle) || '';
     const shop = side === 'shop' && handle;
     return { accountId: String(u._id), gloobalId: u.symbolId || '', name: shop ? shopNameOf(u) : (u.fullName || ''), handle: shop ? handle : '', side: shop ? 'shop' : 'self', countryIso: u.countryIso || '' };
@@ -72,6 +75,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '' }) {
 
   async function cards(ids) {
     const uniq = [...new Set(ids.map(String))].map(oid).filter(Boolean);
+    if (people && uniq.length) {
+      const m = await people.cardsFor(uniq);
+      return new Map([...(m.raw || m)].map(([k, c]) => [k, { _id: k, hellooCard: c, symbolId: c.gloobalId }]));
+    }
     const users = uniq.length ? await User.find({ _id: { $in: uniq } }).select(CARD).lean() : [];
     return new Map(users.map((u) => [String(u._id), u]));
   }
@@ -258,7 +265,9 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '' }) {
         const items = shopsRaw.length ? await CreatorItem.find({ ownerSymbolId: { $in: shopsRaw.map((s) => s.symbolId) } }).select('ownerSymbolId title price currency').sort({ position: 1 }).limit(200).lean() : [];
         const itemsOf = new Map();
         for (const it of items) { const k = it.ownerSymbolId; if (!itemsOf.has(k)) itemsOf.set(k, []); if (itemsOf.get(k).length < 2) itemsOf.get(k).push({ title: it.title, price: it.price, currency: it.currency }); }
-        const shops = shopsRaw.filter((s) => itemsOf.has(s.symbolId)).slice(0, 8).map((s) => Object.assign(cardOf(s, 'shop'), { items: itemsOf.get(s.symbolId) }));
+        const shopRows = shopsRaw.filter((s) => itemsOf.has(s.symbolId)).slice(0, 8);
+        const shopCards = await cards(shopRows.map((s) => s._id));
+        const shops = shopRows.map((s) => Object.assign(cardOf(shopCards.get(String(s._id)), 'shop'), { items: itemsOf.get(s.symbolId) }));
         return res.json({ success: true, trending: await postsOut(trending, me._id), creators, shops, learn: await postsOut(learn, me._id), grid: await postsOut(grid, me._id), before: grid.length ? grid[grid.length - 1].createdAt : null });
       } catch (error) { return fail(res, 'explore', error); }
     });
@@ -273,9 +282,10 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '' }) {
         const re = new RegExp(escapeRe(q), 'i');
         const shops = await User.find({ $or: [{ 'creatorProfile.handle': re }, { 'creatorProfile.handleFirst': re }] }).select(CARD).limit(12).lean();
         const posters = await SocialPost.distinct('author', { removedAt: null, side: 'self' });
-        const people = posters.length ? await User.find({ _id: { $in: posters.slice(0, 2000) }, fullName: re }).select(CARD).limit(12).lean() : [];
+        const persons = posters.length ? await User.find({ _id: { $in: posters.slice(0, 2000) }, fullName: re }).select(CARD).limit(12).lean() : [];
         const posts = await SocialPost.find(visible({ caption: re })).sort({ likeCount: -1, createdAt: -1 }).limit(18).lean();
-        return res.json({ success: true, people: [...shops.map((u) => cardOf(u, 'shop')), ...people.map((u) => cardOf(u, 'self'))], posts: await postsOut(posts, req.authUser._id) });
+        const found = await cards([...shops, ...persons].map((u) => u._id));
+        return res.json({ success: true, people: [...shops.map((u) => cardOf(found.get(String(u._id)), 'shop')), ...persons.map((u) => cardOf(found.get(String(u._id)), 'self'))], posts: await postsOut(posts, req.authUser._id) });
       } catch (error) { return fail(res, 'search', error); }
     });
 
@@ -296,7 +306,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '' }) {
           SocialPost.countDocuments(base), SocialLink.countDocuments({ kind: 'follow', to: u._id }), SocialLink.countDocuments({ kind: 'follow', from: u._id }),
           SocialLink.exists({ kind: 'follow', from: me._id, to: u._id }),
         ]);
-        return res.json({ success: true, profile: Object.assign(cardOf(u, side), { posts: postCount, followers, following, isFollowing: Boolean(isFollowing), isMe: own }), grid: await postsOut(posts, me._id), before: posts.length ? posts[posts.length - 1].createdAt : null });
+        return res.json({ success: true, profile: Object.assign(cardOf((await cards([u._id])).get(String(u._id)), side), { posts: postCount, followers, following, isFollowing: Boolean(isFollowing), isMe: own }), grid: await postsOut(posts, me._id), before: posts.length ? posts[posts.length - 1].createdAt : null });
       } catch (error) { return fail(res, 'profile', error); }
     });
 
@@ -356,7 +366,7 @@ function createSocial({ User, rateLimit, windowMs, publicBase = '' }) {
         if (!text) return res.status(400).json({ success: false, message: 'Write something first.' });
         const c = await SocialComment.create({ post: post._id, author: req.authUser._id, side: req.socialSide === 'shop' ? 'shop' : 'self', text });
         await SocialPost.updateOne({ _id: post._id }, { $inc: { commentCount: 1 } });
-        return res.json({ success: true, comment: commentOut(c.toObject(), req.authUser, req.authUser._id, post.author) });
+        return res.json({ success: true, comment: commentOut(c.toObject(), (await cards([req.authUser._id])).get(String(req.authUser._id)), req.authUser._id, post.author) });
       } catch (error) { return fail(res, 'comment', error); }
     });
     app.delete('/api/social/comments/:id', socialWrite, requireAuth, async (req, res) => {

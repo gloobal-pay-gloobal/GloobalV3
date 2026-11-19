@@ -1121,7 +1121,11 @@ function createHelloo(deps) {
         // Found by their own mobile number, it is the person who was looked
         // for, not their shop.
         const byMobile = /^\+?[\d\s-]{7,}$/.test(identifier) && !user.shopOwnerId;
-        return res.json({ success: true, person: byMobile ? faced(people.raw.get(String(user._id)), 'self') : people.get(String(user._id)) });
+        // Dialled (face=self): a GLOOBAL ID is a person's, so it finds the
+        // person — to message, call or video call. Their shop is found by
+        // its own name. An account that is only a shop stays a shop.
+        const asPerson = (byMobile || req.query.face === 'self') && !user.shopOwnerId;
+        return res.json({ success: true, person: asPerson ? faced(people.raw.get(String(user._id)), 'self') : people.get(String(user._id)), by: byMobile ? 'mobile' : 'id' });
       } catch (error) {
         console.error('Helloo lookup error:', error);
         return res.status(500).json({ success: false, message: 'Could not look that up right now.' });
